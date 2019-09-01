@@ -26,17 +26,17 @@ type Inner = Box<
 >;
 
 #[derive(Clone)]
-pub struct Client {
+pub struct Channel {
     svc: Buffer<Inner, Request<BoxBody>>,
 }
 
-impl Client {
+impl Channel {
     pub fn builder() -> Builder {
         Builder::new()
     }
 }
 
-impl GrpcService<BoxBody> for Client {
+impl GrpcService<BoxBody> for Channel {
     type ResponseBody = hyper::Body;
     type Error = super::Error;
 
@@ -89,7 +89,7 @@ impl Builder {
         self
     }
 
-    pub fn build<T>(&self, uri: T) -> Result<Client, super::Error>
+    pub fn build<T>(&self, uri: T) -> Result<Channel, super::Error>
     where
         Uri: http::HttpTryFrom<T>,
     {
@@ -107,7 +107,7 @@ impl Builder {
                 .unwrap_or_else(|| uri.to_string());
 
             #[cfg(not(any(feature = "openssl-1", feature = "rustls")))]
-            panic!("tls configured when no tls implementation feature was selected!");
+            unreachable!("tls configured when no tls implementation feature was selected!");
 
             #[cfg(feature = "openssl-1")]
             let connector = super::openssl::TlsConnector::new(ca.clone(), domain)?;
@@ -131,9 +131,7 @@ impl Builder {
             let svc = BoxService::new(svc);
             Buffer::new(Box::new(svc) as Inner, 100)
         };
-        // let connector = super::rustls::TlsConnector::load(ca).await?;
-        // let connector = super::openssl::TlsConnector::load(ca).await?;
 
-        Ok(Client { svc })
+        Ok(Channel { svc })
     }
 }
