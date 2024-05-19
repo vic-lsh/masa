@@ -1,3 +1,9 @@
 [submodule "3rd_party/tokio"]
 	path = 3rd_party/tokio
 	url = git@github.com:tokio-rs/tokio.git
+[submodule "3rd_party/hyper"]
+	path = 3rd_party/hyper
+	url = git@github.com:hyperium/hyper.git
+[submodule "3rd_party/tower"]
+	path = 3rd_party/tower
+	url = git@github.com:tower-rs/tower.git
