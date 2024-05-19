@@ -68,15 +68,15 @@ name = "tls-server"
 path = "src/tls/server.rs"
 required-features = ["tls"]
 
-[[bin]]
-name = "tls-rustls-client"
-path = "src/tls_rustls/client.rs"
-required-features = ["tls-rustls"]
-
-[[bin]]
-name = "tls-rustls-server"
-path = "src/tls_rustls/server.rs"
-required-features = ["tls-rustls"]
+# [[bin]]
+# name = "tls-rustls-client"
+# path = "src/tls_rustls/client.rs"
+# required-features = ["tls-rustls"]
+# 
+# [[bin]]
+# name = "tls-rustls-server"
+# path = "src/tls_rustls/server.rs"
+# required-features = ["tls-rustls"]
 
 [[bin]]
 name = "tls-client-auth-server"
@@ -149,15 +149,15 @@ path = "src/interceptor/client.rs"
 name = "interceptor-server"
 path = "src/interceptor/server.rs"
 
-[[bin]]
-name = "hyper-warp-client"
-path = "src/hyper_warp/client.rs"
-required-features = ["hyper-warp"]
-
-[[bin]]
-name = "hyper-warp-server"
-path = "src/hyper_warp/server.rs"
-required-features = ["hyper-warp"]
+# [[bin]]
+# name = "hyper-warp-client"
+# path = "src/hyper_warp/client.rs"
+# required-features = ["hyper-warp"]
+# 
+# [[bin]]
+# name = "hyper-warp-server"
+# path = "src/hyper_warp/server.rs"
+# required-features = ["hyper-warp"]
 
 [[bin]]
 name = "health-server"
@@ -178,15 +178,15 @@ required-features = ["autoreload"]
 name = "optional-server"
 path = "src/optional/server.rs"
 
-[[bin]]
-name = "hyper-warp-multiplex-client"
-path = "src/hyper_warp_multiplex/client.rs"
-required-features = ["hyper-warp-multiplex"]
-
-[[bin]]
-name = "hyper-warp-multiplex-server"
-path = "src/hyper_warp_multiplex/server.rs"
-required-features = ["hyper-warp-multiplex"]
+# [[bin]]
+# name = "hyper-warp-multiplex-client"
+# path = "src/hyper_warp_multiplex/client.rs"
+# required-features = ["hyper-warp-multiplex"]
+# 
+# [[bin]]
+# name = "hyper-warp-multiplex-server"
+# path = "src/hyper_warp_multiplex/server.rs"
+# required-features = ["hyper-warp-multiplex"]
 
 [[bin]]
 name = "compression-server"
@@ -203,15 +203,15 @@ name = "mock"
 path = "src/mock/mock.rs"
 required-features = ["mock"]
 
-[[bin]]
-name = "grpc-web-server"
-path = "src/grpc-web/server.rs"
-required-features = ["grpc-web"]
-
-[[bin]]
-name = "grpc-web-client"
-path = "src/grpc-web/client.rs"
-required-features = ["grpc-web"]
+# [[bin]]
+# name = "grpc-web-server"
+# path = "src/grpc-web/server.rs"
+# required-features = ["grpc-web"]
+# 
+# [[bin]]
+# name = "grpc-web-client"
+# path = "src/grpc-web/client.rs"
+# required-features = ["grpc-web"]
 
 [[bin]]
 name = "streaming-client"
@@ -284,6 +284,8 @@ path = "src/codec_buffers/server.rs"
 name = "codec-buffers-client"
 path = "src/codec_buffers/client.rs"
 
+[profile.release]
+debug = true
 
 [features]
 gcp = ["dep:prost-types", "tonic/tls"]
@@ -315,9 +317,11 @@ default = ["full"]
 
 [dependencies]
 # Common dependencies
-tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
+tokio = { path = "../3rd_party/tokio/tokio", features = ["rt-multi-thread", "macros"] }
 prost = "0.12"
 tonic = { path = "../tonic" }
+px = { path = "../3rd_party/px" }
+futures = "0.3"
 # Optional dependencies
 tonic-web = { path = "../tonic-web", optional = true }
 tonic-health = { path = "../tonic-health", optional = true }
@@ -325,9 +329,9 @@ tonic-reflection = { path = "../tonic-reflection", optional = true }
 tonic-types = { path = "../tonic-types", optional = true }
 either = { version = "1.9", optional = true }
 async-stream = { version = "0.3", optional = true }
-tokio-stream = { version = "0.1", optional = true }
-tokio-util = { version = "0.7.8", optional = true }
-tower = { version = "0.4", optional = true }
+tokio-stream = { path = "../3rd_party/tokio/tokio-stream", optional = true }
+tokio-util = { path = "../3rd_party/tokio/tokio-util", optional = true }
+tower = { path = "../3rd_party/tower/tower", optional = true }
 rand = { version = "0.8", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
@@ -336,12 +340,12 @@ tracing-subscriber = { version = "0.3", features = ["tracing-log", "fmt"], optio
 prost-types = { version = "0.12", optional = true }
 http = { version = "0.2", optional = true }
 http-body = { version = "0.4.2", optional = true }
-hyper = { version = "0.14", optional = true }
+hyper = { path = "../3rd_party/hyper", optional = true }
 warp = { version = "0.3.4", default-features = false, optional = true }
 listenfd = { version = "1.0", optional = true }
 bytes = { version = "1", optional = true }
-h2 = { version = "0.3", optional = true }
-tokio-rustls = { version = "0.24.0", optional = true }
+h2 = { path = "../3rd_party/h2", optional = true }
+tokio-rustls = { path = "../3rd_party/tokio-rustls", optional = true }
 hyper-rustls = { version = "0.24.0", features = ["http2"], optional = true }
 rustls-pemfile = { version = "1", optional = true }
 tower-http = { version = "0.4", optional = true }

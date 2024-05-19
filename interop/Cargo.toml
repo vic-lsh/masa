@@ -21,12 +21,12 @@ pico-args = {version = "0.5", features = ["eq-separator"]}
 console = "0.15"
 http = "0.2"
 http-body = "0.4.2"
-hyper = "0.14"
+hyper = { path = "../3rd_party/hyper/" }
 prost = "0.12"
-tokio = {version = "1.0", features = ["rt-multi-thread", "time", "macros"]}
-tokio-stream = "0.1"
+tokio = {path = "../3rd_party/tokio/tokio", features = ["rt-multi-thread", "time", "macros"]}
+tokio-stream = { path = "../3rd_party/tokio/tokio-stream" }
 tonic = {path = "../tonic", features = ["tls"]}
-tower = {version = "0.4"}
+tower = {path = "../3rd_party/tower/tower"}
 tracing-subscriber = {version = "0.3"}
 
 [build-dependencies]

@@ -57,8 +57,8 @@ tracing = "0.1"
 http-body = "0.4.4"
 percent-encoding = "2.1"
 pin-project = "1.0.11"
-tower-layer = "0.3"
-tower-service = "0.3"
+tower-layer = { path = "../3rd_party/tower/tower-layer/" }
+tower-service = { path = "../3rd_party/tower/tower-service" }
 
 # prost
 prost = {version = "0.12", default-features = false, features = ["std"], optional = true}
@@ -67,20 +67,20 @@ prost = {version = "0.12", default-features = false, features = ["std"], optiona
 async-trait = {version = "0.1.13", optional = true}
 
 # transport
-h2 = {version = "0.3.24", optional = true}
-hyper = {version = "0.14.26", features = ["full"], optional = true}
-hyper-timeout = {version = "0.4", optional = true}
-tokio = {version = "1.0.1", optional = true}
-tokio-stream = "0.1"
-tower = {version = "0.4.7", default-features = false, features = ["balance", "buffer", "discover", "limit", "load", "make", "timeout", "util"], optional = true}
-axum = {version = "0.6.9", default_features = false, optional = true}
+h2 = {path = "../3rd_party/h2", optional = true}
+hyper = {path = "../3rd_party/hyper", features = ["full"], optional = true}
+hyper-timeout = {path = "../3rd_party/hyper-timeout", optional = true}
+tokio = {path = "../3rd_party/tokio/tokio", optional = true}
+tokio-stream = { path = "../3rd_party/tokio/tokio-stream" }
+tower = {path = "../3rd_party/tower/tower", default-features = false, features = ["balance", "buffer", "discover", "limit", "load", "make", "timeout", "util"], optional = true}
+axum = {path = "../3rd_party/axum/axum", default_features = false, optional = true}
 
 # rustls
 async-stream = { version = "0.3", optional = true }
 rustls-pki-types = { version = "1.0", optional = true }
 rustls-pemfile = { version = "2.0", optional = true }
 rustls-native-certs = { version = "0.7", optional = true }
-tokio-rustls = { version = "0.25", optional = true }
+tokio-rustls = { path = "../3rd_party/tokio-rustls", optional = true }
 webpki-roots = { version = "0.26", optional = true }
 
 # compression
@@ -93,8 +93,8 @@ quickcheck = "1.0"
 quickcheck_macros = "1.0"
 rand = "0.8"
 static_assertions = "1.0"
-tokio = {version = "1.0", features = ["rt", "macros"]}
-tower = {version = "0.4.7", features = ["full"]}
+tokio = {path = "../3rd_party/tokio/tokio", features = ["rt", "macros"]}
+tower = {path = "../3rd_party/tower/tower", features = ["full"]}
 
 [package.metadata.docs.rs]
 all-features = true
