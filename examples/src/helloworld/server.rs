@@ -7,8 +7,15 @@ pub mod hello_world {
     tonic::include_proto!("helloworld");
 }
 
-#[derive(Default)]
-pub struct MyGreeter {}
+pub struct MyGreeter {
+    x: u32,
+}
+
+impl Default for MyGreeter {
+    fn default() -> Self {
+        Self { x: 32 }
+    }
+}
 
 #[tonic::async_trait]
 impl Greeter for MyGreeter {
@@ -16,7 +23,7 @@ impl Greeter for MyGreeter {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        println!("Got a request from {:?}", request.remote_addr());
+        // println!("Got a request from {:?}", request.remote_addr());
 
         let reply = hello_world::HelloReply {
             message: format!("Hello {}!", request.into_inner().name),
