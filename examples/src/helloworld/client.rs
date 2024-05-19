@@ -25,17 +25,31 @@ async fn loadgen() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    loop {
+    let num_clients = 256; // tunable
+    let mut handles = Vec::with_capacity(num_clients);
+    for _ in 0..num_clients {
         let mut cl = client.clone();
         let cnt = counter.clone();
-        tokio::spawn(async move {
-            let request = tonic::Request::new(HelloRequest {
+        let h = tokio::spawn(async move {
+            let request = HelloRequest {
                 name: "Tonic".into(),
-            });
-            let _ = cl.say_hello(request).await.unwrap();
-            cnt.fetch_add(1, Ordering::Relaxed);
+            };
+            loop {
+                let _ = cl
+                    .say_hello(tonic::Request::new(request.clone()))
+                    .await
+                    .unwrap();
+                cnt.fetch_add(1, Ordering::Relaxed);
+            }
         });
+        handles.push(h);
     }
+
+    for h in handles {
+        h.await.unwrap();
+    }
+
+    Ok(())
 }
 
 #[tokio::main]
