@@ -17,15 +17,15 @@ version = "0.11.0"
 [dependencies]
 base64 = "0.21"
 bytes = "1"
-tokio-stream = "0.1"
+tokio-stream = { path = "../3rd_party/tokio/tokio-stream" }
 http = "0.2"
 http-body = "0.4"
 hyper = {version = "0.14", default-features = false, features = ["stream"]}
 pin-project = "1"
 tonic = {version = "0.11", path = "../tonic", default-features = false}
-tower-service = "0.3"
-tower-layer = "0.3"
-tower-http = { version = "0.4", features = ["cors"] }
+tower-service = { path = "../3rd_party/tower/tower-service" }
+tower-layer = { path = "../3rd_party/tower/tower-layer" }
+tower-http = { version = "0.4", path = "../3rd_party/tower-http/tower-http/", features = ["cors"] }
 tracing = "0.1"
 
 [dev-dependencies]

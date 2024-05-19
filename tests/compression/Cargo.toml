@@ -10,15 +10,15 @@ version = "0.1.0"
 bytes = "1"
 http = "0.2"
 http-body = "0.4"
-hyper = "0.14.3"
+hyper = { path = "../../3rd_party/hyper" }
 paste = "1.0.12"
 pin-project = "1.0"
 prost = "0.12"
-tokio = {version = "1.0", features = ["macros", "rt-multi-thread", "net"]}
-tokio-stream = "0.1"
+tokio = {path = "../../3rd_party/tokio/tokio", features = ["macros", "rt-multi-thread", "net"]}
+tokio-stream = { path = "../../3rd_party/tokio/tokio-stream" }
 tonic = {path = "../../tonic", features = ["gzip", "zstd"]}
-tower = {version = "0.4", features = []}
-tower-http = {version = "0.4", features = ["map-response-body", "map-request-body"]}
+tower = {path = "../../3rd_party/tower/tower", features = []}
+tower-http = {path = "../../3rd_party/tower-http/tower-http", features = ["map-response-body", "map-request-body"]}
 
 [build-dependencies]
 tonic-build = {path = "../../tonic-build" }

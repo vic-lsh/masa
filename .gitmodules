@@ -7,3 +7,30 @@
 [submodule "3rd_party/tower"]
 	path = 3rd_party/tower
 	url = git@github.com:tower-rs/tower.git
+[submodule "3rd_party/tokio-rustls"]
+	path = 3rd_party/tokio-rustls
+	url = git@github.com:rustls/tokio-rustls.git
+[submodule "3rd_party/h2"]
+	path = 3rd_party/h2
+	url = git@github.com:hyperium/h2.git
+[submodule "3rd_party/hyper-timeout"]
+	path = 3rd_party/hyper-timeout
+	url = git@github.com:hjr3/hyper-timeout.git
+[submodule "3rd_party/tokio-io-timeout"]
+	path = 3rd_party/tokio-io-timeout
+	url = git@github.com:sfackler/tokio-io-timeout.git
+[submodule "3rd_party/axum"]
+	path = 3rd_party/axum
+	url = git@github.com:tokio-rs/axum.git
+[submodule "3rd_party/tower-http"]
+	path = 3rd_party/tower-http
+	url = git@github.com:tower-rs/tower-http.git
+[submodule "3rd_party/http"]
+	path = 3rd_party/http
+	url = git@github.com:hyperium/http.git
+[submodule "3rd_party/http-body"]
+	path = 3rd_party/http-body
+	url = git@github.com:hyperium/http-body.git
+[submodule "3rd_party/px"]
+	path = 3rd_party/px
+	url = git@github.com:vic-lsh/px.git
