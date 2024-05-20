@@ -40,7 +40,7 @@ use crate::server::NamedService;
 use bytes::Bytes;
 use http::{Request, Response};
 use http_body::Body as _;
-use hyper::{server::accept, Body};
+use hyper::{rt::Exec, server::accept, Body};
 use pin_project::pin_project;
 use std::{
     convert::Infallible,
@@ -491,6 +491,7 @@ impl<L> Server<L> {
         svc: S,
         incoming: I,
         signal: Option<F>,
+        executor: Exec,
     ) -> Result<(), super::Error>
     where
         L: Layer<S>,
@@ -543,7 +544,8 @@ impl<L> Server<L> {
             .http2_keep_alive_timeout(http2_keepalive_timeout)
             .http2_adaptive_window(http2_adaptive_window.unwrap_or_default())
             .http2_max_pending_accept_reset_streams(http2_max_pending_accept_reset_streams)
-            .http2_max_frame_size(max_frame_size);
+            .http2_max_frame_size(max_frame_size)
+            .executor(executor);
 
         if let Some(signal) = signal {
             server
@@ -627,6 +629,7 @@ impl<L> Router<L> {
                 self.routes.prepare(),
                 incoming,
                 None,
+                Exec::Default,
             )
             .await
     }
@@ -653,7 +656,7 @@ impl<L> Router<L> {
         let incoming = TcpIncoming::new(addr, self.server.tcp_nodelay, self.server.tcp_keepalive)
             .map_err(super::Error::from_source)?;
         self.server
-            .serve_with_shutdown(self.routes.prepare(), incoming, Some(signal))
+            .serve_with_shutdown(self.routes.prepare(), incoming, Some(signal), Exec::Default)
             .await
     }
 
@@ -684,6 +687,7 @@ impl<L> Router<L> {
                 self.routes.prepare(),
                 incoming,
                 None,
+                Exec::Default,
             )
             .await
     }
@@ -715,7 +719,7 @@ impl<L> Router<L> {
         ResBody::Error: Into<crate::Error>,
     {
         self.server
-            .serve_with_shutdown(self.routes.prepare(), incoming, Some(signal))
+            .serve_with_shutdown(self.routes.prepare(), incoming, Some(signal), Exec::Default)
             .await
     }
 
