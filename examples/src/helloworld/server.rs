@@ -6,6 +6,9 @@ use tonic::{transport::Server, Request, Response, Status};
 use hello_world::greeter_server::{Greeter, GreeterServer};
 use hello_world::{HelloReply, HelloRequest};
 
+use async_executor::Executor;
+use futures_lite::future;
+
 pub mod hello_world {
     tonic::include_proto!("helloworld");
 }
@@ -37,16 +40,34 @@ impl Greeter for MyGreeter {
 
 // Since the Server needs to spawn some background tasks, we needed
 // to configure an Executor that can spawn !Send futures...
-#[derive(Clone, Copy, Debug)]
-struct LocalExec;
+#[derive(Debug)]
+struct LocalExec<'a> {
+    ex: Executor<'a>,
+}
 
-impl<F> hyper::rt::Executor<F> for LocalExec
+impl<'a> LocalExec<'a> {
+    fn new() -> Self {
+        Self {
+            ex: Executor::new(),
+        }
+    }
+
+    async fn run(&self) {
+        loop {
+            self.ex.tick().await;
+        }
+    }
+}
+
+impl<'a, F> hyper::rt::Executor<F> for LocalExec<'a>
 where
     F: std::future::Future + Send + 'static,
     F::Output: Send,
 {
     fn execute(&self, fut: F) {
-        tokio::task::spawn(fut);
+        let task = self.ex.spawn(fut);
+        // [TODO] Fix this.
+        std::mem::forget(task);
     }
 }
 
@@ -57,7 +78,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("GreeterServer listening on {}", addr);
 
-    let ex = Arc::new(LocalExec);
+    let ex = Arc::new(LocalExec::new());
+    let ex_clone = ex.clone();
+    std::thread::spawn(move || future::block_on(ex_clone.run()));
 
     Server::builder()
         .add_service(GreeterServer::new(greeter))
