@@ -16,7 +16,7 @@ exclude = ["/.*"]
 
 [dependencies]
 async-channel = "2.0.0"
-async-executor = "1.5.0"
+async-executor = { path = "../async-executor" }
 async-fs = "2.0.0"
 async-io = "2.1.0"
 async-lock = "3.0.0"
