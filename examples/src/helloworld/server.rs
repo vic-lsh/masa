@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use hyper::rt::Exec;
 use tonic::{transport::Server, Request, Response, Status};
 
 use hello_world::greeter_server::{Greeter, GreeterServer};
@@ -32,6 +35,21 @@ impl Greeter for MyGreeter {
     }
 }
 
+// Since the Server needs to spawn some background tasks, we needed
+// to configure an Executor that can spawn !Send futures...
+#[derive(Clone, Copy, Debug)]
+struct LocalExec;
+
+impl<F> hyper::rt::Executor<F> for LocalExec
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send,
+{
+    fn execute(&self, fut: F) {
+        tokio::task::spawn(fut);
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse().unwrap();
@@ -39,9 +57,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("GreeterServer listening on {}", addr);
 
+    let ex = Arc::new(LocalExec);
+
     Server::builder()
         .add_service(GreeterServer::new(greeter))
-        .serve(addr)
+        .serve_with_executor(addr, Exec::Executor(ex))
         .await?;
 
     Ok(())
