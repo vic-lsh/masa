@@ -635,6 +635,36 @@ impl<L> Router<L> {
     }
 
     /// Consume this [`Server`] creating a future that will execute the server
+    /// on a user-supplied executor.
+    ///
+    /// [`Server`]: struct.Server.html
+    /// [tokio]: https://docs.rs/tokio
+    pub async fn serve_with_executor<ResBody>(
+        self,
+        addr: SocketAddr,
+        executor: Exec,
+    ) -> Result<(), super::Error>
+    where
+        L: Layer<Routes>,
+        L::Service: Service<Request<Body>, Response = Response<ResBody>> + Clone + Send + 'static,
+        <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Future: Send + 'static,
+        <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Error: Into<crate::Error> + Send,
+        ResBody: http_body::Body<Data = Bytes> + Send + 'static,
+        ResBody::Error: Into<crate::Error>,
+    {
+        let incoming = TcpIncoming::new(addr, self.server.tcp_nodelay, self.server.tcp_keepalive)
+            .map_err(super::Error::from_source)?;
+        self.server
+            .serve_with_shutdown::<_, _, future::Ready<()>, _, _, ResBody>(
+                self.routes.prepare(),
+                incoming,
+                None,
+                executor,
+            )
+            .await
+    }
+
+    /// Consume this [`Server`] creating a future that will execute the server
     /// on [tokio]'s default executor. And shutdown when the provided signal
     /// is received.
     ///
