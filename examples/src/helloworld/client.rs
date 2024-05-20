@@ -30,6 +30,7 @@ async fn loadgen() -> Result<(), Box<dyn std::error::Error>> {
     for _ in 0..num_clients {
         let mut cl = client.clone();
         let cnt = counter.clone();
+
         let h = tokio::spawn(async move {
             let request = HelloRequest {
                 name: "Tonic".into(),
@@ -42,6 +43,7 @@ async fn loadgen() -> Result<(), Box<dyn std::error::Error>> {
                 cnt.fetch_add(1, Ordering::Relaxed);
             }
         });
+
         handles.push(h);
     }
 

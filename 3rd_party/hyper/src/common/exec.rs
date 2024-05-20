@@ -27,11 +27,14 @@ pub trait NewSvcExec<I, N, S: HttpService<Body>, E, W: Watcher<I, S, E>>: Clone 
 
 pub(crate) type BoxSendFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 
+/// Specify what executor to use.
 // Either the user provides an executor for background tasks, or we use
 // `tokio::spawn`.
 #[derive(Clone)]
 pub enum Exec {
+    /// Use tokio by default.
     Default,
+    /// Use custom executor.
     Executor(Arc<dyn Executor<BoxSendFuture> + Send + Sync>),
 }
 
