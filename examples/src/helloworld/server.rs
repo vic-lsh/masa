@@ -6,8 +6,8 @@ use tonic::{transport::Server, Request, Response, Status};
 use hello_world::greeter_server::{Greeter, GreeterServer};
 use hello_world::{HelloReply, HelloRequest};
 
-use async_executor::Executor;
 use futures_lite::future;
+use smol::Executor;
 
 pub mod hello_world {
     tonic::include_proto!("helloworld");
@@ -65,9 +65,7 @@ where
     F::Output: Send,
 {
     fn execute(&self, fut: F) {
-        let task = self.ex.spawn(fut);
-        // [TODO] Fix this.
-        std::mem::forget(task);
+        self.ex.spawn(fut).fallible().detach();
     }
 }
 
