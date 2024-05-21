@@ -38,8 +38,6 @@ impl Greeter for MyGreeter {
     }
 }
 
-// Since the Server needs to spawn some background tasks, we needed
-// to configure an Executor that can spawn !Send futures...
 #[derive(Debug)]
 struct LocalExec<'a> {
     ex: Executor<'a>,
