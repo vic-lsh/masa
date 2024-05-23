@@ -180,9 +180,13 @@ impl<'a> Executor<'a> {
                     let global_qlen = state.queue.len();
                     let local_qs = state.local_queues.read().unwrap();
 
-                    print!("global: {}; local: ", global_qlen);
+                    print!(
+                        "global: {}; local q#: {}; qlens: ",
+                        global_qlen,
+                        local_qs.len()
+                    );
                     for (i, q) in local_qs.iter().enumerate() {
-                        print!("{}: {} ", i, q.len());
+                        print!("{} ", q.len());
                     }
                     println!();
 
@@ -1012,6 +1016,11 @@ impl Runner<'_> {
             .write()
             .unwrap()
             .push(runner.local.clone());
+
+        println!(
+            "adding new local q!, qcount {}",
+            state.local_queues.read().unwrap().len()
+        );
         runner
     }
 
