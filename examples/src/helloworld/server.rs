@@ -57,9 +57,14 @@ impl<'a> LocalExec<'a> {
     }
 
     async fn run(&self) {
-        loop {
-            self.ex.tick().await;
-        }
+        // use Executor::run() to force creating a local queue.
+        self.ex
+            .run(async {
+                loop {
+                    future::yield_now().await;
+                }
+            })
+            .await;
     }
 }
 
@@ -75,14 +80,19 @@ where
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    const RT_THREAD_COUNT: usize = 16;
+
     let addr = "[::1]:50051".parse().unwrap();
     let greeter = MyGreeter::default();
 
     println!("GreeterServer listening on {}", addr);
 
     let ex = Arc::new(LocalExec::new());
-    let ex_clone = ex.clone();
-    std::thread::spawn(move || future::block_on(ex_clone.run()));
+
+    for _ in 0..RT_THREAD_COUNT {
+        let ex_clone = ex.clone();
+        std::thread::spawn(move || future::block_on(ex_clone.run()));
+    }
 
     Server::builder()
         .add_service(GreeterServer::new(greeter))
