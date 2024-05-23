@@ -10,6 +10,9 @@ use hello_world::{HelloReply, HelloRequest};
 use futures_lite::future;
 use smol::Executor;
 
+use rand::prelude::*;
+use rand_distr::{Distribution, Normal};
+
 pub mod hello_world {
     tonic::include_proto!("helloworld");
 }
@@ -29,13 +32,26 @@ fn busy_spin(duration: Duration) {
     while now.elapsed() < duration {}
 }
 
+fn rand_busy_spin(mean_ms: impl Into<f64>, stddev_ms: impl Into<f64>) {
+    let mut rng = thread_rng();
+
+    let mean = mean_ms.into();
+    let std_dev = stddev_ms.into();
+    let normal = Normal::new(mean, std_dev).unwrap();
+    let random_value: f64 = normal.sample(&mut rng);
+
+    busy_spin(Duration::from_millis(std::cmp::min(1, random_value as u64)));
+}
+
 #[tonic::async_trait]
 impl Greeter for MyGreeter {
     async fn say_hello(
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        //busy_spin(Duration::from_millis(500));
+        let mean_ms = 10;
+        let stddev_ms = 3;
+        rand_busy_spin(mean_ms, stddev_ms);
 
         let reply = hello_world::HelloReply {
             message: format!("Hello {}!", request.into_inner().name),
