@@ -43,9 +43,10 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock, TryLockError};
 use std::task::{Poll, Waker};
+use std::time::Duration;
 
 use async_task::{Builder, Runnable};
 use concurrent_queue::ConcurrentQueue;
@@ -106,6 +107,10 @@ impl fmt::Debug for Executor<'_> {
     }
 }
 
+static SCHED_TIME_US: AtomicUsize = AtomicUsize::new(0);
+static SCHED_COUNT: AtomicUsize = AtomicUsize::new(0);
+static TIMER_SPAWNED: AtomicBool = AtomicBool::new(false);
+
 impl<'a> Executor<'a> {
     /// Creates a new executor.
     ///
@@ -159,6 +164,41 @@ impl<'a> Executor<'a> {
     /// });
     /// ```
     pub fn spawn<T: Send + 'a>(&self, future: impl Future<Output = T> + Send + 'a) -> Task<T> {
+        let res = TIMER_SPAWNED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed);
+        if res.is_ok() {
+            let self_ptr = self as *const Self as u64;
+            std::thread::spawn(move || {
+                let mut prev_sched = 0;
+                let mut prev_cnt = 0;
+
+                let me: &Self = unsafe { &*(self_ptr as *const Self) };
+
+                loop {
+                    std::thread::sleep(Duration::from_secs(1));
+
+                    let state = me.state();
+                    let global_qlen = state.queue.len();
+                    let local_qs = state.local_queues.read().unwrap();
+
+                    print!("global: {}; local: ", global_qlen);
+                    for (i, q) in local_qs.iter().enumerate() {
+                        print!("{}: {} ", i, q.len());
+                    }
+                    println!();
+
+                    // let sched_us = SCHED_TIME_US.load(Ordering::Relaxed);
+                    // let sched_cnt = SCHED_COUNT.load(Ordering::Relaxed);
+
+                    // let avg_sched_us =
+                    //     (sched_us - prev_sched) as f64 / (sched_cnt - prev_cnt) as f64;
+                    // println!("avg_sched_us {}", avg_sched_us);
+
+                    // prev_sched = sched_us;
+                    // prev_cnt = sched_cnt;
+                }
+            });
+        }
+
         let mut active = self.state().active.lock().unwrap();
 
         // SAFETY: `T` and the future are `Send`.
@@ -349,8 +389,13 @@ impl<'a> Executor<'a> {
 
         // TODO: If possible, push into the current local queue and notify the ticker.
         move |runnable| {
+            //let now = std::time::Instant::now();
+
             state.queue.push(runnable).unwrap();
             state.notify();
+
+            //SCHED_TIME_US.fetch_add(now.elapsed().as_micros() as usize, Ordering::Release);
+            //SCHED_COUNT.fetch_add(1, Ordering::Release);
         }
     }
 
