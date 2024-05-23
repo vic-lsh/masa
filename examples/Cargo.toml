@@ -371,6 +371,8 @@ default = ["full"]
 async-compat = "0.2.3"
 smol = { path = "../3rd_party/smol" }
 futures-lite = { version = "2.0.0" }
+
+
 # Common dependencies
 tokio = { path = "../3rd_party/tokio/tokio", features = [
 	"rt-multi-thread",
@@ -391,6 +393,7 @@ tokio-stream = { path = "../3rd_party/tokio/tokio-stream", optional = true }
 tokio-util = { path = "../3rd_party/tokio/tokio-util", optional = true }
 tower = { path = "../3rd_party/tower/tower", optional = true }
 rand = { version = "0.8", optional = true }
+rand_distr = "0.4"
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
 tracing = { version = "0.1.16", optional = true }
