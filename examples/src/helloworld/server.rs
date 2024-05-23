@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use hyper::rt::Exec;
 use tonic::{transport::Server, Request, Response, Status};
@@ -23,13 +24,18 @@ impl Default for MyGreeter {
     }
 }
 
+fn busy_spin(duration: Duration) {
+    let now = Instant::now();
+    while now.elapsed() < duration {}
+}
+
 #[tonic::async_trait]
 impl Greeter for MyGreeter {
     async fn say_hello(
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        // println!("Got a request from {:?}", request.remote_addr());
+        //busy_spin(Duration::from_millis(500));
 
         let reply = hello_world::HelloReply {
             message: format!("Hello {}!", request.into_inner().name),
