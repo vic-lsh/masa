@@ -96,7 +96,7 @@ where
     F::Output: Send,
 {
     fn execute(&self, fut: F, ddl: DeadlineHint) {
-        self.ex.spawn(fut, ddl).fallible().detach();
+        self.ex.spawn_with_ddl(fut, ddl).fallible().detach();
     }
 }
 

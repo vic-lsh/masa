@@ -165,11 +165,7 @@ impl<'a> Executor<'a> {
     ///     println!("Hello world");
     /// });
     /// ```
-    pub fn spawn<T: Send + 'a>(
-        &self,
-        future: impl Future<Output = T> + Send + 'a,
-        ddl: DeadlineHint,
-    ) -> Task<T> {
+    pub fn spawn<T: Send + 'a>(&self, future: impl Future<Output = T> + Send + 'a) -> Task<T> {
         let res = TIMER_SPAWNED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed);
         if res.is_ok() {
             let self_ptr = self as *const Self as u64;
@@ -213,6 +209,30 @@ impl<'a> Executor<'a> {
 
         // SAFETY: `T` and the future are `Send`.
         unsafe { self.spawn_inner(future, &mut active) }
+    }
+
+    /// Spawns a task with a deadline hint onto the executor.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_executor::Executor;
+    ///
+    /// let ex = Executor::new();
+    ///
+    /// let task = ex.spawn(async {
+    ///     println!("Hello world");
+    /// });
+    /// ```
+    pub fn spawn_with_ddl<T: Send + 'a>(
+        &self,
+        future: impl Future<Output = T> + Send + 'a,
+        ddl: DeadlineHint,
+    ) -> Task<T> {
+        let mut active = self.state().active.lock().unwrap();
+
+        // SAFETY: `T` and the future are `Send`.
+        unsafe { self.spawn_inner_with_ddl(future, ddl, &mut active) }
     }
 
     /// Spawns many tasks onto the executor.
@@ -321,6 +341,61 @@ impl<'a> Executor<'a> {
         // `self.schedule()` is `Send`, `Sync` and `'static`, as checked below.
         // Therefore we do not need to worry about what is done with the
         // `Waker`.
+        let (runnable, task) = Builder::new()
+            .propagate_panic(true)
+            .spawn_unchecked(|()| future, self.schedule());
+        entry.insert(runnable.waker());
+
+        runnable.schedule();
+        task
+    }
+
+    /// Spawn a future with a deadline hint while holding the inner lock.
+    ///
+    /// # Safety
+    ///
+    /// If this is an `Executor`, `F` and `T` must be `Send`.
+    unsafe fn spawn_inner_with_ddl<T: 'a>(
+        &self,
+        future: impl Future<Output = T> + 'a,
+        ddl: DeadlineHint,
+        active: &mut Slab<Waker>,
+    ) -> Task<T> {
+        // Remove the task from the set of active tasks when the future finishes.
+        let entry = active.vacant_entry();
+        let index = entry.key();
+        let state = self.state_as_arc();
+        let future = async move {
+            let _guard = CallOnDrop(move || drop(state.active.lock().unwrap().try_remove(index)));
+            future.await
+        };
+
+        // Create the task and register it in the set of active tasks.
+        //
+        // SAFETY:
+        //
+        // If `future` is not `Send`, this must be a `LocalExecutor` as per this
+        // function's unsafe precondition. Since `LocalExecutor` is `!Sync`,
+        // `try_tick`, `tick` and `run` can only be called from the origin
+        // thread of the `LocalExecutor`. Similarly, `spawn` can only  be called
+        // from the origin thread, ensuring that `future` and the executor share
+        // the same origin thread. The `Runnable` can be scheduled from other
+        // threads, but because of the above `Runnable` can only be called or
+        // dropped on the origin thread.
+        //
+        // `future` is not `'static`, but we make sure that the `Runnable` does
+        // not outlive `'a`. When the executor is dropped, the `active` field is
+        // drained and all of the `Waker`s are woken. Then, the queue inside of
+        // the `Executor` is drained of all of its runnables. This ensures that
+        // runnables are dropped and this precondition is satisfied.
+        //
+        // `self.schedule()` is `Send`, `Sync` and `'static`, as checked below.
+        // Therefore we do not need to worry about what is done with the
+        // `Waker`.
+
+        // [TODO] Propagate ddl.
+        // async-task::spawn_unchecked_with_ddl(future, ddl, self.schedule());
+        // Add ddl into Runnable.
         let (runnable, task) = Builder::new()
             .propagate_panic(true)
             .spawn_unchecked(|()| future, self.schedule());
