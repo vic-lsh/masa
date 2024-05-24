@@ -589,9 +589,8 @@ impl<M> Builder<M> {
             RawTask::<Fut, Fut::Output, S, M>::allocate(future, schedule, self)
         };
 
-        // [TODO] Runnable constructor.
         let mut runnable = Runnable::from_raw(ptr);
-        runnable.ddl = ddl;
+        runnable.set_ddl(ddl);
         let task = Task {
             ptr,
             _marker: PhantomData,

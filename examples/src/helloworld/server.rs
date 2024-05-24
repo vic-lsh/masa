@@ -8,12 +8,11 @@ use hello_world::greeter_server::{Greeter, GreeterServer};
 use hello_world::{HelloReply, HelloRequest};
 
 use futures_lite::future;
-use smol::Executor;
 
 use rand::prelude::*;
 use rand_distr::{Distribution, Normal};
 
-use hyper::rt::{self, DeadlineHint};
+use hyper::rt::{DeadlineHint, Executor};
 
 pub mod hello_world {
     tonic::include_proto!("helloworld");
@@ -50,7 +49,6 @@ impl Greeter for MyGreeter {
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
         let mean_ms = 10;
-        let stddev_ms = 3;
         let stddev_ms = 0;
         rand_busy_spin(mean_ms, stddev_ms);
 
@@ -62,19 +60,19 @@ impl Greeter for MyGreeter {
 }
 
 #[derive(Debug)]
-struct LocalExec<'a> {
-    ex: Executor<'a>,
+struct MyExec<'a> {
+    ex: smol::Executor<'a>,
 }
 
-impl<'a> LocalExec<'a> {
+impl<'a> MyExec<'a> {
     fn new() -> Self {
         Self {
-            ex: Executor::new(),
+            ex: smol::Executor::new(),
         }
     }
 
     async fn run(&self) {
-        // Two-level queues from smol::Executor::run()
+        // [NOTE] Two-level queues are used in smol::Executor::run().
         // self.ex
         //     .run(async {
         //         loop {
@@ -83,14 +81,14 @@ impl<'a> LocalExec<'a> {
         //     })
         //     .await;
 
-        // Global queue only from smol::Executor::tick()
+        // [NOTE] Only a global queue is used in smol::Executor::tick().
         loop {
             self.ex.tick().await;
         }
     }
 }
 
-impl<'a, F> rt::Executor<F> for LocalExec<'a>
+impl<'a, F> Executor<F> for MyExec<'a>
 where
     F: std::future::Future + Send + 'static,
     F::Output: Send,
@@ -102,17 +100,26 @@ where
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    const RT_THREAD_COUNT: usize = 2;
+    const RT_THREAD_COUNT: usize = 16;
 
     let addr = "[::1]:50051".parse().unwrap();
     let greeter = MyGreeter::default();
 
+    // [TODO:Rivers]
+    // Change DeadlineHint::Background to DeadlineHint::Infra;
+    // let smol_exec = Arc::new(smol::Executor::new());
+    // let hi_exec = MyExec::new(smol_exec.clone(), DeadlineHint::Some(1));
+    // let low_exec = MyExec::new(smol_exec.clone(), DeadlineHint::Some(2));
+
     println!("GreeterServer listening on {}", addr);
 
-    let ex = Arc::new(LocalExec::new());
+    let ex = Arc::new(MyExec::new());
 
     for _ in 0..RT_THREAD_COUNT {
         let ex_clone = ex.clone();
+        // [NOTE] Semantically, it is equivalent to tokio::spawn(ex_clone.run()).
+        // However, we use std::thread::spawn() to have dedicated threads for
+        // executors that poll futures based on deadline hints.
         std::thread::spawn(move || future::block_on(ex_clone.run()));
     }
 

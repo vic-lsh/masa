@@ -7,8 +7,10 @@
 		"proto",
 		"qcount",
 		"qlen",
+		"qlens",
 		"sched",
 		"smol",
+		"stddev",
 		"unnotified",
 		"Weixin"
 	]
