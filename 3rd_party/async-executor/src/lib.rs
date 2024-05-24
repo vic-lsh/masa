@@ -53,6 +53,8 @@ use concurrent_queue::ConcurrentQueue;
 use futures_lite::{future, prelude::*};
 use slab::Slab;
 
+use hyper::rt::DeadlineHint;
+
 #[cfg(feature = "static")]
 mod static_executors;
 
@@ -163,7 +165,11 @@ impl<'a> Executor<'a> {
     ///     println!("Hello world");
     /// });
     /// ```
-    pub fn spawn<T: Send + 'a>(&self, future: impl Future<Output = T> + Send + 'a) -> Task<T> {
+    pub fn spawn<T: Send + 'a>(
+        &self,
+        future: impl Future<Output = T> + Send + 'a,
+        ddl: DeadlineHint,
+    ) -> Task<T> {
         let res = TIMER_SPAWNED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed);
         if res.is_ok() {
             let self_ptr = self as *const Self as u64;
@@ -177,7 +183,7 @@ impl<'a> Executor<'a> {
                     std::thread::sleep(Duration::from_secs(1));
 
                     let state = me.state();
-                    let global_qlen = state.queue.len();
+                    let global_qlen = state.queue.lock().unwrap().len();
                     let local_qs = state.local_queues.read().unwrap();
 
                     print!(
@@ -395,7 +401,7 @@ impl<'a> Executor<'a> {
         move |runnable| {
             //let now = std::time::Instant::now();
 
-            state.queue.push(runnable).unwrap();
+            state.queue.lock().unwrap().push(runnable).unwrap();
             state.notify();
 
             //SCHED_TIME_US.fetch_add(now.elapsed().as_micros() as usize, Ordering::Release);
@@ -469,7 +475,7 @@ impl Drop for Executor<'_> {
         }
         drop(active);
 
-        while state.queue.pop().is_ok() {}
+        while state.queue.lock().unwrap().pop().is_ok() {}
     }
 }
 
@@ -711,7 +717,7 @@ impl<'a> Default for LocalExecutor<'a> {
 /// The state of a executor.
 struct State {
     /// The global queue.
-    queue: ConcurrentQueue<Runnable>,
+    queue: Mutex<ConcurrentQueue<Runnable>>,
 
     /// Local queues created by runners.
     local_queues: RwLock<Vec<Arc<ConcurrentQueue<Runnable>>>>,
@@ -730,7 +736,7 @@ impl State {
     /// Creates state for a new executor.
     const fn new() -> State {
         State {
-            queue: ConcurrentQueue::unbounded(),
+            queue: Mutex::new(ConcurrentQueue::unbounded()),
             local_queues: RwLock::new(Vec::new()),
             notified: AtomicBool::new(true),
             sleepers: Mutex::new(Sleepers {
@@ -758,7 +764,7 @@ impl State {
     }
 
     pub(crate) fn try_tick(&self) -> bool {
-        match self.queue.pop() {
+        match self.queue.lock().unwrap().pop() {
             Err(_) => false,
             Ok(runnable) => {
                 // Notify another ticker now to pick up where this ticker left off, just in case
@@ -933,7 +939,8 @@ impl Ticker<'_> {
 
     /// Waits for the next runnable task to run.
     async fn runnable(&mut self) -> Runnable {
-        self.runnable_with(|| self.state.queue.pop().ok()).await
+        self.runnable_with(|| self.state.queue.lock().unwrap().pop().ok())
+            .await
     }
 
     /// Waits for the next runnable task to run, given a function that searches for a task.
@@ -1035,8 +1042,8 @@ impl Runner<'_> {
                 }
 
                 // Try stealing from the global queue.
-                if let Ok(r) = self.state.queue.pop() {
-                    steal(&self.state.queue, &self.local);
+                if let Ok(r) = self.state.queue.lock().unwrap().pop() {
+                    steal(&self.state.queue.lock().unwrap(), &self.local);
                     return Some(r);
                 }
 
@@ -1072,7 +1079,7 @@ impl Runner<'_> {
 
         if self.ticks % 64 == 0 {
             // Steal tasks from the global queue to ensure fair task scheduling.
-            steal(&self.state.queue, &self.local);
+            steal(&self.state.queue.lock().unwrap(), &self.local);
         }
 
         runnable
@@ -1188,7 +1195,7 @@ fn debug_state(state: &State, name: &str, f: &mut fmt::Formatter<'_>) -> fmt::Re
 
     f.debug_struct(name)
         .field("active", &ActiveTasks(&state.active))
-        .field("global_tasks", &state.queue.len())
+        .field("global_tasks", &state.queue.lock().unwrap().len())
         .field("local_runners", &LocalRunners(&state.local_queues))
         .field("sleepers", &SleepCount(&state.sleepers))
         .finish()

@@ -13,19 +13,17 @@ use smol::Executor;
 use rand::prelude::*;
 use rand_distr::{Distribution, Normal};
 
-use hyper::rt::DeadlineHint;
+use hyper::rt::{self, DeadlineHint};
 
 pub mod hello_world {
     tonic::include_proto!("helloworld");
 }
 
-pub struct MyGreeter {
-    x: u32,
-}
+pub struct MyGreeter {}
 
 impl Default for MyGreeter {
     fn default() -> Self {
-        Self { x: 32 }
+        Self {}
     }
 }
 
@@ -76,9 +74,7 @@ impl<'a> LocalExec<'a> {
     }
 
     async fn run(&self) {
-        // use Executor::run() to force creating a local queue.
-
-        // Two-level queues.
+        // Two-level queues from Executor::run()
         // self.ex
         //     .run(async {
         //         loop {
@@ -87,20 +83,20 @@ impl<'a> LocalExec<'a> {
         //     })
         //     .await;
 
-        // Global queue.
+        // Global queue only
         loop {
             self.ex.tick().await;
         }
     }
 }
 
-impl<'a, F> hyper::rt::Executor<F> for LocalExec<'a>
+impl<'a, F> rt::Executor<F> for LocalExec<'a>
 where
     F: std::future::Future + Send + 'static,
     F::Output: Send,
 {
     fn execute(&self, fut: F, ddl: DeadlineHint) {
-        self.ex.spawn(fut).fallible().detach();
+        self.ex.spawn(fut, ddl).fallible().detach();
     }
 }
 
