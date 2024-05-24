@@ -39,6 +39,7 @@
 )]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
+use std::collections::BinaryHeap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::panic::{RefUnwindSafe, UnwindSafe};
@@ -468,15 +469,10 @@ impl<'a> Executor<'a> {
     fn schedule(&self) -> impl Fn(Runnable) + Send + Sync + 'static {
         let state = self.state_as_arc();
 
-        // TODO: If possible, push into the current local queue and notify the ticker.
+        // [TODO:Vic] If possible, push into the current local queue and notify the ticker.
         move |runnable| {
-            //let now = std::time::Instant::now();
-
-            state.queue.lock().unwrap().push(runnable).unwrap();
+            state.queue.lock().unwrap().push(runnable);
             state.notify();
-
-            //SCHED_TIME_US.fetch_add(now.elapsed().as_micros() as usize, Ordering::Release);
-            //SCHED_COUNT.fetch_add(1, Ordering::Release);
         }
     }
 
@@ -546,7 +542,7 @@ impl Drop for Executor<'_> {
         }
         drop(active);
 
-        while state.queue.lock().unwrap().pop().is_ok() {}
+        while state.queue.lock().unwrap().pop().ok_or("empty").is_ok() {}
     }
 }
 
@@ -788,7 +784,7 @@ impl<'a> Default for LocalExecutor<'a> {
 /// The state of a executor.
 struct State {
     /// The global queue.
-    queue: Mutex<ConcurrentQueue<Runnable>>,
+    queue: Mutex<BinaryHeap<Runnable>>,
 
     /// Local queues created by runners.
     local_queues: RwLock<Vec<Arc<ConcurrentQueue<Runnable>>>>,
@@ -805,9 +801,9 @@ struct State {
 
 impl State {
     /// Creates state for a new executor.
-    const fn new() -> State {
+    fn new() -> State {
         State {
-            queue: Mutex::new(ConcurrentQueue::unbounded()),
+            queue: Mutex::new(BinaryHeap::new()),
             local_queues: RwLock::new(Vec::new()),
             notified: AtomicBool::new(true),
             sleepers: Mutex::new(Sleepers {
@@ -836,8 +832,8 @@ impl State {
 
     pub(crate) fn try_tick(&self) -> bool {
         match self.queue.lock().unwrap().pop() {
-            Err(_) => false,
-            Ok(runnable) => {
+            None => false,
+            Some(runnable) => {
                 // Notify another ticker now to pick up where this ticker left off, just in case
                 // running the task takes a long time.
                 self.notify();
@@ -1010,7 +1006,7 @@ impl Ticker<'_> {
 
     /// Waits for the next runnable task to run.
     async fn runnable(&mut self) -> Runnable {
-        self.runnable_with(|| self.state.queue.lock().unwrap().pop().ok())
+        self.runnable_with(|| self.state.queue.lock().unwrap().pop().ok_or("empty").ok())
             .await
     }
 
@@ -1112,11 +1108,12 @@ impl Runner<'_> {
                     return Some(r);
                 }
 
-                // Try stealing from the global queue.
-                if let Ok(r) = self.state.queue.lock().unwrap().pop() {
-                    steal(&self.state.queue.lock().unwrap(), &self.local);
-                    return Some(r);
-                }
+                // [TODO:Rivers] Fix work stealing for Runner.
+                // // Try stealing from the global queue.
+                // if let Some(r) = self.state.queue.lock().unwrap().pop() {
+                //     steal(&self.state.queue.lock().unwrap(), &self.local);
+                //     return Some(r);
+                // }
 
                 // Try stealing from other runners.
                 let local_queues = self.state.local_queues.read().unwrap();
@@ -1150,7 +1147,9 @@ impl Runner<'_> {
 
         if self.ticks % 64 == 0 {
             // Steal tasks from the global queue to ensure fair task scheduling.
-            steal(&self.state.queue.lock().unwrap(), &self.local);
+
+            // [TODO:Rivers] Fix work stealing for Runner.
+            // steal(&self.state.queue.lock().unwrap(), &self.local);
         }
 
         runnable

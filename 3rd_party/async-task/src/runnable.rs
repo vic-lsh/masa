@@ -777,7 +777,34 @@ impl<M> std::panic::UnwindSafe for Runnable<M> {}
 #[cfg(feature = "std")]
 impl<M> std::panic::RefUnwindSafe for Runnable<M> {}
 
+// [TODO:Rivers] Write tests.
+
+impl<M> PartialEq for Runnable<M> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ddl == other.ddl
+    }
+}
+
+impl<M> Eq for Runnable<M> {}
+
+impl<M> PartialOrd for Runnable<M> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.ddl.partial_cmp(&other.ddl)
+    }
+}
+
+impl<M> Ord for Runnable<M> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.ddl.cmp(&other.ddl)
+    }
+}
+
 impl<M> Runnable<M> {
+    /// Return the deadline hint associated with this task.
+    pub fn ddl(&self) -> &DeadlineHint {
+        &self.ddl
+    }
+
     /// Get the metadata associated with this task.
     ///
     /// Tasks can be created with a metadata object associated with them; by default, this

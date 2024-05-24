@@ -74,7 +74,7 @@ impl<'a> LocalExec<'a> {
     }
 
     async fn run(&self) {
-        // Two-level queues from Executor::run()
+        // Two-level queues from smol::Executor::run()
         // self.ex
         //     .run(async {
         //         loop {
@@ -83,7 +83,7 @@ impl<'a> LocalExec<'a> {
         //     })
         //     .await;
 
-        // Global queue only
+        // Global queue only from smol::Executor::tick()
         loop {
             self.ex.tick().await;
         }
@@ -102,7 +102,7 @@ where
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    const RT_THREAD_COUNT: usize = 1;
+    const RT_THREAD_COUNT: usize = 2;
 
     let addr = "[::1]:50051".parse().unwrap();
     let greeter = MyGreeter::default();
