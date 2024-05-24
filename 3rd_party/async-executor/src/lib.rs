@@ -392,13 +392,9 @@ impl<'a> Executor<'a> {
         // `self.schedule()` is `Send`, `Sync` and `'static`, as checked below.
         // Therefore we do not need to worry about what is done with the
         // `Waker`.
-
-        // [TODO] Propagate ddl.
-        // async-task::spawn_unchecked_with_ddl(future, ddl, self.schedule());
-        // Add ddl into Runnable.
         let (runnable, task) = Builder::new()
             .propagate_panic(true)
-            .spawn_unchecked(|()| future, self.schedule());
+            .spawn_unchecked_with_ddl(|()| future, ddl, self.schedule());
         entry.insert(runnable.waker());
 
         runnable.schedule();
