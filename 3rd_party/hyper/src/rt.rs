@@ -7,7 +7,7 @@
 
 /// An executor of futures.
 pub trait Executor<Fut> {
-    /// Place the future into the executor with a deadline hint.
+    /// Place a future with a deadline hint onto the executor.
     fn execute(&self, fut: Fut, ddl: DeadlineHint);
 }
 
