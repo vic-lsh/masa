@@ -1,6 +1,7 @@
 use crate::transport::BoxFuture;
 use std::{future::Future, sync::Arc};
 
+use hyper::rt::DeadlineHint;
 pub(crate) use hyper::rt::Executor;
 
 #[derive(Copy, Clone)]
@@ -11,7 +12,7 @@ where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
 {
-    fn execute(&self, fut: F) {
+    fn execute(&self, fut: F, _ddl: DeadlineHint) {
         tokio::spawn(fut);
     }
 }
@@ -37,7 +38,7 @@ impl SharedExec {
 }
 
 impl Executor<BoxFuture<'static, ()>> for SharedExec {
-    fn execute(&self, fut: BoxFuture<'static, ()>) {
-        self.inner.execute(fut)
+    fn execute(&self, fut: BoxFuture<'static, ()>, ddl: DeadlineHint) {
+        self.inner.execute(fut, ddl);
     }
 }
