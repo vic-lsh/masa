@@ -9,6 +9,7 @@ use crate::body::Body;
 use crate::body::HttpBody;
 #[cfg(all(feature = "http2", feature = "server"))]
 use crate::proto::h2::server::H2Stream;
+use crate::rt::DeadlineHint;
 use crate::rt::Executor;
 #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
 use crate::server::server::{new_svc::NewSvcTask, Watcher};
@@ -41,7 +42,7 @@ pub enum Exec {
 // ===== impl Exec =====
 
 impl Exec {
-    pub(crate) fn execute<F>(&self, fut: F)
+    pub(crate) fn execute<F>(&self, fut: F, ddl: DeadlineHint)
     where
         F: Future<Output = ()> + Send + 'static,
     {
@@ -58,7 +59,7 @@ impl Exec {
                 }
             }
             Exec::Executor(ref e) => {
-                e.execute(Box::pin(fut));
+                e.execute(Box::pin(fut), ddl);
             }
         }
     }
@@ -77,7 +78,7 @@ where
     B: HttpBody,
 {
     fn execute_h2stream(&mut self, fut: H2Stream<F, B>) {
-        self.execute(fut)
+        self.execute(fut, DeadlineHint::Background)
     }
 }
 
@@ -89,7 +90,7 @@ where
     W: Watcher<I, S, E>,
 {
     fn execute_new_svc(&mut self, fut: NewSvcTask<I, N, S, E, W>) {
-        self.execute(fut)
+        self.execute(fut, DeadlineHint::Background)
     }
 }
 
@@ -103,7 +104,7 @@ where
     B: HttpBody,
 {
     fn execute_h2stream(&mut self, fut: H2Stream<F, B>) {
-        self.execute(fut)
+        self.execute(fut, DeadlineHint::Background)
     }
 }
 
@@ -116,7 +117,7 @@ where
     W: Watcher<I, S, E>,
 {
     fn execute_new_svc(&mut self, fut: NewSvcTask<I, N, S, E, W>) {
-        self.execute(fut)
+        self.execute(fut, DeadlineHint::Background)
     }
 }
 

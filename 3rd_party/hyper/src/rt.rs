@@ -7,8 +7,8 @@
 
 /// An executor of futures.
 pub trait Executor<Fut> {
-    /// Place the future into the executor to be run.
-    fn execute(&self, fut: Fut);
+    /// Place the future into the executor with a deadline hint.
+    fn execute(&self, fut: Fut, ddl: DeadlineHint);
 }
 
 pub use crate::common::deadline::DeadlineHint;
