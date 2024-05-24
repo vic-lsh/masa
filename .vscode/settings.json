@@ -1,9 +1,14 @@
 {
 	"cSpell.words": [
+		"docsrs",
+		"fastrand",
 		"helloworld",
+		"MSRV",
 		"proto",
+		"qcount",
 		"qlen",
 		"sched",
-		"smol"
+		"smol",
+		"unnotified"
 	]
 }
