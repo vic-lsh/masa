@@ -9,6 +9,7 @@
 		"qlen",
 		"sched",
 		"smol",
-		"unnotified"
+		"unnotified",
+		"Weixin"
 	]
 }
