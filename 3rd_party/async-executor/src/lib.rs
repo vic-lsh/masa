@@ -44,10 +44,9 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::sync::{Arc, Mutex, RwLock, TryLockError};
 use std::task::{Poll, Waker};
-use std::time::Duration;
 
 use async_task::{Builder, Runnable};
 use concurrent_queue::ConcurrentQueue;
@@ -110,9 +109,10 @@ impl fmt::Debug for Executor<'_> {
     }
 }
 
-static SCHED_TIME_US: AtomicUsize = AtomicUsize::new(0);
-static SCHED_COUNT: AtomicUsize = AtomicUsize::new(0);
-static TIMER_SPAWNED: AtomicBool = AtomicBool::new(false);
+// [NOTE] The scheduling latency for concurrent queues is sub-microsecond.
+// static SCHED_TIME_US: AtomicUsize = AtomicUsize::new(0);
+// static SCHED_COUNT: AtomicUsize = AtomicUsize::new(0);
+// static TIMER_SPAWNED: AtomicBool = AtomicBool::new(false);
 
 impl<'a> Executor<'a> {
     /// Creates a new executor.
@@ -167,44 +167,44 @@ impl<'a> Executor<'a> {
     /// });
     /// ```
     pub fn spawn<T: Send + 'a>(&self, future: impl Future<Output = T> + Send + 'a) -> Task<T> {
-        let res = TIMER_SPAWNED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed);
-        if res.is_ok() {
-            let self_ptr = self as *const Self as u64;
-            std::thread::spawn(move || {
-                let mut prev_sched = 0;
-                let mut prev_cnt = 0;
+        // let res = TIMER_SPAWNED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed);
+        // if res.is_ok() {
+        //     let self_ptr = self as *const Self as u64;
+        //     std::thread::spawn(move || {
+        //         // let mut prev_sched = 0;
+        //         // let mut prev_cnt = 0;
 
-                let me: &Self = unsafe { &*(self_ptr as *const Self) };
+        //         let me: &Self = unsafe { &*(self_ptr as *const Self) };
 
-                loop {
-                    std::thread::sleep(Duration::from_secs(1));
+        //         loop {
+        //             std::thread::sleep(Duration::from_secs(1));
 
-                    let state = me.state();
-                    let global_qlen = state.queue.lock().unwrap().len();
-                    let local_qs = state.local_queues.read().unwrap();
+        //             let state = me.state();
+        //             let global_qlen = state.queue.lock().unwrap().len();
+        //             let local_qs = state.local_queues.read().unwrap();
 
-                    print!(
-                        "global: {}; local q#: {}; qlens: ",
-                        global_qlen,
-                        local_qs.len()
-                    );
-                    for (i, q) in local_qs.iter().enumerate() {
-                        print!("{} ", q.len());
-                    }
-                    println!();
+        //             print!(
+        //                 "global: {}; local q#: {}; qlens: ",
+        //                 global_qlen,
+        //                 local_qs.len()
+        //             );
+        //             for (_, q) in local_qs.iter().enumerate() {
+        //                 print!("{} ", q.len());
+        //             }
+        //             println!();
 
-                    // let sched_us = SCHED_TIME_US.load(Ordering::Relaxed);
-                    // let sched_cnt = SCHED_COUNT.load(Ordering::Relaxed);
+        //             // let sched_us = SCHED_TIME_US.load(Ordering::Relaxed);
+        //             // let sched_cnt = SCHED_COUNT.load(Ordering::Relaxed);
 
-                    // let avg_sched_us =
-                    //     (sched_us - prev_sched) as f64 / (sched_cnt - prev_cnt) as f64;
-                    // println!("avg_sched_us {}", avg_sched_us);
+        //             // let avg_sched_us =
+        //             //     (sched_us - prev_sched) as f64 / (sched_cnt - prev_cnt) as f64;
+        //             // println!("avg_sched_us {}", avg_sched_us);
 
-                    // prev_sched = sched_us;
-                    // prev_cnt = sched_cnt;
-                }
-            });
-        }
+        //             // prev_sched = sched_us;
+        //             // prev_cnt = sched_cnt;
+        //         }
+        //     });
+        // }
 
         let mut active = self.state().active.lock().unwrap();
 
@@ -230,6 +230,11 @@ impl<'a> Executor<'a> {
         future: impl Future<Output = T> + Send + 'a,
         ddl: DeadlineHint,
     ) -> Task<T> {
+        // [NOTE] Capture backtrace in the deepest call stack that we understand.
+        // Set `RUST_BACKTRACE=1` before cargo run. Use `--debug` for more information.
+        // let backtrace = std::backtrace::Backtrace::capture();
+        // println!("Backtrace:\n{}", backtrace);
+
         let mut active = self.state().active.lock().unwrap();
 
         // SAFETY: `T` and the future are `Send`.
