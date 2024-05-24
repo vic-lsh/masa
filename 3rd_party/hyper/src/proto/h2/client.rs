@@ -25,6 +25,7 @@ use crate::ext::Protocol;
 use crate::headers;
 use crate::proto::h2::UpgradedSendStream;
 use crate::proto::Dispatched;
+use crate::rt::DeadlineHint;
 use crate::upgrade::Upgraded;
 use crate::{Body, Request, Response};
 use h2::client::ResponseFuture;
@@ -169,7 +170,10 @@ where
     };
     let conn = conn.map_err(|e| debug!("connection error: {}", e));
 
-    exec.execute(conn_task(conn, conn_drop_rx, cancel_tx));
+    exec.execute(
+        conn_task(conn, conn_drop_rx, cancel_tx),
+        DeadlineHint::Background,
+    );
 
     Ok(ClientTask {
         ping,
@@ -270,7 +274,7 @@ where
                             x
                         });
                         // Clear send task
-                        self.executor.execute(pipe);
+                        self.executor.execute(pipe, DeadlineHint::Background);
                     }
                 }
             }
@@ -327,7 +331,8 @@ where
                 Err((crate::Error::new_h2(err), None))
             }
         });
-        self.executor.execute(f.cb.send_when(fut));
+        self.executor
+            .execute(f.cb.send_when(fut), DeadlineHint::Background);
     }
 }
 

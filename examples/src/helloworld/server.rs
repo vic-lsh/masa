@@ -13,6 +13,8 @@ use smol::Executor;
 use rand::prelude::*;
 use rand_distr::{Distribution, Normal};
 
+use hyper::rt::DeadlineHint;
+
 pub mod hello_world {
     tonic::include_proto!("helloworld");
 }
@@ -51,6 +53,7 @@ impl Greeter for MyGreeter {
     ) -> Result<Response<HelloReply>, Status> {
         let mean_ms = 10;
         let stddev_ms = 3;
+        let stddev_ms = 0;
         rand_busy_spin(mean_ms, stddev_ms);
 
         let reply = hello_world::HelloReply {
@@ -74,13 +77,20 @@ impl<'a> LocalExec<'a> {
 
     async fn run(&self) {
         // use Executor::run() to force creating a local queue.
-        self.ex
-            .run(async {
-                loop {
-                    future::yield_now().await;
-                }
-            })
-            .await;
+
+        // Two-level queues.
+        // self.ex
+        //     .run(async {
+        //         loop {
+        //             future::yield_now().await;
+        //         }
+        //     })
+        //     .await;
+
+        // Global queue.
+        loop {
+            self.ex.tick().await;
+        }
     }
 }
 
@@ -89,14 +99,14 @@ where
     F: std::future::Future + Send + 'static,
     F::Output: Send,
 {
-    fn execute(&self, fut: F) {
+    fn execute(&self, fut: F, ddl: DeadlineHint) {
         self.ex.spawn(fut).fallible().detach();
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    const RT_THREAD_COUNT: usize = 16;
+    const RT_THREAD_COUNT: usize = 1;
 
     let addr = "[::1]:50051".parse().unwrap();
     let greeter = MyGreeter::default();
