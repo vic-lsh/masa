@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use async_task::Runnable;
+use hyper::rt::DeadlineHint;
 use smol::future;
 
 // Creates a future with event counters.
@@ -322,4 +323,85 @@ fn raw() {
     runnable.schedule();
 
     assert!(task_got_executed.load(Ordering::SeqCst));
+}
+
+fn runnable_from_raw() -> Runnable<()> {
+    fn dispatch(trampoline: extern "C" fn(NonNull<()>), context: NonNull<()>) {
+        trampoline(context)
+    }
+    extern "C" fn trampoline(runnable: NonNull<()>) {
+        let task = unsafe { Runnable::<()>::from_raw(runnable) };
+        task.run();
+    }
+
+    let task_got_executed = Arc::new(AtomicBool::new(false));
+    let (runnable, _handle) = async_task::spawn(
+        {
+            let task_got_executed = task_got_executed.clone();
+            async move { task_got_executed.store(true, Ordering::SeqCst) }
+        },
+        |runnable: Runnable<()>| dispatch(trampoline, runnable.into_raw()),
+    );
+    runnable
+}
+
+#[test]
+fn test_runnable_partial_eq() {
+    let mut r1 = runnable_from_raw();
+    let mut r2 = runnable_from_raw();
+    let tests = vec![
+        (DeadlineHint::Some(1), DeadlineHint::Some(1), true),
+        (DeadlineHint::Some(1), DeadlineHint::Some(2), false),
+        (DeadlineHint::Some(1), DeadlineHint::Background, false),
+        (DeadlineHint::Background, DeadlineHint::Some(1), false),
+        (DeadlineHint::Background, DeadlineHint::Background, true),
+    ];
+    for (d1, d2, expected) in tests {
+        r1.set_ddl(d1);
+        r2.set_ddl(d2);
+        assert_eq!(r1 == r2, expected);
+    }
+}
+
+#[test]
+fn test_runnable_partial_ord() {
+    let mut r1 = runnable_from_raw();
+    let mut r2 = runnable_from_raw();
+    let tests = vec![
+        (
+            DeadlineHint::Some(1),
+            DeadlineHint::Some(1),
+            std::cmp::Ordering::Equal,
+        ),
+        (
+            DeadlineHint::Some(1),
+            DeadlineHint::Some(2),
+            std::cmp::Ordering::Less,
+        ),
+        (
+            DeadlineHint::Some(2),
+            DeadlineHint::Some(1),
+            std::cmp::Ordering::Greater,
+        ),
+        (
+            DeadlineHint::Some(1),
+            DeadlineHint::Background,
+            std::cmp::Ordering::Less,
+        ),
+        (
+            DeadlineHint::Background,
+            DeadlineHint::Some(1),
+            std::cmp::Ordering::Greater,
+        ),
+        (
+            DeadlineHint::Background,
+            DeadlineHint::Background,
+            std::cmp::Ordering::Equal,
+        ),
+    ];
+    for (d1, d2, expected) in tests {
+        r1.set_ddl(d1);
+        r2.set_ddl(d2);
+        assert_eq!(r1.partial_cmp(&r2), Some(expected));
+    }
 }

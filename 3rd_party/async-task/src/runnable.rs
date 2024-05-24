@@ -777,8 +777,6 @@ impl<M> std::panic::UnwindSafe for Runnable<M> {}
 #[cfg(feature = "std")]
 impl<M> std::panic::RefUnwindSafe for Runnable<M> {}
 
-// [TODO:Rivers] Write tests.
-
 impl<M> PartialEq for Runnable<M> {
     fn eq(&self, other: &Self) -> bool {
         self.ddl == other.ddl
@@ -803,6 +801,11 @@ impl<M> Runnable<M> {
     /// Return the deadline hint associated with this task.
     pub fn ddl(&self) -> &DeadlineHint {
         &self.ddl
+    }
+
+    /// Set the deadline hint associated with this task.
+    pub fn set_ddl(&mut self, ddl: DeadlineHint) {
+        self.ddl = ddl;
     }
 
     /// Get the metadata associated with this task.
