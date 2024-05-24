@@ -38,6 +38,8 @@ use tower::{
     Service,
 };
 
+use hyper::rt::DeadlineHint;
+
 type Svc = Either<Connection, BoxService<Request<BoxBody>, Response<hyper::Body>, crate::Error>>;
 
 const DEFAULT_BUFFER_SIZE: usize = 1024;
@@ -159,7 +161,7 @@ impl Channel {
 
         let svc = Connection::lazy(connector, endpoint);
         let (svc, worker) = Buffer::pair(Either::A(svc), buffer_size);
-        executor.execute(Box::pin(worker));
+        executor.execute(Box::pin(worker), DeadlineHint::Background);
 
         Channel { svc }
     }
@@ -178,7 +180,7 @@ impl Channel {
             .await
             .map_err(super::Error::from_source)?;
         let (svc, worker) = Buffer::pair(Either::A(svc), buffer_size);
-        executor.execute(Box::pin(worker));
+        executor.execute(Box::pin(worker), DeadlineHint::Background);
 
         Ok(Channel { svc })
     }
@@ -194,7 +196,7 @@ impl Channel {
 
         let svc = BoxService::new(svc);
         let (svc, worker) = Buffer::pair(Either::B(svc), buffer_size);
-        executor.execute(Box::pin(worker));
+        executor.execute(Box::pin(worker), DeadlineHint::Background);
 
         Channel { svc }
     }
