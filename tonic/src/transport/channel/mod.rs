@@ -161,7 +161,7 @@ impl Channel {
 
         let svc = Connection::lazy(connector, endpoint);
         let (svc, worker) = Buffer::pair(Either::A(svc), buffer_size);
-        executor.execute(Box::pin(worker), DeadlineHint::Background);
+        executor.execute(Box::pin(worker), DeadlineHint::Infra);
 
         Channel { svc }
     }
@@ -180,7 +180,7 @@ impl Channel {
             .await
             .map_err(super::Error::from_source)?;
         let (svc, worker) = Buffer::pair(Either::A(svc), buffer_size);
-        executor.execute(Box::pin(worker), DeadlineHint::Background);
+        executor.execute(Box::pin(worker), DeadlineHint::Infra);
 
         Ok(Channel { svc })
     }
@@ -196,7 +196,7 @@ impl Channel {
 
         let svc = BoxService::new(svc);
         let (svc, worker) = Buffer::pair(Either::B(svc), buffer_size);
-        executor.execute(Box::pin(worker), DeadlineHint::Background);
+        executor.execute(Box::pin(worker), DeadlineHint::Infra);
 
         Channel { svc }
     }
