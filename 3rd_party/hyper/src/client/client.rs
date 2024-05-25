@@ -340,18 +340,14 @@ where
             });
 
             #[cfg_attr(feature = "deprecated", allow(deprecated))]
-            self.conn_builder
-                .exec
-                .execute(on_idle, DeadlineHint::Background);
+            self.conn_builder.exec.execute(on_idle, DeadlineHint::Infra);
         } else {
             // There's no body to delay, but the connection isn't
             // ready yet. Only re-insert when it's ready
             let on_idle = future::poll_fn(move |cx| pooled.poll_ready(cx)).map(|_| ());
 
             #[cfg_attr(feature = "deprecated", allow(deprecated))]
-            self.conn_builder
-                .exec
-                .execute(on_idle, DeadlineHint::Background);
+            self.conn_builder.exec.execute(on_idle, DeadlineHint::Infra);
         }
 
         Ok(res)
@@ -405,7 +401,7 @@ where
                     // An execute error here isn't important, we're just trying
                     // to prevent a waste of a socket...
                     #[cfg_attr(feature = "deprecated", allow(deprecated))]
-                    self.conn_builder.exec.execute(bg, DeadlineHint::Background);
+                    self.conn_builder.exec.execute(bg, DeadlineHint::Infra);
                 }
                 Ok(checked_out)
             }
@@ -515,7 +511,7 @@ where
                             executor.execute(
                                 conn.map_err(|e| debug!("client connection error: {}", e))
                                     .map(|_| ()),
-                                DeadlineHint::Background,
+                                DeadlineHint::Infra,
                             );
 
                             // Wait for 'conn' to ready up before we

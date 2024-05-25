@@ -984,7 +984,7 @@ impl<M> Runnable<M> {
     pub unsafe fn from_raw(ptr: NonNull<()>) -> Self {
         Self {
             ptr,
-            ddl: DeadlineHint::Background,
+            ddl: DeadlineHint::Infra,
             _marker: Default::default(),
         }
     }
