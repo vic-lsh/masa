@@ -78,7 +78,7 @@ where
     B: HttpBody,
 {
     fn execute_h2stream(&mut self, fut: H2Stream<F, B>) {
-        self.execute(fut, DeadlineHint::Background)
+        self.execute(fut, DeadlineHint::Infra)
     }
 }
 
@@ -90,7 +90,7 @@ where
     W: Watcher<I, S, E>,
 {
     fn execute_new_svc(&mut self, fut: NewSvcTask<I, N, S, E, W>) {
-        self.execute(fut, DeadlineHint::Background)
+        self.execute(fut, DeadlineHint::Infra)
     }
 }
 
@@ -104,7 +104,7 @@ where
     B: HttpBody,
 {
     fn execute_h2stream(&mut self, fut: H2Stream<F, B>) {
-        self.execute(fut, DeadlineHint::Background)
+        self.execute(fut, DeadlineHint::Infra)
     }
 }
 
@@ -117,7 +117,7 @@ where
     W: Watcher<I, S, E>,
 {
     fn execute_new_svc(&mut self, fut: NewSvcTask<I, N, S, E, W>) {
-        self.execute(fut, DeadlineHint::Background)
+        self.execute(fut, DeadlineHint::Infra)
     }
 }
 

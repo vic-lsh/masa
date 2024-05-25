@@ -172,7 +172,7 @@ where
 
     exec.execute(
         conn_task(conn, conn_drop_rx, cancel_tx),
-        DeadlineHint::Background,
+        DeadlineHint::Infra,
     );
 
     Ok(ClientTask {
@@ -274,7 +274,7 @@ where
                             x
                         });
                         // Clear send task
-                        self.executor.execute(pipe, DeadlineHint::Background);
+                        self.executor.execute(pipe, DeadlineHint::Infra);
                     }
                 }
             }
@@ -332,7 +332,7 @@ where
             }
         });
         self.executor
-            .execute(f.cb.send_when(fut), DeadlineHint::Background);
+            .execute(f.cb.send_when(fut), DeadlineHint::Infra);
     }
 }
 

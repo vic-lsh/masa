@@ -352,9 +352,9 @@ fn test_runnable_partial_eq() {
     let tests = vec![
         (DeadlineHint::Some(1), DeadlineHint::Some(1), true),
         (DeadlineHint::Some(1), DeadlineHint::Some(2), false),
-        (DeadlineHint::Some(1), DeadlineHint::Background, false),
-        (DeadlineHint::Background, DeadlineHint::Some(1), false),
-        (DeadlineHint::Background, DeadlineHint::Background, true),
+        (DeadlineHint::Some(1), DeadlineHint::Infra, false),
+        (DeadlineHint::Infra, DeadlineHint::Some(1), false),
+        (DeadlineHint::Infra, DeadlineHint::Infra, true),
     ];
     for (d1, d2, expected) in tests {
         r1.set_ddl(d1);
@@ -385,17 +385,17 @@ fn test_runnable_partial_ord() {
         ),
         (
             DeadlineHint::Some(1),
-            DeadlineHint::Background,
+            DeadlineHint::Infra,
             std::cmp::Ordering::Less,
         ),
         (
-            DeadlineHint::Background,
+            DeadlineHint::Infra,
             DeadlineHint::Some(1),
             std::cmp::Ordering::Greater,
         ),
         (
-            DeadlineHint::Background,
-            DeadlineHint::Background,
+            DeadlineHint::Infra,
+            DeadlineHint::Infra,
             std::cmp::Ordering::Equal,
         ),
     ];
