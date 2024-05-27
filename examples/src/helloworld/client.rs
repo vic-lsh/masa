@@ -14,30 +14,22 @@ pub mod hello_world {
 #[structopt(about = "Client for benchmarking")]
 pub struct Args {
     #[structopt(short, long, default_value = "http://[::1]:50051")]
-    pub addr: String,
+    pub addr1: String,
+    #[structopt(short, long, default_value = "http://[::1]:50052")]
+    pub addr2: String,
 }
 
-async fn loadgen(addr: String) -> Result<(), Box<dyn std::error::Error>> {
-    let cnt = Arc::new(AtomicUsize::new(0));
-    let c = cnt.clone();
-    tokio::spawn(async move {
-        let mut prev = 0;
-        loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            let now = c.load(Ordering::Relaxed);
-            let rps = now - prev;
-            println!("rps: {}", rps);
-            prev = now;
-        }
-    });
-
+async fn loadgen(
+    addr: String,
+    rpc_count: Arc<AtomicUsize>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let num_clients = 32;
     let mut handles = Vec::with_capacity(num_clients);
 
     let client = GreeterClient::connect(addr).await?;
     for _ in 0..num_clients {
         let mut client = client.clone();
-        let c = cnt.clone();
+        let c = rpc_count.clone();
         let h = tokio::spawn(async move {
             let request = HelloRequest {
                 name: "Tonic".into(),
@@ -62,5 +54,30 @@ async fn loadgen(addr: String) -> Result<(), Box<dyn std::error::Error>> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::from_args();
-    loadgen(args.addr).await
+
+    let cnt = Arc::new(AtomicUsize::new(0));
+    let c = cnt.clone();
+    tokio::spawn(async move {
+        let mut prev = 0;
+        loop {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            let now = c.load(Ordering::Relaxed);
+            let rps = now - prev;
+            println!("rps: {}", rps);
+            prev = now;
+        }
+    });
+
+    let c = cnt.clone();
+    let h1 = tokio::spawn(async move {
+        loadgen(args.addr1, c).await.unwrap();
+    });
+    let c = cnt.clone();
+    let h2 = tokio::spawn(async move {
+        loadgen(args.addr2, c).await.unwrap();
+    });
+
+    h1.await.unwrap();
+    h2.await.unwrap();
+    Ok(())
 }
