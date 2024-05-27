@@ -153,8 +153,8 @@ impl<F, T, S, M> RawTask<F, T, S, M> {
 
         TaskLayout {
             layout: unsafe { layout.into_std() },
-            offset_s,
             offset_d,
+            offset_s,
             offset_f,
             offset_r,
         }
@@ -198,7 +198,7 @@ where
                 Some(p) => p,
             };
 
-            let mut raw = Self::from_ptr(ptr.as_ptr());
+            let raw = Self::from_ptr(ptr.as_ptr());
 
             let crate::Builder {
                 metadata,
@@ -251,8 +251,6 @@ where
             Self {
                 header: p as *const Header<M>,
                 schedule: p.add(task_layout.offset_s) as *const S,
-                // [DEBUG] Consider adding DeadlineHint::None and check propagation.
-                // [TODO:Rivers] Add DeadlineHint in the task layout.
                 ddl: p.add(task_layout.offset_d) as *const DeadlineHint,
                 future: p.add(task_layout.offset_f) as *mut F,
                 output: p.add(task_layout.offset_r) as *mut Result<T, Panic>,
@@ -471,11 +469,6 @@ where
             _waker = Waker::from_raw(Self::clone_waker(ptr));
         }
 
-        // [DEBUG] Consider adding from_raw_with_ddl.
-        // let task = Runnable::from_raw_with_ddl(
-        //     NonNull::new_unchecked(ptr as *mut ()),
-        //     DeadlineHint::Some(3667),
-        // );
         let task = Runnable::from_raw(NonNull::new_unchecked(ptr as *mut ()));
         (*raw.schedule).schedule(task, info);
     }

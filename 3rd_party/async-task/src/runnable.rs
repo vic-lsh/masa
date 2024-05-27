@@ -520,17 +520,12 @@ impl<M> Builder<M> {
                 Box::pin(future)
             };
 
-            RawTask::<_, Fut::Output, S, M>::allocate(
-                future,
-                schedule,
-                DeadlineHint::default(),
-                self,
-            )
+            RawTask::<_, Fut::Output, S, M>::allocate(future, schedule, DeadlineHint::infra(), self)
         } else {
             RawTask::<Fut, Fut::Output, S, M>::allocate(
                 future,
                 schedule,
-                DeadlineHint::default(),
+                DeadlineHint::infra(),
                 self,
             )
         };
@@ -599,7 +594,7 @@ impl<M> Builder<M> {
             RawTask::<Fut, Fut::Output, S, M>::allocate(future, schedule, ddl, self)
         };
 
-        let runnable = Runnable::from_raw_with_ddl(ptr, ddl);
+        let runnable = Runnable::from_raw(ptr);
         // [DEBUG] runnable.ddl here is not propagated to the task.
         // println!(
         //     "spawn_unchecked_with_ddl: runnable.ddl {:?}",
@@ -995,19 +990,6 @@ impl<M> Runnable<M> {
     pub unsafe fn from_raw(ptr: NonNull<()>) -> Self {
         // [DEBUG] Check propagation.
         // println!("[Runnable::from_raw]");
-        // let backtrace = std::backtrace::Backtrace::capture();
-        // println!("Backtrace:\n{}", backtrace);
-
-        Self {
-            ptr,
-            _marker: Default::default(),
-        }
-    }
-
-    /// Converts a raw pointer into a Runnable with a deadline hint.
-    pub unsafe fn from_raw_with_ddl(ptr: NonNull<()>, ddl: DeadlineHint) -> Self {
-        // [DEBUG] Check propagation.
-        // println!("[Runnable::from_raw_with_ddl]");
         // let backtrace = std::backtrace::Backtrace::capture();
         // println!("Backtrace:\n{}", backtrace);
 
