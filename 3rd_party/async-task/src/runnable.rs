@@ -776,9 +776,6 @@ pub struct Runnable<M = ()> {
     /// A pointer to the heap-allocated task.
     pub(crate) ptr: NonNull<()>,
 
-    /// A deadline hint for the task.
-    pub(crate) ddl: DeadlineHint,
-
     /// A marker capturing generic type `M`.
     pub(crate) _marker: PhantomData<M>,
 }
@@ -793,7 +790,7 @@ impl<M> std::panic::RefUnwindSafe for Runnable<M> {}
 
 impl<M> PartialEq for Runnable<M> {
     fn eq(&self, other: &Self) -> bool {
-        self.ddl == other.ddl
+        self.ddl() == other.ddl()
     }
 }
 
@@ -801,20 +798,23 @@ impl<M> Eq for Runnable<M> {}
 
 impl<M> PartialOrd for Runnable<M> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.ddl.partial_cmp(&other.ddl)
+        self.ddl().partial_cmp(&other.ddl())
     }
 }
 
 impl<M> Ord for Runnable<M> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.ddl.cmp(&other.ddl)
+        self.ddl().cmp(&other.ddl())
     }
 }
 
 impl<M> Runnable<M> {
     /// Return the deadline hint associated with this task.
-    pub fn ddl(&self) -> &DeadlineHint {
-        &self.ddl
+    pub fn ddl(&self) -> DeadlineHint {
+        let ptr = self.ptr.as_ptr();
+        // SAFETY: ptr points to a RawTask and is alive (its lifetime is the
+        // same as the Runnable).
+        unsafe { crate::raw::get_ddl_from_raw_task(ptr) }
     }
 
     /// Get the metadata associated with this task.
@@ -999,8 +999,6 @@ impl<M> Runnable<M> {
 
         Self {
             ptr,
-            // [TODO:Rivers] Fix this.
-            ddl: DeadlineHint::infra(),
             _marker: Default::default(),
         }
     }
@@ -1014,7 +1012,6 @@ impl<M> Runnable<M> {
 
         Self {
             ptr,
-            ddl,
             _marker: Default::default(),
         }
     }
