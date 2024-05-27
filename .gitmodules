@@ -31,6 +31,3 @@
 [submodule "3rd_party/http-body"]
 	path = 3rd_party/http-body
 	url = git@github.com:hyperium/http-body.git
-[submodule "3rd_party/px"]
-	path = 3rd_party/px
-	url = git@github.com:vic-lsh/px.git
