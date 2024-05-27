@@ -520,9 +520,19 @@ impl<M> Builder<M> {
                 Box::pin(future)
             };
 
-            RawTask::<_, Fut::Output, S, M>::allocate(future, schedule, self)
+            RawTask::<_, Fut::Output, S, M>::allocate(
+                future,
+                schedule,
+                DeadlineHint::default(),
+                self,
+            )
         } else {
-            RawTask::<Fut, Fut::Output, S, M>::allocate(future, schedule, self)
+            RawTask::<Fut, Fut::Output, S, M>::allocate(
+                future,
+                schedule,
+                DeadlineHint::default(),
+                self,
+            )
         };
 
         let runnable = Runnable::from_raw(ptr);
@@ -584,9 +594,9 @@ impl<M> Builder<M> {
                 Box::pin(future)
             };
 
-            RawTask::<_, Fut::Output, S, M>::allocate(future, schedule, self)
+            RawTask::<_, Fut::Output, S, M>::allocate(future, schedule, ddl, self)
         } else {
-            RawTask::<Fut, Fut::Output, S, M>::allocate(future, schedule, self)
+            RawTask::<Fut, Fut::Output, S, M>::allocate(future, schedule, ddl, self)
         };
 
         let runnable = Runnable::from_raw_with_ddl(ptr, ddl);
