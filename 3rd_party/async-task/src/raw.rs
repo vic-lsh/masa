@@ -70,6 +70,9 @@ pub(crate) struct TaskLayout {
     /// Offset into the task at which the schedule function is stored.
     pub(crate) offset_s: usize,
 
+    /// Offset into the task at which the deadline hint is stored.
+    pub(crate) offset_d: usize,
+
     /// Offset into the task at which the future is stored.
     pub(crate) offset_f: usize,
 
@@ -85,11 +88,11 @@ pub(crate) struct RawTask<F, T, S, M> {
     /// The schedule function.
     pub(crate) schedule: *const S,
 
-    /// The future.
-    pub(crate) future: *mut F,
-
     /// The deadline hint.
     pub(crate) ddl: DeadlineHint,
+
+    /// The future.
+    pub(crate) future: *mut F,
 
     /// The output of the future.
     pub(crate) output: *mut Result<T, Panic>,
@@ -112,6 +115,7 @@ impl<F, T, S, M> RawTask<F, T, S, M> {
         // Compute the layouts for `Header`, `S`, `F`, and `T`.
         let layout_header = Layout::new::<Header<M>>();
         let layout_s = Layout::new::<S>();
+        let layout_d = Layout::new::<DeadlineHint>();
         let layout_f = Layout::new::<F>();
         let layout_r = Layout::new::<Result<T, Panic>>();
 
@@ -123,6 +127,7 @@ impl<F, T, S, M> RawTask<F, T, S, M> {
         // Compute the layout for `Header` followed `S` and `union { F, T }`.
         let layout = layout_header;
         let (layout, offset_s) = leap_unwrap!(layout.extend(layout_s));
+        let (layout, offset_d) = leap_unwrap!(layout.extend(layout_d));
         let (layout, offset_union) = leap_unwrap!(layout.extend(layout_union));
         let offset_f = offset_union;
         let offset_r = offset_union;
@@ -130,6 +135,7 @@ impl<F, T, S, M> RawTask<F, T, S, M> {
         TaskLayout {
             layout: unsafe { layout.into_std() },
             offset_s,
+            offset_d,
             offset_f,
             offset_r,
         }
@@ -154,6 +160,7 @@ where
     pub(crate) fn allocate<'a, Gen: FnOnce(&'a M) -> F>(
         future: Gen,
         schedule: S,
+        ddl: DeadlineHint,
         builder: crate::Builder<M>,
     ) -> NonNull<()>
     where
@@ -172,7 +179,7 @@ where
                 Some(p) => p,
             };
 
-            let raw = Self::from_ptr(ptr.as_ptr());
+            let mut raw = Self::from_ptr(ptr.as_ptr());
 
             let crate::Builder {
                 metadata,
@@ -202,6 +209,8 @@ where
             // Write the schedule function as the third field of the task.
             (raw.schedule as *mut S).write(schedule);
 
+            raw.ddl = ddl;
+
             // Generate the future, now that the metadata has been pinned in place.
             let future = abort_on_panic(|| future(&(*raw.header).metadata));
 
@@ -222,10 +231,10 @@ where
             Self {
                 header: p as *const Header<M>,
                 schedule: p.add(task_layout.offset_s) as *const S,
-                future: p.add(task_layout.offset_f) as *mut F,
                 // [DEBUG] Consider adding DeadlineHint::None and check propagation.
                 // [TODO:Rivers] Add DeadlineHint in the task layout.
-                ddl: DeadlineHint::Infra,
+                ddl: *(p.add(task_layout.offset_d) as *const DeadlineHint),
+                future: p.add(task_layout.offset_f) as *mut F,
                 output: p.add(task_layout.offset_r) as *mut Result<T, Panic>,
             }
         }
