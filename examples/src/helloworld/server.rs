@@ -3,6 +3,7 @@ use hyper::rt::{DeadlineHint, Exec, Executor};
 use rand_distr::{Distribution, Normal};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use structopt::StructOpt;
 use tonic::{transport::Server, Request, Response, Status};
 
 use async_compat::{Compat, CompatExt};
@@ -11,6 +12,13 @@ use hello_world::{HelloReply, HelloRequest};
 
 pub mod hello_world {
     tonic::include_proto!("helloworld");
+}
+
+#[derive(StructOpt, Debug, Clone)]
+#[structopt(about = "Server for benchmarking")]
+pub struct Args {
+    #[structopt(short, long, default_value = 1)]
+    pub num_threads: usize,
 }
 
 pub struct MyGreeter {}
@@ -102,14 +110,16 @@ where
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    const RT_THREAD_COUNT: usize = 1;
+    let args = Args::from_args();
 
     let smol_ex = Arc::new(smol::Executor::new());
     let exs = [
         Arc::new(ExecImpl::new(smol_ex.clone(), DeadlineHint::new(1))),
         Arc::new(ExecImpl::new(smol_ex.clone(), DeadlineHint::new(2))),
     ];
-    for _ in 0..RT_THREAD_COUNT {
+
+    println!("spawning {} server threads", args.num_threads);
+    for _ in 0..args.num_threads {
         let ex = exs[0].clone();
         // [NOTE] Semantically, it is equivalent to tokio::spawn(ex_clone.run()).
         // However, we use std::thread::spawn() to have dedicated threads for
