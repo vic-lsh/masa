@@ -1,9 +1,13 @@
 {
 	"cSpell.words": [
+		"addrs",
+		"dealloc",
 		"docsrs",
 		"fastrand",
 		"helloworld",
+		"loadgen",
 		"MSRV",
+		"notgull",
 		"proto",
 		"qcount",
 		"qlen",
@@ -11,7 +15,10 @@
 		"sched",
 		"smol",
 		"stddev",
+		"structopt",
+		"TOFIX",
 		"unnotified",
+		"vtable",
 		"Weixin"
 	]
 }

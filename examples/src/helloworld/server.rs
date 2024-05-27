@@ -1,18 +1,12 @@
+use futures_lite::future;
+use hyper::rt::{DeadlineHint, Exec, Executor};
+use rand_distr::{Distribution, Normal};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-
-use hyper::rt::Exec;
 use tonic::{transport::Server, Request, Response, Status};
 
 use hello_world::greeter_server::{Greeter, GreeterServer};
 use hello_world::{HelloReply, HelloRequest};
-
-use futures_lite::future;
-
-use rand::prelude::*;
-use rand_distr::{Distribution, Normal};
-
-use hyper::rt::{DeadlineHint, Executor};
 
 pub mod hello_world {
     tonic::include_proto!("helloworld");
@@ -31,15 +25,15 @@ fn busy_spin(duration: Duration) {
     while now.elapsed() < duration {}
 }
 
-fn rand_busy_spin(mean_ms: impl Into<f64>, stddev_ms: impl Into<f64>) {
-    let mut rng = thread_rng();
+fn rand_busy_spin(mean_ms: impl Into<f64>, std_ms: impl Into<f64>) {
+    let mut rng = rand::thread_rng();
 
     let mean = mean_ms.into();
-    let std_dev = stddev_ms.into();
-    let normal = Normal::new(mean, std_dev).unwrap();
+    let std = std_ms.into();
+    let normal = Normal::new(mean, std).unwrap();
     let random_value: f64 = normal.sample(&mut rng);
 
-    busy_spin(Duration::from_millis(std::cmp::min(1, random_value as u64)));
+    busy_spin(Duration::from_millis(std::cmp::max(1, random_value as u64)));
 }
 
 #[tonic::async_trait]
@@ -49,8 +43,8 @@ impl Greeter for MyGreeter {
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
         let mean_ms = 10;
-        let stddev_ms = 0;
-        rand_busy_spin(mean_ms, stddev_ms);
+        let std_ms = 0;
+        rand_busy_spin(mean_ms, std_ms);
 
         let reply = hello_world::HelloReply {
             message: format!("Hello {}!", request.into_inner().name),
@@ -60,15 +54,14 @@ impl Greeter for MyGreeter {
 }
 
 #[derive(Debug)]
-struct MyExec<'a> {
-    ex: smol::Executor<'a>,
+struct ExecImpl<'a> {
+    ex: Arc<smol::Executor<'a>>,
+    ddl: DeadlineHint,
 }
 
-impl<'a> MyExec<'a> {
-    fn new() -> Self {
-        Self {
-            ex: smol::Executor::new(),
-        }
+impl<'a> ExecImpl<'a> {
+    fn new(ex: Arc<smol::Executor<'a>>, ddl: DeadlineHint) -> Self {
+        Self { ex, ddl }
     }
 
     async fn run(&self) {
@@ -88,45 +81,58 @@ impl<'a> MyExec<'a> {
     }
 }
 
-impl<'a, F> Executor<F> for MyExec<'a>
+impl<'a, F> Executor<F> for ExecImpl<'a>
 where
     F: std::future::Future + Send + 'static,
     F::Output: Send,
 {
-    fn execute(&self, fut: F, ddl: DeadlineHint) {
-        self.ex.spawn_with_ddl(fut, ddl).fallible().detach();
+    fn execute(&self, fut: F, _ddl: DeadlineHint) {
+        self.ex
+            .spawn_with_ddl(fut, self.ddl.clone())
+            .fallible()
+            .detach();
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    const RT_THREAD_COUNT: usize = 16;
+    const RT_THREAD_COUNT: usize = 1;
 
-    let addr = "[::1]:50051".parse().unwrap();
-    let greeter = MyGreeter::default();
-
-    // [TODO:Rivers]
-    // Change DeadlineHint::Background to DeadlineHint::Infra;
-    // let smol_exec = Arc::new(smol::Executor::new());
-    // let hi_exec = MyExec::new(smol_exec.clone(), DeadlineHint::Some(1));
-    // let low_exec = MyExec::new(smol_exec.clone(), DeadlineHint::Some(2));
-
-    println!("GreeterServer listening on {}", addr);
-
-    let ex = Arc::new(MyExec::new());
-
+    let smol_ex = Arc::new(smol::Executor::new());
+    let exs = [
+        Arc::new(ExecImpl::new(smol_ex.clone(), DeadlineHint::Some(1))),
+        Arc::new(ExecImpl::new(smol_ex.clone(), DeadlineHint::Some(2))),
+    ];
     for _ in 0..RT_THREAD_COUNT {
-        let ex_clone = ex.clone();
+        let ex = exs[0].clone();
         // [NOTE] Semantically, it is equivalent to tokio::spawn(ex_clone.run()).
         // However, we use std::thread::spawn() to have dedicated threads for
         // executors that poll futures based on deadline hints.
-        std::thread::spawn(move || future::block_on(ex_clone.run()));
+        std::thread::spawn(move || future::block_on(ex.run()));
     }
 
-    Server::builder()
-        .add_service(GreeterServer::new(greeter))
-        .serve_with_executor(addr, Exec::Executor(ex))
-        .await?;
+    let addrs = [
+        "[::1]:50051".parse().unwrap(),
+        "[::1]:50052".parse().unwrap(),
+    ];
+    let mut handles = Vec::new();
+    for i in 0..2 {
+        let ex = exs[i].clone();
+        let addr = addrs[i];
+        let h = tokio::spawn(async move {
+            let greeter = MyGreeter::default();
+            eprintln!("Listening on {}...", addr);
+            Server::builder()
+                .add_service(GreeterServer::new(greeter))
+                .serve_with_executor(addr, Exec::Executor(ex))
+                .await
+                .unwrap();
+        });
+        handles.push(h);
+    }
+    for h in handles {
+        h.await.unwrap();
+    }
 
     Ok(())
 }

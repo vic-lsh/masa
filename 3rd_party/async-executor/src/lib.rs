@@ -47,6 +47,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::sync::{Arc, Mutex, RwLock, TryLockError};
 use std::task::{Poll, Waker};
+use std::time::Duration;
 
 use async_task::{Builder, Runnable};
 use concurrent_queue::ConcurrentQueue;
@@ -112,7 +113,7 @@ impl fmt::Debug for Executor<'_> {
 // [NOTE] The scheduling latency for concurrent queues is sub-microsecond.
 // static SCHED_TIME_US: AtomicUsize = AtomicUsize::new(0);
 // static SCHED_COUNT: AtomicUsize = AtomicUsize::new(0);
-// static TIMER_SPAWNED: AtomicBool = AtomicBool::new(false);
+static TIMER_SPAWNED: AtomicBool = AtomicBool::new(false);
 
 impl<'a> Executor<'a> {
     /// Creates a new executor.
@@ -181,14 +182,14 @@ impl<'a> Executor<'a> {
 
         //             let state = me.state();
         //             let global_qlen = state.queue.lock().unwrap().len();
-        //             let local_qs = state.local_queues.read().unwrap();
+        //             let local_qlens = state.local_queues.read().unwrap();
 
         //             print!(
-        //                 "global: {}; local q#: {}; qlens: ",
+        //                 "global qlen: {}; local qs: {}; local qlens: ",
         //                 global_qlen,
-        //                 local_qs.len()
+        //                 local_qlens.len()
         //             );
-        //             for (_, q) in local_qs.iter().enumerate() {
+        //             for (_, q) in local_qlens.iter().enumerate() {
         //                 print!("{} ", q.len());
         //             }
         //             println!();
@@ -234,6 +235,21 @@ impl<'a> Executor<'a> {
         // Set `RUST_BACKTRACE=1` before cargo run. Use `--debug` for more information.
         // let backtrace = std::backtrace::Backtrace::capture();
         // println!("Backtrace:\n{}", backtrace);
+
+        let res = TIMER_SPAWNED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed);
+        if res.is_ok() {
+            let self_ptr = self as *const Self as u64;
+            std::thread::spawn(move || {
+                let me: &Self = unsafe { &*(self_ptr as *const Self) };
+                loop {
+                    std::thread::sleep(Duration::from_secs(1));
+                    let state = me.state();
+                    let global_qlen = state.queue.lock().unwrap().len();
+                    let local_qs = state.local_queues.read().unwrap();
+                    println!("global qlen: {}, local qs: {}", global_qlen, local_qs.len());
+                }
+            });
+        }
 
         let mut active = self.state().active.lock().unwrap();
 
@@ -476,6 +492,9 @@ impl<'a> Executor<'a> {
 
         // [TODO:Vic] If possible, push into the current local queue and notify the ticker.
         move |runnable| {
+            // [DEBUG] runnable.ddl() is always Infra.
+            // Consider adding DeadlineHint::None and panic when it is used.
+            println!("schedule: runnable.ddl {:?}", runnable.ddl());
             state.queue.lock().unwrap().push(runnable);
             state.notify();
         }
