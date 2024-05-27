@@ -814,7 +814,7 @@ impl<M> Runnable<M> {
         let ptr = self.ptr.as_ptr();
         // SAFETY: ptr points to a RawTask and is alive (its lifetime is the
         // same as the Runnable).
-        unsafe { crate::raw::get_ddl_from_raw_task(ptr) }
+        unsafe { crate::raw::get_ddl_from_raw_task::<M>(ptr) }
     }
 
     /// Get the metadata associated with this task.
