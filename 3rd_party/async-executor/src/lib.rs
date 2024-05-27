@@ -44,7 +44,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock, TryLockError};
 use std::task::{Poll, Waker};
 use std::time::Duration;
@@ -111,8 +111,8 @@ impl fmt::Debug for Executor<'_> {
 }
 
 // [NOTE] The scheduling latency for concurrent queues is sub-microsecond.
-// static SCHED_TIME_US: AtomicUsize = AtomicUsize::new(0);
-// static SCHED_COUNT: AtomicUsize = AtomicUsize::new(0);
+static SCHED_TIME_US: AtomicUsize = AtomicUsize::new(0);
+static SCHED_COUNT: AtomicUsize = AtomicUsize::new(0);
 static TIMER_SPAWNED: AtomicBool = AtomicBool::new(false);
 
 impl<'a> Executor<'a> {
@@ -172,8 +172,8 @@ impl<'a> Executor<'a> {
         // if res.is_ok() {
         //     let self_ptr = self as *const Self as u64;
         //     std::thread::spawn(move || {
-        //         // let mut prev_sched = 0;
-        //         // let mut prev_cnt = 0;
+        //         let mut prev_sched = 0;
+        //         let mut prev_cnt = 0;
 
         //         let me: &Self = unsafe { &*(self_ptr as *const Self) };
 
@@ -194,15 +194,15 @@ impl<'a> Executor<'a> {
         //             }
         //             println!();
 
-        //             // let sched_us = SCHED_TIME_US.load(Ordering::Relaxed);
-        //             // let sched_cnt = SCHED_COUNT.load(Ordering::Relaxed);
+        //             let sched_us = SCHED_TIME_US.load(Ordering::Relaxed);
+        //             let sched_cnt = SCHED_COUNT.load(Ordering::Relaxed);
 
-        //             // let avg_sched_us =
-        //             //     (sched_us - prev_sched) as f64 / (sched_cnt - prev_cnt) as f64;
-        //             // println!("avg_sched_us {}", avg_sched_us);
+        //             let avg_sched_us =
+        //                 (sched_us - prev_sched) as f64 / (sched_cnt - prev_cnt) as f64;
+        //             println!("avg_sched_us {}", avg_sched_us);
 
-        //             // prev_sched = sched_us;
-        //             // prev_cnt = sched_cnt;
+        //             prev_sched = sched_us;
+        //             prev_cnt = sched_cnt;
         //         }
         //     });
         // }
@@ -240,13 +240,32 @@ impl<'a> Executor<'a> {
         if res.is_ok() {
             let self_ptr = self as *const Self as u64;
             std::thread::spawn(move || {
+                let mut prev_sched = 0;
+                let mut prev_cnt = 0;
+
                 let me: &Self = unsafe { &*(self_ptr as *const Self) };
                 loop {
                     std::thread::sleep(Duration::from_secs(1));
                     let state = me.state();
-                    let global_qlen = state.queue.lock().unwrap().len();
-                    let local_qs = state.local_queues.read().unwrap();
-                    println!("global qlen: {}, local qs: {}", global_qlen, local_qs.len());
+
+                    // Note: use nested scope to release these locks ASAP.
+                    let global_qlen = { state.queue.lock().unwrap().len() };
+                    let local_qs = { state.local_queues.read().unwrap() };
+
+                    let sched_us = SCHED_TIME_US.load(Ordering::Relaxed);
+                    let sched_cnt = SCHED_COUNT.load(Ordering::Relaxed);
+
+                    let avg_sched_us =
+                        (sched_us - prev_sched) as f64 / (sched_cnt - prev_cnt) as f64;
+                    println!(
+                        "global qlen: {}, {} local qs, avg_sched_us {:.4}",
+                        global_qlen,
+                        local_qs.len(),
+                        avg_sched_us
+                    );
+
+                    prev_sched = sched_us;
+                    prev_cnt = sched_cnt;
                 }
             });
         }
@@ -494,12 +513,17 @@ impl<'a> Executor<'a> {
         move |runnable| {
             // [DEBUG] runnable.ddl() is always Infra.
             // Consider adding DeadlineHint::None and panic when it is used.
-            if runnable.ddl() != DeadlineHint::infra() {
-                println!("schedule: runnable.ddl {:?}", runnable.ddl());
-            }
+            //if runnable.ddl() != DeadlineHint::infra() {
+            //    println!("schedule: runnable.ddl {:?}", runnable.ddl());
+            //}
+
+            let now = std::time::Instant::now();
 
             state.queue.lock().unwrap().push(runnable);
             state.notify();
+
+            SCHED_TIME_US.fetch_add(now.elapsed().as_micros() as usize, Ordering::Relaxed);
+            SCHED_COUNT.fetch_add(1, Ordering::Relaxed);
         }
     }
 
