@@ -18,6 +18,8 @@ use crate::state::*;
 use crate::utils::{abort, abort_on_panic, max, Layout};
 use crate::Runnable;
 
+use hyper::rt::DeadlineHint;
+
 #[cfg(feature = "std")]
 pub(crate) type Panic = alloc::boxed::Box<dyn core::any::Any + Send + 'static>;
 
@@ -85,6 +87,9 @@ pub(crate) struct RawTask<F, T, S, M> {
 
     /// The future.
     pub(crate) future: *mut F,
+
+    /// The deadline hint.
+    pub(crate) ddl: DeadlineHint,
 
     /// The output of the future.
     pub(crate) output: *mut Result<T, Panic>,
@@ -218,6 +223,9 @@ where
                 header: p as *const Header<M>,
                 schedule: p.add(task_layout.offset_s) as *const S,
                 future: p.add(task_layout.offset_f) as *mut F,
+                // [DEBUG] Consider adding DeadlineHint::None and check propagation.
+                // [TODO:Rivers] Add DeadlineHint in the task layout.
+                ddl: DeadlineHint::Infra,
                 output: p.add(task_layout.offset_r) as *mut Result<T, Panic>,
             }
         }
@@ -434,6 +442,11 @@ where
             _waker = Waker::from_raw(Self::clone_waker(ptr));
         }
 
+        // [DEBUG] Consider adding from_raw_with_ddl.
+        // let task = Runnable::from_raw_with_ddl(
+        //     NonNull::new_unchecked(ptr as *mut ()),
+        //     DeadlineHint::Some(3667),
+        // );
         let task = Runnable::from_raw(NonNull::new_unchecked(ptr as *mut ()));
         (*raw.schedule).schedule(task, info);
     }

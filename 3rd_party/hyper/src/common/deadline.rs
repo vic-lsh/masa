@@ -1,5 +1,5 @@
 /// Deadline hint of a future. Earlier deadlines mean higher priority. The default priority is `Background`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DeadlineHint {
     /// A deadline value.
     Some(u32),

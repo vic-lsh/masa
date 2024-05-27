@@ -589,8 +589,13 @@ impl<M> Builder<M> {
             RawTask::<Fut, Fut::Output, S, M>::allocate(future, schedule, self)
         };
 
-        let mut runnable = Runnable::from_raw(ptr);
-        runnable.set_ddl(ddl);
+        let runnable = Runnable::from_raw_with_ddl(ptr, ddl);
+        // [DEBUG] runnable.ddl here is not propagated to the task.
+        // println!(
+        //     "spawn_unchecked_with_ddl: runnable.ddl {:?}",
+        //     runnable.ddl()
+        // );
+
         let task = Task {
             ptr,
             _marker: PhantomData,
@@ -802,11 +807,6 @@ impl<M> Runnable<M> {
         &self.ddl
     }
 
-    /// Set the deadline hint associated with this task.
-    pub fn set_ddl(&mut self, ddl: DeadlineHint) {
-        self.ddl = ddl;
-    }
-
     /// Get the metadata associated with this task.
     ///
     /// Tasks can be created with a metadata object associated with them; by default, this
@@ -982,9 +982,29 @@ impl<M> Runnable<M> {
 
     /// [into_raw]: #method.into_raw
     pub unsafe fn from_raw(ptr: NonNull<()>) -> Self {
+        // [DEBUG] Check propagation.
+        // println!("[Runnable::from_raw]");
+        // let backtrace = std::backtrace::Backtrace::capture();
+        // println!("Backtrace:\n{}", backtrace);
+
         Self {
             ptr,
+            // [TODO:Rivers] Fix this.
             ddl: DeadlineHint::Infra,
+            _marker: Default::default(),
+        }
+    }
+
+    /// Converts a raw pointer into a Runnable with a deadline hint.
+    pub unsafe fn from_raw_with_ddl(ptr: NonNull<()>, ddl: DeadlineHint) -> Self {
+        // [DEBUG] Check propagation.
+        // println!("[Runnable::from_raw_with_ddl]");
+        // let backtrace = std::backtrace::Backtrace::capture();
+        // println!("Backtrace:\n{}", backtrace);
+
+        Self {
+            ptr,
+            ddl,
             _marker: Default::default(),
         }
     }
