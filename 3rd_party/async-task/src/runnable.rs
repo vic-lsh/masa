@@ -810,6 +810,7 @@ impl<M> Ord for Runnable<M> {
 
 impl<M> Runnable<M> {
     /// Return the deadline hint associated with this task.
+    #[inline]
     pub fn ddl(&self) -> DeadlineHint {
         let ptr = self.ptr.as_ptr();
         // SAFETY: ptr points to a RawTask and is alive (its lifetime is the
