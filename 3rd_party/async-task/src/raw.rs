@@ -81,6 +81,8 @@ pub(crate) struct TaskLayout {
 }
 
 /// Raw pointers to the fields inside a task.
+// Note: the fields are actually contiguous in memory. The fields in RawTask
+// simply points to different offsets of that allocation.
 pub(crate) struct RawTask<F, T, S, M> {
     /// The task header.
     pub(crate) header: *const Header<M>,
@@ -89,7 +91,7 @@ pub(crate) struct RawTask<F, T, S, M> {
     pub(crate) schedule: *const S,
 
     /// The deadline hint.
-    pub(crate) ddl: DeadlineHint,
+    pub(crate) ddl: *const DeadlineHint,
 
     /// The future.
     pub(crate) future: *mut F,
@@ -209,8 +211,8 @@ where
             // Write the schedule function as the third field of the task.
             (raw.schedule as *mut S).write(schedule);
 
-            raw.ddl = ddl;
-            //std::println!("raw task ddl: {:?}", raw.ddl);
+            // Write the deadline hint to the task.
+            (raw.ddl as *mut DeadlineHint).write(ddl);
 
             // Generate the future, now that the metadata has been pinned in place.
             let future = abort_on_panic(|| future(&(*raw.header).metadata));
@@ -234,7 +236,7 @@ where
                 schedule: p.add(task_layout.offset_s) as *const S,
                 // [DEBUG] Consider adding DeadlineHint::None and check propagation.
                 // [TODO:Rivers] Add DeadlineHint in the task layout.
-                ddl: *(p.add(task_layout.offset_d) as *const DeadlineHint),
+                ddl: p.add(task_layout.offset_d) as *const DeadlineHint,
                 future: p.add(task_layout.offset_f) as *mut F,
                 output: p.add(task_layout.offset_r) as *mut Result<T, Panic>,
             }
