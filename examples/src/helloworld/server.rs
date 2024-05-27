@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tonic::{transport::Server, Request, Response, Status};
 
+use async_compat::{Compat, CompatExt};
 use hello_world::greeter_server::{Greeter, GreeterServer};
 use hello_world::{HelloReply, HelloRequest};
 
@@ -20,20 +21,25 @@ impl Default for MyGreeter {
     }
 }
 
-fn busy_spin(duration: Duration) {
+async fn busy_spin(duration: Duration) {
     let now = Instant::now();
-    while now.elapsed() < duration {}
+    while now.elapsed() < duration {
+        future::yield_now().await;
+    }
 }
 
-fn rand_busy_spin(mean_ms: impl Into<f64>, std_ms: impl Into<f64>) {
-    let mut rng = rand::thread_rng();
+async fn rand_busy_spin(mean_ms: impl Into<f64>, std_ms: impl Into<f64>) {
+    let random_value = {
+        let mut rng = rand::thread_rng();
 
-    let mean = mean_ms.into();
-    let std = std_ms.into();
-    let normal = Normal::new(mean, std).unwrap();
-    let random_value: f64 = normal.sample(&mut rng);
+        let mean = mean_ms.into();
+        let std = std_ms.into();
+        let normal = Normal::new(mean, std).unwrap();
+        let random_value: f64 = normal.sample(&mut rng);
+        random_value
+    };
 
-    busy_spin(Duration::from_millis(std::cmp::max(1, random_value as u64)));
+    busy_spin(Duration::from_millis(std::cmp::max(1, random_value as u64))).await;
 }
 
 #[tonic::async_trait]
@@ -44,7 +50,7 @@ impl Greeter for MyGreeter {
     ) -> Result<Response<HelloReply>, Status> {
         let mean_ms = 10;
         let std_ms = 0;
-        rand_busy_spin(mean_ms, std_ms);
+        rand_busy_spin(mean_ms, std_ms).await;
 
         let reply = hello_world::HelloReply {
             message: format!("Hello {}!", request.into_inner().name),
@@ -88,7 +94,7 @@ where
 {
     fn execute(&self, fut: F, _ddl: DeadlineHint) {
         self.ex
-            .spawn_with_ddl(fut, self.ddl.clone())
+            .spawn_with_ddl(Compat::new(fut), self.ddl.clone())
             .fallible()
             .detach();
     }
@@ -100,8 +106,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let smol_ex = Arc::new(smol::Executor::new());
     let exs = [
-        Arc::new(ExecImpl::new(smol_ex.clone(), DeadlineHint::Some(1))),
-        Arc::new(ExecImpl::new(smol_ex.clone(), DeadlineHint::Some(2))),
+        Arc::new(ExecImpl::new(smol_ex.clone(), DeadlineHint::new(1))),
+        Arc::new(ExecImpl::new(smol_ex.clone(), DeadlineHint::new(2))),
     ];
     for _ in 0..RT_THREAD_COUNT {
         let ex = exs[0].clone();
