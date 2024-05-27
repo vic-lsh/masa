@@ -494,7 +494,10 @@ impl<'a> Executor<'a> {
         move |runnable| {
             // [DEBUG] runnable.ddl() is always Infra.
             // Consider adding DeadlineHint::None and panic when it is used.
-            println!("schedule: runnable.ddl {:?}", runnable.ddl());
+            if *runnable.ddl() != DeadlineHint::infra() {
+                println!("schedule: runnable.ddl {:?}", runnable.ddl());
+            }
+
             state.queue.lock().unwrap().push(runnable);
             state.notify();
         }

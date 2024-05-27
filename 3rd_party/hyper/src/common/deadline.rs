@@ -1,27 +1,28 @@
 /// Deadline hint of a future. Earlier deadlines mean higher priority. The default priority is `Background`.
-#[repr(u64)] // this is packed in RawTask, which needs 8-byte alignment.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum DeadlineHint {
-    /// A deadline value.
-    Some(u32),
-    /// Highest priority.
-    Infra,
+pub struct DeadlineHint(u64);
+
+impl DeadlineHint {
+    /// Create a deadline hint for infrastructure tasks, which has the highest priority.
+    pub fn infra() -> Self {
+        Self(0)
+    }
+
+    /// Create a new deadline hint.
+    pub fn new(hint: u64) -> Self {
+        Self(hint)
+    }
 }
 
 impl Default for DeadlineHint {
     fn default() -> Self {
-        DeadlineHint::Infra
+        DeadlineHint::infra()
     }
 }
 
 impl PartialOrd for DeadlineHint {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match (self, other) {
-            (DeadlineHint::Some(a), DeadlineHint::Some(b)) => a.partial_cmp(b),
-            (DeadlineHint::Infra, DeadlineHint::Some(_)) => Some(std::cmp::Ordering::Less),
-            (DeadlineHint::Some(_), DeadlineHint::Infra) => Some(std::cmp::Ordering::Greater),
-            (DeadlineHint::Infra, DeadlineHint::Infra) => Some(std::cmp::Ordering::Equal),
-        }
+        self.0.partial_cmp(&other.0)
     }
 }
 
@@ -37,37 +38,37 @@ mod tests {
 
     #[test]
     fn test_deadline_hint_partial_eq() {
-        assert_eq!(DeadlineHint::Some(1), DeadlineHint::Some(1));
-        assert_ne!(DeadlineHint::Some(1), DeadlineHint::Some(2));
-        assert_ne!(DeadlineHint::Some(1), DeadlineHint::Infra);
-        assert_ne!(DeadlineHint::Infra, DeadlineHint::Some(1));
-        assert_eq!(DeadlineHint::Infra, DeadlineHint::Infra);
+        assert_eq!(DeadlineHint::new(1), DeadlineHint::new(1));
+        assert_ne!(DeadlineHint::new(1), DeadlineHint::new(2));
+        assert_ne!(DeadlineHint::new(1), DeadlineHint::infra());
+        assert_ne!(DeadlineHint::infra(), DeadlineHint::new(1));
+        assert_eq!(DeadlineHint::infra(), DeadlineHint::infra());
     }
 
     #[test]
     fn test_deadline_hint_partial_ord() {
         assert_eq!(
-            DeadlineHint::Some(1).partial_cmp(&DeadlineHint::Some(1)),
+            DeadlineHint::new(1).partial_cmp(&DeadlineHint::new(1)),
             Some(std::cmp::Ordering::Equal)
         );
         assert_eq!(
-            DeadlineHint::Some(1).partial_cmp(&DeadlineHint::Some(2)),
+            DeadlineHint::new(1).partial_cmp(&DeadlineHint::new(2)),
             Some(std::cmp::Ordering::Less)
         );
         assert_eq!(
-            DeadlineHint::Some(2).partial_cmp(&DeadlineHint::Some(1)),
+            DeadlineHint::new(2).partial_cmp(&DeadlineHint::new(1)),
             Some(std::cmp::Ordering::Greater)
         );
         assert_eq!(
-            DeadlineHint::Infra.partial_cmp(&DeadlineHint::Some(1)),
+            DeadlineHint::infra().partial_cmp(&DeadlineHint::new(1)),
             Some(std::cmp::Ordering::Less)
         );
         assert_eq!(
-            DeadlineHint::Some(1).partial_cmp(&DeadlineHint::Infra),
+            DeadlineHint::new(1).partial_cmp(&DeadlineHint::infra()),
             Some(std::cmp::Ordering::Greater)
         );
         assert_eq!(
-            DeadlineHint::Infra.partial_cmp(&DeadlineHint::Infra),
+            DeadlineHint::infra().partial_cmp(&DeadlineHint::infra()),
             Some(std::cmp::Ordering::Equal)
         );
     }

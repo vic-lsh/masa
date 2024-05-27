@@ -82,7 +82,7 @@ where
                                     debug!("connection error: {:?}", e);
                                 }
                             },
-                            DeadlineHint::Infra,
+                            DeadlineHint::infra(),
                         );
                         Ok(sr)
                     }

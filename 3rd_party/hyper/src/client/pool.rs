@@ -427,7 +427,7 @@ impl<T: Poolable> PoolInner<T> {
             pool_drop_notifier: rx,
         };
 
-        self.exec.execute(interval, DeadlineHint::Infra);
+        self.exec.execute(interval, DeadlineHint::infra());
     }
 }
 
