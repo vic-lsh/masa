@@ -1,4 +1,5 @@
 /// Deadline hint of a future. Earlier deadlines mean higher priority. The default priority is `Background`.
+#[repr(u64)] // this is packed in RawTask, which needs 8-byte alignment.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DeadlineHint {
     /// A deadline value.
