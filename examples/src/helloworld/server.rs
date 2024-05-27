@@ -17,7 +17,7 @@ pub mod hello_world {
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Server for benchmarking")]
 pub struct Args {
-    #[structopt(short, long, default_value = 1)]
+    #[structopt(short, long, default_value = "1")]
     pub num_threads: usize,
 }
 
