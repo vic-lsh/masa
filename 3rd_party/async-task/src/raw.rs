@@ -779,3 +779,27 @@ where
         }
     }
 }
+
+/// Get DeadlineHint from a raw task pointer.
+///
+/// Caller must uphold:
+///
+/// 1. the `ptr` must point to a RawTask
+/// 2. the RawTask isn't deallocated
+pub(crate) unsafe fn get_ddl_from_raw_task(ptr: *const ()) -> DeadlineHint {
+    // the following assumes the ddl field is placed after the header ptr and
+    // the schedule fn ptr. It also assumes we use Header<()> (no metadata).
+    // [TODO]: verify this at build time.
+    // [TODO]: either migrate DeadlineHint to metadata, or remove metadata support.
+    const DDL_OFFSET: usize = 48;
+    debug_assert!(!ptr.is_null());
+
+    let ddl_ptr = ((ptr as usize) + DDL_OFFSET) as *const DeadlineHint;
+
+    // SAFETY:
+    // dereferencing this is always valid because:
+    // 1. the deadline hint offset is the same across all RawTasks
+    // 2. the RawTask is alive (upheld by caller)
+    // 3. the deadline hint is always initialized (see RawTask::allocate)
+    *ddl_ptr
+}
