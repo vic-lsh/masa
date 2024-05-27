@@ -371,7 +371,7 @@ default = ["full"]
 async-compat = "0.2.3"
 smol = { path = "../3rd_party/smol" }
 futures-lite = { version = "2.0.0" }
-
+structopt = "0.3.23"
 
 # Common dependencies
 tokio = { path = "../3rd_party/tokio/tokio", features = [
