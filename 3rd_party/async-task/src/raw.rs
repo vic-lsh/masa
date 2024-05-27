@@ -1,6 +1,7 @@
 use alloc::alloc::Layout as StdLayout;
 use core::cell::UnsafeCell;
 use core::future::Future;
+use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
 use core::pin::Pin;
 use core::ptr::NonNull;
@@ -67,11 +68,11 @@ pub(crate) struct TaskLayout {
     /// Memory layout of the whole task.
     pub(crate) layout: StdLayout,
 
-    /// Offset into the task at which the schedule function is stored.
-    pub(crate) offset_s: usize,
-
     /// Offset into the task at which the deadline hint is stored.
     pub(crate) offset_d: usize,
+
+    /// Offset into the task at which the schedule function is stored.
+    pub(crate) offset_s: usize,
 
     /// Offset into the task at which the future is stored.
     pub(crate) offset_f: usize,
@@ -87,11 +88,15 @@ pub(crate) struct RawTask<F, T, S, M> {
     /// The task header.
     pub(crate) header: *const Header<M>,
 
+    /// The deadline hint.
+    // This is intentionally placed directly after the header.
+    // All generic except for M are type erased (i.e., we have Runnable<M>, not
+    // Runnable<F, T, S, M>). To retrieve `ddl` from Runnable, we can only
+    // depend on size information of M, not the other generics.
+    pub(crate) ddl: *const DeadlineHint,
+
     /// The schedule function.
     pub(crate) schedule: *const S,
-
-    /// The deadline hint.
-    pub(crate) ddl: *const DeadlineHint,
 
     /// The future.
     pub(crate) future: *mut F,
@@ -108,6 +113,18 @@ impl<F, T, S, M> Clone for RawTask<F, T, S, M> {
     }
 }
 
+/// Computes the offset of the DeadlineHint field.
+#[inline]
+const fn eval_ddl_offset<M>() -> usize {
+    let layout_header = Layout::new::<Header<M>>();
+    let layout_d = Layout::new::<DeadlineHint>();
+
+    let layout = layout_header;
+    let (_, offset_d) = leap_unwrap!(layout.extend(layout_d));
+
+    offset_d
+}
+
 impl<F, T, S, M> RawTask<F, T, S, M> {
     const TASK_LAYOUT: TaskLayout = Self::eval_task_layout();
 
@@ -116,8 +133,8 @@ impl<F, T, S, M> RawTask<F, T, S, M> {
     const fn eval_task_layout() -> TaskLayout {
         // Compute the layouts for `Header`, `S`, `F`, and `T`.
         let layout_header = Layout::new::<Header<M>>();
-        let layout_s = Layout::new::<S>();
         let layout_d = Layout::new::<DeadlineHint>();
+        let layout_s = Layout::new::<S>();
         let layout_f = Layout::new::<F>();
         let layout_r = Layout::new::<Result<T, Panic>>();
 
@@ -128,8 +145,8 @@ impl<F, T, S, M> RawTask<F, T, S, M> {
 
         // Compute the layout for `Header` followed `S` and `union { F, T }`.
         let layout = layout_header;
-        let (layout, offset_s) = leap_unwrap!(layout.extend(layout_s));
         let (layout, offset_d) = leap_unwrap!(layout.extend(layout_d));
+        let (layout, offset_s) = leap_unwrap!(layout.extend(layout_s));
         let (layout, offset_union) = leap_unwrap!(layout.extend(layout_union));
         let offset_f = offset_union;
         let offset_r = offset_union;
@@ -208,11 +225,11 @@ where
                 propagate_panic,
             });
 
-            // Write the schedule function as the third field of the task.
-            (raw.schedule as *mut S).write(schedule);
-
             // Write the deadline hint to the task.
             (raw.ddl as *mut DeadlineHint).write(ddl);
+
+            // Write the schedule function as the third field of the task.
+            (raw.schedule as *mut S).write(schedule);
 
             // Generate the future, now that the metadata has been pinned in place.
             let future = abort_on_panic(|| future(&(*raw.header).metadata));
@@ -780,21 +797,36 @@ where
     }
 }
 
+trait DeadlineHintOffset {
+    const OFFSET: usize;
+}
+
+struct EvalDeadlineHintOffset<M>(PhantomData<M>);
+
+impl<M> DeadlineHintOffset for EvalDeadlineHintOffset<M> {
+    const OFFSET: usize = eval_ddl_offset::<M>();
+}
+
 /// Get DeadlineHint from a raw task pointer.
 ///
 /// Caller must uphold:
 ///
 /// 1. the `ptr` must point to a RawTask
 /// 2. the RawTask isn't deallocated
-pub(crate) unsafe fn get_ddl_from_raw_task(ptr: *const ()) -> DeadlineHint {
-    // the following assumes the ddl field is placed after the header ptr and
-    // the schedule fn ptr. It also assumes we use Header<()> (no metadata).
-    // [TODO]: verify this at build time.
-    // [TODO]: either migrate DeadlineHint to metadata, or remove metadata support.
-    const DDL_OFFSET: usize = 48;
+pub(crate) unsafe fn get_ddl_from_raw_task<M>(ptr: *const ()) -> DeadlineHint {
+    // This forces the deadline offset calculation to be const.
+    //
+    // Effectively, we want to write the following:
+    //
+    //      const OFFSET: usize = eval_ddl_offset::<M>();
+    //
+    // but rust doesn't allow this, because const calculation cannot depend on
+    // its outer function's generic.
+    let ddl_offset = EvalDeadlineHintOffset::<M>::OFFSET;
+
     debug_assert!(!ptr.is_null());
 
-    let ddl_ptr = ((ptr as usize) + DDL_OFFSET) as *const DeadlineHint;
+    let ddl_ptr = ((ptr as usize) + ddl_offset) as *const DeadlineHint;
 
     // SAFETY:
     // dereferencing this is always valid because:
