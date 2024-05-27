@@ -380,7 +380,6 @@ tokio = { path = "../3rd_party/tokio/tokio", features = [
 ] }
 prost = "0.12"
 tonic = { path = "../tonic" }
-px = { path = "../3rd_party/px" }
 futures = "0.3"
 # Optional dependencies
 tonic-web = { path = "../tonic-web", optional = true }
