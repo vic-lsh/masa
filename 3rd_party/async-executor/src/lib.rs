@@ -519,7 +519,9 @@ impl<'a> Executor<'a> {
 
             let now = std::time::Instant::now();
 
-            state.queue.lock().unwrap().push(runnable);
+            {
+                state.queue.lock().unwrap().push(runnable);
+            }
             state.notify();
 
             SCHED_TIME_US.fetch_add(now.elapsed().as_micros() as usize, Ordering::Relaxed);
