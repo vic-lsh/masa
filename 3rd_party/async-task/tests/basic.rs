@@ -350,11 +350,11 @@ fn test_runnable_partial_eq() {
     let mut r1 = runnable_from_raw();
     let mut r2 = runnable_from_raw();
     let tests = vec![
-        (DeadlineHint::Some(1), DeadlineHint::Some(1), true),
-        (DeadlineHint::Some(1), DeadlineHint::Some(2), false),
-        (DeadlineHint::Some(1), DeadlineHint::Infra, false),
-        (DeadlineHint::Infra, DeadlineHint::Some(1), false),
-        (DeadlineHint::Infra, DeadlineHint::Infra, true),
+        (DeadlineHint::new(1), DeadlineHint::new(1), true),
+        (DeadlineHint::new(1), DeadlineHint::new(2), false),
+        (DeadlineHint::new(1), DeadlineHint::infra(), false),
+        (DeadlineHint::infra(), DeadlineHint::new(1), false),
+        (DeadlineHint::infra(), DeadlineHint::infra(), true),
     ];
     for (d1, d2, expected) in tests {
         r1.set_ddl(d1);
@@ -369,33 +369,33 @@ fn test_runnable_partial_ord() {
     let mut r2 = runnable_from_raw();
     let tests = vec![
         (
-            DeadlineHint::Some(1),
-            DeadlineHint::Some(1),
+            DeadlineHint::new(1),
+            DeadlineHint::new(1),
             std::cmp::Ordering::Equal,
         ),
         (
-            DeadlineHint::Some(1),
-            DeadlineHint::Some(2),
+            DeadlineHint::new(1),
+            DeadlineHint::new(2),
             std::cmp::Ordering::Less,
         ),
         (
-            DeadlineHint::Some(2),
-            DeadlineHint::Some(1),
+            DeadlineHint::new(2),
+            DeadlineHint::new(1),
             std::cmp::Ordering::Greater,
         ),
         (
-            DeadlineHint::Some(1),
-            DeadlineHint::Infra,
+            DeadlineHint::new(1),
+            DeadlineHint::infra(),
             std::cmp::Ordering::Less,
         ),
         (
-            DeadlineHint::Infra,
-            DeadlineHint::Some(1),
+            DeadlineHint::infra(),
+            DeadlineHint::new(1),
             std::cmp::Ordering::Greater,
         ),
         (
-            DeadlineHint::Infra,
-            DeadlineHint::Infra,
+            DeadlineHint::infra(),
+            DeadlineHint::infra(),
             std::cmp::Ordering::Equal,
         ),
     ];
