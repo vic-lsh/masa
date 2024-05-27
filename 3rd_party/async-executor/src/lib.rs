@@ -512,7 +512,6 @@ impl<'a> Executor<'a> {
         // [TODO:Vic] If possible, push into the current local queue and notify the ticker.
         move |runnable| {
             // [DEBUG] runnable.ddl() is always Infra.
-            // Consider adding DeadlineHint::None and panic when it is used.
             //if runnable.ddl() != DeadlineHint::infra() {
             //    println!("schedule: runnable.ddl {:?}", runnable.ddl());
             //}

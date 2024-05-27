@@ -1,4 +1,4 @@
-/// Deadline hint of a future. Earlier deadlines mean higher priority. The default priority is `Background`.
+/// Deadline hint of a future. Earlier deadlines mean higher priority. The default priority is `infra`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct DeadlineHint(u64);
 
@@ -11,12 +11,6 @@ impl DeadlineHint {
     /// Create a new deadline hint.
     pub fn new(hint: u64) -> Self {
         Self(hint)
-    }
-}
-
-impl Default for DeadlineHint {
-    fn default() -> Self {
-        DeadlineHint::infra()
     }
 }
 
