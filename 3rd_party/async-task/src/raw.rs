@@ -210,6 +210,7 @@ where
             (raw.schedule as *mut S).write(schedule);
 
             raw.ddl = ddl;
+            //std::println!("raw task ddl: {:?}", raw.ddl);
 
             // Generate the future, now that the metadata has been pinned in place.
             let future = abort_on_panic(|| future(&(*raw.header).metadata));

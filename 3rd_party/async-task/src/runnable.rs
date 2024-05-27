@@ -1000,7 +1000,7 @@ impl<M> Runnable<M> {
         Self {
             ptr,
             // [TODO:Rivers] Fix this.
-            ddl: DeadlineHint::Infra,
+            ddl: DeadlineHint::infra(),
             _marker: Default::default(),
         }
     }
