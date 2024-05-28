@@ -6,9 +6,9 @@ use std::{
 pub(crate) trait Queue {
     type Item;
 
-    fn push(&self, item: Self::Item);
+    fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>>;
 
-    fn pop(&self) -> Option<Self::Item>;
+    fn pop(&self) -> Result<Self::Item, PopError>;
 
     fn len(&self) -> usize;
 
@@ -19,6 +19,16 @@ pub(crate) trait Queue {
     fn is_full(&self) -> bool;
 }
 
+pub(crate) enum PushError<T> {
+    Full(T),
+    Closed,
+}
+
+pub(crate) enum PopError {
+    Empty,
+    Closed,
+}
+
 pub(crate) struct SimplePriorityQueue<T> {
     q: Mutex<BinaryHeap<T>>,
 }
@@ -26,12 +36,13 @@ pub(crate) struct SimplePriorityQueue<T> {
 impl<T: Ord + PartialOrd> Queue for SimplePriorityQueue<T> {
     type Item = T;
 
-    fn push(&self, item: Self::Item) {
-        self.with_locked(|mut q| q.push(item))
+    fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
+        self.with_locked(|mut q| q.push(item));
+        Ok(())
     }
 
-    fn pop(&self) -> Option<Self::Item> {
-        self.with_locked(|mut q| q.pop())
+    fn pop(&self) -> Result<Self::Item, PopError> {
+        self.with_locked(|mut q| q.pop()).ok_or(PopError::Empty)
     }
 
     fn len(&self) -> usize {
