@@ -52,6 +52,7 @@ use std::time::Duration;
 use async_task::{Builder, Runnable};
 use concurrent_queue::ConcurrentQueue;
 use futures_lite::{future, prelude::*};
+use queue::Queue;
 use slab::Slab;
 
 use hyper::rt::DeadlineHint;
@@ -251,7 +252,7 @@ impl<'a> Executor<'a> {
                     let state = me.state();
 
                     // [NOTE] Use nested scope to release these locks ASAP.
-                    let global_qlen = { state.queue.lock().unwrap().len() };
+                    let global_qlen = state.queue.len();
                     let local_qs = { state.local_queues.read().unwrap() };
 
                     let sched_us = SCHED_TIME_US.load(Ordering::Relaxed);
@@ -520,9 +521,7 @@ impl<'a> Executor<'a> {
 
             let now = std::time::Instant::now();
 
-            {
-                state.queue.lock().unwrap().push(runnable);
-            }
+            state.queue.push(runnable);
             state.notify();
 
             SCHED_TIME_US.fetch_add(now.elapsed().as_micros() as usize, Ordering::Relaxed);
@@ -596,7 +595,7 @@ impl Drop for Executor<'_> {
         }
         drop(active);
 
-        while state.queue.lock().unwrap().pop().ok_or("empty").is_ok() {}
+        while state.queue.pop().ok_or("empty").is_ok() {}
     }
 }
 
@@ -835,10 +834,12 @@ impl<'a> Default for LocalExecutor<'a> {
     }
 }
 
+type GlobalQueue<T> = queue::SimplePriorityQueue<T>;
+
 /// The state of a executor.
 struct State {
     /// The global queue.
-    queue: Mutex<BinaryHeap<Runnable>>,
+    queue: GlobalQueue<Runnable>,
 
     /// Local queues created by runners.
     local_queues: RwLock<Vec<Arc<ConcurrentQueue<Runnable>>>>,
@@ -857,7 +858,7 @@ impl State {
     /// Creates state for a new executor.
     fn new() -> State {
         State {
-            queue: Mutex::new(BinaryHeap::new()),
+            queue: GlobalQueue::default(),
             local_queues: RwLock::new(Vec::new()),
             notified: AtomicBool::new(true),
             sleepers: Mutex::new(Sleepers {
@@ -885,7 +886,7 @@ impl State {
     }
 
     pub(crate) fn try_tick(&self) -> bool {
-        match self.queue.lock().unwrap().pop() {
+        match self.queue.pop() {
             None => false,
             Some(runnable) => {
                 // Notify another ticker now to pick up where this ticker left off, just in case
@@ -1060,7 +1061,7 @@ impl Ticker<'_> {
 
     /// Waits for the next runnable task to run.
     async fn runnable(&mut self) -> Runnable {
-        self.runnable_with(|| self.state.queue.lock().unwrap().pop().ok_or("empty").ok())
+        self.runnable_with(|| self.state.queue.pop().ok_or("empty").ok())
             .await
     }
 
@@ -1319,7 +1320,7 @@ fn debug_state(state: &State, name: &str, f: &mut fmt::Formatter<'_>) -> fmt::Re
 
     f.debug_struct(name)
         .field("active", &ActiveTasks(&state.active))
-        .field("global_tasks", &state.queue.lock().unwrap().len())
+        .field("global_tasks", &state.queue.len())
         .field("local_runners", &LocalRunners(&state.local_queues))
         .field("sleepers", &SleepCount(&state.sleepers))
         .finish()
