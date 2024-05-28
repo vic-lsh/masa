@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use structopt::StructOpt;
 use tonic::{transport::Server, Request, Response, Status};
 
-use async_compat::{Compat, CompatExt};
+use async_compat::Compat;
 use hello_world::greeter_server::{Greeter, GreeterServer};
 use hello_world::{HelloReply, HelloRequest};
 
@@ -21,15 +21,20 @@ pub struct Args {
     pub num_threads: usize,
 }
 
-pub struct MyGreeter {}
+pub struct GreeterImpl {}
 
-impl Default for MyGreeter {
+impl Default for GreeterImpl {
     fn default() -> Self {
         Self {}
     }
 }
 
-async fn busy_spin(duration: Duration) {
+fn busy_spin(duration: Duration) {
+    let now = Instant::now();
+    while now.elapsed() < duration {}
+}
+
+async fn async_busy_spin(duration: Duration) {
     let now = Instant::now();
     while now.elapsed() < duration {
         future::yield_now().await;
@@ -47,11 +52,12 @@ async fn rand_busy_spin(mean_ms: impl Into<f64>, std_ms: impl Into<f64>) {
         random_value
     };
 
-    busy_spin(Duration::from_millis(std::cmp::max(1, random_value as u64))).await;
+    busy_spin(Duration::from_millis(std::cmp::max(1, random_value as u64)));
+    // async_busy_spin(Duration::from_millis(std::cmp::max(1, random_value as u64))).await;
 }
 
 #[tonic::async_trait]
-impl Greeter for MyGreeter {
+impl Greeter for GreeterImpl {
     async fn say_hello(
         &self,
         request: Request<HelloRequest>,
@@ -136,7 +142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let ex = exs[i].clone();
         let addr = addrs[i];
         let h = tokio::spawn(async move {
-            let greeter = MyGreeter::default();
+            let greeter = GreeterImpl::default();
             eprintln!("Listening on {}...", addr);
             Server::builder()
                 .add_service(GreeterServer::new(greeter))
