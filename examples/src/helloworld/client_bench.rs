@@ -1,11 +1,13 @@
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender, TryRecvError};
 use hello_world::greeter_client::GreeterClient;
 use hello_world::HelloRequest;
+use rand_distr::{Distribution, Exp};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
+use tokio::time::{Duration, Instant};
 
 pub mod hello_world {
     tonic::include_proto!("helloworld");
@@ -32,9 +34,9 @@ pub struct Args {
     pub addr1: String,
     #[structopt(short, long, default_value = "http://[::1]:50052")]
     pub addr2: String,
-    #[structopt(short, long, default_value = "client1.txt")]
+    #[structopt(short, long, default_value = "client1.csv")]
     pub output1: String,
-    #[structopt(short, long, default_value = "client2.txt")]
+    #[structopt(short, long, default_value = "client2.csv")]
     pub output2: String,
 }
 
@@ -53,33 +55,69 @@ async fn load_gen(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = GreeterClient::connect(addr).await?;
 
-    let start_at = time_now();
-    let pause_at = start_at + secs * 1_000_000;
+    let start_at = Instant::now();
+    let pause_at = start_at + Duration::from_secs(secs);
 
-    let mut handles = Vec::with_capacity(concurrency as usize);
+    let mut elapse = 0f64;
+    let exponential = Exp::new(rps as f64).unwrap();
+
+    let (request_tx, request_rx) = bounded(concurrency as usize);
+
+    let mut handles = Vec::new();
+    let handle = tokio::spawn(async move {
+        let request = HelloRequest {
+            name: "Tonic".into(),
+        };
+        loop {
+            let now = Instant::now();
+            if now > pause_at {
+                break;
+            }
+            let send_at = start_at + Duration::from_secs_f64(elapse);
+            tokio::time::sleep_until(send_at).await;
+            let value = {
+                let mut rng = rand::thread_rng();
+                exponential.sample(&mut rng)
+            };
+            elapse += value;
+            let request = request.clone();
+            while request_tx.is_full() {
+                tokio::task::yield_now().await;
+            }
+            request_tx.send(request).unwrap();
+        }
+    });
+    handles.push(handle);
+
     for _ in 0..concurrency {
         let mut client = client.clone();
+        let request_rx = request_rx.clone();
         let trace_tx = trace_tx.clone();
         let handle = tokio::spawn(async move {
-            let request = HelloRequest {
-                name: "Tonic".into(),
-            };
             loop {
-                let send_at = time_now();
-                if send_at > pause_at {
-                    break;
+                match request_rx.try_recv() {
+                    Ok(request) => {
+                        let send_at = time_now();
+                        let _ = client
+                            .say_hello(tonic::Request::new(request))
+                            .await
+                            .unwrap();
+                        let recv_at = time_now();
+                        let span = Span { send_at, recv_at };
+                        trace_tx.send(span).unwrap();
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => {
+                        tokio::task::yield_now().await;
+                    }
                 }
-                let _ = client
-                    .say_hello(tonic::Request::new(request.clone()))
-                    .await
-                    .unwrap();
-                let recv_at = time_now();
-                let span = Span { send_at, recv_at };
-                trace_tx.send(span).unwrap();
             }
         });
         handles.push(handle);
     }
+
     for h in handles {
         h.await.unwrap();
     }
@@ -91,13 +129,13 @@ async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
     let path = Path::new(&output);
     if let Some(parent) = path.parent() {
         if !parent.exists() {
-            fs::create_dir_all(parent).expect("Failed to create directory");
+            fs::create_dir_all(parent).unwrap();
         }
     }
-    let mut file = File::create(output).expect("Failed to create file");
+    let mut file = File::create(output).unwrap();
     while let Ok(span) = trace_rx.recv() {
         let latency = span.recv_at - span.send_at;
-        writeln!(file, "{}", latency).expect("Failed to write to file");
+        writeln!(file, "{}", latency).unwrap();
     }
 }
 

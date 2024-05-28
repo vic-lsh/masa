@@ -47,7 +47,8 @@ async fn async_busy_spin(duration: Duration) {
     let now = Instant::now();
     let mut c = 0;
     while now.elapsed() < duration {
-        if c == 100_000 {
+        c += 1;
+        if c >= 100_000 {
             c = 0;
             future::yield_now().await;
         }
@@ -168,7 +169,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(ExecImpl::new(smol_ex.clone(), 1)),
     ];
 
-    println!("spawning {} server threads", args.num_threads);
+    println!("Spawning {} server threads...", args.num_threads);
     for _ in 0..args.num_threads {
         let ex = exs[0].clone();
         // [NOTE] Semantically, it is equivalent to tokio::spawn(ex_clone.run()).
