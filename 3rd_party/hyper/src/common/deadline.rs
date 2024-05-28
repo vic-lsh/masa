@@ -15,8 +15,9 @@ impl DeadlineHint {
 }
 
 impl PartialOrd for DeadlineHint {
+    /// Flip the order for a min-heap.
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+        other.0.partial_cmp(&self.0)
     }
 }
 
@@ -47,19 +48,19 @@ mod tests {
         );
         assert_eq!(
             DeadlineHint::new(1).partial_cmp(&DeadlineHint::new(2)),
-            Some(std::cmp::Ordering::Less)
+            Some(std::cmp::Ordering::Greater)
         );
         assert_eq!(
             DeadlineHint::new(2).partial_cmp(&DeadlineHint::new(1)),
-            Some(std::cmp::Ordering::Greater)
-        );
-        assert_eq!(
-            DeadlineHint::infra().partial_cmp(&DeadlineHint::new(1)),
             Some(std::cmp::Ordering::Less)
         );
         assert_eq!(
-            DeadlineHint::new(1).partial_cmp(&DeadlineHint::infra()),
+            DeadlineHint::infra().partial_cmp(&DeadlineHint::new(1)),
             Some(std::cmp::Ordering::Greater)
+        );
+        assert_eq!(
+            DeadlineHint::new(1).partial_cmp(&DeadlineHint::infra()),
+            Some(std::cmp::Ordering::Less)
         );
         assert_eq!(
             DeadlineHint::infra().partial_cmp(&DeadlineHint::infra()),
