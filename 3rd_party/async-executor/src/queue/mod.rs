@@ -19,6 +19,9 @@ pub(crate) trait Queue {
     }
 
     fn is_full(&self) -> bool;
+
+    /// Refer to implementations for when Some(_) or None is returned.
+    fn capacity(&self) -> Option<usize>;
 }
 
 pub(crate) enum PushError<T> {
@@ -54,6 +57,10 @@ impl<T: Ord + PartialOrd> Queue for SimplePriorityQueue<T> {
     fn is_full(&self) -> bool {
         // [NOTE] this implementation is unbounded so it's never full
         false
+    }
+
+    fn capacity(&self) -> Option<usize> {
+        self.with_locked(|q| Some(q.capacity()))
     }
 }
 
@@ -108,5 +115,9 @@ impl<T> Queue for ConcurrentFifoQueue<T> {
 
     fn is_full(&self) -> bool {
         self.q.is_full()
+    }
+
+    fn capacity(&self) -> Option<usize> {
+        self.q.capacity()
     }
 }
