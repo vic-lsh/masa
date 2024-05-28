@@ -3,6 +3,8 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
+use concurrent_queue::ConcurrentQueue;
+
 pub(crate) trait Queue {
     type Item;
 
@@ -21,7 +23,7 @@ pub(crate) trait Queue {
 
 pub(crate) enum PushError<T> {
     Full(T),
-    Closed,
+    Closed(T),
 }
 
 pub(crate) enum PopError {
@@ -68,5 +70,43 @@ impl<T: Ord> Default for SimplePriorityQueue<T> {
         Self {
             q: Mutex::new(BinaryHeap::new()),
         }
+    }
+}
+
+pub(crate) struct ConcurrentFifoQueue<T> {
+    q: ConcurrentQueue<T>,
+}
+
+impl<T> ConcurrentFifoQueue<T> {
+    pub(crate) fn bounded(size: usize) -> Self {
+        Self {
+            q: ConcurrentQueue::bounded(size),
+        }
+    }
+}
+
+impl<T> Queue for ConcurrentFifoQueue<T> {
+    type Item = T;
+
+    fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
+        self.q.push(item).map_err(|e| match e {
+            concurrent_queue::PushError::Full(item) => PushError::Full(item),
+            concurrent_queue::PushError::Closed(item) => PushError::Closed(item),
+        })
+    }
+
+    fn pop(&self) -> Result<Self::Item, PopError> {
+        self.q.pop().map_err(|e| match e {
+            concurrent_queue::PopError::Empty => PopError::Empty,
+            concurrent_queue::PopError::Closed => PopError::Closed,
+        })
+    }
+
+    fn len(&self) -> usize {
+        self.q.len()
+    }
+
+    fn is_full(&self) -> bool {
+        self.q.is_full()
     }
 }
