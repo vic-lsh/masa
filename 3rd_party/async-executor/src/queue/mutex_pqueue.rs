@@ -5,11 +5,11 @@ use std::{
 
 use super::{PopError, PushError, Queue};
 
-pub(crate) struct SimplePriorityQueue<T> {
+pub(crate) struct MutexPiorityQueue<T> {
     q: Mutex<BinaryHeap<T>>,
 }
 
-impl<T: Ord + PartialOrd> Queue for SimplePriorityQueue<T> {
+impl<T: Ord + PartialOrd> Queue for MutexPiorityQueue<T> {
     type Item = T;
 
     fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
@@ -35,7 +35,7 @@ impl<T: Ord + PartialOrd> Queue for SimplePriorityQueue<T> {
     }
 }
 
-impl<T> SimplePriorityQueue<T> {
+impl<T> MutexPiorityQueue<T> {
     #[inline]
     fn with_locked<R>(&self, f: impl FnOnce(MutexGuard<'_, BinaryHeap<T>>) -> R) -> R {
         let guard = self.q.lock().expect("mutex shouldn't be poisoned");
@@ -43,7 +43,7 @@ impl<T> SimplePriorityQueue<T> {
     }
 }
 
-impl<T: Ord> Default for SimplePriorityQueue<T> {
+impl<T: Ord> Default for MutexPiorityQueue<T> {
     fn default() -> Self {
         Self {
             q: Mutex::new(BinaryHeap::new()),
