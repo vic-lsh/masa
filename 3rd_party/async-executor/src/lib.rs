@@ -49,7 +49,6 @@ use std::task::{Poll, Waker};
 use std::time::Duration;
 
 use async_task::{Builder, Runnable};
-use concurrent_queue::ConcurrentQueue;
 use futures_lite::{future, prelude::*};
 use queue::Queue;
 use slab::Slab;
@@ -520,7 +519,10 @@ impl<'a> Executor<'a> {
 
             let now = std::time::Instant::now();
 
-            state.queue.push(runnable);
+            state
+                .queue
+                .push(runnable)
+                .expect("push should never fail b/c queue is unbounded");
             state.notify();
 
             SCHED_TIME_US.fetch_add(now.elapsed().as_micros() as usize, Ordering::Relaxed);
