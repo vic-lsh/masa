@@ -39,7 +39,6 @@
 )]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
-use std::collections::BinaryHeap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::panic::{RefUnwindSafe, UnwindSafe};
@@ -835,6 +834,7 @@ impl<'a> Default for LocalExecutor<'a> {
 }
 
 type GlobalQueue<T> = queue::SimplePriorityQueue<T>;
+type LocalQueue<T> = queue::ConcurrentFifoQueue<T>;
 
 /// The state of a executor.
 struct State {
@@ -842,7 +842,7 @@ struct State {
     queue: GlobalQueue<Runnable>,
 
     /// Local queues created by runners.
-    local_queues: RwLock<Vec<Arc<ConcurrentQueue<Runnable>>>>,
+    local_queues: RwLock<Vec<Arc<LocalQueue<Runnable>>>>,
 
     /// Set to `true` when a sleeping ticker is notified or no tickers are sleeping.
     notified: AtomicBool,
@@ -1124,7 +1124,7 @@ struct Runner<'a> {
     ticker: Ticker<'a>,
 
     /// The local queue.
-    local: Arc<ConcurrentQueue<Runnable>>,
+    local: Arc<LocalQueue<Runnable>>,
 
     /// Bumped every time a runnable task is found.
     ticks: usize,
@@ -1136,7 +1136,7 @@ impl Runner<'_> {
         let runner = Runner {
             state,
             ticker: Ticker::new(state),
-            local: Arc::new(ConcurrentQueue::bounded(512)),
+            local: Arc::new(LocalQueue::bounded(512)),
             ticks: 0,
         };
         state
@@ -1227,7 +1227,7 @@ impl Drop for Runner<'_> {
 }
 
 /// Steals some items from one queue into another.
-fn steal<T>(src: &ConcurrentQueue<T>, dest: &ConcurrentQueue<T>) {
+fn steal<T>(src: &LocalQueue<T>, dest: &LocalQueue<T>) {
     // Half of `src`'s length rounded up.
     let mut count = (src.len() + 1) / 2;
 
@@ -1289,7 +1289,7 @@ fn debug_state(state: &State, name: &str, f: &mut fmt::Formatter<'_>) -> fmt::Re
     }
 
     /// Debug wrapper for the local runners.
-    struct LocalRunners<'a>(&'a RwLock<Vec<Arc<ConcurrentQueue<Runnable>>>>);
+    struct LocalRunners<'a>(&'a RwLock<Vec<Arc<LocalQueue<Runnable>>>>);
 
     impl fmt::Debug for LocalRunners<'_> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
