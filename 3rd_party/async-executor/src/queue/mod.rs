@@ -1,10 +1,8 @@
-use concurrent_queue::ConcurrentQueue;
-
 mod concurrent_fifo;
 mod mutex_pqueue;
 
 pub(crate) use concurrent_fifo::ConcurrentFifoQueue;
-pub(crate) use mutex_pqueue::SimplePriorityQueue;
+pub(crate) use mutex_pqueue::MutexPiorityQueue;
 
 #[allow(dead_code)]
 pub(crate) trait Queue {
