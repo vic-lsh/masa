@@ -1,17 +1,25 @@
+use async_compat::Compat;
 use futures_lite::future;
+use hello_world::greeter_server::{Greeter, GreeterServer};
+use hello_world::{HelloReply, HelloRequest};
 use hyper::rt::{DeadlineHint, Exec, Executor};
 use rand_distr::{Distribution, Normal};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::time::{SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
 use tonic::{transport::Server, Request, Response, Status};
 
-use async_compat::Compat;
-use hello_world::greeter_server::{Greeter, GreeterServer};
-use hello_world::{HelloReply, HelloRequest};
-
 pub mod hello_world {
     tonic::include_proto!("helloworld");
+}
+
+pub fn time_now() -> u64 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_micros();
+    now as u64
 }
 
 #[derive(StructOpt, Debug, Clone)]
@@ -76,12 +84,17 @@ impl Greeter for GreeterImpl {
 #[derive(Debug)]
 struct ExecImpl<'a> {
     ex: Arc<smol::Executor<'a>>,
-    ddl: DeadlineHint,
+    ddl: u64,
+    start_at: u64,
 }
 
 impl<'a> ExecImpl<'a> {
-    fn new(ex: Arc<smol::Executor<'a>>, ddl: DeadlineHint) -> Self {
-        Self { ex, ddl }
+    fn new(ex: Arc<smol::Executor<'a>>, ddl: u64) -> Self {
+        Self {
+            ex,
+            ddl,
+            start_at: time_now(),
+        }
     }
 
     async fn run(&self) {
@@ -107,8 +120,9 @@ where
     F::Output: Send,
 {
     fn execute(&self, fut: F, _ddl: DeadlineHint) {
+        let ddl = DeadlineHint::new(time_now() - self.start_at + self.ddl);
         self.ex
-            .spawn_with_ddl(Compat::new(fut), self.ddl.clone())
+            .spawn_with_ddl(Compat::new(fut), ddl)
             .fallible()
             .detach();
     }
@@ -120,8 +134,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let smol_ex = Arc::new(smol::Executor::new());
     let exs = [
-        Arc::new(ExecImpl::new(smol_ex.clone(), DeadlineHint::new(1))),
-        Arc::new(ExecImpl::new(smol_ex.clone(), DeadlineHint::new(2))),
+        Arc::new(ExecImpl::new(smol_ex.clone(), 1)),
+        Arc::new(ExecImpl::new(smol_ex.clone(), 50_000)),
     ];
 
     println!("spawning {} server threads", args.num_threads);

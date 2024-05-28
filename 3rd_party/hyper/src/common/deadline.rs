@@ -12,6 +12,11 @@ impl DeadlineHint {
     pub fn new(hint: u64) -> Self {
         Self(hint)
     }
+
+    /// Get the deadline hint.
+    pub fn value(&self) -> u64 {
+        self.0
+    }
 }
 
 impl PartialOrd for DeadlineHint {

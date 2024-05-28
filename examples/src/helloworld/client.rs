@@ -15,19 +15,20 @@ pub mod hello_world {
 pub struct Args {
     #[structopt(short, long, default_value = "http://[::1]:50051")]
     pub addr1: String,
-    #[structopt(short, long, default_value = "http://[::1]:50052")]
-    pub addr2: String,
+    // #[structopt(short, long, default_value = "http://[::1]:50052")]
+    // pub addr2: String,
 }
 
 async fn loadgen(
     addr: String,
     rpc_count: Arc<AtomicUsize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let num_clients = 32;
-    let mut handles = Vec::with_capacity(num_clients);
+    // [TODO] Pass concurrency.
+    let concurrency = 1;
+    let mut handles = Vec::with_capacity(concurrency);
 
     let client = GreeterClient::connect(addr).await?;
-    for _ in 0..num_clients {
+    for _ in 0..concurrency {
         let mut client = client.clone();
         let c = rpc_count.clone();
         let h = tokio::spawn(async move {
@@ -72,12 +73,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let h1 = tokio::spawn(async move {
         loadgen(args.addr1, c).await.unwrap();
     });
-    let c = cnt.clone();
-    let h2 = tokio::spawn(async move {
-        loadgen(args.addr2, c).await.unwrap();
-    });
+    // let c = cnt.clone();
+    // let h2 = tokio::spawn(async move {
+    //     loadgen(args.addr2, c).await.unwrap();
+    // });
 
     h1.await.unwrap();
-    h2.await.unwrap();
+    // h2.await.unwrap();
+
     Ok(())
 }
