@@ -352,7 +352,7 @@ pub trait Service<Request> {
     /// Implementations are permitted to panic if `call` is invoked without
     /// obtaining `Poll::Ready(Ok(()))` from `poll_ready`.
     // [NOTE] change this to return Future and DDL.
-    fn call(&mut self, req: Request) -> (Self::Future, usize);
+    fn call(&mut self, req: Request) -> Self::Future;
 }
 
 impl<'a, S, Request> Service<Request> for &'a mut S
