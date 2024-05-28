@@ -595,7 +595,7 @@ impl Drop for Executor<'_> {
         }
         drop(active);
 
-        while state.queue.pop().ok_or("empty").is_ok() {}
+        while state.queue.pop().is_ok() {}
     }
 }
 
@@ -887,8 +887,8 @@ impl State {
 
     pub(crate) fn try_tick(&self) -> bool {
         match self.queue.pop() {
-            None => false,
-            Some(runnable) => {
+            Err(_) => false,
+            Ok(runnable) => {
                 // Notify another ticker now to pick up where this ticker left off, just in case
                 // running the task takes a long time.
                 self.notify();
@@ -1061,8 +1061,7 @@ impl Ticker<'_> {
 
     /// Waits for the next runnable task to run.
     async fn runnable(&mut self) -> Runnable {
-        self.runnable_with(|| self.state.queue.pop().ok_or("empty").ok())
-            .await
+        self.runnable_with(|| self.state.queue.pop().ok()).await
     }
 
     /// Waits for the next runnable task to run, given a function that searches for a task.
