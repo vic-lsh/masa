@@ -51,3 +51,11 @@ impl<T> SimplePriorityQueue<T> {
         f(guard)
     }
 }
+
+impl<T: Ord> Default for SimplePriorityQueue<T> {
+    fn default() -> Self {
+        Self {
+            q: Mutex::new(BinaryHeap::new()),
+        }
+    }
+}
