@@ -59,6 +59,8 @@ use hyper::rt::DeadlineHint;
 #[cfg(feature = "static")]
 mod static_executors;
 
+mod queue;
+
 #[doc(no_inline)]
 pub use async_task::{FallibleTask, Task};
 #[cfg(feature = "static")]
