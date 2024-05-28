@@ -5,6 +5,7 @@ use std::{
 
 use concurrent_queue::ConcurrentQueue;
 
+#[allow(dead_code)]
 pub(crate) trait Queue {
     type Item;
 
@@ -24,11 +25,13 @@ pub(crate) trait Queue {
     fn capacity(&self) -> Option<usize>;
 }
 
+#[derive(Debug)]
 pub(crate) enum PushError<T> {
     Full(T),
     Closed(T),
 }
 
+#[derive(Debug)]
 pub(crate) enum PopError {
     Empty,
     Closed,
