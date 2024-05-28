@@ -44,8 +44,12 @@ fn busy_spin(duration: Duration) {
 
 async fn async_busy_spin(duration: Duration) {
     let now = Instant::now();
+    let mut c = 0;
     while now.elapsed() < duration {
-        future::yield_now().await;
+        if c == 100_000 {
+            c = 0;
+            future::yield_now().await;
+        }
     }
 }
 
