@@ -1,5 +1,6 @@
 use async_compat::Compat;
 use futures_lite::future;
+use hello_world::greeter_client::GreeterClient;
 use hello_world::greeter_server::{Greeter, GreeterServer};
 use hello_world::{HelloReply, HelloRequest};
 use hyper::rt::{DeadlineHint, Exec, Executor};
@@ -83,6 +84,27 @@ impl Greeter for GreeterImpl {
         };
         Ok(Response::new(reply))
     }
+
+    async fn say_hello_hop(
+        &self,
+        request: Request<HelloRequest>,
+    ) -> Result<Response<HelloReply>, Status> {
+        let mean_ms = 10;
+        let std_ms = 0;
+        rand_busy_spin(mean_ms, std_ms).await;
+
+        let mut client = GreeterClient::connect("http://[::1]:50053")
+            .await
+            .expect("server should be up");
+        client
+            .say_hello(tonic::Request::new(HelloRequest { name: "hi".into() }))
+            .await;
+
+        let reply = hello_world::HelloReply {
+            message: format!("Hello {}!", request.into_inner().name),
+        };
+        Ok(Response::new(reply))
+    }
 }
 
 #[derive(Debug)]
@@ -124,6 +146,9 @@ where
     F::Output: Send,
 {
     fn execute(&self, fut: F, _ddl: DeadlineHint) {
+        let bt = std::backtrace::Backtrace::capture();
+        println!("{}", bt);
+
         let ddl = DeadlineHint::new(time_now() - self.start_at + self.ddl);
         self.ex
             .spawn_with_ddl(Compat::new(fut), ddl)
@@ -139,7 +164,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let smol_ex = Arc::new(smol::Executor::new());
     let exs = [
         Arc::new(ExecImpl::new(smol_ex.clone(), 1)),
-        Arc::new(ExecImpl::new(smol_ex.clone(), 50_000)),
+        Arc::new(ExecImpl::new(smol_ex.clone(), 1)),
+        Arc::new(ExecImpl::new(smol_ex.clone(), 1)),
     ];
 
     println!("spawning {} server threads", args.num_threads);
@@ -148,15 +174,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // [NOTE] Semantically, it is equivalent to tokio::spawn(ex_clone.run()).
         // However, we use std::thread::spawn() to have dedicated threads for
         // executors that poll futures based on deadline hints.
-        std::thread::spawn(move || future::block_on(ex.run()));
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async move {
+                ex.run().await;
+            });
+            //future::block_on(ex.run());
+        });
     }
 
     let addrs = [
         "[::1]:50051".parse().unwrap(),
         "[::1]:50052".parse().unwrap(),
+        "[::1]:50053".parse().unwrap(),
     ];
     let mut handles = Vec::new();
-    for i in 0..2 {
+    for i in 0..addrs.len() {
         let ex = exs[i].clone();
         let addr = addrs[i];
         let h = tokio::spawn(async move {
