@@ -835,7 +835,7 @@ impl<'a> Default for LocalExecutor<'a> {
     }
 }
 
-type GlobalQueue<T> = queue::MutexPiorityQueue<T>;
+type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
 type LocalQueue<T> = queue::ConcurrentFifoQueue<T>;
 
 /// The state of a executor.
