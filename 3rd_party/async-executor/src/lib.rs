@@ -259,7 +259,7 @@ impl<'a> Executor<'a> {
                     let avg_sched_us =
                         (sched_us - prev_sched) as f64 / (sched_cnt - prev_cnt) as f64;
                     println!(
-                        "global qlen: {}, local qs: {}, avg_sched_us: {:.4}",
+                        "global qlen: {}, # local qs: {}, avg sched us: {:.4}",
                         global_qlen,
                         local_qs.len(),
                         avg_sched_us
@@ -513,9 +513,9 @@ impl<'a> Executor<'a> {
         // [TODO:Vic] If possible, push into the current local queue and notify the ticker.
         move |runnable| {
             // [DEBUG] Show runnable.ddl().
-            if runnable.ddl() != DeadlineHint::infra() {
-                println!("schedule: runnable.ddl {:?}", runnable.ddl());
-            }
+            // if runnable.ddl() != DeadlineHint::infra() {
+            //     println!("schedule: runnable.ddl {:?}", runnable.ddl());
+            // }
 
             let now = std::time::Instant::now();
 
