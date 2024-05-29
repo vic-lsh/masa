@@ -38,7 +38,7 @@ use tower::{
     Service,
 };
 
-use hyper::rt::DeadlineHint;
+use tonic_deadline::DeadlineHint;
 
 type Svc = Either<Connection, BoxService<Request<BoxBody>, Response<hyper::Body>, crate::Error>>;
 

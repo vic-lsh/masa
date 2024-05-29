@@ -7,7 +7,6 @@ macro_rules! ready {
     };
 }
 
-pub(crate) mod deadline;
 pub(crate) mod buf;
 #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
 pub(crate) mod date;
