@@ -25,10 +25,10 @@ use crate::ext::Protocol;
 use crate::headers;
 use crate::proto::h2::UpgradedSendStream;
 use crate::proto::Dispatched;
-use crate::rt::DeadlineHint;
 use crate::upgrade::Upgraded;
 use crate::{Body, Request, Response};
 use h2::client::ResponseFuture;
+use tonic_deadline::DeadlineHint;
 
 type ClientRx<B> = crate::client::dispatch::Receiver<Request<B>, Response<Body>>;
 

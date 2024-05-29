@@ -12,7 +12,7 @@ use crate::header::Header;
 use crate::raw::RawTask;
 use crate::state::*;
 use crate::Task;
-use hyper::rt::DeadlineHint;
+use tonic_deadline::DeadlineHint;
 
 mod sealed {
     use super::*;

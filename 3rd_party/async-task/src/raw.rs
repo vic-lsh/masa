@@ -19,7 +19,7 @@ use crate::state::*;
 use crate::utils::{abort, abort_on_panic, max, Layout};
 use crate::Runnable;
 
-use hyper::rt::DeadlineHint;
+use tonic_deadline::DeadlineHint;
 
 #[cfg(feature = "std")]
 pub(crate) type Panic = alloc::boxed::Box<dyn core::any::Any + Send + 'static>;

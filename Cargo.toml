@@ -6,6 +6,7 @@ members = [
   "tonic-types",
   "tonic-reflection",
   "tonic-web", # Non-published crates
+  "tonic-deadline",
   "examples",
   "codegen",
   "interop", # Tests
@@ -25,6 +26,6 @@ members = [
   "tonic-web/tests/integration",
   "tests/service_named_result",
   "tests/use_arc_self",
-  "tests/default_stubs",
+  "tests/default_stubs", 
 ]
 resolver = "2"
