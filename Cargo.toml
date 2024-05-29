@@ -8,6 +8,7 @@ members = [
   "tonic-web", # Non-published crates
   "tonic-deadline",
   "examples",
+  "reboot",
   "codegen",
   "interop", # Tests
   "tests/disable_comments",
