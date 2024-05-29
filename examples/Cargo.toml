@@ -377,6 +377,7 @@ smol = { path = "../3rd_party/smol" }
 futures-lite = { version = "2.0.0" }
 structopt = "0.3.23"
 crossbeam-channel = "0.5"
+tonic-deadline = { path = "../tonic-deadline" }
 
 # Common dependencies
 tokio = { path = "../3rd_party/tokio/tokio", features = [
