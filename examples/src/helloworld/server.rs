@@ -90,6 +90,9 @@ impl Greeter for GreeterImpl {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
+        // let bt = std::backtrace::Backtrace::capture();
+        // println!("{}", bt);
+
         let mean_ms = 10;
         let std_ms = 0;
         rand_busy_spin(mean_ms, std_ms).await;
@@ -99,7 +102,8 @@ impl Greeter for GreeterImpl {
             .expect("server should be up");
         client
             .say_hello(tonic::Request::new(HelloRequest { name: "hi".into() }))
-            .await;
+            .await
+            .unwrap();
 
         let reply = hello_world::HelloReply {
             message: format!("Hello {}!", request.into_inner().name),
@@ -147,8 +151,8 @@ where
     F::Output: Send,
 {
     fn execute(&self, fut: F, _ddl: DeadlineHint) {
-        let bt = std::backtrace::Backtrace::capture();
-        println!("{}", bt);
+        // let bt = std::backtrace::Backtrace::capture();
+        // println!("{}", bt);
 
         let ddl = DeadlineHint::new(time_now() - self.start_at + self.ddl);
         self.ex
