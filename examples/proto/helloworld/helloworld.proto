@@ -25,7 +25,7 @@ service Greeter {
   // Sends a greeting
   rpc SayHello (HelloRequest) returns (HelloReply) {}
   // Sends a greeting with a hop
-  rpc SayHelloHop (HelloRequest) returns (HelloReply) {}
+  // rpc SayHelloHop (HelloRequest) returns (HelloReply) {}
 }
 
 // The request message containing the user's name.

@@ -37,7 +37,7 @@ async fn loadgen(
             };
             loop {
                 let _ = client
-                    .say_hello_hop(tonic::Request::new(request.clone()))
+                    .say_hello(tonic::Request::new(request.clone()))
                     .await
                     .unwrap();
                 c.fetch_add(1, Ordering::Relaxed);
