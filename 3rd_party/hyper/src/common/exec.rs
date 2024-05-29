@@ -9,12 +9,12 @@ use crate::body::Body;
 use crate::body::HttpBody;
 #[cfg(all(feature = "http2", feature = "server"))]
 use crate::proto::h2::server::H2Stream;
-use crate::rt::DeadlineHint;
 use crate::rt::Executor;
 #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
 use crate::server::server::{new_svc::NewSvcTask, Watcher};
 #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
 use crate::service::HttpService;
+use tonic_deadline::DeadlineHint;
 
 #[cfg(feature = "server")]
 pub trait ConnStreamExec<F, B: HttpBody>: Clone {

@@ -18,7 +18,7 @@ use tracing::{debug, trace};
 
 use super::client::Ver;
 use crate::common::exec::Exec;
-use crate::rt::DeadlineHint;
+use tonic_deadline::DeadlineHint;
 
 // FIXME: allow() required due to `impl Trait` leaking types to this lint
 #[allow(missing_debug_implementations)]

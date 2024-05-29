@@ -59,6 +59,7 @@ percent-encoding = "2.1"
 pin-project = "1.0.11"
 tower-layer = { path = "../3rd_party/tower/tower-layer/" }
 tower-service = { path = "../3rd_party/tower/tower-service" }
+tonic-deadline = { path = "../tonic-deadline" }
 
 # prost
 prost = {version = "0.12", default-features = false, features = ["std"], optional = true}
