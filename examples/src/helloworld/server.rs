@@ -87,30 +87,30 @@ impl Greeter for GreeterImpl {
         Ok(Response::new(reply))
     }
 
-    async fn say_hello_hop(
-        &self,
-        request: Request<HelloRequest>,
-    ) -> Result<Response<HelloReply>, Status> {
-        // let bt = std::backtrace::Backtrace::capture();
-        // println!("{}", bt);
+    // async fn say_hello_hop(
+    //     &self,
+    //     request: Request<HelloRequest>,
+    // ) -> Result<Response<HelloReply>, Status> {
+    //     // let bt = std::backtrace::Backtrace::capture();
+    //     // println!("{}", bt);
 
-        let mean_ms = 10;
-        let std_ms = 0;
-        rand_busy_spin(mean_ms, std_ms).await;
+    //     let mean_ms = 10;
+    //     let std_ms = 0;
+    //     rand_busy_spin(mean_ms, std_ms).await;
 
-        let mut client = GreeterClient::connect("http://[::1]:50053")
-            .await
-            .expect("server should be up");
-        client
-            .say_hello(tonic::Request::new(HelloRequest { name: "hi".into() }))
-            .await
-            .unwrap();
+    //     let mut client = GreeterClient::connect("http://[::1]:50053")
+    //         .await
+    //         .expect("server should be up");
+    //     client
+    //         .say_hello(tonic::Request::new(HelloRequest { name: "hi".into() }))
+    //         .await
+    //         .unwrap();
 
-        let reply = hello_world::HelloReply {
-            message: format!("Hello {}!", request.into_inner().name),
-        };
-        Ok(Response::new(reply))
-    }
+    //     let reply = hello_world::HelloReply {
+    //         message: format!("Hello {}!", request.into_inner().name),
+    //     };
+    //     Ok(Response::new(reply))
+    // }
 }
 
 #[derive(Debug)]
