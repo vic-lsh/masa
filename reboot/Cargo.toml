@@ -14,6 +14,14 @@ path = "src/hello/client.rs"
 name = "hello-server"
 path = "src/hello/server.rs"
 
+[[bin]]
+name = "memcached-client"
+path = "src/memcached/client.rs"
+
+[[bin]]
+name = "memcached-server"
+path = "src/memcached/server.rs"
+
 [profile.release]
 debug = true
 
