@@ -1,3 +1,4 @@
+use futures_lite::future;
 use hello::greeter_client::GreeterClient;
 use hello::greeter_server::{Greeter, GreeterServer};
 use hello::{HelloReply, HelloRequest};
@@ -115,6 +116,8 @@ impl<'a> ExecImpl<'a> {
         // [NOTE] Only a global queue is used in smol::Executor::tick().
         loop {
             self.ex.tick().await;
+            // [NOTE] Yield to the tokio runtime.
+            future::yield_now().await;
         }
     }
 }
@@ -150,7 +153,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // However, we use std::thread::spawn() to have dedicated threads for
         // executors that poll futures based on deadline hints.
         std::thread::spawn(move || {
-            // [DEBUG] It will not work if args.num_threads is 1.
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()

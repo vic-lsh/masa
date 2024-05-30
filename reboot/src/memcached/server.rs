@@ -1,9 +1,6 @@
-use async_compat::Compat;
 use futures_lite::future;
-use hello::{
-    greeter_server::{Greeter, GreeterServer},
-    HelloReply, HelloRequest,
-};
+use hello::greeter_server::{Greeter, GreeterServer};
+use hello::{HelloReply, HelloRequest};
 use hyper::rt::{Exec, Executor};
 use rand_distr::{Distribution, Normal};
 use std::sync::Arc;
@@ -69,6 +66,12 @@ impl Greeter for GreeterImpl {
         let std_ms = 0;
         rand_busy_spin(mean_ms, std_ms).await;
 
+        let memcache = memcache::Client::with_pool_size("memcache://127.0.0.1:11003", 32).unwrap();
+        memcache.flush().unwrap();
+        memcache.set("Reboot", "ing...", 0).unwrap();
+        let value = memcache.get::<String>("Reboot");
+        println!("memcached: {:?}", value);
+
         let reply = hello::HelloReply {
             message: format!("Hello {}!", request.into_inner().name),
         };
@@ -79,14 +82,20 @@ impl Greeter for GreeterImpl {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        let mean_ms = 10;
-        let std_ms = 0;
-        rand_busy_spin(mean_ms, std_ms).await;
+        panic!("Not implemented");
 
-        let reply = hello::HelloReply {
-            message: format!("Hello {}!", request.into_inner().name),
-        };
-        Ok(Response::new(reply))
+        // let mean_ms = 10;
+        // let std_ms = 0;
+        // rand_busy_spin(mean_ms, std_ms).await;
+
+        // let reply = hello::HelloReply {
+        //     message: format!("Hello {}!", request.into_inner().name),
+        // };
+        // Ok(Response::new(reply))
+
+        // let mut client = GreeterClient::connect("http://[::1]:50053").await.unwrap();
+        // let reply = client.say_hello(request).await.unwrap();
+        // Ok(reply)
     }
 }
 
@@ -120,10 +129,7 @@ where
 {
     fn execute(&self, fut: F, _ddl: DeadlineHint) {
         let ddl = DeadlineHint::new(time_now() - self.start_at + self.ddl);
-        self.ex
-            .spawn_with_ddl(Compat::new(fut), ddl)
-            .fallible()
-            .detach();
+        self.ex.spawn_with_ddl(fut, ddl).fallible().detach();
     }
 }
 
@@ -132,29 +138,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::from_args();
 
     let smol_ex = Arc::new(smol::Executor::new());
-    let ex = Arc::new(ExecImpl::new(smol_ex.clone(), 1));
+    let exs = [
+        Arc::new(ExecImpl::new(smol_ex.clone(), 1)),
+        // Arc::new(ExecImpl::new(smol_ex.clone(), 1)),
+        // Arc::new(ExecImpl::new(smol_ex.clone(), 1)),
+    ];
 
     println!("Spawning {} server threads...", args.num_threads);
     for _ in 0..args.num_threads {
-        let ex = ex.clone();
+        // [NOTE] exs use the same smol::Executor instance.
+        let ex = exs[0].clone();
+
+        // [NOTE] Semantically, it is equivalent to tokio::spawn(ex_clone.run()).
+        // However, we use std::thread::spawn() to have dedicated threads for
+        // executors that poll futures based on deadline hints.
         std::thread::spawn(move || {
+            // [DEBUG] It will not work if args.num_threads is 1.
+            // let rt = tokio::runtime::Builder::new_current_thread()
+            //     .enable_all()
+            //     .build()
+            //     .unwrap();
+            // rt.block_on(ex.run());
+
             future::block_on(ex.run());
         });
     }
 
-    let addr = "[::1]:50051".parse().unwrap();
+    let addrs = [
+        "[::1]:50051".parse().unwrap(),
+        // "[::1]:50052".parse().unwrap(),
+        // "[::1]:50053".parse().unwrap(),
+    ];
     let mut handles = Vec::new();
-    let ex = ex.clone();
-    let h = tokio::spawn(async move {
-        let greeter = GreeterImpl::default();
-        eprintln!("Listening on {}...", addr);
-        Server::builder()
-            .add_service(GreeterServer::new(greeter))
-            .serve_with_executor(addr, Exec::Executor(ex))
-            .await
-            .unwrap();
-    });
-    handles.push(h);
+    for i in 0..addrs.len() {
+        let ex = exs[i].clone();
+        let addr = addrs[i];
+        let h = tokio::spawn(async move {
+            let greeter = GreeterImpl::default();
+            eprintln!("Listening on {}...", addr);
+            Server::builder()
+                .add_service(GreeterServer::new(greeter))
+                .serve_with_executor(addr, Exec::Executor(ex))
+                .await
+                .unwrap();
+        });
+        handles.push(h);
+    }
     for h in handles {
         h.await.unwrap();
     }
