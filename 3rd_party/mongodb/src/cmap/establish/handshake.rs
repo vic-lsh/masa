@@ -1,0 +1,552 @@
+#[cfg(test)]
+mod test;
+
+use std::env;
+
+use bson::{rawdoc, RawBson, RawDocumentBuf};
+use once_cell::sync::Lazy;
+
+#[cfg(any(
+    feature = "zstd-compression",
+    feature = "zlib-compression",
+    feature = "snappy-compression"
+))]
+use crate::options::Compressor;
+use crate::{
+    client::auth::ClientFirst,
+    cmap::{Command, Connection, StreamDescription},
+    error::Result,
+    hello::{hello_command, run_hello, HelloReply},
+    options::{AuthMechanism, Credential, DriverInfo, ServerApi},
+};
+
+#[cfg(not(feature = "sync"))]
+const RUNTIME_NAME: &str = "tokio";
+
+#[cfg(feature = "sync")]
+const RUNTIME_NAME: &str = "sync (with tokio)";
+
+#[derive(Clone, Debug)]
+struct ClientMetadata {
+    application: Option<AppMetadata>,
+    driver: DriverMetadata,
+    os: OsMetadata,
+    platform: String,
+    env: Option<RuntimeEnvironment>,
+}
+
+#[derive(Clone, Debug)]
+struct AppMetadata {
+    name: String,
+}
+
+#[derive(Clone, Debug)]
+struct DriverMetadata {
+    name: String,
+    version: String,
+}
+
+#[derive(Clone, Debug)]
+struct OsMetadata {
+    os_type: String,
+    name: Option<String>,
+    architecture: Option<String>,
+    version: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct RuntimeEnvironment {
+    name: Option<FaasEnvironmentName>,
+    runtime: Option<String>,
+    timeout_sec: Option<i32>,
+    memory_mb: Option<i32>,
+    region: Option<String>,
+    url: Option<String>,
+    container: Option<RawDocumentBuf>,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub(crate) enum FaasEnvironmentName {
+    AwsLambda,
+    AzureFunc,
+    GcpFunc,
+    Vercel,
+}
+
+impl From<&ClientMetadata> for RawDocumentBuf {
+    fn from(metadata: &ClientMetadata) -> Self {
+        let mut metadata_doc = RawDocumentBuf::new();
+
+        if let Some(application) = &metadata.application {
+            metadata_doc.append("application", rawdoc! { "name": application.name.as_str() });
+        }
+
+        metadata_doc.append(
+            "driver",
+            rawdoc! {
+                "name": metadata.driver.name.as_str(),
+                "version": metadata.driver.version.as_str(),
+            },
+        );
+
+        metadata_doc.append("os", &metadata.os);
+        metadata_doc.append("platform", metadata.platform.as_str());
+
+        if let Some(env) = &metadata.env {
+            metadata_doc.append("env", env);
+        }
+
+        metadata_doc
+    }
+}
+
+impl From<&OsMetadata> for RawBson {
+    fn from(metadata: &OsMetadata) -> Self {
+        let mut doc = rawdoc! { "type": metadata.os_type.as_str() };
+
+        if let Some(name) = &metadata.name {
+            doc.append("name", name.as_str());
+        }
+
+        if let Some(arch) = &metadata.architecture {
+            doc.append("architecture", arch.as_str());
+        }
+
+        if let Some(version) = &metadata.version {
+            doc.append("version", version.as_str());
+        }
+
+        RawBson::Document(doc)
+    }
+}
+
+impl From<&RuntimeEnvironment> for RawBson {
+    fn from(env: &RuntimeEnvironment) -> Self {
+        let RuntimeEnvironment {
+            name,
+            runtime,
+            timeout_sec,
+            memory_mb,
+            region,
+            url,
+            container,
+        } = env;
+        let mut out = rawdoc! {};
+        if let Some(name) = name {
+            out.append("name", name.name());
+        }
+        if let Some(rt) = runtime {
+            out.append("runtime", rt.as_str());
+        }
+        if let Some(t) = timeout_sec {
+            out.append("timeout_sec", *t);
+        }
+        if let Some(m) = memory_mb {
+            out.append("memory_mb", *m);
+        }
+        if let Some(r) = region {
+            out.append("region", r.as_str());
+        }
+        if let Some(u) = url {
+            out.append("url", u.as_str());
+        }
+        if let Some(c) = container {
+            out.append("container", c.clone());
+        }
+        RawBson::Document(out)
+    }
+}
+
+impl RuntimeEnvironment {
+    const UNSET: Self = RuntimeEnvironment {
+        name: None,
+        runtime: None,
+        timeout_sec: None,
+        memory_mb: None,
+        region: None,
+        url: None,
+        container: None,
+    };
+
+    fn new() -> Option<Self> {
+        let mut out = Self::UNSET;
+        if let Some(name) = FaasEnvironmentName::new() {
+            out.name = Some(name);
+            match name {
+                FaasEnvironmentName::AwsLambda => {
+                    out.runtime = env::var("AWS_EXECUTION_ENV").ok();
+                    out.region = env::var("AWS_REGION").ok();
+                    out.memory_mb = env::var("AWS_LAMBDA_FUNCTION_MEMORY_SIZE")
+                        .ok()
+                        .and_then(|s| s.parse().ok());
+                }
+                FaasEnvironmentName::AzureFunc => {
+                    out.runtime = env::var("FUNCTIONS_WORKER_RUNTIME").ok();
+                }
+                FaasEnvironmentName::GcpFunc => {
+                    out.memory_mb = env::var("FUNCTION_MEMORY_MB")
+                        .ok()
+                        .and_then(|s| s.parse().ok());
+                    out.timeout_sec = env::var("FUNCTION_TIMEOUT_SEC")
+                        .ok()
+                        .and_then(|s| s.parse().ok());
+                    out.region = env::var("FUNCTION_REGION").ok();
+                }
+                FaasEnvironmentName::Vercel => {
+                    out.region = env::var("VERCEL_REGION").ok();
+                }
+            }
+        }
+        let mut container = rawdoc! {};
+        if std::path::Path::new("/.dockerenv").exists() {
+            container.append("runtime", "docker");
+        }
+        if var_set("KUBERNETES_SERVICE_HOST") {
+            container.append("orchestrator", "kubernetes");
+        }
+        if !container.is_empty() {
+            out.container = Some(container);
+        }
+        if out == Self::UNSET {
+            None
+        } else {
+            Some(out)
+        }
+    }
+}
+
+fn var_set(name: &str) -> bool {
+    env::var_os(name).map_or(false, |v| !v.is_empty())
+}
+
+impl FaasEnvironmentName {
+    pub(crate) fn new() -> Option<Self> {
+        use FaasEnvironmentName::*;
+        let mut found: Option<Self> = None;
+        let lambda_env = env::var_os("AWS_EXECUTION_ENV")
+            .map_or(false, |v| v.to_string_lossy().starts_with("AWS_Lambda_"));
+        if lambda_env || var_set("AWS_LAMBDA_RUNTIME_API") {
+            found = Some(AwsLambda);
+        }
+        if var_set("VERCEL") {
+            // Vercel takes precedence over AwsLambda.
+            found = Some(Vercel);
+        }
+        // Any other conflict is treated as unset.
+        if var_set("FUNCTIONS_WORKER_RUNTIME") {
+            match found {
+                None => found = Some(AzureFunc),
+                _ => return None,
+            }
+        }
+        if var_set("K_SERVICE") || var_set("FUNCTION_NAME") {
+            match found {
+                None => found = Some(GcpFunc),
+                _ => return None,
+            }
+        }
+        found
+    }
+
+    fn name(&self) -> &'static str {
+        use FaasEnvironmentName::*;
+        match self {
+            AwsLambda => "aws.lambda",
+            AzureFunc => "azure.func",
+            GcpFunc => "gcp.func",
+            Vercel => "vercel",
+        }
+    }
+}
+
+/// Contains the basic handshake information that can be statically determined. This document
+/// (potentially with additional fields added) can be cloned and put in the `client` field of
+/// the `hello` or legacy hello command.
+static BASE_CLIENT_METADATA: Lazy<ClientMetadata> = Lazy::new(|| ClientMetadata {
+    application: None,
+    driver: DriverMetadata {
+        name: "mongo-rust-driver".into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+    },
+    os: OsMetadata {
+        os_type: std::env::consts::OS.into(),
+        architecture: Some(std::env::consts::ARCH.into()),
+        name: None,
+        version: None,
+    },
+    platform: format!(
+        "{} with {}",
+        rustc_version_runtime::version_meta().short_version_string,
+        RUNTIME_NAME
+    ),
+    env: None,
+});
+
+type Truncation = fn(&mut ClientMetadata);
+
+const METADATA_TRUNCATIONS: &[Truncation] = &[
+    // clear `env.*` except `name`
+    |metadata| {
+        if let Some(env) = &mut metadata.env {
+            *env = RuntimeEnvironment {
+                name: env.name,
+                ..RuntimeEnvironment::UNSET
+            }
+        }
+    },
+    // clear `os.*` except `type`
+    |metadata| {
+        metadata.os = OsMetadata {
+            os_type: metadata.os.os_type.clone(),
+            architecture: None,
+            name: None,
+            version: None,
+        }
+    },
+    // clear `env`
+    |metadata| {
+        metadata.env = None;
+    },
+    // truncate `platform`
+    |metadata| {
+        metadata.platform = rustc_version_runtime::version_meta().short_version_string;
+    },
+];
+
+/// Contains the logic needed to handshake a connection.
+#[derive(Clone, Debug)]
+pub(crate) struct Handshaker {
+    /// The hello or legacy hello command to send when handshaking. This will always be identical
+    /// given the same pool options, so it can be created at the time the Handshaker is created.
+    command: Command,
+
+    #[cfg(any(
+        feature = "zstd-compression",
+        feature = "zlib-compression",
+        feature = "snappy-compression"
+    ))]
+    compressors: Option<Vec<Compressor>>,
+
+    server_api: Option<ServerApi>,
+
+    metadata: ClientMetadata,
+
+    #[cfg(feature = "aws-auth")]
+    http_client: crate::runtime::HttpClient,
+}
+
+impl Handshaker {
+    /// Creates a new Handshaker.
+    pub(crate) fn new(options: HandshakerOptions) -> Self {
+        let mut metadata = BASE_CLIENT_METADATA.clone();
+
+        let mut command = hello_command(
+            options.server_api.as_ref(),
+            options.load_balanced.into(),
+            None,
+            None,
+        );
+
+        if let Some(app_name) = options.app_name {
+            metadata.application = Some(AppMetadata { name: app_name });
+        }
+
+        if let Some(driver_info) = options.driver_info {
+            metadata.driver.name.push('|');
+            metadata.driver.name.push_str(&driver_info.name);
+
+            if let Some(ref version) = driver_info.version {
+                metadata.driver.version.push('|');
+                metadata.driver.version.push_str(version);
+            }
+
+            if let Some(ref driver_info_platform) = driver_info.platform {
+                metadata.platform.push('|');
+                metadata.platform.push_str(driver_info_platform);
+            }
+        }
+
+        metadata.env = RuntimeEnvironment::new();
+
+        if options.load_balanced {
+            command.body.append("loadBalanced", true);
+        }
+
+        #[cfg(any(
+            feature = "zstd-compression",
+            feature = "zlib-compression",
+            feature = "snappy-compression"
+        ))]
+        if let Some(ref compressors) = options.compressors {
+            command.body.append(
+                "compression",
+                compressors
+                    .iter()
+                    .map(|compressor| compressor.name())
+                    .collect::<bson::RawArrayBuf>(),
+            );
+        }
+
+        Self {
+            command,
+            #[cfg(any(
+                feature = "zstd-compression",
+                feature = "zlib-compression",
+                feature = "snappy-compression"
+            ))]
+            compressors: options.compressors,
+            server_api: options.server_api,
+            metadata,
+            #[cfg(feature = "aws-auth")]
+            http_client: crate::runtime::HttpClient::default(),
+        }
+    }
+
+    async fn build_command(
+        &self,
+        credential: Option<&Credential>,
+    ) -> Result<(Command, Option<ClientFirst>)> {
+        let mut command = self.command.clone();
+
+        if let Some(cred) = credential {
+            cred.append_needed_mechanism_negotiation(&mut command.body);
+            command.target_db = cred.resolved_source().to_string();
+        }
+
+        let client_first = set_speculative_auth_info(&mut command.body, credential).await?;
+
+        let body = &mut command.body;
+        let body_size = body.as_bytes().len();
+        let mut metadata = self.metadata.clone();
+        let mut meta_doc: RawDocumentBuf = (&metadata).into();
+        const OVERHEAD: usize = 1 /* tag */ + 6 /* name */ + 1 /* null */;
+        for trunc_fn in METADATA_TRUNCATIONS {
+            if body_size + OVERHEAD + meta_doc.as_bytes().len() <= MAX_HELLO_SIZE {
+                break;
+            }
+            trunc_fn(&mut metadata);
+            meta_doc = (&metadata).into();
+        }
+        body.append("client", meta_doc);
+
+        Ok((command, client_first))
+    }
+
+    /// Handshakes a connection.
+    pub(crate) async fn handshake(
+        &self,
+        conn: &mut Connection,
+        credential: Option<&Credential>,
+    ) -> Result<HelloReply> {
+        let (command, client_first) = self.build_command(credential).await?;
+        let mut hello_reply = run_hello(conn, command).await?;
+
+        conn.stream_description = Some(StreamDescription::from_hello_reply(&hello_reply));
+
+        // Record the client's message and the server's response from speculative authentication if
+        // the server did send a response.
+        let first_round = client_first.and_then(|client_first| {
+            hello_reply
+                .command_response
+                .speculative_authenticate
+                .take()
+                .map(|server_first| client_first.into_first_round(server_first))
+        });
+
+        #[cfg(any(
+            feature = "zstd-compression",
+            feature = "zlib-compression",
+            feature = "snappy-compression"
+        ))]
+        if let (Some(server_compressors), Some(client_compressors)) = (
+            hello_reply.command_response.compressors.as_ref(),
+            self.compressors.as_ref(),
+        ) {
+            // Use the first compressor in the user's list that is also supported by the server.
+            if let Some(compressor) = client_compressors.iter().find(|client_compressor| {
+                server_compressors
+                    .iter()
+                    .any(|server_compressor| client_compressor.name() == server_compressor)
+            }) {
+                conn.compressor = Some(compressor.clone());
+            }
+        }
+
+        conn.server_id = hello_reply.command_response.connection_id;
+
+        if let Some(credential) = credential {
+            credential
+                .authenticate_stream(
+                    conn,
+                    self.server_api.as_ref(),
+                    first_round,
+                    #[cfg(feature = "aws-auth")]
+                    &self.http_client,
+                )
+                .await?
+        }
+
+        Ok(hello_reply)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct HandshakerOptions {
+    /// The application name specified by the user. This is sent to the server as part of the
+    /// handshake that each connection makes when it's created.
+    pub(crate) app_name: Option<String>,
+
+    /// The compressors specified by the user. This list is sent to the server and the server
+    /// replies with the subset of the compressors it supports.
+    #[cfg(any(
+        feature = "zstd-compression",
+        feature = "zlib-compression",
+        feature = "snappy-compression"
+    ))]
+    pub(crate) compressors: Option<Vec<Compressor>>,
+
+    /// Extra information to append to the driver version in the metadata of the handshake with the
+    /// server. This should be used by libraries wrapping the driver, e.g. ODMs.
+    pub(crate) driver_info: Option<DriverInfo>,
+
+    /// The declared API version.
+    ///
+    /// The default value is to have no declared API version
+    pub(crate) server_api: Option<ServerApi>,
+
+    /// Whether or not the client is connecting to a MongoDB cluster through a load balancer.
+    pub(crate) load_balanced: bool,
+}
+
+/// Updates the handshake command document with the speculative authenitication info.
+async fn set_speculative_auth_info(
+    command: &mut RawDocumentBuf,
+    credential: Option<&Credential>,
+) -> Result<Option<ClientFirst>> {
+    let credential = match credential {
+        Some(credential) => credential,
+        None => return Ok(None),
+    };
+
+    // The spec indicates that SCRAM-SHA-256 should be assumed for speculative authentication if no
+    // mechanism is provided. This doesn't cause issues with servers where SCRAM-SHA-256 is not the
+    // default due to them being too old to support speculative authentication at all.
+    let auth_mechanism = credential
+        .mechanism
+        .as_ref()
+        .unwrap_or(&AuthMechanism::ScramSha256);
+
+    let client_first = match auth_mechanism
+        .build_speculative_client_first(credential)
+        .await?
+    {
+        Some(client_first) => client_first,
+        None => return Ok(None),
+    };
+
+    command.append("speculativeAuthenticate", client_first.to_document());
+
+    Ok(Some(client_first))
+}
+
+const MAX_HELLO_SIZE: usize = 512;
