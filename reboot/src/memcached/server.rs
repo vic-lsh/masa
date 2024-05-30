@@ -1,4 +1,5 @@
 use async_compat::Compat;
+use futures_lite::future;
 use hello::{
     greeter_server::{Greeter, GreeterServer},
     HelloReply, HelloRequest,
@@ -73,6 +74,20 @@ impl Greeter for GreeterImpl {
         };
         Ok(Response::new(reply))
     }
+
+    async fn say_hola(
+        &self,
+        request: Request<HelloRequest>,
+    ) -> Result<Response<HelloReply>, Status> {
+        let mean_ms = 10;
+        let std_ms = 0;
+        rand_busy_spin(mean_ms, std_ms).await;
+
+        let reply = hello::HelloReply {
+            message: format!("Hello {}!", request.into_inner().name),
+        };
+        Ok(Response::new(reply))
+    }
 }
 
 #[derive(Debug)]
@@ -123,13 +138,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for _ in 0..args.num_threads {
         let ex = ex.clone();
         std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            rt.block_on(async move {
-                ex.run().await;
-            });
+            future::block_on(ex.run());
         });
     }
 
