@@ -4,10 +4,10 @@ package hello;
 
 // The greeting service definition.
 service Greeter {
-  // Sends a greeting
+  // SayHello generates a greeting message
   rpc SayHello(HelloRequest) returns (HelloReply) {}
-  // Sends a greeting with a hop
-  // rpc SayHelloHop(HelloRequest) returns (HelloReply) {}
+  // SayHola will call SayHello
+  rpc SayHola(HelloRequest) returns (HelloReply) {}
 }
 
 // The request message containing the user's name.

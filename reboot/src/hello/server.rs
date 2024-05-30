@@ -1,5 +1,3 @@
-use async_compat::Compat;
-use futures_lite::future;
 use hello::greeter_client::GreeterClient;
 use hello::greeter_server::{Greeter, GreeterServer};
 use hello::{HelloReply, HelloRequest};
@@ -44,18 +42,6 @@ fn busy_spin(duration: Duration) {
     while now.elapsed() < duration {}
 }
 
-async fn async_busy_spin(duration: Duration) {
-    let now = Instant::now();
-    let mut c = 0;
-    while now.elapsed() < duration {
-        c += 1;
-        if c >= 100_000 {
-            c = 0;
-            future::yield_now().await;
-        }
-    }
-}
-
 async fn rand_busy_spin(mean_ms: impl Into<f64>, std_ms: impl Into<f64>) {
     let random_value = {
         let mut rng = rand::thread_rng();
@@ -68,7 +54,6 @@ async fn rand_busy_spin(mean_ms: impl Into<f64>, std_ms: impl Into<f64>) {
     };
 
     busy_spin(Duration::from_millis(std::cmp::max(1, random_value as u64)));
-    // async_busy_spin(Duration::from_millis(std::cmp::max(1, random_value as u64))).await;
 }
 
 #[tonic::async_trait]
@@ -87,30 +72,18 @@ impl Greeter for GreeterImpl {
         Ok(Response::new(reply))
     }
 
-    // async fn say_hello_hop(
-    //     &self,
-    //     request: Request<HelloRequest>,
-    // ) -> Result<Response<HelloReply>, Status> {
-    //     // let bt = std::backtrace::Backtrace::capture();
-    //     // println!("{}", bt);
+    async fn say_hola(
+        &self,
+        request: Request<HelloRequest>,
+    ) -> Result<Response<HelloReply>, Status> {
+        let mean_ms = 10;
+        let std_ms = 0;
+        rand_busy_spin(mean_ms, std_ms).await;
 
-    //     let mean_ms = 10;
-    //     let std_ms = 0;
-    //     rand_busy_spin(mean_ms, std_ms).await;
-
-    //     let mut client = GreeterClient::connect("http://[::1]:50053")
-    //         .await
-    //         .expect("server should be up");
-    //     client
-    //         .say_hello(tonic::Request::new(HelloRequest { name: "hi".into() }))
-    //         .await
-    //         .unwrap();
-
-    //     let reply = hello::HelloReply {
-    //         message: format!("Hello {}!", request.into_inner().name),
-    //     };
-    //     Ok(Response::new(reply))
-    // }
+        let mut client = GreeterClient::connect("http://[::1]:50053").await.unwrap();
+        let reply = client.say_hello(request).await.unwrap();
+        Ok(reply)
+    }
 }
 
 #[derive(Debug)]
@@ -152,14 +125,8 @@ where
     F::Output: Send,
 {
     fn execute(&self, fut: F, _ddl: DeadlineHint) {
-        // let bt = std::backtrace::Backtrace::capture();
-        // println!("{}", bt);
-
         let ddl = DeadlineHint::new(time_now() - self.start_at + self.ddl);
-        self.ex
-            .spawn_with_ddl(Compat::new(fut), ddl)
-            .fallible()
-            .detach();
+        self.ex.spawn_with_ddl(fut, ddl).fallible().detach();
     }
 }
 
@@ -176,19 +143,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Spawning {} server threads...", args.num_threads);
     for _ in 0..args.num_threads {
+        // [NOTE] exs use the same smol::Executor instance.
         let ex = exs[0].clone();
+
         // [NOTE] Semantically, it is equivalent to tokio::spawn(ex_clone.run()).
         // However, we use std::thread::spawn() to have dedicated threads for
         // executors that poll futures based on deadline hints.
         std::thread::spawn(move || {
+            // [DEBUG] It will not work if args.num_threads is 1.
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .unwrap();
-            rt.block_on(async move {
-                ex.run().await;
-            });
-            //future::block_on(ex.run());
+            rt.block_on(ex.run());
+
+            // future::block_on(ex.run());
         });
     }
 
