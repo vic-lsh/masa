@@ -65,8 +65,6 @@ mod common;
 use common::{MidHandshake, TlsState};
 pub mod server;
 
-pub use pki_types::ServerName;
-
 /// A wrapper around a `rustls::ClientConfig`, providing an async `connect` method.
 #[derive(Clone)]
 pub struct TlsConnector {
