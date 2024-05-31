@@ -155,7 +155,8 @@ features = ["derive"]
 version = "0.11.5"
 
 [dependencies.tokio]
-version = "1.17.0"
+#version = "1.17.0"
+path = "../tokio/tokio"
 features = ["io-util", "sync", "macros", "net", "process", "rt", "time"]
 
 # [dependencies.tokio-rustls]
