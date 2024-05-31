@@ -109,7 +109,7 @@ typed-builder = "0.10.0"
 webpki-roots = "0.25.2"
 zstd = { version = "0.11.2", optional = true }
 
-tokio-openssl = { version = "0.6.3", optional = true }
+#tokio-openssl = { version = "0.6.3", optional = true }
 
 # [DEBUG]
 # tokio = { path = "../tokio/tokio", features = [
@@ -125,9 +125,9 @@ tokio-openssl = { version = "0.6.3", optional = true }
 # features = ["dangerous_configuration"]
 tokio-rustls = { package = "tokio-rustls-24", path = "../tokio-rustls-0.24.1", optional = true }
 
-# tokio-util = { path = "../tokio/tokio-util", features = ["io", "compat"] }
+tokio-util = { path = "../tokio/tokio-util", features = ["io", "compat"] }
 
-# tokio-openssl = { path = "../tokio-openssl", optional = true }
+tokio-openssl = { path = "../tokio-openssl", optional = true }
 
 # features = ["dangerous_configuration"]
 # rustls = { path = "../rustls/rustls", optional = true }
@@ -164,9 +164,9 @@ features = ["io-util", "sync", "macros", "net", "process", "rt", "time"]
 # optional = true
 # features = ["dangerous_configuration"]
 
-[dependencies.tokio-util]
-version = "0.7.0"
-features = ["io", "compat"]
+# [dependencies.tokio-util]
+# version = "0.7.0"
+# features = ["io", "compat"]
 
 [dependencies.uuid]
 version = "1.1.2"
