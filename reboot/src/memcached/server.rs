@@ -1,18 +1,18 @@
-// use futures_lite::future;
-// use hello::greeter_server::{Greeter, GreeterServer};
-// use hello::{HelloReply, HelloRequest};
-// use hyper::rt::{Exec, Executor};
-// use rand_distr::{Distribution, Normal};
-// use std::sync::Arc;
-// use std::time::{Duration, Instant};
-// use std::time::{SystemTime, UNIX_EPOCH};
-// use structopt::StructOpt;
-// use tonic::{transport::Server, Request, Response, Status};
-// use tonic_deadline::DeadlineHint;
+use futures_lite::future;
+use hello::greeter_server::{Greeter, GreeterServer};
+use hello::{HelloReply, HelloRequest};
+use hyper::rt::{Exec, Executor};
+use rand_distr::{Distribution, Normal};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use std::time::{SystemTime, UNIX_EPOCH};
+use structopt::StructOpt;
+use tonic::{transport::Server, Request, Response, Status};
+use tonic_deadline::DeadlineHint;
 
-// pub mod hello {
-//     tonic::include_proto!("hello");
-// }
+pub mod hello {
+    tonic::include_proto!("hello");
+}
 
 // pub fn time_now() -> u64 {
 //     let now = SystemTime::now()
@@ -137,17 +137,17 @@
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let args = Args::from_args();
 
-    // println!("Before client...");
-    // let db_client = mongodb::Client::with_uri_str("mongodb://127.0.0.1:27003")
-    //     .await
-    //     .unwrap();
-    // println!("After client...");
-    // let db = db_client.database("reboot");
-    // let cl = db.collection::<String>("reboot");
-    // cl.delete_many(mongodb::bson::doc! {}, None).await?;
-    // cl.insert_one("Reboot".to_string(), None).await?;
-    // let value = cl.find_one(mongodb::bson::doc! {}, None).await?;
-    // println!("mongodb: {:?}", value);
+    println!("Before client...");
+    let db_client = mongodb::Client::with_uri_str("mongodb://127.0.0.1:27003")
+        .await
+        .unwrap();
+    println!("After client...");
+    let db = db_client.database("reboot");
+    let cl = db.collection::<String>("reboot");
+    cl.delete_many(mongodb::bson::doc! {}, None).await?;
+    cl.insert_one("Reboot".to_string(), None).await?;
+    let value = cl.find_one(mongodb::bson::doc! {}, None).await?;
+    println!("mongodb: {:?}", value);
 
     // std::thread::spawn(move || {
     //     let rt = tokio::runtime::Builder::new_current_thread()
