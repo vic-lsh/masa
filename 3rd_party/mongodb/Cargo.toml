@@ -124,7 +124,7 @@ stringprep = "0.1.2"
 strsim = "0.10.0"
 take_mut = "0.2.2"
 thiserror = "1.0.24"
-tokio-openssl = { version = "0.6.3", optional = true }
+tokio-openssl = { path = "../tokio-openssl", optional = true }
 tracing = { version = "0.1.36", optional = true }
 trust-dns-proto = "0.21.2"
 trust-dns-resolver = "0.21.2"
@@ -163,15 +163,16 @@ version = "0.11.5"
 optional = true
 
 [dependencies.tokio]
-version = "1.17.0"
+path = "../tokio/tokio"
 features = ["io-util", "sync", "macros"]
 
 [dependencies.tokio-rustls]
-version = "0.24.1"
+package = "tokio-rustls-24"
+path = "../tokio-rustls-0.24.1"
 features = ["dangerous_configuration"]
 
 [dependencies.tokio-util]
-version = "0.7.0"
+path = "../tokio/tokio-util"
 features = ["io", "compat"]
 
 [dependencies.uuid]
@@ -193,7 +194,7 @@ serde = { version = ">= 0.0.0", features = ["rc"] }
 serde_json = "1.0.64"
 semver = "1.0.0"
 time = "0.3.9"
-tokio = { version = ">= 0.0.0", features = ["fs", "parking_lot"] }
+tokio = { path = "../tokio/tokio", features = ["fs", "parking_lot"] }
 tracing-subscriber = "0.3.16"
 regex = "1.6.0"
 serde-hex = "0.1.0"
