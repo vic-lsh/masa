@@ -137,11 +137,17 @@
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let args = Args::from_args();
 
-    println!("Before client...");
-    let db_client = mongodb::Client::with_uri_str("mongodb://127.0.0.1:27003")
-        .await
-        .unwrap();
-    println!("After client...");
+    // println!("Before client...");
+    // let db_client = mongodb::Client::with_uri_str("mongodb://127.0.0.1:27003")
+    //     .await
+    //     .unwrap();
+    // println!("After client...");
+    // let db = db_client.database("reboot");
+    // let cl = db.collection::<String>("reboot");
+    // cl.delete_many(mongodb::bson::doc! {}, None).await?;
+    // cl.insert_one("Reboot".to_string(), None).await?;
+    // let value = cl.find_one(mongodb::bson::doc! {}, None).await?;
+    // println!("mongodb: {:?}", value);
 
     // std::thread::spawn(move || {
     //     let rt = tokio::runtime::Builder::new_current_thread()
