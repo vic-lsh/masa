@@ -3,6 +3,7 @@ use hello::greeter_server::{Greeter, GreeterServer};
 use hello::{HelloReply, HelloRequest};
 use hyper::rt::{Exec, Executor};
 use rand_distr::{Distribution, Normal};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -12,6 +13,11 @@ use tonic_deadline::DeadlineHint;
 
 pub mod hello {
     tonic::include_proto!("hello");
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Hotel {
+    name: String,
 }
 
 // pub fn time_now() -> u64 {
@@ -137,15 +143,16 @@ pub mod hello {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let args = Args::from_args();
 
-    println!("Before client...");
     let db_client = mongodb::Client::with_uri_str("mongodb://127.0.0.1:27003")
         .await
         .unwrap();
-    println!("After client...");
     let db = db_client.database("reboot");
-    let cl = db.collection::<String>("reboot");
+    let cl = db.collection::<Hotel>("reboot");
     cl.delete_many(mongodb::bson::doc! {}, None).await?;
-    cl.insert_one("Reboot".to_string(), None).await?;
+    let hotel = Hotel {
+        name: "Reboot".to_string(),
+    };
+    cl.insert_one(hotel, None).await?;
     let value = cl.find_one(mongodb::bson::doc! {}, None).await?;
     println!("mongodb: {:?}", value);
 
