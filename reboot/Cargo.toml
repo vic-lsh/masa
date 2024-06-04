@@ -7,20 +7,32 @@ publish = false
 version = "0.1.0"
 
 [[bin]]
-name = "hello-client"
-path = "src/hello/client.rs"
+name = "charleston_client"
+path = "src/charleston/client.rs"
 
 [[bin]]
-name = "hello-server"
-path = "src/hello/server.rs"
+name = "charleston_client_bench"
+path = "src/charleston/client_bench.rs"
 
 [[bin]]
-name = "memcached-client"
+name = "charleston_server"
+path = "src/charleston/server.rs"
+
+[[bin]]
+name = "memcached_client"
 path = "src/memcached/client.rs"
 
 [[bin]]
-name = "memcached-server"
+name = "memcached_server"
 path = "src/memcached/server.rs"
+
+[[bin]]
+name = "hello_client"
+path = "src/hello/client.rs"
+
+[[bin]]
+name = "hello_server"
+path = "src/hello/server.rs"
 
 [profile.release]
 debug = true
