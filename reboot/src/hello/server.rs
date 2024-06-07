@@ -104,7 +104,7 @@ impl<'a> ExecImpl<'a> {
     }
 
     async fn run(&self) {
-        // NOTE: Two-level queues are used in smol::Executor::run().
+        // [NOTE] Two-level queues are used in smol::Executor::run().
         // self.ex
         //     .run(async {
         //         loop {
@@ -113,10 +113,10 @@ impl<'a> ExecImpl<'a> {
         //     })
         //     .await;
 
-        // NOTE: Only a global queue is used in smol::Executor::tick().
+        // [NOTE] Only a global queue is used in smol::Executor::tick().
         loop {
             self.ex.tick().await;
-            // NOTE: Yield to the tokio runtime.
+            // [NOTE] Yield to the tokio runtime.
             future::yield_now().await;
         }
     }
@@ -146,10 +146,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Spawning {} server threads...", args.num_threads);
     for _ in 0..args.num_threads {
-        // NOTE: exs use the same smol::Executor instance.
+        // [NOTE] exs use the same smol::Executor instance.
         let ex = exs[0].clone();
 
-        // NOTE: Semantically, it is equivalent to tokio::spawn(ex_clone.run()).
+        // [NOTE] Semantically, it is equivalent to tokio::spawn(ex_clone.run()).
         // However, we use std::thread::spawn() to have dedicated threads for
         // executors that poll futures based on deadline hints.
         std::thread::spawn(move || {

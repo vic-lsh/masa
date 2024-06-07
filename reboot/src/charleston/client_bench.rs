@@ -139,9 +139,6 @@ async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
     }
 }
 
-// NOTE: This benchmark consists of two clients sending the same RPS to one server.
-// The server has one executor but assigns different deadlines to two request classes.
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::from_args();
