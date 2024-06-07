@@ -245,7 +245,7 @@ where
             }
         };
 
-        // [NOTE] Into service call.
+        // NOTE: Into service call.
         let response = service
             .call(request)
             .await
