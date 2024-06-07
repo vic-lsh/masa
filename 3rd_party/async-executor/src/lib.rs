@@ -1164,7 +1164,7 @@ impl Runner<'_> {
                     return Some(r);
                 }
 
-                // [TODO:Rivers] Fix work stealing for Runner.
+                // [TODO:Weixin] Fix work stealing for Runner.
                 // // Try stealing from the global queue.
                 // if let Some(r) = self.state.queue.lock().unwrap().pop() {
                 //     steal(&self.state.queue.lock().unwrap(), &self.local);
@@ -1204,7 +1204,7 @@ impl Runner<'_> {
         if self.ticks % 64 == 0 {
             // Steal tasks from the global queue to ensure fair task scheduling.
 
-            // [TODO:Rivers] Fix work stealing for Runner.
+            // [TODO:Weixin] Fix work stealing for Runner.
             // steal(&self.state.queue.lock().unwrap(), &self.local);
         }
 
