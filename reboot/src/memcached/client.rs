@@ -19,7 +19,7 @@ async fn loadgen(
     addr: String,
     rpc_count: Arc<AtomicUsize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // [TODO] Pass concurrency.
+    // TODO: Pass concurrency.
     let concurrency = 32;
     let mut handles = Vec::with_capacity(concurrency);
 

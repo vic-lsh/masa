@@ -162,7 +162,7 @@ pub(crate) fn generate_internal<T: Service>(
                     Poll::Ready(Ok(()))
                 }
 
-                // [NOTE] change this to look up request DDL
+                // NOTE: change this to look up request DDL
                 // Return Future and DDL.
                 fn call(&mut self, req: http::Request<B>) -> Self::Future {
                     let inner = self.inner.clone();
@@ -471,7 +471,7 @@ fn generate_unary<T: Method>(
         quote!(&inner)
     };
 
-    // [NOTE] change this to update unary service (e.g., SayHelloSvc)
+    // NOTE: change this to update unary service (e.g., SayHelloSvc)
     quote! {
         #[allow(non_camel_case_types)]
         struct #service_ident<T: #server_trait >(pub Arc<T>);

@@ -333,7 +333,7 @@ where
                             req.extensions_mut().insert(Protocol::from_inner(protocol));
                         }
 
-                        // [NOTE] Into executor.
+                        // NOTE: Into executor.
                         let fut = H2Stream::new(service.call(req), connect_parts, respond);
                         exec.execute_h2stream(fut);
                     }
