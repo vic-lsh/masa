@@ -111,7 +111,7 @@ impl fmt::Debug for Executor<'_> {
     }
 }
 
-// NOTE: The scheduling latency for concurrent queues is sub-microsecond.
+// [NOTE] The scheduling latency for concurrent queues is sub-microsecond.
 static SCHED_TIME_US: AtomicUsize = AtomicUsize::new(0);
 static SCHED_COUNT: AtomicUsize = AtomicUsize::new(0);
 static TIMER_SPAWNED: AtomicBool = AtomicBool::new(false);
@@ -232,7 +232,7 @@ impl<'a> Executor<'a> {
         future: impl Future<Output = T> + Send + 'a,
         ddl: DeadlineHint,
     ) -> Task<T> {
-        // NOTE: Capture backtrace in the deepest call stack that we understand.
+        // [NOTE] Capture backtrace in the deepest call stack that we understand.
         // Set `RUST_BACKTRACE=1` before cargo run. Use `--debug` for more information.
         // let backtrace = std::backtrace::Backtrace::capture();
         // println!("Backtrace:\n{}", backtrace);
@@ -249,7 +249,7 @@ impl<'a> Executor<'a> {
                     std::thread::sleep(Duration::from_secs(1));
                     let state = me.state();
 
-                    // NOTE: Use nested scope to release these locks ASAP.
+                    // [NOTE] Use nested scope to release these locks ASAP.
                     let global_qlen = state.queue.len();
                     let local_qs = { state.local_queues.read().unwrap() };
 
@@ -1164,7 +1164,7 @@ impl Runner<'_> {
                     return Some(r);
                 }
 
-                // TODO: Fix work stealing for Runner.
+                // [TODO:Rivers] Fix work stealing for Runner.
                 // // Try stealing from the global queue.
                 // if let Some(r) = self.state.queue.lock().unwrap().pop() {
                 //     steal(&self.state.queue.lock().unwrap(), &self.local);
@@ -1204,7 +1204,7 @@ impl Runner<'_> {
         if self.ticks % 64 == 0 {
             // Steal tasks from the global queue to ensure fair task scheduling.
 
-            // TODO: Fix work stealing for Runner.
+            // [TODO:Rivers] Fix work stealing for Runner.
             // steal(&self.state.queue.lock().unwrap(), &self.local);
         }
 
