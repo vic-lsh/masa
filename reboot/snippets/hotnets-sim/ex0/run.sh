@@ -9,13 +9,13 @@ for rps in "${rps_values[@]}"; do
     --mode fcfs \
     --rps "$rps" \
     --secs 300 \
-    --output snippets/hotnets/ex0/r${rps}-fcfs.csv
+    --output snippets/hotnets-sim/ex0/r${rps}-fcfs.csv
 
   python src/sim/test.py \
     --mode masa \
     --rps "$rps" \
     --secs 300 \
-    --output snippets/hotnets/ex0/r${rps}-masa.csv
+    --output snippets/hotnets-sim/ex0/r${rps}-masa.csv
 
   sleep 3
 done
