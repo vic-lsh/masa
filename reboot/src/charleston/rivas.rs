@@ -1,9 +1,14 @@
 use crossbeam_channel::{bounded, unbounded, Receiver, Sender, TryRecvError};
+use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp, Normal};
 use std::collections::BinaryHeap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
+use std::sync::{
+    atomic::{AtomicI8, Ordering},
+    Arc,
+};
 use std::time::{SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
 use tokio::time::{Duration, Instant};
@@ -72,107 +77,78 @@ const EXEC_MU: u64 = 2_000; // 2ms
 async fn start_client(
     rps: u64,
     secs: u64,
-    concurrency: u32,
+    token: Arc<AtomicI8>,
     channel_tx: Sender<Request>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let start_at = Instant::now();
     let pause_at = start_at + Duration::from_secs(secs);
 
     let mut elapse = 0f64;
+
+    let mut rng = StdRng::seed_from_u64(998244353);
     let exponential = Exp::new(rps as f64).unwrap();
+    let normal = Normal::new(ELAPSE_MU as f64, ELAPSE_SIGMA as f64).unwrap();
 
-    let (request_tx, request_rx) = bounded(concurrency as usize);
-
-    let mut handles = Vec::new();
-    let handle = tokio::spawn(async move {
-        let normal = Normal::new(ELAPSE_MU as f64, ELAPSE_SIGMA as f64).unwrap();
-
-        loop {
-            let now = Instant::now();
-            if now > pause_at {
-                break;
-            }
-            let send_at = start_at + Duration::from_secs_f64(elapse);
-            tokio::time::sleep_until(send_at).await;
-            let value = {
-                let mut rng = rand::thread_rng();
-                exponential.sample(&mut rng)
-            };
-            elapse += value;
-            let send_at = time_now();
-            let prev_elapse = {
-                let mut rng = rand::thread_rng();
-                normal.sample(&mut rng) as u64
-            };
-            let hint = send_at - prev_elapse;
-            let request = Request {
-                send_at,
-                finish_at: 0,
-                prev_elapse,
-                total_elapse: 0,
-                hint,
-            };
-            while request_tx.is_full() {
-                tokio::task::yield_now().await;
-            }
-            request_tx.send(request).unwrap();
+    loop {
+        let now = Instant::now();
+        if now > pause_at {
+            break;
         }
-    });
-    handles.push(handle);
+        let send_at = start_at + Duration::from_secs_f64(elapse);
+        tokio::time::sleep_until(send_at).await;
 
-    for _ in 0..concurrency {
-        let channel_tx = channel_tx.clone();
-        let request_rx = request_rx.clone();
-        let handle = tokio::spawn(async move {
-            loop {
-                match request_rx.try_recv() {
-                    Ok(request) => {
-                        channel_tx.send(request).unwrap();
-                    }
-                    Err(TryRecvError::Disconnected) => {
-                        break;
-                    }
-                    Err(TryRecvError::Empty) => {
-                        tokio::task::yield_now().await;
-                    }
-                }
-            }
-        });
-        handles.push(handle);
+        let value = {
+            // let mut rng = rand::thread_rng();
+            exponential.sample(&mut rng)
+        };
+        elapse += value;
+
+        let send_at = time_now();
+        let prev_elapse = {
+            // let mut rng = rand::thread_rng();
+            normal.sample(&mut rng) as u64
+        };
+        let hint = send_at - prev_elapse;
+        let request = Request {
+            send_at,
+            finish_at: 0,
+            prev_elapse,
+            total_elapse: 0,
+            hint,
+        };
+
+        while token.load(Ordering::SeqCst) <= 0 {
+            tokio::task::yield_now().await;
+        }
+        token.fetch_sub(1, Ordering::SeqCst);
+        channel_tx.send(request).unwrap();
     }
 
-    for h in handles {
-        h.await.unwrap();
-    }
-
+    println!("Client completed");
     Ok(())
 }
 
 async fn start_fcfs_server(
-    secs: u64,
+    token: Arc<AtomicI8>,
     channel_rx: Receiver<Request>,
     trace_tx: Sender<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let start_at = Instant::now();
-    let pause_at = start_at + Duration::from_secs(secs + 3);
-
-    loop {
-        if Instant::now() > pause_at {
-            break;
-        }
-        if let Ok(mut req) = channel_rx.try_recv() {
-            busy_spin(Duration::from_micros(EXEC_MU));
-            req.finish_at = time_now();
-            req.total_elapse = req.finish_at - req.send_at + req.prev_elapse;
-            trace_tx.send(req.total_elapse).unwrap();
-        }
+    while let Ok(mut request) = channel_rx.recv() {
+        busy_spin(Duration::from_micros(EXEC_MU));
+        request.finish_at = time_now();
+        request.total_elapse = request.finish_at - request.send_at + request.prev_elapse;
+        trace_tx.send(request.total_elapse).unwrap();
+        token.fetch_add(1, Ordering::SeqCst);
+        tokio::task::yield_now().await;
     }
 
+    println!("Server completed");
     Ok(())
 }
 
-async fn start_ddl_server(
+async fn start_masa_server(
     secs: u64,
+    token: Arc<AtomicI8>,
     channel_rx: Receiver<Request>,
     trace_tx: Sender<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -180,19 +156,14 @@ async fn start_ddl_server(
     let pause_at = start_at + Duration::from_secs(secs + 3);
 
     let mut heap = BinaryHeap::new();
-
     loop {
         if Instant::now() > pause_at {
             break;
         }
         while !channel_rx.is_empty() {
             match channel_rx.try_recv() {
-                Ok(req) => {
-                    heap.push(req);
-                }
-                Err(_) => {
-                    break;
-                }
+                Ok(request) => heap.push(request),
+                Err(_) => break,
             }
         }
         if let Some(mut req) = heap.pop() {
@@ -200,21 +171,25 @@ async fn start_ddl_server(
             req.finish_at = time_now();
             req.total_elapse = req.finish_at - req.send_at + req.prev_elapse;
             trace_tx.send(req.total_elapse).unwrap();
+            token.fetch_add(1, Ordering::SeqCst);
+            tokio::task::yield_now().await;
         }
     }
 
+    println!("Server completed");
     Ok(())
 }
 
 async fn start_server(
     mode: &str,
     secs: u64,
+    token: Arc<AtomicI8>,
     channel_rx: Receiver<Request>,
     trace_tx: Sender<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match mode {
-        "fcfs" => start_fcfs_server(secs, channel_rx, trace_tx).await,
-        "ddl" => start_ddl_server(secs, channel_rx, trace_tx).await,
+        "fcfs" => start_fcfs_server(token, channel_rx, trace_tx).await,
+        "masa" => start_masa_server(secs, token, channel_rx, trace_tx).await,
         _ => panic!("Invalid mode"),
     }
 }
@@ -236,15 +211,19 @@ async fn fetch_traces(output: String, trace_rx: Receiver<u64>) {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::from_args();
 
-    let (channel_tx, channel_rx) = unbounded();
+    let token = Arc::new(AtomicI8::new(args.concurrency as i8));
+    let (channel_tx, channel_rx) = bounded(args.concurrency as usize);
     let (trace_tx, trace_rx) = unbounded();
+
+    let token_clone = token.clone();
     let client = tokio::spawn(async move {
-        start_client(args.rps, args.secs, args.concurrency, channel_tx)
+        start_client(args.rps, args.secs, token_clone, channel_tx)
             .await
             .unwrap();
     });
+
     let server = tokio::spawn(async move {
-        start_server(&args.mode, args.secs, channel_rx, trace_tx)
+        start_server(&args.mode, args.secs, token, channel_rx, trace_tx)
             .await
             .unwrap();
     });
