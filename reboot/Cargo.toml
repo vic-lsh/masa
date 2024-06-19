@@ -7,6 +7,10 @@ publish = false
 version = "0.1.0"
 
 [[bin]]
+name = "charleston_rivas"
+path = "src/charleston/rivas.rs"
+
+[[bin]]
 name = "charleston_client"
 path = "src/charleston/client.rs"
 
