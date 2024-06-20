@@ -1,6 +1,6 @@
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use rand::{rngs::StdRng, SeedableRng};
-use rand_distr::{Distribution, Exp, Normal};
+use rand_distr::{Distribution, Exp, Normal, Uniform};
 use std::collections::BinaryHeap;
 use std::fs::{self, File};
 use std::io::Write;
@@ -73,6 +73,8 @@ fn busy_spin(duration: Duration) {
     while now.elapsed() < duration {}
 }
 
+const SEED: u64 = 998244353;
+
 // const ELAPSE_MU: u64 = 20_000; // 20ms
 // const ELAPSE_SIGMA: u64 = 5_000; // 5ms
 
@@ -82,15 +84,17 @@ const EXEC_SIGMA: u64 = 1_000; // 1ms
 
 #[derive(Debug)]
 struct TxManager {
+    rng: StdRng,
     txs: Vec<Sender<Request>>,
-    index: usize,
+    uniform: Uniform<usize>,
 }
 
 impl TxManager {
-    fn new() -> Self {
+    fn new(seed: u64) -> Self {
         TxManager {
+            rng: StdRng::seed_from_u64(seed),
             txs: Vec::new(),
-            index: 0,
+            uniform: Uniform::new(0, 1),
         }
     }
 
@@ -100,16 +104,18 @@ impl TxManager {
 
     fn add(&mut self, tx: Sender<Request>) {
         self.txs.push(tx);
+        self.uniform = Uniform::new(0, self.txs.len());
     }
 
     fn send(&mut self, request: Request) {
-        self.txs[self.index].send(request).unwrap();
-        self.index = (self.index + 1) % self.txs.len();
+        let index = self.uniform.sample(&mut self.rng);
+        self.txs[index].send(request).unwrap();
     }
 }
 
 #[derive(Debug)]
 struct Client {
+    rng: StdRng,
     depth: u64,
     rps: u64,
     secs: u64,
@@ -118,13 +124,14 @@ struct Client {
 }
 
 impl Client {
-    fn new(depth: u64, rps: u64, secs: u64, token: Arc<AtomicI16>) -> Self {
+    fn new(seed: u64, depth: u64, rps: u64, secs: u64, token: Arc<AtomicI16>) -> Self {
         Client {
+            rng: StdRng::seed_from_u64(seed),
             depth,
             rps,
             secs,
             token,
-            tx_manager: TxManager::new(),
+            tx_manager: TxManager::new(seed),
         }
     }
 
@@ -134,7 +141,6 @@ impl Client {
 
         let mut elapse = 0f64;
 
-        let mut rng = StdRng::seed_from_u64(998244353);
         let exponential = Exp::new(self.rps as f64).unwrap();
         // let normal = Normal::new(ELAPSE_MU as f64, ELAPSE_SIGMA as f64).unwrap();
         let normal = Normal::new(EXEC_MU as f64, EXEC_SIGMA as f64).unwrap();
@@ -146,7 +152,7 @@ impl Client {
             let send_at = start_at + Duration::from_secs_f64(elapse);
             tokio::time::sleep_until(send_at).await;
 
-            let value = { exponential.sample(&mut rng) };
+            let value = { exponential.sample(&mut self.rng) };
             elapse += value;
 
             let send_at = time_now();
@@ -154,7 +160,7 @@ impl Client {
             let hint = send_at - prev_elapse;
             let mut proc_elapses = Vec::new();
             for _ in 0..self.depth {
-                proc_elapses.push(normal.sample(&mut rng) as u64);
+                proc_elapses.push(normal.sample(&mut self.rng) as u64);
             }
             let request = Request {
                 send_at,
@@ -191,6 +197,7 @@ struct Server {
 
 impl Server {
     fn new(
+        seed: u64,
         depth: usize,
         mode: String,
         secs: u64,
@@ -205,7 +212,7 @@ impl Server {
             token,
             tx,
             rx,
-            tx_manager: TxManager::new(),
+            tx_manager: TxManager::new(seed),
             trace_tx,
         }
     }
@@ -306,11 +313,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let token = Arc::new(AtomicI16::new(args.concurrency as i16));
     let (trace_tx, trace_rx) = unbounded();
 
-    let mut client = Client::new(args.depth, args.rps, args.secs, token.clone());
+    let mut rng = StdRng::seed_from_u64(SEED);
+    let uniform = Uniform::new(0, 1 << 63);
+
+    let mut client = Client::new(
+        uniform.sample(&mut rng),
+        args.depth,
+        args.rps,
+        args.secs,
+        token.clone(),
+    );
 
     let mut depth_0_servers = Vec::new();
     for _ in 0..REPLICAS {
         let server = Server::new(
+            uniform.sample(&mut rng),
             0,
             args.mode.clone(),
             args.secs,
@@ -324,6 +341,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut depth_1_servers = Vec::new();
     for _ in 0..REPLICAS {
         let server = Server::new(
+            uniform.sample(&mut rng),
             1,
             args.mode.clone(),
             args.secs,
@@ -339,6 +357,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut depth_2_servers = Vec::new();
     for _ in 0..REPLICAS {
         let server = Server::new(
+            uniform.sample(&mut rng),
             2,
             args.mode.clone(),
             args.secs,
