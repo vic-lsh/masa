@@ -1,4 +1,4 @@
-use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp, Normal};
 use std::collections::BinaryHeap;
@@ -33,9 +33,7 @@ pub struct Request {
     send_at: u64,
     finish_at: u64,
     prev_elapse: u64,
-    alpha_elapse: u64,
-    beta_elapse: u64,
-    // [NOTE] Do not need to calculate total_elapse in brother servers.
+    proc_elapses: Vec<u64>,
     total_elapse: u64,
     hint: u64,
 }
@@ -73,9 +71,10 @@ fn busy_spin(duration: Duration) {
     while now.elapsed() < duration {}
 }
 
+// const ELAPSE_MU: u64 = 20_000; // 20ms
+// const ELAPSE_SIGMA: u64 = 5_000; // 5ms
+
 const REPLICAS: usize = 3;
-const ELAPSE_MU: u64 = 20_000; // 20ms
-const ELAPSE_SIGMA: u64 = 5_000; // 5ms
 const EXEC_MU: u64 = 3_000; // 3ms
 const EXEC_SIGMA: u64 = 1_000; // 1ms
 
@@ -91,6 +90,10 @@ impl TxManager {
             txs: Vec::new(),
             index: 0,
         }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.txs.is_empty()
     }
 
     fn add(&mut self, tx: Sender<Request>) {
@@ -144,18 +147,16 @@ impl Client {
             elapse += value;
 
             let send_at = time_now();
-            let prev_elapse = {
-                //  [NOTE] Comment to debug 0-0.
-                // normal.sample(&mut rng) as u64
-                0
-            };
+            let prev_elapse = 0;
             let hint = send_at - prev_elapse;
             let request = Request {
                 send_at,
                 finish_at: 0,
                 prev_elapse,
-                alpha_elapse: normal.sample(&mut rng) as u64,
-                beta_elapse: normal.sample(&mut rng) as u64,
+                proc_elapses: vec![
+                    normal.sample(&mut rng) as u64,
+                    normal.sample(&mut rng) as u64,
+                ],
                 total_elapse: 0,
                 hint,
             };
@@ -173,23 +174,35 @@ impl Client {
 }
 
 #[derive(Debug)]
-struct BrotherServer {
+struct Server {
+    depth: usize,
     mode: String,
     secs: u64,
+    token: Arc<AtomicI8>,
     tx: Sender<Request>,
     rx: Receiver<Request>,
     tx_manager: TxManager,
+    trace_tx: Sender<u64>,
 }
 
-impl BrotherServer {
-    fn new(mode: String, secs: u64) -> Self {
+impl Server {
+    fn new(
+        depth: usize,
+        mode: String,
+        secs: u64,
+        token: Arc<AtomicI8>,
+        trace_tx: Sender<u64>,
+    ) -> Self {
         let (tx, rx) = unbounded::<Request>();
-        BrotherServer {
+        Server {
+            depth,
             mode,
             secs,
+            token,
             tx,
             rx,
             tx_manager: TxManager::new(),
+            trace_tx,
         }
     }
 
@@ -203,18 +216,24 @@ impl BrotherServer {
             }
             if !self.rx.is_empty() {
                 if let Ok(mut request) = self.rx.recv() {
-                    // busy_spin(Duration::from_micros(EXEC_MU));
-                    busy_spin(Duration::from_micros(request.alpha_elapse));
-                    // request.finish_at = time_now();
-                    // request.total_elapse =
-                    //     request.finish_at - request.send_at + request.prev_elapse;
-                    self.tx_manager.send(request);
+                    let elapse = request.proc_elapses[self.depth];
+                    busy_spin(Duration::from_micros(elapse));
+                    let is_leaf = self.tx_manager.is_empty();
+                    if !is_leaf {
+                        self.tx_manager.send(request);
+                    } else {
+                        request.finish_at = time_now();
+                        request.total_elapse =
+                            request.finish_at - request.send_at + request.prev_elapse;
+                        self.trace_tx.send(request.total_elapse).unwrap();
+                        self.token.fetch_add(1, Ordering::SeqCst);
+                    }
                     tokio::task::yield_now().await;
                 }
             }
         }
 
-        println!("Brother server completed");
+        println!("Server {} completed", self.depth);
         Ok(())
     }
 
@@ -234,63 +253,12 @@ impl BrotherServer {
                 }
             }
             if let Some(mut request) = heap.pop() {
-                // busy_spin(Duration::from_micros(EXEC_MU));
-                busy_spin(Duration::from_micros(request.alpha_elapse));
-                // request.finish_at = time_now();
-                // request.total_elapse = request.finish_at - request.send_at + request.prev_elapse;
-                self.tx_manager.send(request);
-                tokio::task::yield_now().await;
-            }
-        }
-
-        println!("Server completed");
-        Ok(())
-    }
-
-    async fn start_server(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        match self.mode.as_str() {
-            "fcfs" => self.start_fcfs_server().await,
-            "masa" => self.start_masa_server().await,
-            _ => panic!("Invalid mode"),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct LeafServer {
-    mode: String,
-    secs: u64,
-    token: Arc<AtomicI8>,
-    tx: Sender<Request>,
-    rx: Receiver<Request>,
-    trace_tx: Sender<u64>,
-}
-
-impl LeafServer {
-    fn new(mode: String, secs: u64, token: Arc<AtomicI8>, trace_tx: Sender<u64>) -> Self {
-        let (tx, rx) = unbounded::<Request>();
-        LeafServer {
-            mode,
-            secs,
-            token,
-            tx,
-            rx,
-            trace_tx,
-        }
-    }
-
-    async fn start_fcfs_server(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let start_at = Instant::now();
-        let pause_at = start_at + Duration::from_secs(self.secs + 3);
-
-        loop {
-            if Instant::now() > pause_at {
-                break;
-            }
-            if !self.rx.is_empty() {
-                if let Ok(mut request) = self.rx.recv() {
-                    // busy_spin(Duration::from_micros(EXEC_MU));
-                    busy_spin(Duration::from_micros(request.beta_elapse));
+                let elapse = request.proc_elapses[self.depth];
+                busy_spin(Duration::from_micros(elapse));
+                let is_leaf = self.tx_manager.is_empty();
+                if !is_leaf {
+                    self.tx_manager.send(request);
+                } else {
                     request.finish_at = time_now();
                     request.total_elapse =
                         request.finish_at - request.send_at + request.prev_elapse;
@@ -301,41 +269,11 @@ impl LeafServer {
             }
         }
 
-        println!("Leaf server completed");
+        println!("Server {} completed", self.depth);
         Ok(())
     }
 
-    async fn start_masa_server(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let start_at = Instant::now();
-        let pause_at = start_at + Duration::from_secs(self.secs + 3);
-
-        let mut heap = BinaryHeap::new();
-        loop {
-            if Instant::now() > pause_at {
-                break;
-            }
-            while !self.rx.is_empty() {
-                match self.rx.try_recv() {
-                    Ok(request) => heap.push(request),
-                    Err(_) => break,
-                }
-            }
-            if let Some(mut request) = heap.pop() {
-                // busy_spin(Duration::from_micros(EXEC_MU));
-                busy_spin(Duration::from_micros(request.beta_elapse));
-                request.finish_at = time_now();
-                request.total_elapse = request.finish_at - request.send_at + request.prev_elapse;
-                self.trace_tx.send(request.total_elapse).unwrap();
-                self.token.fetch_add(1, Ordering::SeqCst);
-                tokio::task::yield_now().await;
-            }
-        }
-
-        println!("Server completed");
-        Ok(())
-    }
-
-    async fn start_server(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn start_server(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         match self.mode.as_str() {
             "fcfs" => self.start_fcfs_server().await,
             "masa" => self.start_masa_server().await,
@@ -368,14 +306,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut bro_servers = Vec::new();
     for _ in 0..REPLICAS {
-        let bro_server = BrotherServer::new(args.mode.clone(), args.secs);
+        let bro_server = Server::new(
+            0,
+            args.mode.clone(),
+            args.secs,
+            token.clone(),
+            trace_tx.clone(),
+        );
         client.tx_manager.add(bro_server.tx.clone());
         bro_servers.push(bro_server);
     }
 
     let mut leaf_servers = Vec::new();
     for _ in 0..REPLICAS {
-        let leaf_server = LeafServer::new(
+        let leaf_server = Server::new(
+            1,
             args.mode.clone(),
             args.secs,
             token.clone(),
@@ -399,11 +344,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
     }));
 
-    for leaf_server in leaf_servers {
-        handles.push(tokio::spawn(async move {
+    handles.extend(leaf_servers.into_iter().map(|mut leaf_server| {
+        tokio::spawn(async move {
             leaf_server.start_server().await.unwrap();
-        }));
-    }
+        })
+    }));
 
     handles.push(tokio::spawn(async move {
         fetch_traces(args.output, trace_rx).await;
