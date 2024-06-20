@@ -1,13 +1,13 @@
 cargo run --release --bin charleston_lactose -- \
   --mode fcfs \
-  --rps 1500 \
+  --rps 1000 \
   --secs 60 \
   --concurrency 32 \
   --output snippets/hotnets/fcfs.csv
 
 cargo run --release --bin charleston_lactose -- \
   --mode masa \
-  --rps 1500 \
+  --rps 1000 \
   --secs 60 \
   --concurrency 32 \
   --output snippets/hotnets/masa.csv
