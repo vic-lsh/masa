@@ -9,7 +9,7 @@ for rps in "${rps_values[@]}"; do
     --depth 3 \
     --mode fcfs \
     --rps "$rps" \
-    --secs 300 \
+    --secs 60 \
     --concurrency 128 \
     --output snippets/hotnets/cg-1-3-3-3/px-3-1/r${rps}-fcfs.csv
 
@@ -19,7 +19,7 @@ for rps in "${rps_values[@]}"; do
     --depth 3 \
     --mode masa \
     --rps "$rps" \
-    --secs 300 \
+    --secs 60 \
     --concurrency 128 \
     --output snippets/hotnets/cg-1-3-3-3/px-3-1/r${rps}-masa.csv
 
