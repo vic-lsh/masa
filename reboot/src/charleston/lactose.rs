@@ -33,6 +33,9 @@ pub struct Request {
     send_at: u64,
     finish_at: u64,
     prev_elapse: u64,
+    alpha_elapse: u64,
+    beta_elapse: u64,
+    // [NOTE] Do not need to calculate total_elapse in brother servers.
     total_elapse: u64,
     hint: u64,
 }
@@ -73,7 +76,8 @@ fn busy_spin(duration: Duration) {
 const REPLICAS: usize = 3;
 const ELAPSE_MU: u64 = 20_000; // 20ms
 const ELAPSE_SIGMA: u64 = 5_000; // 5ms
-const EXEC_MU: u64 = 2_000; // 2ms
+const EXEC_MU: u64 = 3_000; // 3ms
+const EXEC_SIGMA: u64 = 1_000; // 1ms
 
 #[derive(Debug)]
 struct TxManager {
@@ -125,7 +129,8 @@ impl Client {
 
         let mut rng = StdRng::seed_from_u64(998244353);
         let exponential = Exp::new(self.rps as f64).unwrap();
-        let normal = Normal::new(ELAPSE_MU as f64, ELAPSE_SIGMA as f64).unwrap();
+        // let normal = Normal::new(ELAPSE_MU as f64, ELAPSE_SIGMA as f64).unwrap();
+        let normal = Normal::new(EXEC_MU as f64, EXEC_SIGMA as f64).unwrap();
 
         loop {
             let now = Instant::now();
@@ -135,22 +140,22 @@ impl Client {
             let send_at = start_at + Duration::from_secs_f64(elapse);
             tokio::time::sleep_until(send_at).await;
 
-            let value = {
-                // let mut rng = rand::thread_rng();
-                exponential.sample(&mut rng)
-            };
+            let value = { exponential.sample(&mut rng) };
             elapse += value;
 
             let send_at = time_now();
             let prev_elapse = {
-                // let mut rng = rand::thread_rng();
-                normal.sample(&mut rng) as u64
+                //  [NOTE] Comment to debug 0-0.
+                // normal.sample(&mut rng) as u64
+                0
             };
             let hint = send_at - prev_elapse;
             let request = Request {
                 send_at,
                 finish_at: 0,
                 prev_elapse,
+                alpha_elapse: normal.sample(&mut rng) as u64,
+                beta_elapse: normal.sample(&mut rng) as u64,
                 total_elapse: 0,
                 hint,
             };
@@ -198,10 +203,11 @@ impl BrotherServer {
             }
             if !self.rx.is_empty() {
                 if let Ok(mut request) = self.rx.recv() {
-                    busy_spin(Duration::from_micros(EXEC_MU));
-                    request.finish_at = time_now();
-                    request.total_elapse =
-                        request.finish_at - request.send_at + request.prev_elapse;
+                    // busy_spin(Duration::from_micros(EXEC_MU));
+                    busy_spin(Duration::from_micros(request.alpha_elapse));
+                    // request.finish_at = time_now();
+                    // request.total_elapse =
+                    //     request.finish_at - request.send_at + request.prev_elapse;
                     self.tx_manager.send(request);
                     tokio::task::yield_now().await;
                 }
@@ -227,11 +233,12 @@ impl BrotherServer {
                     Err(_) => break,
                 }
             }
-            if let Some(mut req) = heap.pop() {
-                busy_spin(Duration::from_micros(EXEC_MU));
-                req.finish_at = time_now();
-                req.total_elapse = req.finish_at - req.send_at + req.prev_elapse;
-                self.tx_manager.send(req);
+            if let Some(mut request) = heap.pop() {
+                // busy_spin(Duration::from_micros(EXEC_MU));
+                busy_spin(Duration::from_micros(request.alpha_elapse));
+                // request.finish_at = time_now();
+                // request.total_elapse = request.finish_at - request.send_at + request.prev_elapse;
+                self.tx_manager.send(request);
                 tokio::task::yield_now().await;
             }
         }
@@ -282,7 +289,8 @@ impl LeafServer {
             }
             if !self.rx.is_empty() {
                 if let Ok(mut request) = self.rx.recv() {
-                    busy_spin(Duration::from_micros(EXEC_MU));
+                    // busy_spin(Duration::from_micros(EXEC_MU));
+                    busy_spin(Duration::from_micros(request.beta_elapse));
                     request.finish_at = time_now();
                     request.total_elapse =
                         request.finish_at - request.send_at + request.prev_elapse;
@@ -312,11 +320,12 @@ impl LeafServer {
                     Err(_) => break,
                 }
             }
-            if let Some(mut req) = heap.pop() {
-                busy_spin(Duration::from_micros(EXEC_MU));
-                req.finish_at = time_now();
-                req.total_elapse = req.finish_at - req.send_at + req.prev_elapse;
-                self.trace_tx.send(req.total_elapse).unwrap();
+            if let Some(mut request) = heap.pop() {
+                // busy_spin(Duration::from_micros(EXEC_MU));
+                busy_spin(Duration::from_micros(request.beta_elapse));
+                request.finish_at = time_now();
+                request.total_elapse = request.finish_at - request.send_at + request.prev_elapse;
+                self.trace_tx.send(request.total_elapse).unwrap();
                 self.token.fetch_add(1, Ordering::SeqCst);
                 tokio::task::yield_now().await;
             }
