@@ -6,7 +6,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 use std::sync::{
-    atomic::{AtomicI8, Ordering},
+    atomic::{AtomicI16, Ordering},
     Arc,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -17,13 +17,15 @@ use tokio::time::{Duration, Instant};
 #[structopt(about = "Rivas for simulation")]
 pub struct Args {
     #[structopt(short, long, required = true)]
+    pub depth: u64,
+    #[structopt(short, long, required = true)]
     pub mode: String,
     #[structopt(short, long, required = true)]
     pub rps: u64,
     #[structopt(short, long, required = true)]
     pub secs: u64,
     #[structopt(short, long, required = true)]
-    pub concurrency: u32,
+    pub concurrency: u64,
     #[structopt(short, long, required = true)]
     pub output: String,
 }
@@ -108,15 +110,17 @@ impl TxManager {
 
 #[derive(Debug)]
 struct Client {
+    depth: u64,
     rps: u64,
     secs: u64,
-    token: Arc<AtomicI8>,
+    token: Arc<AtomicI16>,
     tx_manager: TxManager,
 }
 
 impl Client {
-    fn new(rps: u64, secs: u64, token: Arc<AtomicI8>) -> Self {
+    fn new(depth: u64, rps: u64, secs: u64, token: Arc<AtomicI16>) -> Self {
         Client {
+            depth,
             rps,
             secs,
             token,
@@ -136,8 +140,7 @@ impl Client {
         let normal = Normal::new(EXEC_MU as f64, EXEC_SIGMA as f64).unwrap();
 
         loop {
-            let now = Instant::now();
-            if now > pause_at {
+            if Instant::now() > pause_at {
                 break;
             }
             let send_at = start_at + Duration::from_secs_f64(elapse);
@@ -149,14 +152,15 @@ impl Client {
             let send_at = time_now();
             let prev_elapse = 0;
             let hint = send_at - prev_elapse;
+            let mut proc_elapses = Vec::new();
+            for _ in 0..self.depth {
+                proc_elapses.push(normal.sample(&mut rng) as u64);
+            }
             let request = Request {
                 send_at,
                 finish_at: 0,
                 prev_elapse,
-                proc_elapses: vec![
-                    normal.sample(&mut rng) as u64,
-                    normal.sample(&mut rng) as u64,
-                ],
+                proc_elapses,
                 total_elapse: 0,
                 hint,
             };
@@ -178,7 +182,7 @@ struct Server {
     depth: usize,
     mode: String,
     secs: u64,
-    token: Arc<AtomicI8>,
+    token: Arc<AtomicI16>,
     tx: Sender<Request>,
     rx: Receiver<Request>,
     tx_manager: TxManager,
@@ -190,7 +194,7 @@ impl Server {
         depth: usize,
         mode: String,
         secs: u64,
-        token: Arc<AtomicI8>,
+        token: Arc<AtomicI16>,
         trace_tx: Sender<u64>,
     ) -> Self {
         let (tx, rx) = unbounded::<Request>();
@@ -299,37 +303,52 @@ async fn fetch_traces(output: String, trace_rx: Receiver<u64>) {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::from_args();
 
-    let token = Arc::new(AtomicI8::new(args.concurrency as i8));
+    let token = Arc::new(AtomicI16::new(args.concurrency as i16));
     let (trace_tx, trace_rx) = unbounded();
 
-    let mut client = Client::new(args.rps, args.secs, token.clone());
+    let mut client = Client::new(args.depth, args.rps, args.secs, token.clone());
 
-    let mut bro_servers = Vec::new();
+    let mut depth_0_servers = Vec::new();
     for _ in 0..REPLICAS {
-        let bro_server = Server::new(
+        let server = Server::new(
             0,
             args.mode.clone(),
             args.secs,
             token.clone(),
             trace_tx.clone(),
         );
-        client.tx_manager.add(bro_server.tx.clone());
-        bro_servers.push(bro_server);
+        client.tx_manager.add(server.tx.clone());
+        depth_0_servers.push(server);
     }
 
-    let mut leaf_servers = Vec::new();
+    let mut depth_1_servers = Vec::new();
     for _ in 0..REPLICAS {
-        let leaf_server = Server::new(
+        let server = Server::new(
             1,
             args.mode.clone(),
             args.secs,
             token.clone(),
             trace_tx.clone(),
         );
-        for bro_server in bro_servers.iter_mut() {
-            bro_server.tx_manager.add(leaf_server.tx.clone());
+        for depth_0_server in depth_0_servers.iter_mut() {
+            depth_0_server.tx_manager.add(server.tx.clone());
         }
-        leaf_servers.push(leaf_server);
+        depth_1_servers.push(server);
+    }
+
+    let mut depth_2_servers = Vec::new();
+    for _ in 0..REPLICAS {
+        let server = Server::new(
+            2,
+            args.mode.clone(),
+            args.secs,
+            token.clone(),
+            trace_tx.clone(),
+        );
+        for depth_1_server in depth_1_servers.iter_mut() {
+            depth_1_server.tx_manager.add(server.tx.clone());
+        }
+        depth_2_servers.push(server);
     }
 
     let mut handles = Vec::new();
@@ -338,15 +357,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         client.start_client().await.unwrap();
     }));
 
-    handles.extend(bro_servers.into_iter().map(|mut bro_server| {
+    handles.extend(depth_0_servers.into_iter().map(|mut server| {
         tokio::spawn(async move {
-            bro_server.start_server().await.unwrap();
+            server.start_server().await.unwrap();
         })
     }));
 
-    handles.extend(leaf_servers.into_iter().map(|mut leaf_server| {
+    handles.extend(depth_1_servers.into_iter().map(|mut server| {
         tokio::spawn(async move {
-            leaf_server.start_server().await.unwrap();
+            server.start_server().await.unwrap();
+        })
+    }));
+
+    handles.extend(depth_2_servers.into_iter().map(|mut server| {
+        tokio::spawn(async move {
+            server.start_server().await.unwrap();
         })
     }));
 
