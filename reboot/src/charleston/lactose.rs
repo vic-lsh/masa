@@ -70,6 +70,7 @@ fn busy_spin(duration: Duration) {
     while now.elapsed() < duration {}
 }
 
+const REPLICAS: usize = 3;
 const ELAPSE_MU: u64 = 20_000; // 20ms
 const ELAPSE_SIGMA: u64 = 5_000; // 5ms
 const EXEC_MU: u64 = 2_000; // 2ms
@@ -355,30 +356,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (trace_tx, trace_rx) = unbounded();
 
     let mut client = Client::new(args.rps, args.secs, token.clone());
-    let mut bro_server = BrotherServer::new(args.mode.clone(), args.secs);
-    let leaf_server = LeafServer::new(args.mode.clone(), args.secs, token, trace_tx);
-    client.tx_manager.add(bro_server.tx.clone());
-    bro_server.tx_manager.add(leaf_server.tx.clone());
 
-    let client_handle = tokio::spawn(async move {
+    let mut bro_servers = Vec::new();
+    for _ in 0..REPLICAS {
+        let bro_server = BrotherServer::new(args.mode.clone(), args.secs);
+        client.tx_manager.add(bro_server.tx.clone());
+        bro_servers.push(bro_server);
+    }
+
+    let mut leaf_servers = Vec::new();
+    for _ in 0..REPLICAS {
+        let leaf_server = LeafServer::new(
+            args.mode.clone(),
+            args.secs,
+            token.clone(),
+            trace_tx.clone(),
+        );
+        for bro_server in bro_servers.iter_mut() {
+            bro_server.tx_manager.add(leaf_server.tx.clone());
+        }
+        leaf_servers.push(leaf_server);
+    }
+
+    let mut handles = Vec::new();
+
+    handles.push(tokio::spawn(async move {
         client.start_client().await.unwrap();
-    });
-    let bro_server_handle = tokio::spawn(async move {
-        bro_server.start_server().await.unwrap();
-    });
-    let leaf_server_handle = tokio::spawn(async move {
-        leaf_server.start_server().await.unwrap();
-    });
-    let tracer_handle = tokio::spawn(async move {
-        fetch_traces(args.output, trace_rx).await;
-    });
+    }));
 
-    let handles = vec![
-        client_handle,
-        bro_server_handle,
-        leaf_server_handle,
-        tracer_handle,
-    ];
+    handles.extend(bro_servers.into_iter().map(|mut bro_server| {
+        tokio::spawn(async move {
+            bro_server.start_server().await.unwrap();
+        })
+    }));
+
+    for leaf_server in leaf_servers {
+        handles.push(tokio::spawn(async move {
+            leaf_server.start_server().await.unwrap();
+        }));
+    }
+
+    handles.push(tokio::spawn(async move {
+        fetch_traces(args.output, trace_rx).await;
+    }));
+
+    drop(trace_tx);
     for h in handles {
         h.await.unwrap();
     }
