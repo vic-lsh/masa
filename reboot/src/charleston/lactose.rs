@@ -78,9 +78,8 @@ const SEED: u64 = 998244353;
 // const ELAPSE_MU: u64 = 20_000; // 20ms
 // const ELAPSE_SIGMA: u64 = 5_000; // 5ms
 
-const REPLICAS: usize = 3;
+const REPLICAS: usize = 6;
 const EXEC_MU: u64 = 3_000; // 3ms
-const EXEC_SIGMA: u64 = 1_000; // 1ms
 
 #[derive(Debug)]
 struct TxManager {
@@ -143,7 +142,7 @@ impl Client {
 
         let exponential = Exp::new(self.rps as f64).unwrap();
         // let normal = Normal::new(ELAPSE_MU as f64, ELAPSE_SIGMA as f64).unwrap();
-        let normal = Normal::new(EXEC_MU as f64, EXEC_SIGMA as f64).unwrap();
+        let normal = Normal::from_mean_cv(EXEC_MU as f64, 0.3).unwrap();
 
         loop {
             if Instant::now() > pause_at {
@@ -160,7 +159,9 @@ impl Client {
             let hint = send_at - prev_elapse;
             let mut proc_elapses = Vec::new();
             for _ in 0..self.depth {
-                proc_elapses.push(normal.sample(&mut self.rng) as u64);
+                let mut elapse = normal.sample(&mut self.rng) as u64;
+                elapse = elapse.max(0);
+                proc_elapses.push(elapse);
             }
             let request = Request {
                 send_at,
@@ -370,6 +371,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         depth_2_servers.push(server);
     }
 
+    let mut depth_3_servers = Vec::new();
+    for _ in 0..REPLICAS {
+        let server = Server::new(
+            uniform.sample(&mut rng),
+            3,
+            args.mode.clone(),
+            args.secs,
+            token.clone(),
+            trace_tx.clone(),
+        );
+        for depth_2_server in depth_2_servers.iter_mut() {
+            depth_2_server.tx_manager.add(server.tx.clone());
+        }
+        depth_3_servers.push(server);
+    }
+
+    let mut depth_4_servers = Vec::new();
+    for _ in 0..REPLICAS {
+        let server = Server::new(
+            uniform.sample(&mut rng),
+            4,
+            args.mode.clone(),
+            args.secs,
+            token.clone(),
+            trace_tx.clone(),
+        );
+        for depth_3_server in depth_3_servers.iter_mut() {
+            depth_3_server.tx_manager.add(server.tx.clone());
+        }
+        depth_4_servers.push(server);
+    }
+
+    let mut depth_5_servers = Vec::new();
+    for _ in 0..REPLICAS {
+        let server = Server::new(
+            uniform.sample(&mut rng),
+            5,
+            args.mode.clone(),
+            args.secs,
+            token.clone(),
+            trace_tx.clone(),
+        );
+        for depth_4_server in depth_4_servers.iter_mut() {
+            depth_4_server.tx_manager.add(server.tx.clone());
+        }
+        depth_5_servers.push(server);
+    }
+
     let mut handles = Vec::new();
 
     handles.push(tokio::spawn(async move {
@@ -389,6 +438,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }));
 
     handles.extend(depth_2_servers.into_iter().map(|mut server| {
+        tokio::spawn(async move {
+            server.start_server().await.unwrap();
+        })
+    }));
+
+    handles.extend(depth_3_servers.into_iter().map(|mut server| {
+        tokio::spawn(async move {
+            server.start_server().await.unwrap();
+        })
+    }));
+
+    handles.extend(depth_4_servers.into_iter().map(|mut server| {
+        tokio::spawn(async move {
+            server.start_server().await.unwrap();
+        })
+    }));
+
+    handles.extend(depth_5_servers.into_iter().map(|mut server| {
         tokio::spawn(async move {
             server.start_server().await.unwrap();
         })
