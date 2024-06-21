@@ -1,5 +1,7 @@
 cargo run --release --bin charleston_lactose -- \
   --depth 6 \
+  --exec-mus 3000 3000 3000 3000 3000 3000 \
+  --replicas 6 \
   --mode fcfs \
   --rps 1600 \
   --secs 60 \
@@ -8,6 +10,8 @@ cargo run --release --bin charleston_lactose -- \
 
 cargo run --release --bin charleston_lactose -- \
   --depth 6 \
+  --exec-mus 3000 3000 3000 3000 3000 3000 \
+  --replicas 6 \
   --mode masa \
   --rps 1600 \
   --secs 60 \
