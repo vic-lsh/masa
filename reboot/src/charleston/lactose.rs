@@ -77,8 +77,6 @@ fn busy_spin(duration: Duration) {
     while now.elapsed() < duration {}
 }
 
-const EXEC_MU: u64 = 3_000; // 3ms
-
 #[derive(Debug)]
 struct TxManager {
     rng: StdRng,
@@ -104,9 +102,14 @@ impl TxManager {
         self.uniform = Uniform::new(0, self.txs.len());
     }
 
-    fn send(&mut self, request: Request) {
+    // fn send(&mut self, request: Request) {
+    //     let index = self.uniform.sample(&mut self.rng);
+    //     self.txs[index].send(request).unwrap();
+    // }
+
+    fn try_send(&mut self, request: Request) -> bool {
         let index = self.uniform.sample(&mut self.rng);
-        self.txs[index].send(request).unwrap();
+        self.txs[index].try_send(request).is_ok()
     }
 }
 
@@ -158,6 +161,11 @@ impl Client {
             if Instant::now() > pause_at {
                 break;
             }
+
+            if self.token.load(Ordering::SeqCst) <= 0 {
+                continue;
+            }
+
             let send_at = start_at + Duration::from_secs_f64(elapse);
             tokio::time::sleep_until(send_at).await;
 
@@ -182,11 +190,11 @@ impl Client {
                 hint,
             };
 
-            while self.token.load(Ordering::SeqCst) <= 0 {
-                tokio::task::yield_now().await;
+            if self.token.load(Ordering::SeqCst) > 0 {
+                if self.tx_manager.try_send(request) {
+                    self.token.fetch_sub(1, Ordering::SeqCst);
+                }
             }
-            self.token.fetch_sub(1, Ordering::SeqCst);
-            self.tx_manager.send(request);
         }
 
         println!("Client completed");
@@ -237,20 +245,19 @@ impl Server {
                 break;
             }
             if !self.rx.is_empty() {
-                if let Ok(mut request) = self.rx.recv() {
+                if let Ok(mut request) = self.rx.try_recv() {
                     let elapse = request.proc_elapses[self.depth];
                     busy_spin(Duration::from_micros(elapse));
                     let is_leaf = self.tx_manager.is_empty();
                     if !is_leaf {
-                        self.tx_manager.send(request);
+                        self.tx_manager.try_send(request);
                     } else {
                         request.finish_at = time_now();
                         request.total_elapse =
                             request.finish_at - request.send_at + request.prev_elapse;
-                        self.trace_tx.send(request.total_elapse).unwrap();
+                        self.trace_tx.try_send(request.total_elapse).unwrap();
                         self.token.fetch_add(1, Ordering::SeqCst);
                     }
-                    tokio::task::yield_now().await;
                 }
             }
         }
@@ -269,24 +276,23 @@ impl Server {
                 break;
             }
             while !self.rx.is_empty() {
-                match self.rx.try_recv() {
-                    Ok(request) => heap.push(request),
-                    Err(_) => break,
+                if let Ok(request) = self.rx.try_recv() {
+                    heap.push(request);
                 }
+                continue;
             }
             if let Some(mut request) = heap.pop() {
                 let elapse = request.proc_elapses[self.depth];
                 busy_spin(Duration::from_micros(elapse));
                 let is_leaf = self.tx_manager.is_empty();
                 if !is_leaf {
-                    self.tx_manager.send(request);
+                    self.tx_manager.try_send(request);
                 } else {
                     request.finish_at = time_now();
                     request.total_elapse =
                         request.finish_at - request.send_at + request.prev_elapse;
-                    self.trace_tx.send(request.total_elapse).unwrap();
+                    self.trace_tx.try_send(request.total_elapse).unwrap();
                     self.token.fetch_add(1, Ordering::SeqCst);
-                    tokio::task::yield_now().await;
                 }
             }
         }
