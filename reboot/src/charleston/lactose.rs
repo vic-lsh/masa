@@ -151,10 +151,11 @@ impl Client {
         let mut elapse = 0f64;
 
         let exponential = Exp::new(self.rps as f64).unwrap();
-        let mut normals = Vec::new();
+        let mut distributions = Vec::new();
         for i in 0..self.depth {
-            let normal = Normal::from_mean_cv(self.exec_mus[i] as f64, 0.3).unwrap();
-            normals.push(normal);
+            // let normal = Normal::from_mean_cv(self.exec_mus[i] as f64, 0.3).unwrap();
+            let exp = Exp::new(1f64 / self.exec_mus[i] as f64).unwrap();
+            distributions.push(exp);
         }
 
         loop {
@@ -177,7 +178,7 @@ impl Client {
             let hint = send_at - prev_elapse;
             let mut proc_elapses = Vec::new();
             for i in 0..self.depth {
-                let mut elapse = normals[i].sample(&mut self.rng) as u64;
+                let mut elapse = distributions[i].sample(&mut self.rng) as u64;
                 elapse = elapse.max(0);
                 proc_elapses.push(elapse);
             }
