@@ -6,7 +6,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 use std::sync::{
-    atomic::{AtomicI16, Ordering},
+    atomic::{AtomicI32, Ordering},
     Arc,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -17,7 +17,11 @@ use tokio::time::{Duration, Instant};
 #[structopt(about = "Rivas for simulation")]
 pub struct Args {
     #[structopt(short, long, required = true)]
-    pub depth: u64,
+    pub depth: usize,
+    #[structopt(short, long, required = true)]
+    pub exec_mus: Vec<u64>,
+    #[structopt(short, long, required = true)]
+    pub replicas: u64,
     #[structopt(short, long, required = true)]
     pub mode: String,
     #[structopt(short, long, required = true)]
@@ -73,12 +77,6 @@ fn busy_spin(duration: Duration) {
     while now.elapsed() < duration {}
 }
 
-const SEED: u64 = 998244353;
-
-// const ELAPSE_MU: u64 = 20_000; // 20ms
-// const ELAPSE_SIGMA: u64 = 5_000; // 5ms
-
-const REPLICAS: usize = 6;
 const EXEC_MU: u64 = 3_000; // 3ms
 
 #[derive(Debug)]
@@ -115,18 +113,27 @@ impl TxManager {
 #[derive(Debug)]
 struct Client {
     rng: StdRng,
-    depth: u64,
+    depth: usize,
+    exec_mus: Vec<u64>,
     rps: u64,
     secs: u64,
-    token: Arc<AtomicI16>,
+    token: Arc<AtomicI32>,
     tx_manager: TxManager,
 }
 
 impl Client {
-    fn new(seed: u64, depth: u64, rps: u64, secs: u64, token: Arc<AtomicI16>) -> Self {
+    fn new(
+        seed: u64,
+        depth: usize,
+        exec_mus: Vec<u64>,
+        rps: u64,
+        secs: u64,
+        token: Arc<AtomicI32>,
+    ) -> Self {
         Client {
             rng: StdRng::seed_from_u64(seed),
             depth,
+            exec_mus,
             rps,
             secs,
             token,
@@ -141,8 +148,11 @@ impl Client {
         let mut elapse = 0f64;
 
         let exponential = Exp::new(self.rps as f64).unwrap();
-        // let normal = Normal::new(ELAPSE_MU as f64, ELAPSE_SIGMA as f64).unwrap();
-        let normal = Normal::from_mean_cv(EXEC_MU as f64, 0.3).unwrap();
+        let mut normals = Vec::new();
+        for i in 0..self.depth {
+            let normal = Normal::from_mean_cv(self.exec_mus[i] as f64, 0.3).unwrap();
+            normals.push(normal);
+        }
 
         loop {
             if Instant::now() > pause_at {
@@ -158,8 +168,8 @@ impl Client {
             let prev_elapse = 0;
             let hint = send_at - prev_elapse;
             let mut proc_elapses = Vec::new();
-            for _ in 0..self.depth {
-                let mut elapse = normal.sample(&mut self.rng) as u64;
+            for i in 0..self.depth {
+                let mut elapse = normals[i].sample(&mut self.rng) as u64;
                 elapse = elapse.max(0);
                 proc_elapses.push(elapse);
             }
@@ -189,7 +199,7 @@ struct Server {
     depth: usize,
     mode: String,
     secs: u64,
-    token: Arc<AtomicI16>,
+    token: Arc<AtomicI32>,
     tx: Sender<Request>,
     rx: Receiver<Request>,
     tx_manager: TxManager,
@@ -202,7 +212,7 @@ impl Server {
         depth: usize,
         mode: String,
         secs: u64,
-        token: Arc<AtomicI16>,
+        token: Arc<AtomicI32>,
         trace_tx: Sender<u64>,
     ) -> Self {
         let (tx, rx) = unbounded::<Request>();
@@ -309,9 +319,12 @@ async fn fetch_traces(output: String, trace_rx: Receiver<u64>) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::from_args();
+    const SEED: u64 = 998244353;
 
-    let token = Arc::new(AtomicI16::new(args.concurrency as i16));
+    let mut args = Args::from_args();
+    args.concurrency = args.concurrency * args.replicas;
+
+    let token = Arc::new(AtomicI32::new(args.concurrency as i32));
     let (trace_tx, trace_rx) = unbounded();
 
     let mut rng = StdRng::seed_from_u64(SEED);
@@ -320,13 +333,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = Client::new(
         uniform.sample(&mut rng),
         args.depth,
+        args.exec_mus,
         args.rps,
         args.secs,
         token.clone(),
     );
 
     let mut depth_0_servers = Vec::new();
-    for _ in 0..REPLICAS {
+    for _ in 0..args.replicas {
         let server = Server::new(
             uniform.sample(&mut rng),
             0,
@@ -340,7 +354,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut depth_1_servers = Vec::new();
-    for _ in 0..REPLICAS {
+    for _ in 0..args.replicas {
         let server = Server::new(
             uniform.sample(&mut rng),
             1,
@@ -356,7 +370,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut depth_2_servers = Vec::new();
-    for _ in 0..REPLICAS {
+    for _ in 0..args.replicas {
         let server = Server::new(
             uniform.sample(&mut rng),
             2,
@@ -372,7 +386,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut depth_3_servers = Vec::new();
-    for _ in 0..REPLICAS {
+    for _ in 0..args.replicas {
         let server = Server::new(
             uniform.sample(&mut rng),
             3,
@@ -388,7 +402,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut depth_4_servers = Vec::new();
-    for _ in 0..REPLICAS {
+    for _ in 0..args.replicas {
         let server = Server::new(
             uniform.sample(&mut rng),
             4,
@@ -404,7 +418,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut depth_5_servers = Vec::new();
-    for _ in 0..REPLICAS {
+    for _ in 0..args.replicas {
         let server = Server::new(
             uniform.sample(&mut rng),
             5,
