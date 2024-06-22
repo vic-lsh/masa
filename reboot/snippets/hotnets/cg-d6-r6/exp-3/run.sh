@@ -12,7 +12,7 @@ for rps in "${rps_values[@]}"; do
     --replicas 6 \
     --mode fcfs \
     --rps "$rps" \
-    --secs 120 \
+    --secs 300 \
     --concurrency 256 \
     --output snippets/hotnets/cg-d6-r6/exp-3/r${rps}-fcfs.csv
 
@@ -24,7 +24,7 @@ for rps in "${rps_values[@]}"; do
     --replicas 6 \
     --mode masa \
     --rps "$rps" \
-    --secs 120 \
+    --secs 300 \
     --concurrency 256 \
     --output snippets/hotnets/cg-d6-r6/exp-3/r${rps}-masa.csv
 
