@@ -1,6 +1,6 @@
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use rand::{rngs::StdRng, SeedableRng};
-use rand_distr::{Distribution, Exp, Normal, Uniform};
+use rand_distr::{Distribution, Exp, Gamma, Uniform};
 use std::collections::BinaryHeap;
 use std::fs::{self, File};
 use std::io::Write;
@@ -18,6 +18,8 @@ use tokio::time::{Duration, Instant};
 pub struct Args {
     #[structopt(short, long, required = true)]
     pub depth: usize,
+    #[structopt(short, long, required = true)]
+    pub exec_ks: Vec<f64>,
     #[structopt(short, long, required = true)]
     pub exec_mus: Vec<u64>,
     #[structopt(short, long, required = true)]
@@ -117,6 +119,7 @@ impl TxManager {
 struct Client {
     rng: StdRng,
     depth: usize,
+    exec_ks: Vec<f64>,
     exec_mus: Vec<u64>,
     rps: u64,
     secs: u64,
@@ -128,6 +131,7 @@ impl Client {
     fn new(
         seed: u64,
         depth: usize,
+        exec_ks: Vec<f64>,
         exec_mus: Vec<u64>,
         rps: u64,
         secs: u64,
@@ -136,6 +140,7 @@ impl Client {
         Client {
             rng: StdRng::seed_from_u64(seed),
             depth,
+            exec_ks,
             exec_mus,
             rps,
             secs,
@@ -154,8 +159,11 @@ impl Client {
         let mut distributions = Vec::new();
         for i in 0..self.depth {
             // let normal = Normal::from_mean_cv(self.exec_mus[i] as f64, 0.3).unwrap();
-            let exp = Exp::new(1f64 / self.exec_mus[i] as f64).unwrap();
-            distributions.push(exp);
+            let k = self.exec_ks[i] as f64;
+            let mu = self.exec_mus[i] as f64;
+            let theta = mu / k;
+            let gamma = Gamma::new(k, theta).unwrap();
+            distributions.push(gamma);
         }
 
         loop {
@@ -326,6 +334,7 @@ async fn fetch_traces(output: String, trace_rx: Receiver<u64>) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    const KEY: u64 = 13;
     const SEED: u64 = 998244353;
 
     let mut args = Args::from_args();
@@ -334,12 +343,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let token = Arc::new(AtomicI32::new(args.concurrency as i32));
     let (trace_tx, trace_rx) = unbounded();
 
-    let mut rng = StdRng::seed_from_u64(SEED);
+    let seed = SEED * KEY + args.rps;
+    let mut rng = StdRng::seed_from_u64(seed);
     let uniform = Uniform::new(0, 1 << 63);
 
     let mut client = Client::new(
         uniform.sample(&mut rng),
         args.depth,
+        args.exec_ks,
         args.exec_mus,
         args.rps,
         args.secs,
