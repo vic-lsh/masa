@@ -74,7 +74,7 @@ pub fn time_now() -> u64 {
     now as u64
 }
 
-fn busy_spin(duration: Duration) {
+fn consume(duration: Duration) {
     let now = Instant::now();
     while now.elapsed() < duration {}
 }
@@ -256,7 +256,7 @@ impl Server {
             if !self.rx.is_empty() {
                 if let Ok(mut request) = self.rx.try_recv() {
                     let elapse = request.proc_elapses[self.depth];
-                    busy_spin(Duration::from_micros(elapse));
+                    consume(Duration::from_micros(elapse));
                     let is_leaf = self.tx_manager.is_empty();
                     if !is_leaf {
                         self.tx_manager.try_send(request);
@@ -292,7 +292,7 @@ impl Server {
             }
             if let Some(mut request) = heap.pop() {
                 let elapse = request.proc_elapses[self.depth];
-                busy_spin(Duration::from_micros(elapse));
+                consume(Duration::from_micros(elapse));
                 let is_leaf = self.tx_manager.is_empty();
                 if !is_leaf {
                     self.tx_manager.try_send(request);
