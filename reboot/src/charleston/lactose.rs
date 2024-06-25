@@ -1,7 +1,7 @@
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp, Gamma, Uniform};
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, VecDeque};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
@@ -41,11 +41,17 @@ pub struct Args {
 #[derive(Debug, Clone)]
 pub struct Request {
     send_at: u64,
+    recv_at: u64,
     finish_at: u64,
     proc_mus: Vec<u64>,
     proc_elapses: Vec<u64>,
-    total_elapse: u64,
     hint: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct Span {
+    span: String,
+    latency: u64,
 }
 
 impl Ord for Request {
@@ -222,10 +228,10 @@ impl Client {
 
             let request = Request {
                 send_at,
+                recv_at: 0,
                 finish_at: 0,
                 proc_mus,
                 proc_elapses,
-                total_elapse: 0,
                 hint,
             };
 
@@ -250,7 +256,7 @@ struct Server {
     tx: Sender<Request>,
     rx: Receiver<Request>,
     tx_manager: TxManager,
-    trace_tx: Sender<u64>,
+    trace_tx: Sender<Span>,
 }
 
 impl Server {
@@ -260,7 +266,7 @@ impl Server {
         mode: String,
         secs: u64,
         token: Arc<AtomicI32>,
-        trace_tx: Sender<u64>,
+        trace_tx: Sender<Span>,
     ) -> Self {
         let (tx, rx) = unbounded::<Request>();
         Server {
@@ -279,23 +285,37 @@ impl Server {
         let start_at = Instant::now();
         let pause_at = start_at + Duration::from_secs(self.secs + 3);
 
+        let mut queue = VecDeque::new();
         loop {
             if Instant::now() > pause_at {
                 break;
             }
-            if !self.rx.is_empty() {
+            while !self.rx.is_empty() {
                 if let Ok(mut request) = self.rx.try_recv() {
-                    let elapse = request.proc_elapses[self.depth];
-                    consume(Duration::from_micros(elapse));
-                    let is_leaf = self.tx_manager.is_empty();
-                    if !is_leaf {
-                        self.tx_manager.try_send(request);
-                    } else {
-                        request.finish_at = time_now();
-                        request.total_elapse = request.finish_at - request.send_at;
-                        self.trace_tx.try_send(request.total_elapse).unwrap();
-                        self.token.fetch_add(1, Ordering::SeqCst);
-                    }
+                    request.recv_at = time_now();
+                    queue.push_back(request);
+                }
+                continue;
+            }
+            if let Some(mut request) = queue.pop_front() {
+                let elapse = request.proc_elapses[self.depth];
+                consume(Duration::from_micros(elapse));
+                let is_leaf = self.tx_manager.is_empty();
+                if !is_leaf {
+                    self.tx_manager.try_send(request);
+                } else {
+                    request.finish_at = time_now();
+                    let span = Span {
+                        span: "end_to_end".to_string(),
+                        latency: request.finish_at - request.send_at,
+                    };
+                    self.trace_tx.try_send(span).unwrap();
+                    let span = Span {
+                        span: "service".to_string(),
+                        latency: request.finish_at - request.recv_at,
+                    };
+                    self.trace_tx.try_send(span).unwrap();
+                    self.token.fetch_add(1, Ordering::SeqCst);
                 }
             }
         }
@@ -315,6 +335,7 @@ impl Server {
             }
             while !self.rx.is_empty() {
                 if let Ok(mut request) = self.rx.try_recv() {
+                    request.recv_at = time_now();
                     request.hint += request.proc_mus[self.depth];
                     heap.push(request);
                 }
@@ -328,8 +349,16 @@ impl Server {
                     self.tx_manager.try_send(request);
                 } else {
                     request.finish_at = time_now();
-                    request.total_elapse = request.finish_at - request.send_at;
-                    self.trace_tx.try_send(request.total_elapse).unwrap();
+                    let span = Span {
+                        span: "end_to_end".to_string(),
+                        latency: request.finish_at - request.send_at,
+                    };
+                    self.trace_tx.try_send(span).unwrap();
+                    let span = Span {
+                        span: "service".to_string(),
+                        latency: request.finish_at - request.recv_at,
+                    };
+                    self.trace_tx.try_send(span).unwrap();
                     self.token.fetch_add(1, Ordering::SeqCst);
                 }
             }
@@ -348,7 +377,7 @@ impl Server {
     }
 }
 
-async fn fetch_traces(output: String, trace_rx: Receiver<u64>) {
+async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
     let path = Path::new(&output);
     if let Some(parent) = path.parent() {
         if !parent.exists() {
@@ -356,8 +385,8 @@ async fn fetch_traces(output: String, trace_rx: Receiver<u64>) {
         }
     }
     let mut file = File::create(output).unwrap();
-    while let Ok(latency) = trace_rx.recv() {
-        writeln!(file, "{}", latency).unwrap();
+    while let Ok(span) = trace_rx.recv() {
+        writeln!(file, "{},{}", span.span, span.latency).unwrap();
     }
 }
 
