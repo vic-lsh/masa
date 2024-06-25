@@ -21,7 +21,9 @@ pub struct Args {
     #[structopt(short, long, required = true)]
     pub exec_ks: Vec<f64>,
     #[structopt(short, long, required = true)]
-    pub exec_mus: Vec<u64>,
+    pub first_exec_mus: Vec<u64>,
+    #[structopt(short, long, required = true)]
+    pub second_exec_mus: Vec<u64>,
     #[structopt(short, long, required = true)]
     pub replicas: u64,
     #[structopt(short, long, required = true)]
@@ -40,7 +42,7 @@ pub struct Args {
 pub struct Request {
     send_at: u64,
     finish_at: u64,
-    prev_elapse: u64,
+    proc_mus: Vec<u64>,
     proc_elapses: Vec<u64>,
     total_elapse: u64,
     hint: u64,
@@ -120,7 +122,8 @@ struct Client {
     rng: StdRng,
     depth: usize,
     exec_ks: Vec<f64>,
-    exec_mus: Vec<u64>,
+    first_exec_mus: Vec<u64>,
+    second_exec_mus: Vec<u64>,
     rps: u64,
     secs: u64,
     token: Arc<AtomicI32>,
@@ -132,7 +135,8 @@ impl Client {
         seed: u64,
         depth: usize,
         exec_ks: Vec<f64>,
-        exec_mus: Vec<u64>,
+        first_exec_mus: Vec<u64>,
+        second_exec_mus: Vec<u64>,
         rps: u64,
         secs: u64,
         token: Arc<AtomicI32>,
@@ -141,7 +145,8 @@ impl Client {
             rng: StdRng::seed_from_u64(seed),
             depth,
             exec_ks,
-            exec_mus,
+            first_exec_mus,
+            second_exec_mus,
             rps,
             secs,
             token,
@@ -154,16 +159,23 @@ impl Client {
         let pause_at = start_at + Duration::from_secs(self.secs);
 
         let mut elapse = 0f64;
+        let uniform = Uniform::new(0, 1_000_000_007);
 
         let exponential = Exp::new(self.rps as f64).unwrap();
-        let mut distributions = Vec::new();
+        let mut first_gammas = Vec::new();
+        let mut second_gammas = Vec::new();
         for i in 0..self.depth {
-            // let normal = Normal::from_mean_cv(self.exec_mus[i] as f64, 0.3).unwrap();
             let k = self.exec_ks[i] as f64;
-            let mu = self.exec_mus[i] as f64;
+
+            let mu = self.first_exec_mus[i] as f64;
             let theta = mu / k;
             let gamma = Gamma::new(k, theta).unwrap();
-            distributions.push(gamma);
+            first_gammas.push(gamma);
+
+            let mu = self.second_exec_mus[i] as f64;
+            let theta = mu / k;
+            let gamma = Gamma::new(k, theta).unwrap();
+            second_gammas.push(gamma);
         }
 
         loop {
@@ -181,19 +193,37 @@ impl Client {
             let value = { exponential.sample(&mut self.rng) };
             elapse += value;
 
+            let coin = uniform.sample(&mut self.rng) % 2;
             let send_at = time_now();
-            let prev_elapse = 0;
-            let hint = send_at - prev_elapse;
+            // [NOTE] hint = send_at + SLO.
+            let mut hint = send_at;
+            let mut proc_mus = Vec::new();
             let mut proc_elapses = Vec::new();
             for i in 0..self.depth {
-                let mut elapse = distributions[i].sample(&mut self.rng) as u64;
-                elapse = elapse.max(0);
+                let proc_mu = {
+                    if coin == 0 {
+                        self.first_exec_mus[i]
+                    } else {
+                        self.second_exec_mus[i]
+                    }
+                };
+                proc_mus.push(proc_mu);
+                hint -= proc_mu;
+
+                let elapse = {
+                    if coin == 0 {
+                        first_gammas[i].sample(&mut self.rng) as u64
+                    } else {
+                        second_gammas[i].sample(&mut self.rng) as u64
+                    }
+                };
                 proc_elapses.push(elapse);
             }
+
             let request = Request {
                 send_at,
                 finish_at: 0,
-                prev_elapse,
+                proc_mus,
                 proc_elapses,
                 total_elapse: 0,
                 hint,
@@ -262,8 +292,7 @@ impl Server {
                         self.tx_manager.try_send(request);
                     } else {
                         request.finish_at = time_now();
-                        request.total_elapse =
-                            request.finish_at - request.send_at + request.prev_elapse;
+                        request.total_elapse = request.finish_at - request.send_at;
                         self.trace_tx.try_send(request.total_elapse).unwrap();
                         self.token.fetch_add(1, Ordering::SeqCst);
                     }
@@ -285,7 +314,8 @@ impl Server {
                 break;
             }
             while !self.rx.is_empty() {
-                if let Ok(request) = self.rx.try_recv() {
+                if let Ok(mut request) = self.rx.try_recv() {
+                    request.hint += request.proc_mus[self.depth];
                     heap.push(request);
                 }
                 continue;
@@ -298,8 +328,7 @@ impl Server {
                     self.tx_manager.try_send(request);
                 } else {
                     request.finish_at = time_now();
-                    request.total_elapse =
-                        request.finish_at - request.send_at + request.prev_elapse;
+                    request.total_elapse = request.finish_at - request.send_at;
                     self.trace_tx.try_send(request.total_elapse).unwrap();
                     self.token.fetch_add(1, Ordering::SeqCst);
                 }
@@ -351,7 +380,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         uniform.sample(&mut rng),
         args.depth,
         args.exec_ks,
-        args.exec_mus,
+        args.first_exec_mus,
+        args.second_exec_mus,
         args.rps,
         args.secs,
         token.clone(),

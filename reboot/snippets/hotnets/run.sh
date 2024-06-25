@@ -1,26 +1,37 @@
 cargo run --release --bin charleston_lactose -- \
   --depth 6 \
   --exec-ks 0.5 0.5 0.5 0.5 0.5 0.5 \
-  --exec-mus 3000 3000 3000 3000 3000 3000 \
+  --first-exec-mus 1500 2000 2500 3500 4000 4500 \
+  --second-exec-mus 4500 4000 3500 2500 2000 1500 \
   --replicas 6 \
   --mode fcfs \
   --rps 1600 \
-  --secs 10 \
+  --secs 60 \
   --concurrency 256 \
   --output snippets/hotnets/fcfs.csv
 
 cargo run --release --bin charleston_lactose -- \
   --depth 6 \
   --exec-ks 0.5 0.5 0.5 0.5 0.5 0.5 \
-  --exec-mus 3000 3000 3000 3000 3000 3000 \
+  --first-exec-mus 1500 2000 2500 3500 4000 4500 \
+  --second-exec-mus 4500 4000 3500 2500 2000 1500 \
   --replicas 6 \
   --mode masa \
   --rps 1600 \
-  --secs 10 \
+  --secs 60 \
   --concurrency 256 \
   --output snippets/hotnets/masa.csv
 
-# --exec-ks 0.1 0.1 0.1 0.1 0.1 0.1 \
+# --exec-ks 0.125 0.125 0.125 0.125 0.125 0.125 \
 # --exec-ks 0.25 0.25 0.25 0.25 0.25 0.25 \
 # --exec-ks 0.5 0.5 0.5 0.5 0.5 0.5 \
 # --exec-ks 1 1 1 1 1 1 \
+
+# --first-exec-mus 3000 3000 3000 3000 3000 3000 \
+# --second-exec-mus 3000 3000 3000 3000 3000 3000 \
+
+# --first-exec-mus 1500 2000 2500 3500 4000 4500 \
+# --second-exec-mus 4500 4000 3500 2500 2000 1500 \
+
+# --first-exec-mus 1500 1500 1500 4500 4500 4500 \
+# --second-exec-mus 4500 4500 4500 1500 1500 1500 \
