@@ -25,6 +25,10 @@ pub struct Args {
     #[structopt(short, long, required = true)]
     pub second_exec_mus: Vec<u64>,
     #[structopt(short, long, required = true)]
+    pub first_slo: u64,
+    #[structopt(short, long, required = true)]
+    pub second_slo: u64,
+    #[structopt(short, long, required = true)]
     pub replicas: u64,
     #[structopt(short, long, required = true)]
     pub mode: String,
@@ -45,12 +49,14 @@ pub struct Request {
     finish_at: u64,
     proc_mus: Vec<u64>,
     proc_elapses: Vec<u64>,
+    slo: u64,
     hint: u64,
 }
 
 #[derive(Debug, Clone)]
 pub struct Span {
     span: String,
+    slo: u64,
     latency: u64,
 }
 
@@ -130,6 +136,8 @@ struct Client {
     exec_ks: Vec<f64>,
     first_exec_mus: Vec<u64>,
     second_exec_mus: Vec<u64>,
+    first_slo: u64,
+    second_slo: u64,
     rps: u64,
     secs: u64,
     token: Arc<AtomicI32>,
@@ -143,6 +151,8 @@ impl Client {
         exec_ks: Vec<f64>,
         first_exec_mus: Vec<u64>,
         second_exec_mus: Vec<u64>,
+        first_slo: u64,
+        second_slo: u64,
         rps: u64,
         secs: u64,
         token: Arc<AtomicI32>,
@@ -153,6 +163,8 @@ impl Client {
             exec_ks,
             first_exec_mus,
             second_exec_mus,
+            first_slo,
+            second_slo,
             rps,
             secs,
             token,
@@ -202,7 +214,14 @@ impl Client {
             let coin = uniform.sample(&mut self.rng) % 2;
             let send_at = time_now();
             // [NOTE] hint = send_at + SLO.
-            let mut hint = send_at;
+            let slo = {
+                if coin == 0 {
+                    self.first_slo
+                } else {
+                    self.second_slo
+                }
+            };
+            let mut hint = send_at + slo;
             let mut proc_mus = Vec::new();
             let mut proc_elapses = Vec::new();
             for i in 0..self.depth {
@@ -232,6 +251,7 @@ impl Client {
                 finish_at: 0,
                 proc_mus,
                 proc_elapses,
+                slo,
                 hint,
             };
 
@@ -307,11 +327,13 @@ impl Server {
                     request.finish_at = time_now();
                     let span = Span {
                         span: "end_to_end".to_string(),
+                        slo: request.slo,
                         latency: request.finish_at - request.send_at,
                     };
                     self.trace_tx.try_send(span).unwrap();
                     let span = Span {
                         span: "service".to_string(),
+                        slo: request.slo,
                         latency: request.finish_at - request.recv_at,
                     };
                     self.trace_tx.try_send(span).unwrap();
@@ -351,11 +373,13 @@ impl Server {
                     request.finish_at = time_now();
                     let span = Span {
                         span: "end_to_end".to_string(),
+                        slo: request.slo,
                         latency: request.finish_at - request.send_at,
                     };
                     self.trace_tx.try_send(span).unwrap();
                     let span = Span {
                         span: "service".to_string(),
+                        slo: request.slo,
                         latency: request.finish_at - request.recv_at,
                     };
                     self.trace_tx.try_send(span).unwrap();
@@ -386,7 +410,7 @@ async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
     }
     let mut file = File::create(output).unwrap();
     while let Ok(span) = trace_rx.recv() {
-        writeln!(file, "{},{}", span.span, span.latency).unwrap();
+        writeln!(file, "{},{},{}", span.span, span.slo, span.latency).unwrap();
     }
 }
 
@@ -411,6 +435,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.exec_ks,
         args.first_exec_mus,
         args.second_exec_mus,
+        args.first_slo,
+        args.second_slo,
         args.rps,
         args.secs,
         token.clone(),
