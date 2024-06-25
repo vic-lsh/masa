@@ -510,6 +510,70 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         depth_5_servers.push(server);
     }
 
+    let mut depth_6_servers = Vec::new();
+    for _ in 0..args.replicas {
+        let server = Server::new(
+            uniform.sample(&mut rng),
+            6,
+            args.mode.clone(),
+            args.secs,
+            token.clone(),
+            trace_tx.clone(),
+        );
+        for depth_5_server in depth_5_servers.iter_mut() {
+            depth_5_server.tx_manager.add(server.tx.clone());
+        }
+        depth_6_servers.push(server);
+    }
+
+    let mut depth_7_servers = Vec::new();
+    for _ in 0..args.replicas {
+        let server = Server::new(
+            uniform.sample(&mut rng),
+            7,
+            args.mode.clone(),
+            args.secs,
+            token.clone(),
+            trace_tx.clone(),
+        );
+        for depth_6_server in depth_6_servers.iter_mut() {
+            depth_6_server.tx_manager.add(server.tx.clone());
+        }
+        depth_7_servers.push(server);
+    }
+
+    let mut depth_8_servers = Vec::new();
+    for _ in 0..args.replicas {
+        let server = Server::new(
+            uniform.sample(&mut rng),
+            8,
+            args.mode.clone(),
+            args.secs,
+            token.clone(),
+            trace_tx.clone(),
+        );
+        for depth_7_server in depth_7_servers.iter_mut() {
+            depth_7_server.tx_manager.add(server.tx.clone());
+        }
+        depth_8_servers.push(server);
+    }
+
+    let mut depth_9_servers = Vec::new();
+    for _ in 0..args.replicas {
+        let server = Server::new(
+            uniform.sample(&mut rng),
+            9,
+            args.mode.clone(),
+            args.secs,
+            token.clone(),
+            trace_tx.clone(),
+        );
+        for depth_8_server in depth_8_servers.iter_mut() {
+            depth_8_server.tx_manager.add(server.tx.clone());
+        }
+        depth_9_servers.push(server);
+    }
+
     let mut handles = Vec::new();
 
     handles.push(tokio::spawn(async move {
@@ -547,6 +611,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }));
 
     handles.extend(depth_5_servers.into_iter().map(|mut server| {
+        tokio::spawn(async move {
+            server.start_server().await.unwrap();
+        })
+    }));
+
+    handles.extend(depth_6_servers.into_iter().map(|mut server| {
+        tokio::spawn(async move {
+            server.start_server().await.unwrap();
+        })
+    }));
+
+    handles.extend(depth_7_servers.into_iter().map(|mut server| {
+        tokio::spawn(async move {
+            server.start_server().await.unwrap();
+        })
+    }));
+
+    handles.extend(depth_8_servers.into_iter().map(|mut server| {
+        tokio::spawn(async move {
+            server.start_server().await.unwrap();
+        })
+    }));
+
+    handles.extend(depth_9_servers.into_iter().map(|mut server| {
         tokio::spawn(async move {
             server.start_server().await.unwrap();
         })
