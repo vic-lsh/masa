@@ -3,6 +3,8 @@ cargo run --release --bin charleston_lactose -- \
   --exec-ks 1 1 1 1 1 1 1 1 1 1 \
   --first-exec-mus 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 \
   --second-exec-mus 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 \
+  --first-slo 50000 \
+  --second-slo 500000 \
   --replicas 4 \
   --mode fcfs \
   --rps 1600 \
@@ -15,6 +17,8 @@ cargo run --release --bin charleston_lactose -- \
   --exec-ks 1 1 1 1 1 1 1 1 1 1 \
   --first-exec-mus 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 \
   --second-exec-mus 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 \
+  --first-slo 50000 \
+  --second-slo 500000 \
   --replicas 4 \
   --mode masa \
   --rps 1600 \
