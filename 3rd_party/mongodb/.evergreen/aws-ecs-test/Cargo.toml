@@ -1,0 +1,12 @@
+[package]
+name = "aws-ecs-test"
+version = "0.1.0"
+authors = ["Saghm Rossi <saghmrossi@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+tokio = "1.0.2"
+
+[dependencies.mongodb]
+path = "../.."
+features = ["aws-auth"]

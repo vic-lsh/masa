@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+    branches:
+    - master
+  pull_request: {}
+
+env:
+  PROTOC_VERSION: 3.23.4
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+
+  rustfmt:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: hecrj/setup-rust-action@v2
+      with:
+        components: rustfmt
+    - run: cargo fmt --all --check
+
+  deny-check:
+    name: cargo-deny check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: EmbarkStudios/cargo-deny-action@v1
+
+  codegen:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: hecrj/setup-rust-action@v2
+    - name: Install protoc
+      uses: taiki-e/install-action@v2
+      with:
+        tool: protoc@${{ env.PROTOC_VERSION }}
+    - uses: Swatinem/rust-cache@v2
+    - run: cargo run --package codegen
+    - run: git diff --exit-code
+
+  udeps:
+    name: Check unused dependencies
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+        include:
+        - os: windows-latest
+          option: --exclude-features uds
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: nightly-2024-02-06
+    - uses: taiki-e/install-action@cargo-hack
+    - uses: taiki-e/install-action@cargo-udeps
+    - name: Install protoc
+      uses: taiki-e/install-action@v2
+      with:
+        tool: protoc@${{ env.PROTOC_VERSION }}
+    - uses: Swatinem/rust-cache@v2
+    - run: cargo hack udeps --workspace --each-feature ${{ matrix.option }}
+
+  check:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: hecrj/setup-rust-action@v2
+    - uses: taiki-e/install-action@cargo-hack
+    - name: Install protoc
+      uses: taiki-e/install-action@v2
+      with:
+        tool: protoc@${{ env.PROTOC_VERSION }}
+    - uses: Swatinem/rust-cache@v2
+    - name: Check features
+      run: cargo hack check --workspace --no-private --each-feature --no-dev-deps
+    - name: Check all targets
+      run: cargo check --workspace --all-targets --all-features
+
+  msrv:
+    name: Check MSRV
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: hecrj/setup-rust-action@v2
+      with:
+        rust-version: "1.70"    # msrv
+    - name: Install protoc
+      uses: taiki-e/install-action@v2
+      with:
+        tool: protoc@${{ env.PROTOC_VERSION }}
+    - uses: Swatinem/rust-cache@v2
+    - run: cargo check --workspace --all-targets --all-features
+    - run: cargo doc --no-deps --package tonic --package tonic-build --package tonic-health --package tonic-reflection --package tonic-types --package tonic-web
+      env:
+        RUSTDOCFLAGS: "-D warnings"
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: hecrj/setup-rust-action@v2
+    - name: Install protoc
+      uses: taiki-e/install-action@v2
+      with:
+        tool: protoc@${{ env.PROTOC_VERSION }}
+    - uses: Swatinem/rust-cache@v2
+    - run: cargo test --workspace --all-features
+      env:
+        QUICKCHECK_TESTS: 1000  # run a lot of quickcheck iterations
+
+  interop:
+    name: Interop Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: hecrj/setup-rust-action@v2
+    - name: Install protoc
+      uses: taiki-e/install-action@v2
+      with:
+        tool: protoc@${{ env.PROTOC_VERSION }}
+    - uses: Swatinem/rust-cache@v2
+    - name: Run interop tests
+      run: ./interop/test.sh
+      shell: bash
+    - name: Run interop tests with Rustls
+      run: ./interop/test.sh --use_tls tls_rustls
+      shell: bash

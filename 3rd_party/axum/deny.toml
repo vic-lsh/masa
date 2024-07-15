@@ -1,0 +1,43 @@
+[advisories]
+vulnerability = "deny"
+unmaintained = "warn"
+notice = "warn"
+ignore = []
+
+[licenses]
+unlicensed = "warn"
+allow = []
+deny = []
+copyleft = "warn"
+allow-osi-fsf-free = "either"
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "deny"
+highlight = "all"
+skip-tree = [
+    # currently duplicated through header, reqwest, tower-http and cookie
+    # C.f. https://github.com/tokio-rs/axum/pull/1641
+    { name = "base64" },
+    # parking_lot pulls in old versions of windows-sys
+    { name = "windows-sys" },
+    # old version pulled in by rustls via ring
+    { name = "spin" },
+    # lots still pulls in syn 1.x
+    { name = "syn" },
+    # pulled in by tracing-subscriber
+    { name = "regex-syntax" },
+    # pulled in by tracing-subscriber
+    { name = "regex-automata" },
+    # pulled in by h2
+    { name = "indexmap" },
+    # pulled in by axum, can't update without breaking changes
+    { name = "bitflags" },
+    # pulled in by hyper
+    { name = "socket2" },
+]
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-git = []
