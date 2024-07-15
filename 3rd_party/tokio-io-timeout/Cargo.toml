@@ -1,0 +1,16 @@
+[package]
+name = "tokio-io-timeout"
+version = "1.2.0"
+authors = ["Steven Fackler <sfackler@gmail.com>"]
+license = "MIT/Apache-2.0"
+description = "Tokio wrappers which apply timeouts to IO operations"
+repository = "https://github.com/sfackler/tokio-io-timeout"
+readme = "README.md"
+edition = "2018"
+
+[dependencies]
+pin-project-lite = "0.2"
+tokio = { path = "../tokio/tokio", features = ["time"] }
+
+[dev-dependencies]
+tokio = { path = "../tokio/tokio", features = ["full"] }

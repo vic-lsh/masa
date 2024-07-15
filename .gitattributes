@@ -1,3 +1,4 @@
+*.csv filter=lfs diff=lfs merge=lfs -text
 trace-analysis/analyze.ipynb filter=lfs diff=lfs merge=lfs -text
 trace-analysis/analyze.ipynb !text !filter !merge !diff
 * !text !filter !merge !diff

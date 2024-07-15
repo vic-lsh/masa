@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches:
+    - master
+  pull_request: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Install protoc
+      uses: taiki-e/install-action@v2
+      with:
+        tool: protoc@3.20.3
+    - run: cargo check --workspace --all-features --all-targets
+
+  check-docs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Install protoc
+      uses: taiki-e/install-action@v2
+      with:
+        tool: protoc@3.20.3
+    - name: cargo doc
+      working-directory: ${{ matrix.subcrate }}
+      env:
+        RUSTDOCFLAGS: "-D rustdoc::broken_intra_doc_links"
+      run: cargo doc --all-features --no-deps
+
+  cargo-hack:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: taiki-e/install-action@cargo-hack
+    - name: Install protoc
+      uses: taiki-e/install-action@v2
+      with:
+        tool: protoc@3.20.3
+    - name: cargo hack check
+      working-directory: ${{ matrix.subcrate }}
+      env:
+        RUSTFLAGS: "-D unused_imports -D dead_code -D unused_variables"
+      run: cargo hack check --each-feature --no-dev-deps --workspace
+
+  test-versions:
+    # Test against the stable, beta, and nightly Rust toolchains on ubuntu-latest.
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable, beta, nightly]
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
+    - name: Install protoc
+      uses: taiki-e/install-action@v2
+      with:
+        tool: protoc@3.20.3
+    - run: cargo test --workspace --all-features
+
+  test-msrv:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@1.63.0
+    - name: Install protoc
+      uses: taiki-e/install-action@v2
+      with:
+        tool: protoc@3.20.3
+    - run: cargo test -p tower-http --all-features
+
+  style:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt
+    - name: Install protoc
+      uses: taiki-e/install-action@v2
+      with:
+        tool: protoc@3.20.3
+    - run: cargo fmt --all --check
+
+  deny-check:
+    name: cargo-deny check
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.checks == 'advisories' }}
+    strategy:
+      matrix:
+        checks:
+        - advisories
+        - bans licenses sources
+    steps:
+    - uses: actions/checkout@v3
+    - uses: EmbarkStudios/cargo-deny-action@v1
+      with:
+        command: check ${{ matrix.checks }}
+        arguments: --all-features --manifest-path tower-http/Cargo.toml
+
+  cargo-public-api-crates:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@nightly
+    - uses: Swatinem/rust-cache@v2
+    - name: Install cargo-public-api-crates
+      run: |
+        cargo install --git https://github.com/davidpdrsn/cargo-public-api-crates
+    - name: cargo public-api-crates check
+      run: cargo public-api-crates --manifest-path tower-http/Cargo.toml check
