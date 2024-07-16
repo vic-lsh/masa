@@ -162,9 +162,12 @@ pub(crate) fn generate_internal<T: Service>(
                     Poll::Ready(Ok(()))
                 }
 
-                // [NOTE] change this to look up request DDL
-                // Return Future and DDL.
+                // [TODO] Return Future and DDL.
                 fn call(&mut self, req: http::Request<B>) -> Self::Future {
+                    let masa_str = req.headers()["masa"].to_str().unwrap();
+                    let masa_u64 = masa_str.parse::<u64>().unwrap();
+                    // println!("{:?}", masa_u64);
+
                     let inner = self.inner.clone();
 
                     match req.uri().path() {
@@ -471,7 +474,7 @@ fn generate_unary<T: Method>(
         quote!(&inner)
     };
 
-    // [NOTE] change this to update unary service (e.g., SayHelloSvc)
+    // [TODO] Update unary service (e.g., SayHelloSvc).
     quote! {
         #[allow(non_camel_case_types)]
         struct #service_ident<T: #server_trait >(pub Arc<T>);
