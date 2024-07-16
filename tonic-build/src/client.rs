@@ -237,6 +237,7 @@ fn generate_unary<T: Service>(
                tonic::Status::new(tonic::Code::Unknown, format!("Service was not ready: {}", e.into()))
            })?;
            let codec = #codec_name::default();
+           // [NOTE] Method path name on the client side.
            let path = http::uri::PathAndQuery::from_static(#path);
            let mut req = request.into_request();
            req.extensions_mut().insert(GrpcMethod::new(#service_name, #method_name));
