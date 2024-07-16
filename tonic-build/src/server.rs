@@ -164,6 +164,8 @@ pub(crate) fn generate_internal<T: Service>(
 
                 // [TODO] Return Future and DDL.
                 fn call(&mut self, req: http::Request<B>) -> Self::Future {
+                    // [NOTE] Request path on the server side.
+
                     let masa_str = req.headers()["masa"].to_str().unwrap();
                     let masa_u64 = masa_str.parse::<u64>().unwrap();
                     // println!("{:?}", masa_u64);
@@ -400,6 +402,7 @@ fn generate_methods<T: Service>(
 
     for method in service.methods() {
         let path = format_method_path(service, method, emit_package);
+        // [NOTE] Method path name on the server side.
         let method_path = Lit::Str(LitStr::new(&path, Span::call_site()));
         let ident = quote::format_ident!("{}", method.name());
         let server_trait = quote::format_ident!("{}", service.name());
@@ -474,7 +477,6 @@ fn generate_unary<T: Method>(
         quote!(&inner)
     };
 
-    // [TODO] Update unary service (e.g., SayHelloSvc).
     quote! {
         #[allow(non_camel_case_types)]
         struct #service_ident<T: #server_trait >(pub Arc<T>);
@@ -483,6 +485,7 @@ fn generate_unary<T: Method>(
             type Response = #response;
             type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
 
+            // [TODO] Return Future and DDL.
             fn call(&mut self, request: tonic::Request<#request>) -> Self::Future {
                 let inner = Arc::clone(&self.0);
                 let fut = async move {
