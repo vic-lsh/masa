@@ -216,7 +216,13 @@ impl<T> Grpc<T> {
         M1: Send + Sync + 'static,
         M2: Send + Sync + 'static,
     {
-        let request = request.map(|m| tokio_stream::once(m));
+        // [NOTE] Request path on the client side.
+
+        let mut request = request.map(|m| tokio_stream::once(m));
+
+        let metadata = request.metadata_mut();
+        metadata.insert("masa", "8660".parse().unwrap());
+
         self.client_streaming(request, path, codec).await
     }
 
