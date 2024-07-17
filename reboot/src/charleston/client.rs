@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use structopt::StructOpt;
+use tonic::metadata::MasaContext;
 
 pub mod hello {
     tonic::include_proto!("hello");
@@ -35,10 +36,11 @@ async fn loadgen(
                 name: "Tonic".into(),
             };
             loop {
-                let _ = client
-                    .say_hello(tonic::Request::new(request.clone()))
-                    .await
-                    .unwrap();
+                let mut request = tonic::Request::new(request.clone());
+                let metadata = request.metadata_mut();
+                let par_ctx = MasaContext::default();
+                metadata.insert_ctx("par_ctx", par_ctx);
+                let _ = client.say_hello(request).await.unwrap();
                 c.fetch_add(1, Ordering::Relaxed);
             }
         });
