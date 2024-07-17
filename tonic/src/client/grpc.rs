@@ -3,7 +3,6 @@ use crate::{
     body::BoxBody,
     client::GrpcService,
     codec::{encode_client, Codec, Decoder, Streaming},
-    metadata::MasaContext,
     request::SanitizeHeaders,
     Code, Request, Response, Status,
 };

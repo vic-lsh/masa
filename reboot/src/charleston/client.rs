@@ -14,9 +14,7 @@ pub mod hello {
 #[structopt(about = "Client for benchmarking")]
 pub struct Args {
     #[structopt(short, long, default_value = "http://[::1]:50051")]
-    pub addr1: String,
-    // #[structopt(short, long, default_value = "http://[::1]:50052")]
-    // pub addr2: String,
+    pub addr: String,
 }
 
 async fn loadgen(
@@ -71,16 +69,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let c = cnt.clone();
-    let h1 = tokio::spawn(async move {
-        loadgen(args.addr1, c).await.unwrap();
+    let h = tokio::spawn(async move {
+        loadgen(args.addr, c).await.unwrap();
     });
-    // let c = cnt.clone();
-    // let h2 = tokio::spawn(async move {
-    //     loadgen(args.addr2, c).await.unwrap();
-    // });
 
-    h1.await.unwrap();
-    // h2.await.unwrap();
+    h.await.unwrap();
 
     Ok(())
 }

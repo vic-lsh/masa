@@ -1,12 +1,12 @@
 # README
 
-# Rotation
+## Tests
 
-* `lactose.rs` is the Hotnets draft of emulation.
-* `client_bench.rs` is the report draft of the client for executor check.
-* `server.rs` is the report draft of the server for executor check.
+* `client.rs` is a closed-loop client.
+* `client_bench.rs` is an open-loop client.
+* `server.rs` is a single server.
 
-## Archives
+## Lactose
 
-* `rivas.rs` is the base draft of emulation.
-* `client.rs` is the base draft of the client for executor check.
+* `lactose/sequential.rs` is emulating a sequential call graph. It is used in the Hotnets evaluations.
+* `lactose/single.rs` is emulating a single server.

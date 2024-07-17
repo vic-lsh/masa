@@ -7,12 +7,12 @@ publish = false
 version = "0.1.0"
 
 [[bin]]
-name = "charleston_lactose"
-path = "src/charleston/lactose.rs"
+name = "charleston_lactose_sequential"
+path = "src/charleston/lactose/sequential.rs"
 
 [[bin]]
-name = "charleston_rivas"
-path = "src/charleston/rivas.rs"
+name = "charleston_lactose_single"
+path = "src/charleston/lactose/single.rs"
 
 [[bin]]
 name = "charleston_client"

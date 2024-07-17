@@ -2,7 +2,6 @@ use futures_lite::future;
 use hello::greeter_server::{Greeter, GreeterServer};
 use hello::{HelloReply, HelloRequest};
 use hyper::rt::{Exec, Executor};
-use rand_distr::{Distribution, Normal};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -42,20 +41,6 @@ fn busy_spin(duration: Duration) {
     while now.elapsed() < duration {}
 }
 
-async fn rand_busy_spin(mean_ms: impl Into<f64>, std_ms: impl Into<f64>) {
-    let random_value = {
-        let mut rng = rand::thread_rng();
-
-        let mean = mean_ms.into();
-        let std = std_ms.into();
-        let normal = Normal::new(mean, std).unwrap();
-        let random_value: f64 = normal.sample(&mut rng);
-        random_value
-    };
-
-    busy_spin(Duration::from_millis(std::cmp::max(1, random_value as u64)));
-}
-
 #[tonic::async_trait]
 impl Greeter for GreeterImpl {
     async fn say_hello(
@@ -63,8 +48,7 @@ impl Greeter for GreeterImpl {
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
         let mean_ms = 2;
-        let std_ms = 1;
-        rand_busy_spin(mean_ms, std_ms).await;
+        busy_spin(Duration::from_millis(mean_ms));
 
         let reply = hello::HelloReply {
             message: format!("Hello {}!", request.into_inner().name),
@@ -133,7 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let smol_ex = Arc::new(smol::Executor::new());
     let exs = [
         Arc::new(ExecImpl::new(smol_ex.clone(), 1)),
-        Arc::new(ExecImpl::new(smol_ex.clone(), 1)),
+        // Arc::new(ExecImpl::new(smol_ex.clone(), 1)),
     ];
 
     println!("Spawning {} server threads...", args.num_threads);
@@ -157,7 +141,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addrs = [
         "[::1]:50051".parse().unwrap(),
-        "[::1]:50052".parse().unwrap(),
+        // "[::1]:50052".parse().unwrap(),
     ];
     let mut handles = Vec::new();
     for i in 0..addrs.len() {
