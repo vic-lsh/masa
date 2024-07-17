@@ -3,6 +3,7 @@
 mod encoding;
 mod key;
 mod map;
+mod masa;
 mod value;
 
 pub use self::encoding::Ascii;
@@ -27,6 +28,7 @@ pub use self::map::ValueRef;
 pub use self::map::ValueRefMut;
 pub use self::map::Values;
 pub use self::map::ValuesMut;
+pub use self::masa::Masainfo;
 pub use self::value::AsciiMetadataValue;
 pub use self::value::BinaryMetadataValue;
 pub use self::value::MetadataValue;

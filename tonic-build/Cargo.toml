@@ -20,6 +20,7 @@ proc-macro2 = "1.0"
 prost-build = { version = "0.12", optional = true }
 quote = "1.0"
 syn = "2.0"
+tonic = { path = "../tonic" }
 
 [features]
 default = ["transport", "prost"]

@@ -104,6 +104,8 @@ pub(crate) fn generate_internal<T: Service>(
                 clippy::let_unit_value,
             )]
             use tonic::codegen::*;
+            /// Use Masainfo.
+            use tonic::metadata::Masainfo;
 
             #generated_trait
 
@@ -166,9 +168,9 @@ pub(crate) fn generate_internal<T: Service>(
                 fn call(&mut self, req: http::Request<B>) -> Self::Future {
                     // [NOTE] Request path on the server side.
 
-                    let masa_str = req.headers()["masa"].to_str().unwrap();
-                    let masa_u64 = masa_str.parse::<u64>().unwrap();
-                    // println!("{:?}", masa_u64);
+                    let masainfo_str = req.headers()["masainfo"].to_str().unwrap();
+                    let masainfo = Masainfo::from_json(masainfo_str);
+                    println!("{:?}", masainfo);
 
                     let inner = self.inner.clone();
 
