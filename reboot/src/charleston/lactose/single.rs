@@ -1,4 +1,4 @@
-use crossbeam_channel::{bounded, unbounded, Receiver, Sender, TryRecvError};
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp, Normal};
 use std::collections::BinaryHeap;
