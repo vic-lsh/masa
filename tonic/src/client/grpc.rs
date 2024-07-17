@@ -3,7 +3,7 @@ use crate::{
     body::BoxBody,
     client::GrpcService,
     codec::{encode_client, Codec, Decoder, Streaming},
-    metadata::{Graph, Masainfo},
+    metadata::MasaContext,
     request::SanitizeHeaders,
     Code, Request, Response, Status,
 };
@@ -222,8 +222,13 @@ impl<T> Grpc<T> {
         let mut request = request.map(|m| tokio_stream::once(m));
 
         let metadata = request.metadata_mut();
-        let masainfo = Masainfo::new(1, 2, Graph::default());
-        metadata.insert("masainfo", masainfo.to_json().parse().unwrap());
+        let par_ctx = metadata.get_ctx("par_ctx").unwrap();
+        println!("par_ctx: {:?}", par_ctx);
+
+        let span = path.to_string();
+        let ctx = par_ctx.forward(span);
+        println!("ctx: {:?}", ctx);
+        metadata.insert_ctx("ctx", ctx);
 
         self.client_streaming(request, path, codec).await
     }

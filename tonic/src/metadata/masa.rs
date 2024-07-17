@@ -6,37 +6,70 @@ type Timestamp = u64;
 type Latency = u64;
 type Span = String;
 
-/// Represent Masa Information.
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Masainfo {
+/// Represent a Masa context.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MasaContext {
+    span: Span,
     start_at: Timestamp,
     deadline: Timestamp,
     graph: Graph,
 }
 
-impl Masainfo {
-    /// Create a new Masainfo.
-    pub fn new(start_at: Timestamp, deadline: Timestamp, graph: Graph) -> Self {
+impl MasaContext {
+    /// Create a default Masa context.
+    pub fn default() -> Self {
         Self {
+            span: "0".to_string(),
+            start_at: 1,
+            deadline: 2,
+            graph: Graph::default(),
+        }
+    }
+
+    /// Create a new Masa context.
+    pub fn new(span: Span, start_at: Timestamp, deadline: Timestamp, graph: Graph) -> Self {
+        Self {
+            span,
             start_at,
             deadline,
             graph,
         }
     }
 
-    /// Create a new Masainfo from JSON.
+    /// Create a new Masa context with a forward span.
+    pub fn forward(&self, span: Span) -> Self {
+        let ctx = MasaContext {
+            span,
+            start_at: self.start_at + 1,
+            deadline: self.deadline + 2,
+            graph: self.graph.clone(),
+        };
+        ctx
+
+        // [TODO] Check self.span and span are valid.
+        // let deadline = self.deadline - graph.proc_ests[&span];
+        // let ctx = Masa context {
+        // 	span,
+        // 	start_at: self.start_at,
+        // 	deadline,
+        // 	graph: self.graph,
+        // };
+        // ctx
+    }
+
+    /// Create a new Masa context from JSON.
     pub fn from_json(json: &str) -> Self {
         serde_json::from_str(json).unwrap()
     }
 
-    /// Convert Masainfo to JSON.
+    /// Convert a Masa context to JSON.
     pub fn to_json(&self) -> String {
         serde_json::to_string(&self).unwrap()
     }
 }
 
 /// Represent a call graph.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Graph {
     spans: Vec<Span>,
     proc_ests: HashMap<Span, Latency>,
@@ -44,7 +77,7 @@ pub struct Graph {
 }
 
 impl Graph {
-    /// Create a default Graph.
+    /// Create a default graph.
     pub fn default() -> Self {
         Self {
             spans: Vec::new(),
@@ -53,7 +86,7 @@ impl Graph {
         }
     }
 
-    /// Create a new Graph.
+    /// Create a new graph.
     pub fn new(
         spans: Vec<Span>,
         proc_ests: HashMap<Span, Latency>,
@@ -66,12 +99,12 @@ impl Graph {
         }
     }
 
-    /// Create a new Graph from JSON.
+    /// Create a new graph from JSON.
     pub fn from_json(json: &str) -> Self {
         serde_json::from_str(json).unwrap()
     }
 
-    /// Convert Graph to JSON.
+    /// Convert a graph to JSON.
     pub fn to_json(&self) -> String {
         serde_json::to_string(&self).unwrap()
     }
