@@ -7,7 +7,7 @@ type Latency = u64;
 type Span = String;
 
 /// Represent a Masa context.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct MasaContext {
     span: Span,
     start_at: Timestamp,
@@ -69,7 +69,7 @@ impl MasaContext {
 }
 
 /// Represent a call graph.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Graph {
     spans: Vec<Span>,
     proc_ests: HashMap<Span, Latency>,
