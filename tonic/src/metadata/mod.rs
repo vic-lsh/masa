@@ -28,7 +28,7 @@ pub use self::map::ValueRef;
 pub use self::map::ValueRefMut;
 pub use self::map::Values;
 pub use self::map::ValuesMut;
-pub use self::masa::Masainfo;
+pub use self::masa::{Graph, Masainfo};
 pub use self::value::AsciiMetadataValue;
 pub use self::value::BinaryMetadataValue;
 pub use self::value::MetadataValue;
