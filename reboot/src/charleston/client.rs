@@ -1,10 +1,11 @@
 use hello::greeter_client::GreeterClient;
 use hello::HelloRequest;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use structopt::StructOpt;
-use tonic::metadata::MasaContext;
+use tonic::metadata::{Context, Graph};
 
 pub mod hello {
     tonic::include_proto!("hello");
@@ -25,8 +26,26 @@ async fn loadgen(
     let concurrency = 1;
     let mut handles = Vec::with_capacity(concurrency);
 
+    let graph = {
+        let spans = vec![
+            "head".to_string(),
+            "/hello.Greeter/SayHello".to_string(),
+            "tail".to_string(),
+        ];
+        let mut proc_ests = HashMap::new();
+        for span in &spans {
+            proc_ests.insert(span.clone(), 1);
+        }
+        let mut proc_elapses = HashMap::new();
+        for span in &spans {
+            proc_elapses.insert(span.clone(), 1);
+        }
+        Graph::new(spans, proc_ests, proc_elapses)
+    };
+
     let client = GreeterClient::connect(addr).await?;
     for _ in 0..concurrency {
+        let graph = graph.clone();
         let mut client = client.clone();
         let c = rpc_count.clone();
         let h = tokio::spawn(async move {
@@ -37,17 +56,13 @@ async fn loadgen(
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 c.fetch_add(1, Ordering::Relaxed);
 
-                // [TODO] Context management is per parent.
-                // Each child should have a different context.
-                // Each context should have a different graph.
+                let ctx = Context::new(1, 10, graph.clone());
 
-                let ctx = MasaContext::default();
                 let mut request = tonic::Request::new(request.clone());
                 request.metadata_mut().insert_ctx("par_ctx", &ctx);
 
                 let response = client.say_hello(request).await.unwrap();
-                let child_ctx = response.metadata().get_ctx("ctx").unwrap();
-                println!("[client] child_ctx: {:?}", child_ctx);
+                // let child_ctx = response.metadata().get_ctx("ctx").unwrap();
 
                 let ctx = response.metadata().get_ctx("par_ctx").unwrap();
                 println!("[client] ctx: {:?}", ctx);

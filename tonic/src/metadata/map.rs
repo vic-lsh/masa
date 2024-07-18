@@ -5,7 +5,7 @@ pub(crate) use self::into_metadata_key::IntoMetadataKey;
 use super::encoding::{Ascii, Binary, ValueEncoding};
 use super::key::{InvalidMetadataKey, MetadataKey};
 use super::value::MetadataValue;
-use super::MasaContext;
+use super::Context;
 
 use std::marker::PhantomData;
 
@@ -460,13 +460,13 @@ impl MetadataMap {
     }
 
     /// High-level method to get a Masa context from MetadataMap.
-    pub fn get_ctx<K>(&self, key: K) -> Option<MasaContext>
+    pub fn get_ctx<K>(&self, key: K) -> Option<Context>
     where
         K: AsMetadataKey<Ascii>,
     {
         let value = self.get(key);
         if let Some(value) = value {
-            return Some(MasaContext::from_json(value.to_str().unwrap()));
+            return Some(Context::from_json(value.to_str().unwrap()));
         }
         None
     }
@@ -1019,13 +1019,13 @@ impl MetadataMap {
     }
 
     /// High-level method to insert a Masa context into MetadataMap.
-    pub fn insert_ctx<K>(&mut self, key: K, val: &MasaContext) -> Option<MasaContext>
+    pub fn insert_ctx<K>(&mut self, key: K, val: &Context) -> Option<Context>
     where
         K: IntoMetadataKey<Ascii>,
     {
         let value = key.insert(self, val.to_json().parse().unwrap());
         if let Some(value) = value {
-            return Some(MasaContext::from_json(value.to_str().unwrap()));
+            return Some(Context::from_json(value.to_str().unwrap()));
         }
         None
     }

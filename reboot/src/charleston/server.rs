@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
+use tonic::metadata::Graph;
 use tonic::{transport::Server, Request, Response, Status};
 use tonic_deadline::DeadlineHint;
 
@@ -28,11 +29,15 @@ pub struct Args {
     pub num_threads: usize,
 }
 
-pub struct GreeterImpl {}
+pub struct GreeterImpl {
+    graph: Graph,
+}
 
 impl Default for GreeterImpl {
     fn default() -> Self {
-        Self {}
+        Self {
+            graph: Graph::default(),
+        }
     }
 }
 
@@ -47,6 +52,9 @@ impl Greeter for GreeterImpl {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
+        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        ctx.set_graph(self.graph.clone());
+
         let mean_ms = 2;
         busy_spin(Duration::from_millis(mean_ms));
 
@@ -120,7 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Arc::new(ExecImpl::new(smol_ex.clone(), 1)),
     ];
 
-    println!("Spawning {} server threads...", args.num_threads);
+    eprintln!("Spawning {} server threads...", args.num_threads);
     for _ in 0..args.num_threads {
         // [NOTE] exs use the same smol::Executor instance.
         let ex = exs[0].clone();
