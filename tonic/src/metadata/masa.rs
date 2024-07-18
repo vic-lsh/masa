@@ -25,13 +25,13 @@ impl Context {
         Self {
             start_at,
             deadline,
-            graph: graph,
+            graph,
         }
     }
 
     /// Create a new Masa context with a forward span.
     pub fn forward(&mut self, span: &Span) -> Self {
-        let deadline = self.graph.forward(span, self.deadline);
+        let deadline = self.deadline - self.graph.estimate_suffix(span);
         Context::new(self.start_at, deadline, Graph::default())
     }
 
@@ -95,7 +95,7 @@ impl Graph {
     }
 
     /// Return the deadline of a forward span.
-    pub fn forward(&mut self, span: &Span, deadline: Timestamp) -> Timestamp {
+    pub fn estimate_suffix(&mut self, span: &Span) -> Timestamp {
         assert!(self.spans.contains(span));
         let id = self.spans.iter().position(|x| x == span).unwrap();
         assert!(self.id + 1 == id);
@@ -107,8 +107,7 @@ impl Graph {
 
         self.id += 1;
 
-        let deadline = deadline - suffix_sum;
-        deadline
+        suffix_sum
     }
 
     /// Create a new graph from JSON.

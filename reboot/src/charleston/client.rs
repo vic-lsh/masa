@@ -18,12 +18,11 @@ pub struct Args {
     pub addr: String,
 }
 
-async fn loadgen(
+async fn load_gen(
     addr: String,
-    rpc_count: Arc<AtomicUsize>,
+    concurrency: usize,
+    rps_cnt: Arc<AtomicUsize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // [TODO] Pass concurrency.
-    let concurrency = 1;
     let mut handles = Vec::with_capacity(concurrency);
 
     let graph = {
@@ -45,16 +44,17 @@ async fn loadgen(
 
     let client = GreeterClient::connect(addr).await?;
     for _ in 0..concurrency {
+        let rps_cnt = rps_cnt.clone();
         let graph = graph.clone();
         let mut client = client.clone();
-        let c = rpc_count.clone();
+        let request = HelloRequest {
+            name: "Tonic".into(),
+        };
+
         let h = tokio::spawn(async move {
-            let request = HelloRequest {
-                name: "Tonic".into(),
-            };
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                c.fetch_add(1, Ordering::Relaxed);
+                rps_cnt.fetch_add(1, Ordering::Relaxed);
 
                 let ctx = Context::new(1, 10, graph.clone());
 
@@ -70,10 +70,10 @@ async fn loadgen(
         });
         handles.push(h);
     }
+
     for h in handles {
         h.await.unwrap();
     }
-
     Ok(())
 }
 
@@ -81,22 +81,22 @@ async fn loadgen(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::from_args();
 
-    let cnt = Arc::new(AtomicUsize::new(0));
-    let c = cnt.clone();
+    let rps_cnt = Arc::new(AtomicUsize::new(0));
+    let rps_cnt_clone = rps_cnt.clone();
     tokio::spawn(async move {
         let mut prev = 0;
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
-            let now = c.load(Ordering::Relaxed);
+            let now = rps_cnt_clone.load(Ordering::Relaxed);
             let rps = now - prev;
             println!("rps: {}", rps);
             prev = now;
         }
     });
 
-    let c = cnt.clone();
+    let rps_cnt_clone = rps_cnt.clone();
     let h = tokio::spawn(async move {
-        loadgen(args.addr, c).await.unwrap();
+        load_gen(args.addr, 1, rps_cnt_clone).await.unwrap();
     });
 
     h.await.unwrap();
