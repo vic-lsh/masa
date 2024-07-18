@@ -237,39 +237,39 @@ impl<'a> Executor<'a> {
         // let backtrace = std::backtrace::Backtrace::capture();
         // println!("Backtrace:\n{}", backtrace);
 
-        let res = TIMER_SPAWNED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed);
-        if res.is_ok() {
-            let self_ptr = self as *const Self as u64;
-            std::thread::spawn(move || {
-                let mut prev_sched = 0;
-                let mut prev_cnt = 0;
+        // let res = TIMER_SPAWNED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed);
+        // if res.is_ok() {
+        //     let self_ptr = self as *const Self as u64;
+        //     std::thread::spawn(move || {
+        //         let mut prev_sched = 0;
+        //         let mut prev_cnt = 0;
 
-                let me: &Self = unsafe { &*(self_ptr as *const Self) };
-                loop {
-                    std::thread::sleep(Duration::from_secs(1));
-                    let state = me.state();
+        //         let me: &Self = unsafe { &*(self_ptr as *const Self) };
+        //         loop {
+        //             std::thread::sleep(Duration::from_secs(1));
+        //             let state = me.state();
 
-                    // [NOTE] Use nested scope to release these locks ASAP.
-                    let global_qlen = state.queue.len();
-                    let local_qs = { state.local_queues.read().unwrap() };
+        //             // [NOTE] Use nested scope to release these locks ASAP.
+        //             let global_qlen = state.queue.len();
+        //             let local_qs = { state.local_queues.read().unwrap() };
 
-                    let sched_us = SCHED_TIME_US.load(Ordering::Relaxed);
-                    let sched_cnt = SCHED_COUNT.load(Ordering::Relaxed);
+        //             let sched_us = SCHED_TIME_US.load(Ordering::Relaxed);
+        //             let sched_cnt = SCHED_COUNT.load(Ordering::Relaxed);
 
-                    let avg_sched_us =
-                        (sched_us - prev_sched) as f64 / (sched_cnt - prev_cnt) as f64;
-                    println!(
-                        "global qlen: {}, # local qs: {}, avg sched us: {:.4}",
-                        global_qlen,
-                        local_qs.len(),
-                        avg_sched_us
-                    );
+        //             let avg_sched_us =
+        //                 (sched_us - prev_sched) as f64 / (sched_cnt - prev_cnt) as f64;
+        //             println!(
+        //                 "global qlen: {}, # local qs: {}, avg sched us: {:.4}",
+        //                 global_qlen,
+        //                 local_qs.len(),
+        //                 avg_sched_us
+        //             );
 
-                    prev_sched = sched_us;
-                    prev_cnt = sched_cnt;
-                }
-            });
-        }
+        //             prev_sched = sched_us;
+        //             prev_cnt = sched_cnt;
+        //         }
+        //     });
+        // }
 
         let mut active = self.state().active.lock().unwrap();
 
@@ -510,7 +510,7 @@ impl<'a> Executor<'a> {
     fn schedule(&self) -> impl Fn(Runnable) + Send + Sync + 'static {
         let state = self.state_as_arc();
 
-        // [TODO:Vic] If possible, push into the current local queue and notify the ticker.
+        // [TODO] If possible, push into the current local queue and notify the ticker.
         move |runnable| {
             // [DEBUG] Show runnable.ddl().
             // if runnable.ddl() != DeadlineHint::infra() {
@@ -1164,7 +1164,7 @@ impl Runner<'_> {
                     return Some(r);
                 }
 
-                // [TODO:Weixin] Fix work stealing for Runner.
+                // [TODO] Fix work stealing for Runner.
                 // // Try stealing from the global queue.
                 // if let Some(r) = self.state.queue.lock().unwrap().pop() {
                 //     steal(&self.state.queue.lock().unwrap(), &self.local);
@@ -1204,7 +1204,7 @@ impl Runner<'_> {
         if self.ticks % 64 == 0 {
             // Steal tasks from the global queue to ensure fair task scheduling.
 
-            // [TODO:Weixin] Fix work stealing for Runner.
+            // [TODO] Fix work stealing for Runner.
             // steal(&self.state.queue.lock().unwrap(), &self.local);
         }
 

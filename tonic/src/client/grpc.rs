@@ -221,14 +221,12 @@ impl<T> Grpc<T> {
         let mut request = request.map(|m| tokio_stream::once(m));
 
         let mut par_ctx = request.metadata().get_ctx("par_ctx").unwrap();
-        println!("[unary] par_ctx: {:?}", par_ctx);
-
         let span = path.to_string();
         let ctx = par_ctx.forward(&span);
-        println!("[unary] ctx: {:?}", ctx);
         request.metadata_mut().insert_ctx("ctx", &ctx);
 
         let result = self.client_streaming(request, path, codec).await;
+
         if let Ok(mut response) = result {
             response.metadata_mut().insert_ctx("par_ctx", &par_ctx);
             response.metadata_mut().insert_ctx("ctx", &ctx);

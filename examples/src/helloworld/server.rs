@@ -1,6 +1,5 @@
 use async_compat::Compat;
 use futures_lite::future;
-use hello_world::greeter_client::GreeterClient;
 use hello_world::greeter_server::{Greeter, GreeterServer};
 use hello_world::{HelloReply, HelloRequest};
 use hyper::rt::{Exec, Executor};
@@ -44,7 +43,7 @@ fn busy_spin(duration: Duration) {
     while now.elapsed() < duration {}
 }
 
-async fn async_busy_spin(duration: Duration) {
+async fn _async_busy_spin(duration: Duration) {
     let now = Instant::now();
     let mut c = 0;
     while now.elapsed() < duration {

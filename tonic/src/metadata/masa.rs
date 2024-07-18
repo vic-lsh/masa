@@ -2,62 +2,42 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
 
-type Timestamp = u64;
-type Latency = u64;
-type Span = String;
+/// Type alias for a timestamp.
+pub type Timestamp = u64;
+
+/// Type alias for a latency.
+pub type Latency = u64;
+
+/// Type alias for a span.
+pub type Span = String;
 
 /// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct MasaContext {
-    span: Span,
+pub struct Context {
     start_at: Timestamp,
     deadline: Timestamp,
     graph: Graph,
 }
 
-impl MasaContext {
-    /// Create a default Masa context.
-    pub fn default() -> Self {
-        Self {
-            span: "head".to_string(),
-            start_at: 1,
-            deadline: 10,
-            graph: Graph::default(),
-        }
-    }
-
+impl Context {
     /// Create a new Masa context.
-    pub fn new(span: Span, start_at: Timestamp, deadline: Timestamp, graph: Graph) -> Self {
+    pub fn new(start_at: Timestamp, deadline: Timestamp, graph: Graph) -> Self {
         Self {
-            span,
             start_at,
             deadline,
-            graph,
+            graph: graph,
         }
     }
 
     /// Create a new Masa context with a forward span.
     pub fn forward(&mut self, span: &Span) -> Self {
-        let graph = &self.graph;
-        assert!(graph.spans.contains(span));
+        let deadline = self.graph.forward(span, self.deadline);
+        Context::new(self.start_at, deadline, Graph::default())
+    }
 
-        let prev_id = graph.spans.iter().position(|x| x == &self.span).unwrap();
-        let next_id = graph.spans.iter().position(|x| x == span).unwrap();
-        assert!(prev_id + 1 == next_id);
-
-        let mut suffix_sum = 0;
-        for i in next_id + 1..graph.spans.len() {
-            suffix_sum += graph.proc_ests[&graph.spans[i]];
-        }
-        let deadline = self.deadline - suffix_sum;
-
-        self.span = span.clone();
-        MasaContext {
-            span: span.clone(),
-            start_at: self.start_at,
-            deadline,
-            graph: self.graph.clone(),
-        }
+    /// Set the graph of a Masa context.
+    pub fn set_graph(&mut self, graph: Graph) {
+        self.graph = graph;
     }
 
     /// Create a new Masa context from JSON.
@@ -77,28 +57,26 @@ pub struct Graph {
     spans: Vec<Span>,
     proc_ests: HashMap<Span, Latency>,
     proc_elapses: HashMap<Span, Latency>,
+    id: usize,
 }
 
 impl Graph {
     /// Create a default graph.
     pub fn default() -> Self {
-        let spans = vec![
-            "head".to_string(),
-            "/hello.Greeter/SayHello".to_string(),
-            "tail".to_string(),
-        ];
+        let spans = vec!["head".to_string(), "tail".to_string()];
         let mut proc_ests = HashMap::new();
-        for i in 0..spans.len() {
-            proc_ests.insert(spans[i].clone(), i as Latency);
+        for span in &spans {
+            proc_ests.insert(span.clone(), 1);
         }
         let mut proc_elapses = HashMap::new();
-        for i in 0..spans.len() {
-            proc_elapses.insert(spans[i].clone(), i as Latency);
+        for span in &spans {
+            proc_elapses.insert(span.clone(), 1);
         }
         Self {
             spans,
             proc_ests,
             proc_elapses,
+            id: 0,
         }
     }
 
@@ -112,7 +90,25 @@ impl Graph {
             spans,
             proc_ests,
             proc_elapses,
+            id: 0,
         }
+    }
+
+    /// Return the deadline of a forward span.
+    pub fn forward(&mut self, span: &Span, deadline: Timestamp) -> Timestamp {
+        assert!(self.spans.contains(span));
+        let id = self.spans.iter().position(|x| x == span).unwrap();
+        assert!(self.id + 1 == id);
+
+        let mut suffix_sum = 0;
+        for i in id + 1..self.spans.len() {
+            suffix_sum += self.proc_ests[&self.spans[i]];
+        }
+
+        self.id += 1;
+
+        let deadline = deadline - suffix_sum;
+        deadline
     }
 
     /// Create a new graph from JSON.
