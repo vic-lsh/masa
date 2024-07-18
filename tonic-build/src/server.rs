@@ -104,8 +104,8 @@ pub(crate) fn generate_internal<T: Service>(
                 clippy::let_unit_value,
             )]
             use tonic::codegen::*;
-            /// Use MasaContext.
-            use tonic::metadata::MasaContext;
+            /// Use Masa Context.
+            use tonic::metadata::Context as MasaContext;
 
             #generated_trait
 
@@ -170,7 +170,7 @@ pub(crate) fn generate_internal<T: Service>(
 
                     let ctx_str = req.headers()["ctx"].to_str().unwrap();
                     let ctx = MasaContext::from_json(ctx_str);
-                    println!("{:?}", ctx);
+                    println!("[call] {:?}", ctx);
 
                     let inner = self.inner.clone();
 
