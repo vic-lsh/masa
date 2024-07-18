@@ -22,7 +22,7 @@ async fn loadgen(
     rpc_count: Arc<AtomicUsize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // [TODO] Pass concurrency.
-    let concurrency = 32;
+    let concurrency = 1;
     let mut handles = Vec::with_capacity(concurrency);
 
     let client = GreeterClient::connect(addr).await?;
@@ -34,12 +34,23 @@ async fn loadgen(
                 name: "Tonic".into(),
             };
             loop {
-                let mut request = tonic::Request::new(request.clone());
-                let metadata = request.metadata_mut();
-                let par_ctx = MasaContext::default();
-                metadata.insert_ctx("par_ctx", par_ctx);
-                let _ = client.say_hello(request).await.unwrap();
+                tokio::time::sleep(Duration::from_secs(1)).await;
                 c.fetch_add(1, Ordering::Relaxed);
+
+                // [TODO] Context management is per parent.
+                // Each child should have a different context.
+                // Each context should have a different graph.
+
+                let ctx = MasaContext::default();
+                let mut request = tonic::Request::new(request.clone());
+                request.metadata_mut().insert_ctx("par_ctx", &ctx);
+
+                let response = client.say_hello(request).await.unwrap();
+                let child_ctx = response.metadata().get_ctx("ctx").unwrap();
+                println!("[client] child_ctx: {:?}", child_ctx);
+
+                let ctx = response.metadata().get_ctx("par_ctx").unwrap();
+                println!("[client] ctx: {:?}", ctx);
             }
         });
         handles.push(h);
