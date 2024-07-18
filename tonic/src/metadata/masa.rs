@@ -19,9 +19,9 @@ impl MasaContext {
     /// Create a default Masa context.
     pub fn default() -> Self {
         Self {
-            span: "0".to_string(),
+            span: "head".to_string(),
             start_at: 1,
-            deadline: 2,
+            deadline: 10,
             graph: Graph::default(),
         }
     }
@@ -37,24 +37,27 @@ impl MasaContext {
     }
 
     /// Create a new Masa context with a forward span.
-    pub fn forward(&self, span: Span) -> Self {
-        let ctx = MasaContext {
-            span,
-            start_at: self.start_at + 1,
-            deadline: self.deadline + 2,
-            graph: self.graph.clone(),
-        };
-        ctx
+    pub fn forward(&mut self, span: &Span) -> Self {
+        let graph = &self.graph;
+        assert!(graph.spans.contains(span));
 
-        // [TODO] Check self.span and span are valid.
-        // let deadline = self.deadline - graph.proc_ests[&span];
-        // let ctx = Masa context {
-        // 	span,
-        // 	start_at: self.start_at,
-        // 	deadline,
-        // 	graph: self.graph,
-        // };
-        // ctx
+        let prev_id = graph.spans.iter().position(|x| x == &self.span).unwrap();
+        let next_id = graph.spans.iter().position(|x| x == span).unwrap();
+        assert!(prev_id + 1 == next_id);
+
+        let mut suffix_sum = 0;
+        for i in next_id + 1..graph.spans.len() {
+            suffix_sum += graph.proc_ests[&graph.spans[i]];
+        }
+        let deadline = self.deadline - suffix_sum;
+
+        self.span = span.clone();
+        MasaContext {
+            span: span.clone(),
+            start_at: self.start_at,
+            deadline,
+            graph: self.graph.clone(),
+        }
     }
 
     /// Create a new Masa context from JSON.
@@ -79,10 +82,23 @@ pub struct Graph {
 impl Graph {
     /// Create a default graph.
     pub fn default() -> Self {
+        let spans = vec![
+            "head".to_string(),
+            "/hello.Greeter/SayHello".to_string(),
+            "tail".to_string(),
+        ];
+        let mut proc_ests = HashMap::new();
+        for i in 0..spans.len() {
+            proc_ests.insert(spans[i].clone(), i as Latency);
+        }
+        let mut proc_elapses = HashMap::new();
+        for i in 0..spans.len() {
+            proc_elapses.insert(spans[i].clone(), i as Latency);
+        }
         Self {
-            spans: Vec::new(),
-            proc_ests: HashMap::new(),
-            proc_elapses: HashMap::new(),
+            spans,
+            proc_ests,
+            proc_elapses,
         }
     }
 

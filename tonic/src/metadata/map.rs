@@ -1019,7 +1019,7 @@ impl MetadataMap {
     }
 
     /// High-level method to insert a Masa context into MetadataMap.
-    pub fn insert_ctx<K>(&mut self, key: K, val: MasaContext) -> Option<MasaContext>
+    pub fn insert_ctx<K>(&mut self, key: K, val: &MasaContext) -> Option<MasaContext>
     where
         K: IntoMetadataKey<Ascii>,
     {
