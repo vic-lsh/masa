@@ -390,16 +390,16 @@ where
     }
 }
 
-// pub trait DDLService<Request>: Service<Request> {
-pub trait DDLService<Request> {
-    /// Responses given by the service.
-    type Response;
+pub trait DDLService<Request>: Service<Request> {
+    // pub trait DDLService<Request> {
+    // /// Responses given by the service.
+    // type Response;
 
-    /// Errors produced by the service.
-    type Error;
+    // /// Errors produced by the service.
+    // type Error;
 
-    /// The future response value.
-    type Future: Future<Output = Result<Self::Response, Self::Error>>;
+    // /// The future response value.
+    // type Future: Future<Output = Result<Self::Response, Self::Error>>;
 
     /// Returns `Poll::Ready(Ok(()))` when the service is able to process requests.
     ///
