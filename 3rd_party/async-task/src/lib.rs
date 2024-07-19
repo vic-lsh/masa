@@ -109,6 +109,7 @@ mod state;
 mod task;
 mod utils;
 
+pub use crate::raw::{get_task_ddl, set_task_ddl};
 pub use crate::runnable::{
     spawn, spawn_unchecked, Builder, Runnable, Schedule, ScheduleInfo, WithInfo,
 };

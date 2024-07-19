@@ -21,6 +21,21 @@ use crate::Runnable;
 
 use tonic_deadline::DeadlineHint;
 
+use std::cell::RefCell;
+use std::thread_local;
+
+thread_local! {
+    static THREAD_LOCAL_DDL: RefCell<DeadlineHint> = RefCell::new(DeadlineHint::infra());
+}
+
+pub fn get_task_ddl() -> DeadlineHint {
+    THREAD_LOCAL_DDL.with(|value| *value.borrow())
+}
+
+pub fn set_task_ddl(new_value: DeadlineHint) {
+    THREAD_LOCAL_DDL.with(|value| *value.borrow_mut() = new_value);
+}
+
 #[cfg(feature = "std")]
 pub(crate) type Panic = alloc::boxed::Box<dyn core::any::Any + Send + 'static>;
 
@@ -576,6 +591,8 @@ where
         #[cfg(not(feature = "std"))]
         let poll = <F as Future>::poll(Pin::new_unchecked(&mut *raw.future), cx).map(Ok);
 
+        let original_ddl = DeadlineHint::new(100);
+        set_task_ddl(original_ddl);
         #[cfg(feature = "std")]
         let poll = {
             // Check if we should propagate panics.
@@ -592,6 +609,11 @@ where
                 <F as Future>::poll(Pin::new_unchecked(&mut *raw.future), cx).map(Ok)
             }
         };
+        let ddl = get_task_ddl();
+        if ddl != original_ddl {
+            std::println!("DDL updated to {:?}", ddl);
+            // TODO: update the task.ddl field. Maybe trigger scheduler queue sorting.
+        }
 
         mem::forget(guard);
 

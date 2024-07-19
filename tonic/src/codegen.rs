@@ -7,7 +7,7 @@ pub use std::future::Future;
 pub use std::pin::Pin;
 pub use std::sync::Arc;
 pub use std::task::{Context, Poll};
-pub use tower_service::DDLService as Service;
+pub use tower_service::{DDLService, Service};
 pub type StdError = Box<dyn std::error::Error + Send + Sync + 'static>;
 pub use crate::codec::{CompressionEncoding, EnabledCompressionEncodings};
 pub use crate::extensions::GrpcMethod;

@@ -167,6 +167,15 @@ pub(crate) fn generate_internal<T: Service>(
                 // [TODO] Return Future and DDL.
                 fn call(&mut self, req: http::Request<B>) -> Self::Future {
                     // [NOTE] Request path on the server side.
+                    use tonic_deadline::DeadlineHint;
+
+                    let ddl = async_task::get_task_ddl();
+                    println!("got DDL from async-task {:?}", ddl);
+                    async_task::set_task_ddl(DeadlineHint::new(232));
+                    println!("updated ddl");
+
+                    // let bt = std::backtrace::Backtrace::capture();
+                    // println!("{:?}", bt);
 
                     let ctx_str = req.headers()["ctx"].to_str().unwrap();
                     let ctx = MasaContext::from_json(ctx_str);
