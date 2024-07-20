@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
-use tonic::metadata::Graph;
 use tonic::{transport::Server, Request, Response, Status};
 use tonic_deadline::DeadlineHint;
 
@@ -29,15 +28,11 @@ pub struct Args {
     pub num_threads: usize,
 }
 
-pub struct GreeterImpl {
-    graph: Graph,
-}
+pub struct GreeterImpl {}
 
 impl Default for GreeterImpl {
     fn default() -> Self {
-        Self {
-            graph: Graph::default(),
-        }
+        Self {}
     }
 }
 
@@ -52,8 +47,7 @@ impl Greeter for GreeterImpl {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
-        ctx.set_graph(self.graph.clone());
+        let _ctx = request.metadata().get_ctx("ctx").unwrap();
 
         let mean_ms = 2;
         busy_spin(Duration::from_millis(mean_ms));
