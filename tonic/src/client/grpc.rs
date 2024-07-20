@@ -222,7 +222,7 @@ impl<T> Grpc<T> {
 
         let mut par_ctx = request.metadata().get_ctx("par_ctx").unwrap();
         let span = path.to_string();
-        let ctx = par_ctx.forward(&span);
+        let ctx = par_ctx.spawn(&span);
         request.metadata_mut().insert_ctx("ctx", &ctx);
 
         let result = self.client_streaming(request, path, codec).await;

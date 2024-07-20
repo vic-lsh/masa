@@ -5,12 +5,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use structopt::StructOpt;
-use tonic::metadata::{Context, Graph};
+use tonic::metadata::{Context, GlobalGraph, LocalGraph, Span};
 
 pub mod hello {
     tonic::include_proto!("hello");
 }
-
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Client for benchmarking")]
 pub struct Args {
@@ -25,27 +24,25 @@ async fn load_gen(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut handles = Vec::with_capacity(concurrency);
 
-    let graph = {
-        let spans = vec![
-            "head".to_string(),
-            "/hello.Greeter/SayHello".to_string(),
-            "tail".to_string(),
-        ];
-        let mut proc_ests = HashMap::new();
-        for span in &spans {
-            proc_ests.insert(span.clone(), 1);
-        }
-        let mut proc_elapses = HashMap::new();
-        for span in &spans {
-            proc_elapses.insert(span.clone(), 1);
-        }
-        Graph::new(spans, proc_ests, proc_elapses)
-    };
+    let mut local_graphs = HashMap::new();
+    local_graphs.insert(
+        "Source".to_string(),
+        LocalGraph::new(vec![Span::new("/hello.Greeter/SayHello".to_string(), 1, 1)]),
+    );
+    local_graphs.insert(
+        "/hello.Greeter/SayHello".to_string(),
+        LocalGraph::new(vec![
+            Span::new("Head".to_string(), 1, 1),
+            Span::new("Tail".to_string(), 1, 1),
+        ]),
+    );
+    let global_graph = GlobalGraph::new(local_graphs);
 
     let client = GreeterClient::connect(addr).await?;
     for _ in 0..concurrency {
         let rps_cnt = rps_cnt.clone();
-        let graph = graph.clone();
+        let local_graph = global_graph.get_source().clone();
+        let global_graph = global_graph.clone();
         let mut client = client.clone();
         let request = HelloRequest {
             name: "Tonic".into(),
@@ -56,7 +53,7 @@ async fn load_gen(
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 rps_cnt.fetch_add(1, Ordering::Relaxed);
 
-                let ctx = Context::new(1, 10, graph.clone());
+                let ctx = Context::new(1, 10, local_graph.clone(), global_graph.clone());
 
                 let mut request = tonic::Request::new(request.clone());
                 request.metadata_mut().insert_ctx("par_ctx", &ctx);
