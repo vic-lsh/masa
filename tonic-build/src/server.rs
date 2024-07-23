@@ -170,7 +170,7 @@ pub(crate) fn generate_internal<T: Service>(
 
                     let ctx_str = req.headers()["ctx"].to_str().unwrap();
                     let ctx = MasaContext::from_json(ctx_str);
-                    println!("[call] {:?}", ctx);
+                    // println!("[call] {:?}", ctx);
 
                     let inner = self.inner.clone();
 

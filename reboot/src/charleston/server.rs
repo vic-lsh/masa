@@ -54,6 +54,7 @@ impl Greeter for GreeterImpl {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.gid()).unwrap();
         ctx.set_local_graph(local_graph.clone());
+        println!("[server] ctx: {:?}", ctx);
 
         let mean_ms = 2;
         busy_spin(Duration::from_millis(mean_ms));
