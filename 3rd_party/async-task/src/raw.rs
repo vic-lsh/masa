@@ -108,7 +108,7 @@ pub(crate) struct RawTask<F, T, S, M> {
     // All generic except for M are type erased (i.e., we have Runnable<M>, not
     // Runnable<F, T, S, M>). To retrieve `ddl` from Runnable, we can only
     // depend on size information of M, not the other generics.
-    pub(crate) ddl: *const DeadlineHint,
+    pub(crate) ddl: *mut DeadlineHint,
 
     /// The schedule function.
     pub(crate) schedule: *const S,
@@ -266,7 +266,7 @@ where
             Self {
                 header: p as *const Header<M>,
                 schedule: p.add(task_layout.offset_s) as *const S,
-                ddl: p.add(task_layout.offset_d) as *const DeadlineHint,
+                ddl: p.add(task_layout.offset_d) as *mut DeadlineHint,
                 future: p.add(task_layout.offset_f) as *mut F,
                 output: p.add(task_layout.offset_r) as *mut Result<T, Panic>,
             }
