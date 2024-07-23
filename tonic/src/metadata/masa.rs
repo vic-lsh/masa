@@ -11,6 +11,9 @@ pub type Timestamp = u64;
 /// Type alias for a latency.
 pub type Latency = u64;
 
+/// Type alias for a graph ID.
+pub type GraphID = String;
+
 /// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Span {
@@ -28,32 +31,39 @@ impl Span {
             proc_elapse,
         }
     }
+
+    /// Get the path.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 }
 
 /// Represent a call graph in a local view.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct LocalGraph {
     spans: Vec<Span>,
-    paths: Vec<Path>,
 }
 
 impl LocalGraph {
     /// Create a new graph.
     pub fn new(spans: Vec<Span>) -> Self {
-        let paths = spans.iter().map(|x| x.path.clone()).collect();
-        Self { spans, paths }
+        Self { spans }
     }
 
     /// Return the estimated suffix latency after a span indexed by its path.
-    pub fn estimate_suffix(&mut self, path: &Path) -> Latency {
-        assert!(self.paths.contains(path));
-        let id = self.paths.iter().position(|x| x == path).unwrap();
-
+    pub fn estimate_suffix(&self, path: &Path) -> Latency {
+        let mut existed = false;
         let mut suffix_sum = 0;
-        for i in id + 1..self.paths.len() {
-            suffix_sum += self.spans[i].proc_est;
+
+        for span in self.spans.iter().rev() {
+            if span.path == *path {
+                existed = true;
+                break;
+            }
+            suffix_sum += span.proc_est;
         }
 
+        assert!(existed);
         suffix_sum
     }
 }
@@ -61,14 +71,20 @@ impl LocalGraph {
 /// Represent a call graph in a global view.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct GlobalGraph {
+    gid: GraphID,
     local_graphs: HashMap<Path, LocalGraph>,
 }
 
 impl GlobalGraph {
     /// Create a new graph.
-    pub fn new(local_graphs: HashMap<Path, LocalGraph>) -> Self {
-        assert!(local_graphs.contains_key("Source"));
-        Self { local_graphs }
+    pub fn new(gid: GraphID, local_graphs: HashMap<Path, LocalGraph>) -> Self {
+        assert!(local_graphs.contains_key(&"Source".to_string()));
+        Self { gid, local_graphs }
+    }
+
+    /// Get the graph ID.
+    pub fn gid(&self) -> &GraphID {
+        &self.gid
     }
 
     /// Get the source local graph.
@@ -86,37 +102,52 @@ impl GlobalGraph {
 /// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Context {
+    gid: GraphID,
     start_at: Timestamp,
     deadline: Timestamp,
-    local_graph: LocalGraph,
-    global_graph: GlobalGraph,
+    local_graph: Option<LocalGraph>,
 }
 
 impl Context {
     /// Create a new Masa context.
     pub fn new(
+        gid: GraphID,
         start_at: Timestamp,
         deadline: Timestamp,
-        local_graph: LocalGraph,
-        global_graph: GlobalGraph,
+        local_graph: Option<LocalGraph>,
     ) -> Self {
         Self {
+            gid,
             start_at,
             deadline,
             local_graph,
-            global_graph,
         }
     }
 
-    /// Create a new Masa context into a spawned span indexed by its path.
-    pub fn spawn(&mut self, path: &Path) -> Self {
-        let deadline = self.deadline - self.local_graph.estimate_suffix(path);
-        Context::new(
-            self.start_at,
-            deadline,
-            self.global_graph.get_local_graph(path).clone(),
-            self.global_graph.clone(),
-        )
+    /// Get the graph ID.
+    pub fn gid(&self) -> &GraphID {
+        &self.gid
+    }
+
+    /// Get the start timestamp.
+    pub fn start_at(&self) -> Timestamp {
+        self.start_at
+    }
+
+    /// Get the deadline.
+    pub fn deadline(&self) -> Timestamp {
+        self.deadline
+    }
+
+    /// Get the local graph.
+    pub fn get_local_graph(&self) -> LocalGraph {
+        assert!(self.local_graph.is_some());
+        self.local_graph.clone().unwrap()
+    }
+
+    /// Set the local graph.
+    pub fn set_local_graph(&mut self, local_graph: LocalGraph) {
+        self.local_graph = Some(local_graph);
     }
 
     /// Create a new Masa context from JSON.
