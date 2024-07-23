@@ -591,7 +591,13 @@ where
         #[cfg(not(feature = "std"))]
         let poll = <F as Future>::poll(Pin::new_unchecked(&mut *raw.future), cx).map(Ok);
 
-        let original_ddl = DeadlineHint::new(100);
+        // let original_ddl = DeadlineHint::new(100);
+        let original_ddl = *raw.ddl;
+        std::println!(
+            "task {:p}, before polling, ddl {}",
+            ptr,
+            original_ddl.value()
+        );
         set_task_ddl(original_ddl);
         #[cfg(feature = "std")]
         let poll = {
@@ -609,11 +615,22 @@ where
                 <F as Future>::poll(Pin::new_unchecked(&mut *raw.future), cx).map(Ok)
             }
         };
-        let ddl = get_task_ddl();
-        if ddl != original_ddl {
-            std::println!("DDL updated to {:?}", ddl);
-            // TODO: update the task.ddl field. Maybe trigger scheduler queue sorting.
+        if poll.is_pending() {
+            let old_val = original_ddl.value();
+            let ddl = DeadlineHint::new(original_ddl.value() + 100);
+            std::println!(
+                "task {:p}, after polling, old val {}, new val {}",
+                ptr,
+                old_val,
+                ddl.value()
+            );
+            *raw.ddl = ddl;
         }
+        // let ddl = get_task_ddl();
+        // if ddl != original_ddl {
+        //     std::println!("DDL updated to {:?}", ddl);
+        //     // TODO: update the task.ddl field. Maybe trigger scheduler queue sorting.
+        // }
 
         mem::forget(guard);
 
