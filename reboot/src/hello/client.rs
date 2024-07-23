@@ -23,7 +23,7 @@ async fn loadgen(
     rpc_count: Arc<AtomicUsize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // [TODO] Pass concurrency.
-    let concurrency = 32;
+    let concurrency = 1;
     let mut handles = Vec::with_capacity(concurrency);
 
     let client = GreeterClient::connect(addr).await?;
@@ -40,6 +40,7 @@ async fn loadgen(
                     .await
                     .unwrap();
                 c.fetch_add(1, Ordering::Relaxed);
+                panic!();
             }
         });
         handles.push(h);
