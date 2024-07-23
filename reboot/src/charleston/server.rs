@@ -2,10 +2,12 @@ use futures_lite::future;
 use hello::greeter_server::{Greeter, GreeterServer};
 use hello::{HelloReply, HelloRequest};
 use hyper::rt::{Exec, Executor};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
+use tonic::metadata::{GlobalGraph, LocalGraph, Path, Span};
 use tonic::{transport::Server, Request, Response, Status};
 use tonic_deadline::DeadlineHint;
 
@@ -28,11 +30,13 @@ pub struct Args {
     pub num_threads: usize,
 }
 
-pub struct GreeterImpl {}
+pub struct GreeterImpl {
+    local_graphs: HashMap<Path, LocalGraph>,
+}
 
-impl Default for GreeterImpl {
-    fn default() -> Self {
-        Self {}
+impl GreeterImpl {
+    pub fn new(local_graphs: HashMap<Path, LocalGraph>) -> Self {
+        Self { local_graphs }
     }
 }
 
@@ -47,7 +51,9 @@ impl Greeter for GreeterImpl {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        let _ctx = request.metadata().get_ctx("ctx").unwrap();
+        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        let local_graph = self.local_graphs.get(ctx.gid()).unwrap();
+        ctx.set_local_graph(local_graph.clone());
 
         let mean_ms = 2;
         busy_spin(Duration::from_millis(mean_ms));
@@ -141,16 +147,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    let mut local_graphs = HashMap::new();
+    local_graphs.insert(
+        "Source".to_string() as Path,
+        LocalGraph::new(vec![Span::new("/hello.Greeter/SayHello".to_string(), 1, 1)]),
+    );
+    local_graphs.insert(
+        "/hello.Greeter/SayHello".to_string() as Path,
+        LocalGraph::new(vec![
+            Span::new("Head".to_string(), 1, 1),
+            Span::new("Tail".to_string(), 1, 1),
+        ]),
+    );
+    let global_graph = GlobalGraph::new("GID".to_string(), local_graphs);
+
     let addrs = [
         "[::1]:50051".parse().unwrap(),
         // "[::1]:50052".parse().unwrap(),
     ];
     let mut handles = Vec::new();
+
     for i in 0..addrs.len() {
         let ex = exs[i].clone();
         let addr = addrs[i];
+        let global_graph = global_graph.clone();
+
         let h = tokio::spawn(async move {
-            let greeter = GreeterImpl::default();
+            let mut local_graphs = HashMap::new();
+            let path: Path = "/hello.Greeter/SayHello".to_string();
+            local_graphs.insert(
+                global_graph.gid().clone(),
+                global_graph.get_local_graph(&path).clone(),
+            );
+            let greeter = GreeterImpl::new(local_graphs);
+
             eprintln!("Listening on {}...", addr);
             Server::builder()
                 .add_service(GreeterServer::new(greeter))
@@ -158,8 +188,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .await
                 .unwrap();
         });
+
         handles.push(h);
     }
+
     for h in handles {
         h.await.unwrap();
     }
