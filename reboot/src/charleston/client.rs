@@ -36,13 +36,14 @@ async fn load_gen(
             Span::new("Tail".to_string(), 1, 1),
         ]),
     );
-    let global_graph = GlobalGraph::new(local_graphs);
+    let global_graph = GlobalGraph::new("GID".to_string(), local_graphs);
 
     let client = GreeterClient::connect(addr).await?;
     for _ in 0..concurrency {
-        let rps_cnt = rps_cnt.clone();
+        let gid = global_graph.gid().clone();
         let local_graph = global_graph.get_source().clone();
-        let global_graph = global_graph.clone();
+
+        let rps_cnt = rps_cnt.clone();
         let mut client = client.clone();
         let request = HelloRequest {
             name: "Tonic".into(),
@@ -53,7 +54,7 @@ async fn load_gen(
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 rps_cnt.fetch_add(1, Ordering::Relaxed);
 
-                let ctx = Context::new(1, 10, local_graph.clone(), global_graph.clone());
+                let ctx = Context::new(gid.clone(), 1, 10, Some(local_graph.clone()));
 
                 let mut request = tonic::Request::new(request.clone());
                 request.metadata_mut().insert_ctx("par_ctx", &ctx);

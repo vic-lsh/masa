@@ -3,6 +3,7 @@ use crate::{
     body::BoxBody,
     client::GrpcService,
     codec::{encode_client, Codec, Decoder, Streaming},
+    metadata::{Context, Path},
     request::SanitizeHeaders,
     Code, Request, Response, Status,
 };
@@ -220,9 +221,12 @@ impl<T> Grpc<T> {
 
         let mut request = request.map(|m| tokio_stream::once(m));
 
-        let mut par_ctx = request.metadata().get_ctx("par_ctx").unwrap();
-        let span = path.to_string();
-        let ctx = par_ctx.spawn(&span);
+        let par_ctx = request.metadata().get_ctx("par_ctx").unwrap();
+        let local_graph = par_ctx.get_local_graph();
+
+        let request_path: Path = path.to_string();
+        let deadline = par_ctx.deadline() - local_graph.estimate_suffix(&request_path);
+        let ctx = Context::new(par_ctx.gid().clone(), par_ctx.start_at(), deadline, None);
         request.metadata_mut().insert_ctx("ctx", &ctx);
 
         let result = self.client_streaming(request, path, codec).await;
