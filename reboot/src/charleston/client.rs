@@ -27,7 +27,10 @@ async fn load_gen(
     let mut local_graphs = HashMap::new();
     local_graphs.insert(
         "Source".to_string(),
-        LocalGraph::new(vec![Span::new("/hello.Greeter/SayHello".to_string(), 1, 1)]),
+        LocalGraph::new(vec![
+            Span::new("/hello.Greeter/SayHello".to_string(), 1, 1),
+            Span::new("/hello.Greeter/SayGoodbye".to_string(), 1, 1),
+        ]),
     );
     local_graphs.insert(
         "/hello.Greeter/SayHello".to_string(),
@@ -59,11 +62,7 @@ async fn load_gen(
                 let mut request = tonic::Request::new(request.clone());
                 request.metadata_mut().insert_ctx("par_ctx", &ctx);
 
-                let response = client.say_hello(request).await.unwrap();
-                // let child_ctx = response.metadata().get_ctx("ctx").unwrap();
-
-                let ctx = response.metadata().get_ctx("par_ctx").unwrap();
-                println!("[client] ctx: {:?}", ctx);
+                let _response = client.say_hello(request).await.unwrap();
             }
         });
         handles.push(h);
