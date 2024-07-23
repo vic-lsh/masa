@@ -56,8 +56,14 @@ impl Greeter for GreeterImpl {
         ctx.set_local_graph(local_graph.clone());
         println!("[server] ctx: {:?}", ctx);
 
-        let mean_ms = 2;
-        busy_spin(Duration::from_millis(mean_ms));
+        let spans = local_graph.spans();
+        let elapse = spans.first().unwrap().proc_elapse();
+        busy_spin(Duration::from_micros(elapse));
+
+        // [TODO] Iterate the middle spans.
+
+        let elapse = spans.last().unwrap().proc_elapse();
+        busy_spin(Duration::from_micros(elapse));
 
         let reply = hello::HelloReply {
             message: format!("Hello {}!", request.into_inner().name),
