@@ -36,6 +36,16 @@ impl Span {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    /// Get the processing estimate.
+    pub fn proc_est(&self) -> Latency {
+        self.proc_est
+    }
+
+    /// Get the processing elapse.
+    pub fn proc_elapse(&self) -> Latency {
+        self.proc_elapse
+    }
 }
 
 /// Represent a call graph in a local view.
@@ -65,6 +75,11 @@ impl LocalGraph {
 
         assert!(existed);
         suffix_sum
+    }
+
+    /// Get the spans.
+    pub fn spans(&self) -> &Vec<Span> {
+        &self.spans
     }
 }
 
@@ -141,7 +156,6 @@ impl Context {
 
     /// Get the local graph.
     pub fn get_local_graph(&self) -> LocalGraph {
-        assert!(self.local_graph.is_some());
         self.local_graph.clone().unwrap()
     }
 
