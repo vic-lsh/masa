@@ -1,4 +1,10 @@
 {
+	"files.watcherExclude": {
+		"**/.git/objects/**": true,
+		"**/.git/subtree-cache/**": true,
+		"**/node_modules/**": true,
+		"3rd_party/": true,
+	},
 	"cSpell.words": [
 		"addrs",
 		"bson",
