@@ -124,7 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let client = GreeterClient::connect(args.addr).await?;
 
-        let load_gen = LoadGenerator::new(global_graph, client, 1, rps_cnt.clone());
+        let load_gen = LoadGenerator::new(global_graph, client, 1, rps_cnt);
         load_gen
     };
     load_gen.run().await.unwrap();
