@@ -5,7 +5,7 @@ use hello::{
     HelloReply, HelloRequest,
 };
 use hyper::rt::{Exec, Executor};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
@@ -162,19 +162,27 @@ where
 #[derive(Debug)]
 struct VirtualServer {
     addr: Address,
-    down_addrs: HashMap<Path, Address>,
+    conn_addrs: HashMap<Path, Address>,
     local_graphs: HashMap<Path, LocalGraph>,
 }
 
 impl VirtualServer {
     fn new(
         addr: Address,
-        down_addrs: HashMap<Path, Address>,
+        conn_addrs: HashMap<Path, Address>,
         local_graphs: HashMap<Path, LocalGraph>,
     ) -> Self {
+        let mut paths = Vec::new();
+        let mut addrs = Vec::new();
+        for (path, addr) in conn_addrs.iter() {
+            paths.push(path);
+            addrs.push(addr);
+        }
+        assert_eq!(paths.len(), paths.iter().collect::<HashSet<_>>().len());
+        assert_eq!(addrs.len(), addrs.iter().collect::<HashSet<_>>().len());
         Self {
             addr,
-            down_addrs,
+            conn_addrs,
             local_graphs,
         }
     }
@@ -189,7 +197,7 @@ impl VirtualServer {
 
     pub async fn get_clients(&self) -> HashMap<Path, GreeterClient<Channel>> {
         let mut clients = HashMap::new();
-        for (path, addr) in self.down_addrs.iter() {
+        for (path, addr) in self.conn_addrs.iter() {
             let client = GreeterClient::connect(addr.clone()).await.unwrap();
             clients.insert(path.clone(), client);
         }
@@ -225,24 +233,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut graphs = HashMap::new();
             graphs.insert(
                 "Source".to_string() as Path,
-                LocalGraph::new(vec![
-                    Span::new("/hello.Greeter/SayHello".to_string(), 1, 1),
-                    Span::new("Mock".to_string(), 1, 1),
-                ]),
+                LocalGraph::new(vec![Span::new("/hello.Greeter/SayHello".to_string(), 1, 1)]),
             );
             graphs.insert(
                 "/hello.Greeter/SayHello".to_string() as Path,
                 LocalGraph::new(vec![
-                    Span::new("Head".to_string(), 1, 1),
-                    Span::new("/hello.Greeter/SayGoodbye".to_string(), 1, 1),
-                    Span::new("Tail".to_string(), 1, 1),
+                    Span::new("Head".to_string(), 2, 2),
+                    Span::new("/hello.Greeter/SayGoodbye".to_string(), 3, 3),
+                    Span::new("Tail".to_string(), 4, 4),
                 ]),
             );
             graphs.insert(
                 "/hello.Greeter/SayGoodbye".to_string() as Path,
                 LocalGraph::new(vec![
-                    Span::new("Head".to_string(), 1, 1),
-                    Span::new("Tail".to_string(), 1, 1),
+                    Span::new("Head".to_string(), 5, 5),
+                    Span::new("Tail".to_string(), 6, 6),
                 ]),
             );
             graphs
@@ -255,7 +260,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let server2 = {
         let addr: Address = "[::1]:50052".to_string();
-        let down_addrs = HashMap::new();
+        let conn_addrs = HashMap::new();
         let path: Path = "/hello.Greeter/SayGoodbye".to_string();
         let local_graphs = {
             let mut graphs = HashMap::new();
@@ -265,15 +270,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             graphs
         };
-        let server = VirtualServer::new(addr, down_addrs, local_graphs);
+        let server = VirtualServer::new(addr, conn_addrs, local_graphs);
         server
     };
     servers.push(server2);
 
     let server1 = {
         let addr: Address = "[::1]:50051".to_string();
-        let mut down_addrs = HashMap::new();
-        down_addrs.insert(
+        let mut conn_addrs = HashMap::new();
+        conn_addrs.insert(
             "/hello.Greeter/SayGoodbye".to_string() as Path,
             "http://[::1]:50052".to_string() as Address,
         );
@@ -286,7 +291,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             graphs
         };
-        let server = VirtualServer::new(addr, down_addrs, local_graphs);
+        let server = VirtualServer::new(addr, conn_addrs, local_graphs);
         server
     };
     servers.push(server1);
