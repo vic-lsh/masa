@@ -99,22 +99,16 @@ impl Greeter for GreeterImpl {
 
     async fn say_hola(
         &self,
-        request: Request<HelloRequest>,
+        _request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
         panic!("Not implemented");
+    }
 
-        // let mean_ms = 10;
-        // let std_ms = 0;
-        // rand_busy_spin(mean_ms, std_ms).await;
-
-        // let reply = hello::HelloReply {
-        //     message: format!("Hello {}!", request.into_inner().name),
-        // };
-        // Ok(Response::new(reply))
-
-        // let mut client = GreeterClient::connect("http://[::1]:50053").await.unwrap();
-        // let reply = client.say_hello(request).await.unwrap();
-        // Ok(reply)
+    async fn say_goodbye(
+        &self,
+        _request: Request<HelloRequest>,
+    ) -> Result<Response<HelloReply>, Status> {
+        panic!("Not implemented");
     }
 }
 

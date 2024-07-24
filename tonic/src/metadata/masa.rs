@@ -14,6 +14,9 @@ pub type Latency = u64;
 /// Type alias for a graph ID.
 pub type GraphID = String;
 
+/// Type alias for an addreess.
+pub type Address = String;
+
 /// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Span {
