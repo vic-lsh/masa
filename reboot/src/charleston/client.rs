@@ -28,24 +28,21 @@ async fn load_gen(
             let mut graphs = HashMap::new();
             graphs.insert(
                 "Source".to_string() as Path,
-                LocalGraph::new(vec![
-                    Span::new("/hello.Greeter/SayHello".to_string(), 1, 1),
-                    Span::new("Mock".to_string(), 1, 1),
-                ]),
+                LocalGraph::new(vec![Span::new("/hello.Greeter/SayHello".to_string(), 1, 1)]),
             );
             graphs.insert(
                 "/hello.Greeter/SayHello".to_string() as Path,
                 LocalGraph::new(vec![
-                    Span::new("Head".to_string(), 1, 1),
-                    Span::new("/hello.Greeter/SayGoodbye".to_string(), 1, 1),
-                    Span::new("Tail".to_string(), 1, 1),
+                    Span::new("Head".to_string(), 2, 2),
+                    Span::new("/hello.Greeter/SayGoodbye".to_string(), 3, 3),
+                    Span::new("Tail".to_string(), 4, 4),
                 ]),
             );
             graphs.insert(
                 "/hello.Greeter/SayGoodbye".to_string() as Path,
                 LocalGraph::new(vec![
-                    Span::new("Head".to_string(), 1, 1),
-                    Span::new("Tail".to_string(), 1, 1),
+                    Span::new("Head".to_string(), 5, 5),
+                    Span::new("Tail".to_string(), 6, 6),
                 ]),
             );
             graphs
@@ -70,7 +67,7 @@ async fn load_gen(
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 rps_cnt.fetch_add(1, Ordering::Relaxed);
 
-                let ctx = Context::new(gid.clone(), 1, 10, Some(local_graph.clone()));
+                let ctx = Context::new(gid.clone(), 1, 100, Some(local_graph.clone()));
                 let mut request = tonic::Request::new(request.clone());
                 request.metadata_mut().insert_ctx("par_ctx", &ctx);
 
