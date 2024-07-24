@@ -167,7 +167,7 @@ struct VirtualServer {
 }
 
 impl VirtualServer {
-    fn new(
+    pub fn new(
         addr: Address,
         conn_addrs: HashMap<Path, Address>,
         local_graphs: HashMap<Path, LocalGraph>,
