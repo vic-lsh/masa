@@ -85,6 +85,13 @@ impl Greeter for GreeterImpl {
         let reply = client.say_hello(request).await.unwrap();
         Ok(reply)
     }
+
+    async fn say_goodbye(
+        &self,
+        _request: Request<HelloRequest>,
+    ) -> Result<Response<HelloReply>, Status> {
+        panic!("Not implemented");
+    }
 }
 
 #[derive(Debug)]
