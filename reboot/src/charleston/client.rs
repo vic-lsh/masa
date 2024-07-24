@@ -1,11 +1,10 @@
-use hello::greeter_client::GreeterClient;
-use hello::HelloRequest;
+use hello::{greeter_client::GreeterClient, HelloRequest};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use structopt::StructOpt;
-use tonic::metadata::{Context, GlobalGraph, LocalGraph, Span};
+use tonic::metadata::{Context, GlobalGraph, LocalGraph, Path, Span};
 
 pub mod hello {
     tonic::include_proto!("hello");
@@ -24,22 +23,36 @@ async fn load_gen(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut handles = Vec::with_capacity(concurrency);
 
-    let mut local_graphs = HashMap::new();
-    local_graphs.insert(
-        "Source".to_string(),
-        LocalGraph::new(vec![
-            Span::new("/hello.Greeter/SayHello".to_string(), 1, 1),
-            Span::new("/hello.Greeter/SayGoodbye".to_string(), 1, 1),
-        ]),
-    );
-    local_graphs.insert(
-        "/hello.Greeter/SayHello".to_string(),
-        LocalGraph::new(vec![
-            Span::new("Head".to_string(), 1, 1),
-            Span::new("Tail".to_string(), 1, 1),
-        ]),
-    );
-    let global_graph = GlobalGraph::new("GID".to_string(), local_graphs);
+    let global_graph = {
+        let local_graphs = {
+            let mut graphs = HashMap::new();
+            graphs.insert(
+                "Source".to_string() as Path,
+                LocalGraph::new(vec![
+                    Span::new("/hello.Greeter/SayHello".to_string(), 1, 1),
+                    Span::new("Mock".to_string(), 1, 1),
+                ]),
+            );
+            graphs.insert(
+                "/hello.Greeter/SayHello".to_string() as Path,
+                LocalGraph::new(vec![
+                    Span::new("Head".to_string(), 1, 1),
+                    Span::new("/hello.Greeter/SayGoodbye".to_string(), 1, 1),
+                    Span::new("Tail".to_string(), 1, 1),
+                ]),
+            );
+            graphs.insert(
+                "/hello.Greeter/SayGoodbye".to_string() as Path,
+                LocalGraph::new(vec![
+                    Span::new("Head".to_string(), 1, 1),
+                    Span::new("Tail".to_string(), 1, 1),
+                ]),
+            );
+            graphs
+        };
+        let global_graph = GlobalGraph::new("GID".to_string() as Path, local_graphs);
+        global_graph
+    };
 
     let client = GreeterClient::connect(addr).await?;
     for _ in 0..concurrency {
@@ -58,7 +71,6 @@ async fn load_gen(
                 rps_cnt.fetch_add(1, Ordering::Relaxed);
 
                 let ctx = Context::new(gid.clone(), 1, 10, Some(local_graph.clone()));
-
                 let mut request = tonic::Request::new(request.clone());
                 request.metadata_mut().insert_ctx("par_ctx", &ctx);
 

@@ -1,14 +1,19 @@
 use futures_lite::future;
-use hello::greeter_server::{Greeter, GreeterServer};
-use hello::{HelloReply, HelloRequest};
+use hello::{
+    greeter_client::GreeterClient,
+    greeter_server::{Greeter, GreeterServer},
+    HelloReply, HelloRequest,
+};
 use hyper::rt::{Exec, Executor};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
-use tonic::metadata::{GlobalGraph, LocalGraph, Path, Span};
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::metadata::{Address, GlobalGraph, LocalGraph, Path, Span};
+use tonic::{
+    transport::{Channel, Server},
+    Request, Response, Status,
+};
 use tonic_deadline::DeadlineHint;
 
 pub mod hello {
@@ -32,11 +37,18 @@ pub struct Args {
 
 pub struct GreeterImpl {
     local_graphs: HashMap<Path, LocalGraph>,
+    clients: HashMap<Path, GreeterClient<Channel>>,
 }
 
 impl GreeterImpl {
-    pub fn new(local_graphs: HashMap<Path, LocalGraph>) -> Self {
-        Self { local_graphs }
+    pub fn new(
+        local_graphs: HashMap<Path, LocalGraph>,
+        clients: HashMap<Path, GreeterClient<Channel>>,
+    ) -> Self {
+        Self {
+            local_graphs,
+            clients,
+        }
     }
 }
 
@@ -54,18 +66,25 @@ impl Greeter for GreeterImpl {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.gid()).unwrap();
         ctx.set_local_graph(local_graph.clone());
-        println!("[server] ctx: {:?}", ctx);
+        println!("[server:say_hello] ctx: {:?}", ctx);
 
         let spans = local_graph.spans();
         let elapse = spans.first().unwrap().proc_elapse();
         busy_spin(Duration::from_micros(elapse));
 
-        // [TODO] Iterate the middle spans.
+        for span in spans.iter().skip(1).take(spans.len() - 2) {
+            let mut client = self.clients.get(span.path()).unwrap().clone();
+            let mut request = Request::new(HelloRequest {
+                name: "SayGoodbye".to_string(),
+            });
+            request.metadata_mut().insert_ctx("par_ctx", &ctx);
+            client.say_goodbye(request).await.unwrap();
+        }
 
         let elapse = spans.last().unwrap().proc_elapse();
         busy_spin(Duration::from_micros(elapse));
 
-        let reply = hello::HelloReply {
+        let reply = HelloReply {
             message: format!("Hello {}!", request.into_inner().name),
         };
         Ok(Response::new(reply))
@@ -76,6 +95,21 @@ impl Greeter for GreeterImpl {
         _request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
         panic!("Not implemented");
+    }
+
+    async fn say_goodbye(
+        &self,
+        request: Request<HelloRequest>,
+    ) -> Result<Response<HelloReply>, Status> {
+        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        let local_graph = self.local_graphs.get(ctx.gid()).unwrap();
+        ctx.set_local_graph(local_graph.clone());
+        println!("[server:say_goodbye] ctx: {:?}", ctx);
+
+        let reply = HelloReply {
+            message: format!("Hello {}!", request.into_inner().name),
+        };
+        Ok(Response::new(reply))
     }
 }
 
@@ -125,20 +159,54 @@ where
     }
 }
 
+#[derive(Debug)]
+struct VirtualServer {
+    addr: Address,
+    down_addrs: HashMap<Path, Address>,
+    local_graphs: HashMap<Path, LocalGraph>,
+}
+
+impl VirtualServer {
+    fn new(
+        addr: Address,
+        down_addrs: HashMap<Path, Address>,
+        local_graphs: HashMap<Path, LocalGraph>,
+    ) -> Self {
+        Self {
+            addr,
+            down_addrs,
+            local_graphs,
+        }
+    }
+
+    pub fn addr(&self) -> &Address {
+        &self.addr
+    }
+
+    pub fn local_graphs(&self) -> &HashMap<Path, LocalGraph> {
+        &self.local_graphs
+    }
+
+    pub async fn get_clients(&self) -> HashMap<Path, GreeterClient<Channel>> {
+        let mut clients = HashMap::new();
+        for (path, addr) in self.down_addrs.iter() {
+            let client = GreeterClient::connect(addr.clone()).await.unwrap();
+            clients.insert(path.clone(), client);
+        }
+        clients
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::from_args();
 
-    let smol_ex = Arc::new(smol::Executor::new());
-    let exs = [
-        Arc::new(ExecImpl::new(smol_ex.clone(), 1)),
-        // Arc::new(ExecImpl::new(smol_ex.clone(), 1)),
-    ];
+    let ex = Arc::new(ExecImpl::new(Arc::new(smol::Executor::new()), 1));
 
     eprintln!("Spawning {} server threads...", args.num_threads);
     for _ in 0..args.num_threads {
-        // [NOTE] exs use the same smol::Executor instance.
-        let ex = exs[0].clone();
+        // [NOTE] There is only one smol::Executor instance.
+        let ex = ex.clone();
 
         // [NOTE] Semantically, it is equivalent to tokio::spawn(ex_clone.run()).
         // However, we use std::thread::spawn() to have dedicated threads for
@@ -149,45 +217,90 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .build()
                 .unwrap();
             rt.block_on(ex.run());
-
-            // future::block_on(ex.run());
         });
     }
 
-    let mut local_graphs = HashMap::new();
-    local_graphs.insert(
-        "Source".to_string() as Path,
-        LocalGraph::new(vec![Span::new("/hello.Greeter/SayHello".to_string(), 1, 1)]),
-    );
-    local_graphs.insert(
-        "/hello.Greeter/SayHello".to_string() as Path,
-        LocalGraph::new(vec![
-            Span::new("Head".to_string(), 1, 1),
-            Span::new("Tail".to_string(), 1, 1),
-        ]),
-    );
-    let global_graph = GlobalGraph::new("GID".to_string(), local_graphs);
+    let global_graph = {
+        let local_graphs = {
+            let mut graphs = HashMap::new();
+            graphs.insert(
+                "Source".to_string() as Path,
+                LocalGraph::new(vec![
+                    Span::new("/hello.Greeter/SayHello".to_string(), 1, 1),
+                    Span::new("Mock".to_string(), 1, 1),
+                ]),
+            );
+            graphs.insert(
+                "/hello.Greeter/SayHello".to_string() as Path,
+                LocalGraph::new(vec![
+                    Span::new("Head".to_string(), 1, 1),
+                    Span::new("/hello.Greeter/SayGoodbye".to_string(), 1, 1),
+                    Span::new("Tail".to_string(), 1, 1),
+                ]),
+            );
+            graphs.insert(
+                "/hello.Greeter/SayGoodbye".to_string() as Path,
+                LocalGraph::new(vec![
+                    Span::new("Head".to_string(), 1, 1),
+                    Span::new("Tail".to_string(), 1, 1),
+                ]),
+            );
+            graphs
+        };
+        let global_graph = GlobalGraph::new("GID".to_string() as Path, local_graphs);
+        global_graph
+    };
 
-    let addrs = [
-        "[::1]:50051".parse().unwrap(),
-        // "[::1]:50052".parse().unwrap(),
-    ];
-    let mut handles = Vec::new();
+    let mut servers = Vec::new();
 
-    for i in 0..addrs.len() {
-        let ex = exs[i].clone();
-        let addr = addrs[i];
-        let global_graph = global_graph.clone();
-
-        let h = tokio::spawn(async move {
-            let mut local_graphs = HashMap::new();
-            let path: Path = "/hello.Greeter/SayHello".to_string();
-            local_graphs.insert(
+    let server2 = {
+        let addr: Address = "[::1]:50052".to_string();
+        let down_addrs = HashMap::new();
+        let path: Path = "/hello.Greeter/SayGoodbye".to_string();
+        let local_graphs = {
+            let mut graphs = HashMap::new();
+            graphs.insert(
                 global_graph.gid().clone(),
                 global_graph.get_local_graph(&path).clone(),
             );
-            let greeter = GreeterImpl::new(local_graphs);
+            graphs
+        };
+        let server = VirtualServer::new(addr, down_addrs, local_graphs);
+        server
+    };
+    servers.push(server2);
 
+    let server1 = {
+        let addr: Address = "[::1]:50051".to_string();
+        let mut down_addrs = HashMap::new();
+        down_addrs.insert(
+            "/hello.Greeter/SayGoodbye".to_string() as Path,
+            "http://[::1]:50052".to_string() as Address,
+        );
+        let path: Path = "/hello.Greeter/SayHello".to_string();
+        let local_graphs = {
+            let mut graphs = HashMap::new();
+            graphs.insert(
+                global_graph.gid().clone(),
+                global_graph.get_local_graph(&path).clone(),
+            );
+            graphs
+        };
+        let server = VirtualServer::new(addr, down_addrs, local_graphs);
+        server
+    };
+    servers.push(server1);
+
+    let mut handles = Vec::new();
+
+    for server in servers {
+        let ex = ex.clone();
+        let addr = server.addr().parse().unwrap();
+        let local_graphs = server.local_graphs().clone();
+        let clients = server.get_clients().await;
+
+        let h = tokio::spawn(async move {
+            let greeter = GreeterImpl::new(local_graphs, clients);
             eprintln!("Listening on {}...", addr);
             Server::builder()
                 .add_service(GreeterServer::new(greeter))
@@ -195,8 +308,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .await
                 .unwrap();
         });
-
         handles.push(h);
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
     for h in handles {
