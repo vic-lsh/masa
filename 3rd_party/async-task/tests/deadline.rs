@@ -1,4 +1,4 @@
-use async_task::{Builder, Runnable, Task};
+use async_task::{Runnable, Task};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -23,6 +23,8 @@ fn spawn_util() -> (Runnable<()>, Task<()>) {
     )
 }
 
+fn sched_noop(_r: Runnable<()>) {}
+
 #[test]
 fn test_default_ddl() {
     let (runnable, task) = spawn_util();
@@ -32,13 +34,8 @@ fn test_default_ddl() {
 
 #[test]
 fn test_custom_ddl() {
-    async fn my_future() {}
     let ddl = DeadlineHint::new(100);
-    let (runnable, task) = unsafe {
-        Builder::new()
-            .deadline(ddl)
-            .spawn_unchecked(move |()| my_future(), |_r: Runnable<()>| {})
-    };
+    let (runnable, task) = async_task::spawn_with_deadline(async {}, ddl, sched_noop);
 
     assert_eq!(runnable.deadline(), ddl);
     assert_eq!(task.deadline(), ddl);
