@@ -19,6 +19,7 @@ use tonic_deadline::DeadlineHint;
 pub mod hello {
     tonic::include_proto!("hello");
 }
+mod graph;
 
 pub fn time_now() -> u64 {
     let now = SystemTime::now()
@@ -228,33 +229,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    let global_graph = {
-        let local_graphs = {
-            let mut graphs = HashMap::new();
-            graphs.insert(
-                "Source".to_string() as Path,
-                LocalGraph::new(vec![Span::new("/hello.Greeter/SayHello".to_string(), 1, 1)]),
-            );
-            graphs.insert(
-                "/hello.Greeter/SayHello".to_string() as Path,
-                LocalGraph::new(vec![
-                    Span::new("Head".to_string(), 2, 2),
-                    Span::new("/hello.Greeter/SayGoodbye".to_string(), 3, 3),
-                    Span::new("Tail".to_string(), 4, 4),
-                ]),
-            );
-            graphs.insert(
-                "/hello.Greeter/SayGoodbye".to_string() as Path,
-                LocalGraph::new(vec![
-                    Span::new("Head".to_string(), 5, 5),
-                    Span::new("Tail".to_string(), 6, 6),
-                ]),
-            );
-            graphs
-        };
-        let global_graph = GlobalGraph::new("GID".to_string() as Path, local_graphs);
-        global_graph
-    };
+    let global_graph = graph::get_global_graph();
 
     let mut servers = Vec::new();
 
