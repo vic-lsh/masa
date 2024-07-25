@@ -673,7 +673,6 @@ where
     F: Future,
     S: Schedule,
 {
-    let ddl = DeadlineHint::infra();
     Builder::new().spawn_unchecked(move |()| future, schedule)
 }
 
@@ -733,7 +732,7 @@ impl<M> std::panic::RefUnwindSafe for Runnable<M> {}
 
 impl<M> PartialEq for Runnable<M> {
     fn eq(&self, other: &Self) -> bool {
-        self.ddl() == other.ddl()
+        self.deadline() == other.deadline()
     }
 }
 
@@ -741,20 +740,20 @@ impl<M> Eq for Runnable<M> {}
 
 impl<M> PartialOrd for Runnable<M> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.ddl().partial_cmp(&other.ddl())
+        self.deadline().partial_cmp(&other.deadline())
     }
 }
 
 impl<M> Ord for Runnable<M> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.ddl().cmp(&other.ddl())
+        self.deadline().cmp(&other.deadline())
     }
 }
 
 impl<M> Runnable<M> {
     /// Return the deadline hint associated with this task.
     #[inline]
-    pub fn ddl(&self) -> DeadlineHint {
+    pub fn deadline(&self) -> DeadlineHint {
         let ptr = self.ptr.as_ptr();
         // SAFETY: ptr points to a RawTask and is alive (its lifetime is the
         // same as the Runnable).

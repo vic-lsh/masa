@@ -7,8 +7,10 @@ use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 use core::task::{Context, Poll};
 
+use tonic_deadline::DeadlineHint;
+
 use crate::header::Header;
-use crate::raw::Panic;
+use crate::raw::{get_ddl_from_raw_task, Panic};
 use crate::runnable::ScheduleInfo;
 use crate::state::*;
 
@@ -434,6 +436,12 @@ impl<T, M> Task<T, M> {
     /// is a `()` value. See the [`Builder::metadata()`] method for more information.
     pub fn metadata(&self) -> &M {
         &self.header().metadata
+    }
+
+    /// Get the deadline associated with this task.
+    pub fn deadline(&self) -> DeadlineHint {
+        // SAFETY: `self.ptr` is alive if Task is alive
+        unsafe { get_ddl_from_raw_task::<M>(self.ptr.as_ptr()) }
     }
 }
 
