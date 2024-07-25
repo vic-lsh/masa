@@ -436,7 +436,8 @@ impl<'a> Executor<'a> {
         // `Waker`.
         let (runnable, task) = Builder::new()
             .propagate_panic(true)
-            .spawn_unchecked_with_ddl(|()| future, ddl, self.schedule());
+            .deadline(ddl)
+            .spawn_unchecked(|()| future, self.schedule());
         entry.insert(runnable.waker());
 
         runnable.schedule();
