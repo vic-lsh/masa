@@ -31,7 +31,7 @@ fn test_default_ddl() {
 }
 
 #[test]
-fn runnable_custom_ddl() {
+fn test_custom_ddl() {
     async fn my_future() {}
     let ddl = DeadlineHint::new(100);
     let (runnable, task) = unsafe {
