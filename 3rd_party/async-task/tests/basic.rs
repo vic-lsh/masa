@@ -7,7 +7,6 @@ use std::task::{Context, Poll};
 
 use async_task::Runnable;
 use smol::future;
-use tonic_deadline::DeadlineHint;
 
 // Creates a future with event counters.
 //
