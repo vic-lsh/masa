@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use async_task::Runnable;
-use hyper::rt::DeadlineHint;
 use smol::future;
+use tonic_deadline::DeadlineHint;
 
 // Creates a future with event counters.
 //
@@ -343,65 +343,4 @@ fn runnable_from_raw() -> Runnable<()> {
         |runnable: Runnable<()>| dispatch(trampoline, runnable.into_raw()),
     );
     runnable
-}
-
-#[test]
-fn test_runnable_partial_eq() {
-    let mut r1 = runnable_from_raw();
-    let mut r2 = runnable_from_raw();
-    let tests = vec![
-        (DeadlineHint::new(1), DeadlineHint::new(1), true),
-        (DeadlineHint::new(1), DeadlineHint::new(2), false),
-        (DeadlineHint::new(1), DeadlineHint::infra(), false),
-        (DeadlineHint::infra(), DeadlineHint::new(1), false),
-        (DeadlineHint::infra(), DeadlineHint::infra(), true),
-    ];
-    for (d1, d2, expected) in tests {
-        r1.set_ddl(d1);
-        r2.set_ddl(d2);
-        assert_eq!(r1 == r2, expected);
-    }
-}
-
-#[test]
-fn test_runnable_partial_ord() {
-    let mut r1 = runnable_from_raw();
-    let mut r2 = runnable_from_raw();
-    let tests = vec![
-        (
-            DeadlineHint::new(1),
-            DeadlineHint::new(1),
-            std::cmp::Ordering::Equal,
-        ),
-        (
-            DeadlineHint::new(1),
-            DeadlineHint::new(2),
-            std::cmp::Ordering::Less,
-        ),
-        (
-            DeadlineHint::new(2),
-            DeadlineHint::new(1),
-            std::cmp::Ordering::Greater,
-        ),
-        (
-            DeadlineHint::new(1),
-            DeadlineHint::infra(),
-            std::cmp::Ordering::Less,
-        ),
-        (
-            DeadlineHint::infra(),
-            DeadlineHint::new(1),
-            std::cmp::Ordering::Greater,
-        ),
-        (
-            DeadlineHint::infra(),
-            DeadlineHint::infra(),
-            std::cmp::Ordering::Equal,
-        ),
-    ];
-    for (d1, d2, expected) in tests {
-        r1.set_ddl(d1);
-        r2.set_ddl(d2);
-        assert_eq!(r1.partial_cmp(&r2), Some(expected));
-    }
 }
