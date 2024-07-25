@@ -29,6 +29,9 @@ pub struct Builder<M> {
     /// The metadata associated with the task.
     pub(crate) metadata: M,
 
+    /// The deadline associated with the task.
+    pub(crate) deadline: DeadlineHint,
+
     /// Whether or not a panic that occurs in the task should be propagated.
     #[cfg(feature = "std")]
     pub(crate) propagate_panic: bool,
@@ -185,6 +188,7 @@ impl Builder<()> {
     pub fn new() -> Builder<()> {
         Builder {
             metadata: (),
+            deadline: DeadlineHint::infra(),
             #[cfg(feature = "std")]
             propagate_panic: false,
         }
@@ -272,6 +276,7 @@ impl Builder<()> {
     pub fn metadata<M>(self, metadata: M) -> Builder<M> {
         Builder {
             metadata,
+            deadline: self.deadline,
             #[cfg(feature = "std")]
             propagate_panic: self.propagate_panic,
         }
@@ -279,6 +284,16 @@ impl Builder<()> {
 }
 
 impl<M> Builder<M> {
+    /// Specify a deadline for this task.
+    pub fn deadline(self, deadline: DeadlineHint) -> Builder<M> {
+        Builder {
+            metadata: self.metadata,
+            deadline,
+            #[cfg(feature = "std")]
+            propagate_panic: self.propagate_panic,
+        }
+    }
+
     /// Propagates panics that occur in the task.
     ///
     /// When this is `true`, panics that occur in the task will be propagated to the caller of
@@ -323,6 +338,7 @@ impl<M> Builder<M> {
     pub fn propagate_panic(self, propagate_panic: bool) -> Builder<M> {
         Builder {
             metadata: self.metadata,
+            deadline: self.deadline,
             propagate_panic,
         }
     }
@@ -367,24 +383,7 @@ impl<M> Builder<M> {
         Fut::Output: Send + 'static,
         S: Schedule<M> + Send + Sync + 'static,
     {
-        let ddl = DeadlineHint::infra();
-        unsafe { self.spawn_unchecked(future, ddl, schedule) }
-    }
-
-    /// Spawn a task with a given deadline.
-    pub fn spawn_with_ddl<F, Fut, S>(
-        self,
-        future: F,
-        deadline: DeadlineHint,
-        schedule: S,
-    ) -> (Runnable<M>, Task<Fut::Output, M>)
-    where
-        F: FnOnce(&M) -> Fut,
-        Fut: Future + Send + 'static,
-        Fut::Output: Send + 'static,
-        S: Schedule<M> + Send + Sync + 'static,
-    {
-        unsafe { self.spawn_unchecked(future, deadline, schedule) }
+        unsafe { self.spawn_unchecked(future, schedule) }
     }
 
     /// Creates a new thread-local task.
@@ -484,8 +483,7 @@ impl<M> Builder<M> {
             }
         };
 
-        let ddl = DeadlineHint::infra();
-        unsafe { self.spawn_unchecked(future, ddl, schedule) }
+        unsafe { self.spawn_unchecked(future, schedule) }
     }
 
     /// Creates a new task with a deadline without [`Send`], [`Sync`], and `'static` bounds.
@@ -523,7 +521,6 @@ impl<M> Builder<M> {
     pub unsafe fn spawn_unchecked<'a, F, Fut, S>(
         self,
         future: F,
-        ddl: DeadlineHint,
         schedule: S,
     ) -> (Runnable<M>, Task<Fut::Output, M>)
     where
@@ -539,9 +536,9 @@ impl<M> Builder<M> {
                 Box::pin(future)
             };
 
-            RawTask::<_, Fut::Output, S, M>::allocate(future, schedule, ddl, self)
+            RawTask::<_, Fut::Output, S, M>::allocate(future, schedule, self)
         } else {
-            RawTask::<Fut, Fut::Output, S, M>::allocate(future, schedule, ddl, self)
+            RawTask::<Fut, Fut::Output, S, M>::allocate(future, schedule, self)
         };
 
         let runnable = Runnable::from_raw(ptr);
@@ -677,7 +674,7 @@ where
     S: Schedule,
 {
     let ddl = DeadlineHint::infra();
-    Builder::new().spawn_unchecked(move |()| future, ddl, schedule)
+    Builder::new().spawn_unchecked(move |()| future, schedule)
 }
 
 /// A handle to a runnable task.
