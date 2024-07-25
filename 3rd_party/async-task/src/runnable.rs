@@ -367,7 +367,24 @@ impl<M> Builder<M> {
         Fut::Output: Send + 'static,
         S: Schedule<M> + Send + Sync + 'static,
     {
-        unsafe { self.spawn_unchecked(future, schedule) }
+        let ddl = DeadlineHint::infra();
+        unsafe { self.spawn_unchecked(future, ddl, schedule) }
+    }
+
+    /// Spawn a task with a given deadline.
+    pub fn spawn_with_ddl<F, Fut, S>(
+        self,
+        future: F,
+        deadline: DeadlineHint,
+        schedule: S,
+    ) -> (Runnable<M>, Task<Fut::Output, M>)
+    where
+        F: FnOnce(&M) -> Fut,
+        Fut: Future + Send + 'static,
+        Fut::Output: Send + 'static,
+        S: Schedule<M> + Send + Sync + 'static,
+    {
+        unsafe { self.spawn_unchecked(future, deadline, schedule) }
     }
 
     /// Creates a new thread-local task.
@@ -467,75 +484,8 @@ impl<M> Builder<M> {
             }
         };
 
-        unsafe { self.spawn_unchecked(future, schedule) }
-    }
-
-    /// Creates a new task without [`Send`], [`Sync`], and `'static` bounds.
-    ///
-    /// This function is same as [`spawn()`], except it does not require [`Send`], [`Sync`], and
-    /// `'static` on `future` and `schedule`.
-    ///
-    /// # Safety
-    ///
-    /// - If `Fut` is not [`Send`], its [`Runnable`] must be used and dropped on the original
-    ///   thread.
-    /// - If `Fut` is not `'static`, borrowed non-metadata variables must outlive its [`Runnable`].
-    /// - If `schedule` is not [`Send`] and [`Sync`], all instances of the [`Runnable`]'s [`Waker`]
-    ///   must be used and dropped on the original thread.
-    /// - If `schedule` is not `'static`, borrowed variables must outlive all instances of the
-    ///   [`Runnable`]'s [`Waker`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use async_task::Builder;
-    ///
-    /// // The future inside the task.
-    /// let future = async {
-    ///     println!("Hello, world!");
-    /// };
-    ///
-    /// // If the task gets woken up, it will be sent into this channel.
-    /// let (s, r) = flume::unbounded();
-    /// let schedule = move |runnable| s.send(runnable).unwrap();
-    ///
-    /// // Create a task with the future and the schedule function.
-    /// let (runnable, task) = unsafe { Builder::new().spawn_unchecked(move |()| future, schedule) };
-    /// ```
-    pub unsafe fn spawn_unchecked<'a, F, Fut, S>(
-        self,
-        future: F,
-        schedule: S,
-    ) -> (Runnable<M>, Task<Fut::Output, M>)
-    where
-        F: FnOnce(&'a M) -> Fut,
-        Fut: Future + 'a,
-        S: Schedule<M>,
-        M: 'a,
-    {
-        // Allocate large futures on the heap.
-        let ptr = if mem::size_of::<Fut>() >= 2048 {
-            let future = |meta| {
-                let future = future(meta);
-                Box::pin(future)
-            };
-
-            RawTask::<_, Fut::Output, S, M>::allocate(future, schedule, DeadlineHint::infra(), self)
-        } else {
-            RawTask::<Fut, Fut::Output, S, M>::allocate(
-                future,
-                schedule,
-                DeadlineHint::infra(),
-                self,
-            )
-        };
-
-        let runnable = Runnable::from_raw(ptr);
-        let task = Task {
-            ptr,
-            _marker: PhantomData,
-        };
-        (runnable, task)
+        let ddl = DeadlineHint::infra();
+        unsafe { self.spawn_unchecked(future, ddl, schedule) }
     }
 
     /// Creates a new task with a deadline without [`Send`], [`Sync`], and `'static` bounds.
@@ -570,7 +520,7 @@ impl<M> Builder<M> {
     /// // Create a task with the future and the schedule function.
     /// let (runnable, task) = unsafe { Builder::new().spawn_unchecked(move |()| future, schedule) };
     /// ```
-    pub unsafe fn spawn_unchecked_with_ddl<'a, F, Fut, S>(
+    pub unsafe fn spawn_unchecked<'a, F, Fut, S>(
         self,
         future: F,
         ddl: DeadlineHint,
@@ -726,7 +676,8 @@ where
     F: Future,
     S: Schedule,
 {
-    Builder::new().spawn_unchecked(move |()| future, schedule)
+    let ddl = DeadlineHint::infra();
+    Builder::new().spawn_unchecked(move |()| future, ddl, schedule)
 }
 
 /// A handle to a runnable task.
