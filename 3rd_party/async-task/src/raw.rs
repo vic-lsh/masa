@@ -194,7 +194,6 @@ where
     pub(crate) fn allocate<'a, Gen: FnOnce(&'a M) -> F>(
         future: Gen,
         schedule: S,
-        ddl: DeadlineHint,
         builder: crate::Builder<M>,
     ) -> NonNull<()>
     where
@@ -219,6 +218,7 @@ where
                 metadata,
                 #[cfg(feature = "std")]
                 propagate_panic,
+                deadline,
             } = builder;
 
             // Write the header as the first field of the task.
@@ -241,7 +241,7 @@ where
             });
 
             // Write the deadline hint to the task.
-            (raw.ddl as *mut DeadlineHint).write(ddl);
+            (raw.ddl as *mut DeadlineHint).write(deadline);
 
             // Write the schedule function as the third field of the task.
             (raw.schedule as *mut S).write(schedule);
