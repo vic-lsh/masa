@@ -124,6 +124,9 @@ pub use request::{IntoRequest, IntoStreamingRequest, Request};
 pub use response::Response;
 pub use status::{Code, Status};
 
+pub use async_task;
+pub use tonic_deadline as deadline;
+
 pub(crate) type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[doc(hidden)]
