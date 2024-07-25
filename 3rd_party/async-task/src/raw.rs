@@ -615,22 +615,11 @@ where
                 <F as Future>::poll(Pin::new_unchecked(&mut *raw.future), cx).map(Ok)
             }
         };
-        if poll.is_pending() {
-            let old_val = original_ddl.value();
-            let ddl = DeadlineHint::new(original_ddl.value() + 100);
-            std::println!(
-                "task {:p}, after polling, old val {}, new val {}",
-                ptr,
-                old_val,
-                ddl.value()
-            );
+        let ddl = get_task_ddl();
+        if ddl != original_ddl {
+            std::println!("task {:p}, DDL updated to {:?}", ptr, ddl);
             *raw.ddl = ddl;
         }
-        // let ddl = get_task_ddl();
-        // if ddl != original_ddl {
-        //     std::println!("DDL updated to {:?}", ddl);
-        //     // TODO: update the task.ddl field. Maybe trigger scheduler queue sorting.
-        // }
 
         mem::forget(guard);
 

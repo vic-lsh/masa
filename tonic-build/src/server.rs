@@ -169,17 +169,11 @@ pub(crate) fn generate_internal<T: Service>(
                     // [NOTE] Request path on the server side.
                     use tonic_deadline::DeadlineHint;
 
-                    let ddl = async_task::get_task_ddl();
-                    println!("TonicServerHandler: ddl {:?}", ddl);
-                    // async_task::set_task_ddl(DeadlineHint::new(232));
-                    // println!("updated ddl");
-
-                    // let bt = std::backtrace::Backtrace::capture();
-                    // println!("{:?}", bt);
-
                     let ctx_str = req.headers()["ctx"].to_str().unwrap();
                     let ctx = MasaContext::from_json(ctx_str);
                     // println!("[call] {:?}", ctx);
+                    async_task::set_task_ddl(DeadlineHint::new(ctx.deadline()));
+                    println!("updated ddl to {}", ctx.deadline());
 
                     let inner = self.inner.clone();
 
