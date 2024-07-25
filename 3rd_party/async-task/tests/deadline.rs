@@ -1,10 +1,10 @@
-use async_task::{Builder, Runnable};
+use async_task::{Builder, Runnable, Task};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tonic_deadline::DeadlineHint;
 
-fn runnable_from_raw() -> Runnable<()> {
+fn spawn_util() -> (Runnable<()>, Task<()>) {
     fn dispatch(trampoline: extern "C" fn(NonNull<()>), context: NonNull<()>) {
         trampoline(context)
     }
@@ -14,31 +14,32 @@ fn runnable_from_raw() -> Runnable<()> {
     }
 
     let task_got_executed = Arc::new(AtomicBool::new(false));
-    let (runnable, _handle) = async_task::spawn(
+    async_task::spawn(
         {
             let task_got_executed = task_got_executed.clone();
             async move { task_got_executed.store(true, Ordering::SeqCst) }
         },
         |runnable: Runnable<()>| dispatch(trampoline, runnable.into_raw()),
-    );
-    runnable
+    )
 }
 
 #[test]
-fn runnable_default_ddl() {
-    let r = runnable_from_raw();
-    assert_eq!(r.ddl(), DeadlineHint::infra());
+fn test_default_ddl() {
+    let (runnable, task) = spawn_util();
+    assert_eq!(runnable.deadline(), DeadlineHint::infra());
+    assert_eq!(task.deadline(), DeadlineHint::infra());
 }
 
 #[test]
 fn runnable_custom_ddl() {
     async fn my_future() {}
     let ddl = DeadlineHint::new(100);
-    let (r, _) = unsafe {
+    let (runnable, task) = unsafe {
         Builder::new()
             .deadline(ddl)
             .spawn_unchecked(move |()| my_future(), |_r: Runnable<()>| {})
     };
 
-    assert_eq!(r.ddl(), ddl);
+    assert_eq!(runnable.deadline(), ddl);
+    assert_eq!(task.deadline(), ddl);
 }
