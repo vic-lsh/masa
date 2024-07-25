@@ -324,23 +324,3 @@ fn raw() {
 
     assert!(task_got_executed.load(Ordering::SeqCst));
 }
-
-fn runnable_from_raw() -> Runnable<()> {
-    fn dispatch(trampoline: extern "C" fn(NonNull<()>), context: NonNull<()>) {
-        trampoline(context)
-    }
-    extern "C" fn trampoline(runnable: NonNull<()>) {
-        let task = unsafe { Runnable::<()>::from_raw(runnable) };
-        task.run();
-    }
-
-    let task_got_executed = Arc::new(AtomicBool::new(false));
-    let (runnable, _handle) = async_task::spawn(
-        {
-            let task_got_executed = task_got_executed.clone();
-            async move { task_got_executed.store(true, Ordering::SeqCst) }
-        },
-        |runnable: Runnable<()>| dispatch(trampoline, runnable.into_raw()),
-    );
-    runnable
-}
