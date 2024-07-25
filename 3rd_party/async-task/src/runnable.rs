@@ -596,6 +596,24 @@ where
     unsafe { spawn_unchecked(future, schedule) }
 }
 
+/// Creates a new task with a deadline.
+pub fn spawn_with_deadline<F, S>(
+    future: F,
+    deadline: DeadlineHint,
+    schedule: S,
+) -> (Runnable, Task<F::Output>)
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+    S: Schedule + Send + Sync + 'static,
+{
+    unsafe {
+        Builder::new()
+            .deadline(deadline)
+            .spawn_unchecked(move |()| future, schedule)
+    }
+}
+
 /// Creates a new thread-local task.
 ///
 /// This function is same as [`spawn()`], except it does not require [`Send`] on `future`. If the

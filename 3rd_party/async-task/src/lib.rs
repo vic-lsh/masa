@@ -111,7 +111,8 @@ mod utils;
 
 pub use crate::raw::{get_task_ddl, set_task_ddl};
 pub use crate::runnable::{
-    spawn, spawn_unchecked, Builder, Runnable, Schedule, ScheduleInfo, WithInfo,
+    spawn, spawn_unchecked, spawn_with_deadline, Builder, Runnable, Schedule, ScheduleInfo,
+    WithInfo,
 };
 pub use crate::task::{FallibleTask, Task};
 
