@@ -5,7 +5,7 @@
     unreachable_pub
 )]
 #![forbid(unsafe_code)]
-#![feature(negative_impls)]
+// #![feature(negative_impls)]
 // `rustdoc::broken_intra_doc_links` is checked on CI
 
 //! Definition of the core `Service` trait to Tower
