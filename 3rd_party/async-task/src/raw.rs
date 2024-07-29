@@ -594,7 +594,7 @@ where
         // let original_ddl = DeadlineHint::new(100);
         let original_ddl = *raw.ddl;
         std::println!(
-            "task {:p}, before polling, ddl {}",
+            "task {:p}, before polling, ddl {:?}",
             ptr,
             original_ddl.value()
         );
@@ -617,7 +617,7 @@ where
         };
         let ddl = get_task_ddl();
         if ddl != original_ddl {
-            std::println!("task {:p}, DDL updated to {:?}", ptr, ddl);
+            std::println!("task {:p}, ddl updated to {:?}", ptr, ddl);
             *raw.ddl = ddl;
         }
 
