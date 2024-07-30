@@ -21,6 +21,21 @@ use crate::Runnable;
 
 use tonic_deadline::DeadlineHint;
 
+use std::cell::RefCell;
+use std::thread_local;
+
+thread_local! {
+    static THREAD_LOCAL_DDL: RefCell<DeadlineHint> = RefCell::new(DeadlineHint::infra());
+}
+
+pub fn get_task_ddl() -> DeadlineHint {
+    THREAD_LOCAL_DDL.with(|value| *value.borrow())
+}
+
+pub fn set_task_ddl(new_value: DeadlineHint) {
+    THREAD_LOCAL_DDL.with(|value| *value.borrow_mut() = new_value);
+}
+
 #[cfg(feature = "std")]
 pub(crate) type Panic = alloc::boxed::Box<dyn core::any::Any + Send + 'static>;
 
@@ -93,7 +108,7 @@ pub(crate) struct RawTask<F, T, S, M> {
     // All generic except for M are type erased (i.e., we have Runnable<M>, not
     // Runnable<F, T, S, M>). To retrieve `ddl` from Runnable, we can only
     // depend on size information of M, not the other generics.
-    pub(crate) ddl: *const DeadlineHint,
+    pub(crate) ddl: *mut DeadlineHint,
 
     /// The schedule function.
     pub(crate) schedule: *const S,
@@ -179,7 +194,6 @@ where
     pub(crate) fn allocate<'a, Gen: FnOnce(&'a M) -> F>(
         future: Gen,
         schedule: S,
-        ddl: DeadlineHint,
         builder: crate::Builder<M>,
     ) -> NonNull<()>
     where
@@ -204,6 +218,7 @@ where
                 metadata,
                 #[cfg(feature = "std")]
                 propagate_panic,
+                deadline,
             } = builder;
 
             // Write the header as the first field of the task.
@@ -226,7 +241,7 @@ where
             });
 
             // Write the deadline hint to the task.
-            (raw.ddl as *mut DeadlineHint).write(ddl);
+            (raw.ddl as *mut DeadlineHint).write(deadline);
 
             // Write the schedule function as the third field of the task.
             (raw.schedule as *mut S).write(schedule);
@@ -251,7 +266,7 @@ where
             Self {
                 header: p as *const Header<M>,
                 schedule: p.add(task_layout.offset_s) as *const S,
-                ddl: p.add(task_layout.offset_d) as *const DeadlineHint,
+                ddl: p.add(task_layout.offset_d) as *mut DeadlineHint,
                 future: p.add(task_layout.offset_f) as *mut F,
                 output: p.add(task_layout.offset_r) as *mut Result<T, Panic>,
             }
@@ -576,6 +591,14 @@ where
         #[cfg(not(feature = "std"))]
         let poll = <F as Future>::poll(Pin::new_unchecked(&mut *raw.future), cx).map(Ok);
 
+        // let original_ddl = DeadlineHint::new(100);
+        let original_ddl = *raw.ddl;
+        std::println!(
+            "task {:p}, before polling, ddl {:?}",
+            ptr,
+            original_ddl.value()
+        );
+        set_task_ddl(original_ddl);
         #[cfg(feature = "std")]
         let poll = {
             // Check if we should propagate panics.
@@ -592,6 +615,11 @@ where
                 <F as Future>::poll(Pin::new_unchecked(&mut *raw.future), cx).map(Ok)
             }
         };
+        let ddl = get_task_ddl();
+        if ddl != original_ddl {
+            std::println!("task {:p}, ddl updated to {:?}", ptr, ddl);
+            *raw.ddl = ddl;
+        }
 
         mem::forget(guard);
 
