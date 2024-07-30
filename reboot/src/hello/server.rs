@@ -81,6 +81,8 @@ impl Greeter for GreeterImpl {
         let std_ms = 0;
         rand_busy_spin(mean_ms, std_ms).await;
 
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
         let mut client = GreeterClient::connect("http://[::1]:50053").await.unwrap();
         let reply = client.say_hello(request).await.unwrap();
         Ok(reply)

@@ -13,7 +13,17 @@ impl<T: Ord + PartialOrd> Queue for MutexPriorityQueue<T> {
     type Item = T;
 
     fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
-        self.with_locked(|mut q| q.push(item));
+        self.with_locked(|mut q| {
+            // [DEBUG] to determine whether requests are reordered by deadline
+            let smaller_elems_cnt = q.iter().filter(|&e| e < &item).count();
+            let larger_elems_cnt = q.len() - smaller_elems_cnt;
+            println!(
+                "Pushing into PQueue: {} before, {} after",
+                smaller_elems_cnt, larger_elems_cnt
+            );
+
+            q.push(item);
+        });
         Ok(())
     }
 
