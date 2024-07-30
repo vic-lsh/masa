@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
-use tonic::metadata::{Address, GlobalGraph, LocalGraph, Path, Span};
+use tonic::metadata::{Address, LocalGraph, Path};
 use tonic::{
     transport::{Channel, Server},
     Request, Response, Status,
