@@ -155,7 +155,8 @@ where
     F::Output: Send,
 {
     fn execute(&self, fut: F, _ddl: DeadlineHint) {
-        let ddl = DeadlineHint::new(time_now() - self.start_at + self.ddl);
+        // [TODO] think about what the deadline should be here
+        let ddl = DeadlineHint::infra();
         self.ex.spawn_with_ddl(fut, ddl).fallible().detach();
     }
 }

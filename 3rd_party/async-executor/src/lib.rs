@@ -436,7 +436,8 @@ impl<'a> Executor<'a> {
         // `Waker`.
         let (runnable, task) = Builder::new()
             .propagate_panic(true)
-            .spawn_unchecked_with_ddl(|()| future, ddl, self.schedule());
+            .deadline(ddl)
+            .spawn_unchecked(|()| future, self.schedule());
         entry.insert(runnable.waker());
 
         runnable.schedule();
@@ -513,8 +514,8 @@ impl<'a> Executor<'a> {
         // [TODO] If possible, push into the current local queue and notify the ticker.
         move |runnable| {
             // [DEBUG] Show runnable.ddl().
-            // if runnable.ddl() != DeadlineHint::infra() {
-            //     println!("schedule: runnable.ddl {:?}", runnable.ddl());
+            // if runnable.deadline() != DeadlineHint::infra() {
+            //     println!("scheduling: runnable.ddl {:?}", runnable.deadline());
             // }
 
             let now = std::time::Instant::now();
