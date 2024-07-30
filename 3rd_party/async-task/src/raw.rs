@@ -527,6 +527,26 @@ where
         alloc::alloc::dealloc(ptr as *mut u8, task_layout.layout);
     }
 
+    #[inline]
+    unsafe fn set_ddl_before_poll(&self) -> DeadlineHint {
+        let original_ddl = *self.ddl;
+        set_task_ddl(original_ddl);
+        original_ddl
+    }
+
+    #[inline]
+    unsafe fn maybe_update_ddl_after_poll(&self) -> (bool, DeadlineHint) {
+        let ddl_after_poll = get_task_ddl();
+        // [TODO] as an optimization, we don't need to deref self.ddl twice.
+        // for now, we keep this as-is to let the caller know  whether the
+        // ddl was updated.
+        let updated = ddl_after_poll != *self.ddl;
+        if updated {
+            *self.ddl = ddl_after_poll;
+        }
+        (updated, ddl_after_poll)
+    }
+
     /// Runs a task.
     ///
     /// If polling its future panics, the task will be closed and the panic will be propagated into
@@ -587,18 +607,17 @@ where
         // If available, we should also try to catch the panic so that it is propagated correctly.
         let guard = Guard(raw);
 
-        // Panic propagation is not available for no_std.
-        #[cfg(not(feature = "std"))]
-        let poll = <F as Future>::poll(Pin::new_unchecked(&mut *raw.future), cx).map(Ok);
-
-        // let original_ddl = DeadlineHint::new(100);
-        let original_ddl = *raw.ddl;
+        let original_ddl = raw.set_ddl_before_poll();
         std::println!(
             "task {:p}, before polling, ddl {:?}",
             ptr,
             original_ddl.value()
         );
-        set_task_ddl(original_ddl);
+
+        // Panic propagation is not available for no_std.
+        #[cfg(not(feature = "std"))]
+        let poll = <F as Future>::poll(Pin::new_unchecked(&mut *raw.future), cx).map(Ok);
+
         #[cfg(feature = "std")]
         let poll = {
             // Check if we should propagate panics.
@@ -615,10 +634,9 @@ where
                 <F as Future>::poll(Pin::new_unchecked(&mut *raw.future), cx).map(Ok)
             }
         };
-        let ddl = get_task_ddl();
-        if ddl != original_ddl {
-            std::println!("task {:p}, ddl updated to {:?}", ptr, ddl);
-            *raw.ddl = ddl;
+        let (updated, ddl_after_poll) = raw.maybe_update_ddl_after_poll();
+        if updated {
+            std::println!("task {:p}, ddl updated to {:?}", ptr, ddl_after_poll);
         }
 
         mem::forget(guard);
