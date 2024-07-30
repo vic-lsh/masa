@@ -58,7 +58,7 @@ impl LoadGenerator {
 
             let h = tokio::spawn(async move {
                 loop {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    // tokio::time::sleep(Duration::from_secs(1)).await;
                     rps_cnt.fetch_add(1, Ordering::Relaxed);
 
                     let ctx = Context::new(gid.clone(), 1, 100, Some(local_graph.clone()));
@@ -100,7 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let client = GreeterClient::connect(args.addr).await?;
 
-        let load_gen = LoadGenerator::new(global_graph, client, 1, rps_cnt);
+        let load_gen = LoadGenerator::new(global_graph, client, 1024, rps_cnt);
         load_gen
     };
     load_gen.run().await.unwrap();
