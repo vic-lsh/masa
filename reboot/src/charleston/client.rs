@@ -1,18 +1,17 @@
 use hello::{greeter_client::GreeterClient, HelloRequest};
-use std::collections::HashMap;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use structopt::StructOpt;
-use tonic::metadata::{Context, GlobalGraph, LocalGraph, Path, Span};
+use tonic::metadata::{Context, GlobalGraph};
 use tonic::transport::Channel;
-
-mod graph;
 
 pub mod hello {
     tonic::include_proto!("hello");
 }
+mod graph;
+
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Client for benchmarking")]
 pub struct Args {
@@ -97,7 +96,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let load_gen = {
         let global_graph = graph::get_global_graph();
-
         let client = GreeterClient::connect(args.addr).await?;
 
         let load_gen = LoadGenerator::new(global_graph, client, 1024, rps_cnt);
