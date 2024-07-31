@@ -1,9 +1,10 @@
+use log::info;
+
+use super::{PopError, PushError, Queue};
 use std::{
     collections::BinaryHeap,
     sync::{Mutex, MutexGuard},
 };
-
-use super::{PopError, PushError, Queue};
 
 pub(crate) struct MutexPriorityQueue<T> {
     q: Mutex<BinaryHeap<T>>,
@@ -17,7 +18,7 @@ impl<T: Ord + PartialOrd> Queue for MutexPriorityQueue<T> {
             // [DEBUG] to determine whether requests are reordered by deadline
             let smaller_elems_cnt = q.iter().filter(|&e| e < &item).count();
             let larger_elems_cnt = q.len() - smaller_elems_cnt;
-            println!(
+            info!(
                 "Pushing into PQueue: {} before, {} after",
                 smaller_elems_cnt, larger_elems_cnt
             );
