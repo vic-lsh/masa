@@ -122,7 +122,7 @@ struct ExecImpl<'a> {
 }
 
 impl<'a> ExecImpl<'a> {
-    fn new(ex: Arc<smol::Executor<'a>>, ddl: u64) -> Self {
+    fn new(ex: Arc<smol::Executor<'a>>) -> Self {
         Self { ex }
     }
 
@@ -227,7 +227,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::from_args();
 
-    let ex = Arc::new(ExecImpl::new(Arc::new(smol::Executor::new()), 1));
+    let ex = Arc::new(ExecImpl::new(Arc::new(smol::Executor::new())));
 
     info!("Spawning {} server threads...", args.num_threads);
     for _ in 0..args.num_threads {
