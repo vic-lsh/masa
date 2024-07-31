@@ -17,22 +17,44 @@ pub type GraphID = String;
 /// Type alias for an addreess.
 pub type Address = String;
 
-/// Represent a Masa context.
+/// Type alias for a request ID.
+pub type RequestID = u64;
+
+/// Represent a distribution.
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct Distribution {
+    mean: Latency,
+}
+
+impl Distribution {
+    /// Create a new distribution.
+    pub fn new(mean: Latency) -> Self {
+        Self { mean }
+    }
+
+    /// Get an estimate.
+    pub fn estimate(&self) -> Latency {
+        self.mean
+    }
+
+    /// Sample a latency.
+    pub fn sample(&self, _request_id: RequestID) -> Latency {
+        // [TODO] Fix this.
+        self.mean
+    }
+}
+
+/// Represent a span.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Span {
     path: Path,
-    proc_est: Latency,
-    proc_elapse: Latency,
+    distribution: Distribution,
 }
 
 impl Span {
     /// Create a new span.
-    pub fn new(path: Path, proc_est: Latency, proc_elapse: Latency) -> Self {
-        Self {
-            path,
-            proc_est,
-            proc_elapse,
-        }
+    pub fn new(path: Path, distribution: Distribution) -> Self {
+        Self { path, distribution }
     }
 
     /// Get the path.
@@ -40,14 +62,9 @@ impl Span {
         &self.path
     }
 
-    /// Get the processing estimate.
-    pub fn proc_est(&self) -> Latency {
-        self.proc_est
-    }
-
-    /// Get the processing elapse.
-    pub fn proc_elapse(&self) -> Latency {
-        self.proc_elapse
+    /// Get the distribution.
+    pub fn distribution(&self) -> &Distribution {
+        &self.distribution
     }
 }
 
@@ -73,7 +90,7 @@ impl LocalGraph {
                 existed = true;
                 break;
             }
-            suffix_sum += span.proc_est;
+            suffix_sum += span.distribution().estimate();
         }
 
         assert!(existed);
@@ -89,20 +106,23 @@ impl LocalGraph {
 /// Represent a call graph in a global view.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct GlobalGraph {
-    gid: GraphID,
+    graph_id: GraphID,
     local_graphs: HashMap<Path, LocalGraph>,
 }
 
 impl GlobalGraph {
     /// Create a new graph.
-    pub fn new(gid: GraphID, local_graphs: HashMap<Path, LocalGraph>) -> Self {
+    pub fn new(graph_id: GraphID, local_graphs: HashMap<Path, LocalGraph>) -> Self {
         assert!(local_graphs.contains_key(&"Source".to_string()));
-        Self { gid, local_graphs }
+        Self {
+            graph_id,
+            local_graphs,
+        }
     }
 
     /// Get the graph ID.
-    pub fn gid(&self) -> &GraphID {
-        &self.gid
+    pub fn graph_id(&self) -> &GraphID {
+        &self.graph_id
     }
 
     /// Get the source local graph.
@@ -120,7 +140,8 @@ impl GlobalGraph {
 /// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Context {
-    gid: GraphID,
+    graph_id: GraphID,
+    request_id: RequestID,
     start_at: Timestamp,
     deadline: Timestamp,
     local_graph: Option<LocalGraph>,
@@ -129,13 +150,15 @@ pub struct Context {
 impl Context {
     /// Create a new Masa context.
     pub fn new(
-        gid: GraphID,
+        graph_id: GraphID,
+        request_id: RequestID,
         start_at: Timestamp,
         deadline: Timestamp,
         local_graph: Option<LocalGraph>,
     ) -> Self {
         Self {
-            gid,
+            graph_id,
+            request_id,
             start_at,
             deadline,
             local_graph,
@@ -143,8 +166,13 @@ impl Context {
     }
 
     /// Get the graph ID.
-    pub fn gid(&self) -> &GraphID {
-        &self.gid
+    pub fn graph_id(&self) -> &GraphID {
+        &self.graph_id
+    }
+
+    /// Get the request ID.
+    pub fn request_id(&self) -> RequestID {
+        self.request_id
     }
 
     /// Get the start timestamp.

@@ -48,7 +48,8 @@ impl LoadGenerator {
         let mut handles = Vec::with_capacity(self.concurrency);
 
         for _ in 0..self.concurrency {
-            let gid = self.global_graph.gid().clone();
+            let graph_id = self.global_graph.graph_id().clone();
+            let request_id = 1;
             let local_graph = self.global_graph.get_source().clone();
 
             let rps_cnt = self.rps_cnt.clone();
@@ -63,7 +64,13 @@ impl LoadGenerator {
 
                     rps_cnt.fetch_add(1, Ordering::Relaxed);
 
-                    let ctx = Context::new(gid.clone(), 1, 100, Some(local_graph.clone()));
+                    let ctx = Context::new(
+                        graph_id.clone(),
+                        request_id,
+                        1,
+                        100,
+                        Some(local_graph.clone()),
+                    );
                     let mut request = tonic::Request::new(request.clone());
                     request.metadata_mut().insert_ctx("par_ctx", &ctx);
 
