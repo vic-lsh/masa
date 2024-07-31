@@ -226,7 +226,13 @@ impl<T> Grpc<T> {
 
         let request_path: Path = path.to_string();
         let deadline = par_ctx.deadline() - local_graph.estimate_suffix(&request_path);
-        let ctx = Context::new(par_ctx.gid().clone(), par_ctx.start_at(), deadline, None);
+        let ctx = Context::new(
+            par_ctx.graph_id().clone(),
+            par_ctx.request_id(),
+            par_ctx.start_at(),
+            deadline,
+            None,
+        );
         request.metadata_mut().insert_ctx("ctx", &ctx);
 
         let result = self.client_streaming(request, path, codec).await;

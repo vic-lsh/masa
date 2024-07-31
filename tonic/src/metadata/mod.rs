@@ -29,7 +29,8 @@ pub use self::map::ValueRefMut;
 pub use self::map::Values;
 pub use self::map::ValuesMut;
 pub use self::masa::{
-    Address, Context, GlobalGraph, GraphID, Latency, LocalGraph, Path, Span, Timestamp,
+    Address, Context, Distribution, GlobalGraph, GraphID, Latency, LocalGraph, Path, RequestID,
+    Span, Timestamp,
 };
 pub use self::value::AsciiMetadataValue;
 pub use self::value::BinaryMetadataValue;

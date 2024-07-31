@@ -67,12 +67,16 @@ impl Greeter for GreeterImpl {
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
-        let local_graph = self.local_graphs.get(ctx.gid()).unwrap();
+        let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         ctx.set_local_graph(local_graph.clone());
         info!("[server:say_hello] ctx: {:?}", ctx);
 
         let spans = local_graph.spans();
-        let elapse = spans.first().unwrap().proc_elapse();
+        let elapse = spans
+            .first()
+            .unwrap()
+            .distribution()
+            .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
 
         for span in spans.iter().skip(1).take(spans.len() - 2) {
@@ -84,7 +88,11 @@ impl Greeter for GreeterImpl {
             client.say_goodbye(request).await.unwrap();
         }
 
-        let elapse = spans.last().unwrap().proc_elapse();
+        let elapse = spans
+            .last()
+            .unwrap()
+            .distribution()
+            .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
 
         let reply = HelloReply {
@@ -105,7 +113,7 @@ impl Greeter for GreeterImpl {
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
-        let local_graph = self.local_graphs.get(ctx.gid()).unwrap();
+        let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         ctx.set_local_graph(local_graph.clone());
         info!("[server:say_goodbye] ctx: {:?}", ctx);
 
@@ -257,7 +265,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let local_graphs = {
             let mut graphs = HashMap::new();
             graphs.insert(
-                global_graph.gid().clone(),
+                global_graph.graph_id().clone(),
                 global_graph.get_local_graph(&path).clone(),
             );
             graphs
@@ -278,7 +286,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let local_graphs = {
             let mut graphs = HashMap::new();
             graphs.insert(
-                global_graph.gid().clone(),
+                global_graph.graph_id().clone(),
                 global_graph.get_local_graph(&path).clone(),
             );
             graphs
