@@ -23,6 +23,7 @@ std = []
 portable-atomic = { version = "1", optional = true, default-features = false }
 hyper = { path = "../hyper" }
 tonic-deadline = { path = "../../tonic-deadline" }
+log = "0.4"
 
 [dev-dependencies]
 atomic-waker = "1"

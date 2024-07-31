@@ -22,6 +22,7 @@ quote = "1.0"
 syn = "2.0"
 tonic = { path = "../tonic" }
 async-task = { path = "../3rd_party/async-task" }
+log = "0.4"
 
 [features]
 default = ["transport", "prost"]
