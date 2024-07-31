@@ -58,6 +58,7 @@ impl LoadGenerator {
             let h = tokio::spawn(async move {
                 loop {
                     // tokio::time::sleep(Duration::from_secs(1)).await;
+
                     rps_cnt.fetch_add(1, Ordering::Relaxed);
 
                     let ctx = Context::new(gid.clone(), 1, 100, Some(local_graph.clone()));
@@ -79,6 +80,8 @@ impl LoadGenerator {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
+
     let args = Args::from_args();
 
     let rps_cnt = Arc::new(AtomicUsize::new(0));
@@ -97,8 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let load_gen = {
         let global_graph = graph::get_global_graph();
         let client = GreeterClient::connect(args.addr).await?;
-
-        let load_gen = LoadGenerator::new(global_graph, client, 1024, rps_cnt);
+        let load_gen = LoadGenerator::new(global_graph, client, 128, rps_cnt);
         load_gen
     };
     load_gen.run().await.unwrap();

@@ -1,3 +1,5 @@
+use log::info;
+
 use alloc::alloc::Layout as StdLayout;
 use core::cell::UnsafeCell;
 use core::future::Future;
@@ -608,7 +610,7 @@ where
         let guard = Guard(raw);
 
         let original_ddl = raw.set_ddl_before_poll();
-        std::println!(
+        info!(
             "task {:p}, before polling, ddl {:?}",
             ptr,
             original_ddl.value()
@@ -636,7 +638,7 @@ where
         };
         let (updated, ddl_after_poll) = raw.maybe_update_ddl_after_poll();
         if updated {
-            std::println!("task {:p}, ddl updated to {:?}", ptr, ddl_after_poll);
+            info!("task {:p}, ddl updated to {:?}", ptr, ddl_after_poll);
         }
 
         mem::forget(guard);

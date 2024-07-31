@@ -1,3 +1,4 @@
+use env_logger::{Builder, Env};
 use futures_lite::future;
 use hello::{
     greeter_client::GreeterClient,
@@ -5,6 +6,7 @@ use hello::{
     HelloReply, HelloRequest,
 };
 use hyper::rt::{Exec, Executor};
+use log::info;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -67,7 +69,7 @@ impl Greeter for GreeterImpl {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.gid()).unwrap();
         ctx.set_local_graph(local_graph.clone());
-        println!("[server:say_hello] ctx: {:?}", ctx);
+        info!("[server:say_hello] ctx: {:?}", ctx);
 
         let spans = local_graph.spans();
         let elapse = spans.first().unwrap().proc_elapse();
@@ -105,7 +107,7 @@ impl Greeter for GreeterImpl {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.gid()).unwrap();
         ctx.set_local_graph(local_graph.clone());
-        println!("[server:say_goodbye] ctx: {:?}", ctx);
+        info!("[server:say_goodbye] ctx: {:?}", ctx);
 
         let reply = HelloReply {
             message: format!("Hello {}!", request.into_inner().name),
@@ -117,17 +119,11 @@ impl Greeter for GreeterImpl {
 #[derive(Debug)]
 struct ExecImpl<'a> {
     ex: Arc<smol::Executor<'a>>,
-    ddl: u64,
-    start_at: u64,
 }
 
 impl<'a> ExecImpl<'a> {
     fn new(ex: Arc<smol::Executor<'a>>, ddl: u64) -> Self {
-        Self {
-            ex,
-            ddl,
-            start_at: time_now(),
-        }
+        Self { ex }
     }
 
     async fn run(&self) {
@@ -207,13 +203,33 @@ impl VirtualServer {
     }
 }
 
+fn init_logging() {
+    Builder::from_env(Env::default().default_filter_or("info"))
+        .format(|buf, record| {
+            use std::io::Write;
+            writeln!(
+                buf,
+                "{} [{}:{}] {}",
+                record.level(),
+                record.file().unwrap_or("unknown"),
+                record.line().unwrap_or(0),
+                // record.target(),
+                record.args()
+            )
+        })
+        .init();
+    info!("Logging initialized");
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_logging();
+
     let args = Args::from_args();
 
     let ex = Arc::new(ExecImpl::new(Arc::new(smol::Executor::new()), 1));
 
-    eprintln!("Spawning {} server threads...", args.num_threads);
+    info!("Spawning {} server threads...", args.num_threads);
     for _ in 0..args.num_threads {
         // [NOTE] There is only one smol::Executor instance.
         let ex = ex.clone();
@@ -282,7 +298,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let h = tokio::spawn(async move {
             let greeter = GreeterImpl::new(local_graphs, clients);
-            eprintln!("Listening on {}...", addr);
+            info!("Listening on {}...", addr);
             Server::builder()
                 .add_service(GreeterServer::new(greeter))
                 .serve_with_executor(addr, Exec::Executor(ex))
