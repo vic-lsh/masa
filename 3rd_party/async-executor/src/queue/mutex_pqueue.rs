@@ -1,10 +1,11 @@
 use log::info;
 
-use super::{PopError, PushError, Queue};
 use std::{
     collections::BinaryHeap,
     sync::{Mutex, MutexGuard},
 };
+
+use super::{PopError, PushError, Queue};
 
 pub(crate) struct MutexPriorityQueue<T> {
     q: Mutex<BinaryHeap<T>>,
