@@ -30,10 +30,12 @@ thread_local! {
     static THREAD_LOCAL_DDL: RefCell<DeadlineHint> = RefCell::new(DeadlineHint::infra());
 }
 
+/// Get the deadline hint for the current task through thread-local storage.
 pub fn get_task_ddl() -> DeadlineHint {
     THREAD_LOCAL_DDL.with(|value| *value.borrow())
 }
 
+/// Set the deadline hint for the current task through thread-local storage.
 pub fn set_task_ddl(new_value: DeadlineHint) {
     THREAD_LOCAL_DDL.with(|value| *value.borrow_mut() = new_value);
 }
@@ -540,7 +542,7 @@ where
     unsafe fn maybe_update_ddl_after_poll(&self) -> (bool, DeadlineHint) {
         let ddl_after_poll = get_task_ddl();
         // [TODO] as an optimization, we don't need to deref self.ddl twice.
-        // for now, we keep this as-is to let the caller know  whether the
+        // for now, we keep this as-is to let the caller know whether the
         // ddl was updated.
         let updated = ddl_after_poll != *self.ddl;
         if updated {
@@ -609,12 +611,8 @@ where
         // If available, we should also try to catch the panic so that it is propagated correctly.
         let guard = Guard(raw);
 
-        let original_ddl = raw.set_ddl_before_poll();
-        info!(
-            "task {:p}, before polling, ddl {:?}",
-            ptr,
-            original_ddl.value()
-        );
+        let ddl_before = raw.set_ddl_before_poll();
+        info!("task: {:p}, ddl before: {:?}", ptr, ddl_before.value(),);
 
         // Panic propagation is not available for no_std.
         #[cfg(not(feature = "std"))]
@@ -636,9 +634,10 @@ where
                 <F as Future>::poll(Pin::new_unchecked(&mut *raw.future), cx).map(Ok)
             }
         };
-        let (updated, ddl_after_poll) = raw.maybe_update_ddl_after_poll();
+
+        let (updated, ddl_after) = raw.maybe_update_ddl_after_poll();
         if updated {
-            info!("task {:p}, ddl updated to {:?}", ptr, ddl_after_poll);
+            info!("task: {:p}, ddl after: {:?}", ptr, ddl_after.value());
         }
 
         mem::forget(guard);
