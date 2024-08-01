@@ -68,8 +68,8 @@ impl Greeter for GreeterImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        ctx.set_local_graph(local_graph.clone());
         info!("[server:say_hello] ctx: {:?}", ctx);
+        ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
         let elapse = spans
@@ -114,8 +114,23 @@ impl Greeter for GreeterImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        ctx.set_local_graph(local_graph.clone());
         info!("[server:say_goodbye] ctx: {:?}", ctx);
+        ctx.set_local_graph(local_graph.clone());
+
+        let spans = local_graph.spans();
+        let elapse = spans
+            .first()
+            .unwrap()
+            .distribution()
+            .sample(ctx.request_id());
+        busy_spin(Duration::from_micros(elapse));
+
+        let elapse = spans
+            .last()
+            .unwrap()
+            .distribution()
+            .sample(ctx.request_id());
+        busy_spin(Duration::from_micros(elapse));
 
         let reply = HelloReply {
             message: format!("Hello {}!", request.into_inner().name),
