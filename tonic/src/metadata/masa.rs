@@ -24,12 +24,16 @@ pub type RequestID = u64;
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Distribution {
     mean: Latency,
+    percentile_latencies: Option<Vec<Latency>>,
 }
 
 impl Distribution {
     /// Create a new distribution.
-    pub fn new(mean: Latency) -> Self {
-        Self { mean }
+    pub fn new(mean: Latency, percentile_latencies: Option<Vec<Latency>>) -> Self {
+        Self {
+            mean,
+            percentile_latencies,
+        }
     }
 
     /// Get an estimate.
@@ -38,9 +42,13 @@ impl Distribution {
     }
 
     /// Sample a latency.
-    pub fn sample(&self, _request_id: RequestID) -> Latency {
-        // [TODO] Fix this.
-        self.mean
+    pub fn sample(&self, request_id: RequestID) -> Latency {
+        if let Some(percentile_latencies) = &self.percentile_latencies {
+            let index = request_id as usize % percentile_latencies.len();
+            percentile_latencies[index]
+        } else {
+            panic!("No percentile latencies");
+        }
     }
 }
 

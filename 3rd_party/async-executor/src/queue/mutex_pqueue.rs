@@ -20,7 +20,7 @@ impl<T: Ord + PartialOrd> Queue for MutexPriorityQueue<T> {
             let smaller_elems_cnt = q.iter().filter(|&e| e < &item).count();
             let larger_elems_cnt = q.len() - smaller_elems_cnt;
             info!(
-                "Pushing into PQueue: {} before, {} after",
+                "PQueue, before: {}, after: {}",
                 smaller_elems_cnt, larger_elems_cnt
             );
 
