@@ -59,6 +59,7 @@ channel = []
 # harness = false
 
 [dependencies]
+log = "0.4"
 base64 = "0.21"
 bytes = "1.0"
 http = "0.2"
