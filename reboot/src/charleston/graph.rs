@@ -102,6 +102,6 @@ pub fn get_global_graph() -> GlobalGraph {
         );
         graphs
     };
-    let global_graph = GlobalGraph::new("GID".to_string() as Path, local_graphs);
+    let global_graph = GlobalGraph::new("GraphID".to_string() as Path, local_graphs);
     global_graph
 }

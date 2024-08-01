@@ -246,10 +246,11 @@ where
         };
 
         // [NOTE] Into service call.
-        let response = service
-            .call(request)
-            .await
-            .map(|r| r.map(|m| tokio_stream::once(Ok(m))));
+        let fut = service.call(request);
+        // [NOTE] Yield to the tokio runtime such that the thread local deadline
+        // is visible to the future queue.
+        tokio::task::yield_now().await;
+        let response = fut.await.map(|r| r.map(|m| tokio_stream::once(Ok(m))));
 
         let compression_override = compression_override_from_response(&response);
 

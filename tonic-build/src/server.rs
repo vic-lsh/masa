@@ -175,7 +175,7 @@ pub(crate) fn generate_internal<T: Service>(
                     let ctx = MasaContext::from_json(ctx_str);
                     // info!("[call] {:?}", ctx);
                     async_task::set_task_ddl(DeadlineHint::new(ctx.deadline()));
-                    info!("Server call, set ddl in thread local variable to {:?}", ctx.deadline());
+                    info!("thread local ddl: {:?}", ctx.deadline());
 
                     let inner = self.inner.clone();
 
