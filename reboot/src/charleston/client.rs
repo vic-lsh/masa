@@ -4,8 +4,10 @@ use log::info;
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Uniform};
 use std::error::Error;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
@@ -55,15 +57,12 @@ impl LoadGenerator {
         }
     }
 
-    pub async fn run(&self) -> Result<(), Box<dyn Error>> {
+    async fn run(&self) -> Result<(), Box<dyn Error>> {
         let init_at = time_now();
-        let mut rng = StdRng::seed_from_u64(998244353);
-        let uniform = Uniform::from(0..1 << 63);
         let mut handles = Vec::with_capacity(self.concurrency);
 
-        for _ in 0..self.concurrency {
+        for i in 0..self.concurrency {
             let graph_id = self.global_graph.graph_id().clone();
-            let request_id = uniform.sample(&mut rng);
             let local_graph = self.global_graph.get_source().clone();
 
             let rps_cnt = self.rps_cnt.clone();
@@ -73,11 +72,14 @@ impl LoadGenerator {
             };
 
             let h = tokio::spawn(async move {
+                let mut rng = StdRng::seed_from_u64(998244353 + i as u64);
+                let uniform = Uniform::new(0, 1_000_000_007);
                 loop {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    // tokio::time::sleep(Duration::from_secs(1)).await;
 
                     rps_cnt.fetch_add(1, Ordering::Relaxed);
 
+                    let request_id = uniform.sample(&mut rng);
                     let start_at = time_now() - init_at;
                     let slo = 10_000;
                     let deadline = start_at + slo;
@@ -146,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let load_gen = {
         let global_graph = graph::get_global_graph();
         let client = GreeterClient::connect(args.addr).await?;
-        let load_gen = LoadGenerator::new(global_graph, client, 1, rps_cnt);
+        let load_gen = LoadGenerator::new(global_graph, client, 16, rps_cnt);
         load_gen
     };
     load_gen.run().await.unwrap();
