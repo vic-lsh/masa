@@ -48,14 +48,20 @@ pub struct Args {
 
 #[derive(Debug, Clone)]
 pub struct Span {
+    request_id: u64,
     span: String,
     slo: u64,
     latency: u64,
 }
 
 impl Span {
-    pub fn new(span: String, slo: u64, latency: u64) -> Self {
-        Self { span, slo, latency }
+    pub fn new(request_id: u64, span: String, slo: u64, latency: u64) -> Self {
+        Self {
+            request_id,
+            span,
+            slo,
+            latency,
+        }
     }
 }
 
@@ -67,9 +73,14 @@ async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
         }
     }
     let mut file = File::create(output).unwrap();
-    writeln!(file, "span,slo,latency").unwrap();
+    writeln!(file, "request_id,span,slo,latency").unwrap();
     while let Ok(span) = trace_rx.recv() {
-        writeln!(file, "{},{},{}", span.span, span.slo, span.latency).unwrap();
+        writeln!(
+            file,
+            "{},{},{},{}",
+            span.request_id, span.span, span.slo, span.latency
+        )
+        .unwrap();
     }
 }
 
@@ -150,8 +161,8 @@ impl LoadGenerator {
             let value = exponential.sample(&mut self.rng);
             elapse += value;
 
+            let request_id = uniform.sample(&mut self.rng);
             let request = {
-                let request_id = uniform.sample(&mut self.rng);
                 let start_at = time_now() - init_at_u64;
                 let deadline = start_at + self.slo;
                 let ctx = Context::new(
@@ -181,13 +192,12 @@ impl LoadGenerator {
                     token.fetch_add(1, Ordering::SeqCst);
                     let recv_at = time_now();
                     let latency = recv_at - send_at;
-                    let span = Span::new("SayHello".to_string(), slo, latency);
+                    let span = Span::new(request_id, "SayHello".to_string(), slo, latency);
                     trace_tx.try_send(span).unwrap();
                 });
             }
         }
 
-        info!("Load gen completed");
         Ok(())
     }
 }
