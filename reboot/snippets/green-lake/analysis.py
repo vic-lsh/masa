@@ -3,7 +3,7 @@ import pandas as pd
 # rps = [100, 200]
 # modes = ["masa", "fifo"]
 
-rps = [800, 900, 1000, 1100, 1200]
+rps = [700, 750, 800, 850, 900]
 modes = ["masa", "fifo"]
 
 print(rps)

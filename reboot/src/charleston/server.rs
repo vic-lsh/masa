@@ -180,7 +180,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct VirtualServer {
     addr: Address,
     conn_addrs: HashMap<Path, Address>,
@@ -250,23 +250,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::from_args();
 
-    let ex = Arc::new(ExecImpl::new(Arc::new(smol::Executor::new())));
+    let exs = vec![
+        Arc::new(ExecImpl::new(Arc::new(smol::Executor::new()))),
+        Arc::new(ExecImpl::new(Arc::new(smol::Executor::new()))),
+    ];
 
     info!("Spawning {} server threads...", args.num_threads);
     for _ in 0..args.num_threads {
-        // [NOTE] There is only one smol::Executor instance.
-        let ex = ex.clone();
-
-        // [NOTE] Semantically, it is equivalent to tokio::spawn(ex_clone.run()).
-        // However, we use std::thread::spawn() to have dedicated threads for
-        // executors that poll futures based on deadline hints.
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            rt.block_on(ex.run());
-        });
+        for ex in exs.iter() {
+            let ex = ex.clone();
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                rt.block_on(ex.run());
+            });
+        }
     }
 
     let global_graph = graph::get_global_graph();
@@ -313,13 +313,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut handles = Vec::new();
 
-    for server in servers {
-        let ex = ex.clone();
-        let addr = server.addr().parse().unwrap();
-        let local_graphs = server.local_graphs().clone();
-        let clients = server.get_clients().await;
-
+    for i in 0..servers.len() {
+        let ex = exs[i].clone();
+        let server = servers[i].clone();
         let h = tokio::spawn(async move {
+            let addr = server.addr().parse().unwrap();
+            let local_graphs = server.local_graphs().clone();
+            let clients = server.get_clients().await;
+
             let greeter = GreeterImpl::new(local_graphs, clients);
             info!("Listening on {}...", addr);
             Server::builder()
