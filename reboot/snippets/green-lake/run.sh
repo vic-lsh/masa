@@ -1,7 +1,9 @@
 #!/bin/bash
 
 path="snippets/green-lake"
-rps_values=(800 900 1000 1100 1200)
+
+rps_values=(700 750 800 850 900)
+
 mode="masa"
 # mode="fifo"
 
