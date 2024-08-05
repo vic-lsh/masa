@@ -1,7 +1,7 @@
 #!/bin/bash
 
 path="snippets/green-lake"
-rps_values=(100 200)
+rps_values=(800 900 1000 1100 1200)
 mode="masa"
 # mode="fifo"
 
@@ -13,8 +13,8 @@ for rps in "${rps_values[@]}"; do
 	cargo run --release --bin charleston_client_bench -- \
 		--slo 10000 \
 		--rps ${rps} \
-		--secs 60 \
-		--concurrency 128 \
+		--secs 120 \
+		--concurrency 512 \
 		--output snippets/green-lake/r${rps}-${mode}.csv
 
 	sleep 3
