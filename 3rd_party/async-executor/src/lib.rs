@@ -46,7 +46,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock, TryLockError};
 use std::task::{Poll, Waker};
-use std::time::Duration;
+// use std::time::Duration;
 
 use async_task::{Builder, Runnable};
 use futures_lite::{future, prelude::*};
@@ -513,11 +513,6 @@ impl<'a> Executor<'a> {
 
         // [TODO] If possible, push into the current local queue and notify the ticker.
         move |runnable| {
-            // [DEBUG] Show runnable.ddl().
-            // if runnable.deadline() != DeadlineHint::infra() {
-            //     println!("scheduling: runnable.ddl {:?}", runnable.deadline());
-            // }
-
             let now = std::time::Instant::now();
 
             state
@@ -837,6 +832,7 @@ impl<'a> Default for LocalExecutor<'a> {
 }
 
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
+// type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 type LocalQueue<T> = queue::ConcurrentFifoQueue<T>;
 
 /// The state of a executor.
