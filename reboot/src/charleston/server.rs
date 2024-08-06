@@ -108,6 +108,7 @@ impl Greeter for GreeterImpl {
         panic!("Not implemented");
     }
 
+    // [TODO] Initialize servers in different processes.
     async fn say_goodbye(
         &self,
         request: Request<HelloRequest>,
@@ -150,6 +151,7 @@ impl<'a> ExecImpl<'a> {
     }
 
     async fn run(&self) {
+        // [TODO] Simplify comments.
         // [NOTE] Two-level queues are used in smol::Executor::run().
         // self.ex
         //     .run(async {
@@ -174,7 +176,7 @@ where
     F::Output: Send,
 {
     fn execute(&self, fut: F, _ddl: DeadlineHint) {
-        // [TODO] think about what the deadline should be here
+        // [TODO] Think about what the deadline should be here.
         let ddl = DeadlineHint::infra();
         self.ex.spawn_with_ddl(fut, ddl).fallible().detach();
     }
@@ -250,6 +252,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::from_args();
 
+    // [TODO] Move ex inside VirtualServer start.
     let exs = vec![
         Arc::new(ExecImpl::new(Arc::new(smol::Executor::new()))),
         Arc::new(ExecImpl::new(Arc::new(smol::Executor::new()))),

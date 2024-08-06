@@ -541,7 +541,7 @@ where
     #[inline]
     unsafe fn maybe_update_ddl_after_poll(&self) -> (bool, DeadlineHint) {
         let ddl_after_poll = get_task_ddl();
-        // [TODO] as an optimization, we don't need to deref self.ddl twice.
+        // [TODO] As an optimization, we don't need to deref self.ddl twice.
         // for now, we keep this as-is to let the caller know whether the
         // ddl was updated.
         let updated = ddl_after_poll != *self.ddl;
