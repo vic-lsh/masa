@@ -35,7 +35,7 @@ pub fn time_now() -> u64 {
 #[structopt(about = "Server for benchmarking")]
 pub struct Args {
     #[structopt(short, long, default_value = "1")]
-    pub num_threads: usize,
+    pub n_threads: usize,
 }
 
 pub struct GreeterImpl {
@@ -151,16 +151,6 @@ impl<'a> ExecImpl<'a> {
     }
 
     async fn run(&self) {
-        // [TODO] Simplify comments.
-        // [NOTE] Two-level queues are used in smol::Executor::run().
-        // self.ex
-        //     .run(async {
-        //         loop {
-        //             future::yield_now().await;
-        //         }
-        //     })
-        //     .await;
-
         // [NOTE] Only a global queue is used in smol::Executor::tick().
         loop {
             self.ex.tick().await;
@@ -187,6 +177,7 @@ struct VirtualServer {
     addr: Address,
     conn_addrs: HashMap<Path, Address>,
     local_graphs: HashMap<Path, LocalGraph>,
+    n_threads: usize,
 }
 
 impl VirtualServer {
@@ -194,6 +185,7 @@ impl VirtualServer {
         addr: Address,
         conn_addrs: HashMap<Path, Address>,
         local_graphs: HashMap<Path, LocalGraph>,
+        n_threads: usize,
     ) -> Self {
         let mut paths = Vec::new();
         let mut addrs = Vec::new();
@@ -207,6 +199,7 @@ impl VirtualServer {
             addr,
             conn_addrs,
             local_graphs,
+            n_threads,
         }
     }
 
@@ -225,6 +218,10 @@ impl VirtualServer {
             clients.insert(path.clone(), client);
         }
         clients
+    }
+
+    pub fn n_threads(&self) -> usize {
+        self.n_threads
     }
 }
 
@@ -252,26 +249,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::from_args();
 
-    // [TODO] Move ex inside VirtualServer start.
-    let exs = vec![
-        Arc::new(ExecImpl::new(Arc::new(smol::Executor::new()))),
-        Arc::new(ExecImpl::new(Arc::new(smol::Executor::new()))),
-    ];
-
-    info!("Spawning {} server threads...", args.num_threads);
-    for _ in 0..args.num_threads {
-        for ex in exs.iter() {
-            let ex = ex.clone();
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap();
-                rt.block_on(ex.run());
-            });
-        }
-    }
-
     let global_graph = graph::get_global_graph();
 
     let mut servers = Vec::new();
@@ -288,7 +265,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             graphs
         };
-        let server = VirtualServer::new(addr, conn_addrs, local_graphs);
+        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
         server
     };
     servers.push(server2);
@@ -309,7 +286,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             graphs
         };
-        let server = VirtualServer::new(addr, conn_addrs, local_graphs);
+        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
         server
     };
     servers.push(server1);
@@ -317,8 +294,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut handles = Vec::new();
 
     for i in 0..servers.len() {
-        let ex = exs[i].clone();
         let server = servers[i].clone();
+
+        let ex = Arc::new(ExecImpl::new(Arc::new(smol::Executor::new())));
+        for _ in 0..server.n_threads() {
+            let ex = ex.clone();
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                rt.block_on(ex.run());
+            });
+        }
+
         let h = tokio::spawn(async move {
             let addr = server.addr().parse().unwrap();
             let local_graphs = server.local_graphs().clone();

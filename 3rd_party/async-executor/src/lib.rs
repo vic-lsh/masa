@@ -511,7 +511,6 @@ impl<'a> Executor<'a> {
     fn schedule(&self) -> impl Fn(Runnable) + Send + Sync + 'static {
         let state = self.state_as_arc();
 
-        // [TODO] If possible, push into the current local queue and notify the ticker.
         move |runnable| {
             let now = std::time::Instant::now();
 
@@ -831,9 +830,11 @@ impl<'a> Default for LocalExecutor<'a> {
     }
 }
 
-// [TODO] Pass mode arg.
+#[cfg(feature = "masa")]
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
-// type GlobalQueue<T> = queue::MutexFifoQueue<T>;
+#[cfg(not(feature = "masa"))]
+type GlobalQueue<T> = queue::MutexFifoQueue<T>;
+
 type LocalQueue<T> = queue::ConcurrentFifoQueue<T>;
 
 /// The state of a executor.
