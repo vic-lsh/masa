@@ -46,6 +46,9 @@ path = "src/hello/server.rs"
 debug = true
 
 [features]
+masa = ["async-executor/masa"]
+fifo = ["async-executor/fifo"]
+
 gcp = ["dep:prost-types", "tonic/tls"]
 routeguide = [
 	"dep:async-stream",
@@ -126,7 +129,7 @@ full = [
 default = ["full"]
 
 [dependencies]
-# Reboot
+async-executor = { path = "../3rd_party/async-executor" }
 async-compat = "0.2.3"
 async-task = { path = "../3rd_party/async-task" }
 smol = { path = "../3rd_party/smol" }
