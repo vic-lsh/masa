@@ -1,7 +1,5 @@
 import pandas as pd
 
-# [TODO] Read Hotnets evaluation figures.
-
 rps = [700, 750, 800, 850, 900]
 modes = ["masa", "fifo"]
 
