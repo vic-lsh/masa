@@ -15,7 +15,6 @@ pub trait UnaryService<R> {
     type Future: Future<Output = Result<Response<Self::Response>, Status>>;
 
     /// Call the service
-    // [TODO] Return Future and DDL.
     fn call(&mut self, request: Request<R>) -> Self::Future;
 }
 

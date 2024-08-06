@@ -165,6 +165,7 @@ impl LoadGenerator {
             let request = {
                 let start_at = time_now() - init_at_u64;
                 let deadline = start_at + self.slo;
+                // [TODO] Support Hotel.
                 let ctx = Context::new(
                     graph_id.clone(),
                     request_id,
