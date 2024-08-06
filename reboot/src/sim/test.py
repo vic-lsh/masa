@@ -123,8 +123,6 @@ def sim_fcfs(opts: Options):
             total_elapse = round(req.total_elapse * 1e6)
             f.write(f"{total_elapse}\n")
 
-    # [TODO] Output as a distribution.
-
 
 def sim_masa(opts: Options):
     exp = ExponentialDistribution(opts.rps)
@@ -170,8 +168,6 @@ def sim_masa(opts: Options):
             # f.write(f"{req}\n")
             total_elapse = round(req.total_elapse * 1e6)
             f.write(f"{total_elapse}\n")
-
-    # [TODO] Output as a distribution.
 
 
 def main():

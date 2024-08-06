@@ -25,6 +25,7 @@ fn get_percentile_latencies(
     percentiles
 }
 
+// [TODO] Support Hotel.
 pub fn get_global_graph() -> GlobalGraph {
     let local_graphs = {
         let mut rng = StdRng::seed_from_u64(998244353);

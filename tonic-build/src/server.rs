@@ -164,7 +164,6 @@ pub(crate) fn generate_internal<T: Service>(
                     Poll::Ready(Ok(()))
                 }
 
-                // [TODO] Return Future and DDL.
                 fn call(&mut self, req: http::Request<B>) -> Self::Future {
                     // [NOTE] Request path on the server side.
                     use tonic::deadline::DeadlineHint;
@@ -492,7 +491,6 @@ fn generate_unary<T: Method>(
             type Response = #response;
             type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
 
-            // [TODO] Return Future and DDL.
             fn call(&mut self, request: tonic::Request<#request>) -> Self::Future {
                 let inner = Arc::clone(&self.0);
                 let fut = async move {

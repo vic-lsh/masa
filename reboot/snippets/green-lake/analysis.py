@@ -1,7 +1,6 @@
 import pandas as pd
 
-# rps = [100, 200]
-# modes = ["masa", "fifo"]
+# [TODO] Read Hotnets evaluation figures.
 
 rps = [700, 750, 800, 850, 900]
 modes = ["masa", "fifo"]

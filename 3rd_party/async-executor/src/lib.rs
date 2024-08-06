@@ -831,6 +831,7 @@ impl<'a> Default for LocalExecutor<'a> {
     }
 }
 
+// [TODO] Pass mode arg.
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
 // type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 type LocalQueue<T> = queue::ConcurrentFifoQueue<T>;

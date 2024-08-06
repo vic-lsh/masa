@@ -14,7 +14,7 @@ use tokio_stream::Stream;
 /// A gRPC request and metadata from an RPC call.
 #[derive(Debug)]
 pub struct Request<T> {
-    // [TODO] Add a Masa context.
+    // [NOTE] Maybe add a MasaContext here.
     metadata: MetadataMap,
     message: T,
     extensions: Extensions,

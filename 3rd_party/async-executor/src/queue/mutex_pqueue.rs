@@ -16,7 +16,8 @@ impl<T: Ord + PartialOrd> Queue for MutexPriorityQueue<T> {
 
     fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
         self.with_locked(|mut q| {
-            // [DEBUG] to determine whether requests are reordered by deadline
+            // [TODO] Determine whether requests are reordered by deadline.
+            // Verify queueing length and latency for Masa.
             let n_smaller = q.iter().filter(|&e| e < &item).count();
             let n_larger = q.len() - n_smaller;
             info!("pqueue smaller: {}, pqueue larger: {}", n_smaller, n_larger);
