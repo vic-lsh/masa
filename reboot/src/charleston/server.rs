@@ -68,7 +68,7 @@ impl Greeter for GreeterImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        info!("[server:say_hello] ctx: {:?}", ctx);
+        info!("ctx: {:?}", ctx);
         ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
@@ -115,7 +115,7 @@ impl Greeter for GreeterImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        info!("[server:say_goodbye] ctx: {:?}", ctx);
+        info!("ctx: {:?}", ctx);
         ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();

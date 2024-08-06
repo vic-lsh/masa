@@ -2,7 +2,8 @@
 
 path="snippets/green-lake"
 
-rps_values=(700 750 800 850 900)
+# rps_values=(300 325 350 375 400 425 450 475 500 525 550 575 600 625 650 675 700 725 750 775 800 825 850 875 900)
+rps_values=(925 950 975 1000)
 
 modes=("masa" "fifo")
 
@@ -25,7 +26,7 @@ for mode in "${modes[@]}"; do
 		cargo run --release --bin charleston_client_bench -- \
 			--slo 10000 \
 			--rps $rps \
-			--secs 60 \
+			--secs 300 \
 			--concurrency 512 \
 			--output $path/r$rps-$mode.csv \
 			>/dev/null 2>&1
