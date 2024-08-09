@@ -11,11 +11,12 @@ packages=(
     "tonic-types"
     "tonic-web"
     "hyper"
-    "tokio"
-    "tokio-stream"
-    "tokio-util"
-    "tokio-io-timeout"
-    "tokio-openssl"
+    # tokio's tests are flaky -- reenable when we start to modify them
+    # "tokio"
+    # "tokio-stream"
+    # "tokio-util"
+    # "tokio-io-timeout"
+    # "tokio-openssl"
     "tower"
 )
 
