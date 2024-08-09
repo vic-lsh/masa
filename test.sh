@@ -18,8 +18,8 @@ packages=(
 )
 
 declare -A package_features=(
-    ["tokio"]="full"
-    ["tokio-util"]="full"
+    ["tokio"]="--features full"
+    ["tokio-util"]="--features full"
 )
 
 failed_packages=()
@@ -33,7 +33,7 @@ for package in "${packages[@]}"; do
 
     # Check if the package has defined feature flags
     if [ -n "${package_features[$package]}" ]; then
-        features="--features ${package_features[$package]}"
+        features="${package_features[$package]}"
     else
         features=""
     fi
