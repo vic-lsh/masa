@@ -10,7 +10,13 @@ packages=(
     #"tonic-reflection"
     "tonic-types"
     "tonic-web"
+    "tokio-util"
 )
+
+declare -A package_features=(
+    ["tokio-util"]="full"
+)
+
 failed_packages=()
 
 # Initialize a variable to track the overall test status
@@ -19,8 +25,15 @@ overall_status=0
 # Loop through each package and run tests
 for package in "${packages[@]}"; do
     echo "======== Testing $package ========"
+
+    # Check if the package has defined feature flags
+    if [ -n "${package_features[$package]}" ]; then
+        features="--features ${package_features[$package]}"
+    else
+        features=""
+    fi
     
-    cargo test -p "$package"
+    cargo test -p "$package" $features
     
     test_status=$?
     
