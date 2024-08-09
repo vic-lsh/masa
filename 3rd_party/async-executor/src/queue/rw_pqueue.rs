@@ -5,6 +5,7 @@ use std::{
 
 use super::{PopError, PushError, Queue};
 
+#[allow(dead_code)]
 pub(crate) struct RwPriorityQueue<T> {
     q: RwLock<BinaryHeap<T>>,
 }
@@ -35,6 +36,7 @@ impl<T: Ord + PartialOrd> Queue for RwPriorityQueue<T> {
     }
 }
 
+#[allow(dead_code)]
 impl<T> RwPriorityQueue<T> {
     #[inline]
     fn with_read_lock<R>(&self, f: impl FnOnce(RwLockReadGuard<'_, BinaryHeap<T>>) -> R) -> R {
