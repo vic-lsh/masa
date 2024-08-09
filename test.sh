@@ -13,6 +13,8 @@ packages=(
     "tokio"
     "tokio-stream"
     "tokio-util"
+    "tokio-io-timeout"
+    "tokio-openssl"
 )
 
 declare -A package_features=(
