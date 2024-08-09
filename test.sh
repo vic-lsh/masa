@@ -10,6 +10,7 @@ packages=(
     #"tonic-reflection"
     "tonic-types"
     "tonic-web"
+    "hyper"
     "tokio"
     "tokio-stream"
     "tokio-util"
