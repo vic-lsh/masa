@@ -10,10 +10,13 @@ packages=(
     #"tonic-reflection"
     "tonic-types"
     "tonic-web"
+    "tokio"
+    "tokio-stream"
     "tokio-util"
 )
 
 declare -A package_features=(
+    ["tokio"]="full"
     ["tokio-util"]="full"
 )
 
