@@ -15,11 +15,13 @@ packages=(
     "tokio-util"
     "tokio-io-timeout"
     "tokio-openssl"
+    "tower"
 )
 
 declare -A package_features=(
     ["tokio"]="--features full"
     ["tokio-util"]="--features full"
+    ["tower"]="--all-features"
 )
 
 failed_packages=()
