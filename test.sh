@@ -18,12 +18,21 @@ packages=(
     # "tokio-io-timeout"
     # "tokio-openssl"
     "tower"
+    "async-task"
 )
 
+# If testing your crate requires special feature flags, set them here
 declare -A package_features=(
     ["tokio"]="--features full"
     ["tokio-util"]="--features full"
     ["tower"]="--all-features"
+)
+
+# Testing by package name can be ambiguous (e.g., we have a local crate X and
+# cargo also downloads another version from crates.io). In this case, we can
+# be precise about our package under test by specifying its Cargo.toml path.
+declare -A package_manifest_paths=(
+    ["async-task"]="./3rd_party/async-task/Cargo.toml"
 )
 
 failed_packages=()
@@ -41,8 +50,16 @@ for package in "${packages[@]}"; do
     else
         features=""
     fi
+
+    if [ -n "${package_manifest_paths[$package]}" ]; then
+        # for packages with manifest path, test directly using manifest path
+        manifest_path="--manifest-path ${package_manifest_paths[$package]}"
+        cargo test $manifest_path
+    else
+        # otherwise, test with package name and optionally with feature flags
+        cargo test -p "$package" $features
+    fi
     
-    cargo test -p "$package" $features
     
     test_status=$?
     
