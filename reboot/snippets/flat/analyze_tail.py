@@ -4,7 +4,7 @@ import pandas as pd
 
 percentiles = [0.1, 0.25, 0.5, 0.75, 0.9, 0.99]
 # rps = [r for r in range(300, 901, 25)]
-rps = [1600]
+rps = [200, 1600]
 modes = ["masa", "fifo"]
 
 for pctl in percentiles:
