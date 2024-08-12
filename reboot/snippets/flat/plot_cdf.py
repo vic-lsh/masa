@@ -10,7 +10,7 @@ modes = ["masa", "fifo"]
 results: Dict[str, List[int]] = {"masa": [], "fifo": []}
 
 for mode in modes:
-    file = f"r{rps}-{mode}.csv"
+    file = f"r{rps}_{mode}.csv"
     df = pd.read_csv(file)
 
     df["latency"] /= 1_000
