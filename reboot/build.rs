@@ -7,4 +7,9 @@ fn main() {
         .file_descriptor_set_path(out_dir.join("hello_descriptor.bin"))
         .compile(&["proto/hello.proto"], &["proto"])
         .unwrap();
+
+    tonic_build::configure()
+        .file_descriptor_set_path(out_dir.join("hello_descriptor.bin"))
+        .compile(&["proto/bridge.proto"], &["proto"])
+        .unwrap();
 }
