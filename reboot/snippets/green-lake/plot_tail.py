@@ -17,8 +17,8 @@ plt.rcParams.update(
 
 # Load the compiled results
 df = pd.read_csv("results.csv")
-df["masa"] = df["masa"] / 1_000
-df["fifo"] = df["fifo"] / 1_000
+df["masa"] /= 1_000
+df["fifo"] /= 1_000
 
 # Create a figure and a set of subplots
 fig, ax1 = plt.subplots(figsize=(10, 6))
@@ -55,5 +55,5 @@ ax1.legend(lines + lines2, labels + labels2, loc="upper left")
 # Save the plot as a PNG file
 plt.tight_layout()
 plt.title("Tail Latency Comparison")
-plt.savefig("results.png")
+plt.savefig("fig_tail.png")
 plt.show()
