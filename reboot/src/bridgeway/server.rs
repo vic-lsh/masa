@@ -93,8 +93,10 @@ impl Worker for WorkerImpl {
             .unwrap()
             .distribution()
             .sample(ctx.request_id());
+        // let elapse_first = elapse;
         busy_spin(Duration::from_micros(elapse));
 
+        // let start_at = time_now();
         for span in spans.iter().skip(1).take(spans.len() - 2) {
             let mut client = self.clients.get(span.path()).unwrap().clone();
             let mut request = Request::new(HelloRequest {
@@ -103,6 +105,8 @@ impl Worker for WorkerImpl {
             request.metadata_mut().insert_ctx("par_ctx", &ctx);
             client.say_hello_i1(request).await.unwrap();
         }
+        // let finish_at = time_now();
+        // let latency = finish_at - start_at;
 
         let elapse = spans
             .last()
@@ -110,6 +114,11 @@ impl Worker for WorkerImpl {
             .distribution()
             .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
+
+        // if ctx.request_id() % 10 == 0 {
+        //     use log::warn;
+        //     warn!("say_hello_i2,{},{},{}", ctx.request_id(), elapse_first, latency);
+        // }
 
         let reply = HelloReply {
             message: format!("Hello {}!", request.into_inner().name),
@@ -121,6 +130,8 @@ impl Worker for WorkerImpl {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
+        // let start_at = time_now();
+
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         info!("ctx: {:?}", ctx);
@@ -132,6 +143,7 @@ impl Worker for WorkerImpl {
             .unwrap()
             .distribution()
             .sample(ctx.request_id());
+        // let elapse_first = elapse;
         busy_spin(Duration::from_micros(elapse));
 
         let elapse = spans
@@ -140,6 +152,13 @@ impl Worker for WorkerImpl {
             .distribution()
             .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
+
+        // let finish_at = time_now();
+        // let latency = finish_at - start_at;
+        // if ctx.request_id() % 10 == 0 {
+        //     use log::warn;
+        //     warn!("say_hello_i1,{},{},{}", ctx.request_id(), elapse_first, latency);
+        // }
 
         let reply = HelloReply {
             message: format!("Hello {}!", request.into_inner().name),

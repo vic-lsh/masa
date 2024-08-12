@@ -4,7 +4,7 @@ import pandas as pd
 
 percentiles = [0.1, 0.25, 0.5, 0.75, 0.9, 0.99]
 # rps = [r for r in range(300, 901, 25)]
-rps = [200, 1600]
+rps = [1600]
 modes = ["masa", "fifo"]
 
 for pctl in percentiles:
@@ -12,7 +12,7 @@ for pctl in percentiles:
 
     for r in rps:
         for mode in modes:
-            file = f"r{r}-{mode}.csv"
+            file = f"r{r}_{mode}.csv"
             df = pd.read_csv(file)
 
             latencies = df["latency"].quantile(pctl)
