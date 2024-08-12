@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package bridge;
+
+service Worker {
+  rpc SayHelloI1(HelloRequest) returns (HelloReply) {}
+  rpc SayHelloI2(HelloRequest) returns (HelloReply) {}
+  rpc SayHelloI3(HelloRequest) returns (HelloReply) {}
+  rpc SayHelloI4(HelloRequest) returns (HelloReply) {}
+}
+
+message HelloRequest { string name = 1; }
+
+message HelloReply { string message = 1; }
