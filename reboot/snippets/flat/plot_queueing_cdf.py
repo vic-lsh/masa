@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+rps = 1600
 modes = ["masa", "fifo"]
 results_raw = {}
 sh_i1 = "say_hello_i1"
@@ -63,7 +64,7 @@ for mode in modes:
 
 plot_cdf(
     results_queueing_second_hop,
-    "Queueing Latency at Second Hop",
+    f"Queueing Latency at Second Hop (rps={rps})",
     "fig_queueing_second_hop_cdf.png",
 )
 
@@ -76,18 +77,20 @@ def plot_cdf_relative(results: List[float], title: str, fig_name: str):
 
     plt.plot(results, cdf)
 
-    plt.axvline(x=100, color="r", linestyle="--")
-    if results[-1] >= 100:
-        # Only calculate if there are results that reach or exceed 100%
-        y_value = next((y for x, y in zip(results, cdf) if x >= 100), None)
-        if y_value is not None:
-            plt.axhline(
-                y=y_value,
-                color="r",
-                linestyle="--",
-                label=f"CDF at x=100: {y_value:.2f}",
-            )
-            plt.legend()  # Show legend with the label
+    pois = [100, 200, 300, 400, 500]
+    for poi in pois:
+        # plt.axvline(x=poi, color="r", linestyle="--")
+        if results[-1] >= poi:
+            y_value = next((y for x, y in zip(results, cdf) if x >= poi), None)
+            if y_value is not None:
+                plt.axhline(
+                    y=y_value,
+                    color="forestgreen",
+                    linestyle="--",
+                    label=f"CDF at x={poi}: {y_value:.2f}",
+                )
+
+    plt.legend()  # Show legend with the label
 
     # plt.tight_layout()
     plt.xlabel("Relative Latency (%)")
@@ -107,6 +110,6 @@ for i in range(len(results_queueing_second_hop["masa"])):
     )
 plot_cdf_relative(
     results_queueing_second_hop_relative,
-    "Relative Queueing Latency at Second Hop (FIFO / Masa)",
+    f"Relative Queueing Latency at Second Hop (fifo / masa) (rps={rps})",
     "fig_queueing_second_hop_relative_cdf.png",
 )
