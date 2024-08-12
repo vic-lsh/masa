@@ -36,7 +36,7 @@ pub fn get_global_graph() -> GlobalGraph {
             "Source".to_string() as Path,
             LocalGraph::new(vec![Span::new(
                 "/hello.Greeter/SayHello".to_string(),
-                MasaDistribution::new(1_000, None),
+                MasaDistribution::new(4_000, None),
             )]),
         );
         graphs.insert(
@@ -45,10 +45,10 @@ pub fn get_global_graph() -> GlobalGraph {
                 Span::new(
                     "Head".to_string(),
                     MasaDistribution::new(
-                        1_000,
+                        2_000,
                         Some(get_percentile_latencies(
                             &mut rng,
-                            1_000,
+                            2_000,
                             n_samples,
                             n_percentiles,
                         )),
