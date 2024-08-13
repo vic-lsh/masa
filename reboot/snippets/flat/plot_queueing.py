@@ -37,10 +37,8 @@ def plot_cdf(results: Dict[str, List[int]], title: str, fig_name: str):
         latencies = [r / 1e3 for r in results[mode]]
         latencies.sort()
         cdf = np.arange(1, len(latencies) + 1) / len(latencies)
-
         plt.plot(latencies, cdf, label=mode)
 
-    # plt.tight_layout()
     plt.xlabel("Latency (ms)")
     plt.ylabel("CDF")
     plt.title(title)
@@ -50,26 +48,49 @@ def plot_cdf(results: Dict[str, List[int]], title: str, fig_name: str):
     plt.show()
 
 
-results_queueing_second_hop: Dict[str, List[int]] = {"masa": [], "fifo": []}
+def plot_pdf(results: Dict[str, List[int]], title: str, fig_name: str):
+    fig = plt.figure(figsize=(10, 6))
+
+    for mode in modes:
+        latencies = [r / 1e3 for r in results[mode]]
+        plt.hist(latencies, bins=1000, density=True, histtype="step", label=mode)
+
+    plt.xlabel("Latency (ms)")
+    plt.ylabel("PDF")
+    plt.title(title)
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(fig_name)
+    plt.show()
+
+
+results_second_hop_queueing: Dict[str, List[int]] = {"masa": [], "fifo": []}
 for mode in modes:
     n_dp = 0
     id_to_spans = results_raw[mode]
     for id, spans in id_to_spans.items():
         if len(spans) == 2:
             n_dp += 1
+            # [NOTE] Depending on the definition of "latency" and "elapse".
             # queueing_latency = spans[1]["latency"] - spans[1]["elapse"] - spans[0]["latency"]
             queueing_latency = spans[1]["latency"] - spans[0]["latency"]
-            results_queueing_second_hop[mode].append(queueing_latency)
+            results_second_hop_queueing[mode].append(queueing_latency)
     print(f"{mode}: {n_dp} data points")
 
 plot_cdf(
-    results_queueing_second_hop,
+    results_second_hop_queueing,
     f"Queueing Latency at Second Hop (rps={rps})",
-    "fig_queueing_second_hop_cdf.png",
+    "fig_second_hop_queueing_cdf.png",
+)
+
+plot_pdf(
+    results_second_hop_queueing,
+    f"Queueing Latency at Second Hop (rps={rps})",
+    "fig_second_hop_queueing_pdf.png",
 )
 
 
-def plot_cdf_relative(results: List[float], title: str, fig_name: str):
+def plot_ratio_cdf(results: List[float], title: str, fig_name: str):
     fig = plt.figure(figsize=(10, 6))
 
     results.sort()
@@ -90,10 +111,9 @@ def plot_cdf_relative(results: List[float], title: str, fig_name: str):
                     label=f"CDF at x={poi}: {y_value:.2f}",
                 )
 
-    plt.legend()  # Show legend with the label
+    plt.legend()
 
-    # plt.tight_layout()
-    plt.xlabel("Relative Latency (%)")
+    plt.xlabel("Latency Ratio (%)")
     plt.ylabel("CDF")
     plt.title(title)
     plt.grid(True)
@@ -101,15 +121,37 @@ def plot_cdf_relative(results: List[float], title: str, fig_name: str):
     plt.show()
 
 
-results_queueing_second_hop_relative: List[float] = []
-for i in range(len(results_queueing_second_hop["masa"])):
-    results_queueing_second_hop_relative.append(
-        results_queueing_second_hop["fifo"][i]
+def plot_ratio_pdf(results: List[float], title: str, fig_name: str):
+    fig = plt.figure(figsize=(10, 6))
+
+    plt.hist(results, bins=1000, density=True, histtype="step", label="masa / fifo")
+
+    plt.legend()
+
+    plt.xlabel("Latency Ratio (%)")
+    plt.ylabel("PDF")
+    plt.title(title)
+    plt.grid(True)
+    plt.savefig(fig_name)
+    plt.show()
+
+
+results_second_hop_queueing_ratio: List[float] = []
+for i in range(len(results_second_hop_queueing["masa"])):
+    results_second_hop_queueing_ratio.append(
+        results_second_hop_queueing["masa"][i]
         * 100
-        / results_queueing_second_hop["masa"][i]
+        / results_second_hop_queueing["fifo"][i]
     )
-plot_cdf_relative(
-    results_queueing_second_hop_relative,
-    f"Relative Queueing Latency at Second Hop (fifo / masa) (rps={rps})",
-    "fig_queueing_second_hop_relative_cdf.png",
+
+plot_ratio_cdf(
+    results_second_hop_queueing_ratio,
+    f"Queueing Latency Ratio at Second Hop (masa / fifo) (rps={rps})",
+    "fig_second_hop_queueing_ratio_cdf.png",
+)
+
+plot_ratio_pdf(
+    results_second_hop_queueing_ratio,
+    f"Queueing Latency Ratio at Second Hop (masa / fifo) (rps={rps})",
+    "fig_second_hop_queueing_ratio_pdf.png",
 )
