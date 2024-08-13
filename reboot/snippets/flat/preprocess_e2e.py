@@ -14,10 +14,10 @@ for mode in modes:
 
     spans: List[Dict] = []
     for _, row in df.iterrows():
-        id = row["request_id"]
+        id = int(row["request_id"])
         span = row["span"]
-        slo = row["slo"]
-        latency = row["latency"]
+        slo = int(row["slo"])
+        latency = int(row["latency"])
         spans.append({"request_id": id, "span": span, "slo": slo, "latency": latency})
     results_raw[mode] = spans
 

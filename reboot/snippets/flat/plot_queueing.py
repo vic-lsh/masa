@@ -6,28 +6,12 @@ import pandas as pd
 
 rps = 1600
 modes = ["masa", "fifo"]
-results_raw = {}
-sh_i1 = "say_hello_i1"
-sh_i2 = "say_hello_i2"
+results_queueing: Dict[str, List[int]] = {}
 
 for mode in modes:
-    file = f"tmp_{mode}_log.txt"
-    id_to_spans: Dict[int, List[Dict]] = {}
-
-    with open(file) as f:
-        lines = f.readlines()
-        for line in lines:
-            if sh_i1 in line or sh_i2 in line:
-                splits = line.split()[-1].split(",")
-                span = splits[0]
-                id = int(splits[1])
-                elapse = int(splits[2])
-                latency = int(splits[3])
-                id_to_spans.setdefault(id, []).append(
-                    {"span": span, "elapse": elapse, "latency": latency}
-                )
-
-    results_raw[mode] = id_to_spans
+    file = f"tmp_{mode}_log_filtered.csv"
+    df = pd.read_csv(file)
+    results_queueing[mode] = list(df["queueing"])
 
 
 def plot_cdf(results: Dict[str, List[int]], title: str, fig_name: str):
@@ -64,31 +48,17 @@ def plot_pdf(results: Dict[str, List[int]], title: str, fig_name: str):
     plt.show()
 
 
-# results_second_hop_queueing: Dict[str, List[int]] = {"masa": [], "fifo": []}
-# for mode in modes:
-#     n_dp = 0
-#     id_to_spans = results_raw[mode]
-#     for id, spans in id_to_spans.items():
-#         if len(spans) == 2:
-#             n_dp += 1
-#             # [NOTE] Depending on the definition of "latency" and "elapse".
-#             # queueing_latency = spans[1]["latency"] - spans[1]["elapse"] - spans[0]["latency"]
-#             queueing_latency = spans[1]["latency"] - spans[0]["latency"]
-#             results_second_hop_queueing[mode].append(queueing_latency)
-#     pctl_dp = n_dp / len(id_to_spans)
-#     print(f"{mode}: {round(pctl_dp*100)}% data points")
+plot_cdf(
+    results_queueing,
+    f"Queueing Latency at Second Hop (rps={rps})",
+    "fig_queueing_second_hop_cdf.png",
+)
 
-# plot_cdf(
-#     results_second_hop_queueing,
-#     f"Queueing Latency at Second Hop (rps={rps})",
-#     "fig_second_hop_queueing_cdf.png",
-# )
-
-# plot_pdf(
-#     results_second_hop_queueing,
-#     f"Queueing Latency at Second Hop (rps={rps})",
-#     "fig_second_hop_queueing_pdf.png",
-# )
+plot_pdf(
+    results_queueing,
+    f"Queueing Latency at Second Hop (rps={rps})",
+    "fig_queueing_second_hop_pdf.png",
+)
 
 
 def plot_ratio_cdf(results: List[float], title: str, fig_name: str):
@@ -137,21 +107,98 @@ def plot_ratio_pdf(results: List[float], title: str, fig_name: str):
     plt.show()
 
 
-# results_second_hop_queueing_ratio: List[float] = []
-# for i in range(len(results_second_hop_queueing["masa"])):
-#     masa = results_second_hop_queueing["masa"][i]
-#     fifo = results_second_hop_queueing["fifo"][i]
-#     ratio = masa / fifo * 100
-#     results_second_hop_queueing_ratio.append(ratio)
+results_queueing_ratio: List[float] = []
+for i in range(len(results_queueing["masa"])):
+    masa = results_queueing["masa"][i]
+    fifo = results_queueing["fifo"][i]
+    ratio = masa / fifo * 100
+    results_queueing_ratio.append(ratio)
 
-# plot_ratio_cdf(
-#     results_second_hop_queueing_ratio,
-#     f"Queueing Latency Ratio at Second Hop (masa / fifo) (rps={rps})",
-#     "fig_second_hop_queueing_ratio_cdf.png",
-# )
+plot_ratio_cdf(
+    results_queueing_ratio,
+    f"Queueing Latency Ratio at Second Hop (masa / fifo) (rps={rps})",
+    "fig_queueing_ratio_second_hop_cdf.png",
+)
 
-# plot_ratio_pdf(
-#     results_second_hop_queueing_ratio,
-#     f"Queueing Latency Ratio at Second Hop (masa / fifo) (rps={rps})",
-#     "fig_second_hop_queueing_ratio_pdf.png",
-# )
+plot_ratio_pdf(
+    results_queueing_ratio,
+    f"Queueing Latency Ratio at Second Hop (masa / fifo) (rps={rps})",
+    "fig_queueing_ratio_second_hop_pdf.png",
+)
+
+
+def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    masa_latencies = [r / 1e3 for r in results["masa"]]
+    fifo_latencies = [r / 1e3 for r in results["fifo"]]
+    h, xedges, yedges, img = ax.hist2d(
+        masa_latencies,
+        fifo_latencies,
+        range=[[0, 4], [0, 4]],
+        bins=100,
+        cmap="inferno",
+        density=True,
+    )
+    ax.set_xlabel("masa Latency (ms)")
+    ax.set_ylabel("fifo Latency (ms)")
+    ax.set_title(title)
+
+    cbar = fig.colorbar(img, ax=ax)
+    cbar.ax.set_ylabel("Density")
+
+    plt.grid(True)
+    plt.savefig(fig_name)
+    plt.show()
+
+
+results_queueing_slower: Dict[str, List[int]] = {"masa": [], "fifo": []}
+results_queueing_faster: Dict[str, List[int]] = {"masa": [], "fifo": []}
+
+for i in range(len(results_queueing["masa"])):
+    masa = results_queueing["masa"][i]
+    fifo = results_queueing["fifo"][i]
+    if masa > fifo:
+        results_queueing_slower["masa"].append(masa)
+        results_queueing_slower["fifo"].append(fifo)
+    else:
+        results_queueing_faster["masa"].append(masa)
+        results_queueing_faster["fifo"].append(fifo)
+
+plot_cdf(
+    results_queueing_slower,
+    f"Queueing Slower Latency at Second Hop (masa > fifo) (rps={rps})",
+    "fig_queueing_slower_second_hop_cdf.png",
+)
+plot_pdf(
+    results_queueing_slower,
+    f"Queueing Slower Latency at Second Hop (masa > fifo) (rps={rps})",
+    "fig_queueing_slower_second_hop_pdf.png",
+)
+plot_2d_histogram(
+    results_queueing_slower,
+    f"Queueing Slower Latency at Second Hop 2D Histogram (masa > fifo) (rps={rps})",
+    "fig_queueing_slower_second_hop_2d_hist.png",
+)
+
+plot_cdf(
+    results_queueing_faster,
+    f"Queueing Faster Latency at Second Hop (masa < fifo) (rps={rps})",
+    "fig_queueing_faster_second_hop_cdf.png",
+)
+plot_pdf(
+    results_queueing_faster,
+    f"Queueing Faster Latency at Second Hop (masa < fifo) (rps={rps})",
+    "fig_queueing_faster_second_hop_pdf.png",
+)
+plot_2d_histogram(
+    results_queueing_faster,
+    f"Queueing Faster Latency at Second Hop 2D Histogram (masa < fifo) (rps={rps})",
+    "fig_queueing_faster_second_hop_2d_hist.png",
+)
+
+plot_2d_histogram(
+    results_queueing,
+    f"Queueing Latency at Second Hop 2D Histogram (rps={rps})",
+    "fig_queueing_second_hop_2d_hist.png",
+)

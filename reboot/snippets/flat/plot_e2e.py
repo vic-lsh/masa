@@ -118,20 +118,6 @@ plot_ratio_pdf(
     f"fig_e2e_ratio_pdf.png",
 )
 
-# [TODO] Plot a 2D histogram of masa vs fifo latencies.
-results_slower: Dict[str, List[int]] = {"masa": [], "fifo": []}
-results_faster: Dict[str, List[int]] = {"masa": [], "fifo": []}
-
-for i in range(len(results_e2e["masa"])):
-    masa = results_e2e["masa"][i]
-    fifo = results_e2e["fifo"][i]
-    if masa > fifo:
-        results_slower["masa"].append(masa)
-        results_slower["fifo"].append(fifo)
-    else:
-        results_faster["masa"].append(masa)
-        results_faster["fifo"].append(fifo)
-
 
 def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -158,27 +144,49 @@ def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
     plt.show()
 
 
+results_slower: Dict[str, List[int]] = {"masa": [], "fifo": []}
+results_faster: Dict[str, List[int]] = {"masa": [], "fifo": []}
+
+for i in range(len(results_e2e["masa"])):
+    masa = results_e2e["masa"][i]
+    fifo = results_e2e["fifo"][i]
+    if masa > fifo:
+        results_slower["masa"].append(masa)
+        results_slower["fifo"].append(fifo)
+    else:
+        results_faster["masa"].append(masa)
+        results_faster["fifo"].append(fifo)
+
+
 plot_cdf(
-    results_slower, f"E2E Slower Latency CDF (rps={rps})", f"fig_e2e_slower_cdf.png"
+    results_slower,
+    f"E2E Slower Latency CDF (masa > fifo) (rps={rps})",
+    f"fig_e2e_slower_cdf.png",
 )
 plot_pdf(
-    results_slower, f"E2E Slower Latency PDF (rps={rps})", f"fig_e2e_slower_pdf.png"
+    results_slower,
+    f"E2E Slower Latency PDF (masa > fifo) (rps={rps})",
+    f"fig_e2e_slower_pdf.png",
 )
 plot_2d_histogram(
     results_slower,
-    f"E2E Slower Latency 2D Histogram (rps={rps})",
+    f"E2E Slower Latency 2D Histogram (masa > fifo) (rps={rps})",
     f"fig_e2e_slower_2d_hist.png",
 )
 
 plot_cdf(
-    results_faster, f"E2E Faster Latency CDF (rps={rps})", f"fig_e2e_faster_cdf.png"
+    results_faster,
+    f"E2E Faster Latency CDF (masa < fifo) (rps={rps})",
+    f"fig_e2e_faster_cdf.png",
 )
 plot_pdf(
-    results_faster, f"E2E Faster Latency PDF (rps={rps})", f"fig_e2e_faster_pdf.png"
+    results_faster,
+    f"E2E Faster Latency PDF (masa < fifo) (rps={rps})",
+    f"fig_e2e_faster_pdf.png",
 )
 plot_2d_histogram(
     results_faster,
-    f"E2E Faster Latency 2D Histogram (rps={rps})",
+    f"E2E Faster Latency 2D Histogram (masa < fifo) (rps={rps})",
     f"fig_e2e_faster_2d_hist.png",
 )
 
