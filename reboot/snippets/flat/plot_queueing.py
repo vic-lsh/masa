@@ -64,30 +64,31 @@ def plot_pdf(results: Dict[str, List[int]], title: str, fig_name: str):
     plt.show()
 
 
-results_second_hop_queueing: Dict[str, List[int]] = {"masa": [], "fifo": []}
-for mode in modes:
-    n_dp = 0
-    id_to_spans = results_raw[mode]
-    for id, spans in id_to_spans.items():
-        if len(spans) == 2:
-            n_dp += 1
-            # [NOTE] Depending on the definition of "latency" and "elapse".
-            # queueing_latency = spans[1]["latency"] - spans[1]["elapse"] - spans[0]["latency"]
-            queueing_latency = spans[1]["latency"] - spans[0]["latency"]
-            results_second_hop_queueing[mode].append(queueing_latency)
-    print(f"{mode}: {n_dp} data points")
+# results_second_hop_queueing: Dict[str, List[int]] = {"masa": [], "fifo": []}
+# for mode in modes:
+#     n_dp = 0
+#     id_to_spans = results_raw[mode]
+#     for id, spans in id_to_spans.items():
+#         if len(spans) == 2:
+#             n_dp += 1
+#             # [NOTE] Depending on the definition of "latency" and "elapse".
+#             # queueing_latency = spans[1]["latency"] - spans[1]["elapse"] - spans[0]["latency"]
+#             queueing_latency = spans[1]["latency"] - spans[0]["latency"]
+#             results_second_hop_queueing[mode].append(queueing_latency)
+#     pctl_dp = n_dp / len(id_to_spans)
+#     print(f"{mode}: {round(pctl_dp*100)}% data points")
 
-plot_cdf(
-    results_second_hop_queueing,
-    f"Queueing Latency at Second Hop (rps={rps})",
-    "fig_second_hop_queueing_cdf.png",
-)
+# plot_cdf(
+#     results_second_hop_queueing,
+#     f"Queueing Latency at Second Hop (rps={rps})",
+#     "fig_second_hop_queueing_cdf.png",
+# )
 
-plot_pdf(
-    results_second_hop_queueing,
-    f"Queueing Latency at Second Hop (rps={rps})",
-    "fig_second_hop_queueing_pdf.png",
-)
+# plot_pdf(
+#     results_second_hop_queueing,
+#     f"Queueing Latency at Second Hop (rps={rps})",
+#     "fig_second_hop_queueing_pdf.png",
+# )
 
 
 def plot_ratio_cdf(results: List[float], title: str, fig_name: str):
@@ -136,22 +137,21 @@ def plot_ratio_pdf(results: List[float], title: str, fig_name: str):
     plt.show()
 
 
-results_second_hop_queueing_ratio: List[float] = []
-for i in range(len(results_second_hop_queueing["masa"])):
-    results_second_hop_queueing_ratio.append(
-        results_second_hop_queueing["masa"][i]
-        * 100
-        / results_second_hop_queueing["fifo"][i]
-    )
+# results_second_hop_queueing_ratio: List[float] = []
+# for i in range(len(results_second_hop_queueing["masa"])):
+#     masa = results_second_hop_queueing["masa"][i]
+#     fifo = results_second_hop_queueing["fifo"][i]
+#     ratio = masa / fifo * 100
+#     results_second_hop_queueing_ratio.append(ratio)
 
-plot_ratio_cdf(
-    results_second_hop_queueing_ratio,
-    f"Queueing Latency Ratio at Second Hop (masa / fifo) (rps={rps})",
-    "fig_second_hop_queueing_ratio_cdf.png",
-)
+# plot_ratio_cdf(
+#     results_second_hop_queueing_ratio,
+#     f"Queueing Latency Ratio at Second Hop (masa / fifo) (rps={rps})",
+#     "fig_second_hop_queueing_ratio_cdf.png",
+# )
 
-plot_ratio_pdf(
-    results_second_hop_queueing_ratio,
-    f"Queueing Latency Ratio at Second Hop (masa / fifo) (rps={rps})",
-    "fig_second_hop_queueing_ratio_pdf.png",
-)
+# plot_ratio_pdf(
+#     results_second_hop_queueing_ratio,
+#     f"Queueing Latency Ratio at Second Hop (masa / fifo) (rps={rps})",
+#     "fig_second_hop_queueing_ratio_pdf.png",
+# )
