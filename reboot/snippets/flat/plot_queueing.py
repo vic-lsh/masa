@@ -37,7 +37,20 @@ def plot_pdf(results: Dict[str, List[int]], title: str, fig_name: str):
 
     for mode in modes:
         latencies = [r / 1e3 for r in results[mode]]
-        plt.hist(latencies, bins=1000, density=True, histtype="step", label=mode)
+
+        counts, bin_edges = np.histogram(latencies, bins=1000, density=True)
+        bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+        bin_width = bin_edges[1] - bin_edges[0]
+        # Calculate expected value E[X] = sum(x * p(x) * width of bin)
+        expected_value = np.sum(bin_centers * counts * bin_width)
+
+        plt.hist(
+            latencies,
+            bins=1000,
+            density=True,
+            histtype="step",
+            label=f"{mode} (E[X]={expected_value:.2f}ms)",
+        )
 
     plt.xlabel("Latency (ms)")
     plt.ylabel("PDF")
