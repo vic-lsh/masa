@@ -132,15 +132,58 @@ for i in range(len(results_e2e["masa"])):
         results_faster["masa"].append(masa)
         results_faster["fifo"].append(fifo)
 
+
+def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    masa_latencies = [r / 1e3 for r in results["masa"]]
+    fifo_latencies = [r / 1e3 for r in results["fifo"]]
+    h, xedges, yedges, img = ax.hist2d(
+        masa_latencies,
+        fifo_latencies,
+        range=[[0, 30], [0, 30]],
+        bins=100,
+        cmap="inferno",
+        density=True,
+    )
+    ax.set_xlabel("masa Latency (ms)")
+    ax.set_ylabel("fifo Latency (ms)")
+    ax.set_title(title)
+
+    cbar = fig.colorbar(img, ax=ax)
+    cbar.ax.set_ylabel("Density")
+
+    plt.grid(True)
+    plt.savefig(fig_name)
+    plt.show()
+
+
 plot_cdf(
     results_slower, f"E2E Slower Latency CDF (rps={rps})", f"fig_e2e_slower_cdf.png"
 )
 plot_pdf(
     results_slower, f"E2E Slower Latency PDF (rps={rps})", f"fig_e2e_slower_pdf.png"
 )
+plot_2d_histogram(
+    results_slower,
+    f"E2E Slower Latency 2D Histogram (rps={rps})",
+    f"fig_e2e_slower_2d_hist.png",
+)
+
 plot_cdf(
     results_faster, f"E2E Faster Latency CDF (rps={rps})", f"fig_e2e_faster_cdf.png"
 )
 plot_pdf(
     results_faster, f"E2E Faster Latency PDF (rps={rps})", f"fig_e2e_faster_pdf.png"
+)
+plot_2d_histogram(
+    results_faster,
+    f"E2E Faster Latency 2D Histogram (rps={rps})",
+    f"fig_e2e_faster_2d_hist.png",
+)
+
+plot_2d_histogram(
+    results_e2e,
+    f"E2E Latency 2D Histogram (rps={rps})",
+    f"fig_e2e_2d_hist.png",
 )
