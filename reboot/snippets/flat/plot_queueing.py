@@ -4,6 +4,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+plt.rcParams["font.family"] = "Roboto"
+fontsize = 17
+plt.rcParams.update(
+    {
+        "font.size": fontsize,
+        "axes.labelsize": fontsize,
+        "axes.titlesize": fontsize,
+        "xtick.labelsize": fontsize,
+        "ytick.labelsize": fontsize,
+        "legend.fontsize": fontsize,
+    }
+)
+
 rps = 1600
 modes = ["masa", "fifo"]
 results_queueing: Dict[str, List[int]] = {}
