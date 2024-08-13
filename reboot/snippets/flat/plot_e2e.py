@@ -7,43 +7,11 @@ import pandas as pd
 rps = 1600
 modes = ["masa", "fifo"]
 
-results_raw: Dict[str, List] = {}
+results_e2e: Dict[str, List[int]] = {}
 for mode in modes:
-    file = f"r{rps}_{mode}.csv"
+    file = f"r{rps}_{mode}_filtered.csv"
     df = pd.read_csv(file)
-
-    spans: List[Dict] = []
-    for _, row in df.iterrows():
-        id = row["request_id"]
-        span = row["span"]
-        slo = row["slo"]
-        latency = row["latency"]
-        spans.append({"id": id, "span": span, "slo": slo, "latency": latency})
-    results_raw[mode] = spans
-
-ids_to_modes: Dict[int, List[str]] = {}
-for mode in modes:
-    spans = results_raw[mode]
-    for span in spans:
-        id = span["id"]
-        ids_to_modes.setdefault(id, []).append(mode)
-
-common_ids = set(
-    id for id, modes in ids_to_modes.items() if len(modes) == 2 and modes[0] != modes[1]
-)
-
-# [TODO] Output this to a separate binary.
-results_e2e: Dict[str, List[int]] = {"masa": [], "fifo": []}
-for mode in modes:
-    spans_filtered = []
-    spans = results_raw[mode]
-    for span in spans:
-        id = span["id"]
-        latency = span["latency"]
-        if id in common_ids:
-            spans_filtered.append((id, latency))
-    spans_filtered.sort(key=lambda x: x[0])
-    results_e2e[mode] = [x[1] for x in spans_filtered]
+    results_e2e[mode] = list(df["latency"])
 
 
 def plot_cdf(results: Dict[str, List[int]], title: str, fig_name: str):
