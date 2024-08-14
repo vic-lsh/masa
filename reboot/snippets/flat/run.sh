@@ -4,7 +4,7 @@ path="snippets/flat"
 
 # rps_values=(300 325 350 375 400 425 450 475 500 525 550 575 600 625 650 675 700 725 750 775 800 825 850 875 900)
 # rps_values=(200 1600)
-rps_values=(200)
+rps_values=(50)
 
 modes=("masa" "fifo")
 
@@ -13,7 +13,7 @@ for mode in "${modes[@]}"; do
 
 	cargo build --features $mode --release >/dev/null 2>&1
 
-	RUST_LOG=warn cargo run --features $mode --release --bin bridgeway_server -- --n-threads 4 >$path/tmp_${mode}.log 2>&1 &
+	RUST_LOG=warn cargo run --features $mode --release --bin bridgeway_server -- --n-threads 1 >$path/tmp_${mode}.log 2>&1 &
 
 	pid=$!
 
