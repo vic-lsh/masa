@@ -1,9 +1,9 @@
 # README
 
-Assert `Masa = Fifo` when:
+Expect to assert `Masa = Fifo` but failed when:
 
 1. All processing latency is static as 2ms.
-2. `Masa` uses an increasing `test_id` as `deadline`.
+2. `Masa` uses an equal `deadline` as `1`.
 
 # Tiny Observations
 
