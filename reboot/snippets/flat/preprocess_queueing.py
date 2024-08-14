@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-rps = 1600
+rps = 800
 modes = ["masa", "fifo"]
 
 results_raw: Dict[str, List] = {}

@@ -18,7 +18,7 @@ plt.rcParams.update(
     }
 )
 
-rps = 1600
+rps = 800
 modes = ["masa", "fifo"]
 results_queueing: Dict[str, List[int]] = {}
 
