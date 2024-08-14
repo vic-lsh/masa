@@ -10,7 +10,7 @@ from plot_core import (  # type: ignore
     plot_ratio_pdf,
 )
 
-rps = 200
+rps = 50
 
 results_e2e: Dict[str, List[int]] = {}
 for mode in MODES:
