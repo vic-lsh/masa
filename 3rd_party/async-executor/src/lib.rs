@@ -833,7 +833,8 @@ impl<'a> Default for LocalExecutor<'a> {
 #[cfg(feature = "masa")]
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
 #[cfg(not(feature = "masa"))]
-type GlobalQueue<T> = queue::MutexFifoQueue<T>;
+type GlobalQueue<T> = queue::ConcurrentFifoQueue<T>;
+// type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 
 type LocalQueue<T> = queue::ConcurrentFifoQueue<T>;
 
