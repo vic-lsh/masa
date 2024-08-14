@@ -1,15 +1,13 @@
 # README
 
-Assert `Masa <= Fifo` when:
+Failed to assert `Masa <= Fifo` when:
 
 1. All processing latency is static as 16ms.
-2. Let `Masa` enable `deadline`.
-3. Let `Fifo` enable `ConcurrentFifoQueue`.
+2. Let `Masa` disable `deadline`.
 
 # Tiny Observations
 
-1. P99 difference is close to 16ms.
-2. Let `Masa` disable `deadline`.
+1. When `deadline` is disabled in `Masa`, the tail becomes much worse. This is expected since the priority queue is not able to pop futures of earlier requests.
 
 # Tiny Sparks
 
