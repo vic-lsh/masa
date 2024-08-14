@@ -13,7 +13,7 @@ for mode in "${modes[@]}"; do
 
 	cargo build --features $mode --release >/dev/null 2>&1
 
-	RUST_LOG=warn cargo run --features $mode --release --bin bridgeway_server -- --n-threads 4 >$path/tmp_${mode}_log.txt 2>&1 &
+	RUST_LOG=warn cargo run --features $mode --release --bin bridgeway_server -- --n-threads 4 >$path/tmp_${mode}.log 2>&1 &
 
 	pid=$!
 
@@ -27,7 +27,7 @@ for mode in "${modes[@]}"; do
 		cargo run --release --bin bridgeway_client_bench -- \
 			--slo 10000 \
 			--rps $rps \
-			--secs 180 \
+			--secs 120 \
 			--concurrency 512 \
 			--output $path/r${rps}_${mode}.csv \
 			>/dev/null 2>&1

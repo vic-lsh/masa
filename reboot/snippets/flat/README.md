@@ -1,5 +1,10 @@
 # README
 
-I plot the PDF to check where are the gains and losses. Visually a PDF contains more information than a CDF. Masa is more dense in mid-range, and more sparse in long-range.
+Assert `Masa = Fifo` when:
 
-I plot the CDF to check whether the latency CDF is "flattened" in both sides comparing Masa to FIFO. It turns out Masa is "better" than FIFO in both sides. We know it cannot be true. It means the losses are hidden somewhere else.
+1. All processing latency is static as 2ms.
+2. `Masa` uses an increasing `test_id` as `deadline`.
+
+# Tiny Observations
+
+1. gRPC also has a latency around 2ms. I should change processing latency to verify the impacts of gRPC.
