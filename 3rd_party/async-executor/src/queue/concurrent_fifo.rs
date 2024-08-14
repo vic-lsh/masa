@@ -8,11 +8,17 @@ pub(crate) struct ConcurrentFifoQueue<T> {
 
 impl<T> Default for ConcurrentFifoQueue<T> {
     fn default() -> Self {
-        Self::bounded(512)
+        Self::unbounded()
     }
 }
 
 impl<T> ConcurrentFifoQueue<T> {
+    pub(crate) fn unbounded() -> Self {
+        Self {
+            q: ConcurrentQueue::unbounded(),
+        }
+    }
+
     pub(crate) fn bounded(size: usize) -> Self {
         Self {
             q: ConcurrentQueue::bounded(size),
