@@ -1,6 +1,7 @@
 from typing import *
 
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import numpy as np
 import pandas as pd
 
@@ -74,9 +75,46 @@ def plot_pdf(results: Dict[str, List[int]], title: str, fig_name: str):
     plt.show()
 
 
+def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    masa_latencies = [r / 1e3 for r in results["masa"]]
+    fifo_latencies = [r / 1e3 for r in results["fifo"]]
+    h, xedges, yedges, img = ax.hist2d(
+        masa_latencies,
+        fifo_latencies,
+        range=[[0, 30], [0, 30]],
+        bins=100,
+        cmap="inferno",
+        density=True,
+    )
+    ax.set_xlabel("masa Latency (ms)")
+    ax.set_ylabel("fifo Latency (ms)")
+    ax.set_title(title)
+
+    ax.set_aspect("equal")
+    ax.xaxis.set_major_locator(ticker.LinearLocator(7))
+    ax.yaxis.set_major_locator(ticker.LinearLocator(7))
+
+    cbar = fig.colorbar(img, ax=ax)
+    cbar.ax.set_ylabel("Density")
+
+    plt.grid(True)
+    plt.savefig(fig_name)
+    plt.show()
+
+
 plot_cdf(results_e2e, f"E2E Latency CDF (rps={rps})", f"fig_e2e_cdf.png")
 
 plot_pdf(results_e2e, f"E2E Latency PDF (rps={rps})", f"fig_e2e_pdf.png")
+
+plot_2d_histogram(
+    results_e2e,
+    f"E2E Latency 2D Histogram (rps={rps})",
+    f"fig_e2e_2d_hist.png",
+)
+
+exit()
 
 
 def plot_ratio_cdf(results: List[float], title: str, fig_name: str):
@@ -145,31 +183,6 @@ plot_ratio_pdf(
 )
 
 
-def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    masa_latencies = [r / 1e3 for r in results["masa"]]
-    fifo_latencies = [r / 1e3 for r in results["fifo"]]
-    h, xedges, yedges, img = ax.hist2d(
-        masa_latencies,
-        fifo_latencies,
-        range=[[0, 30], [0, 30]],
-        bins=100,
-        cmap="inferno",
-        density=True,
-    )
-    ax.set_xlabel("masa Latency (ms)")
-    ax.set_ylabel("fifo Latency (ms)")
-    ax.set_title(title)
-
-    cbar = fig.colorbar(img, ax=ax)
-    cbar.ax.set_ylabel("Density")
-
-    plt.grid(True)
-    plt.savefig(fig_name)
-    plt.show()
-
-
 results_slower: Dict[str, List[int]] = {"masa": [], "fifo": []}
 results_faster: Dict[str, List[int]] = {"masa": [], "fifo": []}
 
@@ -214,10 +227,4 @@ plot_2d_histogram(
     results_faster,
     f"E2E Faster Latency 2D Histogram (masa < fifo) (rps={rps})",
     f"fig_e2e_faster_2d_hist.png",
-)
-
-plot_2d_histogram(
-    results_e2e,
-    f"E2E Latency 2D Histogram (rps={rps})",
-    f"fig_e2e_2d_hist.png",
 )
