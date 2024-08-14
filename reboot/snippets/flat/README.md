@@ -1,9 +1,13 @@
 # README
 
-Assert `Masa = Fifo` when:
+Assert `Masa <= Fifo` when:
 
-1. All processing latency is static as 2ms.
+1. All processing latency is static as 8ms.
 2. `Masa` uses normal `deadline`.
+
+# Tiny Hypothesis
+
+1. P99 difference is close to 8ms.
 
 # Tiny Observations
 
