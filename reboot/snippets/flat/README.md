@@ -1,10 +1,12 @@
 # README
 
-Expect to assert `Masa = Fifo` but failed when:
+Assert `Masa = Fifo` when:
 
-1. All processing latency is static as 8ms.
-2. `Masa` uses an equal `deadline` as `1`.
+1. All processing latency is static as 2ms.
+2. `Masa` uses normal `deadline`.
 
 # Tiny Observations
 
-1. gRPC also has a latency around 2ms. I should change processing latency to verify the impacts of gRPC.
+1. Vary processing latency among 2ms, 4ms, 8ms.
+2. Make first hop static and second hop exponential.
+3. Make first hop exponential and second hop static.
