@@ -4,7 +4,7 @@ path="snippets/flat"
 
 # rps_values=(300 325 350 375 400 425 450 475 500 525 550 575 600 625 650 675 700 725 750 775 800 825 850 875 900)
 # rps_values=(200 1600)
-rps_values=(400)
+rps_values=(1600)
 
 modes=("masa" "fifo")
 

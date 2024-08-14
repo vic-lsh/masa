@@ -18,7 +18,7 @@ plt.rcParams.update(
     }
 )
 
-rps = 400
+rps = 1600
 modes = ["masa", "fifo"]
 
 results_e2e: Dict[str, List[int]] = {}
