@@ -1,16 +1,16 @@
 # README
 
-Failed to assert `Masa <= Fifo` when:
+Assert `Masa <= Fifo` when:
 
 1. All processing latency is static as 16ms.
-2. Let `Masa` disable `deadline`.
+2. Keep one hop.
+3. Let `Masa` enable `deadline`.
 
 # Tiny Observations
 
-1. When `deadline` is disabled in `Masa`, the tail becomes much worse. This is expected since the priority queue is not able to pop futures of earlier requests.
+1. Very interesting results. Even in one hop, tail difference still matches the processing latency as 16ms.
+2. Try constant load generation.
 
 # Tiny Sparks
 
-1. Vary processing latency.
-2. Make first hop static and second hop exponential.
-3. Make first hop exponential and second hop static.
+1. Make first hop static and second hop exponential. Make first hop exponential and second hop static.
