@@ -10,7 +10,7 @@ from plot_core import (  # type: ignore
     plot_ratio_pdf,
 )
 
-rps = 400
+rps = 200
 
 results_e2e: Dict[str, List[int]] = {}
 for mode in MODES:
@@ -22,13 +22,13 @@ plot_cdf(results_e2e, f"E2E Latency CDF (rps={rps})", f"fig_e2e_cdf.png")
 
 plot_pdf(results_e2e, f"E2E Latency PDF (rps={rps})", f"fig_e2e_pdf.png")
 
+exit()
+
 plot_2d_histogram(
     results_e2e,
     f"E2E Latency 2D Histogram (rps={rps})",
     f"fig_e2e_2d_hist.png",
 )
-
-exit()
 
 
 results_ratio: List[float] = []

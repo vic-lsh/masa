@@ -10,7 +10,7 @@ from plot_core import (  # type: ignore
     plot_ratio_pdf,
 )
 
-rps = 400
+rps = 200
 
 results_queueing: Dict[str, List[int]] = {}
 for mode in MODES:
@@ -30,13 +30,13 @@ plot_pdf(
     "fig_queueing_second_hop_pdf.png",
 )
 
+exit()
+
 plot_2d_histogram(
     results_queueing,
     f"Queueing Latency at Second Hop 2D Histogram (rps={rps})",
     "fig_queueing_second_hop_2d_hist.png",
 )
-
-exit()
 
 
 results_queueing_ratio: List[float] = []
