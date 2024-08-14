@@ -2,7 +2,7 @@
 
 Expect to assert `Masa = Fifo` but failed when:
 
-1. All processing latency is static as 4ms.
+1. All processing latency is static as 8ms.
 2. `Masa` uses an equal `deadline` as `1`.
 
 # Tiny Observations
