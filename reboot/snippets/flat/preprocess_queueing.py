@@ -12,7 +12,7 @@ sh_i1 = "say_hello_i1"
 sh_i2 = "say_hello_i2"
 
 for mode in modes:
-    file = f"tmp_{mode}_log.txt"
+    file = f"tmp_{mode}.log"
     ids_to_spans: Dict[int, List[Dict]] = {}
 
     with open(file) as f:
@@ -35,8 +35,8 @@ for mode in modes:
             continue
         span1 = spans[0]
         span2 = spans[1]
-        assert span1["span"] == sh_i1
-        assert span2["span"] == sh_i2
+        if span1["span"] != sh_i1 or span2["span"] != sh_i2:
+            continue
         span_queueing = {
             "request_id": id,
             "queueing": int(span2["latency"]) - int(span1["latency"]),
@@ -65,4 +65,4 @@ for mode in modes:
             spans_filtered.append(span)
     spans_filtered = sorted(spans_filtered, key=lambda x: x["request_id"])
     df = pd.DataFrame(spans_filtered)
-    df.to_csv(f"tmp_{mode}_log_filtered.csv", index=False)
+    df.to_csv(f"r{rps}_{mode}_queueing_filtered.csv", index=False)

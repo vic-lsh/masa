@@ -1,6 +1,7 @@
 from typing import *
 
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import numpy as np
 import pandas as pd
 
@@ -22,7 +23,7 @@ modes = ["masa", "fifo"]
 results_queueing: Dict[str, List[int]] = {}
 
 for mode in modes:
-    file = f"tmp_{mode}_log_filtered.csv"
+    file = f"r{rps}_{mode}_queueing_filtered.csv"
     df = pd.read_csv(file)
     results_queueing[mode] = list(df["queueing"])
 
@@ -74,6 +75,35 @@ def plot_pdf(results: Dict[str, List[int]], title: str, fig_name: str):
     plt.show()
 
 
+def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    masa_latencies = [r / 1e3 for r in results["masa"]]
+    fifo_latencies = [r / 1e3 for r in results["fifo"]]
+    h, xedges, yedges, img = ax.hist2d(
+        masa_latencies,
+        fifo_latencies,
+        range=[[0, 4], [0, 4]],
+        bins=100,
+        cmap="inferno",
+        density=True,
+    )
+    ax.set_xlabel("masa Latency (ms)")
+    ax.set_ylabel("fifo Latency (ms)")
+    ax.set_title(title)
+
+    ax.set_aspect("equal")
+    ax.xaxis.set_major_locator(ticker.LinearLocator(9))
+    ax.yaxis.set_major_locator(ticker.LinearLocator(9))
+
+    cbar = fig.colorbar(img, ax=ax)
+    cbar.ax.set_ylabel("Density")
+
+    plt.grid(True)
+    plt.savefig(fig_name)
+    plt.show()
+
+
 plot_cdf(
     results_queueing,
     f"Queueing Latency at Second Hop (rps={rps})",
@@ -85,6 +115,14 @@ plot_pdf(
     f"Queueing Latency at Second Hop (rps={rps})",
     "fig_queueing_second_hop_pdf.png",
 )
+
+plot_2d_histogram(
+    results_queueing,
+    f"Queueing Latency at Second Hop 2D Histogram (rps={rps})",
+    "fig_queueing_second_hop_2d_hist.png",
+)
+
+exit()
 
 
 def plot_ratio_cdf(results: List[float], title: str, fig_name: str):
@@ -153,31 +191,6 @@ plot_ratio_pdf(
 )
 
 
-def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    masa_latencies = [r / 1e3 for r in results["masa"]]
-    fifo_latencies = [r / 1e3 for r in results["fifo"]]
-    h, xedges, yedges, img = ax.hist2d(
-        masa_latencies,
-        fifo_latencies,
-        range=[[0, 4], [0, 4]],
-        bins=100,
-        cmap="inferno",
-        density=True,
-    )
-    ax.set_xlabel("masa Latency (ms)")
-    ax.set_ylabel("fifo Latency (ms)")
-    ax.set_title(title)
-
-    cbar = fig.colorbar(img, ax=ax)
-    cbar.ax.set_ylabel("Density")
-
-    plt.grid(True)
-    plt.savefig(fig_name)
-    plt.show()
-
-
 results_queueing_slower: Dict[str, List[int]] = {"masa": [], "fifo": []}
 results_queueing_faster: Dict[str, List[int]] = {"masa": [], "fifo": []}
 
@@ -221,10 +234,4 @@ plot_2d_histogram(
     results_queueing_faster,
     f"Queueing Faster Latency at Second Hop 2D Histogram (masa < fifo) (rps={rps})",
     "fig_queueing_faster_second_hop_2d_hist.png",
-)
-
-plot_2d_histogram(
-    results_queueing,
-    f"Queueing Latency at Second Hop 2D Histogram (rps={rps})",
-    "fig_queueing_second_hop_2d_hist.png",
 )

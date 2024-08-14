@@ -138,19 +138,13 @@ impl Worker for WorkerImpl {
         ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
-        let elapse = spans
-            .first()
-            .unwrap()
-            .distribution()
-            .sample(ctx.request_id());
+        let elapse = spans.first().unwrap().distribution().estimate();
+        // .sample(ctx.request_id());
         // let elapse_first = elapse;
         busy_spin(Duration::from_micros(elapse));
 
-        let elapse = spans
-            .last()
-            .unwrap()
-            .distribution()
-            .sample(ctx.request_id());
+        let elapse = spans.last().unwrap().distribution().estimate();
+        // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
 
         // let finish_at = time_now();
