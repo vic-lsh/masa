@@ -190,10 +190,10 @@ impl LoadGenerator {
                 tokio::task::spawn(async move {
                     let send_at = time_now();
                     client.say_hello_i2(request).await.unwrap();
-                    token.fetch_add(1, Ordering::SeqCst);
                     let recv_at = time_now();
                     let latency = recv_at - send_at;
                     let span = Span::new(request_id, "SayHello".to_string(), slo, latency);
+                    token.fetch_add(1, Ordering::SeqCst);
                     trace_tx.try_send(span).unwrap();
                 });
             }
