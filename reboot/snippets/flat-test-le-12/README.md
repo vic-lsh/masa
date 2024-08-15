@@ -3,9 +3,8 @@
 Assert `Masa <= Fifo` when:
 
 * Use one hop.
-* Use constant load generation.
-* Use static processing latency as 16ms.
 * Use one executor thread.
+* Use static processing latency as 16ms.
 * Enable `deadline` in `Masa`.
 
 # Tiny Observations
