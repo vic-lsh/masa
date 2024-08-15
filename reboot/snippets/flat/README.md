@@ -10,7 +10,7 @@ Assert `Masa <= Fifo` when:
 
 # Tiny Observations
 
-* Again very interesting results. Is it possible to simulate `Fifo` in `Masa`'s priority queue?
+* Again very interesting results.
 
 # Tiny Sparks
 
