@@ -8,6 +8,21 @@ rps_values=(50)
 
 modes=("masa" "fifo")
 
+server_pid=
+
+ctrl_c_handler() {
+    echo ""
+    echo "Caught Ctrl-C, exiting..."
+    cleanup
+    exit 1
+}
+
+cleanup() {
+    kill -9 ${server_pid}
+}
+
+trap ctrl_c_handler SIGINT
+
 for mode in "${modes[@]}"; do
 	echo "Compiling mode: $mode..."
 
@@ -15,7 +30,7 @@ for mode in "${modes[@]}"; do
 
 	RUST_LOG=warn cargo run --features $mode --release --bin bridgeway_server -- --n-threads 1 >$path/tmp_${mode}.log 2>&1 &
 
-	pid=$!
+	server_pid=$!
 
 	echo "Running server in mode: $mode..."
 
@@ -33,7 +48,7 @@ for mode in "${modes[@]}"; do
 			>/dev/null 2>&1
 	done
 
-	kill $pid
+	kill $server_pid
 
 	echo "Completed mode: $mode"
 done
