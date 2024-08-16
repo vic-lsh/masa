@@ -36,7 +36,7 @@ pub fn get_global_graph() -> GlobalGraph {
             "Source".to_string() as Path,
             LocalGraph::new(vec![Span::new(
                 "/bridge.Worker/SayHelloI2".to_string(),
-                MasaDistribution::new(4_000, None),
+                MasaDistribution::new(32_000, None),
             )]),
         );
         graphs.insert(
@@ -45,10 +45,10 @@ pub fn get_global_graph() -> GlobalGraph {
                 Span::new(
                     "Head".to_string(),
                     MasaDistribution::new(
-                        2_000,
+                        16_000,
                         Some(get_percentile_latencies(
                             &mut rng,
-                            2_000,
+                            16_000,
                             n_samples,
                             n_percentiles,
                         )),
@@ -56,7 +56,7 @@ pub fn get_global_graph() -> GlobalGraph {
                 ),
                 Span::new(
                     "/bridge.Worker/SayHelloI1".to_string(),
-                    MasaDistribution::new(2_000, None),
+                    MasaDistribution::new(16_000, None),
                 ),
                 Span::new(
                     "Tail".to_string(),
@@ -78,10 +78,10 @@ pub fn get_global_graph() -> GlobalGraph {
                 Span::new(
                     "Head".to_string(),
                     MasaDistribution::new(
-                        2_000,
+                        16_000,
                         Some(get_percentile_latencies(
                             &mut rng,
-                            2_000,
+                            16_000,
                             n_samples,
                             n_percentiles,
                         )),
