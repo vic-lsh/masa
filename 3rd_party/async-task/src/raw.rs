@@ -1,5 +1,3 @@
-use log::info;
-
 use alloc::alloc::Layout as StdLayout;
 use core::cell::UnsafeCell;
 use core::future::Future;
@@ -612,7 +610,7 @@ where
         let guard = Guard(raw);
 
         let ddl_before = raw.set_ddl_before_poll();
-        info!("task: {:p}, ddl before: {:?}", ptr, ddl_before.value(),);
+        log::info!("task: {:p}, ddl before: {}", ptr, ddl_before.value(),);
 
         // Panic propagation is not available for no_std.
         #[cfg(not(feature = "std"))]
@@ -637,13 +635,15 @@ where
 
         let (updated, ddl_after) = raw.maybe_update_ddl_after_poll();
         if updated {
-            info!("task: {:p}, ddl after: {:?}", ptr, ddl_after.value());
+            log::info!("task: {:p}, ddl after: {}", ptr, ddl_after.value());
         }
 
         mem::forget(guard);
 
         match poll {
             Poll::Ready(out) => {
+                log::info!("task completed: {:p}, ddl: {}", ptr, ddl_after.value());
+
                 // Replace the future with its output.
                 Self::drop_future(ptr);
                 raw.output.write(out);

@@ -514,10 +514,16 @@ impl<'a> Executor<'a> {
         move |runnable| {
             let now = std::time::Instant::now();
 
+            log::info!(
+                "Push runnable to queue, task: {}, deadline: {}",
+                runnable.ptr_to_string(),
+                runnable.deadline().value()
+            );
+
             state
                 .queue
                 .push(runnable)
-                .expect("push should never fail b/c queue is unbounded");
+                .expect("Push should never fail in an unbounded queue");
             state.notify();
 
             SCHED_TIME_US.fetch_add(now.elapsed().as_micros() as usize, Ordering::Relaxed);
@@ -1079,6 +1085,8 @@ impl Ticker<'_> {
                         }
                     }
                     Some(r) => {
+                        log::info!("Pop runnable from queue, task: {}", r.ptr_to_string());
+
                         // Wake up.
                         self.wake();
 

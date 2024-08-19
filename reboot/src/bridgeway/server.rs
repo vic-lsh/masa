@@ -6,7 +6,6 @@ use bridge::{
 use env_logger::{Builder, Env};
 use futures_lite::future;
 use hyper::rt::{Exec, Executor};
-use log::info;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -84,7 +83,7 @@ impl Worker for WorkerImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        info!("ctx: {:?}", ctx);
+        log::info!("ctx: {:?}", ctx);
         ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
@@ -111,8 +110,7 @@ impl Worker for WorkerImpl {
 
         // if ctx.request_id() % 10 == 0 {
         if true {
-            use log::warn;
-            warn!(
+            log::warn!(
                 "say_hello_i2,{},{},{}",
                 ctx.request_id(),
                 elapse_first,
@@ -134,7 +132,7 @@ impl Worker for WorkerImpl {
 
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        info!("ctx: {:?}", ctx);
+        log::info!("ctx: {:?}", ctx);
         ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
@@ -267,7 +265,7 @@ fn init_logging() {
             )
         })
         .init();
-    info!("Logging initialized");
+    log::info!("Logging initialized");
 }
 
 #[tokio::main]
@@ -341,7 +339,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let clients = server.get_clients().await;
 
             let worker = WorkerImpl::new(local_graphs, clients);
-            info!("Listening on {}...", addr);
+            log::info!("Listening on {}...", addr);
             Server::builder()
                 .add_service(WorkerServer::new(worker))
                 .serve_with_executor(addr, Exec::Executor(ex))
