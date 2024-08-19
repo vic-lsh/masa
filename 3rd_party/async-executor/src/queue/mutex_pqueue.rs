@@ -17,10 +17,9 @@ impl<T: Ord + PartialOrd> Queue for MutexPriorityQueue<T> {
     fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
         self.with_locked(|mut q| {
             // [TODO] Quantify queueing length and latency.
-
-            let n_smaller = q.iter().filter(|&e| e < &item).count();
-            let n_smaller_pctl = n_smaller * 100 / (q.len() + 1);
-            info!("pqueue rank: {}", n_smaller_pctl);
+            // let n_smaller = q.iter().filter(|&e| e > &item).count();
+            // let n_smaller_pctl = n_smaller * 100 / (q.len() + 1);
+            // info!("Pushed runnable to queue, pqueue rank: {}", n_smaller_pctl);
 
             q.push(item);
         });
