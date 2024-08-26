@@ -36,6 +36,7 @@ tower-service = { path = "../tower/tower-service" }
 tokio = { path = "../tokio/tokio", features = ["sync"] }
 want = "0.3"
 tonic-deadline = { path = "../../tonic-deadline" }
+async-task = { path = "../async-task" }
 
 # Optional
 
