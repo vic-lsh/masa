@@ -26,8 +26,10 @@ trap ctrl_c_handler SIGINT
 for mode in "${modes[@]}"; do
 	echo "Compiling mode: $mode..."
 
+	# cargo build --features $mode >/dev/null 2>&1
 	cargo build --features $mode --release >/dev/null 2>&1
 
+	# RUST_BACKTRACE=1 RUST_LOG=info cargo run --features $mode --bin bridgeway_server -- --n-threads 1 >$path/tmp_${mode}.log 2>&1 &
 	RUST_LOG=info cargo run --features $mode --release --bin bridgeway_server -- --n-threads 1 >$path/tmp_${mode}.log 2>&1 &
 
 	server_pid=$!
