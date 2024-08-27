@@ -12,24 +12,60 @@ from plot_core import (  # type: ignore
 
 rps = 50
 
-results_queueing: Dict[str, List[int]] = {}
+results_all: Dict[str, List[int]] = {}
+results_infra: Dict[str, List[int]] = {}
+results_req: Dict[str, List[int]] = {}
+
 for mode in MODES:
-    file = f"r{rps}_{mode}_queueing_filtered.csv"
+    file = f"r{rps}_{mode}_all_queueing.csv"
     df = pd.read_csv(file)
-    results_queueing[mode] = list(df["queueing"])
+    results_all[mode] = list(df["queueing"])
+
+    file = f"r{rps}_{mode}_infra_queueing.csv"
+    df = pd.read_csv(file)
+    results_infra[mode] = list(df["queueing"])
+
+    file = f"r{rps}_{mode}_req_queueing.csv"
+    df = pd.read_csv(file)
+    results_req[mode] = list(df["queueing"])
 
 plot_cdf(
-    results_queueing,
-    f"Queueing Latency at Second Hop (rps={rps})",
-    "fig_queueing_second_hop_cdf.png",
+    results_all,
+    f"All Task Queueing Latency (rps={rps})",
+    "fig_all_queueing_cdf.png",
 )
 
 plot_pdf(
-    results_queueing,
-    f"Queueing Latency at Second Hop (rps={rps})",
-    "fig_queueing_second_hop_pdf.png",
+    results_all,
+    f"All Task Queueing Latency (rps={rps})",
+    "fig_all_queueing_pdf.png",
 )
 
+plot_cdf(
+    results_infra,
+    f"Infra Task Queueing Latency (rps={rps})",
+    "fig_infra_queueing_cdf.png",
+)
+
+plot_pdf(
+    results_infra,
+    f"Infra Task Queueing Latency (rps={rps})",
+    "fig_infra_queueing_pdf.png",
+)
+
+plot_cdf(
+    results_req,
+    f"Req Task Queueing Latency (rps={rps})",
+    "fig_req_queueing_cdf.png",
+)
+
+plot_pdf(
+    results_req,
+    f"Req Task Queueing Latency (rps={rps})",
+    "fig_req_queueing_pdf.png",
+)
+
+"""
 exit()
 
 plot_2d_histogram(
@@ -103,3 +139,4 @@ plot_2d_histogram(
     f"Queueing Faster Latency at Second Hop 2D Histogram (masa < fifo) (rps={rps})",
     "fig_queueing_faster_second_hop_2d_hist.png",
 )
+"""

@@ -46,7 +46,16 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock, TryLockError};
 use std::task::{Poll, Waker};
+use std::time::{SystemTime, UNIX_EPOCH};
 // use std::time::Duration;
+
+fn time_now() -> u64 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_micros();
+    now as u64
+}
 
 use async_task::{Builder, Runnable};
 use futures_lite::{future, prelude::*};
@@ -514,9 +523,10 @@ impl<'a> Executor<'a> {
         move |runnable| {
             let now = std::time::Instant::now();
 
-            log::info!(
-                "Push runnable to queue, task: {}, deadline: {}",
-                runnable.ptr_to_string(),
+            log::warn!(
+                "Push runnable to queue, now: {}, task: {:p}, deadline: {}",
+                time_now(),
+                runnable.ptr_to_u64() as *const (),
                 runnable.deadline().value()
             );
 
@@ -1085,7 +1095,12 @@ impl Ticker<'_> {
                         }
                     }
                     Some(r) => {
-                        log::info!("Pop runnable from queue, task: {}", r.ptr_to_string());
+                        log::warn!(
+                            "Pop runnable from queue, now: {}, task: {:p}, deadline: {}",
+                            time_now(),
+                            r.ptr_to_u64() as *const (),
+                            r.deadline().value()
+                        );
 
                         // Wake up.
                         self.wake();

@@ -158,8 +158,8 @@ impl LoadGenerator {
             let start_at = init_at + Duration::from_secs_f64(elapse);
             tokio::time::sleep_until(start_at).await;
 
-            // let value = exponential.sample(&mut self.rng);
-            let value = 1f64 / self.rps as f64;
+            let value = exponential.sample(&mut self.rng);
+            // let value = 1f64 / self.rps as f64;
             elapse += value;
 
             let request_id = uniform.sample(&mut self.rng);
