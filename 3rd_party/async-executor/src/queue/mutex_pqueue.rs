@@ -1,11 +1,10 @@
-use log::info;
-
 use std::{
     collections::BinaryHeap,
     sync::{Mutex, MutexGuard},
 };
 
 use super::{PopError, PushError, Queue};
+use tonic_deadline::DeadlineHint;
 
 pub(crate) struct MutexPriorityQueue<T> {
     q: Mutex<BinaryHeap<T>>,
@@ -24,6 +23,14 @@ impl<T: Ord + PartialOrd> Queue for MutexPriorityQueue<T> {
             q.push(item);
         });
         Ok(())
+    }
+
+    fn push_with_ddl(
+        &self,
+        item: Self::Item,
+        _ddl: DeadlineHint,
+    ) -> Result<(), PushError<Self::Item>> {
+        self.push(item)
     }
 
     fn pop(&self) -> Result<Self::Item, PopError> {

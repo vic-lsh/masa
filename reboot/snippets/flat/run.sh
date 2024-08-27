@@ -6,7 +6,7 @@ path="snippets/flat"
 # rps_values=(200 1600)
 rps_values=(50)
 
-modes=("masa" "fifo")
+modes=("masa" "fifo-binary" "fifo")
 
 server_pid=
 
@@ -44,7 +44,7 @@ for mode in "${modes[@]}"; do
 		cargo run --release --bin bridgeway_client_bench -- \
 			--slo 10000 \
 			--rps $rps \
-			--secs 60 \
+			--secs 10 \
 			--concurrency 512 \
 			--output $path/r${rps}_${mode}.csv \
 			>/dev/null 2>&1
