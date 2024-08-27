@@ -14,7 +14,10 @@ rps = 50
 
 results_e2e: Dict[str, List[int]] = {}
 for mode in MODES:
+    """
     file = f"r{rps}_{mode}_filtered.csv"
+    """
+    file = f"r{rps}_{mode}.csv"
     df = pd.read_csv(file)
     results_e2e[mode] = list(df["latency"])
 

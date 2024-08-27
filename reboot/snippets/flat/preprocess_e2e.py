@@ -28,17 +28,22 @@ for mode in modes:
         id = span["request_id"]
         ids_to_modes.setdefault(id, []).append(mode)
 
+"""
 common_ids = set(
     id for id, modes in ids_to_modes.items() if len(modes) == 2 and modes[0] != modes[1]
 )
+"""
 
 for mode in modes:
     spans_filtered = []
     spans = results_raw[mode]
     for span in spans:
         id = span["request_id"]
+        """
         if id in common_ids:
             spans_filtered.append(span)
+        """
+        spans_filtered.append(span)
     spans_filtered = sorted(spans_filtered, key=lambda x: x["request_id"])
     df = pd.DataFrame(spans_filtered)
     df.to_csv(f"r{rps}_{mode}_filtered.csv", index=False)

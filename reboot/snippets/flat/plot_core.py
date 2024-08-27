@@ -60,29 +60,42 @@ def plot_pdf(results: Dict[str, List[int]], title: str, fig_name: str):
     for mode in MODES:
         latencies = [r / 1e3 for r in results[mode]]
 
-        counts, bin_edges = np.histogram(latencies, bins=1000, density=True)
+        counts, bin_edges = np.histogram(latencies, bins=1000, density=False)
         bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
-        bin_width = bin_edges[1] - bin_edges[0]
-        # Calculate expected value E[X] = sum(x * p(x) * width of bin)
-        expected_value = np.sum(bin_centers * counts * bin_width)
+        # Calculate sum value S[X] = sum(x * c(x))
+        sum_value = np.sum(bin_centers * counts)
+        # Calculate expected value E[X] = sum(x * c(x) / sum(c(x)))
+        sum_counts = np.sum(counts)
+        mean_value = np.sum(bin_centers * counts / sum_counts)
 
         plt.hist(
             latencies,
             bins=1000,
-            density=True,
+            density=False,
             histtype="step",
             label=f"{mode}",
         )
 
-        plt.axvline(
-            x=expected_value,
-            linestyle="--",
-            label=f"{mode} $E[X]$: {expected_value:.2f}ms",
+        plt.plot(
+            [], [], " ", label=f"{mode} sum: {sum_value:.2f}ms", color="forestgreen"
+        )
+        plt.plot(
+            [],
+            [],
+            " ",
+            label=f"{mode} counts: {sum_counts}",
+            color="forestgreen",
+        )
+        plt.plot(
+            [],
+            [],
+            " ",
+            label=f"{mode} mean: {mean_value:.2f}ms",
             color="forestgreen",
         )
 
     plt.xlabel("Latency (ms)")
-    plt.ylabel("PDF")
+    plt.ylabel("Counts")
     plt.title(title)
     plt.legend()
     plt.grid(True)
