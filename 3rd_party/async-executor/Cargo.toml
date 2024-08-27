@@ -22,6 +22,7 @@ exclude = ["/.*"]
 static = []
 masa = []
 fifo = []
+fifo-binary = []
 
 [dependencies]
 async-task = { path = "../async-task" }

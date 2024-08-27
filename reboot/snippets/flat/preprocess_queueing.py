@@ -4,7 +4,7 @@ from typing import *
 import pandas as pd
 
 rps = 50
-modes = ["masa", "fifo"]
+modes = ["masa", "fifo", "fifo-binary"]
 
 results_all: Dict[str, List] = {}
 results_infra: Dict[str, List] = {}

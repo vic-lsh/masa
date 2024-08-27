@@ -530,9 +530,10 @@ impl<'a> Executor<'a> {
                 runnable.deadline().value()
             );
 
+            let deadline = runnable.deadline();
             state
                 .queue
-                .push(runnable)
+                .push_with_ddl(runnable, deadline)
                 .expect("Push should never fail in an unbounded queue");
             state.notify();
 
@@ -848,8 +849,12 @@ impl<'a> Default for LocalExecutor<'a> {
 
 #[cfg(feature = "masa")]
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
-#[cfg(not(feature = "masa"))]
+#[cfg(feature = "fifo-binary")]
+type GlobalQueue<T> = queue::MutexFifoBinaryQueue<T>;
+#[cfg(not(any(feature = "masa", feature = "fifo-binary")))]
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
+
+// [NOTE] The original implementation uses a concurrent queue for the global queue.
 // type GlobalQueue<T> = queue::ConcurrentFifoQueue<T>;
 
 type LocalQueue<T> = queue::ConcurrentFifoQueue<T>;
