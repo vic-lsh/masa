@@ -4,6 +4,7 @@ use std::{
 };
 
 use super::{PopError, PushError, Queue};
+use tonic_deadline::DeadlineHint;
 
 pub(crate) struct MutexFifoQueue<T> {
     q: Mutex<VecDeque<T>>,
@@ -17,6 +18,14 @@ impl<T: Ord + PartialOrd> Queue for MutexFifoQueue<T> {
             q.push_back(item);
         });
         Ok(())
+    }
+
+    fn push_with_ddl(
+        &self,
+        item: Self::Item,
+        _ddl: DeadlineHint,
+    ) -> Result<(), PushError<Self::Item>> {
+        self.push(item)
     }
 
     fn pop(&self) -> Result<Self::Item, PopError> {

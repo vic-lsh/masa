@@ -17,18 +17,19 @@ plt.rcParams.update(
     }
 )
 
-MODES = ["masa", "fifo"]
+MODES = ["masa", "fifo", "fifo-binary"]
+COLORS = ["tab:blue", "tab:orange", "tab:purple"]
 
 
 def plot_cdf(results: Dict[str, List[int]], title: str, fig_name: str):
     fig = plt.figure(figsize=(10, 6))
 
     p99s = {}
-    for mode in MODES:
+    for i, mode in enumerate(MODES):
         latencies = [r / 1e3 for r in results[mode]]
         latencies.sort()
         cdf = np.arange(1, len(latencies) + 1) / len(latencies)
-        plt.plot(latencies, cdf, label=mode)
+        plt.plot(latencies, cdf, label=mode, color=COLORS[i])
 
         p99 = float(np.percentile(latencies, 99))
         p99s[mode] = p99
@@ -57,7 +58,7 @@ def plot_cdf(results: Dict[str, List[int]], title: str, fig_name: str):
 def plot_pdf(results: Dict[str, List[int]], title: str, fig_name: str):
     fig = plt.figure(figsize=(10, 6))
 
-    for mode in MODES:
+    for i, mode in enumerate(MODES):
         latencies = [r / 1e3 for r in results[mode]]
 
         counts, bin_edges = np.histogram(latencies, bins=1000, density=False)
@@ -74,6 +75,7 @@ def plot_pdf(results: Dict[str, List[int]], title: str, fig_name: str):
             density=False,
             histtype="step",
             label=f"{mode}",
+            color=COLORS[i],
         )
 
         plt.plot(

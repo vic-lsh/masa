@@ -4,6 +4,7 @@ use std::{
 };
 
 use super::{PopError, PushError, Queue};
+use tonic_deadline::DeadlineHint;
 
 #[allow(dead_code)]
 pub(crate) struct RwPriorityQueue<T> {
@@ -16,6 +17,14 @@ impl<T: Ord + PartialOrd> Queue for RwPriorityQueue<T> {
     fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
         self.with_write_lock(|mut q| q.push(item));
         Ok(())
+    }
+
+    fn push_with_ddl(
+        &self,
+        item: Self::Item,
+        _ddl: DeadlineHint,
+    ) -> Result<(), PushError<Self::Item>> {
+        self.push(item)
     }
 
     fn pop(&self) -> Result<Self::Item, PopError> {
