@@ -769,9 +769,9 @@ impl<M> Ord for Runnable<M> {
 }
 
 impl<M> Runnable<M> {
-    /// Return the pointer as a string for debugging.
-    pub fn ptr_to_string(&self) -> std::string::String {
-        std::format!("{:p}", self.ptr.as_ptr())
+    /// Return the pointer as a u64 for debugging.
+    pub fn ptr_to_u64(&self) -> u64 {
+        self.ptr.as_ptr() as u64
     }
 
     /// Return the deadline hint associated with this task.

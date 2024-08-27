@@ -18,6 +18,7 @@ use tonic_deadline::DeadlineHint;
 
 #[cfg(feature = "server")]
 pub trait ConnStreamExec<F, B: HttpBody>: Clone {
+    // [TODO] Change this to pass the deadline.
     fn execute_h2stream(&mut self, fut: H2Stream<F, B>);
 }
 
