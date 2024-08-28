@@ -3,7 +3,6 @@ use crate::{
     body::BoxBody,
     client::GrpcService,
     codec::{encode_client, Codec, Decoder, Streaming},
-    metadata::{Context, Path},
     request::SanitizeHeaders,
     Code, Request, Response, Status,
 };
@@ -14,6 +13,7 @@ use http::{
 use http_body::Body;
 use std::{fmt, future, pin::pin};
 use tokio_stream::{Stream, StreamExt};
+use tonic_masa::{Context, Path};
 
 /// A gRPC client dispatcher.
 ///

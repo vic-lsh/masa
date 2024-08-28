@@ -11,8 +11,8 @@ use std::sync::{
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
-use tonic::metadata::{Context, GlobalGraph};
 use tonic::transport::Channel;
+use tonic_masa::{Context, GlobalGraph};
 
 pub mod hello {
     tonic::include_proto!("hello");
