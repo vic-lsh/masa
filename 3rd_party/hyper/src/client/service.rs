@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use tonic_deadline::DeadlineHint;
+use tonic_masa::DeadlineHint;
 
 use tracing::debug;
 

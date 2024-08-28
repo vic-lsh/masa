@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{PopError, PushError, Queue};
-use tonic_deadline::DeadlineHint;
+use tonic_masa::DeadlineHint;
 
 #[allow(dead_code)]
 pub(crate) struct RwPriorityQueue<T> {

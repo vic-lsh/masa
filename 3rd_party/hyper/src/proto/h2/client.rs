@@ -28,7 +28,7 @@ use crate::proto::Dispatched;
 use crate::upgrade::Upgraded;
 use crate::{Body, Request, Response};
 use h2::client::ResponseFuture;
-use tonic_deadline::DeadlineHint;
+use tonic_masa::DeadlineHint;
 
 type ClientRx<B> = crate::client::dispatch::Receiver<Request<B>, Response<Body>>;
 

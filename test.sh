@@ -5,7 +5,7 @@
 packages=(
     "tonic"
     "tonic-build"
-    "tonic-deadline"
+    "tonic-masa"
     "tonic-health"
     #"tonic-reflection"
     "tonic-types"

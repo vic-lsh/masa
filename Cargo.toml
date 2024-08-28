@@ -6,7 +6,7 @@ members = [
   "tonic-types",
   "tonic-reflection",
   "tonic-web",                        # Non-published crates
-  "tonic-deadline",
+  "tonic-masa",
   "examples",
   "reboot",
   "codegen",

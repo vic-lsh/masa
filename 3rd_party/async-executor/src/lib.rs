@@ -62,7 +62,7 @@ use futures_lite::{future, prelude::*};
 use queue::Queue;
 use slab::Slab;
 
-use tonic_deadline::DeadlineHint;
+use tonic_masa::DeadlineHint;
 
 #[cfg(feature = "static")]
 mod static_executors;
