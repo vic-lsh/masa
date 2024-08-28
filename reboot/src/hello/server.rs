@@ -125,7 +125,7 @@ impl<'a> ExecImpl<'a> {
         // [NOTE] Only a global queue is used in smol::Executor::tick().
         loop {
             self.ex.tick().await;
-            // [NOTE] Yield to the tokio runtime.
+            // [NOTE] Yield to tokio runtime.
             future::yield_now().await;
         }
     }
