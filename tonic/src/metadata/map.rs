@@ -5,7 +5,8 @@ pub(crate) use self::into_metadata_key::IntoMetadataKey;
 use super::encoding::{Ascii, Binary, ValueEncoding};
 use super::key::{InvalidMetadataKey, MetadataKey};
 use super::value::MetadataValue;
-use super::Context;
+
+use tonic_masa::Context;
 
 use std::marker::PhantomData;
 

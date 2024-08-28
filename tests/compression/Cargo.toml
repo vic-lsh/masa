@@ -17,6 +17,7 @@ prost = "0.12"
 tokio = {path = "../../3rd_party/tokio/tokio", features = ["macros", "rt-multi-thread", "net"]}
 tokio-stream = { path = "../../3rd_party/tokio/tokio-stream" }
 tonic = {path = "../../tonic", features = ["gzip", "zstd"]}
+tonic-masa = { path = "../../tonic-masa" }
 tower = {path = "../../3rd_party/tower/tower", features = []}
 tower-http = {path = "../../3rd_party/tower-http/tower-http", features = ["map-response-body", "map-request-body"]}
 
