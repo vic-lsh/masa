@@ -190,9 +190,8 @@ where
     F: std::future::Future + Send + 'static,
     F::Output: Send,
 {
-    fn execute(&self, fut: F, _ddl: DeadlineHint) {
-        // [TODO] Think about what the deadline should be here.
-        let ddl = DeadlineHint::infra();
+    fn execute(&self, fut: F, ddl: DeadlineHint) {
+        // [NOTE] Deadline is passed from H2Stream.
         self.ex.spawn_with_ddl(fut, ddl).fallible().detach();
     }
 }
