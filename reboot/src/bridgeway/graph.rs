@@ -1,7 +1,7 @@
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp};
 use std::collections::HashMap;
-use tonic::metadata::{
+use tonic_masa::{
     Distribution as MasaDistribution, GlobalGraph, Latency, LocalGraph, Path, Span,
 };
 

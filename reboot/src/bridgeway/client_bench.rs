@@ -15,8 +15,8 @@ use std::sync::{
 use std::time::{SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
 use tokio::time::{Duration, Instant};
-use tonic::metadata::{Context, GlobalGraph};
 use tonic::transport::Channel;
+use tonic_masa::{Context, GlobalGraph};
 
 pub mod bridge {
     tonic::include_proto!("bridge");

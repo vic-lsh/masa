@@ -105,7 +105,7 @@ pub(crate) fn generate_internal<T: Service>(
             )]
             use tonic::codegen::*;
             /// Use Masa Context.
-            use tonic::metadata::Context as MasaContext;
+            use tonic_masa::Context as MasaContext;
 
             #generated_trait
 
