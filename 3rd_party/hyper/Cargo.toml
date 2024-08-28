@@ -37,6 +37,7 @@ tokio = { path = "../tokio/tokio", features = ["sync"] }
 want = "0.3"
 tonic-masa = { path = "../../tonic-masa" }
 async-task = { path = "../async-task" }
+log = "0.4"
 
 # Optional
 

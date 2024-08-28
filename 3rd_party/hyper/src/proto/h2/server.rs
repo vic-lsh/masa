@@ -28,7 +28,7 @@ use crate::service::HttpService;
 use crate::upgrade::{OnUpgrade, Pending, Upgraded};
 use crate::{Body, Response};
 
-// use tonic_masa::Context as MasaContext;
+use tonic_masa::Context as MasaContext;
 
 // Our defaults are chosen for the "majority" case, which usually are not
 // resource constrained, and so the spec default of 64kb can be too limiting
@@ -335,8 +335,9 @@ where
                             req.extensions_mut().insert(Protocol::from_inner(protocol));
                         }
 
-                        // let ctx_str = req.headers()["ctx"].to_str().unwrap();
-                        // let ctx = MasaContext::from_json(ctx_str);
+                        let ctx_str = req.headers()["ctx"].to_str().unwrap();
+                        let ctx = MasaContext::from_json(ctx_str);
+                        log::warn!("ctx: {:?}", ctx);
 
                         // [NOTE] Into executor.
                         let fut = H2Stream::new(service.call(req), connect_parts, respond);
