@@ -7,7 +7,7 @@ use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 use core::task::{Context, Poll};
 
-use tonic_deadline::DeadlineHint;
+use tonic_masa::DeadlineHint;
 
 use crate::header::Header;
 use crate::raw::{get_ddl_from_raw_task, Panic};

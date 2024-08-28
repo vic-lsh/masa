@@ -1,7 +1,7 @@
 use concurrent_queue::ConcurrentQueue;
 
 use super::{PopError, PushError, Queue};
-use tonic_deadline::DeadlineHint;
+use tonic_masa::DeadlineHint;
 
 pub(crate) struct ConcurrentFifoQueue<T> {
     q: ConcurrentQueue<T>,

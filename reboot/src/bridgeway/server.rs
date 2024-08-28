@@ -15,7 +15,7 @@ use tonic::{
     transport::{Channel, Server},
     Request, Response, Status,
 };
-use tonic_deadline::DeadlineHint;
+use tonic_masa::DeadlineHint;
 
 pub mod bridge {
     tonic::include_proto!("bridge");

@@ -20,7 +20,7 @@ use crate::common::{exec::BoxSendFuture, lazy as hyper_lazy, sync_wrapper::SyncW
 #[cfg(feature = "http2")]
 use crate::ext::Protocol;
 use crate::rt::Executor;
-use tonic_deadline::DeadlineHint;
+use tonic_masa::DeadlineHint;
 
 use super::conn;
 use super::connect::{self, sealed::Connect, Alpn, Connected, Connection};

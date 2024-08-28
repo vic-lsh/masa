@@ -5,7 +5,7 @@
 //! If the `runtime` feature is disabled, the types in this module can be used
 //! to plug in other runtimes.
 
-use tonic_deadline::DeadlineHint;
+use tonic_masa::DeadlineHint;
 
 /// An executor of futures.
 pub trait Executor<Fut> {

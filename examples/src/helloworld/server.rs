@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
 use tonic::{transport::Server, Request, Response, Status};
-use tonic_deadline::DeadlineHint;
+use tonic_masa::DeadlineHint;
 
 pub mod hello_world {
     tonic::include_proto!("helloworld");

@@ -145,7 +145,7 @@ smol = { path = "../3rd_party/smol" }
 futures-lite = { version = "2.0.0" }
 structopt = "0.3.23"
 crossbeam-channel = "0.5"
-tonic-deadline = { path = "../tonic-deadline" }
+tonic-masa = { path = "../tonic-masa" }
 mongodb = { path = "../3rd_party/mongodb" }
 memcache = "0.16"
 log = "0.4"
