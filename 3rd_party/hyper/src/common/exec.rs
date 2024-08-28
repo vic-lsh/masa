@@ -18,8 +18,9 @@ use tonic_masa::DeadlineHint;
 
 #[cfg(feature = "server")]
 pub trait ConnStreamExec<F, B: HttpBody>: Clone {
-    // [TODO] Change this to pass the deadline.
     fn execute_h2stream(&mut self, fut: H2Stream<F, B>);
+
+    fn execute_h2stream_with_ddl(&mut self, fut: H2Stream<F, B>, ddl: DeadlineHint);
 }
 
 #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
@@ -81,6 +82,10 @@ where
     fn execute_h2stream(&mut self, fut: H2Stream<F, B>) {
         self.execute(fut, DeadlineHint::infra())
     }
+
+    fn execute_h2stream_with_ddl(&mut self, fut: H2Stream<F, B>, ddl: DeadlineHint) {
+        self.execute(fut, ddl)
+    }
 }
 
 #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
@@ -106,6 +111,10 @@ where
 {
     fn execute_h2stream(&mut self, fut: H2Stream<F, B>) {
         self.execute(fut, DeadlineHint::infra())
+    }
+
+    fn execute_h2stream_with_ddl(&mut self, fut: H2Stream<F, B>, ddl: DeadlineHint) {
+        self.execute(fut, ddl)
     }
 }
 
