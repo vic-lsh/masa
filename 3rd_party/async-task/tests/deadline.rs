@@ -2,7 +2,7 @@ use async_task::{Runnable, Task};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tonic_deadline::DeadlineHint;
+use tonic_masa::DeadlineHint;
 
 fn spawn_util() -> (Runnable<()>, Task<()>) {
     fn dispatch(trampoline: extern "C" fn(NonNull<()>), context: NonNull<()>) {

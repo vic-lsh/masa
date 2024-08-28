@@ -38,7 +38,7 @@ use tower::{
     Service,
 };
 
-use tonic_deadline::DeadlineHint;
+use tonic_masa::DeadlineHint;
 
 type Svc = Either<Connection, BoxService<Request<BoxBody>, Response<hyper::Body>, crate::Error>>;
 

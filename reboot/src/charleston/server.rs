@@ -16,7 +16,7 @@ use tonic::{
     transport::{Channel, Server},
     Request, Response, Status,
 };
-use tonic_deadline::DeadlineHint;
+use tonic_masa::DeadlineHint;
 
 pub mod hello {
     tonic::include_proto!("hello");

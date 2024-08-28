@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{PopError, PushError, Queue};
-use tonic_deadline::DeadlineHint;
+use tonic_masa::DeadlineHint;
 
 pub(crate) struct MutexFifoBinaryQueue<T> {
     q_infra: Mutex<VecDeque<T>>,
@@ -39,10 +39,9 @@ impl<T: Ord + PartialOrd> Queue for MutexFifoBinaryQueue<T> {
         let infra_pop = self.with_locked_q_infra(|mut q| q.pop_front());
         match infra_pop {
             Some(item) => Ok(item),
-            None => {
-                self.with_locked_q_others(|mut q| q.pop_front())
-                    .ok_or(PopError::Empty)
-            }
+            None => self
+                .with_locked_q_others(|mut q| q.pop_front())
+                .ok_or(PopError::Empty),
         }
     }
 
