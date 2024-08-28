@@ -25,19 +25,19 @@ use std::cell::RefCell;
 use std::thread_local;
 
 thread_local! {
-    static THREAD_LOCAL_DDL: RefCell<DeadlineHint> = RefCell::new(DeadlineHint::infra());
+    // static THREAD_LOCAL_DDL: RefCell<DeadlineHint> = RefCell::new(DeadlineHint::infra());
     static THREAD_LOCAL_TASK_PTR: RefCell<u64> = RefCell::new(0);
 }
 
-/// Get the deadline hint for the current task through thread-local storage.
-pub fn get_task_ddl() -> DeadlineHint {
-    THREAD_LOCAL_DDL.with(|value| *value.borrow())
-}
+// /// Get the deadline hint for the current task through thread-local storage.
+// pub fn get_task_ddl() -> DeadlineHint {
+//     THREAD_LOCAL_DDL.with(|value| *value.borrow())
+// }
 
-/// Set the deadline hint for the current task through thread-local storage.
-pub fn set_task_ddl(new_value: DeadlineHint) {
-    THREAD_LOCAL_DDL.with(|value| *value.borrow_mut() = new_value);
-}
+// /// Set the deadline hint for the current task through thread-local storage.
+// pub fn set_task_ddl(new_value: DeadlineHint) {
+//     THREAD_LOCAL_DDL.with(|value| *value.borrow_mut() = new_value);
+// }
 
 /// Get task ptr.
 pub fn get_task_ptr() -> u64 {
@@ -540,25 +540,25 @@ where
         alloc::alloc::dealloc(ptr as *mut u8, task_layout.layout);
     }
 
-    #[inline]
-    unsafe fn set_ddl_before_poll(&self) -> DeadlineHint {
-        let original_ddl = *self.ddl;
-        set_task_ddl(original_ddl);
-        original_ddl
-    }
+    // #[inline]
+    // unsafe fn set_ddl_before_poll(&self) -> DeadlineHint {
+    //     let original_ddl = *self.ddl;
+    //     set_task_ddl(original_ddl);
+    //     original_ddl
+    // }
 
-    #[inline]
-    unsafe fn maybe_update_ddl_after_poll(&self) -> (bool, DeadlineHint) {
-        let ddl_after_poll = get_task_ddl();
-        // [TODO] As an optimization, we don't need to deref self.ddl twice.
-        // for now, we keep this as-is to let the caller know whether the
-        // ddl was updated.
-        let updated = ddl_after_poll != *self.ddl;
-        if updated {
-            *self.ddl = ddl_after_poll;
-        }
-        (updated, ddl_after_poll)
-    }
+    // #[inline]
+    // unsafe fn maybe_update_ddl_after_poll(&self) -> (bool, DeadlineHint) {
+    //     let ddl_after_poll = get_task_ddl();
+    //     // [TODO] As an optimization, we don't need to deref self.ddl twice.
+    //     // for now, we keep this as-is to let the caller know whether the
+    //     // ddl was updated.
+    //     let updated = ddl_after_poll != *self.ddl;
+    //     if updated {
+    //         *self.ddl = ddl_after_poll;
+    //     }
+    //     (updated, ddl_after_poll)
+    // }
 
     /// Runs a task.
     ///
@@ -621,8 +621,8 @@ where
         let guard = Guard(raw);
 
         set_task_ptr(ptr as u64);
-        let ddl_before = raw.set_ddl_before_poll();
-        log::info!("task: {:p}, ddl before: {}", ptr, ddl_before.value(),);
+        // let ddl_before = raw.set_ddl_before_poll();
+        // log::info!("task: {:p}, ddl before: {}", ptr, ddl_before.value(),);
 
         // Panic propagation is not available for no_std.
         #[cfg(not(feature = "std"))]
@@ -645,17 +645,17 @@ where
             }
         };
 
-        let (updated, ddl_after) = raw.maybe_update_ddl_after_poll();
         set_task_ptr(0);
-        if updated {
-            log::info!("task: {:p}, ddl after: {}", ptr, ddl_after.value());
-        }
+        // let (updated, ddl_after) = raw.maybe_update_ddl_after_poll();
+        // if updated {
+        //     log::info!("task: {:p}, ddl after: {}", ptr, ddl_after.value());
+        // }
 
         mem::forget(guard);
 
         match poll {
             Poll::Ready(out) => {
-                log::warn!("RawTask completed, task: {:p}, ddl: {}", ptr, ddl_after.value());
+                // log::warn!("RawTask completed, task: {:p}, ddl: {}", ptr, ddl_after.value());
 
                 // Replace the future with its output.
                 Self::drop_future(ptr);
