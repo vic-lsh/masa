@@ -10,12 +10,12 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
-use tonic_masa::{Address, LocalGraph, Path};
 use tonic::{
     transport::{Channel, Server},
     Request, Response, Status,
 };
 use tonic_masa::DeadlineHint;
+use tonic_masa::{Address, LocalGraph, Path};
 
 pub mod bridge {
     tonic::include_proto!("bridge");
@@ -179,7 +179,7 @@ impl<'a> ExecImpl<'a> {
         // [NOTE] Only a global queue is used in smol::Executor::tick().
         loop {
             self.ex.tick().await;
-            // [NOTE] Yield to the tokio runtime.
+            // [NOTE] Yield to tokio runtime.
             future::yield_now().await;
         }
     }

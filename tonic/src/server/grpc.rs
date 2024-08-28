@@ -247,11 +247,11 @@ where
 
         // [NOTE] Into service call.
         let fut = service.call(request);
-        // [NOTE] Yield to the tokio runtime such that the thread local deadline
+        // [NOTE] Yield to tokio runtime such that the thread local deadline
         // is visible to the future queue.
         // tokio::task::yield_now().await;
-        // [NOTE] Do not need to yield to the tokio runtime. The deadline is
-        // already visible to the future queue from H2Stream. 
+        // [NOTE] Do not need to yield to tokio runtime. The deadline is already
+        // visible to the future queue passed from H2Stream.
         let response = fut.await.map(|r| r.map(|m| tokio_stream::once(Ok(m))));
 
         let compression_override = compression_override_from_response(&response);

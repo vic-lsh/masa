@@ -166,15 +166,6 @@ pub(crate) fn generate_internal<T: Service>(
 
                 fn call(&mut self, req: http::Request<B>) -> Self::Future {
                     // [NOTE] Request path on the server side.
-                    // use tonic::deadline::DeadlineHint;
-                    // use tonic::async_task;
-
-                    // let ctx_str = req.headers()["ctx"].to_str().unwrap();
-                    // let ctx = MasaContext::from_json(ctx_str);
-                    // async_task::set_task_ddl(DeadlineHint::new(ctx.deadline()));
-
-                    // use log::info;
-                    // info!("thread local ddl: {:?}", ctx.deadline());
 
                     let inner = self.inner.clone();
 
