@@ -101,7 +101,7 @@ impl LocalGraph {
             suffix_sum += span.distribution().estimate();
         }
 
-        assert!(existed);
+        assert!(existed, "Span {} not found", path);
         suffix_sum
     }
 

@@ -289,7 +289,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert!(args.n_hops > 0);
     assert!(args.n_hops <= 2);
 
-    let global_graph = graph::get_global_graph_i1();
+    let global_graph = {
+        if args.n_hops == 1 {
+            graph::get_global_graph_i1()
+        } else if args.n_hops == 2 {
+            graph::get_global_graph_i2()
+        } else {
+            panic!("Unsupported n_hops: {}", args.n_hops);
+        }
+    };
 
     let mut servers = Vec::new();
 
