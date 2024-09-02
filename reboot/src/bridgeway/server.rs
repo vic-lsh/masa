@@ -33,7 +33,9 @@ pub fn time_now() -> u64 {
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Server for benchmarking")]
 pub struct Args {
-    #[structopt(short, long, default_value = "1")]
+    #[structopt(short, long, required = true)]
+    pub n_hops: usize,
+    #[structopt(short, long, required = true)]
     pub n_threads: usize,
 }
 
@@ -284,48 +286,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
     let args = Args::from_args();
+    assert!(args.n_hops > 0);
+    assert!(args.n_hops <= 2);
 
     let global_graph = graph::get_global_graph_i1();
 
     let mut servers = Vec::new();
 
-    let server1 = {
-        let addr: Address = "[::1]:50051".to_string();
-        let conn_addrs = HashMap::new();
-        let path: Path = "/bridge.Worker/SayHelloI1".to_string();
-        let local_graphs = {
-            let mut graphs = HashMap::new();
-            graphs.insert(
-                global_graph.graph_id().clone(),
-                global_graph.get_local_graph(&path).clone(),
-            );
-            graphs
+    if args.n_hops >= 1 {
+        let server1 = {
+            let addr: Address = "[::1]:50051".to_string();
+            let conn_addrs = HashMap::new();
+            let path: Path = "/bridge.Worker/SayHelloI1".to_string();
+            let local_graphs = {
+                let mut graphs = HashMap::new();
+                graphs.insert(
+                    global_graph.graph_id().clone(),
+                    global_graph.get_local_graph(&path).clone(),
+                );
+                graphs
+            };
+            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+            server
         };
-        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
-        server
-    };
-    servers.push(server1);
+        servers.push(server1);
+    }
 
-    // let server2 = {
-    //     let addr: Address = "[::1]:50052".to_string();
-    //     let mut conn_addrs = HashMap::new();
-    //     conn_addrs.insert(
-    //         "/bridge.Worker/SayHelloI1".to_string() as Path,
-    //         "http://[::1]:50051".to_string() as Address,
-    //     );
-    //     let path: Path = "/bridge.Worker/SayHelloI2".to_string();
-    //     let local_graphs = {
-    //         let mut graphs = HashMap::new();
-    //         graphs.insert(
-    //             global_graph.graph_id().clone(),
-    //             global_graph.get_local_graph(&path).clone(),
-    //         );
-    //         graphs
-    //     };
-    //     let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
-    //     server
-    // };
-    // servers.push(server2);
+    if args.n_hops >= 2 {
+        let server2 = {
+            let addr: Address = "[::1]:50052".to_string();
+            let mut conn_addrs = HashMap::new();
+            conn_addrs.insert(
+                "/bridge.Worker/SayHelloI1".to_string() as Path,
+                "http://[::1]:50051".to_string() as Address,
+            );
+            let path: Path = "/bridge.Worker/SayHelloI2".to_string();
+            let local_graphs = {
+                let mut graphs = HashMap::new();
+                graphs.insert(
+                    global_graph.graph_id().clone(),
+                    global_graph.get_local_graph(&path).clone(),
+                );
+                graphs
+            };
+            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+            server
+        };
+        servers.push(server2);
+    }
 
     let mut handles = Vec::new();
 
