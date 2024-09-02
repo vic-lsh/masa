@@ -28,6 +28,11 @@ pub fn get_global_graph_hotel() -> GlobalGraph {
     panic!("Not implemented");
 }
 
+// [TODO] Support I4.
+pub fn get_global_graph_i4() -> GlobalGraph {
+    panic!("Not implemented");
+}
+
 pub fn get_global_graph_i2() -> GlobalGraph {
     let local_graphs = {
         let mut rng = StdRng::seed_from_u64(998244353);
