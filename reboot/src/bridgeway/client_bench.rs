@@ -199,6 +199,8 @@ impl LoadGenerator {
                         client.say_hello_i1(request).await.unwrap();
                     } else if graph_id == "I2" {
                         client.say_hello_i2(request).await.unwrap();
+                    } else if graph_id == "I4" {
+                        client.say_hello_i4(request).await.unwrap();
                     } else {
                         panic!("Unsupported graph_id: {}", graph_id);
                     }
@@ -209,6 +211,8 @@ impl LoadGenerator {
                             "SayHelloI1".to_string()
                         } else if graph_id == "I2" {
                             "SayHelloI2".to_string()
+                        } else if graph_id == "I4" {
+                            "SayHelloI4".to_string()
                         } else {
                             panic!("Unsupported graph_id: {}", graph_id);
                         }
@@ -263,6 +267,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 graph::get_global_graph_i1()
             } else if args.graph_id == "I2" {
                 graph::get_global_graph_i2()
+            } else if args.graph_id == "I4" {
+                graph::get_global_graph_i4()
             } else if args.graph_id == "Hotel" {
                 graph::get_global_graph_hotel()
             } else {

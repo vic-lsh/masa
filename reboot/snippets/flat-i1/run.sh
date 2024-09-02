@@ -34,7 +34,7 @@ for mode in "${modes[@]}"; do
 		--release --bin bridgeway_server -- \
 		--n-hops 1 \
 		--n-threads 1 \
-		>$path/tmp_${mode}.log 2>&1 &
+		>$path/tmp_server_${mode}.log 2>&1 &
 
 	server_pid=$!
 
@@ -53,7 +53,7 @@ for mode in "${modes[@]}"; do
 			--output $path/r${rps}_${mode}.csv \
 			--graph-id I1 \
 			--addr http://[::1]:50051 \
-			>/dev/null 2>&1
+			>$path/tmp_client_${mode}.log 2>&1
 	done
 
 	kill $server_pid
