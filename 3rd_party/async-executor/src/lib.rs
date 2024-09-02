@@ -523,7 +523,7 @@ impl<'a> Executor<'a> {
         move |runnable| {
             let now = std::time::Instant::now();
 
-            log::warn!(
+            log::info!(
                 "Push runnable to queue, now: {}, task: {:p}, deadline: {}",
                 time_now(),
                 runnable.ptr_to_u64() as *const (),
@@ -1100,7 +1100,7 @@ impl Ticker<'_> {
                         }
                     }
                     Some(r) => {
-                        log::warn!(
+                        log::info!(
                             "Pop runnable from queue, now: {}, task: {:p}, deadline: {}",
                             time_now(),
                             r.ptr_to_u64() as *const (),
