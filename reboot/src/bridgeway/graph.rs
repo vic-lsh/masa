@@ -1,9 +1,7 @@
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp};
 use std::collections::HashMap;
-use tonic_masa::{
-    Distribution as MasaDistribution, GlobalGraph, Latency, LocalGraph, Path, Span,
-};
+use tonic_masa::{Distribution as MasaDistribution, GlobalGraph, Latency, LocalGraph, Path, Span};
 
 fn get_percentile_latencies(
     rng: &mut StdRng,
@@ -26,7 +24,11 @@ fn get_percentile_latencies(
 }
 
 // [TODO] Support Hotel.
-pub fn get_global_graph() -> GlobalGraph {
+pub fn get_global_graph_hotel() -> GlobalGraph {
+    panic!("Not implemented");
+}
+
+pub fn get_global_graph_i2() -> GlobalGraph {
     let local_graphs = {
         let mut rng = StdRng::seed_from_u64(998244353);
         let mut graphs = HashMap::new();
@@ -61,10 +63,10 @@ pub fn get_global_graph() -> GlobalGraph {
                 Span::new(
                     "Tail".to_string(),
                     MasaDistribution::new(
-                        3,
+                        1,
                         Some(get_percentile_latencies(
                             &mut rng,
-                            3,
+                            1,
                             n_samples,
                             n_percentiles,
                         )),
@@ -90,10 +92,10 @@ pub fn get_global_graph() -> GlobalGraph {
                 Span::new(
                     "Tail".to_string(),
                     MasaDistribution::new(
-                        4,
+                        2,
                         Some(get_percentile_latencies(
                             &mut rng,
-                            4,
+                            2,
                             n_samples,
                             n_percentiles,
                         )),
@@ -103,6 +105,54 @@ pub fn get_global_graph() -> GlobalGraph {
         );
         graphs
     };
-    let global_graph = GlobalGraph::new("GraphID".to_string() as Path, local_graphs);
+    let global_graph = GlobalGraph::new("global_graph_i2".to_string() as Path, local_graphs);
+    global_graph
+}
+
+pub fn get_global_graph_i1() -> GlobalGraph {
+    let local_graphs = {
+        let mut rng = StdRng::seed_from_u64(998244353);
+        let mut graphs = HashMap::new();
+        let n_samples = 1_000;
+        let n_percentiles = 1_000;
+        graphs.insert(
+            "Source".to_string() as Path,
+            LocalGraph::new(vec![Span::new(
+                "/bridge.Worker/SayHelloI1".to_string(),
+                MasaDistribution::new(16_000, None),
+            )]),
+        );
+        graphs.insert(
+            "/bridge.Worker/SayHelloI1".to_string() as Path,
+            LocalGraph::new(vec![
+                Span::new(
+                    "Head".to_string(),
+                    MasaDistribution::new(
+                        16_000,
+                        Some(get_percentile_latencies(
+                            &mut rng,
+                            16_000,
+                            n_samples,
+                            n_percentiles,
+                        )),
+                    ),
+                ),
+                Span::new(
+                    "Tail".to_string(),
+                    MasaDistribution::new(
+                        1,
+                        Some(get_percentile_latencies(
+                            &mut rng,
+                            1,
+                            n_samples,
+                            n_percentiles,
+                        )),
+                    ),
+                ),
+            ]),
+        );
+        graphs
+    };
+    let global_graph = GlobalGraph::new("global_graph_i1".to_string() as Path, local_graphs);
     global_graph
 }

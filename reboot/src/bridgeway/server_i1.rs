@@ -81,39 +81,46 @@ impl Worker for WorkerImpl {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
+        let start_at = time_now();
+        let mut latency_spin = 0;
+
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
         ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
+        assert!(spans.len() == 3);
+
         let elapse = spans.first().unwrap().distribution().estimate();
         // .sample(ctx.request_id());
-        let elapse_first = elapse;
         busy_spin(Duration::from_micros(elapse));
+        latency_spin += elapse;
 
-        let start_at = time_now();
-        // for span in spans.iter().skip(1).take(spans.len() - 2) {
-        //     let mut client = self.clients.get(span.path()).unwrap().clone();
-        //     let mut request = Request::new(HelloRequest {
-        //         name: "SayHelloI1".to_string(),
-        //     });
-        //     request.metadata_mut().insert_ctx("par_ctx", &ctx);
-        //     client.say_hello_i1(request).await.unwrap();
-        // }
+        for span in spans.iter().skip(1).take(spans.len() - 2) {
+            let mut client = self.clients.get(span.path()).unwrap().clone();
+            let mut request = Request::new(HelloRequest {
+                name: "SayHelloI1".to_string(),
+            });
+            request.metadata_mut().insert_ctx("par_ctx", &ctx);
+            client.say_hello_i1(request).await.unwrap();
+        }
+
+        let elapse = spans.last().unwrap().distribution().estimate();
+        // .sample(ctx.request_id());
+        busy_spin(Duration::from_micros(elapse));
+        latency_spin += elapse;
+
         let finish_at = time_now();
         let latency = finish_at - start_at;
 
-        // let elapse = spans.last().unwrap().distribution().estimate();
-        // // .sample(ctx.request_id());
-        // busy_spin(Duration::from_micros(elapse));
-
+        // [OPTION] Log by probability.
         // if ctx.request_id() % 10 == 0 {
         if true {
             log::warn!(
                 "say_hello_i2,{},{},{}",
                 ctx.request_id(),
-                elapse_first,
+                latency_spin,
                 latency
             );
         }
@@ -129,6 +136,7 @@ impl Worker for WorkerImpl {
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
         let start_at = time_now();
+        let mut latency_spin = 0;
 
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
@@ -136,23 +144,28 @@ impl Worker for WorkerImpl {
         ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
+        assert!(spans.len() == 2);
+
         let elapse = spans.first().unwrap().distribution().estimate();
         // .sample(ctx.request_id());
-        let elapse_first = elapse;
         busy_spin(Duration::from_micros(elapse));
+        latency_spin += elapse;
 
-        // let elapse = spans.last().unwrap().distribution().estimate();
-        // // .sample(ctx.request_id());
-        // busy_spin(Duration::from_micros(elapse));
+        let elapse = spans.last().unwrap().distribution().estimate();
+        // .sample(ctx.request_id());
+        busy_spin(Duration::from_micros(elapse));
+        latency_spin += elapse;
 
         let finish_at = time_now();
         let latency = finish_at - start_at;
+
+        // [OPTION] Log by probability.
         // if ctx.request_id() % 10 == 0 {
         if true {
             log::warn!(
                 "say_hello_i1,{},{},{}",
                 ctx.request_id(),
-                elapse_first,
+                latency_spin,
                 latency
             );
         }
@@ -272,12 +285,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::from_args();
 
-    let global_graph = graph::get_global_graph();
+    let global_graph = graph::get_global_graph_i1();
 
     let mut servers = Vec::new();
 
-    let server2 = {
-        let addr: Address = "[::1]:50052".to_string();
+    let server1 = {
+        let addr: Address = "[::1]:50051".to_string();
         let conn_addrs = HashMap::new();
         let path: Path = "/bridge.Worker/SayHelloI1".to_string();
         let local_graphs = {
@@ -291,28 +304,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
         server
     };
-    servers.push(server2);
-
-    let server1 = {
-        let addr: Address = "[::1]:50051".to_string();
-        let mut conn_addrs = HashMap::new();
-        conn_addrs.insert(
-            "/bridge.Worker/SayHelloI1".to_string() as Path,
-            "http://[::1]:50052".to_string() as Address,
-        );
-        let path: Path = "/bridge.Worker/SayHelloI2".to_string();
-        let local_graphs = {
-            let mut graphs = HashMap::new();
-            graphs.insert(
-                global_graph.graph_id().clone(),
-                global_graph.get_local_graph(&path).clone(),
-            );
-            graphs
-        };
-        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
-        server
-    };
     servers.push(server1);
+
+    // let server2 = {
+    //     let addr: Address = "[::1]:50052".to_string();
+    //     let mut conn_addrs = HashMap::new();
+    //     conn_addrs.insert(
+    //         "/bridge.Worker/SayHelloI1".to_string() as Path,
+    //         "http://[::1]:50051".to_string() as Address,
+    //     );
+    //     let path: Path = "/bridge.Worker/SayHelloI2".to_string();
+    //     let local_graphs = {
+    //         let mut graphs = HashMap::new();
+    //         graphs.insert(
+    //             global_graph.graph_id().clone(),
+    //             global_graph.get_local_graph(&path).clone(),
+    //         );
+    //         graphs
+    //     };
+    //     let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+    //     server
+    // };
+    // servers.push(server2);
 
     let mut handles = Vec::new();
 
