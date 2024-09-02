@@ -25,10 +25,16 @@ for mode in "${modes[@]}"; do
 	echo "Compiling mode: $mode..."
 
 	# cargo build --features $mode >/dev/null 2>&1
-	cargo build --features $mode --release >/dev/null 2>&1
+	cargo build --features $mode \
+		--release >/dev/null 2>&1
 
-	# RUST_BACKTRACE=1 RUST_LOG=info cargo run --features $mode --bin bridgeway_server -- --n-threads 1 >$path/tmp_${mode}.log 2>&1 &
-	RUST_LOG=warn cargo run --features $mode --release --bin bridgeway_server_i1 -- --n-threads 1 >$path/tmp_${mode}.log 2>&1 &
+	# RUST_BACKTRACE=1 RUST_LOG=info cargo run ...
+	RUST_LOG=warn \
+		cargo run --features $mode \
+		--release --bin bridgeway_server -- \
+		--n-hops 1 \
+		--n-threads 1 \
+		>$path/tmp_${mode}.log 2>&1 &
 
 	server_pid=$!
 
@@ -45,6 +51,8 @@ for mode in "${modes[@]}"; do
 			--secs 10 \
 			--concurrency 512 \
 			--output $path/r${rps}_${mode}.csv \
+			--graph-id i1 \
+			--addr http://[::1]:50051 \
 			>/dev/null 2>&1
 	done
 
