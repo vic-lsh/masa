@@ -1,6 +1,6 @@
 #!/bin/bash
 
-path="snippets/flat"
+path="snippets/flat-i1"
 
 rps_values=(50)
 
