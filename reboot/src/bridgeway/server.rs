@@ -149,8 +149,7 @@ impl Worker for WorkerImpl {
         let latency = finish_at - start_at;
         // if ctx.request_id() % 10 == 0 {
         if true {
-            use log::warn;
-            warn!(
+            log::warn!(
                 "say_hello_i1,{},{},{}",
                 ctx.request_id(),
                 elapse_first,
