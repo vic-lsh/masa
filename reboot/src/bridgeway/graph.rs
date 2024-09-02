@@ -28,9 +28,151 @@ pub fn get_global_graph_hotel() -> GlobalGraph {
     panic!("Not implemented");
 }
 
-// [TODO] Support I4.
 pub fn get_global_graph_i4() -> GlobalGraph {
-    panic!("Not implemented");
+    let local_graphs = {
+        let mut rng = StdRng::seed_from_u64(998244353);
+        let mut graphs = HashMap::new();
+        let n_samples = 1_000;
+        let n_percentiles = 1_000;
+        graphs.insert(
+            "Source".to_string() as Path,
+            LocalGraph::new(vec![Span::new(
+                "/bridge.Worker/SayHelloI4".to_string(),
+                MasaDistribution::new(64_000, None),
+            )]),
+        );
+        graphs.insert(
+            "/bridge.Worker/SayHelloI4".to_string() as Path,
+            LocalGraph::new(vec![
+                Span::new(
+                    "Head".to_string(),
+                    MasaDistribution::new(
+                        16_000,
+                        Some(get_percentile_latencies(
+                            &mut rng,
+                            16_000,
+                            n_samples,
+                            n_percentiles,
+                        )),
+                    ),
+                ),
+                Span::new(
+                    "/bridge.Worker/SayHelloI3".to_string(),
+                    MasaDistribution::new(48_000, None),
+                ),
+                Span::new(
+                    "Tail".to_string(),
+                    MasaDistribution::new(
+                        4,
+                        Some(get_percentile_latencies(
+                            &mut rng,
+                            4,
+                            n_samples,
+                            n_percentiles,
+                        )),
+                    ),
+                ),
+            ]),
+        );
+        graphs.insert(
+            "/bridge.Worker/SayHelloI3".to_string() as Path,
+            LocalGraph::new(vec![
+                Span::new(
+                    "Head".to_string(),
+                    MasaDistribution::new(
+                        16_000,
+                        Some(get_percentile_latencies(
+                            &mut rng,
+                            16_000,
+                            n_samples,
+                            n_percentiles,
+                        )),
+                    ),
+                ),
+                Span::new(
+                    "/bridge.Worker/SayHelloI2".to_string(),
+                    MasaDistribution::new(32_000, None),
+                ),
+                Span::new(
+                    "Tail".to_string(),
+                    MasaDistribution::new(
+                        3,
+                        Some(get_percentile_latencies(
+                            &mut rng,
+                            3,
+                            n_samples,
+                            n_percentiles,
+                        )),
+                    ),
+                ),
+            ]),
+        );
+        graphs.insert(
+            "/bridge.Worker/SayHelloI2".to_string() as Path,
+            LocalGraph::new(vec![
+                Span::new(
+                    "Head".to_string(),
+                    MasaDistribution::new(
+                        16_000,
+                        Some(get_percentile_latencies(
+                            &mut rng,
+                            16_000,
+                            n_samples,
+                            n_percentiles,
+                        )),
+                    ),
+                ),
+                Span::new(
+                    "/bridge.Worker/SayHelloI1".to_string(),
+                    MasaDistribution::new(16_000, None),
+                ),
+                Span::new(
+                    "Tail".to_string(),
+                    MasaDistribution::new(
+                        2,
+                        Some(get_percentile_latencies(
+                            &mut rng,
+                            2,
+                            n_samples,
+                            n_percentiles,
+                        )),
+                    ),
+                ),
+            ]),
+        );
+        graphs.insert(
+            "/bridge.Worker/SayHelloI1".to_string() as Path,
+            LocalGraph::new(vec![
+                Span::new(
+                    "Head".to_string(),
+                    MasaDistribution::new(
+                        16_000,
+                        Some(get_percentile_latencies(
+                            &mut rng,
+                            16_000,
+                            n_samples,
+                            n_percentiles,
+                        )),
+                    ),
+                ),
+                Span::new(
+                    "Tail".to_string(),
+                    MasaDistribution::new(
+                        1,
+                        Some(get_percentile_latencies(
+                            &mut rng,
+                            1,
+                            n_samples,
+                            n_percentiles,
+                        )),
+                    ),
+                ),
+            ]),
+        );
+        graphs
+    };
+    let global_graph = GlobalGraph::new("I4".to_string() as Path, local_graphs);
+    global_graph
 }
 
 pub fn get_global_graph_i2() -> GlobalGraph {
@@ -68,10 +210,10 @@ pub fn get_global_graph_i2() -> GlobalGraph {
                 Span::new(
                     "Tail".to_string(),
                     MasaDistribution::new(
-                        1,
+                        2,
                         Some(get_percentile_latencies(
                             &mut rng,
-                            1,
+                            2,
                             n_samples,
                             n_percentiles,
                         )),
@@ -97,10 +239,10 @@ pub fn get_global_graph_i2() -> GlobalGraph {
                 Span::new(
                     "Tail".to_string(),
                     MasaDistribution::new(
-                        2,
+                        1,
                         Some(get_percentile_latencies(
                             &mut rng,
-                            2,
+                            1,
                             n_samples,
                             n_percentiles,
                         )),

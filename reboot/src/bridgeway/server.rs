@@ -67,16 +67,110 @@ impl Worker for WorkerImpl {
 
     async fn say_hello_i4(
         &self,
-        _request: Request<HelloRequest>,
+        request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        panic!("Not implemented");
+        let start_at = time_now();
+        let mut latency_spin = 0;
+
+        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
+        log::info!("ctx: {:?}", ctx);
+        ctx.set_local_graph(local_graph.clone());
+
+        let spans = local_graph.spans();
+        assert!(spans.len() == 3);
+
+        let elapse = spans.first().unwrap().distribution().estimate();
+        // .sample(ctx.request_id());
+        busy_spin(Duration::from_micros(elapse));
+        latency_spin += elapse;
+
+        for span in spans.iter().skip(1).take(spans.len() - 2) {
+            let mut client = self.clients.get(span.path()).unwrap().clone();
+            let mut request = Request::new(HelloRequest {
+                name: "SayHelloI3".to_string(),
+            });
+            request.metadata_mut().insert_ctx("par_ctx", &ctx);
+            client.say_hello_i3(request).await.unwrap();
+        }
+
+        let elapse = spans.last().unwrap().distribution().estimate();
+        // .sample(ctx.request_id());
+        busy_spin(Duration::from_micros(elapse));
+        latency_spin += elapse;
+
+        let finish_at = time_now();
+        let latency = finish_at - start_at;
+
+        // [OPTION] Log by probability.
+        // if ctx.request_id() % 10 == 0 {
+        if true {
+            log::warn!(
+                "say_hello_i4,{},{},{}",
+                ctx.request_id(),
+                latency_spin,
+                latency
+            );
+        }
+
+        let reply = HelloReply {
+            message: format!("Hello {}!", request.into_inner().name),
+        };
+        Ok(Response::new(reply))
     }
 
     async fn say_hello_i3(
         &self,
-        _request: Request<HelloRequest>,
+        request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        panic!("Not implemented");
+        let start_at = time_now();
+        let mut latency_spin = 0;
+
+        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
+        log::info!("ctx: {:?}", ctx);
+        ctx.set_local_graph(local_graph.clone());
+
+        let spans = local_graph.spans();
+        assert!(spans.len() == 3);
+
+        let elapse = spans.first().unwrap().distribution().estimate();
+        // .sample(ctx.request_id());
+        busy_spin(Duration::from_micros(elapse));
+        latency_spin += elapse;
+
+        for span in spans.iter().skip(1).take(spans.len() - 2) {
+            let mut client = self.clients.get(span.path()).unwrap().clone();
+            let mut request = Request::new(HelloRequest {
+                name: "SayHelloI2".to_string(),
+            });
+            request.metadata_mut().insert_ctx("par_ctx", &ctx);
+            client.say_hello_i2(request).await.unwrap();
+        }
+
+        let elapse = spans.last().unwrap().distribution().estimate();
+        // .sample(ctx.request_id());
+        busy_spin(Duration::from_micros(elapse));
+        latency_spin += elapse;
+
+        let finish_at = time_now();
+        let latency = finish_at - start_at;
+
+        // [OPTION] Log by probability.
+        // if ctx.request_id() % 10 == 0 {
+        if true {
+            log::warn!(
+                "say_hello_i3,{},{},{}",
+                ctx.request_id(),
+                latency_spin,
+                latency
+            );
+        }
+
+        let reply = HelloReply {
+            message: format!("Hello {}!", request.into_inner().name),
+        };
+        Ok(Response::new(reply))
     }
 
     async fn say_hello_i2(
@@ -287,13 +381,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::from_args();
     assert!(args.n_hops > 0);
-    assert!(args.n_hops <= 2);
+    assert!(args.n_hops <= 4);
 
     let global_graph = {
         if args.n_hops == 1 {
             graph::get_global_graph_i1()
         } else if args.n_hops == 2 {
             graph::get_global_graph_i2()
+        } else if args.n_hops == 4 {
+            graph::get_global_graph_i4()
         } else {
             panic!("Unsupported n_hops: {}", args.n_hops);
         }
@@ -343,6 +439,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         servers.push(server2);
     }
 
+    if args.n_hops >= 3 {
+        let server3 = {
+            let addr: Address = "[::1]:50053".to_string();
+            let mut conn_addrs = HashMap::new();
+            conn_addrs.insert(
+                "/bridge.Worker/SayHelloI2".to_string() as Path,
+                "http://[::1]:50052".to_string() as Address,
+            );
+            let path: Path = "/bridge.Worker/SayHelloI3".to_string();
+            let local_graphs = {
+                let mut graphs = HashMap::new();
+                graphs.insert(
+                    global_graph.graph_id().clone(),
+                    global_graph.get_local_graph(&path).clone(),
+                );
+                graphs
+            };
+            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+            server
+        };
+        servers.push(server3);
+    }
+
+    if args.n_hops >= 4 {
+        let server4 = {
+            let addr: Address = "[::1]:50054".to_string();
+            let mut conn_addrs = HashMap::new();
+            conn_addrs.insert(
+                "/bridge.Worker/SayHelloI3".to_string() as Path,
+                "http://[::1]:50053".to_string() as Address,
+            );
+            let path: Path = "/bridge.Worker/SayHelloI4".to_string();
+            let local_graphs = {
+                let mut graphs = HashMap::new();
+                graphs.insert(
+                    global_graph.graph_id().clone(),
+                    global_graph.get_local_graph(&path).clone(),
+                );
+                graphs
+            };
+            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+            server
+        };
+        servers.push(server4);
+    }
+
     let mut handles = Vec::new();
 
     for i in 0..servers.len() {
@@ -366,7 +508,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let clients = server.get_clients().await;
 
             let worker = WorkerImpl::new(local_graphs, clients);
-            log::info!("Listening on {}...", addr);
+            log::warn!("Listening on {}...", addr);
             Server::builder()
                 .add_service(WorkerServer::new(worker))
                 .serve_with_executor(addr, Exec::Executor(ex))
