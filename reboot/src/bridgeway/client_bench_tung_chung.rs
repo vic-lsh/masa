@@ -1,4 +1,4 @@
-use bridge::{worker_client::WorkerClient, HelloRequest};
+use bridge::{tung_chung_client::TungChungClient, WalkRequest};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use env_logger::{Builder, Env};
 use log::info;
@@ -96,7 +96,7 @@ struct LoadGenerator {
     secs: u64,
     token: Arc<AtomicI32>,
     global_graph: GlobalGraph,
-    client: WorkerClient<Channel>,
+    client: TungChungClient<Channel>,
     trace_tx: Sender<Span>,
 }
 
@@ -108,7 +108,7 @@ impl LoadGenerator {
         secs: u64,
         token: Arc<AtomicI32>,
         global_graph: GlobalGraph,
-        client: WorkerClient<Channel>,
+        client: TungChungClient<Channel>,
         trace_tx: Sender<Span>,
     ) -> Self {
         LoadGenerator {
@@ -146,7 +146,7 @@ impl LoadGenerator {
 
         let graph_id = self.global_graph.graph_id().clone();
         let local_graph = self.global_graph.get_source().clone();
-        let request = HelloRequest {
+        let request = WalkRequest {
             name: "Tonic".into(),
         };
 
@@ -195,28 +195,10 @@ impl LoadGenerator {
 
                 tokio::task::spawn(async move {
                     let send_at = time_now();
-                    if graph_id == "I1" {
-                        client.say_hello_i1(request).await.unwrap();
-                    } else if graph_id == "I2" {
-                        client.say_hello_i2(request).await.unwrap();
-                    } else if graph_id == "I4" {
-                        client.say_hello_i4(request).await.unwrap();
-                    } else {
-                        panic!("Unsupported graph_id: {}", graph_id);
-                    }
+                    client.say_frontend(request).await.unwrap();
                     let recv_at = time_now();
                     let latency = recv_at - send_at;
-                    let span_str = {
-                        if graph_id == "I1" {
-                            "SayHelloI1".to_string()
-                        } else if graph_id == "I2" {
-                            "SayHelloI2".to_string()
-                        } else if graph_id == "I4" {
-                            "SayHelloI4".to_string()
-                        } else {
-                            panic!("Unsupported graph_id: {}", graph_id);
-                        }
-                    };
+                    let span_str = "frontend".to_string();
                     let span = Span::new(request_id, span_str, slo, latency);
                     token.fetch_add(1, Ordering::SeqCst);
                     trace_tx.try_send(span).unwrap();
@@ -263,18 +245,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let rng = StdRng::seed_from_u64(seed);
         let token = Arc::new(AtomicI32::new(args.concurrency as i32));
         let global_graph = {
-            if args.graph_id == "I1" {
-                graph::get_global_graph_i1()
-            } else if args.graph_id == "I2" {
-                graph::get_global_graph_i2()
-            } else if args.graph_id == "I4" {
-                graph::get_global_graph_i4()
+            if args.graph_id == "TungChung" {
+                graph::get_global_graph_tung_chung()
+            } else if args.graph_id == "Hotel" {
+                graph::get_global_graph_hotel()
             } else {
                 panic!("Unsupported graph_id: {}", args.graph_id);
             }
         };
         assert!(global_graph.graph_id().to_string() == args.graph_id);
-        let client = WorkerClient::connect(args.addr).await?;
+        let client = TungChungClient::connect(args.addr).await?;
 
         let load_gen = LoadGenerator::new(
             rng,
