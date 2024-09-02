@@ -17,7 +17,7 @@ plt.rcParams.update(
     }
 )
 
-MODES = ["masa", "fifo", "fifo-binary"]
+MODES = ["masa", "fifo-binary", "fifo"]
 COLORS = ["tab:blue", "tab:orange", "tab:purple"]
 
 

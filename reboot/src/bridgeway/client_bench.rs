@@ -44,6 +44,10 @@ pub struct Args {
     pub concurrency: u64,
     #[structopt(short, long, required = true)]
     pub output: String,
+    #[structopt(short, long, required = true)]
+    pub graph_id: String,
+    #[structopt(short, long, required = true)]
+    pub addr: String,
 }
 
 #[derive(Debug, Clone)]
@@ -238,8 +242,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let seed = SEED * KEY + args.rps;
         let rng = StdRng::seed_from_u64(seed);
         let token = Arc::new(AtomicI32::new(args.concurrency as i32));
-        let global_graph = graph::get_global_graph_i1();
-        let client = WorkerClient::connect("http://[::1]:50051").await?;
+        let global_graph = {
+            if args.graph_id == "i1" {
+                graph::get_global_graph_i1()
+            } else if args.graph_id == "i2" {
+                graph::get_global_graph_i2()
+            } else if args.graph_id == "hotel" {
+                graph::get_global_graph_hotel()
+            } else {
+                panic!("Unsupported graph_id: {}", args.graph_id);
+            }
+        };
+        let client = WorkerClient::connect(args.addr).await?;
 
         let load_gen = LoadGenerator::new(
             rng,
