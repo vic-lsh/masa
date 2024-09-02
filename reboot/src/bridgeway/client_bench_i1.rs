@@ -190,10 +190,10 @@ impl LoadGenerator {
 
                 tokio::task::spawn(async move {
                     let send_at = time_now();
-                    client.say_hello_i2(request).await.unwrap();
+                    client.say_hello_i1(request).await.unwrap();
                     let recv_at = time_now();
                     let latency = recv_at - send_at;
-                    let span = Span::new(request_id, "SayHello".to_string(), slo, latency);
+                    let span = Span::new(request_id, "SayHelloI1".to_string(), slo, latency);
                     token.fetch_add(1, Ordering::SeqCst);
                     trace_tx.try_send(span).unwrap();
                 });
@@ -238,7 +238,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let seed = SEED * KEY + args.rps;
         let rng = StdRng::seed_from_u64(seed);
         let token = Arc::new(AtomicI32::new(args.concurrency as i32));
-        let global_graph = graph::get_global_graph();
+        let global_graph = graph::get_global_graph_i1();
         let client = WorkerClient::connect("http://[::1]:50051").await?;
 
         let load_gen = LoadGenerator::new(
