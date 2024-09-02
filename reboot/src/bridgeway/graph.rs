@@ -105,7 +105,7 @@ pub fn get_global_graph_i2() -> GlobalGraph {
         );
         graphs
     };
-    let global_graph = GlobalGraph::new("global_graph_i2".to_string() as Path, local_graphs);
+    let global_graph = GlobalGraph::new("I2".to_string() as Path, local_graphs);
     global_graph
 }
 
@@ -153,6 +153,6 @@ pub fn get_global_graph_i1() -> GlobalGraph {
         );
         graphs
     };
-    let global_graph = GlobalGraph::new("global_graph_i1".to_string() as Path, local_graphs);
+    let global_graph = GlobalGraph::new("I1".to_string() as Path, local_graphs);
     global_graph
 }

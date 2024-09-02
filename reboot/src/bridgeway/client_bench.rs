@@ -166,6 +166,7 @@ impl LoadGenerator {
             // let value = 1f64 / self.rps as f64;
             elapse += value;
 
+            let graph_id = graph_id.clone();
             let request_id = uniform.sample(&mut self.rng);
             let request = {
                 let start_at = time_now() - init_at_u64;
@@ -194,10 +195,25 @@ impl LoadGenerator {
 
                 tokio::task::spawn(async move {
                     let send_at = time_now();
-                    client.say_hello_i1(request).await.unwrap();
+                    if graph_id == "I1" {
+                        client.say_hello_i1(request).await.unwrap();
+                    } else if graph_id == "I2" {
+                        client.say_hello_i2(request).await.unwrap();
+                    } else {
+                        panic!("Unsupported graph_id: {}", graph_id);
+                    }
                     let recv_at = time_now();
                     let latency = recv_at - send_at;
-                    let span = Span::new(request_id, "SayHelloI1".to_string(), slo, latency);
+                    let span_str = {
+                        if graph_id == "I1" {
+                            "SayHelloI1".to_string()
+                        } else if graph_id == "I2" {
+                            "SayHelloI2".to_string()
+                        } else {
+                            panic!("Unsupported graph_id: {}", graph_id);
+                        }
+                    };
+                    let span = Span::new(request_id, span_str, slo, latency);
                     token.fetch_add(1, Ordering::SeqCst);
                     trace_tx.try_send(span).unwrap();
                 });
@@ -243,16 +259,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let rng = StdRng::seed_from_u64(seed);
         let token = Arc::new(AtomicI32::new(args.concurrency as i32));
         let global_graph = {
-            if args.graph_id == "i1" {
+            if args.graph_id == "I1" {
                 graph::get_global_graph_i1()
-            } else if args.graph_id == "i2" {
+            } else if args.graph_id == "I2" {
                 graph::get_global_graph_i2()
-            } else if args.graph_id == "hotel" {
+            } else if args.graph_id == "Hotel" {
                 graph::get_global_graph_hotel()
             } else {
                 panic!("Unsupported graph_id: {}", args.graph_id);
             }
         };
+        assert!(global_graph.graph_id().to_string() == args.graph_id);
         let client = WorkerClient::connect(args.addr).await?;
 
         let load_gen = LoadGenerator::new(

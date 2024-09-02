@@ -1,6 +1,6 @@
 #!/bin/bash
 
-path="snippets/flat-i1"
+path="snippets/flat-i2"
 
 rps_values=(50)
 
@@ -32,7 +32,7 @@ for mode in "${modes[@]}"; do
 	RUST_LOG=warn \
 		cargo run --features $mode \
 		--release --bin bridgeway_server -- \
-		--n-hops 1 \
+		--n-hops 2 \
 		--n-threads 1 \
 		>$path/tmp_${mode}.log 2>&1 &
 
@@ -51,8 +51,8 @@ for mode in "${modes[@]}"; do
 			--secs 10 \
 			--concurrency 512 \
 			--output $path/r${rps}_${mode}.csv \
-			--graph-id I1 \
-			--addr http://[::1]:50051 \
+			--graph-id I2 \
+			--addr http://[::1]:50052 \
 			>/dev/null 2>&1
 	done
 
