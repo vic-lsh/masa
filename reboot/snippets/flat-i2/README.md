@@ -1,17 +1,7 @@
 # README
 
-Assert `Masa <= Fifo` when:
+Failed to assert `Masa == Fifo-binary` when:
 
-* Use one hop.
-* Use static processing latency as 16ms.
+* Use two hops.
 * Use one executor thread.
-* Enable `deadline` in `Masa`.
-
-# Tiny Observations
-
-* Again very interesting results.
-
-# Tiny Sparks
-
-* Make first hop static and second hop exponential.
-* Make first hop exponential and second hop static.
+* Use static processing latency as 16ms.
