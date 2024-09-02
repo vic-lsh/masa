@@ -655,7 +655,7 @@ where
 
         match poll {
             Poll::Ready(out) => {
-                // log::warn!("RawTask completed, task: {:p}, ddl: {}", ptr, ddl_after.value());
+                // log::info!("RawTask completed, task: {:p}, ddl: {}", ptr, ddl_after.value());
 
                 // Replace the future with its output.
                 Self::drop_future(ptr);
