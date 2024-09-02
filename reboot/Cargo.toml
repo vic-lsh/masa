@@ -7,6 +7,14 @@ publish = false
 version = "0.1.0"
 
 [[bin]]
+name = "bridgeway_client_bench_tung_chung"
+path = "src/bridgeway/client_bench_tung_chung.rs"
+
+[[bin]]
+name = "bridgeway_server_tung_chung"
+path = "src/bridgeway/server_tung_chung.rs"
+
+[[bin]]
 name = "bridgeway_client_bench"
 path = "src/bridgeway/client_bench.rs"
 
