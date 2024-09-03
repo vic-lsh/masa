@@ -1,34 +1,32 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use env_logger::{Builder, Env};
+use structopt::StructOpt;
+
+use hyper::rt::Exec;
+use tokio::task::JoinHandle;
+use tonic::{
+    transport::{Channel, Server},
+    Request, Response, Status,
+};
+use tonic_masa::{Address, GlobalGraph, LocalGraph, Path};
+
+pub mod bridge {
+    tonic::include_proto!("bridge");
+}
+mod common;
+mod exec;
+mod graph;
+
 use bridge::{
     worker_client::WorkerClient,
     worker_server::{Worker, WorkerServer},
     HelloReply, HelloRequest,
 };
-use env_logger::{Builder, Env};
-use futures_lite::future;
-use hyper::rt::{Exec, Executor};
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use structopt::StructOpt;
-use tonic::{
-    transport::{Channel, Server},
-    Request, Response, Status,
-};
-use tonic_masa::DeadlineHint;
-use tonic_masa::{Address, LocalGraph, Path};
-
-pub mod bridge {
-    tonic::include_proto!("bridge");
-}
-mod graph;
-
-pub fn time_now() -> u64 {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_micros();
-    now as u64
-}
+use common::{time_now, VirtualServer};
+use exec::ExecImpl;
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Server for benchmarking")]
@@ -273,113 +271,7 @@ impl Worker for WorkerImpl {
     }
 }
 
-#[derive(Debug)]
-struct ExecImpl<'a> {
-    ex: Arc<smol::Executor<'a>>,
-}
-
-impl<'a> ExecImpl<'a> {
-    fn new(ex: Arc<smol::Executor<'a>>) -> Self {
-        Self { ex }
-    }
-
-    async fn run(&self) {
-        // [NOTE] Only a global queue is used in smol::Executor::tick().
-        loop {
-            self.ex.tick().await;
-            // [NOTE] Yield to tokio runtime.
-            future::yield_now().await;
-        }
-    }
-}
-
-impl<'a, F> Executor<F> for ExecImpl<'a>
-where
-    F: std::future::Future + Send + 'static,
-    F::Output: Send,
-{
-    fn execute(&self, fut: F, ddl: DeadlineHint) {
-        // [NOTE] Deadline is passed from H2Stream.
-        self.ex.spawn_with_ddl(fut, ddl).fallible().detach();
-    }
-}
-
-#[derive(Debug, Clone)]
-struct VirtualServer {
-    addr: Address,
-    conn_addrs: HashMap<Path, Address>,
-    local_graphs: HashMap<Path, LocalGraph>,
-    n_threads: usize,
-}
-
-impl VirtualServer {
-    pub fn new(
-        addr: Address,
-        conn_addrs: HashMap<Path, Address>,
-        local_graphs: HashMap<Path, LocalGraph>,
-        n_threads: usize,
-    ) -> Self {
-        let mut paths = Vec::new();
-        let mut addrs = Vec::new();
-        for (path, addr) in conn_addrs.iter() {
-            paths.push(path);
-            addrs.push(addr);
-        }
-        assert_eq!(paths.len(), paths.iter().collect::<HashSet<_>>().len());
-        assert_eq!(addrs.len(), addrs.iter().collect::<HashSet<_>>().len());
-        Self {
-            addr,
-            conn_addrs,
-            local_graphs,
-            n_threads,
-        }
-    }
-
-    pub fn addr(&self) -> &Address {
-        &self.addr
-    }
-
-    pub fn local_graphs(&self) -> &HashMap<Path, LocalGraph> {
-        &self.local_graphs
-    }
-
-    pub async fn get_clients(&self) -> HashMap<Path, WorkerClient<Channel>> {
-        let mut clients = HashMap::new();
-        for (path, addr) in self.conn_addrs.iter() {
-            let client = WorkerClient::connect(addr.clone()).await.unwrap();
-            clients.insert(path.clone(), client);
-        }
-        clients
-    }
-
-    pub fn n_threads(&self) -> usize {
-        self.n_threads
-    }
-}
-
-fn init_logging() {
-    Builder::from_env(Env::default().default_filter_or("info"))
-        .format(|buf, record| {
-            use std::io::Write;
-            writeln!(
-                buf,
-                "{} [{}:{}] {}",
-                record.level(),
-                record.file().unwrap_or("unknown"),
-                record.line().unwrap_or(0),
-                // record.target(),
-                record.args()
-            )
-        })
-        .init();
-    log::info!("Logging initialized");
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging();
-
-    let args = Args::from_args();
+fn get_global_graph(args: Args) -> GlobalGraph {
     assert!(args.n_hops > 0);
     assert!(args.n_hops <= 4);
 
@@ -394,7 +286,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             panic!("Unsupported n_hops: {}", args.n_hops);
         }
     };
+    global_graph
+}
 
+fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
     let mut servers = Vec::new();
 
     if args.n_hops >= 1 {
@@ -485,6 +380,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         servers.push(server4);
     }
 
+    servers
+}
+
+async fn get_clients(server: &VirtualServer) -> HashMap<Path, WorkerClient<Channel>> {
+    let mut clients = HashMap::new();
+    for (path, addr) in server.conn_addrs().iter() {
+        let client = WorkerClient::connect(addr.clone()).await.unwrap();
+        clients.insert(path.clone(), client);
+    }
+    clients
+}
+
+async fn start_servers(servers: Vec<VirtualServer>) -> Vec<JoinHandle<()>> {
     let mut handles = Vec::new();
 
     for i in 0..servers.len() {
@@ -505,7 +413,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let h = tokio::spawn(async move {
             let addr = server.addr().parse().unwrap();
             let local_graphs = server.local_graphs().clone();
-            let clients = server.get_clients().await;
+            let clients = get_clients(&server).await;
 
             let worker = WorkerImpl::new(local_graphs, clients);
             log::warn!("Listening on {}...", addr);
@@ -520,9 +428,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
+    handles
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_logging();
+
+    let args = Args::from_args();
+    let global_graph = get_global_graph(args.clone());
+    let servers = get_servers(args.clone(), global_graph.clone());
+    let handles = start_servers(servers).await;
     for h in handles {
         h.await.unwrap();
     }
 
     Ok(())
+}
+
+fn init_logging() {
+    Builder::from_env(Env::default().default_filter_or("info"))
+        .format(|buf, record| {
+            use std::io::Write;
+            writeln!(
+                buf,
+                "{} [{}:{}] {}",
+                record.level(),
+                record.file().unwrap_or("unknown"),
+                record.line().unwrap_or(0),
+                // record.target(),
+                record.args()
+            )
+        })
+        .init();
+    log::info!("Logging initialized");
 }
