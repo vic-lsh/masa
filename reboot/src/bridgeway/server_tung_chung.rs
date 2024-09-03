@@ -1,3 +1,10 @@
+pub mod bridge {
+    tonic::include_proto!("bridge");
+}
+mod common;
+mod exec;
+mod graph;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -13,13 +20,6 @@ use tonic::{
     Request, Response, Status,
 };
 use tonic_masa::{Address, GlobalGraph, LocalGraph, Path};
-
-pub mod bridge {
-    tonic::include_proto!("bridge");
-}
-mod common;
-mod exec;
-mod graph;
 
 use bridge::{
     tung_chung_client::TungChungClient,
