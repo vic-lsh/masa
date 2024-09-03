@@ -2,6 +2,6 @@
 
 Failed to assert `Masa == Fifo-binary` when:
 
-* Use two hops.
+* Use hotel call graph.
 * Use one executor thread.
-* Use static processing latency as 16ms.
+* Use empty processing latency.
