@@ -1,3 +1,9 @@
+pub mod bridge {
+    tonic::include_proto!("bridge");
+}
+mod common;
+mod graph;
+
 use std::sync::atomic::AtomicUsize;
 use std::sync::{
     atomic::{AtomicI32, Ordering},
@@ -12,12 +18,6 @@ use tokio::time::{Duration, Instant};
 
 use tonic::transport::Channel;
 use tonic_masa::{Context, GlobalGraph};
-
-pub mod bridge {
-    tonic::include_proto!("bridge");
-}
-mod common;
-mod graph;
 
 use bridge::{worker_client::WorkerClient, HelloRequest};
 use common::{fetch_traces, init_logging, time_now, Span};
