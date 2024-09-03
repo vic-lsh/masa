@@ -1,0 +1,27 @@
+services:
+  tung_chung_memcached:
+    image: memcached:1.6
+    container_name: tung_chung_memcached
+    command: --port 11003
+    network_mode: host
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+
+  tung_chung_mongo:
+    image: mongo:7.0
+    container_name: tung_chung_mongo
+    command: --port 27003
+    network_mode: host
+    restart: always
+    volumes:
+      - tung_chung:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+
+volumes:
+  tung_chung:
