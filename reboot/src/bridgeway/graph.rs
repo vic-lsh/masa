@@ -4,10 +4,12 @@ use std::collections::HashMap;
 use tonic_masa::{Distribution as MasaDistribution, GlobalGraph, Latency, LocalGraph, Path, Span};
 
 // [TODO] Support Hotel.
+#[allow(dead_code)]
 pub fn get_global_graph_hotel() -> GlobalGraph {
     panic!("Not implemented");
 }
 
+#[allow(dead_code)]
 pub fn get_global_graph_tung_chung() -> GlobalGraph {
     let local_graphs = {
         let mut rng = StdRng::seed_from_u64(998244353);
@@ -240,6 +242,7 @@ pub fn get_global_graph_tung_chung() -> GlobalGraph {
     global_graph
 }
 
+#[allow(dead_code)]
 pub fn get_global_graph_i4() -> GlobalGraph {
     let local_graphs = {
         let mut rng = StdRng::seed_from_u64(998244353);
@@ -387,6 +390,7 @@ pub fn get_global_graph_i4() -> GlobalGraph {
     global_graph
 }
 
+#[allow(dead_code)]
 pub fn get_global_graph_i2() -> GlobalGraph {
     let local_graphs = {
         let mut rng = StdRng::seed_from_u64(998244353);
@@ -468,6 +472,7 @@ pub fn get_global_graph_i2() -> GlobalGraph {
     global_graph
 }
 
+#[allow(dead_code)]
 pub fn get_global_graph_i1() -> GlobalGraph {
     let local_graphs = {
         let mut rng = StdRng::seed_from_u64(998244353);
