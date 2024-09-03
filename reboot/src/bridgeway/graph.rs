@@ -77,14 +77,14 @@ pub fn get_global_graph_tung_chung() -> GlobalGraph {
                         )),
                     ),
                 ),
-                // Span::new(
-                //     "/bridge.TungChung/SayGeo".to_string(),
-                //     MasaDistribution::new(1, None),
-                // ),
-                // Span::new(
-                //     "/bridge.TungChung/SayRate".to_string(),
-                //     MasaDistribution::new(1, None),
-                // ),
+                Span::new(
+                    "/bridge.TungChung/SayGeo".to_string(),
+                    MasaDistribution::new(1, None),
+                ),
+                Span::new(
+                    "/bridge.TungChung/SayRate".to_string(),
+                    MasaDistribution::new(1, None),
+                ),
                 Span::new(
                     "Tail".to_string(),
                     MasaDistribution::new(
