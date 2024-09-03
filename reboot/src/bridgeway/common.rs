@@ -45,8 +45,8 @@ pub struct VirtualServer {
     n_threads: usize,
 }
 
+#[allow(dead_code)]
 impl VirtualServer {
-    #[allow(dead_code)]
     pub fn new(
         addr: Address,
         conn_addrs: HashMap<Path, Address>,
@@ -69,22 +69,18 @@ impl VirtualServer {
         }
     }
 
-    #[allow(dead_code)]
     pub fn addr(&self) -> &Address {
         &self.addr
     }
 
-    #[allow(dead_code)]
     pub fn conn_addrs(&self) -> &HashMap<Path, Address> {
         &self.conn_addrs
     }
 
-    #[allow(dead_code)]
     pub fn local_graphs(&self) -> &HashMap<Path, LocalGraph> {
         &self.local_graphs
     }
 
-    #[allow(dead_code)]
     pub fn n_threads(&self) -> usize {
         self.n_threads
     }
@@ -99,8 +95,8 @@ pub struct Span {
     latency: u64,
 }
 
+#[allow(dead_code)]
 impl Span {
-    #[allow(dead_code)]
     pub fn new(request_id: u64, span: String, slo: u64, latency: u64) -> Self {
         Self {
             request_id,
