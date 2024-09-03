@@ -1,38 +1,26 @@
-use crossbeam_channel::{unbounded, Receiver, Sender};
-use env_logger::{Builder, Env};
-use log::info;
-use rand::{rngs::StdRng, SeedableRng};
-use rand_distr::{Distribution, Exp, Uniform};
-use structopt::StructOpt;
-
-use std::fs::{self, File};
-use std::io::Write;
-use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{
     atomic::{AtomicI32, Ordering},
     Arc,
 };
-use std::time::{SystemTime, UNIX_EPOCH};
 
+use crossbeam_channel::{unbounded, Sender};
+use rand::{rngs::StdRng, SeedableRng};
+use rand_distr::{Distribution, Exp, Uniform};
+use structopt::StructOpt;
 use tokio::time::{Duration, Instant};
+
 use tonic::transport::Channel;
 use tonic_masa::{Context, GlobalGraph};
-
-use bridge::{tung_chung_client::TungChungClient, WalkRequest};
 
 pub mod bridge {
     tonic::include_proto!("bridge");
 }
+mod common;
 mod graph;
 
-pub fn time_now() -> u64 {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_micros();
-    now as u64
-}
+use bridge::{tung_chung_client::TungChungClient, WalkRequest};
+use common::{fetch_traces, init_logging, time_now, Span};
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Reboot for simulation")]
@@ -51,44 +39,6 @@ pub struct Args {
     pub graph_id: String,
     #[structopt(short, long, required = true)]
     pub addr: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct Span {
-    request_id: u64,
-    span: String,
-    slo: u64,
-    latency: u64,
-}
-
-impl Span {
-    pub fn new(request_id: u64, span: String, slo: u64, latency: u64) -> Self {
-        Self {
-            request_id,
-            span,
-            slo,
-            latency,
-        }
-    }
-}
-
-async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
-    let path = Path::new(&output);
-    if let Some(parent) = path.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent).unwrap();
-        }
-    }
-    let mut file = File::create(output).unwrap();
-    writeln!(file, "request_id,span,slo,latency").unwrap();
-    while let Ok(span) = trace_rx.recv() {
-        writeln!(
-            file,
-            "{},{},{},{}",
-            span.request_id, span.span, span.slo, span.latency
-        )
-        .unwrap();
-    }
 }
 
 #[derive(Debug)]
@@ -134,7 +84,7 @@ impl LoadGenerator {
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 let counter_now = counter_clone.load(Ordering::Relaxed);
-                info!("RPS: {}", counter_now - counter_before);
+                log::info!("RPS: {}", counter_now - counter_before);
                 counter_before = counter_now;
             }
         });
@@ -213,22 +163,14 @@ impl LoadGenerator {
     }
 }
 
-fn init_logging() {
-    Builder::from_env(Env::default().default_filter_or("info"))
-        .format(|buf, record| {
-            use std::io::Write;
-            writeln!(
-                buf,
-                "{} [{}:{}] {}",
-                record.level(),
-                record.file().unwrap_or("unknown"),
-                record.line().unwrap_or(0),
-                // record.target(),
-                record.args()
-            )
-        })
-        .init();
-    info!("Logging initialized");
+fn get_global_graph(args: &Args) -> GlobalGraph {
+    if args.graph_id == "TungChung" {
+        graph::get_global_graph_tung_chung()
+    } else if args.graph_id == "Hotel" {
+        graph::get_global_graph_hotel()
+    } else {
+        panic!("Unsupported graph_id: {}", args.graph_id);
+    }
 }
 
 #[tokio::main]
@@ -239,23 +181,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (trace_tx, trace_rx) = unbounded();
 
-    let mut handles = Vec::new();
-
     let mut load_gen = {
         const KEY: u64 = 13;
         const SEED: u64 = 998244353;
         let seed = SEED * KEY + args.rps;
         let rng = StdRng::seed_from_u64(seed);
         let token = Arc::new(AtomicI32::new(args.concurrency as i32));
-        let global_graph = {
-            if args.graph_id == "TungChung" {
-                graph::get_global_graph_tung_chung()
-            } else if args.graph_id == "Hotel" {
-                graph::get_global_graph_hotel()
-            } else {
-                panic!("Unsupported graph_id: {}", args.graph_id);
-            }
-        };
+        let global_graph = get_global_graph(&args);
         assert!(global_graph.graph_id().to_string() == args.graph_id);
         let client = TungChungClient::connect(args.addr).await?;
 
@@ -271,6 +203,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         load_gen
     };
+
+    let mut handles = Vec::new();
 
     handles.push(tokio::spawn(async move {
         load_gen.run().await.unwrap();
