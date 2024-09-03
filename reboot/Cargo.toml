@@ -43,12 +43,12 @@ name = "charleston_server"
 path = "src/charleston/server.rs"
 
 [[bin]]
-name = "memcached_client"
-path = "src/memcached/client.rs"
+name = "sheraton_client"
+path = "src/sheraton/client.rs"
 
 [[bin]]
-name = "memcached_server"
-path = "src/memcached/server.rs"
+name = "sheraton_server"
+path = "src/sheraton/server.rs"
 
 [[bin]]
 name = "hello_client"
