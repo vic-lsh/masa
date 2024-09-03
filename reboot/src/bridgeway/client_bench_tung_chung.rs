@@ -1,9 +1,10 @@
-use bridge::{tung_chung_client::TungChungClient, WalkRequest};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use env_logger::{Builder, Env};
 use log::info;
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp, Uniform};
+use structopt::StructOpt;
+
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
@@ -13,10 +14,12 @@ use std::sync::{
     Arc,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
-use structopt::StructOpt;
+
 use tokio::time::{Duration, Instant};
 use tonic::transport::Channel;
 use tonic_masa::{Context, GlobalGraph};
+
+use bridge::{tung_chung_client::TungChungClient, WalkRequest};
 
 pub mod bridge {
     tonic::include_proto!("bridge");
