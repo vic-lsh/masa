@@ -111,6 +111,7 @@ impl TungChung for TungChungImpl {
         let spans = local_graph.spans();
         assert!(spans.len() == 4);
 
+        assert!(spans.first().unwrap().path() == "Head");
         let elapse = spans.first().unwrap().distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
@@ -131,6 +132,7 @@ impl TungChung for TungChungImpl {
             }
         }
 
+        assert!(spans.last().unwrap().path() == "Tail");
         let elapse = spans.last().unwrap().distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
@@ -169,13 +171,30 @@ impl TungChung for TungChungImpl {
         ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
-        assert!(spans.len() == 2);
+        assert!(spans.len() == 4);
 
+        assert!(spans.first().unwrap().path() == "Head");
         let elapse = spans.first().unwrap().distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
 
+        for span in spans.iter().skip(1).take(spans.len() - 2) {
+            let mut client = self.clients.get(span.path()).unwrap().clone();
+            let mut request = Request::new(WalkRequest {
+                name: "SayTungChung".to_string(),
+            });
+            request.metadata_mut().insert_ctx("par_ctx", &ctx);
+            if span.path() == "/bridge.TungChung/SayGeo" {
+                client.say_geo(request).await.unwrap();
+            } else if span.path() == "/bridge.TungChung/SayRate" {
+                client.say_rate(request).await.unwrap();
+            } else {
+                panic!("Invalid path: {:?}", span.path());
+            }
+        }
+
+        assert!(spans.last().unwrap().path() == "Tail");
         let elapse = spans.last().unwrap().distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
@@ -216,11 +235,13 @@ impl TungChung for TungChungImpl {
         let spans = local_graph.spans();
         assert!(spans.len() == 2);
 
+        assert!(spans.first().unwrap().path() == "Head");
         let elapse = spans.first().unwrap().distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
 
+        assert!(spans.last().unwrap().path() == "Tail");
         let elapse = spans.last().unwrap().distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
@@ -246,15 +267,82 @@ impl TungChung for TungChungImpl {
         Ok(Response::new(reply))
     }
 
-    async fn say_geo(&self, _request: Request<WalkRequest>) -> Result<Response<WalkReply>, Status> {
-        panic!("Not implemented");
+    async fn say_geo(&self, request: Request<WalkRequest>) -> Result<Response<WalkReply>, Status> {
+        let start_at = time_now();
+        let mut latency_spin = 0;
+
+        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
+        log::info!("ctx: {:?}", ctx);
+        ctx.set_local_graph(local_graph.clone());
+
+        let spans = local_graph.spans();
+        assert!(spans.len() == 2);
+
+        assert!(spans.first().unwrap().path() == "Head");
+        let elapse = spans.first().unwrap().distribution().estimate();
+        // .sample(ctx.request_id());
+        busy_spin(Duration::from_micros(elapse));
+        latency_spin += elapse;
+
+        assert!(spans.last().unwrap().path() == "Tail");
+        let elapse = spans.last().unwrap().distribution().estimate();
+        // .sample(ctx.request_id());
+        busy_spin(Duration::from_micros(elapse));
+        latency_spin += elapse;
+
+        let finish_at = time_now();
+        let latency = finish_at - start_at;
+
+        // [OPTION] Log by probability.
+        // if ctx.request_id() % 10 == 0 {
+        if true {
+            log::warn!("say_geo,{},{},{}", ctx.request_id(), latency_spin, latency);
+        }
+
+        let reply = WalkReply {
+            message: format!("Walk {}!", request.into_inner().name),
+        };
+        Ok(Response::new(reply))
     }
 
-    async fn say_rate(
-        &self,
-        _request: Request<WalkRequest>,
-    ) -> Result<Response<WalkReply>, Status> {
-        panic!("Not implemented");
+    async fn say_rate(&self, request: Request<WalkRequest>) -> Result<Response<WalkReply>, Status> {
+        let start_at = time_now();
+        let mut latency_spin = 0;
+
+        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
+        log::info!("ctx: {:?}", ctx);
+        ctx.set_local_graph(local_graph.clone());
+
+        let spans = local_graph.spans();
+        assert!(spans.len() == 2);
+
+        assert!(spans.first().unwrap().path() == "Head");
+        let elapse = spans.first().unwrap().distribution().estimate();
+        // .sample(ctx.request_id());
+        busy_spin(Duration::from_micros(elapse));
+        latency_spin += elapse;
+
+        assert!(spans.last().unwrap().path() == "Tail");
+        let elapse = spans.last().unwrap().distribution().estimate();
+        // .sample(ctx.request_id());
+        busy_spin(Duration::from_micros(elapse));
+        latency_spin += elapse;
+
+        let finish_at = time_now();
+        let latency = finish_at - start_at;
+
+        // [OPTION] Log by probability.
+        // if ctx.request_id() % 10 == 0 {
+        if true {
+            log::warn!("say_rate,{},{},{}", ctx.request_id(), latency_spin, latency);
+        }
+
+        let reply = WalkReply {
+            message: format!("Walk {}!", request.into_inner().name),
+        };
+        Ok(Response::new(reply))
     }
 }
 
@@ -341,7 +429,15 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
 
     let server_search = {
         let addr: Address = "[::1]:50052".to_string();
-        let conn_addrs = HashMap::new();
+        let mut conn_addrs = HashMap::new();
+        conn_addrs.insert(
+            "/bridge.TungChung/SayGeo".to_string() as Path,
+            "http://[::1]:50054".to_string() as Address,
+        );
+        conn_addrs.insert(
+            "/bridge.TungChung/SayRate".to_string() as Path,
+            "http://[::1]:50055".to_string() as Address,
+        );
         let path: Path = "/bridge.TungChung/SaySearch".to_string();
         let local_graphs = {
             let mut graphs = HashMap::new();
@@ -372,6 +468,40 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
         server
     };
     servers.push(server_profile);
+
+    let server_geo = {
+        let addr: Address = "[::1]:50054".to_string();
+        let conn_addrs = HashMap::new();
+        let path: Path = "/bridge.TungChung/SayGeo".to_string();
+        let local_graphs = {
+            let mut graphs = HashMap::new();
+            graphs.insert(
+                global_graph.graph_id().clone(),
+                global_graph.get_local_graph(&path).clone(),
+            );
+            graphs
+        };
+        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+        server
+    };
+    servers.push(server_geo);
+
+    let server_rate = {
+        let addr: Address = "[::1]:50055".to_string();
+        let conn_addrs = HashMap::new();
+        let path: Path = "/bridge.TungChung/SayRate".to_string();
+        let local_graphs = {
+            let mut graphs = HashMap::new();
+            graphs.insert(
+                global_graph.graph_id().clone(),
+                global_graph.get_local_graph(&path).clone(),
+            );
+            graphs
+        };
+        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+        server
+    };
+    servers.push(server_rate);
 
     servers.reverse();
     servers
