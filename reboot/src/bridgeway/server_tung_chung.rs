@@ -4,8 +4,10 @@ pub mod bridge {
 mod common;
 mod exec;
 mod graph;
+mod manager;
 
 use std::collections::HashMap;
+use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -28,6 +30,7 @@ use bridge::{
 };
 use common::{time_now, VirtualServer};
 use exec::ExecImpl;
+use manager::Manager;
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Server for benchmarking")]
@@ -320,7 +323,7 @@ struct Hotel {
 }
 
 impl TungChungImpl {
-    async fn say_sheraton(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn say_sheraton(&self) -> Result<(), Box<dyn Error>> {
         let mc_client = memcache::Client::with_pool_size("memcache://127.0.0.1:11003", 32).unwrap();
         mc_client.flush().unwrap();
         mc_client.set("reboot", "ing...", 0).unwrap();
@@ -501,7 +504,7 @@ async fn start_servers(servers: Vec<VirtualServer>) -> Vec<JoinHandle<()>> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn Error>> {
     init_logging();
 
     let args = Args::from_args();

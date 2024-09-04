@@ -8,7 +8,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "2"
+          cpus: "4"
 
   tung_chung_mongo:
     image: mongo:7.0
@@ -21,7 +21,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "2"
+          cpus: "4"
 
 volumes:
   tung_chung:
