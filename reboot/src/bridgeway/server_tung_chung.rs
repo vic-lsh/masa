@@ -56,6 +56,36 @@ impl TungChungImpl {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Hotel {
+    name: String,
+}
+
+impl TungChungImpl {
+    async fn say_sheraton(&self) -> Result<(), Box<dyn Error>> {
+        let mc_client = memcache::Client::with_pool_size("memcache://127.0.0.1:11003", 32).unwrap();
+        mc_client.flush().unwrap();
+        mc_client.set("reboot", "ing...", 0).unwrap();
+        let value = mc_client.get::<String>("reboot");
+        log::warn!("memcached: {:?}", value);
+
+        let db_client = mongodb::Client::with_uri_str("mongodb://127.0.0.1:27003")
+            .await
+            .unwrap();
+        let db = db_client.database("reboot");
+        let cl = db.collection::<Hotel>("reboot");
+        cl.delete_many(mongodb::bson::doc! {}, None).await.unwrap();
+        let hotel = Hotel {
+            name: "reboot".to_string(),
+        };
+        cl.insert_one(hotel, None).await.unwrap();
+        let value = cl.find_one(mongodb::bson::doc! {}, None).await.unwrap();
+        log::warn!("mongodb: {:?}", value);
+
+        Ok(())
+    }
+}
+
 fn busy_spin(duration: Duration) {
     let now = Instant::now();
     while now.elapsed() < duration {}
@@ -314,36 +344,6 @@ impl TungChung for TungChungImpl {
             message: format!("Walk {}!", request.into_inner().name),
         };
         Ok(Response::new(reply))
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Hotel {
-    name: String,
-}
-
-impl TungChungImpl {
-    async fn say_sheraton(&self) -> Result<(), Box<dyn Error>> {
-        let mc_client = memcache::Client::with_pool_size("memcache://127.0.0.1:11003", 32).unwrap();
-        mc_client.flush().unwrap();
-        mc_client.set("reboot", "ing...", 0).unwrap();
-        let value = mc_client.get::<String>("reboot");
-        log::warn!("memcached: {:?}", value);
-
-        let db_client = mongodb::Client::with_uri_str("mongodb://127.0.0.1:27003")
-            .await
-            .unwrap();
-        let db = db_client.database("reboot");
-        let cl = db.collection::<Hotel>("reboot");
-        cl.delete_many(mongodb::bson::doc! {}, None).await.unwrap();
-        let hotel = Hotel {
-            name: "reboot".to_string(),
-        };
-        cl.insert_one(hotel, None).await.unwrap();
-        let value = cl.find_one(mongodb::bson::doc! {}, None).await.unwrap();
-        log::warn!("mongodb: {:?}", value);
-
-        Ok(())
     }
 }
 
