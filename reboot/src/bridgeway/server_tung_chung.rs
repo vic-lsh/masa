@@ -59,6 +59,7 @@ impl TungChungImpl {
 
 impl TungChungImpl {
     async fn start_manager(&mut self) -> Result<(), Box<dyn Error>> {
+        // [TODO] Pass args.
         let n_hotels = 10_000;
         let payload = 16;
         let cache_addr = "memcache://127.0.0.1:11003".to_string();
@@ -81,6 +82,7 @@ impl TungChungImpl {
     }
 
     async fn fetch_mixture(&self) -> Vec<Hotel> {
+        // [TODO] Make reproducible.
         let manager = self.manager.as_ref().unwrap();
         let mut names = Vec::new();
         for i in 0..3 {
