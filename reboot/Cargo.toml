@@ -7,6 +7,10 @@ publish = false
 version = "0.1.0"
 
 [[bin]]
+name = "bridgeway_manager"
+path = "src/bridgeway/manager_main.rs"
+
+[[bin]]
 name = "bridgeway_client_bench_tung_chung"
 path = "src/bridgeway/client_bench_tung_chung.rs"
 
