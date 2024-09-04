@@ -4,6 +4,7 @@ pub mod bridge {
 mod common;
 mod graph;
 
+use std::error::Error;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{
     atomic::{AtomicI32, Ordering},
@@ -76,7 +77,7 @@ impl LoadGenerator {
         }
     }
 
-    async fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn run(&mut self) -> Result<(), Box<dyn Error>> {
         let counter = Arc::new(AtomicUsize::new(0));
         let counter_clone = counter.clone();
         tokio::task::spawn(async move {
@@ -174,7 +175,7 @@ fn get_global_graph(args: &Args) -> GlobalGraph {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn Error>> {
     init_logging();
 
     let args = Args::from_args();
