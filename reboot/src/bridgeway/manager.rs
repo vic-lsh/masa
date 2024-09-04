@@ -150,7 +150,7 @@ impl Manager {
             let hotel = hotel.expect("Failed to get hotel");
             hotels.push(hotel);
         }
-        // [OPTIONAL] Clear cache
+        // [OPTION] Clear cache.
         hotels
     }
 
@@ -158,6 +158,7 @@ impl Manager {
         let names_clone = names.clone();
         let mut names_db = Vec::new();
         for name in names_clone {
+			// [TODO] Make reproducible.
             let mut rng = rand::thread_rng();
             if rng.gen::<f32>() < self.cache_miss_rate {
                 names_db.push(name);
