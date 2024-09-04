@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use futures::StreamExt;
 use mongodb::{bson::doc, Client, Collection, Database, IndexModel};
 use rand::Rng;
@@ -32,7 +34,7 @@ impl Manager {
         cache_conn: u32,
         cache_miss_rate: f32,
         db_addr: String,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self, Box<dyn Error>> {
         let memcache = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
         let client = Client::with_uri_str(db_addr).await?;
         let database = client.database("TungChung");
@@ -70,7 +72,7 @@ impl Manager {
         Ok(manager)
     }
 
-    async fn populate_memcache(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn populate_memcache(&self) -> Result<(), Box<dyn Error>> {
         self.memcache.flush()?;
         let n_hotels = self.n_hotels as usize;
         let payload = self.payload as usize;
@@ -101,7 +103,7 @@ impl Manager {
         Ok(())
     }
 
-    async fn populate_mongodb(&self, n_hotels: u32) -> Result<(), Box<dyn std::error::Error>> {
+    async fn populate_mongodb(&self, n_hotels: u32) -> Result<(), Box<dyn Error>> {
         let payload = self.payload as usize;
         let mut hotels = Vec::new();
         for i in 0..n_hotels {
