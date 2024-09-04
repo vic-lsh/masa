@@ -125,7 +125,6 @@ pub use response::Response;
 pub use status::{Code, Status};
 
 pub use async_task;
-pub use tonic_masa as deadline;
 
 pub(crate) type Error = Box<dyn std::error::Error + Send + Sync>;
 

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::Write;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crossbeam_channel::Receiver;
 use env_logger::{Builder, Env};
@@ -37,12 +37,19 @@ pub fn time_now() -> u64 {
 }
 
 #[allow(dead_code)]
+pub fn busy_spin(duration: Duration) {
+    let now = Instant::now();
+    while now.elapsed() < duration {}
+}
+
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct VirtualServer {
     addr: Address,
     conn_addrs: HashMap<Path, Address>,
     local_graphs: HashMap<Path, LocalGraph>,
     n_threads: usize,
+    start_manager: bool,
 }
 
 #[allow(dead_code)]
@@ -52,6 +59,7 @@ impl VirtualServer {
         conn_addrs: HashMap<Path, Address>,
         local_graphs: HashMap<Path, LocalGraph>,
         n_threads: usize,
+        start_manager: bool,
     ) -> Self {
         let mut paths = Vec::new();
         let mut addrs = Vec::new();
@@ -66,6 +74,7 @@ impl VirtualServer {
             conn_addrs,
             local_graphs,
             n_threads,
+            start_manager,
         }
     }
 
@@ -83,6 +92,10 @@ impl VirtualServer {
 
     pub fn n_threads(&self) -> usize {
         self.n_threads
+    }
+
+    pub fn start_manager(&self) -> bool {
+        self.start_manager
     }
 }
 

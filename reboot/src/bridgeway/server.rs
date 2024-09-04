@@ -7,7 +7,7 @@ mod graph;
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use env_logger::{Builder, Env};
 use structopt::StructOpt;
@@ -25,7 +25,7 @@ use bridge::{
     worker_server::{Worker, WorkerServer},
     HelloReply, HelloRequest,
 };
-use common::{time_now, VirtualServer};
+use common::{busy_spin, time_now, VirtualServer};
 use exec::ExecImpl;
 
 #[derive(StructOpt, Debug, Clone)]
@@ -52,11 +52,6 @@ impl WorkerImpl {
             clients,
         }
     }
-}
-
-fn busy_spin(duration: Duration) {
-    let now = Instant::now();
-    while now.elapsed() < duration {}
 }
 
 #[tonic::async_trait]

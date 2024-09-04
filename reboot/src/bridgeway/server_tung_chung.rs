@@ -9,10 +9,9 @@ mod manager;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use env_logger::{Builder, Env};
-use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
 
 use hyper::rt::Exec;
@@ -28,9 +27,9 @@ use bridge::{
     tung_chung_server::{TungChung, TungChungServer},
     WalkReply, WalkRequest,
 };
-use common::{time_now, VirtualServer};
+use common::{busy_spin, time_now, VirtualServer};
 use exec::ExecImpl;
-use manager::Manager;
+use manager::{Hotel, Manager};
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Server for benchmarking")]
@@ -42,6 +41,7 @@ pub struct Args {
 pub struct TungChungImpl {
     local_graphs: HashMap<Path, LocalGraph>,
     clients: HashMap<Path, TungChungClient<Channel>>,
+    manager: Option<Manager>,
 }
 
 impl TungChungImpl {
@@ -52,43 +52,44 @@ impl TungChungImpl {
         Self {
             local_graphs,
             clients,
+            manager: None,
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Hotel {
-    name: String,
-}
-
 impl TungChungImpl {
-    async fn say_sheraton(&self) -> Result<(), Box<dyn Error>> {
-        let mc_client = memcache::Client::with_pool_size("memcache://127.0.0.1:11003", 32).unwrap();
-        mc_client.flush().unwrap();
-        mc_client.set("reboot", "ing...", 0).unwrap();
-        let value = mc_client.get::<String>("reboot");
-        log::warn!("memcached: {:?}", value);
+    async fn start_manager(&mut self) -> Result<(), Box<dyn Error>> {
+        let n_hotels = 10_000;
+        let payload = 16;
+        let cache_addr = "memcache://127.0.0.1:11003".to_string();
+        let cache_conn = 32;
+        let cache_miss_rate = 0.5;
+        let db_addr = "mongodb://127.0.0.1:27003".to_string();
 
-        let db_client = mongodb::Client::with_uri_str("mongodb://127.0.0.1:27003")
-            .await
-            .unwrap();
-        let db = db_client.database("reboot");
-        let cl = db.collection::<Hotel>("reboot");
-        cl.delete_many(mongodb::bson::doc! {}, None).await.unwrap();
-        let hotel = Hotel {
-            name: "reboot".to_string(),
-        };
-        cl.insert_one(hotel, None).await.unwrap();
-        let value = cl.find_one(mongodb::bson::doc! {}, None).await.unwrap();
-        log::warn!("mongodb: {:?}", value);
+        let manager = Manager::new(
+            n_hotels,
+            payload,
+            cache_addr,
+            cache_conn,
+            cache_miss_rate,
+            db_addr,
+        )
+        .await?;
+        self.manager = Some(manager);
 
         Ok(())
     }
-}
 
-fn busy_spin(duration: Duration) {
-    let now = Instant::now();
-    while now.elapsed() < duration {}
+    async fn fetch_mixture(&self) -> Vec<Hotel> {
+        let manager = self.manager.as_ref().unwrap();
+        let mut names = Vec::new();
+        for i in 0..3 {
+            names.push(format!("Tung Chung Ave {}", 3667 + i));
+        }
+        let hotels = manager.fetch_mixture(names).await;
+        log::warn!("hotels: {:?}", hotels);
+        hotels
+    }
 }
 
 #[tonic::async_trait]
@@ -151,7 +152,7 @@ impl TungChung for TungChungImpl {
             );
         }
 
-        self.say_sheraton().await.unwrap();
+        self.fetch_mixture().await;
 
         let reply = WalkReply {
             message: format!("Walk {}!", request.into_inner().name),
@@ -370,7 +371,7 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
             );
             graphs
         };
-        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, true);
         server
     };
     servers.push(server_frontend);
@@ -395,7 +396,7 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
             );
             graphs
         };
-        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
         server
     };
     servers.push(server_search);
@@ -412,7 +413,7 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
             );
             graphs
         };
-        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
         server
     };
     servers.push(server_profile);
@@ -429,7 +430,7 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
             );
             graphs
         };
-        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
         server
     };
     servers.push(server_geo);
@@ -446,7 +447,7 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
             );
             graphs
         };
-        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
         server
     };
     servers.push(server_rate);
@@ -487,7 +488,11 @@ async fn start_servers(servers: Vec<VirtualServer>) -> Vec<JoinHandle<()>> {
             let local_graphs = server.local_graphs().clone();
             let clients = get_clients(&server).await;
 
-            let tung_chung = TungChungImpl::new(local_graphs, clients);
+            let mut tung_chung = TungChungImpl::new(local_graphs, clients);
+            if server.start_manager() {
+                tung_chung.start_manager().await.unwrap();
+            }
+
             log::warn!("Listening on {}...", addr);
             Server::builder()
                 .add_service(TungChungServer::new(tung_chung))
