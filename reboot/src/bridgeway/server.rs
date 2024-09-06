@@ -300,7 +300,7 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
                 );
                 graphs
             };
-            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
             server
         };
         servers.push(server1);
@@ -323,7 +323,7 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
                 );
                 graphs
             };
-            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
             server
         };
         servers.push(server2);
@@ -346,7 +346,7 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
                 );
                 graphs
             };
-            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
             server
         };
         servers.push(server3);
@@ -369,7 +369,7 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
                 );
                 graphs
             };
-            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
             server
         };
         servers.push(server4);
