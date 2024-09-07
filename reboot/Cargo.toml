@@ -71,8 +71,8 @@ debug = true
 
 [features]
 masa = ["async-executor/masa"]
-fifo = ["async-executor/fifo"]
 fifo-binary = ["async-executor/fifo-binary"]
+fifo = ["async-executor/fifo"]
 
 gcp = ["dep:prost-types", "tonic/tls"]
 routeguide = [
