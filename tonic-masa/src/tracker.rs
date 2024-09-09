@@ -1,3 +1,6 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct LatencyTracker {
     capacity: usize,
     cur_queue: Vec<u64>,

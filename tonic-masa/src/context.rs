@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
-use crate::{Distribution, EST_OFFLINE, EST_ONLINE, MOCK_DIST};
+use crate::{Distribution, LatencyTracker, EST_OFFLINE, EST_ONLINE, MOCK_DIST};
 
 /// Type alias for a path.
 pub type Path = String;
@@ -28,15 +28,29 @@ pub type RequestID = u64;
 pub struct Span {
     path: Path,
     distribution: Option<Distribution>,
+    tracker: Option<LatencyTracker>,
 }
 
 impl Span {
     /// Create a new span.
-    pub fn new(path: Path, distribution: Option<Distribution>) -> Self {
+    pub fn new(
+        path: Path,
+        distribution: Option<Distribution>,
+        tracker_capacity: Option<usize>,
+    ) -> Self {
         if MOCK_DIST {
             assert!(distribution.is_some());
         }
-        Self { path, distribution }
+        let mut tracker = None;
+        if EST_ONLINE {
+            let tracker_capacity = tracker_capacity.unwrap();
+            tracker = Some(LatencyTracker::new(tracker_capacity));
+        }
+        Self {
+            path,
+            distribution,
+            tracker,
+        }
     }
 
     /// Get the path.
