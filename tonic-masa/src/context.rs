@@ -136,7 +136,7 @@ impl GlobalGraph {
 pub struct Context {
     graph_id: GraphID,
     request_id: RequestID,
-    start_at: Timestamp,
+    send_at: Timestamp,
     deadline: Timestamp,
     local_graph: Option<LocalGraph>,
 }
@@ -146,14 +146,14 @@ impl Context {
     pub fn new(
         graph_id: GraphID,
         request_id: RequestID,
-        start_at: Timestamp,
+        send_at: Timestamp,
         deadline: Timestamp,
         local_graph: Option<LocalGraph>,
     ) -> Self {
         Self {
             graph_id,
             request_id,
-            start_at,
+            send_at,
             deadline,
             local_graph,
         }
@@ -169,9 +169,9 @@ impl Context {
         self.request_id
     }
 
-    /// Get the start timestamp.
-    pub fn start_at(&self) -> Timestamp {
-        self.start_at
+    /// Get the send timestamp.
+    pub fn send_at(&self) -> Timestamp {
+        self.send_at
     }
 
     /// Get the deadline.
