@@ -30,25 +30,25 @@ path = "src/bridgeway/client_bench.rs"
 name = "bridgeway_server"
 path = "src/bridgeway/server.rs"
 
-[[bin]]
-name = "charleston_lactose_sequential"
-path = "src/charleston/lactose/sequential.rs"
+# [[bin]]
+# name = "charleston_lactose_sequential"
+# path = "src/charleston/lactose/sequential.rs"
 
-[[bin]]
-name = "charleston_lactose_single"
-path = "src/charleston/lactose/single.rs"
+# [[bin]]
+# name = "charleston_lactose_single"
+# path = "src/charleston/lactose/single.rs"
 
-[[bin]]
-name = "charleston_client"
-path = "src/charleston/client.rs"
+# [[bin]]
+# name = "charleston_client"
+# path = "src/charleston/client.rs"
 
-[[bin]]
-name = "charleston_client_bench"
-path = "src/charleston/client_bench.rs"
+# [[bin]]
+# name = "charleston_client_bench"
+# path = "src/charleston/client_bench.rs"
 
-[[bin]]
-name = "charleston_server"
-path = "src/charleston/server.rs"
+# [[bin]]
+# name = "charleston_server"
+# path = "src/charleston/server.rs"
 
 [[bin]]
 name = "sheraton_client"

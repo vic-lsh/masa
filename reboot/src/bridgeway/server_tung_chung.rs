@@ -114,7 +114,7 @@ impl TungChung for TungChungImpl {
         assert!(spans.len() == 4);
 
         assert!(spans.first().unwrap().path() == "Head");
-        let elapse = spans.first().unwrap().distribution().estimate();
+        let elapse = spans.first().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -135,7 +135,7 @@ impl TungChung for TungChungImpl {
         }
 
         assert!(spans.last().unwrap().path() == "Tail");
-        let elapse = spans.last().unwrap().distribution().estimate();
+        let elapse = spans.last().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -178,7 +178,7 @@ impl TungChung for TungChungImpl {
         assert!(spans.len() == 4);
 
         assert!(spans.first().unwrap().path() == "Head");
-        let elapse = spans.first().unwrap().distribution().estimate();
+        let elapse = spans.first().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -199,7 +199,7 @@ impl TungChung for TungChungImpl {
         }
 
         assert!(spans.last().unwrap().path() == "Tail");
-        let elapse = spans.last().unwrap().distribution().estimate();
+        let elapse = spans.last().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -240,13 +240,13 @@ impl TungChung for TungChungImpl {
         assert!(spans.len() == 2);
 
         assert!(spans.first().unwrap().path() == "Head");
-        let elapse = spans.first().unwrap().distribution().estimate();
+        let elapse = spans.first().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
 
         assert!(spans.last().unwrap().path() == "Tail");
-        let elapse = spans.last().unwrap().distribution().estimate();
+        let elapse = spans.last().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -284,13 +284,13 @@ impl TungChung for TungChungImpl {
         assert!(spans.len() == 2);
 
         assert!(spans.first().unwrap().path() == "Head");
-        let elapse = spans.first().unwrap().distribution().estimate();
+        let elapse = spans.first().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
 
         assert!(spans.last().unwrap().path() == "Tail");
-        let elapse = spans.last().unwrap().distribution().estimate();
+        let elapse = spans.last().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -323,13 +323,13 @@ impl TungChung for TungChungImpl {
         assert!(spans.len() == 2);
 
         assert!(spans.first().unwrap().path() == "Head");
-        let elapse = spans.first().unwrap().distribution().estimate();
+        let elapse = spans.first().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
 
         assert!(spans.last().unwrap().path() == "Tail");
-        let elapse = spans.last().unwrap().distribution().estimate();
+        let elapse = spans.last().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
