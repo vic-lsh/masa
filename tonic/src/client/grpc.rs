@@ -237,9 +237,8 @@ impl<T> Grpc<T> {
 
         let result = self.client_streaming(request, path, codec).await;
 
-        if let Ok(mut response) = result {
-            response.metadata_mut().insert_ctx("par_ctx", &par_ctx);
-            response.metadata_mut().insert_ctx("ctx", &ctx);
+        if let Ok(response) = result {
+            // [TODO] Use tracker to calculate latency percentiles.
             Ok(response)
         } else {
             result
