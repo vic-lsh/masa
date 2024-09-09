@@ -20,9 +20,9 @@ exclude = ["/.*"]
 [features]
 # Adds support for executors optimized for use in static variables.
 static = []
-masa = []
-fifo-binary = []
-fifo = []
+queue_edf = []
+queue_fifo_two = []
+queue_fifo = []
 
 [dependencies]
 async-task = { path = "../async-task" }

@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 rps = 50
-modes = ["masa", "fifo"]
+modes = ["queue_edf", "queue_fifo"]
 
 results_raw: Dict[str, List] = {}
 for mode in modes:
