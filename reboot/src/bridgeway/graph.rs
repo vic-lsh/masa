@@ -20,7 +20,7 @@ pub fn get_global_graph_tung_chung() -> GlobalGraph {
             "Source".to_string() as Path,
             LocalGraph::new(vec![Span::new(
                 "/bridge.TungChung/SayFrontend".to_string(),
-                MasaDistribution::new(1, None),
+                None,
             )]),
         );
         graphs.insert(
@@ -28,39 +28,23 @@ pub fn get_global_graph_tung_chung() -> GlobalGraph {
             LocalGraph::new(vec![
                 Span::new(
                     "Head".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         1,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            1,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 1, n_samples, n_percentiles),
+                    )),
                 ),
-                Span::new(
-                    "/bridge.TungChung/SaySearch".to_string(),
-                    MasaDistribution::new(1, None),
-                ),
+                Span::new("/bridge.TungChung/SaySearch".to_string(), None),
                 // Span::new(
                 //     "/bridge.TungChung/SayReserve".to_string(),
-                //     MasaDistribution::new(0, None),
+                //     None,,
                 // ),
-                Span::new(
-                    "/bridge.TungChung/SayProfile".to_string(),
-                    MasaDistribution::new(1, None),
-                ),
+                Span::new("/bridge.TungChung/SayProfile".to_string(), None),
                 Span::new(
                     "Tail".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         1,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            1,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 1, n_samples, n_percentiles),
+                    )),
                 ),
             ]),
         );
@@ -69,35 +53,19 @@ pub fn get_global_graph_tung_chung() -> GlobalGraph {
             LocalGraph::new(vec![
                 Span::new(
                     "Head".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         1,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            1,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 1, n_samples, n_percentiles),
+                    )),
                 ),
-                Span::new(
-                    "/bridge.TungChung/SayGeo".to_string(),
-                    MasaDistribution::new(1, None),
-                ),
-                Span::new(
-                    "/bridge.TungChung/SayRate".to_string(),
-                    MasaDistribution::new(1, None),
-                ),
+                Span::new("/bridge.TungChung/SayGeo".to_string(), None),
+                Span::new("/bridge.TungChung/SayRate".to_string(), None),
                 Span::new(
                     "Tail".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         1,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            1,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 1, n_samples, n_percentiles),
+                    )),
                 ),
             ]),
         );
@@ -106,27 +74,17 @@ pub fn get_global_graph_tung_chung() -> GlobalGraph {
             LocalGraph::new(vec![
                 Span::new(
                     "Head".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         1,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            1,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 1, n_samples, n_percentiles),
+                    )),
                 ),
                 Span::new(
                     "Tail".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         1,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            1,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 1, n_samples, n_percentiles),
+                    )),
                 ),
             ]),
         );
@@ -135,51 +93,25 @@ pub fn get_global_graph_tung_chung() -> GlobalGraph {
             LocalGraph::new(vec![
                 Span::new(
                     "Head".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         1,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            1,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 1, n_samples, n_percentiles),
+                    )),
                 ),
-                // Span::new(
+                // Some(Span::new(
                 //     "Memcached".to_string(),
-                //     MasaDistribution::new(
-                //         1,
-                //         Some(get_percentile_latencies(
-                //             &mut rng,
-                //             1,
-                //             n_samples,
-                //             n_percentiles,
-                //         )),
-                //     ),
-                // ),
-                // Span::new(
+                //     ...,
+                // )),
+                // Some(Span::new(
                 //     "Mongodb".to_string(),
-                //     MasaDistribution::new(
-                //         1,
-                //         Some(get_percentile_latencies(
-                //             &mut rng,
-                //             1,
-                //             n_samples,
-                //             n_percentiles,
-                //         )),
-                //     ),
-                // ),
+                //     ...,
+                // )),
                 Span::new(
                     "Tail".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         1,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            1,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 1, n_samples, n_percentiles),
+                    )),
                 ),
             ]),
         );
@@ -188,51 +120,25 @@ pub fn get_global_graph_tung_chung() -> GlobalGraph {
             LocalGraph::new(vec![
                 Span::new(
                     "Head".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         1,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            1,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 1, n_samples, n_percentiles),
+                    )),
                 ),
                 // Span::new(
                 //     "Memcached".to_string(),
-                //     MasaDistribution::new(
-                //         1,
-                //         Some(get_percentile_latencies(
-                //             &mut rng,
-                //             1,
-                //             n_samples,
-                //             n_percentiles,
-                //         )),
-                //     ),
+                //     ...,
                 // ),
                 // Span::new(
                 //     "Mongodb".to_string(),
-                //     MasaDistribution::new(
-                //         1,
-                //         Some(get_percentile_latencies(
-                //             &mut rng,
-                //             1,
-                //             n_samples,
-                //             n_percentiles,
-                //         )),
-                //     ),
+                //     ...,
                 // ),
                 Span::new(
                     "Tail".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         1,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            1,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 1, n_samples, n_percentiles),
+                    )),
                 ),
             ]),
         );
@@ -253,7 +159,7 @@ pub fn get_global_graph_i4() -> GlobalGraph {
             "Source".to_string() as Path,
             LocalGraph::new(vec![Span::new(
                 "/bridge.Worker/SayHelloI4".to_string(),
-                MasaDistribution::new(64_000, None),
+                None,
             )]),
         );
         graphs.insert(
@@ -261,31 +167,18 @@ pub fn get_global_graph_i4() -> GlobalGraph {
             LocalGraph::new(vec![
                 Span::new(
                     "Head".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         16_000,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            16_000,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 16_000, n_samples, n_percentiles),
+                    )),
                 ),
-                Span::new(
-                    "/bridge.Worker/SayHelloI3".to_string(),
-                    MasaDistribution::new(48_000, None),
-                ),
+                Span::new("/bridge.Worker/SayHelloI3".to_string(), None),
                 Span::new(
                     "Tail".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         4,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            4,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 4, n_samples, n_percentiles),
+                    )),
                 ),
             ]),
         );
@@ -294,31 +187,18 @@ pub fn get_global_graph_i4() -> GlobalGraph {
             LocalGraph::new(vec![
                 Span::new(
                     "Head".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         16_000,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            16_000,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 16_000, n_samples, n_percentiles),
+                    )),
                 ),
-                Span::new(
-                    "/bridge.Worker/SayHelloI2".to_string(),
-                    MasaDistribution::new(32_000, None),
-                ),
+                Span::new("/bridge.Worker/SayHelloI2".to_string(), None),
                 Span::new(
                     "Tail".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         3,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            3,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 3, n_samples, n_percentiles),
+                    )),
                 ),
             ]),
         );
@@ -327,31 +207,18 @@ pub fn get_global_graph_i4() -> GlobalGraph {
             LocalGraph::new(vec![
                 Span::new(
                     "Head".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         16_000,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            16_000,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 16_000, n_samples, n_percentiles),
+                    )),
                 ),
-                Span::new(
-                    "/bridge.Worker/SayHelloI1".to_string(),
-                    MasaDistribution::new(16_000, None),
-                ),
+                Span::new("/bridge.Worker/SayHelloI1".to_string(), None),
                 Span::new(
                     "Tail".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         2,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            2,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 2, n_samples, n_percentiles),
+                    )),
                 ),
             ]),
         );
@@ -360,27 +227,17 @@ pub fn get_global_graph_i4() -> GlobalGraph {
             LocalGraph::new(vec![
                 Span::new(
                     "Head".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         16_000,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            16_000,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 16_000, n_samples, n_percentiles),
+                    )),
                 ),
                 Span::new(
                     "Tail".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         1,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            1,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 1, n_samples, n_percentiles),
+                    )),
                 ),
             ]),
         );
@@ -401,7 +258,7 @@ pub fn get_global_graph_i2() -> GlobalGraph {
             "Source".to_string() as Path,
             LocalGraph::new(vec![Span::new(
                 "/bridge.Worker/SayHelloI2".to_string(),
-                MasaDistribution::new(32_000, None),
+                None,
             )]),
         );
         graphs.insert(
@@ -409,31 +266,18 @@ pub fn get_global_graph_i2() -> GlobalGraph {
             LocalGraph::new(vec![
                 Span::new(
                     "Head".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         16_000,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            16_000,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 16_000, n_samples, n_percentiles),
+                    )),
                 ),
-                Span::new(
-                    "/bridge.Worker/SayHelloI1".to_string(),
-                    MasaDistribution::new(16_000, None),
-                ),
+                Span::new("/bridge.Worker/SayHelloI1".to_string(), None),
                 Span::new(
                     "Tail".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         2,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            2,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 2, n_samples, n_percentiles),
+                    )),
                 ),
             ]),
         );
@@ -442,27 +286,17 @@ pub fn get_global_graph_i2() -> GlobalGraph {
             LocalGraph::new(vec![
                 Span::new(
                     "Head".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         16_000,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            16_000,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 16_000, n_samples, n_percentiles),
+                    )),
                 ),
                 Span::new(
                     "Tail".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         1,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            1,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 1, n_samples, n_percentiles),
+                    )),
                 ),
             ]),
         );
@@ -483,7 +317,7 @@ pub fn get_global_graph_i1() -> GlobalGraph {
             "Source".to_string() as Path,
             LocalGraph::new(vec![Span::new(
                 "/bridge.Worker/SayHelloI1".to_string(),
-                MasaDistribution::new(16_000, None),
+                None,
             )]),
         );
         graphs.insert(
@@ -491,27 +325,17 @@ pub fn get_global_graph_i1() -> GlobalGraph {
             LocalGraph::new(vec![
                 Span::new(
                     "Head".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         16_000,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            16_000,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 16_000, n_samples, n_percentiles),
+                    )),
                 ),
                 Span::new(
                     "Tail".to_string(),
-                    MasaDistribution::new(
+                    Some(MasaDistribution::new(
                         1,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            1,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
+                        get_percentile_latencies(&mut rng, 1, n_samples, n_percentiles),
+                    )),
                 ),
             ]),
         );
