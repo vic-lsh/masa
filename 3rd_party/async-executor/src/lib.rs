@@ -851,7 +851,13 @@ impl<'a> Default for LocalExecutor<'a> {
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
 #[cfg(feature = "queue_fifo_two")]
 type GlobalQueue<T> = queue::MutexFifoBinaryQueue<T>;
-#[cfg(not(any(feature = "queue_edf", feature = "queue_fifo_two")))]
+#[cfg(feature = "queue_fifo")]
+type GlobalQueue<T> = queue::MutexFifoQueue<T>;
+#[cfg(not(any(
+    feature = "queue_edf",
+    feature = "queue_fifo_two",
+    feature = "queue_fifo"
+)))]
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 
 // [NOTE] The original implementation uses a concurrent queue for the global queue.
