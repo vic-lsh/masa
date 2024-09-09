@@ -70,9 +70,9 @@ path = "src/hello/server.rs"
 debug = true
 
 [features]
-masa = ["async-executor/masa"]
-fifo-binary = ["async-executor/fifo-binary"]
-fifo = ["async-executor/fifo"]
+queue_edf = ["async-executor/queue_edf"]
+queue_fifo_two = ["async-executor/queue_fifo_two"]
+queue_fifo = ["async-executor/queue_fifo"]
 
 gcp = ["dep:prost-types", "tonic/tls"]
 routeguide = [

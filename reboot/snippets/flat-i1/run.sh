@@ -4,7 +4,7 @@ path="snippets/flat-i1"
 
 rps_values=(50)
 
-modes=("masa" "fifo-binary" "fifo")
+modes=("queue_edf" "queue_fifo_two" "queue_fifo")
 
 server_pid=
 
