@@ -1,6 +1,9 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::collections::HashMap;
+
+use crate::{Distribution, EST_OFFLINE, EST_ONLINE, MOCK_DIST};
 
 /// Type alias for a path.
 pub type Path = String;
@@ -20,48 +23,19 @@ pub type Address = String;
 /// Type alias for a request ID.
 pub type RequestID = u64;
 
-/// Represent a distribution.
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct Distribution {
-    mean: Latency,
-    percentile_latencies: Option<Vec<Latency>>,
-}
-
-impl Distribution {
-    /// Create a new distribution.
-    pub fn new(mean: Latency, percentile_latencies: Option<Vec<Latency>>) -> Self {
-        Self {
-            mean,
-            percentile_latencies,
-        }
-    }
-
-    /// Get an estimate.
-    pub fn estimate(&self) -> Latency {
-        self.mean
-    }
-
-    /// Sample a latency.
-    pub fn sample(&self, request_id: RequestID) -> Latency {
-        if let Some(percentile_latencies) = &self.percentile_latencies {
-            let index = request_id as usize % percentile_latencies.len();
-            percentile_latencies[index]
-        } else {
-            panic!("No percentile latencies");
-        }
-    }
-}
-
 /// Represent a span.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Span {
     path: Path,
-    distribution: Distribution,
+    distribution: Option<Distribution>,
 }
 
 impl Span {
     /// Create a new span.
-    pub fn new(path: Path, distribution: Distribution) -> Self {
+    pub fn new(path: Path, distribution: Option<Distribution>) -> Self {
+        if MOCK_DIST {
+            assert!(distribution.is_some());
+        }
         Self { path, distribution }
     }
 
@@ -71,8 +45,20 @@ impl Span {
     }
 
     /// Get the distribution.
-    pub fn distribution(&self) -> &Distribution {
-        &self.distribution
+    pub fn get_distribution(&self) -> &Distribution {
+        assert!(self.distribution.is_some());
+        self.distribution.as_ref().unwrap()
+    }
+
+    /// Estimate the latency.
+    pub fn estimate(&self) -> Latency {
+        if EST_OFFLINE {
+            self.get_distribution().estimate()
+        } else if EST_ONLINE {
+            panic!("Not implemented")
+        } else {
+            panic!("Not implemented")
+        }
     }
 }
 
@@ -98,7 +84,7 @@ impl LocalGraph {
                 existed = true;
                 break;
             }
-            suffix_sum += span.distribution().estimate();
+            suffix_sum += span.estimate();
         }
 
         assert!(existed, "Span {} not found", path);

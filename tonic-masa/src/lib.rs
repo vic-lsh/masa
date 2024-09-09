@@ -1,12 +1,13 @@
 mod context;
 mod deadline;
+mod distribution;
 mod tracker;
 
 pub use context::{
-    Address, Context, Distribution, GlobalGraph, GraphID, Latency, LocalGraph, Path, RequestID,
-    Span, Timestamp,
+    Address, Context, GlobalGraph, GraphID, Latency, LocalGraph, Path, RequestID, Span, Timestamp,
 };
 pub use deadline::DeadlineHint;
+pub use distribution::Distribution;
 pub use tracker::LatencyTracker;
 
 pub const EST_OFFLINE: bool = if cfg!(feature = "est_offline") {

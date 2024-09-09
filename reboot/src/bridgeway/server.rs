@@ -73,7 +73,7 @@ impl Worker for WorkerImpl {
         let spans = local_graph.spans();
         assert!(spans.len() == 3);
 
-        let elapse = spans.first().unwrap().distribution().estimate();
+        let elapse = spans.first().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -87,7 +87,7 @@ impl Worker for WorkerImpl {
             client.say_hello_i3(request).await.unwrap();
         }
 
-        let elapse = spans.last().unwrap().distribution().estimate();
+        let elapse = spans.last().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -127,7 +127,7 @@ impl Worker for WorkerImpl {
         let spans = local_graph.spans();
         assert!(spans.len() == 3);
 
-        let elapse = spans.first().unwrap().distribution().estimate();
+        let elapse = spans.first().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -141,7 +141,7 @@ impl Worker for WorkerImpl {
             client.say_hello_i2(request).await.unwrap();
         }
 
-        let elapse = spans.last().unwrap().distribution().estimate();
+        let elapse = spans.last().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -181,7 +181,7 @@ impl Worker for WorkerImpl {
         let spans = local_graph.spans();
         assert!(spans.len() == 3);
 
-        let elapse = spans.first().unwrap().distribution().estimate();
+        let elapse = spans.first().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -195,7 +195,7 @@ impl Worker for WorkerImpl {
             client.say_hello_i1(request).await.unwrap();
         }
 
-        let elapse = spans.last().unwrap().distribution().estimate();
+        let elapse = spans.last().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -235,12 +235,12 @@ impl Worker for WorkerImpl {
         let spans = local_graph.spans();
         assert!(spans.len() == 2);
 
-        let elapse = spans.first().unwrap().distribution().estimate();
+        let elapse = spans.first().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
 
-        let elapse = spans.last().unwrap().distribution().estimate();
+        let elapse = spans.last().unwrap().get_distribution().estimate();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
