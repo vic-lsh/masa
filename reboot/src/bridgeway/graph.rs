@@ -1,18 +1,16 @@
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp};
 use std::collections::HashMap;
-use tonic_masa::{
-    Distribution as MasaDistribution, GlobalGraphInner, Latency, LocalGraphInner, Path, SpanInner,
-};
+use tonic_masa::{Distribution as MasaDistribution, GlobalGraph, Latency, LocalGraph, Path, Span};
 
 // [TODO] Support Hotel.
 #[allow(dead_code)]
-pub fn get_global_graph_hotel() -> GlobalGraphInner {
+pub fn get_global_graph_hotel() -> GlobalGraph {
     panic!("Not implemented");
 }
 
 #[allow(dead_code)]
-pub fn get_global_graph_tung_chung() -> GlobalGraphInner {
+pub fn get_global_graph_tung_chung() -> GlobalGraph {
     let local_graphs = {
         let mut rng = StdRng::seed_from_u64(998244353);
         let mut graphs = HashMap::new();
@@ -20,7 +18,7 @@ pub fn get_global_graph_tung_chung() -> GlobalGraphInner {
         let n_percentiles = 1_000;
         graphs.insert(
             "Source".to_string() as Path,
-            LocalGraphInner::new(vec![SpanInner::new(
+            LocalGraph::new(vec![Span::new(
                 "/bridge.TungChung/SayFrontend".to_string(),
                 None,
                 None,
@@ -28,8 +26,8 @@ pub fn get_global_graph_tung_chung() -> GlobalGraphInner {
         );
         graphs.insert(
             "/bridge.TungChung/SayFrontend".to_string() as Path,
-            LocalGraphInner::new(vec![
-                SpanInner::new(
+            LocalGraph::new(vec![
+                Span::new(
                     "Head".to_string(),
                     Some(MasaDistribution::new(
                         1,
@@ -37,13 +35,13 @@ pub fn get_global_graph_tung_chung() -> GlobalGraphInner {
                     )),
                     None,
                 ),
-                SpanInner::new("/bridge.TungChung/SaySearch".to_string(), None, None),
+                Span::new("/bridge.TungChung/SaySearch".to_string(), None, None),
                 // SpanInner::new(
                 //     "/bridge.TungChung/SayReserve".to_string(),
                 //     None,,
                 // ),
-                SpanInner::new("/bridge.TungChung/SayProfile".to_string(), None, None),
-                SpanInner::new(
+                Span::new("/bridge.TungChung/SayProfile".to_string(), None, None),
+                Span::new(
                     "Tail".to_string(),
                     Some(MasaDistribution::new(
                         1,
@@ -55,8 +53,8 @@ pub fn get_global_graph_tung_chung() -> GlobalGraphInner {
         );
         graphs.insert(
             "/bridge.TungChung/SaySearch".to_string() as Path,
-            LocalGraphInner::new(vec![
-                SpanInner::new(
+            LocalGraph::new(vec![
+                Span::new(
                     "Head".to_string(),
                     Some(MasaDistribution::new(
                         1,
@@ -64,9 +62,9 @@ pub fn get_global_graph_tung_chung() -> GlobalGraphInner {
                     )),
                     None,
                 ),
-                SpanInner::new("/bridge.TungChung/SayGeo".to_string(), None, None),
-                SpanInner::new("/bridge.TungChung/SayRate".to_string(), None, None),
-                SpanInner::new(
+                Span::new("/bridge.TungChung/SayGeo".to_string(), None, None),
+                Span::new("/bridge.TungChung/SayRate".to_string(), None, None),
+                Span::new(
                     "Tail".to_string(),
                     Some(MasaDistribution::new(
                         1,
@@ -78,8 +76,8 @@ pub fn get_global_graph_tung_chung() -> GlobalGraphInner {
         );
         graphs.insert(
             "/bridge.TungChung/SayGeo".to_string() as Path,
-            LocalGraphInner::new(vec![
-                SpanInner::new(
+            LocalGraph::new(vec![
+                Span::new(
                     "Head".to_string(),
                     Some(MasaDistribution::new(
                         1,
@@ -87,7 +85,7 @@ pub fn get_global_graph_tung_chung() -> GlobalGraphInner {
                     )),
                     None,
                 ),
-                SpanInner::new(
+                Span::new(
                     "Tail".to_string(),
                     Some(MasaDistribution::new(
                         1,
@@ -99,8 +97,8 @@ pub fn get_global_graph_tung_chung() -> GlobalGraphInner {
         );
         graphs.insert(
             "/bridge.TungChung/SayRate".to_string() as Path,
-            LocalGraphInner::new(vec![
-                SpanInner::new(
+            LocalGraph::new(vec![
+                Span::new(
                     "Head".to_string(),
                     Some(MasaDistribution::new(
                         1,
@@ -116,7 +114,7 @@ pub fn get_global_graph_tung_chung() -> GlobalGraphInner {
                 //     "Mongodb".to_string(),
                 //     ...,
                 // )),
-                SpanInner::new(
+                Span::new(
                     "Tail".to_string(),
                     Some(MasaDistribution::new(
                         1,
@@ -128,8 +126,8 @@ pub fn get_global_graph_tung_chung() -> GlobalGraphInner {
         );
         graphs.insert(
             "/bridge.TungChung/SayProfile".to_string() as Path,
-            LocalGraphInner::new(vec![
-                SpanInner::new(
+            LocalGraph::new(vec![
+                Span::new(
                     "Head".to_string(),
                     Some(MasaDistribution::new(
                         1,
@@ -145,7 +143,7 @@ pub fn get_global_graph_tung_chung() -> GlobalGraphInner {
                 //     "Mongodb".to_string(),
                 //     ...,
                 // ),
-                SpanInner::new(
+                Span::new(
                     "Tail".to_string(),
                     Some(MasaDistribution::new(
                         1,
@@ -157,12 +155,12 @@ pub fn get_global_graph_tung_chung() -> GlobalGraphInner {
         );
         graphs
     };
-    let global_graph = GlobalGraphInner::new("TungChung".to_string() as Path, local_graphs);
+    let global_graph = GlobalGraph::new("TungChung".to_string() as Path, local_graphs);
     global_graph
 }
 
 #[allow(dead_code)]
-pub fn get_global_graph_i4() -> GlobalGraphInner {
+pub fn get_global_graph_i4() -> GlobalGraph {
     let local_graphs = {
         let mut rng = StdRng::seed_from_u64(998244353);
         let mut graphs = HashMap::new();
@@ -170,7 +168,7 @@ pub fn get_global_graph_i4() -> GlobalGraphInner {
         let n_percentiles = 1_000;
         graphs.insert(
             "Source".to_string() as Path,
-            LocalGraphInner::new(vec![SpanInner::new(
+            LocalGraph::new(vec![Span::new(
                 "/bridge.Worker/SayHelloI4".to_string(),
                 None,
                 None,
@@ -178,8 +176,8 @@ pub fn get_global_graph_i4() -> GlobalGraphInner {
         );
         graphs.insert(
             "/bridge.Worker/SayHelloI4".to_string() as Path,
-            LocalGraphInner::new(vec![
-                SpanInner::new(
+            LocalGraph::new(vec![
+                Span::new(
                     "Head".to_string(),
                     Some(MasaDistribution::new(
                         16_000,
@@ -187,8 +185,8 @@ pub fn get_global_graph_i4() -> GlobalGraphInner {
                     )),
                     None,
                 ),
-                SpanInner::new("/bridge.Worker/SayHelloI3".to_string(), None, None),
-                SpanInner::new(
+                Span::new("/bridge.Worker/SayHelloI3".to_string(), None, None),
+                Span::new(
                     "Tail".to_string(),
                     Some(MasaDistribution::new(
                         4,
@@ -200,8 +198,8 @@ pub fn get_global_graph_i4() -> GlobalGraphInner {
         );
         graphs.insert(
             "/bridge.Worker/SayHelloI3".to_string() as Path,
-            LocalGraphInner::new(vec![
-                SpanInner::new(
+            LocalGraph::new(vec![
+                Span::new(
                     "Head".to_string(),
                     Some(MasaDistribution::new(
                         16_000,
@@ -209,8 +207,8 @@ pub fn get_global_graph_i4() -> GlobalGraphInner {
                     )),
                     None,
                 ),
-                SpanInner::new("/bridge.Worker/SayHelloI2".to_string(), None, None),
-                SpanInner::new(
+                Span::new("/bridge.Worker/SayHelloI2".to_string(), None, None),
+                Span::new(
                     "Tail".to_string(),
                     Some(MasaDistribution::new(
                         3,
@@ -222,8 +220,8 @@ pub fn get_global_graph_i4() -> GlobalGraphInner {
         );
         graphs.insert(
             "/bridge.Worker/SayHelloI2".to_string() as Path,
-            LocalGraphInner::new(vec![
-                SpanInner::new(
+            LocalGraph::new(vec![
+                Span::new(
                     "Head".to_string(),
                     Some(MasaDistribution::new(
                         16_000,
@@ -231,8 +229,8 @@ pub fn get_global_graph_i4() -> GlobalGraphInner {
                     )),
                     None,
                 ),
-                SpanInner::new("/bridge.Worker/SayHelloI1".to_string(), None, None),
-                SpanInner::new(
+                Span::new("/bridge.Worker/SayHelloI1".to_string(), None, None),
+                Span::new(
                     "Tail".to_string(),
                     Some(MasaDistribution::new(
                         2,
@@ -244,8 +242,8 @@ pub fn get_global_graph_i4() -> GlobalGraphInner {
         );
         graphs.insert(
             "/bridge.Worker/SayHelloI1".to_string() as Path,
-            LocalGraphInner::new(vec![
-                SpanInner::new(
+            LocalGraph::new(vec![
+                Span::new(
                     "Head".to_string(),
                     Some(MasaDistribution::new(
                         16_000,
@@ -253,7 +251,7 @@ pub fn get_global_graph_i4() -> GlobalGraphInner {
                     )),
                     None,
                 ),
-                SpanInner::new(
+                Span::new(
                     "Tail".to_string(),
                     Some(MasaDistribution::new(
                         1,
@@ -265,12 +263,12 @@ pub fn get_global_graph_i4() -> GlobalGraphInner {
         );
         graphs
     };
-    let global_graph = GlobalGraphInner::new("I4".to_string() as Path, local_graphs);
+    let global_graph = GlobalGraph::new("I4".to_string() as Path, local_graphs);
     global_graph
 }
 
 #[allow(dead_code)]
-pub fn get_global_graph_i2() -> GlobalGraphInner {
+pub fn get_global_graph_i2() -> GlobalGraph {
     let local_graphs = {
         let mut rng = StdRng::seed_from_u64(998244353);
         let mut graphs = HashMap::new();
@@ -278,7 +276,7 @@ pub fn get_global_graph_i2() -> GlobalGraphInner {
         let n_percentiles = 1_000;
         graphs.insert(
             "Source".to_string() as Path,
-            LocalGraphInner::new(vec![SpanInner::new(
+            LocalGraph::new(vec![Span::new(
                 "/bridge.Worker/SayHelloI2".to_string(),
                 None,
                 None,
@@ -286,8 +284,8 @@ pub fn get_global_graph_i2() -> GlobalGraphInner {
         );
         graphs.insert(
             "/bridge.Worker/SayHelloI2".to_string() as Path,
-            LocalGraphInner::new(vec![
-                SpanInner::new(
+            LocalGraph::new(vec![
+                Span::new(
                     "Head".to_string(),
                     Some(MasaDistribution::new(
                         16_000,
@@ -295,8 +293,8 @@ pub fn get_global_graph_i2() -> GlobalGraphInner {
                     )),
                     None,
                 ),
-                SpanInner::new("/bridge.Worker/SayHelloI1".to_string(), None, None),
-                SpanInner::new(
+                Span::new("/bridge.Worker/SayHelloI1".to_string(), None, None),
+                Span::new(
                     "Tail".to_string(),
                     Some(MasaDistribution::new(
                         2,
@@ -308,8 +306,8 @@ pub fn get_global_graph_i2() -> GlobalGraphInner {
         );
         graphs.insert(
             "/bridge.Worker/SayHelloI1".to_string() as Path,
-            LocalGraphInner::new(vec![
-                SpanInner::new(
+            LocalGraph::new(vec![
+                Span::new(
                     "Head".to_string(),
                     Some(MasaDistribution::new(
                         16_000,
@@ -317,7 +315,7 @@ pub fn get_global_graph_i2() -> GlobalGraphInner {
                     )),
                     None,
                 ),
-                SpanInner::new(
+                Span::new(
                     "Tail".to_string(),
                     Some(MasaDistribution::new(
                         1,
@@ -329,12 +327,12 @@ pub fn get_global_graph_i2() -> GlobalGraphInner {
         );
         graphs
     };
-    let global_graph = GlobalGraphInner::new("I2".to_string() as Path, local_graphs);
+    let global_graph = GlobalGraph::new("I2".to_string() as Path, local_graphs);
     global_graph
 }
 
 #[allow(dead_code)]
-pub fn get_global_graph_i1() -> GlobalGraphInner {
+pub fn get_global_graph_i1() -> GlobalGraph {
     let local_graphs = {
         let mut rng = StdRng::seed_from_u64(998244353);
         let mut graphs = HashMap::new();
@@ -342,7 +340,7 @@ pub fn get_global_graph_i1() -> GlobalGraphInner {
         let n_percentiles = 1_000;
         graphs.insert(
             "Source".to_string() as Path,
-            LocalGraphInner::new(vec![SpanInner::new(
+            LocalGraph::new(vec![Span::new(
                 "/bridge.Worker/SayHelloI1".to_string(),
                 None,
                 None,
@@ -350,8 +348,8 @@ pub fn get_global_graph_i1() -> GlobalGraphInner {
         );
         graphs.insert(
             "/bridge.Worker/SayHelloI1".to_string() as Path,
-            LocalGraphInner::new(vec![
-                SpanInner::new(
+            LocalGraph::new(vec![
+                Span::new(
                     "Head".to_string(),
                     Some(MasaDistribution::new(
                         16_000,
@@ -359,7 +357,7 @@ pub fn get_global_graph_i1() -> GlobalGraphInner {
                     )),
                     None,
                 ),
-                SpanInner::new(
+                Span::new(
                     "Tail".to_string(),
                     Some(MasaDistribution::new(
                         1,
@@ -371,7 +369,7 @@ pub fn get_global_graph_i1() -> GlobalGraphInner {
         );
         graphs
     };
-    let global_graph = GlobalGraphInner::new("I1".to_string() as Path, local_graphs);
+    let global_graph = GlobalGraph::new("I1".to_string() as Path, local_graphs);
     global_graph
 }
 

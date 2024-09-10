@@ -17,7 +17,7 @@ use structopt::StructOpt;
 use tokio::time::{Duration, Instant};
 
 use tonic::transport::Channel;
-use tonic_masa::{Context, GlobalGraphInner};
+use tonic_masa::{Context, GlobalGraph};
 
 use bridge::{worker_client::WorkerClient, HelloRequest};
 use common::{fetch_traces, init_logging, time_now, Span};
@@ -48,7 +48,7 @@ struct LoadGenerator {
     rps: u64,
     secs: u64,
     token: Arc<AtomicI32>,
-    global_graph: GlobalGraphInner,
+    global_graph: GlobalGraph,
     client: WorkerClient<Channel>,
     trace_tx: Sender<Span>,
 }
@@ -60,7 +60,7 @@ impl LoadGenerator {
         rps: u64,
         secs: u64,
         token: Arc<AtomicI32>,
-        global_graph: GlobalGraphInner,
+        global_graph: GlobalGraph,
         client: WorkerClient<Channel>,
         trace_tx: Sender<Span>,
     ) -> Self {
@@ -98,7 +98,6 @@ impl LoadGenerator {
         let uniform = Uniform::new(0, 1_000_000_007);
 
         let graph_id = self.global_graph.graph_id().clone();
-        let local_graph = self.global_graph.get_source().clone();
         let request = HelloRequest {
             name: "Tonic".into(),
         };
@@ -124,16 +123,14 @@ impl LoadGenerator {
             let request = {
                 let start_at = time_now() - init_at_u64;
                 let deadline = start_at + self.slo;
-                // [TODO] Support Hotel.
                 let ctx = Context::new(
                     graph_id.clone(),
                     request_id,
                     deadline,
                     start_at,
-                    // Some(local_graph.clone()),
                 );
                 let mut request = tonic::Request::new(request.clone());
-                request.metadata_mut().insert_ctx("par_ctx", &ctx);
+                request.metadata_mut().insert_ctx("ctx", &ctx);
                 request
             };
 
@@ -181,7 +178,7 @@ impl LoadGenerator {
     }
 }
 
-fn get_global_graph(args: &Args) -> GlobalGraphInner {
+fn get_global_graph(args: &Args) -> GlobalGraph {
     if args.graph_id == "I1" {
         graph::get_global_graph_i1()
     } else if args.graph_id == "I2" {

@@ -9,8 +9,8 @@ mod typing;
 pub use context::Context;
 pub use deadline::DeadlineHint;
 pub use distribution::Distribution;
-pub use graph::{GlobalGraph, GlobalGraphInner, LocalGraph, LocalGraphInner};
-pub use span::{Span, SpanInner};
+pub use graph::{GlobalGraph, GlobalGraphTracker, LocalGraph, LocalGraphTracker};
+pub use span::{Span, SpanTracker};
 pub use tracker::LatencyTracker;
 pub use typing::{Address, GraphID, Latency, Path, RequestID, Timestamp};
 
