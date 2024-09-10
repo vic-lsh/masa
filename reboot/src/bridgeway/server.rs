@@ -18,7 +18,9 @@ use tonic::{
     transport::{Channel, Server},
     Request, Response, Status,
 };
-use tonic_masa::{Address, GlobalGraph, LocalGraph, Path};
+use tonic_masa::{
+    Address, Context, GlobalGraphInner, LocalGraph, LocalGraphInner, Path, EST_ONLINE, QUEUE_EDF,
+};
 
 use bridge::{
     worker_client::WorkerClient,
@@ -37,6 +39,34 @@ pub struct Args {
     pub n_threads: usize,
 }
 
+fn pre_unary(
+    graph: &LocalGraph,
+    ctx: &Context,
+    request: &mut Request<HelloRequest>,
+    path: &Path,
+) -> Context {
+    let mut deadline = ctx.deadline();
+    if QUEUE_EDF {
+        deadline = ctx.deadline() - graph.estimate_suffix(path);
+    }
+    let child_ctx = Context::new(
+        ctx.graph_id().clone(),
+        ctx.request_id(),
+        deadline,
+        time_now(),
+    );
+    request.metadata_mut().insert_ctx("ctx", &child_ctx);
+    child_ctx
+}
+
+fn post_unary(graph: &mut LocalGraph, ctx: &Context, path: &Path) {
+    if EST_ONLINE {
+        let send_at = ctx.send_at();
+        let recv_at = time_now();
+        graph.track(path, recv_at - send_at);
+    }
+}
+
 pub struct WorkerImpl {
     local_graphs: HashMap<Path, LocalGraph>,
     clients: HashMap<Path, WorkerClient<Channel>>,
@@ -44,9 +74,16 @@ pub struct WorkerImpl {
 
 impl WorkerImpl {
     pub fn new(
-        local_graphs: HashMap<Path, LocalGraph>,
+        local_graphs: HashMap<Path, LocalGraphInner>,
         clients: HashMap<Path, WorkerClient<Channel>>,
     ) -> Self {
+        let local_graphs = local_graphs
+            .iter()
+            .map(|(path, local_graph_inner)| {
+                let local_graph = LocalGraph::from(local_graph_inner.clone());
+                (path.clone(), local_graph)
+            })
+            .collect();
         Self {
             local_graphs,
             clients,
@@ -66,11 +103,10 @@ impl Worker for WorkerImpl {
         let mut latency_spin = 0;
 
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
-        let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
+        let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
-        ctx.set_local_graph(local_graph.clone());
 
-        let spans = local_graph.spans();
+        let spans = graph.spans();
         assert!(spans.len() == 3);
 
         let elapse = spans.first().unwrap().get_distribution().estimate();
@@ -120,11 +156,10 @@ impl Worker for WorkerImpl {
         let mut latency_spin = 0;
 
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
-        let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
+        let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
-        ctx.set_local_graph(local_graph.clone());
 
-        let spans = local_graph.spans();
+        let spans = graph.spans();
         assert!(spans.len() == 3);
 
         let elapse = spans.first().unwrap().get_distribution().estimate();
@@ -174,11 +209,10 @@ impl Worker for WorkerImpl {
         let mut latency_spin = 0;
 
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
-        let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
+        let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
-        ctx.set_local_graph(local_graph.clone());
 
-        let spans = local_graph.spans();
+        let spans = graph.spans();
         assert!(spans.len() == 3);
 
         let elapse = spans.first().unwrap().get_distribution().estimate();
@@ -228,11 +262,10 @@ impl Worker for WorkerImpl {
         let mut latency_spin = 0;
 
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
-        let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
+        let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
-        ctx.set_local_graph(local_graph.clone());
 
-        let spans = local_graph.spans();
+        let spans = graph.spans();
         assert!(spans.len() == 2);
 
         let elapse = spans.first().unwrap().get_distribution().estimate();
@@ -266,7 +299,7 @@ impl Worker for WorkerImpl {
     }
 }
 
-fn get_global_graph(args: Args) -> GlobalGraph {
+fn get_global_graph(args: Args) -> GlobalGraphInner {
     assert!(args.n_hops > 0);
     assert!(args.n_hops <= 4);
 
@@ -284,7 +317,7 @@ fn get_global_graph(args: Args) -> GlobalGraph {
     global_graph
 }
 
-fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
+fn get_servers(args: Args, global_graph: GlobalGraphInner) -> Vec<VirtualServer> {
     let mut servers = Vec::new();
 
     if args.n_hops >= 1 {

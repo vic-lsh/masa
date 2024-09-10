@@ -30,7 +30,7 @@ impl LatencyTracker {
         }
     }
 
-    pub fn update(&mut self) {
+    fn update(&mut self) {
         let mut values = Vec::new();
         values.extend(self.prev_queue.iter());
         values.extend(self.cur_queue.iter());

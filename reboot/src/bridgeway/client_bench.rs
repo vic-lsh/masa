@@ -17,7 +17,7 @@ use structopt::StructOpt;
 use tokio::time::{Duration, Instant};
 
 use tonic::transport::Channel;
-use tonic_masa::{Context, GlobalGraph};
+use tonic_masa::{Context, GlobalGraphInner};
 
 use bridge::{worker_client::WorkerClient, HelloRequest};
 use common::{fetch_traces, init_logging, time_now, Span};
@@ -48,7 +48,7 @@ struct LoadGenerator {
     rps: u64,
     secs: u64,
     token: Arc<AtomicI32>,
-    global_graph: GlobalGraph,
+    global_graph: GlobalGraphInner,
     client: WorkerClient<Channel>,
     trace_tx: Sender<Span>,
 }
@@ -60,7 +60,7 @@ impl LoadGenerator {
         rps: u64,
         secs: u64,
         token: Arc<AtomicI32>,
-        global_graph: GlobalGraph,
+        global_graph: GlobalGraphInner,
         client: WorkerClient<Channel>,
         trace_tx: Sender<Span>,
     ) -> Self {
@@ -128,9 +128,9 @@ impl LoadGenerator {
                 let ctx = Context::new(
                     graph_id.clone(),
                     request_id,
-                    start_at,
                     deadline,
-                    Some(local_graph.clone()),
+                    start_at,
+                    // Some(local_graph.clone()),
                 );
                 let mut request = tonic::Request::new(request.clone());
                 request.metadata_mut().insert_ctx("par_ctx", &ctx);
@@ -181,7 +181,7 @@ impl LoadGenerator {
     }
 }
 
-fn get_global_graph(args: &Args) -> GlobalGraph {
+fn get_global_graph(args: &Args) -> GlobalGraphInner {
     if args.graph_id == "I1" {
         graph::get_global_graph_i1()
     } else if args.graph_id == "I2" {

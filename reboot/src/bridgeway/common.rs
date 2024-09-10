@@ -6,7 +6,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use crossbeam_channel::Receiver;
 use env_logger::{Builder, Env};
 
-use tonic_masa::{Address, LocalGraph, Path};
+use tonic_masa::{Address, LocalGraphInner, Path};
 
 #[allow(dead_code)]
 pub fn init_logging() {
@@ -47,7 +47,7 @@ pub fn busy_spin(duration: Duration) {
 pub struct VirtualServer {
     addr: Address,
     conn_addrs: HashMap<Path, Address>,
-    local_graphs: HashMap<Path, LocalGraph>,
+    local_graphs: HashMap<Path, LocalGraphInner>,
     n_threads: usize,
     start_manager: bool,
 }
@@ -57,7 +57,7 @@ impl VirtualServer {
     pub fn new(
         addr: Address,
         conn_addrs: HashMap<Path, Address>,
-        local_graphs: HashMap<Path, LocalGraph>,
+        local_graphs: HashMap<Path, LocalGraphInner>,
         n_threads: usize,
         start_manager: bool,
     ) -> Self {
@@ -86,7 +86,7 @@ impl VirtualServer {
         &self.conn_addrs
     }
 
-    pub fn local_graphs(&self) -> &HashMap<Path, LocalGraph> {
+    pub fn local_graphs(&self) -> &HashMap<Path, LocalGraphInner> {
         &self.local_graphs
     }
 
