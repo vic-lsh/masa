@@ -4,13 +4,13 @@ use crate::{Distribution, Latency, LatencyTracker, Path, EST_OFFLINE, EST_ONLINE
 
 /// Represent a span inner.
 #[derive(Debug, Default, Clone)]
-pub struct SpanInner {
+pub struct Span {
     path: Path,
     distribution: Option<Distribution>,
     tracker_capacity: Option<usize>,
 }
 
-impl SpanInner {
+impl Span {
     /// Create a new span inner.
     pub fn new(
         path: Path,
@@ -23,23 +23,34 @@ impl SpanInner {
             tracker_capacity,
         }
     }
+
+    /// Get the path.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Get the distribution.
+    pub fn get_distribution(&self) -> &Distribution {
+        assert!(self.distribution.is_some());
+        self.distribution.as_ref().unwrap()
+    }
 }
 
 /// Represent a span.
 #[derive(Debug, Default)]
-pub struct Span {
+pub struct SpanTracker {
     path: Path,
     distribution: Option<Distribution>,
     tracker: Option<RwLock<LatencyTracker>>,
 }
 
-impl From<SpanInner> for Span {
-    fn from(span: SpanInner) -> Self {
-        Span::new(span.path, span.distribution, span.tracker_capacity)
+impl From<Span> for SpanTracker {
+    fn from(span: Span) -> Self {
+        SpanTracker::new(span.path, span.distribution, span.tracker_capacity)
     }
 }
 
-impl Span {
+impl SpanTracker {
     /// Create a new span.
     pub fn new(
         path: Path,
@@ -75,7 +86,7 @@ impl Span {
     /// Estimate the latency.
     pub fn estimate(&self) -> Latency {
         if EST_OFFLINE {
-            self.get_distribution().estimate()
+            self.get_distribution().mean()
         } else if EST_ONLINE {
             self.tracker.as_ref().unwrap().read().unwrap().estimate()
         } else {
