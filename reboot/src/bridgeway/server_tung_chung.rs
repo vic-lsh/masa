@@ -20,7 +20,7 @@ use tonic::{
     transport::{Channel, Server},
     Request, Response, Status,
 };
-use tonic_masa::{Address, GlobalGraph, LocalGraph, Path};
+use tonic_masa::{Address, GlobalGraphInner, LocalGraph, LocalGraphInner, Path};
 
 use bridge::{
     tung_chung_client::TungChungClient,
@@ -46,9 +46,16 @@ pub struct TungChungImpl {
 
 impl TungChungImpl {
     pub fn new(
-        local_graphs: HashMap<Path, LocalGraph>,
+        local_graphs: HashMap<Path, LocalGraphInner>,
         clients: HashMap<Path, TungChungClient<Channel>>,
     ) -> Self {
+        let local_graphs = local_graphs
+            .iter()
+            .map(|(path, local_graph_inner)| {
+                let local_graph = LocalGraph::from(local_graph_inner.clone());
+                (path.clone(), local_graph)
+            })
+            .collect();
         Self {
             local_graphs,
             clients,
@@ -108,7 +115,6 @@ impl TungChung for TungChungImpl {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
-        ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
         assert!(spans.len() == 4);
@@ -172,7 +178,6 @@ impl TungChung for TungChungImpl {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
-        ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
         assert!(spans.len() == 4);
@@ -234,7 +239,6 @@ impl TungChung for TungChungImpl {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
-        ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
         assert!(spans.len() == 2);
@@ -278,7 +282,6 @@ impl TungChung for TungChungImpl {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
-        ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
         assert!(spans.len() == 2);
@@ -317,7 +320,6 @@ impl TungChung for TungChungImpl {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
-        ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
         assert!(spans.len() == 2);
@@ -350,7 +352,7 @@ impl TungChung for TungChungImpl {
     }
 }
 
-fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
+fn get_servers(args: Args, global_graph: GlobalGraphInner) -> Vec<VirtualServer> {
     let mut servers = Vec::new();
 
     let server_frontend = {
@@ -445,6 +447,9 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
             let mut graphs = HashMap::new();
             graphs.insert(
                 global_graph.graph_id().clone(),
+                // [TODO]
+                // Impl From<RoSpan> for Span {}
+                // RoSpan.into()
                 global_graph.get_local_graph(&path).clone(),
             );
             graphs
