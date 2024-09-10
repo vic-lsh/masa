@@ -24,8 +24,8 @@ impl Distribution {
         self.percentile_latencies[index]
     }
 
-    /// Get an estimate.
-    pub fn estimate(&self) -> Latency {
+    /// Get the mean.
+    pub fn mean(&self) -> Latency {
         self.mean
     }
 }

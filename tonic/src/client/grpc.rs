@@ -220,7 +220,9 @@ impl<T> Grpc<T> {
 
         let request = request.map(|m| tokio_stream::once(m));
 
-        // [NOTE] Move the following logic to the application layer.
+        // [NOTE] Move the following logic to the application layer `pre_unary`
+        // and `post_unary`.
+
         // let par_ctx = request.metadata().get_ctx("par_ctx").unwrap();
         // let local_graph = par_ctx.get_local_graph();
         // let request_path: Path = path.to_string();
