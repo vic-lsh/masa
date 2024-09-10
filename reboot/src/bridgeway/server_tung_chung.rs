@@ -66,6 +66,7 @@ impl TungChungImpl {
             manager: None,
         }
     }
+
     fn pre_unary(&self, ctx: &Context, request: &mut Request<WalkRequest>, path: &Path) -> Context {
         let mut deadline = ctx.deadline();
         if QUEUE_EDF {
