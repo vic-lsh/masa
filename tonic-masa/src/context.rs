@@ -213,3 +213,21 @@ impl Context {
         serde_json::to_string(&self).unwrap()
     }
 }
+
+pub struct RequestTxContext {}
+
+pub struct RequestRxContext {
+    graph_id: GraphID,
+    request_id: RequestID,
+    start_at: Timestamp,
+    deadline: Timestamp,
+    local_graph: Option<LocalGraph>,
+}
+
+pub struct ServerContext {}
+
+impl RequestRxContext {
+    pub fn new<B>(req: &http::Request<B>) -> Self {
+        todo!()
+    }
+}
