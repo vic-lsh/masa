@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 /// Type alias for a path.
 pub type Path = String;
@@ -231,7 +231,7 @@ pub struct ServerContext {
 }
 
 impl RequestRxContext {
-    pub fn new<B>(req: &http::Request<B>) -> Self {
+    pub fn new<B>(req: &http::Request<B>, server_ctx: Arc<ServerContext>) -> Self {
         todo!()
     }
 }
