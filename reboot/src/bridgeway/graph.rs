@@ -274,12 +274,14 @@ pub fn get_global_graph_i2() -> GlobalGraph {
         let mut graphs = HashMap::new();
         let n_samples = 1_000;
         let n_percentiles = 1_000;
+        let tracker_capacity = Some(100);
+        let mean = 1_000;
         graphs.insert(
             "Source".to_string() as Path,
             LocalGraph::new(vec![Span::new(
                 "/bridge.Worker/SayHelloI2".to_string(),
                 None,
-                None,
+                tracker_capacity,
             )]),
         );
         graphs.insert(
@@ -288,19 +290,23 @@ pub fn get_global_graph_i2() -> GlobalGraph {
                 Span::new(
                     "Head".to_string(),
                     Some(MasaDistribution::new(
-                        16_000,
-                        get_percentile_latencies(&mut rng, 16_000, n_samples, n_percentiles),
+                        mean,
+                        get_percentile_latencies(&mut rng, mean, n_samples, n_percentiles),
                     )),
-                    None,
+                    tracker_capacity,
                 ),
-                Span::new("/bridge.Worker/SayHelloI1".to_string(), None, None),
+                Span::new(
+                    "/bridge.Worker/SayHelloI1".to_string(),
+                    None,
+                    tracker_capacity,
+                ),
                 Span::new(
                     "Tail".to_string(),
                     Some(MasaDistribution::new(
                         2,
                         get_percentile_latencies(&mut rng, 2, n_samples, n_percentiles),
                     )),
-                    None,
+                    tracker_capacity,
                 ),
             ]),
         );
@@ -310,10 +316,10 @@ pub fn get_global_graph_i2() -> GlobalGraph {
                 Span::new(
                     "Head".to_string(),
                     Some(MasaDistribution::new(
-                        16_000,
-                        get_percentile_latencies(&mut rng, 16_000, n_samples, n_percentiles),
+                        mean,
+                        get_percentile_latencies(&mut rng, mean, n_samples, n_percentiles),
                     )),
-                    None,
+                    tracker_capacity,
                 ),
                 Span::new(
                     "Tail".to_string(),
@@ -321,7 +327,7 @@ pub fn get_global_graph_i2() -> GlobalGraph {
                         1,
                         get_percentile_latencies(&mut rng, 1, n_samples, n_percentiles),
                     )),
-                    None,
+                    tracker_capacity,
                 ),
             ]),
         );
@@ -338,12 +344,14 @@ pub fn get_global_graph_i1() -> GlobalGraph {
         let mut graphs = HashMap::new();
         let n_samples = 1_000;
         let n_percentiles = 1_000;
+        let tracker_capacity = Some(100);
+        let mean = 1_000;
         graphs.insert(
             "Source".to_string() as Path,
             LocalGraph::new(vec![Span::new(
                 "/bridge.Worker/SayHelloI1".to_string(),
                 None,
-                None,
+                tracker_capacity,
             )]),
         );
         graphs.insert(
@@ -352,10 +360,10 @@ pub fn get_global_graph_i1() -> GlobalGraph {
                 Span::new(
                     "Head".to_string(),
                     Some(MasaDistribution::new(
-                        16_000,
-                        get_percentile_latencies(&mut rng, 16_000, n_samples, n_percentiles),
+                        mean,
+                        get_percentile_latencies(&mut rng, mean, n_samples, n_percentiles),
                     )),
-                    None,
+                    tracker_capacity,
                 ),
                 Span::new(
                     "Tail".to_string(),
@@ -363,7 +371,7 @@ pub fn get_global_graph_i1() -> GlobalGraph {
                         1,
                         get_percentile_latencies(&mut rng, 1, n_samples, n_percentiles),
                     )),
-                    None,
+                    tracker_capacity,
                 ),
             ]),
         );
