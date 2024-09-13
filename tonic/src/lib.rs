@@ -110,7 +110,7 @@ mod macros;
 mod request;
 mod response;
 mod status;
-mod util;
+pub mod util;
 
 /// A re-export of [`async-trait`](https://docs.rs/async-trait) for use with codegen.
 #[cfg(feature = "codegen")]

@@ -521,6 +521,13 @@ fn generate_unary<T: Method>(
             Ok(res)
         };
 
+        // use tonic::util::Hookable;
+        // let fut = fut
+        //     .hook()
+        //     .pre_hook(|| println!("pre-hook"))
+        //     .post_hook(|| println!("post-hook"))
+        //     .build();
+
         Box::pin(fut)
     }
 }
