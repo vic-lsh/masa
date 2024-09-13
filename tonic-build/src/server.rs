@@ -476,14 +476,17 @@ fn generate_unary<T: Method>(
 
     quote! {
         #[allow(non_camel_case_types)]
-        struct #service_ident<T: #server_trait >(pub Arc<T>);
+        struct #service_ident<T: #server_trait > {
+            pub inner: Arc<T>,
+            pub ctx: tonic_masa::RequestRxContext,
+        }
 
         impl<T: #server_trait> tonic::server::UnaryService<#request> for #service_ident<T> {
             type Response = #response;
             type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
 
             fn call(&mut self, request: tonic::Request<#request>) -> Self::Future {
-                let inner = Arc::clone(&self.0);
+                let inner = Arc::clone(&self.inner);
                 let fut = async move {
                     <T as #server_trait>::#method_ident(#inner_arg, request).await
                 };
@@ -498,7 +501,10 @@ fn generate_unary<T: Method>(
         let inner = self.inner.clone();
         let fut = async move {
             let inner = inner.0;
-            let method = #service_ident(inner);
+            let method = #service_ident {
+                inner,
+                ctx: tonic_masa::RequestRxContext::new(&req),
+            };
             let codec = #codec_name::default();
 
             let mut grpc = tonic::server::Grpc::new(codec)
