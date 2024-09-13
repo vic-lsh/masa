@@ -21,7 +21,7 @@ impl LatencyTracker {
         }
     }
 
-    pub fn add(&mut self, value: u64) {
+    pub fn track(&mut self, value: u64) {
         self.cur_queue.push(value);
         if self.cur_queue.len() >= self.capacity {
             self.update();

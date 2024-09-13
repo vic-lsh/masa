@@ -2,9 +2,10 @@
 
 path="snippets/flat-i1"
 
-rps_values=(50)
+rps_values=(100)
 
-modes=("queue_edf" "queue_fifo_two" "queue_fifo")
+# modes=("queue_edf" "queue_fifo_two" "queue_fifo")
+modes=("queue_edf est_online")
 
 server_pid=
 
@@ -24,17 +25,17 @@ trap ctrl_c_handler SIGINT
 for mode in "${modes[@]}"; do
 	echo "Compiling mode: $mode..."
 
-	# cargo build --features $mode >/dev/null 2>&1
-	cargo build --features $mode \
+	# cargo build --features "$mode" >/dev/null 2>&1
+	cargo build --features "$mode" \
 		--release >/dev/null 2>&1
 
 	# RUST_BACKTRACE=1 RUST_LOG=info cargo run ...
 	RUST_LOG=warn \
-		cargo run --features $mode \
+		cargo run --features "$mode" \
 		--release --bin bridgeway_server -- \
 		--n-hops 1 \
 		--n-threads 1 \
-		>$path/tmp_server_${mode}.log 2>&1 &
+		>$path/tmp_server_test.log 2>&1 &
 
 	server_pid=$!
 
@@ -48,12 +49,12 @@ for mode in "${modes[@]}"; do
 		cargo run --release --bin bridgeway_client_bench -- \
 			--slo 10000 \
 			--rps $rps \
-			--secs 10 \
+			--secs 3 \
 			--concurrency 512 \
-			--output $path/r${rps}_${mode}.csv \
+			--output $path/r${rps}_test.csv \
 			--graph-id I1 \
 			--addr http://[::1]:50051 \
-			>$path/tmp_client_${mode}.log 2>&1
+			>$path/tmp_client_test.log 2>&1
 	done
 
 	kill $server_pid

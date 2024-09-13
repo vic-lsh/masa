@@ -1,6 +1,6 @@
 use std::sync::RwLock;
 
-use crate::{Distribution, Latency, LatencyTracker, Path, EST_OFFLINE, EST_ONLINE, MOCK_DIST};
+use crate::{Distribution, Latency, LatencyTracker, Path, EST_OFFLINE, EST_ONLINE};
 
 /// Represent a span inner.
 #[derive(Debug, Default, Clone)]
@@ -57,9 +57,6 @@ impl SpanTracker {
         distribution: Option<Distribution>,
         tracker_capacity: Option<usize>,
     ) -> Self {
-        if MOCK_DIST {
-            assert!(distribution.is_some());
-        }
         let mut tracker = None;
         if EST_ONLINE {
             let tracker_capacity = tracker_capacity.unwrap();
@@ -96,6 +93,11 @@ impl SpanTracker {
 
     /// Update the tracker.
     pub fn track(&mut self, latency: Latency) {
-        self.tracker.as_ref().unwrap().write().unwrap().add(latency);
+        self.tracker
+            .as_ref()
+            .unwrap()
+            .write()
+            .unwrap()
+            .track(latency);
     }
 }
