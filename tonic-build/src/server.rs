@@ -114,6 +114,7 @@ pub(crate) fn generate_internal<T: Service>(
             #[derive(Debug)]
             pub struct #server_service<T: #server_trait> {
                 inner: _Inner<T>,
+                ctx: Arc<tonic_masa::ServerContext>,
                 accept_compression_encodings: EnabledCompressionEncodings,
                 send_compression_encodings: EnabledCompressionEncodings,
                 max_decoding_message_size: Option<usize>,
@@ -129,8 +130,10 @@ pub(crate) fn generate_internal<T: Service>(
 
                 pub fn from_arc(inner: Arc<T>) -> Self {
                     let inner = _Inner(inner);
+                    let ctx = tonic_masa::ServerContext::new();
                     Self {
                         inner,
+                        ctx: Arc::new(ctx),
                         accept_compression_encodings: Default::default(),
                         send_compression_encodings: Default::default(),
                         max_decoding_message_size: None,
@@ -187,8 +190,10 @@ pub(crate) fn generate_internal<T: Service>(
             impl<T: #server_trait> Clone for #server_service<T> {
                 fn clone(&self) -> Self {
                     let inner = self.inner.clone();
+                    let ctx = self.ctx.clone();
                     Self {
                         inner,
+                        ctx,
                         accept_compression_encodings: self.accept_compression_encodings,
                         send_compression_encodings: self.send_compression_encodings,
                         max_decoding_message_size: self.max_decoding_message_size,
