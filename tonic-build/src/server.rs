@@ -504,11 +504,12 @@ fn generate_unary<T: Method>(
         let max_decoding_message_size = self.max_decoding_message_size;
         let max_encoding_message_size = self.max_encoding_message_size;
         let inner = self.inner.clone();
+        let server_ctx = self.ctx.clone();
         let fut = async move {
             let inner = inner.0;
             let method = #service_ident {
                 inner,
-                ctx: tonic_masa::RequestRxContext::new(&req),
+                ctx: tonic_masa::RequestRxContext::new(&req, server_ctx),
             };
             let codec = #codec_name::default();
 
