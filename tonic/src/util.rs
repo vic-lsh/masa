@@ -79,7 +79,7 @@ where
     F: Future,
 {
     ///
-    pub fn post_hook<NewPost: Fn(Poll<F::Output>)>(
+    pub fn post_hook<NewPost: Fn(&Poll<F::Output>)>(
         self,
         hook: NewPost,
     ) -> HookedFutureBuilder<F, Pre, NewPost> {
