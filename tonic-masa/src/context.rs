@@ -224,10 +224,20 @@ pub struct RequestRxContext {
     local_graph: Option<LocalGraph>,
 }
 
-pub struct ServerContext {}
+// [NOTE] Tonic-generated server requires Debug.
+#[derive(Debug)]
+pub struct ServerContext {
+    local_graph: Option<LocalGraph>,
+}
 
 impl RequestRxContext {
     pub fn new<B>(req: &http::Request<B>) -> Self {
+        todo!()
+    }
+}
+
+impl ServerContext {
+    pub fn new() -> Self {
         todo!()
     }
 }
