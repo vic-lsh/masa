@@ -15,7 +15,7 @@ pub(crate) fn generate_internal<T: Service>(
     emit_package: bool,
     proto_path: &str,
     compile_well_known_types: bool,
-    enable_parent_rpc_ctx: bool,
+    _enable_parent_rpc_ctx: bool,
     attributes: &Attributes,
     disable_comments: &HashSet<String>,
     use_arc_self: bool,
