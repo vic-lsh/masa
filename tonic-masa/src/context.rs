@@ -224,12 +224,7 @@ pub struct RequestTxContext {}
 
 #[derive(Debug)]
 pub struct RequestRxContext {
-    val: AtomicUsize,
-    // graph_id: GraphID,
-    // request_id: RequestID,
-    // start_at: Timestamp,
-    // deadline: Timestamp,
-    // local_graph: Option<LocalGraph>,
+    ctx: Context,
 }
 
 // [NOTE] Tonic-generated server requires Debug.
@@ -240,9 +235,9 @@ pub struct ServerContext {
 
 impl RequestRxContext {
     pub fn new<B>(req: &http::Request<B>, server_ctx: Arc<ServerContext>) -> Self {
-        Self {
-            val: AtomicUsize::new(0),
-        }
+        let ctx_str = req.headers()["ctx"].to_str().unwrap();
+        let ctx = Context::from_json(ctx_str);
+        Self { ctx }
     }
 
     pub fn before_child_rpc(&self) {
@@ -251,10 +246,6 @@ impl RequestRxContext {
 
     pub fn after_child_rpc(&self) {
         println!("after_child_rpc");
-    }
-
-    pub fn increment(&self) {
-        self.val.fetch_add(1, Ordering::Relaxed);
     }
 }
 
