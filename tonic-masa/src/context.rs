@@ -220,6 +220,13 @@ impl Context {
     }
 }
 
+/// Description of a RPC about to be transmitted.
+#[derive(Debug)]
+pub struct RpcInfo {
+    pub service_name: &'static str,
+    pub method_name: &'static str,
+}
+
 pub struct RequestTxContext {}
 
 #[derive(Debug)]
@@ -251,12 +258,12 @@ impl RequestRxContext {
 // Request lifecycle hooks.
 // [TODO] extract this into a trait.
 impl RequestRxContext {
-    pub fn before_child_rpc(&self) {
-        println!("before_child_rpc");
+    pub fn before_child_rpc(&self, rpc: RpcInfo) {
+        println!("before_child_rpc, {:?}", rpc);
     }
 
-    pub fn after_child_rpc(&self) {
-        println!("after_child_rpc");
+    pub fn after_child_rpc(&self, rpc: RpcInfo) {
+        println!("after_child_rpc, {:?}", rpc);
     }
 }
 
