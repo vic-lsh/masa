@@ -252,7 +252,11 @@ fn generate_unary<T: Service>(
            if let Some(parent_ctx) = self.get_parent_ctx() {
               parent_ctx.before_child_rpc();
            }
-           self.inner.unary(req, path, codec).await
+           let resp = self.inner.unary(req, path, codec).await;
+           if let Some(parent_ctx) = self.get_parent_ctx() {
+              parent_ctx.after_child_rpc();
+           }
+           resp
         }
     }
 }
