@@ -525,13 +525,16 @@ fn generate_unary<T: Method>(
                 .apply_compression_config(accept_compression_encodings, send_compression_encodings)
                 .apply_max_message_size_config(max_decoding_message_size, max_encoding_message_size);
 
-            let req_ctx = tonic::masa::RequestRxContext::new(#method_name, &req, server_ctx);
+            use tonic::masa::RequestHandlerHooks;
+
+            // Request-begin lifecycle hook.
+            let req_ctx = tonic::masa::RequestRxContext::begin(#method_name, &req, server_ctx);
+
             // Promise `req_ctx` will not be moved. This is important because
             // child RPCs will assume a fixed memory location for the parent request context.
             let req_ctx = std::pin::Pin::new(&req_ctx);
 
             use tonic::util::Hookable;
-            use tonic::masa::RequestHandlerHooks;
             let fut = grpc.unary(method, req)
                 .hook()
                 .pre_hook(|| {
@@ -557,7 +560,10 @@ fn generate_unary<T: Method>(
                 .build();
 
             let mut res = fut.await;
+
+            // Request-completed lifecycle hook.
             req_ctx.finalize(&mut res);
+
             Ok(res)
         };
 
