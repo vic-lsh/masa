@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tonic_masa::Context;
 
-use crate::{GrpcMethod, Request, Response, Status};
+use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
 pub struct RequestTxContext {}
 
@@ -42,6 +42,10 @@ impl RequestRxContext {
     pub fn after_child_rpc<T>(&self, method: GrpcMethod, resp: &mut Result<Response<T>, Status>) {
         println!("after_child_rpc, {:?}", method);
     }
+
+    /// The last lifecycle hook to be invoked. Provides a mutable reference to the response about
+    /// to be sent back to the client.
+    pub fn finalize(&self, response: &mut http::Response<BoxBody>) {}
 }
 
 impl ServerContext {
