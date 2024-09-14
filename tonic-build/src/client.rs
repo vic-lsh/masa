@@ -41,6 +41,8 @@ pub(crate) fn generate_internal<T: Service>(
     let mod_attributes = attributes.for_mod(package);
     let struct_attributes = attributes.for_struct(&service_name);
 
+    let server_parent_rpc_ctx = quote::format_ident!("{}_parent_rpc_ctx", service.name());
+
     quote! {
         /// Generated client implementations.
         #(#mod_attributes)*
@@ -127,6 +129,12 @@ pub(crate) fn generate_internal<T: Service>(
                 pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
                     self.inner = self.inner.max_encoding_message_size(limit);
                     self
+                }
+
+                /// Internal. Obtain the parent RPC in which this RPC client stub operates.
+                fn get_parent_ctx(&self) -> Option<&'_ tonic_masa::RequestRxContext> {
+                    let ctx = super::#server_parent_rpc_ctx.get();
+                    unsafe { ctx.as_ref() }
                 }
 
                 #methods
@@ -241,6 +249,9 @@ fn generate_unary<T: Service>(
            let path = http::uri::PathAndQuery::from_static(#path);
            let mut req = request.into_request();
            req.extensions_mut().insert(GrpcMethod::new(#service_name, #method_name));
+           if let Some(parent_ctx) = self.get_parent_ctx() {
+              parent_ctx.before_child_rpc();
+           }
            self.inner.unary(req, path, codec).await
         }
     }

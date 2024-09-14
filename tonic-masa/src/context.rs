@@ -1,6 +1,12 @@
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
 /// Type alias for a path.
 pub type Path = String;
@@ -216,28 +222,40 @@ impl Context {
 
 pub struct RequestTxContext {}
 
+#[derive(Debug)]
 pub struct RequestRxContext {
-    graph_id: GraphID,
-    request_id: RequestID,
-    start_at: Timestamp,
-    deadline: Timestamp,
-    local_graph: Option<LocalGraph>,
+    val: AtomicUsize,
+    // graph_id: GraphID,
+    // request_id: RequestID,
+    // start_at: Timestamp,
+    // deadline: Timestamp,
+    // local_graph: Option<LocalGraph>,
 }
 
 // [NOTE] Tonic-generated server requires Debug.
 #[derive(Debug)]
 pub struct ServerContext {
-    local_graph: Option<LocalGraph>,
+    // local_graph: Option<LocalGraph>,
 }
 
 impl RequestRxContext {
     pub fn new<B>(req: &http::Request<B>, server_ctx: Arc<ServerContext>) -> Self {
-        todo!()
+        Self {
+            val: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn before_child_rpc(&self) {
+        println!("before_child_rpc");
+    }
+
+    pub fn increment(&self) {
+        self.val.fetch_add(1, Ordering::Relaxed);
     }
 }
 
 impl ServerContext {
     pub fn new() -> Self {
-        todo!()
+        Self {}
     }
 }
