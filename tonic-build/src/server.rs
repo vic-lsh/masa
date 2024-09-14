@@ -525,8 +525,10 @@ fn generate_unary<T: Method>(
                 .apply_compression_config(accept_compression_encodings, send_compression_encodings)
                 .apply_max_message_size_config(max_decoding_message_size, max_encoding_message_size);
 
-            // [TODO] mark this as pinned?
             let req_ctx = tonic::masa::RequestRxContext::new(#method_name, &req, server_ctx);
+            // Promise `req_ctx` will not be moved. This is important because
+            // child RPCs will assume a fixed memory location for the parent request context.
+            let req_ctx = std::pin::Pin::new(&req_ctx);
 
             use tonic::util::Hookable;
             let fut = grpc.unary(method, req)
@@ -536,7 +538,10 @@ fn generate_unary<T: Method>(
                     // initiated by this server handler. Child RPCs' lifetime
                     // is shorter than the server handler. Therefore it it safe
                     // to access req_ctx from the child RPCs.
-                    let original = super::#server_parent_rpc_ctx.replace(&req_ctx as *const _);
+                    let pinned_ctx = req_ctx.as_ref();
+                    let req_ctx_addr = Pin::into_inner(pinned_ctx) as *const tonic::masa::RequestRxContext;
+                    let original = super::#server_parent_rpc_ctx.replace(req_ctx_addr);
+
                     // A server handler should not be calling another server handler.
                     // We only set this value before polling a server handler.
                     assert!(original.is_null());
