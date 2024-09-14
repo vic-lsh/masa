@@ -225,7 +225,8 @@ pub struct RequestTxContext {}
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct RequestRxContext {
-    ctx: Context,
+    req_ctx: Context,
+    server_ctx: Arc<ServerContext>,
 }
 
 // [NOTE] Tonic-generated server requires Debug.
@@ -237,8 +238,11 @@ pub struct ServerContext {
 impl RequestRxContext {
     pub fn new<B>(req: &http::Request<B>, server_ctx: Arc<ServerContext>) -> Self {
         let ctx_str = req.headers()["ctx"].to_str().unwrap();
-        let ctx = Context::from_json(ctx_str);
-        Self { ctx }
+        let req_ctx = Context::from_json(ctx_str);
+        Self {
+            req_ctx,
+            server_ctx,
+        }
     }
 }
 
