@@ -2,7 +2,7 @@ use unique_id_service::greeter_client::GreeterClient;
 use unique_id_service::UniqueIdRequest;
 
 pub mod unique_id_service {
-    tonic::include_proto!("unique");
+    tonic::include_proto!("uniqueidservice");
 }
 
 #[tokio::main]
