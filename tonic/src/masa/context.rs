@@ -13,9 +13,15 @@ use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
 pub struct RequestTxContext {}
 
+/// Context struct instantiated once per RPC, when the server invokes a request handler.
+///
+/// Must implement `RequestHandlerHooks`.
+pub type RequestRxContext = SimpleReqRxCtx;
+
+/// A simple implementation of `RequestHandlerHooks`.
 #[derive(Debug)]
 #[allow(dead_code)]
-pub struct RequestRxContext {
+pub struct SimpleReqRxCtx {
     method_name: &'static str,
     req_ctx: Context,
     server_ctx: Arc<ServerContext>,
@@ -69,7 +75,7 @@ pub trait RequestHandlerHooks {
     fn finalize(&self, response: &mut http::Response<BoxBody>) {}
 }
 
-impl RequestHandlerHooks for RequestRxContext {
+impl RequestHandlerHooks for SimpleReqRxCtx {
     fn begin<B>(
         method: &'static str,
         req: &http::Request<B>,
