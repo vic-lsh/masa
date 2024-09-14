@@ -136,7 +136,7 @@ pub(crate) fn generate_internal<T: Service>(
 
                 pub fn from_arc(inner: Arc<T>) -> Self {
                     let inner = _Inner(inner);
-                    let ctx = tonic::masa::ServerContext::new();
+                    let ctx = tonic::masa::ServerContext::new(<Self as tonic::server::NamedService>::NAME);
                     Self {
                         inner,
                         ctx: Arc::new(ctx),
