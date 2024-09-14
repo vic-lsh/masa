@@ -1,0 +1,15 @@
+syntax = "proto3";
+package uniqueidservice;
+
+service Greeter {
+    rpc ComposeUniqueId (UniqueIdRequest) returns (UniqueIdReply);
+}
+
+message UniqueIdRequest {
+   int64 id = 1;
+}
+
+message UniqueIdReply {
+    int64 message = 1;
+}
+
