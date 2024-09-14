@@ -107,6 +107,11 @@ pub(crate) fn generate_internal<T: Service>(
             /// Use Masa Context.
             // use tonic_masa::Context as MasaContext;
 
+            use std::cell::Cell;
+            thread_local! {
+                 static PARENT_RPC_CTX: Cell<*const tonic_masa::RequestRxContext> = Cell::new(core::ptr::null());
+            }
+
             #generated_trait
 
             #service_doc
@@ -483,7 +488,7 @@ fn generate_unary<T: Method>(
         #[allow(non_camel_case_types)]
         struct #service_ident<T: #server_trait > {
             pub inner: Arc<T>,
-            pub ctx: tonic_masa::RequestRxContext,
+            // pub ctx: tonic_masa::RequestRxContext,
         }
 
         impl<T: #server_trait> tonic::server::UnaryService<#request> for #service_ident<T> {
@@ -507,9 +512,11 @@ fn generate_unary<T: Method>(
         let server_ctx = self.ctx.clone();
         let fut = async move {
             let inner = inner.0;
+            // [TODO] mark this as pinned?
+            let req_ctx = tonic_masa::RequestRxContext::new(&req, server_ctx);
             let method = #service_ident {
                 inner,
-                ctx: tonic_masa::RequestRxContext::new(&req, server_ctx),
+                // ctx: req_ctx,
             };
             let codec = #codec_name::default();
 
@@ -517,16 +524,28 @@ fn generate_unary<T: Method>(
                 .apply_compression_config(accept_compression_encodings, send_compression_encodings)
                 .apply_max_message_size_config(max_decoding_message_size, max_encoding_message_size);
 
-            let res = grpc.unary(method, req).await;
+            use tonic::util::Hookable;
+            let fut = grpc.unary(method, req)
+                .hook()
+                .pre_hook(|| {
+                    // SAFETY: req_ctx will only be accessed by child RPCs
+                    // initiated by this server handler. Child RPCs' lifetime
+                    // is shorter than the server handler. Therefore it it safe
+                    // to access req_ctx from the child RPCs.
+                    let original = PARENT_RPC_CTX.replace(&req_ctx as *const _);
+                    // A server handler should not be calling another server handler.
+                    // We only set this value before polling a server handler.
+                    assert!(original.is_null());
+                })
+                .post_hook(|_| {
+                    let original = PARENT_RPC_CTX.replace(core::ptr::null());
+                    assert!(!original.is_null());
+                })
+                .build();
+
+            let res = fut.await;
             Ok(res)
         };
-
-        // use tonic::util::Hookable;
-        // let fut = fut
-        //     .hook()
-        //     .pre_hook(|| println!("pre-hook"))
-        //     .post_hook(|| println!("post-hook"))
-        //     .build();
 
         Box::pin(fut)
     }
