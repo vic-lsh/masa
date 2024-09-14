@@ -256,11 +256,7 @@ fn generate_unary<T: Service>(
     let before_child_rpc = if enable_parent_rpc_ctx {
         quote! {
             if let Some(parent_ctx) = self.get_parent_ctx() {
-                let rpc = tonic::masa::RpcInfo {
-                    service_name: #service_name,
-                    method_name: #method_name,
-                };
-                parent_ctx.before_child_rpc(rpc, &mut req);
+                parent_ctx.before_child_rpc(grpc_method, &mut req);
             }
         }
     } else {
@@ -270,11 +266,7 @@ fn generate_unary<T: Service>(
     let after_child_rpc = if enable_parent_rpc_ctx {
         quote! {
             if let Some(parent_ctx) = self.get_parent_ctx() {
-                let rpc = tonic::masa::RpcInfo {
-                    service_name: #service_name,
-                    method_name: #method_name,
-                };
-                parent_ctx.after_child_rpc(rpc, &mut resp);
+                parent_ctx.after_child_rpc(grpc_method, &mut resp);
             }
         }
     } else {
@@ -293,7 +285,8 @@ fn generate_unary<T: Service>(
            // [NOTE] Method path name on the client side.
            let path = http::uri::PathAndQuery::from_static(#path);
            let mut req = request.into_request();
-           req.extensions_mut().insert(GrpcMethod::new(#service_name, #method_name));
+           let grpc_method = GrpcMethod::new(#service_name, #method_name);
+           req.extensions_mut().insert(grpc_method);
            #before_child_rpc
            #[allow(unused_mut)]
            let mut resp = self.inner.unary(req, path, codec).await;

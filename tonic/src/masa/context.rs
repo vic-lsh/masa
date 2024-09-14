@@ -2,17 +2,7 @@ use std::sync::Arc;
 
 use tonic_masa::Context;
 
-use crate::{Request, Response, Status};
-
-/// Description of a RPC about to be transmitted.
-#[derive(Debug)]
-pub struct RpcInfo {
-    // [TODO] replace service_name + method_name with `GrpcMethod`.
-    // we can't do this right now, because GrpcMethod is defined within `tonic`,
-    // and `tonic-masa` depending on `tonic` would create a dependency cycle.
-    pub service_name: &'static str,
-    pub method_name: &'static str,
-}
+use crate::{GrpcMethod, Request, Response, Status};
 
 pub struct RequestTxContext {}
 
@@ -45,12 +35,12 @@ impl RequestRxContext {
 // Request lifecycle hooks.
 // [TODO] extract this into a trait.
 impl RequestRxContext {
-    pub fn before_child_rpc<T>(&self, rpc: RpcInfo, req: &mut Request<T>) {
-        println!("before_child_rpc, {:?}", rpc);
+    pub fn before_child_rpc<T>(&self, method: GrpcMethod, req: &mut Request<T>) {
+        println!("before_child_rpc, {:?}", method);
     }
 
-    pub fn after_child_rpc<T>(&self, rpc: RpcInfo, resp: &mut Result<Response<T>, Status>) {
-        println!("after_child_rpc, {:?}", rpc);
+    pub fn after_child_rpc<T>(&self, method: GrpcMethod, resp: &mut Result<Response<T>, Status>) {
+        println!("after_child_rpc, {:?}", method);
     }
 }
 
