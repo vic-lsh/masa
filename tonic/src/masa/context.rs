@@ -1,4 +1,10 @@
-use std::{sync::Arc, task::Poll};
+use std::{
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    task::Poll,
+};
 
 use tonic_masa::Context;
 
@@ -9,8 +15,10 @@ pub struct RequestTxContext {}
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct RequestRxContext {
+    method_name: String,
     req_ctx: Context,
     server_ctx: Arc<ServerContext>,
+    polled: AtomicUsize,
 }
 
 // [NOTE] Tonic-generated server requires Debug.
@@ -22,12 +30,14 @@ pub struct ServerContext {
 }
 
 impl RequestRxContext {
-    pub fn new<B>(req: &http::Request<B>, server_ctx: Arc<ServerContext>) -> Self {
+    pub fn new<B>(method: &str, req: &http::Request<B>, server_ctx: Arc<ServerContext>) -> Self {
         let ctx_str = req.headers()["ctx"].to_str().unwrap();
         let req_ctx = Context::from_json(ctx_str);
         Self {
+            method_name: method.to_string(),
             req_ctx,
             server_ctx,
+            polled: AtomicUsize::new(0),
         }
     }
 }
@@ -46,7 +56,9 @@ impl RequestRxContext {
     /// Invoked each time before the request handler is polled.
     ///
     /// This indicates that the request handler can make progress.
-    pub fn before_poll(&self) {}
+    pub fn before_poll(&self) {
+        self.polled.fetch_add(1, Ordering::Relaxed);
+    }
 
     /// Invoked each time after the request handler is polled.
     ///
@@ -55,7 +67,13 @@ impl RequestRxContext {
 
     /// The last lifecycle hook to be invoked. Provides a mutable reference to the response about
     /// to be sent back to the client.
-    pub fn finalize(&self, response: &mut http::Response<BoxBody>) {}
+    pub fn finalize(&self, response: &mut http::Response<BoxBody>) {
+        println!(
+            "method {} polled {} times",
+            self.method_name,
+            self.polled.load(Ordering::Relaxed)
+        );
+    }
 }
 
 impl ServerContext {

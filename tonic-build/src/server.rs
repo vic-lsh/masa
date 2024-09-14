@@ -476,6 +476,7 @@ fn generate_unary<T: Method>(
     let codec_name = syn::parse_str::<syn::Path>(method.codec_path()).unwrap();
 
     let service_ident = quote::format_ident!("{}Svc", method.identifier());
+    let method_name = method.name();
 
     let (request, response) = method.request_response_name(proto_path, compile_well_known_types);
 
@@ -525,7 +526,7 @@ fn generate_unary<T: Method>(
                 .apply_max_message_size_config(max_decoding_message_size, max_encoding_message_size);
 
             // [TODO] mark this as pinned?
-            let req_ctx = tonic::masa::RequestRxContext::new(&req, server_ctx);
+            let req_ctx = tonic::masa::RequestRxContext::new(#method_name, &req, server_ctx);
 
             use tonic::util::Hookable;
             let fut = grpc.unary(method, req)
