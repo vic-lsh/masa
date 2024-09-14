@@ -4,6 +4,7 @@ use std::{
         Arc,
     },
     task::Poll,
+    time::Instant,
 };
 
 use tonic_masa::Context;
@@ -18,7 +19,9 @@ pub struct RequestRxContext {
     method_name: &'static str,
     req_ctx: Context,
     server_ctx: Arc<ServerContext>,
+
     polled: AtomicUsize,
+    request_start: Instant,
 }
 
 // [NOTE] Tonic-generated server requires Debug.
@@ -79,6 +82,7 @@ impl RequestHandlerHooks for RequestRxContext {
             req_ctx,
             server_ctx,
             polled: AtomicUsize::new(0),
+            request_start: Instant::now(),
         }
     }
 
@@ -96,9 +100,10 @@ impl RequestHandlerHooks for RequestRxContext {
 
     fn finalize(&self, response: &mut http::Response<BoxBody>) {
         println!(
-            "method {} polled {} times",
+            "method {} polled {} times, duration {} ms",
             self.method_name,
-            self.polled.load(Ordering::Relaxed)
+            self.polled.load(Ordering::Relaxed),
+            self.request_start.elapsed().as_millis()
         );
     }
 }
