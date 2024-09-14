@@ -74,7 +74,7 @@ impl fmt::Debug for Extensions {
 }
 
 /// A gRPC Method info extension.
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct GrpcMethod {
     service: &'static str,
     method: &'static str,
