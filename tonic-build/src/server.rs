@@ -96,7 +96,7 @@ pub(crate) fn generate_internal<T: Service>(
     quote! {
         thread_local! {
             #[allow(non_upper_case_globals)]
-             static #server_parent_rpc_ctx: std::cell::Cell<*const tonic_masa::RequestRxContext> =
+             static #server_parent_rpc_ctx: std::cell::Cell<*const tonic::masa::RequestRxContext> =
                     std::cell::Cell::new(core::ptr::null());
         }
 
@@ -111,8 +111,6 @@ pub(crate) fn generate_internal<T: Service>(
                 clippy::let_unit_value,
             )]
             use tonic::codegen::*;
-            /// Use Masa Context.
-            // use tonic_masa::Context as MasaContext;
 
             #generated_trait
 
@@ -121,7 +119,7 @@ pub(crate) fn generate_internal<T: Service>(
             #[derive(Debug)]
             pub struct #server_service<T: #server_trait> {
                 inner: _Inner<T>,
-                ctx: Arc<tonic_masa::ServerContext>,
+                ctx: Arc<tonic::masa::ServerContext>,
                 accept_compression_encodings: EnabledCompressionEncodings,
                 send_compression_encodings: EnabledCompressionEncodings,
                 max_decoding_message_size: Option<usize>,
@@ -137,7 +135,7 @@ pub(crate) fn generate_internal<T: Service>(
 
                 pub fn from_arc(inner: Arc<T>) -> Self {
                     let inner = _Inner(inner);
-                    let ctx = tonic_masa::ServerContext::new();
+                    let ctx = tonic::masa::ServerContext::new();
                     Self {
                         inner,
                         ctx: Arc::new(ctx),
@@ -493,7 +491,7 @@ fn generate_unary<T: Method>(
         #[allow(non_camel_case_types)]
         struct #service_ident<T: #server_trait > {
             pub inner: Arc<T>,
-            // pub ctx: tonic_masa::RequestRxContext,
+            // pub ctx: tonic::masa::RequestRxContext,
         }
 
         impl<T: #server_trait> tonic::server::UnaryService<#request> for #service_ident<T> {
@@ -518,7 +516,7 @@ fn generate_unary<T: Method>(
         let fut = async move {
             let inner = inner.0;
             // [TODO] mark this as pinned?
-            let req_ctx = tonic_masa::RequestRxContext::new(&req, server_ctx);
+            let req_ctx = tonic::masa::RequestRxContext::new(&req, server_ctx);
             let method = #service_ident {
                 inner,
                 // ctx: req_ctx,

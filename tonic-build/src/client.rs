@@ -132,7 +132,7 @@ pub(crate) fn generate_internal<T: Service>(
                 }
 
                 /// Internal. Obtain the parent RPC in which this RPC client stub operates.
-                fn get_parent_ctx(&self) -> Option<&'_ tonic_masa::RequestRxContext> {
+                fn get_parent_ctx(&self) -> Option<&'_ tonic::masa::RequestRxContext> {
                     let ctx = super::#server_parent_rpc_ctx.get();
                     unsafe { ctx.as_ref() }
                 }
