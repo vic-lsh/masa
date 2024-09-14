@@ -14,6 +14,7 @@ pub(crate) fn generate_internal<T: Service>(
     proto_path: &str,
     compile_well_known_types: bool,
     build_transport: bool,
+    enable_parent_rpc_ctx: bool,
     attributes: &Attributes,
     disable_comments: &HashSet<String>,
 ) -> TokenStream {
@@ -24,6 +25,7 @@ pub(crate) fn generate_internal<T: Service>(
         emit_package,
         proto_path,
         compile_well_known_types,
+        enable_parent_rpc_ctx,
         disable_comments,
     );
 
@@ -41,7 +43,11 @@ pub(crate) fn generate_internal<T: Service>(
     let mod_attributes = attributes.for_mod(package);
     let struct_attributes = attributes.for_struct(&service_name);
 
-    let server_parent_rpc_ctx = quote::format_ident!("{}_parent_rpc_ctx", service.name());
+    let get_parent_rpc_ctx = if enable_parent_rpc_ctx {
+        generate_get_parent_rpc_ctx(service)
+    } else {
+        TokenStream::new()
+    };
 
     quote! {
         /// Generated client implementations.
@@ -131,14 +137,22 @@ pub(crate) fn generate_internal<T: Service>(
                     self
                 }
 
-                /// Internal. Obtain the parent RPC in which this RPC client stub operates.
-                fn get_parent_ctx(&self) -> Option<&'_ tonic::masa::RequestRxContext> {
-                    let ctx = super::#server_parent_rpc_ctx.get();
-                    unsafe { ctx.as_ref() }
-                }
+                #get_parent_rpc_ctx
 
                 #methods
             }
+        }
+    }
+}
+
+fn generate_get_parent_rpc_ctx(service: &impl Service) -> TokenStream {
+    let server_parent_rpc_ctx = quote::format_ident!("{}_parent_rpc_ctx", service.name());
+
+    quote! {
+        /// Internal. Obtain the parent RPC in which this RPC client stub operates.
+        fn get_parent_ctx(&self) -> Option<&'_ tonic::masa::RequestRxContext> {
+            let ctx = super::#server_parent_rpc_ctx.get();
+            unsafe { ctx.as_ref() }
         }
     }
 }
@@ -176,6 +190,7 @@ fn generate_methods<T: Service>(
     emit_package: bool,
     proto_path: &str,
     compile_well_known_types: bool,
+    enable_parent_rpc_ctx: bool,
     disable_comments: &HashSet<String>,
 ) -> TokenStream {
     let mut stream = TokenStream::new();
@@ -192,6 +207,7 @@ fn generate_methods<T: Service>(
                 emit_package,
                 proto_path,
                 compile_well_known_types,
+                enable_parent_rpc_ctx,
             ),
             (false, true) => generate_server_streaming(
                 service,
@@ -228,6 +244,7 @@ fn generate_unary<T: Service>(
     emit_package: bool,
     proto_path: &str,
     compile_well_known_types: bool,
+    enable_parent_rpc_ctx: bool,
 ) -> TokenStream {
     let codec_name = syn::parse_str::<syn::Path>(method.codec_path()).unwrap();
     let ident = format_ident!("{}", method.name());
@@ -235,6 +252,26 @@ fn generate_unary<T: Service>(
     let service_name = format_service_name(service, emit_package);
     let path = format_method_path(service, method, emit_package);
     let method_name = method.identifier();
+
+    let before_child_rpc = if enable_parent_rpc_ctx {
+        quote! {
+           if let Some(parent_ctx) = self.get_parent_ctx() {
+              parent_ctx.before_child_rpc();
+           }
+        }
+    } else {
+        TokenStream::new()
+    };
+
+    let after_child_rpc = if enable_parent_rpc_ctx {
+        quote! {
+           if let Some(parent_ctx) = self.get_parent_ctx() {
+              parent_ctx.after_child_rpc();
+           }
+        }
+    } else {
+        TokenStream::new()
+    };
 
     quote! {
         pub async fn #ident(
@@ -249,13 +286,9 @@ fn generate_unary<T: Service>(
            let path = http::uri::PathAndQuery::from_static(#path);
            let mut req = request.into_request();
            req.extensions_mut().insert(GrpcMethod::new(#service_name, #method_name));
-           if let Some(parent_ctx) = self.get_parent_ctx() {
-              parent_ctx.before_child_rpc();
-           }
+           #before_child_rpc
            let resp = self.inner.unary(req, path, codec).await;
-           if let Some(parent_ctx) = self.get_parent_ctx() {
-              parent_ctx.after_child_rpc();
-           }
+           #after_child_rpc
            resp
         }
     }
