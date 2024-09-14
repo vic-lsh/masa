@@ -40,6 +40,9 @@ pub struct ServerContext {
 
 /// Lifecycle hooks when the server executes a request.
 ///
+/// Structs that implement this trait will be constructed each time a server
+/// starts handling a request, and destructed when the request is complete.
+///
 /// All hook points have a default, empty implementation (except for `begin`,
 /// which must be implemented and acts as a constructor). Implementer can choose
 /// to only implement hooks they're interested in.
