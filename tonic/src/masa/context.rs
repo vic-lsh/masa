@@ -15,7 +15,7 @@ pub struct RequestTxContext {}
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct RequestRxContext {
-    method_name: String,
+    method_name: &'static str,
     req_ctx: Context,
     server_ctx: Arc<ServerContext>,
     polled: AtomicUsize,
@@ -30,11 +30,15 @@ pub struct ServerContext {
 }
 
 impl RequestRxContext {
-    pub fn new<B>(method: &str, req: &http::Request<B>, server_ctx: Arc<ServerContext>) -> Self {
+    pub fn new<B>(
+        method: &'static str,
+        req: &http::Request<B>,
+        server_ctx: Arc<ServerContext>,
+    ) -> Self {
         let ctx_str = req.headers()["ctx"].to_str().unwrap();
         let req_ctx = Context::from_json(ctx_str);
         Self {
-            method_name: method.to_string(),
+            method_name: method,
             req_ctx,
             server_ctx,
             polled: AtomicUsize::new(0),
