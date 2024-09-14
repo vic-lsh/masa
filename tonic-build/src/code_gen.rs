@@ -14,6 +14,10 @@ pub struct CodeGenBuilder {
     disable_comments: HashSet<String>,
     use_arc_self: bool,
     generate_default_stubs: bool,
+    /// Masa-specific.
+    /// Toggles whether we enable RPC clients to know if they're being used
+    /// in a RPC handler -- their parent RPC.
+    enable_parent_rpc_ctx: bool,
 }
 
 impl CodeGenBuilder {
@@ -71,6 +75,13 @@ impl CodeGenBuilder {
         self
     }
 
+    /// Enable or disable parent RPC support in RPC clients. Requires server-side code
+    /// modification.
+    pub fn enable_parent_rpc_context(&mut self, enable_parent_rpc_ctx: bool) -> &mut Self {
+        self.enable_parent_rpc_ctx = enable_parent_rpc_ctx;
+        self
+    }
+
     /// Generate client code based on `Service`.
     ///
     /// This takes some `Service` and will generate a `TokenStream` that contains
@@ -82,6 +93,7 @@ impl CodeGenBuilder {
             proto_path,
             self.compile_well_known_types,
             self.build_transport,
+            self.enable_parent_rpc_ctx,
             &self.attributes,
             &self.disable_comments,
         )
@@ -97,6 +109,7 @@ impl CodeGenBuilder {
             self.emit_package,
             proto_path,
             self.compile_well_known_types,
+            self.enable_parent_rpc_ctx,
             &self.attributes,
             &self.disable_comments,
             self.use_arc_self,
@@ -115,6 +128,7 @@ impl Default for CodeGenBuilder {
             disable_comments: HashSet::default(),
             use_arc_self: false,
             generate_default_stubs: false,
+            enable_parent_rpc_ctx: false,
         }
     }
 }
