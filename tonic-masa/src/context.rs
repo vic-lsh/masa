@@ -223,6 +223,9 @@ impl Context {
 /// Description of a RPC about to be transmitted.
 #[derive(Debug)]
 pub struct RpcInfo {
+    // [TODO] replace service_name + method_name with `GrpcMethod`.
+    // we can't do this right now, because GrpcMethod is defined within `tonic`,
+    // and `tonic-masa` depending on `tonic` would create a dependency cycle.
     pub service_name: &'static str,
     pub method_name: &'static str,
 }
