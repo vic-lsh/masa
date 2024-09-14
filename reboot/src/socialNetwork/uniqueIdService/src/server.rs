@@ -4,7 +4,7 @@ use unique_id_service::greeter_server::{Greeter, GreeterServer};
 use unique_id_service::{UniqueIdReply, UniqueIdRequest};
 
 pub mod unique_id_service {
-    tonic::include_proto!("unique");
+    tonic::include_proto!("uniqueidservice");
 }
 
 #[derive(Debug, Default)]
