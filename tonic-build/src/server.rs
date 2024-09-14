@@ -539,10 +539,13 @@ fn generate_unary<T: Method>(
                     // A server handler should not be calling another server handler.
                     // We only set this value before polling a server handler.
                     assert!(original.is_null());
+
+                    req_ctx.before_poll();
                 })
-                .post_hook(|_| {
+                .post_hook(|poll| {
                     let original = super::#server_parent_rpc_ctx.replace(core::ptr::null());
                     assert!(!original.is_null());
+                    req_ctx.after_poll(poll);
                 })
                 .build();
 

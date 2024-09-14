@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, task::Poll};
 
 use tonic_masa::Context;
 
@@ -42,6 +42,16 @@ impl RequestRxContext {
     pub fn after_child_rpc<T>(&self, method: GrpcMethod, resp: &mut Result<Response<T>, Status>) {
         println!("after_child_rpc, {:?}", method);
     }
+
+    /// Invoked each time before the request handler is polled.
+    ///
+    /// This indicates that the request handler can make progress.
+    pub fn before_poll(&self) {}
+
+    /// Invoked each time after the request handler is polled.
+    ///
+    /// The poll result shows whether the request is blocked or finalized.
+    pub fn after_poll<T>(&self, poll: &Poll<T>) {}
 
     /// The last lifecycle hook to be invoked. Provides a mutable reference to the response about
     /// to be sent back to the client.
