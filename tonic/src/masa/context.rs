@@ -29,29 +29,22 @@ pub struct ServerContext {
     // local_graph: Option<LocalGraph>,
 }
 
-impl RequestRxContext {
-    pub fn new<B>(
+/// Lifecycle hooks while the server executes a request.
+///
+/// All hook points have a default, empty implementation (except for `begin`,
+/// which must be implemented and acts as a constructor). Implementer can choose
+/// to only implement hooks they're interested in.
+#[allow(unused_variables)]
+pub trait RequestHandlerHooks {
+    /// The first lifecycle, marking the start of a request execution.
+    ///
+    /// This is also the constructor for the hook point struct implementation.
+    fn begin<B>(
         method: &'static str,
         req: &http::Request<B>,
         server_ctx: Arc<ServerContext>,
-    ) -> Self {
-        let ctx_str = req.headers()["ctx"].to_str().unwrap();
-        let req_ctx = Context::from_json(ctx_str);
-        Self {
-            method_name: method,
-            req_ctx,
-            server_ctx,
-            polled: AtomicUsize::new(0),
-        }
-    }
-}
+    ) -> Self;
 
-/// Lifecycle hooks while the server executes a request.
-///
-/// All hook points have a default, empty implementation. Implementer can
-/// choose to only implement hooks they're interested in.
-#[allow(unused_variables)]
-pub trait RequestHandlerHooks {
     /// Invoked before the request handler makes an RPC.
     fn before_child_rpc<T>(&self, method: GrpcMethod, req: &mut Request<T>) {}
 
@@ -74,6 +67,21 @@ pub trait RequestHandlerHooks {
 }
 
 impl RequestHandlerHooks for RequestRxContext {
+    fn begin<B>(
+        method: &'static str,
+        req: &http::Request<B>,
+        server_ctx: Arc<ServerContext>,
+    ) -> Self {
+        let ctx_str = req.headers()["ctx"].to_str().unwrap();
+        let req_ctx = Context::from_json(ctx_str);
+        Self {
+            method_name: method,
+            req_ctx,
+            server_ctx,
+            polled: AtomicUsize::new(0),
+        }
+    }
+
     fn before_child_rpc<T>(&self, method: GrpcMethod, req: &mut Request<T>) {
         println!("before_child_rpc, {:?}", method);
     }
