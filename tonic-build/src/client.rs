@@ -260,7 +260,7 @@ fn generate_unary<T: Service>(
                     service_name: #service_name,
                     method_name: #method_name,
                 };
-                parent_ctx.before_child_rpc(rpc);
+                parent_ctx.before_child_rpc(rpc, &mut req);
             }
         }
     } else {
@@ -274,7 +274,7 @@ fn generate_unary<T: Service>(
                     service_name: #service_name,
                     method_name: #method_name,
                 };
-                parent_ctx.after_child_rpc(rpc);
+                parent_ctx.after_child_rpc(rpc, &mut resp);
             }
         }
     } else {
@@ -295,7 +295,8 @@ fn generate_unary<T: Service>(
            let mut req = request.into_request();
            req.extensions_mut().insert(GrpcMethod::new(#service_name, #method_name));
            #before_child_rpc
-           let resp = self.inner.unary(req, path, codec).await;
+           #[allow(unused_mut)]
+           let mut resp = self.inner.unary(req, path, codec).await;
            #after_child_rpc
            resp
         }
