@@ -492,7 +492,6 @@ fn generate_unary<T: Method>(
         #[allow(non_camel_case_types)]
         struct #service_ident<T: #server_trait > {
             pub inner: Arc<T>,
-            // pub ctx: tonic::masa::RequestRxContext,
         }
 
         impl<T: #server_trait> tonic::server::UnaryService<#request> for #service_ident<T> {
@@ -516,17 +515,17 @@ fn generate_unary<T: Method>(
         let server_ctx = self.ctx.clone();
         let fut = async move {
             let inner = inner.0;
-            // [TODO] mark this as pinned?
-            let req_ctx = tonic::masa::RequestRxContext::new(&req, server_ctx);
             let method = #service_ident {
                 inner,
-                // ctx: req_ctx,
             };
             let codec = #codec_name::default();
 
             let mut grpc = tonic::server::Grpc::new(codec)
                 .apply_compression_config(accept_compression_encodings, send_compression_encodings)
                 .apply_max_message_size_config(max_decoding_message_size, max_encoding_message_size);
+
+            // [TODO] mark this as pinned?
+            let req_ctx = tonic::masa::RequestRxContext::new(&req, server_ctx);
 
             use tonic::util::Hookable;
             let fut = grpc.unary(method, req)
@@ -547,7 +546,8 @@ fn generate_unary<T: Method>(
                 })
                 .build();
 
-            let res = fut.await;
+            let mut res = fut.await;
+            req_ctx.finalize(&mut res);
             Ok(res)
         };
 
