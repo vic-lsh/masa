@@ -223,6 +223,7 @@ impl Context {
 pub struct RequestTxContext {}
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct RequestRxContext {
     ctx: Context,
 }
@@ -239,7 +240,11 @@ impl RequestRxContext {
         let ctx = Context::from_json(ctx_str);
         Self { ctx }
     }
+}
 
+// Request lifecycle hooks.
+// [TODO] extract this into a trait.
+impl RequestRxContext {
     pub fn before_child_rpc(&self) {
         println!("before_child_rpc");
     }
