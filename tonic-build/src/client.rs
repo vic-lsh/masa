@@ -255,6 +255,7 @@ fn generate_unary<T: Service>(
 
     let before_child_rpc = if enable_parent_rpc_ctx {
         quote! {
+            use tonic::masa::RequestHandlerHooks;
             if let Some(parent_ctx) = self.get_parent_ctx() {
                 parent_ctx.before_child_rpc(grpc_method, &mut req);
             }

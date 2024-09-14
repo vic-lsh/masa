@@ -531,6 +531,7 @@ fn generate_unary<T: Method>(
             let req_ctx = std::pin::Pin::new(&req_ctx);
 
             use tonic::util::Hookable;
+            use tonic::masa::RequestHandlerHooks;
             let fut = grpc.unary(method, req)
                 .hook()
                 .pre_hook(|| {
