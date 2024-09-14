@@ -8,6 +8,8 @@ use hello::{
 use hyper::rt::{Exec, Executor};
 use log::info;
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
@@ -30,6 +32,8 @@ pub fn time_now() -> u64 {
     now as u64
 }
 
+type BoxSendFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Server for benchmarking")]
 pub struct Args {
@@ -40,16 +44,20 @@ pub struct Args {
 pub struct GreeterImpl {
     local_graphs: HashMap<Path, LocalGraph>,
     clients: HashMap<Path, GreeterClient<Channel>>,
+    executor: Arc<dyn Executor<BoxSendFuture> + Send + Sync>,
 }
 
 impl GreeterImpl {
     pub fn new(
         local_graphs: HashMap<Path, LocalGraph>,
         clients: HashMap<Path, GreeterClient<Channel>>,
+        //     executor: Arc<ExecImpl<'a>>,
+        executor: Arc<dyn Executor<BoxSendFuture> + Send + Sync>,
     ) -> Self {
         Self {
             local_graphs,
             clients,
+            executor,
         }
     }
 }
@@ -67,8 +75,9 @@ impl Greeter for GreeterImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        info!("ctx: {:?}", ctx);
+        // info!("ctx: {:?}", ctx);
         ctx.set_local_graph(local_graph.clone());
+        info!("say_hello");
 
         let spans = local_graph.spans();
         let elapse = spans
@@ -114,8 +123,9 @@ impl Greeter for GreeterImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        info!("ctx: {:?}", ctx);
+        // info!("ctx: {:?}", ctx);
         ctx.set_local_graph(local_graph.clone());
+        info!("say_goodbye");
 
         let spans = local_graph.spans();
         let elapse = spans
@@ -141,11 +151,11 @@ impl Greeter for GreeterImpl {
 
 #[derive(Debug)]
 struct ExecImpl<'a> {
-    ex: Arc<smol::Executor<'a>>,
+    ex: &'a smol::Executor<'a>,
 }
 
 impl<'a> ExecImpl<'a> {
-    fn new(ex: Arc<smol::Executor<'a>>) -> Self {
+    fn new(ex: &'a smol::Executor<'a>) -> Self {
         Self { ex }
     }
 
@@ -244,6 +254,8 @@ fn init_logging() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    static SMOL_EXECUTOR: smol::Executor<'static> = smol::Executor::new();
+
     init_logging();
 
     let args = Args::from_args();
@@ -295,7 +307,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..servers.len() {
         let server = servers[i].clone();
 
-        let ex = Arc::new(ExecImpl::new(Arc::new(smol::Executor::new())));
+        let ex = Arc::new(ExecImpl::new(&SMOL_EXECUTOR));
         for _ in 0..server.n_threads() {
             let ex = ex.clone();
             std::thread::spawn(move || {
@@ -311,8 +323,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let addr = server.addr().parse().unwrap();
             let local_graphs = server.local_graphs().clone();
             let clients = server.get_clients().await;
+            let server_ex = ex.clone();
 
-            let greeter = GreeterImpl::new(local_graphs, clients);
+            let greeter = GreeterImpl::new(local_graphs, clients, server_ex);
             info!("Listening on {}...", addr);
             Server::builder()
                 .add_service(GreeterServer::new(greeter))
