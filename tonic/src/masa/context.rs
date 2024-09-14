@@ -38,13 +38,17 @@ pub struct ServerContext {
     // local_graph: Option<LocalGraph>,
 }
 
-/// Lifecycle hooks while the server executes a request.
+/// Lifecycle hooks when the server executes a request.
 ///
 /// All hook points have a default, empty implementation (except for `begin`,
 /// which must be implemented and acts as a constructor). Implementer can choose
 /// to only implement hooks they're interested in.
+///
+/// The implementation must be multithread-safe (i.e. `Sync`). One reasons is
+/// that child RPCs can run in parallel, and they may invoke hook points
+/// defined below from different threads.
 #[allow(unused_variables)]
-pub trait RequestHandlerHooks {
+pub trait RequestHandlerHooks: Sync {
     /// The first lifecycle, marking the start of a request execution.
     ///
     /// This is also the constructor for the hook point struct implementation.
