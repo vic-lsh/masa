@@ -20,12 +20,6 @@ pub const QUEUE_EDF: bool = if cfg!(feature = "queue_edf") {
     false
 };
 
-pub const EST_OFFLINE: bool = if cfg!(feature = "est_offline") {
-    true
-} else {
-    false
-};
-
 pub const EST_ONLINE: bool = if cfg!(feature = "est_online") {
     true
 } else {

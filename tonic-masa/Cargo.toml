@@ -8,7 +8,6 @@ queue_edf = []
 queue_fifo_two = []
 queue_fifo = []
 est_online = []
-est_offline = []
 mock_dist = []
 mock_hotel = []
 

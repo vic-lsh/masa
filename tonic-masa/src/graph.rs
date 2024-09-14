@@ -52,15 +52,13 @@ impl LocalGraphTracker {
     pub fn estimate_suffix(&self, path: &Path) -> Latency {
         let mut existed = false;
         let mut suffix_sum = 0;
-
         for span in self.spans.iter().rev() {
-            if *span.path() == *path {
+            if span.path() == path {
                 existed = true;
                 break;
             }
             suffix_sum += span.estimate();
         }
-
         assert!(existed, "Span {} not found", path);
         suffix_sum
     }
@@ -68,7 +66,7 @@ impl LocalGraphTracker {
     /// Track the latency of a span indexed by its path.
     pub fn track(&mut self, path: &Path, latency: Latency) {
         for span in self.spans.iter_mut() {
-            if *span.path() == *path {
+            if span.path() == path {
                 span.track(latency);
                 return;
             }
