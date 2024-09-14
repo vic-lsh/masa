@@ -255,9 +255,13 @@ fn generate_unary<T: Service>(
 
     let before_child_rpc = if enable_parent_rpc_ctx {
         quote! {
-           if let Some(parent_ctx) = self.get_parent_ctx() {
-              parent_ctx.before_child_rpc();
-           }
+            if let Some(parent_ctx) = self.get_parent_ctx() {
+                let rpc = tonic::masa::RpcInfo {
+                    service_name: #service_name,
+                    method_name: #method_name,
+                };
+                parent_ctx.before_child_rpc(rpc);
+            }
         }
     } else {
         TokenStream::new()
@@ -265,9 +269,13 @@ fn generate_unary<T: Service>(
 
     let after_child_rpc = if enable_parent_rpc_ctx {
         quote! {
-           if let Some(parent_ctx) = self.get_parent_ctx() {
-              parent_ctx.after_child_rpc();
-           }
+            if let Some(parent_ctx) = self.get_parent_ctx() {
+                let rpc = tonic::masa::RpcInfo {
+                    service_name: #service_name,
+                    method_name: #method_name,
+                };
+                parent_ctx.after_child_rpc(rpc);
+            }
         }
     } else {
         TokenStream::new()
