@@ -19,7 +19,8 @@ use tonic::{
     Request, Response, Status,
 };
 use tonic_masa::{
-    Address, Context, GlobalGraph, LocalGraph, LocalGraphTracker, Path, EST_ONLINE, QUEUE_EDF,
+    Address, Context, GlobalGraph, Latency, LocalGraph, LocalGraphTracker, Path, EST_ONLINE,
+    QUEUE_EDF,
 };
 
 use bridge::{
@@ -64,12 +65,7 @@ impl WorkerImpl {
         }
     }
 
-    fn pre_unary(
-        &self,
-        ctx: &Context,
-        request: &mut Request<HelloRequest>,
-        path: &Path,
-    ) -> Context {
+    fn set_child_ctx(&self, ctx: &Context, request: &mut Request<HelloRequest>, path: &Path) {
         let mut deadline = ctx.deadline();
         if QUEUE_EDF {
             let graph = self
@@ -87,20 +83,17 @@ impl WorkerImpl {
             time_now(),
         );
         request.metadata_mut().insert_ctx("ctx", &child_ctx);
-        child_ctx
     }
 
-    fn post_unary(&self, ctx: &Context, child_ctx: &Context, path: &Path) {
+    fn track(&self, ctx: &Context, path: &Path, latency: Latency) {
         if EST_ONLINE {
-            let send_at = child_ctx.send_at();
-            let recv_at = time_now();
             let mut graph = self
                 .local_graph_trackers
                 .get(ctx.graph_id())
                 .unwrap()
                 .write()
                 .unwrap();
-            graph.track(path, recv_at - send_at);
+            graph.track(path, latency);
         }
     }
 }
@@ -123,29 +116,34 @@ impl Worker for WorkerImpl {
         let spans = graph.spans();
         assert!(spans.len() == 3);
 
-        let elapse = spans.first().unwrap().get_distribution().mean();
-        // .sample(ctx.request_id());
-        busy_spin(Duration::from_micros(elapse));
-        latency_spin += elapse;
+        for i in 0..spans.len() {
+            let span = &spans[i];
+            let path = span.path();
 
-        for span in spans.iter().skip(1).take(spans.len() - 2) {
-            let mut client = self.clients.get(span.path()).unwrap().clone();
-            let mut request = Request::new(HelloRequest {
-                name: "SayHelloI3".to_string(),
-            });
+            if i == 0 || i == spans.len() - 1 {
+                let elapse = span.distribution().mean();
+                // .sample(ctx.request_id());
+                latency_spin += elapse;
 
-            let child_ctx = self.pre_unary(&ctx, &mut request, span.path());
-            client.say_hello_i3(request).await.unwrap();
-            self.post_unary(&ctx, &child_ctx, span.path());
+                let start_at = time_now();
+                busy_spin(Duration::from_micros(elapse));
+                let latency = time_now() - start_at;
+                self.track(&ctx, path, latency);
+            } else {
+                let mut client = self.clients.get(path).unwrap().clone();
+                let mut request = Request::new(HelloRequest {
+                    name: "SayHelloI3".to_string(),
+                });
+
+                self.set_child_ctx(&ctx, &mut request, path);
+                let start_at = time_now();
+                client.say_hello_i3(request).await.unwrap();
+                let latency = time_now() - start_at;
+                self.track(&ctx, path, latency);
+            }
         }
 
-        let elapse = spans.last().unwrap().get_distribution().mean();
-        // .sample(ctx.request_id());
-        busy_spin(Duration::from_micros(elapse));
-        latency_spin += elapse;
-
-        let finish_at = time_now();
-        let latency = finish_at - start_at;
+        let latency = time_now() - start_at;
 
         // [OPTION] Log by probability.
         // if ctx.request_id() % 10 == 0 {
@@ -153,8 +151,8 @@ impl Worker for WorkerImpl {
             log::warn!(
                 "say_hello_i4,{},{},{}",
                 ctx.request_id(),
+                latency,
                 latency_spin,
-                latency
             );
         }
 
@@ -178,28 +176,34 @@ impl Worker for WorkerImpl {
         let spans = graph.spans();
         assert!(spans.len() == 3);
 
-        let elapse = spans.first().unwrap().get_distribution().mean();
-        // .sample(ctx.request_id());
-        busy_spin(Duration::from_micros(elapse));
-        latency_spin += elapse;
+        for i in 0..spans.len() {
+            let span = &spans[i];
+            let path = span.path();
 
-        for span in spans.iter().skip(1).take(spans.len() - 2) {
-            let mut client = self.clients.get(span.path()).unwrap().clone();
-            let mut request = Request::new(HelloRequest {
-                name: "SayHelloI2".to_string(),
-            });
-            let child_ctx = self.pre_unary(&ctx, &mut request, span.path());
-            client.say_hello_i2(request).await.unwrap();
-            self.post_unary(&ctx, &child_ctx, span.path());
+            if i == 0 || i == spans.len() - 1 {
+                let elapse = span.distribution().mean();
+                // .sample(ctx.request_id());
+                latency_spin += elapse;
+
+                let start_at = time_now();
+                busy_spin(Duration::from_micros(elapse));
+                let latency = time_now() - start_at;
+                self.track(&ctx, path, latency);
+            } else {
+                let mut client = self.clients.get(path).unwrap().clone();
+                let mut request = Request::new(HelloRequest {
+                    name: "SayHelloI2".to_string(),
+                });
+
+                self.set_child_ctx(&ctx, &mut request, path);
+                let start_at = time_now();
+                client.say_hello_i2(request).await.unwrap();
+                let latency = time_now() - start_at;
+                self.track(&ctx, path, latency);
+            }
         }
 
-        let elapse = spans.last().unwrap().get_distribution().mean();
-        // .sample(ctx.request_id());
-        busy_spin(Duration::from_micros(elapse));
-        latency_spin += elapse;
-
-        let finish_at = time_now();
-        let latency = finish_at - start_at;
+        let latency = time_now() - start_at;
 
         // [OPTION] Log by probability.
         // if ctx.request_id() % 10 == 0 {
@@ -207,8 +211,8 @@ impl Worker for WorkerImpl {
             log::warn!(
                 "say_hello_i3,{},{},{}",
                 ctx.request_id(),
+                latency,
                 latency_spin,
-                latency
             );
         }
 
@@ -232,28 +236,34 @@ impl Worker for WorkerImpl {
         let spans = graph.spans();
         assert!(spans.len() == 3);
 
-        let elapse = spans.first().unwrap().get_distribution().mean();
-        // .sample(ctx.request_id());
-        busy_spin(Duration::from_micros(elapse));
-        latency_spin += elapse;
+        for i in 0..spans.len() {
+            let span = &spans[i];
+            let path = span.path();
 
-        for span in spans.iter().skip(1).take(spans.len() - 2) {
-            let mut client = self.clients.get(span.path()).unwrap().clone();
-            let mut request = Request::new(HelloRequest {
-                name: "SayHelloI1".to_string(),
-            });
-            let child_ctx = self.pre_unary(&ctx, &mut request, span.path());
-            client.say_hello_i1(request).await.unwrap();
-            self.post_unary(&ctx, &child_ctx, span.path());
+            if i == 0 || i == spans.len() - 1 {
+                let elapse = span.distribution().mean();
+                // .sample(ctx.request_id());
+                latency_spin += elapse;
+
+                let start_at = time_now();
+                busy_spin(Duration::from_micros(elapse));
+                let latency = time_now() - start_at;
+                self.track(&ctx, path, latency);
+            } else {
+                let mut client = self.clients.get(path).unwrap().clone();
+                let mut request = Request::new(HelloRequest {
+                    name: "SayHelloI1".to_string(),
+                });
+
+                self.set_child_ctx(&ctx, &mut request, path);
+                let start_at = time_now();
+                client.say_hello_i1(request).await.unwrap();
+                let latency = time_now() - start_at;
+                self.track(&ctx, path, latency);
+            }
         }
 
-        let elapse = spans.last().unwrap().get_distribution().mean();
-        // .sample(ctx.request_id());
-        busy_spin(Duration::from_micros(elapse));
-        latency_spin += elapse;
-
-        let finish_at = time_now();
-        let latency = finish_at - start_at;
+        let latency = time_now() - start_at;
 
         // [OPTION] Log by probability.
         // if ctx.request_id() % 10 == 0 {
@@ -261,8 +271,8 @@ impl Worker for WorkerImpl {
             log::warn!(
                 "say_hello_i2,{},{},{}",
                 ctx.request_id(),
+                latency,
                 latency_spin,
-                latency
             );
         }
 
@@ -286,18 +296,34 @@ impl Worker for WorkerImpl {
         let spans = graph.spans();
         assert!(spans.len() == 2);
 
-        let elapse = spans.first().unwrap().get_distribution().mean();
-        // .sample(ctx.request_id());
-        busy_spin(Duration::from_micros(elapse));
-        latency_spin += elapse;
+        for i in 0..spans.len() {
+            let span = &spans[i];
+            let path = span.path();
 
-        let elapse = spans.last().unwrap().get_distribution().mean();
-        // .sample(ctx.request_id());
-        busy_spin(Duration::from_micros(elapse));
-        latency_spin += elapse;
+            if i == 0 || i == spans.len() - 1 {
+                let elapse = span.distribution().mean();
+                // .sample(ctx.request_id());
+                latency_spin += elapse;
 
-        let finish_at = time_now();
-        let latency = finish_at - start_at;
+                let start_at = time_now();
+                busy_spin(Duration::from_micros(elapse));
+                let latency = time_now() - start_at;
+                self.track(&ctx, path, latency);
+            } else {
+                let mut client = self.clients.get(path).unwrap().clone();
+                let mut request = Request::new(HelloRequest {
+                    name: "SayHelloI1".to_string(),
+                });
+
+                self.set_child_ctx(&ctx, &mut request, path);
+                let start_at = time_now();
+                client.say_hello_i1(request).await.unwrap();
+                let latency = time_now() - start_at;
+                self.track(&ctx, path, latency);
+            }
+        }
+
+        let latency = time_now() - start_at;
 
         // [OPTION] Log by probability.
         // if ctx.request_id() % 10 == 0 {
@@ -305,8 +331,8 @@ impl Worker for WorkerImpl {
             log::warn!(
                 "say_hello_i1,{},{},{}",
                 ctx.request_id(),
-                latency_spin,
-                latency
+                latency,
+                latency_spin
             );
         }
 

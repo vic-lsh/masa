@@ -74,7 +74,6 @@ queue_edf = ["tonic-masa/queue_edf"]
 queue_fifo_two = ["tonic-masa/queue_fifo_two"]
 queue_fifo = ["tonic-masa/queue_fifo"]
 est_online = ["tonic-masa/est_online"]
-est_offline = ["tonic-masa/est_offline"]
 mock_dist = ["tonic-masa/mock_dist"]
 mock_hotel = ["tonic-masa/mock_hotel"]
 
