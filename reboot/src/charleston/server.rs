@@ -73,40 +73,7 @@ impl Greeter for GreeterImpl {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
-        let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        // info!("ctx: {:?}", ctx);
-        ctx.set_local_graph(local_graph.clone());
-        info!("say_hello");
-
-        let spans = local_graph.spans();
-        let elapse = spans
-            .first()
-            .unwrap()
-            .distribution()
-            .sample(ctx.request_id());
-        busy_spin(Duration::from_micros(elapse));
-
-        for span in spans.iter().skip(1).take(spans.len() - 2) {
-            let mut client = self.clients.get(span.path()).unwrap().clone();
-            let mut request = Request::new(HelloRequest {
-                name: "SayGoodbye".to_string(),
-            });
-            request.metadata_mut().insert_ctx("par_ctx", &ctx);
-            client.say_goodbye(request).await.unwrap();
-        }
-
-        let elapse = spans
-            .last()
-            .unwrap()
-            .distribution()
-            .sample(ctx.request_id());
-        busy_spin(Duration::from_micros(elapse));
-
-        let reply = HelloReply {
-            message: format!("Hello {}!", request.into_inner().name),
-        };
-        Ok(Response::new(reply))
+        self.say_hello_old_impl(request).await
     }
 
     async fn say_hola(
@@ -134,6 +101,48 @@ impl Greeter for GreeterImpl {
             .distribution()
             .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
+
+        let elapse = spans
+            .last()
+            .unwrap()
+            .distribution()
+            .sample(ctx.request_id());
+        busy_spin(Duration::from_micros(elapse));
+
+        let reply = HelloReply {
+            message: format!("Hello {}!", request.into_inner().name),
+        };
+        Ok(Response::new(reply))
+    }
+}
+
+impl GreeterImpl {
+    async fn say_hello_old_impl(
+        &self,
+        request: Request<HelloRequest>,
+    ) -> Result<Response<HelloReply>, Status> {
+        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
+        // info!("ctx: {:?}", ctx);
+        ctx.set_local_graph(local_graph.clone());
+        info!("say_hello");
+
+        let spans = local_graph.spans();
+        let elapse = spans
+            .first()
+            .unwrap()
+            .distribution()
+            .sample(ctx.request_id());
+        busy_spin(Duration::from_micros(elapse));
+
+        for span in spans.iter().skip(1).take(spans.len() - 2) {
+            let mut client = self.clients.get(span.path()).unwrap().clone();
+            let mut request = Request::new(HelloRequest {
+                name: "SayGoodbye".to_string(),
+            });
+            request.metadata_mut().insert_ctx("par_ctx", &ctx);
+            client.say_goodbye(request).await.unwrap();
+        }
 
         let elapse = spans
             .last()
