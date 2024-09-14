@@ -231,7 +231,9 @@ pub struct RequestRxContext {
 
 // [NOTE] Tonic-generated server requires Debug.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ServerContext {
+    service_name: &'static str,
     // local_graph: Option<LocalGraph>,
 }
 
@@ -259,7 +261,8 @@ impl RequestRxContext {
 }
 
 impl ServerContext {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(service_name: &'static str) -> Self {
+        println!("ServerContext: constructed for service {}", service_name);
+        Self { service_name }
     }
 }
