@@ -1,6 +1,4 @@
-use std::sync::RwLock;
-
-use crate::{Distribution, Latency, LatencyTracker, Path, EST_OFFLINE, EST_ONLINE};
+use crate::{Distribution, Latency, LatencyTracker, Path, EST_ONLINE, MOCK_DIST};
 
 /// Represent a span inner.
 #[derive(Debug, Default, Clone)]
@@ -30,7 +28,7 @@ impl Span {
     }
 
     /// Get the distribution.
-    pub fn get_distribution(&self) -> &Distribution {
+    pub fn distribution(&self) -> &Distribution {
         assert!(self.distribution.is_some());
         self.distribution.as_ref().unwrap()
     }
@@ -41,7 +39,7 @@ impl Span {
 pub struct SpanTracker {
     path: Path,
     distribution: Option<Distribution>,
-    tracker: Option<RwLock<LatencyTracker>>,
+    tracker: Option<LatencyTracker>,
 }
 
 impl From<Span> for SpanTracker {
@@ -60,7 +58,7 @@ impl SpanTracker {
         let mut tracker = None;
         if EST_ONLINE {
             let tracker_capacity = tracker_capacity.unwrap();
-            tracker = Some(RwLock::new(LatencyTracker::new(tracker_capacity)));
+            tracker = Some(LatencyTracker::new(tracker_capacity));
         }
         Self {
             path,
@@ -75,29 +73,28 @@ impl SpanTracker {
     }
 
     /// Get the distribution.
-    pub fn get_distribution(&self) -> &Distribution {
+    pub fn distribution(&self) -> &Distribution {
         assert!(self.distribution.is_some());
         self.distribution.as_ref().unwrap()
     }
 
     /// Estimate the latency.
     pub fn estimate(&self) -> Latency {
-        if EST_OFFLINE {
-            self.get_distribution().mean()
-        } else if EST_ONLINE {
-            self.tracker.as_ref().unwrap().read().unwrap().estimate()
+        if EST_ONLINE {
+            self.tracker.as_ref().unwrap().estimate()
+        } else if MOCK_DIST {
+            self.distribution().mean()
         } else {
-            panic!("Not implemented")
+            panic!("Not implemented");
         }
     }
 
     /// Update the tracker.
     pub fn track(&mut self, latency: Latency) {
-        self.tracker
-            .as_ref()
-            .unwrap()
-            .write()
-            .unwrap()
-            .track(latency);
+        if EST_ONLINE {
+            self.tracker.as_mut().unwrap().track(latency);
+        } else {
+            panic!("Not implemented");
+        }
     }
 }
