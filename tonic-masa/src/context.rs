@@ -249,6 +249,10 @@ impl RequestRxContext {
         println!("before_child_rpc");
     }
 
+    pub fn after_child_rpc(&self) {
+        println!("after_child_rpc");
+    }
+
     pub fn increment(&self) {
         self.val.fetch_add(1, Ordering::Relaxed);
     }
