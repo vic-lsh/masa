@@ -32,6 +32,7 @@ pub(crate) fn generate_internal<T: Service>(
     let server_service = quote::format_ident!("{}Server", service.name());
     let server_trait = quote::format_ident!("{}", service.name());
     let server_mod = quote::format_ident!("{}_server", naive_snake_case(service.name()));
+    let server_parent_rpc_ctx = quote::format_ident!("{}_parent_rpc_ctx", service.name());
     let generated_trait = generate_trait(
         service,
         emit_package,
@@ -93,6 +94,12 @@ pub(crate) fn generate_internal<T: Service>(
     };
 
     quote! {
+        thread_local! {
+            #[allow(non_upper_case_globals)]
+             static #server_parent_rpc_ctx: std::cell::Cell<*const tonic_masa::RequestRxContext> =
+                    std::cell::Cell::new(core::ptr::null());
+        }
+
         /// Generated server implementations.
         #(#mod_attributes)*
         pub mod #server_mod {
@@ -106,11 +113,6 @@ pub(crate) fn generate_internal<T: Service>(
             use tonic::codegen::*;
             /// Use Masa Context.
             // use tonic_masa::Context as MasaContext;
-
-            use std::cell::Cell;
-            thread_local! {
-                 static PARENT_RPC_CTX: Cell<*const tonic_masa::RequestRxContext> = Cell::new(core::ptr::null());
-            }
 
             #generated_trait
 
@@ -478,6 +480,9 @@ fn generate_unary<T: Method>(
 
     let (request, response) = method.request_response_name(proto_path, compile_well_known_types);
 
+    // server_trait has the same name as the Server.
+    let server_parent_rpc_ctx = quote::format_ident!("{}_parent_rpc_ctx", server_trait);
+
     let inner_arg = if use_arc_self {
         quote!(inner)
     } else {
@@ -532,13 +537,13 @@ fn generate_unary<T: Method>(
                     // initiated by this server handler. Child RPCs' lifetime
                     // is shorter than the server handler. Therefore it it safe
                     // to access req_ctx from the child RPCs.
-                    let original = PARENT_RPC_CTX.replace(&req_ctx as *const _);
+                    let original = super::#server_parent_rpc_ctx.replace(&req_ctx as *const _);
                     // A server handler should not be calling another server handler.
                     // We only set this value before polling a server handler.
                     assert!(original.is_null());
                 })
                 .post_hook(|_| {
-                    let original = PARENT_RPC_CTX.replace(core::ptr::null());
+                    let original = super::#server_parent_rpc_ctx.replace(core::ptr::null());
                     assert!(!original.is_null());
                 })
                 .build();
