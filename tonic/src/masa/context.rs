@@ -46,32 +46,47 @@ impl RequestRxContext {
     }
 }
 
-// Request lifecycle hooks.
-// [TODO] extract this into a trait.
-impl RequestRxContext {
-    pub fn before_child_rpc<T>(&self, method: GrpcMethod, req: &mut Request<T>) {
-        println!("before_child_rpc, {:?}", method);
-    }
+/// Lifecycle hooks while the server executes a request.
+///
+/// All hook points have a default, empty implementation. Implementer can
+/// choose to only implement hooks they're interested in.
+#[allow(unused_variables)]
+pub trait RequestHandlerHooks {
+    /// Invoked before the request handler makes an RPC.
+    fn before_child_rpc<T>(&self, method: GrpcMethod, req: &mut Request<T>) {}
 
-    pub fn after_child_rpc<T>(&self, method: GrpcMethod, resp: &mut Result<Response<T>, Status>) {
-        println!("after_child_rpc, {:?}", method);
-    }
+    /// Invoked after the request handler receives a response from an RPC it made earlier.
+    fn after_child_rpc<T>(&self, method: GrpcMethod, resp: &mut Result<Response<T>, Status>) {}
 
     /// Invoked each time before the request handler is polled.
     ///
     /// This indicates that the request handler can make progress.
-    pub fn before_poll(&self) {
-        self.polled.fetch_add(1, Ordering::Relaxed);
-    }
+    fn before_poll(&self) {}
 
     /// Invoked each time after the request handler is polled.
     ///
     /// The poll result shows whether the request is blocked or finalized.
-    pub fn after_poll<T>(&self, poll: &Poll<T>) {}
+    fn after_poll<T>(&self, poll: &Poll<T>) {}
 
     /// The last lifecycle hook to be invoked. Provides a mutable reference to the response about
     /// to be sent back to the client.
-    pub fn finalize(&self, response: &mut http::Response<BoxBody>) {
+    fn finalize(&self, response: &mut http::Response<BoxBody>) {}
+}
+
+impl RequestHandlerHooks for RequestRxContext {
+    fn before_child_rpc<T>(&self, method: GrpcMethod, req: &mut Request<T>) {
+        println!("before_child_rpc, {:?}", method);
+    }
+
+    fn after_child_rpc<T>(&self, method: GrpcMethod, resp: &mut Result<Response<T>, Status>) {
+        println!("after_child_rpc, {:?}", method);
+    }
+
+    fn before_poll(&self) {
+        self.polled.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn finalize(&self, response: &mut http::Response<BoxBody>) {
         println!(
             "method {} polled {} times",
             self.method_name,
