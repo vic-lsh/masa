@@ -361,48 +361,9 @@ impl<'a> Executor<'a> {
         future: impl Future<Output = T> + 'a,
         active: &mut Slab<Waker>,
     ) -> Task<T> {
-        // Remove the task from the set of active tasks when the future finishes.
-        let entry = active.vacant_entry();
-        let index = entry.key();
-        let state = self.state_as_arc();
-        let future = async move {
-            let _guard = CallOnDrop(move || drop(state.active.lock().unwrap().try_remove(index)));
-            future.await
-        };
-
         // Inherit the parent task ddl, if there is a parent task.
         let ddl = async_task::get_task_ddl().unwrap_or(DeadlineHint::infra());
-
-        // Create the task and register it in the set of active tasks.
-        //
-        // SAFETY:
-        //
-        // If `future` is not `Send`, this must be a `LocalExecutor` as per this
-        // function's unsafe precondition. Since `LocalExecutor` is `!Sync`,
-        // `try_tick`, `tick` and `run` can only be called from the origin
-        // thread of the `LocalExecutor`. Similarly, `spawn` can only  be called
-        // from the origin thread, ensuring that `future` and the executor share
-        // the same origin thread. The `Runnable` can be scheduled from other
-        // threads, but because of the above `Runnable` can only be called or
-        // dropped on the origin thread.
-        //
-        // `future` is not `'static`, but we make sure that the `Runnable` does
-        // not outlive `'a`. When the executor is dropped, the `active` field is
-        // drained and all of the `Waker`s are woken. Then, the queue inside of
-        // the `Executor` is drained of all of its runnables. This ensures that
-        // runnables are dropped and this precondition is satisfied.
-        //
-        // `self.schedule()` is `Send`, `Sync` and `'static`, as checked below.
-        // Therefore we do not need to worry about what is done with the
-        // `Waker`.
-        let (runnable, task) = Builder::new()
-            .propagate_panic(true)
-            .deadline(ddl)
-            .spawn_unchecked(|()| future, self.schedule());
-        entry.insert(runnable.waker());
-
-        runnable.schedule();
-        task
+        self.spawn_inner_with_ddl(future, ddl, active)
     }
 
     /// Spawn a future with a deadline hint while holding the inner lock.
@@ -527,12 +488,12 @@ impl<'a> Executor<'a> {
         move |runnable| {
             let now = std::time::Instant::now();
 
-            log::info!(
-                "Push runnable to queue, now: {}, task: {:p}, deadline: {}",
-                time_now(),
-                runnable.ptr_to_u64() as *const (),
-                runnable.deadline().value()
-            );
+            // log::info!(
+            //     "Push runnable to queue, now: {}, task: {:p}, deadline: {}",
+            //     time_now(),
+            //     runnable.ptr_to_u64() as *const (),
+            //     runnable.deadline().value()
+            // );
 
             let deadline = runnable.deadline();
             state
@@ -1104,12 +1065,12 @@ impl Ticker<'_> {
                         }
                     }
                     Some(r) => {
-                        log::info!(
-                            "Pop runnable from queue, now: {}, task: {:p}, deadline: {}",
-                            time_now(),
-                            r.ptr_to_u64() as *const (),
-                            r.deadline().value()
-                        );
+                        // log::info!(
+                        //     "Pop runnable from queue, now: {}, task: {:p}, deadline: {}",
+                        //     time_now(),
+                        //     r.ptr_to_u64() as *const (),
+                        //     r.deadline().value()
+                        // );
 
                         // Wake up.
                         self.wake();
