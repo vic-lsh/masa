@@ -32,6 +32,8 @@ pub fn time_now() -> u64 {
 pub struct Args {
     #[structopt(short, long, default_value = "http://[::1]:50051")]
     pub addr: String,
+    #[structopt(short, long)]
+    pub concurrency: usize,
 }
 
 #[derive(Debug)]
@@ -75,7 +77,7 @@ impl LoadGenerator {
                 let mut rng = StdRng::seed_from_u64(998244353 + i as u64);
                 let uniform = Uniform::new(0, 1_000_000_007);
                 loop {
-                    // tokio::time::sleep(Duration::from_secs(1)).await;
+                    tokio::time::sleep(Duration::from_secs(1)).await;
 
                     rps_cnt.fetch_add(1, Ordering::Relaxed);
 
@@ -148,7 +150,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let load_gen = {
         let global_graph = graph::get_global_graph();
         let client = GreeterClient::connect(args.addr).await?;
-        let load_gen = LoadGenerator::new(global_graph, client, 16, rps_cnt);
+        let load_gen = LoadGenerator::new(global_graph, client, args.concurrency, rps_cnt);
         load_gen
     };
     load_gen.run().await.unwrap();
