@@ -370,6 +370,9 @@ impl<'a> Executor<'a> {
             future.await
         };
 
+        // Inherit the parent task ddl, if there is a parent task.
+        let ddl = async_task::get_task_ddl().unwrap_or(DeadlineHint::infra());
+
         // Create the task and register it in the set of active tasks.
         //
         // SAFETY:
@@ -394,6 +397,7 @@ impl<'a> Executor<'a> {
         // `Waker`.
         let (runnable, task) = Builder::new()
             .propagate_panic(true)
+            .deadline(ddl)
             .spawn_unchecked(|()| future, self.schedule());
         entry.insert(runnable.waker());
 
