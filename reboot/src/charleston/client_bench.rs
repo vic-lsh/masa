@@ -38,7 +38,7 @@ pub struct Args {
     pub slo: u64,
     #[structopt(short, long, required = true)]
     pub rps: u64,
-    #[structopt(short, long, required = true)]
+    #[structopt(long, required = true)]
     pub secs: u64,
     #[structopt(short, long, required = true)]
     pub concurrency: u64,

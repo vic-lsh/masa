@@ -41,18 +41,17 @@ pub struct Args {
     pub n_threads: usize,
 }
 
-pub struct GreeterImpl {
+pub struct GreeterImpl<'a> {
     local_graphs: HashMap<Path, LocalGraph>,
     clients: HashMap<Path, GreeterClient<Channel>>,
-    executor: Arc<dyn Executor<BoxSendFuture> + Send + Sync>,
+    executor: Arc<ExecImpl<'a>>,
 }
 
-impl GreeterImpl {
+impl<'a> GreeterImpl<'a> {
     pub fn new(
         local_graphs: HashMap<Path, LocalGraph>,
         clients: HashMap<Path, GreeterClient<Channel>>,
-        //     executor: Arc<ExecImpl<'a>>,
-        executor: Arc<dyn Executor<BoxSendFuture> + Send + Sync>,
+        executor: Arc<ExecImpl<'a>>,
     ) -> Self {
         Self {
             local_graphs,
@@ -68,12 +67,12 @@ fn busy_spin(duration: Duration) {
 }
 
 #[tonic::async_trait]
-impl Greeter for GreeterImpl {
+impl Greeter for GreeterImpl<'static> {
     async fn say_hello(
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        self.say_hello_old_impl(request).await
+        self.say_hello_fanout(request).await
     }
 
     async fn say_hola(
@@ -116,7 +115,53 @@ impl Greeter for GreeterImpl {
     }
 }
 
-impl GreeterImpl {
+#[allow(dead_code)]
+impl<'a> GreeterImpl<'a> {
+    async fn say_hello_fanout(
+        &self,
+        request: Request<HelloRequest>,
+    ) -> Result<Response<HelloReply>, Status> {
+        const CLIENT_PATH: &str = "/hello.Greeter/SayGoodbye";
+
+        let start = Instant::now();
+
+        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
+        ctx.set_local_graph(local_graph.clone());
+
+        info!("say_hello");
+
+        busy_spin(Duration::from_millis(5));
+
+        let mut tasks = Vec::new();
+        for idx in 0..10 {
+            info!("spawning {}", idx);
+
+            let mut client = self.clients.get(CLIENT_PATH).unwrap().clone();
+            let mut request = Request::new(HelloRequest {
+                name: "SayGoodbye".to_string(),
+            });
+            request.metadata_mut().insert_ctx("par_ctx", &ctx);
+            tasks.push(self.executor.spawn(async move {
+                client.say_goodbye(request).await.unwrap();
+            }));
+        }
+
+        for (idx, task) in tasks.into_iter().enumerate() {
+            task.await;
+            info!("task {} finished", idx);
+        }
+
+        busy_spin(Duration::from_millis(5));
+
+        let reply = HelloReply {
+            message: format!("Hello {}!", request.into_inner().name),
+        };
+
+        println!("request handling time {}ms", start.elapsed().as_millis());
+        Ok(Response::new(reply))
+    }
+
     async fn say_hello_old_impl(
         &self,
         request: Request<HelloRequest>,
@@ -166,6 +211,13 @@ struct ExecImpl<'a> {
 impl<'a> ExecImpl<'a> {
     fn new(ex: &'a smol::Executor<'a>) -> Self {
         Self { ex }
+    }
+
+    pub fn spawn<T: Send + 'a>(
+        &self,
+        future: impl Future<Output = T> + Send + 'a,
+    ) -> async_task::Task<T> {
+        self.ex.spawn(future)
     }
 
     async fn run(&self) {
