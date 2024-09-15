@@ -91,7 +91,7 @@ impl Greeter for GreeterImpl<'static> {
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         // info!("ctx: {:?}", ctx);
         ctx.set_local_graph(local_graph.clone());
-        info!("say_goodbye");
+        info!("say_goodbye ddl {:?}", async_task::get_task_ddl());
 
         let spans = local_graph.spans();
         let elapse = spans
@@ -129,7 +129,7 @@ impl<'a> GreeterImpl<'a> {
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         ctx.set_local_graph(local_graph.clone());
 
-        info!("say_hello");
+        info!("say_hello ddl {:?}", async_task::get_task_ddl());
 
         busy_spin(Duration::from_millis(5));
 
@@ -235,9 +235,7 @@ where
     F: std::future::Future + Send + 'static,
     F::Output: Send,
 {
-    fn execute(&self, fut: F, _ddl: DeadlineHint) {
-        // [TODO] Think about what the deadline should be here.
-        let ddl = DeadlineHint::infra();
+    fn execute(&self, fut: F, ddl: DeadlineHint) {
         self.ex.spawn_with_ddl(fut, ddl).fallible().detach();
     }
 }
