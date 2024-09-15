@@ -25,23 +25,25 @@ use std::cell::RefCell;
 use std::thread_local;
 
 thread_local! {
-    // static THREAD_LOCAL_DDL: RefCell<DeadlineHint> = RefCell::new(DeadlineHint::infra());
+    // This is set to the DDL of the task running on this thread, or None if there's
+    // no task running.
+    static THREAD_LOCAL_DDL: RefCell<Option<DeadlineHint>> = RefCell::new(None);
     static THREAD_LOCAL_TASK_PTR: RefCell<u64> = RefCell::new(0);
 }
 
-// /// Get the deadline hint for the current task through thread-local storage.
-// pub fn get_task_ddl() -> DeadlineHint {
-//     THREAD_LOCAL_DDL.with(|value| *value.borrow())
-// }
+/// Get the deadline hint for the current task through thread-local storage.
+pub fn get_task_ddl() -> Option<DeadlineHint> {
+    THREAD_LOCAL_DDL.with(|value| *value.borrow())
+}
 
-// /// Set the deadline hint for the current task through thread-local storage.
-// pub fn set_task_ddl(new_value: DeadlineHint) {
-//     THREAD_LOCAL_DDL.with(|value| *value.borrow_mut() = new_value);
-// }
+/// Set the deadline hint for the current task through thread-local storage.
+fn set_task_ddl(new_value: Option<DeadlineHint>) {
+    THREAD_LOCAL_DDL.with(|value| *value.borrow_mut() = new_value);
+}
 
 /// Get task ptr.
 pub fn get_task_ptr() -> u64 {
-    THREAD_LOCAL_TASK_PTR.with(|value| value.borrow().clone() as u64 )
+    THREAD_LOCAL_TASK_PTR.with(|value| value.borrow().clone() as u64)
 }
 
 /// Set task ptr.
@@ -540,12 +542,17 @@ where
         alloc::alloc::dealloc(ptr as *mut u8, task_layout.layout);
     }
 
-    // #[inline]
-    // unsafe fn set_ddl_before_poll(&self) -> DeadlineHint {
-    //     let original_ddl = *self.ddl;
-    //     set_task_ddl(original_ddl);
-    //     original_ddl
-    // }
+    #[inline]
+    unsafe fn set_ddl_before_poll(&self) -> DeadlineHint {
+        let original_ddl = *self.ddl;
+        set_task_ddl(Some(original_ddl));
+        original_ddl
+    }
+
+    #[inline]
+    unsafe fn reset_ddl_after_poll(&self) {
+        set_task_ddl(None);
+    }
 
     // #[inline]
     // unsafe fn maybe_update_ddl_after_poll(&self) -> (bool, DeadlineHint) {
@@ -621,7 +628,7 @@ where
         let guard = Guard(raw);
 
         set_task_ptr(ptr as u64);
-        // let ddl_before = raw.set_ddl_before_poll();
+        raw.set_ddl_before_poll();
         // log::info!("task: {:p}, ddl before: {}", ptr, ddl_before.value(),);
 
         // Panic propagation is not available for no_std.
@@ -646,6 +653,8 @@ where
         };
 
         set_task_ptr(0);
+        raw.reset_ddl_after_poll();
+
         // let (updated, ddl_after) = raw.maybe_update_ddl_after_poll();
         // if updated {
         //     log::info!("task: {:p}, ddl after: {}", ptr, ddl_after.value());
