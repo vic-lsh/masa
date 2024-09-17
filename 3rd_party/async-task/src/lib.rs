@@ -114,7 +114,7 @@ pub use crate::runnable::{
     spawn, spawn_unchecked, spawn_with_deadline, Builder, Runnable, Schedule, ScheduleInfo,
     WithInfo,
 };
-pub use crate::task::{FallibleTask, Task};
+pub use crate::task::{task_metadata_from_ptr, FallibleTask, Task};
 
 #[cfg(feature = "std")]
 pub use crate::runnable::spawn_local;
