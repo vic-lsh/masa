@@ -85,7 +85,7 @@ impl WorkerImpl {
         request.metadata_mut().insert_ctx("ctx", &child_ctx);
     }
 
-    fn track(&self, ctx: &Context, path: &Path, latency: Latency) {
+    fn track_span(&self, ctx: &Context, path: &Path, latency: Latency) {
         if EST_ONLINE {
             let mut graph = self
                 .local_graph_trackers
@@ -93,7 +93,7 @@ impl WorkerImpl {
                 .unwrap()
                 .write()
                 .unwrap();
-            graph.track(path, latency);
+            graph.track_span(path, latency);
         }
     }
 }
@@ -106,9 +106,6 @@ impl Worker for WorkerImpl {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        let start_at = time_now();
-        let mut latency_spin = 0;
-
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
@@ -123,12 +120,10 @@ impl Worker for WorkerImpl {
             if i == 0 || i == spans.len() - 1 {
                 let elapse = span.distribution().mean();
                 // .sample(ctx.request_id());
-                latency_spin += elapse;
-
                 let start_at = time_now();
                 busy_spin(Duration::from_micros(elapse));
                 let latency = time_now() - start_at;
-                self.track(&ctx, path, latency);
+                self.track_span(&ctx, path, latency);
             } else {
                 let mut client = self.clients.get(path).unwrap().clone();
                 let mut request = Request::new(HelloRequest {
@@ -139,21 +134,8 @@ impl Worker for WorkerImpl {
                 let start_at = time_now();
                 client.say_hello_i3(request).await.unwrap();
                 let latency = time_now() - start_at;
-                self.track(&ctx, path, latency);
+                self.track_span(&ctx, path, latency);
             }
-        }
-
-        let latency = time_now() - start_at;
-
-        // [OPTION] Log by probability.
-        // if ctx.request_id() % 10 == 0 {
-        if true {
-            log::warn!(
-                "say_hello_i4,{},{},{}",
-                ctx.request_id(),
-                latency,
-                latency_spin,
-            );
         }
 
         let reply = HelloReply {
@@ -166,9 +148,6 @@ impl Worker for WorkerImpl {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        let start_at = time_now();
-        let mut latency_spin = 0;
-
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
@@ -183,12 +162,10 @@ impl Worker for WorkerImpl {
             if i == 0 || i == spans.len() - 1 {
                 let elapse = span.distribution().mean();
                 // .sample(ctx.request_id());
-                latency_spin += elapse;
-
                 let start_at = time_now();
                 busy_spin(Duration::from_micros(elapse));
                 let latency = time_now() - start_at;
-                self.track(&ctx, path, latency);
+                self.track_span(&ctx, path, latency);
             } else {
                 let mut client = self.clients.get(path).unwrap().clone();
                 let mut request = Request::new(HelloRequest {
@@ -199,21 +176,8 @@ impl Worker for WorkerImpl {
                 let start_at = time_now();
                 client.say_hello_i2(request).await.unwrap();
                 let latency = time_now() - start_at;
-                self.track(&ctx, path, latency);
+                self.track_span(&ctx, path, latency);
             }
-        }
-
-        let latency = time_now() - start_at;
-
-        // [OPTION] Log by probability.
-        // if ctx.request_id() % 10 == 0 {
-        if true {
-            log::warn!(
-                "say_hello_i3,{},{},{}",
-                ctx.request_id(),
-                latency,
-                latency_spin,
-            );
         }
 
         let reply = HelloReply {
@@ -226,9 +190,6 @@ impl Worker for WorkerImpl {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        let start_at = time_now();
-        let mut latency_spin = 0;
-
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
@@ -243,12 +204,10 @@ impl Worker for WorkerImpl {
             if i == 0 || i == spans.len() - 1 {
                 let elapse = span.distribution().mean();
                 // .sample(ctx.request_id());
-                latency_spin += elapse;
-
                 let start_at = time_now();
                 busy_spin(Duration::from_micros(elapse));
                 let latency = time_now() - start_at;
-                self.track(&ctx, path, latency);
+                self.track_span(&ctx, path, latency);
             } else {
                 let mut client = self.clients.get(path).unwrap().clone();
                 let mut request = Request::new(HelloRequest {
@@ -259,21 +218,8 @@ impl Worker for WorkerImpl {
                 let start_at = time_now();
                 client.say_hello_i1(request).await.unwrap();
                 let latency = time_now() - start_at;
-                self.track(&ctx, path, latency);
+                self.track_span(&ctx, path, latency);
             }
-        }
-
-        let latency = time_now() - start_at;
-
-        // [OPTION] Log by probability.
-        // if ctx.request_id() % 10 == 0 {
-        if true {
-            log::warn!(
-                "say_hello_i2,{},{},{}",
-                ctx.request_id(),
-                latency,
-                latency_spin,
-            );
         }
 
         let reply = HelloReply {
@@ -286,9 +232,6 @@ impl Worker for WorkerImpl {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        let start_at = time_now();
-        let mut latency_spin = 0;
-
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
@@ -303,12 +246,10 @@ impl Worker for WorkerImpl {
             if i == 0 || i == spans.len() - 1 {
                 let elapse = span.distribution().mean();
                 // .sample(ctx.request_id());
-                latency_spin += elapse;
-
                 let start_at = time_now();
                 busy_spin(Duration::from_micros(elapse));
                 let latency = time_now() - start_at;
-                self.track(&ctx, path, latency);
+                self.track_span(&ctx, path, latency);
             } else {
                 let mut client = self.clients.get(path).unwrap().clone();
                 let mut request = Request::new(HelloRequest {
@@ -319,21 +260,8 @@ impl Worker for WorkerImpl {
                 let start_at = time_now();
                 client.say_hello_i1(request).await.unwrap();
                 let latency = time_now() - start_at;
-                self.track(&ctx, path, latency);
+                self.track_span(&ctx, path, latency);
             }
-        }
-
-        let latency = time_now() - start_at;
-
-        // [OPTION] Log by probability.
-        // if ctx.request_id() % 10 == 0 {
-        if true {
-            log::warn!(
-                "say_hello_i1,{},{},{}",
-                ctx.request_id(),
-                latency,
-                latency_spin
-            );
         }
 
         let reply = HelloReply {
