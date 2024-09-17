@@ -42,7 +42,7 @@ for mode in "${modes[@]}"; do
 	echo "Running server in mode: $mode..."
 
 	for rps in "${rps_values[@]}"; do
-		sleep 3
+		sleep 1
 
 		echo "Running benchmark for RPS: $rps..."
 
