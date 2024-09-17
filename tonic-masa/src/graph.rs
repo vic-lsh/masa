@@ -59,12 +59,18 @@ impl LocalGraphTracker {
             }
             suffix_sum += span.estimate();
         }
+        log::warn!(
+            "estimate_suffix, path: {}, suffix_sum: {}",
+            path,
+            suffix_sum
+        );
         assert!(existed, "Span {} not found", path);
         suffix_sum
     }
 
     /// Track the latency of a span indexed by its path.
-    pub fn track(&mut self, path: &Path, latency: Latency) {
+    pub fn track_span(&mut self, path: &Path, latency: Latency) {
+        log::warn!("track, path: {}, latency: {}", path, latency);
         for span in self.spans.iter_mut() {
             if span.path() == path {
                 span.track(latency);
@@ -104,7 +110,7 @@ impl GlobalGraph {
 
     /// Get the source local graph.
     pub fn get_source(&self) -> &LocalGraph {
-        self.get_local_graph(&"Source".to_string())
+        panic!("Deprecated");
     }
 }
 
@@ -149,6 +155,6 @@ impl GlobalGraphTracker {
 
     /// Get the source local graph.
     pub fn get_source(&self) -> &LocalGraphTracker {
-        self.get_local_graph(&"Source".to_string())
+        panic!("Deprecated");
     }
 }

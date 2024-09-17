@@ -98,7 +98,7 @@ impl TungChungImpl {
                 .unwrap()
                 .write()
                 .unwrap();
-            graph.track(path, recv_at - send_at);
+            graph.track_span(path, recv_at - send_at);
         }
     }
 }
