@@ -28,7 +28,7 @@ thread_local! {
     // This is set to the DDL of the task running on this thread, or None if there's
     // no task running.
     static THREAD_LOCAL_DDL: RefCell<Option<DeadlineHint>> = RefCell::new(None);
-    static THREAD_LOCAL_TASK_PTR: RefCell<u64> = RefCell::new(0);
+    static THREAD_LOCAL_TASK_PTR: RefCell<*const ()> = RefCell::new(core::ptr::null());
 }
 
 /// Get the deadline hint for the current task through thread-local storage.
@@ -42,12 +42,12 @@ fn set_task_ddl(new_value: Option<DeadlineHint>) {
 }
 
 /// Get task ptr.
-pub fn get_task_ptr() -> u64 {
-    THREAD_LOCAL_TASK_PTR.with(|value| value.borrow().clone() as u64)
+pub fn get_task_ptr() -> *const () {
+    THREAD_LOCAL_TASK_PTR.with(|value| value.borrow().clone())
 }
 
 /// Set task ptr.
-pub fn set_task_ptr(new_value: u64) {
+pub fn set_task_ptr(new_value: *const ()) {
     THREAD_LOCAL_TASK_PTR.with(|value| *value.borrow_mut() = new_value);
 }
 
@@ -627,7 +627,7 @@ where
         // If available, we should also try to catch the panic so that it is propagated correctly.
         let guard = Guard(raw);
 
-        set_task_ptr(ptr as u64);
+        set_task_ptr(ptr);
         raw.set_ddl_before_poll();
         // log::info!("task: {:p}, ddl before: {}", ptr, ddl_before.value(),);
 
@@ -652,7 +652,7 @@ where
             }
         };
 
-        set_task_ptr(0);
+        set_task_ptr(core::ptr::null());
         raw.reset_ddl_after_poll();
 
         // let (updated, ddl_after) = raw.maybe_update_ddl_after_poll();
