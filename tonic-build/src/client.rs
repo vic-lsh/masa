@@ -151,8 +151,17 @@ fn generate_get_parent_rpc_ctx(service: &impl Service) -> TokenStream {
     quote! {
         /// Internal. Obtain the parent RPC in which this RPC client stub operates.
         fn get_parent_ctx(&self) -> Option<&'_ tonic::masa::RequestRxContext> {
-            let ctx = super::#server_parent_rpc_ctx.get();
-            unsafe { ctx.as_ref() }
+            let task_ptr = async_task::get_task_ptr();
+            if !task_ptr.is_null() {
+                let req_ctx = unsafe {
+                    async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
+                        task_ptr
+                    )
+                };
+                req_ctx.as_ref().map(|v| &**v)
+            } else {
+                None
+            }
         }
     }
 }
@@ -257,7 +266,10 @@ fn generate_unary<T: Service>(
         quote! {
             use tonic::masa::RequestHandlerHooks;
             if let Some(parent_ctx) = self.get_parent_ctx() {
+                println!("got parent ctx before {:?}", grpc_method);
                 parent_ctx.before_child_rpc(grpc_method, &mut req);
+            } else {
+                println!("no parent ctx before {:?}", grpc_method);
             }
         }
     } else {
@@ -267,7 +279,10 @@ fn generate_unary<T: Service>(
     let after_child_rpc = if enable_parent_rpc_ctx {
         quote! {
             if let Some(parent_ctx) = self.get_parent_ctx() {
+                println!("got parent ctx after {:?}", grpc_method);
                 parent_ctx.after_child_rpc(grpc_method, &mut resp);
+            } else {
+                println!("no parent ctx after {:?}", grpc_method);
             }
         }
     } else {
