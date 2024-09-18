@@ -897,3 +897,33 @@ pub(crate) unsafe fn get_ddl_from_raw_task<M>(ptr: *const ()) -> DeadlineHint {
     // 3. the deadline hint is always initialized (see RawTask::allocate)
     *ddl_ptr
 }
+
+/// Get Metadata raw pointer from a raw task pointer.
+///
+/// Caller must uphold:
+///
+/// 1. the `ptr` must point to a RawTask
+/// 2. the RawTask isn't deallocated
+/// 3. The metadata type of the task is the one specified by the generic.
+pub unsafe fn get_metadata_from_raw_task<'a, M>(ptr: *const ()) -> &'a M {
+    debug_assert!(!ptr.is_null());
+
+    let header = unsafe { &*(ptr as *const Header<M>) };
+
+    &header.metadata
+}
+
+/// Set Metadata from a raw task pointer.
+///
+/// Caller must uphold:
+///
+/// 1. the `ptr` must point to a RawTask
+/// 2. the RawTask isn't deallocated
+/// 3. The metadata type of the task is the one specified by the generic.
+pub unsafe fn set_metadata_from_raw_task<M>(ptr: *const (), metadata: M) {
+    debug_assert!(!ptr.is_null());
+
+    let header = unsafe { &mut *(ptr as *mut Header<M>) };
+
+    header.metadata = metadata;
+}

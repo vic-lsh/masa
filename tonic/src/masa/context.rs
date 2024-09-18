@@ -19,7 +19,7 @@ pub struct RequestTxContext {}
 pub type RequestRxContext = SimpleReqRxCtx;
 
 /// Type of metadata required for async-tasks used in tonic.
-pub type AsyncTaskMetadata = Arc<Mutex<Option<RequestRxContext>>>;
+pub type AsyncTaskMetadata = Option<Arc<RequestRxContext>>;
 
 /// A simple implementation of `RequestHandlerHooks`.
 #[derive(Debug)]
