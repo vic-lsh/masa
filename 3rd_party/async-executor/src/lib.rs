@@ -212,13 +212,13 @@ where
     ) -> Task<T, M> {
         let mut active = self.state().active.lock().unwrap();
 
-        let meta = Self::get_parent_task_metadata().unwrap_or_default();
+        let meta = Self::clone_parent_task_metadata().unwrap_or_default();
         // let meta = M::default();
         // SAFETY: `T` and the future are `Send`.
         unsafe { self.spawn_inner_impl(future, ddl, meta, &mut active) }
     }
 
-    fn get_parent_task_metadata() -> Option<M> {
+    fn clone_parent_task_metadata() -> Option<M> {
         NonNull::new(async_task::get_task_ptr() as *mut ()).map(|ptr| {
             // SAFETY:
             // - task ptr is valid if non-null (guaranteed by `get_task_ptr`)
@@ -307,7 +307,7 @@ where
         let ddl = async_task::get_task_ddl().unwrap_or(DeadlineHint::infra());
 
         // [TODO] make inheriting metadata or not configurable
-        let meta = Self::get_parent_task_metadata().unwrap_or_default();
+        let meta = Self::clone_parent_task_metadata().unwrap_or_default();
         // let meta = M::default();
 
         self.spawn_inner_impl(future, ddl, meta, active)
