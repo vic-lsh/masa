@@ -158,7 +158,7 @@ fn generate_get_parent_rpc_ctx(service: &impl Service) -> TokenStream {
                         task_ptr
                     )
                 };
-                req_ctx.as_ref().map(|v| &**v)
+                req_ctx.as_ref().map(|v| v.as_ref())
             } else {
                 None
             }
