@@ -538,36 +538,30 @@ fn generate_unary<T: Method>(
                 );
             };
 
+            let get_ctx = || {
+                // SAFETY:
+                // - task-ptr is valid (upheld by `async_task::get_task_ptr`)
+                // - metadata type is correct
+                //      (trust that the application uses this metadata type in the executor)
+                let ctx = unsafe {
+                    async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
+                        async_task::get_task_ptr()
+                    )
+                };
+                ctx.as_ref().expect("ctx should be set")
+            };
+
             use tonic::util::Hookable;
             let fut = grpc.unary(method, req)
                 .hook()
-                .pre_hook(|| {
-                    let ctx = unsafe {
-                        async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
-                            async_task::get_task_ptr()
-                        )
-                    };
-                    ctx.as_ref().expect("ctx should be set").before_poll();
-                })
-                .post_hook(|poll| {
-                    let ctx = unsafe {
-                        async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
-                            async_task::get_task_ptr()
-                        )
-                    };
-                    ctx.as_ref().expect("ctx should be set").after_poll(poll);
-                })
+                .pre_hook(|| get_ctx().before_poll())
+                .post_hook(|poll| get_ctx().after_poll(poll))
                 .build();
 
             let mut res = fut.await;
 
             // Request-completed lifecycle hook.
-            unsafe {
-                let req_ctx = async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
-                    async_task::get_task_ptr()
-                );
-                req_ctx.as_ref().expect("ctx should be set").finalize(&mut res);
-            };
+            get_ctx().finalize(&mut res);
 
             Ok(res)
         };
