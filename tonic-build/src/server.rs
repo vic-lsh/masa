@@ -532,8 +532,8 @@ fn generate_unary<T: Method>(
             let req_ctx = std::sync::Arc::new(Some(req_ctx));
 
             unsafe {
-                async_task::set_metadata_from_raw_task(
-                    async_task::get_task_ptr(),
+                tonic::async_task::set_metadata_from_raw_task(
+                    tonic::async_task::get_task_ptr(),
                     Some(req_ctx)
                 );
             };
@@ -544,8 +544,8 @@ fn generate_unary<T: Method>(
                 // - metadata type is correct
                 //      (trust that the application uses this metadata type in the executor)
                 let ctx = unsafe {
-                    async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
-                        async_task::get_task_ptr()
+                    tonic::async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
+                        tonic::async_task::get_task_ptr()
                     )
                 };
                 ctx.as_ref().expect("ctx should be set")
