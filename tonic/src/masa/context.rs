@@ -1,7 +1,7 @@
 use std::{
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     task::Poll,
     time::Instant,
@@ -17,6 +17,9 @@ pub struct RequestTxContext {}
 ///
 /// Must implement `RequestHandlerHooks`.
 pub type RequestRxContext = SimpleReqRxCtx;
+
+/// Type of metadata required for async-tasks used in tonic.
+pub type AsyncTaskMetadata = Arc<Mutex<Option<RequestRxContext>>>;
 
 /// A simple implementation of `RequestHandlerHooks`.
 #[derive(Debug)]
