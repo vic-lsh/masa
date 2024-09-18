@@ -529,40 +529,45 @@ fn generate_unary<T: Method>(
 
             // Request-begin lifecycle hook.
             let req_ctx = tonic::masa::RequestRxContext::begin(#method_name, &req, server_ctx);
+            let req_ctx = std::sync::Arc::new(Some(req_ctx));
 
-            // Promise `req_ctx` will not be moved. This is important because
-            // child RPCs will assume a fixed memory location for the parent request context.
-            let req_ctx = std::pin::Pin::new(&req_ctx);
+            unsafe {
+                async_task::set_metadata_from_raw_task(
+                    async_task::get_task_ptr(),
+                    Some(req_ctx)
+                );
+            };
 
             use tonic::util::Hookable;
             let fut = grpc.unary(method, req)
                 .hook()
                 .pre_hook(|| {
-                    // SAFETY: req_ctx will only be accessed by child RPCs
-                    // initiated by this server handler. Child RPCs' lifetime
-                    // is shorter than the server handler. Therefore it it safe
-                    // to access req_ctx from the child RPCs.
-                    let pinned_ctx = req_ctx.as_ref();
-                    let req_ctx_addr = Pin::into_inner(pinned_ctx) as *const tonic::masa::RequestRxContext;
-                    let original = super::#server_parent_rpc_ctx.replace(req_ctx_addr);
-
-                    // A server handler should not be calling another server handler.
-                    // We only set this value before polling a server handler.
-                    assert!(original.is_null());
-
-                    req_ctx.before_poll();
+                    let ctx = unsafe {
+                        async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
+                            async_task::get_task_ptr()
+                        )
+                    };
+                    ctx.as_ref().expect("ctx should be set").before_poll();
                 })
                 .post_hook(|poll| {
-                    let original = super::#server_parent_rpc_ctx.replace(core::ptr::null());
-                    assert!(!original.is_null());
-                    req_ctx.after_poll(poll);
+                    let ctx = unsafe {
+                        async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
+                            async_task::get_task_ptr()
+                        )
+                    };
+                    ctx.as_ref().expect("ctx should be set").after_poll(poll);
                 })
                 .build();
 
             let mut res = fut.await;
 
             // Request-completed lifecycle hook.
-            req_ctx.finalize(&mut res);
+            unsafe {
+                let req_ctx = async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
+                    async_task::get_task_ptr()
+                );
+                req_ctx.as_ref().expect("ctx should be set").finalize(&mut res);
+            };
 
             Ok(res)
         };
