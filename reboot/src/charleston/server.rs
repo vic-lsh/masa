@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
 use tonic::{
+    masa::AsyncTaskMetadata,
     transport::{Channel, Server},
     Request, Response, Status,
 };
@@ -205,18 +206,18 @@ impl<'a> GreeterImpl<'a> {
 
 #[derive(Debug)]
 struct ExecImpl<'a> {
-    ex: &'a smol::Executor<'a>,
+    ex: &'a smol::Executor<'a, AsyncTaskMetadata>,
 }
 
 impl<'a> ExecImpl<'a> {
-    fn new(ex: &'a smol::Executor<'a>) -> Self {
+    fn new(ex: &'a smol::Executor<'a, AsyncTaskMetadata>) -> Self {
         Self { ex }
     }
 
     pub fn spawn<T: Send + 'a>(
         &self,
         future: impl Future<Output = T> + Send + 'a,
-    ) -> async_task::Task<T> {
+    ) -> async_task::Task<T, AsyncTaskMetadata> {
         self.ex.spawn(future)
     }
 
@@ -313,7 +314,7 @@ fn init_logging() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    static SMOL_EXECUTOR: smol::Executor<'static> = smol::Executor::new();
+    static SMOL_EXECUTOR: smol::Executor<'static, AsyncTaskMetadata> = smol::Executor::new();
 
     init_logging();
 
