@@ -151,10 +151,10 @@ fn generate_get_parent_rpc_ctx(service: &impl Service) -> TokenStream {
     quote! {
         /// Internal. Obtain the parent RPC in which this RPC client stub operates.
         fn get_parent_ctx(&self) -> Option<&'_ tonic::masa::RequestRxContext> {
-            let task_ptr = async_task::get_task_ptr();
+            let task_ptr = tonic::async_task::get_task_ptr();
             if !task_ptr.is_null() {
                 let req_ctx = unsafe {
-                    async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
+                    tonic::async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
                         task_ptr
                     )
                 };
