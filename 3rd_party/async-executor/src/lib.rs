@@ -186,45 +186,6 @@ where
     /// });
     /// ```
     pub fn spawn<T: Send + 'a>(&self, future: impl Future<Output = T> + Send + 'a) -> Task<T, M> {
-        // let res = TIMER_SPAWNED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed);
-        // if res.is_ok() {
-        //     let self_ptr = self as *const Self as u64;
-        //     std::thread::spawn(move || {
-        //         let mut prev_sched = 0;
-        //         let mut prev_cnt = 0;
-
-        //         let me: &Self = unsafe { &*(self_ptr as *const Self) };
-
-        //         loop {
-        //             std::thread::sleep(Duration::from_secs(1));
-
-        //             let state = me.state();
-        //             let global_qlen = state.queue.lock().unwrap().len();
-        //             let local_qlens = state.local_queues.read().unwrap();
-
-        //             print!(
-        //                 "global qlen: {}; local qs: {}; local qlens: ",
-        //                 global_qlen,
-        //                 local_qlens.len()
-        //             );
-        //             for (_, q) in local_qlens.iter().enumerate() {
-        //                 print!("{} ", q.len());
-        //             }
-        //             println!();
-
-        //             let sched_us = SCHED_TIME_US.load(Ordering::Relaxed);
-        //             let sched_cnt = SCHED_COUNT.load(Ordering::Relaxed);
-
-        //             let avg_sched_us =
-        //                 (sched_us - prev_sched) as f64 / (sched_cnt - prev_cnt) as f64;
-        //             println!("avg_sched_us {}", avg_sched_us);
-
-        //             prev_sched = sched_us;
-        //             prev_cnt = sched_cnt;
-        //         }
-        //     });
-        // }
-
         let mut active = self.state().active.lock().unwrap();
 
         // SAFETY: `T` and the future are `Send`.
@@ -249,45 +210,6 @@ where
         future: impl Future<Output = T> + Send + 'a,
         ddl: DeadlineHint,
     ) -> Task<T, M> {
-        // [NOTE] Capture backtrace in the deepest call stack that we understand.
-        // Set `RUST_BACKTRACE=1` before cargo run. Use `--debug` for more information.
-        // let backtrace = std::backtrace::Backtrace::capture();
-        // println!("Backtrace:\n{}", backtrace);
-
-        // let res = TIMER_SPAWNED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed);
-        // if res.is_ok() {
-        //     let self_ptr = self as *const Self as u64;
-        //     std::thread::spawn(move || {
-        //         let mut prev_sched = 0;
-        //         let mut prev_cnt = 0;
-
-        //         let me: &Self = unsafe { &*(self_ptr as *const Self) };
-        //         loop {
-        //             std::thread::sleep(Duration::from_secs(1));
-        //             let state = me.state();
-
-        //             // [NOTE] Use nested scope to release these locks ASAP.
-        //             let global_qlen = state.queue.len();
-        //             let local_qs = { state.local_queues.read().unwrap() };
-
-        //             let sched_us = SCHED_TIME_US.load(Ordering::Relaxed);
-        //             let sched_cnt = SCHED_COUNT.load(Ordering::Relaxed);
-
-        //             let avg_sched_us =
-        //                 (sched_us - prev_sched) as f64 / (sched_cnt - prev_cnt) as f64;
-        //             println!(
-        //                 "global qlen: {}, # local qs: {}, avg sched us: {:.4}",
-        //                 global_qlen,
-        //                 local_qs.len(),
-        //                 avg_sched_us
-        //             );
-
-        //             prev_sched = sched_us;
-        //             prev_cnt = sched_cnt;
-        //         }
-        //     });
-        // }
-
         let mut active = self.state().active.lock().unwrap();
 
         let meta = Self::get_parent_task_metadata().unwrap_or_default();
