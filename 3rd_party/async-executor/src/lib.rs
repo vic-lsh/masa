@@ -65,6 +65,65 @@ pub use async_task::{FallibleTask, Task};
 #[cfg(feature = "static")]
 pub use static_executors::*;
 
+fn get_static_ex() -> &'static Executor<'static> {
+    static STATIC_EX: Executor<'static> = Executor::new();
+    static INIT: AtomicBool = AtomicBool::new(false);
+    if INIT
+        .compare_exchange(false, true, Ordering::Release, Ordering::Acquire)
+        .is_ok()
+    {
+        // [TODO] make thread pool size configurable
+        const N_THRS: usize = 1;
+        for _ in 0..N_THRS {
+            std::thread::spawn(|| future::block_on(drive_runtime(&STATIC_EX)));
+        }
+    }
+    &STATIC_EX
+}
+
+async fn drive_runtime(ex: &'static Executor<'static>) {
+    loop {
+        ex.tick().await;
+    }
+}
+
+/// Spawns a task onto the executor.
+///
+/// # Examples
+///
+/// ```
+/// use async_executor::Executor;
+///
+/// let ex = Executor::new();
+///
+/// let task = ex.spawn(async {
+///     println!("Hello world");
+/// });
+/// ```
+pub fn spawn<T: Send + 'static>(future: impl Future<Output = T> + Send + 'static) -> Task<T> {
+    get_static_ex().spawn(future)
+}
+
+/// Spawns a task with a deadline hint onto the executor.
+///
+/// # Examples
+///
+/// ```
+/// use async_executor::Executor;
+///
+/// let ex = Executor::new();
+///
+/// let task = ex.spawn(async {
+///     println!("Hello world");
+/// });
+/// ```
+pub fn spawn_with_ddl<T: Send + 'static>(
+    future: impl Future<Output = T> + Send + 'static,
+    ddl: DeadlineHint,
+) -> Task<T> {
+    get_static_ex().spawn_with_ddl(future, ddl)
+}
+
 /// An async executor.
 ///
 /// # Examples
