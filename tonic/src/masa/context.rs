@@ -1,7 +1,7 @@
 use std::{
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Mutex,
+        Arc,
     },
     task::Poll,
     time::Instant,
@@ -11,6 +11,8 @@ use tonic_masa::Context;
 
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
+/// Context struct instantiated on RPC transmission.
+#[derive(Debug)]
 pub struct RequestTxContext {}
 
 /// Context struct instantiated once per RPC, when the server invokes a request handler.
@@ -33,7 +35,7 @@ pub struct SimpleReqRxCtx {
     request_start: Instant,
 }
 
-// [NOTE] Tonic-generated server requires Debug.
+/// Context struct for an RPC server, instantiated during server startup.
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct ServerContext {
@@ -102,11 +104,11 @@ impl RequestHandlerHooks for SimpleReqRxCtx {
         }
     }
 
-    fn before_child_rpc<T>(&self, method: GrpcMethod, req: &mut Request<T>) {
+    fn before_child_rpc<T>(&self, method: GrpcMethod, _req: &mut Request<T>) {
         println!("before_child_rpc, {:?}", method);
     }
 
-    fn after_child_rpc<T>(&self, method: GrpcMethod, resp: &mut Result<Response<T>, Status>) {
+    fn after_child_rpc<T>(&self, method: GrpcMethod, _resp: &mut Result<Response<T>, Status>) {
         println!("after_child_rpc, {:?}", method);
     }
 
@@ -114,7 +116,7 @@ impl RequestHandlerHooks for SimpleReqRxCtx {
         self.polled.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn finalize(&self, response: &mut http::Response<BoxBody>) {
+    fn finalize(&self, _response: &mut http::Response<BoxBody>) {
         println!(
             "method {} polled {} times, duration {} ms",
             self.method_name,
@@ -125,6 +127,7 @@ impl RequestHandlerHooks for SimpleReqRxCtx {
 }
 
 impl ServerContext {
+    /// Construct a ServerContext.
     pub fn new(service_name: &'static str) -> Self {
         println!("ServerContext: constructed for service {}", service_name);
         Self { service_name }
