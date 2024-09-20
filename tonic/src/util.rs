@@ -34,14 +34,16 @@ pub(crate) mod base64 {
     );
 }
 
-// The main HookedFuture struct
+/// Struct for defining hook points before and after polling a future.
+#[derive(Debug)]
 pub struct HookedFuture<F, Pre, Post> {
     inner: F,
     pre_hook: Option<Pre>,
     post_hook: Option<Post>,
 }
 
-// The Builder struct
+/// Struct for building a HookedFuture.
+#[derive(Debug)]
 pub struct HookedFutureBuilder<F, Pre, Post> {
     inner: F,
     before_poll: Option<Pre>,
@@ -50,6 +52,7 @@ pub struct HookedFutureBuilder<F, Pre, Post> {
 }
 
 impl<F: Future> HookedFutureBuilder<F, (), ()> {
+    /// Start constructing a HookedFuture.
     pub fn new(future: F) -> Self {
         Self {
             inner: future,
@@ -63,7 +66,7 @@ impl<F, Pre, Post> HookedFutureBuilder<F, Pre, Post>
 where
     F: Future,
 {
-    ///
+    /// Define hook point before polling.
     pub fn pre_hook<NewPre: Fn()>(self, hook: NewPre) -> HookedFutureBuilder<F, NewPre, Post> {
         HookedFutureBuilder {
             inner: self.inner,
@@ -78,7 +81,7 @@ impl<F, Pre, Post> HookedFutureBuilder<F, Pre, Post>
 where
     F: Future,
 {
-    ///
+    /// Define hook point after polling.
     pub fn post_hook<NewPost: Fn(&Poll<F::Output>)>(
         self,
         hook: NewPost,
@@ -138,8 +141,9 @@ where
     }
 }
 
-// Trait to add the `hook` method to futures
+/// Trait to add the `hook` method to futures
 pub trait Hookable: Sized + Future {
+    /// Start building a HookedFuture.
     fn hook(self) -> HookedFutureBuilder<Self, (), ()>;
 }
 
