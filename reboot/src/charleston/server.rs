@@ -9,7 +9,6 @@ use hyper::rt::{Exec, Executor};
 use log::info;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
@@ -32,8 +31,6 @@ pub fn time_now() -> u64 {
         .as_micros();
     now as u64
 }
-
-type BoxSendFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Server for benchmarking")]
@@ -205,7 +202,7 @@ impl<'a> GreeterImpl<'a> {
 }
 
 #[derive(Debug)]
-struct ExecImpl<'a> {
+pub struct ExecImpl<'a> {
     ex: &'a smol::Executor<'a, AsyncTaskMetadata>,
 }
 
