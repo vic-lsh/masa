@@ -303,10 +303,19 @@ fn generate_unary<T: Service>(
            let mut req = request.into_request();
            let grpc_method = GrpcMethod::new(#service_name, #method_name);
            req.extensions_mut().insert(grpc_method);
+
+           use tonic::masa::ClientStubHooks;
+           let mut tx_ctx = tonic::masa::RequestTxContext::new(grpc_method, &req);
+
            #before_child_rpc
+
+           tx_ctx.before_send(&mut req);
            #[allow(unused_mut)]
            let mut resp = self.inner.unary(req, path, codec).await;
+           tx_ctx.after_recv(&mut resp);
+
            #after_child_rpc
+
            resp
         }
     }
