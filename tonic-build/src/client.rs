@@ -150,7 +150,7 @@ fn generate_get_parent_rpc_ctx(service: &impl Service) -> TokenStream {
 
     quote! {
         /// Internal. Obtain the parent RPC in which this RPC client stub operates.
-        fn get_parent_ctx(&self) -> Option<&'_ tonic::masa::RequestRxContext> {
+        fn get_parent_ctx(&self) -> Option<&'_ tonic::masa::ParentContext> {
             let task_ptr = tonic::async_task::get_task_ptr();
             if !task_ptr.is_null() {
                 let req_ctx = unsafe {
@@ -267,7 +267,7 @@ fn generate_unary<T: Service>(
             use tonic::masa::RequestHandlerHooks;
             if let Some(parent_ctx) = self.get_parent_ctx() {
                 println!("got parent ctx before {:?}", grpc_method);
-                parent_ctx.before_child_rpc(grpc_method, &mut req, &mut tx_ctx);
+                parent_ctx.before_child_rpc(grpc_method, &mut req, &mut child_ctx);
             } else {
                 println!("no parent ctx before {:?}", grpc_method);
             }
@@ -280,7 +280,7 @@ fn generate_unary<T: Service>(
         quote! {
             if let Some(parent_ctx) = self.get_parent_ctx() {
                 println!("got parent ctx after {:?}", grpc_method);
-                parent_ctx.after_child_rpc(grpc_method, &mut resp, tx_ctx);
+                parent_ctx.after_child_rpc(grpc_method, &mut resp, child_ctx);
             } else {
                 println!("no parent ctx after {:?}", grpc_method);
             }
@@ -305,14 +305,14 @@ fn generate_unary<T: Service>(
            req.extensions_mut().insert(grpc_method);
 
            use tonic::masa::ClientStubHooks;
-           let mut tx_ctx = tonic::masa::RequestTxContext::new(grpc_method, &req);
+           let mut child_ctx = tonic::masa::ChildContext::new(grpc_method, &req);
 
            #before_child_rpc
 
-           tx_ctx.before_send(&mut req);
+           child_ctx.before_send(&mut req);
            #[allow(unused_mut)]
            let mut resp = self.inner.unary(req, path, codec).await;
-           tx_ctx.after_recv(&mut resp);
+           child_ctx.after_recv(&mut resp);
 
            #after_child_rpc
 

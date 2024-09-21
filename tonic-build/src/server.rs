@@ -97,7 +97,7 @@ pub(crate) fn generate_internal<T: Service>(
     quote! {
         thread_local! {
             #[allow(non_upper_case_globals)]
-             static #server_parent_rpc_ctx: std::cell::Cell<*const tonic::masa::RequestRxContext> =
+             static #server_parent_rpc_ctx: std::cell::Cell<*const tonic::masa::ParentContext> =
                     std::cell::Cell::new(core::ptr::null());
         }
 
@@ -533,7 +533,7 @@ fn generate_unary<T: Method>(
 
             // Request-begin lifecycle hook.
             let grpc_method = GrpcMethod::new(#outer_service_name, #grpc_method_ident);
-            let req_ctx = tonic::masa::RequestRxContext::begin(grpc_method, &req, server_ctx);
+            let req_ctx = tonic::masa::ParentContext::begin(grpc_method, &req, server_ctx);
             let req_ctx = std::sync::Arc::new(Some(req_ctx));
 
             unsafe {
