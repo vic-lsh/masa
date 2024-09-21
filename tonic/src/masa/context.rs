@@ -95,10 +95,22 @@ pub trait RequestHandlerHooks: Sync {
         -> Self;
 
     /// Invoked before the request handler makes an RPC.
-    fn before_child_rpc<T>(&self, method: GrpcMethod, req: &mut Request<T>) {}
+    fn before_child_rpc<T>(
+        &self,
+        method: GrpcMethod,
+        req: &mut Request<T>,
+        tx_ctx: &mut RequestTxContext,
+    ) {
+    }
 
     /// Invoked after the request handler receives a response from an RPC it made earlier.
-    fn after_child_rpc<T>(&self, method: GrpcMethod, resp: &mut Result<Response<T>, Status>) {}
+    fn after_child_rpc<T>(
+        &self,
+        method: GrpcMethod,
+        resp: &mut Result<Response<T>, Status>,
+        tx_ctx: RequestTxContext,
+    ) {
+    }
 
     /// Invoked each time before the request handler is polled.
     ///
@@ -132,11 +144,21 @@ impl RequestHandlerHooks for SimpleReqRxCtx {
         }
     }
 
-    fn before_child_rpc<T>(&self, method: GrpcMethod, req: &mut Request<T>) {
+    fn before_child_rpc<T>(
+        &self,
+        method: GrpcMethod,
+        _req: &mut Request<T>,
+        _tx_ctx: &mut RequestTxContext,
+    ) {
         println!("before_child_rpc, {:?}", method);
     }
 
-    fn after_child_rpc<T>(&self, method: GrpcMethod, resp: &mut Result<Response<T>, Status>) {
+    fn after_child_rpc<T>(
+        &self,
+        method: GrpcMethod,
+        _resp: &mut Result<Response<T>, Status>,
+        _tx_ctx: RequestTxContext,
+    ) {
         println!("after_child_rpc, {:?}", method);
     }
 
