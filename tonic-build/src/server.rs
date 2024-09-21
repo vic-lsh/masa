@@ -529,7 +529,8 @@ fn generate_unary<T: Method>(
             use tonic::masa::RequestHandlerHooks;
 
             // Request-begin lifecycle hook.
-            let req_ctx = tonic::masa::RequestRxContext::begin(#method_name, &req, server_ctx);
+            let grpc_method = GrpcMethod::new(#outer_service_name, #grpc_method_ident);
+            let req_ctx = tonic::masa::RequestRxContext::begin(grpc_method, &req, server_ctx);
             let req_ctx = Arc::new(req_ctx);
 
             // Only construct the following if we're using async-executor.
