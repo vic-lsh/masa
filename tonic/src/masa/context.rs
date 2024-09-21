@@ -11,9 +11,9 @@ use tonic_masa::Context;
 
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
-/// Context struct instantiated on RPC transmission.
+/// A simple implementation of `ClientStubHooks`.
 #[derive(Debug)]
-pub struct SimpleReqTxCtx {
+pub struct SimpleChildContext {
     method: GrpcMethod,
     start: Option<Instant>,
 }
@@ -21,18 +21,20 @@ pub struct SimpleReqTxCtx {
 /// Context struct instantiated once per RPC, when the server invokes a request handler.
 ///
 /// Must implement `RequestHandlerHooks`.
-pub type RequestRxContext = SimpleReqRxCtx;
+pub type ParentContext = SimpleParentContext;
 
+/// Context struct instantiated on RPC transmission.
 ///
-pub type RequestTxContext = SimpleReqTxCtx;
+/// Must implement `ClientStubHooks`.
+pub type ChildContext = SimpleChildContext;
 
 /// Type of metadata required for async-tasks used in tonic.
-pub type AsyncTaskMetadata = Option<Arc<RequestRxContext>>;
+pub type AsyncTaskMetadata = Option<Arc<ParentContext>>;
 
 /// A simple implementation of `RequestHandlerHooks`.
 #[derive(Debug)]
 #[allow(dead_code)]
-pub struct SimpleReqRxCtx {
+pub struct SimpleParentContext {
     method: GrpcMethod,
     req_ctx: Context,
     server_ctx: Arc<ServerContext>,
@@ -51,7 +53,7 @@ pub struct ServerContext {
 
 /// Lifecycle hooks when a client stub executes a request.
 ///
-/// Structs that implement this trait (aliased to `RequestTxContext`) will be
+/// Structs that implement this trait (aliased to `ChildContext`) will be
 /// constructed each time a client stub sends an RPC, and destructeed when the
 /// RPC completes.
 ///
@@ -103,7 +105,7 @@ pub trait RequestHandlerHooks: Sync {
         &self,
         method: GrpcMethod,
         req: &mut Request<T>,
-        tx_ctx: &mut RequestTxContext,
+        child_ctx: &mut ChildContext,
     ) {
     }
 
@@ -112,7 +114,7 @@ pub trait RequestHandlerHooks: Sync {
         &self,
         method: GrpcMethod,
         resp: &mut Result<Response<T>, Status>,
-        tx_ctx: RequestTxContext,
+        child_ctx: ChildContext,
     ) {
     }
 
@@ -131,7 +133,7 @@ pub trait RequestHandlerHooks: Sync {
     fn finalize(&self, response: &mut http::Response<BoxBody>) {}
 }
 
-impl RequestHandlerHooks for SimpleReqRxCtx {
+impl RequestHandlerHooks for SimpleParentContext {
     fn begin<B>(
         method: GrpcMethod,
         req: &http::Request<B>,
@@ -152,7 +154,7 @@ impl RequestHandlerHooks for SimpleReqRxCtx {
         &self,
         method: GrpcMethod,
         _req: &mut Request<T>,
-        _tx_ctx: &mut RequestTxContext,
+        _child_ctx: &mut ChildContext,
     ) {
         println!("before_child_rpc, {:?}", method);
     }
@@ -161,7 +163,7 @@ impl RequestHandlerHooks for SimpleReqRxCtx {
         &self,
         method: GrpcMethod,
         _resp: &mut Result<Response<T>, Status>,
-        _tx_ctx: RequestTxContext,
+        _child_ctx: ChildContext,
     ) {
         println!("after_child_rpc, {:?}", method);
     }
@@ -180,7 +182,7 @@ impl RequestHandlerHooks for SimpleReqRxCtx {
     }
 }
 
-impl ClientStubHooks for SimpleReqTxCtx {
+impl ClientStubHooks for SimpleChildContext {
     fn new<T>(method: GrpcMethod, _req: &Request<T>) -> Self {
         Self {
             method,
@@ -189,7 +191,7 @@ impl ClientStubHooks for SimpleReqTxCtx {
     }
 
     fn before_send<T>(&mut self, _req: &mut Request<T>) {
-        println!("tx_ctx {:?} before send", self.method);
+        println!("child_ctx {:?} before send", self.method);
         self.start = Some(Instant::now());
     }
 
@@ -200,7 +202,10 @@ impl ClientStubHooks for SimpleReqTxCtx {
             .expect("rpc must have started")
             .elapsed()
             .as_millis();
-        println!("tx_ctx {:?} after recv, latency {} ms", self.method, lat_ms);
+        println!(
+            "child_ctx {:?} after recv, latency {} ms",
+            self.method, lat_ms
+        );
     }
 }
 
