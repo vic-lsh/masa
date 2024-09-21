@@ -11,12 +11,19 @@ use tonic_masa::Context;
 
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
-pub struct RequestTxContext {}
+/// Context struct instantiated on RPC transmission.
+#[derive(Debug)]
+pub struct SimpleReqTxCtx {
+    method: GrpcMethod,
+}
 
 /// Context struct instantiated once per RPC, when the server invokes a request handler.
 ///
 /// Must implement `RequestHandlerHooks`.
 pub type RequestRxContext = SimpleReqRxCtx;
+
+///
+pub type RequestTxContext = SimpleReqTxCtx;
 
 /// A simple implementation of `RequestHandlerHooks`.
 #[derive(Debug)]
@@ -36,6 +43,35 @@ pub struct SimpleReqRxCtx {
 pub struct ServerContext {
     service_name: &'static str,
     // local_graph: Option<LocalGraph>,
+}
+
+/// Lifecycle hooks when a client stub executes a request.
+///
+/// Structs that implement this trait (aliased to `RequestTxContext`) will be
+/// constructed each time a client stub sends an RPC, and destructeed when the
+/// RPC completes.
+///
+/// All hooks have a default, empty implementation. The only exception is `new`,
+/// which is the hook constructor and must be implemented.
+///
+/// This struct does not need to be thread-safe -- it will not be accessed concurrently.
+#[allow(unused_variables)]
+pub trait ClientStubHooks {
+    /// Construct a new ClientStubHook.
+    fn new<T>(method: GrpcMethod, req: &Request<T>) -> Self;
+
+    /// Lifecycle hook invoked just before a client stub sends an RPC.
+    ///
+    /// This is the last lifecycle hook to be called before the request is sent.
+    /// For example, it is called _after_ hooks like `RequestHandlerHooks::before_child_rpc`.
+    fn before_send<T>(&mut self, req: &mut Request<T>) {}
+
+    /// Lifecycle hook invoked right after a client stub received a response
+    /// for this RPC.
+    ///
+    /// This is the first lifecycle hook to be called after receiving the response.
+    /// For example, it is called _before_ hooks like `RequestHandlerHooks::after_child_rpc`.
+    fn after_recv<T>(&mut self, response: &mut Result<Response<T>, Status>) {}
 }
 
 /// Lifecycle hooks when the server executes a request.
@@ -115,6 +151,20 @@ impl RequestHandlerHooks for SimpleReqRxCtx {
             self.polled.load(Ordering::Relaxed),
             self.request_start.elapsed().as_millis()
         );
+    }
+}
+
+impl ClientStubHooks for SimpleReqTxCtx {
+    fn new<T>(method: GrpcMethod, _req: &Request<T>) -> Self {
+        Self { method }
+    }
+
+    fn before_send<T>(&mut self, _req: &mut Request<T>) {
+        println!("tx_ctx {:?} before send", self.method);
+    }
+
+    fn after_recv<T>(&mut self, _response: &mut Result<Response<T>, Status>) {
+        println!("tx_ctx {:?} after recv", self.method);
     }
 }
 
