@@ -336,6 +336,12 @@ where
         })
     }
 
+    fn set_child_task_poll_hook(func: fn() -> Option<Box<dyn async_task::PollHook>>) -> bool {
+        // SAFETY:
+        // - metadata of task is of type M -- all tasks have the same metadata type
+        unsafe { async_task::set_poll_hook_factory_on_self_task::<M>(func) }
+    }
+
     /// Spawns many tasks onto the executor.
     ///
     /// As opposed to the [`spawn`] method, this locks the executor's inner task lock once and
