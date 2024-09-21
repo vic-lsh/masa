@@ -529,41 +529,55 @@ fn generate_unary<T: Method>(
             use tonic::masa::RequestHandlerHooks;
 
             // Request-begin lifecycle hook.
-            let grpc_method = GrpcMethod::new(#outer_service_name, #grpc_method_ident);
-            let req_ctx = tonic::masa::ParentContext::begin(grpc_method, &req, server_ctx);
-            let req_ctx = std::sync::Arc::new(Some(req_ctx));
+            let req_ctx = tonic::masa::RequestRxContext::begin(#method_name, &req, server_ctx);
+            let req_ctx = Arc::new(req_ctx);
 
-            unsafe {
-                tonic::async_task::set_metadata_from_raw_task(
-                    tonic::async_task::get_task_ptr(),
-                    Some(req_ctx)
-                );
+            let req_ctx_addr = req_ctx.as_ref() as *const tonic::masa::RequestRxContext as u64;
+            let hook_factory = move || {
+                struct ReqCtxHook(u64);
+                impl tonic::async_task::PollHook for ReqCtxHook {
+                    fn before_poll(&self) {
+                        // TODO: this is not safe yet. this assumes child rpc
+                        // joins before the request handler finishes.
+                        let addr = self.0 as *const tonic::masa::RequestRxContext;
+                        let original = super::#server_parent_rpc_ctx.replace(addr);
+                        assert!(original.is_null());
+                    }
+                    fn after_poll(&self) {
+                        let original = super::#server_parent_rpc_ctx.replace(core::ptr::null());
+                        assert!(!original.is_null());
+                    }
+                }
+                return Box::new(ReqCtxHook(req_ctx_addr)) as Box<dyn tonic::async_task::PollHook>;
             };
-
-            let get_ctx = || {
-                // SAFETY:
-                // - task-ptr is valid (upheld by `async_task::get_task_ptr`)
-                // - metadata type is correct
-                //      (trust that the application uses this metadata type in the executor)
-                let ctx = unsafe {
-                    tonic::async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
-                        tonic::async_task::get_task_ptr()
-                    )
-                };
-                ctx.as_ref().expect("ctx should be set")
-            };
+            tonic::async_executor::set_child_task_poll_hook(Arc::new(hook_factory));
 
             use tonic::util::Hookable;
             let fut = grpc.unary(method, req)
                 .hook()
-                .pre_hook(|| get_ctx().before_poll())
-                .post_hook(|poll| get_ctx().after_poll(poll))
+                .pre_hook(|| {
+                    let req_ctx_addr = req_ctx.as_ref() as *const tonic::masa::RequestRxContext;
+                    let original = super::#server_parent_rpc_ctx.replace(req_ctx_addr);
+
+                    // A server handler should not be calling another server handler.
+                    // We only set this value before polling a server handler.
+                    assert!(original.is_null());
+
+                    req_ctx.before_poll();
+                })
+                .post_hook(|poll| {
+                    let original = super::#server_parent_rpc_ctx.replace(core::ptr::null());
+                    assert!(!original.is_null());
+                    req_ctx.after_poll(poll);
+                })
                 .build();
 
             let mut res = fut.await;
 
             // Request-completed lifecycle hook.
             get_ctx().finalize(&mut res);
+
+            tonic::async_executor::reset_child_task_poll_hook();
 
             Ok(res)
         };

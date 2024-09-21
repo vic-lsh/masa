@@ -94,8 +94,14 @@ pub fn is_runtime_active() -> bool {
     __INIT.load(Ordering::Relaxed)
 }
 
-pub fn set_child_task_poll_hook(func: fn() -> Option<Box<dyn async_task::PollHook>>) -> bool {
+///
+pub fn set_child_task_poll_hook(func: Arc<dyn Fn() -> Box<dyn async_task::PollHook>>) -> bool {
     get_static_ex().set_child_task_poll_hook(func)
+}
+
+///
+pub fn reset_child_task_poll_hook() -> bool {
+    get_static_ex().reset_child_task_poll_hook()
 }
 
 /// Spawns a task onto the executor.
@@ -289,11 +295,17 @@ where
 
     fn set_child_task_poll_hook(
         &self,
-        func: fn() -> Option<Box<dyn async_task::PollHook>>,
+        func: Arc<dyn Fn() -> Box<dyn async_task::PollHook>>,
     ) -> bool {
         // SAFETY:
         // - metadata of task is of type M -- all tasks have the same metadata type
         unsafe { async_task::set_poll_hook_factory_on_self_task::<M>(func) }
+    }
+
+    fn reset_child_task_poll_hook(&self) -> bool {
+        // SAFETY:
+        // - metadata of task is of type M -- all tasks have the same metadata type
+        unsafe { async_task::reset_poll_hook_factory_on_self_task::<M>() }
     }
 
     /// Spawns many tasks onto the executor.
@@ -401,7 +413,7 @@ where
         // Instrument future with hook point if hook factory is defined.
         let maybe_hook = unsafe {
             // Safety: all tasks spawned from this executor has metadata type M.
-            async_task::get_poll_hook_factory_on_self_task::<M>().and_then(|factory| factory())
+            async_task::get_poll_hook_factory_on_self_task::<M>().map(|factory| factory())
         };
 
         let future = async move {

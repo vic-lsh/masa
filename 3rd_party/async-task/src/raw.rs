@@ -1,5 +1,6 @@
 use alloc::alloc::Layout as StdLayout;
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use core::cell::UnsafeCell;
 use core::future::Future;
 use core::marker::PhantomData;
@@ -252,7 +253,7 @@ where
                     clone_waker: Self::clone_waker,
                     layout_info: &Self::TASK_LAYOUT,
                 },
-                make_child_poll_hook: Self::make_poll_hook,
+                make_child_poll_hook: None,
                 metadata,
                 #[cfg(feature = "std")]
                 propagate_panic,
@@ -439,10 +440,6 @@ where
         }
 
         RawWaker::new(ptr, &Self::RAW_WAKER_VTABLE)
-    }
-
-    fn make_poll_hook() -> Option<Box<dyn PollHook>> {
-        None
     }
 
     /// Drops a waker.
@@ -926,7 +923,7 @@ pub unsafe fn set_metadata_from_raw_task<M>(ptr: *const (), metadata: M) {
 ///
 /// - Caller must supply the metadata type M that is associated with the currently running task.
 pub unsafe fn set_poll_hook_factory_on_self_task<'a, M>(
-    factory: fn() -> Option<Box<dyn crate::PollHook>>,
+    factory: Arc<dyn Fn() -> Box<dyn crate::PollHook>>,
 ) -> bool {
     NonNull::new(get_task_ptr() as *mut ())
         .map(|ptr| {
@@ -934,7 +931,23 @@ pub unsafe fn set_poll_hook_factory_on_self_task<'a, M>(
             let header = ptr as *mut Header<M>;
             let header = unsafe { &mut *header };
 
-            header.make_child_poll_hook = factory;
+            header.make_child_poll_hook = Some(factory);
+            ()
+        })
+        .is_some()
+}
+
+/// Safety:
+///
+/// - Caller must supply the metadata type M that is associated with the currently running task.
+pub unsafe fn reset_poll_hook_factory_on_self_task<'a, M>() -> bool {
+    NonNull::new(get_task_ptr() as *mut ())
+        .map(|ptr| {
+            let ptr = ptr.as_ptr();
+            let header = ptr as *mut Header<M>;
+            let header = unsafe { &mut *header };
+
+            header.make_child_poll_hook = None;
             ()
         })
         .is_some()
@@ -948,12 +961,12 @@ pub unsafe fn set_poll_hook_factory_on_self_task<'a, M>(
 ///
 /// - Caller must supply the metadata type M that is associated with the currently running task.
 pub unsafe fn get_poll_hook_factory_on_self_task<'a, M>(
-) -> Option<fn() -> Option<Box<dyn crate::PollHook>>> {
-    NonNull::new(get_task_ptr() as *mut ()).map(|ptr| {
+) -> Option<Arc<dyn Fn() -> Box<dyn crate::PollHook>>> {
+    NonNull::new(get_task_ptr() as *mut ()).and_then(|ptr| {
         let ptr = ptr.as_ptr();
         let header = ptr as *mut Header<M>;
         let header = unsafe { &mut *header };
 
-        header.make_child_poll_hook
+        Some(header.make_child_poll_hook.as_ref()?.clone())
     })
 }

@@ -113,7 +113,7 @@ mod utils;
 pub use crate::poll_hook::{PollHook, PollHookFuture, WithPollHook};
 pub use crate::raw::{
     get_poll_hook_factory_on_self_task, get_task_ddl, get_task_ptr,
-    set_poll_hook_factory_on_self_task, set_task_ptr,
+    reset_poll_hook_factory_on_self_task, set_poll_hook_factory_on_self_task, set_task_ptr,
 };
 pub use crate::runnable::{
     spawn, spawn_unchecked, spawn_with_deadline, Builder, Runnable, Schedule, ScheduleInfo,
