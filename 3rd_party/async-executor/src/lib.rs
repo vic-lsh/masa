@@ -65,26 +65,33 @@ pub use async_task::{FallibleTask, Task};
 #[cfg(feature = "static")]
 pub use static_executors::*;
 
+static __STATIC_EX: Executor<'static> = Executor::new();
+static __INIT: AtomicBool = AtomicBool::new(false);
+
 fn get_static_ex() -> &'static Executor<'static> {
-    static STATIC_EX: Executor<'static> = Executor::new();
-    static INIT: AtomicBool = AtomicBool::new(false);
-    if INIT
+    if __INIT
         .compare_exchange(false, true, Ordering::Release, Ordering::Acquire)
         .is_ok()
     {
         // [TODO] make thread pool size configurable
         const N_THRS: usize = 1;
         for _ in 0..N_THRS {
-            std::thread::spawn(|| future::block_on(drive_runtime(&STATIC_EX)));
+            std::thread::spawn(|| future::block_on(drive_runtime(&__STATIC_EX)));
         }
     }
-    &STATIC_EX
+
+    &__STATIC_EX
 }
 
 async fn drive_runtime(ex: &'static Executor<'static>) {
     loop {
         ex.tick().await;
     }
+}
+
+/// Gives users a way to check whether they're currently in an async-executor environment.
+pub fn is_runtime_active() -> bool {
+    __INIT.load(Ordering::Relaxed)
 }
 
 /// Spawns a task onto the executor.
