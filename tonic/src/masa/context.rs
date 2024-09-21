@@ -15,6 +15,7 @@ use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 #[derive(Debug)]
 pub struct SimpleReqTxCtx {
     method: GrpcMethod,
+    start: Option<Instant>,
 }
 
 /// Context struct instantiated once per RPC, when the server invokes a request handler.
@@ -181,15 +182,25 @@ impl RequestHandlerHooks for SimpleReqRxCtx {
 
 impl ClientStubHooks for SimpleReqTxCtx {
     fn new<T>(method: GrpcMethod, _req: &Request<T>) -> Self {
-        Self { method }
+        Self {
+            method,
+            start: None,
+        }
     }
 
     fn before_send<T>(&mut self, _req: &mut Request<T>) {
         println!("tx_ctx {:?} before send", self.method);
+        self.start = Some(Instant::now());
     }
 
     fn after_recv<T>(&mut self, _response: &mut Result<Response<T>, Status>) {
-        println!("tx_ctx {:?} after recv", self.method);
+        let lat_ms = self
+            .start
+            .take()
+            .expect("rpc must have started")
+            .elapsed()
+            .as_millis();
+        println!("tx_ctx {:?} after recv, latency {} ms", self.method, lat_ms);
     }
 }
 
