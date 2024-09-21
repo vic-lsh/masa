@@ -408,6 +408,7 @@ fn generate_methods<T: Service>(
 ) -> TokenStream {
     let mut stream = TokenStream::new();
 
+    let service_name = format_service_name(service, emit_package);
     for method in service.methods() {
         let path = format_method_path(service, method, emit_package);
         // [NOTE] Method path name on the server side.
@@ -418,6 +419,7 @@ fn generate_methods<T: Service>(
         let method_stream = match (method.client_streaming(), method.server_streaming()) {
             (false, false) => generate_unary(
                 method,
+                &service_name,
                 proto_path,
                 compile_well_known_types,
                 ident,
@@ -467,6 +469,7 @@ fn generate_methods<T: Service>(
 
 fn generate_unary<T: Method>(
     method: &T,
+    outer_service_name: &str,
     proto_path: &str,
     compile_well_known_types: bool,
     method_ident: Ident,
@@ -476,7 +479,8 @@ fn generate_unary<T: Method>(
     let codec_name = syn::parse_str::<syn::Path>(method.codec_path()).unwrap();
 
     let service_ident = quote::format_ident!("{}Svc", method.identifier());
-    let method_name = method.name();
+    // ident used in constructing GrpcMethod, distinct from the `method_ident` arg
+    let grpc_method_ident = method.identifier();
 
     let (request, response) = method.request_response_name(proto_path, compile_well_known_types);
 
@@ -528,7 +532,8 @@ fn generate_unary<T: Method>(
             use tonic::masa::RequestHandlerHooks;
 
             // Request-begin lifecycle hook.
-            let req_ctx = tonic::masa::RequestRxContext::begin(#method_name, &req, server_ctx);
+            let grpc_method = GrpcMethod::new(#outer_service_name, #grpc_method_ident);
+            let req_ctx = tonic::masa::RequestRxContext::begin(grpc_method, &req, server_ctx);
             let req_ctx = std::sync::Arc::new(Some(req_ctx));
 
             unsafe {

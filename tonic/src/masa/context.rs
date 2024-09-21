@@ -27,7 +27,7 @@ pub type AsyncTaskMetadata = Option<Arc<RequestRxContext>>;
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct SimpleReqRxCtx {
-    method_name: &'static str,
+    method: GrpcMethod,
     req_ctx: Context,
     server_ctx: Arc<ServerContext>,
 
@@ -60,11 +60,8 @@ pub trait RequestHandlerHooks: Sync {
     /// The first lifecycle, marking the start of a request execution.
     ///
     /// This is also the constructor for the hook point struct implementation.
-    fn begin<B>(
-        method: &'static str,
-        req: &http::Request<B>,
-        server_ctx: Arc<ServerContext>,
-    ) -> Self;
+    fn begin<B>(method: GrpcMethod, req: &http::Request<B>, server_ctx: Arc<ServerContext>)
+        -> Self;
 
     /// Invoked before the request handler makes an RPC.
     fn before_child_rpc<T>(&self, method: GrpcMethod, req: &mut Request<T>) {}
@@ -89,14 +86,14 @@ pub trait RequestHandlerHooks: Sync {
 
 impl RequestHandlerHooks for SimpleReqRxCtx {
     fn begin<B>(
-        method: &'static str,
+        method: GrpcMethod,
         req: &http::Request<B>,
         server_ctx: Arc<ServerContext>,
     ) -> Self {
         let ctx_str = req.headers()["ctx"].to_str().unwrap();
         let req_ctx = Context::from_json(ctx_str);
         Self {
-            method_name: method,
+            method,
             req_ctx,
             server_ctx,
             polled: AtomicUsize::new(0),
@@ -118,8 +115,8 @@ impl RequestHandlerHooks for SimpleReqRxCtx {
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
         println!(
-            "method {} polled {} times, duration {} ms",
-            self.method_name,
+            "method {:?} polled {} times, duration {} ms",
+            self.method,
             self.polled.load(Ordering::Relaxed),
             self.request_start.elapsed().as_millis()
         );
