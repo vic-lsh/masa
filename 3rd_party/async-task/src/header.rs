@@ -2,6 +2,7 @@ use core::cell::UnsafeCell;
 use core::fmt;
 use core::task::Waker;
 
+use alloc::boxed::Box;
 #[cfg(not(feature = "portable-atomic"))]
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
@@ -9,8 +10,8 @@ use core::sync::atomic::Ordering;
 use portable_atomic::AtomicUsize;
 
 use crate::raw::TaskVTable;
-use crate::state::*;
 use crate::utils::abort_on_panic;
+use crate::{state::*, PollHook};
 
 /// The header of a task.
 ///
@@ -31,6 +32,9 @@ pub(crate) struct Header<M> {
     /// In addition to the actual waker virtual table, it also contains pointers to several other
     /// methods necessary for bookkeeping the heap-allocated task.
     pub(crate) vtable: &'static TaskVTable,
+
+    /// Customizes child task's behavior on each poll.
+    pub(crate) make_child_poll_hook: fn() -> Option<Box<dyn PollHook>>,
 
     /// Metadata associated with the task.
     ///
