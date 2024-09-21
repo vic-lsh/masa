@@ -94,6 +94,10 @@ pub fn is_runtime_active() -> bool {
     __INIT.load(Ordering::Relaxed)
 }
 
+pub fn set_child_task_poll_hook(func: fn() -> Option<Box<dyn async_task::PollHook>>) -> bool {
+    get_static_ex().set_child_task_poll_hook(func)
+}
+
 /// Spawns a task onto the executor.
 ///
 /// # Examples
@@ -131,14 +135,6 @@ pub fn spawn_with_ddl<T: Send + 'static>(
     get_static_ex().spawn_with_prio(future, ddl)
 }
 
-/// Trait used to define custom behavior before and after a future is called.
-pub trait PollHook {
-    /// Called before polling.
-    fn before_poll(&self);
-    /// Called after polling.
-    fn after_poll(&self);
-}
-
 /// An async executor.
 ///
 /// # Examples
@@ -167,8 +163,6 @@ pub struct Executor<'a, M = ()> {
     /// The executor state.
     state: AtomicPtr<State<M>>,
 
-    pool_hook_factory: std::sync::RwLock<Option<fn() -> Box<dyn PollHook>>>,
-
     /// Makes the `'a` lifetime invariant.
     _marker: PhantomData<std::cell::UnsafeCell<&'a ()>>,
 }
@@ -194,48 +188,6 @@ where
 static SCHED_TIME_US: AtomicUsize = AtomicUsize::new(0);
 static SCHED_COUNT: AtomicUsize = AtomicUsize::new(0);
 
-/// The main HookedFuture struct
-#[allow(missing_debug_implementations)]
-pub struct PollHookFuture<F> {
-    inner: F,
-    // TODO: make this non-box?
-    hook: Box<dyn PollHook>,
-}
-
-impl<F> Future for PollHookFuture<F>
-where
-    F: Future,
-{
-    type Output = F::Output;
-
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
-        // SAFETY: We're not moving any fields out of self
-        let this = unsafe { self.get_unchecked_mut() };
-
-        this.hook.before_poll();
-
-        // Poll the inner future
-        // SAFETY: We're not moving the future, just polling it
-        let poll_result = unsafe { std::pin::Pin::new_unchecked(&mut this.inner) }.poll(cx);
-
-        this.hook.after_poll();
-
-        poll_result
-    }
-}
-
-/// Trait to add the `hook` method to futures
-pub trait WithPollHook: Sized + Future {
-    ///
-    fn with_poll_hook(self, hook: Box<dyn PollHook>) -> PollHookFuture<Self>;
-}
-
-impl<F: Future> WithPollHook for F {
-    fn with_poll_hook(self, hook: Box<dyn PollHook>) -> PollHookFuture<F> {
-        PollHookFuture { inner: self, hook }
-    }
-}
-
 impl<'a, M: Default + Clone> Executor<'a, M>
 where
     // [TODO:Vic] Why does M need to be Sync?
@@ -253,7 +205,6 @@ where
     pub const fn new() -> Executor<'a, M> {
         Executor {
             state: AtomicPtr::new(std::ptr::null_mut()),
-            pool_hook_factory: std::sync::RwLock::new(None),
             _marker: PhantomData,
         }
     }
@@ -336,7 +287,10 @@ where
         })
     }
 
-    fn set_child_task_poll_hook(func: fn() -> Option<Box<dyn async_task::PollHook>>) -> bool {
+    fn set_child_task_poll_hook(
+        &self,
+        func: fn() -> Option<Box<dyn async_task::PollHook>>,
+    ) -> bool {
         // SAFETY:
         // - metadata of task is of type M -- all tasks have the same metadata type
         unsafe { async_task::set_poll_hook_factory_on_self_task::<M>(func) }
@@ -445,13 +399,14 @@ where
         let state = self.state_as_arc();
 
         // Instrument future with hook point if hook factory is defined.
-        let maybe_hook = {
-            let guard = self.pool_hook_factory.read().unwrap();
-            guard.as_ref().map(|mk_hook| mk_hook())
+        let maybe_hook = unsafe {
+            // Safety: all tasks spawned from this executor has metadata type M.
+            async_task::get_poll_hook_factory_on_self_task::<M>().and_then(|factory| factory())
         };
 
         let future = async move {
             let _guard = CallOnDrop(move || drop(state.active.lock().unwrap().try_remove(index)));
+            use async_task::WithPollHook;
             match maybe_hook {
                 Some(hook) => future.with_poll_hook(hook).await,
                 None => future.await,
