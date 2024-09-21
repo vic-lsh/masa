@@ -126,9 +126,17 @@ pub fn spawn<T: Send + 'static>(future: impl Future<Output = T> + Send + 'static
 /// ```
 pub fn spawn_with_ddl<T: Send + 'static>(
     future: impl Future<Output = T> + Send + 'static,
-    ddl: DeadlineHint,
+    ddl: PriorityHint,
 ) -> Task<T> {
-    get_static_ex().spawn_with_ddl(future, ddl)
+    get_static_ex().spawn_with_prio(future, ddl)
+}
+
+/// Trait used to define custom behavior before and after a future is called.
+pub trait PollHook {
+    /// Called before polling.
+    fn before_poll(&self);
+    /// Called after polling.
+    fn after_poll(&self);
 }
 
 /// An async executor.
@@ -159,6 +167,8 @@ pub struct Executor<'a, M = ()> {
     /// The executor state.
     state: AtomicPtr<State<M>>,
 
+    pool_hook_factory: std::sync::RwLock<Option<fn() -> Box<dyn PollHook>>>,
+
     /// Makes the `'a` lifetime invariant.
     _marker: PhantomData<std::cell::UnsafeCell<&'a ()>>,
 }
@@ -183,7 +193,48 @@ where
 // [NOTE] The scheduling latency for concurrent queues is sub-microsecond.
 static SCHED_TIME_US: AtomicUsize = AtomicUsize::new(0);
 static SCHED_COUNT: AtomicUsize = AtomicUsize::new(0);
-// static TIMER_SPAWNED: AtomicBool = AtomicBool::new(false);
+
+/// The main HookedFuture struct
+#[allow(missing_debug_implementations)]
+pub struct PollHookFuture<F> {
+    inner: F,
+    // TODO: make this non-box?
+    hook: Box<dyn PollHook>,
+}
+
+impl<F> Future for PollHookFuture<F>
+where
+    F: Future,
+{
+    type Output = F::Output;
+
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: We're not moving any fields out of self
+        let this = unsafe { self.get_unchecked_mut() };
+
+        this.hook.before_poll();
+
+        // Poll the inner future
+        // SAFETY: We're not moving the future, just polling it
+        let poll_result = unsafe { std::pin::Pin::new_unchecked(&mut this.inner) }.poll(cx);
+
+        this.hook.after_poll();
+
+        poll_result
+    }
+}
+
+/// Trait to add the `hook` method to futures
+pub trait WithPollHook: Sized + Future {
+    ///
+    fn with_poll_hook(self, hook: Box<dyn PollHook>) -> PollHookFuture<Self>;
+}
+
+impl<F: Future> WithPollHook for F {
+    fn with_poll_hook(self, hook: Box<dyn PollHook>) -> PollHookFuture<F> {
+        PollHookFuture { inner: self, hook }
+    }
+}
 
 impl<'a, M: Default + Clone> Executor<'a, M>
 where
@@ -202,6 +253,7 @@ where
     pub const fn new() -> Executor<'a, M> {
         Executor {
             state: AtomicPtr::new(std::ptr::null_mut()),
+            pool_hook_factory: std::sync::RwLock::new(None),
             _marker: PhantomData,
         }
     }
@@ -385,9 +437,19 @@ where
         let entry = active.vacant_entry();
         let index = entry.key();
         let state = self.state_as_arc();
+
+        // Instrument future with hook point if hook factory is defined.
+        let maybe_hook = {
+            let guard = self.pool_hook_factory.read().unwrap();
+            guard.as_ref().map(|mk_hook| mk_hook())
+        };
+
         let future = async move {
             let _guard = CallOnDrop(move || drop(state.active.lock().unwrap().try_remove(index)));
-            future.await
+            match maybe_hook {
+                Some(hook) => future.with_poll_hook(hook).await,
+                None => future.await,
+            }
         };
 
         // Create the task and register it in the set of active tasks.
