@@ -3,6 +3,7 @@ use core::fmt;
 use core::task::Waker;
 
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 #[cfg(not(feature = "portable-atomic"))]
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
@@ -34,7 +35,7 @@ pub(crate) struct Header<M> {
     pub(crate) vtable: &'static TaskVTable,
 
     /// Customizes child task's behavior on each poll.
-    pub(crate) make_child_poll_hook: fn() -> Option<Box<dyn PollHook>>,
+    pub(crate) make_child_poll_hook: Option<Arc<dyn Fn() -> Box<dyn PollHook> + 'static>>,
 
     /// Metadata associated with the task.
     ///
