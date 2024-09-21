@@ -267,7 +267,7 @@ fn generate_unary<T: Service>(
             use tonic::masa::RequestHandlerHooks;
             if let Some(parent_ctx) = self.get_parent_ctx() {
                 println!("got parent ctx before {:?}", grpc_method);
-                parent_ctx.before_child_rpc(grpc_method, &mut req);
+                parent_ctx.before_child_rpc(grpc_method, &mut req, &mut tx_ctx);
             } else {
                 println!("no parent ctx before {:?}", grpc_method);
             }
@@ -280,7 +280,7 @@ fn generate_unary<T: Service>(
         quote! {
             if let Some(parent_ctx) = self.get_parent_ctx() {
                 println!("got parent ctx after {:?}", grpc_method);
-                parent_ctx.after_child_rpc(grpc_method, &mut resp);
+                parent_ctx.after_child_rpc(grpc_method, &mut resp, tx_ctx);
             } else {
                 println!("no parent ctx after {:?}", grpc_method);
             }
