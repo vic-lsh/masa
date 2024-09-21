@@ -18,17 +18,10 @@ use crate::header::Header;
 use crate::runnable::{Schedule, ScheduleInfo};
 use crate::state::*;
 use crate::utils::{abort, abort_on_panic, max, Layout};
+use crate::PollHook;
 use crate::Runnable;
 
 use tonic_masa::PriorityHint;
-
-/// Trait used to define custom behavior before and after a future is called.
-pub trait PollHook {
-    /// Called before polling.
-    fn before_poll(&self);
-    /// Called after polling.
-    fn after_poll(&self);
-}
 
 use std::cell::RefCell;
 use std::thread_local;
@@ -945,4 +938,22 @@ pub unsafe fn set_poll_hook_factory_on_self_task<'a, M>(
             ()
         })
         .is_some()
+}
+
+/// Obtain the poll hook factory defined on the task in which this function is invoked.
+///
+/// Returns None if this is not invoked in an async-task.
+///
+/// Safety:
+///
+/// - Caller must supply the metadata type M that is associated with the currently running task.
+pub unsafe fn get_poll_hook_factory_on_self_task<'a, M>(
+) -> Option<fn() -> Option<Box<dyn crate::PollHook>>> {
+    NonNull::new(get_task_ptr() as *mut ()).map(|ptr| {
+        let ptr = ptr.as_ptr();
+        let header = ptr as *mut Header<M>;
+        let header = unsafe { &mut *header };
+
+        header.make_child_poll_hook
+    })
 }
