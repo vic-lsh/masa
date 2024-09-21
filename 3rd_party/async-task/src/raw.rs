@@ -1,4 +1,5 @@
 use alloc::alloc::Layout as StdLayout;
+use alloc::boxed::Box;
 use core::cell::UnsafeCell;
 use core::future::Future;
 use core::marker::PhantomData;
@@ -20,6 +21,14 @@ use crate::utils::{abort, abort_on_panic, max, Layout};
 use crate::Runnable;
 
 use tonic_masa::PriorityHint;
+
+/// Trait used to define custom behavior before and after a future is called.
+pub trait PollHook {
+    /// Called before polling.
+    fn before_poll(&self);
+    /// Called after polling.
+    fn after_poll(&self);
+}
 
 use std::cell::RefCell;
 use std::thread_local;
@@ -250,6 +259,7 @@ where
                     clone_waker: Self::clone_waker,
                     layout_info: &Self::TASK_LAYOUT,
                 },
+                make_child_poll_hook: Self::make_poll_hook,
                 metadata,
                 #[cfg(feature = "std")]
                 propagate_panic,
@@ -436,6 +446,10 @@ where
         }
 
         RawWaker::new(ptr, &Self::RAW_WAKER_VTABLE)
+    }
+
+    fn make_poll_hook() -> Option<Box<dyn PollHook>> {
+        None
     }
 
     /// Drops a waker.
@@ -913,4 +927,22 @@ pub unsafe fn set_metadata_from_raw_task<M>(ptr: *const (), metadata: M) {
     let header = unsafe { &mut *(ptr as *mut Header<M>) };
 
     header.metadata = metadata;
+}
+
+/// Safety:
+///
+/// - Caller must supply the metadata type M that is associated with the currently running task.
+pub unsafe fn set_poll_hook_factory_on_self_task<'a, M>(
+    factory: fn() -> Option<Box<dyn crate::PollHook>>,
+) -> bool {
+    NonNull::new(get_task_ptr() as *mut ())
+        .map(|ptr| {
+            let ptr = ptr.as_ptr();
+            let header = ptr as *mut Header<M>;
+            let header = unsafe { &mut *header };
+
+            header.make_child_poll_hook = factory;
+            ()
+        })
+        .is_some()
 }
