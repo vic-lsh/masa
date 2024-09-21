@@ -530,7 +530,7 @@ fn generate_unary<T: Method>(
 
             // Request-begin lifecycle hook.
             let grpc_method = GrpcMethod::new(#outer_service_name, #grpc_method_ident);
-            let req_ctx = tonic::masa::RequestRxContext::begin(grpc_method, &req, server_ctx);
+            let req_ctx = tonic::masa::ParentContext::begin(grpc_method, &req, server_ctx);
             let req_ctx = Arc::new(req_ctx);
 
             // Only construct the following if we're using async-executor.
@@ -543,21 +543,21 @@ fn generate_unary<T: Method>(
                 // Each child task would clone this req-ctx again, using this fn.
                 let on_clone = |raw_ctx: *const ()| {
                     // Bump req-ctx ref-count without losing the original ref-count.
-                    let c = unsafe { Arc::from_raw(raw_ctx as *const tonic::masa::RequestRxContext) };
+                    let c = unsafe { Arc::from_raw(raw_ctx as *const tonic::masa::ParentContext) };
                     let _ = Arc::into_raw(c.clone());
                     let _ = Arc::into_raw(c); // don't drop c and lose a refcount.
                 };
 
                 // We can release the ref-count we obtained at the begining of the if-block.
                 let on_destroy = |raw_ctx: *const ()| {
-                    unsafe { Arc::from_raw(raw_ctx as *const tonic::masa::RequestRxContext) };
+                    unsafe { Arc::from_raw(raw_ctx as *const tonic::masa::ParentContext) };
                 };
 
                 // Configure child task's thread-local to point to our req-ctx.
                 // SAFETY: `hook_ctx` holds one ref-count to req-ctx.
                 let before_poll = |raw_ctx: *const ()| {
                     let original = super::#server_parent_rpc_ctx.replace(
-                        raw_ctx as *const tonic::masa::RequestRxContext
+                        raw_ctx as *const tonic::masa::ParentContext
                     );
                     assert!(original.is_null());
                 };
@@ -587,7 +587,7 @@ fn generate_unary<T: Method>(
             let fut = grpc.unary(method, req)
                 .hook()
                 .pre_hook(|| {
-                    let req_ctx_addr = req_ctx.as_ref() as *const tonic::masa::RequestRxContext;
+                    let req_ctx_addr = req_ctx.as_ref() as *const tonic::masa::ParentContext;
                     let original = super::#server_parent_rpc_ctx.replace(req_ctx_addr);
 
                     // A server handler should not be calling another server handler.
