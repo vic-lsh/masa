@@ -65,14 +65,24 @@ pub(crate) fn generate_internal<T: Service>(
 
             #service_doc
             #(#struct_attributes)*
-            #[derive(Debug, Clone)]
-            pub struct #service_ident<T> {
+            #[derive(Debug)]
+            pub struct #service_ident<T, P: tonic::masa::RequestHandlerHooks = tonic::masa::ParentContext> {
                 inner: tonic::client::Grpc<T>,
+                _parent_ctx_ty: std::marker::PhantomData<P>,
+            }
+
+            impl<T: Clone, P: tonic::masa::RequestHandlerHooks> Clone for #service_ident<T, P> {
+                fn clone(&self) -> Self {
+                    Self {
+                        inner: self.inner.clone(),
+                        _parent_ctx_ty: std::marker::PhantomData,
+                    }
+                }
             }
 
             #connect
 
-            impl<T> #service_ident<T>
+            impl<T> #service_ident<T, tonic::masa::ParentContext>
             where
                 T: tonic::client::GrpcService<tonic::body::BoxBody>,
                 T::Error: Into<StdError>,
@@ -81,12 +91,12 @@ pub(crate) fn generate_internal<T: Service>(
             {
                 pub fn new(inner: T) -> Self {
                     let inner = tonic::client::Grpc::new(inner);
-                    Self { inner }
+                    Self { inner, _parent_ctx_ty: std::marker::PhantomData }
                 }
 
                 pub fn with_origin(inner: T, origin: Uri) -> Self {
                     let inner = tonic::client::Grpc::with_origin(inner, origin);
-                    Self { inner }
+                    Self { inner, _parent_ctx_ty: std::marker::PhantomData }
                 }
 
                 pub fn with_interceptor<F>(inner: T, interceptor: F) -> #service_ident<InterceptedService<T, F>>
@@ -102,6 +112,16 @@ pub(crate) fn generate_internal<T: Service>(
                     #service_ident::new(InterceptedService::new(inner, interceptor))
                 }
 
+            }
+
+            impl<T, P> #service_ident<T, P>
+            where
+                T: tonic::client::GrpcService<tonic::body::BoxBody>,
+                T::Error: Into<StdError>,
+                T::ResponseBody: Body<Data = Bytes> + Send  + 'static,
+                <T::ResponseBody as Body>::Error: Into<StdError> + Send,
+                P: tonic::masa::RequestHandlerHooks,
+            {
                 /// Compress requests with the given encoding.
                 ///
                 /// This requires the server to support it otherwise it might respond with an
@@ -148,8 +168,8 @@ pub(crate) fn generate_internal<T: Service>(
 fn generate_get_parent_rpc_ctx(_service: &impl Service) -> TokenStream {
     quote! {
         /// Internal. Obtain the parent RPC in which this RPC client stub operates.
-        fn get_parent_ctx(&self) -> Option<&'_ tonic::masa::ParentContext> {
-            let ctx = super::#server_parent_rpc_ctx.get();
+        fn get_parent_ctx(&self) -> Option<&'_ P> {
+            let ctx = super::#server_parent_rpc_ctx.get() as *const P;
             unsafe { ctx.as_ref() }
         }
     }
@@ -158,7 +178,7 @@ fn generate_get_parent_rpc_ctx(_service: &impl Service) -> TokenStream {
 #[cfg(feature = "transport")]
 fn generate_connect(service_ident: &syn::Ident, enabled: bool) -> TokenStream {
     let connect_impl = quote! {
-        impl #service_ident<tonic::transport::Channel> {
+        impl #service_ident<tonic::transport::Channel, tonic::masa::ParentContext> {
             /// Attempt to create a new client by connecting to a given endpoint.
             pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
             where
