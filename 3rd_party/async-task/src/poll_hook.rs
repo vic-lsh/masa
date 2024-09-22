@@ -2,6 +2,8 @@ use alloc::boxed::Box;
 use core::future::Future;
 use core::task::Poll;
 
+use crate::RawPollHook;
+
 /// Trait used to define custom behavior before and after a future is called.
 pub trait PollHook {
     /// Called before polling.
@@ -14,8 +16,7 @@ pub trait PollHook {
 #[allow(missing_debug_implementations)]
 pub struct PollHookFuture<F> {
     inner: F,
-    // TODO: make this non-box?
-    hook: Box<dyn PollHook>,
+    hook: RawPollHook,
 }
 
 impl<F> Future for PollHookFuture<F>
@@ -28,13 +29,12 @@ where
         // SAFETY: We're not moving any fields out of self
         let this = unsafe { self.get_unchecked_mut() };
 
-        this.hook.before_poll();
-
+        this.hook.invoke_before_poll();
         // Poll the inner future
         // SAFETY: We're not moving the future, just polling it
         let poll_result = unsafe { std::pin::Pin::new_unchecked(&mut this.inner) }.poll(cx);
 
-        this.hook.after_poll();
+        this.hook.invoke_after_poll();
 
         poll_result
     }
@@ -43,11 +43,11 @@ where
 /// Trait to add the `hook` method to futures
 pub trait WithPollHook: Sized + Future {
     ///
-    fn with_poll_hook(self, hook: Box<dyn PollHook>) -> PollHookFuture<Self>;
+    fn with_poll_hook(self, hook: RawPollHook) -> PollHookFuture<Self>;
 }
 
 impl<F: Future> WithPollHook for F {
-    fn with_poll_hook(self, hook: Box<dyn PollHook>) -> PollHookFuture<F> {
+    fn with_poll_hook(self, hook: RawPollHook) -> PollHookFuture<F> {
         PollHookFuture { inner: self, hook }
     }
 }

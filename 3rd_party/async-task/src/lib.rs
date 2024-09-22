@@ -110,10 +110,11 @@ mod state;
 mod task;
 mod utils;
 
+pub use crate::header::RawPollHook;
 pub use crate::poll_hook::{PollHook, PollHookFuture, WithPollHook};
 pub use crate::raw::{
-    get_poll_hook_factory_on_self_task, get_task_ddl, get_task_ptr,
-    reset_poll_hook_factory_on_self_task, set_poll_hook_factory_on_self_task, set_task_ptr,
+    get_task_ddl, get_task_ptr, maybe_clone_my_child_task_poll_hooks,
+    reset_my_child_task_poll_hooks, set_my_child_task_poll_hooks, set_task_ptr,
 };
 pub use crate::runnable::{
     spawn, spawn_unchecked, spawn_with_deadline, Builder, Runnable, Schedule, ScheduleInfo,

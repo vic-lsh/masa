@@ -15,11 +15,10 @@ use core::sync::atomic::Ordering;
 #[cfg(feature = "portable-atomic")]
 use portable_atomic::AtomicUsize;
 
-use crate::header::Header;
+use crate::header::{Header, RawPollHook};
 use crate::runnable::{Schedule, ScheduleInfo};
 use crate::state::*;
 use crate::utils::{abort, abort_on_panic, max, Layout};
-use crate::PollHook;
 use crate::Runnable;
 
 use tonic_masa::PriorityHint;
@@ -253,7 +252,7 @@ where
                     clone_waker: Self::clone_waker,
                     layout_info: &Self::TASK_LAYOUT,
                 },
-                make_child_poll_hook: None,
+                child_poll_hooks: RawPollHook::default(),
                 metadata,
                 #[cfg(feature = "std")]
                 propagate_panic,
@@ -922,51 +921,49 @@ pub unsafe fn set_metadata_from_raw_task<M>(ptr: *const (), metadata: M) {
 /// Safety:
 ///
 /// - Caller must supply the metadata type M that is associated with the currently running task.
-pub unsafe fn set_poll_hook_factory_on_self_task<'a, M>(
-    factory: Arc<dyn Fn() -> Box<dyn crate::PollHook>>,
-) -> bool {
-    NonNull::new(get_task_ptr() as *mut ())
-        .map(|ptr| {
-            let ptr = ptr.as_ptr();
-            let header = ptr as *mut Header<M>;
-            let header = unsafe { &mut *header };
+pub(crate) unsafe fn with_self_task_header<M, R>(
+    func: impl FnOnce(&mut Header<M>) -> R,
+) -> Option<R> {
+    NonNull::new(get_task_ptr() as *mut ()).map(|ptr| {
+        let ptr = ptr.as_ptr();
+        let header = ptr as *mut Header<M>;
+        let header = unsafe { &mut *header };
 
-            header.make_child_poll_hook = Some(factory);
-            ()
-        })
-        .is_some()
+        func(header)
+    })
 }
 
 /// Safety:
 ///
 /// - Caller must supply the metadata type M that is associated with the currently running task.
-pub unsafe fn reset_poll_hook_factory_on_self_task<'a, M>() -> bool {
-    NonNull::new(get_task_ptr() as *mut ())
-        .map(|ptr| {
-            let ptr = ptr.as_ptr();
-            let header = ptr as *mut Header<M>;
-            let header = unsafe { &mut *header };
-
-            header.make_child_poll_hook = None;
-            ()
-        })
-        .is_some()
+pub unsafe fn set_my_child_task_poll_hooks<'a, M>(poll_hook: RawPollHook) -> bool {
+    with_self_task_header::<M, ()>(move |header| {
+        header.child_poll_hooks = poll_hook;
+    })
+    .is_some()
 }
 
-/// Obtain the poll hook factory defined on the task in which this function is invoked.
+/// Safety:
+///
+/// - Caller must supply the metadata type M that is associated with the currently running task.
+pub unsafe fn reset_my_child_task_poll_hooks<'a, M>() -> bool {
+    with_self_task_header::<M, ()>(|header| {
+        header.child_poll_hooks.reset();
+    })
+    .is_some()
+}
+
+/// Obtain a copy of child task poll hooks defined on the task in which this function is invoked.
 ///
 /// Returns None if this is not invoked in an async-task.
 ///
 /// Safety:
 ///
 /// - Caller must supply the metadata type M that is associated with the currently running task.
-pub unsafe fn get_poll_hook_factory_on_self_task<'a, M>(
-) -> Option<Arc<dyn Fn() -> Box<dyn crate::PollHook>>> {
-    NonNull::new(get_task_ptr() as *mut ()).and_then(|ptr| {
-        let ptr = ptr.as_ptr();
-        let header = ptr as *mut Header<M>;
-        let header = unsafe { &mut *header };
-
-        Some(header.make_child_poll_hook.as_ref()?.clone())
+pub unsafe fn maybe_clone_my_child_task_poll_hooks<'a, M>() -> Option<RawPollHook> {
+    with_self_task_header::<M, RawPollHook>(|header| {
+        // this internally invokes the on_clone handler for the ctx, if the ctx is set.
+        // caller beware of cloning expenses.
+        header.child_poll_hooks.clone()
     })
 }
