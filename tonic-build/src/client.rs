@@ -66,23 +66,34 @@ pub(crate) fn generate_internal<T: Service>(
             #service_doc
             #(#struct_attributes)*
             #[derive(Debug)]
-            pub struct #service_ident<T, P: tonic::masa::RequestHandlerHooks = tonic::masa::ParentContext> {
+            pub struct #service_ident<
+                T,
+                C: tonic::masa::ClientStubHooks = tonic::masa::ChildContext,
+                P: tonic::masa::RequestHandlerHooks<C> = tonic::masa::ParentContext,
+            > {
                 inner: tonic::client::Grpc<T>,
                 _parent_ctx_ty: std::marker::PhantomData<P>,
+                _child_ctx_ty: std::marker::PhantomData<C>,
             }
 
-            impl<T: Clone, P: tonic::masa::RequestHandlerHooks> Clone for #service_ident<T, P> {
+            impl<T, C, P> Clone for #service_ident<T, C, P>
+            where
+                T: Clone,
+                C: tonic::masa::ClientStubHooks,
+                P: tonic::masa::RequestHandlerHooks<C>,
+            {
                 fn clone(&self) -> Self {
                     Self {
                         inner: self.inner.clone(),
                         _parent_ctx_ty: std::marker::PhantomData,
+                        _child_ctx_ty: std::marker::PhantomData,
                     }
                 }
             }
 
             #connect
 
-            impl<T> #service_ident<T, tonic::masa::ParentContext>
+            impl<T> #service_ident<T, tonic::masa::ChildContext, tonic::masa::ParentContext>
             where
                 T: tonic::client::GrpcService<tonic::body::BoxBody>,
                 T::Error: Into<StdError>,
@@ -91,12 +102,20 @@ pub(crate) fn generate_internal<T: Service>(
             {
                 pub fn new(inner: T) -> Self {
                     let inner = tonic::client::Grpc::new(inner);
-                    Self { inner, _parent_ctx_ty: std::marker::PhantomData }
+                    Self {
+                        inner,
+                        _parent_ctx_ty: std::marker::PhantomData,
+                        _child_ctx_ty: std::marker::PhantomData,
+                    }
                 }
 
                 pub fn with_origin(inner: T, origin: Uri) -> Self {
                     let inner = tonic::client::Grpc::with_origin(inner, origin);
-                    Self { inner, _parent_ctx_ty: std::marker::PhantomData }
+                    Self {
+                        inner,
+                        _parent_ctx_ty: std::marker::PhantomData,
+                        _child_ctx_ty: std::marker::PhantomData,
+                    }
                 }
 
                 pub fn with_interceptor<F>(inner: T, interceptor: F) -> #service_ident<InterceptedService<T, F>>
@@ -114,13 +133,14 @@ pub(crate) fn generate_internal<T: Service>(
 
             }
 
-            impl<T, P> #service_ident<T, P>
+            impl<T, C, P> #service_ident<T, C, P>
             where
                 T: tonic::client::GrpcService<tonic::body::BoxBody>,
                 T::Error: Into<StdError>,
                 T::ResponseBody: Body<Data = Bytes> + Send  + 'static,
                 <T::ResponseBody as Body>::Error: Into<StdError> + Send,
-                P: tonic::masa::RequestHandlerHooks,
+                C: tonic::masa::ClientStubHooks,
+                P: tonic::masa::RequestHandlerHooks<C>,
             {
                 /// Compress requests with the given encoding.
                 ///
@@ -178,7 +198,7 @@ fn generate_get_parent_rpc_ctx(_service: &impl Service) -> TokenStream {
 #[cfg(feature = "transport")]
 fn generate_connect(service_ident: &syn::Ident, enabled: bool) -> TokenStream {
     let connect_impl = quote! {
-        impl #service_ident<tonic::transport::Channel, tonic::masa::ParentContext> {
+        impl #service_ident<tonic::transport::Channel, tonic::masa::ChildContext, tonic::masa::ParentContext> {
             /// Attempt to create a new client by connecting to a given endpoint.
             pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
             where
@@ -273,7 +293,6 @@ fn generate_unary<T: Service>(
 
     let before_child_rpc = if enable_parent_rpc_ctx {
         quote! {
-            use tonic::masa::RequestHandlerHooks;
             if let Some(parent_ctx) = self.get_parent_ctx() {
                 parent_ctx.before_child_rpc(grpc_method, &mut req, &mut child_ctx);
             }
@@ -307,8 +326,7 @@ fn generate_unary<T: Service>(
            let grpc_method = GrpcMethod::new(#service_name, #method_name);
            req.extensions_mut().insert(grpc_method);
 
-           use tonic::masa::ClientStubHooks;
-           let mut child_ctx = tonic::masa::ChildContext::new(grpc_method, &req);
+           let mut child_ctx = C::new(grpc_method, &req);
 
            #before_child_rpc
 

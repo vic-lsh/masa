@@ -123,7 +123,8 @@ pub(crate) fn generate_internal<T: Service>(
             #[derive(Debug)]
             pub struct #server_service<
                     T: #server_trait,
-                    P: tonic::masa::RequestHandlerHooks = tonic::masa::ParentContext
+                    C: tonic::masa::ClientStubHooks = tonic::masa::ChildContext,
+                    P: tonic::masa::RequestHandlerHooks<C> = tonic::masa::ParentContext
                 > {
                 inner: _Inner<T>,
                 ctx: Arc<tonic::masa::ServerContext>,
@@ -131,13 +132,13 @@ pub(crate) fn generate_internal<T: Service>(
                 send_compression_encodings: EnabledCompressionEncodings,
                 max_decoding_message_size: Option<usize>,
                 max_encoding_message_size: Option<usize>,
-                _parent_ctx_ty: std::marker::PhantomData<P>,
+                _ctx_ty: std::marker::PhantomData<(C, P)>,
             }
 
             struct _Inner<T>(Arc<T>);
 
             // Methods that don't expect a custom context generic parameter.
-            impl<T: #server_trait> #server_service<T, tonic::masa::ParentContext> {
+            impl<T: #server_trait> #server_service<T, tonic::masa::ChildContext, tonic::masa::ParentContext> {
                 pub fn new(inner: T) -> Self {
                     Self::new_impl(inner)
                 }
@@ -156,8 +157,9 @@ pub(crate) fn generate_internal<T: Service>(
 
             impl<
                 T: #server_trait,
-                P: tonic::masa::RequestHandlerHooks,
-            > #server_service<T, P> {
+                C: tonic::masa::ClientStubHooks,
+                P: tonic::masa::RequestHandlerHooks<C>,
+            > #server_service<T, C, P> {
                 pub fn with_custom_context(inner: T) -> Self {
                     Self::new_impl(inner)
                 }
@@ -176,7 +178,7 @@ pub(crate) fn generate_internal<T: Service>(
                         send_compression_encodings: Default::default(),
                         max_decoding_message_size: None,
                         max_encoding_message_size: None,
-                        _parent_ctx_ty: std::marker::PhantomData,
+                        _ctx_ty: std::marker::PhantomData,
                     }
                 }
 
@@ -192,10 +194,11 @@ pub(crate) fn generate_internal<T: Service>(
                 #configure_max_message_size_methods
             }
 
-            impl<T, P, B> tonic::codegen::Service<http::Request<B>> for #server_service<T, P>
+            impl<T, C, P, B> tonic::codegen::Service<http::Request<B>> for #server_service<T, C, P>
                 where
                     T: #server_trait,
-                    P: tonic::masa::RequestHandlerHooks,
+                    C: tonic::masa::ClientStubHooks,
+                    P: tonic::masa::RequestHandlerHooks<C>,
                     B: Body + Send + 'static,
                     B::Error: Into<StdError> + Send + 'static,
             {
@@ -229,8 +232,9 @@ pub(crate) fn generate_internal<T: Service>(
 
             impl<
                 T: #server_trait,
-                P: tonic::masa::RequestHandlerHooks,
-            > Clone for #server_service<T, P> {
+                C: tonic::masa::ClientStubHooks,
+                P: tonic::masa::RequestHandlerHooks<C>,
+            > Clone for #server_service<T, C, P> {
                 fn clone(&self) -> Self {
                     let inner = self.inner.clone();
                     let ctx = self.ctx.clone();
@@ -241,7 +245,7 @@ pub(crate) fn generate_internal<T: Service>(
                         send_compression_encodings: self.send_compression_encodings,
                         max_decoding_message_size: self.max_decoding_message_size,
                         max_encoding_message_size: self.max_encoding_message_size,
-                        _parent_ctx_ty: std::marker::PhantomData,
+                        _ctx_ty: std::marker::PhantomData,
                     }
                 }
             }
@@ -432,8 +436,9 @@ fn generate_named(
     quote! {
         impl<
             T: #server_trait,
-            P: tonic::masa::RequestHandlerHooks,
-        > tonic::server::NamedService for #server_service<T, P> {
+            C: tonic::masa::ClientStubHooks,
+            P: tonic::masa::RequestHandlerHooks<C>,
+        > tonic::server::NamedService for #server_service<T, C, P> {
             const NAME: &'static str = #service_name;
         }
     }
@@ -566,8 +571,6 @@ fn generate_unary<T: Method>(
             let mut grpc = tonic::server::Grpc::new(codec)
                 .apply_compression_config(accept_compression_encodings, send_compression_encodings)
                 .apply_max_message_size_config(max_decoding_message_size, max_encoding_message_size);
-
-            use tonic::masa::RequestHandlerHooks;
 
             // Request-begin lifecycle hook.
             let grpc_method = GrpcMethod::new(#outer_service_name, #grpc_method_ident);
