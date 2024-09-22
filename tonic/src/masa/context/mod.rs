@@ -62,7 +62,10 @@ pub trait ClientStubHooks {
 /// is that child RPCs can run in parallel, and they may invoke hook points
 /// defined below from different threads.
 #[allow(unused_variables)]
-pub trait RequestHandlerHooks: Send + Sync {
+pub trait RequestHandlerHooks<Child>: Send + Sync
+where
+    Child: ClientStubHooks,
+{
     /// The first lifecycle, marking the start of a request execution.
     ///
     /// This is also the constructor for the hook point struct implementation.
@@ -70,12 +73,7 @@ pub trait RequestHandlerHooks: Send + Sync {
         -> Self;
 
     /// Invoked before the request handler makes an RPC.
-    fn before_child_rpc<T>(
-        &self,
-        method: GrpcMethod,
-        req: &mut Request<T>,
-        child_ctx: &mut ChildContext,
-    ) {
+    fn before_child_rpc<T>(&self, method: GrpcMethod, req: &mut Request<T>, child_ctx: &mut Child) {
     }
 
     /// Invoked after the request handler receives a response from an RPC it made earlier.
@@ -83,7 +81,7 @@ pub trait RequestHandlerHooks: Send + Sync {
         &self,
         method: GrpcMethod,
         resp: &mut Result<Response<T>, Status>,
-        child_ctx: ChildContext,
+        child_ctx: Child,
     ) {
     }
 
