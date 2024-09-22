@@ -58,11 +58,11 @@ pub trait ClientStubHooks {
 /// which must be implemented and acts as a constructor). Implementer can choose
 /// to only implement hooks they're interested in.
 ///
-/// The implementation must be multithread-safe (i.e. `Sync`). One reasons is
-/// that child RPCs can run in parallel, and they may invoke hook points
+/// The implementation must be multithread-safe (i.e. `Send+Sync`). One reason
+/// is that child RPCs can run in parallel, and they may invoke hook points
 /// defined below from different threads.
 #[allow(unused_variables)]
-pub trait RequestHandlerHooks: Sync {
+pub trait RequestHandlerHooks: Send + Sync {
     /// The first lifecycle, marking the start of a request execution.
     ///
     /// This is also the constructor for the hook point struct implementation.

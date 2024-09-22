@@ -97,7 +97,10 @@ pub(crate) fn generate_internal<T: Service>(
     quote! {
         thread_local! {
             #[allow(non_upper_case_globals)]
-             static #server_parent_rpc_ctx: std::cell::Cell<*const tonic::masa::ParentContext> =
+            // This is deliberately type-erased to support generic-based
+            // parent context. It is up to the client and server-generated code
+            // to cast the pointer back to the correct parent context type.
+            static #server_parent_rpc_ctx: std::cell::Cell<*const ()> =
                     std::cell::Cell::new(core::ptr::null());
         }
 
@@ -118,23 +121,52 @@ pub(crate) fn generate_internal<T: Service>(
             #service_doc
             #(#struct_attributes)*
             #[derive(Debug)]
-            pub struct #server_service<T: #server_trait> {
+            pub struct #server_service<
+                    T: #server_trait,
+                    P: tonic::masa::RequestHandlerHooks = tonic::masa::ParentContext
+                > {
                 inner: _Inner<T>,
                 ctx: Arc<tonic::masa::ServerContext>,
                 accept_compression_encodings: EnabledCompressionEncodings,
                 send_compression_encodings: EnabledCompressionEncodings,
                 max_decoding_message_size: Option<usize>,
                 max_encoding_message_size: Option<usize>,
+                _parent_ctx_ty: std::marker::PhantomData<P>,
             }
 
             struct _Inner<T>(Arc<T>);
 
-            impl<T: #server_trait> #server_service<T> {
+            // Methods that don't expect a custom context generic parameter.
+            impl<T: #server_trait> #server_service<T, tonic::masa::ParentContext> {
                 pub fn new(inner: T) -> Self {
-                    Self::from_arc(Arc::new(inner))
+                    Self::new_impl(inner)
                 }
 
                 pub fn from_arc(inner: Arc<T>) -> Self {
+                    Self::from_arc_impl(inner)
+                }
+
+                pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
+                where
+                    F: tonic::service::Interceptor,
+                {
+                    Self::with_interceptor_impl(inner, interceptor)
+                }
+            }
+
+            impl<
+                T: #server_trait,
+                P: tonic::masa::RequestHandlerHooks,
+            > #server_service<T, P> {
+                pub fn with_custom_context(inner: T) -> Self {
+                    Self::new_impl(inner)
+                }
+
+                fn new_impl(inner: T) -> Self {
+                    Self::from_arc_impl(Arc::new(inner))
+                }
+
+                fn from_arc_impl(inner: Arc<T>) -> Self {
                     let inner = _Inner(inner);
                     let ctx = tonic::masa::ServerContext::new(<Self as tonic::server::NamedService>::NAME);
                     Self {
@@ -144,14 +176,15 @@ pub(crate) fn generate_internal<T: Service>(
                         send_compression_encodings: Default::default(),
                         max_decoding_message_size: None,
                         max_encoding_message_size: None,
+                        _parent_ctx_ty: std::marker::PhantomData,
                     }
                 }
 
-                pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
+                fn with_interceptor_impl<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
                 where
                     F: tonic::service::Interceptor,
                 {
-                    InterceptedService::new(Self::new(inner), interceptor)
+                    InterceptedService::new(Self::new_impl(inner), interceptor)
                 }
 
                 #configure_compression_methods
@@ -159,9 +192,10 @@ pub(crate) fn generate_internal<T: Service>(
                 #configure_max_message_size_methods
             }
 
-            impl<T, B> tonic::codegen::Service<http::Request<B>> for #server_service<T>
+            impl<T, P, B> tonic::codegen::Service<http::Request<B>> for #server_service<T, P>
                 where
                     T: #server_trait,
+                    P: tonic::masa::RequestHandlerHooks,
                     B: Body + Send + 'static,
                     B::Error: Into<StdError> + Send + 'static,
             {
@@ -193,7 +227,10 @@ pub(crate) fn generate_internal<T: Service>(
                 }
             }
 
-            impl<T: #server_trait> Clone for #server_service<T> {
+            impl<
+                T: #server_trait,
+                P: tonic::masa::RequestHandlerHooks,
+            > Clone for #server_service<T, P> {
                 fn clone(&self) -> Self {
                     let inner = self.inner.clone();
                     let ctx = self.ctx.clone();
@@ -204,6 +241,7 @@ pub(crate) fn generate_internal<T: Service>(
                         send_compression_encodings: self.send_compression_encodings,
                         max_decoding_message_size: self.max_decoding_message_size,
                         max_encoding_message_size: self.max_encoding_message_size,
+                        _parent_ctx_ty: std::marker::PhantomData,
                     }
                 }
             }
@@ -392,7 +430,10 @@ fn generate_named(
     let service_name = syn::LitStr::new(service_name, proc_macro2::Span::call_site());
 
     quote! {
-        impl<T: #server_trait> tonic::server::NamedService for #server_service<T> {
+        impl<
+            T: #server_trait,
+            P: tonic::masa::RequestHandlerHooks,
+        > tonic::server::NamedService for #server_service<T, P> {
             const NAME: &'static str = #service_name;
         }
     }
@@ -530,7 +571,7 @@ fn generate_unary<T: Method>(
 
             // Request-begin lifecycle hook.
             let grpc_method = GrpcMethod::new(#outer_service_name, #grpc_method_ident);
-            let req_ctx = tonic::masa::ParentContext::begin(grpc_method, &req, server_ctx);
+            let req_ctx = P::begin(grpc_method, &req, server_ctx);
             let req_ctx = Arc::new(req_ctx);
 
             // Only construct the following if we're using async-executor.
@@ -543,22 +584,20 @@ fn generate_unary<T: Method>(
                 // Each child task would clone this req-ctx again, using this fn.
                 let on_clone = |raw_ctx: *const ()| {
                     // Bump req-ctx ref-count without losing the original ref-count.
-                    let c = unsafe { Arc::from_raw(raw_ctx as *const tonic::masa::ParentContext) };
+                    let c = unsafe { Arc::from_raw(raw_ctx as *const P) };
                     let _ = Arc::into_raw(c.clone());
                     let _ = Arc::into_raw(c); // don't drop c and lose a refcount.
                 };
 
                 // We can release the ref-count we obtained at the begining of the if-block.
                 let on_destroy = |raw_ctx: *const ()| {
-                    unsafe { Arc::from_raw(raw_ctx as *const tonic::masa::ParentContext) };
+                    unsafe { Arc::from_raw(raw_ctx as *const P) };
                 };
 
                 // Configure child task's thread-local to point to our req-ctx.
                 // SAFETY: `hook_ctx` holds one ref-count to req-ctx.
                 let before_poll = |raw_ctx: *const ()| {
-                    let original = super::#server_parent_rpc_ctx.replace(
-                        raw_ctx as *const tonic::masa::ParentContext
-                    );
+                    let original = super::#server_parent_rpc_ctx.replace(raw_ctx);
                     assert!(original.is_null());
                 };
 
@@ -587,8 +626,8 @@ fn generate_unary<T: Method>(
             let fut = grpc.unary(method, req)
                 .hook()
                 .pre_hook(|| {
-                    let req_ctx_addr = req_ctx.as_ref() as *const tonic::masa::ParentContext;
-                    let original = super::#server_parent_rpc_ctx.replace(req_ctx_addr);
+                    let req_ctx_addr = req_ctx.as_ref() as *const P;
+                    let original = super::#server_parent_rpc_ctx.replace(req_ctx_addr as *const ());
 
                     // A server handler should not be calling another server handler.
                     // We only set this value before polling a server handler.
