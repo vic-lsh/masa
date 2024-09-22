@@ -48,7 +48,7 @@ use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock, TryLockError};
 use std::task::{Poll, Waker};
 
-use async_task::{Builder, Runnable};
+use async_task::{Builder, RawPollHook, Runnable};
 use futures_lite::{future, prelude::*};
 use queue::Queue;
 use slab::Slab;
@@ -94,14 +94,18 @@ pub fn is_runtime_active() -> bool {
     __INIT.load(Ordering::Relaxed)
 }
 
+/// Customizes child task's behavior by installing functions to run before and after
+/// the child task is polled.
 ///
-pub fn set_child_task_poll_hook(func: Arc<dyn Fn() -> Box<dyn async_task::PollHook>>) -> bool {
-    get_static_ex().set_child_task_poll_hook(func)
+/// The returned boolean indicates whether the hook is set. This will only be successful
+/// if it is invoked within an async-task (otherwise there's no child task).
+pub fn configure_child_task_poll_hooks(hooks: RawPollHook) -> bool {
+    get_static_ex().configure_child_task_poll_hooks(hooks)
 }
 
-///
+/// Removes previously-configured poll hooks, if any.
 pub fn reset_child_task_poll_hook() -> bool {
-    get_static_ex().reset_child_task_poll_hook()
+    get_static_ex().reset_child_task_poll_hooks()
 }
 
 /// Spawns a task onto the executor.
@@ -293,19 +297,22 @@ where
         })
     }
 
-    fn set_child_task_poll_hook(
-        &self,
-        func: Arc<dyn Fn() -> Box<dyn async_task::PollHook>>,
-    ) -> bool {
+    fn configure_child_task_poll_hooks(&self, hooks: RawPollHook) -> bool {
         // SAFETY:
         // - metadata of task is of type M -- all tasks have the same metadata type
-        unsafe { async_task::set_poll_hook_factory_on_self_task::<M>(func) }
+        unsafe { async_task::set_my_child_task_poll_hooks::<M>(hooks) }
     }
 
-    fn reset_child_task_poll_hook(&self) -> bool {
+    fn reset_child_task_poll_hooks(&self) -> bool {
         // SAFETY:
         // - metadata of task is of type M -- all tasks have the same metadata type
-        unsafe { async_task::reset_poll_hook_factory_on_self_task::<M>() }
+        unsafe { async_task::reset_my_child_task_poll_hooks::<M>() }
+    }
+
+    fn clone_child_task_poll_hooks(&self) -> Option<async_task::RawPollHook> {
+        // SAFETY:
+        // - metadata of task is of type M -- all tasks have the same metadata type
+        unsafe { async_task::maybe_clone_my_child_task_poll_hooks::<M>() }
     }
 
     /// Spawns many tasks onto the executor.
@@ -411,15 +418,12 @@ where
         let state = self.state_as_arc();
 
         // Instrument future with hook point if hook factory is defined.
-        let maybe_hook = unsafe {
-            // Safety: all tasks spawned from this executor has metadata type M.
-            async_task::get_poll_hook_factory_on_self_task::<M>().map(|factory| factory())
-        };
+        let maybe_hooks = self.clone_child_task_poll_hooks();
 
         let future = async move {
             let _guard = CallOnDrop(move || drop(state.active.lock().unwrap().try_remove(index)));
             use async_task::WithPollHook;
-            match maybe_hook {
+            match maybe_hooks {
                 Some(hook) => future.with_poll_hook(hook).await,
                 None => future.await,
             }
