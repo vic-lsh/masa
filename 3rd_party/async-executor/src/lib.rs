@@ -76,7 +76,14 @@ fn get_static_ex() -> &'static Executor<'static> {
         // [TODO] make thread pool size configurable
         const N_THRS: usize = 1;
         for _ in 0..N_THRS {
-            std::thread::spawn(|| future::block_on(drive_runtime(&__STATIC_EX)));
+            // std::thread::spawn(|| future::block_on(drive_runtime(&__STATIC_EX)));
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                rt.block_on(drive_runtime(&__STATIC_EX));
+            });
         }
     }
 
