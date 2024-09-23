@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package test;
+
+service ParentService {
+  rpc Rpc(Input1) returns (Output1);
+  rpc FanoutRpc(Input1) returns (Output1);
+}
+
+service ChildService {
+  rpc Rpc1(Input1) returns (Output1);
+  rpc Rpc2(Input2) returns (Output2);
+}
+
+message Input1 {}
+
+message Input2 {}
+
+message Output1 {}
+
+message Output2 {}
+
