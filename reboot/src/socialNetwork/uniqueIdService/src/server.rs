@@ -1,5 +1,9 @@
+use log::error;
+use std::fmt::Write; // For using the `write!` macro
+use std::fs::File;
+use std::io::{self, BufReader, Read};
 use std::process;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH}; // Assuming you're using a logging crate like `log`
 
 use tonic::{transport::Server, Request, Response, Status};
 
@@ -49,7 +53,45 @@ impl Greeter for MyGreeter {
 }
 
 fn get_machine_id(netif: &str) -> String {
-    todo!()
+    let mac_addr_filename = format!("/sys/class/net/{}/address", netif);
+
+    // Step1: open file
+    let mac_addr_file = match File::open(&mac_addr_filename) {
+        Ok(file) => file,
+        Err(e) => {
+            error!(
+                "Cannot read MAC address from net interface {}: {}",
+                netif, e
+            );
+            // return "" ?
+            return String::new(); // Return empty string
+        }
+    };
+
+    // Step2: read the file content into the `mac` variable
+    let mut reader = BufReader::new(mac_addr_file); // Wrap the file in a buffered reader
+    let mut mac = String::new();
+    match reader.read_to_string(&mut mac) {
+        Ok(_) => (),
+        Err(e) => {
+            error!("Failed to read from file: {}", e);
+            return String::new(); // Return empty string
+        }
+    }
+
+    // Step3: convert mac address to a string
+    let mut stream = String::new();
+    write!(&mut stream, "{:x}", hash_mac_address_pid(&mac)).unwrap();
+
+    // Step4: fix the size of mac_hash to be 3
+    let mut mac_hash = stream;
+    if mac_hash.len() > 3 {
+        mac_hash = mac_hash[mac_hash.len() - 3..].to_string(); // Slice the last 3 characters
+    } else if mac_hash.len() < 3 {
+        let padding = "0".repeat(3 - mac_hash.len()); // Create the necessary padding with '0's
+        mac_hash = format!("{}{}", padding, mac_hash); // Prepend the padding
+    }
+    mac_hash
 }
 
 fn hash_mac_address_pid(mac: &str) -> u16 {
@@ -64,6 +106,7 @@ fn hash_mac_address_pid(mac: &str) -> u16 {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
     let addr = "[::1]:50051".parse()?;
     let netif = "";
     let greeter = MyGreeter {
