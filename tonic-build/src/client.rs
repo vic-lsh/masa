@@ -101,12 +101,7 @@ pub(crate) fn generate_internal<T: Service>(
                 <T::ResponseBody as Body>::Error: Into<StdError> + Send,
             {
                 pub fn new(inner: T) -> Self {
-                    let inner = tonic::client::Grpc::new(inner);
-                    Self {
-                        inner,
-                        _parent_ctx_ty: std::marker::PhantomData,
-                        _child_ctx_ty: std::marker::PhantomData,
-                    }
+                    Self::new_impl(inner)
                 }
 
                 pub fn with_origin(inner: T, origin: Uri) -> Self {
@@ -142,6 +137,15 @@ pub(crate) fn generate_internal<T: Service>(
                 C: tonic::masa::ClientStubHooks,
                 P: tonic::masa::RequestHandlerHooks<C>,
             {
+                fn new_impl(inner: T) -> Self {
+                    let inner = tonic::client::Grpc::new(inner);
+                    Self {
+                        inner,
+                        _parent_ctx_ty: std::marker::PhantomData,
+                        _child_ctx_ty: std::marker::PhantomData,
+                    }
+                }
+
                 /// Compress requests with the given encoding.
                 ///
                 /// This requires the server to support it otherwise it might respond with an
@@ -206,7 +210,22 @@ fn generate_connect(service_ident: &syn::Ident, enabled: bool) -> TokenStream {
                 D::Error: Into<StdError>,
             {
                 let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
-                Ok(Self::new(conn))
+                Ok(Self::new_impl(conn))
+            }
+        }
+        impl<C, P> #service_ident<tonic::transport::Channel, C, P>
+        where
+            C: tonic::masa::ClientStubHooks,
+            P: tonic::masa::RequestHandlerHooks<C>,
+        {
+            /// Attempt to create a new client by connecting to a given endpoint.
+            pub async fn connect_with_custom_context<D>(dst: D) -> Result<Self, tonic::transport::Error>
+            where
+                D: TryInto<tonic::transport::Endpoint>,
+                D::Error: Into<StdError>,
+            {
+                let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+                Ok(Self::new_impl(conn))
             }
         }
     };
