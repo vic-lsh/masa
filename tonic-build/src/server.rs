@@ -9,6 +9,20 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{Ident, Lit, LitStr};
 
+pub(crate) fn generate_rpc_context() -> TokenStream {
+    let server_parent_rpc_ctx = quote::format_ident!("parent_rpc_ctx");
+    quote! {
+        thread_local! {
+            #[allow(non_upper_case_globals)]
+            // This is deliberately type-erased to support generic-based
+            // parent context. It is up to the client and server-generated code
+            // to cast the pointer back to the correct parent context type.
+            static #server_parent_rpc_ctx: std::cell::Cell<*const ()> =
+                    std::cell::Cell::new(core::ptr::null());
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn generate_internal<T: Service>(
     service: &T,
@@ -33,7 +47,6 @@ pub(crate) fn generate_internal<T: Service>(
     let server_service = quote::format_ident!("{}Server", service.name());
     let server_trait = quote::format_ident!("{}", service.name());
     let server_mod = quote::format_ident!("{}_server", naive_snake_case(service.name()));
-    let server_parent_rpc_ctx = quote::format_ident!("{}_parent_rpc_ctx", service.name());
     let generated_trait = generate_trait(
         service,
         emit_package,
@@ -95,14 +108,6 @@ pub(crate) fn generate_internal<T: Service>(
     };
 
     quote! {
-        thread_local! {
-            #[allow(non_upper_case_globals)]
-            // This is deliberately type-erased to support generic-based
-            // parent context. It is up to the client and server-generated code
-            // to cast the pointer back to the correct parent context type.
-            static #server_parent_rpc_ctx: std::cell::Cell<*const ()> =
-                    std::cell::Cell::new(core::ptr::null());
-        }
 
         /// Generated server implementations.
         #(#mod_attributes)*
@@ -529,6 +534,8 @@ fn generate_unary<T: Method>(
     let grpc_method_ident = method.identifier();
 
     let (request, response) = method.request_response_name(proto_path, compile_well_known_types);
+
+    let server_parent_rpc_ctx = quote::format_ident!("parent_rpc_ctx");
 
     let inner_arg = if use_arc_self {
         quote!(inner)
