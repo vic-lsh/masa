@@ -189,7 +189,9 @@ pub(crate) fn generate_internal<T: Service>(
     }
 }
 
-fn generate_get_parent_rpc_ctx(_service: &impl Service) -> TokenStream {
+fn generate_get_parent_rpc_ctx(service: &impl Service) -> TokenStream {
+    let server_parent_rpc_ctx = quote::format_ident!("parent_rpc_ctx");
+
     quote! {
         /// Internal. Obtain the parent RPC in which this RPC client stub operates.
         fn get_parent_ctx(&self) -> Option<&'_ P> {
