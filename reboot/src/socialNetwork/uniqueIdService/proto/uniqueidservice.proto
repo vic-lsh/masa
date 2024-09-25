@@ -6,10 +6,10 @@ service Greeter {
 }
 
 message UniqueIdRequest {
-   int64 id = 1;
+   uint64 id = 1;
 }
 
 message UniqueIdReply {
-    int64 message = 1;
+    uint64 message = 1;
 }
 
