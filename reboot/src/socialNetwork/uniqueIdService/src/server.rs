@@ -1,10 +1,17 @@
+use core::time;
+use env_logger::fmt::Timestamp;
 use log::error;
 use std::fmt::Write; // For using the `write!` macro
 use std::fs::File;
-use std::io::{self, BufReader, Read};
+use std::io::{BufReader, Read};
 use std::process;
-use std::time::{SystemTime, UNIX_EPOCH}; // Assuming you're using a logging crate like `log`
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::Mutex; // Assuming you're using a logging crate like `log`
 
+const CUSTOM_EPOCH: i64 = 1514764800000;
+static mut CURRENT_TIMESTAMP: i64 = -1;
+static mut COUNTER: i64 = 0;
 use tonic::{transport::Server, Request, Response, Status};
 
 use unique_id_service::greeter_server::{Greeter, GreeterServer};
@@ -26,29 +33,75 @@ impl Greeter for MyGreeter {
         request: Request<UniqueIdRequest>,
     ) -> Result<Response<UniqueIdReply>, Status> {
         println!("Got a request: {:?}", request);
-        let reply = UniqueIdReply {
-            message: request.into_inner().id,
-        };
+
+        // Part1: thread lock
+        // - Get Timestamp and idx
+        let timestamp: i64;
+        let idx: i64;
+        {
+            let lock: Arc<Mutex<()>> = Arc::new(Mutex::new(())); // Shared lock across threads
+                                                                 // Lock the mutex
+            let _guard = lock.lock().await; // Await the lock asynchronously (non-blocking)
+                                            // Get the current system time (like duration_cast in C++)
+            let now = SystemTime::now();
+            let since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+            timestamp = since_epoch.as_millis() as i64 - CUSTOM_EPOCH;
+            idx = get_counter(timestamp);
+        }
+        // Part2:
+        // Change timestamp to a 16 hex string
+        // Fix size to 10
+        let mut timestamp_hex = String::new();
+        write!(&mut timestamp_hex, "{:x}", timestamp).unwrap();
+
+        if timestamp_hex.len() > 10 {
+            timestamp_hex = timestamp_hex[timestamp_hex.len() - 10..].to_string();
+        // Slice the last 3 characters
+        } else if timestamp_hex.len() < 10 {
+            let padding = "0".repeat(10 - timestamp_hex.len()); // Create the necessary padding with '0's
+            timestamp_hex = format!("{}{}", padding, timestamp_hex); // Prepend the padding
+        }
+
+        // Part3:
+        // Do the same thing for idx
+        // Fix size to 3
+        let mut counter_hex = String::new();
+        write!(&mut counter_hex, "{:x}", idx).unwrap();
+
+        if counter_hex.len() > 3 {
+            counter_hex = counter_hex[counter_hex.len() - 3..].to_string();
+        } else if counter_hex.len() < 3 {
+            let padding = "0".repeat(3 - counter_hex.len()); // Create the necessary padding with '0's
+            counter_hex = format!("{}{}", padding, counter_hex); // Prepend the padding
+        }
+
+        // Part4: assign value to _machine_id
         // Initialize the random number generator
         let _machine_id = self.machine_id.clone();
 
-        // Get the current system time
-        let start = SystemTime::now();
-
-        // Calculate the duration since the UNIX epoch
-        let duration = start
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards");
-
-        // Get the timestamp in milliseconds
-        let timestamp: i64 = duration.as_millis() as i64;
-
-        let counter_hex = "1";
-
-        // Generate a random ID between 1 and 100 (inclusive)
-        let random_id = format!("{}{}{}", _machine_id, timestamp_hex, counter_hex);
-
+        let post_id_str = format!("{}{}{}", _machine_id, timestamp_hex, counter_hex);
+        // When you apply the bitmask 0x7FFFFFFFFFFFFFFF,
+        // you are limiting the result to a 63-bit integer
+        // (since 0x7FFFFFFFFFFFFFFF is the maximum value for a 63-bit unsigned integer).
+        let post_id = u64::from_str_radix(&post_id_str, 16).unwrap() & 0x7FFFFFFFFFFFFFFF;
+        let reply = UniqueIdReply { message: post_id };
         Ok(Response::new(reply))
+    }
+}
+
+fn get_counter(timestamp: i64) -> i64 {
+    unsafe {
+        if CURRENT_TIMESTAMP > timestamp {
+            eprintln!("Timestamps are not incremental.");
+            std::process::exit(1);
+        } else if CURRENT_TIMESTAMP == timestamp {
+            COUNTER += 1;
+            return COUNTER - 1;
+        } else {
+            CURRENT_TIMESTAMP = timestamp;
+            COUNTER = 1;
+            return 0;
+        }
     }
 }
 
@@ -94,6 +147,9 @@ fn get_machine_id(netif: &str) -> String {
     mac_hash
 }
 
+/* produces a 16-bit hash value by combining the MAC address and process ID,
+    ensuring a unique result for different processes on the same machine.
+*/
 fn hash_mac_address_pid(mac: &str) -> u16 {
     let mut hash: u16 = 0;
     let pid = process::id().to_string();
@@ -110,7 +166,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse()?;
     let netif = "";
     let greeter = MyGreeter {
-        machine_id: get_machine_id(netif),
+        // machine_id: get_machine_id(netif),
+        // now it is hardcoded
+        machine_id: String::from("abc"),
     };
 
     Server::builder()
