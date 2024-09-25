@@ -56,6 +56,10 @@ impl LatencyTracker {
     }
 
     pub fn estimate(&self) -> u64 {
-        self.mean
+        if self.percentiles.len() == 0 {
+            self.mean
+        } else {
+            self.percentile(90)
+        }
     }
 }

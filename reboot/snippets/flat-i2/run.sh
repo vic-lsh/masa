@@ -2,7 +2,7 @@
 
 path="snippets/flat-i2"
 
-rps_values=(100)
+rps_values=(800)
 
 # modes=("queue_edf" "queue_fifo_two" "queue_fifo")
 modes=("queue_edf est_online")
@@ -49,7 +49,7 @@ for mode in "${modes[@]}"; do
 		cargo run --release --bin bridgeway_client_bench -- \
 			--slo 10000 \
 			--rps $rps \
-			--secs 3 \
+			--secs 10 \
 			--concurrency 512 \
 			--output $path/r${rps}_test.csv \
 			--graph-id I2 \
