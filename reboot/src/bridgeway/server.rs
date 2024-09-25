@@ -118,8 +118,7 @@ impl Worker for WorkerImpl {
             let path = span.path();
 
             if i == 0 || i == spans.len() - 1 {
-                let elapse = span.distribution().mean();
-                // .sample(ctx.request_id());
+                let elapse = span.distribution().sample(ctx.request_id());
                 let start_at = time_now();
                 busy_spin(Duration::from_micros(elapse));
                 let latency = time_now() - start_at;
@@ -160,8 +159,7 @@ impl Worker for WorkerImpl {
             let path = span.path();
 
             if i == 0 || i == spans.len() - 1 {
-                let elapse = span.distribution().mean();
-                // .sample(ctx.request_id());
+                let elapse = span.distribution().sample(ctx.request_id());
                 let start_at = time_now();
                 busy_spin(Duration::from_micros(elapse));
                 let latency = time_now() - start_at;
@@ -202,8 +200,7 @@ impl Worker for WorkerImpl {
             let path = span.path();
 
             if i == 0 || i == spans.len() - 1 {
-                let elapse = span.distribution().mean();
-                // .sample(ctx.request_id());
+                let elapse = span.distribution().sample(ctx.request_id());
                 let start_at = time_now();
                 busy_spin(Duration::from_micros(elapse));
                 let latency = time_now() - start_at;
@@ -244,8 +241,7 @@ impl Worker for WorkerImpl {
             let path = span.path();
 
             if i == 0 || i == spans.len() - 1 {
-                let elapse = span.distribution().mean();
-                // .sample(ctx.request_id());
+                let elapse = span.distribution().sample(ctx.request_id());
                 let start_at = time_now();
                 busy_spin(Duration::from_micros(elapse));
                 let latency = time_now() - start_at;
