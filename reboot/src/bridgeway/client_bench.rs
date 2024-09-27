@@ -17,7 +17,7 @@ use structopt::StructOpt;
 use tokio::time::{Duration, Instant};
 
 use tonic::transport::Channel;
-use tonic_masa::{Context, GlobalGraph};
+use tonic_masa::{Context, GlobalGraph, QUEUE_EDF};
 
 use bridge::{worker_client::WorkerClient, HelloRequest};
 use common::{fetch_traces, init_logging, time_now, Span};
@@ -122,11 +122,20 @@ impl LoadGenerator {
             let request_id = uniform.sample(&mut self.rng);
             let request = {
                 let start_at = time_now() - init_at_u64;
-                let deadline = start_at + self.slo;
+                let deadline = {
+                    if QUEUE_EDF {
+                        start_at + self.slo
+                    } else {
+                        self.slo
+                    }
+                };
+                // [TODO] This is a hack for client bench.
+                let latest_exec_at = deadline;
                 let ctx = Context::new(
                     graph_id.clone(),
                     request_id,
                     deadline,
+                    latest_exec_at,
                     start_at,
                 );
                 let mut request = tonic::Request::new(request.clone());

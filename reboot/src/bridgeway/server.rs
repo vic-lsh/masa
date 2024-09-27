@@ -66,20 +66,37 @@ impl WorkerImpl {
     }
 
     fn set_child_ctx(&self, ctx: &Context, request: &mut Request<HelloRequest>, path: &Path) {
-        let mut deadline = ctx.deadline();
-        if QUEUE_EDF {
-            let graph = self
-                .local_graph_trackers
-                .get(ctx.graph_id())
-                .unwrap()
-                .read()
-                .unwrap();
-            deadline = ctx.deadline() - graph.estimate_suffix(path);
-        }
+        let deadline = {
+            if QUEUE_EDF {
+                let graph = self
+                    .local_graph_trackers
+                    .get(ctx.graph_id())
+                    .unwrap()
+                    .read()
+                    .unwrap();
+                ctx.deadline() - graph.estimate_suffix_deadline(path)
+            } else {
+                ctx.deadline()
+            }
+        };
+        let latest_exec_at = {
+            if QUEUE_EDF {
+                let graph = self
+                    .local_graph_trackers
+                    .get(ctx.graph_id())
+                    .unwrap()
+                    .read()
+                    .unwrap();
+                ctx.deadline() - graph.estimate_suffix_latest_exec_at(path)
+            } else {
+                ctx.latest_exec_at()
+            }
+        };
         let child_ctx = Context::new(
             ctx.graph_id().clone(),
             ctx.request_id(),
             deadline,
+            latest_exec_at,
             time_now(),
         );
         request.metadata_mut().insert_ctx("ctx", &child_ctx);

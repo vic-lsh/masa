@@ -123,10 +123,12 @@ impl LoadGenerator {
             let request_id = uniform.sample(&mut self.rng);
             let request = {
                 let start_at = time_now() - init_at_u64;
+                // [TODO] Update this.
                 let deadline = start_at + self.slo;
                 let ctx = Context::new(
                     graph_id.clone(),
                     request_id,
+                    deadline,
                     deadline,
                     start_at,
                 );

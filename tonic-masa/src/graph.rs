@@ -49,7 +49,7 @@ impl LocalGraphTracker {
     }
 
     /// Return the estimated suffix latency after a span indexed by its path.
-    pub fn estimate_suffix(&self, path: &Path) -> Latency {
+    pub fn estimate_suffix_deadline(&self, path: &Path) -> Latency {
         let mut existed = false;
         let mut suffix_sum = 0;
         for span in self.spans.iter().rev() {
@@ -60,7 +60,27 @@ impl LocalGraphTracker {
             suffix_sum += span.estimate();
         }
         log::warn!(
-            "estimate_suffix, path: {}, suffix_sum: {}",
+            "estimate_suffix_deadline, path: {}, suffix_sum: {}",
+            path,
+            suffix_sum
+        );
+        assert!(existed, "Span {} not found", path);
+        suffix_sum
+    }
+
+    /// Return the estimated suffix latency no before than a span indexed by its path.
+    pub fn estimate_suffix_latest_exec_at(&self, path: &Path) -> Latency {
+        let mut existed = false;
+        let mut suffix_sum = 0;
+        for span in self.spans.iter().rev() {
+            suffix_sum += span.estimate();
+            if span.path() == path {
+                existed = true;
+                break;
+            }
+        }
+        log::warn!(
+            "estimate_suffix_latest_exec_at, path: {}, suffix_sum: {}",
             path,
             suffix_sum
         );
