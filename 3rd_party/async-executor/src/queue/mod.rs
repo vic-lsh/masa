@@ -14,7 +14,7 @@ pub(crate) use mutex_fifo_binary::MutexFifoBinaryQueue;
 #[allow(unused_imports)]
 pub(crate) use mutex_pqueue::MutexPriorityQueue;
 
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 #[allow(dead_code)]
 pub(crate) trait Queue {
@@ -25,7 +25,7 @@ pub(crate) trait Queue {
     fn push_with_ddl(
         &self,
         item: Self::Item,
-        ddl: DeadlineHint,
+        ddl: PriorityHint,
     ) -> Result<(), PushError<Self::Item>>;
 
     fn pop(&self) -> Result<Self::Item, PopError>;
