@@ -14,13 +14,13 @@ use crate::rt::Executor;
 use crate::server::server::{new_svc::NewSvcTask, Watcher};
 #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
 use crate::service::HttpService;
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 #[cfg(feature = "server")]
 pub trait ConnStreamExec<F, B: HttpBody>: Clone {
     fn execute_h2stream(&mut self, fut: H2Stream<F, B>);
 
-    fn execute_h2stream_with_ddl(&mut self, fut: H2Stream<F, B>, ddl: DeadlineHint);
+    fn execute_h2stream_with_ddl(&mut self, fut: H2Stream<F, B>, ddl: PriorityHint);
 }
 
 #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
@@ -44,7 +44,7 @@ pub enum Exec {
 // ===== impl Exec =====
 
 impl Exec {
-    pub(crate) fn execute<F>(&self, fut: F, ddl: DeadlineHint)
+    pub(crate) fn execute<F>(&self, fut: F, ddl: PriorityHint)
     where
         F: Future<Output = ()> + Send + 'static,
     {
@@ -80,10 +80,10 @@ where
     B: HttpBody,
 {
     fn execute_h2stream(&mut self, fut: H2Stream<F, B>) {
-        self.execute(fut, DeadlineHint::infra())
+        self.execute(fut, PriorityHint::infra())
     }
 
-    fn execute_h2stream_with_ddl(&mut self, fut: H2Stream<F, B>, ddl: DeadlineHint) {
+    fn execute_h2stream_with_ddl(&mut self, fut: H2Stream<F, B>, ddl: PriorityHint) {
         self.execute(fut, ddl)
     }
 }
@@ -96,7 +96,7 @@ where
     W: Watcher<I, S, E>,
 {
     fn execute_new_svc(&mut self, fut: NewSvcTask<I, N, S, E, W>) {
-        self.execute(fut, DeadlineHint::infra())
+        self.execute(fut, PriorityHint::infra())
     }
 }
 
@@ -110,10 +110,10 @@ where
     B: HttpBody,
 {
     fn execute_h2stream(&mut self, fut: H2Stream<F, B>) {
-        self.execute(fut, DeadlineHint::infra())
+        self.execute(fut, PriorityHint::infra())
     }
 
-    fn execute_h2stream_with_ddl(&mut self, fut: H2Stream<F, B>, ddl: DeadlineHint) {
+    fn execute_h2stream_with_ddl(&mut self, fut: H2Stream<F, B>, ddl: PriorityHint) {
         self.execute(fut, ddl)
     }
 }
@@ -127,7 +127,7 @@ where
     W: Watcher<I, S, E>,
 {
     fn execute_new_svc(&mut self, fut: NewSvcTask<I, N, S, E, W>) {
-        self.execute(fut, DeadlineHint::infra())
+        self.execute(fut, PriorityHint::infra())
     }
 }
 

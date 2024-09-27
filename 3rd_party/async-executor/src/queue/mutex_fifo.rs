@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{PopError, PushError, Queue};
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 pub(crate) struct MutexFifoQueue<T> {
     q: Mutex<VecDeque<T>>,
@@ -23,7 +23,7 @@ impl<T: Ord + PartialOrd> Queue for MutexFifoQueue<T> {
     fn push_with_ddl(
         &self,
         item: Self::Item,
-        _ddl: DeadlineHint,
+        _ddl: PriorityHint,
     ) -> Result<(), PushError<Self::Item>> {
         self.push(item)
     }
