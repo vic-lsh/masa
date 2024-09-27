@@ -533,7 +533,7 @@ impl<'a> Executor<'a> {
             let deadline = runnable.priority();
             state
                 .queue
-                .push_with_ddl(runnable, deadline)
+                .push_with_prio(runnable, deadline)
                 .expect("Push should never fail in an unbounded queue");
             state.notify();
 
@@ -850,7 +850,7 @@ impl<'a> Default for LocalExecutor<'a> {
 #[cfg(feature = "queue_edf")]
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
 #[cfg(feature = "queue_fifo_two")]
-type GlobalQueue<T> = queue::MutexFifoBinaryQueue<T>;
+type GlobalQueue<T> = queue::MutexFifoTwoQueue<T>;
 #[cfg(feature = "queue_fifo")]
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 #[cfg(not(any(

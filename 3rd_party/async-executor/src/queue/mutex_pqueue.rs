@@ -25,10 +25,10 @@ impl<T: Ord + PartialOrd> Queue for MutexPriorityQueue<T> {
         Ok(())
     }
 
-    fn push_with_ddl(
+    fn push_with_prio(
         &self,
         item: Self::Item,
-        _ddl: PriorityHint,
+        _prio: PriorityHint,
     ) -> Result<(), PushError<Self::Item>> {
         self.push(item)
     }
@@ -42,7 +42,6 @@ impl<T: Ord + PartialOrd> Queue for MutexPriorityQueue<T> {
     }
 
     fn is_full(&self) -> bool {
-        // [NOTE] this implementation is unbounded so it's never full
         false
     }
 

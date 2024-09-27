@@ -6,24 +6,24 @@ use std::{
 use super::{PopError, PushError, Queue};
 use tonic_masa::PriorityHint;
 
-pub(crate) struct MutexFifoBinaryQueue<T> {
+pub(crate) struct MutexFifoTwoQueue<T> {
     q_infra: Mutex<VecDeque<T>>,
     q_others: Mutex<VecDeque<T>>,
 }
 
-impl<T: Ord + PartialOrd> Queue for MutexFifoBinaryQueue<T> {
+impl<T: Ord + PartialOrd> Queue for MutexFifoTwoQueue<T> {
     type Item = T;
 
     fn push(&self, _item: Self::Item) -> Result<(), PushError<Self::Item>> {
         panic!("Not implemented for MutexFifoBinaryQueue");
     }
 
-    fn push_with_ddl(
+    fn push_with_prio(
         &self,
         item: Self::Item,
-        ddl: PriorityHint,
+        prio: PriorityHint,
     ) -> Result<(), PushError<Self::Item>> {
-        if ddl.value() == 0 {
+        if prio.value() == 0 {
             self.with_locked_q_infra(|mut q| {
                 q.push_back(item);
             });
@@ -50,7 +50,6 @@ impl<T: Ord + PartialOrd> Queue for MutexFifoBinaryQueue<T> {
     }
 
     fn is_full(&self) -> bool {
-        // [NOTE] This implementation is unbounded so it is never full.
         false
     }
 
@@ -62,7 +61,7 @@ impl<T: Ord + PartialOrd> Queue for MutexFifoBinaryQueue<T> {
     }
 }
 
-impl<T> MutexFifoBinaryQueue<T> {
+impl<T> MutexFifoTwoQueue<T> {
     #[inline]
     fn with_locked_q_infra<R>(&self, f: impl FnOnce(MutexGuard<'_, VecDeque<T>>) -> R) -> R {
         let guard = self.q_infra.lock().expect("Mutex should not be poisoned");
@@ -76,7 +75,7 @@ impl<T> MutexFifoBinaryQueue<T> {
     }
 }
 
-impl<T: Ord> Default for MutexFifoBinaryQueue<T> {
+impl<T: Ord> Default for MutexFifoTwoQueue<T> {
     fn default() -> Self {
         Self {
             q_infra: Mutex::new(VecDeque::new()),
