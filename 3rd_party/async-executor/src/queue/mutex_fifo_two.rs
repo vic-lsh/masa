@@ -15,7 +15,7 @@ impl<T: Ord + PartialOrd> Queue for MutexFifoTwoQueue<T> {
     type Item = T;
 
     fn push(&self, _item: Self::Item) -> Result<(), PushError<Self::Item>> {
-        panic!("Not implemented for MutexFifoBinaryQueue");
+        panic!("Not implemented");
     }
 
     fn push_with_prio(

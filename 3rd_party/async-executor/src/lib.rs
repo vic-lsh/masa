@@ -524,17 +524,14 @@ impl<'a> Executor<'a> {
             let now = std::time::Instant::now();
 
             log::info!(
-                "Push runnable to queue, now: {}, task: {:p}, deadline: {}",
+                "Push runnable to queue, now: {}, task: {:p}, priority: {}",
                 time_now(),
                 runnable.ptr_to_u64() as *const (),
                 runnable.priority().value()
             );
 
-            let deadline = runnable.priority();
-            state
-                .queue
-                .push_with_prio(runnable, deadline)
-                .expect("Push should never fail in an unbounded queue");
+            let prio = runnable.priority();
+            state.queue.push_with_prio(runnable, prio).unwrap();
             state.notify();
 
             SCHED_TIME_US.fetch_add(now.elapsed().as_micros() as usize, Ordering::Relaxed);
@@ -847,17 +844,13 @@ impl<'a> Default for LocalExecutor<'a> {
     }
 }
 
-#[cfg(feature = "queue_edf")]
+#[cfg(feature = "prio_local")]
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
-#[cfg(feature = "queue_fifo_two")]
+#[cfg(feature = "fifo_two")]
 type GlobalQueue<T> = queue::MutexFifoTwoQueue<T>;
-#[cfg(feature = "queue_fifo")]
+#[cfg(feature = "fifo")]
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
-#[cfg(not(any(
-    feature = "queue_edf",
-    feature = "queue_fifo_two",
-    feature = "queue_fifo"
-)))]
+#[cfg(not(any(feature = "prio_local", feature = "fifo_two", feature = "fifo")))]
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 
 // [NOTE] The original implementation uses a concurrent queue for the global queue.

@@ -19,8 +19,8 @@ use tonic::{
     Request, Response, Status,
 };
 use tonic_masa::{
-    Address, Context, GlobalGraph, Latency, LocalGraph, LocalGraphTracker, Path, EST_ONLINE,
-    QUEUE_EDF,
+    Address, Context, GlobalGraph, Latency, LocalGraph, LocalGraphTracker, Path, ONLINE_TRACKER,
+    PRIO_LOCAL,
 };
 
 use bridge::{
@@ -67,7 +67,7 @@ impl WorkerImpl {
 
     fn set_child_ctx(&self, ctx: &Context, request: &mut Request<HelloRequest>, path: &Path) {
         let deadline = {
-            if QUEUE_EDF {
+            if PRIO_LOCAL {
                 let graph = self
                     .local_graph_trackers
                     .get(ctx.graph_id())
@@ -80,7 +80,7 @@ impl WorkerImpl {
             }
         };
         let latest_exec_at = {
-            if QUEUE_EDF {
+            if PRIO_LOCAL {
                 let graph = self
                     .local_graph_trackers
                     .get(ctx.graph_id())
@@ -102,7 +102,7 @@ impl WorkerImpl {
     }
 
     fn track_span(&self, ctx: &Context, path: &Path, latency: Latency) {
-        if EST_ONLINE {
+        if ONLINE_TRACKER {
             let mut graph = self
                 .local_graph_trackers
                 .get(ctx.graph_id())

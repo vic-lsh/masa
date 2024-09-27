@@ -1,4 +1,4 @@
-use crate::{Distribution, Latency, LatencyTracker, Path, EST_ONLINE};
+use crate::{Distribution, Latency, LatencyTracker, Path, ONLINE_TRACKER};
 
 /// Represent a span inner.
 #[derive(Debug, Default, Clone)]
@@ -56,7 +56,7 @@ impl SpanTracker {
         tracker_capacity: Option<usize>,
     ) -> Self {
         let mut tracker = None;
-        if EST_ONLINE {
+        if ONLINE_TRACKER {
             let tracker_capacity = tracker_capacity.unwrap();
             tracker = Some(LatencyTracker::new(tracker_capacity));
         }
@@ -80,7 +80,7 @@ impl SpanTracker {
 
     /// Estimate the latency.
     pub fn estimate(&self) -> Latency {
-        if EST_ONLINE {
+        if ONLINE_TRACKER {
             self.tracker.as_ref().unwrap().estimate()
         } else {
             self.distribution().mean()
@@ -89,7 +89,7 @@ impl SpanTracker {
 
     /// Update the tracker.
     pub fn track(&mut self, latency: Latency) {
-        if EST_ONLINE {
+        if ONLINE_TRACKER {
             self.tracker.as_mut().unwrap().track(latency);
         } else {
             panic!("Not implemented");
