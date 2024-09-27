@@ -335,14 +335,14 @@ where
                             req.extensions_mut().insert(Protocol::from_inner(protocol));
                         }
 
-                        // [NOTE] Get deadline from context.
+                        // [NOTE] Get priority from context.
                         let ctx_str = req.headers()["ctx"].to_str().unwrap();
                         let ctx = MasaContext::from_json(ctx_str);
-                        let ddl = PriorityHint::new(ctx.deadline());
+                        let prio = PriorityHint::new(ctx.latest_exec_at());
 
                         // [NOTE] Into executor.
                         let fut = H2Stream::new(service.call(req), connect_parts, respond);
-                        exec.execute_h2stream_with_ddl(fut, ddl);
+                        exec.execute_h2stream_with_prio(fut, prio);
                     }
                     Some(Err(e)) => {
                         return Poll::Ready(Err(crate::Error::new_h2(e)));

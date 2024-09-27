@@ -9,7 +9,7 @@ pub(crate) use concurrent_fifo::ConcurrentFifoQueue;
 #[allow(dead_code)]
 pub(crate) use mutex_fifo::MutexFifoQueue;
 #[allow(dead_code)]
-pub(crate) use mutex_fifo_binary::MutexFifoBinaryQueue;
+pub(crate) use mutex_fifo_binary::MutexFifoTwoQueue;
 #[allow(dead_code)]
 #[allow(unused_imports)]
 pub(crate) use mutex_pqueue::MutexPriorityQueue;
@@ -22,10 +22,10 @@ pub(crate) trait Queue {
 
     fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>>;
 
-    fn push_with_ddl(
+    fn push_with_prio(
         &self,
         item: Self::Item,
-        ddl: PriorityHint,
+        prio: PriorityHint,
     ) -> Result<(), PushError<Self::Item>>;
 
     fn pop(&self) -> Result<Self::Item, PopError>;
