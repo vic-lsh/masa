@@ -23,7 +23,29 @@ pub mod unique_id_service {
 #[derive(Debug, Default)]
 pub struct MyGreeter {
     machine_id: String,
-    thread_lock: Arc<Mutex<()>>,
+    counter: Arc<Mutex<Counter>>,
+}
+
+#[derive(Debug, Default)]
+struct Counter {
+    current_stamp: i64,
+    counter: i64,
+}
+
+impl Counter {
+    fn get_counter(&mut self, timestamp: i64) -> i64 {
+        if self.current_stamp > timestamp {
+            eprintln!("Timestamps are not incremental.");
+            std::process::exit(1);
+        } else if self.current_stamp == timestamp {
+            self.counter += 1;
+            return self.counter - 1;
+        } else {
+            self.current_stamp = timestamp;
+            self.counter = 1;
+            return 0;
+        }
+    }
 }
 
 #[tonic::async_trait]
@@ -39,27 +61,18 @@ impl Greeter for MyGreeter {
         let timestamp: i64;
         let idx: i64;
         {
-            let lock = self.thread_lock.lock().unwrap();
+            let mut counter = self.counter.lock().unwrap();
             // Lock the mutex
             // Get the current system time (like duration_cast in C++)
             let now = SystemTime::now();
             let since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
             timestamp = since_epoch.as_millis() as i64 - CUSTOM_EPOCH;
-            idx = get_counter(timestamp);
+            idx = counter.get_counter(timestamp);
         }
         // Part2:
         // Change timestamp to a 16 hex string
         // Fix size to 10
-        let mut timestamp_hex = String::new();
-        write!(&mut timestamp_hex, "{:x}", timestamp).unwrap();
-
-        if timestamp_hex.len() > 10 {
-            timestamp_hex = timestamp_hex[timestamp_hex.len() - 10..].to_string();
-        // Slice the last 3 characters
-        } else if timestamp_hex.len() < 10 {
-            let padding = "0".repeat(10 - timestamp_hex.len()); // Create the necessary padding with '0's
-            timestamp_hex = format!("{}{}", padding, timestamp_hex); // Prepend the padding
-        }
+        let timestamp_hex = get_timestamp_hex(timestamp);
 
         // Part3:
         // Do the same thing for idx
@@ -85,22 +98,6 @@ impl Greeter for MyGreeter {
         let post_id = u64::from_str_radix(&post_id_str, 16).unwrap() & 0x7FFFFFFFFFFFFFFF;
         let reply = UniqueIdReply { message: post_id };
         Ok(Response::new(reply))
-    }
-}
-
-fn get_counter(timestamp: i64) -> i64 {
-    unsafe {
-        if CURRENT_TIMESTAMP > timestamp {
-            eprintln!("Timestamps are not incremental.");
-            std::process::exit(1);
-        } else if CURRENT_TIMESTAMP == timestamp {
-            COUNTER += 1;
-            return COUNTER - 1;
-        } else {
-            CURRENT_TIMESTAMP = timestamp;
-            COUNTER = 1;
-            return 0;
-        }
     }
 }
 
@@ -146,6 +143,23 @@ fn get_machine_id(netif: &str) -> String {
     mac_hash
 }
 
+fn get_timestamp_hex(timestamp: i64) -> String {
+    // Part2:
+    // Change timestamp to a 16 hex string
+    // Fix size to 10
+    let mut timestamp_hex = String::new();
+    write!(&mut timestamp_hex, "{:x}", timestamp).unwrap();
+
+    if timestamp_hex.len() > 10 {
+        timestamp_hex = timestamp_hex[timestamp_hex.len() - 10..].to_string();
+    // Slice the last 3 characters
+    } else if timestamp_hex.len() < 10 {
+        let padding = "0".repeat(10 - timestamp_hex.len()); // Create the necessary padding with '0's
+        timestamp_hex = format!("{}{}", padding, timestamp_hex); // Prepend the padding
+    }
+    timestamp_hex
+}
+
 /* produces a 16-bit hash value by combining the MAC address and process ID,
     ensuring a unique result for different processes on the same machine.
 */
@@ -168,7 +182,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // machine_id: get_machine_id(netif),
         // now it is hardcoded
         machine_id: String::from("abc"),
-        thread_lock: Arc::new(Mutex::new(())),
+        counter: Arc::new(Mutex::new(Counter::default())),
     };
 
     Server::builder()
@@ -177,4 +191,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timestamp_hex_test() {
+        let timestamp_hex = get_timestamp_hex(212711383016);
+        assert_eq!(timestamp_hex, "3186961fe8");
+        let timestamp_hex2 = get_timestamp_hex(212711383016122);
+        assert_eq!(timestamp_hex2, "75ba6ca2ba");
+        let timestamp_hex3 = get_timestamp_hex(123);
+        assert_eq!(timestamp_hex3, "000000007b");
+    }
 }
