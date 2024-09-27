@@ -101,6 +101,17 @@ impl Greeter for MyGreeter {
     }
 }
 
+impl MyGreeter {
+    pub fn new(machine_id: String) -> Self {
+        MyGreeter {
+            // machine_id: get_machine_id(netif),
+            // now it is hardcoded
+            machine_id,
+            counter: Arc::new(Mutex::new(Counter::default())),
+        }
+    }
+}
+
 fn get_machine_id(netif: &str) -> String {
     let mac_addr_filename = format!("/sys/class/net/{}/address", netif);
 
