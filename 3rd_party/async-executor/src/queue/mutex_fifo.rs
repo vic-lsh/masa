@@ -13,11 +13,8 @@ pub(crate) struct MutexFifoQueue<T> {
 impl<T: Ord + PartialOrd> Queue for MutexFifoQueue<T> {
     type Item = T;
 
-    fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
-        self.with_locked(|mut q| {
-            q.push_back(item);
-        });
-        Ok(())
+    fn push(&self, _item: Self::Item) -> Result<(), PushError<Self::Item>> {
+        panic!("Not implemented");
     }
 
     fn push_with_prio(
@@ -25,7 +22,10 @@ impl<T: Ord + PartialOrd> Queue for MutexFifoQueue<T> {
         item: Self::Item,
         _prio: PriorityHint,
     ) -> Result<(), PushError<Self::Item>> {
-        self.push(item)
+        self.with_locked(|mut q| {
+            q.push_back(item);
+        });
+        Ok(())
     }
 
     fn pop(&self) -> Result<Self::Item, PopError> {

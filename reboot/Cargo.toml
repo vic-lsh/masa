@@ -70,12 +70,9 @@ path = "src/bridgeway/server.rs"
 debug = true
 
 [features]
-queue_edf = ["tonic-masa/queue_edf"]
-queue_fifo_two = ["tonic-masa/queue_fifo_two"]
-queue_fifo = ["tonic-masa/queue_fifo"]
-est_online = ["tonic-masa/est_online"]
-mock_dist = ["tonic-masa/mock_dist"]
-mock_hotel = ["tonic-masa/mock_hotel"]
+prio_local = ["tonic-masa/prio_local"]
+fifo_two = ["tonic-masa/fifo_two"]
+fifo = ["tonic-masa/fifo"]
 
 gcp = ["dep:prost-types", "tonic/tls"]
 routeguide = [

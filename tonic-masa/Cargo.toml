@@ -4,12 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-queue_edf = []
-queue_fifo_two = []
-queue_fifo = []
-est_online = []
-mock_dist = []
-mock_hotel = []
+prio_local = []
+fifo_two = []
+fifo = []
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

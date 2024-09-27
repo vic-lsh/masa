@@ -17,7 +17,7 @@ use structopt::StructOpt;
 use tokio::time::{Duration, Instant};
 
 use tonic::transport::Channel;
-use tonic_masa::{Context, GlobalGraph, QUEUE_EDF};
+use tonic_masa::{Context, GlobalGraph, PRIO_LOCAL};
 
 use bridge::{worker_client::WorkerClient, HelloRequest};
 use common::{fetch_traces, init_logging, time_now, Span};
@@ -122,7 +122,7 @@ impl LoadGenerator {
             let request_id = uniform.sample(&mut self.rng);
             let request = {
                 let deadline = {
-                    if QUEUE_EDF {
+                    if PRIO_LOCAL {
                         let start_at = time_now() - init_at_u64;
                         start_at + self.slo
                     } else {

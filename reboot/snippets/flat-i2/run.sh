@@ -4,9 +4,9 @@ path="snippets/flat-i2"
 
 rps_values=(100)
 
-# modes=("queue_edf" "queue_fifo_two" "queue_fifo")
-# modes=("queue_edf est_online" "queue_fifo est_online")
-modes=("queue_edf est_online")
+# modes=("prio_local" "fifo_two" "fifo")
+# modes=("prio_local" "fifo")
+modes=("prio_local")
 
 server_pid=
 

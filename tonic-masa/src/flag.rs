@@ -1,11 +1,7 @@
-pub const QUEUE_EDF: bool = if cfg!(feature = "queue_edf") {
+pub const PRIO_LOCAL: bool = if cfg!(feature = "prio_local") {
     true
 } else {
     false
 };
 
-pub const EST_ONLINE: bool = if cfg!(feature = "est_online") {
-    true
-} else {
-    false
-};
+pub const ONLINE_TRACKER: bool = true;
