@@ -1,4 +1,4 @@
-use crate::{Distribution, Latency, LatencyTracker, Path, EST_ONLINE, MOCK_DIST};
+use crate::{Distribution, Latency, LatencyTracker, Path, EST_ONLINE};
 
 /// Represent a span inner.
 #[derive(Debug, Default, Clone)]
@@ -82,10 +82,8 @@ impl SpanTracker {
     pub fn estimate(&self) -> Latency {
         if EST_ONLINE {
             self.tracker.as_ref().unwrap().estimate()
-        } else if MOCK_DIST {
-            self.distribution().mean()
         } else {
-            panic!("Not implemented");
+            self.distribution().mean()
         }
     }
 

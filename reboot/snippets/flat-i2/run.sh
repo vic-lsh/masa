@@ -5,7 +5,7 @@ path="snippets/flat-i2"
 rps_values=(800)
 
 # modes=("queue_edf" "queue_fifo_two" "queue_fifo")
-modes=("queue_edf est_online")
+modes=("queue_edf est_online" "queue_fifo est_online")
 
 server_pid=
 
