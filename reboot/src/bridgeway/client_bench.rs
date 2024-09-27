@@ -121,9 +121,9 @@ impl LoadGenerator {
             let graph_id = graph_id.clone();
             let request_id = uniform.sample(&mut self.rng);
             let request = {
-                let start_at = time_now() - init_at_u64;
                 let deadline = {
                     if QUEUE_EDF {
+                        let start_at = time_now() - init_at_u64;
                         start_at + self.slo
                     } else {
                         self.slo
@@ -131,13 +131,7 @@ impl LoadGenerator {
                 };
                 // [TODO] This is a hack for client bench.
                 let latest_exec_at = deadline;
-                let ctx = Context::new(
-                    graph_id.clone(),
-                    request_id,
-                    deadline,
-                    latest_exec_at,
-                    start_at,
-                );
+                let ctx = Context::new(graph_id.clone(), request_id, deadline, latest_exec_at);
                 let mut request = tonic::Request::new(request.clone());
                 request.metadata_mut().insert_ctx("ctx", &ctx);
                 request

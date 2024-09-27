@@ -255,7 +255,7 @@ pub fn get_global_graph_i2() -> GlobalGraph {
         let mut graphs = HashMap::new();
         let n_samples = 1_000;
         let n_percentiles = 1_000;
-        let tracker_capacity = Some(1000);
+        let tracker_capacity = Some(100);
         let mean = 1_000;
         graphs.insert(
             "/bridge.Worker/SayHelloI2".to_string() as Path,
@@ -317,7 +317,7 @@ pub fn get_global_graph_i1() -> GlobalGraph {
         let mut graphs = HashMap::new();
         let n_samples = 1_000;
         let n_percentiles = 1_000;
-        let tracker_capacity = Some(1000);
+        let tracker_capacity = Some(100);
         let mean = 1_000;
         graphs.insert(
             "/bridge.Worker/SayHelloI1".to_string() as Path,

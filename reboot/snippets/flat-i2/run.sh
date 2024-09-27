@@ -2,10 +2,11 @@
 
 path="snippets/flat-i2"
 
-rps_values=(800)
+rps_values=(100)
 
 # modes=("queue_edf" "queue_fifo_two" "queue_fifo")
-modes=("queue_edf est_online" "queue_fifo est_online")
+# modes=("queue_edf est_online" "queue_fifo est_online")
+modes=("queue_edf est_online")
 
 server_pid=
 
@@ -31,8 +32,10 @@ for mode in "${modes[@]}"; do
 
 	# RUST_BACKTRACE=1 RUST_LOG=info cargo run ...
 	RUST_LOG=warn \
-		cargo run --features "$mode" \
-		--release --bin bridgeway_server -- \
+		cargo run \
+		--release \
+		--features "$mode" \
+		--bin bridgeway_server -- \
 		--n-hops 2 \
 		--n-threads 1 \
 		>$path/tmp_server_test.log 2>&1 &
@@ -46,7 +49,10 @@ for mode in "${modes[@]}"; do
 
 		echo "Running benchmark for RPS: $rps..."
 
-		cargo run --release --bin bridgeway_client_bench -- \
+		cargo run \
+			--release \
+			--features "$mode" \
+			--bin bridgeway_client_bench -- \
 			--slo 10000 \
 			--rps $rps \
 			--secs 10 \
