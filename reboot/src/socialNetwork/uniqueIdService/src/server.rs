@@ -5,9 +5,8 @@ use std::fmt::Write; // For using the `write!` macro
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::process;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::Mutex; // Assuming you're using a logging crate like `log`
 
 const CUSTOM_EPOCH: i64 = 1514764800000;
 static mut CURRENT_TIMESTAMP: i64 = -1;
@@ -24,6 +23,7 @@ pub mod unique_id_service {
 #[derive(Debug, Default)]
 pub struct MyGreeter {
     machine_id: String,
+    thread_lock: Arc<Mutex<()>>,
 }
 
 #[tonic::async_trait]
@@ -39,10 +39,9 @@ impl Greeter for MyGreeter {
         let timestamp: i64;
         let idx: i64;
         {
-            let lock: Arc<Mutex<()>> = Arc::new(Mutex::new(())); // Shared lock across threads
-                                                                 // Lock the mutex
-            let _guard = lock.lock().await; // Await the lock asynchronously (non-blocking)
-                                            // Get the current system time (like duration_cast in C++)
+            let lock = self.thread_lock.lock().unwrap();
+            // Lock the mutex
+            // Get the current system time (like duration_cast in C++)
             let now = SystemTime::now();
             let since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
             timestamp = since_epoch.as_millis() as i64 - CUSTOM_EPOCH;
@@ -169,6 +168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // machine_id: get_machine_id(netif),
         // now it is hardcoded
         machine_id: String::from("abc"),
+        thread_lock: Arc::new(Mutex::new(())),
     };
 
     Server::builder()
