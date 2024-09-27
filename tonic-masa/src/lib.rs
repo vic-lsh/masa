@@ -8,7 +8,7 @@ mod tracker;
 mod typing;
 
 pub use context::Context;
-pub use deadline::DeadlineHint;
+pub use deadline::PriorityHint;
 pub use distribution::Distribution;
 pub use flag::{EST_ONLINE, QUEUE_EDF};
 pub use graph::{GlobalGraph, GlobalGraphTracker, LocalGraph, LocalGraphTracker};

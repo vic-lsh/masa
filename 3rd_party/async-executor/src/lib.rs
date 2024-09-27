@@ -62,7 +62,7 @@ use futures_lite::{future, prelude::*};
 use queue::Queue;
 use slab::Slab;
 
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 #[cfg(feature = "static")]
 mod static_executors;
@@ -239,7 +239,7 @@ impl<'a> Executor<'a> {
     pub fn spawn_with_ddl<T: Send + 'a>(
         &self,
         future: impl Future<Output = T> + Send + 'a,
-        ddl: DeadlineHint,
+        ddl: PriorityHint,
     ) -> Task<T> {
         // [NOTE] Capture backtrace in the deepest call stack that we understand.
         // Set `RUST_BACKTRACE=1` before cargo run. Use `--debug` for more information.
@@ -409,7 +409,7 @@ impl<'a> Executor<'a> {
     unsafe fn spawn_inner_with_ddl<T: 'a>(
         &self,
         future: impl Future<Output = T> + 'a,
-        ddl: DeadlineHint,
+        ddl: PriorityHint,
         active: &mut Slab<Waker>,
     ) -> Task<T> {
         // Remove the task from the set of active tasks when the future finishes.
@@ -527,10 +527,10 @@ impl<'a> Executor<'a> {
                 "Push runnable to queue, now: {}, task: {:p}, deadline: {}",
                 time_now(),
                 runnable.ptr_to_u64() as *const (),
-                runnable.deadline().value()
+                runnable.priority().value()
             );
 
-            let deadline = runnable.deadline();
+            let deadline = runnable.priority();
             state
                 .queue
                 .push_with_ddl(runnable, deadline)
@@ -1110,7 +1110,7 @@ impl Ticker<'_> {
                             "Pop runnable from queue, now: {}, task: {:p}, deadline: {}",
                             time_now(),
                             r.ptr_to_u64() as *const (),
-                            r.deadline().value()
+                            r.priority().value()
                         );
 
                         // Wake up.
