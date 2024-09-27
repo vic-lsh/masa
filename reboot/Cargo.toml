@@ -7,28 +7,28 @@ publish = false
 version = "0.1.0"
 
 [[bin]]
-name = "irust_tracker"
-path = "src/irust/tracker.rs"
-
-[[bin]]
-name = "bridgeway_manager"
-path = "src/bridgeway/manager_main.rs"
-
-[[bin]]
-name = "bridgeway_client_bench_tung_chung"
-path = "src/bridgeway/client_bench_tung_chung.rs"
-
-[[bin]]
-name = "bridgeway_server_tung_chung"
-path = "src/bridgeway/server_tung_chung.rs"
-
-[[bin]]
 name = "bridgeway_client_bench"
 path = "src/bridgeway/client_bench.rs"
 
 [[bin]]
 name = "bridgeway_server"
 path = "src/bridgeway/server.rs"
+
+# [[bin]]
+# name = "irust_tracker"
+# path = "src/irust/tracker.rs"
+
+# [[bin]]
+# name = "bridgeway_manager"
+# path = "src/bridgeway/manager_main.rs"
+
+# [[bin]]
+# name = "bridgeway_client_bench_tung_chung"
+# path = "src/bridgeway/client_bench_tung_chung.rs"
+
+# [[bin]]
+# name = "bridgeway_server_tung_chung"
+# path = "src/bridgeway/server_tung_chung.rs"
 
 # [[bin]]
 # name = "charleston_lactose_sequential"
@@ -50,21 +50,21 @@ path = "src/bridgeway/server.rs"
 # name = "charleston_server"
 # path = "src/charleston/server.rs"
 
-[[bin]]
-name = "sheraton_client"
-path = "src/sheraton/client.rs"
+# [[bin]]
+# name = "sheraton_client"
+# path = "src/sheraton/client.rs"
 
-[[bin]]
-name = "sheraton_server"
-path = "src/sheraton/server.rs"
+# [[bin]]
+# name = "sheraton_server"
+# path = "src/sheraton/server.rs"
 
-[[bin]]
-name = "hello_client"
-path = "src/hello/client.rs"
+# [[bin]]
+# name = "hello_client"
+# path = "src/hello/client.rs"
 
-[[bin]]
-name = "hello_server"
-path = "src/hello/server.rs"
+# [[bin]]
+# name = "hello_server"
+# path = "src/hello/server.rs"
 
 [profile.release]
 debug = true

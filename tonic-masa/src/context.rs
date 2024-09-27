@@ -9,7 +9,6 @@ pub struct Context {
     request_id: RequestID,
     deadline: Timestamp,
     latest_exec_at: Timestamp,
-    send_at: Timestamp,
 }
 
 impl Context {
@@ -19,14 +18,12 @@ impl Context {
         request_id: RequestID,
         deadline: Timestamp,
         latest_exec_at: Timestamp,
-        send_at: Timestamp,
     ) -> Self {
         Self {
             graph_id,
             request_id,
             deadline,
             latest_exec_at,
-            send_at,
         }
     }
 
@@ -40,10 +37,10 @@ impl Context {
         self.request_id
     }
 
-    /// Get the send timestamp.
-    pub fn send_at(&self) -> Timestamp {
-        self.send_at
-    }
+    // /// Get the send timestamp.
+    // pub fn send_at(&self) -> Timestamp {
+    //     self.send_at
+    // }
 
     /// Get the deadline.
     pub fn deadline(&self) -> Timestamp {

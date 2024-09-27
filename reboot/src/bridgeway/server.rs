@@ -97,7 +97,6 @@ impl WorkerImpl {
             ctx.request_id(),
             deadline,
             latest_exec_at,
-            time_now(),
         );
         request.metadata_mut().insert_ctx("ctx", &child_ctx);
     }
@@ -125,7 +124,7 @@ impl Worker for WorkerImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        log::info!("ctx: {:?}", ctx);
+        log::warn!("ctx: {:?}", ctx);
 
         let spans = graph.spans();
         assert!(spans.len() == 3);
@@ -166,7 +165,7 @@ impl Worker for WorkerImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        log::info!("ctx: {:?}", ctx);
+        log::warn!("ctx: {:?}", ctx);
 
         let spans = graph.spans();
         assert!(spans.len() == 3);
@@ -207,7 +206,7 @@ impl Worker for WorkerImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        log::info!("ctx: {:?}", ctx);
+        log::warn!("ctx: {:?}", ctx);
 
         let spans = graph.spans();
         assert!(spans.len() == 3);
@@ -248,7 +247,7 @@ impl Worker for WorkerImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        log::info!("ctx: {:?}", ctx);
+        log::warn!("ctx: {:?}", ctx);
 
         let spans = graph.spans();
         assert!(spans.len() == 2);
