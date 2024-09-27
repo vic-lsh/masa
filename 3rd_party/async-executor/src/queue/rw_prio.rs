@@ -14,9 +14,8 @@ pub(crate) struct RwPriorityQueue<T> {
 impl<T: Ord + PartialOrd> Queue for RwPriorityQueue<T> {
     type Item = T;
 
-    fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
-        self.with_write_lock(|mut q| q.push(item));
-        Ok(())
+    fn push(&self, _item: Self::Item) -> Result<(), PushError<Self::Item>> {
+        panic!("Not implemented");
     }
 
     fn push_with_prio(
@@ -24,7 +23,8 @@ impl<T: Ord + PartialOrd> Queue for RwPriorityQueue<T> {
         item: Self::Item,
         _ddl: PriorityHint,
     ) -> Result<(), PushError<Self::Item>> {
-        self.push(item)
+        self.with_write_lock(|mut q| q.push(item));
+        Ok(())
     }
 
     fn pop(&self) -> Result<Self::Item, PopError> {

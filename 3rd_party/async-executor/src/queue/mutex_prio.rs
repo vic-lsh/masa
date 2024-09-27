@@ -13,16 +13,8 @@ pub(crate) struct MutexPriorityQueue<T> {
 impl<T: Ord + PartialOrd> Queue for MutexPriorityQueue<T> {
     type Item = T;
 
-    fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
-        self.with_locked(|mut q| {
-            // [TODO] Quantify queueing length and latency.
-            // let n_smaller = q.iter().filter(|&e| e > &item).count();
-            // let n_smaller_pctl = n_smaller * 100 / (q.len() + 1);
-            // info!("Pushed runnable to queue, pqueue rank: {}", n_smaller_pctl);
-
-            q.push(item);
-        });
-        Ok(())
+    fn push(&self, _item: Self::Item) -> Result<(), PushError<Self::Item>> {
+        panic!("Not implemented");
     }
 
     fn push_with_prio(
@@ -30,7 +22,10 @@ impl<T: Ord + PartialOrd> Queue for MutexPriorityQueue<T> {
         item: Self::Item,
         _prio: PriorityHint,
     ) -> Result<(), PushError<Self::Item>> {
-        self.push(item)
+        self.with_locked(|mut q| {
+            q.push(item);
+        });
+        Ok(())
     }
 
     fn pop(&self) -> Result<Self::Item, PopError> {
