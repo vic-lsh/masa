@@ -1,6 +1,7 @@
 mod context;
 mod deadline;
 mod distribution;
+mod flag;
 mod graph;
 mod span;
 mod tracker;
@@ -9,31 +10,8 @@ mod typing;
 pub use context::Context;
 pub use deadline::DeadlineHint;
 pub use distribution::Distribution;
+pub use flag::{EST_ONLINE, QUEUE_EDF};
 pub use graph::{GlobalGraph, GlobalGraphTracker, LocalGraph, LocalGraphTracker};
 pub use span::{Span, SpanTracker};
 pub use tracker::LatencyTracker;
 pub use typing::{Address, GraphID, Latency, Path, RequestID, Timestamp};
-
-pub const QUEUE_EDF: bool = if cfg!(feature = "queue_edf") {
-    true
-} else {
-    false
-};
-
-pub const EST_ONLINE: bool = if cfg!(feature = "est_online") {
-    true
-} else {
-    false
-};
-
-pub const MOCK_DIST: bool = if cfg!(feature = "mock_dist") {
-    true
-} else {
-    false
-};
-
-pub const MOCK_HOTEL: bool = if cfg!(feature = "mock_hotel") {
-    true
-} else {
-    false
-};
