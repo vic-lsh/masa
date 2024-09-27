@@ -20,7 +20,7 @@ use tonic_masa::PriorityHint;
 pub trait ConnStreamExec<F, B: HttpBody>: Clone {
     fn execute_h2stream(&mut self, fut: H2Stream<F, B>);
 
-    fn execute_h2stream_with_ddl(&mut self, fut: H2Stream<F, B>, ddl: PriorityHint);
+    fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: PriorityHint);
 }
 
 #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
@@ -44,7 +44,7 @@ pub enum Exec {
 // ===== impl Exec =====
 
 impl Exec {
-    pub(crate) fn execute<F>(&self, fut: F, ddl: PriorityHint)
+    pub(crate) fn execute<F>(&self, fut: F, prio: PriorityHint)
     where
         F: Future<Output = ()> + Send + 'static,
     {
@@ -61,7 +61,7 @@ impl Exec {
                 }
             }
             Exec::Executor(ref e) => {
-                e.execute(Box::pin(fut), ddl);
+                e.execute(Box::pin(fut), prio);
             }
         }
     }
@@ -83,8 +83,8 @@ where
         self.execute(fut, PriorityHint::infra())
     }
 
-    fn execute_h2stream_with_ddl(&mut self, fut: H2Stream<F, B>, ddl: PriorityHint) {
-        self.execute(fut, ddl)
+    fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: PriorityHint) {
+        self.execute(fut, prio)
     }
 }
 
@@ -113,8 +113,8 @@ where
         self.execute(fut, PriorityHint::infra())
     }
 
-    fn execute_h2stream_with_ddl(&mut self, fut: H2Stream<F, B>, ddl: PriorityHint) {
-        self.execute(fut, ddl)
+    fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: PriorityHint) {
+        self.execute(fut, prio)
     }
 }
 

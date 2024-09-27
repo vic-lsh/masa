@@ -37,10 +37,10 @@ impl<T> Queue for ConcurrentFifoQueue<T> {
         })
     }
 
-    fn push_with_ddl(
+    fn push_with_prio(
         &self,
         item: Self::Item,
-        _ddl: PriorityHint,
+        _prio: PriorityHint,
     ) -> Result<(), PushError<Self::Item>> {
         self.push(item)
     }

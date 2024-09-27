@@ -19,7 +19,7 @@ impl<T: Ord + PartialOrd> Queue for RwPriorityQueue<T> {
         Ok(())
     }
 
-    fn push_with_ddl(
+    fn push_with_prio(
         &self,
         item: Self::Item,
         _ddl: PriorityHint,
@@ -36,7 +36,6 @@ impl<T: Ord + PartialOrd> Queue for RwPriorityQueue<T> {
     }
 
     fn is_full(&self) -> bool {
-        // [NOTE] this implementation is unbounded so it's never full
         false
     }
 
