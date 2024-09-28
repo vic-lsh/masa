@@ -28,15 +28,19 @@ use bridge::{
     worker_server::{Worker, WorkerServer},
     HelloReply, HelloRequest,
 };
-use common::{busy_spin, time_now, VirtualServer};
+use common::{busy_spin, get_global_graphs, time_now, VirtualServer, get_local_graphs};
 use exec::ExecImpl;
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Server for benchmarking")]
 pub struct Args {
-    #[structopt(short, long, required = true)]
+    #[structopt(long, required = true)]
+    pub graph_ids: Vec<String>,
+    #[structopt(long, required = true)]
+    pub slos: Vec<u64>,
+    #[structopt(long, required = true)]
     pub n_hops: usize,
-    #[structopt(short, long, required = true)]
+    #[structopt(long, required = true)]
     pub n_threads: usize,
 }
 
@@ -206,7 +210,7 @@ impl Worker for WorkerImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        log::warn!("ctx: {:?}", ctx);
+        log::warn!("say_hello_i2, ctx: {:?}", ctx);
 
         let spans = graph.spans();
         assert!(spans.len() == 3);
@@ -247,7 +251,7 @@ impl Worker for WorkerImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        log::warn!("ctx: {:?}", ctx);
+        log::warn!("say_hello_i1, ctx: {:?}", ctx);
 
         let spans = graph.spans();
         assert!(spans.len() == 2);
@@ -283,25 +287,7 @@ impl Worker for WorkerImpl {
     }
 }
 
-fn get_global_graph(args: Args) -> GlobalGraph {
-    assert!(args.n_hops > 0);
-    assert!(args.n_hops <= 4);
-
-    let global_graph = {
-        if args.n_hops == 1 {
-            graph::get_global_graph_i1()
-        } else if args.n_hops == 2 {
-            graph::get_global_graph_i2()
-        } else if args.n_hops == 4 {
-            graph::get_global_graph_i4()
-        } else {
-            panic!("Unsupported n_hops: {}", args.n_hops);
-        }
-    };
-    global_graph
-}
-
-fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
+fn get_servers(args: Args, global_graphs: &Vec<GlobalGraph>) -> Vec<VirtualServer> {
     let mut servers = Vec::new();
 
     if args.n_hops >= 1 {
@@ -309,14 +295,7 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
             let addr: Address = "[::1]:50051".to_string();
             let conn_addrs = HashMap::new();
             let path: Path = "/bridge.Worker/SayHelloI1".to_string();
-            let local_graphs = {
-                let mut graphs = HashMap::new();
-                graphs.insert(
-                    global_graph.graph_id().clone(),
-                    global_graph.get_local_graph(&path).clone(),
-                );
-                graphs
-            };
+            let local_graphs = get_local_graphs(global_graphs, &path);
             let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
             server
         };
@@ -332,14 +311,7 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
                 "http://[::1]:50051".to_string() as Address,
             );
             let path: Path = "/bridge.Worker/SayHelloI2".to_string();
-            let local_graphs = {
-                let mut graphs = HashMap::new();
-                graphs.insert(
-                    global_graph.graph_id().clone(),
-                    global_graph.get_local_graph(&path).clone(),
-                );
-                graphs
-            };
+            let local_graphs = get_local_graphs(global_graphs, &path);
             let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
             server
         };
@@ -355,14 +327,7 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
                 "http://[::1]:50052".to_string() as Address,
             );
             let path: Path = "/bridge.Worker/SayHelloI3".to_string();
-            let local_graphs = {
-                let mut graphs = HashMap::new();
-                graphs.insert(
-                    global_graph.graph_id().clone(),
-                    global_graph.get_local_graph(&path).clone(),
-                );
-                graphs
-            };
+            let local_graphs = get_local_graphs(global_graphs, &path);
             let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
             server
         };
@@ -378,14 +343,7 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
                 "http://[::1]:50053".to_string() as Address,
             );
             let path: Path = "/bridge.Worker/SayHelloI4".to_string();
-            let local_graphs = {
-                let mut graphs = HashMap::new();
-                graphs.insert(
-                    global_graph.graph_id().clone(),
-                    global_graph.get_local_graph(&path).clone(),
-                );
-                graphs
-            };
+            let local_graphs = get_local_graphs(global_graphs, &path);
             let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
             server
         };
@@ -448,8 +406,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
     let args = Args::from_args();
-    let global_graph = get_global_graph(args.clone());
-    let servers = get_servers(args.clone(), global_graph.clone());
+    let global_graphs = get_global_graphs(&args.graph_ids, &args.slos);
+    let servers = get_servers(args.clone(), &global_graphs);
     let handles = start_servers(servers).await;
     for h in handles {
         h.await.unwrap();
