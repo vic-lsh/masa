@@ -5,13 +5,19 @@ use crate::{GraphID, Latency, Path, Span, SpanTracker};
 /// Represent a local graph inner.
 #[derive(Debug, Default, Clone)]
 pub struct LocalGraph {
+    graph_id: GraphID,
     spans: Vec<Span>,
 }
 
 impl LocalGraph {
     /// Create a new local graph inner.
-    pub fn new(spans: Vec<Span>) -> Self {
-        Self { spans }
+    pub fn new(graph_id: GraphID, spans: Vec<Span>) -> Self {
+        Self { graph_id, spans }
+    }
+
+    /// Get the graph ID.
+    pub fn graph_id(&self) -> &GraphID {
+        &self.graph_id
     }
 
     /// Get the spans.
@@ -23,24 +29,26 @@ impl LocalGraph {
 /// Represent a local graph.
 #[derive(Debug, Default)]
 pub struct LocalGraphTracker {
+    graph_id: GraphID,
     spans: Vec<SpanTracker>,
 }
 
 impl From<LocalGraph> for LocalGraphTracker {
     fn from(local_graph: LocalGraph) -> Self {
+        let graph_id = local_graph.graph_id().clone();
         let spans = local_graph
             .spans
             .iter()
             .map(|span| SpanTracker::from(span.clone()))
             .collect();
-        Self::new(spans)
+        Self::new(graph_id, spans)
     }
 }
 
 impl LocalGraphTracker {
     /// Create a new graph.
-    pub fn new(spans: Vec<SpanTracker>) -> Self {
-        Self { spans }
+    pub fn new(graph_id: GraphID, spans: Vec<SpanTracker>) -> Self {
+        Self { graph_id, spans }
     }
 
     /// Get the spans.
@@ -60,7 +68,8 @@ impl LocalGraphTracker {
             suffix_sum += span.estimate();
         }
         log::warn!(
-            "estimate_suffix_deadline, path: {}, suffix_sum: {}",
+            "estimate_suffix_deadline, graph_id: {:?}, path: {:?}, suffix_sum: {}",
+            self.graph_id,
             path,
             suffix_sum
         );
@@ -80,7 +89,8 @@ impl LocalGraphTracker {
             }
         }
         log::warn!(
-            "estimate_suffix_latest_exec_at, path: {}, suffix_sum: {}",
+            "estimate_suffix_latest_exec_at, graph_id: {:?}, path: {:?}, suffix_sum: {}",
+            self.graph_id,
             path,
             suffix_sum
         );
@@ -90,7 +100,12 @@ impl LocalGraphTracker {
 
     /// Track the latency of a span indexed by its path.
     pub fn track_span(&mut self, path: &Path, latency: Latency) {
-        log::warn!("track, path: {}, latency: {}", path, latency);
+        log::warn!(
+            "track, graph_id: {:?}, path: {:?}, latency: {}",
+            self.graph_id,
+            path,
+            latency
+        );
         for span in self.spans.iter_mut() {
             if span.path() == path {
                 span.track(latency);
@@ -106,6 +121,7 @@ impl LocalGraphTracker {
 pub struct GlobalGraph {
     graph_id: GraphID,
     local_graphs: HashMap<Path, LocalGraph>,
+    slo: Latency,
 }
 
 impl GlobalGraph {
@@ -114,6 +130,7 @@ impl GlobalGraph {
         Self {
             graph_id,
             local_graphs,
+            slo: 0,
         }
     }
 
@@ -128,9 +145,14 @@ impl GlobalGraph {
         &self.local_graphs[path]
     }
 
-    /// Get the source local graph.
-    pub fn get_source(&self) -> &LocalGraph {
-        panic!("Deprecated");
+    /// Set the SLO.
+    pub fn set_slo(&mut self, slo: Latency) {
+        self.slo = slo;
+    }
+
+    /// Get the SLO.
+    pub fn slo(&self) -> Latency {
+        self.slo
     }
 }
 
@@ -171,10 +193,5 @@ impl GlobalGraphTracker {
     pub fn get_local_graph(&self, path: &Path) -> &LocalGraphTracker {
         assert!(self.local_graphs.contains_key(path));
         &self.local_graphs[path]
-    }
-
-    /// Get the source local graph.
-    pub fn get_source(&self) -> &LocalGraphTracker {
-        panic!("Deprecated");
     }
 }

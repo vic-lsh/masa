@@ -36,6 +36,8 @@ for mode in "${modes[@]}"; do
 		--release \
 		--features "$mode" \
 		--bin bridgeway_server -- \
+		--graph-ids I2_1 I2_2 \
+		--slos 10000 20000 \
 		--n-hops 2 \
 		--n-threads 1 \
 		>$path/tmp_server_test.log 2>&1 &
@@ -53,12 +55,12 @@ for mode in "${modes[@]}"; do
 			--release \
 			--features "$mode" \
 			--bin bridgeway_client_bench -- \
-			--slo 10000 \
+			--graph-ids I2_1 I2_2 \
+			--slos 10000 20000 \
 			--rps $rps \
 			--secs 10 \
 			--concurrency 512 \
 			--output $path/r${rps}_test.csv \
-			--graph-id I2 \
 			--addr http://[::1]:50052 \
 			>$path/tmp_client_test.log 2>&1
 	done
