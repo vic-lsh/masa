@@ -1,5 +1,3 @@
-use core::time;
-use env_logger::fmt::Timestamp;
 use log::error;
 use std::fmt::Write; // For using the `write!` macro
 use std::fs::File;
@@ -9,8 +7,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const CUSTOM_EPOCH: i64 = 1514764800000;
-static mut CURRENT_TIMESTAMP: i64 = -1;
-static mut COUNTER: i64 = 0;
 use tonic::{transport::Server, Request, Response, Status};
 
 use unique_id_service::greeter_server::{Greeter, GreeterServer};
@@ -77,15 +73,7 @@ impl Greeter for MyGreeter {
         // Part3:
         // Do the same thing for idx
         // Fix size to 3
-        let mut counter_hex = String::new();
-        write!(&mut counter_hex, "{:x}", idx).unwrap();
-
-        if counter_hex.len() > 3 {
-            counter_hex = counter_hex[counter_hex.len() - 3..].to_string();
-        } else if counter_hex.len() < 3 {
-            let padding = "0".repeat(3 - counter_hex.len()); // Create the necessary padding with '0's
-            counter_hex = format!("{}{}", padding, counter_hex); // Prepend the padding
-        }
+        let counter_hex = get_counter_hex(idx);
 
         // Part4: assign value to _machine_id
         // Initialize the random number generator
@@ -101,6 +89,7 @@ impl Greeter for MyGreeter {
     }
 }
 
+// Add a function to class MyGreeter
 impl MyGreeter {
     pub fn new(machine_id: String) -> Self {
         MyGreeter {
@@ -154,21 +143,36 @@ fn get_machine_id(netif: &str) -> String {
     mac_hash
 }
 
+/*  Change timestamp to a hexadecimal string,
+    Fix size to 10
+*/
 fn get_timestamp_hex(timestamp: i64) -> String {
-    // Part2:
-    // Change timestamp to a 16 hex string
-    // Fix size to 10
     let mut timestamp_hex = String::new();
     write!(&mut timestamp_hex, "{:x}", timestamp).unwrap();
 
     if timestamp_hex.len() > 10 {
         timestamp_hex = timestamp_hex[timestamp_hex.len() - 10..].to_string();
-    // Slice the last 3 characters
     } else if timestamp_hex.len() < 10 {
         let padding = "0".repeat(10 - timestamp_hex.len()); // Create the necessary padding with '0's
         timestamp_hex = format!("{}{}", padding, timestamp_hex); // Prepend the padding
     }
     timestamp_hex
+}
+
+/*  Change idx to a hexadecimal string,
+   Fix size to 3
+*/
+fn get_counter_hex(idx: i64) -> String {
+    let mut counter_hex = String::new();
+    write!(&mut counter_hex, "{:x}", idx).unwrap();
+
+    if counter_hex.len() > 3 {
+        counter_hex = counter_hex[counter_hex.len() - 3..].to_string();
+    } else if counter_hex.len() < 3 {
+        let padding = "0".repeat(3 - counter_hex.len()); // Create the necessary padding with '0's
+        counter_hex = format!("{}{}", padding, counter_hex); // Prepend the padding
+    }
+    counter_hex
 }
 
 /* produces a 16-bit hash value by combining the MAC address and process ID,
@@ -216,5 +220,13 @@ mod tests {
         assert_eq!(timestamp_hex2, "75ba6ca2ba");
         let timestamp_hex3 = get_timestamp_hex(123);
         assert_eq!(timestamp_hex3, "000000007b");
+    }
+
+    #[test]
+    fn counter_hex_test() {
+        let counter_hex = get_counter_hex(1);
+        assert_eq!(counter_hex, "001");
+        let counter_hex2 = get_counter_hex(123456);
+        assert_eq!(counter_hex2, "240");
     }
 }
