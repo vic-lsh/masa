@@ -67,7 +67,7 @@ impl LocalGraphTracker {
             }
             suffix_sum += span.estimate();
         }
-        log::warn!(
+        log::info!(
             "estimate_suffix_deadline, graph_id: {:?}, path: {:?}, suffix_sum: {}",
             self.graph_id,
             path,
@@ -88,7 +88,7 @@ impl LocalGraphTracker {
                 break;
             }
         }
-        log::warn!(
+        log::info!(
             "estimate_suffix_latest_exec_at, graph_id: {:?}, path: {:?}, suffix_sum: {}",
             self.graph_id,
             path,
@@ -100,7 +100,7 @@ impl LocalGraphTracker {
 
     /// Track the latency of a span indexed by its path.
     pub fn track_span(&mut self, path: &Path, latency: Latency) {
-        log::warn!(
+        log::info!(
             "track, graph_id: {:?}, path: {:?}, latency: {}",
             self.graph_id,
             path,

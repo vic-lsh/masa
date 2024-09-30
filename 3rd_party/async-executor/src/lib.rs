@@ -1100,7 +1100,7 @@ impl Ticker<'_> {
                     }
                     Some(r) => {
                         log::info!(
-                            "Pop runnable from queue, now: {}, task: {:p}, deadline: {}",
+                            "Pop runnable from queue, now: {}, task: {:p}, priority: {}",
                             time_now(),
                             r.ptr_to_u64() as *const (),
                             r.priority().value()

@@ -28,7 +28,7 @@ use bridge::{
     worker_server::{Worker, WorkerServer},
     HelloReply, HelloRequest,
 };
-use common::{busy_spin, get_global_graphs, time_now, VirtualServer, get_local_graphs};
+use common::{busy_spin, get_global_graphs, get_local_graphs, time_now, VirtualServer};
 use exec::ExecImpl;
 
 #[derive(StructOpt, Debug, Clone)]
@@ -128,7 +128,7 @@ impl Worker for WorkerImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        log::warn!("ctx: {:?}", ctx);
+        log::info!("say_hello_i4, ctx: {:?}", ctx);
 
         let spans = graph.spans();
         assert!(spans.len() == 3);
@@ -169,7 +169,7 @@ impl Worker for WorkerImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        log::warn!("ctx: {:?}", ctx);
+        log::info!("say_hello_i3, ctx: {:?}", ctx);
 
         let spans = graph.spans();
         assert!(spans.len() == 3);
@@ -210,7 +210,7 @@ impl Worker for WorkerImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        log::warn!("say_hello_i2, ctx: {:?}", ctx);
+        log::info!("say_hello_i2, ctx: {:?}", ctx);
 
         let spans = graph.spans();
         assert!(spans.len() == 3);
@@ -251,7 +251,7 @@ impl Worker for WorkerImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        log::warn!("say_hello_i1, ctx: {:?}", ctx);
+        log::info!("say_hello_i1, ctx: {:?}", ctx);
 
         let spans = graph.spans();
         assert!(spans.len() == 2);
