@@ -17,7 +17,9 @@ plt.rcParams.update(
     }
 )
 
-MODES = ["queue_edf", "queue_fifo_two", "queue_fifo"]
+MODES = ["prio_local", "fifo"]
+# GRAPH_IDS = ["I2_1", "I2_2"]
+GRAPH_IDS = ["I2_1"]
 COLORS = ["tab:blue", "tab:orange", "tab:purple"]
 
 
@@ -41,10 +43,10 @@ def plot_cdf(results: Dict[str, List[int]], title: str, fig_name: str):
         )
         plt.scatter([p99], [0.99], color="forestgreen")
 
-    p99_ratio_masa_fifo = p99s["queue_edf"] * 100 / p99s["queue_fifo"]
-    p99_ratio_fifo_masa = p99s["queue_fifo"] * 100 / p99s["queue_edf"]
-    plt.plot([], [], " ", label=f"masa/fifo: {round(p99_ratio_masa_fifo)}%")
-    plt.plot([], [], " ", label=f"fifo/masa: {round(p99_ratio_fifo_masa)}%")
+    # p99_ratio_masa_fifo = p99s["queue_edf"] * 100 / p99s["queue_fifo"]
+    # p99_ratio_fifo_masa = p99s["queue_fifo"] * 100 / p99s["queue_edf"]
+    # plt.plot([], [], " ", label=f"masa/fifo: {round(p99_ratio_masa_fifo)}%")
+    # plt.plot([], [], " ", label=f"fifo/masa: {round(p99_ratio_fifo_masa)}%")
 
     plt.xlabel("Latency (ms)")
     plt.ylabel("CDF")
@@ -78,9 +80,9 @@ def plot_pdf(results: Dict[str, List[int]], title: str, fig_name: str):
             color=COLORS[i],
         )
 
-        plt.plot(
-            [], [], " ", label=f"{mode} sum: {sum_value:.2f}ms", color="forestgreen"
-        )
+        # plt.plot(
+        #     [], [], " ", label=f"{mode} sum: {sum_value:.2f}ms", color="forestgreen"
+        # )
         plt.plot(
             [],
             [],
