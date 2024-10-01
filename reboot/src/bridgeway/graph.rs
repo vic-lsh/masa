@@ -157,7 +157,7 @@ pub fn get_global_graph_i2_1() -> GlobalGraph {
         let n_samples = 1_000;
         let n_percentiles = 1_000;
         let tracker_capacity = Some(100);
-        let mean = 16_000;
+        let mean = 1_000;
         graphs.insert(
             "/bridge.Worker/SayHelloI2".to_string() as Path,
             LocalGraph::new(
@@ -226,7 +226,7 @@ pub fn get_global_graph_i2_2() -> GlobalGraph {
         let n_samples = 1_000;
         let n_percentiles = 1_000;
         let tracker_capacity = Some(100);
-        let mean = 20_000;
+        let mean = 2_000;
         graphs.insert(
             "/bridge.Worker/SayHelloI2".to_string() as Path,
             LocalGraph::new(
