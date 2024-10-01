@@ -45,7 +45,9 @@ pub fn busy_spin(duration: Duration) {
 }
 
 fn get_global_graph(graph_id: &GraphID) -> GlobalGraph {
-    if graph_id == "I2" {
+    if graph_id == "I1" {
+        graph::get_global_graph_i1()
+    } else if graph_id == "I2" {
         graph::get_global_graph_i2()
     } else if graph_id == "I2_1" {
         graph::get_global_graph_i2_1()

@@ -110,7 +110,7 @@ pub(crate) struct RawTask<F, T, S, M> {
     // All generic except for M are type erased (i.e., we have Runnable<M>, not
     // Runnable<F, T, S, M>). To retrieve `ddl` from Runnable, we can only
     // depend on size information of M, not the other generics.
-    pub(crate) ddl: *mut PriorityHint,
+    pub(crate) prio: *mut PriorityHint,
 
     /// The schedule function.
     pub(crate) schedule: *const S,
@@ -243,7 +243,7 @@ where
             });
 
             // Write the deadline hint to the task.
-            (raw.ddl as *mut PriorityHint).write(deadline);
+            (raw.prio as *mut PriorityHint).write(deadline);
 
             // Write the schedule function as the third field of the task.
             (raw.schedule as *mut S).write(schedule);
@@ -268,7 +268,7 @@ where
             Self {
                 header: p as *const Header<M>,
                 schedule: p.add(task_layout.offset_s) as *const S,
-                ddl: p.add(task_layout.offset_d) as *mut PriorityHint,
+                prio: p.add(task_layout.offset_d) as *mut PriorityHint,
                 future: p.add(task_layout.offset_f) as *mut F,
                 output: p.add(task_layout.offset_r) as *mut Result<T, Panic>,
             }
@@ -624,7 +624,7 @@ where
 
         match poll {
             Poll::Ready(out) => {
-                // log::info!("RawTask completed, task: {:p}, ddl: {}", ptr, ddl_after.value());
+                // log::info!("RawTask completed, task: {:p}, prio: {}", ptr, ddl_after.value());
 
                 // Replace the future with its output.
                 Self::drop_future(ptr);
