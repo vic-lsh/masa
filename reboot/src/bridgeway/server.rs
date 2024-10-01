@@ -71,32 +71,30 @@ impl WorkerImpl {
 
     fn set_child_ctx(&self, ctx: &Context, request: &mut Request<HelloRequest>, path: &Path) {
         let deadline = {
-            // if PRIO_LOCAL {
-            //     let graph = self
-            //         .local_graph_trackers
-            //         .get(ctx.graph_id())
-            //         .unwrap()
-            //         .read()
-            //         .unwrap();
-            //     ctx.deadline() - graph.estimate_suffix_deadline(path)
-            // } else {
-            //     ctx.deadline()
-            // }
-            ctx.deadline()
+            if PRIO_LOCAL {
+                let graph = self
+                    .local_graph_trackers
+                    .get(ctx.graph_id())
+                    .unwrap()
+                    .read()
+                    .unwrap();
+                ctx.deadline() - graph.estimate_suffix_deadline(path)
+            } else {
+                ctx.deadline()
+            }
         };
         let latest_exec_at = {
-            // if PRIO_LOCAL {
-            //     let graph = self
-            //         .local_graph_trackers
-            //         .get(ctx.graph_id())
-            //         .unwrap()
-            //         .read()
-            //         .unwrap();
-            //     ctx.deadline() - graph.estimate_suffix_latest_exec_at(path)
-            // } else {
-            //     ctx.latest_exec_at()
-            // }
-            ctx.latest_exec_at()
+            if PRIO_LOCAL {
+                let graph = self
+                    .local_graph_trackers
+                    .get(ctx.graph_id())
+                    .unwrap()
+                    .read()
+                    .unwrap();
+                ctx.deadline() - graph.estimate_suffix_latest_exec_at(path)
+            } else {
+                ctx.latest_exec_at()
+            }
         };
         let child_ctx = Context::new(
             ctx.graph_id().clone(),
@@ -212,7 +210,7 @@ impl Worker for WorkerImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        log::info!("say_hello_i2, ctx: {:?}", ctx);
+        log::warn!("say_hello_i2, ctx: {:?}", ctx);
 
         let spans = graph.spans();
         assert!(spans.len() == 3);
@@ -253,7 +251,7 @@ impl Worker for WorkerImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        log::info!("say_hello_i1, ctx: {:?}", ctx);
+        log::warn!("say_hello_i1, ctx: {:?}", ctx);
 
         let spans = graph.spans();
         assert!(spans.len() == 2);
