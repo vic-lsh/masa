@@ -236,10 +236,10 @@ impl<'a> Executor<'a> {
     ///     println!("Hello world");
     /// });
     /// ```
-    pub fn spawn_with_ddl<T: Send + 'a>(
+    pub fn spawn_with_prio<T: Send + 'a>(
         &self,
         future: impl Future<Output = T> + Send + 'a,
-        ddl: PriorityHint,
+        prio: PriorityHint,
     ) -> Task<T> {
         // [NOTE] Capture backtrace in the deepest call stack that we understand.
         // Set `RUST_BACKTRACE=1` before cargo run. Use `--debug` for more information.
@@ -283,7 +283,7 @@ impl<'a> Executor<'a> {
         let mut active = self.state().active.lock().unwrap();
 
         // SAFETY: `T` and the future are `Send`.
-        unsafe { self.spawn_inner_with_ddl(future, ddl, &mut active) }
+        unsafe { self.spawn_inner_with_prio(future, prio, &mut active) }
     }
 
     /// Spawns many tasks onto the executor.
@@ -406,10 +406,10 @@ impl<'a> Executor<'a> {
     /// # Safety
     ///
     /// If this is an `Executor`, `F` and `T` must be `Send`.
-    unsafe fn spawn_inner_with_ddl<T: 'a>(
+    unsafe fn spawn_inner_with_prio<T: 'a>(
         &self,
         future: impl Future<Output = T> + 'a,
-        ddl: PriorityHint,
+        prio: PriorityHint,
         active: &mut Slab<Waker>,
     ) -> Task<T> {
         // Remove the task from the set of active tasks when the future finishes.
@@ -445,7 +445,7 @@ impl<'a> Executor<'a> {
         // `Waker`.
         let (runnable, task) = Builder::new()
             .propagate_panic(true)
-            .deadline(ddl)
+            .deadline(prio)
             .spawn_unchecked(|()| future, self.schedule());
         entry.insert(runnable.waker());
 
@@ -879,6 +879,15 @@ struct State {
 impl State {
     /// Creates state for a new executor.
     fn new() -> State {
+        if cfg!(feature = "prio_local") {
+            log::warn!("Enabled prio_local");
+        } else if cfg!(feature = "fifo_two") {
+            log::warn!("Enabled fifo_two");
+        } else if cfg!(feature = "fifo") {
+            log::warn!("Enabled fifo");
+        } else {
+            log::warn!("Enabled fifo (default)");
+        }
         State {
             queue: GlobalQueue::default(),
             local_queues: RwLock::new(Vec::new()),

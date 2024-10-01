@@ -156,7 +156,7 @@ where
 
         let ddl = PriorityHint::new(time_now() - self.start_at + self.ddl);
         self.ex
-            .spawn_with_ddl(Compat::new(fut), ddl)
+            .spawn_with_prio(Compat::new(fut), ddl)
             .fallible()
             .detach();
     }

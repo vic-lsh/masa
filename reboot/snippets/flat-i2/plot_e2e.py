@@ -3,7 +3,7 @@ from typing import *
 import pandas as pd
 from plot_core import GRAPH_IDS, MODES, plot_cdf, plot_pdf  # type: ignore
 
-rps = 50
+rps = 75
 
 graph_id_to_e2e: Dict[str, Dict[str, List[int]]] = DefaultDict(dict)
 for mode in MODES:

@@ -12,7 +12,7 @@ where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
 {
-    fn execute(&self, fut: F, _ddl: PriorityHint) {
+    fn execute(&self, fut: F, _prio: PriorityHint) {
         tokio::spawn(fut);
     }
 }
@@ -38,7 +38,7 @@ impl SharedExec {
 }
 
 impl Executor<BoxFuture<'static, ()>> for SharedExec {
-    fn execute(&self, fut: BoxFuture<'static, ()>, ddl: PriorityHint) {
-        self.inner.execute(fut, ddl);
+    fn execute(&self, fut: BoxFuture<'static, ()>, prio: PriorityHint) {
+        self.inner.execute(fut, prio);
     }
 }

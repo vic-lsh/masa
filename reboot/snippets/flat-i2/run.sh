@@ -2,11 +2,10 @@
 
 path="snippets/flat-i2"
 
-rps_values=(50)
+rps_values=(75)
 
-# modes=("prio_local" "fifo_two" "fifo")
+modes=("prio_local" "fifo_two" "fifo")
 # modes=("prio_local" "fifo")
-modes=("prio_local")
 
 server_pid=
 
@@ -28,25 +27,23 @@ for mode in "${modes[@]}"; do
 
 	# cargo build --features $mode >/dev/null 2>&1
 	cargo build \
-		--features "$mode" \
 		--release \
+		--features "$mode" \
 		>/dev/null 2>&1
 
 	# RUST_BACKTRACE=1 RUST_LOG=info \
 	# --graph-ids I2_1 I2_2 \
 	# --slos 30000 60000 \
-	# RUST_LOG=warn \
-	# RUST_BACKTRACE=1 RUST_LOG=info \
-	cargo run \
-		--features "prio_local" \
+	RUST_LOG=warn \
+		cargo run \
 		--release \
+		--features "$mode" \
 		--bin bridgeway_server -- \
 		--graph-ids I2_1 \
 		--slos 100000 \
 		--n-hops 2 \
-		--n-threads 1
-	# --n-threads 1 \
-	# >$path/tmp_server_${mode}.log 2>&1 &
+		--n-threads 1 \
+		>$path/tmp_server_${mode}.log 2>&1 &
 
 	server_pid=$!
 
@@ -58,8 +55,8 @@ for mode in "${modes[@]}"; do
 		echo "Running benchmark for RPS: $rps..."
 
 		cargo run \
-			--features "$mode" \
 			--release \
+			--features "$mode" \
 			--bin bridgeway_client_bench -- \
 			--graph-ids I2_1 \
 			--slos 100000 \

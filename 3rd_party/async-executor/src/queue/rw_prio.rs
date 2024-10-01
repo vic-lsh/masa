@@ -21,7 +21,7 @@ impl<T: Ord + PartialOrd> Queue for RwPriorityQueue<T> {
     fn push_with_prio(
         &self,
         item: Self::Item,
-        _ddl: PriorityHint,
+        _prio: PriorityHint,
     ) -> Result<(), PushError<Self::Item>> {
         self.with_write_lock(|mut q| q.push(item));
         Ok(())

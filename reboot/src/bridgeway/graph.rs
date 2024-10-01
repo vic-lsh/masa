@@ -157,7 +157,7 @@ pub fn get_global_graph_i2_1() -> GlobalGraph {
         let n_samples = 1_000;
         let n_percentiles = 1_000;
         let tracker_capacity = Some(100);
-        let mean = 2_000;
+        let mean = 16_000;
         graphs.insert(
             "/bridge.Worker/SayHelloI2".to_string() as Path,
             LocalGraph::new(
@@ -226,7 +226,7 @@ pub fn get_global_graph_i2_2() -> GlobalGraph {
         let n_samples = 1_000;
         let n_percentiles = 1_000;
         let tracker_capacity = Some(100);
-        let mean = 4_000;
+        let mean = 16_000;
         graphs.insert(
             "/bridge.Worker/SayHelloI2".to_string() as Path,
             LocalGraph::new(
@@ -455,41 +455,45 @@ pub fn get_global_graph_i2() -> GlobalGraph {
     global_graph
 }
 
-// #[allow(dead_code)]
-// pub fn get_global_graph_i1() -> GlobalGraph {
-//     let local_graphs = {
-//         let mut rng = StdRng::seed_from_u64(998244353);
-//         let mut graphs = HashMap::new();
-//         let n_samples = 1_000;
-//         let n_percentiles = 1_000;
-//         let tracker_capacity = Some(100);
-//         let mean = 1_000;
-//         graphs.insert(
-//             "/bridge.Worker/SayHelloI1".to_string() as Path,
-//             LocalGraph::new(vec![
-//                 Span::new(
-//                     "/bridge.Worker/SayHelloI1/Head".to_string(),
-//                     Some(MasaDistribution::new(
-//                         mean / 2,
-//                         get_percentile_latencies(&mut rng, mean / 2, n_samples, n_percentiles),
-//                     )),
-//                     tracker_capacity,
-//                 ),
-//                 Span::new(
-//                     "/bridge.Worker/SayHelloI1/Tail".to_string(),
-//                     Some(MasaDistribution::new(
-//                         mean / 2,
-//                         get_percentile_latencies(&mut rng, mean / 2, n_samples, n_percentiles),
-//                     )),
-//                     tracker_capacity,
-//                 ),
-//             ]),
-//         );
-//         graphs
-//     };
-//     let global_graph = GlobalGraph::new("I1".to_string() as Path, local_graphs);
-//     global_graph
-// }
+#[allow(dead_code)]
+pub fn get_global_graph_i1() -> GlobalGraph {
+    let graph_id: Path = "I1".to_string();
+    let local_graphs = {
+        let mut rng = StdRng::seed_from_u64(998244353);
+        let mut graphs = HashMap::new();
+        let n_samples = 1_000;
+        let n_percentiles = 1_000;
+        let tracker_capacity = Some(100);
+        let mean = 16_000;
+        graphs.insert(
+            "/bridge.Worker/SayHelloI1".to_string() as Path,
+            LocalGraph::new(
+                graph_id.clone(),
+                vec![
+                    Span::new(
+                        "/bridge.Worker/SayHelloI1/Head".to_string(),
+                        Some(MasaDistribution::new(
+                            mean / 2,
+                            get_percentile_latencies(&mut rng, mean / 2, n_samples, n_percentiles),
+                        )),
+                        tracker_capacity,
+                    ),
+                    Span::new(
+                        "/bridge.Worker/SayHelloI1/Tail".to_string(),
+                        Some(MasaDistribution::new(
+                            mean / 2,
+                            get_percentile_latencies(&mut rng, mean / 2, n_samples, n_percentiles),
+                        )),
+                        tracker_capacity,
+                    ),
+                ],
+            ),
+        );
+        graphs
+    };
+    let global_graph = GlobalGraph::new(graph_id, local_graphs);
+    global_graph
+}
 
 fn get_percentile_latencies(
     rng: &mut StdRng,
