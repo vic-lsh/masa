@@ -2,7 +2,7 @@
 
 path="snippets/flat-i2"
 
-rps_values=(50)
+rps_values=(300 325 350 375 400 425 450)
 
 # modes=("prio_local" "fifo_two" "fifo")
 modes=("prio_local" "fifo_two")
@@ -32,15 +32,13 @@ for mode in "${modes[@]}"; do
 		>/dev/null 2>&1
 
 	# RUST_BACKTRACE=1 RUST_LOG=info \
-	# --graph-ids I2_1 I2_2 \
-	# --slos 30000 60000 \
 	RUST_LOG=warn \
 		cargo run \
 		--release \
 		--features "$mode" \
 		--bin bridgeway_server -- \
 		--graph-ids I2_1 I2_2 \
-		--slos 200000 400000 \
+		--slos 10000 20000 \
 		--n-hops 2 \
 		--n-threads 1 \
 		>$path/tmp_server_${mode}.log 2>&1 &
@@ -59,9 +57,9 @@ for mode in "${modes[@]}"; do
 			--features "$mode" \
 			--bin bridgeway_client_bench -- \
 			--graph-ids I2_1 I2_2 \
-			--slos 200000 400000 \
+			--slos 10000 20000 \
 			--rps $rps \
-			--secs 30 \
+			--secs 60 \
 			--concurrency 512 \
 			--output $path/r${rps}_${mode}.csv \
 			--addr http://[::1]:50052 \

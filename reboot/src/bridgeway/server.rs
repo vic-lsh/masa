@@ -128,7 +128,7 @@ impl Worker for WorkerImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        log::info!("say_hello_i4, ctx: {:?}", ctx);
+        log::warn!("say_hello_i4, ctx: {:?}", ctx);
 
         let spans = graph.spans();
         assert!(spans.len() == 3);
@@ -169,7 +169,7 @@ impl Worker for WorkerImpl {
     ) -> Result<Response<HelloReply>, Status> {
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        log::info!("say_hello_i3, ctx: {:?}", ctx);
+        log::warn!("say_hello_i3, ctx: {:?}", ctx);
 
         let spans = graph.spans();
         assert!(spans.len() == 3);
