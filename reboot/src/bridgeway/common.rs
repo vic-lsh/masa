@@ -53,6 +53,8 @@ fn get_global_graph(graph_id: &GraphID) -> GlobalGraph {
         graph::get_global_graph_i2_1()
     } else if graph_id == "I2_2" {
         graph::get_global_graph_i2_2()
+    } else if graph_id == "I4" {
+        graph::get_global_graph_i4()
     } else {
         panic!("Unsupported graph_id: {}", graph_id);
     }
