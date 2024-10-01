@@ -10,7 +10,7 @@ use tonic_masa::PriorityHint;
 /// An executor of futures.
 pub trait Executor<Fut> {
     /// Place a future with a deadline hint onto the executor.
-    fn execute(&self, fut: Fut, ddl: PriorityHint);
+    fn execute(&self, fut: Fut, prio: PriorityHint);
 }
 
 #[cfg(any(feature = "http1", feature = "http2", feature = "server"))]

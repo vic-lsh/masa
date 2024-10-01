@@ -62,6 +62,15 @@ impl LoadGenerator {
         client: WorkerClient<Channel>,
         trace_tx: Sender<Span>,
     ) -> Self {
+        if cfg!(feature = "prio_local") {
+            log::warn!("Enabled prio_local");
+        } else if cfg!(feature = "fifo_two") {
+            log::warn!("Enabled fifo_two");
+        } else if cfg!(feature = "fifo") {
+            log::warn!("Enabled fifo");
+        } else {
+            log::warn!("Enabled fifo (default)");
+        }
         LoadGenerator {
             rng,
             rps,

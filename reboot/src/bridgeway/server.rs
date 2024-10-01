@@ -71,30 +71,32 @@ impl WorkerImpl {
 
     fn set_child_ctx(&self, ctx: &Context, request: &mut Request<HelloRequest>, path: &Path) {
         let deadline = {
-            if PRIO_LOCAL {
-                let graph = self
-                    .local_graph_trackers
-                    .get(ctx.graph_id())
-                    .unwrap()
-                    .read()
-                    .unwrap();
-                ctx.deadline() - graph.estimate_suffix_deadline(path)
-            } else {
-                ctx.deadline()
-            }
+            // if PRIO_LOCAL {
+            //     let graph = self
+            //         .local_graph_trackers
+            //         .get(ctx.graph_id())
+            //         .unwrap()
+            //         .read()
+            //         .unwrap();
+            //     ctx.deadline() - graph.estimate_suffix_deadline(path)
+            // } else {
+            //     ctx.deadline()
+            // }
+            ctx.deadline()
         };
         let latest_exec_at = {
-            if PRIO_LOCAL {
-                let graph = self
-                    .local_graph_trackers
-                    .get(ctx.graph_id())
-                    .unwrap()
-                    .read()
-                    .unwrap();
-                ctx.deadline() - graph.estimate_suffix_latest_exec_at(path)
-            } else {
-                ctx.latest_exec_at()
-            }
+            // if PRIO_LOCAL {
+            //     let graph = self
+            //         .local_graph_trackers
+            //         .get(ctx.graph_id())
+            //         .unwrap()
+            //         .read()
+            //         .unwrap();
+            //     ctx.deadline() - graph.estimate_suffix_latest_exec_at(path)
+            // } else {
+            //     ctx.latest_exec_at()
+            // }
+            ctx.latest_exec_at()
         };
         let child_ctx = Context::new(
             ctx.graph_id().clone(),

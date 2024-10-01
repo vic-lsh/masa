@@ -542,11 +542,6 @@ impl<M> Builder<M> {
         };
 
         let runnable = Runnable::from_raw(ptr);
-        // [DEBUG] runnable.ddl here is not propagated to the task.
-        // println!(
-        //     "spawn_unchecked_with_ddl: runnable.ddl {:?}",
-        //     runnable.ddl()
-        // );
 
         let task = Task {
             ptr,
