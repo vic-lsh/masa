@@ -3,7 +3,7 @@
 path="snippets/flat-i4"
 
 # rps_values=(300 325 350 375 400 425 450)
-rps_values=(800)
+rps_values=(400 500 600)
 
 # modes=("prio_local" "fifo_two" "fifo")
 modes=("prio_local" "fifo_two")
@@ -38,8 +38,8 @@ for mode in "${modes[@]}"; do
 		--release \
 		--features "$mode" \
 		--bin bridgeway_server -- \
-		--graph-ids I4 \
-		--slos 20000 \
+		--graph-ids I4_1 I4_2 \
+		--slos 20000 40000 \
 		--n-hops 4 \
 		--n-threads 1 \
 		>$path/tmp_server_${mode}.log 2>&1 &
@@ -57,10 +57,10 @@ for mode in "${modes[@]}"; do
 			--release \
 			--features "$mode" \
 			--bin bridgeway_client_bench -- \
-			--graph-ids I4 \
-			--slos 20000 \
+			--graph-ids I4_1 I4_2 \
+			--slos 20000 40000 \
 			--rps $rps \
-			--secs 10 \
+			--secs 60 \
 			--concurrency 512 \
 			--output $path/r${rps}_${mode}.csv \
 			--addr http://[::1]:50054 \
