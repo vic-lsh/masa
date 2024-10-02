@@ -159,7 +159,7 @@ impl LoadGenerator {
                         client.say_hello_i1(request).await.unwrap();
                     } else if graph_id.contains("I2") {
                         client.say_hello_i2(request).await.unwrap();
-                    } else if graph_id == "I4" {
+                    } else if graph_id.contains("I4") {
                         client.say_hello_i4(request).await.unwrap();
                     } else {
                         panic!("Unsupported graph_id: {}", graph_id);
