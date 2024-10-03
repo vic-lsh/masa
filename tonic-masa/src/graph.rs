@@ -67,7 +67,7 @@ impl LocalGraphTracker {
             }
             suffix_sum += span.estimate();
         }
-        log::warn!(
+        log::info!(
             "estimate_suffix_deadline, graph_id: {:?}, path: {:?}, suffix_sum: {}",
             self.graph_id,
             path,
@@ -88,7 +88,7 @@ impl LocalGraphTracker {
                 break;
             }
         }
-        log::warn!(
+        log::info!(
             "estimate_suffix_latest_exec_at, graph_id: {:?}, path: {:?}, suffix_sum: {}",
             self.graph_id,
             path,

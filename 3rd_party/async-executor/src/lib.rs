@@ -844,13 +844,20 @@ impl<'a> Default for LocalExecutor<'a> {
     }
 }
 
-#[cfg(feature = "prio_local")]
+#[cfg(any(feature = "prio_local", feature = "prio_global"))]
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
 #[cfg(feature = "fifo_two")]
 type GlobalQueue<T> = queue::MutexFifoTwoQueue<T>;
 #[cfg(feature = "fifo")]
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
-#[cfg(not(any(feature = "prio_local", feature = "fifo_two", feature = "fifo")))]
+#[cfg(not(any(
+    feature = "prio_class",
+    feature = "prio_global",
+    feature = "prio_class_global",
+    feature = "prio_local",
+    feature = "fifo_two",
+    feature = "fifo"
+)))]
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 
 // [NOTE] The original implementation uses a concurrent queue for the global queue.
@@ -879,14 +886,20 @@ struct State {
 impl State {
     /// Creates state for a new executor.
     fn new() -> State {
-        if cfg!(feature = "prio_local") {
+        if cfg!(feature = "prio_class") {
+            log::warn!("Enabled prio_class");
+        } else if cfg!(feature = "prio_global") {
+            log::warn!("Enabled prio_global");
+        } else if cfg!(feature = "prio_class_global") {
+            log::warn!("Enabled prio_class_global");
+        } else if cfg!(feature = "prio_local") {
             log::warn!("Enabled prio_local");
         } else if cfg!(feature = "fifo_two") {
             log::warn!("Enabled fifo_two");
         } else if cfg!(feature = "fifo") {
             log::warn!("Enabled fifo");
         } else {
-            log::warn!("Enabled fifo (default)");
+            panic!("Not implemented policy");
         }
         State {
             queue: GlobalQueue::default(),

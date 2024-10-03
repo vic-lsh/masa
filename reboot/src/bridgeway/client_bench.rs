@@ -17,7 +17,7 @@ use structopt::StructOpt;
 use tokio::time::{Duration, Instant};
 
 use tonic::transport::Channel;
-use tonic_masa::{Context, GlobalGraph, PRIO_LOCAL};
+use tonic_masa::{Context, GlobalGraph, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_LOCAL};
 
 use bridge::{worker_client::WorkerClient, HelloRequest};
 use common::{fetch_traces, get_global_graphs, init_logging, time_now, Span};
@@ -62,14 +62,20 @@ impl LoadGenerator {
         client: WorkerClient<Channel>,
         trace_tx: Sender<Span>,
     ) -> Self {
-        if cfg!(feature = "prio_local") {
+        if cfg!(feature = "prio_class") {
+            log::warn!("Enabled prio_class");
+        } else if cfg!(feature = "prio_global") {
+            log::warn!("Enabled prio_global");
+        } else if cfg!(feature = "prio_class_global") {
+            log::warn!("Enabled prio_class_global");
+        } else if cfg!(feature = "prio_local") {
             log::warn!("Enabled prio_local");
         } else if cfg!(feature = "fifo_two") {
             log::warn!("Enabled fifo_two");
         } else if cfg!(feature = "fifo") {
             log::warn!("Enabled fifo");
         } else {
-            log::warn!("Enabled fifo (default)");
+            panic!("Not implemented policy");
         }
         LoadGenerator {
             rng,
@@ -124,22 +130,31 @@ impl LoadGenerator {
             elapse += value;
 
             let request_id = uniform.sample(&mut self.rng) as u64;
-            let request_class = uniform.sample(&mut self.rng) % self.global_graphs.len();
+            let request_class = request_id as usize % self.global_graphs.len();
             let graph_id = self.global_graphs[request_class].graph_id().clone();
             let slo = self.global_graphs[request_class].slo();
 
             let request = {
                 let deadline = {
-                    if PRIO_LOCAL {
+                    if PRIO_GLOBAL || PRIO_LOCAL {
                         let start_at = time_now() - init_at_u64;
                         start_at + slo
-                    } else {
+                    } else if FIFO_TWO || FIFO {
                         slo
+                    } else {
+                        panic!("Unimplemented policy")
                     }
                 };
                 // [TODO] This is a hack for client bench.
                 let latest_exec_at = deadline;
-                let ctx = Context::new(graph_id.clone(), request_id, deadline, latest_exec_at);
+                let request_class = request_class as u64;
+                let ctx = Context::new(
+                    graph_id.clone(),
+                    request_id,
+                    deadline,
+                    latest_exec_at,
+                    request_class,
+                );
                 let mut request = tonic::Request::new(request.clone());
                 request.metadata_mut().insert_ctx("ctx", &ctx);
                 request

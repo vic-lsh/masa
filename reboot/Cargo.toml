@@ -70,6 +70,9 @@ path = "src/bridgeway/server.rs"
 debug = true
 
 [features]
+prio_class = ["async-executor/prio_class", "tonic-masa/prio_class"]
+prio_global = ["async-executor/prio_global", "tonic-masa/prio_global"]
+prio_class_global = ["async-executor/prio_class_global", "tonic-masa/prio_class_global"]
 prio_local = ["async-executor/prio_local", "tonic-masa/prio_local"]
 fifo_two = ["async-executor/fifo_two", "tonic-masa/fifo_two"]
 fifo = ["async-executor/fifo", "tonic-masa/fifo"]
