@@ -157,7 +157,7 @@ pub fn get_global_graph_i4_1() -> GlobalGraph {
         let n_samples = 1_000;
         let n_percentiles = 1_000;
         let tracker_capacity = Some(100);
-        let mean = 1_000;
+        let mean = 4_000;
         graphs.insert(
             "/bridge.Worker/SayHelloI4".to_string() as Path,
             LocalGraph::new(
@@ -284,7 +284,7 @@ pub fn get_global_graph_i4_2() -> GlobalGraph {
         let n_samples = 1_000;
         let n_percentiles = 1_000;
         let tracker_capacity = Some(100);
-        let mean = 2_000;
+        let mean = 8_000;
         graphs.insert(
             "/bridge.Worker/SayHelloI4".to_string() as Path,
             LocalGraph::new(
@@ -549,7 +549,7 @@ pub fn get_global_graph_i4() -> GlobalGraph {
         let n_samples = 1_000;
         let n_percentiles = 1_000;
         let tracker_capacity = Some(100);
-        let mean = 1_000;
+        let mean = 4_000;
         graphs.insert(
             "/bridge.Worker/SayHelloI4".to_string() as Path,
             LocalGraph::new(
@@ -565,7 +565,7 @@ pub fn get_global_graph_i4() -> GlobalGraph {
                     ),
                     Span::new(
                         "/bridge.Worker/SayHelloI3".to_string(),
-                        None,
+                        Some(MasaDistribution::new(mean * 3, Vec::new())),
                         tracker_capacity,
                     ),
                     Span::new(
@@ -594,7 +594,7 @@ pub fn get_global_graph_i4() -> GlobalGraph {
                     ),
                     Span::new(
                         "/bridge.Worker/SayHelloI2".to_string(),
-                        None,
+                        Some(MasaDistribution::new(mean * 2, Vec::new())),
                         tracker_capacity,
                     ),
                     Span::new(
@@ -623,7 +623,7 @@ pub fn get_global_graph_i4() -> GlobalGraph {
                     ),
                     Span::new(
                         "/bridge.Worker/SayHelloI1".to_string(),
-                        None,
+                        Some(MasaDistribution::new(mean, Vec::new())),
                         tracker_capacity,
                     ),
                     Span::new(
@@ -745,7 +745,7 @@ pub fn get_global_graph_i1() -> GlobalGraph {
         let n_samples = 1_000;
         let n_percentiles = 1_000;
         let tracker_capacity = Some(100);
-        let mean = 16_000;
+        let mean = 1_000;
         graphs.insert(
             "/bridge.Worker/SayHelloI1".to_string() as Path,
             LocalGraph::new(
