@@ -15,3 +15,6 @@ pub type Address = String;
 
 /// Type alias for a request ID.
 pub type RequestID = u64;
+
+/// Type alias for a request class.
+pub type RequestClass = u64;

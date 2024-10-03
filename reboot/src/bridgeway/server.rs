@@ -19,8 +19,8 @@ use tonic::{
     Request, Response, Status,
 };
 use tonic_masa::{
-    Address, Context, GlobalGraph, Latency, LocalGraph, LocalGraphTracker, Path, ONLINE_TRACKER,
-    PRIO_LOCAL,
+    Address, Context, GlobalGraph, Latency, LocalGraph, LocalGraphTracker, Path, FIFO, FIFO_TWO,
+    ONLINE_TRACKER, PRIO_GLOBAL, PRIO_LOCAL,
 };
 
 use bridge::{
@@ -70,37 +70,29 @@ impl WorkerImpl {
     }
 
     fn set_child_ctx(&self, ctx: &Context, request: &mut Request<HelloRequest>, path: &Path) {
-        let deadline = {
-            if PRIO_LOCAL {
-                let graph = self
-                    .local_graph_trackers
-                    .get(ctx.graph_id())
-                    .unwrap()
-                    .read()
-                    .unwrap();
-                ctx.deadline() - graph.estimate_suffix_deadline(path)
-            } else {
-                ctx.deadline()
-            }
-        };
-        let latest_exec_at = {
-            if PRIO_LOCAL {
-                let graph = self
-                    .local_graph_trackers
-                    .get(ctx.graph_id())
-                    .unwrap()
-                    .read()
-                    .unwrap();
-                ctx.deadline() - graph.estimate_suffix_latest_exec_at(path)
-            } else {
-                ctx.latest_exec_at()
-            }
-        };
+        let deadline;
+        let latest_exec_at;
+        if PRIO_LOCAL {
+            let graph = self
+                .local_graph_trackers
+                .get(ctx.graph_id())
+                .unwrap()
+                .read()
+                .unwrap();
+            deadline = ctx.deadline() - graph.estimate_suffix_deadline(path);
+            latest_exec_at = ctx.deadline() - graph.estimate_suffix_latest_exec_at(path);
+        } else if PRIO_GLOBAL || FIFO_TWO || FIFO {
+            deadline = ctx.deadline();
+            latest_exec_at = ctx.latest_exec_at();
+        } else {
+            panic!("Unimplemented policy");
+        }
         let child_ctx = Context::new(
             ctx.graph_id().clone(),
             ctx.request_id(),
             deadline,
             latest_exec_at,
+            ctx.request_class(),
         );
         request.metadata_mut().insert_ctx("ctx", &child_ctx);
     }

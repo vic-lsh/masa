@@ -2,9 +2,10 @@
 
 path="snippets/flat-i1"
 
-rps_values=(75)
+rps_values=(900)
 
-modes=("prio_local" "fifo_two" "fifo")
+# modes=("prio_local" "prio_global" "fifo_two")
+modes=("prio_local" "prio_global")
 
 server_pid=
 
@@ -47,7 +48,7 @@ for mode in "${modes[@]}"; do
 	echo "Running server in mode: $mode..."
 
 	for rps in "${rps_values[@]}"; do
-		sleep 3
+		sleep 1
 
 		echo "Running benchmark for RPS: $rps..."
 
@@ -58,7 +59,7 @@ for mode in "${modes[@]}"; do
 			--graph-ids I1 \
 			--slos 100000 \
 			--rps $rps \
-			--secs 10 \
+			--secs 60 \
 			--concurrency 512 \
 			--output $path/r${rps}_${mode}.csv \
 			--addr http://[::1]:50051 \

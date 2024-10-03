@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{GraphID, RequestID, Timestamp};
+use crate::{GraphID, RequestClass, RequestID, Timestamp};
 
 /// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -9,6 +9,7 @@ pub struct Context {
     request_id: RequestID,
     deadline: Timestamp,
     latest_exec_at: Timestamp,
+    request_class: RequestClass,
 }
 
 impl Context {
@@ -18,12 +19,14 @@ impl Context {
         request_id: RequestID,
         deadline: Timestamp,
         latest_exec_at: Timestamp,
+        request_class: RequestClass,
     ) -> Self {
         Self {
             graph_id,
             request_id,
             deadline,
             latest_exec_at,
+            request_class,
         }
     }
 
@@ -50,6 +53,11 @@ impl Context {
     /// Get the latest execution timestamp.
     pub fn latest_exec_at(&self) -> Timestamp {
         self.latest_exec_at
+    }
+
+    /// Get the request class.
+    pub fn request_class(&self) -> RequestClass {
+        self.request_class
     }
 
     /// Create a new Masa context from JSON.
