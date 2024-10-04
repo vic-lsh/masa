@@ -139,6 +139,11 @@ impl GlobalGraph {
         &self.graph_id
     }
 
+    /// Check if a path is contained in the graph.
+    pub fn contains_path(&self, path: &Path) -> bool {
+        self.local_graphs.contains_key(path)
+    }
+
     /// Get a local graph indexed by its path.
     pub fn get_local_graph(&self, path: &Path) -> &LocalGraph {
         assert!(self.local_graphs.contains_key(path));

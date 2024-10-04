@@ -1,15 +1,14 @@
 #!/bin/bash
 
-path="snippets/flat-i4"
-modes=("prio_local" "prio_global" "fifo_two")
-# modes=("prio_local")
-rps_values=(450 500 550)
-graph_ids="I4_1 I4_2"
-slos="50000 200000"
-rps_ranges="4 5"
+path="snippets/flat-i4-two"
+# modes=("prio_local" "prio_global" "fifo_two")
+modes=("prio_local" "prio_global")
+rps_values=(300)
+graph_ids="I4_two_1 I4_two_2"
+slos="200000 200000"
 n_hops=4
-n_threads="4 4 4 4"
-secs=120
+n_threads=4
+secs=45
 
 ctrl_c_handler() {
 	echo ""
@@ -62,7 +61,6 @@ for mode in "${modes[@]}"; do
 			--bin bridgeway_client_bench -- \
 			--graph-ids $graph_ids \
 			--slos $slos \
-			--rps-ranges $rps_ranges \
 			--rps $rps \
 			--secs $secs \
 			--concurrency 512 \
