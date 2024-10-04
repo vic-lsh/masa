@@ -41,7 +41,7 @@ pub struct Args {
     #[structopt(long, required = true)]
     pub n_hops: usize,
     #[structopt(long, required = true)]
-    pub n_threads: usize,
+    pub n_threads: Vec<usize>,
 }
 
 pub struct WorkerImpl {
@@ -70,15 +70,15 @@ impl WorkerImpl {
     }
 
     fn set_child_ctx(&self, ctx: &Context, request: &mut Request<HelloRequest>, path: &Path) {
+        let graph = self
+            .local_graph_trackers
+            .get(ctx.graph_id())
+            .unwrap()
+            .read()
+            .unwrap();
         let deadline;
         let latest_exec_at;
         if PRIO_LOCAL {
-            let graph = self
-                .local_graph_trackers
-                .get(ctx.graph_id())
-                .unwrap()
-                .read()
-                .unwrap();
             deadline = ctx.deadline() - graph.estimate_suffix_deadline(path);
             latest_exec_at = ctx.deadline() - graph.estimate_suffix_latest_exec_at(path);
         } else if PRIO_GLOBAL || FIFO_TWO || FIFO {
@@ -178,13 +178,29 @@ impl Worker for WorkerImpl {
                 self.track_span(&ctx, path, latency);
             } else {
                 let mut client = self.clients.get(path).unwrap().clone();
-                let mut request = Request::new(HelloRequest {
-                    name: "SayHelloI2".to_string(),
-                });
+                let mut request = {
+                    if path == "/bridge.Worker/SayHelloI2" {
+                        Request::new(HelloRequest {
+                            name: "SayHelloI2".to_string(),
+                        })
+                    } else if path == "/bridge.Worker/SayHelloI1" {
+                        Request::new(HelloRequest {
+                            name: "SayHelloI1".to_string(),
+                        })
+                    } else {
+                        panic!("Unimplemented path");
+                    }
+                };
 
                 self.set_child_ctx(&ctx, &mut request, path);
                 let start_at = time_now();
-                client.say_hello_i2(request).await.unwrap();
+                if path == "/bridge.Worker/SayHelloI2" {
+                    client.say_hello_i2(request).await.unwrap();
+                } else if path == "/bridge.Worker/SayHelloI1" {
+                    client.say_hello_i1(request).await.unwrap();
+                } else {
+                    panic!("Unimplemented path");
+                }
                 let latency = time_now() - start_at;
                 self.track_span(&ctx, path, latency);
             }
@@ -288,7 +304,8 @@ fn get_servers(args: Args, global_graphs: &Vec<GlobalGraph>) -> Vec<VirtualServe
             let conn_addrs = HashMap::new();
             let path: Path = "/bridge.Worker/SayHelloI1".to_string();
             let local_graphs = get_local_graphs(global_graphs, &path);
-            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
+            let server =
+                VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads[0], false);
             server
         };
         servers.push(server1);
@@ -304,7 +321,8 @@ fn get_servers(args: Args, global_graphs: &Vec<GlobalGraph>) -> Vec<VirtualServe
             );
             let path: Path = "/bridge.Worker/SayHelloI2".to_string();
             let local_graphs = get_local_graphs(global_graphs, &path);
-            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
+            let server =
+                VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads[1], false);
             server
         };
         servers.push(server2);
@@ -318,9 +336,14 @@ fn get_servers(args: Args, global_graphs: &Vec<GlobalGraph>) -> Vec<VirtualServe
                 "/bridge.Worker/SayHelloI2".to_string() as Path,
                 "http://[::1]:50052".to_string() as Address,
             );
+            conn_addrs.insert(
+                "/bridge.Worker/SayHelloI1".to_string() as Path,
+                "http://[::1]:50051".to_string() as Address,
+            );
             let path: Path = "/bridge.Worker/SayHelloI3".to_string();
             let local_graphs = get_local_graphs(global_graphs, &path);
-            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
+            let server =
+                VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads[2], false);
             server
         };
         servers.push(server3);
@@ -336,7 +359,8 @@ fn get_servers(args: Args, global_graphs: &Vec<GlobalGraph>) -> Vec<VirtualServe
             );
             let path: Path = "/bridge.Worker/SayHelloI4".to_string();
             let local_graphs = get_local_graphs(global_graphs, &path);
-            let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads, false);
+            let server =
+                VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads[3], false);
             server
         };
         servers.push(server4);
@@ -371,6 +395,11 @@ async fn start_servers(servers: Vec<VirtualServer>) -> Vec<JoinHandle<()>> {
                 rt.block_on(ex.run());
             });
         }
+        log::warn!(
+            "Spawned {} executors for {}",
+            server.n_threads(),
+            server.addr()
+        );
 
         let h = tokio::spawn(async move {
             let addr = server.addr().parse().unwrap();
