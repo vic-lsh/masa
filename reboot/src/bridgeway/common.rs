@@ -6,7 +6,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use crossbeam_channel::Receiver;
 use env_logger::{Builder, Env};
 
-use tonic_masa::{Address, LocalGraph, Path};
+use tonic_masa::{Address, GlobalGraph, GraphID, Latency, LocalGraph, Path};
+
+use crate::graph;
 
 #[allow(dead_code)]
 pub fn init_logging() {
@@ -40,6 +42,68 @@ pub fn time_now() -> u64 {
 pub fn busy_spin(duration: Duration) {
     let now = Instant::now();
     while now.elapsed() < duration {}
+}
+
+fn get_global_graph(graph_id: GraphID) -> GlobalGraph {
+    if graph_id == "I1" {
+        graph::get_global_graph_i1()
+    // } else if graph_id == "I2" {
+    //     graph::get_global_graph_i2(graph_id, 1_000, 1_000, Some(100), 4_000)
+    // } else if graph_id == "I2_1" {
+    //     graph::get_global_graph_i2(graph_id, 1_000, 1_000, Some(100), 4_000)
+    // } else if graph_id == "I2_2" {
+    //     graph::get_global_graph_i2(graph_id, 1_000, 1_000, Some(100), 8_000)
+    } else if graph_id == "I2_melody_1" {
+        graph::get_global_graph_i2_melody(graph_id, 1_000, 1_000, Some(100), 4_000)
+    } else if graph_id == "I2_melody_2" {
+        graph::get_global_graph_i2_melody(graph_id, 1_000, 1_000, Some(100), 32_000)
+    // } else if graph_id == "I4" {
+    //     graph::get_global_graph_i4(graph_id, 1_000, 1_000, Some(100), 4_000)
+    } else if graph_id == "I4_1" {
+        graph::get_global_graph_i4(graph_id, 1_000, 1_000, Some(100), 4_000)
+    } else if graph_id == "I4_2" {
+        graph::get_global_graph_i4(graph_id, 1_000, 1_000, Some(100), 16_000)
+    // } else if graph_id == "I4_two_1" {
+    //     graph::get_global_graph_i4_two(graph_id, 1_000, 1_000, Some(100), 4_000, 12_000)
+    // } else if graph_id == "I4_two_2" {
+    //     graph::get_global_graph_i4_two(graph_id, 1_000, 1_000, Some(100), 12_000, 4_000)
+    // } else if graph_id == "I4_melody_1" {
+    //     graph::get_global_graph_i4_melody_1(graph_id, 1_000, 1_000, Some(100), 4_000, 1_000)
+    // } else if graph_id == "I4_melody_2" {
+    //     graph::get_global_graph_i4_melody_2(graph_id, 1_000, 1_000, Some(100), 12_000, 1_000)
+    } else {
+        panic!("Unsupported graph_id: {}", graph_id);
+    }
+}
+
+#[allow(dead_code)]
+pub fn get_global_graphs(graph_ids: &Vec<GraphID>, slos: &Vec<Latency>) -> Vec<GlobalGraph> {
+    let mut global_graphs = Vec::new();
+    for i in 0..graph_ids.len() {
+        let graph_id = graph_ids[i].clone();
+        let slo = slos[i];
+        let mut global_graph = get_global_graph(graph_id);
+        global_graph.set_slo(slo);
+        global_graphs.push(global_graph);
+    }
+    global_graphs
+}
+
+#[allow(dead_code)]
+pub fn get_local_graphs(
+    global_graphs: &Vec<GlobalGraph>,
+    path: &Path,
+) -> HashMap<Path, LocalGraph> {
+    let mut local_graphs = HashMap::new();
+    for global_graph in global_graphs.iter() {
+        if global_graph.contains_path(path) {
+            local_graphs.insert(
+                global_graph.graph_id().clone(),
+                global_graph.get_local_graph(path).clone(),
+            );
+        }
+    }
+    local_graphs
 }
 
 #[allow(dead_code)]
@@ -103,17 +167,17 @@ impl VirtualServer {
 #[derive(Debug, Clone)]
 pub struct Span {
     request_id: u64,
-    span: String,
+    graph_id: String,
     slo: u64,
     latency: u64,
 }
 
 #[allow(dead_code)]
 impl Span {
-    pub fn new(request_id: u64, span: String, slo: u64, latency: u64) -> Self {
+    pub fn new(request_id: u64, graph_id: String, slo: u64, latency: u64) -> Self {
         Self {
             request_id,
-            span,
+            graph_id,
             slo,
             latency,
         }
@@ -130,12 +194,12 @@ pub async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
         }
     }
     let mut file = File::create(output).unwrap();
-    writeln!(file, "request_id,span,slo,latency").unwrap();
+    writeln!(file, "request_id,graph_id,slo,latency").unwrap();
     while let Ok(span) = trace_rx.recv() {
         writeln!(
             file,
             "{},{},{},{}",
-            span.request_id, span.span, span.slo, span.latency
+            span.request_id, span.graph_id, span.slo, span.latency
         )
         .unwrap();
     }

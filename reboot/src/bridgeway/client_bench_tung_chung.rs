@@ -99,7 +99,6 @@ impl LoadGenerator {
         let uniform = Uniform::new(0, 1_000_000_007);
 
         let graph_id = self.global_graph.graph_id().clone();
-        let local_graph = self.global_graph.get_source().clone();
         let request = WalkRequest {
             name: "Tonic".into(),
         };
@@ -124,17 +123,17 @@ impl LoadGenerator {
             let request_id = uniform.sample(&mut self.rng);
             let request = {
                 let start_at = time_now() - init_at_u64;
+                // [TODO] Update this.
                 let deadline = start_at + self.slo;
-                // [TODO] Support Hotel.
                 let ctx = Context::new(
                     graph_id.clone(),
                     request_id,
-                    start_at,
                     deadline,
-                    Some(local_graph.clone()),
+                    deadline,
+                    start_at,
                 );
                 let mut request = tonic::Request::new(request.clone());
-                request.metadata_mut().insert_ctx("par_ctx", &ctx);
+                request.metadata_mut().insert_ctx("ctx", &ctx);
                 request
             };
 

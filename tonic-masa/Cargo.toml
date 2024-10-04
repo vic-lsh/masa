@@ -3,6 +3,15 @@ name = "tonic-masa"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+prio_class = []
+prio_global = []
+prio_class_global = []
+prio_local = []
+fifo_two = []
+fifo = []
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+log = "0.4"
