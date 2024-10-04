@@ -30,6 +30,8 @@ pub struct Args {
     #[structopt(long, required = true)]
     pub slos: Vec<u64>,
     #[structopt(long, required = true)]
+    pub rps_ranges: Vec<u64>,
+    #[structopt(long, required = true)]
     pub rps: u64,
     #[structopt(long, required = true)]
     pub secs: u64,
@@ -44,6 +46,7 @@ pub struct Args {
 #[derive(Debug)]
 struct LoadGenerator {
     rng: StdRng,
+    rps_ranges: Vec<u64>,
     rps: u64,
     secs: u64,
     token: Arc<AtomicI32>,
@@ -55,6 +58,7 @@ struct LoadGenerator {
 impl LoadGenerator {
     fn new(
         rng: StdRng,
+        rps_ranges: Vec<u64>,
         rps: u64,
         secs: u64,
         token: Arc<AtomicI32>,
@@ -79,6 +83,7 @@ impl LoadGenerator {
         }
         LoadGenerator {
             rng,
+            rps_ranges,
             rps,
             secs,
             token,
@@ -130,7 +135,17 @@ impl LoadGenerator {
             elapse += value;
 
             let request_id = uniform.sample(&mut self.rng) as u64;
-            let request_class = request_id as usize % self.global_graphs.len();
+            let request_class = {
+                let mut request_class = 0;
+                let range = request_id % self.rps_ranges[self.rps_ranges.len() - 1];
+                for i in 0..self.rps_ranges.len() {
+                    if range < self.rps_ranges[i] {
+                        request_class = i;
+                        break;
+                    }
+                }
+                request_class
+            };
             let graph_id = self.global_graphs[request_class].graph_id().clone();
             let slo = self.global_graphs[request_class].slo();
 
@@ -212,6 +227,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let load_gen = LoadGenerator::new(
             rng,
+            args.rps_ranges,
             args.rps,
             args.secs,
             token,

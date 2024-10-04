@@ -44,21 +44,33 @@ pub fn busy_spin(duration: Duration) {
     while now.elapsed() < duration {}
 }
 
-fn get_global_graph(graph_id: &GraphID) -> GlobalGraph {
+fn get_global_graph(graph_id: GraphID) -> GlobalGraph {
     if graph_id == "I1" {
         graph::get_global_graph_i1()
-    } else if graph_id == "I2" {
-        graph::get_global_graph_i2()
-    } else if graph_id == "I2_1" {
-        graph::get_global_graph_i2_1()
-    } else if graph_id == "I2_2" {
-        graph::get_global_graph_i2_2()
-    } else if graph_id == "I4" {
-        graph::get_global_graph_i4()
+    // } else if graph_id == "I2" {
+    //     graph::get_global_graph_i2(graph_id, 1_000, 1_000, Some(100), 4_000)
+    // } else if graph_id == "I2_1" {
+    //     graph::get_global_graph_i2(graph_id, 1_000, 1_000, Some(100), 4_000)
+    // } else if graph_id == "I2_2" {
+    //     graph::get_global_graph_i2(graph_id, 1_000, 1_000, Some(100), 8_000)
+    } else if graph_id == "I2_melody_1" {
+        graph::get_global_graph_i2_melody(graph_id, 1_000, 1_000, Some(100), 4_000)
+    } else if graph_id == "I2_melody_2" {
+        graph::get_global_graph_i2_melody(graph_id, 1_000, 1_000, Some(100), 32_000)
+    // } else if graph_id == "I4" {
+    //     graph::get_global_graph_i4(graph_id, 1_000, 1_000, Some(100), 4_000)
     } else if graph_id == "I4_1" {
-        graph::get_global_graph_i4_1()
+        graph::get_global_graph_i4(graph_id, 1_000, 1_000, Some(100), 4_000)
     } else if graph_id == "I4_2" {
-        graph::get_global_graph_i4_2()
+        graph::get_global_graph_i4(graph_id, 1_000, 1_000, Some(100), 16_000)
+    // } else if graph_id == "I4_two_1" {
+    //     graph::get_global_graph_i4_two(graph_id, 1_000, 1_000, Some(100), 4_000, 12_000)
+    // } else if graph_id == "I4_two_2" {
+    //     graph::get_global_graph_i4_two(graph_id, 1_000, 1_000, Some(100), 12_000, 4_000)
+    // } else if graph_id == "I4_melody_1" {
+    //     graph::get_global_graph_i4_melody_1(graph_id, 1_000, 1_000, Some(100), 4_000, 1_000)
+    // } else if graph_id == "I4_melody_2" {
+    //     graph::get_global_graph_i4_melody_2(graph_id, 1_000, 1_000, Some(100), 12_000, 1_000)
     } else {
         panic!("Unsupported graph_id: {}", graph_id);
     }
@@ -68,10 +80,9 @@ fn get_global_graph(graph_id: &GraphID) -> GlobalGraph {
 pub fn get_global_graphs(graph_ids: &Vec<GraphID>, slos: &Vec<Latency>) -> Vec<GlobalGraph> {
     let mut global_graphs = Vec::new();
     for i in 0..graph_ids.len() {
-        let graph_id = &graph_ids[i];
+        let graph_id = graph_ids[i].clone();
         let slo = slos[i];
         let mut global_graph = get_global_graph(graph_id);
-        assert!(global_graph.graph_id() == graph_id);
         global_graph.set_slo(slo);
         global_graphs.push(global_graph);
     }
@@ -85,10 +96,12 @@ pub fn get_local_graphs(
 ) -> HashMap<Path, LocalGraph> {
     let mut local_graphs = HashMap::new();
     for global_graph in global_graphs.iter() {
-        local_graphs.insert(
-            global_graph.graph_id().clone(),
-            global_graph.get_local_graph(path).clone(),
-        );
+        if global_graph.contains_path(path) {
+            local_graphs.insert(
+                global_graph.graph_id().clone(),
+                global_graph.get_local_graph(path).clone(),
+            );
+        }
     }
     local_graphs
 }
