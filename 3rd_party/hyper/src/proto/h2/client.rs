@@ -28,7 +28,7 @@ use crate::proto::Dispatched;
 use crate::upgrade::Upgraded;
 use crate::{Body, Request, Response};
 use h2::client::ResponseFuture;
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 type ClientRx<B> = crate::client::dispatch::Receiver<Request<B>, Response<Body>>;
 
@@ -172,7 +172,7 @@ where
 
     exec.execute(
         conn_task(conn, conn_drop_rx, cancel_tx),
-        DeadlineHint::infra(),
+        PriorityHint::infra(),
     );
 
     Ok(ClientTask {
@@ -274,7 +274,7 @@ where
                             x
                         });
                         // Clear send task
-                        self.executor.execute(pipe, DeadlineHint::infra());
+                        self.executor.execute(pipe, PriorityHint::infra());
                     }
                 }
             }
@@ -332,7 +332,7 @@ where
             }
         });
         self.executor
-            .execute(f.cb.send_when(fut), DeadlineHint::infra());
+            .execute(f.cb.send_when(fut), PriorityHint::infra());
     }
 }
 

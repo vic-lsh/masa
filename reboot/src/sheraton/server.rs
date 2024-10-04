@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
 use tonic::{transport::Server, Request, Response, Status};
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 pub mod hello {
     tonic::include_proto!("hello");
@@ -48,7 +48,7 @@ where
     F: std::future::Future + Send + 'static,
     F::Output: Send,
 {
-    fn execute(&self, fut: F, ddl: DeadlineHint) {
+    fn execute(&self, fut: F, ddl: PriorityHint) {
         // [NOTE] Deadline is passed from H2Stream.
         self.ex.spawn_with_ddl(fut, ddl).fallible().detach();
     }
