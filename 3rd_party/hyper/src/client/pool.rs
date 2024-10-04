@@ -18,7 +18,7 @@ use tracing::{debug, trace};
 
 use super::client::Ver;
 use crate::common::exec::Exec;
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 // FIXME: allow() required due to `impl Trait` leaking types to this lint
 #[allow(missing_debug_implementations)]
@@ -427,7 +427,7 @@ impl<T: Poolable> PoolInner<T> {
             pool_drop_notifier: rx,
         };
 
-        self.exec.execute(interval, DeadlineHint::infra());
+        self.exec.execute(interval, PriorityHint::infra());
     }
 }
 

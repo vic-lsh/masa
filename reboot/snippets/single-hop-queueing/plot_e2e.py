@@ -35,9 +35,9 @@ plot_2d_histogram(
 
 
 results_ratio: List[float] = []
-for i in range(len(results_e2e["masa"])):
-    masa = results_e2e["masa"][i]
-    fifo = results_e2e["fifo"][i]
+for i in range(len(results_e2e["queue_edf"])):
+    masa = results_e2e["queue_edf"][i]
+    fifo = results_e2e["queue_fifo"][i]
     ratio = masa / fifo * 100
     results_ratio.append(ratio)
 
@@ -54,18 +54,18 @@ plot_ratio_pdf(
 )
 
 
-results_slower: Dict[str, List[int]] = {"masa": [], "fifo": []}
-results_faster: Dict[str, List[int]] = {"masa": [], "fifo": []}
+results_slower: Dict[str, List[int]] = {"queue_edf": [], "queue_fifo": []}
+results_faster: Dict[str, List[int]] = {"queue_edf": [], "queue_fifo": []}
 
-for i in range(len(results_e2e["masa"])):
-    masa = results_e2e["masa"][i]
-    fifo = results_e2e["fifo"][i]
+for i in range(len(results_e2e["queue_edf"])):
+    masa = results_e2e["queue_edf"][i]
+    fifo = results_e2e["queue_fifo"][i]
     if masa > fifo:
-        results_slower["masa"].append(masa)
-        results_slower["fifo"].append(fifo)
+        results_slower["queue_edf"].append(masa)
+        results_slower["queue_fifo"].append(fifo)
     else:
-        results_faster["masa"].append(masa)
-        results_faster["fifo"].append(fifo)
+        results_faster["queue_edf"].append(masa)
+        results_faster["queue_fifo"].append(fifo)
 
 
 plot_cdf(
