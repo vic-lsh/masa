@@ -91,6 +91,7 @@ impl GrpcMethod {
     pub fn service(&self) -> &str {
         self.service
     }
+
     /// gRPC method name
     pub fn method(&self) -> &str {
         self.method

@@ -107,6 +107,7 @@ pub mod transport;
 
 mod extensions;
 mod macros;
+/// Masa-related modules.
 pub mod masa;
 mod request;
 mod response;

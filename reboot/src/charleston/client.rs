@@ -96,6 +96,7 @@ impl LoadGenerator {
                     request.metadata_mut().insert_ctx("par_ctx", &ctx);
 
                     let _response = client.say_hello(request).await.unwrap();
+                    break;
                 }
             });
             handles.push(h);
