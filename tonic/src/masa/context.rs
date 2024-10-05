@@ -139,6 +139,7 @@ impl RequestHandlerHooks for SimpleParentContext {
         req: &http::Request<B>,
         server_ctx: Arc<ServerContext>,
     ) -> Self {
+        log::info!("parent_ctx, begin, method: {:?}", method);
         let ctx_str = req.headers()["ctx"].to_str().unwrap();
         let req_ctx = Context::from_json(ctx_str);
         Self {
@@ -156,7 +157,7 @@ impl RequestHandlerHooks for SimpleParentContext {
         _req: &mut Request<T>,
         _child_ctx: &mut ChildContext,
     ) {
-        println!("before_child_rpc, {:?}", method);
+        log::info!("parent_ctx, before_child_rpc, method: {:?}", method);
     }
 
     fn after_child_rpc<T>(
@@ -165,16 +166,17 @@ impl RequestHandlerHooks for SimpleParentContext {
         _resp: &mut Result<Response<T>, Status>,
         _child_ctx: ChildContext,
     ) {
-        println!("after_child_rpc, {:?}", method);
+        log::info!("parent_ctx, after_child_rpc, method: {:?}", method);
     }
 
     fn before_poll(&self) {
+        log::info!("parent_ctx, before_poll, method: {:?}", self.method);
         self.polled.fetch_add(1, Ordering::Relaxed);
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
-        println!(
-            "method {:?} polled {} times, duration {} ms",
+        log::info!(
+            "parent_ctx, finalize, method: {:?}, polled: {} times, duration: {} ms",
             self.method,
             self.polled.load(Ordering::Relaxed),
             self.request_start.elapsed().as_millis()
@@ -191,7 +193,7 @@ impl ClientStubHooks for SimpleChildContext {
     }
 
     fn before_send<T>(&mut self, _req: &mut Request<T>) {
-        println!("child_ctx {:?} before send", self.method);
+        log::info!("child_ctx, before_send, method: {:?}", self.method);
         self.start = Some(Instant::now());
     }
 
@@ -202,9 +204,10 @@ impl ClientStubHooks for SimpleChildContext {
             .expect("rpc must have started")
             .elapsed()
             .as_millis();
-        println!(
-            "child_ctx {:?} after recv, latency {} ms",
-            self.method, lat_ms
+        log::info!(
+            "child_ctx, after_recv, method: {:?}, latency {} ms",
+            self.method,
+            lat_ms
         );
     }
 }
@@ -212,7 +215,7 @@ impl ClientStubHooks for SimpleChildContext {
 impl ServerContext {
     /// Construct a ServerContext.
     pub fn new(service_name: &'static str) -> Self {
-        println!("ServerContext: constructed for service {}", service_name);
+        log::info!("ServerContext, service: {}", service_name);
         Self { service_name }
     }
 }

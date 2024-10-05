@@ -6,7 +6,6 @@ use hello::{
     HelloReply, HelloRequest,
 };
 use hyper::rt::{Exec, Executor};
-use log::info;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::Arc;
@@ -87,9 +86,9 @@ impl Greeter for GreeterImpl<'static> {
     ) -> Result<Response<HelloReply>, Status> {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        // info!("ctx: {:?}", ctx);
+        // log::info!("ctx: {:?}", ctx);
         ctx.set_local_graph(local_graph.clone());
-        info!("say_goodbye ddl {:?}", async_task::get_task_ddl());
+        log::info!("say_goodbye, ddl: {:?}", async_task::get_task_ddl());
 
         let spans = local_graph.spans();
         let elapse = spans
@@ -127,13 +126,13 @@ impl<'a> GreeterImpl<'a> {
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         ctx.set_local_graph(local_graph.clone());
 
-        info!("say_hello ddl {:?}", async_task::get_task_ddl());
+        log::info!("say_hello_fanout, ddl: {:?}", async_task::get_task_ddl());
 
         busy_spin(Duration::from_millis(5));
 
         let mut tasks = Vec::new();
-        for idx in 0..10 {
-            info!("spawning {}", idx);
+        for idx in 0..2 {
+            log::info!("say_hello_fanout, spawning task {}", idx);
 
             let mut client = self.clients.get(CLIENT_PATH).unwrap().clone();
             let mut request = Request::new(HelloRequest {
@@ -147,7 +146,7 @@ impl<'a> GreeterImpl<'a> {
 
         for (idx, task) in tasks.into_iter().enumerate() {
             task.await;
-            info!("task {} finished", idx);
+            log::info!("say_hello_fanout, completed task {}", idx);
         }
 
         busy_spin(Duration::from_millis(5));
@@ -156,7 +155,10 @@ impl<'a> GreeterImpl<'a> {
             message: format!("Hello {}!", request.into_inner().name),
         };
 
-        println!("request handling time {}ms", start.elapsed().as_millis());
+        log::info!(
+            "say_hello_fanout, elapsed {} ms",
+            start.elapsed().as_millis()
+        );
         Ok(Response::new(reply))
     }
 
@@ -166,9 +168,9 @@ impl<'a> GreeterImpl<'a> {
     ) -> Result<Response<HelloReply>, Status> {
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-        // info!("ctx: {:?}", ctx);
+        // log::info!("ctx: {:?}", ctx);
         ctx.set_local_graph(local_graph.clone());
-        info!("say_hello");
+        log::info!("say_hello");
 
         let spans = local_graph.spans();
         let elapse = spans
@@ -306,7 +308,7 @@ fn init_logging() {
             )
         })
         .init();
-    info!("Logging initialized");
+    log::info!("Logging initialized");
 }
 
 #[tokio::main]
@@ -383,7 +385,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let server_ex = ex.clone();
 
             let greeter = GreeterImpl::new(local_graphs, clients, server_ex);
-            info!("Listening on {}...", addr);
+            log::info!("Listening on {}...", addr);
             Server::builder()
                 .add_service(GreeterServer::new(greeter))
                 .serve_with_executor(addr, Exec::Executor(ex))

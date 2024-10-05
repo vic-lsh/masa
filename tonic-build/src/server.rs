@@ -484,9 +484,6 @@ fn generate_unary<T: Method>(
 
     let (request, response) = method.request_response_name(proto_path, compile_well_known_types);
 
-    // server_trait has the same name as the Server.
-    let server_parent_rpc_ctx = quote::format_ident!("{}_parent_rpc_ctx", server_trait);
-
     let inner_arg = if use_arc_self {
         quote!(inner)
     } else {
