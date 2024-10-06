@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{GraphID, RequestClass, RequestID, Timestamp};
+use crate::{GraphId, RequestClass, RequestId, Timestamp};
 use std::{
     collections::HashMap,
     sync::{
@@ -12,8 +12,8 @@ use std::{
 /// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Context {
-    graph_id: GraphID,
-    request_id: RequestID,
+    graph_id: GraphId,
+    request_id: RequestId,
     deadline: Timestamp,
     latest_exec_at: Timestamp,
     request_class: RequestClass,
@@ -22,8 +22,8 @@ pub struct Context {
 impl Context {
     /// Create a new Masa context.
     pub fn new(
-        graph_id: GraphID,
-        request_id: RequestID,
+        graph_id: GraphId,
+        request_id: RequestId,
         deadline: Timestamp,
         latest_exec_at: Timestamp,
         request_class: RequestClass,
@@ -38,12 +38,12 @@ impl Context {
     }
 
     /// Get the graph ID.
-    pub fn graph_id(&self) -> &GraphID {
+    pub fn graph_id(&self) -> &GraphId {
         &self.graph_id
     }
 
     /// Get the request ID.
-    pub fn request_id(&self) -> RequestID {
+    pub fn request_id(&self) -> RequestId {
         self.request_id
     }
 
