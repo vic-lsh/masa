@@ -4,7 +4,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc, RwLock,
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use tonic_masa::{
@@ -31,8 +31,37 @@ pub struct SimpleParentContext {
 #[derive(Debug)]
 pub struct SimpleChildContext {
     method: GrpcMethod,
-    start: Option<Instant>,
-    latency_us: Option<u64>,
+    track_latency: TrackLatency,
+}
+
+#[derive(Debug)]
+enum TrackLatency {
+    NotStarted,
+    Started(Instant),
+    Finished(Duration),
+}
+
+impl TrackLatency {
+    fn start(&mut self) {
+        *self = match self {
+            Self::NotStarted => Self::Started(Instant::now()),
+            _ => panic!("Cannot start tracking latency twice"),
+        }
+    }
+
+    fn record_latency(&mut self) {
+        *self = match self {
+            Self::Started(inst) => Self::Finished(inst.elapsed()),
+            _ => panic!("Cannot record latency if the tracker hasn't started"),
+        }
+    }
+
+    fn get_latency(&self) -> Option<Duration> {
+        match self {
+            Self::Finished(lat) => Some(*lat),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -96,14 +125,14 @@ impl RequestHandlerHooks for SimpleParentContext {
             "parent_ctx, after_child_rpc, method: {:?}",
             child_rpc_method.id()
         );
-        let latency_us = child_ctx.latency_us.unwrap();
+        let latency_us = child_ctx.track_latency.get_latency().unwrap().as_micros();
         self.server_ctx
             .local_graph_trackers
             .get(&self.method.id())
             .unwrap()
             .write()
             .unwrap()
-            .track_span(&child_rpc_method.id(), latency_us);
+            .track_span(&child_rpc_method.id(), latency_us as u64);
     }
 
     fn before_poll(&self) {
@@ -125,29 +154,22 @@ impl ClientStubHooks for SimpleChildContext {
     fn new<T>(method: GrpcMethod, _req: &Request<T>) -> Self {
         Self {
             method,
-            start: None,
-            latency_us: None,
+            track_latency: TrackLatency::NotStarted,
         }
     }
 
     fn before_send<T>(&mut self, _req: &mut Request<T>) {
         log::info!("child_ctx, before_send, method: {:?}", self.method.id());
-        self.start = Some(Instant::now());
+        self.track_latency.start();
     }
 
     fn after_recv<T>(&mut self, _response: &mut Result<Response<T>, Status>) {
-        let elapsed_us = self
-            .start
-            .take()
-            .expect("Child RPC must have started")
-            .elapsed()
-            .as_micros() as u64;
+        self.track_latency.record_latency();
         log::info!(
             "child_ctx, after_recv, method: {:?}, elapsed: {} us",
             self.method.id(),
-            elapsed_us
+            self.track_latency.get_latency().unwrap().as_micros(),
         );
-        self.latency_us = Some(elapsed_us);
     }
 }
 
