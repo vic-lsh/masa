@@ -12,7 +12,7 @@ use crate::header::Header;
 use crate::raw::RawTask;
 use crate::state::*;
 use crate::Task;
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 mod sealed {
     use super::*;
@@ -30,7 +30,7 @@ pub struct Builder<M> {
     pub(crate) metadata: M,
 
     /// The deadline associated with the task.
-    pub(crate) deadline: DeadlineHint,
+    pub(crate) deadline: PriorityHint,
 
     /// Whether or not a panic that occurs in the task should be propagated.
     #[cfg(feature = "std")]
@@ -188,7 +188,7 @@ impl Builder<()> {
     pub fn new() -> Builder<()> {
         Builder {
             metadata: (),
-            deadline: DeadlineHint::infra(),
+            deadline: PriorityHint::infra(),
             #[cfg(feature = "std")]
             propagate_panic: false,
         }
@@ -285,7 +285,7 @@ impl Builder<()> {
 
 impl<M> Builder<M> {
     /// Specify a deadline for this task.
-    pub fn deadline(self, deadline: DeadlineHint) -> Builder<M> {
+    pub fn deadline(self, deadline: PriorityHint) -> Builder<M> {
         Builder {
             metadata: self.metadata,
             deadline,
@@ -594,7 +594,7 @@ where
 /// Creates a new task with a deadline.
 pub fn spawn_with_deadline<F, S>(
     future: F,
-    deadline: DeadlineHint,
+    deadline: PriorityHint,
     schedule: S,
 ) -> (Runnable, Task<F::Output>)
 where
@@ -745,7 +745,7 @@ impl<M> std::panic::RefUnwindSafe for Runnable<M> {}
 
 impl<M> PartialEq for Runnable<M> {
     fn eq(&self, other: &Self) -> bool {
-        self.deadline() == other.deadline()
+        self.priority() == other.priority()
     }
 }
 
@@ -753,13 +753,13 @@ impl<M> Eq for Runnable<M> {}
 
 impl<M> PartialOrd for Runnable<M> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.deadline().partial_cmp(&other.deadline())
+        self.priority().partial_cmp(&other.priority())
     }
 }
 
 impl<M> Ord for Runnable<M> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.deadline().cmp(&other.deadline())
+        self.priority().cmp(&other.priority())
     }
 }
 
@@ -769,13 +769,13 @@ impl<M> Runnable<M> {
         self.ptr.as_ptr() as u64
     }
 
-    /// Return the deadline hint associated with this task.
+    /// Return the priority hint associated with this task.
     #[inline]
-    pub fn deadline(&self) -> DeadlineHint {
+    pub fn priority(&self) -> PriorityHint {
         let ptr = self.ptr.as_ptr();
         // SAFETY: ptr points to a RawTask and is alive (its lifetime is the
         // same as the Runnable).
-        unsafe { crate::raw::get_ddl_from_raw_task::<M>(ptr) }
+        unsafe { crate::raw::get_prio_from_raw_task::<M>(ptr) }
     }
 
     /// Get the metadata associated with this task.
