@@ -16,4 +16,6 @@ pub use graph::{GlobalGraph, GlobalGraphTracker, LocalGraph, LocalGraphTracker};
 pub use priority::PriorityHint;
 pub use span::{Span, SpanTracker};
 pub use tracker::LatencyTracker;
-pub use typing::{Address, GraphID, Latency, Path, RequestClass, RequestID, Timestamp};
+pub use typing::{
+    Address, GraphId, Latency, MethodId, RequestClass, RequestId, ServiceId, SpanId, Timestamp,
+};

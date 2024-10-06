@@ -9,7 +9,7 @@ use std::{
 };
 
 use tonic_masa::{
-    Context, LocalGraph, LocalGraphTracker, Path, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_LOCAL,
+    Context, LocalGraph, LocalGraphTracker, MethodId, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_LOCAL,
 };
 
 use crate::{body::BoxBody, masa::mock_graph, GrpcMethod, Request, Response, Status};
@@ -31,7 +31,7 @@ pub struct SimpleParentContext {
 pub struct SimpleChildContext {
     method: GrpcMethod,
     start: Option<Instant>,
-    lat_us: Option<u64>,
+    latency_us: Option<u64>,
 }
 
 /// Context struct for an RPC server, instantiated during server startup.
@@ -39,8 +39,8 @@ pub struct SimpleChildContext {
 #[allow(dead_code)]
 pub struct ServerContext {
     service_name: &'static str,
-    local_graphs: HashMap<Path, LocalGraph>,
-    local_graph_trackers: HashMap<Path, RwLock<LocalGraphTracker>>,
+    local_graphs: HashMap<MethodId, LocalGraph>,
+    local_graph_trackers: HashMap<MethodId, RwLock<LocalGraphTracker>>,
 }
 
 /// Context struct instantiated once per RPC, when the server invokes a request handler.
@@ -188,14 +188,14 @@ impl RequestHandlerHooks for SimpleParentContext {
         child_ctx: ChildContext,
     ) {
         log::info!("parent_ctx, after_child_rpc, method: {:?}", method.id());
-        let lat_us = child_ctx.lat_us.unwrap();
+        let latency_us = child_ctx.latency_us.unwrap();
         self.server_ctx
             .local_graph_trackers
             .get(&self.method.id())
             .unwrap()
             .write()
             .unwrap()
-            .track_span(&method.id(), lat_us);
+            .track_span(&method.id(), latency_us);
     }
 
     fn before_poll(&self) {
@@ -218,7 +218,7 @@ impl ClientStubHooks for SimpleChildContext {
         Self {
             method,
             start: None,
-            lat_us: None,
+            latency_us: None,
         }
     }
 
@@ -239,7 +239,7 @@ impl ClientStubHooks for SimpleChildContext {
             self.method.id(),
             elapsed_us
         );
-        self.lat_us = Some(elapsed_us);
+        self.latency_us = Some(elapsed_us);
     }
 }
 
@@ -250,8 +250,7 @@ impl ServerContext {
         // - Application
         //  - Service
         //   - Method
-        //    - Span
-        // `global_graph` contains GraphId and HashMap<MethodId, LocalGraph>.
+        //    - Span (Method / Compute)
 
         let global_graph =
             mock_graph::get_global_graph_i2(service_name.to_string(), Some(100), 1_000);

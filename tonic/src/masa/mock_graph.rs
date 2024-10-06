@@ -1,40 +1,41 @@
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp};
 use std::collections::HashMap;
-use tonic_masa::{Distribution as MasaDistribution, GlobalGraph, Latency, LocalGraph, Path, Span};
+use tonic_masa::{
+    Distribution as MasaDistribution, GlobalGraph, GraphId, Latency, LocalGraph, MethodId, Span,
+};
 
 /// Get a global graph with two hops.
 #[allow(dead_code)]
 pub fn get_global_graph_i2(
-    graph_id: Path, // GraphId
+    graph_id: GraphId,
     tracker_capacity: Option<usize>,
     mean: u64,
 ) -> GlobalGraph {
     let local_graphs = {
         let mut _rng = StdRng::seed_from_u64(998244353);
         let mut graphs = HashMap::new();
+        let method_id: MethodId = "/hello.Greeter/SayHello".to_string();
         graphs.insert(
-            "/hello.Greeter/SayHello".to_string() as Path, // MethodId
+            method_id.clone(),
             LocalGraph::new(
-                // {GraphId, Vec<Span<MethodId>>}
-                graph_id.clone(), // GraphId
+                graph_id.clone(),
+                method_id.clone(),
                 vec![Span::new(
-                    "/hello.Greeter/SayGoodbye".to_string(), // MethodId
+                    "/hello.Greeter/SayGoodbye".to_string() as MethodId,
                     Some(MasaDistribution::new(mean, Vec::new())),
                     tracker_capacity,
                 )],
             ),
         );
+        let method_id: MethodId = "/hello.Greeter/SayGoodbye".to_string();
         graphs.insert(
-            "/hello.Greeter/SayGoodbye".to_string() as Path, // MethodId
-            LocalGraph::new(graph_id.clone(), vec![]),
+            method_id.clone(),
+            LocalGraph::new(graph_id.clone(), method_id.clone(), vec![]),
         );
         graphs
     };
-    let global_graph = GlobalGraph::new(
-        graph_id,     // GraphId
-        local_graphs, // HashMap<MethodId, LocalGraph>
-    );
+    let global_graph = GlobalGraph::new(graph_id, local_graphs);
     global_graph
 }
 
