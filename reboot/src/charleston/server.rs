@@ -5,14 +5,11 @@ mod graph;
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use env_logger::{Builder, Env};
-
-// [TODO] Move to `exec.rs`.
 use futures_lite::future;
-use tonic_masa::PriorityHint;
 
 use hyper::rt::{Exec, Executor};
 use structopt::StructOpt;
@@ -21,10 +18,7 @@ use tonic::{
     transport::{Channel, Server},
     Request, Response, Status,
 };
-use tonic_masa::{
-    Address, Context, Latency, LocalGraph, LocalGraphTracker, Path, FIFO, FIFO_TWO, ONLINE_TRACKER,
-    PRIO_GLOBAL, PRIO_LOCAL,
-};
+use tonic_masa::{Address, Path, PriorityHint};
 
 use hello::{
     greeter_client::GreeterClient,
@@ -48,71 +42,16 @@ pub struct Args {
 }
 
 pub struct GreeterImpl<'a> {
-    _local_graphs: HashMap<Path, LocalGraph>,
-    _local_graph_trackers: HashMap<Path, RwLock<LocalGraphTracker>>,
     clients: HashMap<Path, GreeterClient<Channel>>,
     executor: Arc<ExecImpl<'a>>,
 }
 
 impl<'a> GreeterImpl<'a> {
     pub fn new(
-        local_graphs: HashMap<Path, LocalGraph>,
         clients: HashMap<Path, GreeterClient<Channel>>,
         executor: Arc<ExecImpl<'a>>,
     ) -> Self {
-        let local_graph_trackers = local_graphs
-            .iter()
-            .map(|(path, local_graph)| {
-                let local_graph = LocalGraphTracker::from(local_graph.clone());
-                (path.clone(), RwLock::new(local_graph))
-            })
-            .collect();
-        Self {
-            _local_graphs: local_graphs,
-            _local_graph_trackers: local_graph_trackers,
-            clients,
-            executor,
-        }
-    }
-
-    fn _set_child_ctx(&self, ctx: &Context, request: &mut Request<HelloRequest>, path: &Path) {
-        let graph = self
-            ._local_graph_trackers
-            .get(ctx.graph_id())
-            .unwrap()
-            .read()
-            .unwrap();
-        let deadline;
-        let latest_exec_at;
-        if PRIO_LOCAL {
-            deadline = ctx.deadline() - graph.estimate_suffix_deadline(path);
-            latest_exec_at = ctx.deadline() - graph.estimate_suffix_latest_exec_at(path);
-        } else if PRIO_GLOBAL || FIFO_TWO || FIFO {
-            deadline = ctx.deadline();
-            latest_exec_at = ctx.latest_exec_at();
-        } else {
-            panic!("Unimplemented policy");
-        }
-        let child_ctx = Context::new(
-            ctx.graph_id().clone(),
-            ctx.request_id(),
-            deadline,
-            latest_exec_at,
-            ctx.request_class(),
-        );
-        request.metadata_mut().insert_ctx("ctx", &child_ctx);
-    }
-
-    fn _track_span(&self, ctx: &Context, path: &Path, latency: Latency) {
-        if ONLINE_TRACKER {
-            let mut graph = self
-                ._local_graph_trackers
-                .get(ctx.graph_id())
-                .unwrap()
-                .write()
-                .unwrap();
-            graph.track_span(path, latency);
-        }
+        Self { clients, executor }
     }
 }
 
@@ -195,8 +134,6 @@ impl<'a> GreeterImpl<'a> {
             let request = Request::new(HelloRequest {
                 name: "SayGoodbye".to_string(),
             });
-            // [CL] Move to hooks.
-            // self.set_child_ctx(&ctx, &mut request, &path);
             tasks.push(self.executor.spawn(async move {
                 client.say_goodbye(request).await.unwrap();
             }));
@@ -262,17 +199,11 @@ where
 struct VirtualServer {
     addr: Address,
     conn_addrs: HashMap<Path, Address>,
-    local_graphs: HashMap<Path, LocalGraph>,
     n_threads: usize,
 }
 
 impl VirtualServer {
-    pub fn new(
-        addr: Address,
-        conn_addrs: HashMap<Path, Address>,
-        local_graphs: HashMap<Path, LocalGraph>,
-        n_threads: usize,
-    ) -> Self {
+    pub fn new(addr: Address, conn_addrs: HashMap<Path, Address>, n_threads: usize) -> Self {
         let mut paths = Vec::new();
         let mut addrs = Vec::new();
         for (path, addr) in conn_addrs.iter() {
@@ -284,17 +215,12 @@ impl VirtualServer {
         Self {
             addr,
             conn_addrs,
-            local_graphs,
             n_threads,
         }
     }
 
     pub fn addr(&self) -> &Address {
         &self.addr
-    }
-
-    pub fn local_graphs(&self) -> &HashMap<Path, LocalGraph> {
-        &self.local_graphs
     }
 
     pub async fn get_clients(&self) -> HashMap<Path, GreeterClient<Channel>> {
@@ -337,27 +263,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::from_args();
 
-    // [CL] Move to ServerContext.
-    // let global_graph = graph::get_global_graph_i2("I2".to_string(), 1_000, 1_000, Some(100), 5_000);
-
     let mut servers = Vec::new();
 
     let server1 = {
         let addr: Address = "[::1]:50051".to_string();
         let conn_addrs = HashMap::new();
-        // [CL] Path should be "/hello.Greeter".
-        // let path: Path = "/hello.Greeter/SayGoodbye".to_string();
-        let local_graphs = {
-            // [CL] Move to ServerContext.
-            HashMap::new()
-            // let mut graphs = HashMap::new();
-            // graphs.insert(
-            //     global_graph.graph_id().clone(),
-            //     global_graph.get_local_graph(&path).clone(),
-            // );
-            // graphs
-        };
-        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+        let server = VirtualServer::new(addr, conn_addrs, args.n_threads);
         server
     };
     servers.push(server1);
@@ -369,17 +280,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/hello.Greeter/SayGoodbye".to_string() as Path,
             "http://[::1]:50051".to_string() as Address,
         );
-        // let path: Path = "/hello.Greeter/SayHello".to_string();
-        let local_graphs = {
-            HashMap::new()
-            // let mut graphs = HashMap::new();
-            // graphs.insert(
-            //     global_graph.graph_id().clone(),
-            //     global_graph.get_local_graph(&path).clone(),
-            // );
-            // graphs
-        };
-        let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
+        let server = VirtualServer::new(addr, conn_addrs, args.n_threads);
         server
     };
     servers.push(server2);
@@ -403,11 +304,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let h = tokio::spawn(async move {
             let addr = server.addr().parse().unwrap();
-            let local_graphs = server.local_graphs().clone();
             let clients = server.get_clients().await;
             let server_ex = ex.clone();
 
-            let greeter = GreeterImpl::new(local_graphs, clients, server_ex);
+            let greeter = GreeterImpl::new(clients, server_ex);
             log::info!("Listening on {}...", addr);
             Server::builder()
                 .add_service(GreeterServer::new(greeter))
