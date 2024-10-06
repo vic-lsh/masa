@@ -9,16 +9,19 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{Ident, Lit, LitStr};
 
-pub(crate) fn generate_rpc_context() -> TokenStream {
+pub(crate) fn generate_rpc_context(package: &str) -> TokenStream {
+    let pkg = quote::format_ident!("{}_parent_rpc_ctx", package);
     let server_parent_rpc_ctx = quote::format_ident!("parent_rpc_ctx");
     quote! {
-        thread_local! {
-            #[allow(non_upper_case_globals)]
-            // This is deliberately type-erased to support generic-based
-            // parent context. It is up to the client and server-generated code
-            // to cast the pointer back to the correct parent context type.
-            static #server_parent_rpc_ctx: std::cell::Cell<*const ()> =
-                    std::cell::Cell::new(core::ptr::null());
+        mod #pkg {
+            thread_local! {
+                #[allow(non_upper_case_globals)]
+                // This is deliberately type-erased to support generic-based
+                // parent context. It is up to the client and server-generated code
+                // to cast the pointer back to the correct parent context type.
+                pub static #server_parent_rpc_ctx: std::cell::Cell<*const ()> =
+                        std::cell::Cell::new(core::ptr::null());
+            }
         }
     }
 }
@@ -471,6 +474,7 @@ fn generate_methods<T: Service>(
             (false, false) => generate_unary(
                 method,
                 &service_name,
+                &service.package(),
                 proto_path,
                 compile_well_known_types,
                 ident,
@@ -521,6 +525,7 @@ fn generate_methods<T: Service>(
 fn generate_unary<T: Method>(
     method: &T,
     outer_service_name: &str,
+    package: &str,
     proto_path: &str,
     compile_well_known_types: bool,
     method_ident: Ident,
@@ -535,6 +540,7 @@ fn generate_unary<T: Method>(
 
     let (request, response) = method.request_response_name(proto_path, compile_well_known_types);
 
+    let parent_ctx_pkg = quote::format_ident!("{}_parent_rpc_ctx", package);
     let server_parent_rpc_ctx = quote::format_ident!("parent_rpc_ctx");
 
     let inner_arg = if use_arc_self {
@@ -607,14 +613,14 @@ fn generate_unary<T: Method>(
                 // Configure child task's thread-local to point to our req-ctx.
                 // SAFETY: `hook_ctx` holds one ref-count to req-ctx.
                 let before_poll = |raw_ctx: *const ()| {
-                    let original = super::#server_parent_rpc_ctx.replace(raw_ctx);
+                    let original = super::#parent_ctx_pkg::#server_parent_rpc_ctx.replace(raw_ctx);
                     assert!(original.is_null());
                 };
 
                 // Remove req-ctx from our thread local to avoid exposing this req-ctx
                 // to another task (and mislead another task to think they have a parent rpc).
                 let after_poll = |raw_ctx: *const ()| {
-                    let original = super::#server_parent_rpc_ctx.replace(
+                    let original = super::#parent_ctx_pkg::#server_parent_rpc_ctx.replace(
                         core::ptr::null(),
                     );
                     assert!(!original.is_null());
@@ -637,7 +643,7 @@ fn generate_unary<T: Method>(
                 .hook()
                 .pre_hook(|| {
                     let req_ctx_addr = req_ctx.as_ref() as *const P;
-                    let original = super::#server_parent_rpc_ctx.replace(req_ctx_addr as *const ());
+                    let original = super::#parent_ctx_pkg::#server_parent_rpc_ctx.replace(req_ctx_addr as *const ());
 
                     // A server handler should not be calling another server handler.
                     // We only set this value before polling a server handler.
@@ -646,7 +652,7 @@ fn generate_unary<T: Method>(
                     req_ctx.before_poll();
                 })
                 .post_hook(|poll| {
-                    let original = super::#server_parent_rpc_ctx.replace(core::ptr::null());
+                    let original = super::#parent_ctx_pkg::#server_parent_rpc_ctx.replace(core::ptr::null());
                     assert!(!original.is_null());
                     req_ctx.after_poll(poll);
                 })

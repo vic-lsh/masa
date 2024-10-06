@@ -117,8 +117,8 @@ impl CodeGenBuilder {
         )
     }
 
-    pub fn generate_parent_rpc_context(&self) -> TokenStream {
-        crate::server::generate_rpc_context()
+    pub fn generate_parent_rpc_context(&self, package: &str) -> TokenStream {
+        crate::server::generate_rpc_context(package)
     }
 }
 
