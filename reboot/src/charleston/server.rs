@@ -1,7 +1,6 @@
 pub mod hello {
     tonic::include_proto!("hello");
 }
-mod graph;
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -18,7 +17,7 @@ use tonic::{
     transport::{Channel, Server},
     Request, Response, Status,
 };
-use tonic_masa::{Address, Path, PriorityHint};
+use tonic_masa::{Address, MethodId, PriorityHint};
 
 use hello::{
     greeter_client::GreeterClient,
@@ -42,13 +41,13 @@ pub struct Args {
 }
 
 pub struct GreeterImpl<'a> {
-    clients: HashMap<Path, GreeterClient<Channel>>,
+    clients: HashMap<MethodId, GreeterClient<Channel>>,
     executor: Arc<ExecImpl<'a>>,
 }
 
 impl<'a> GreeterImpl<'a> {
     pub fn new(
-        clients: HashMap<Path, GreeterClient<Channel>>,
+        clients: HashMap<MethodId, GreeterClient<Channel>>,
         executor: Arc<ExecImpl<'a>>,
     ) -> Self {
         Self { clients, executor }
@@ -118,7 +117,7 @@ impl<'a> GreeterImpl<'a> {
     ) -> Result<Response<HelloReply>, Status> {
         log::info!("say_hello_fanout, ddl: {:?}", async_task::get_task_ddl());
 
-        let path = "/hello.Greeter/SayGoodbye".to_string();
+        let method_id: MethodId = "/hello.Greeter/SayGoodbye".to_string();
         let start = Instant::now();
 
         // let ctx = request.metadata().get_ctx("ctx").unwrap();
@@ -130,7 +129,7 @@ impl<'a> GreeterImpl<'a> {
         for idx in 0..2 {
             log::info!("say_hello_fanout, spawning task: {}", idx);
 
-            let mut client = self.clients.get(&path).unwrap().clone();
+            let mut client = self.clients.get(&method_id).unwrap().clone();
             let request = Request::new(HelloRequest {
                 name: "SayGoodbye".to_string(),
             });
@@ -198,12 +197,12 @@ where
 #[derive(Debug, Clone)]
 struct VirtualServer {
     addr: Address,
-    conn_addrs: HashMap<Path, Address>,
+    conn_addrs: HashMap<MethodId, Address>,
     n_threads: usize,
 }
 
 impl VirtualServer {
-    pub fn new(addr: Address, conn_addrs: HashMap<Path, Address>, n_threads: usize) -> Self {
+    pub fn new(addr: Address, conn_addrs: HashMap<MethodId, Address>, n_threads: usize) -> Self {
         let mut paths = Vec::new();
         let mut addrs = Vec::new();
         for (path, addr) in conn_addrs.iter() {
@@ -223,7 +222,7 @@ impl VirtualServer {
         &self.addr
     }
 
-    pub async fn get_clients(&self) -> HashMap<Path, GreeterClient<Channel>> {
+    pub async fn get_clients(&self) -> HashMap<MethodId, GreeterClient<Channel>> {
         let mut clients = HashMap::new();
         for (path, addr) in self.conn_addrs.iter() {
             let client = GreeterClient::connect(addr.clone()).await.unwrap();
@@ -277,7 +276,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let addr: Address = "[::1]:50052".to_string();
         let mut conn_addrs = HashMap::new();
         conn_addrs.insert(
-            "/hello.Greeter/SayGoodbye".to_string() as Path,
+            "/hello.Greeter/SayGoodbye".to_string() as MethodId,
             "http://[::1]:50051".to_string() as Address,
         );
         let server = VirtualServer::new(addr, conn_addrs, args.n_threads);

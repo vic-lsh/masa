@@ -13,14 +13,13 @@ use rand_distr::{Distribution, Uniform};
 use structopt::StructOpt;
 
 use tonic::transport::Channel;
-use tonic_masa::{Context, Path};
+use tonic_masa::{Context, GraphId};
 
 use hello::{greeter_client::GreeterClient, HelloRequest};
 
 pub mod hello {
     tonic::include_proto!("hello");
 }
-mod graph;
 
 pub fn time_now() -> u64 {
     let now = SystemTime::now()
@@ -41,7 +40,7 @@ pub struct Args {
 
 #[derive(Debug)]
 struct LoadGenerator {
-    graph_id: Path,
+    graph_id: GraphId,
     client: GreeterClient<Channel>,
     concurrency: usize,
     rps_cnt: Arc<AtomicUsize>,
@@ -49,7 +48,7 @@ struct LoadGenerator {
 
 impl LoadGenerator {
     pub fn new(
-        graph_id: Path,
+        graph_id: GraphId,
         client: GreeterClient<Channel>,
         concurrency: usize,
         rps_cnt: Arc<AtomicUsize>,
@@ -153,7 +152,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     let load_gen = {
-        let graph_id: Path = "/hello.Greeter".to_string();
+        let graph_id: GraphId = "/hello.Greeter".to_string();
         let client = GreeterClient::connect(args.addr).await?;
         let load_gen = LoadGenerator::new(graph_id, client, args.concurrency, rps_cnt);
         load_gen
