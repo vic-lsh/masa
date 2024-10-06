@@ -87,13 +87,18 @@ impl GrpcMethod {
         Self { service, method }
     }
 
-    /// gRPC service name
+    /// gRPC service name.
     pub fn service(&self) -> &str {
         self.service
     }
 
-    /// gRPC method name
+    /// gRPC method name.
     pub fn method(&self) -> &str {
         self.method
+    }
+
+    /// gRPC method id.
+    pub fn id(&self) -> String {
+        format!("/{}/{}", self.service, self.method)
     }
 }

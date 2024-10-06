@@ -13,7 +13,7 @@ use rand_distr::{Distribution, Uniform};
 use structopt::StructOpt;
 
 use tonic::transport::Channel;
-use tonic_masa::{Context, GlobalGraph};
+use tonic_masa::{Context, Path};
 
 use hello::{greeter_client::GreeterClient, HelloRequest};
 
@@ -41,7 +41,7 @@ pub struct Args {
 
 #[derive(Debug)]
 struct LoadGenerator {
-    global_graph: GlobalGraph,
+    graph_id: Path,
     client: GreeterClient<Channel>,
     concurrency: usize,
     rps_cnt: Arc<AtomicUsize>,
@@ -49,13 +49,13 @@ struct LoadGenerator {
 
 impl LoadGenerator {
     pub fn new(
-        global_graph: GlobalGraph,
+        graph_id: Path,
         client: GreeterClient<Channel>,
         concurrency: usize,
         rps_cnt: Arc<AtomicUsize>,
     ) -> Self {
         Self {
-            global_graph,
+            graph_id,
             client,
             concurrency,
             rps_cnt,
@@ -67,8 +67,7 @@ impl LoadGenerator {
         let mut handles = Vec::with_capacity(self.concurrency);
 
         for i in 0..self.concurrency {
-            let graph_id = self.global_graph.graph_id().clone();
-
+            let graph_id = self.graph_id.clone();
             let rps_cnt = self.rps_cnt.clone();
             let mut client = self.client.clone();
             let request = HelloRequest {
@@ -154,10 +153,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     let load_gen = {
-        let global_graph =
-            graph::get_global_graph_i2("I2".to_string(), 1_000, 1_000, Some(100), 5_000);
+        let graph_id: Path = "/hello.Greeter".to_string();
         let client = GreeterClient::connect(args.addr).await?;
-        let load_gen = LoadGenerator::new(global_graph, client, args.concurrency, rps_cnt);
+        let load_gen = LoadGenerator::new(graph_id, client, args.concurrency, rps_cnt);
         load_gen
     };
     load_gen.run().await.unwrap();

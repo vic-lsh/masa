@@ -14,13 +14,13 @@ path = "src/charleston/client.rs"
 name = "charleston_server"
 path = "src/charleston/server.rs"
 
-[[bin]]
-name = "bridgeway_client_bench"
-path = "src/bridgeway/client_bench.rs"
+# [[bin]]
+# name = "bridgeway_client_bench"
+# path = "src/bridgeway/client_bench.rs"
 
-[[bin]]
-name = "bridgeway_server"
-path = "src/bridgeway/server.rs"
+# [[bin]]
+# name = "bridgeway_server"
+# path = "src/bridgeway/server.rs"
 
 # [[bin]]
 # name = "irust_tracker"
