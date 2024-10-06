@@ -253,14 +253,6 @@ impl prost_build::ServiceGenerator for ServiceGenerator {
     }
 
     fn finalize(&mut self, buf: &mut String) {
-        let rpc_ctx = crate::server::generate_rpc_context();
-        let rpc_ctx_src = quote::quote! {
-            #rpc_ctx
-        };
-        let ast: syn::File = syn::parse2(rpc_ctx_src).expect("not a valid tokenstream");
-        let code = prettyplease::unparse(&ast);
-        buf.push_str(&code);
-
         if self.builder.build_client && !self.clients.is_empty() {
             let clients = &self.clients;
 
@@ -288,6 +280,16 @@ impl prost_build::ServiceGenerator for ServiceGenerator {
 
             self.servers = TokenStream::default();
         }
+    }
+
+    fn finalize_package(&mut self, package: &str, buf: &mut String) {
+        let rpc_ctx = crate::server::generate_rpc_context(package);
+        let rpc_ctx_src = quote::quote! {
+            #rpc_ctx
+        };
+        let ast: syn::File = syn::parse2(rpc_ctx_src).expect("not a valid tokenstream");
+        let code = prettyplease::unparse(&ast);
+        buf.push_str(&code);
     }
 }
 
