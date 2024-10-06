@@ -1,13 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{GraphId, RequestClass, RequestId, Timestamp};
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-};
 
 /// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
