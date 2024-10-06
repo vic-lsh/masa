@@ -7,16 +7,12 @@ publish = false
 version = "0.1.0"
 
 [[bin]]
-name = "bridgeway_manager"
-path = "src/bridgeway/manager_main.rs"
+name = "charleston_client"
+path = "src/charleston/client.rs"
 
 [[bin]]
-name = "bridgeway_client_bench_tung_chung"
-path = "src/bridgeway/client_bench_tung_chung.rs"
-
-[[bin]]
-name = "bridgeway_server_tung_chung"
-path = "src/bridgeway/server_tung_chung.rs"
+name = "charleston_server"
+path = "src/charleston/server.rs"
 
 [[bin]]
 name = "bridgeway_client_bench"
@@ -26,49 +22,71 @@ path = "src/bridgeway/client_bench.rs"
 name = "bridgeway_server"
 path = "src/bridgeway/server.rs"
 
-[[bin]]
-name = "charleston_lactose_sequential"
-path = "src/charleston/lactose/sequential.rs"
+# [[bin]]
+# name = "irust_tracker"
+# path = "src/irust/tracker.rs"
 
-[[bin]]
-name = "charleston_lactose_single"
-path = "src/charleston/lactose/single.rs"
+# [[bin]]
+# name = "bridgeway_manager"
+# path = "src/bridgeway/manager_main.rs"
 
-[[bin]]
-name = "charleston_client"
-path = "src/charleston/client.rs"
+# [[bin]]
+# name = "bridgeway_client_bench_tung_chung"
+# path = "src/bridgeway/client_bench_tung_chung.rs"
 
-[[bin]]
-name = "charleston_client_bench"
-path = "src/charleston/client_bench.rs"
+# [[bin]]
+# name = "bridgeway_server_tung_chung"
+# path = "src/bridgeway/server_tung_chung.rs"
 
-[[bin]]
-name = "charleston_server"
-path = "src/charleston/server.rs"
+# [[bin]]
+# name = "charleston_lactose_sequential"
+# path = "src/charleston/lactose/sequential.rs"
 
-[[bin]]
-name = "sheraton_client"
-path = "src/sheraton/client.rs"
+# [[bin]]
+# name = "charleston_lactose_single"
+# path = "src/charleston/lactose/single.rs"
 
-[[bin]]
-name = "sheraton_server"
-path = "src/sheraton/server.rs"
+# [[bin]]
+# name = "charleston_client_bench"
+# path = "src/charleston/client_bench.rs"
 
-[[bin]]
-name = "hello_client"
-path = "src/hello/client.rs"
+# [[bin]]
+# name = "charleston_client"
+# path = "src/charleston/client.rs"
 
-[[bin]]
-name = "hello_server"
-path = "src/hello/server.rs"
+# [[bin]]
+# name = "charleston_server"
+# path = "src/charleston/server.rs"
+
+# [[bin]]
+# name = "sheraton_client"
+# path = "src/sheraton/client.rs"
+
+# [[bin]]
+# name = "sheraton_server"
+# path = "src/sheraton/server.rs"
+
+# [[bin]]
+# name = "hello_client"
+# path = "src/hello/client.rs"
+
+# [[bin]]
+# name = "hello_server"
+# path = "src/hello/server.rs"
 
 [profile.release]
 debug = true
 
 [features]
-masa = ["async-executor/masa"]
-fifo = ["async-executor/fifo"]
-fifo-binary = ["async-executor/fifo-binary"]
+prio_class = ["async-executor/prio_class", "tonic-masa/prio_class"]
+prio_global = ["async-executor/prio_global", "tonic-masa/prio_global"]
+prio_class_global = [
+	"async-executor/prio_class_global",
+	"tonic-masa/prio_class_global",
+]
+prio_local = ["async-executor/prio_local", "tonic-masa/prio_local"]
+fifo_two = ["async-executor/fifo_two", "tonic-masa/fifo_two"]
+fifo = ["async-executor/fifo", "tonic-masa/fifo"]
 
 gcp = ["dep:prost-types", "tonic/tls"]
 routeguide = [
@@ -150,6 +168,7 @@ full = [
 default = ["full"]
 
 [dependencies]
+tonic-masa = { path = "../tonic-masa" }
 async-executor = { path = "../3rd_party/async-executor" }
 async-compat = "0.2.3"
 async-task = { path = "../3rd_party/async-task" }
@@ -157,7 +176,6 @@ smol = { path = "../3rd_party/smol" }
 futures-lite = { version = "2.0.0" }
 structopt = "0.3.23"
 crossbeam-channel = "0.5"
-tonic-masa = { path = "../tonic-masa" }
 mongodb = { path = "../3rd_party/mongodb" }
 memcache = "0.16"
 log = "0.4"

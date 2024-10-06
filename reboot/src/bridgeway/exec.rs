@@ -1,7 +1,7 @@
 use futures_lite::future;
 use hyper::rt::Executor;
 use std::sync::Arc;
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 #[derive(Debug)]
 pub struct ExecImpl<'a> {
@@ -29,8 +29,8 @@ where
     F: std::future::Future + Send + 'static,
     F::Output: Send,
 {
-    fn execute(&self, fut: F, ddl: DeadlineHint) {
+    fn execute(&self, fut: F, prio: PriorityHint) {
         // [NOTE] Deadline is passed from H2Stream.
-        self.ex.spawn_with_ddl(fut, ddl).fallible().detach();
+        self.ex.spawn_with_prio(fut, prio).fallible().detach();
     }
 }

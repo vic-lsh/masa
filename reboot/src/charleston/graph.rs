@@ -1,9 +1,77 @@
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp};
 use std::collections::HashMap;
-use tonic_masa::{
-    Distribution as MasaDistribution, GlobalGraph, Latency, LocalGraph, Path, Span,
-};
+use tonic_masa::{Distribution as MasaDistribution, GlobalGraph, Latency, LocalGraph, Path, Span};
+
+#[allow(dead_code)]
+pub fn get_global_graph_i2(
+    graph_id: Path,
+    n_samples: usize,
+    n_percentiles: usize,
+    tracker_capacity: Option<usize>,
+    mean: u64,
+) -> GlobalGraph {
+    let local_graphs = {
+        let mut rng = StdRng::seed_from_u64(998244353);
+        let mut graphs = HashMap::new();
+        graphs.insert(
+            "/hello.Greeter/SayHello".to_string() as Path,
+            LocalGraph::new(
+                graph_id.clone(),
+                vec![
+                    Span::new(
+                        "/hello.Greeter/SayHello/Head".to_string(),
+                        Some(MasaDistribution::new(
+                            mean / 2,
+                            get_percentile_latencies(&mut rng, mean / 2, n_samples, n_percentiles),
+                        )),
+                        tracker_capacity,
+                    ),
+                    Span::new(
+                        "/hello.Greeter/SayGoodbye".to_string(),
+                        Some(MasaDistribution::new(mean, Vec::new())),
+                        tracker_capacity,
+                    ),
+                    Span::new(
+                        "/hello.Greeter/SayHello/Tail".to_string(),
+                        Some(MasaDistribution::new(
+                            mean / 2,
+                            get_percentile_latencies(&mut rng, mean / 2, n_samples, n_percentiles),
+                        )),
+                        tracker_capacity,
+                    ),
+                ],
+            ),
+        );
+        graphs.insert(
+            "/hello.Greeter/SayGoodbye".to_string() as Path,
+            LocalGraph::new(
+                graph_id.clone(),
+                vec![
+                    Span::new(
+                        "/hello.Greeter/SayGoodbye/Head".to_string(),
+                        Some(MasaDistribution::new(
+                            mean / 2,
+                            get_percentile_latencies(&mut rng, mean / 2, n_samples, n_percentiles),
+                        )),
+                        tracker_capacity,
+                    ),
+                    Span::new(
+                        "/hello.Greeter/SayGoodbye/Tail".to_string(),
+                        Some(MasaDistribution::new(
+                            mean / 2,
+                            get_percentile_latencies(&mut rng, mean / 2, n_samples, n_percentiles),
+                        )),
+                        tracker_capacity,
+                    ),
+                ],
+            ),
+        );
+        graphs
+    };
+    let global_graph = GlobalGraph::new(graph_id, local_graphs);
+    global_graph
+}
 
 fn get_percentile_latencies(
     rng: &mut StdRng,
@@ -23,86 +91,4 @@ fn get_percentile_latencies(
         percentiles.push(samples[index]);
     }
     percentiles
-}
-
-// [TODO] Support Hotel.
-pub fn get_global_graph() -> GlobalGraph {
-    let local_graphs = {
-        let mut rng = StdRng::seed_from_u64(998244353);
-        let mut graphs = HashMap::new();
-        let n_samples = 1_000;
-        let n_percentiles = 1_000;
-        graphs.insert(
-            "Source".to_string() as Path,
-            LocalGraph::new(vec![Span::new(
-                "/hello.Greeter/SayHello".to_string(),
-                MasaDistribution::new(4_000, None),
-            )]),
-        );
-        graphs.insert(
-            "/hello.Greeter/SayHello".to_string() as Path,
-            LocalGraph::new(vec![
-                Span::new(
-                    "Head".to_string(),
-                    MasaDistribution::new(
-                        2_000,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            2_000,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
-                ),
-                Span::new(
-                    "/hello.Greeter/SayGoodbye".to_string(),
-                    MasaDistribution::new(2_000, None),
-                ),
-                Span::new(
-                    "Tail".to_string(),
-                    MasaDistribution::new(
-                        3,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            3,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
-                ),
-            ]),
-        );
-        graphs.insert(
-            "/hello.Greeter/SayGoodbye".to_string() as Path,
-            LocalGraph::new(vec![
-                Span::new(
-                    "Head".to_string(),
-                    MasaDistribution::new(
-                        2_000,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            2_000,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
-                ),
-                Span::new(
-                    "Tail".to_string(),
-                    MasaDistribution::new(
-                        4,
-                        Some(get_percentile_latencies(
-                            &mut rng,
-                            4,
-                            n_samples,
-                            n_percentiles,
-                        )),
-                    ),
-                ),
-            ]),
-        );
-        graphs
-    };
-    let global_graph = GlobalGraph::new("GraphID".to_string() as Path, local_graphs);
-    global_graph
 }

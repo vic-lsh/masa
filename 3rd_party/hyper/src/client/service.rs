@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 use tracing::debug;
 
@@ -82,7 +82,7 @@ where
                                     debug!("connection error: {:?}", e);
                                 }
                             },
-                            DeadlineHint::infra(),
+                            PriorityHint::infra(),
                         );
                         Ok(sr)
                     }

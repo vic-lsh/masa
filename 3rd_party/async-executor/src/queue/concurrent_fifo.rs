@@ -1,7 +1,7 @@
 use concurrent_queue::ConcurrentQueue;
 
 use super::{PopError, PushError, Queue};
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 pub(crate) struct ConcurrentFifoQueue<T> {
     q: ConcurrentQueue<T>,
@@ -37,10 +37,10 @@ impl<T> Queue for ConcurrentFifoQueue<T> {
         })
     }
 
-    fn push_with_ddl(
+    fn push_with_prio(
         &self,
         item: Self::Item,
-        _ddl: DeadlineHint,
+        _prio: PriorityHint,
     ) -> Result<(), PushError<Self::Item>> {
         self.push(item)
     }
