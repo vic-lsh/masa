@@ -88,11 +88,14 @@ impl RequestHandlerHooks for SimpleParentContext {
 
     fn after_child_rpc<T>(
         &self,
-        method: GrpcMethod,
+        child_rpc_method: GrpcMethod,
         _resp: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext,
     ) {
-        log::info!("parent_ctx, after_child_rpc, method: {:?}", method.id());
+        log::info!(
+            "parent_ctx, after_child_rpc, method: {:?}",
+            child_rpc_method.id()
+        );
         let latency_us = child_ctx.latency_us.unwrap();
         self.server_ctx
             .local_graph_trackers
@@ -100,7 +103,7 @@ impl RequestHandlerHooks for SimpleParentContext {
             .unwrap()
             .write()
             .unwrap()
-            .track_span(&method.id(), latency_us);
+            .track_span(&child_rpc_method.id(), latency_us);
     }
 
     fn before_poll(&self) {
