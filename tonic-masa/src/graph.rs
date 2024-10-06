@@ -99,16 +99,16 @@ impl LocalGraphTracker {
     }
 
     /// Track the latency of a span indexed by its path.
-    pub fn track_span(&mut self, path: &Path, latency: Latency) {
+    pub fn track_span(&mut self, path: &Path, lat_us: Latency) {
         log::info!(
-            "track, graph_id: {:?}, path: {:?}, latency: {}",
+            "tracker, graph_id: {:?}, path: {:?}, latency: {} us",
             self.graph_id,
             path,
-            latency
+            lat_us
         );
         for span in self.spans.iter_mut() {
             if span.path() == path {
-                span.track(latency);
+                span.track(lat_us);
                 return;
             }
         }
@@ -137,6 +137,11 @@ impl GlobalGraph {
     /// Get the graph ID.
     pub fn graph_id(&self) -> &GraphID {
         &self.graph_id
+    }
+
+    /// Get the local graphs.
+    pub fn local_graphs(&self) -> &HashMap<Path, LocalGraph> {
+        &self.local_graphs
     }
 
     /// Check if a path is contained in the graph.

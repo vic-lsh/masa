@@ -22,8 +22,8 @@ use tonic::{
     Request, Response, Status,
 };
 use tonic_masa::{
-    Address, Context, GlobalGraph, Latency, LocalGraph, LocalGraphTracker, Path, FIFO, FIFO_TWO,
-    ONLINE_TRACKER, PRIO_GLOBAL, PRIO_LOCAL,
+    Address, Context, Latency, LocalGraph, LocalGraphTracker, Path, FIFO, FIFO_TWO, ONLINE_TRACKER,
+    PRIO_GLOBAL, PRIO_LOCAL,
 };
 
 use hello::{
@@ -48,8 +48,8 @@ pub struct Args {
 }
 
 pub struct GreeterImpl<'a> {
-    local_graphs: HashMap<Path, LocalGraph>,
-    local_graph_trackers: HashMap<Path, RwLock<LocalGraphTracker>>,
+    _local_graphs: HashMap<Path, LocalGraph>,
+    _local_graph_trackers: HashMap<Path, RwLock<LocalGraphTracker>>,
     clients: HashMap<Path, GreeterClient<Channel>>,
     executor: Arc<ExecImpl<'a>>,
 }
@@ -68,16 +68,16 @@ impl<'a> GreeterImpl<'a> {
             })
             .collect();
         Self {
-            local_graphs,
-            local_graph_trackers,
+            _local_graphs: local_graphs,
+            _local_graph_trackers: local_graph_trackers,
             clients,
             executor,
         }
     }
 
-    fn set_child_ctx(&self, ctx: &Context, request: &mut Request<HelloRequest>, path: &Path) {
+    fn _set_child_ctx(&self, ctx: &Context, request: &mut Request<HelloRequest>, path: &Path) {
         let graph = self
-            .local_graph_trackers
+            ._local_graph_trackers
             .get(ctx.graph_id())
             .unwrap()
             .read()
@@ -103,16 +103,16 @@ impl<'a> GreeterImpl<'a> {
         request.metadata_mut().insert_ctx("ctx", &child_ctx);
     }
 
-    fn track_span(&self, ctx: &Context, path: &Path, latency: Latency) {
-        // if ONLINE_TRACKER {
-        //     let mut graph = self
-        //         .local_graph_trackers
-        //         .get(ctx.graph_id())
-        //         .unwrap()
-        //         .write()
-        //         .unwrap();
-        //     graph.track_span(path, latency);
-        // }
+    fn _track_span(&self, ctx: &Context, path: &Path, latency: Latency) {
+        if ONLINE_TRACKER {
+            let mut graph = self
+                ._local_graph_trackers
+                .get(ctx.graph_id())
+                .unwrap()
+                .write()
+                .unwrap();
+            graph.track_span(path, latency);
+        }
     }
 }
 
@@ -141,25 +141,28 @@ impl Greeter for GreeterImpl<'static> {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
-        let ctx = request.metadata().get_ctx("ctx").unwrap();
-        let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("say_goodbye, ddl: {:?}", async_task::get_task_ddl());
 
-        let spans = graph.spans();
-        assert!(spans.len() == 2);
+        // [CL] Compute spans are not supported for now.
 
-        for i in 0..spans.len() {
-            let span = &spans[i];
-            let path = span.path();
+        // let ctx = request.metadata().get_ctx("ctx").unwrap();
+        // let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
 
-            if i == 0 || i == spans.len() - 1 {
-                let elapse = span.distribution().sample(ctx.request_id());
-                let start_at = time_now();
-                busy_spin(Duration::from_micros(elapse));
-                let latency = time_now() - start_at;
-                self.track_span(&ctx, path, latency);
-            }
-        }
+        // let spans = graph.spans();
+        // assert!(spans.len() == 2);
+
+        // for i in 0..spans.len() {
+        //     let span = &spans[i];
+        //     let path = span.path();
+
+        //     if i == 0 || i == spans.len() - 1 {
+        //         let elapse = span.distribution().sample(ctx.request_id());
+        //         let start_at = time_now();
+        //         busy_spin(Duration::from_micros(elapse));
+        //         let latency = time_now() - start_at;
+        //         self.track_span(&ctx, path, latency);
+        //     }
+        // }
 
         let reply = HelloReply {
             message: format!("Hello {}!", request.into_inner().name),
@@ -174,25 +177,26 @@ impl<'a> GreeterImpl<'a> {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloReply>, Status> {
+        log::info!("say_hello_fanout, ddl: {:?}", async_task::get_task_ddl());
+
         let path = "/hello.Greeter/SayGoodbye".to_string();
         let start = Instant::now();
 
-        let ctx = request.metadata().get_ctx("ctx").unwrap();
+        // let ctx = request.metadata().get_ctx("ctx").unwrap();
         // let graph = self.local_graphs.get(ctx.graph_id()).unwrap();
-
-        log::info!("say_hello_fanout, ddl: {:?}", async_task::get_task_ddl());
 
         busy_spin(Duration::from_millis(5));
 
         let mut tasks = Vec::new();
         for idx in 0..2 {
-            log::info!("say_hello_fanout, spawning task {}", idx);
+            log::info!("say_hello_fanout, spawning task: {}", idx);
 
             let mut client = self.clients.get(&path).unwrap().clone();
-            let mut request = Request::new(HelloRequest {
+            let request = Request::new(HelloRequest {
                 name: "SayGoodbye".to_string(),
             });
-            self.set_child_ctx(&ctx, &mut request, &path);
+            // [CL] Move to hooks.
+            // self.set_child_ctx(&ctx, &mut request, &path);
             tasks.push(self.executor.spawn(async move {
                 client.say_goodbye(request).await.unwrap();
             }));
@@ -200,7 +204,7 @@ impl<'a> GreeterImpl<'a> {
 
         for (idx, task) in tasks.into_iter().enumerate() {
             task.await;
-            log::info!("say_hello_fanout, completed task {}", idx);
+            log::info!("say_hello_fanout, completed task: {}", idx);
         }
 
         busy_spin(Duration::from_millis(5));
@@ -210,8 +214,8 @@ impl<'a> GreeterImpl<'a> {
         };
 
         log::info!(
-            "say_hello_fanout, elapsed {} ms",
-            start.elapsed().as_millis()
+            "say_hello_fanout, elapsed: {} us",
+            start.elapsed().as_micros()
         );
         Ok(Response::new(reply))
     }
@@ -333,21 +337,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::from_args();
 
-    let global_graph = graph::get_global_graph_i2("I2".to_string(), 1_000, 1_000, Some(100), 5_000);
+    // [CL] Move to ServerContext.
+    // let global_graph = graph::get_global_graph_i2("I2".to_string(), 1_000, 1_000, Some(100), 5_000);
 
     let mut servers = Vec::new();
 
     let server1 = {
         let addr: Address = "[::1]:50051".to_string();
         let conn_addrs = HashMap::new();
-        let path: Path = "/hello.Greeter/SayGoodbye".to_string();
+        // [CL] Path should be "/hello.Greeter".
+        // let path: Path = "/hello.Greeter/SayGoodbye".to_string();
         let local_graphs = {
-            let mut graphs = HashMap::new();
-            graphs.insert(
-                global_graph.graph_id().clone(),
-                global_graph.get_local_graph(&path).clone(),
-            );
-            graphs
+            // [CL] Move to ServerContext.
+            HashMap::new()
+            // let mut graphs = HashMap::new();
+            // graphs.insert(
+            //     global_graph.graph_id().clone(),
+            //     global_graph.get_local_graph(&path).clone(),
+            // );
+            // graphs
         };
         let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
         server
@@ -361,14 +369,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/hello.Greeter/SayGoodbye".to_string() as Path,
             "http://[::1]:50051".to_string() as Address,
         );
-        let path: Path = "/hello.Greeter/SayHello".to_string();
+        // let path: Path = "/hello.Greeter/SayHello".to_string();
         let local_graphs = {
-            let mut graphs = HashMap::new();
-            graphs.insert(
-                global_graph.graph_id().clone(),
-                global_graph.get_local_graph(&path).clone(),
-            );
-            graphs
+            HashMap::new()
+            // let mut graphs = HashMap::new();
+            // graphs.insert(
+            //     global_graph.graph_id().clone(),
+            //     global_graph.get_local_graph(&path).clone(),
+            // );
+            // graphs
         };
         let server = VirtualServer::new(addr, conn_addrs, local_graphs, args.n_threads);
         server
