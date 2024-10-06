@@ -63,7 +63,7 @@ use futures_lite::{future, prelude::*};
 use queue::Queue;
 use slab::Slab;
 
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 #[cfg(feature = "static")]
 mod static_executors;
@@ -205,17 +205,17 @@ where
     ///     println!("Hello world");
     /// });
     /// ```
-    pub fn spawn_with_ddl<T: Send + 'a>(
+    pub fn spawn_with_prio<T: Send + 'a>(
         &self,
         future: impl Future<Output = T> + Send + 'a,
-        ddl: DeadlineHint,
+        prio: PriorityHint,
     ) -> Task<T, M> {
         let mut active = self.state().active.lock().unwrap();
 
         let meta = Self::clone_parent_task_metadata().unwrap_or_default();
         // let meta = M::default();
         // SAFETY: `T` and the future are `Send`.
-        unsafe { self.spawn_inner_impl(future, ddl, meta, &mut active) }
+        unsafe { self.spawn_inner_impl(future, prio, meta, &mut active) }
     }
 
     fn clone_parent_task_metadata() -> Option<M> {
@@ -304,7 +304,7 @@ where
         active: &mut Slab<Waker>,
     ) -> Task<T, M> {
         // Inherit the parent task ddl, if there is a parent task.
-        let ddl = async_task::get_task_ddl().unwrap_or(DeadlineHint::infra());
+        let ddl = async_task::get_task_ddl().unwrap_or(PriorityHint::infra());
 
         // [TODO] make inheriting metadata or not configurable
         let meta = Self::clone_parent_task_metadata().unwrap_or_default();
@@ -321,7 +321,7 @@ where
     unsafe fn spawn_inner_impl<T: 'a>(
         &self,
         future: impl Future<Output = T> + 'a,
-        ddl: DeadlineHint,
+        prio: PriorityHint,
         metadata: M,
         active: &mut Slab<Waker>,
     ) -> Task<T, M> {
@@ -358,7 +358,7 @@ where
         // `Waker`.
         let (runnable, task) = Builder::new()
             .propagate_panic(true)
-            .deadline(ddl)
+            .deadline(prio)
             .metadata(metadata)
             .spawn_unchecked(|_| future, self.schedule());
         entry.insert(runnable.waker());
@@ -444,10 +444,10 @@ where
             //     runnable.deadline().value()
             // );
 
-            let deadline = runnable.deadline();
-            if state.queue.push_with_ddl(runnable, deadline).is_err() {
-                panic!("Push should never fail in an unbounded queue");
-            }
+            let prio = runnable.priority();
+            if state.queue.push_with_prio(runnable, prio).is_err() {
+                panic!("Failed to push runnable to queue");
+            };
             state.notify();
 
             SCHED_TIME_US.fetch_add(now.elapsed().as_micros() as usize, Ordering::Relaxed);
@@ -760,11 +760,20 @@ impl<'a> Default for LocalExecutor<'a> {
     }
 }
 
-#[cfg(feature = "masa")]
+#[cfg(any(feature = "prio_local", feature = "prio_global"))]
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
-#[cfg(feature = "fifo-binary")]
-type GlobalQueue<T> = queue::MutexFifoBinaryQueue<T>;
-#[cfg(not(any(feature = "masa", feature = "fifo-binary")))]
+#[cfg(feature = "fifo_two")]
+type GlobalQueue<T> = queue::MutexFifoTwoQueue<T>;
+#[cfg(feature = "fifo")]
+type GlobalQueue<T> = queue::MutexFifoQueue<T>;
+#[cfg(not(any(
+    feature = "prio_class",
+    feature = "prio_global",
+    feature = "prio_class_global",
+    feature = "prio_local",
+    feature = "fifo_two",
+    feature = "fifo"
+)))]
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 
 // [NOTE] The original implementation uses a concurrent queue for the global queue.
@@ -793,6 +802,21 @@ struct State<M> {
 impl<M> State<M> {
     /// Creates state for a new executor.
     fn new() -> State<M> {
+        if cfg!(feature = "prio_class") {
+            log::warn!("Enabled prio_class");
+        } else if cfg!(feature = "prio_global") {
+            log::warn!("Enabled prio_global");
+        } else if cfg!(feature = "prio_class_global") {
+            log::warn!("Enabled prio_class_global");
+        } else if cfg!(feature = "prio_local") {
+            log::warn!("Enabled prio_local");
+        } else if cfg!(feature = "fifo_two") {
+            log::warn!("Enabled fifo_two");
+        } else if cfg!(feature = "fifo") {
+            log::warn!("Enabled fifo");
+        } else {
+            panic!("Not implemented policy");
+        }
         State {
             queue: GlobalQueue::default(),
             local_queues: RwLock::new(Vec::new()),
@@ -1017,10 +1041,10 @@ impl<M> Ticker<'_, M> {
                     }
                     Some(r) => {
                         // log::info!(
-                        //     "Pop runnable from queue, now: {}, task: {:p}, deadline: {}",
+                        //     "Pop runnable from queue, now: {}, task: {:p}, priority: {}",
                         //     time_now(),
                         //     r.ptr_to_u64() as *const (),
-                        //     r.deadline().value()
+                        //     r.priority().value()
                         // );
 
                         // Wake up.

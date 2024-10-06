@@ -1,8 +1,3 @@
-use env_logger::{Builder, Env};
-use hello::{greeter_client::GreeterClient, HelloRequest};
-use log::info;
-use rand::{rngs::StdRng, SeedableRng};
-use rand_distr::{Distribution, Uniform};
 use std::error::Error;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -10,9 +5,17 @@ use std::sync::{
 };
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use env_logger::{Builder, Env};
+use log::info;
+use rand::{rngs::StdRng, SeedableRng};
+use rand_distr::{Distribution, Uniform};
 use structopt::StructOpt;
+
 use tonic::transport::Channel;
 use tonic_masa::{Context, GlobalGraph};
+
+use hello::{greeter_client::GreeterClient, HelloRequest};
 
 pub mod hello {
     tonic::include_proto!("hello");
@@ -30,9 +33,9 @@ pub fn time_now() -> u64 {
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Client for benchmarking")]
 pub struct Args {
-    #[structopt(short, long, default_value = "http://[::1]:50051")]
+    #[structopt(long, default_value = "http://[::1]:50052")]
     pub addr: String,
-    #[structopt(short, long)]
+    #[structopt(long)]
     pub concurrency: usize,
 }
 
@@ -65,7 +68,6 @@ impl LoadGenerator {
 
         for i in 0..self.concurrency {
             let graph_id = self.global_graph.graph_id().clone();
-            let local_graph = self.global_graph.get_source().clone();
 
             let rps_cnt = self.rps_cnt.clone();
             let mut client = self.client.clone();
@@ -85,15 +87,18 @@ impl LoadGenerator {
                     let start_at = time_now() - init_at;
                     let slo = 10_000;
                     let deadline = start_at + slo;
+                    let latest_exec_at = deadline;
+                    let request_class = 0;
+
                     let ctx = Context::new(
                         graph_id.clone(),
                         request_id,
-                        start_at,
                         deadline,
-                        Some(local_graph.clone()),
+                        latest_exec_at,
+                        request_class,
                     );
                     let mut request = tonic::Request::new(request.clone());
-                    request.metadata_mut().insert_ctx("par_ctx", &ctx);
+                    request.metadata_mut().insert_ctx("ctx", &ctx);
 
                     let _response = client.say_hello(request).await.unwrap();
                     break;
@@ -149,7 +154,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     let load_gen = {
-        let global_graph = graph::get_global_graph();
+        let global_graph =
+            graph::get_global_graph_i2("I2".to_string(), 1_000, 1_000, Some(100), 5_000);
         let client = GreeterClient::connect(args.addr).await?;
         let load_gen = LoadGenerator::new(global_graph, client, args.concurrency, rps_cnt);
         load_gen
