@@ -1,13 +1,14 @@
 #!/bin/bash
 
 current_dir=$(pwd)
-if [[ "$current_dir" != */MPD237 ]]; then
-    echo "Error: plese run in the MPD237 root directory" >&2
+if [[ "$current_dir" != */Masa-Lo-Ding ]]; then
+    echo "Error: plese run in the Masa-Lo-Ding root directory" >&2
     exit 1
 fi
 
 SESSION_NAME="hotel"
-SVCS=("hotel_geo" "hotel_rate" "hotel_search" "hotel_frontend")
+# SVCS=("hotel_geo" "hotel_rate" "hotel_search" "hotel_frontend")
+SVCS=("hotel_search" "hotel_frontend")
 
 tmux new-session -d -s $SESSION_NAME -n "local"
 tmux set-option -s pane-border-status top
@@ -19,8 +20,8 @@ for i in "${!SVCS[@]}"; do
     svc=${SVCS[$i]}
     wait_secs=$((i * 1))
 
-    RUN_CMD="cargo run --release --bin $svc"
-    CMD="cd ~/MPD237/reboot; sleep $wait_secs; $RUN_CMD"
+    RUN_CMD="cargo run --release --features \"prio_global\" --bin $svc > tmp_$svc.log 2>&1"
+    CMD="cd ~/Masa-Lo-Ding/reboot-hotel; sleep $wait_secs; $RUN_CMD"
 
     if [ "$first_pane" = true ]; then
         tmux select-pane -T $svc

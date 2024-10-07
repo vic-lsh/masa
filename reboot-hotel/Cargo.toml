@@ -34,6 +34,16 @@ name = "hotel_frontend"
 path = "src/hotel/frontend/main.rs"
 
 [features]
+prio_class = ["async-executor/prio_class", "tonic-masa/prio_class"]
+prio_global = ["async-executor/prio_global", "tonic-masa/prio_global"]
+prio_class_global = [
+	"async-executor/prio_class_global",
+	"tonic-masa/prio_class_global",
+]
+prio_local = ["async-executor/prio_local", "tonic-masa/prio_local"]
+fifo_two = ["async-executor/fifo_two", "tonic-masa/fifo_two"]
+fifo = ["async-executor/fifo", "tonic-masa/fifo"]
+
 gcp = ["dep:prost-types", "tonic/tls"]
 routeguide = [
 	"dep:async-stream",
@@ -114,10 +124,28 @@ full = [
 default = ["full"]
 
 [dependencies]
+# Reboot
+tonic-masa = { path = "../tonic-masa" }
+async-executor = { path = "../3rd_party/async-executor" }
+async-compat = "0.2.3"
+async-task = { path = "../3rd_party/async-task" }
+smol = { path = "../3rd_party/smol" }
+futures-lite = { version = "2.0.0" }
+structopt = "0.3.23"
+crossbeam-channel = "0.5"
+mongodb = { path = "../3rd_party/mongodb" }
+memcache = "0.16"
+log = "0.4"
+env_logger = "0.9"
+
 # Common dependencies
-tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
+tokio = { path = "../3rd_party/tokio/tokio", features = [
+	"rt-multi-thread",
+	"macros",
+] }
 prost = "0.12"
 tonic = { path = "../tonic" }
+futures = "0.3"
 # Optional dependencies
 tonic-web = { path = "../tonic-web", optional = true }
 tonic-health = { path = "../tonic-health", optional = true }
@@ -125,10 +153,11 @@ tonic-reflection = { path = "../tonic-reflection", optional = true }
 tonic-types = { path = "../tonic-types", optional = true }
 either = { version = "1.9", optional = true }
 async-stream = { version = "0.3", optional = true }
-tokio-stream = { version = "0.1", optional = true }
-tokio-util = { version = "0.7.8", optional = true }
-tower = { version = "0.4", optional = true }
+tokio-stream = { path = "../3rd_party/tokio/tokio-stream", optional = true }
+tokio-util = { path = "../3rd_party/tokio/tokio-util", optional = true }
+tower = { path = "../3rd_party/tower/tower", optional = true }
 rand = { version = "0.8", optional = true }
+rand_distr = "0.4"
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
 tracing = { version = "0.1.16", optional = true }
@@ -139,22 +168,15 @@ tracing-subscriber = { version = "0.3", features = [
 prost-types = { version = "0.12", optional = true }
 http = { version = "0.2", optional = true }
 http-body = { version = "0.4.2", optional = true }
-hyper = { version = "0.14", optional = true }
+hyper = { path = "../3rd_party/hyper", optional = true }
 warp = { version = "0.3.4", default-features = false, optional = true }
 listenfd = { version = "1.0", optional = true }
 bytes = { version = "1", optional = true }
-h2 = { version = "0.3", optional = true }
-tokio-rustls = { version = "0.24.0", optional = true }
+h2 = { path = "../3rd_party/h2", optional = true }
+tokio-rustls = { path = "../3rd_party/tokio-rustls", optional = true }
 hyper-rustls = { version = "0.24.0", features = ["http2"], optional = true }
 rustls-pemfile = { version = "1", optional = true }
 tower-http = { version = "0.4", optional = true }
-# Reboot
-structopt = "0.3.23"
-futures = "0.3"
-rand_distr = "0.4"
-crossbeam-channel = "0.5"
-mongodb = "2.8"
-memcache = "0.16"
 
 [build-dependencies]
 tonic-build = { path = "../tonic-build", features = ["prost"] }

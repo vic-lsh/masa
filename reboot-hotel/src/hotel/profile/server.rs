@@ -204,7 +204,7 @@ impl HotelManager {
 }
 
 pub struct ProfileImpl {
-    manager: HotelManager,
+    // manager: HotelManager,
 }
 
 impl ProfileImpl {
@@ -216,16 +216,18 @@ impl ProfileImpl {
         cache_miss_rate: f32,
         db_addr: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let manager = HotelManager::new(
-            hotels,
-            payload,
-            cache_addr,
-            cache_conn,
-            cache_miss_rate,
-            db_addr,
-        )
-        .await?;
-        let profile = ProfileImpl { manager };
+        // let manager = HotelManager::new(
+        //     hotels,
+        //     payload,
+        //     cache_addr,
+        //     cache_conn,
+        //     cache_miss_rate,
+        //     db_addr,
+        // )
+        // .await?;
+        let profile = ProfileImpl { 
+            // manager 
+        };
         Ok(profile)
     }
 }
@@ -236,16 +238,16 @@ impl Profile for ProfileImpl {
         &self,
         request: Request<profile::ProfileRequest>,
     ) -> Result<Response<profile::ProfileResponse>, Status> {
-        let request = request.into_inner();
-        let hotels = self.manager.fetch_mixture(request.hotels).await;
+        // let request = request.into_inner();
+        // let hotels = self.manager.fetch_mixture(request.hotels).await;
         let mut profiles = Vec::new();
-        for hotel in hotels {
-            profiles.push(profile::HotelProfile {
-                key: "profile".to_string(),
-                hotel: hotel.name,
-                payload: hotel.payload,
-            });
-        }
+        // for hotel in hotels {
+        //     profiles.push(profile::HotelProfile {
+        //         key: "profile".to_string(),
+        //         hotel: hotel.name,
+        //         payload: hotel.payload,
+        //     });
+        // }
         let response = profile::ProfileResponse { profiles };
         Ok(Response::new(response))
     }

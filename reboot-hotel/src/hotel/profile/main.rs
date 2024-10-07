@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 use tonic::transport::Server;
 
+use reboot_hotel::init_logging;
+
 #[path = "../config.rs"]
 pub mod config;
 pub mod server;
@@ -22,6 +24,8 @@ pub struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_logging();
+
     let args = Args::from_args();
     let file = File::open(args.config).expect("Failed to open file");
     let reader = BufReader::new(file);
