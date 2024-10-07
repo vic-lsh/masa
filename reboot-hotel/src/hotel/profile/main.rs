@@ -1,17 +1,19 @@
-use config::Config;
-use server::masa::profile::profile_server::ProfileServer;
-use server::ProfileImpl;
-use std::fs::File;
-use std::io::BufReader;
-use std::path::PathBuf;
-use structopt::StructOpt;
-use tonic::transport::Server;
-
-use reboot_hotel::init_logging;
-
 #[path = "../config.rs"]
 pub mod config;
 pub mod server;
+
+use std::fs::File;
+use std::io::BufReader;
+use std::path::PathBuf;
+
+use structopt::StructOpt;
+use tonic::transport::Server;
+
+use config::Config;
+use reboot_hotel::init_logging;
+
+use server::hotel::profile::profile_server::ProfileServer;
+use server::ProfileImpl;
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Hotel Args")]
