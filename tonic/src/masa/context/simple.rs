@@ -200,7 +200,7 @@ impl SimpleServerContext {
             .collect();
 
         log::info!(
-            "SimpleServerContext, service: {}, local_graphs: {:?}",
+            "SimpleServerContext, service: {:?}, local_graphs: {:?}",
             service_name,
             local_graphs
         );

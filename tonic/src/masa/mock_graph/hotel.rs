@@ -7,10 +7,10 @@ static TRACKER_CAPACITY: Option<usize> = Some(100);
 static GLOBAL_GRAPHS: OnceLock<HashMap<ServiceId, GlobalGraph>> = OnceLock::new();
 
 fn get_global_graph_frontend() -> GlobalGraph {
-    let service_id: ServiceId = "/hotel.Frontend".to_string();
+    let service_id: ServiceId = "frontend.Frontend".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/hotel.Frontend/SayFrontend".to_string();
+        let method_id: MethodId = "/frontend.Frontend/HandleSearch".to_string();
         graphs.insert(
             method_id.clone(),
             LocalGraph::new(
@@ -18,12 +18,12 @@ fn get_global_graph_frontend() -> GlobalGraph {
                 method_id.clone(),
                 vec![
                     Span::new(
-                        "/hotel.Search/SaySearch".to_string() as MethodId,
+                        "/search.Search/HandleNearby".to_string() as MethodId,
                         None,
                         TRACKER_CAPACITY,
                     ),
                     Span::new(
-                        "/hotel.Profile/SayProfile".to_string() as MethodId,
+                        "/profile.Profile/HandleGetProfiles".to_string() as MethodId,
                         None,
                         TRACKER_CAPACITY,
                     ),
@@ -37,10 +37,10 @@ fn get_global_graph_frontend() -> GlobalGraph {
 }
 
 fn get_global_graph_search() -> GlobalGraph {
-    let service_id: ServiceId = "/hotel.Search".to_string();
+    let service_id: ServiceId = "search.Search".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/hotel.Search/SaySearch".to_string();
+        let method_id: MethodId = "/search.Search/HandleNearby".to_string();
         graphs.insert(
             method_id.clone(),
             LocalGraph::new(service_id.clone(), method_id.clone(), vec![]),
@@ -52,10 +52,10 @@ fn get_global_graph_search() -> GlobalGraph {
 }
 
 fn get_global_graph_profile() -> GlobalGraph {
-    let service_id: ServiceId = "/hotel.Profile".to_string();
+    let service_id: ServiceId = "profile.Profile".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/hotel.Profile/SayProfile".to_string();
+        let method_id: MethodId = "/profile.Profile/HandleGetProfiles".to_string();
         graphs.insert(
             method_id.clone(),
             LocalGraph::new(service_id.clone(), method_id.clone(), vec![]),
