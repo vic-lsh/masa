@@ -9,6 +9,7 @@ members = [
   "tonic-masa",
   "examples",
   "reboot",
+  "reboot-hotel",
   "codegen",
   "interop",                          # Tests
   "tests/disable_comments",

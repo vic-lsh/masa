@@ -1,0 +1,27 @@
+services:
+  sheraton-mongo:
+    image: mongo:7.0
+    container_name: "sheraton_mongo"
+    command: --port 27003
+    network_mode: "host"
+    restart: always
+    volumes:
+      - sheraton:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
+  sheraton-memcached:
+    image: memcached:1.6
+    container_name: "sheraton_memcached"
+    command: --port 11003
+    network_mode: "host"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
+volumes:
+  sheraton:
