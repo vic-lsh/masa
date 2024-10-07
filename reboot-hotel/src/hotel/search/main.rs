@@ -1,20 +1,39 @@
+pub mod server;
+
+use std::sync::Arc;
+
+use hyper::rt::Exec;
+use tonic::{masa::AsyncTaskMetadata, transport::Server};
+
+use reboot_hotel::{init_logging, ExecImpl};
+
 use server::masa::search::search_server::SearchServer;
 use server::SearchImpl;
-use tonic::transport::Server;
-
-pub mod server;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let search_addr = "[::]:8661".parse().expect("Failed to parse address");
+    init_logging();
+
+    let search_addr = "[::1]:8661".parse().expect("Failed to parse address");
     let geo_addr = "http://[::1]:8662".to_string();
     let rate_addr = "http://[::1]:8663".to_string();
 
+    static SMOL_EX: smol::Executor<'static, AsyncTaskMetadata> = smol::Executor::new();
+    let ex = Arc::new(ExecImpl::new(&SMOL_EX));
+    let ex_clone = ex.clone();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(ex_clone.run());
+    });
+
     let search = SearchImpl::new(geo_addr, rate_addr).await;
-    eprintln!("Server listening on {}...", search_addr);
+    log::info!("Server listening on {}...", search_addr);
     Server::builder()
         .add_service(SearchServer::new(search))
-        .serve(search_addr)
+        .serve_with_executor(search_addr, Exec::Executor(ex))
         .await?;
 
     Ok(())

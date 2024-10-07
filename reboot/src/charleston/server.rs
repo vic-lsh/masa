@@ -9,9 +9,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use env_logger::{Builder, Env};
 use futures_lite::future;
+use structopt::StructOpt;
 
 use hyper::rt::{Exec, Executor};
-use structopt::StructOpt;
 use tonic::{
     masa::AsyncTaskMetadata,
     transport::{Channel, Server},
