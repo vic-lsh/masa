@@ -6,8 +6,16 @@ publish = false
 version = "0.1.0"
 
 [[bin]]
-name = "hotel_profile"
-path = "src/hotel/profile/main.rs"
+name = "hotel_client_lim"
+path = "src/hotel/client/client_lim.rs"
+
+[[bin]]
+name = "hotel_client"
+path = "src/hotel/client/client.rs"
+
+[[bin]]
+name = "hotel_frontend"
+path = "src/hotel/frontend/main.rs"
 
 [[bin]]
 name = "hotel_geo"
@@ -22,16 +30,8 @@ name = "hotel_search"
 path = "src/hotel/search/main.rs"
 
 [[bin]]
-name = "hotel_client"
-path = "src/hotel/client/client.rs"
-
-[[bin]]
-name = "hotel_client_bench"
-path = "src/hotel/client/client_bench.rs"
-
-[[bin]]
-name = "hotel_frontend"
-path = "src/hotel/frontend/main.rs"
+name = "hotel_profile"
+path = "src/hotel/profile/main.rs"
 
 [features]
 prio_class = ["async-executor/prio_class", "tonic-masa/prio_class"]
