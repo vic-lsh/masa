@@ -1,15 +1,16 @@
-use futures::StreamExt;
-use masa::{profile, profile::profile_server::Profile};
-use mongodb::{bson::doc, Client, Collection, Database, IndexModel};
-use rand::Rng;
-use serde::{Deserialize, Serialize};
-use tonic::{Request, Response, Status};
-
-pub mod masa {
+pub mod hotel {
     pub mod profile {
         tonic::include_proto!("profile");
     }
 }
+
+use futures::StreamExt;
+use rand::Rng;
+use serde::{Deserialize, Serialize};
+use tonic::{Request, Response, Status};
+use mongodb::{bson::doc, Client, Collection, Database, IndexModel};
+
+use hotel::{profile, profile::profile_server::Profile};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hotel {

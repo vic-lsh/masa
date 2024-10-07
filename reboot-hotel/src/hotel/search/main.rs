@@ -7,7 +7,7 @@ use tonic::{masa::AsyncTaskMetadata, transport::Server};
 
 use reboot_hotel::{init_logging, ExecImpl};
 
-use server::masa::search::search_server::SearchServer;
+use server::hotel::search::search_server::SearchServer;
 use server::SearchImpl;
 
 #[tokio::main]

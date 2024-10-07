@@ -5,11 +5,15 @@ pub mod hotel {
 use tonic::Request;
 use tonic_masa::{Context, GraphId};
 
+use reboot_hotel::init_logging;
+
 use hotel::frontend_client::FrontendClient;
 use hotel::SearchRequest;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_logging();
+
     let mut client = FrontendClient::connect("http://[::1]:8660").await?;
 
     let graph_id: GraphId = "Hotel".to_string();
@@ -31,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let response = client.handle_search(request).await?;
 
-    println!("{:?}", response);
+    log::info!("{:?}", response);
 
     Ok(())
 }

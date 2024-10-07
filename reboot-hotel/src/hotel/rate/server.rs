@@ -1,15 +1,16 @@
+pub mod hotel {
+    pub mod rate {
+        tonic::include_proto!("rate");
+    }
+}
+
 use futures::StreamExt;
-use masa::{rate, rate::rate_server::Rate};
 use mongodb::{bson::doc, Client, Collection, Database, IndexModel};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tonic::{Request, Response, Status};
 
-pub mod masa {
-    pub mod rate {
-        tonic::include_proto!("rate");
-    }
-}
+use hotel::{rate, rate::rate_server::Rate};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hotel {
@@ -204,28 +205,30 @@ impl HotelManager {
 }
 
 pub struct RateImpl {
-    manager: HotelManager,
+    // manager: HotelManager,
 }
 
 impl RateImpl {
     pub async fn new(
-        hotels: u32,
-        payload: u32,
-        cache_addr: String,
-        cache_conn: u32,
-        cache_miss_rate: f32,
-        db_addr: String,
+        // hotels: u32,
+        // payload: u32,
+        // cache_addr: String,
+        // cache_conn: u32,
+        // cache_miss_rate: f32,
+        // db_addr: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let manager = HotelManager::new(
-            hotels,
-            payload,
-            cache_addr,
-            cache_conn,
-            cache_miss_rate,
-            db_addr,
-        )
-        .await?;
-        let rate = RateImpl { manager };
+        // let manager = HotelManager::new(
+        //     hotels,
+        //     payload,
+        //     cache_addr,
+        //     cache_conn,
+        //     cache_miss_rate,
+        //     db_addr,
+        // )
+        // .await?;
+        let rate = RateImpl { 
+            // manager
+        };
         Ok(rate)
     }
 }
@@ -236,16 +239,16 @@ impl Rate for RateImpl {
         &self,
         request: Request<rate::RateRequest>,
     ) -> Result<Response<rate::RateResponse>, Status> {
-        let request = request.into_inner();
-        let hotels = self.manager.fetch_mixture(request.hotels).await;
+        // let request = request.into_inner();
+        // let hotels = self.manager.fetch_mixture(request.hotels).await;
         let mut plans = Vec::new();
-        for hotel in hotels {
-            plans.push(rate::HotelRate {
-                key: "rate".to_string(),
-                hotel: hotel.name,
-                payload: hotel.payload,
-            });
-        }
+        // for hotel in hotels {
+        //     plans.push(rate::HotelRate {
+        //         key: "rate".to_string(),
+        //         hotel: hotel.name,
+        //         payload: hotel.payload,
+        //     });
+        // }
         let response = rate::RateResponse { plans };
         Ok(Response::new(response))
     }

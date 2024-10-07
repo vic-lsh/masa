@@ -1,10 +1,4 @@
-use masa::{
-    frontend, frontend::frontend_server::Frontend, profile, profile::profile_client::ProfileClient,
-    search, search::search_client::SearchClient,
-};
-use tonic::{transport::Channel, Request, Response, Status};
-
-pub mod masa {
+pub mod hotel {
     pub mod frontend {
         tonic::include_proto!("frontend");
     }
@@ -15,6 +9,13 @@ pub mod masa {
         tonic::include_proto!("profile");
     }
 }
+
+use tonic::{transport::Channel, Request, Response, Status};
+
+use hotel::{
+    frontend, frontend::frontend_server::Frontend, profile, profile::profile_client::ProfileClient,
+    search, search::search_client::SearchClient,
+};
 
 pub struct FrontendImpl {
     search_client: SearchClient<Channel>,
