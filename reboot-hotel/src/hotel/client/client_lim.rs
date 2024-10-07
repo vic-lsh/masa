@@ -1,5 +1,5 @@
-pub mod hello {
-    tonic::include_proto!("hello");
+pub mod hotel {
+    tonic::include_proto!("frontend");
 }
 
 use std::error::Error;
@@ -10,7 +10,6 @@ use std::sync::{
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use env_logger::{Builder, Env};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Uniform};
 use structopt::StructOpt;
@@ -18,7 +17,9 @@ use structopt::StructOpt;
 use tonic::transport::Channel;
 use tonic_masa::{Context, GraphId};
 
-use hello::{greeter_client::GreeterClient, HelloRequest};
+use reboot_hotel::init_logging;
+
+use hotel::{frontend_client::FrontendClient, SearchRequest};
 
 pub fn time_now() -> u64 {
     let now = SystemTime::now()
@@ -31,7 +32,7 @@ pub fn time_now() -> u64 {
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Client for benchmarking")]
 pub struct Args {
-    #[structopt(long, default_value = "http://[::1]:50052")]
+    #[structopt(long, default_value = "http://[::1]:8660")]
     pub addr: String,
     #[structopt(long)]
     pub concurrency: usize,
@@ -40,7 +41,7 @@ pub struct Args {
 #[derive(Debug)]
 struct LoadGenerator {
     graph_id: GraphId,
-    client: GreeterClient<Channel>,
+    client: FrontendClient<Channel>,
     concurrency: usize,
     rps_cnt: Arc<AtomicUsize>,
 }
@@ -48,7 +49,7 @@ struct LoadGenerator {
 impl LoadGenerator {
     pub fn new(
         graph_id: GraphId,
-        client: GreeterClient<Channel>,
+        client: FrontendClient<Channel>,
         concurrency: usize,
         rps_cnt: Arc<AtomicUsize>,
     ) -> Self {
@@ -68,16 +69,12 @@ impl LoadGenerator {
             let graph_id = self.graph_id.clone();
             let rps_cnt = self.rps_cnt.clone();
             let mut client = self.client.clone();
-            let request = HelloRequest {
-                name: "Tonic".into(),
-            };
+            let request = SearchRequest { ave: 61 };
 
             let h = tokio::spawn(async move {
                 let mut rng = StdRng::seed_from_u64(998244353 + i as u64);
                 let uniform = Uniform::new(0, 1_000_000_007);
                 loop {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-
                     rps_cnt.fetch_add(1, Ordering::Relaxed);
 
                     let request_id = uniform.sample(&mut rng);
@@ -97,8 +94,7 @@ impl LoadGenerator {
                     let mut request = tonic::Request::new(request.clone());
                     request.metadata_mut().insert_ctx("ctx", &ctx);
 
-                    let _response = client.say_hello(request).await.unwrap();
-                    break;
+                    let _response = client.handle_search(request).await.unwrap();
                 }
             });
             handles.push(h);
@@ -109,24 +105,6 @@ impl LoadGenerator {
         }
         Ok(())
     }
-}
-
-fn init_logging() {
-    Builder::from_env(Env::default().default_filter_or("info"))
-        .format(|buf, record| {
-            use std::io::Write;
-            writeln!(
-                buf,
-                "{} [{}:{}] {}",
-                record.level(),
-                record.file().unwrap_or("unknown"),
-                record.line().unwrap_or(0),
-                // record.target(),
-                record.args()
-            )
-        })
-        .init();
-    log::info!("Logging initialized");
 }
 
 #[tokio::main]
@@ -143,16 +121,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::time::sleep(Duration::from_secs(1)).await;
             let now = rps_cnt_clone.load(Ordering::Relaxed);
             let rps = now - prev;
-            println!("rps: {}", rps);
+            log::warn!("rps: {}", rps);
             prev = now;
         }
     });
 
-    tokio::time::sleep(Duration::from_secs(1)).await;
-
     let load_gen = {
-        let graph_id: GraphId = "/hello.Greeter".to_string();
-        let client = GreeterClient::connect(args.addr).await?;
+        let graph_id: GraphId = "Hotel".to_string();
+        let client = FrontendClient::connect(args.addr).await?;
         let load_gen = LoadGenerator::new(graph_id, client, args.concurrency, rps_cnt);
         load_gen
     };
