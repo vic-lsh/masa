@@ -7,7 +7,7 @@ use tonic::{masa::AsyncTaskMetadata, transport::Server};
 
 use reboot_hotel::{init_logging, ExecImpl};
 
-use server::masa::frontend::frontend_server::FrontendServer;
+use server::hotel::frontend::frontend_server::FrontendServer;
 use server::FrontendImpl;
 
 #[tokio::main]

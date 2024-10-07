@@ -1,14 +1,13 @@
 #!/bin/bash
 
 current_dir=$(pwd)
-if [[ "$current_dir" != */Masa-Lo-Ding ]]; then
-    echo "Error: plese run in the Masa-Lo-Ding root directory" >&2
+if [[ "$current_dir" != */reboot-hotel ]]; then
+    echo "Error: plese run in the reboot-hotel directory" >&2
     exit 1
 fi
 
 SESSION_NAME="hotel"
-# SVCS=("hotel_geo" "hotel_rate" "hotel_search" "hotel_frontend")
-SVCS=("hotel_search" "hotel_frontend")
+SVCS=("hotel_geo" "hotel_rate" "hotel_search" "hotel_frontend")
 
 tmux new-session -d -s $SESSION_NAME -n "local"
 tmux set-option -s pane-border-status top

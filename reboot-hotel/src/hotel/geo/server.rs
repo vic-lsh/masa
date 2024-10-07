@@ -1,11 +1,12 @@
-use masa::{geo, geo::geo_server::Geo};
-use tonic::{Request, Response, Status};
-
-pub mod masa {
+pub mod hotel {
     pub mod geo {
         tonic::include_proto!("geo");
     }
 }
+
+use tonic::{Request, Response, Status};
+
+use hotel::{geo, geo::geo_server::Geo};
 
 #[derive(Debug, Clone)]
 struct Hotel {
@@ -39,13 +40,13 @@ impl HotelManager {
 }
 
 pub struct GeoImpl {
-    manager: HotelManager,
+    // manager: HotelManager,
 }
 
 impl GeoImpl {
     pub fn new() -> Self {
         GeoImpl {
-            manager: HotelManager::new(10_000, 5),
+            // manager: HotelManager::new(10_000, 5),
         }
     }
 }
@@ -56,12 +57,12 @@ impl Geo for GeoImpl {
         &self,
         request: Request<geo::NearbyRequest>,
     ) -> Result<Response<geo::NearbyResponse>, Status> {
-        let request = request.into_inner();
-        let fetched_hotels = self.manager.fetch(request.ave);
+        // let request = request.into_inner();
+        // let fetched_hotels = self.manager.fetch(request.ave);
         let mut hotels = Vec::new();
-        for hotel in fetched_hotels {
-            hotels.push(hotel.name);
-        }
+        // for hotel in fetched_hotels {
+        //     hotels.push(hotel.name);
+        // }
         let response = geo::NearbyResponse { hotels };
         println!("{:?}", response);
         Ok(Response::new(response))
