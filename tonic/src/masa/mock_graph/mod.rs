@@ -3,6 +3,7 @@ use rand_distr::{Distribution, Exp};
 use tonic_masa::Latency;
 
 pub(crate) mod charleston;
+pub(crate) mod hotel;
 
 fn get_percentile_latencies(
     rng: &mut StdRng,
