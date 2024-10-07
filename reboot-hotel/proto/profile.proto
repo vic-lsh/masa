@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package Profile;
+
+service Profile {
+  rpc HandleGetProfiles(ProfileRequest) returns (ProfileResponse) {}
+}
+
+message ProfileRequest {
+  repeated string hotels = 1;
+}
+
+message ProfileResponse { repeated HotelProfile profiles = 1; }
+
+message HotelProfile {
+  string key = 1; // key = "profile"
+  string hotel = 2;
+  bytes payload = 3;
+}

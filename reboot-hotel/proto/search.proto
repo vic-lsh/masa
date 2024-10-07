@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package search;
+
+service Search {
+  rpc HandleNearby(NearbyRequest) returns (NearbyResponse) {}
+}
+
+message NearbyRequest {
+  uint32 ave = 1;
+
+  // float lat = 1;
+  // float lon = 2;
+  // string inDate = 3;
+  // string outDate = 4;
+}
+
+message NearbyResponse { repeated string hotels = 1; }
