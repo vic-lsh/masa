@@ -7,8 +7,7 @@ use tonic_masa::{Context, GraphId};
 
 use reboot_hotel::init_logging;
 
-use hotel::frontend_client::FrontendClient;
-use hotel::SearchRequest;
+use hotel::{frontend_client::FrontendClient, SearchRequest};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
