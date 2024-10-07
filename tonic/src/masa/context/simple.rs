@@ -183,7 +183,7 @@ impl SimpleServerContext {
         //    - Span (Method / Compute)
 
         let global_graph =
-            mock_graph::get_global_graph_i2(service_name.to_string(), Some(100), 1_000);
+            mock_graph::charleston::get_global_graph_i2(service_name.to_string(), Some(100), 1_000);
 
         // [CL] Ideally, trackers should be Hashmap<MethodId, LatencyTracker>.
         // But for now, two trackers are tracking the same method ID separately.
