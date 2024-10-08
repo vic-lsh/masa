@@ -210,12 +210,12 @@ pub struct ProfileImpl {
 
 impl ProfileImpl {
     pub async fn new(
-        hotels: u32,
-        payload: u32,
-        cache_addr: String,
-        cache_conn: u32,
-        cache_miss_rate: f32,
-        db_addr: String,
+        // hotels: u32,
+        // payload: u32,
+        // cache_addr: String,
+        // cache_conn: u32,
+        // cache_miss_rate: f32,
+        // db_addr: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // let manager = HotelManager::new(
         //     hotels,

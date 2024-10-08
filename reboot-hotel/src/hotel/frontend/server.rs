@@ -19,7 +19,7 @@ use hotel::{
 
 pub struct FrontendImpl {
     search_client: SearchClient<Channel>,
-    // profile_client: ProfileClient<Channel>,
+    profile_client: ProfileClient<Channel>,
 }
 
 impl FrontendImpl {
@@ -27,12 +27,12 @@ impl FrontendImpl {
         let search_client = SearchClient::connect(search_addr)
             .await
             .expect("Failed to connect to search");
-        // let profile_client = ProfileClient::connect(profile_addr)
-        //     .await
-        //     .expect("Failed to connect to search");
+        let profile_client = ProfileClient::connect(profile_addr)
+            .await
+            .expect("Failed to connect to search");
         FrontendImpl {
             search_client,
-            // profile_client,
+            profile_client,
         }
     }
 }
@@ -57,22 +57,22 @@ impl Frontend for FrontendImpl {
         // reserve_client.check_availability()
         // ReserveRequest { customer, hotel_ids, in_date, out_date, room_number }
 
-        // let mut profile_client = self.profile_client.clone();
-        // let span_request = profile::ProfileRequest {
-        //     hotels: response.hotels,
-        // };
-        // let span_response = profile_client
-        //     .handle_get_profiles(span_request)
-        //     .await
-        //     .expect("Failed to call profile::get_profiles");
-        // let response = span_response.into_inner();
+        let mut profile_client = self.profile_client.clone();
+        let profile_request = profile::ProfileRequest {
+            hotels: response.hotels,
+        };
+        let profile_response = profile_client
+            .handle_get_profiles(profile_request)
+            .await
+            .expect("Failed to call profile::get_profiles");
+        let response = profile_response.into_inner();
 
         let mut hotels = Vec::new();
-        // for profile in response.profiles {
-        //     hotels.push(frontend::Hotel {
-        //         name: profile.hotel,
-        //     });
-        // }
+        for profile in response.profiles {
+            hotels.push(frontend::Hotel {
+                name: profile.hotel,
+            });
+        }
         let response = frontend::SearchResponse { hotels };
         Ok(Response::new(response))
     }
