@@ -7,7 +7,7 @@ if [[ "$current_dir" != */reboot-hotel ]]; then
 fi
 
 SESSION_NAME="hotel"
-SVCS=("hotel_geo" "hotel_rate" "hotel_search" "hotel_frontend")
+SVCS=("hotel_geo" "hotel_rate" "hotel_search" "hotel_profile" "hotel_frontend")
 
 tmux new-session -d -s $SESSION_NAME -n "local"
 tmux set-option -s pane-border-status top
@@ -19,8 +19,18 @@ for i in "${!SVCS[@]}"; do
     svc=${SVCS[$i]}
     wait_secs=$((i * 1))
 
-    RUN_CMD="cargo run --release --features \"prio_global\" --bin $svc > tmp_$svc.log 2>&1"
-    CMD="cd ~/Masa-Lo-Ding/reboot-hotel; sleep $wait_secs; $RUN_CMD"
+    RUN_CMD=" \
+    cargo run --release \
+    --features \"prio_global\" \
+    --bin $svc \
+    > tmp_$svc.log 2>&1 \
+    "
+
+    CMD=" \
+    cd ~/Masa-Lo-Ding/reboot-hotel; \
+    sleep $wait_secs; \
+    $RUN_CMD \
+    "
 
     if [ "$first_pane" = true ]; then
         tmux select-pane -T $svc

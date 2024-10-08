@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package Profile;
+package profile;
 
 service Profile {
   rpc HandleGetProfiles(ProfileRequest) returns (ProfileResponse) {}
