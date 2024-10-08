@@ -7,11 +7,11 @@ use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use config::Config;
 use hyper::rt::Exec;
 use structopt::StructOpt;
 use tonic::{masa::AsyncTaskMetadata, transport::Server};
 
+use config::Config;
 use reboot_hotel::{init_logging, ExecImpl};
 
 use server::hotel::rate::rate_server::RateServer;
