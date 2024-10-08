@@ -7,7 +7,8 @@ if [[ "$current_dir" != */reboot-hotel ]]; then
 fi
 
 SESSION_NAME="hotel"
-SVCS=("hotel_geo" "hotel_rate" "hotel_search" "hotel_profile" "hotel_frontend")
+SVCS=("hotel_geo" "hotel_rate" "hotel_search" "hotel_profile" "hotel_frontend"
+    "hotel_client_bench")
 
 tmux new-session -d -s $SESSION_NAME -n "local"
 tmux set-option -s pane-border-status top
@@ -19,12 +20,27 @@ for i in "${!SVCS[@]}"; do
     svc=${SVCS[$i]}
     wait_secs=$((i * 1))
 
-    RUN_CMD=" \
-    cargo run --release \
-    --features \"prio_global\" \
-    --bin $svc \
-    > tmp_$svc.log 2>&1 \
-    "
+    if [[ "$svc" != "hotel_client_bench" ]]; then
+        RUN_CMD=" \
+        RUST_LOG=warn \
+        cargo run --release \
+        --features \"prio_global\" \
+        --bin $svc \
+        > tmp_$svc.log 2>&1 \
+        "
+    else
+        RUN_CMD=" \
+        RUST_LOG=warn \
+        cargo run --release \
+        --bin $svc \
+        -- \
+        --rps 100 \
+        --secs 10 \
+        --concurrency 128 \
+        --output tmp_$svc.csv \
+        > tmp_$svc.log 2>&1 \
+        "
+    fi
 
     CMD=" \
     cd ~/Masa-Lo-Ding/reboot-hotel; \

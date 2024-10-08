@@ -31,17 +31,17 @@ pub struct SimpleParentContext {
 #[derive(Debug)]
 pub struct SimpleChildContext {
     method: GrpcMethod,
-    track_latency: TrackLatency,
+    track_latency: LatencyTracker,
 }
 
 #[derive(Debug)]
-enum TrackLatency {
+enum LatencyTracker {
     NotStarted,
     Started(Instant),
     Finished(Duration),
 }
 
-impl TrackLatency {
+impl LatencyTracker {
     fn start(&mut self) {
         *self = match self {
             Self::NotStarted => Self::Started(Instant::now()),
@@ -154,7 +154,7 @@ impl ClientStubHooks for SimpleChildContext {
     fn new<T>(method: GrpcMethod, _req: &Request<T>) -> Self {
         Self {
             method,
-            track_latency: TrackLatency::NotStarted,
+            track_latency: LatencyTracker::NotStarted,
         }
     }
 
