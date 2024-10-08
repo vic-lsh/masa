@@ -58,7 +58,7 @@ impl SpanTracker {
         let mut tracker = None;
         if ONLINE_TRACKER {
             let tracker_capacity = tracker_capacity.unwrap();
-            tracker = Some(LatencyTracker::new(tracker_capacity));
+            tracker = Some(LatencyTracker::new(span_id.clone(), tracker_capacity));
         }
         Self {
             span_id,
