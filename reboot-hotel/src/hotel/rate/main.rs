@@ -20,37 +20,29 @@ use server::RateImpl;
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Hotel Args")]
 pub struct Args {
-    // #[structopt(short, long, required = true)]
-    // pub config: PathBuf,
-    // #[structopt(short, long, required = true)]
-    // pub output: String,
+    #[structopt(short, long, required = true)]
+    pub config: PathBuf,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
-    // let args = Args::from_args();
-    // let file = File::open(args.config).expect("Failed to open file");
-    // let reader = BufReader::new(file);
-    // let cfg: Config = serde_json::from_reader(reader)?;
-    // log::info!("Hotel config: {:?}", cfg);
+    let args = Args::from_args();
+    let file = File::open(args.config).expect("Failed to open file");
+    let reader = BufReader::new(file);
+    let cfg: Config = serde_json::from_reader(reader)?;
+    log::info!("Hotel config: {:?}", cfg);
 
-    // let rate_addr = format!("[::1]:{}", cfg.rate_port)
-    //     .parse()
-    //     .expect("Failed to parse address");
-
-    // let rate = RateImpl::new(
-    //     cfg.hotels,
-    //     cfg.payload,
-    //     cfg.rate_memcached_addr,
-    //     cfg.cache_conn,
-    //     cfg.cache_miss_rate,
-    //     cfg.rate_mongodb_addr,
-    // )
-    // .await?;
-
-    let rate_addr = "[::1]:8663".parse().expect("Failed to parse address");
+    let rate = RateImpl::new(
+        cfg.hotels,
+        cfg.payload,
+        cfg.rate_memcached_addr,
+        cfg.cache_conn,
+        cfg.cache_miss_rate,
+        cfg.rate_mongodb_addr,
+    )
+    .await?;
 
     static SMOL_EX: smol::Executor<'static, AsyncTaskMetadata> = smol::Executor::new();
     let ex = Arc::new(ExecImpl::new(&SMOL_EX));
@@ -63,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         rt.block_on(ex_clone.run());
     });
 
-    let rate = RateImpl::new().await?;
+    let rate_addr = "[::1]:8663".parse().expect("Failed to parse address");
     log::info!("Server listening on {}...", rate_addr);
     Server::builder()
         .add_service(RateServer::new(rate))

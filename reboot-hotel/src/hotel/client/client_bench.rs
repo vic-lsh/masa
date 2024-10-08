@@ -110,7 +110,8 @@ impl LoadGenerator {
             let slo = 10_000;
 
             let request = {
-                let search_request = SearchRequest { ave: 61 };
+                let ave = (request_id % 10_000) as u32;
+                let search_request = SearchRequest { ave };
                 let mut request = tonic::Request::new(search_request);
 
                 let deadline = time_now() - init_at_u64 + slo;

@@ -20,17 +20,15 @@ use server::ProfileImpl;
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Hotel Args")]
 pub struct Args {
-    // #[structopt(short, long, required = true)]
-    // pub config: PathBuf,
-    // #[structopt(short, long, required = true)]
-    // pub output: String,
+    #[structopt(short, long, required = true)]
+    pub config: PathBuf,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
-    // let args = Args::from_args();
+    let _args = Args::from_args();
     // let file = File::open(args.config).expect("Failed to open file");
     // let reader = BufReader::new(file);
     // let cfg: Config = serde_json::from_reader(reader)?;

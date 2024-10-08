@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,39 +12,36 @@ pub struct Config {
     #[serde(rename = "CacheMissRate")]
     pub cache_miss_rate: f32,
 
-    #[serde(rename = "FrontendPort")]
-    pub frontend_port: String,
+    // #[serde(rename = "FrontendPort")]
+    // pub frontend_port: String,
 
-    #[serde(rename = "SearchAddr")]
-    pub search_addr: String,
-    #[serde(rename = "SearchPort")]
-    pub search_port: String,
+    // #[serde(rename = "SearchAddr")]
+    // pub search_addr: String,
+    // #[serde(rename = "SearchPort")]
+    // pub search_port: String,
 
-    #[serde(rename = "GeoAddr")]
-    pub geo_addr: String,
-    #[serde(rename = "GeoPort")]
-    pub geo_port: String,
-    #[serde(rename = "GeoRange")]
-    pub geo_range: u32,
+    // #[serde(rename = "GeoAddr")]
+    // pub geo_addr: String,
+    // #[serde(rename = "GeoPort")]
+    // pub geo_port: String,
+    // #[serde(rename = "GeoRange")]
+    // pub geo_range: u32,
 
-    #[serde(rename = "RateAddr")]
-    pub rate_addr: String,
-    #[serde(rename = "RatePort")]
-    pub rate_port: String,
+    // #[serde(rename = "RateAddr")]
+    // pub rate_addr: String,
+    // #[serde(rename = "RatePort")]
+    // pub rate_port: String,
     #[serde(rename = "RateMongodbAddr")]
     pub rate_mongodb_addr: String,
     #[serde(rename = "RateMemcachedAddr")]
     pub rate_memcached_addr: String,
 
-    #[serde(rename = "ProfileAddr")]
-    pub profile_addr: String,
-    #[serde(rename = "ProfilePort")]
-    pub profile_port: String,
-    #[serde(rename = "ProfileMongodbAddr")]
-    pub profile_mongodb_addr: String,
-    #[serde(rename = "ProfileMemcachedAddr")]
-    pub profile_memcached_addr: String,
-
-    #[serde(rename = "LogPath")]
-    pub log_path: PathBuf,
+    // #[serde(rename = "ProfileAddr")]
+    // pub profile_addr: String,
+    // #[serde(rename = "ProfilePort")]
+    // pub profile_port: String,
+    // #[serde(rename = "ProfileMongodbAddr")]
+    // pub profile_mongodb_addr: String,
+    // #[serde(rename = "ProfileMemcachedAddr")]
+    // pub profile_memcached_addr: String,
 }
