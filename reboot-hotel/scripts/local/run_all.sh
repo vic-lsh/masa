@@ -6,57 +6,69 @@ if [[ "$current_dir" != */reboot-hotel ]]; then
     exit 1
 fi
 
-SESSION_NAME="hotel"
-SVCS=("hotel_geo" "hotel_rate" "hotel_search" "hotel_profile" "hotel_frontend"
-    "hotel_client_bench")
-
-tmux new-session -d -s $SESSION_NAME -n "local"
+session_name="hotel"
+tmux new-session -d -s $session_name -n "local"
 tmux set-option -s pane-border-status top
 tmux set-option -s pane-border-format "#{pane_title}"
 
+services=(
+    "hotel_geo"
+    "hotel_rate"
+    "hotel_search"
+    "hotel_profile"
+    "hotel_frontend"
+    "hotel_client_bench"
+)
+rust_log=warn
+rps=100
+secs=10
+concurrency=128
+
 first_pane=true
 
-for i in "${!SVCS[@]}"; do
-    svc=${SVCS[$i]}
-    wait_secs=$((i * 1))
+for i in "${!services[@]}"; do
+    service=${services[$i]}
+    wait_secs=$((i * 5))
 
-    if [[ "$svc" != "hotel_client_bench" ]]; then
-        RUN_CMD=" \
-        RUST_LOG=warn \
+    if [[ "$service" != "hotel_client_bench" ]]; then
+        run_cmd=" \
+        RUST_LOG=$rust_log \
         cargo run --release \
-        --features \"prio_global\" \
-        --bin $svc \
-        > tmp_$svc.log 2>&1 \
+        --features prio_global \
+        --bin $service \
+        -- \
+        --config scripts/local/config.json \
+        > tmp_$service.log 2>&1 \
         "
     else
-        RUN_CMD=" \
-        RUST_LOG=warn \
+        run_cmd=" \
+        RUST_LOG=$rust_log \
         cargo run --release \
-        --bin $svc \
+        --bin $service \
         -- \
-        --rps 100 \
-        --secs 10 \
-        --concurrency 128 \
-        --output tmp_$svc.csv \
-        > tmp_$svc.log 2>&1 \
+        --rps $rps \
+        --secs $secs \
+        --concurrency $concurrency \
+        --output tmp_$service.csv \
+        > tmp_$service.log 2>&1 \
         "
     fi
 
-    CMD=" \
+    cmd=" \
     cd ~/Masa-Lo-Ding/reboot-hotel; \
     sleep $wait_secs; \
-    $RUN_CMD \
+    $run_cmd \
     "
 
     if [ "$first_pane" = true ]; then
-        tmux select-pane -T $svc
+        tmux select-pane -T $service
         first_pane=false
     else
-        tmux split-window -h -t $SESSION_NAME
-        tmux select-pane -T $svc
-        tmux select-layout -t $SESSION_NAME tiled
+        tmux split-window -h -t $session_name
+        tmux select-pane -T $service
+        tmux select-layout -t $session_name tiled
     fi
-    tmux send-keys -t $SESSION_NAME "$CMD" C-m
+    tmux send-keys -t $session_name "$cmd" C-m
 done
 
-tmux attach -t $SESSION_NAME
+tmux attach -t $session_name
