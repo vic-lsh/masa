@@ -56,21 +56,21 @@ impl HotelManager {
         };
         let manager_clone = manager.clone();
         let cache = tokio::spawn(async move {
-            eprintln!("Populating Memcached...");
+            log::info!("Populating Memcached...");
             manager_clone
                 .populate_memcache()
                 .await
                 .expect("Failed to populate memcached");
-            eprintln!("Populated Memcached");
+            log::info!("Populated Memcached");
         });
         let manager_clone = manager.clone();
         let db = tokio::spawn(async move {
-            eprintln!("Populating Mongodb...");
+            log::info!("Populating Mongodb...");
             manager_clone
                 .populate_mongodb(hotels)
                 .await
                 .expect("Failed to populate mongodb");
-            eprintln!("Populated Mongodb");
+            log::info!("Populated Mongodb");
         });
         cache.await?;
         db.await?;

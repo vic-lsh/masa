@@ -49,7 +49,6 @@ for i in $(seq $NODE_MIN $NODE_MAX); do
         wait_secs=${WAIT_SECS[$j]}
 
         RUN_CMD="cargo run --release --bin $svc"
-        # [TODO]
         if [[ $svc == "hotel_rate" ]]; then
             RUN_CMD="cargo run --release --bin $svc -- --config ~/MPD237/reboot/snippets/variations/config.json"
         fi

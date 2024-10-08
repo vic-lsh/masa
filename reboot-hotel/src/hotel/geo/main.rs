@@ -1,8 +1,10 @@
 pub mod server;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use hyper::rt::Exec;
+use structopt::StructOpt;
 use tonic::{masa::AsyncTaskMetadata, transport::Server};
 
 use reboot_hotel::{init_logging, ExecImpl};
@@ -10,9 +12,19 @@ use reboot_hotel::{init_logging, ExecImpl};
 use server::hotel::geo::geo_server::GeoServer;
 use server::GeoImpl;
 
+#[derive(StructOpt, Debug, Clone)]
+#[structopt(about = "Hotel Args")]
+pub struct Args {
+    #[structopt(short, long, required = true)]
+    pub config: PathBuf,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
+
+    // [TODO] Use args from the config file.
+    let _args = Args::from_args();
 
     let geo_addr = "[::1]:8662".parse().expect("Failed to parse address");
 

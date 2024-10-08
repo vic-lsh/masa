@@ -4,6 +4,8 @@ pub mod hotel {
     }
 }
 
+use std::error::Error;
+
 use futures::StreamExt;
 use mongodb::{bson::doc, Client, Collection, Database, IndexModel};
 use rand::Rng;
@@ -39,7 +41,7 @@ impl HotelManager {
         cache_conn: u32,
         cache_miss_rate: f32,
         db_addr: String,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self, Box<dyn Error>> {
         let memcache = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
         let client = Client::with_uri_str(db_addr).await?;
         let database = client.database("sheraton");
@@ -56,28 +58,28 @@ impl HotelManager {
         };
         let manager_clone = manager.clone();
         let cache = tokio::spawn(async move {
-            eprintln!("Populating Memcached...");
+            log::info!("Populating Memcached...");
             manager_clone
                 .populate_memcache()
                 .await
                 .expect("Failed to populate memcached");
-            eprintln!("Populated Memcached");
+            log::info!("Populated Memcached");
         });
         let manager_clone = manager.clone();
         let db = tokio::spawn(async move {
-            eprintln!("Populating Mongodb...");
+            log::info!("Populating Mongodb...");
             manager_clone
                 .populate_mongodb(hotels)
                 .await
                 .expect("Failed to populate mongodb");
-            eprintln!("Populated Mongodb");
+            log::info!("Populated Mongodb");
         });
         cache.await?;
         db.await?;
         Ok(manager)
     }
 
-    async fn populate_memcache(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn populate_memcache(&self) -> Result<(), Box<dyn Error>> {
         self.memcache.flush()?;
         let n_hotels = self.hotels as usize;
         let payload = self.payload as usize;
@@ -108,7 +110,7 @@ impl HotelManager {
         Ok(())
     }
 
-    async fn populate_mongodb(&self, n_hotels: u32) -> Result<(), Box<dyn std::error::Error>> {
+    async fn populate_mongodb(&self, n_hotels: u32) -> Result<(), Box<dyn Error>> {
         let payload = self.payload as usize;
         let mut hotels = Vec::new();
         for i in 0..n_hotels {
@@ -205,29 +207,29 @@ impl HotelManager {
 }
 
 pub struct RateImpl {
-    // manager: HotelManager,
+    manager: HotelManager,
 }
 
 impl RateImpl {
     pub async fn new(
-        // hotels: u32,
-        // payload: u32,
-        // cache_addr: String,
-        // cache_conn: u32,
-        // cache_miss_rate: f32,
-        // db_addr: String,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        // let manager = HotelManager::new(
-        //     hotels,
-        //     payload,
-        //     cache_addr,
-        //     cache_conn,
-        //     cache_miss_rate,
-        //     db_addr,
-        // )
-        // .await?;
+        hotels: u32,
+        payload: u32,
+        cache_addr: String,
+        cache_conn: u32,
+        cache_miss_rate: f32,
+        db_addr: String,
+    ) -> Result<Self, Box<dyn Error>> {
+        let manager = HotelManager::new(
+            hotels,
+            payload,
+            cache_addr,
+            cache_conn,
+            cache_miss_rate,
+            db_addr,
+        )
+        .await?;
         let rate = RateImpl { 
-            // manager
+            manager
         };
         Ok(rate)
     }
@@ -239,16 +241,16 @@ impl Rate for RateImpl {
         &self,
         request: Request<rate::RateRequest>,
     ) -> Result<Response<rate::RateResponse>, Status> {
-        // let request = request.into_inner();
-        // let hotels = self.manager.fetch_mixture(request.hotels).await;
+        let request = request.into_inner();
+        let hotels = self.manager.fetch_mixture(request.hotels).await;
         let mut plans = Vec::new();
-        // for hotel in hotels {
-        //     plans.push(rate::HotelRate {
-        //         key: "rate".to_string(),
-        //         hotel: hotel.name,
-        //         payload: hotel.payload,
-        //     });
-        // }
+        for hotel in hotels {
+            plans.push(rate::HotelRate {
+                key: "rate".to_string(),
+                hotel: hotel.name,
+                payload: hotel.payload,
+            });
+        }
         let response = rate::RateResponse { plans };
         Ok(Response::new(response))
     }
