@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 use tonic_masa::{GlobalGraph, LocalGraph, MethodId, ServiceId, Span};
 
 static TRACKER_CAPACITY: Option<usize> = Some(100);
+// static TRACKER_CAPACITY: Option<usize> = Some(1_000);
 static GLOBAL_GRAPHS: OnceLock<HashMap<ServiceId, GlobalGraph>> = OnceLock::new();
 
 fn get_frontend() -> GlobalGraph {
