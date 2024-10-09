@@ -40,8 +40,8 @@ pub struct Config {
     // pub profile_addr: String,
     // #[serde(rename = "ProfilePort")]
     // pub profile_port: String,
-    // #[serde(rename = "ProfileMongodbAddr")]
-    // pub profile_mongodb_addr: String,
-    // #[serde(rename = "ProfileMemcachedAddr")]
-    // pub profile_memcached_addr: String,
+    #[serde(rename = "ProfileMongodbAddr")]
+    pub profile_mongodb_addr: String,
+    #[serde(rename = "ProfileMemcachedAddr")]
+    pub profile_memcached_addr: String,
 }
