@@ -27,27 +27,21 @@ pub struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
-    let _args = Args::from_args();
-    // let file = File::open(args.config).expect("Failed to open file");
-    // let reader = BufReader::new(file);
-    // let cfg: Config = serde_json::from_reader(reader)?;
-    // log::info!("Hotel config: {:?}", cfg);
+    let args = Args::from_args();
+    let file = File::open(args.config).expect("Failed to open file");
+    let reader = BufReader::new(file);
+    let cfg: Config = serde_json::from_reader(reader)?;
+    log::info!("Hotel config: {:?}", cfg);
 
-    // let profile_addr = format!("[::1]:{}", cfg.profile_port)
-    //     .parse()
-    //     .expect("Failed to parse address");
-
-    // let profile = ProfileImpl::new(
-    //     cfg.hotels,
-    //     cfg.payload,
-    //     cfg.profile_memcached_addr,
-    //     cfg.cache_conn,
-    //     cfg.cache_miss_rate,
-    //     cfg.profile_mongodb_addr,
-    // )
-    // .await?;
-
-    let profile_addr = "[::1]:8664".parse().expect("Failed to parse address");
+    let profile = ProfileImpl::new(
+        cfg.hotels,
+        cfg.payload,
+        cfg.profile_memcached_addr,
+        cfg.cache_conn,
+        cfg.cache_miss_rate,
+        cfg.profile_mongodb_addr,
+    )
+    .await?;
 
     static SMOL_EX: smol::Executor<'static, AsyncTaskMetadata> = smol::Executor::new();
     let ex = Arc::new(ExecImpl::new(&SMOL_EX));
@@ -60,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         rt.block_on(ex_clone.run());
     });
 
-    let profile = ProfileImpl::new().await?;
+    let profile_addr = "[::1]:8664".parse().expect("Failed to parse address");
     log::info!("Server listening on {}...", profile_addr);
     Server::builder()
         .add_service(ProfileServer::new(profile))

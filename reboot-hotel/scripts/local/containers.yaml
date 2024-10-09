@@ -1,20 +1,20 @@
 services:
-  sheraton-mongo:
+  rate-mongo:
     image: mongo:7.0
-    container_name: "sheraton_mongo"
+    container_name: "rate_mongo"
     command: --port 27003
     network_mode: "host"
     restart: always
     volumes:
-      - sheraton:/data
+      - rate:/data
     deploy:
       resources:
         limits:
           cpus: "4"
 
-  sheraton-memcached:
+  rate-memcached:
     image: memcached:1.6
-    container_name: "sheraton_memcached"
+    container_name: "rate_memcached"
     command: --port 11003
     network_mode: "host"
     restart: always
@@ -23,5 +23,30 @@ services:
         limits:
           cpus: "4"
 
+  profile-mongo:
+    image: mongo:7.0
+    container_name: "profile_mongo"
+    command: --port 27004
+    network_mode: "host"
+    restart: always
+    volumes:
+      - profile:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
+  profile-memcached:
+    image: memcached:1.6
+    container_name: "profile_memcached"
+    command: --port 11004
+    network_mode: "host"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
 volumes:
-  sheraton:
+  rate:
+  profile:
