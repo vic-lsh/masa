@@ -252,6 +252,7 @@ impl Rate for RateImpl {
             });
         }
         let response = rate::RateResponse { plans };
+        log::info!("response: {:?}", response);
         Ok(Response::new(response))
     }
 }

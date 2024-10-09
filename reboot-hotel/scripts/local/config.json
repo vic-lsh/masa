@@ -5,5 +5,7 @@
 	"CacheMissRate": 0.5,
 	"GeoRange": 5,
 	"RateMongodbAddr": "mongodb://127.0.0.1:27003",
-	"RateMemcachedAddr": "memcache://127.0.0.1:11003"
+	"RateMemcachedAddr": "memcache://127.0.0.1:11003",
+	"ProfileMongodbAddr": "mongodb://127.0.0.1:27004",
+	"ProfileMemcachedAddr": "memcache://127.0.0.1:11004"
 }

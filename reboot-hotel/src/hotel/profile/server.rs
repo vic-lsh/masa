@@ -5,10 +5,10 @@ pub mod hotel {
 }
 
 use futures::StreamExt;
+use mongodb::{bson::doc, Client, Collection, Database, IndexModel};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tonic::{Request, Response, Status};
-use mongodb::{bson::doc, Client, Collection, Database, IndexModel};
 
 use hotel::{profile, profile::profile_server::Profile};
 
@@ -205,30 +205,28 @@ impl HotelManager {
 }
 
 pub struct ProfileImpl {
-    // manager: HotelManager,
+    manager: HotelManager,
 }
 
 impl ProfileImpl {
     pub async fn new(
-        // hotels: u32,
-        // payload: u32,
-        // cache_addr: String,
-        // cache_conn: u32,
-        // cache_miss_rate: f32,
-        // db_addr: String,
+        hotels: u32,
+        payload: u32,
+        cache_addr: String,
+        cache_conn: u32,
+        cache_miss_rate: f32,
+        db_addr: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        // let manager = HotelManager::new(
-        //     hotels,
-        //     payload,
-        //     cache_addr,
-        //     cache_conn,
-        //     cache_miss_rate,
-        //     db_addr,
-        // )
-        // .await?;
-        let profile = ProfileImpl { 
-            // manager 
-        };
+        let manager = HotelManager::new(
+            hotels,
+            payload,
+            cache_addr,
+            cache_conn,
+            cache_miss_rate,
+            db_addr,
+        )
+        .await?;
+        let profile = ProfileImpl { manager };
         Ok(profile)
     }
 }
@@ -239,17 +237,18 @@ impl Profile for ProfileImpl {
         &self,
         request: Request<profile::ProfileRequest>,
     ) -> Result<Response<profile::ProfileResponse>, Status> {
-        // let request = request.into_inner();
-        // let hotels = self.manager.fetch_mixture(request.hotels).await;
+        let request = request.into_inner();
+        let hotels = self.manager.fetch_mixture(request.hotels).await;
         let mut profiles = Vec::new();
-        // for hotel in hotels {
-        //     profiles.push(profile::HotelProfile {
-        //         key: "profile".to_string(),
-        //         hotel: hotel.name,
-        //         payload: hotel.payload,
-        //     });
-        // }
+        for hotel in hotels {
+            profiles.push(profile::HotelProfile {
+                key: "profile".to_string(),
+                hotel: hotel.name,
+                payload: hotel.payload,
+            });
+        }
         let response = profile::ProfileResponse { profiles };
+        log::info!("response: {:?}", response);
         Ok(Response::new(response))
     }
 }

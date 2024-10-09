@@ -64,7 +64,7 @@ impl Geo for GeoImpl {
             hotels.push(hotel.name);
         }
         let response = geo::NearbyResponse { hotels };
-        log::info!("{:?}", response);
+        log::info!("response: {:?}", response);
         Ok(Response::new(response))
     }
 }
