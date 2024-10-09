@@ -24,8 +24,8 @@ pub struct Config {
     // pub geo_addr: String,
     // #[serde(rename = "GeoPort")]
     // pub geo_port: String,
-    // #[serde(rename = "GeoRange")]
-    // pub geo_range: u32,
+    #[serde(rename = "GeoRange")]
+    pub geo_range: u32,
 
     // #[serde(rename = "RateAddr")]
     // pub rate_addr: String,

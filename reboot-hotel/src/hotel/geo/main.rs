@@ -1,5 +1,9 @@
+#[path = "../config.rs"]
+pub mod config;
 pub mod server;
 
+use std::fs::File;
+use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -7,8 +11,8 @@ use hyper::rt::Exec;
 use structopt::StructOpt;
 use tonic::{masa::AsyncTaskMetadata, transport::Server};
 
+use config::Config;
 use reboot_hotel::{init_logging, ExecImpl};
-
 use server::hotel::geo::geo_server::GeoServer;
 use server::GeoImpl;
 
@@ -23,10 +27,13 @@ pub struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
-    // [TODO] Use args from the config file.
-    let _args = Args::from_args();
+    let args = Args::from_args();
+    let file = File::open(args.config).expect("Failed to open file");
+    let reader = BufReader::new(file);
+    let cfg: Config = serde_json::from_reader(reader)?;
+    log::info!("Hotel config: {:?}", cfg);
 
-    let geo_addr = "[::1]:8662".parse().expect("Failed to parse address");
+    let geo = GeoImpl::new(cfg.hotels, cfg.geo_range);
 
     static SMOL_EX: smol::Executor<'static, AsyncTaskMetadata> = smol::Executor::new();
     let ex = Arc::new(ExecImpl::new(&SMOL_EX));
@@ -39,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         rt.block_on(ex_clone.run());
     });
 
-    let geo = GeoImpl::new();
+    let geo_addr = "[::1]:8662".parse().expect("Failed to parse address");
     log::info!("Server listening on {}...", geo_addr);
     Server::builder()
         .add_service(GeoServer::new(geo))

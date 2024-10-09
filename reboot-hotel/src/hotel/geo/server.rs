@@ -44,9 +44,9 @@ pub struct GeoImpl {
 }
 
 impl GeoImpl {
-    pub fn new() -> Self {
+    pub fn new(hotels: u32, range: u32) -> Self {
         GeoImpl {
-            manager: HotelManager::new(10_000, 5),
+            manager: HotelManager::new(hotels, range),
         }
     }
 }

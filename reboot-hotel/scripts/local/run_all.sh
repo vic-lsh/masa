@@ -19,16 +19,21 @@ services=(
     "hotel_frontend"
     "hotel_client_bench"
 )
-rust_log=warn
-rps=100
-secs=10
+waits_secs=(
+    0
+    0
+    6
+    0
+    12
+    18
+)
 concurrency=128
 
 first_pane=true
 
 for i in "${!services[@]}"; do
     service=${services[$i]}
-    wait_secs=$((i * 5))
+    wait_secs=${waits_secs[$i]}
 
     if [[ "$service" != "hotel_client_bench" ]]; then
         run_cmd=" \
@@ -46,6 +51,7 @@ for i in "${!services[@]}"; do
         cargo run --release \
         --bin $service \
         -- \
+        --config scripts/local/config.json \
         --rps $rps \
         --secs $secs \
         --concurrency $concurrency \
