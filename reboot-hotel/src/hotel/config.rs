@@ -10,7 +10,7 @@ pub struct Config {
     #[serde(rename = "CacheConn")]
     pub cache_conn: u32,
     #[serde(rename = "CacheMissRate")]
-    pub cache_miss_rate: f32,
+    pub cache_miss_rate: u32,
 
     // #[serde(rename = "FrontendPort")]
     // pub frontend_port: String,
