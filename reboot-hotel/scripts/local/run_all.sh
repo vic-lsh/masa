@@ -6,6 +6,26 @@ if [[ "$current_dir" != */reboot-hotel ]]; then
     exit 1
 fi
 
+features=""
+output=""
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+    --features)
+        features="$2"
+        shift
+        ;;
+    --output)
+        output="$2"
+        shift
+        ;;
+    *)
+        echo "Unknown parameter passed: $1"
+        exit 1
+        ;;
+    esac
+    shift
+done
+
 session_name="hotel"
 tmux new-session -d -s $session_name -n "local"
 tmux set-option -s pane-border-status top
@@ -27,6 +47,10 @@ waits_secs=(
     12
     18
 )
+rust_log=warn
+repeats=2
+rps=200
+secs=60
 concurrency=128
 
 first_pane=true
@@ -39,25 +63,27 @@ for i in "${!services[@]}"; do
         run_cmd=" \
         RUST_LOG=$rust_log \
         cargo run --release \
-        --features prio_global \
+        --features $features \
         --bin $service \
         -- \
         --config scripts/local/config.json \
-        > tmp_$service.log 2>&1 \
+        > $output/tmp_$service.log 2>&1
         "
     else
-        run_cmd=" \
-        RUST_LOG=$rust_log \
-        cargo run --release \
-        --bin $service \
-        -- \
-        --config scripts/local/config.json \
-        --rps $rps \
-        --secs $secs \
-        --concurrency $concurrency \
-        --output tmp_$service.csv \
-        > tmp_$service.log 2>&1 \
-        "
+        run_cmd=""
+        for i in $(seq 1 $repeats); do
+            run_cmd+=" \
+            RUST_LOG=$rust_log \
+            cargo run --release \
+            --bin $service \
+            -- \
+            --config scripts/local/config.json \
+            --rps $rps \
+            --secs $secs \
+            --concurrency $concurrency \
+            --output $output/${service}_$i.csv \
+            > $output/tmp_${service}_$i.log 2>&1; "
+        done
     fi
 
     cmd=" \

@@ -25,7 +25,7 @@ pub struct HotelManager {
     hotels: u32,
     payload: u32,
     cache_conn: u32,
-    cache_miss_rate: f32,
+    cache_miss_rate: u32,
     memcache: memcache::Client,
     _database: Database,
     collection: Collection<Hotel>,
@@ -37,7 +37,7 @@ impl HotelManager {
         payload: u32,
         cache_addr: String,
         cache_conn: u32,
-        cache_miss_rate: f32,
+        cache_miss_rate: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let memcache = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
@@ -125,49 +125,48 @@ impl HotelManager {
         Ok(())
     }
 
-    pub fn fetch_memcache(&self, names: Vec<String>) -> Vec<Hotel> {
-        let names_ref = names.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
-        let mut hotels = Vec::new();
-        if let Ok(hotel_jsons) = self.memcache.gets::<String>(&names_ref) {
-            for hotel_json in hotel_jsons.values() {
-                let hotel: Hotel =
-                    serde_json::from_str(hotel_json).expect("Failed to deserialize hotel");
-                hotels.push(hotel);
-            }
-        }
-        hotels.sort_by_key(|hotel| hotel.ave);
-        hotels
-    }
+    // pub fn fetch_memcache(&self, names: Vec<String>) -> Vec<Hotel> {
+    //     let names_ref = names.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
+    //     let mut hotels = Vec::new();
+    //     if let Ok(hotel_jsons) = self.memcache.gets::<String>(&names_ref) {
+    //         for hotel_json in hotel_jsons.values() {
+    //             let hotel: Hotel =
+    //                 serde_json::from_str(hotel_json).expect("Failed to deserialize hotel");
+    //             hotels.push(hotel);
+    //         }
+    //     }
+    //     hotels.sort_by_key(|hotel| hotel.ave);
+    //     hotels
+    // }
 
-    pub async fn fetch_mongodb(&self, names: Vec<String>) -> Vec<Hotel> {
-        let query = doc! {
-            "name": {
-                "$in": names
+    // pub async fn fetch_mongodb(&self, names: Vec<String>) -> Vec<Hotel> {
+    //     let query = doc! {
+    //         "name": {
+    //             "$in": names
+    //         }
+    //     };
+    //     let mut cursor = self
+    //         .collection
+    //         .find(query, None)
+    //         .await
+    //         .expect("Failed to find hotels");
+    //     let mut hotels = Vec::new();
+    //     while let Some(hotel) = cursor.next().await {
+    //         let hotel = hotel.expect("Failed to get hotel");
+    //         hotels.push(hotel);
+    //     }
+    //     // [OPTIONAL] Clear cache
+    //     hotels
+    // }
+
+    pub async fn fetch_mixture(&self, request_id: u64, names: Vec<String>) -> Vec<Hotel> {
+        let names_db = {
+            if request_id % 100 < self.cache_miss_rate as u64 {
+                names.clone()
+            } else {
+                Vec::new()
             }
         };
-        let mut cursor = self
-            .collection
-            .find(query, None)
-            .await
-            .expect("Failed to find hotels");
-        let mut hotels = Vec::new();
-        while let Some(hotel) = cursor.next().await {
-            let hotel = hotel.expect("Failed to get hotel");
-            hotels.push(hotel);
-        }
-        // [OPTIONAL] Clear cache
-        hotels
-    }
-
-    pub async fn fetch_mixture(&self, names: Vec<String>) -> Vec<Hotel> {
-        let names_clone = names.clone();
-        let mut names_db = Vec::new();
-        for name in names_clone {
-            let mut rng = rand::thread_rng();
-            if rng.gen::<f32>() < self.cache_miss_rate {
-                names_db.push(name);
-            }
-        }
 
         let names_ref = names.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
         let mut hotels = Vec::new();
@@ -214,7 +213,7 @@ impl ProfileImpl {
         payload: u32,
         cache_addr: String,
         cache_conn: u32,
-        cache_miss_rate: f32,
+        cache_miss_rate: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let manager = HotelManager::new(
@@ -237,8 +236,12 @@ impl Profile for ProfileImpl {
         &self,
         request: Request<profile::ProfileRequest>,
     ) -> Result<Response<profile::ProfileResponse>, Status> {
+        let ctx = request.metadata().get_ctx("ctx").unwrap();
         let request = request.into_inner();
-        let hotels = self.manager.fetch_mixture(request.hotels).await;
+        let hotels = self
+            .manager
+            .fetch_mixture(ctx.request_id(), request.hotels)
+            .await;
         let mut profiles = Vec::new();
         for hotel in hotels {
             profiles.push(profile::HotelProfile {
