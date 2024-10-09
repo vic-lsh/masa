@@ -1,8 +1,13 @@
+#[path = "../config.rs"]
+pub mod config;
 pub mod hotel {
     tonic::include_proto!("frontend");
 }
 
 use std::error::Error;
+use std::fs::File;
+use std::io::BufReader;
+use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -17,13 +22,15 @@ use tokio::time::{Duration, Instant};
 use tonic::transport::Channel;
 use tonic_masa::{Context, GraphId};
 
-use reboot_hotel::{fetch_traces, init_logging, time_now, Span};
-
+use config::Config;
 use hotel::{frontend_client::FrontendClient, SearchRequest};
+use reboot_hotel::{fetch_traces, init_logging, time_now, Span};
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Client for benchmarking")]
 pub struct Args {
+    #[structopt(short, long, required = true)]
+    pub config: PathBuf,
     #[structopt(long, required = true)]
     pub rps: u64,
     #[structopt(long, required = true)]
@@ -38,6 +45,7 @@ pub struct Args {
 
 #[derive(Debug)]
 struct LoadGenerator {
+    cfg: Config,
     rng: StdRng,
     graph_id: GraphId,
     rps: u64,
@@ -49,6 +57,7 @@ struct LoadGenerator {
 
 impl LoadGenerator {
     pub fn new(
+        cfg: Config,
         rng: StdRng,
         graph_id: GraphId,
         rps: u64,
@@ -58,6 +67,7 @@ impl LoadGenerator {
         trace_tx: Sender<Span>,
     ) -> Self {
         Self {
+            cfg,
             rng,
             graph_id,
             rps,
@@ -110,7 +120,7 @@ impl LoadGenerator {
             let slo = 10_000;
 
             let request = {
-                let ave = (request_id % 10_000) as u32;
+                let ave = (request_id % self.cfg.hotels as u64) as u32;
                 let search_request = SearchRequest { ave };
                 let mut request = tonic::Request::new(search_request);
 
@@ -158,6 +168,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
     let args = Args::from_args();
+    let file = File::open(args.config).expect("Failed to open file");
+    let reader = BufReader::new(file);
+    let cfg: Config = serde_json::from_reader(reader)?;
+    log::info!("Hotel config: {:?}", cfg);
 
     let (trace_tx, trace_rx) = unbounded();
 
@@ -171,8 +185,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let token = Arc::new(AtomicUsize::new(args.concurrency));
         let client = FrontendClient::connect(args.addr).await?;
 
-        let load_gen =
-            LoadGenerator::new(rng, graph_id, args.rps, args.secs, token, client, trace_tx);
+        let load_gen = LoadGenerator::new(
+            cfg, rng, graph_id, args.rps, args.secs, token, client, trace_tx,
+        );
         load_gen
     };
 

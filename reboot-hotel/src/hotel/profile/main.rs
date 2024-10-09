@@ -13,7 +13,6 @@ use tonic::{masa::AsyncTaskMetadata, transport::Server};
 
 use config::Config;
 use reboot_hotel::{init_logging, ExecImpl};
-
 use server::hotel::profile::profile_server::ProfileServer;
 use server::ProfileImpl;
 

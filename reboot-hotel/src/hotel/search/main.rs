@@ -8,7 +8,6 @@ use structopt::StructOpt;
 use tonic::{masa::AsyncTaskMetadata, transport::Server};
 
 use reboot_hotel::{init_logging, ExecImpl};
-
 use server::hotel::search::search_server::SearchServer;
 use server::SearchImpl;
 
