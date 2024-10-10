@@ -6,8 +6,8 @@ if [[ "$current_dir" != */reboot-hotel ]]; then
     exit 1
 fi
 
-features=""
-output=""
+features="" # prio_local, prio_global, fifo_two
+output=""   # snippets/demo
 while [[ "$#" -gt 0 ]]; do
     case $1 in
     --features)
@@ -49,8 +49,8 @@ waits_secs=(
 )
 rust_log=warn
 repeats=2
-rps=200
-secs=60
+rps=500
+secs=30
 concurrency=128
 
 first_pane=true
@@ -75,13 +75,14 @@ for i in "${!services[@]}"; do
             run_cmd+=" \
             RUST_LOG=$rust_log \
             cargo run --release \
+            --features $features \
             --bin $service \
             -- \
             --config scripts/local/config.json \
             --rps $rps \
             --secs $secs \
             --concurrency $concurrency \
-            --output $output/${service}_$i.csv \
+            --output $output/r${rps}_${service}_$i.csv \
             > $output/tmp_${service}_$i.log 2>&1; "
         done
     fi

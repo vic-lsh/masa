@@ -9,6 +9,7 @@ fi
 RUST_LOG=warn \
 	cargo run --release \
 	--bin hotel_client_bench \
+	--features prio_global \
 	-- \
 	--rps 100 \
 	--secs 10 \
