@@ -20,7 +20,7 @@ use structopt::StructOpt;
 use tokio::time::{Duration, Instant};
 
 use tonic::transport::Channel;
-use tonic_masa::{Context, GraphId};
+use tonic_masa::{Context, GraphId, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_LOCAL};
 
 use config::Config;
 use hotel::{frontend_client::FrontendClient, SearchRequest};
@@ -116,17 +116,22 @@ impl LoadGenerator {
             elapse += value;
 
             let request_id = uniform.sample(&mut self.rng) as u64;
+            let request_class = 0;
             let graph_id = self.graph_id.clone();
             let slo = 10_000;
 
             let request = {
-                let ave = (request_id % self.cfg.hotels as u64) as u32;
-                let search_request = SearchRequest { ave };
-                let mut request = tonic::Request::new(search_request);
-
-                let deadline = time_now() - init_at_u64 + slo;
+                let deadline = {
+                    if PRIO_GLOBAL || PRIO_LOCAL {
+                        let start_at = time_now() - init_at_u64;
+                        start_at + slo
+                    } else if FIFO_TWO || FIFO {
+                        slo
+                    } else {
+                        panic!("Unimplemented policy")
+                    }
+                };
                 let latest_exec_at = deadline;
-                let request_class = 0;
                 let ctx = Context::new(
                     graph_id.clone(),
                     request_id,
@@ -134,6 +139,10 @@ impl LoadGenerator {
                     latest_exec_at,
                     request_class,
                 );
+
+                let ave = (request_id % self.cfg.hotels as u64) as u32;
+                let search_request = SearchRequest { ave };
+                let mut request = tonic::Request::new(search_request);
                 request.metadata_mut().insert_ctx("ctx", &ctx);
 
                 request
