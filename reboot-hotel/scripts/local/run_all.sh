@@ -71,7 +71,7 @@ for i in "${!services[@]}"; do
         "
     else
         run_cmd=""
-        for i in $(seq 1 $repeats); do
+        for i in $(seq 0 $(($repeats - 1))); do
             run_cmd+=" \
             RUST_LOG=$rust_log \
             cargo run --release \
