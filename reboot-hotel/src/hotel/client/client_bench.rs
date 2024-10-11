@@ -66,6 +66,21 @@ impl LoadGenerator {
         client: FrontendClient<Channel>,
         trace_tx: Sender<Span>,
     ) -> Self {
+        if cfg!(feature = "prio_class") {
+            log::warn!("Enabled prio_class");
+        } else if cfg!(feature = "prio_global") {
+            log::warn!("Enabled prio_global");
+        } else if cfg!(feature = "prio_class_global") {
+            log::warn!("Enabled prio_class_global");
+        } else if cfg!(feature = "prio_local") {
+            log::warn!("Enabled prio_local");
+        } else if cfg!(feature = "fifo_two") {
+            log::warn!("Enabled fifo_two");
+        } else if cfg!(feature = "fifo") {
+            log::warn!("Enabled fifo");
+        } else {
+            panic!("Not implemented policy");
+        }
         Self {
             cfg,
             rng,
