@@ -338,6 +338,7 @@ where
                         // [NOTE] Get priority from context.
                         let ctx_str = req.headers()["ctx"].to_str().unwrap();
                         let ctx = MasaContext::from_json(ctx_str);
+                        // [TODO] Set priority based on the `features` flag.
                         let prio = PriorityHint::new(ctx.latest_exec_at());
 
                         // [NOTE] Into executor.
