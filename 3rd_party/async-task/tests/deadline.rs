@@ -27,6 +27,7 @@ fn sched_noop(_r: Runnable<()>) {}
 
 #[test]
 fn test_default_ddl() {
+    use tonic_masa::Prioritize;
     let (runnable, task) = spawn_util();
     assert_eq!(runnable.priority(), PriorityHint::infra());
     assert_eq!(task.priority(), PriorityHint::infra());
@@ -34,6 +35,7 @@ fn test_default_ddl() {
 
 #[test]
 fn test_custom_ddl() {
+    use tonic_masa::Prioritize;
     let ddl = PriorityHint::new(100);
     let (runnable, task) = async_task::spawn_with_deadline(async {}, ddl, sched_noop);
 
