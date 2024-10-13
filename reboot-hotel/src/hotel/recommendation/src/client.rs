@@ -1,4 +1,4 @@
-use recommendation::greeter_client::GreeterClient;
+use recommendation::recommendation_client::RecommendationClient;
 use recommendation::HelloRequest;
 
 pub mod recommendation {
@@ -7,7 +7,7 @@ pub mod recommendation {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = GreeterClient::connect("http://[::1]:50051").await?;
+    let mut client = RecommendationClient::connect("http://[::1]:50051").await?;
 
     let request = tonic::Request::new(HelloRequest {
         require: "Tonic".into(),

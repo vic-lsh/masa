@@ -1,6 +1,6 @@
 use tonic::{transport::Server, Request, Response, Status};
 
-use recommendation::greeter_server::{Greeter, GreeterServer};
+use recommendation::recommendation_server::{Recommendation, RecommendationServer};
 use recommendation::{HelloReply, HelloRequest};
 
 pub mod recommendation {
@@ -8,10 +8,10 @@ pub mod recommendation {
 }
 
 #[derive(Debug, Default)]
-pub struct MyGreeter {}
+pub struct MyRecommendation {}
 
 #[tonic::async_trait]
-impl Greeter for MyGreeter {
+impl Recommendation for MyRecommendation {
     async fn say_hello(
         &self,
         request: Request<HelloRequest>,
@@ -29,10 +29,10 @@ impl Greeter for MyGreeter {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse()?;
-    let greeter = MyGreeter::default();
+    let greeter = MyRecommendation::default();
 
     Server::builder()
-        .add_service(GreeterServer::new(greeter))
+        .add_service(RecommendationServer::new(greeter))
         .serve(addr)
         .await?;
 
