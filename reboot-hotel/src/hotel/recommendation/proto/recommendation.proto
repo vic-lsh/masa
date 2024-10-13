@@ -2,15 +2,15 @@ syntax = "proto3";
 package recommendation;
 
 service Recommendation {
-    rpc SayHello (HelloRequest) returns (HelloReply);
+    rpc GetRecommendations (RecommendationRequest) returns (RecommendationReply);
 }
 
-message HelloRequest {
+message RecommendationRequest {
   string require = 1;
   double lat = 2;
   double lon = 3;
 }
 
-message HelloReply {
+message RecommendationReply {
   repeated string HotelIds = 1;
 }
