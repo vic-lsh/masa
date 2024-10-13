@@ -4,14 +4,14 @@ use std::{
 };
 
 use super::{PopError, PushError, Queue};
-use tonic_masa::PriorityHint;
+use tonic_masa::{Prioritize, PriorityHint};
 
 #[allow(dead_code)]
 pub(crate) struct RwPriorityQueue<T> {
     q: RwLock<BinaryHeap<T>>,
 }
 
-impl<T: Ord + PartialOrd> Queue for RwPriorityQueue<T> {
+impl<T: Ord + PartialOrd + Prioritize> Queue for RwPriorityQueue<T> {
     type Item = T;
 
     fn push(&self, _item: Self::Item) -> Result<(), PushError<Self::Item>> {
