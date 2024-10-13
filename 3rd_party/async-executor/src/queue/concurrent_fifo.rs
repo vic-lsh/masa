@@ -1,7 +1,6 @@
 use concurrent_queue::ConcurrentQueue;
 
 use super::{PopError, PushError, Queue};
-use tonic_masa::PriorityHint;
 
 pub(crate) struct ConcurrentFifoQueue<T> {
     q: ConcurrentQueue<T>,
@@ -35,14 +34,6 @@ impl<T> Queue for ConcurrentFifoQueue<T> {
             concurrent_queue::PushError::Full(item) => PushError::Full(item),
             concurrent_queue::PushError::Closed(item) => PushError::Closed(item),
         })
-    }
-
-    fn push_with_prio(
-        &self,
-        item: Self::Item,
-        _prio: PriorityHint,
-    ) -> Result<(), PushError<Self::Item>> {
-        self.push(item)
     }
 
     fn pop(&self) -> Result<Self::Item, PopError> {
