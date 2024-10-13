@@ -13,7 +13,7 @@ pub use flag::{
     FIFO, FIFO_TWO, ONLINE_TRACKER, PRIO_CLASS, PRIO_CLASS_GLOBAL, PRIO_GLOBAL, PRIO_LOCAL,
 };
 pub use graph::{GlobalGraph, GlobalGraphTracker, LocalGraph, LocalGraphTracker};
-pub use priority::PriorityHint;
+pub use priority::{Prioritize, PriorityHint};
 pub use span::{Span, SpanTracker};
 pub use tracker::LatencyTracker;
 pub use typing::{
