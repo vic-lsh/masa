@@ -32,6 +32,12 @@ impl Ord for PriorityHint {
     }
 }
 
+/// Structs that have a notion of priority hint should implement this trait.
+pub trait Prioritize {
+    /// Return the priority hint associated with this struct.
+    fn priority(&self) -> PriorityHint;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

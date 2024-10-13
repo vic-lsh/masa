@@ -7,6 +7,7 @@ use core::sync::atomic::Ordering;
 use core::task::Waker;
 
 use alloc::boxed::Box;
+use tonic_masa::Prioritize;
 
 use crate::header::Header;
 use crate::raw::RawTask;
@@ -763,19 +764,20 @@ impl<M> Ord for Runnable<M> {
     }
 }
 
-impl<M> Runnable<M> {
-    /// Return the pointer as a u64 for debugging.
-    pub fn ptr_to_u64(&self) -> u64 {
-        self.ptr.as_ptr() as u64
-    }
-
-    /// Return the priority hint associated with this task.
+impl<M> Prioritize for Runnable<M> {
     #[inline]
-    pub fn priority(&self) -> PriorityHint {
+    fn priority(&self) -> PriorityHint {
         let ptr = self.ptr.as_ptr();
         // SAFETY: ptr points to a RawTask and is alive (its lifetime is the
         // same as the Runnable).
         unsafe { crate::raw::get_prio_from_raw_task::<M>(ptr) }
+    }
+}
+
+impl<M> Runnable<M> {
+    /// Return the pointer as a u64 for debugging.
+    pub fn ptr_to_u64(&self) -> u64 {
+        self.ptr.as_ptr() as u64
     }
 
     /// Get the metadata associated with this task.
