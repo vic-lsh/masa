@@ -444,9 +444,7 @@ where
             //     runnable.deadline().value()
             // );
 
-            use tonic_masa::Prioritize;
-            let prio = runnable.priority();
-            if state.queue.push_with_prio(runnable, prio).is_err() {
+            if state.queue.push(runnable).is_err() {
                 panic!("Failed to push runnable to queue");
             };
             state.notify();
