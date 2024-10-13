@@ -530,6 +530,7 @@ impl<'a> Executor<'a> {
                 runnable.priority().value()
             );
 
+            use tonic_masa::Prioritize;
             let prio = runnable.priority();
             state.queue.push_with_prio(runnable, prio).unwrap();
             state.notify();
