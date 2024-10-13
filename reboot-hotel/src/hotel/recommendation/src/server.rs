@@ -1,7 +1,7 @@
 use tonic::{transport::Server, Request, Response, Status};
 
 use recommendation::recommendation_server::{Recommendation, RecommendationServer};
-use recommendation::{HelloReply, HelloRequest};
+use recommendation::{RecommendationReply, RecommendationRequest};
 
 pub mod recommendation {
     tonic::include_proto!("recommendation");
@@ -12,13 +12,13 @@ pub struct MyRecommendation {}
 
 #[tonic::async_trait]
 impl Recommendation for MyRecommendation {
-    async fn say_hello(
+    async fn get_recommendations(
         &self,
-        request: Request<HelloRequest>,
-    ) -> Result<Response<HelloReply>, Status> {
+        request: Request<RecommendationRequest>,
+    ) -> Result<Response<RecommendationReply>, Status> {
         println!("Got a request: {:?}", request);
 
-        let reply = HelloReply {
+        let reply = RecommendationReply {
             hotel_ids: vec![format!("require: {}!", request.into_inner().require)],
         };
 
