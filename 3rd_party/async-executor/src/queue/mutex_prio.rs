@@ -4,13 +4,13 @@ use std::{
 };
 
 use super::{PopError, PushError, Queue};
-use tonic_masa::PriorityHint;
+use tonic_masa::{Prioritize, PriorityHint};
 
 pub(crate) struct MutexPriorityQueue<T> {
     q: Mutex<BinaryHeap<T>>,
 }
 
-impl<T: Ord + PartialOrd> Queue for MutexPriorityQueue<T> {
+impl<T: Ord + PartialOrd + Prioritize> Queue for MutexPriorityQueue<T> {
     type Item = T;
 
     fn push(&self, _item: Self::Item) -> Result<(), PushError<Self::Item>> {
