@@ -6,7 +6,6 @@ pub mod hotel {
 
 use futures::StreamExt;
 use mongodb::{bson::doc, Client, Collection, Database, IndexModel};
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tonic::{Request, Response, Status};
 

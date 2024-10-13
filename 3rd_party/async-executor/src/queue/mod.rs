@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 mod concurrent_fifo;
 mod mutex_fifo;
 mod mutex_fifo_two;
@@ -21,19 +23,20 @@ pub(crate) use mutex_prio::MutexPriorityQueue;
 #[allow(unused_imports)]
 pub(crate) use mutex_prio_two::MutexPriorityTwoQueue;
 
-use tonic_masa::PriorityHint;
+#[allow(dead_code)]
+pub fn time_now() -> u64 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_micros();
+    now as u64
+}
 
 #[allow(dead_code)]
 pub(crate) trait Queue {
     type Item;
 
     fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>>;
-
-    fn push_with_prio(
-        &self,
-        item: Self::Item,
-        prio: PriorityHint,
-    ) -> Result<(), PushError<Self::Item>>;
 
     fn pop(&self) -> Result<Self::Item, PopError>;
 

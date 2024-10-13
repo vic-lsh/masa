@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{PopError, PushError, Queue};
-use tonic_masa::{Prioritize, PriorityHint};
+use tonic_masa::Prioritize;
 
 pub(crate) struct MutexFifoTwoQueue<T> {
     q_infra: Mutex<VecDeque<T>>,
@@ -14,15 +14,8 @@ pub(crate) struct MutexFifoTwoQueue<T> {
 impl<T: Ord + PartialOrd + Prioritize> Queue for MutexFifoTwoQueue<T> {
     type Item = T;
 
-    fn push(&self, _item: Self::Item) -> Result<(), PushError<Self::Item>> {
-        panic!("Not implemented");
-    }
-
-    fn push_with_prio(
-        &self,
-        item: Self::Item,
-        prio: PriorityHint,
-    ) -> Result<(), PushError<Self::Item>> {
+    fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
+        let prio = item.priority();
         if prio.value() == 0 {
             self.with_locked_q_infra(|mut q| {
                 q.push_back(item);
