@@ -7,12 +7,20 @@ publish = false
 version = "0.1.0"
 
 [[bin]]
-name = "bridgeway_client_bench"
-path = "src/bridgeway/client_bench.rs"
+name = "charleston_client"
+path = "src/charleston/client.rs"
 
-[[bin]]
-name = "bridgeway_server"
-path = "src/bridgeway/server.rs"
+# [[bin]]
+# name = "charleston_server"
+# path = "src/charleston/server.rs"
+
+# [[bin]]
+# name = "bridgeway_client_bench"
+# path = "src/bridgeway/client_bench.rs"
+
+# [[bin]]
+# name = "bridgeway_server"
+# path = "src/bridgeway/server.rs"
 
 # [[bin]]
 # name = "irust_tracker"
@@ -39,12 +47,12 @@ path = "src/bridgeway/server.rs"
 # path = "src/charleston/lactose/single.rs"
 
 # [[bin]]
-# name = "charleston_client"
-# path = "src/charleston/client.rs"
-
-# [[bin]]
 # name = "charleston_client_bench"
 # path = "src/charleston/client_bench.rs"
+
+# [[bin]]
+# name = "charleston_client"
+# path = "src/charleston/client.rs"
 
 # [[bin]]
 # name = "charleston_server"
@@ -72,8 +80,13 @@ debug = true
 [features]
 prio_class = ["async-executor/prio_class", "tonic-masa/prio_class"]
 prio_global = ["async-executor/prio_global", "tonic-masa/prio_global"]
-prio_class_global = ["async-executor/prio_class_global", "tonic-masa/prio_class_global"]
+prio_global_two = ["async-executor/prio_global_two", "tonic-masa/prio_global_two"]
+prio_class_global = [
+	"async-executor/prio_class_global",
+	"tonic-masa/prio_class_global",
+]
 prio_local = ["async-executor/prio_local", "tonic-masa/prio_local"]
+prio_local_two = ["async-executor/prio_local_two", "tonic-masa/prio_local_two"]
 fifo_two = ["async-executor/fifo_two", "tonic-masa/fifo_two"]
 fifo = ["async-executor/fifo", "tonic-masa/fifo"]
 
@@ -157,6 +170,7 @@ full = [
 default = ["full"]
 
 [dependencies]
+# Reboot
 tonic-masa = { path = "../tonic-masa" }
 async-executor = { path = "../3rd_party/async-executor" }
 async-compat = "0.2.3"

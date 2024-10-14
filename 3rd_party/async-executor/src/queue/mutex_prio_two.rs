@@ -3,8 +3,8 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
-use super::{PopError, PushError, Queue};
-use tonic_masa::{Prioritize, PriorityHint};
+use super::{time_now, PopError, PushError, Queue};
+use tonic_masa::Prioritize;
 
 pub(crate) struct MutexPriorityTwoQueue<T> {
     q_active: Mutex<BinaryHeap<T>>,
@@ -14,20 +14,9 @@ pub(crate) struct MutexPriorityTwoQueue<T> {
 impl<T: Ord + PartialOrd + Prioritize> Queue for MutexPriorityTwoQueue<T> {
     type Item = T;
 
-    fn push(&self, _item: Self::Item) -> Result<(), PushError<Self::Item>> {
-        panic!("Not implemented");
-    }
-
-    fn push_with_prio(
-        &self,
-        item: Self::Item,
-        prio: PriorityHint,
-    ) -> Result<(), PushError<Self::Item>> {
-        // [TODO] Instead of passing `prio`, can we get it from `item`?
-        // Such that, based on the value, we can push it to the active or passive queue.
-        // If a value is before the current time, it should be pushed to the active queue.
-        // Otherwise, it should be pushed to the passive queue.
-        if prio.value() == 0 {
+    fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
+        let prio = item.priority();
+        if time_now() < prio.value() {
             self.with_locked_q_active(|mut q| {
                 q.push(item);
             });
@@ -40,14 +29,28 @@ impl<T: Ord + PartialOrd + Prioritize> Queue for MutexPriorityTwoQueue<T> {
     }
 
     fn pop(&self) -> Result<Self::Item, PopError> {
-        // [TODO] When we pop an item, we should check if the item is after the current time.
-        // If it is, we should push it to the passive queue.
-        let infra_pop = self.with_locked_q_active(|mut q| q.pop());
-        match infra_pop {
-            Some(item) => Ok(item),
-            None => self
-                .with_locked_q_passive(|mut q| q.pop())
-                .ok_or(PopError::Empty),
+        // [NOTE] Pop from active queue first, check if it is still active,
+        // if not, push to passive queue. If no valid item in active queue,
+        // pop from passive queue.
+        loop {
+            let infra_pop = self.with_locked_q_active(|mut q| q.pop());
+            match infra_pop {
+                Some(item) => {
+                    let prio = item.priority();
+                    if time_now() < prio.value() {
+                        return Ok(item);
+                    } else {
+                        self.with_locked_q_passive(|mut q| q.push(item));
+                    }
+                }
+                None => {
+                    if let Some(item) = self.with_locked_q_passive(|mut q| q.pop()) {
+                        return Ok(item);
+                    } else {
+                        return Err(PopError::Empty);
+                    }
+                }
+            }
         }
     }
 

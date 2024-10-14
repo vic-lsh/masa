@@ -445,6 +445,16 @@ impl<T, M> Task<T, M> {
     }
 }
 
+/// SAFETY: caller must uphold:
+/// - ptr points to a Task that is alive
+/// - ptr points to a Task whose metadata type is M
+pub unsafe fn task_metadata_from_ptr<'a, M>(ptr: NonNull<()>) -> &'a M {
+    let ptr = ptr.as_ptr();
+    let header = ptr as *const Header<M>;
+    let header = unsafe { &*header };
+    &header.metadata
+}
+
 impl<T, M> Drop for Task<T, M> {
     fn drop(&mut self) {
         self.set_canceled();

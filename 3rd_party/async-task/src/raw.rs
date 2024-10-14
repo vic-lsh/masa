@@ -25,16 +25,29 @@ use std::cell::RefCell;
 use std::thread_local;
 
 thread_local! {
-    static THREAD_LOCAL_TASK_PTR: RefCell<u64> = RefCell::new(0);
+    // This is set to the DDL of the task running on this thread, or None if there's
+    // no task running.
+    static THREAD_LOCAL_DDL: RefCell<Option<PriorityHint>> = RefCell::new(None);
+    static THREAD_LOCAL_TASK_PTR: RefCell<*const ()> = RefCell::new(core::ptr::null());
+}
+
+/// Get the deadline hint for the current task through thread-local storage.
+pub fn get_task_ddl() -> Option<PriorityHint> {
+    THREAD_LOCAL_DDL.with(|value| *value.borrow())
+}
+
+/// Set the deadline hint for the current task through thread-local storage.
+fn set_task_ddl(new_value: Option<PriorityHint>) {
+    THREAD_LOCAL_DDL.with(|value| *value.borrow_mut() = new_value);
 }
 
 /// Get task ptr.
-pub fn get_task_ptr() -> u64 {
-    THREAD_LOCAL_TASK_PTR.with(|value| value.borrow().clone() as u64)
+pub fn get_task_ptr() -> *const () {
+    THREAD_LOCAL_TASK_PTR.with(|value| value.borrow().clone())
 }
 
 /// Set task ptr.
-pub fn set_task_ptr(new_value: u64) {
+pub fn set_task_ptr(new_value: *const ()) {
     THREAD_LOCAL_TASK_PTR.with(|value| *value.borrow_mut() = new_value);
 }
 
@@ -529,6 +542,18 @@ where
         alloc::alloc::dealloc(ptr as *mut u8, task_layout.layout);
     }
 
+    #[inline]
+    unsafe fn set_ddl_before_poll(&self) -> PriorityHint {
+        let original_ddl = *self.prio;
+        set_task_ddl(Some(original_ddl));
+        original_ddl
+    }
+
+    #[inline]
+    unsafe fn reset_ddl_after_poll(&self) {
+        set_task_ddl(None);
+    }
+
     /// Runs a task.
     ///
     /// If polling its future panics, the task will be closed and the panic will be propagated into
@@ -589,8 +614,8 @@ where
         // If available, we should also try to catch the panic so that it is propagated correctly.
         let guard = Guard(raw);
 
-        set_task_ptr(ptr as u64);
-        // let ddl_before = raw.set_ddl_before_poll();
+        set_task_ptr(ptr);
+        raw.set_ddl_before_poll();
         // log::info!("task: {:p}, ddl before: {}", ptr, ddl_before.value(),);
 
         // Panic propagation is not available for no_std.
@@ -614,7 +639,9 @@ where
             }
         };
 
-        set_task_ptr(0);
+        set_task_ptr(core::ptr::null());
+        raw.reset_ddl_after_poll();
+
         // let (updated, ddl_after) = raw.maybe_update_ddl_after_poll();
         // if updated {
         //     log::info!("task: {:p}, ddl after: {}", ptr, ddl_after.value());
@@ -856,4 +883,34 @@ pub(crate) unsafe fn get_prio_from_raw_task<M>(ptr: *const ()) -> PriorityHint {
     // 2. the RawTask is alive (upheld by caller)
     // 3. the deadline hint is always initialized (see RawTask::allocate)
     *prio_ptr
+}
+
+/// Get Metadata raw pointer from a raw task pointer.
+///
+/// Caller must uphold:
+///
+/// 1. the `ptr` must point to a RawTask
+/// 2. the RawTask isn't deallocated
+/// 3. The metadata type of the task is the one specified by the generic.
+pub unsafe fn get_metadata_from_raw_task<'a, M>(ptr: *const ()) -> &'a M {
+    debug_assert!(!ptr.is_null());
+
+    let header = unsafe { &*(ptr as *const Header<M>) };
+
+    &header.metadata
+}
+
+/// Set Metadata from a raw task pointer.
+///
+/// Caller must uphold:
+///
+/// 1. the `ptr` must point to a RawTask
+/// 2. the RawTask isn't deallocated
+/// 3. The metadata type of the task is the one specified by the generic.
+pub unsafe fn set_metadata_from_raw_task<M>(ptr: *const (), metadata: M) {
+    debug_assert!(!ptr.is_null());
+
+    let header = unsafe { &mut *(ptr as *mut Header<M>) };
+
+    header.metadata = metadata;
 }

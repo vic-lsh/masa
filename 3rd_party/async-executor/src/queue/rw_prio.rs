@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{PopError, PushError, Queue};
-use tonic_masa::{Prioritize, PriorityHint};
+use tonic_masa::Prioritize;
 
 #[allow(dead_code)]
 pub(crate) struct RwPriorityQueue<T> {
@@ -16,15 +16,6 @@ impl<T: Ord + PartialOrd + Prioritize> Queue for RwPriorityQueue<T> {
 
     fn push(&self, _item: Self::Item) -> Result<(), PushError<Self::Item>> {
         panic!("Not implemented");
-    }
-
-    fn push_with_prio(
-        &self,
-        item: Self::Item,
-        _prio: PriorityHint,
-    ) -> Result<(), PushError<Self::Item>> {
-        self.with_write_lock(|mut q| q.push(item));
-        Ok(())
     }
 
     fn pop(&self) -> Result<Self::Item, PopError> {

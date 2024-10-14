@@ -14,6 +14,7 @@ pub(crate) fn generate_internal<T: Service>(
     proto_path: &str,
     compile_well_known_types: bool,
     build_transport: bool,
+    enable_parent_rpc_ctx: bool,
     attributes: &Attributes,
     disable_comments: &HashSet<String>,
 ) -> TokenStream {
@@ -24,6 +25,7 @@ pub(crate) fn generate_internal<T: Service>(
         emit_package,
         proto_path,
         compile_well_known_types,
+        enable_parent_rpc_ctx,
         disable_comments,
     );
 
@@ -40,6 +42,12 @@ pub(crate) fn generate_internal<T: Service>(
 
     let mod_attributes = attributes.for_mod(package);
     let struct_attributes = attributes.for_struct(&service_name);
+
+    let get_parent_rpc_ctx = if enable_parent_rpc_ctx {
+        generate_get_parent_rpc_ctx(service)
+    } else {
+        TokenStream::new()
+    };
 
     quote! {
         /// Generated client implementations.
@@ -129,7 +137,28 @@ pub(crate) fn generate_internal<T: Service>(
                     self
                 }
 
+                #get_parent_rpc_ctx
+
                 #methods
+            }
+        }
+    }
+}
+
+fn generate_get_parent_rpc_ctx(_service: &impl Service) -> TokenStream {
+    quote! {
+        /// Internal. Obtain the parent RPC in which this RPC client stub operates.
+        fn get_parent_ctx(&self) -> Option<&'_ tonic::masa::ParentContext> {
+            let task_ptr = tonic::async_task::get_task_ptr();
+            if !task_ptr.is_null() {
+                let req_ctx = unsafe {
+                    tonic::async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
+                        task_ptr
+                    )
+                };
+                req_ctx.as_ref().map(|v| v.as_ref())
+            } else {
+                None
             }
         }
     }
@@ -168,6 +197,7 @@ fn generate_methods<T: Service>(
     emit_package: bool,
     proto_path: &str,
     compile_well_known_types: bool,
+    enable_parent_rpc_ctx: bool,
     disable_comments: &HashSet<String>,
 ) -> TokenStream {
     let mut stream = TokenStream::new();
@@ -184,6 +214,7 @@ fn generate_methods<T: Service>(
                 emit_package,
                 proto_path,
                 compile_well_known_types,
+                enable_parent_rpc_ctx,
             ),
             (false, true) => generate_server_streaming(
                 service,
@@ -220,6 +251,7 @@ fn generate_unary<T: Service>(
     emit_package: bool,
     proto_path: &str,
     compile_well_known_types: bool,
+    enable_parent_rpc_ctx: bool,
 ) -> TokenStream {
     let codec_name = syn::parse_str::<syn::Path>(method.codec_path()).unwrap();
     let ident = format_ident!("{}", method.name());
@@ -227,6 +259,33 @@ fn generate_unary<T: Service>(
     let service_name = format_service_name(service, emit_package);
     let path = format_method_path(service, method, emit_package);
     let method_name = method.identifier();
+
+    let before_child_rpc = if enable_parent_rpc_ctx {
+        quote! {
+            use tonic::masa::RequestHandlerHooks;
+            if let Some(parent_ctx) = self.get_parent_ctx() {
+                // log::info!("into parent ctx, before rpc, method: {:?}", grpc_method);
+                parent_ctx.before_child_rpc(grpc_method, &mut req, &mut child_ctx);
+            } else {
+                // log::info!("no parent ctx, before rpc, method: {:?}", grpc_method);
+            }
+        }
+    } else {
+        TokenStream::new()
+    };
+
+    let after_child_rpc = if enable_parent_rpc_ctx {
+        quote! {
+            if let Some(parent_ctx) = self.get_parent_ctx() {
+                // log::info!("into parent ctx, after rpc, method: {:?}", grpc_method);
+                parent_ctx.after_child_rpc(grpc_method, &mut resp, child_ctx);
+            } else {
+                // log::info!("no parent ctx, after rpc, method: {:?}", grpc_method);
+            }
+        }
+    } else {
+        TokenStream::new()
+    };
 
     quote! {
         pub async fn #ident(
@@ -240,8 +299,22 @@ fn generate_unary<T: Service>(
            // [NOTE] Method path name on the client side.
            let path = http::uri::PathAndQuery::from_static(#path);
            let mut req = request.into_request();
-           req.extensions_mut().insert(GrpcMethod::new(#service_name, #method_name));
-           self.inner.unary(req, path, codec).await
+           let grpc_method = GrpcMethod::new(#service_name, #method_name);
+           req.extensions_mut().insert(grpc_method);
+
+           use tonic::masa::ClientStubHooks;
+           let mut child_ctx = tonic::masa::ChildContext::new(grpc_method, &req);
+
+           #before_child_rpc
+
+           child_ctx.before_send(&mut req);
+           #[allow(unused_mut)]
+           let mut resp = self.inner.unary(req, path, codec).await;
+           child_ctx.after_recv(&mut resp);
+
+           #after_child_rpc
+
+           resp
         }
     }
 }

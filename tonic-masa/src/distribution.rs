@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub use crate::{Latency, RequestID};
+pub use crate::{Latency, RequestId};
 
 /// Represent a distribution.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -19,7 +19,7 @@ impl Distribution {
     }
 
     /// Sample a latency.
-    pub fn sample(&self, request_id: RequestID) -> Latency {
+    pub fn sample(&self, request_id: RequestId) -> Latency {
         // let index = request_id as usize % self.percentile_latencies.len();
         // self.percentile_latencies[index]
         self.mean

@@ -219,27 +219,9 @@ impl<T> Grpc<T> {
         // [NOTE] Request path on the client side.
 
         let request = request.map(|m| tokio_stream::once(m));
-
-        // [NOTE] Move the following logic to the application layer `pre_unary`
-        // and `post_unary`.
-
-        // let par_ctx = request.metadata().get_ctx("par_ctx").unwrap();
-        // let local_graph = par_ctx.get_local_graph();
-        // let request_path: Path = path.to_string();
-        // let deadline = par_ctx.deadline() - local_graph.estimate_suffix(&request_path);
-        // let ctx = Context::new(
-        //     par_ctx.graph_id().clone(),
-        //     par_ctx.request_id(),
-        //     par_ctx.send_at(),
-        //     deadline,
-        //     // None,
-        // );
-        // request.metadata_mut().insert_ctx("ctx", &ctx);
-
         let result = self.client_streaming(request, path, codec).await;
 
         if let Ok(response) = result {
-            // [TODO] Use tracker to calculate latency percentiles.
             Ok(response)
         } else {
             result
