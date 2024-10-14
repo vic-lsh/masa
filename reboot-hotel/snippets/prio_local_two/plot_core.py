@@ -33,16 +33,32 @@ def plot_cdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
         latencies_ms = [latency / 1e3 for latency in latencies]
         latencies_ms.sort()
         cdf = np.arange(1, len(latencies_ms) + 1) / len(latencies_ms)
-        plt.plot(latencies_ms, cdf, label=label)
+        plt.plot(latencies_ms, cdf, label=label, color=COLORS[i])
 
-        p99 = float(np.percentile(latencies_ms, 99))
+        # p90 = float(np.percentile(latencies_ms, 90))
+        # plt.axvline(
+        #     x=p90,
+        #     linestyle="--",
+        #     label=f"{label} p90: {p90:.2f}ms",
+        #     color="forestgreen",
+        # )
+        # plt.scatter([p90], [0.90], color="forestgreen")
+        p95 = float(np.percentile(latencies_ms, 95))
         plt.axvline(
-            x=p99,
+            x=p95,
             linestyle="--",
-            label=f"{label} p99: {p99:.2f}ms",
+            label=f"{label} p95: {p95:.2f}ms",
             color="forestgreen",
         )
-        plt.scatter([p99], [0.99], color="forestgreen")
+        plt.scatter([p95], [0.95], color="forestgreen")
+        # p99 = float(np.percentile(latencies_ms, 99))
+        # plt.axvline(
+        #     x=p99,
+        #     linestyle="--",
+        #     label=f"{label} p99: {p99:.2f}ms",
+        #     color="forestgreen",
+        # )
+        # plt.scatter([p99], [0.99], color="forestgreen")
 
     plt.xlabel("Latency (ms)")
     plt.ylabel("CDF")
