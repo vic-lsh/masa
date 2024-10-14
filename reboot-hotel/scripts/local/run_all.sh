@@ -44,10 +44,10 @@ waits_secs=(
     18
 )
 rust_log=warn
-repeats=2
+repeats=3
 slo=30000
-rps=500
-secs=30
+rps=750
+secs=120
 concurrency=128
 
 first_pane=true
