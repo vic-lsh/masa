@@ -8,7 +8,8 @@ use std::{
 };
 
 use tonic_masa::{
-    Context, LocalGraph, LocalGraphTracker, MethodId, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_LOCAL,
+    Context, LocalGraph, LocalGraphTracker, MethodId, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_TWO,
+    PRIO_LOCAL, PRIO_LOCAL_TWO,
 };
 
 use crate::{body::BoxBody, masa::mock_graph, GrpcMethod, Request, Response, Status};
@@ -97,11 +98,22 @@ impl RequestHandlerHooks for SimpleParentContext {
         _child_send_ctx: &mut ChildContext,
     ) {
         log::info!("parent_ctx, before_child_rpc, method: {:?}", method.id());
+        let graph = self
+            .server_ctx
+            .local_graph_trackers
+            .get(&self.method.id())
+            .unwrap()
+            .read()
+            .unwrap();
         let deadline;
         let latest_exec_at;
-        if PRIO_GLOBAL || FIFO_TWO || FIFO {
+        if FIFO || FIFO_TWO || PRIO_GLOBAL || PRIO_GLOBAL_TWO {
             deadline = self.ctx.deadline();
             latest_exec_at = self.ctx.latest_exec_at();
+        } else if PRIO_LOCAL || PRIO_LOCAL_TWO {
+            deadline = self.ctx.deadline() - graph.estimate_suffix_deadline(&method.id());
+            latest_exec_at =
+                self.ctx.deadline() - graph.estimate_suffix_latest_exec_at(&method.id());
         } else {
             panic!("Unimplemented policy");
         }
@@ -126,13 +138,14 @@ impl RequestHandlerHooks for SimpleParentContext {
             child_rpc_method.id()
         );
         let latency_us = child_ctx.track_latency.get_latency().unwrap().as_micros();
-        self.server_ctx
+        let mut graph = self
+            .server_ctx
             .local_graph_trackers
             .get(&self.method.id())
             .unwrap()
             .write()
-            .unwrap()
-            .track_span(&child_rpc_method.id(), latency_us as u64);
+            .unwrap();
+        graph.track_span(&child_rpc_method.id(), latency_us as u64);
     }
 
     fn before_poll(&self) {
@@ -176,7 +189,7 @@ impl ClientStubHooks for SimpleChildContext {
 impl SimpleServerContext {
     /// Construct a SimpleServerContext.
     pub fn new(service_name: &'static str) -> Self {
-        // Hierarachy:
+        // [NOTE] Hierarachy:
         // - Application
         //  - Service
         //   - Method
