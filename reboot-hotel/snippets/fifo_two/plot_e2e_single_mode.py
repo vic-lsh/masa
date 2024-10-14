@@ -3,9 +3,9 @@ from typing import *
 import pandas as pd
 from plot_core import GRAPH_IDS, MODES, plot_cdf, plot_pdf  # type: ignore
 
-repeats = 2
+repeats = 3
 graph_id = GRAPH_IDS[0]
-rps = 500
+rps = 750
 
 for mode in MODES:
     e2e_repeats: List[Tuple[str, List[int]]] = []
