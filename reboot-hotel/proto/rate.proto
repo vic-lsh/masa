@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package rate;
+
+service Rate {
+  rpc HandleGetRates(RateRequest) returns (RateResponse) {}
+}
+
+message RateRequest {
+  repeated string hotels = 1;
+}
+
+message RateResponse { repeated HotelRate plans = 1; }
+
+message HotelRate {
+  string key = 1; // key = "rate"
+  string hotel = 2;
+  bytes payload = 3;
+}
