@@ -74,7 +74,7 @@ impl fmt::Debug for Extensions {
 }
 
 /// A gRPC Method info extension.
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct GrpcMethod {
     service: &'static str,
     method: &'static str,
@@ -87,12 +87,18 @@ impl GrpcMethod {
         Self { service, method }
     }
 
-    /// gRPC service name
+    /// gRPC service name.
     pub fn service(&self) -> &str {
         self.service
     }
-    /// gRPC method name
+
+    /// gRPC method name.
     pub fn method(&self) -> &str {
         self.method
+    }
+
+    /// gRPC method id.
+    pub fn id(&self) -> String {
+        format!("/{}/{}", self.service, self.method)
     }
 }

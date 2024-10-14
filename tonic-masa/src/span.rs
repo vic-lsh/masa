@@ -1,9 +1,9 @@
-use crate::{Distribution, Latency, LatencyTracker, Path, ONLINE_TRACKER};
+use crate::{Distribution, Latency, LatencyTracker, SpanId, ONLINE_TRACKER};
 
 /// Represent a span inner.
 #[derive(Debug, Default, Clone)]
 pub struct Span {
-    path: Path,
+    span_id: SpanId,
     distribution: Option<Distribution>,
     tracker_capacity: Option<usize>,
 }
@@ -11,20 +11,20 @@ pub struct Span {
 impl Span {
     /// Create a new span inner.
     pub fn new(
-        path: Path,
+        span_id: SpanId,
         distribution: Option<Distribution>,
         tracker_capacity: Option<usize>,
     ) -> Self {
         Self {
-            path,
+            span_id,
             distribution,
             tracker_capacity,
         }
     }
 
-    /// Get the path.
-    pub fn path(&self) -> &Path {
-        &self.path
+    /// Get the span ID.
+    pub fn span_id(&self) -> &SpanId {
+        &self.span_id
     }
 
     /// Get the distribution.
@@ -37,39 +37,39 @@ impl Span {
 /// Represent a span.
 #[derive(Debug, Default)]
 pub struct SpanTracker {
-    path: Path,
+    span_id: SpanId,
     distribution: Option<Distribution>,
     tracker: Option<LatencyTracker>,
 }
 
 impl From<Span> for SpanTracker {
     fn from(span: Span) -> Self {
-        SpanTracker::new(span.path, span.distribution, span.tracker_capacity)
+        SpanTracker::new(span.span_id, span.distribution, span.tracker_capacity)
     }
 }
 
 impl SpanTracker {
     /// Create a new span.
     pub fn new(
-        path: Path,
+        span_id: SpanId,
         distribution: Option<Distribution>,
         tracker_capacity: Option<usize>,
     ) -> Self {
         let mut tracker = None;
         if ONLINE_TRACKER {
             let tracker_capacity = tracker_capacity.unwrap();
-            tracker = Some(LatencyTracker::new(tracker_capacity));
+            tracker = Some(LatencyTracker::new(span_id.clone(), tracker_capacity));
         }
         Self {
-            path,
+            span_id,
             distribution,
             tracker,
         }
     }
 
-    /// Get the path.
-    pub fn path(&self) -> &Path {
-        &self.path
+    /// Get the span ID.
+    pub fn span_id(&self) -> &SpanId {
+        &self.span_id
     }
 
     /// Get the distribution.
