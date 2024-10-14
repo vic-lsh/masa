@@ -40,11 +40,6 @@ impl Context {
         self.request_id
     }
 
-    // /// Get the send timestamp.
-    // pub fn send_at(&self) -> Timestamp {
-    //     self.send_at
-    // }
-
     /// Get the deadline.
     pub fn deadline(&self) -> Timestamp {
         self.deadline

@@ -47,16 +47,6 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock, TryLockError};
 use std::task::{Poll, Waker};
-use std::time::{SystemTime, UNIX_EPOCH};
-// use std::time::Duration;
-
-fn time_now() -> u64 {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_micros();
-    now as u64
-}
 
 use async_task::{Builder, Runnable};
 use futures_lite::{future, prelude::*};
@@ -127,11 +117,11 @@ where
 // [NOTE] The scheduling latency for concurrent queues is sub-microsecond.
 static SCHED_TIME_US: AtomicUsize = AtomicUsize::new(0);
 static SCHED_COUNT: AtomicUsize = AtomicUsize::new(0);
-static TIMER_SPAWNED: AtomicBool = AtomicBool::new(false);
+// static TIMER_SPAWNED: AtomicBool = AtomicBool::new(false);
 
 impl<'a, M: Default + Clone> Executor<'a, M>
 where
-    // [TODO] why does M need to be Sync?
+    // [TODO:Vic] Why does M need to be Sync?
     M: Send + Sync + 'static,
 {
     /// Creates a new executor.
@@ -306,7 +296,7 @@ where
         // Inherit the parent task ddl, if there is a parent task.
         let ddl = async_task::get_task_ddl().unwrap_or(PriorityHint::infra());
 
-        // [TODO] make inheriting metadata or not configurable
+        // [TODO:Vic] Make inheriting metadata or not configurable.
         let meta = Self::clone_parent_task_metadata().unwrap_or_default();
         // let meta = M::default();
 
@@ -759,21 +749,26 @@ impl<'a> Default for LocalExecutor<'a> {
     }
 }
 
-#[cfg(any(feature = "prio_local", feature = "prio_global"))]
-type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
-#[cfg(feature = "fifo_two")]
-type GlobalQueue<T> = queue::MutexFifoTwoQueue<T>;
-#[cfg(feature = "fifo")]
-type GlobalQueue<T> = queue::MutexFifoQueue<T>;
+// [NOTE] Check `hyper/src/proto/h2/server.rs` for the priority.
 #[cfg(not(any(
     feature = "prio_class",
     feature = "prio_global",
+    feature = "prio_global_two",
     feature = "prio_class_global",
     feature = "prio_local",
+    feature = "prio_local_two",
     feature = "fifo_two",
     feature = "fifo"
 )))]
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
+#[cfg(feature = "fifo")]
+type GlobalQueue<T> = queue::MutexFifoQueue<T>;
+#[cfg(feature = "fifo_two")]
+type GlobalQueue<T> = queue::MutexFifoTwoQueue<T>;
+#[cfg(any(feature = "prio_global", feature = "prio_local"))]
+type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
+#[cfg(any(feature = "prio_global_two", feature = "prio_local_two"))]
+type GlobalQueue<T> = queue::MutexPriorityTwoQueue<T>;
 
 // [NOTE] The original implementation uses a concurrent queue for the global queue.
 // type GlobalQueue<T> = queue::ConcurrentFifoQueue<T>;
@@ -805,10 +800,14 @@ impl<M> State<M> {
             log::warn!("Enabled prio_class");
         } else if cfg!(feature = "prio_global") {
             log::warn!("Enabled prio_global");
+        } else if cfg!(feature = "prio_global_two") {
+            log::warn!("Enabled prio_global_two");
         } else if cfg!(feature = "prio_class_global") {
             log::warn!("Enabled prio_class_global");
         } else if cfg!(feature = "prio_local") {
             log::warn!("Enabled prio_local");
+        } else if cfg!(feature = "prio_local_two") {
+            log::warn!("Enabled prio_local_two");
         } else if cfg!(feature = "fifo_two") {
             log::warn!("Enabled fifo_two");
         } else if cfg!(feature = "fifo") {

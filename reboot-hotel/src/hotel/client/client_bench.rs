@@ -20,7 +20,9 @@ use structopt::StructOpt;
 use tokio::time::{Duration, Instant};
 
 use tonic::transport::Channel;
-use tonic_masa::{Context, GraphId, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_LOCAL};
+use tonic_masa::{
+    Context, GraphId, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_TWO, PRIO_LOCAL, PRIO_LOCAL_TWO,
+};
 
 use config::Config;
 use hotel::{frontend_client::FrontendClient, SearchRequest};
@@ -31,6 +33,8 @@ use reboot_hotel::{fetch_traces, init_logging, time_now, Span};
 pub struct Args {
     #[structopt(short, long, required = true)]
     pub config: PathBuf,
+    #[structopt(long, required = true)]
+    pub slo: u64,
     #[structopt(long, required = true)]
     pub rps: u64,
     #[structopt(long, required = true)]
@@ -48,6 +52,7 @@ struct LoadGenerator {
     cfg: Config,
     rng: StdRng,
     graph_id: GraphId,
+    slo: u64,
     rps: u64,
     secs: u64,
     token: Arc<AtomicUsize>,
@@ -60,6 +65,7 @@ impl LoadGenerator {
         cfg: Config,
         rng: StdRng,
         graph_id: GraphId,
+        slo: u64,
         rps: u64,
         secs: u64,
         token: Arc<AtomicUsize>,
@@ -70,10 +76,14 @@ impl LoadGenerator {
             log::warn!("Enabled prio_class");
         } else if cfg!(feature = "prio_global") {
             log::warn!("Enabled prio_global");
+        } else if cfg!(feature = "prio_global_two") {
+            log::warn!("Enabled prio_global_two");
         } else if cfg!(feature = "prio_class_global") {
             log::warn!("Enabled prio_class_global");
         } else if cfg!(feature = "prio_local") {
             log::warn!("Enabled prio_local");
+        } else if cfg!(feature = "prio_local_two") {
+            log::warn!("Enabled prio_local_two");
         } else if cfg!(feature = "fifo_two") {
             log::warn!("Enabled fifo_two");
         } else if cfg!(feature = "fifo") {
@@ -85,6 +95,7 @@ impl LoadGenerator {
             cfg,
             rng,
             graph_id,
+            slo,
             rps,
             secs,
             token,
@@ -133,11 +144,11 @@ impl LoadGenerator {
             let request_id = uniform.sample(&mut self.rng) as u64;
             let request_class = 0;
             let graph_id = self.graph_id.clone();
-            let slo = 10_000;
+            let slo = self.slo;
 
             let request = {
                 let deadline = {
-                    if PRIO_GLOBAL || PRIO_LOCAL {
+                    if PRIO_GLOBAL || PRIO_GLOBAL_TWO || PRIO_LOCAL || PRIO_LOCAL_TWO {
                         let start_at = time_now() - init_at_u64;
                         start_at + slo
                     } else if FIFO_TWO || FIFO {
@@ -210,7 +221,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let client = FrontendClient::connect(args.addr).await?;
 
         let load_gen = LoadGenerator::new(
-            cfg, rng, graph_id, args.rps, args.secs, token, client, trace_tx,
+            cfg, rng, graph_id, args.slo, args.rps, args.secs, token, client, trace_tx,
         );
         load_gen
     };
