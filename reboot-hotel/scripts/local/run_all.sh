@@ -6,16 +6,11 @@ if [[ "$current_dir" != */reboot-hotel ]]; then
     exit 1
 fi
 
-features="" # prio_local, prio_global, fifo_two
-output=""   # snippets/demo
+features="" # prio_local_two, prio_local, prio_global, fifo_two
 while [[ "$#" -gt 0 ]]; do
     case $1 in
     --features)
         features="$2"
-        shift
-        ;;
-    --output)
-        output="$2"
         shift
         ;;
     *)
@@ -25,6 +20,7 @@ while [[ "$#" -gt 0 ]]; do
     esac
     shift
 done
+output="snippets/$features"
 
 session_name="hotel"
 tmux new-session -d -s $session_name -n "local"
@@ -49,6 +45,7 @@ waits_secs=(
 )
 rust_log=warn
 repeats=2
+slo=30000
 rps=500
 secs=30
 concurrency=128
@@ -79,6 +76,7 @@ for i in "${!services[@]}"; do
             --bin $service \
             -- \
             --config scripts/local/config.json \
+            --slo $slo \
             --rps $rps \
             --secs $secs \
             --concurrency $concurrency \
