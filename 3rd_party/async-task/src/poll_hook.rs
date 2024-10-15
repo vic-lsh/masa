@@ -1,16 +1,7 @@
-use alloc::boxed::Box;
 use core::future::Future;
 use core::task::Poll;
 
 use crate::RawPollHook;
-
-/// Trait used to define custom behavior before and after a future is called.
-pub trait PollHook {
-    /// Called before polling.
-    fn before_poll(&self);
-    /// Called after polling.
-    fn after_poll(&self);
-}
 
 /// The main HookedFuture struct
 #[allow(missing_debug_implementations)]
