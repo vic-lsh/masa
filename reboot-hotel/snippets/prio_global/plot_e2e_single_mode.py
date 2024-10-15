@@ -3,7 +3,6 @@ from typing import *
 import pandas as pd
 from plot_core import GRAPH_IDS, MODES, REPEATS, plot_cdf, plot_pdf  # type: ignore
 
-graph_id = GRAPH_IDS[0]
 rps = 750
 
 for mode in MODES:
