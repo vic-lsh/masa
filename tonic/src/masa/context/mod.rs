@@ -26,7 +26,7 @@ pub type AsyncTaskMetadata = Option<Arc<ParentContext>>;
 
 /// Lifecycle hooks of a Masa server.
 #[allow(unused_variables)]
-pub trait ServerHooks {
+pub trait ServerHooks: Send + Sync + 'static {
     /// Creates the service-level context.
     // [TODO] mark this function as async to support fetching resources asynchronously.
     //        this may require async support in the tonic service constructor.
@@ -75,15 +75,15 @@ pub trait ClientStubHooks {
 /// is that child RPCs can run in parallel, and they may invoke hook points
 /// defined below from different threads.
 #[allow(unused_variables)]
-pub trait RequestHandlerHooks<Child>: Send + Sync
+pub trait RequestHandlerHooks<Child, Server>: Send + Sync
 where
     Child: ClientStubHooks,
+    Server: ServerHooks,
 {
     /// The first lifecycle, marking the start of a request execution.
     ///
     /// This is also the constructor for the hook point struct implementation.
-    fn begin<B>(method: GrpcMethod, req: &http::Request<B>, server_ctx: Arc<ServerContext>)
-        -> Self;
+    fn begin<B>(method: GrpcMethod, req: &http::Request<B>, server_ctx: Arc<Server>) -> Self;
 
     /// Invoked before the request handler makes an RPC.
     fn before_child_rpc<T>(&self, method: GrpcMethod, req: &mut Request<T>, child_ctx: &mut Child) {
