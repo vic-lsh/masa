@@ -163,7 +163,6 @@ pub(crate) fn generate_internal<T: Service>(
 
                 fn from_arc_impl(inner: Arc<T>) -> Self {
                     let inner = _Inner(inner);
-                    use tonic::masa::ServerHooks;
                     let ctx = S::new(<Self as tonic::server::NamedService>::NAME);
                     Self {
                         inner,
