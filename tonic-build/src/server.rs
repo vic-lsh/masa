@@ -531,39 +531,9 @@ fn generate_unary<T: Method>(
             // Request-begin lifecycle hook.
             let grpc_method = GrpcMethod::new(#outer_service_name, #grpc_method_ident);
             let req_ctx = tonic::masa::ParentContext::begin(grpc_method, &req, server_ctx);
-            let req_ctx = std::sync::Arc::new(Some(req_ctx));
 
-            unsafe {
-                tonic::async_task::set_metadata_from_raw_task(
-                    tonic::async_task::get_task_ptr(),
-                    Some(req_ctx)
-                );
-            };
-
-            let get_ctx = || {
-                // SAFETY:
-                // - task-ptr is valid (upheld by `async_task::get_task_ptr`)
-                // - metadata type is correct
-                //      (trust that the application uses this metadata type in the executor)
-                let ctx = unsafe {
-                    tonic::async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
-                        tonic::async_task::get_task_ptr()
-                    )
-                };
-                ctx.as_ref().expect("ctx should be set")
-            };
-
-            use tonic::util::Hookable;
-            let fut = grpc.unary(method, req)
-                .hook()
-                .pre_hook(|| get_ctx().before_poll())
-                .post_hook(|poll| get_ctx().after_poll(poll))
-                .build();
-
-            let mut res = fut.await;
-
-            // Request-completed lifecycle hook.
-            get_ctx().finalize(&mut res);
+            let fut = grpc.unary(method, req, Some(req_ctx));
+            let res = fut.await;
 
             Ok(res)
         };

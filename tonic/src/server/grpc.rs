@@ -222,12 +222,38 @@ where
         &mut self,
         mut service: S,
         req: http::Request<B>,
+        context: Option<crate::masa::ParentContext>,
     ) -> http::Response<BoxBody>
     where
         S: UnaryService<T::Decode, Response = T::Encode>,
         B: Body + Send + 'static,
         B::Error: Into<crate::Error> + Send,
     {
+        use crate::masa::RequestHandlerHooks;
+
+        if let Some(ctx) = context {
+            let req_ctx = std::sync::Arc::new(ctx);
+            unsafe {
+                crate::async_task::set_metadata_from_raw_task(
+                    crate::async_task::get_task_ptr(),
+                    Some(req_ctx),
+                );
+            };
+        }
+
+        let get_ctx = || {
+            // SAFETY:
+            // - task-ptr is valid (upheld by `async_task::get_task_ptr`)
+            // - metadata type is correct
+            //      (trust that the application uses this metadata type in the executor)
+            let ctx = unsafe {
+                crate::async_task::get_metadata_from_raw_task::<crate::masa::AsyncTaskMetadata>(
+                    crate::async_task::get_task_ptr(),
+                )
+            };
+            ctx.as_ref().expect("ctx should be set")
+        };
+
         let accept_encoding = CompressionEncoding::from_accept_encoding_header(
             req.headers(),
             self.send_compression_encodings,
@@ -246,22 +272,28 @@ where
         };
 
         // [NOTE] Into service call.
-        let fut = service.call(request);
-        // [NOTE] Yield to tokio runtime such that the thread local deadline
-        // is visible to the future queue.
-        // tokio::task::yield_now().await;
-        // [NOTE] Do not need to yield to tokio runtime. The deadline is already
-        // visible to the future queue passed from H2Stream.
+        use crate::util::Hookable;
+        let fut = service
+            .call(request)
+            .hook()
+            .pre_hook(|| get_ctx().before_poll())
+            .post_hook(|poll| get_ctx().after_poll(poll))
+            .build();
         let response = fut.await.map(|r| r.map(|m| tokio_stream::once(Ok(m))));
 
         let compression_override = compression_override_from_response(&response);
 
-        self.map_response(
+        let mut res = self.map_response(
             response,
             accept_encoding,
             compression_override,
             self.max_encoding_message_size,
-        )
+        );
+
+        // Request-completed lifecycle hook.
+        get_ctx().finalize(&mut res);
+        // [TODO] unset metadata?
+        res
     }
 
     /// Handle a server side streaming request.
