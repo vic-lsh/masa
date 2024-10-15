@@ -111,7 +111,7 @@ mod task;
 mod utils;
 
 pub use crate::header::RawPollHook;
-pub use crate::poll_hook::{PollHook, PollHookFuture, WithPollHook};
+pub use crate::poll_hook::{PollHookFuture, WithPollHook};
 pub use crate::raw::{
     get_task_ddl, get_task_ptr, maybe_clone_my_child_task_poll_hooks,
     reset_my_child_task_poll_hooks, set_my_child_task_poll_hooks, set_task_ptr,
