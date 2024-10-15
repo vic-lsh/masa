@@ -217,6 +217,22 @@ where
         this
     }
 
+    /// Obtain the masa parent context associated with a request the server is handling.
+    ///
+    /// This field does not exist if the server is running outside of masa.
+    fn get_masa_request_context<'a>() -> Option<&'a crate::masa::ParentContext> {
+        // SAFETY:
+        // - task-ptr is valid (upheld by `async_task::get_task_ptr`)
+        // - metadata type is correct
+        //      (trust that the application uses this metadata type in the executor)
+        let ctx = unsafe {
+            crate::async_task::get_metadata_from_raw_task::<crate::masa::AsyncTaskMetadata>(
+                crate::async_task::get_task_ptr(),
+            )
+        };
+        ctx.as_ref().map(|r| &**r)
+    }
+
     /// Handle a single unary gRPC request.
     pub async fn unary<S, B>(
         &mut self,
@@ -241,19 +257,6 @@ where
             };
         }
 
-        let get_ctx = || {
-            // SAFETY:
-            // - task-ptr is valid (upheld by `async_task::get_task_ptr`)
-            // - metadata type is correct
-            //      (trust that the application uses this metadata type in the executor)
-            let ctx = unsafe {
-                crate::async_task::get_metadata_from_raw_task::<crate::masa::AsyncTaskMetadata>(
-                    crate::async_task::get_task_ptr(),
-                )
-            };
-            ctx.as_ref().expect("ctx should be set")
-        };
-
         let accept_encoding = CompressionEncoding::from_accept_encoding_header(
             req.headers(),
             self.send_compression_encodings,
@@ -276,8 +279,8 @@ where
         let fut = service
             .call(request)
             .hook()
-            .pre_hook(|| get_ctx().before_poll())
-            .post_hook(|poll| get_ctx().after_poll(poll))
+            .pre_hook(|| Self::get_masa_request_context().and_then(|ctx| ctx.before_poll()))
+            .post_hook(|poll| Self::get_masa_request_context().and_then(|ctx| ctx.after_poll(poll)))
             .build();
         let response = fut.await.map(|r| r.map(|m| tokio_stream::once(Ok(m))));
 
@@ -291,7 +294,7 @@ where
         );
 
         // Request-completed lifecycle hook.
-        get_ctx().finalize(&mut res);
+        Self::get_masa_request_context().map(|ctx| ctx.finalize(&mut res));
         // [TODO] unset metadata?
         res
     }
