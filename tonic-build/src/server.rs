@@ -580,43 +580,11 @@ fn generate_unary<T: Method>(
                 // Bump req-ctx reference count to avoid deallocation.
                 // This ref-count will be decremented when `child_hook` is deallocated,
                 // which would happen when this request finishes and removes this hook.
-                let hook_ctx = Arc::into_raw(req_ctx.clone()) as *const ();
+                let req_ctx_for_child_task = req_ctx.clone();
 
-                // Each child task would clone this req-ctx again, using this fn.
-                let on_clone = |raw_ctx: *const ()| {
-                    // Bump req-ctx ref-count without losing the original ref-count.
-                    let c = unsafe { Arc::from_raw(raw_ctx as *const P) };
-                    let _ = Arc::into_raw(c.clone());
-                    let _ = Arc::into_raw(c); // don't drop c and lose a refcount.
-                };
-
-                // We can release the ref-count we obtained at the begining of the if-block.
-                let on_destroy = |raw_ctx: *const ()| {
-                    unsafe { Arc::from_raw(raw_ctx as *const P) };
-                };
-
-                // Configure child task's thread-local to point to our req-ctx.
-                // SAFETY: `hook_ctx` holds one ref-count to req-ctx.
-                let before_poll = |raw_ctx: *const ()| {
-                    let ctx = unsafe { &*(raw_ctx as *const P) };
-                    tonic::masa::context::server::set_parent_ctx::<S, C, P>(ctx);
-                };
-
-                // Remove req-ctx from our thread local to avoid exposing this req-ctx
-                // to another task (and mislead another task to think they have a parent rpc).
-                let after_poll = |raw_ctx: *const ()| {
-                    tonic::masa::context::server::reset_parent_ctx::<S, C, P>();
-                };
-
-                let child_hook = unsafe {
-                    tonic::async_task::RawPollHook::new(
-                        hook_ctx,
-                        Some(on_clone),
-                        Some(on_destroy),
-                        Some(before_poll),
-                        Some(after_poll)
-                    )
-                };
+                let child_hook = tonic::masa::context::runtime::async_executor::make_child_task_poll_hook::<S, C, P>(
+                    req_ctx_for_child_task
+                );
                 tonic::async_executor::configure_child_task_poll_hooks(child_hook);
             }
 
