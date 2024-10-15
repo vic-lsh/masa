@@ -73,7 +73,7 @@ pub struct SimpleServerContext {
     local_graph_trackers: HashMap<MethodId, RwLock<LocalGraphTracker>>,
 }
 
-impl RequestHandlerHooks<SimpleChildContext> for SimpleParentContext {
+impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContext {
     fn begin<B>(
         method: GrpcMethod,
         req: &http::Request<B>,

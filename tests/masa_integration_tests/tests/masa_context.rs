@@ -16,7 +16,7 @@ use masa_integration_tests::pb::{
 };
 use tonic::{
     body::BoxBody,
-    masa::{ClientStubHooks, RequestHandlerHooks, ServerContext},
+    masa::{ClientStubHooks, RequestHandlerHooks, ServerContext, ServerHooks},
     transport::Server,
     GrpcMethod, Request, Response, Status,
 };
@@ -33,7 +33,7 @@ struct ParentSvc {
 impl ParentService for ParentSvc {
     async fn rpc(&self, _req: Request<Input1>) -> Result<Response<Output1>, Status> {
         let mut client =
-            ChildServiceClient::<_, TestChildCtx, TestParentCtx>::connect_with_custom_context(
+            ChildServiceClient::<_, TestServerCtx, TestChildCtx, TestParentCtx>::connect_with_custom_context(
                 format!("http://{}", self.child_addr),
             )
             .await
@@ -48,7 +48,7 @@ impl ParentService for ParentSvc {
 
     async fn fanout_rpc(&self, _req: Request<Input1>) -> Result<Response<Output1>, Status> {
         let mut client =
-            ChildServiceClient::<_, TestChildCtx, TestParentCtx>::connect_with_custom_context(
+            ChildServiceClient::<_, TestServerCtx, TestChildCtx, TestParentCtx>::connect_with_custom_context(
                 format!("http://{}", self.child_addr),
             )
             .await
@@ -96,13 +96,21 @@ where
     }
 }
 
+struct TestServerCtx;
+
+impl ServerHooks for TestServerCtx {
+    fn new(service_name: &'static str) -> Self {
+        Self
+    }
+}
+
 struct TestParentCtx {}
 
-impl<C: ClientStubHooks> RequestHandlerHooks<C> for TestParentCtx {
+impl<C: ClientStubHooks> RequestHandlerHooks<C, TestServerCtx> for TestParentCtx {
     fn begin<B>(
         method: GrpcMethod,
         req: &http::Request<B>,
-        server_ctx: Arc<ServerContext>,
+        server_ctx: Arc<TestServerCtx>,
     ) -> Self {
         Self {}
     }
@@ -143,9 +151,12 @@ async fn test_child_ctx_hook_invocations() {
 
     let _child_svc = tokio::spawn(async {
         Server::builder()
-            .add_service(
-                ChildServiceServer::<_, TestChildCtx, TestParentCtx>::with_custom_context(ChildSvc),
-            )
+            .add_service(ChildServiceServer::<
+                _,
+                TestServerCtx,
+                TestChildCtx,
+                TestParentCtx,
+            >::with_custom_context(ChildSvc))
             .serve_with_executor(
                 child_svc_addr.parse().unwrap(),
                 Exec::Executor(Arc::new(ExecImpl)),
@@ -156,14 +167,15 @@ async fn test_child_ctx_hook_invocations() {
 
     let _parent_svc = tokio::spawn(async move {
         Server::builder()
-            .add_service(
-                ParentServiceServer::<_, TestChildCtx, TestParentCtx>::with_custom_context(
-                    ParentSvc {
-                        child_addr: child_svc_addr,
-                        fanout_factor,
-                    },
-                ),
-            )
+            .add_service(ParentServiceServer::<
+                _,
+                TestServerCtx,
+                TestChildCtx,
+                TestParentCtx,
+            >::with_custom_context(ParentSvc {
+                child_addr: child_svc_addr,
+                fanout_factor,
+            }))
             .serve_with_executor(
                 parent_svc_addr.parse().unwrap(),
                 Exec::Executor(Arc::new(ExecImpl)),
