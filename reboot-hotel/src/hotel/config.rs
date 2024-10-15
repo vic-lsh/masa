@@ -2,7 +2,28 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Config {
+pub struct GenConfig {
+    #[serde(rename = "Repeats")]
+    pub repeats: u64,
+    #[serde(rename = "Slo")]
+    pub slo: u64,
+    #[serde(rename = "Rps")]
+    pub rps: u64,
+    #[serde(rename = "WarmupSecs")]
+    pub warmup_secs: u64,
+    #[serde(rename = "DurationSecs")]
+    pub duration_secs: u64,
+    #[serde(rename = "Concurrency")]
+    pub concurrency: usize,
+    #[serde(rename = "Output")]
+    pub output: String,
+    #[serde(rename = "Addr")]
+    pub addr: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HotelConfig {
     #[serde(rename = "Hotels")]
     pub hotels: u32,
     #[serde(rename = "Payload")]
