@@ -145,7 +145,7 @@ pub fn spawn<T: Send + 'static>(future: impl Future<Output = T> + Send + 'static
 ///     println!("Hello world");
 /// });
 /// ```
-pub fn spawn_with_ddl<T: Send + 'static>(
+pub fn spawn_with_prio<T: Send + 'static>(
     future: impl Future<Output = T> + Send + 'static,
     ddl: PriorityHint,
 ) -> Task<T> {
