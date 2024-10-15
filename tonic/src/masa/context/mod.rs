@@ -7,6 +7,8 @@ mod tls;
 pub use tls::{client, server};
 
 /// Context struct for an RPC server, instantiated during server startup.
+///
+/// Must implement `ServerHooks`.
 pub type ServerContext = simple::SimpleServerContext;
 
 /// Context struct instantiated once per RPC, when the server invokes a request handler.
@@ -21,6 +23,15 @@ pub type ChildContext = simple::SimpleChildContext;
 
 /// Type of metadata required for async-tasks used in tonic.
 pub type AsyncTaskMetadata = Option<Arc<ParentContext>>;
+
+/// Lifecycle hooks of a Masa server.
+#[allow(unused_variables)]
+pub trait ServerHooks {
+    /// Creates the service-level context.
+    // [TODO] mark this function as async to support fetching resources asynchronously.
+    //        this may require async support in the tonic service constructor.
+    fn new(service_name: &'static str) -> Self;
+}
 
 /// Lifecycle hooks when a client stub executes a request.
 ///
