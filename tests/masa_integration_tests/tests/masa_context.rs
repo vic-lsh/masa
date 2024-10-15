@@ -142,14 +142,12 @@ impl ClientStubHooks for TestChildCtx {
     fn after_recv<T>(&mut self, _response: &mut Result<Response<T>, Status>) {}
 }
 
-#[tokio::test]
-async fn test_child_ctx_hook_invocations() {
-    let parent_svc_addr = "127.0.0.1:4455";
-    let child_svc_addr = "127.0.0.1:4466";
-
-    let fanout_factor = 10;
-
-    let _child_svc = tokio::spawn(async {
+async fn make_parent_child_svcs(
+    parent_svc_addr: &'static str,
+    child_svc_addr: &'static str,
+    fanout_factor: usize,
+) -> (tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>) {
+    let child_svc = tokio::spawn(async {
         Server::builder()
             .add_service(ChildServiceServer::<
                 _,
@@ -165,7 +163,7 @@ async fn test_child_ctx_hook_invocations() {
             .unwrap();
     });
 
-    let _parent_svc = tokio::spawn(async move {
+    let parent_svc = tokio::spawn(async move {
         Server::builder()
             .add_service(ParentServiceServer::<
                 _,
@@ -183,6 +181,18 @@ async fn test_child_ctx_hook_invocations() {
             .await
             .unwrap();
     });
+
+    (parent_svc, child_svc)
+}
+
+#[tokio::test]
+async fn test_child_ctx_hook_invocations() {
+    let parent_svc_addr = "127.0.0.1:4455";
+    let child_svc_addr = "127.0.0.1:4466";
+    let fanout_factor = 10;
+
+    let (_parent, _child) =
+        make_parent_child_svcs(parent_svc_addr, child_svc_addr, fanout_factor).await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
