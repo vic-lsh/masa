@@ -106,12 +106,8 @@ impl ServerHooks for TestServerCtx {
 
 struct TestParentCtx {}
 
-impl<C: ClientStubHooks> RequestHandlerHooks<C, TestServerCtx> for TestParentCtx {
-    fn begin<B>(
-        method: GrpcMethod,
-        req: &http::Request<B>,
-        server_ctx: Arc<TestServerCtx>,
-    ) -> Self {
+impl<C: ClientStubHooks, S: ServerHooks> RequestHandlerHooks<C, S> for TestParentCtx {
+    fn begin<B>(method: GrpcMethod, req: &http::Request<B>, server_ctx: Arc<S>) -> Self {
         Self {}
     }
 
@@ -183,6 +179,45 @@ async fn make_parent_child_svcs(
     });
 
     (parent_svc, child_svc)
+}
+
+#[tokio::test]
+async fn test_service_ctx_construction() {
+    static N_SERVICE_CTX_CTORS: AtomicUsize = AtomicUsize::new(0);
+
+    struct TestCtorCountServerCtx;
+
+    impl ServerHooks for TestCtorCountServerCtx {
+        fn new(service_name: &'static str) -> Self {
+            N_SERVICE_CTX_CTORS.fetch_add(1, Ordering::Relaxed);
+            Self
+        }
+    }
+
+    let n_svcs = 12;
+
+    let parent_svc_addr = "127.0.0.1:7878";
+
+    let _handles: Vec<_> = (0..n_svcs)
+        .map(|i| {
+            let addr = format!("127.0.0.1:{}", 7878 + i);
+            tokio::spawn(async move {
+                Server::builder()
+                    .add_service(ChildServiceServer::<
+                        _,
+                        TestCtorCountServerCtx,
+                        TestChildCtx,
+                        TestParentCtx,
+                    >::with_custom_context(ChildSvc))
+                    .serve_with_executor(addr.parse().unwrap(), Exec::Executor(Arc::new(ExecImpl)))
+                    .await
+                    .unwrap();
+            });
+        })
+        .collect();
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(N_SERVICE_CTX_CTORS.load(Ordering::Relaxed), n_svcs);
 }
 
 #[tokio::test]
