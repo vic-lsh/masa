@@ -37,6 +37,8 @@ pub(crate) type BoxSendFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 pub enum Exec {
     /// Use tokio by default.
     Default,
+    /// Use masa-specific runtime.
+    Masa,
     /// Use custom executor.
     Executor(Arc<dyn Executor<BoxSendFuture> + Send + Sync>),
 }
@@ -59,6 +61,11 @@ impl Exec {
                     // If no runtime, we need an executor!
                     panic!("executor must be set")
                 }
+            }
+            Exec::Masa => {
+                async_executor::spawn_with_prio(fut, prio)
+                    .fallible()
+                    .detach();
             }
             Exec::Executor(ref e) => {
                 e.execute(Box::pin(fut), prio);
