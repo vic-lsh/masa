@@ -22,9 +22,6 @@ pub type ParentContext = simple::SimpleParentContext;
 /// Must implement `ClientStubHooks`.
 pub type ChildContext = simple::SimpleChildContext;
 
-/// Type of metadata required for async-tasks used in tonic.
-pub type AsyncTaskMetadata = Option<Arc<ParentContext>>;
-
 /// Lifecycle hooks of a Masa server.
 #[allow(unused_variables)]
 pub trait ServerHooks: Send + Sync + 'static {
