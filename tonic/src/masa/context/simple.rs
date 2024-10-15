@@ -14,7 +14,7 @@ use tonic_masa::{
 
 use crate::{body::BoxBody, masa::mock_graph, GrpcMethod, Request, Response, Status};
 
-use super::{ChildContext, ClientStubHooks, RequestHandlerHooks, ServerContext};
+use super::{ChildContext, ClientStubHooks, RequestHandlerHooks, ServerContext, ServerHooks};
 
 /// A simple implementation of `RequestHandlerHooks`.
 #[derive(Debug)]
@@ -186,17 +186,15 @@ impl ClientStubHooks for SimpleChildContext {
     }
 }
 
-impl SimpleServerContext {
+impl ServerHooks for SimpleServerContext {
     /// Construct a SimpleServerContext.
-    pub fn new(service_name: &'static str) -> Self {
+    fn new(service_name: &'static str) -> Self {
         // [NOTE] Hierarachy:
         // - Application
         //  - Service
         //   - Method
         //    - Span (Method / Compute)
 
-        // let global_graph =
-        //     mock_graph::charleston::get_global_graph_i2(service_name.to_string(), Some(100), 1_000);
         let global_graph = mock_graph::hotel::get_global_graph(service_name.to_string());
 
         // [CL] Ideally, trackers should be Hashmap<MethodId, LatencyTracker>.
