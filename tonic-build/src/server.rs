@@ -9,23 +9,6 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{Ident, Lit, LitStr};
 
-pub(crate) fn generate_rpc_context(package: &str) -> TokenStream {
-    let pkg = quote::format_ident!("{}_parent_rpc_ctx", package);
-    let server_parent_rpc_ctx = quote::format_ident!("parent_rpc_ctx");
-    quote! {
-        mod #pkg {
-            thread_local! {
-                #[allow(non_upper_case_globals)]
-                // This is deliberately type-erased to support generic-based
-                // parent context. It is up to the client and server-generated code
-                // to cast the pointer back to the correct parent context type.
-                pub static #server_parent_rpc_ctx: std::cell::Cell<*const ()> =
-                        std::cell::Cell::new(core::ptr::null());
-            }
-        }
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn generate_internal<T: Service>(
     service: &T,
@@ -525,7 +508,7 @@ fn generate_methods<T: Service>(
 fn generate_unary<T: Method>(
     method: &T,
     outer_service_name: &str,
-    package: &str,
+    _package: &str,
     proto_path: &str,
     compile_well_known_types: bool,
     method_ident: Ident,
@@ -539,9 +522,6 @@ fn generate_unary<T: Method>(
     let grpc_method_ident = method.identifier();
 
     let (request, response) = method.request_response_name(proto_path, compile_well_known_types);
-
-    let parent_ctx_pkg = quote::format_ident!("{}_parent_rpc_ctx", package);
-    let server_parent_rpc_ctx = quote::format_ident!("parent_rpc_ctx");
 
     let inner_arg = if use_arc_self {
         quote!(inner)
@@ -613,17 +593,14 @@ fn generate_unary<T: Method>(
                 // Configure child task's thread-local to point to our req-ctx.
                 // SAFETY: `hook_ctx` holds one ref-count to req-ctx.
                 let before_poll = |raw_ctx: *const ()| {
-                    let original = super::#parent_ctx_pkg::#server_parent_rpc_ctx.replace(raw_ctx);
-                    assert!(original.is_null());
+                    let ctx = unsafe { &*(raw_ctx as *const P) };
+                    tonic::masa::context::server::set_parent_ctx::<C, P>(ctx);
                 };
 
                 // Remove req-ctx from our thread local to avoid exposing this req-ctx
                 // to another task (and mislead another task to think they have a parent rpc).
                 let after_poll = |raw_ctx: *const ()| {
-                    let original = super::#parent_ctx_pkg::#server_parent_rpc_ctx.replace(
-                        core::ptr::null(),
-                    );
-                    assert!(!original.is_null());
+                    tonic::masa::context::server::reset_parent_ctx::<C, P>();
                 };
 
                 let child_hook = unsafe {
@@ -642,18 +619,11 @@ fn generate_unary<T: Method>(
             let fut = grpc.unary(method, req)
                 .hook()
                 .pre_hook(|| {
-                    let req_ctx_addr = req_ctx.as_ref() as *const P;
-                    let original = super::#parent_ctx_pkg::#server_parent_rpc_ctx.replace(req_ctx_addr as *const ());
-
-                    // A server handler should not be calling another server handler.
-                    // We only set this value before polling a server handler.
-                    assert!(original.is_null());
-
+                    tonic::masa::context::server::set_parent_ctx::<C, P>(req_ctx.as_ref());
                     req_ctx.before_poll();
                 })
                 .post_hook(|poll| {
-                    let original = super::#parent_ctx_pkg::#server_parent_rpc_ctx.replace(core::ptr::null());
-                    assert!(!original.is_null());
+                    tonic::masa::context::server::reset_parent_ctx::<C, P>();
                     req_ctx.after_poll(poll);
                 })
                 .build();
@@ -661,7 +631,7 @@ fn generate_unary<T: Method>(
             let mut res = fut.await;
 
             // Request-completed lifecycle hook.
-            get_ctx().finalize(&mut res);
+            req_ctx.finalize(&mut res);
 
             tonic::async_executor::reset_child_task_poll_hook();
 

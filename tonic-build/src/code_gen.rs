@@ -116,10 +116,6 @@ impl CodeGenBuilder {
             self.generate_default_stubs,
         )
     }
-
-    pub fn generate_parent_rpc_context(&self, package: &str) -> TokenStream {
-        crate::server::generate_rpc_context(package)
-    }
 }
 
 impl Default for CodeGenBuilder {
