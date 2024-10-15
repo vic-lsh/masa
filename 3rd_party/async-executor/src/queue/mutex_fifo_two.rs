@@ -14,8 +14,18 @@ pub(crate) struct MutexFifoTwoQueue<T> {
 impl<T: Ord + PartialOrd + Prioritize> Queue for MutexFifoTwoQueue<T> {
     type Item = T;
 
-    fn push(&self, _item: Self::Item) -> Result<(), PushError<Self::Item>> {
-        panic!("Not implemented");
+    fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
+        let prio = item.priority();
+        if prio.value() == 0 {
+            self.with_locked_q_infra(|mut q| {
+                q.push_back(item);
+            });
+        } else {
+            self.with_locked_q_others(|mut q| {
+                q.push_back(item);
+            });
+        }
+        Ok(())
     }
 
     fn pop(&self) -> Result<Self::Item, PopError> {

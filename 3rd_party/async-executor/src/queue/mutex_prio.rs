@@ -13,8 +13,11 @@ pub(crate) struct MutexPriorityQueue<T> {
 impl<T: Ord + PartialOrd + Prioritize> Queue for MutexPriorityQueue<T> {
     type Item = T;
 
-    fn push(&self, _item: Self::Item) -> Result<(), PushError<Self::Item>> {
-        panic!("Not implemented");
+    fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
+        self.with_locked(|mut q| {
+            q.push(item);
+        });
+        Ok(())
     }
 
     fn pop(&self) -> Result<Self::Item, PopError> {
