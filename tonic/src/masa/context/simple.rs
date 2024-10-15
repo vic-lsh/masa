@@ -14,7 +14,7 @@ use tonic_masa::{
 
 use crate::{body::BoxBody, masa::mock_graph, GrpcMethod, Request, Response, Status};
 
-use super::{ChildContext, ClientStubHooks, RequestHandlerHooks, ServerContext, ServerHooks};
+use super::{ClientStubHooks, RequestHandlerHooks, ServerContext, ServerHooks};
 
 /// A simple implementation of `RequestHandlerHooks`.
 #[derive(Debug)]
