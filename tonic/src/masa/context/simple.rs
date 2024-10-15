@@ -148,9 +148,10 @@ impl RequestHandlerHooks for SimpleParentContext {
         graph.track_span(&child_rpc_method.id(), latency_us as u64);
     }
 
-    fn before_poll(&self) {
+    fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
         log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
         self.polled.fetch_add(1, Ordering::Relaxed);
+        None
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
