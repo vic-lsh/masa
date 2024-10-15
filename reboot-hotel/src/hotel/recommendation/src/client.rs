@@ -10,7 +10,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = RecommendationClient::connect("http://[::1]:50051").await?;
 
     let request = tonic::Request::new(RecommendationRequest {
-        require: "Tonic".into(),
+        require: "dis".into(),
         lat: 0.1,
         lon: 0.2,
     });
