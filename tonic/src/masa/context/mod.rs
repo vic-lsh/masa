@@ -3,6 +3,8 @@ use std::{sync::Arc, task::Poll};
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
 mod simple;
+mod tls;
+pub use tls::{client, server};
 
 /// Context struct for an RPC server, instantiated during server startup.
 pub type ServerContext = simple::SimpleServerContext;
