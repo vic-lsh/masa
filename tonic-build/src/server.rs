@@ -114,11 +114,12 @@ pub(crate) fn generate_internal<T: Service>(
             #[derive(Debug)]
             pub struct #server_service<
                     T: #server_trait,
+                    S: tonic::masa::ServerHooks = tonic::masa::ServerContext,
                     C: tonic::masa::ClientStubHooks = tonic::masa::ChildContext,
-                    P: tonic::masa::RequestHandlerHooks<C> = tonic::masa::ParentContext
+                    P: tonic::masa::RequestHandlerHooks<C, S> = tonic::masa::ParentContext
                 > {
                 inner: _Inner<T>,
-                ctx: Arc<tonic::masa::ServerContext>,
+                ctx: Arc<S>,
                 accept_compression_encodings: EnabledCompressionEncodings,
                 send_compression_encodings: EnabledCompressionEncodings,
                 max_decoding_message_size: Option<usize>,
@@ -129,7 +130,7 @@ pub(crate) fn generate_internal<T: Service>(
             struct _Inner<T>(Arc<T>);
 
             // Methods that don't expect a custom context generic parameter.
-            impl<T: #server_trait> #server_service<T, tonic::masa::ChildContext, tonic::masa::ParentContext> {
+            impl<T: #server_trait> #server_service<T, tonic::masa::ServerContext, tonic::masa::ChildContext, tonic::masa::ParentContext> {
                 pub fn new(inner: T) -> Self {
                     Self::new_impl(inner)
                 }
@@ -148,9 +149,10 @@ pub(crate) fn generate_internal<T: Service>(
 
             impl<
                 T: #server_trait,
+                S: tonic::masa::ServerHooks,
                 C: tonic::masa::ClientStubHooks,
-                P: tonic::masa::RequestHandlerHooks<C>,
-            > #server_service<T, C, P> {
+                P: tonic::masa::RequestHandlerHooks<C, S>,
+            > #server_service<T, S, C, P> {
                 pub fn with_custom_context(inner: T) -> Self {
                     Self::new_impl(inner)
                 }
@@ -162,7 +164,7 @@ pub(crate) fn generate_internal<T: Service>(
                 fn from_arc_impl(inner: Arc<T>) -> Self {
                     let inner = _Inner(inner);
                     use tonic::masa::ServerHooks;
-                    let ctx = tonic::masa::ServerContext::new(<Self as tonic::server::NamedService>::NAME);
+                    let ctx = S::new(<Self as tonic::server::NamedService>::NAME);
                     Self {
                         inner,
                         ctx: Arc::new(ctx),
@@ -186,11 +188,12 @@ pub(crate) fn generate_internal<T: Service>(
                 #configure_max_message_size_methods
             }
 
-            impl<T, C, P, B> tonic::codegen::Service<http::Request<B>> for #server_service<T, C, P>
+            impl<T, S, C, P, B> tonic::codegen::Service<http::Request<B>> for #server_service<T, S, C, P>
                 where
                     T: #server_trait,
+                    S: tonic::masa::ServerHooks,
                     C: tonic::masa::ClientStubHooks,
-                    P: tonic::masa::RequestHandlerHooks<C>,
+                    P: tonic::masa::RequestHandlerHooks<C, S>,
                     B: Body + Send + 'static,
                     B::Error: Into<StdError> + Send + 'static,
             {
@@ -224,9 +227,10 @@ pub(crate) fn generate_internal<T: Service>(
 
             impl<
                 T: #server_trait,
+                S: tonic::masa::ServerHooks,
                 C: tonic::masa::ClientStubHooks,
-                P: tonic::masa::RequestHandlerHooks<C>,
-            > Clone for #server_service<T, C, P> {
+                P: tonic::masa::RequestHandlerHooks<C, S>,
+            > Clone for #server_service<T, S, C, P> {
                 fn clone(&self) -> Self {
                     let inner = self.inner.clone();
                     let ctx = self.ctx.clone();
@@ -428,9 +432,10 @@ fn generate_named(
     quote! {
         impl<
             T: #server_trait,
+            S: tonic::masa::ServerHooks,
             C: tonic::masa::ClientStubHooks,
-            P: tonic::masa::RequestHandlerHooks<C>,
-        > tonic::server::NamedService for #server_service<T, C, P> {
+            P: tonic::masa::RequestHandlerHooks<C, S>,
+        > tonic::server::NamedService for #server_service<T, S, C, P> {
             const NAME: &'static str = #service_name;
         }
     }
@@ -595,13 +600,13 @@ fn generate_unary<T: Method>(
                 // SAFETY: `hook_ctx` holds one ref-count to req-ctx.
                 let before_poll = |raw_ctx: *const ()| {
                     let ctx = unsafe { &*(raw_ctx as *const P) };
-                    tonic::masa::context::server::set_parent_ctx::<C, P>(ctx);
+                    tonic::masa::context::server::set_parent_ctx::<S, C, P>(ctx);
                 };
 
                 // Remove req-ctx from our thread local to avoid exposing this req-ctx
                 // to another task (and mislead another task to think they have a parent rpc).
                 let after_poll = |raw_ctx: *const ()| {
-                    tonic::masa::context::server::reset_parent_ctx::<C, P>();
+                    tonic::masa::context::server::reset_parent_ctx::<S, C, P>();
                 };
 
                 let child_hook = unsafe {
@@ -620,11 +625,11 @@ fn generate_unary<T: Method>(
             let fut = grpc.unary(method, req)
                 .hook()
                 .pre_hook(|| {
-                    tonic::masa::context::server::set_parent_ctx::<C, P>(req_ctx.as_ref());
+                    tonic::masa::context::server::set_parent_ctx::<S, C, P>(req_ctx.as_ref());
                     req_ctx.before_poll();
                 })
                 .post_hook(|poll| {
-                    tonic::masa::context::server::reset_parent_ctx::<C, P>();
+                    tonic::masa::context::server::reset_parent_ctx::<S, C, P>();
                     req_ctx.after_poll(poll);
                 })
                 .build();
