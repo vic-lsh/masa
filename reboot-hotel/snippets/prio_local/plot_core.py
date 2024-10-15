@@ -18,6 +18,8 @@ plt.rcParams.update(
 )
 
 # MODES = ["prio_local", "prio_global", "fifo_two"]
+
+REPEATS = 3
 MODES = ["prio_local"]
 GRAPH_IDS = ["Hotel"]
 COLORS = ["tab:blue", "tab:orange", "tab:purple"]
