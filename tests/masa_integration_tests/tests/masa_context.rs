@@ -1,4 +1,5 @@
 use std::{
+    marker::PhantomData,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -15,32 +16,49 @@ use masa_integration_tests::pb::{
     Input1, Input2, Output1, Output2,
 };
 use tonic::{
-    body::BoxBody,
-    masa::{ClientStubHooks, RequestHandlerHooks, ServerContext, ServerHooks},
+    masa::{ClientStubHooks, RequestHandlerHooks, ServerHooks},
     transport::Server,
     GrpcMethod, Request, Response, Status,
 };
 use tonic_masa::PriorityHint;
 
-static N_BEFORE_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
-static N_AFTER_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
-
-struct ParentSvc {
+struct ParentSvc<S, C, P> {
     child_addr: &'static str,
     fanout_factor: usize,
+    _s_ty: PhantomData<S>,
+    _c_ty: PhantomData<C>,
+    _p_ty: PhantomData<P>,
+}
+
+impl<S, C, P> ParentSvc<S, C, P> {
+    fn new(child_addr: &'static str, fanout_factor: usize) -> Self {
+        Self {
+            child_addr,
+            fanout_factor,
+            _s_ty: PhantomData,
+            _c_ty: PhantomData,
+            _p_ty: PhantomData,
+        }
+    }
 }
 
 #[tonic::async_trait]
-impl ParentService for ParentSvc {
+impl<S, C, P> ParentService for ParentSvc<S, C, P>
+where
+    S: ServerHooks,
+    C: ClientStubHooks + Send + Sync + 'static,
+    P: RequestHandlerHooks<C, S> + 'static,
+{
     async fn rpc(&self, _req: Request<Input1>) -> Result<Response<Output1>, Status> {
-        let mut client =
-            ChildServiceClient::<_, TestServerCtx, TestChildCtx, TestParentCtx>::connect_with_custom_context(
-                format!("http://{}", self.child_addr),
-            )
-            .await
-            .unwrap();
+        let mut client = ChildServiceClient::<_, S, C, P>::connect_with_custom_context(format!(
+            "http://{}",
+            self.child_addr
+        ))
+        .await
+        .unwrap();
 
         for _ in 0..self.fanout_factor {
+            println!("calling child...");
             client.rpc1(Request::new(Input1 {})).await.unwrap();
         }
 
@@ -48,12 +66,12 @@ impl ParentService for ParentSvc {
     }
 
     async fn fanout_rpc(&self, _req: Request<Input1>) -> Result<Response<Output1>, Status> {
-        let mut client =
-            ChildServiceClient::<_, TestServerCtx, TestChildCtx, TestParentCtx>::connect_with_custom_context(
-                format!("http://{}", self.child_addr),
-            )
-            .await
-            .unwrap();
+        let client = ChildServiceClient::<_, S, C, P>::connect_with_custom_context(format!(
+            "http://{}",
+            self.child_addr
+        ))
+        .await
+        .unwrap();
 
         let mut handles: Vec<_> = Vec::new();
         for _ in 0..self.fanout_factor {
@@ -97,62 +115,45 @@ where
     }
 }
 
-struct TestServerCtx;
+struct MockServerCtx;
 
-impl ServerHooks for TestServerCtx {
-    fn new(service_name: &'static str) -> Self {
+impl ServerHooks for MockServerCtx {
+    fn new(_service_name: &'static str) -> Self {
         Self
     }
 }
 
-struct TestParentCtx {}
+struct MockParentCtx {}
 
-impl<C: ClientStubHooks, S: ServerHooks> RequestHandlerHooks<C, S> for TestParentCtx {
-    fn begin<B>(method: GrpcMethod, req: &http::Request<B>, server_ctx: Arc<S>) -> Self {
+impl<C: ClientStubHooks, S: ServerHooks> RequestHandlerHooks<C, S> for MockParentCtx {
+    fn begin<B>(_method: GrpcMethod, _req: &http::Request<B>, _server_ctx: Arc<S>) -> Self {
         Self {}
     }
-
-    fn before_child_rpc<T>(&self, method: GrpcMethod, _req: &mut Request<T>, _child_ctx: &mut C) {
-        N_BEFORE_CHILD_RPCS.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn after_child_rpc<T>(
-        &self,
-        method: GrpcMethod,
-        _resp: &mut Result<Response<T>, Status>,
-        _child_ctx: C,
-    ) {
-        N_AFTER_CHILD_RPCS.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn finalize(&self, response: &mut http::Response<BoxBody>) {}
 }
 
-struct TestChildCtx;
+struct MockChildCtx;
 
-impl ClientStubHooks for TestChildCtx {
-    fn new<T>(method: GrpcMethod, _req: &Request<T>) -> Self {
+impl ClientStubHooks for MockChildCtx {
+    fn new<T>(_method: GrpcMethod, _req: &Request<T>) -> Self {
         Self {}
     }
-
-    fn before_send<T>(&mut self, _req: &mut Request<T>) {}
-
-    fn after_recv<T>(&mut self, _response: &mut Result<Response<T>, Status>) {}
 }
 
-async fn make_parent_child_svcs(
+async fn make_parent_child_svcs<S, C, P>(
     parent_svc_addr: &'static str,
     child_svc_addr: &'static str,
     fanout_factor: usize,
-) -> (tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>) {
+) -> (tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>)
+where
+    S: ServerHooks,
+    C: ClientStubHooks + Send + Sync + 'static,
+    P: RequestHandlerHooks<C, S> + 'static,
+{
     let child_svc = tokio::spawn(async {
         Server::builder()
-            .add_service(ChildServiceServer::<
-                _,
-                TestServerCtx,
-                TestChildCtx,
-                TestParentCtx,
-            >::with_custom_context(ChildSvc))
+            .add_service(ChildServiceServer::<_, S, C, P>::with_custom_context(
+                ChildSvc,
+            ))
             .serve_with_executor(
                 child_svc_addr.parse().unwrap(),
                 Exec::Executor(Arc::new(ExecImpl)),
@@ -163,15 +164,9 @@ async fn make_parent_child_svcs(
 
     let parent_svc = tokio::spawn(async move {
         Server::builder()
-            .add_service(ParentServiceServer::<
-                _,
-                TestServerCtx,
-                TestChildCtx,
-                TestParentCtx,
-            >::with_custom_context(ParentSvc {
-                child_addr: child_svc_addr,
-                fanout_factor,
-            }))
+            .add_service(ParentServiceServer::<_, S, C, P>::with_custom_context(
+                ParentSvc::<S, C, P>::new(child_svc_addr, fanout_factor),
+            ))
             .serve_with_executor(
                 parent_svc_addr.parse().unwrap(),
                 Exec::Executor(Arc::new(ExecImpl)),
@@ -190,16 +185,13 @@ async fn test_service_ctx_construction() {
     struct TestCtorCountServerCtx;
 
     impl ServerHooks for TestCtorCountServerCtx {
-        fn new(service_name: &'static str) -> Self {
+        fn new(_service_name: &'static str) -> Self {
             N_SERVICE_CTX_CTORS.fetch_add(1, Ordering::Relaxed);
             Self
         }
     }
 
     let n_svcs = 12;
-
-    let parent_svc_addr = "127.0.0.1:7878";
-
     let _handles: Vec<_> = (0..n_svcs)
         .map(|i| {
             let addr = format!("127.0.0.1:{}", 7878 + i);
@@ -208,8 +200,8 @@ async fn test_service_ctx_construction() {
                     .add_service(ChildServiceServer::<
                         _,
                         TestCtorCountServerCtx,
-                        TestChildCtx,
-                        TestParentCtx,
+                        MockChildCtx,
+                        MockParentCtx,
                     >::with_custom_context(ChildSvc))
                     .serve_with_executor(addr.parse().unwrap(), Exec::Executor(Arc::new(ExecImpl)))
                     .await
@@ -223,13 +215,45 @@ async fn test_service_ctx_construction() {
 }
 
 #[tokio::test]
-async fn test_child_ctx_hook_invocations() {
+async fn test_child_rpc_hooks_invocations() {
+    static N_BEFORE_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
+    static N_AFTER_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
+
+    struct TestChildRpcParentCtx {}
+
+    impl<C: ClientStubHooks, S: ServerHooks> RequestHandlerHooks<C, S> for TestChildRpcParentCtx {
+        fn begin<B>(_method: GrpcMethod, _req: &http::Request<B>, _server_ctx: Arc<S>) -> Self {
+            Self {}
+        }
+
+        fn before_child_rpc<T>(
+            &self,
+            _method: GrpcMethod,
+            _req: &mut Request<T>,
+            _child_ctx: &mut C,
+        ) {
+            N_BEFORE_CHILD_RPCS.fetch_add(1, Ordering::Relaxed);
+        }
+
+        fn after_child_rpc<T>(
+            &self,
+            _method: GrpcMethod,
+            _resp: &mut Result<Response<T>, Status>,
+            _child_ctx: C,
+        ) {
+            N_AFTER_CHILD_RPCS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
     let parent_svc_addr = "127.0.0.1:4455";
     let child_svc_addr = "127.0.0.1:4466";
     let fanout_factor = 10;
-
-    let (_parent, _child) =
-        make_parent_child_svcs(parent_svc_addr, child_svc_addr, fanout_factor).await;
+    let (_parent, _child) = make_parent_child_svcs::<
+        MockServerCtx,
+        MockChildCtx,
+        TestChildRpcParentCtx,
+    >(parent_svc_addr, child_svc_addr, fanout_factor)
+    .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
@@ -248,4 +272,57 @@ async fn test_child_ctx_hook_invocations() {
     assert_eq!(N_BEFORE_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
     assert_eq!(N_AFTER_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
     N_BEFORE_CHILD_RPCS.store(0, Ordering::Relaxed);
+    N_AFTER_CHILD_RPCS.store(0, Ordering::Relaxed);
+}
+
+#[tokio::test]
+async fn test_child_ctx_hook_invocations() {
+    static N_BEFORE_SEND: AtomicUsize = AtomicUsize::new(0);
+    static N_AFTER_RECV: AtomicUsize = AtomicUsize::new(0);
+
+    struct TestInvocationChildCtx;
+
+    impl ClientStubHooks for TestInvocationChildCtx {
+        fn new<T>(_method: GrpcMethod, _req: &Request<T>) -> Self {
+            Self {}
+        }
+
+        fn before_send<T>(&mut self, _req: &mut Request<T>) {
+            N_BEFORE_SEND.fetch_add(1, Ordering::Relaxed);
+        }
+
+        fn after_recv<T>(&mut self, _response: &mut Result<Response<T>, Status>) {
+            N_AFTER_RECV.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    let parent_svc_addr = "127.0.0.1:4355";
+    let child_svc_addr = "127.0.0.1:4366";
+    let fanout_factor = 10;
+
+    let (_parent, _child) = make_parent_child_svcs::<
+        MockServerCtx,
+        TestInvocationChildCtx,
+        MockParentCtx,
+    >(parent_svc_addr, child_svc_addr, fanout_factor)
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
+        .await
+        .unwrap();
+
+    parent_cl.rpc(Request::new(Input1 {})).await.unwrap();
+
+    assert_eq!(N_BEFORE_SEND.load(Ordering::Relaxed), fanout_factor);
+    assert_eq!(N_AFTER_RECV.load(Ordering::Relaxed), fanout_factor);
+    N_BEFORE_SEND.store(0, Ordering::Relaxed);
+    N_AFTER_RECV.store(0, Ordering::Relaxed);
+
+    parent_cl.fanout_rpc(Request::new(Input1 {})).await.unwrap();
+
+    assert_eq!(N_BEFORE_SEND.load(Ordering::Relaxed), fanout_factor);
+    assert_eq!(N_AFTER_RECV.load(Ordering::Relaxed), fanout_factor);
+    N_BEFORE_SEND.store(0, Ordering::Relaxed);
+    N_AFTER_RECV.store(0, Ordering::Relaxed);
 }
