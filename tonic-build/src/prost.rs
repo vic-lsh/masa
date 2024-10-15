@@ -281,8 +281,6 @@ impl prost_build::ServiceGenerator for ServiceGenerator {
             self.servers = TokenStream::default();
         }
     }
-
-    fn finalize_package(&mut self, package: &str, buf: &mut String) {}
 }
 
 /// Service generator builder.
