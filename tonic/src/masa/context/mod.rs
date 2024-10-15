@@ -89,7 +89,10 @@ pub trait RequestHandlerHooks: Sync {
 
     /// Invoked each time before the request handler is polled.
     ///
-    /// This indicates that the request handler can make progress.
+    /// Being invoked indicates that the request handler can make progress.
+    ///
+    /// To return early without continuing request processing, return the
+    /// response to write back to the client in this hook.
     fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
         None
     }
@@ -97,6 +100,9 @@ pub trait RequestHandlerHooks: Sync {
     /// Invoked each time after the request handler is polled.
     ///
     /// The poll result shows whether the request is blocked or finalized.
+    ///
+    /// To return early without continuing request processing, return the
+    /// response to write back to the client in this hook.
     fn after_poll<Ret>(
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
