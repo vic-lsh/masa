@@ -233,6 +233,17 @@ where
         ctx.as_ref().map(|r| &**r)
     }
 
+    /// Takes ownership of the request context and sets it up.
+    fn setup_masa_request_context(context: crate::masa::ParentContext) {
+        let req_ctx = std::sync::Arc::new(context);
+        unsafe {
+            crate::async_task::set_metadata_from_raw_task(
+                crate::async_task::get_task_ptr(),
+                Some(req_ctx),
+            );
+        };
+    }
+
     /// Handle a single unary gRPC request.
     pub async fn unary<S, B>(
         &mut self,
@@ -247,15 +258,7 @@ where
     {
         use crate::masa::RequestHandlerHooks;
 
-        if let Some(ctx) = context {
-            let req_ctx = std::sync::Arc::new(ctx);
-            unsafe {
-                crate::async_task::set_metadata_from_raw_task(
-                    crate::async_task::get_task_ptr(),
-                    Some(req_ctx),
-                );
-            };
-        }
+        context.map(Self::setup_masa_request_context);
 
         let accept_encoding = CompressionEncoding::from_accept_encoding_header(
             req.headers(),
