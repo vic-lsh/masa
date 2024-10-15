@@ -22,7 +22,8 @@ use tonic::{
 };
 use tonic_masa::PriorityHint;
 
-static N_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
+static N_BEFORE_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
+static N_AFTER_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
 
 struct ParentSvc {
     child_addr: &'static str,
@@ -112,7 +113,7 @@ impl<C: ClientStubHooks, S: ServerHooks> RequestHandlerHooks<C, S> for TestParen
     }
 
     fn before_child_rpc<T>(&self, method: GrpcMethod, _req: &mut Request<T>, _child_ctx: &mut C) {
-        N_CHILD_RPCS.fetch_add(1, Ordering::Relaxed);
+        N_BEFORE_CHILD_RPCS.fetch_add(1, Ordering::Relaxed);
     }
 
     fn after_child_rpc<T>(
@@ -121,6 +122,7 @@ impl<C: ClientStubHooks, S: ServerHooks> RequestHandlerHooks<C, S> for TestParen
         _resp: &mut Result<Response<T>, Status>,
         _child_ctx: C,
     ) {
+        N_AFTER_CHILD_RPCS.fetch_add(1, Ordering::Relaxed);
     }
 
     fn finalize(&self, response: &mut http::Response<BoxBody>) {}
@@ -236,11 +238,14 @@ async fn test_child_ctx_hook_invocations() {
 
     parent_cl.rpc(Request::new(Input1 {})).await.unwrap();
 
-    assert_eq!(N_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
-    N_CHILD_RPCS.store(0, Ordering::Relaxed);
+    assert_eq!(N_BEFORE_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
+    assert_eq!(N_AFTER_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
+    N_BEFORE_CHILD_RPCS.store(0, Ordering::Relaxed);
+    N_AFTER_CHILD_RPCS.store(0, Ordering::Relaxed);
 
     parent_cl.fanout_rpc(Request::new(Input1 {})).await.unwrap();
 
-    assert_eq!(N_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
-    N_CHILD_RPCS.store(0, Ordering::Relaxed);
+    assert_eq!(N_BEFORE_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
+    assert_eq!(N_AFTER_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
+    N_BEFORE_CHILD_RPCS.store(0, Ordering::Relaxed);
 }
