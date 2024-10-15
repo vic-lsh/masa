@@ -189,11 +189,18 @@ pub(crate) fn generate_internal<T: Service>(
     }
 }
 
-fn generate_get_parent_rpc_ctx(service: &impl Service) -> TokenStream {
+fn generate_get_parent_rpc_ctx(_service: &impl Service) -> TokenStream {
     quote! {
         /// Internal. Obtain the parent RPC in which this RPC client stub operates.
         fn get_parent_ctx(&self) -> Option<&'_ P> {
-            tonic::masa::context::client::get_parent_ctx()
+            // SAFETY:
+            // - same parent ctx type used in client and server
+            //   - if the caller didn't configure P (the normal case where applications
+            //     use clients and servers), code-gen ensures the same P type across
+            //     client and server.
+            //   - if custom P types are configured (e.g., in tests), the user have to
+            //     ensure that. code-gen doesn't enforce this rule yet.
+            unsafe { tonic::masa::context::client::get_parent_ctx() }
         }
     }
 }
