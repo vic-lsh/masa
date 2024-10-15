@@ -20,12 +20,13 @@ use tonic::{
     transport::Server,
     GrpcMethod, Request, Response, Status,
 };
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 static N_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
 
 struct ParentSvc {
     child_addr: &'static str,
+    fanout_factor: usize,
 }
 
 #[tonic::async_trait]
@@ -38,8 +39,7 @@ impl ParentService for ParentSvc {
             .await
             .unwrap();
 
-        let fanout_factor = 10;
-        for _ in 0..fanout_factor {
+        for _ in 0..self.fanout_factor {
             client.rpc1(Request::new(Input1 {})).await.unwrap();
         }
 
@@ -54,9 +54,8 @@ impl ParentService for ParentSvc {
             .await
             .unwrap();
 
-        let fanout_factor = 10;
         let mut handles: Vec<_> = Vec::new();
-        for _ in 0..fanout_factor {
+        for _ in 0..self.fanout_factor {
             let mut c = client.clone();
             handles.push(async_executor::spawn(async move {
                 c.rpc1(Request::new(Input1 {})).await.unwrap();
@@ -90,8 +89,10 @@ where
     F: std::future::Future + Send + 'static,
     F::Output: Send,
 {
-    fn execute(&self, fut: F, ddl: DeadlineHint) {
-        async_executor::spawn_with_ddl(fut, ddl).fallible().detach();
+    fn execute(&self, fut: F, prio: PriorityHint) {
+        async_executor::spawn_with_prio(fut, prio)
+            .fallible()
+            .detach();
     }
 }
 
@@ -118,8 +119,6 @@ impl<C: ClientStubHooks> RequestHandlerHooks<C> for TestParentCtx {
     ) {
     }
 
-    fn before_poll(&self) {}
-
     fn finalize(&self, response: &mut http::Response<BoxBody>) {}
 }
 
@@ -136,11 +135,13 @@ impl ClientStubHooks for TestChildCtx {
 }
 
 #[tokio::test]
-async fn test_ctx_hook() {
+async fn test_child_ctx_hook_invocations() {
     let parent_svc_addr = "127.0.0.1:4455";
     let child_svc_addr = "127.0.0.1:4466";
 
-    let child_svc = tokio::spawn(async {
+    let fanout_factor = 10;
+
+    let _child_svc = tokio::spawn(async {
         Server::builder()
             .add_service(
                 ChildServiceServer::<_, TestChildCtx, TestParentCtx>::with_custom_context(ChildSvc),
@@ -153,12 +154,13 @@ async fn test_ctx_hook() {
             .unwrap();
     });
 
-    let parent_svc = tokio::spawn(async {
+    let _parent_svc = tokio::spawn(async move {
         Server::builder()
             .add_service(
                 ParentServiceServer::<_, TestChildCtx, TestParentCtx>::with_custom_context(
                     ParentSvc {
                         child_addr: child_svc_addr,
+                        fanout_factor,
                     },
                 ),
             )
@@ -177,11 +179,11 @@ async fn test_ctx_hook() {
 
     parent_cl.rpc(Request::new(Input1 {})).await.unwrap();
 
-    assert_eq!(N_CHILD_RPCS.load(Ordering::Relaxed), 10);
+    assert_eq!(N_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
     N_CHILD_RPCS.store(0, Ordering::Relaxed);
 
     parent_cl.fanout_rpc(Request::new(Input1 {})).await.unwrap();
 
-    assert_eq!(N_CHILD_RPCS.load(Ordering::Relaxed), 10);
+    assert_eq!(N_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
     N_CHILD_RPCS.store(0, Ordering::Relaxed);
 }
