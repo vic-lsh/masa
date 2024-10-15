@@ -12,7 +12,7 @@ use tonic_masa::{
     PRIO_LOCAL, PRIO_LOCAL_TWO,
 };
 
-use crate::{body::BoxBody, masa::mock_graph, GrpcMethod, Request, Response, Status};
+use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
 
 use super::{ChildContext, ClientStubHooks, RequestHandlerHooks, ServerContext};
 
@@ -71,6 +71,22 @@ pub struct SimpleServerContext {
     service_name: &'static str,
     local_graphs: HashMap<MethodId, LocalGraph>,
     local_graph_trackers: HashMap<MethodId, RwLock<LocalGraphTracker>>,
+}
+
+impl SimpleParentContext {
+    #[inline]
+    fn should_early_return(&self) -> bool {
+        // [TODO] curr_time >= self.ddl
+        false
+    }
+
+    #[inline]
+    fn issue_early_return<T>(&self) -> Result<Response<T>, Status> {
+        Err(Status::new(
+            Code::DeadlineExceeded,
+            "could not complete the request before its deadline",
+        ))
+    }
 }
 
 impl RequestHandlerHooks for SimpleParentContext {
@@ -149,6 +165,10 @@ impl RequestHandlerHooks for SimpleParentContext {
     }
 
     fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
+        if self.should_early_return() {
+            return Some(self.issue_early_return());
+        }
+
         log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
         self.polled.fetch_add(1, Ordering::Relaxed);
         None
