@@ -73,7 +73,7 @@ pub struct SimpleServerContext {
     local_graph_trackers: HashMap<MethodId, RwLock<LocalGraphTracker>>,
 }
 
-impl RequestHandlerHooks for SimpleParentContext {
+impl RequestHandlerHooks<SimpleChildContext> for SimpleParentContext {
     fn begin<B>(
         method: GrpcMethod,
         req: &http::Request<B>,
@@ -95,7 +95,7 @@ impl RequestHandlerHooks for SimpleParentContext {
         &self,
         method: GrpcMethod,
         request: &mut Request<T>,
-        _child_send_ctx: &mut ChildContext,
+        _child_send_ctx: &mut SimpleChildContext,
     ) {
         log::info!("parent_ctx, before_child_rpc, method: {:?}", method.id());
         let graph = self
@@ -131,7 +131,7 @@ impl RequestHandlerHooks for SimpleParentContext {
         &self,
         child_rpc_method: GrpcMethod,
         _resp: &mut Result<Response<T>, Status>,
-        child_ctx: ChildContext,
+        child_ctx: SimpleChildContext,
     ) {
         log::info!(
             "parent_ctx, after_child_rpc, method: {:?}",
