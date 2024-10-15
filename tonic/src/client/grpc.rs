@@ -224,7 +224,7 @@ impl<T> Grpc<T> {
         if let Ok(response) = result {
             Ok(response)
         } else {
-            self.client_streaming(request, path, codec).await
+            result
         }
     }
 
