@@ -10,6 +10,8 @@ members = [
   "examples",
   "reboot",
   "reboot-hotel",
+  # socialnetwork eval impl
+  "reboot-socialnet/unique_id",
   "codegen",
   "interop",                          # Tests
   "tests/disable_comments",
