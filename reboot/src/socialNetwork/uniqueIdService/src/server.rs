@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const CUSTOM_EPOCH: i64 = 1514764800000;
 use tonic::{transport::Server, Request, Response, Status};
 
-use unique_id_service::greeter_server::{Greeter, GreeterServer};
+use unique_id_service::unique_id_service_server::{UniqueIdService, UniqueIdServiceServer};
 use unique_id_service::{UniqueIdReply, UniqueIdRequest};
 
 pub mod unique_id_service {
@@ -19,7 +19,7 @@ pub mod unique_id_service {
 }
 
 #[derive(Debug, Default)]
-pub struct MyGreeter {
+pub struct UniqueIdSvcImpl {
     machine_id: String,
     counter: Arc<Mutex<Counter>>,
 }
@@ -47,7 +47,7 @@ impl Counter {
 }
 
 #[tonic::async_trait]
-impl Greeter for MyGreeter {
+impl UniqueIdService for UniqueIdSvcImpl {
     async fn compose_unique_id(
         &self,
         request: Request<UniqueIdRequest>,
@@ -92,9 +92,9 @@ impl Greeter for MyGreeter {
 }
 
 // Add a function to class MyGreeter
-impl MyGreeter {
+impl UniqueIdSvcImpl {
     pub fn new(machine_id: String) -> Self {
-        MyGreeter {
+        UniqueIdSvcImpl {
             // machine_id: get_machine_id(netif),
             // now it is hardcoded
             machine_id,
@@ -194,7 +194,7 @@ fn hash_mac_address_pid(mac: &str) -> u16 {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     let addr = "[::1]:50051".parse()?;
-    let greeter = MyGreeter {
+    let greeter = UniqueIdSvcImpl {
         // machine_id: get_machine_id(netif),
         // now it is hardcoded
         machine_id: String::from("abc"),
@@ -202,7 +202,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     Server::builder()
-        .add_service(GreeterServer::new(greeter))
+        .add_service(UniqueIdServiceServer::new(greeter))
         .serve(addr)
         .await?;
 
