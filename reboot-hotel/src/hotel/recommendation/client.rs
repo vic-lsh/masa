@@ -1,8 +1,10 @@
 use recommendation::recommendation_client::RecommendationClient;
 use recommendation::RecommendationRequest;
 
-pub mod recommendation {
-    tonic::include_proto!("recommendation");
+pub mod hotel {
+    pub mod recommendation {
+        tonic::include_proto!("recommendation");
+    }
 }
 
 #[tokio::main]

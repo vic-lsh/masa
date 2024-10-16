@@ -7,11 +7,11 @@ use tonic::{transport::Server, Request, Response, Status}; // Import geo functio
 
 use recommendation::recommendation_server::{Recommendation, RecommendationServer};
 use recommendation::{RecommendationReply, RecommendationRequest};
-
-pub mod recommendation {
-    tonic::include_proto!("recommendation");
+pub mod hotel {
+    pub mod recommendation {
+        tonic::include_proto!("recommendation");
+    }
 }
-
 #[derive(Debug, Default)]
 pub struct MyRecommendation {
     hotels: HashMap<String, Hotel>,
