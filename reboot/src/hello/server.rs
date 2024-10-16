@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
 use tonic::{transport::Server, Request, Response, Status};
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 pub mod hello {
     tonic::include_proto!("hello");
@@ -136,8 +136,8 @@ where
     F: std::future::Future + Send + 'static,
     F::Output: Send,
 {
-    fn execute(&self, fut: F, _ddl: DeadlineHint) {
-        let ddl = DeadlineHint::new(time_now() - self.start_at + self.ddl);
+    fn execute(&self, fut: F, _ddl: PriorityHint) {
+        let ddl = PriorityHint::new(time_now() - self.start_at + self.ddl);
         self.ex.spawn_with_ddl(fut, ddl).fallible().detach();
     }
 }

@@ -38,7 +38,7 @@ use tower::{
     Service,
 };
 
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 type Svc = Either<Connection, BoxService<Request<BoxBody>, Response<hyper::Body>, crate::Error>>;
 
@@ -161,7 +161,7 @@ impl Channel {
 
         let svc = Connection::lazy(connector, endpoint);
         let (svc, worker) = Buffer::pair(Either::A(svc), buffer_size);
-        executor.execute(Box::pin(worker), DeadlineHint::infra());
+        executor.execute(Box::pin(worker), PriorityHint::infra());
 
         Channel { svc }
     }
@@ -180,7 +180,7 @@ impl Channel {
             .await
             .map_err(super::Error::from_source)?;
         let (svc, worker) = Buffer::pair(Either::A(svc), buffer_size);
-        executor.execute(Box::pin(worker), DeadlineHint::infra());
+        executor.execute(Box::pin(worker), PriorityHint::infra());
 
         Ok(Channel { svc })
     }
@@ -196,7 +196,7 @@ impl Channel {
 
         let svc = BoxService::new(svc);
         let (svc, worker) = Buffer::pair(Either::B(svc), buffer_size);
-        executor.execute(Box::pin(worker), DeadlineHint::infra());
+        executor.execute(Box::pin(worker), PriorityHint::infra());
 
         Channel { svc }
     }

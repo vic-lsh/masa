@@ -17,38 +17,40 @@ use structopt::StructOpt;
 use tokio::time::{Duration, Instant};
 
 use tonic::transport::Channel;
-use tonic_masa::{Context, GlobalGraph};
+use tonic_masa::{Context, GlobalGraph, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_LOCAL};
 
 use bridge::{worker_client::WorkerClient, HelloRequest};
-use common::{fetch_traces, init_logging, time_now, Span};
+use common::{fetch_traces, get_global_graphs, init_logging, time_now, Span};
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Reboot for simulation")]
 pub struct Args {
-    #[structopt(short, long, required = true)]
-    pub slo: u64,
-    #[structopt(short, long, required = true)]
+    #[structopt(long, required = true)]
+    pub graph_ids: Vec<String>,
+    #[structopt(long, required = true)]
+    pub slos: Vec<u64>,
+    #[structopt(long, required = true)]
+    pub rps_ranges: Vec<u64>,
+    #[structopt(long, required = true)]
     pub rps: u64,
-    #[structopt(short, long, required = true)]
+    #[structopt(long, required = true)]
     pub secs: u64,
-    #[structopt(short, long, required = true)]
+    #[structopt(long, required = true)]
     pub concurrency: u64,
-    #[structopt(short, long, required = true)]
+    #[structopt(long, required = true)]
     pub output: String,
-    #[structopt(short, long, required = true)]
-    pub graph_id: String,
-    #[structopt(short, long, required = true)]
+    #[structopt(long, required = true)]
     pub addr: String,
 }
 
 #[derive(Debug)]
 struct LoadGenerator {
     rng: StdRng,
-    slo: u64,
+    rps_ranges: Vec<u64>,
     rps: u64,
     secs: u64,
     token: Arc<AtomicI32>,
-    global_graph: GlobalGraph,
+    global_graphs: Vec<GlobalGraph>,
     client: WorkerClient<Channel>,
     trace_tx: Sender<Span>,
 }
@@ -56,21 +58,36 @@ struct LoadGenerator {
 impl LoadGenerator {
     fn new(
         rng: StdRng,
-        slo: u64,
+        rps_ranges: Vec<u64>,
         rps: u64,
         secs: u64,
         token: Arc<AtomicI32>,
-        global_graph: GlobalGraph,
+        global_graphs: Vec<GlobalGraph>,
         client: WorkerClient<Channel>,
         trace_tx: Sender<Span>,
     ) -> Self {
+        if cfg!(feature = "prio_class") {
+            log::warn!("Enabled prio_class");
+        } else if cfg!(feature = "prio_global") {
+            log::warn!("Enabled prio_global");
+        } else if cfg!(feature = "prio_class_global") {
+            log::warn!("Enabled prio_class_global");
+        } else if cfg!(feature = "prio_local") {
+            log::warn!("Enabled prio_local");
+        } else if cfg!(feature = "fifo_two") {
+            log::warn!("Enabled fifo_two");
+        } else if cfg!(feature = "fifo") {
+            log::warn!("Enabled fifo");
+        } else {
+            panic!("Not implemented policy");
+        }
         LoadGenerator {
             rng,
-            slo,
+            rps_ranges,
             rps,
             secs,
             token,
-            global_graph,
+            global_graphs,
             client,
             trace_tx,
         }
@@ -97,8 +114,6 @@ impl LoadGenerator {
         let exponential = Exp::new(self.rps as f64).unwrap();
         let uniform = Uniform::new(0, 1_000_000_007);
 
-        let graph_id = self.global_graph.graph_id().clone();
-        let local_graph = self.global_graph.get_source().clone();
         let request = HelloRequest {
             name: "Tonic".into(),
         };
@@ -119,21 +134,44 @@ impl LoadGenerator {
             // let value = 1f64 / self.rps as f64;
             elapse += value;
 
-            let graph_id = graph_id.clone();
-            let request_id = uniform.sample(&mut self.rng);
+            let request_id = uniform.sample(&mut self.rng) as u64;
+            let request_class = {
+                let mut request_class = 0;
+                let range = request_id % self.rps_ranges[self.rps_ranges.len() - 1];
+                for i in 0..self.rps_ranges.len() {
+                    if range < self.rps_ranges[i] {
+                        request_class = i;
+                        break;
+                    }
+                }
+                request_class
+            };
+            let graph_id = self.global_graphs[request_class].graph_id().clone();
+            let slo = self.global_graphs[request_class].slo();
+
             let request = {
-                let start_at = time_now() - init_at_u64;
-                let deadline = start_at + self.slo;
-                // [TODO] Support Hotel.
+                let deadline = {
+                    if PRIO_GLOBAL || PRIO_LOCAL {
+                        let start_at = time_now() - init_at_u64;
+                        start_at + slo
+                    } else if FIFO_TWO || FIFO {
+                        slo
+                    } else {
+                        panic!("Unimplemented policy")
+                    }
+                };
+                // [TODO] This is a hack for client bench.
+                let latest_exec_at = deadline;
+                let request_class = request_class as u64;
                 let ctx = Context::new(
                     graph_id.clone(),
                     request_id,
-                    start_at,
                     deadline,
-                    Some(local_graph.clone()),
+                    latest_exec_at,
+                    request_class,
                 );
                 let mut request = tonic::Request::new(request.clone());
-                request.metadata_mut().insert_ctx("par_ctx", &ctx);
+                request.metadata_mut().insert_ctx("ctx", &ctx);
                 request
             };
 
@@ -142,7 +180,6 @@ impl LoadGenerator {
                 let token = self.token.clone();
                 token.fetch_sub(1, Ordering::SeqCst);
 
-                let slo = self.slo;
                 let mut client = self.client.clone();
                 let trace_tx = self.trace_tx.clone();
 
@@ -150,27 +187,16 @@ impl LoadGenerator {
                     let send_at = time_now();
                     if graph_id == "I1" {
                         client.say_hello_i1(request).await.unwrap();
-                    } else if graph_id == "I2" {
+                    } else if graph_id.contains("I2") {
                         client.say_hello_i2(request).await.unwrap();
-                    } else if graph_id == "I4" {
+                    } else if graph_id.contains("I4") {
                         client.say_hello_i4(request).await.unwrap();
                     } else {
                         panic!("Unsupported graph_id: {}", graph_id);
                     }
                     let recv_at = time_now();
                     let latency = recv_at - send_at;
-                    let span_str = {
-                        if graph_id == "I1" {
-                            "SayHelloI1".to_string()
-                        } else if graph_id == "I2" {
-                            "SayHelloI2".to_string()
-                        } else if graph_id == "I4" {
-                            "SayHelloI4".to_string()
-                        } else {
-                            panic!("Unsupported graph_id: {}", graph_id);
-                        }
-                    };
-                    let span = Span::new(request_id, span_str, slo, latency);
+                    let span = Span::new(request_id, graph_id, slo, latency);
                     token.fetch_add(1, Ordering::SeqCst);
                     trace_tx.try_send(span).unwrap();
                 });
@@ -181,23 +207,12 @@ impl LoadGenerator {
     }
 }
 
-fn get_global_graph(args: &Args) -> GlobalGraph {
-    if args.graph_id == "I1" {
-        graph::get_global_graph_i1()
-    } else if args.graph_id == "I2" {
-        graph::get_global_graph_i2()
-    } else if args.graph_id == "I4" {
-        graph::get_global_graph_i4()
-    } else {
-        panic!("Unsupported graph_id: {}", args.graph_id);
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
     let args = Args::from_args();
+    assert!(args.graph_ids.len() == args.slos.len());
 
     let (trace_tx, trace_rx) = unbounded();
 
@@ -207,17 +222,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let seed = SEED * KEY + args.rps;
         let rng = StdRng::seed_from_u64(seed);
         let token = Arc::new(AtomicI32::new(args.concurrency as i32));
-        let global_graph = get_global_graph(&args);
-        assert!(global_graph.graph_id().to_string() == args.graph_id);
+        let global_graphs = get_global_graphs(&args.graph_ids, &args.slos);
         let client = WorkerClient::connect(args.addr).await?;
 
         let load_gen = LoadGenerator::new(
             rng,
-            args.slo,
+            args.rps_ranges,
             args.rps,
             args.secs,
             token,
-            global_graph,
+            global_graphs,
             client,
             trace_tx,
         );

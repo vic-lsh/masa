@@ -1119,7 +1119,9 @@ where
 
 // assert trait markers
 
+#[allow(dead_code)]
 trait AssertSend: Send {}
+#[allow(dead_code)]
 trait AssertSendSync: Send + Sync {}
 
 #[cfg_attr(feature = "deprecated", allow(deprecated))]
