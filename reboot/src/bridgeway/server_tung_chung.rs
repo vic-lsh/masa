@@ -8,7 +8,7 @@ mod manager;
 
 use std::collections::HashMap;
 use std::error::Error;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use env_logger::{Builder, Env};
@@ -20,7 +20,9 @@ use tonic::{
     transport::{Channel, Server},
     Request, Response, Status,
 };
-use tonic_masa::{Address, GlobalGraph, LocalGraph, Path};
+use tonic_masa::{
+    Address, Context, GlobalGraph, LocalGraph, LocalGraphTracker, Path, EST_ONLINE, QUEUE_EDF,
+};
 
 use bridge::{
     tung_chung_client::TungChungClient,
@@ -40,6 +42,7 @@ pub struct Args {
 
 pub struct TungChungImpl {
     local_graphs: HashMap<Path, LocalGraph>,
+    local_graph_trackers: HashMap<Path, RwLock<LocalGraphTracker>>,
     clients: HashMap<Path, TungChungClient<Channel>>,
     manager: Option<Manager>,
 }
@@ -49,10 +52,70 @@ impl TungChungImpl {
         local_graphs: HashMap<Path, LocalGraph>,
         clients: HashMap<Path, TungChungClient<Channel>>,
     ) -> Self {
+        let local_graph_trackers = local_graphs
+            .iter()
+            .map(|(path, local_graph_inner)| {
+                let local_graph = LocalGraphTracker::from(local_graph_inner.clone());
+                (path.clone(), RwLock::new(local_graph))
+            })
+            .collect();
         Self {
             local_graphs,
+            local_graph_trackers,
             clients,
             manager: None,
+        }
+    }
+
+    fn pre_unary(&self, ctx: &Context, request: &mut Request<WalkRequest>, path: &Path) -> Context {
+        let deadline = {
+            if QUEUE_EDF {
+                let graph = self
+                    .local_graph_trackers
+                    .get(ctx.graph_id())
+                    .unwrap()
+                    .read()
+                    .unwrap();
+                ctx.deadline() - graph.estimate_suffix_deadline(path)
+            } else {
+                ctx.deadline()
+            }
+        };
+        let latest_exec_at = {
+            if QUEUE_EDF {
+                let graph = self
+                    .local_graph_trackers
+                    .get(ctx.graph_id())
+                    .unwrap()
+                    .read()
+                    .unwrap();
+                ctx.deadline() - graph.estimate_suffix_latest_exec_at(path)
+            } else {
+                ctx.latest_exec_at()
+            }
+        };
+        let child_ctx = Context::new(
+            ctx.graph_id().clone(),
+            ctx.request_id(),
+            deadline,
+            latest_exec_at,
+            time_now(),
+        );
+        request.metadata_mut().insert_ctx("ctx", &child_ctx);
+        child_ctx
+    }
+
+    fn post_unary(&self, ctx: &Context, child_ctx: &Context, path: &Path) {
+        if EST_ONLINE {
+            let send_at = child_ctx.send_at();
+            let recv_at = time_now();
+            let mut graph = self
+                .local_graph_trackers
+                .get(ctx.graph_id())
+                .unwrap()
+                .write()
+                .unwrap();
+            graph.track_span(path, recv_at - send_at);
         }
     }
 }
@@ -105,16 +168,15 @@ impl TungChung for TungChungImpl {
         let start_at = time_now();
         let mut latency_spin = 0;
 
-        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        let ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
-        ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
         assert!(spans.len() == 4);
 
         assert!(spans.first().unwrap().path() == "Head");
-        let elapse = spans.first().unwrap().distribution().estimate();
+        let elapse = spans.first().unwrap().distribution().mean();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -124,7 +186,7 @@ impl TungChung for TungChungImpl {
             let mut request = Request::new(WalkRequest {
                 name: "SayTungChung".to_string(),
             });
-            request.metadata_mut().insert_ctx("par_ctx", &ctx);
+            let child_ctx = self.pre_unary(&ctx, &mut request, span.path());
             if span.path() == "/bridge.TungChung/SaySearch" {
                 client.say_search(request).await.unwrap();
             } else if span.path() == "/bridge.TungChung/SayProfile" {
@@ -132,10 +194,11 @@ impl TungChung for TungChungImpl {
             } else {
                 panic!("Invalid path: {:?}", span.path());
             }
+            self.post_unary(&ctx, &child_ctx, span.path());
         }
 
         assert!(spans.last().unwrap().path() == "Tail");
-        let elapse = spans.last().unwrap().distribution().estimate();
+        let elapse = spans.last().unwrap().distribution().mean();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -169,16 +232,15 @@ impl TungChung for TungChungImpl {
         let start_at = time_now();
         let mut latency_spin = 0;
 
-        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        let ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
-        ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
         assert!(spans.len() == 4);
 
         assert!(spans.first().unwrap().path() == "Head");
-        let elapse = spans.first().unwrap().distribution().estimate();
+        let elapse = spans.first().unwrap().distribution().mean();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -188,7 +250,7 @@ impl TungChung for TungChungImpl {
             let mut request = Request::new(WalkRequest {
                 name: "SayTungChung".to_string(),
             });
-            request.metadata_mut().insert_ctx("par_ctx", &ctx);
+            let child_ctx = self.pre_unary(&ctx, &mut request, span.path());
             if span.path() == "/bridge.TungChung/SayGeo" {
                 client.say_geo(request).await.unwrap();
             } else if span.path() == "/bridge.TungChung/SayRate" {
@@ -196,10 +258,11 @@ impl TungChung for TungChungImpl {
             } else {
                 panic!("Invalid path: {:?}", span.path());
             }
+            self.post_unary(&ctx, &child_ctx, span.path());
         }
 
         assert!(spans.last().unwrap().path() == "Tail");
-        let elapse = spans.last().unwrap().distribution().estimate();
+        let elapse = spans.last().unwrap().distribution().mean();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -231,22 +294,21 @@ impl TungChung for TungChungImpl {
         let start_at = time_now();
         let mut latency_spin = 0;
 
-        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        let ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
-        ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
         assert!(spans.len() == 2);
 
         assert!(spans.first().unwrap().path() == "Head");
-        let elapse = spans.first().unwrap().distribution().estimate();
+        let elapse = spans.first().unwrap().distribution().mean();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
 
         assert!(spans.last().unwrap().path() == "Tail");
-        let elapse = spans.last().unwrap().distribution().estimate();
+        let elapse = spans.last().unwrap().distribution().mean();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -275,22 +337,21 @@ impl TungChung for TungChungImpl {
         let start_at = time_now();
         let mut latency_spin = 0;
 
-        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        let ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
-        ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
         assert!(spans.len() == 2);
 
         assert!(spans.first().unwrap().path() == "Head");
-        let elapse = spans.first().unwrap().distribution().estimate();
+        let elapse = spans.first().unwrap().distribution().mean();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
 
         assert!(spans.last().unwrap().path() == "Tail");
-        let elapse = spans.last().unwrap().distribution().estimate();
+        let elapse = spans.last().unwrap().distribution().mean();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -314,22 +375,21 @@ impl TungChung for TungChungImpl {
         let start_at = time_now();
         let mut latency_spin = 0;
 
-        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        let ctx = request.metadata().get_ctx("ctx").unwrap();
         let local_graph = self.local_graphs.get(ctx.graph_id()).unwrap();
         log::info!("ctx: {:?}", ctx);
-        ctx.set_local_graph(local_graph.clone());
 
         let spans = local_graph.spans();
         assert!(spans.len() == 2);
 
         assert!(spans.first().unwrap().path() == "Head");
-        let elapse = spans.first().unwrap().distribution().estimate();
+        let elapse = spans.first().unwrap().distribution().mean();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
 
         assert!(spans.last().unwrap().path() == "Tail");
-        let elapse = spans.last().unwrap().distribution().estimate();
+        let elapse = spans.last().unwrap().distribution().mean();
         // .sample(ctx.request_id());
         busy_spin(Duration::from_micros(elapse));
         latency_spin += elapse;
@@ -445,6 +505,9 @@ fn get_servers(args: Args, global_graph: GlobalGraph) -> Vec<VirtualServer> {
             let mut graphs = HashMap::new();
             graphs.insert(
                 global_graph.graph_id().clone(),
+                // [TODO]
+                // Impl From<RoSpan> for Span {}
+                // RoSpan.into()
                 global_graph.get_local_graph(&path).clone(),
             );
             graphs

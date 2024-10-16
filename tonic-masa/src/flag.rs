@@ -1,0 +1,45 @@
+pub const PRIO_CLASS: bool = if cfg!(feature = "prio_class") {
+    true
+} else {
+    false
+};
+
+pub const PRIO_GLOBAL: bool = if cfg!(feature = "prio_global") {
+    true
+} else {
+    false
+};
+
+pub const PRIO_GLOBAL_TWO: bool = if cfg!(feature = "prio_global_two") {
+    true
+} else {
+    false
+};
+
+pub const PRIO_CLASS_GLOBAL: bool = if cfg!(feature = "prio_class_global") {
+    true
+} else {
+    false
+};
+
+pub const PRIO_LOCAL: bool = if cfg!(feature = "prio_local") {
+    true
+} else {
+    false
+};
+
+pub const PRIO_LOCAL_TWO: bool = if cfg!(feature = "prio_local_two") {
+    true
+} else {
+    false
+};
+
+pub const FIFO: bool = if cfg!(feature = "fifo") { true } else { false };
+
+pub const FIFO_TWO: bool = if cfg!(feature = "fifo_two") {
+    true
+} else {
+    false
+};
+
+pub const ONLINE_TRACKER: bool = true;

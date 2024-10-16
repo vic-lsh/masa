@@ -212,6 +212,12 @@ impl ServiceGenerator {
 
 impl prost_build::ServiceGenerator for ServiceGenerator {
     fn generate(&mut self, service: prost_build::Service, _buf: &mut String) {
+        // [NOTE] in the future this can be a build time flag.
+        let should_enable_parent_rpc_ctx = true;
+        // parent_rpc_ctx requires server-side support -- no need to turn this
+        // on if the server code isn't compiled.
+        let enable_parent_rpc_ctx = self.builder.build_server && should_enable_parent_rpc_ctx;
+
         if self.builder.build_server {
             let server = CodeGenBuilder::new()
                 .emit_package(self.builder.emit_package)
@@ -220,6 +226,7 @@ impl prost_build::ServiceGenerator for ServiceGenerator {
                 .disable_comments(self.builder.disable_comments.clone())
                 .use_arc_self(self.builder.use_arc_self)
                 .generate_default_stubs(self.builder.generate_default_stubs)
+                .enable_parent_rpc_context(enable_parent_rpc_ctx)
                 .generate_server(
                     &TonicBuildService::new(service.clone(), self.builder.compile_settings.clone()),
                     &self.builder.proto_path,
@@ -235,6 +242,7 @@ impl prost_build::ServiceGenerator for ServiceGenerator {
                 .attributes(self.builder.client_attributes.clone())
                 .disable_comments(self.builder.disable_comments.clone())
                 .build_transport(self.builder.build_transport)
+                .enable_parent_rpc_context(enable_parent_rpc_ctx)
                 .generate_client(
                     &TonicBuildService::new(service, self.builder.compile_settings.clone()),
                     &self.builder.proto_path,

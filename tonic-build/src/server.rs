@@ -15,6 +15,7 @@ pub(crate) fn generate_internal<T: Service>(
     emit_package: bool,
     proto_path: &str,
     compile_well_known_types: bool,
+    _enable_parent_rpc_ctx: bool,
     attributes: &Attributes,
     disable_comments: &HashSet<String>,
     use_arc_self: bool,
@@ -32,6 +33,7 @@ pub(crate) fn generate_internal<T: Service>(
     let server_service = quote::format_ident!("{}Server", service.name());
     let server_trait = quote::format_ident!("{}", service.name());
     let server_mod = quote::format_ident!("{}_server", naive_snake_case(service.name()));
+    let server_parent_rpc_ctx = quote::format_ident!("{}_parent_rpc_ctx", service.name());
     let generated_trait = generate_trait(
         service,
         emit_package,
@@ -93,6 +95,12 @@ pub(crate) fn generate_internal<T: Service>(
     };
 
     quote! {
+        thread_local! {
+            #[allow(non_upper_case_globals)]
+             static #server_parent_rpc_ctx: std::cell::Cell<*const tonic::masa::ParentContext> =
+                    std::cell::Cell::new(core::ptr::null());
+        }
+
         /// Generated server implementations.
         #(#mod_attributes)*
         pub mod #server_mod {
@@ -104,8 +112,6 @@ pub(crate) fn generate_internal<T: Service>(
                 clippy::let_unit_value,
             )]
             use tonic::codegen::*;
-            /// Use Masa Context.
-            // use tonic_masa::Context as MasaContext;
 
             #generated_trait
 
@@ -114,6 +120,7 @@ pub(crate) fn generate_internal<T: Service>(
             #[derive(Debug)]
             pub struct #server_service<T: #server_trait> {
                 inner: _Inner<T>,
+                ctx: Arc<tonic::masa::ServerContext>,
                 accept_compression_encodings: EnabledCompressionEncodings,
                 send_compression_encodings: EnabledCompressionEncodings,
                 max_decoding_message_size: Option<usize>,
@@ -129,8 +136,10 @@ pub(crate) fn generate_internal<T: Service>(
 
                 pub fn from_arc(inner: Arc<T>) -> Self {
                     let inner = _Inner(inner);
+                    let ctx = tonic::masa::ServerContext::new(<Self as tonic::server::NamedService>::NAME);
                     Self {
                         inner,
+                        ctx: Arc::new(ctx),
                         accept_compression_encodings: Default::default(),
                         send_compression_encodings: Default::default(),
                         max_decoding_message_size: None,
@@ -187,8 +196,10 @@ pub(crate) fn generate_internal<T: Service>(
             impl<T: #server_trait> Clone for #server_service<T> {
                 fn clone(&self) -> Self {
                     let inner = self.inner.clone();
+                    let ctx = self.ctx.clone();
                     Self {
                         inner,
+                        ctx,
                         accept_compression_encodings: self.accept_compression_encodings,
                         send_compression_encodings: self.send_compression_encodings,
                         max_decoding_message_size: self.max_decoding_message_size,
@@ -397,6 +408,7 @@ fn generate_methods<T: Service>(
 ) -> TokenStream {
     let mut stream = TokenStream::new();
 
+    let service_name = format_service_name(service, emit_package);
     for method in service.methods() {
         let path = format_method_path(service, method, emit_package);
         // [NOTE] Method path name on the server side.
@@ -407,6 +419,7 @@ fn generate_methods<T: Service>(
         let method_stream = match (method.client_streaming(), method.server_streaming()) {
             (false, false) => generate_unary(
                 method,
+                &service_name,
                 proto_path,
                 compile_well_known_types,
                 ident,
@@ -456,6 +469,7 @@ fn generate_methods<T: Service>(
 
 fn generate_unary<T: Method>(
     method: &T,
+    outer_service_name: &str,
     proto_path: &str,
     compile_well_known_types: bool,
     method_ident: Ident,
@@ -465,6 +479,8 @@ fn generate_unary<T: Method>(
     let codec_name = syn::parse_str::<syn::Path>(method.codec_path()).unwrap();
 
     let service_ident = quote::format_ident!("{}Svc", method.identifier());
+    // ident used in constructing GrpcMethod, distinct from the `method_ident` arg
+    let grpc_method_ident = method.identifier();
 
     let (request, response) = method.request_response_name(proto_path, compile_well_known_types);
 
@@ -476,14 +492,16 @@ fn generate_unary<T: Method>(
 
     quote! {
         #[allow(non_camel_case_types)]
-        struct #service_ident<T: #server_trait >(pub Arc<T>);
+        struct #service_ident<T: #server_trait > {
+            pub inner: Arc<T>,
+        }
 
         impl<T: #server_trait> tonic::server::UnaryService<#request> for #service_ident<T> {
             type Response = #response;
             type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
 
             fn call(&mut self, request: tonic::Request<#request>) -> Self::Future {
-                let inner = Arc::clone(&self.0);
+                let inner = Arc::clone(&self.inner);
                 let fut = async move {
                     <T as #server_trait>::#method_ident(#inner_arg, request).await
                 };
@@ -496,16 +514,57 @@ fn generate_unary<T: Method>(
         let max_decoding_message_size = self.max_decoding_message_size;
         let max_encoding_message_size = self.max_encoding_message_size;
         let inner = self.inner.clone();
+        let server_ctx = self.ctx.clone();
         let fut = async move {
             let inner = inner.0;
-            let method = #service_ident(inner);
+            let method = #service_ident {
+                inner,
+            };
             let codec = #codec_name::default();
 
             let mut grpc = tonic::server::Grpc::new(codec)
                 .apply_compression_config(accept_compression_encodings, send_compression_encodings)
                 .apply_max_message_size_config(max_decoding_message_size, max_encoding_message_size);
 
-            let res = grpc.unary(method, req).await;
+            use tonic::masa::RequestHandlerHooks;
+
+            // Request-begin lifecycle hook.
+            let grpc_method = GrpcMethod::new(#outer_service_name, #grpc_method_ident);
+            let req_ctx = tonic::masa::ParentContext::begin(grpc_method, &req, server_ctx);
+            let req_ctx = std::sync::Arc::new(Some(req_ctx));
+
+            unsafe {
+                tonic::async_task::set_metadata_from_raw_task(
+                    tonic::async_task::get_task_ptr(),
+                    Some(req_ctx)
+                );
+            };
+
+            let get_ctx = || {
+                // SAFETY:
+                // - task-ptr is valid (upheld by `async_task::get_task_ptr`)
+                // - metadata type is correct
+                //      (trust that the application uses this metadata type in the executor)
+                let ctx = unsafe {
+                    tonic::async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
+                        tonic::async_task::get_task_ptr()
+                    )
+                };
+                ctx.as_ref().expect("ctx should be set")
+            };
+
+            use tonic::util::Hookable;
+            let fut = grpc.unary(method, req)
+                .hook()
+                .pre_hook(|| get_ctx().before_poll())
+                .post_hook(|poll| get_ctx().after_poll(poll))
+                .build();
+
+            let mut res = fut.await;
+
+            // Request-completed lifecycle hook.
+            get_ctx().finalize(&mut res);
+
             Ok(res)
         };
 

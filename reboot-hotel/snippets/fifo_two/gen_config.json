@@ -1,0 +1,10 @@
+{
+	"Repeats": 3,
+	"Slo": 30000,
+	"Rps": 750,
+	"WarmupSecs": 30,
+	"DurationSecs": 90,
+	"Concurrency": 512,
+	"Output": "snippets/fifo_two",
+	"Addr": "http://[::1]:8660"
+}

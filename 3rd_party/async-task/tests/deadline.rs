@@ -2,7 +2,7 @@ use async_task::{Runnable, Task};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 fn spawn_util() -> (Runnable<()>, Task<()>) {
     fn dispatch(trampoline: extern "C" fn(NonNull<()>), context: NonNull<()>) {
@@ -27,16 +27,18 @@ fn sched_noop(_r: Runnable<()>) {}
 
 #[test]
 fn test_default_ddl() {
+    use tonic_masa::Prioritize;
     let (runnable, task) = spawn_util();
-    assert_eq!(runnable.deadline(), DeadlineHint::infra());
-    assert_eq!(task.deadline(), DeadlineHint::infra());
+    assert_eq!(runnable.priority(), PriorityHint::infra());
+    assert_eq!(task.priority(), PriorityHint::infra());
 }
 
 #[test]
 fn test_custom_ddl() {
-    let ddl = DeadlineHint::new(100);
+    use tonic_masa::Prioritize;
+    let ddl = PriorityHint::new(100);
     let (runnable, task) = async_task::spawn_with_deadline(async {}, ddl, sched_noop);
 
-    assert_eq!(runnable.deadline(), ddl);
-    assert_eq!(task.deadline(), ddl);
+    assert_eq!(runnable.priority(), ddl);
+    assert_eq!(task.priority(), ddl);
 }

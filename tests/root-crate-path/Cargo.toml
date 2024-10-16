@@ -11,5 +11,5 @@ prost = "0.12"
 tonic = {path = "../../tonic"}
 tonic-masa = { path = "../../tonic-masa" }
 
-[build_dependencies]
+[build-dependencies]
 tonic-build = {path = "../../tonic-build"}
