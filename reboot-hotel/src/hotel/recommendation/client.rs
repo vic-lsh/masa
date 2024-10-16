@@ -1,5 +1,5 @@
-use recommendation::recommendation_client::RecommendationClient;
-use recommendation::RecommendationRequest;
+use hotel::recommendation::recommendation_client::RecommendationClient;
+use hotel::recommendation::RecommendationRequest;
 
 pub mod hotel {
     pub mod recommendation {

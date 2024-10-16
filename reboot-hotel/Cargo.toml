@@ -151,6 +151,7 @@ memcache = "0.16"
 log = "0.4"
 env_logger = "0.9"
 
+
 # Common dependencies
 tokio = { path = "../3rd_party/tokio/tokio", features = [
 	"rt-multi-thread",
@@ -190,6 +191,8 @@ tokio-rustls = { path = "../3rd_party/tokio-rustls", optional = true }
 hyper-rustls = { version = "0.24.0", features = ["http2"], optional = true }
 rustls-pemfile = { version = "1", optional = true }
 tower-http = { version = "0.4", optional = true }
+geo = "0.21"
+
 
 [build-dependencies]
 tonic-build = { path = "../tonic-build", features = ["prost"] }
