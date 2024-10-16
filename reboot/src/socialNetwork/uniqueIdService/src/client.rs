@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use rand::Rng;
-use unique_id_service::greeter_client::GreeterClient;
+use unique_id_service::unique_id_service_client::UniqueIdServiceClient;
 use unique_id_service::UniqueIdRequest;
 
 pub mod unique_id_service {
@@ -10,7 +10,7 @@ pub mod unique_id_service {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = GreeterClient::connect("http://[::1]:50051").await?;
+    let mut client = UniqueIdServiceClient::connect("http://[::1]:50051").await?;
 
     let request: tonic::Request<UniqueIdRequest> = generate_unique_id_request();
 
