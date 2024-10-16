@@ -1,5 +1,5 @@
 [package]
-name = "uniqueIdService"
+name = "unique_id_service"
 version = "0.1.0"
 edition = "2021"
 
