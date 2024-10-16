@@ -4,7 +4,6 @@ use std::{
 };
 
 use super::{PopError, PushError, Queue};
-use tonic_masa::DeadlineHint;
 
 pub(crate) struct MutexFifoQueue<T> {
     q: Mutex<VecDeque<T>>,
@@ -20,14 +19,6 @@ impl<T: Ord + PartialOrd> Queue for MutexFifoQueue<T> {
         Ok(())
     }
 
-    fn push_with_ddl(
-        &self,
-        item: Self::Item,
-        _ddl: DeadlineHint,
-    ) -> Result<(), PushError<Self::Item>> {
-        self.push(item)
-    }
-
     fn pop(&self) -> Result<Self::Item, PopError> {
         self.with_locked(|mut q| q.pop_front())
             .ok_or(PopError::Empty)
@@ -38,7 +29,6 @@ impl<T: Ord + PartialOrd> Queue for MutexFifoQueue<T> {
     }
 
     fn is_full(&self) -> bool {
-        // [NOTE] This implementation is unbounded so it is never full.
         false
     }
 

@@ -7,10 +7,10 @@ use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 use core::task::{Context, Poll};
 
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 use crate::header::Header;
-use crate::raw::{get_ddl_from_raw_task, Panic};
+use crate::raw::{get_prio_from_raw_task, Panic};
 use crate::runnable::ScheduleInfo;
 use crate::state::*;
 
@@ -438,11 +438,21 @@ impl<T, M> Task<T, M> {
         &self.header().metadata
     }
 
-    /// Get the deadline associated with this task.
-    pub fn deadline(&self) -> DeadlineHint {
+    /// Get the priority associated with this task.
+    pub fn priority(&self) -> PriorityHint {
         // SAFETY: `self.ptr` is alive if Task is alive
-        unsafe { get_ddl_from_raw_task::<M>(self.ptr.as_ptr()) }
+        unsafe { get_prio_from_raw_task::<M>(self.ptr.as_ptr()) }
     }
+}
+
+/// SAFETY: caller must uphold:
+/// - ptr points to a Task that is alive
+/// - ptr points to a Task whose metadata type is M
+pub unsafe fn task_metadata_from_ptr<'a, M>(ptr: NonNull<()>) -> &'a M {
+    let ptr = ptr.as_ptr();
+    let header = ptr as *const Header<M>;
+    let header = unsafe { &*header };
+    &header.metadata
 }
 
 impl<T, M> Drop for Task<T, M> {

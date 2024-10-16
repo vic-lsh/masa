@@ -1,32 +1,42 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 mod concurrent_fifo;
 mod mutex_fifo;
-mod mutex_fifo_binary;
-mod mutex_pqueue;
-mod rw_pqueue;
+mod mutex_fifo_two;
+mod mutex_prio;
+mod mutex_prio_two;
+mod rw_prio;
 
-#[allow(dead_code)]
-pub(crate) use concurrent_fifo::ConcurrentFifoQueue;
-#[allow(dead_code)]
-pub(crate) use mutex_fifo::MutexFifoQueue;
-#[allow(dead_code)]
-pub(crate) use mutex_fifo_binary::MutexFifoBinaryQueue;
 #[allow(dead_code)]
 #[allow(unused_imports)]
-pub(crate) use mutex_pqueue::MutexPriorityQueue;
+pub(crate) use concurrent_fifo::ConcurrentFifoQueue;
+#[allow(dead_code)]
+#[allow(unused_imports)]
+pub(crate) use mutex_fifo::MutexFifoQueue;
+#[allow(dead_code)]
+#[allow(unused_imports)]
+pub(crate) use mutex_fifo_two::MutexFifoTwoQueue;
+#[allow(dead_code)]
+#[allow(unused_imports)]
+pub(crate) use mutex_prio::MutexPriorityQueue;
+#[allow(dead_code)]
+#[allow(unused_imports)]
+pub(crate) use mutex_prio_two::MutexPriorityTwoQueue;
 
-use tonic_masa::DeadlineHint;
+#[allow(dead_code)]
+pub fn time_now() -> u64 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_micros();
+    now as u64
+}
 
 #[allow(dead_code)]
 pub(crate) trait Queue {
     type Item;
 
     fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>>;
-
-    fn push_with_ddl(
-        &self,
-        item: Self::Item,
-        ddl: DeadlineHint,
-    ) -> Result<(), PushError<Self::Item>>;
 
     fn pop(&self) -> Result<Self::Item, PopError>;
 

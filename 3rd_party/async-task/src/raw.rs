@@ -19,33 +19,35 @@ use crate::state::*;
 use crate::utils::{abort, abort_on_panic, max, Layout};
 use crate::Runnable;
 
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 use std::cell::RefCell;
 use std::thread_local;
 
 thread_local! {
-    // static THREAD_LOCAL_DDL: RefCell<DeadlineHint> = RefCell::new(DeadlineHint::infra());
-    static THREAD_LOCAL_TASK_PTR: RefCell<u64> = RefCell::new(0);
+    // This is set to the DDL of the task running on this thread, or None if there's
+    // no task running.
+    static THREAD_LOCAL_DDL: RefCell<Option<PriorityHint>> = RefCell::new(None);
+    static THREAD_LOCAL_TASK_PTR: RefCell<*const ()> = RefCell::new(core::ptr::null());
 }
 
-// /// Get the deadline hint for the current task through thread-local storage.
-// pub fn get_task_ddl() -> DeadlineHint {
-//     THREAD_LOCAL_DDL.with(|value| *value.borrow())
-// }
+/// Get the deadline hint for the current task through thread-local storage.
+pub fn get_task_ddl() -> Option<PriorityHint> {
+    THREAD_LOCAL_DDL.with(|value| *value.borrow())
+}
 
-// /// Set the deadline hint for the current task through thread-local storage.
-// pub fn set_task_ddl(new_value: DeadlineHint) {
-//     THREAD_LOCAL_DDL.with(|value| *value.borrow_mut() = new_value);
-// }
+/// Set the deadline hint for the current task through thread-local storage.
+fn set_task_ddl(new_value: Option<PriorityHint>) {
+    THREAD_LOCAL_DDL.with(|value| *value.borrow_mut() = new_value);
+}
 
 /// Get task ptr.
-pub fn get_task_ptr() -> u64 {
-    THREAD_LOCAL_TASK_PTR.with(|value| value.borrow().clone() as u64 )
+pub fn get_task_ptr() -> *const () {
+    THREAD_LOCAL_TASK_PTR.with(|value| value.borrow().clone())
 }
 
 /// Set task ptr.
-pub fn set_task_ptr(new_value: u64) {
+pub fn set_task_ptr(new_value: *const ()) {
     THREAD_LOCAL_TASK_PTR.with(|value| *value.borrow_mut() = new_value);
 }
 
@@ -121,7 +123,7 @@ pub(crate) struct RawTask<F, T, S, M> {
     // All generic except for M are type erased (i.e., we have Runnable<M>, not
     // Runnable<F, T, S, M>). To retrieve `ddl` from Runnable, we can only
     // depend on size information of M, not the other generics.
-    pub(crate) ddl: *mut DeadlineHint,
+    pub(crate) prio: *mut PriorityHint,
 
     /// The schedule function.
     pub(crate) schedule: *const S,
@@ -141,11 +143,11 @@ impl<F, T, S, M> Clone for RawTask<F, T, S, M> {
     }
 }
 
-/// Computes the offset of the DeadlineHint field.
+/// Computes the offset of the PriorityHint field.
 #[inline]
-const fn eval_ddl_offset<M>() -> usize {
+const fn eval_prio_offset<M>() -> usize {
     let layout_header = Layout::new::<Header<M>>();
-    let layout_d = Layout::new::<DeadlineHint>();
+    let layout_d = Layout::new::<PriorityHint>();
 
     let layout = layout_header;
     let (_, offset_d) = leap_unwrap!(layout.extend(layout_d));
@@ -161,7 +163,7 @@ impl<F, T, S, M> RawTask<F, T, S, M> {
     const fn eval_task_layout() -> TaskLayout {
         // Compute the layouts for `Header`, `S`, `F`, and `T`.
         let layout_header = Layout::new::<Header<M>>();
-        let layout_d = Layout::new::<DeadlineHint>();
+        let layout_d = Layout::new::<PriorityHint>();
         let layout_s = Layout::new::<S>();
         let layout_f = Layout::new::<F>();
         let layout_r = Layout::new::<Result<T, Panic>>();
@@ -254,7 +256,7 @@ where
             });
 
             // Write the deadline hint to the task.
-            (raw.ddl as *mut DeadlineHint).write(deadline);
+            (raw.prio as *mut PriorityHint).write(deadline);
 
             // Write the schedule function as the third field of the task.
             (raw.schedule as *mut S).write(schedule);
@@ -279,7 +281,7 @@ where
             Self {
                 header: p as *const Header<M>,
                 schedule: p.add(task_layout.offset_s) as *const S,
-                ddl: p.add(task_layout.offset_d) as *mut DeadlineHint,
+                prio: p.add(task_layout.offset_d) as *mut PriorityHint,
                 future: p.add(task_layout.offset_f) as *mut F,
                 output: p.add(task_layout.offset_r) as *mut Result<T, Panic>,
             }
@@ -540,25 +542,17 @@ where
         alloc::alloc::dealloc(ptr as *mut u8, task_layout.layout);
     }
 
-    // #[inline]
-    // unsafe fn set_ddl_before_poll(&self) -> DeadlineHint {
-    //     let original_ddl = *self.ddl;
-    //     set_task_ddl(original_ddl);
-    //     original_ddl
-    // }
+    #[inline]
+    unsafe fn set_ddl_before_poll(&self) -> PriorityHint {
+        let original_ddl = *self.prio;
+        set_task_ddl(Some(original_ddl));
+        original_ddl
+    }
 
-    // #[inline]
-    // unsafe fn maybe_update_ddl_after_poll(&self) -> (bool, DeadlineHint) {
-    //     let ddl_after_poll = get_task_ddl();
-    //     // [TODO] As an optimization, we don't need to deref self.ddl twice.
-    //     // for now, we keep this as-is to let the caller know whether the
-    //     // ddl was updated.
-    //     let updated = ddl_after_poll != *self.ddl;
-    //     if updated {
-    //         *self.ddl = ddl_after_poll;
-    //     }
-    //     (updated, ddl_after_poll)
-    // }
+    #[inline]
+    unsafe fn reset_ddl_after_poll(&self) {
+        set_task_ddl(None);
+    }
 
     /// Runs a task.
     ///
@@ -620,8 +614,8 @@ where
         // If available, we should also try to catch the panic so that it is propagated correctly.
         let guard = Guard(raw);
 
-        set_task_ptr(ptr as u64);
-        // let ddl_before = raw.set_ddl_before_poll();
+        set_task_ptr(ptr);
+        raw.set_ddl_before_poll();
         // log::info!("task: {:p}, ddl before: {}", ptr, ddl_before.value(),);
 
         // Panic propagation is not available for no_std.
@@ -645,7 +639,9 @@ where
             }
         };
 
-        set_task_ptr(0);
+        set_task_ptr(core::ptr::null());
+        raw.reset_ddl_after_poll();
+
         // let (updated, ddl_after) = raw.maybe_update_ddl_after_poll();
         // if updated {
         //     log::info!("task: {:p}, ddl after: {}", ptr, ddl_after.value());
@@ -655,7 +651,7 @@ where
 
         match poll {
             Poll::Ready(out) => {
-                // log::info!("RawTask completed, task: {:p}, ddl: {}", ptr, ddl_after.value());
+                // log::info!("RawTask completed, task: {:p}, prio: {}", ptr, ddl_after.value());
 
                 // Replace the future with its output.
                 Self::drop_future(ptr);
@@ -850,23 +846,23 @@ where
     }
 }
 
-trait DeadlineHintOffset {
+trait PriorityHintOffset {
     const OFFSET: usize;
 }
 
-struct EvalDeadlineHintOffset<M>(PhantomData<M>);
+struct EvalPriorityHintOffset<M>(PhantomData<M>);
 
-impl<M> DeadlineHintOffset for EvalDeadlineHintOffset<M> {
-    const OFFSET: usize = eval_ddl_offset::<M>();
+impl<M> PriorityHintOffset for EvalPriorityHintOffset<M> {
+    const OFFSET: usize = eval_prio_offset::<M>();
 }
 
-/// Get DeadlineHint from a raw task pointer.
+/// Get PriorityHint from a raw task pointer.
 ///
 /// Caller must uphold:
 ///
 /// 1. the `ptr` must point to a RawTask
 /// 2. the RawTask isn't deallocated
-pub(crate) unsafe fn get_ddl_from_raw_task<M>(ptr: *const ()) -> DeadlineHint {
+pub(crate) unsafe fn get_prio_from_raw_task<M>(ptr: *const ()) -> PriorityHint {
     // This forces the deadline offset calculation to be const.
     //
     // Effectively, we want to write the following:
@@ -875,16 +871,46 @@ pub(crate) unsafe fn get_ddl_from_raw_task<M>(ptr: *const ()) -> DeadlineHint {
     //
     // but rust doesn't allow this, because const calculation cannot depend on
     // its outer function's generic.
-    let ddl_offset = EvalDeadlineHintOffset::<M>::OFFSET;
+    let prio_offset = EvalPriorityHintOffset::<M>::OFFSET;
 
     debug_assert!(!ptr.is_null());
 
-    let ddl_ptr = ((ptr as usize) + ddl_offset) as *const DeadlineHint;
+    let prio_ptr = ((ptr as usize) + prio_offset) as *const PriorityHint;
 
     // SAFETY:
     // dereferencing this is always valid because:
     // 1. the deadline hint offset is the same across all RawTasks
     // 2. the RawTask is alive (upheld by caller)
     // 3. the deadline hint is always initialized (see RawTask::allocate)
-    *ddl_ptr
+    *prio_ptr
+}
+
+/// Get Metadata raw pointer from a raw task pointer.
+///
+/// Caller must uphold:
+///
+/// 1. the `ptr` must point to a RawTask
+/// 2. the RawTask isn't deallocated
+/// 3. The metadata type of the task is the one specified by the generic.
+pub unsafe fn get_metadata_from_raw_task<'a, M>(ptr: *const ()) -> &'a M {
+    debug_assert!(!ptr.is_null());
+
+    let header = unsafe { &*(ptr as *const Header<M>) };
+
+    &header.metadata
+}
+
+/// Set Metadata from a raw task pointer.
+///
+/// Caller must uphold:
+///
+/// 1. the `ptr` must point to a RawTask
+/// 2. the RawTask isn't deallocated
+/// 3. The metadata type of the task is the one specified by the generic.
+pub unsafe fn set_metadata_from_raw_task<M>(ptr: *const (), metadata: M) {
+    debug_assert!(!ptr.is_null());
+
+    let header = unsafe { &mut *(ptr as *mut Header<M>) };
+
+    header.metadata = metadata;
 }

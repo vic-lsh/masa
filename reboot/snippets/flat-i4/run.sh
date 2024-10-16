@@ -1,12 +1,15 @@
 #!/bin/bash
 
 path="snippets/flat-i4"
-
-rps_values=(50)
-
-modes=("masa" "fifo-binary" "fifo")
-
-server_pid=
+modes=("prio_local" "prio_global" "fifo_two")
+# modes=("prio_local")
+rps_values=(450 500 550)
+graph_ids="I4_1 I4_2"
+slos="50000 200000"
+rps_ranges="4 5"
+n_hops=4
+n_threads="4 4 4 4"
+secs=120
 
 ctrl_c_handler() {
 	echo ""
@@ -14,6 +17,8 @@ ctrl_c_handler() {
 	cleanup
 	exit 1
 }
+
+server_pid=
 
 cleanup() {
 	kill -9 ${server_pid}
@@ -25,15 +30,21 @@ for mode in "${modes[@]}"; do
 	echo "Compiling mode: $mode..."
 
 	# cargo build --features $mode >/dev/null 2>&1
-	cargo build --features $mode \
-		--release >/dev/null 2>&1
+	cargo build \
+		--release \
+		--features "$mode" \
+		>/dev/null 2>&1
 
-	# RUST_BACKTRACE=1 RUST_LOG=info cargo run ...
+	# RUST_BACKTRACE=1 RUST_LOG=info \
 	RUST_LOG=warn \
-		cargo run --features $mode \
-		--release --bin bridgeway_server -- \
-		--n-hops 4 \
-		--n-threads 1 \
+		cargo run \
+		--release \
+		--features "$mode" \
+		--bin bridgeway_server -- \
+		--graph-ids $graph_ids \
+		--slos $slos \
+		--n-hops $n_hops \
+		--n-threads $n_threads \
 		>$path/tmp_server_${mode}.log 2>&1 &
 
 	server_pid=$!
@@ -41,17 +52,21 @@ for mode in "${modes[@]}"; do
 	echo "Running server in mode: $mode..."
 
 	for rps in "${rps_values[@]}"; do
-		sleep 3
+		sleep 1
 
 		echo "Running benchmark for RPS: $rps..."
 
-		cargo run --release --bin bridgeway_client_bench -- \
-			--slo 10000 \
+		cargo run \
+			--release \
+			--features "$mode" \
+			--bin bridgeway_client_bench -- \
+			--graph-ids $graph_ids \
+			--slos $slos \
+			--rps-ranges $rps_ranges \
 			--rps $rps \
-			--secs 10 \
+			--secs $secs \
 			--concurrency 512 \
 			--output $path/r${rps}_${mode}.csv \
-			--graph-id I4 \
 			--addr http://[::1]:50054 \
 			>$path/tmp_client_${mode}.log 2>&1
 	done

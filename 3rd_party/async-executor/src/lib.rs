@@ -42,27 +42,18 @@
 use std::fmt;
 use std::marker::PhantomData;
 use std::panic::{RefUnwindSafe, UnwindSafe};
+use std::ptr::NonNull;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock, TryLockError};
 use std::task::{Poll, Waker};
-use std::time::{SystemTime, UNIX_EPOCH};
-// use std::time::Duration;
-
-fn time_now() -> u64 {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_micros();
-    now as u64
-}
 
 use async_task::{Builder, Runnable};
 use futures_lite::{future, prelude::*};
 use queue::Queue;
 use slab::Slab;
 
-use tonic_masa::DeadlineHint;
+use tonic_masa::PriorityHint;
 
 #[cfg(feature = "static")]
 mod static_executors;
@@ -98,23 +89,26 @@ pub use static_executors::*;
 ///         drop(signal);
 ///     }));
 /// ```
-pub struct Executor<'a> {
+pub struct Executor<'a, M = ()> {
     /// The executor state.
-    state: AtomicPtr<State>,
+    state: AtomicPtr<State<M>>,
 
     /// Makes the `'a` lifetime invariant.
     _marker: PhantomData<std::cell::UnsafeCell<&'a ()>>,
 }
 
 // SAFETY: Executor stores no thread local state that can be accessed via other thread.
-unsafe impl Send for Executor<'_> {}
+unsafe impl<M> Send for Executor<'_, M> {}
 // SAFETY: Executor internally synchronizes all of it's operations internally.
-unsafe impl Sync for Executor<'_> {}
+unsafe impl<M> Sync for Executor<'_, M> {}
 
-impl UnwindSafe for Executor<'_> {}
-impl RefUnwindSafe for Executor<'_> {}
+impl<M> UnwindSafe for Executor<'_, M> {}
+impl<M> RefUnwindSafe for Executor<'_, M> {}
 
-impl fmt::Debug for Executor<'_> {
+impl<M> fmt::Debug for Executor<'_, M>
+where
+    M: std::fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         debug_executor(self, "Executor", f)
     }
@@ -123,9 +117,13 @@ impl fmt::Debug for Executor<'_> {
 // [NOTE] The scheduling latency for concurrent queues is sub-microsecond.
 static SCHED_TIME_US: AtomicUsize = AtomicUsize::new(0);
 static SCHED_COUNT: AtomicUsize = AtomicUsize::new(0);
-static TIMER_SPAWNED: AtomicBool = AtomicBool::new(false);
+// static TIMER_SPAWNED: AtomicBool = AtomicBool::new(false);
 
-impl<'a> Executor<'a> {
+impl<'a, M: Default + Clone> Executor<'a, M>
+where
+    // [TODO:Vic] Why does M need to be Sync?
+    M: Send + Sync + 'static,
+{
     /// Creates a new executor.
     ///
     /// # Examples
@@ -135,7 +133,7 @@ impl<'a> Executor<'a> {
     ///
     /// let ex = Executor::new();
     /// ```
-    pub const fn new() -> Executor<'a> {
+    pub const fn new() -> Executor<'a, M> {
         Executor {
             state: AtomicPtr::new(std::ptr::null_mut()),
             _marker: PhantomData,
@@ -177,46 +175,7 @@ impl<'a> Executor<'a> {
     ///     println!("Hello world");
     /// });
     /// ```
-    pub fn spawn<T: Send + 'a>(&self, future: impl Future<Output = T> + Send + 'a) -> Task<T> {
-        // let res = TIMER_SPAWNED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed);
-        // if res.is_ok() {
-        //     let self_ptr = self as *const Self as u64;
-        //     std::thread::spawn(move || {
-        //         let mut prev_sched = 0;
-        //         let mut prev_cnt = 0;
-
-        //         let me: &Self = unsafe { &*(self_ptr as *const Self) };
-
-        //         loop {
-        //             std::thread::sleep(Duration::from_secs(1));
-
-        //             let state = me.state();
-        //             let global_qlen = state.queue.lock().unwrap().len();
-        //             let local_qlens = state.local_queues.read().unwrap();
-
-        //             print!(
-        //                 "global qlen: {}; local qs: {}; local qlens: ",
-        //                 global_qlen,
-        //                 local_qlens.len()
-        //             );
-        //             for (_, q) in local_qlens.iter().enumerate() {
-        //                 print!("{} ", q.len());
-        //             }
-        //             println!();
-
-        //             let sched_us = SCHED_TIME_US.load(Ordering::Relaxed);
-        //             let sched_cnt = SCHED_COUNT.load(Ordering::Relaxed);
-
-        //             let avg_sched_us =
-        //                 (sched_us - prev_sched) as f64 / (sched_cnt - prev_cnt) as f64;
-        //             println!("avg_sched_us {}", avg_sched_us);
-
-        //             prev_sched = sched_us;
-        //             prev_cnt = sched_cnt;
-        //         }
-        //     });
-        // }
-
+    pub fn spawn<T: Send + 'a>(&self, future: impl Future<Output = T> + Send + 'a) -> Task<T, M> {
         let mut active = self.state().active.lock().unwrap();
 
         // SAFETY: `T` and the future are `Send`.
@@ -236,54 +195,27 @@ impl<'a> Executor<'a> {
     ///     println!("Hello world");
     /// });
     /// ```
-    pub fn spawn_with_ddl<T: Send + 'a>(
+    pub fn spawn_with_prio<T: Send + 'a>(
         &self,
         future: impl Future<Output = T> + Send + 'a,
-        ddl: DeadlineHint,
-    ) -> Task<T> {
-        // [NOTE] Capture backtrace in the deepest call stack that we understand.
-        // Set `RUST_BACKTRACE=1` before cargo run. Use `--debug` for more information.
-        // let backtrace = std::backtrace::Backtrace::capture();
-        // println!("Backtrace:\n{}", backtrace);
-
-        // let res = TIMER_SPAWNED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed);
-        // if res.is_ok() {
-        //     let self_ptr = self as *const Self as u64;
-        //     std::thread::spawn(move || {
-        //         let mut prev_sched = 0;
-        //         let mut prev_cnt = 0;
-
-        //         let me: &Self = unsafe { &*(self_ptr as *const Self) };
-        //         loop {
-        //             std::thread::sleep(Duration::from_secs(1));
-        //             let state = me.state();
-
-        //             // [NOTE] Use nested scope to release these locks ASAP.
-        //             let global_qlen = state.queue.len();
-        //             let local_qs = { state.local_queues.read().unwrap() };
-
-        //             let sched_us = SCHED_TIME_US.load(Ordering::Relaxed);
-        //             let sched_cnt = SCHED_COUNT.load(Ordering::Relaxed);
-
-        //             let avg_sched_us =
-        //                 (sched_us - prev_sched) as f64 / (sched_cnt - prev_cnt) as f64;
-        //             println!(
-        //                 "global qlen: {}, # local qs: {}, avg sched us: {:.4}",
-        //                 global_qlen,
-        //                 local_qs.len(),
-        //                 avg_sched_us
-        //             );
-
-        //             prev_sched = sched_us;
-        //             prev_cnt = sched_cnt;
-        //         }
-        //     });
-        // }
-
+        prio: PriorityHint,
+    ) -> Task<T, M> {
         let mut active = self.state().active.lock().unwrap();
 
+        let meta = Self::clone_parent_task_metadata().unwrap_or_default();
+        // let meta = M::default();
         // SAFETY: `T` and the future are `Send`.
-        unsafe { self.spawn_inner_with_ddl(future, ddl, &mut active) }
+        unsafe { self.spawn_inner_impl(future, prio, meta, &mut active) }
+    }
+
+    fn clone_parent_task_metadata() -> Option<M> {
+        NonNull::new(async_task::get_task_ptr() as *mut ()).map(|ptr| {
+            // SAFETY:
+            // - task ptr is valid if non-null (guaranteed by `get_task_ptr`)
+            // - metadata of task is of type M -- all tasks have the same metadata type
+            let meta = unsafe { async_task::task_metadata_from_ptr::<M>(ptr) };
+            meta.clone()
+        })
     }
 
     /// Spawns many tasks onto the executor.
@@ -329,7 +261,7 @@ impl<'a> Executor<'a> {
     pub fn spawn_many<T: Send + 'a, F: Future<Output = T> + Send + 'a>(
         &self,
         futures: impl IntoIterator<Item = F>,
-        handles: &mut impl Extend<Task<F::Output>>,
+        handles: &mut impl Extend<Task<F::Output, M>>,
     ) {
         let mut active = Some(self.state().active.lock().unwrap());
 
@@ -360,45 +292,15 @@ impl<'a> Executor<'a> {
         &self,
         future: impl Future<Output = T> + 'a,
         active: &mut Slab<Waker>,
-    ) -> Task<T> {
-        // Remove the task from the set of active tasks when the future finishes.
-        let entry = active.vacant_entry();
-        let index = entry.key();
-        let state = self.state_as_arc();
-        let future = async move {
-            let _guard = CallOnDrop(move || drop(state.active.lock().unwrap().try_remove(index)));
-            future.await
-        };
+    ) -> Task<T, M> {
+        // Inherit the parent task ddl, if there is a parent task.
+        let ddl = async_task::get_task_ddl().unwrap_or(PriorityHint::infra());
 
-        // Create the task and register it in the set of active tasks.
-        //
-        // SAFETY:
-        //
-        // If `future` is not `Send`, this must be a `LocalExecutor` as per this
-        // function's unsafe precondition. Since `LocalExecutor` is `!Sync`,
-        // `try_tick`, `tick` and `run` can only be called from the origin
-        // thread of the `LocalExecutor`. Similarly, `spawn` can only  be called
-        // from the origin thread, ensuring that `future` and the executor share
-        // the same origin thread. The `Runnable` can be scheduled from other
-        // threads, but because of the above `Runnable` can only be called or
-        // dropped on the origin thread.
-        //
-        // `future` is not `'static`, but we make sure that the `Runnable` does
-        // not outlive `'a`. When the executor is dropped, the `active` field is
-        // drained and all of the `Waker`s are woken. Then, the queue inside of
-        // the `Executor` is drained of all of its runnables. This ensures that
-        // runnables are dropped and this precondition is satisfied.
-        //
-        // `self.schedule()` is `Send`, `Sync` and `'static`, as checked below.
-        // Therefore we do not need to worry about what is done with the
-        // `Waker`.
-        let (runnable, task) = Builder::new()
-            .propagate_panic(true)
-            .spawn_unchecked(|()| future, self.schedule());
-        entry.insert(runnable.waker());
+        // [TODO:Vic] Make inheriting metadata or not configurable.
+        let meta = Self::clone_parent_task_metadata().unwrap_or_default();
+        // let meta = M::default();
 
-        runnable.schedule();
-        task
+        self.spawn_inner_impl(future, ddl, meta, active)
     }
 
     /// Spawn a future with a deadline hint while holding the inner lock.
@@ -406,12 +308,13 @@ impl<'a> Executor<'a> {
     /// # Safety
     ///
     /// If this is an `Executor`, `F` and `T` must be `Send`.
-    unsafe fn spawn_inner_with_ddl<T: 'a>(
+    unsafe fn spawn_inner_impl<T: 'a>(
         &self,
         future: impl Future<Output = T> + 'a,
-        ddl: DeadlineHint,
+        prio: PriorityHint,
+        metadata: M,
         active: &mut Slab<Waker>,
-    ) -> Task<T> {
+    ) -> Task<T, M> {
         // Remove the task from the set of active tasks when the future finishes.
         let entry = active.vacant_entry();
         let index = entry.key();
@@ -445,8 +348,9 @@ impl<'a> Executor<'a> {
         // `Waker`.
         let (runnable, task) = Builder::new()
             .propagate_panic(true)
-            .deadline(ddl)
-            .spawn_unchecked(|()| future, self.schedule());
+            .deadline(prio)
+            .metadata(metadata)
+            .spawn_unchecked(|_| future, self.schedule());
         entry.insert(runnable.waker());
 
         runnable.schedule();
@@ -517,24 +421,22 @@ impl<'a> Executor<'a> {
     }
 
     /// Returns a function that schedules a runnable task when it gets woken up.
-    fn schedule(&self) -> impl Fn(Runnable) + Send + Sync + 'static {
+    fn schedule(&self) -> impl Fn(Runnable<M>) + Send + Sync + 'static {
         let state = self.state_as_arc();
 
         move |runnable| {
             let now = std::time::Instant::now();
 
-            log::info!(
-                "Push runnable to queue, now: {}, task: {:p}, deadline: {}",
-                time_now(),
-                runnable.ptr_to_u64() as *const (),
-                runnable.deadline().value()
-            );
+            // log::info!(
+            //     "Push runnable to queue, now: {}, task: {:p}, priority: {}",
+            //     time_now(),
+            //     runnable.ptr_to_u64() as *const (),
+            //     runnable.priority().value()
+            // );
 
-            let deadline = runnable.deadline();
-            state
-                .queue
-                .push_with_ddl(runnable, deadline)
-                .expect("Push should never fail in an unbounded queue");
+            if state.queue.push(runnable).is_err() {
+                panic!("Failed to push runnable to queue");
+            };
             state.notify();
 
             SCHED_TIME_US.fetch_add(now.elapsed().as_micros() as usize, Ordering::Relaxed);
@@ -544,12 +446,12 @@ impl<'a> Executor<'a> {
 
     /// Returns a pointer to the inner state.
     #[inline]
-    fn state_ptr(&self) -> *const State {
+    fn state_ptr(&self) -> *const State<M> {
         #[cold]
-        fn alloc_state(atomic_ptr: &AtomicPtr<State>) -> *mut State {
-            let state = Arc::new(State::new());
+        fn alloc_state<M>(atomic_ptr: &AtomicPtr<State<M>>) -> *mut State<M> {
+            let state = Arc::new(State::<M>::new());
             // TODO: Switch this to use cast_mut once the MSRV can be bumped past 1.65
-            let ptr = Arc::into_raw(state) as *mut State;
+            let ptr = Arc::into_raw(state) as *mut State<M>;
             if let Err(actual) = atomic_ptr.compare_exchange(
                 std::ptr::null_mut(),
                 ptr,
@@ -573,7 +475,7 @@ impl<'a> Executor<'a> {
 
     /// Returns a reference to the inner state.
     #[inline]
-    fn state(&self) -> &State {
+    fn state(&self) -> &State<M> {
         // SAFETY: So long as an Executor lives, it's state pointer will always be valid
         // when accessed through state_ptr.
         unsafe { &*self.state_ptr() }
@@ -581,7 +483,7 @@ impl<'a> Executor<'a> {
 
     // Clones the inner state Arc
     #[inline]
-    fn state_as_arc(&self) -> Arc<State> {
+    fn state_as_arc(&self) -> Arc<State<M>> {
         // SAFETY: So long as an Executor lives, it's state pointer will always be a valid
         // Arc when accessed through state_ptr.
         let arc = unsafe { Arc::from_raw(self.state_ptr()) };
@@ -591,7 +493,7 @@ impl<'a> Executor<'a> {
     }
 }
 
-impl Drop for Executor<'_> {
+impl<M> Drop for Executor<'_, M> {
     fn drop(&mut self) {
         let ptr = *self.state.get_mut();
         if ptr.is_null() {
@@ -847,12 +749,26 @@ impl<'a> Default for LocalExecutor<'a> {
     }
 }
 
-#[cfg(feature = "masa")]
-type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
-#[cfg(feature = "fifo-binary")]
-type GlobalQueue<T> = queue::MutexFifoBinaryQueue<T>;
-#[cfg(not(any(feature = "masa", feature = "fifo-binary")))]
+// [NOTE] Check `hyper/src/proto/h2/server.rs` for the priority.
+#[cfg(not(any(
+    feature = "prio_class",
+    feature = "prio_global",
+    feature = "prio_global_two",
+    feature = "prio_class_global",
+    feature = "prio_local",
+    feature = "prio_local_two",
+    feature = "fifo_two",
+    feature = "fifo"
+)))]
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
+#[cfg(feature = "fifo")]
+type GlobalQueue<T> = queue::MutexFifoQueue<T>;
+#[cfg(feature = "fifo_two")]
+type GlobalQueue<T> = queue::MutexFifoTwoQueue<T>;
+#[cfg(any(feature = "prio_global", feature = "prio_local"))]
+type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
+#[cfg(any(feature = "prio_global_two", feature = "prio_local_two"))]
+type GlobalQueue<T> = queue::MutexPriorityTwoQueue<T>;
 
 // [NOTE] The original implementation uses a concurrent queue for the global queue.
 // type GlobalQueue<T> = queue::ConcurrentFifoQueue<T>;
@@ -860,12 +776,12 @@ type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 type LocalQueue<T> = queue::ConcurrentFifoQueue<T>;
 
 /// The state of a executor.
-struct State {
+struct State<M> {
     /// The global queue.
-    queue: GlobalQueue<Runnable>,
+    queue: GlobalQueue<Runnable<M>>,
 
     /// Local queues created by runners.
-    local_queues: RwLock<Vec<Arc<LocalQueue<Runnable>>>>,
+    local_queues: RwLock<Vec<Arc<LocalQueue<Runnable<M>>>>>,
 
     /// Set to `true` when a sleeping ticker is notified or no tickers are sleeping.
     notified: AtomicBool,
@@ -877,9 +793,28 @@ struct State {
     active: Mutex<Slab<Waker>>,
 }
 
-impl State {
+impl<M> State<M> {
     /// Creates state for a new executor.
-    fn new() -> State {
+    fn new() -> State<M> {
+        if cfg!(feature = "prio_class") {
+            log::warn!("Enabled prio_class");
+        } else if cfg!(feature = "prio_global") {
+            log::warn!("Enabled prio_global");
+        } else if cfg!(feature = "prio_global_two") {
+            log::warn!("Enabled prio_global_two");
+        } else if cfg!(feature = "prio_class_global") {
+            log::warn!("Enabled prio_class_global");
+        } else if cfg!(feature = "prio_local") {
+            log::warn!("Enabled prio_local");
+        } else if cfg!(feature = "prio_local_two") {
+            log::warn!("Enabled prio_local_two");
+        } else if cfg!(feature = "fifo_two") {
+            log::warn!("Enabled fifo_two");
+        } else if cfg!(feature = "fifo") {
+            log::warn!("Enabled fifo");
+        } else {
+            panic!("Not implemented policy");
+        }
         State {
             queue: GlobalQueue::default(),
             local_queues: RwLock::new(Vec::new()),
@@ -1023,9 +958,9 @@ impl Sleepers {
 }
 
 /// Runs task one by one.
-struct Ticker<'a> {
+struct Ticker<'a, M> {
     /// The executor state.
-    state: &'a State,
+    state: &'a State<M>,
 
     /// Set to a non-zero sleeper ID when in sleeping state.
     ///
@@ -1036,9 +971,9 @@ struct Ticker<'a> {
     sleeping: usize,
 }
 
-impl Ticker<'_> {
+impl<M> Ticker<'_, M> {
     /// Creates a ticker.
-    fn new(state: &State) -> Ticker<'_> {
+    fn new(state: &State<M>) -> Ticker<'_, M> {
         Ticker { state, sleeping: 0 }
     }
 
@@ -1083,12 +1018,15 @@ impl Ticker<'_> {
     }
 
     /// Waits for the next runnable task to run.
-    async fn runnable(&mut self) -> Runnable {
+    async fn runnable(&mut self) -> Runnable<M> {
         self.runnable_with(|| self.state.queue.pop().ok()).await
     }
 
     /// Waits for the next runnable task to run, given a function that searches for a task.
-    async fn runnable_with(&mut self, mut search: impl FnMut() -> Option<Runnable>) -> Runnable {
+    async fn runnable_with(
+        &mut self,
+        mut search: impl FnMut() -> Option<Runnable<M>>,
+    ) -> Runnable<M> {
         future::poll_fn(|cx| {
             loop {
                 match search() {
@@ -1100,12 +1038,12 @@ impl Ticker<'_> {
                         }
                     }
                     Some(r) => {
-                        log::info!(
-                            "Pop runnable from queue, now: {}, task: {:p}, deadline: {}",
-                            time_now(),
-                            r.ptr_to_u64() as *const (),
-                            r.deadline().value()
-                        );
+                        // log::info!(
+                        //     "Pop runnable from queue, now: {}, task: {:p}, priority: {}",
+                        //     time_now(),
+                        //     r.ptr_to_u64() as *const (),
+                        //     r.priority().value()
+                        // );
 
                         // Wake up.
                         self.wake();
@@ -1123,7 +1061,7 @@ impl Ticker<'_> {
     }
 }
 
-impl Drop for Ticker<'_> {
+impl<M> Drop for Ticker<'_, M> {
     fn drop(&mut self) {
         // If this ticker is in sleeping state, it must be removed from the sleepers list.
         if self.sleeping != 0 {
@@ -1146,23 +1084,23 @@ impl Drop for Ticker<'_> {
 /// A worker in a work-stealing executor.
 ///
 /// This is just a ticker that also has an associated local queue for improved cache locality.
-struct Runner<'a> {
+struct Runner<'a, M> {
     /// The executor state.
-    state: &'a State,
+    state: &'a State<M>,
 
     /// Inner ticker.
-    ticker: Ticker<'a>,
+    ticker: Ticker<'a, M>,
 
     /// The local queue.
-    local: Arc<LocalQueue<Runnable>>,
+    local: Arc<LocalQueue<Runnable<M>>>,
 
     /// Bumped every time a runnable task is found.
     ticks: usize,
 }
 
-impl Runner<'_> {
+impl<M> Runner<'_, M> {
     /// Creates a runner and registers it in the executor state.
-    fn new(state: &State) -> Runner<'_> {
+    fn new(state: &State<M>) -> Runner<'_, M> {
         let runner = Runner {
             state,
             ticker: Ticker::new(state),
@@ -1183,7 +1121,7 @@ impl Runner<'_> {
     }
 
     /// Waits for the next runnable task to run.
-    async fn runnable(&mut self, rng: &mut fastrand::Rng) -> Runnable {
+    async fn runnable(&mut self, rng: &mut fastrand::Rng) -> Runnable<M> {
         let runnable = self
             .ticker
             .runnable_with(|| {
@@ -1240,7 +1178,7 @@ impl Runner<'_> {
     }
 }
 
-impl Drop for Runner<'_> {
+impl<M> Drop for Runner<'_, M> {
     fn drop(&mut self) {
         // Remove the local queue.
         self.state
@@ -1279,7 +1217,14 @@ fn steal<T>(src: &LocalQueue<T>, dest: &LocalQueue<T>) {
 }
 
 /// Debug implementation for `Executor` and `LocalExecutor`.
-fn debug_executor(executor: &Executor<'_>, name: &str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+fn debug_executor<M>(
+    executor: &Executor<'_, M>,
+    name: &str,
+    f: &mut fmt::Formatter<'_>,
+) -> fmt::Result
+where
+    M: std::fmt::Debug,
+{
     // Get a reference to the state.
     let ptr = executor.state.load(Ordering::Acquire);
     if ptr.is_null() {
@@ -1304,7 +1249,10 @@ fn debug_executor(executor: &Executor<'_>, name: &str, f: &mut fmt::Formatter<'_
 }
 
 /// Debug implementation for `Executor` and `LocalExecutor`.
-fn debug_state(state: &State, name: &str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+fn debug_state<M>(state: &State<M>, name: &str, f: &mut fmt::Formatter<'_>) -> fmt::Result
+where
+    M: std::fmt::Debug,
+{
     /// Debug wrapper for the number of active tasks.
     struct ActiveTasks<'a>(&'a Mutex<Slab<Waker>>);
 
@@ -1319,9 +1267,9 @@ fn debug_state(state: &State, name: &str, f: &mut fmt::Formatter<'_>) -> fmt::Re
     }
 
     /// Debug wrapper for the local runners.
-    struct LocalRunners<'a>(&'a RwLock<Vec<Arc<LocalQueue<Runnable>>>>);
+    struct LocalRunners<'a, M>(&'a RwLock<Vec<Arc<LocalQueue<Runnable<M>>>>>);
 
-    impl fmt::Debug for LocalRunners<'_> {
+    impl<M> fmt::Debug for LocalRunners<'_, M> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self.0.try_read() {
                 Ok(lock) => f
@@ -1371,10 +1319,10 @@ fn _ensure_send_and_sync() {
     fn is_sync<T: Sync>(_: T) {}
     fn is_static<T: 'static>(_: T) {}
 
-    is_send::<Executor<'_>>(Executor::new());
-    is_sync::<Executor<'_>>(Executor::new());
+    is_send::<Executor<'_, ()>>(Executor::new());
+    is_sync::<Executor<'_, ()>>(Executor::new());
 
-    let ex = Executor::new();
+    let ex = Executor::<()>::new();
     is_send(ex.run(pending::<()>()));
     is_sync(ex.run(pending::<()>()));
     is_send(ex.tick());

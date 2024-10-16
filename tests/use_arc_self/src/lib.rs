@@ -6,6 +6,7 @@ use tonic::{Request, Response, Status};
 
 tonic::include_proto!("test");
 
+#[allow(dead_code)]
 #[derive(Debug, Default)]
 struct Svc;
 

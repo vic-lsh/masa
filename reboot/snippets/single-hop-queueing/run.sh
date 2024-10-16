@@ -6,7 +6,7 @@ path="snippets/flat"
 # rps_values=(200 1600)
 rps_values=(50)
 
-modes=("masa" "fifo")
+modes=("queue_edf" "queue_fifo")
 
 server_pid=
 

@@ -17,7 +17,10 @@ plt.rcParams.update(
     }
 )
 
-MODES = ["masa", "fifo-binary", "fifo"]
+# MODES = ["prio_local", "fifo_two", "fifo"]
+# MODES = ["prio_local", "prio_global", "fifo_two"]
+MODES = ["prio_local", "prio_global"]
+GRAPH_IDS = ["I1"]
 COLORS = ["tab:blue", "tab:orange", "tab:purple"]
 
 
@@ -41,10 +44,10 @@ def plot_cdf(results: Dict[str, List[int]], title: str, fig_name: str):
         )
         plt.scatter([p99], [0.99], color="forestgreen")
 
-    p99_ratio_masa_fifo = p99s["masa"] * 100 / p99s["fifo"]
-    p99_ratio_fifo_masa = p99s["fifo"] * 100 / p99s["masa"]
-    plt.plot([], [], " ", label=f"masa/fifo: {round(p99_ratio_masa_fifo)}%")
-    plt.plot([], [], " ", label=f"fifo/masa: {round(p99_ratio_fifo_masa)}%")
+    # p99_ratio_masa_fifo = p99s["queue_edf"] * 100 / p99s["queue_fifo"]
+    # p99_ratio_fifo_masa = p99s["queue_fifo"] * 100 / p99s["queue_edf"]
+    # plt.plot([], [], " ", label=f"masa/fifo: {round(p99_ratio_masa_fifo)}%")
+    # plt.plot([], [], " ", label=f"fifo/masa: {round(p99_ratio_fifo_masa)}%")
 
     plt.xlabel("Latency (ms)")
     plt.ylabel("CDF")
@@ -78,9 +81,9 @@ def plot_pdf(results: Dict[str, List[int]], title: str, fig_name: str):
             color=COLORS[i],
         )
 
-        plt.plot(
-            [], [], " ", label=f"{mode} sum: {sum_value:.2f}ms", color="forestgreen"
-        )
+        # plt.plot(
+        #     [], [], " ", label=f"{mode} sum: {sum_value:.2f}ms", color="forestgreen"
+        # )
         plt.plot(
             [],
             [],
@@ -108,8 +111,8 @@ def plot_pdf(results: Dict[str, List[int]], title: str, fig_name: str):
 def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    masa_latencies = [r / 1e3 for r in results["masa"]]
-    fifo_latencies = [r / 1e3 for r in results["fifo"]]
+    masa_latencies = [r / 1e3 for r in results["queue_edf"]]
+    fifo_latencies = [r / 1e3 for r in results["queue_fifo"]]
     h, xedges, yedges, img = ax.hist2d(
         masa_latencies,
         fifo_latencies,
