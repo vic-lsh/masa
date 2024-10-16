@@ -237,6 +237,7 @@ pub(crate) struct LastWrite {
     pub last_write_date: DateTime,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub(crate) struct OpTime {
     ts: Timestamp,

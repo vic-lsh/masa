@@ -169,6 +169,7 @@ pub(crate) fn to_raw_document_buf_with_options<T: Serialize>(
     let raw_doc = if human_readable_serialization {
         let doc = bson::to_document_with_options(
             doc,
+            #[allow(deprecated)]
             SerializerOptions::builder().human_readable(true).build(),
         )?;
         RawDocumentBuf::from_document(&doc)?

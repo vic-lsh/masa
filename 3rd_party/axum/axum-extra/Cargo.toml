@@ -44,7 +44,7 @@ mime = "0.3"
 pin-project-lite = "0.2"
 serde = "1.0"
 tokio = "1.19"
-tower = { path = "../../tower/tower", default_features = false, features = ["util"] }
+tower = { path = "../../tower/tower", default-features = false, features = ["util"] }
 tower-layer = { path = "../../tower/tower-layer" }
 tower-service = { path = "../../tower/tower-service" }
 
