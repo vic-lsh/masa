@@ -191,7 +191,7 @@ tokio-rustls = { path = "../3rd_party/tokio-rustls", optional = true }
 hyper-rustls = { version = "0.24.0", features = ["http2"], optional = true }
 rustls-pemfile = { version = "1", optional = true }
 tower-http = { version = "0.4", optional = true }
-geo = "0.21"
+geo = "0.28"
 
 
 [build-dependencies]
