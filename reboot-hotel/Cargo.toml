@@ -37,6 +37,15 @@ path = "src/hotel/search/main.rs"
 name = "hotel_profile"
 path = "src/hotel/profile/main.rs"
 
+[[bin]]
+name = "recommendation-server"
+path = "src/hotel/recommendation/server.rs"
+
+[[bin]]
+name = "recommendation-client"
+path = "src/hotel/recommendation/client.rs"
+
+
 [features]
 prio_class = ["async-executor/prio_class", "tonic-masa/prio_class"]
 prio_global = ["async-executor/prio_global", "tonic-masa/prio_global"]
@@ -144,6 +153,7 @@ memcache = "0.16"
 log = "0.4"
 env_logger = "0.9"
 
+
 # Common dependencies
 tokio = { path = "../3rd_party/tokio/tokio", features = [
 	"rt-multi-thread",
@@ -183,6 +193,8 @@ tokio-rustls = { path = "../3rd_party/tokio-rustls", optional = true }
 hyper-rustls = { version = "0.24.0", features = ["http2"], optional = true }
 rustls-pemfile = { version = "1", optional = true }
 tower-http = { version = "0.4", optional = true }
+geo = "0.28"
+
 
 [build-dependencies]
 tonic-build = { path = "../tonic-build", features = ["prost"] }
