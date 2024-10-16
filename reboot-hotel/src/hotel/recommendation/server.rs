@@ -1,12 +1,12 @@
-use ::recommendation::JsonParser;
 use geo::point;
 use geo::prelude::*;
+use reboot_hotel::JsonParser;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tonic::{transport::Server, Request, Response, Status}; // Import geo functionality
 
-use recommendation::recommendation_server::{Recommendation, RecommendationServer};
-use recommendation::{RecommendationReply, RecommendationRequest};
+use hotel::recommendation::recommendation_server::{Recommendation, RecommendationServer};
+use hotel::recommendation::{RecommendationReply, RecommendationRequest};
 pub mod hotel {
     pub mod recommendation {
         tonic::include_proto!("recommendation");
