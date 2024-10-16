@@ -31,3 +31,10 @@ members = [
   "tests/default_stubs",
 ]
 resolver = "2"
+
+[profile.release]
+debug = true
+
+# rewrite dependencies to use the our version of async-task when running tests
+[patch.crates-io]
+async-task = { path = "./3rd_party/async-task" }

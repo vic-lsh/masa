@@ -44,6 +44,7 @@ pin_project! {
 pub struct Count(usize);
 
 /// Tracks an in-flight request by reference count.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Handle(RefCount);
 

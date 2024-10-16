@@ -211,7 +211,7 @@
     nonstandard_style,
     missing_docs
 )]
-#![deny(unreachable_pub, private_in_public)]
+#![deny(unreachable_pub, private_bounds, private_interfaces)]
 #![allow(
     elided_lifetimes_in_paths,
     // TODO: Remove this once the MSRV bumps to 1.42.0 or above.
@@ -360,6 +360,7 @@ pub enum LatencyUnit {
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 mod sealed {
+    #[allow(dead_code)]
     #[allow(unreachable_pub)]
     pub trait Sealed<T> {}
 }

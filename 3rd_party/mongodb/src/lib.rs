@@ -309,6 +309,8 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![cfg_attr(test, type_length_limit = "80000000")]
 #![doc(html_root_url = "https://docs.rs/mongodb/2.8.2")]
+// Vic: added to avoid warnings about incorrectly configured cfg flags in the crate
+#![allow(unexpected_cfgs)]
 
 #[cfg(all(feature = "aws-auth", feature = "async-std-runtime"))]
 compile_error!("The `aws-auth` feature flag is only supported on the tokio runtime.");
@@ -340,8 +342,8 @@ mod index;
 mod operation;
 pub mod results;
 pub(crate) mod runtime;
-mod search_index;
 mod sdam;
+mod search_index;
 mod selection_criteria;
 mod serde_util;
 mod srv;
@@ -366,7 +368,10 @@ pub use crate::{
     gridfs::{GridFsBucket, GridFsDownloadStream, GridFsUploadStream},
 };
 
-pub use {client::session::ClusterTime, coll::Namespace, index::IndexModel, sdam::public::*, search_index::SearchIndexModel};
+pub use {
+    client::session::ClusterTime, coll::Namespace, index::IndexModel, sdam::public::*,
+    search_index::SearchIndexModel,
+};
 
 #[cfg(all(feature = "tokio-runtime", feature = "sync",))]
 compile_error!(
