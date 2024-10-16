@@ -37,6 +37,15 @@ path = "src/hotel/search/main.rs"
 name = "hotel_profile"
 path = "src/hotel/profile/main.rs"
 
+[[bin]]
+name = "recommendation-server"
+path = "src/hotel/recommendation/server.rs"
+
+[[bin]]
+name = "recommendation-client"
+path = "src/hotel/recommendation/client.rs"
+
+
 [features]
 prio_class = ["async-executor/prio_class", "tonic-masa/prio_class"]
 prio_global = ["async-executor/prio_global", "tonic-masa/prio_global"]
