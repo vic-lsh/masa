@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use log::error;
 use std::fmt::Write; // For using the `write!` macro
 use std::fs::File;
@@ -192,7 +194,6 @@ fn hash_mac_address_pid(mac: &str) -> u16 {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     let addr = "[::1]:50051".parse()?;
-    let netif = "";
     let greeter = MyGreeter {
         // machine_id: get_machine_id(netif),
         // now it is hardcoded
