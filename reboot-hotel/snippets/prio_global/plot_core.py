@@ -122,6 +122,11 @@ def plot_pdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
     plt.show()
 
 
+def plot_goodput():
+    # [TODO]
+    pass
+
+
 def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
     fig, ax = plt.subplots(figsize=(10, 6))
 

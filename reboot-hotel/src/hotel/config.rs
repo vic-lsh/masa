@@ -8,7 +8,7 @@ pub struct GenConfig {
     #[serde(rename = "Slo")]
     pub slo: u64,
     #[serde(rename = "Rps")]
-    pub rps: u64,
+    pub rps_values: Vec<u64>,
     #[serde(rename = "WarmupSecs")]
     pub warmup_secs: u64,
     #[serde(rename = "DurationSecs")]
