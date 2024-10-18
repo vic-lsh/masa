@@ -298,7 +298,7 @@ where
 
         // Request-completed lifecycle hook.
         Self::get_masa_request_context().map(|ctx| ctx.finalize(&mut res));
-        // [TODO] unset metadata?
+        // [TODO:Vic] Unset metadata?
         res
     }
 

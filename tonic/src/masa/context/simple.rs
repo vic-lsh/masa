@@ -4,7 +4,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc, RwLock,
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use tonic_masa::{
@@ -15,6 +15,14 @@ use tonic_masa::{
 use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
 
 use super::{ChildContext, ClientStubHooks, RequestHandlerHooks, ServerContext};
+
+fn time_now() -> u64 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_micros();
+    now as u64
+}
 
 /// A simple implementation of `RequestHandlerHooks`.
 #[derive(Debug)]
@@ -75,16 +83,19 @@ pub struct SimpleServerContext {
 
 impl SimpleParentContext {
     #[inline]
-    fn should_early_return(&self) -> bool {
-        // [TODO] curr_time >= self.ddl
-        false
+    fn check_early_return(&self) -> bool {
+        if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
+            time_now() >= self.ctx.deadline()
+        } else {
+            false
+        }
     }
 
     #[inline]
     fn issue_early_return<T>(&self) -> Result<Response<T>, Status> {
         Err(Status::new(
             Code::DeadlineExceeded,
-            "could not complete the request before its deadline",
+            "Could not complete the request before its deadline",
         ))
     }
 }
@@ -165,7 +176,7 @@ impl RequestHandlerHooks for SimpleParentContext {
     }
 
     fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
-        if self.should_early_return() {
+        if self.check_early_return() {
             return Some(self.issue_early_return());
         }
 
