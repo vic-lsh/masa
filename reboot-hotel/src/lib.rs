@@ -82,16 +82,18 @@ pub struct Span {
     graph_id: String,
     slo: u64,
     latency: u64,
+    error: bool,
 }
 
 #[allow(dead_code)]
 impl Span {
-    pub fn new(request_id: u64, graph_id: String, slo: u64, latency: u64) -> Self {
+    pub fn new(request_id: u64, graph_id: String, slo: u64, latency: u64, error: bool) -> Self {
         Self {
             request_id,
             graph_id,
             slo,
             latency,
+            error,
         }
     }
 }
@@ -105,12 +107,12 @@ pub async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
         }
     }
     let mut file = File::create(output).unwrap();
-    writeln!(file, "request_id,graph_id,slo,latency").unwrap();
+    writeln!(file, "request_id,graph_id,slo,latency,error").unwrap();
     while let Ok(span) = trace_rx.recv() {
         writeln!(
             file,
-            "{},{},{},{}",
-            span.request_id, span.graph_id, span.slo, span.latency
+            "{},{},{},{},{}",
+            span.request_id, span.graph_id, span.slo, span.latency, span.error
         )
         .unwrap();
     }
