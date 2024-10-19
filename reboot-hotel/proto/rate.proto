@@ -7,13 +7,26 @@ service Rate {
 }
 
 message RateRequest {
-  repeated string hotels = 1;
+  repeated string hotelIds = 1;
+  string inDate = 2;
+  string outDate = 3;
 }
 
-message RateResponse { repeated HotelRate plans = 1; }
+message RateResponse { repeated RatePlan ratePlans = 1; }
 
-message HotelRate {
-  string key = 1; // key = "rate"
-  string hotel = 2;
-  bytes payload = 3;
+message RatePlan {
+  string hotelId = 1;
+  string code = 2;
+  string inDate = 3;
+  string outDate = 4;
+  RoomType roomType = 5;
+}
+
+message RoomType {
+  double bookableRate = 1;
+  double totalRate = 2;
+  double totalRateInclusive = 3;
+  string code = 4;
+  string currency = 5;
+  string roomDescription = 6;
 }

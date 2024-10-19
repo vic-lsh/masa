@@ -7,12 +7,10 @@ service Search {
 }
 
 message NearbyRequest {
-  uint32 ave = 1;
-
-  // float lat = 1;
-  // float lon = 2;
-  // string inDate = 3;
-  // string outDate = 4;
+  float lat = 1;
+  float lon = 2;
+  string inDate = 3;
+  string outDate = 4;
 }
 
-message NearbyResponse { repeated string hotels = 1; }
+message NearbyResponse { repeated string hotelIds = 1; }
