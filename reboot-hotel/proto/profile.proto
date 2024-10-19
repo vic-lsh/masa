@@ -3,7 +3,7 @@ syntax = "proto3";
 package profile;
 
 service Profile {
-  rpc HandleGetProfiles(ProfileRequest) returns (ProfileResponse) {}
+  rpc GetProfiles(ProfileRequest) returns (ProfileResponse) {}
 }
 
 message ProfileRequest {
