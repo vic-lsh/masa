@@ -46,27 +46,31 @@ impl Search for SearchImpl {
         let request = request.into_inner();
 
         let mut geo_client = self.geo_client.clone();
-        let geo_request = geo::NearbyRequest { ave: request.ave };
-        let geo_response = geo_client
-            .handle_nearby(Request::new(geo_request))
-            .await
-            .unwrap();
+        let geo_request = geo::NearbyRequest {
+            lat: request.lat,
+            lon: request.lon,
+        };
+        let geo_response = geo_client.handle_nearby(Request::new(geo_request)).await?;
         let response = geo_response.into_inner();
 
-        let hotels = response.hotels;
+        let hotel_ids = response.hotel_ids;
         let mut rate_client = self.rate_client.clone();
-        let rate_request = rate::RateRequest { hotels };
+        let rate_request = rate::RateRequest {
+            hotel_ids,
+            in_date: request.in_date,
+            out_date: request.out_date,
+        };
         let rate_response = rate_client
             .handle_get_rates(Request::new(rate_request))
             .await
             .unwrap();
         let response = rate_response.into_inner();
 
-        let mut hotels = Vec::new();
-        for plan in response.plans {
-            hotels.push(plan.hotel);
+        let mut hotel_ids = Vec::new();
+        for plan in response.rate_plans {
+            hotel_ids.push(plan.hotel_id);
         }
-        let response = search::NearbyResponse { hotels };
+        let response = search::NearbyResponse { hotel_ids };
         Ok(Response::new(response))
     }
 }

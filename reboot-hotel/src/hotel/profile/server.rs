@@ -239,17 +239,17 @@ impl Profile for ProfileImpl {
         let request = request.into_inner();
         let hotels = self
             .manager
-            .fetch_mixture(ctx.request_id(), request.hotels)
+            .fetch_mixture(ctx.request_id(), request.hotel_ids)
             .await;
-        let mut profiles = Vec::new();
+        let mut hotels = Vec::new();
         for hotel in hotels {
-            profiles.push(profile::HotelProfile {
+            hotels.push(profile::Hotel {
                 key: "profile".to_string(),
                 hotel: hotel.name,
                 payload: hotel.payload,
             });
         }
-        let response = profile::ProfileResponse { profiles };
+        let response = profile::ProfileResponse { hotels };
         log::info!("response: {:?}", response);
         Ok(Response::new(response))
     }

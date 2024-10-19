@@ -46,12 +46,17 @@ impl Frontend for FrontendImpl {
         let request = request.into_inner();
 
         let mut search_client = self.search_client.clone();
-        let span_request = search::NearbyRequest { ave: request.ave };
-        let span_response = search_client
-            .handle_nearby(span_request)
+        let search_req = search::NearbyRequest {
+            lat: request.lat,
+            lon: request.lon,
+            in_date: request.in_date,
+            out_date: request.out_date,
+        };
+        let search_resp = search_client
+            .handle_nearby(search_req)
             .await
             .expect("Failed to call search::nearby");
-        let response = span_response.into_inner();
+        let response = search_resp.into_inner();
 
         // [TODO] Reserve.
         // reserve_client.check_availability()
@@ -59,7 +64,7 @@ impl Frontend for FrontendImpl {
 
         let mut profile_client = self.profile_client.clone();
         let profile_request = profile::ProfileRequest {
-            hotels: response.hotels,
+            hotel_ids: response.hotel_ids,
         };
         let profile_response = profile_client
             .handle_get_profiles(profile_request)
@@ -68,10 +73,8 @@ impl Frontend for FrontendImpl {
         let response = profile_response.into_inner();
 
         let mut hotels = Vec::new();
-        for profile in response.profiles {
-            hotels.push(frontend::Hotel {
-                name: profile.hotel,
-            });
+        for profile in response.hotels {
+            hotels.push(frontend::Hotel { name: profile.name });
         }
         let response = frontend::SearchResponse { hotels };
         Ok(Response::new(response))

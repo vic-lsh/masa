@@ -38,6 +38,10 @@ pub struct Args {
     pub concurrency: usize,
 }
 
+fn gen_search_request() -> SearchRequest {
+    todo!()
+}
+
 #[derive(Debug)]
 struct LoadGenerator {
     graph_id: GraphId,
@@ -69,7 +73,7 @@ impl LoadGenerator {
             let graph_id = self.graph_id.clone();
             let rps_cnt = self.rps_cnt.clone();
             let mut client = self.client.clone();
-            let request = SearchRequest { ave: 61 };
+            let request = gen_search_request();
 
             let h = tokio::spawn(async move {
                 let mut rng = StdRng::seed_from_u64(998244353 + i as u64);

@@ -9,6 +9,10 @@ use reboot_hotel::init_logging;
 
 use hotel::{frontend_client::FrontendClient, SearchRequest};
 
+fn gen_search_request() -> SearchRequest {
+    todo!()
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
@@ -29,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         request_class,
     );
 
-    let mut request = Request::new(SearchRequest { ave: 61 });
+    let mut request = Request::new(gen_search_request());
     request.metadata_mut().insert_ctx("ctx", &ctx);
 
     let response = client.handle_search(request).await?;
