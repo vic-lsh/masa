@@ -74,9 +74,6 @@ path = "src/charleston/client.rs"
 # name = "hello_server"
 # path = "src/hello/server.rs"
 
-[profile.release]
-debug = true
-
 [features]
 prio_class = ["async-executor/prio_class", "tonic-masa/prio_class"]
 prio_global = ["async-executor/prio_global", "tonic-masa/prio_global"]
@@ -179,7 +176,7 @@ smol = { path = "../3rd_party/smol" }
 futures-lite = { version = "2.0.0" }
 structopt = "0.3.23"
 crossbeam-channel = "0.5"
-mongodb = { path = "../3rd_party/mongodb" }
+mongodb = "2.8.2"
 memcache = "0.16"
 log = "0.4"
 env_logger = "0.9"

@@ -24,7 +24,7 @@ use tonic_masa::{
     Context, GraphId, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_TWO, PRIO_LOCAL, PRIO_LOCAL_TWO,
 };
 
-use config::Config;
+use config::{GenConfig, HotelConfig};
 use hotel::{frontend_client::FrontendClient, SearchRequest};
 use reboot_hotel::{fetch_traces, init_logging, time_now, Span};
 
@@ -32,29 +32,17 @@ use reboot_hotel::{fetch_traces, init_logging, time_now, Span};
 #[structopt(about = "Client for benchmarking")]
 pub struct Args {
     #[structopt(short, long, required = true)]
-    pub config: PathBuf,
-    #[structopt(long, required = true)]
-    pub slo: u64,
-    #[structopt(long, required = true)]
-    pub rps: u64,
-    #[structopt(long, required = true)]
-    pub secs: u64,
-    #[structopt(long, required = true)]
-    pub concurrency: usize,
-    #[structopt(long, required = true)]
-    pub output: String,
-    #[structopt(long, default_value = "http://[::1]:8660")]
-    pub addr: String,
+    pub hotel_config: PathBuf,
+    #[structopt(short, long, required = true)]
+    pub gen_config: PathBuf,
 }
 
 #[derive(Debug)]
 struct LoadGenerator {
-    cfg: Config,
+    hotel_cfg: HotelConfig,
+    gen_cfg: GenConfig,
     rng: StdRng,
     graph_id: GraphId,
-    slo: u64,
-    rps: u64,
-    secs: u64,
     token: Arc<AtomicUsize>,
     client: FrontendClient<Channel>,
     trace_tx: Sender<Span>,
@@ -62,12 +50,10 @@ struct LoadGenerator {
 
 impl LoadGenerator {
     pub fn new(
-        cfg: Config,
+        hotel_cfg: HotelConfig,
+        gen_cfg: GenConfig,
         rng: StdRng,
         graph_id: GraphId,
-        slo: u64,
-        rps: u64,
-        secs: u64,
         token: Arc<AtomicUsize>,
         client: FrontendClient<Channel>,
         trace_tx: Sender<Span>,
@@ -92,12 +78,10 @@ impl LoadGenerator {
             panic!("Not implemented policy");
         }
         Self {
-            cfg,
+            hotel_cfg,
+            gen_cfg,
             rng,
             graph_id,
-            slo,
-            rps,
-            secs,
             token,
             client,
             trace_tx,
@@ -119,10 +103,12 @@ impl LoadGenerator {
 
         let init_at = Instant::now();
         let init_at_u64 = time_now();
-        let pause_at = init_at + Duration::from_secs(self.secs);
+        let trace_at = init_at + Duration::from_secs(self.gen_cfg.warmup_secs);
+        let pause_at =
+            init_at + Duration::from_secs(self.gen_cfg.warmup_secs + self.gen_cfg.duration_secs);
 
         let mut elapse = 0f64;
-        let exponential = Exp::new(self.rps as f64).unwrap();
+        let exponential = Exp::new(self.gen_cfg.rps as f64).unwrap();
         let uniform = Uniform::new(0, 1_000_000_007);
 
         loop {
@@ -144,7 +130,7 @@ impl LoadGenerator {
             let request_id = uniform.sample(&mut self.rng) as u64;
             let request_class = 0;
             let graph_id = self.graph_id.clone();
-            let slo = self.slo;
+            let slo = self.gen_cfg.slo;
 
             let request = {
                 let deadline = {
@@ -166,7 +152,7 @@ impl LoadGenerator {
                     request_class,
                 );
 
-                let ave = (request_id % self.cfg.hotels as u64) as u32;
+                let ave = (request_id % self.hotel_cfg.hotels as u64) as u32;
                 let search_request = SearchRequest { ave };
                 let mut request = tonic::Request::new(search_request);
                 request.metadata_mut().insert_ctx("ctx", &ctx);
@@ -189,7 +175,9 @@ impl LoadGenerator {
                     let latency = recv_at - send_at;
                     let span = Span::new(request_id, graph_id, slo, latency);
                     token.fetch_add(1, Ordering::SeqCst);
-                    trace_tx.try_send(span).unwrap();
+                    if Instant::now() > trace_at {
+                        trace_tx.try_send(span).unwrap();
+                    }
                 });
             }
         }
@@ -203,41 +191,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
     let args = Args::from_args();
-    let file = File::open(args.config).expect("Failed to open file");
-    let reader = BufReader::new(file);
-    let cfg: Config = serde_json::from_reader(reader)?;
-    log::info!("Hotel config: {:?}", cfg);
-
-    let (trace_tx, trace_rx) = unbounded();
-
-    let mut load_gen = {
-        const KEY: u64 = 13;
-        const SEED: u64 = 998244353;
-
-        let graph_id: GraphId = "Hotel".to_string();
-        let seed = SEED * KEY + args.rps;
-        let rng = StdRng::seed_from_u64(seed);
-        let token = Arc::new(AtomicUsize::new(args.concurrency));
-        let client = FrontendClient::connect(args.addr).await?;
-
-        let load_gen = LoadGenerator::new(
-            cfg, rng, graph_id, args.slo, args.rps, args.secs, token, client, trace_tx,
-        );
-        load_gen
+    let hotel_cfg: HotelConfig = {
+        let file = File::open(args.hotel_config).expect("Failed to open file");
+        let reader = BufReader::new(file);
+        serde_json::from_reader(reader)?
     };
+    log::info!("Hotel config: {:?}", hotel_cfg);
+    let gen_cfg: GenConfig = {
+        let file = File::open(args.gen_config).expect("Failed to open file");
+        let reader = BufReader::new(file);
+        serde_json::from_reader(reader)?
+    };
+    log::info!("Gen config: {:?}", gen_cfg);
 
-    let mut handles = Vec::new();
+    for i in 0..gen_cfg.repeats {
+        let output_path = gen_cfg.output.clone();
+        let output = format!("{}/r{}_{}.csv", output_path.clone(), gen_cfg.rps, i);
 
-    handles.push(tokio::spawn(async move {
-        load_gen.run().await.unwrap();
-    }));
+        let (trace_tx, trace_rx) = unbounded();
 
-    handles.push(tokio::spawn(async move {
-        fetch_traces(args.output, trace_rx).await;
-    }));
+        let mut load_gen = {
+            const KEY: u64 = 13;
+            const SEED: u64 = 998244353;
 
-    for h in handles {
-        h.await.unwrap();
+            let graph_id: GraphId = "Hotel".to_string();
+            let seed = SEED * KEY + gen_cfg.rps;
+            let rng = StdRng::seed_from_u64(seed);
+            let token = Arc::new(AtomicUsize::new(gen_cfg.concurrency));
+            let client = FrontendClient::connect(gen_cfg.addr.clone()).await?;
+
+            let load_gen = LoadGenerator::new(
+                hotel_cfg.clone(),
+                gen_cfg.clone(),
+                rng,
+                graph_id,
+                token,
+                client,
+                trace_tx,
+            );
+            load_gen
+        };
+
+        let mut handles = Vec::new();
+
+        handles.push(tokio::spawn(async move {
+            load_gen.run().await.unwrap();
+        }));
+
+        handles.push(tokio::spawn(async move {
+            fetch_traces(output, trace_rx).await;
+        }));
+
+        for h in handles {
+            h.await.unwrap();
+        }
     }
 
     Ok(())

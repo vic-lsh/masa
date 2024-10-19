@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 use tonic::transport::Server;
 
-use config::Config;
+use config::HotelConfig;
 use reboot_hotel::init_logging;
 use server::hotel::profile::profile_server::ProfileServer;
 use server::ProfileImpl;
@@ -26,9 +26,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
     let args = Args::from_args();
-    let file = File::open(args.config).expect("Failed to open file");
-    let reader = BufReader::new(file);
-    let cfg: Config = serde_json::from_reader(reader)?;
+    let cfg: HotelConfig = {
+        let file = File::open(args.config).expect("Failed to open file");
+        let reader = BufReader::new(file);
+        serde_json::from_reader(reader)?
+    };
     log::info!("Hotel config: {:?}", cfg);
 
     let profile = ProfileImpl::new(
