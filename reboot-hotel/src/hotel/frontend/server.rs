@@ -65,6 +65,7 @@ impl Frontend for FrontendImpl {
         let mut profile_client = self.profile_client.clone();
         let profile_request = profile::ProfileRequest {
             hotel_ids: response.hotel_ids,
+            locale: request.locale.unwrap_or("en".to_string()),
         };
         let profile_response = profile_client
             .handle_get_profiles(profile_request)
@@ -73,8 +74,14 @@ impl Frontend for FrontendImpl {
         let response = profile_response.into_inner();
 
         let mut hotels = Vec::new();
-        for profile in response.hotels {
-            hotels.push(frontend::Hotel { name: profile.name });
+        for hotel in response.hotels {
+            hotels.push(frontend::Hotel {
+                name: hotel.name,
+                id: hotel.id,
+                phone_number: hotel.phone_number,
+                lat: hotel.address.unwrap().lat,
+                lon: hotel.address.unwrap().lon,
+            });
         }
         let response = frontend::SearchResponse { hotels };
         Ok(Response::new(response))
