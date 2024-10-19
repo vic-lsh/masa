@@ -11,17 +11,17 @@ message SearchRequest {
   float lon = 2;
   string inDate = 3;
   string outDate = 4;
+  optional string locale = 5;
 }
 
 message SearchResponse { repeated Hotel hotels = 1; }
 
 message Hotel {
   string name = 1;
-
-  // string phoneNumber = 2;
-  // string description = 3;
-  // Address address = 4;
-  // repeated Image images = 5;
+  string id = 2;
+  string phoneNumber = 3;
+  float lat = 4;
+  float lon = 5;
 }
 
 // message Address {
