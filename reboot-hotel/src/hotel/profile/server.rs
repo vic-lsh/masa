@@ -158,13 +158,15 @@ impl HotelManager {
     //     hotels
     // }
 
+    fn should_cache_miss(&self, request_id: u64) -> bool {
+        request_id % 100 < self.cache_miss_rate as u64
+    }
+
     pub async fn fetch_mixture(&self, request_id: u64, names: Vec<String>) -> Vec<Hotel> {
-        let names_db = {
-            if request_id % 100 < self.cache_miss_rate as u64 {
-                names.clone()
-            } else {
-                Vec::new()
-            }
+        let names_db = if self.should_cache_miss(request_id) {
+            Some(names.clone())
+        } else {
+            None
         };
 
         let names_ref = names.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
@@ -178,12 +180,14 @@ impl HotelManager {
         }
         hotels.sort_by_key(|hotel| hotel.ave);
 
-        if !names_db.is_empty() {
+        if let Some(hotel_names) = names_db {
             let query = doc! {
                 "name": {
-                    "$in": names_db
+                    "$in": hotel_names
                 }
             };
+
+            // [NOTE] original impl used one mongo query per hotel entry
             let mut cursor = self
                 .collection
                 .find(query, None)
@@ -231,7 +235,7 @@ impl ProfileImpl {
 
 #[tonic::async_trait]
 impl Profile for ProfileImpl {
-    async fn handle_get_profiles(
+    async fn get_profiles(
         &self,
         request: Request<profile::ProfileRequest>,
     ) -> Result<Response<profile::ProfileResponse>, Status> {
