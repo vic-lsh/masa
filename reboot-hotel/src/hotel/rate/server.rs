@@ -241,17 +241,17 @@ impl Rate for RateImpl {
         let request = request.into_inner();
         let hotels = self
             .manager
-            .fetch_mixture(ctx.request_id(), request.hotels)
+            .fetch_mixture(ctx.request_id(), request.hotel_ids)
             .await;
-        let mut plans = Vec::new();
+        let mut rate_plans = Vec::new();
         for hotel in hotels {
-            plans.push(rate::HotelRate {
+            rate_plans.push(rate::RatePlan {
                 key: "rate".to_string(),
-                hotel: hotel.name,
+                hotel_id: hotel.name,
                 payload: hotel.payload,
             });
         }
-        let response = rate::RateResponse { plans };
+        let response = rate::RateResponse { rate_plans };
         log::info!("response: {:?}", response);
         Ok(Response::new(response))
     }

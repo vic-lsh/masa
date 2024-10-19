@@ -37,6 +37,10 @@ pub struct Args {
     pub gen_config: PathBuf,
 }
 
+fn gen_search_request() -> SearchRequest {
+    todo!()
+}
+
 #[derive(Debug)]
 struct LoadGenerator {
     hotel_cfg: HotelConfig,
@@ -153,7 +157,7 @@ impl LoadGenerator {
                 );
 
                 let ave = (request_id % self.hotel_cfg.hotels as u64) as u32;
-                let search_request = SearchRequest { ave };
+                let search_request = gen_search_request();
                 let mut request = tonic::Request::new(search_request);
                 request.metadata_mut().insert_ctx("ctx", &ctx);
 

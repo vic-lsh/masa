@@ -11,7 +11,7 @@ message ProfileRequest {
   string locale = 2;
 }
 
-message ProfileResponse {  repeated Hotel hotels = 1; }
+message ProfileResponse { repeated Hotel hotels = 1; }
 
 message Hotel {
   string id = 1;
