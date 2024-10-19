@@ -1,12 +1,21 @@
 #!/bin/bash
 
+# Restart the containers.
+cd ~/Masa-Lo-Ding/reboot-hotel/scripts/local
+docker compose -f containers.yaml down
+cd ~/Masa-Lo-Ding/reboot-hotel/scripts/local
+docker compose -f containers.yaml up -d
+
+# Enter the reboot-hotel directory.
+cd ~/Masa-Lo-Ding/reboot-hotel
+
 current_dir=$(pwd)
 if [[ "$current_dir" != */reboot-hotel ]]; then
     echo "Error: plese run in the reboot-hotel directory" >&2
     exit 1
 fi
 
-features="" # prio_local_two, prio_local, prio_global, fifo_two
+features=""
 while [[ "$#" -gt 0 ]]; do
     case $1 in
     --features)
@@ -44,11 +53,6 @@ waits_secs=(
     18
 )
 rust_log=warn
-repeats=3
-slo=30000
-rps=750
-secs=120
-concurrency=128
 
 first_pane=true
 
@@ -63,26 +67,18 @@ for i in "${!services[@]}"; do
         --features $features \
         --bin $service \
         -- \
-        --config scripts/local/config.json \
-        > $output/tmp_$service.log 2>&1
-        "
+        --config scripts/local/hotel_config.json \
+        > $output/tmp_$service.log 2>&1"
     else
-        run_cmd=""
-        for i in $(seq 0 $(($repeats - 1))); do
-            run_cmd+=" \
-            RUST_LOG=$rust_log \
-            cargo run --release \
-            --features $features \
-            --bin $service \
-            -- \
-            --config scripts/local/config.json \
-            --slo $slo \
-            --rps $rps \
-            --secs $secs \
-            --concurrency $concurrency \
-            --output $output/r${rps}_${service}_$i.csv \
-            > $output/tmp_${service}_$i.log 2>&1; "
-        done
+        run_cmd=" \
+        RUST_LOG=$rust_log \
+        cargo run --release \
+        --features $features \
+        --bin $service \
+        -- \
+        --hotel-config scripts/local/hotel_config.json \
+        --gen-config $output/gen_config.json \
+        > $output/tmp_${service}.log 2>&1"
     fi
 
     cmd=" \

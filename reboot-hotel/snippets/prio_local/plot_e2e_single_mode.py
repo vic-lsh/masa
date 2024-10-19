@@ -1,16 +1,14 @@
 from typing import *
 
 import pandas as pd
-from plot_core import GRAPH_IDS, MODES, plot_cdf, plot_pdf  # type: ignore
+from plot_core import GRAPH_IDS, MODES, REPEATS, plot_cdf, plot_pdf  # type: ignore
 
-repeats = 2
-graph_id = GRAPH_IDS[0]
 rps = 500
 
 for mode in MODES:
     e2e_repeats: List[Tuple[str, List[int]]] = []
-    for r in range(repeats):
-        file = f"r{rps}_hotel_client_bench_{r}.csv"
+    for r in range(REPEATS):
+        file = f"r{rps}_{r}.csv"
         df = pd.read_csv(file)
         for graph_id in GRAPH_IDS:
             df_filtered = df[df["graph_id"] == graph_id]

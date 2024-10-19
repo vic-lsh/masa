@@ -9,6 +9,7 @@ use tonic::{Request, Response, Status, Streaming};
 tonic::include_proto!("test");
 tonic::include_proto!("test_default");
 
+#[allow(dead_code)]
 #[derive(Debug, Default)]
 struct Svc;
 

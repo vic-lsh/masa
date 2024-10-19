@@ -97,6 +97,7 @@ where
 }
 
 /// Error returned when trying to connect to an HTTPS endpoint without TLS enabled.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct HttpsUriWithoutTlsSupport(());
 

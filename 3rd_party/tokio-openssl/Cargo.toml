@@ -17,3 +17,6 @@ tokio = { path = "../tokio/tokio" }
 
 [dev-dependencies]
 tokio = { path = "../tokio/tokio", features = ["full"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(ossl111)'] }
