@@ -31,11 +31,12 @@ impl HotelManager {
         HotelManager { hotels, range }
     }
 
-    fn fetch(&self, ave: u32) -> Vec<Hotel> {
-        let ave = ave as usize;
-        let range = self.range as usize;
-        let end = (ave + range).min(self.hotels.len());
-        self.hotels[ave..end].to_vec()
+    fn fetch(&self, lat: f32, lon: f32) -> Vec<Hotel> {
+        todo!()
+        // let ave = ave as usize;
+        // let range = self.range as usize;
+        // let end = (ave + range).min(self.hotels.len());
+        // self.hotels[ave..end].to_vec()
     }
 }
 
@@ -58,12 +59,12 @@ impl Geo for GeoImpl {
         request: Request<geo::NearbyRequest>,
     ) -> Result<Response<geo::NearbyResponse>, Status> {
         let request = request.into_inner();
-        let fetched_hotels = self.manager.fetch(request.ave);
-        let mut hotels = Vec::new();
+        let fetched_hotels = self.manager.fetch(request.lat, request.lon);
+        let mut hotel_ids = Vec::new();
         for hotel in fetched_hotels {
-            hotels.push(hotel.name);
+            hotel_ids.push(hotel.name);
         }
-        let response = geo::NearbyResponse { hotels };
+        let response = geo::NearbyResponse { hotel_ids };
         log::info!("response: {:?}", response);
         Ok(Response::new(response))
     }
