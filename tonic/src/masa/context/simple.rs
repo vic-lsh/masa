@@ -84,11 +84,12 @@ pub struct SimpleServerContext {
 impl SimpleParentContext {
     #[inline]
     fn check_early_return(&self) -> bool {
-        if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
-            time_now() >= self.ctx.deadline()
-        } else {
-            false
-        }
+        false
+        // if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
+        //     time_now() >= self.ctx.deadline()
+        // } else {
+        //     false
+        // }
     }
 
     #[inline]
