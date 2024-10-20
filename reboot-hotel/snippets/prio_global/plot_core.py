@@ -17,9 +17,6 @@ plt.rcParams.update(
     }
 )
 
-# MODES = ["prio_local", "prio_global", "fifo_two"]
-
-REPEATS = 3
 MODES = ["prio_global"]
 GRAPH_IDS = ["Hotel"]
 COLORS = ["tab:blue", "tab:orange", "tab:purple"]
@@ -53,14 +50,6 @@ def plot_cdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
             color="forestgreen",
         )
         plt.scatter([p95], [0.95], color="forestgreen")
-        # p99 = float(np.percentile(latencies_ms, 99))
-        # plt.axvline(
-        #     x=p99,
-        #     linestyle="--",
-        #     label=f"{label} p99: {p99:.2f}ms",
-        #     color="forestgreen",
-        # )
-        # plt.scatter([p99], [0.99], color="forestgreen")
 
     plt.xlabel("Latency (ms)")
     plt.ylabel("CDF")
@@ -122,9 +111,30 @@ def plot_pdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
     plt.show()
 
 
-def plot_goodput():
-    # [TODO]
-    pass
+def plot_goodput(results: List[Dict[str, Any]], fig_name: str):
+    rps_values = [res["rps"] for res in results]
+    goodput_values = [res["goodput"] for res in results]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.bar(rps_values, goodput_values, color="tab:blue", width=0.6)
+
+    ax.set_title("Goodput vs RPS", fontsize=fontsize)
+    ax.set_xlabel("RPS (Requests per Second)", fontsize=fontsize)
+    ax.set_ylabel("Goodput", fontsize=fontsize)
+
+    for i, value in enumerate(goodput_values):
+        ax.text(
+            rps_values[i],
+            value,
+            value,
+            ha="center",
+            va="bottom",
+            fontsize=fontsize - 3,
+        )
+
+    plt.grid(True, axis="y", linestyle="--", alpha=0.7)
+    plt.savefig(fig_name)
+    plt.show()
 
 
 def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
