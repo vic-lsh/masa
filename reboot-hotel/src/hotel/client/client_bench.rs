@@ -178,9 +178,9 @@ impl LoadGenerator {
                     let response = client.handle_search(request).await;
                     let recv_at = time_now();
                     let latency = recv_at - send_at;
-                    let error = response.is_err();
                     token.fetch_add(1, Ordering::SeqCst);
                     if Instant::now() > trace_at {
+                        let error = response.is_err();
                         let span = Span::new(request_id, graph_id, slo, latency, error);
                         trace_tx.try_send(span).unwrap();
                     }

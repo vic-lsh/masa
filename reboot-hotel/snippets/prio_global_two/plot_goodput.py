@@ -27,4 +27,4 @@ for mode in MODES:
                 result["goodput"] = round(len(df_filtered) / cfg["DurationSecs"])
                 goodput_results.append(result)
 
-        plot_goodput(goodput_results, "goodput_rps.png")
+        plot_goodput(goodput_results, f"goodput_rps_{r}.png")
