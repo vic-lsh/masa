@@ -23,6 +23,6 @@
 	"WarmupSecs": 30,
 	"DurationSecs": 180,
 	"Concurrency": 512,
-	"Output": "snippets/prio_global",
+	"Output": "snippets/prio_global_two",
 	"Addr": "http://[::1]:8660"
 }

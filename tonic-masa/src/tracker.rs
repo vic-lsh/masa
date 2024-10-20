@@ -73,6 +73,7 @@ impl LatencyTracker {
         if self.percentiles.len() == 0 {
             self.mean
         } else {
+            // [KNOB] Different percentiles.
             self.percentile(90)
         }
     }
