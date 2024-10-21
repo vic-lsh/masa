@@ -137,6 +137,19 @@ def plot_goodput(results: List[Dict[str, Any]], fig_name: str):
     plt.show()
 
 
+def plot_goodput_per_rps(result: Dict[str, Any], fig_name: str):
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(result["goodput_per_rps"], color="tab:blue")
+
+    ax.set_title(f"Goodput per RPS", fontsize=fontsize)
+    ax.set_xlabel("Time (Seconds)", fontsize=fontsize)
+    ax.set_ylabel("Goodput", fontsize=fontsize)
+
+    plt.grid(True, linestyle="--", alpha=0.7)
+    plt.savefig(fig_name)
+    plt.show()
+
+
 def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
     fig, ax = plt.subplots(figsize=(10, 6))
 
