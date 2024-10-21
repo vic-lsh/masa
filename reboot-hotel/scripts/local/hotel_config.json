@@ -2,7 +2,7 @@
 	"Hotels": 1000,
 	"Payload": 1024,
 	"CacheConn": 32,
-	"CacheMissRate": 50,
+	"CacheMissRate": 20,
 	"GeoRange": 5,
 	"RateMongodbAddr": "mongodb://127.0.0.1:27003",
 	"RateMemcachedAddr": "memcache://127.0.0.1:11003",

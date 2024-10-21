@@ -1,25 +1,15 @@
 #!/bin/bash
 
-# Restart the containers.
-cd ~/Masa-Lo-Ding/reboot-hotel/scripts/local
-docker compose -f containers.yaml down
-cd ~/Masa-Lo-Ding/reboot-hotel/scripts/local
-docker compose -f containers.yaml up -d
-
-# Enter the reboot-hotel directory.
-cd ~/Masa-Lo-Ding/reboot-hotel
-
-current_dir=$(pwd)
-if [[ "$current_dir" != */reboot-hotel ]]; then
-    echo "Error: plese run in the reboot-hotel directory" >&2
-    exit 1
-fi
-
 features=""
+repeats="1"
 while [[ "$#" -gt 0 ]]; do
     case $1 in
     --features)
         features="$2"
+        shift
+        ;;
+    --repeats)
+        repeats="$2"
         shift
         ;;
     *)
@@ -32,9 +22,6 @@ done
 output="snippets/$features"
 
 session_name="hotel"
-tmux new-session -d -s $session_name -n "local"
-tmux set-option -s pane-border-status top
-tmux set-option -s pane-border-format "#{pane_title}"
 
 services=(
     "hotel_geo"
@@ -47,55 +34,92 @@ services=(
 waits_secs=(
     0
     0
-    6
+    10
     0
-    12
-    18
+    20
+    26
 )
 rust_log=warn
 
-first_pane=true
+ready_go() {
+    run_idx=$1
+    rm $output/tmp_*.log
 
-for i in "${!services[@]}"; do
-    service=${services[$i]}
-    wait_secs=${waits_secs[$i]}
+    docker compose -f ~/Masa-Lo-Ding/reboot-hotel/scripts/local/containers.yaml down
+    docker compose -f ~/Masa-Lo-Ding/reboot-hotel/scripts/local/containers.yaml up -d
 
-    if [[ "$service" != "hotel_client_bench" ]]; then
-        run_cmd=" \
-        RUST_LOG=$rust_log \
-        cargo run --release \
-        --features $features \
-        --bin $service \
-        -- \
-        --config scripts/local/hotel_config.json \
-        > $output/tmp_$service.log 2>&1"
-    else
-        run_cmd=" \
-        RUST_LOG=$rust_log \
-        cargo run --release \
-        --features $features \
-        --bin $service \
-        -- \
-        --hotel-config scripts/local/hotel_config.json \
-        --gen-config $output/gen_config.json \
-        > $output/tmp_${service}.log 2>&1"
-    fi
+    first_pane=true
 
-    cmd=" \
-    cd ~/Masa-Lo-Ding/reboot-hotel; \
-    sleep $wait_secs; \
-    $run_cmd \
-    "
+    for i in "${!services[@]}"; do
+        service=${services[$i]}
+        wait_secs=${waits_secs[$i]}
 
-    if [ "$first_pane" = true ]; then
-        tmux select-pane -T $service
-        first_pane=false
-    else
-        tmux split-window -h -t $session_name
-        tmux select-pane -T $service
-        tmux select-layout -t $session_name tiled
-    fi
-    tmux send-keys -t $session_name "$cmd" C-m
+        if [[ "$service" != "hotel_client_bench" ]]; then
+
+            run_cmd=" \
+RUST_LOG=$rust_log \
+cargo run --release \
+--features $features \
+--bin $service \
+-- \
+--config scripts/local/hotel_config.json \
+> $output/tmp_$service.log 2>&1"
+
+        else
+
+            run_cmd=" \
+RUST_LOG=$rust_log \
+cargo run --release \
+--features $features \
+--bin $service \
+-- \
+--hotel-config scripts/local/hotel_config.json \
+--gen-config $output/gen_config.json \
+--run-idx $run_idx \
+> $output/tmp_$service.log 2>&1"
+
+        fi
+
+        cmd=" \
+cd ~/Masa-Lo-Ding/reboot-hotel; \
+sleep $wait_secs; \
+$run_cmd"
+
+        if [ "$first_pane" = true ]; then
+            tmux select-pane -T $service
+            first_pane=false
+        else
+            tmux split-window -h -t $session_name
+            tmux select-pane -T $service
+            tmux select-layout -t $session_name tiled
+        fi
+        tmux send-keys -t $session_name "$cmd" C-m
+    done
+
+    all_done=false
+    while [[ $all_done == false ]]; do
+        sleep 10
+        service=${services[-1]}
+        if [ ! -f $output/tmp_$service.log ]; then
+            continue
+        fi
+        if tail -n 1 $output/tmp_$service.log | grep -q "Load generator done"; then
+            all_done=true
+        fi
+    done
+}
+
+tmux kill-session -t $session_name
+
+for ((run = 0; run < repeats; run++)); do
+    echo "Starting run $run/$repeats..."
+
+    tmux new-session -d -s $session_name -n "local"
+    tmux set-option -s pane-border-status top
+    tmux set-option -s pane-border-format "#{pane_title}"
+
+    ready_go $run
+
+    echo "Killing session for run $run..."
+    tmux kill-session -t $session_name
 done
-
-tmux attach -t $session_name

@@ -116,4 +116,5 @@ pub async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
         )
         .unwrap();
     }
+    log::warn!("Traces fetched");
 }
