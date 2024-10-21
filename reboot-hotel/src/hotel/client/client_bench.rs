@@ -129,6 +129,22 @@ impl LoadGenerator {
             // let value = 1f64 / self.rps as f64;
             elapse += value;
 
+            // Atomically decrement if we still have remaining concurrency
+            if self
+                .token
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |token| {
+                    if token > 0 {
+                        Some(token - 1)
+                    } else {
+                        None
+                    }
+                })
+                .is_err()
+            {
+                // The token was set at 0 -- we have exhausted our concurrency
+                continue;
+            }
+
             let request_id = uniform.sample(&mut self.rng) as u64;
             let request_class = 0;
             let graph_id = self.graph_id.clone();
@@ -161,26 +177,22 @@ impl LoadGenerator {
                 request
             };
 
-            if self.token.load(Ordering::SeqCst) > 0 {
-                counter.fetch_add(1, Ordering::Relaxed);
-                let token = self.token.clone();
-                token.fetch_sub(1, Ordering::SeqCst);
+            let token = self.token.clone();
+            counter.fetch_add(1, Ordering::Relaxed);
 
-                let mut client = self.client.clone();
-                let trace_tx = self.trace_tx.clone();
-
-                tokio::task::spawn(async move {
-                    let send_at = time_now();
-                    client.handle_search(request).await.unwrap();
-                    let recv_at = time_now();
-                    let latency = recv_at - send_at;
+            let mut client = self.client.clone();
+            let trace_tx = self.trace_tx.clone();
+            tokio::task::spawn(async move {
+                let send_at = time_now();
+                let _response = client.handle_search(request).await;
+                let recv_at = time_now();
+                let latency = recv_at - send_at;
+                token.fetch_add(1, Ordering::SeqCst);
+                if Instant::now() > trace_at {
                     let span = Span::new(request_id, graph_id, slo, latency);
-                    token.fetch_add(1, Ordering::SeqCst);
-                    if Instant::now() > trace_at {
-                        trace_tx.try_send(span).unwrap();
-                    }
-                });
-            }
+                    trace_tx.try_send(span).unwrap();
+                }
+            });
         }
 
         Ok(())
