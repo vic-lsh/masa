@@ -1,0 +1,16 @@
+{
+	"Repeats": 1,
+	"Slo": 30000,
+	"Rps": [
+		1150,
+		1200,
+		1250,
+		1300,
+		1350
+	],
+	"WarmupSecs": 30,
+	"DurationSecs": 120,
+	"Concurrency": 1024,
+	"Output": "snippets/prio_global_two_mock",
+	"Addr": "http://[::1]:8660"
+}
