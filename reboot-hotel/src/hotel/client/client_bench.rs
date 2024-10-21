@@ -31,10 +31,12 @@ use reboot_hotel::{fetch_traces, init_logging, time_now, Span};
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Client for benchmarking")]
 pub struct Args {
-    #[structopt(short, long, required = true)]
+    #[structopt(long, required = true)]
     pub hotel_config: PathBuf,
-    #[structopt(short, long, required = true)]
+    #[structopt(long, required = true)]
     pub gen_config: PathBuf,
+    #[structopt(long, required = true)]
+    pub run_idx: String,
 }
 
 #[derive(Debug)]
@@ -92,23 +94,29 @@ impl LoadGenerator {
     }
 
     async fn run(&mut self) -> Result<(), Box<dyn Error>> {
+        let init_at = Instant::now();
+        // let init_at_u64 = time_now();
+        let warm_at = init_at + Duration::from_secs(self.gen_cfg.warmup_secs / 2);
+        let trace_at = init_at + Duration::from_secs(self.gen_cfg.warmup_secs);
+        let pause_at =
+            init_at + Duration::from_secs(self.gen_cfg.warmup_secs + self.gen_cfg.duration_secs);
+
         let counter = Arc::new(AtomicUsize::new(0));
         let counter_clone = counter.clone();
         tokio::task::spawn(async move {
             let mut counter_before = 0;
+            let mut secs = 0;
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 let counter_now = counter_clone.load(Ordering::Relaxed);
-                log::info!("RPS: {}", counter_now - counter_before);
+                secs += 1;
+                log::warn!("secs: {}, rps: {}", secs, counter_now - counter_before);
                 counter_before = counter_now;
+                if Instant::now() > pause_at {
+                    break;
+                }
             }
         });
-
-        let init_at = Instant::now();
-        // let init_at_u64 = time_now();
-        let trace_at = init_at + Duration::from_secs(self.gen_cfg.warmup_secs);
-        let pause_at =
-            init_at + Duration::from_secs(self.gen_cfg.warmup_secs + self.gen_cfg.duration_secs);
 
         let mut elapse = 0f64;
         let exponential = Exp::new(self.rps as f64).unwrap();
@@ -119,16 +127,22 @@ impl LoadGenerator {
                 break;
             }
 
-            if self.token.load(Ordering::SeqCst) <= 0 {
-                continue;
-            }
-
             let start_at = init_at + Duration::from_secs_f64(elapse);
             tokio::time::sleep_until(start_at).await;
 
-            let value = exponential.sample(&mut self.rng);
-            // let value = 1f64 / self.rps as f64;
+            let value = {
+                if Instant::now() < warm_at {
+                    0.01
+                } else {
+                    exponential.sample(&mut self.rng)
+                    // 1f64 / self.rps as f64
+                }
+            };
             elapse += value;
+
+            if self.token.load(Ordering::SeqCst) <= 0 {
+                continue;
+            }
 
             let request_id = uniform.sample(&mut self.rng) as u64;
             let request_class = 0;
@@ -165,29 +179,29 @@ impl LoadGenerator {
                 request
             };
 
-            if self.token.load(Ordering::SeqCst) > 0 {
-                counter.fetch_add(1, Ordering::Relaxed);
-                let token = self.token.clone();
-                token.fetch_sub(1, Ordering::SeqCst);
+            let token = self.token.clone();
+            assert!(token.load(Ordering::SeqCst) > 0);
+            token.fetch_sub(1, Ordering::SeqCst);
+            counter.fetch_add(1, Ordering::Relaxed);
 
-                let mut client = self.client.clone();
-                let trace_tx = self.trace_tx.clone();
-
-                tokio::task::spawn(async move {
-                    let send_at = time_now();
-                    let response = client.handle_search(request).await;
-                    let recv_at = time_now();
-                    let latency = recv_at - send_at;
-                    token.fetch_add(1, Ordering::SeqCst);
-                    if Instant::now() > trace_at {
-                        let error = response.is_err();
-                        let span = Span::new(request_id, graph_id, slo, latency, error);
-                        trace_tx.try_send(span).unwrap();
-                    }
-                });
-            }
+            let mut client = self.client.clone();
+            let trace_tx = self.trace_tx.clone();
+            tokio::task::spawn(async move {
+                let send_at = time_now();
+                let response = client.handle_search(request).await;
+                let recv_at = time_now();
+                let latency = recv_at - send_at;
+                token.fetch_add(1, Ordering::SeqCst);
+                if Instant::now() > trace_at {
+                    let error = response.is_err();
+                    let span = Span::new(request_id, graph_id, slo, latency, error);
+                    trace_tx.try_send(span).unwrap();
+                }
+            });
         }
 
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        log::warn!("Load generated");
         Ok(())
     }
 }
@@ -210,52 +224,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     log::info!("Gen config: {:?}", gen_cfg);
 
-    for i in 0..gen_cfg.repeats {
-        for rps in &gen_cfg.rps_values {
-            let output_path = gen_cfg.output.clone();
-            let output = format!("{}/r{}_{}.csv", output_path.clone(), rps, i);
+    for rps in &gen_cfg.rps_values {
+        log::warn!("Running rps: {}", rps);
 
-            let (trace_tx, trace_rx) = unbounded();
+        let output_path = gen_cfg.output.clone();
+        let output = format!("{}/r{}_{}.csv", output_path, rps, args.run_idx);
+        let (trace_tx, trace_rx) = unbounded();
 
-            let mut load_gen = {
-                const KEY: u64 = 13;
-                const SEED: u64 = 998244353;
+        let mut load_gen = {
+            const KEY: u64 = 13;
+            const SEED: u64 = 998244353;
 
-                let graph_id: GraphId = "Hotel".to_string();
-                let seed = SEED * KEY + rps;
-                let rng = StdRng::seed_from_u64(seed);
-                let token = Arc::new(AtomicUsize::new(gen_cfg.concurrency));
-                let client = FrontendClient::connect(gen_cfg.addr.clone()).await?;
+            let graph_id: GraphId = "Hotel".to_string();
+            let seed = SEED * KEY + rps;
+            let rng = StdRng::seed_from_u64(seed);
+            let token = Arc::new(AtomicUsize::new(gen_cfg.concurrency));
+            let client = FrontendClient::connect(gen_cfg.addr.clone()).await?;
 
-                let load_gen = LoadGenerator::new(
-                    hotel_cfg.clone(),
-                    gen_cfg.clone(),
-                    rng,
-                    graph_id,
-                    *rps,
-                    token,
-                    client,
-                    trace_tx,
-                );
-                load_gen
-            };
+            let load_gen = LoadGenerator::new(
+                hotel_cfg.clone(),
+                gen_cfg.clone(),
+                rng,
+                graph_id,
+                *rps,
+                token,
+                client,
+                trace_tx,
+            );
+            load_gen
+        };
 
-            let mut handles = Vec::new();
-
-            handles.push(tokio::spawn(async move {
-                load_gen.run().await.unwrap();
-            }));
-
-            handles.push(tokio::spawn(async move {
-                fetch_traces(output, trace_rx).await;
-            }));
-
-            for h in handles {
-                h.await.unwrap();
-            }
-            tokio::time::sleep(Duration::from_secs(3)).await;
+        let mut handles = Vec::new();
+        handles.push(tokio::spawn(async move {
+            load_gen.run().await.unwrap();
+        }));
+        handles.push(tokio::spawn(async move {
+            fetch_traces(output, trace_rx).await;
+        }));
+        for h in handles {
+            h.await.unwrap();
         }
     }
 
+    log::warn!("Load generator done");
     Ok(())
 }
