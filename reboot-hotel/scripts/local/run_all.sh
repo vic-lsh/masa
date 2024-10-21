@@ -1,11 +1,16 @@
 #!/bin/bash
 
 features=""
+output=""
 repeats="1"
 while [[ "$#" -gt 0 ]]; do
     case $1 in
     --features)
         features="$2"
+        shift
+        ;;
+    --output)
+        output="$2"
         shift
         ;;
     --repeats)
@@ -19,7 +24,9 @@ while [[ "$#" -gt 0 ]]; do
     esac
     shift
 done
-output="snippets/$features"
+if [ -z "$output" ]; then
+    output="snippets/$features"
+fi
 
 session_name="hotel"
 
