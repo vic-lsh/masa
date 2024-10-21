@@ -116,7 +116,7 @@ def plot_goodput(results: List[Dict[str, Any]], fig_name: str):
     goodput_values = [res["goodput"] for res in results]
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.bar(rps_values, goodput_values, color="tab:blue", width=0.6)
+    ax.plot(rps_values, goodput_values, color="tab:blue")
 
     ax.set_title("Goodput vs RPS", fontsize=fontsize)
     ax.set_xlabel("RPS (Requests per Second)", fontsize=fontsize)
