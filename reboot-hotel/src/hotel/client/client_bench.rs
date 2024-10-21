@@ -140,7 +140,19 @@ impl LoadGenerator {
             };
             elapse += value;
 
-            if self.token.load(Ordering::SeqCst) <= 0 {
+            // Atomically decrement if we still have remaining concurrency
+            if self
+                .token
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |token| {
+                    if token > 0 {
+                        Some(token - 1)
+                    } else {
+                        None
+                    }
+                })
+                .is_err()
+            {
+                // The token was set at 0 -- we have exhausted our concurrency
                 continue;
             }
 
@@ -180,8 +192,6 @@ impl LoadGenerator {
             };
 
             let token = self.token.clone();
-            assert!(token.load(Ordering::SeqCst) > 0);
-            token.fetch_sub(1, Ordering::SeqCst);
             counter.fetch_add(1, Ordering::Relaxed);
 
             let mut client = self.client.clone();
