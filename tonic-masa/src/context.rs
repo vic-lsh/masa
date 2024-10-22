@@ -10,6 +10,7 @@ pub struct Context {
     deadline: Timestamp,
     latest_exec_at: Timestamp,
     request_class: RequestClass,
+    frontend_elapse: Option<u64>,
 }
 
 impl Context {
@@ -27,6 +28,7 @@ impl Context {
             deadline,
             latest_exec_at,
             request_class,
+            frontend_elapse: None,
         }
     }
 
@@ -53,6 +55,16 @@ impl Context {
     /// Get the request class.
     pub fn request_class(&self) -> RequestClass {
         self.request_class
+    }
+
+    /// Get the frontend elapse time.
+    pub fn frontend_elapse(&self) -> Option<u64> {
+        self.frontend_elapse
+    }
+
+    /// Set the frontend elapse time.
+    pub fn set_frontend_elapse(&mut self, elapse: u64) {
+        self.frontend_elapse = Some(elapse);
     }
 
     /// Create a new Masa context from JSON.

@@ -204,7 +204,7 @@ impl LoadGenerator {
                 token.fetch_add(1, Ordering::SeqCst);
                 if Instant::now() > trace_at {
                     let error = response.is_err();
-                    let span = Span::new(request_id, graph_id, slo, latency, error);
+                    let span = Span::new(request_id, graph_id, slo, latency, 0, error);
                     trace_tx.try_send(span).unwrap();
                 }
             });
