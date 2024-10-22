@@ -50,7 +50,7 @@ rust_log=warn
 
 ready_go() {
     run_idx=$1
-    rm $output/tmp_*.log
+    rm $output/*.log
 
     docker compose -f ~/Masa-Lo-Ding/reboot-hotel/scripts/local/containers.yaml down
     docker compose -f ~/Masa-Lo-Ding/reboot-hotel/scripts/local/containers.yaml up -d
