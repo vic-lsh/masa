@@ -4,6 +4,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc, RwLock,
     },
+    task::Poll,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -183,6 +184,27 @@ impl RequestHandlerHooks for SimpleParentContext {
 
         log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
         self.polled.fetch_add(1, Ordering::Relaxed);
+        None
+    }
+
+    fn after_poll<Ret>(
+        &self,
+        poll: &Poll<Result<Response<Ret>, Status>>,
+    ) -> Option<Result<Response<Ret>, Status>> {
+        // Note: maybe wrap in `if self.is_frontend() {}`
+        if let Poll::Ready(resp) = poll {
+            match resp {
+                Ok(v) => {
+                    // record goodput and latency
+                }
+                Err(e) => {
+                    if e.code() == Code::DeadlineExceeded {
+                        // record ddl exceeded
+                    }
+                }
+            }
+        }
+
         None
     }
 
