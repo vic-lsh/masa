@@ -47,11 +47,7 @@ impl Search for SearchImpl {
 
         let mut geo_client = self.geo_client.clone();
         let geo_request = geo::NearbyRequest { ave: request.ave };
-        let geo_response = geo_client.handle_nearby(Request::new(geo_request)).await;
-        if geo_response.is_err() {
-            return Err(geo_response.unwrap_err());
-        }
-        let geo_response = geo_response.expect("Failed to call geo::nearby");
+        let geo_response = geo_client.handle_nearby(Request::new(geo_request)).await?;
         let response = geo_response.into_inner();
 
         let hotels = response.hotels;
@@ -59,11 +55,7 @@ impl Search for SearchImpl {
         let rate_request = rate::RateRequest { hotels };
         let rate_response = rate_client
             .handle_get_rates(Request::new(rate_request))
-            .await;
-        if rate_response.is_err() {
-            return Err(rate_response.unwrap_err());
-        }
-        let rate_response = rate_response.expect("Failed to call rate::get_rates");
+            .await?;
         let response = rate_response.into_inner();
 
         let mut hotels = Vec::new();
