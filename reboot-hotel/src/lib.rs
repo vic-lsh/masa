@@ -82,7 +82,7 @@ pub struct Span {
     graph_id: String,
     slo: u64,
     latency: u64,
-    fe_latency: u64,
+    latency_fe: u64,
     error: bool,
 }
 
@@ -93,7 +93,7 @@ impl Span {
         graph_id: String,
         slo: u64,
         latency: u64,
-        fe_latency: u64,
+        latency_fe: u64,
         error: bool,
     ) -> Self {
         Self {
@@ -101,7 +101,7 @@ impl Span {
             graph_id,
             slo,
             latency,
-            fe_latency,
+            latency_fe,
             error,
         }
     }
@@ -116,12 +116,12 @@ pub async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
         }
     }
     let mut file = File::create(output).unwrap();
-    writeln!(file, "request_id,graph_id,slo,latency,fe_latency,error").unwrap();
+    writeln!(file, "request_id,graph_id,slo,latency,latency_fe,error").unwrap();
     while let Ok(span) = trace_rx.recv() {
         writeln!(
             file,
             "{},{},{},{},{},{}",
-            span.request_id, span.graph_id, span.slo, span.latency, span.fe_latency, span.error
+            span.request_id, span.graph_id, span.slo, span.latency, span.latency_fe, span.error
         )
         .unwrap();
     }
