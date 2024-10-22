@@ -19,7 +19,7 @@ plt.rcParams.update(
 
 MODES = ["prio_global_two"]
 GRAPH_IDS = ["Hotel"]
-COLORS = ["tab:blue", "tab:orange", "tab:purple"]
+COLORS = ["tab:blue", "tab:orange", "tab:purple", "tab:red"]
 
 
 def plot_cdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
@@ -137,6 +137,54 @@ def plot_goodput(results: List[Dict[str, Any]], fig_name: str):
     plt.ylabel("Goodput")
     plt.ylim(0, 1500)
     plt.title("Goodput vs RPS")
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(fig_name)
+    plt.show()
+
+
+def plot_throughput(results: List[Dict[str, Any]], fig_name: str):
+    rps_values = [result["rps"] for result in results]
+    tput_all = [result["tput_all"] for result in results]
+    tput_good = [result["tput_good"] for result in results]
+    tput_neutral = [result["tput_neutral"] for result in results]
+    tput_error = [result["tput_error"] for result in results]
+
+    fig = plt.figure(figsize=(10, 6))
+
+    plt.plot(
+        rps_values,
+        tput_all,
+        label="Throughput All",
+        color=COLORS[0],
+        marker="o",
+    )
+    plt.plot(
+        rps_values,
+        tput_good,
+        label="Throughput Good",
+        color=COLORS[1],
+        marker="x",
+    )
+    plt.plot(
+        rps_values,
+        tput_neutral,
+        label="Throughput Neutral",
+        color=COLORS[2],
+        marker="^",
+    )
+    plt.plot(
+        rps_values,
+        tput_error,
+        label="Throughput Error",
+        color=COLORS[3],
+        marker=".",
+    )
+
+    plt.xlabel("RPS")
+    plt.ylabel("Throughput")
+    plt.ylim(0, 1500)
+    plt.title("Throughput vs RPS")
     plt.legend()
     plt.grid(True)
     plt.savefig(fig_name)
