@@ -85,12 +85,13 @@ pub struct SimpleServerContext {
 impl SimpleParentContext {
     #[inline]
     fn check_early_return(&self) -> bool {
-        // false
-        if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
-            time_now() >= self.ctx.deadline()
-        } else {
-            false
+        if self.method.id() != "/frontend.Frontend/HandleSearch" {
+            // [NOTE] The frontend should not early return.
+            if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
+                return time_now() >= self.ctx.deadline();
+            }
         }
+        false
     }
 
     #[inline]
@@ -189,23 +190,28 @@ impl RequestHandlerHooks for SimpleParentContext {
 
     fn after_poll<Ret>(
         &self,
-        poll: &Poll<Result<Response<Ret>, Status>>,
+        _poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Option<Result<Response<Ret>, Status>> {
-        // Note: maybe wrap in `if self.is_frontend() {}`
-        if let Poll::Ready(resp) = poll {
-            match resp {
-                Ok(v) => {
-                    // record goodput and latency
-                }
-                Err(e) => {
-                    if e.code() == Code::DeadlineExceeded {
-                        // record ddl exceeded
-                    }
-                }
-            }
-        }
-
         None
+
+        // if self.method.id() == "/frontend.Frontend/HandleSearch" {
+        //     if let Poll::Ready(resp) = poll {
+        //         let request_id = self.ctx.request_id();
+        //         let graph_id = self.ctx.graph_id();
+        //         let slo = 0; // [TODO]
+        //         let latency = self.request_start.elapsed().as_micros();
+        //         let error = resp.is_err();
+        //         log::warn!(
+        //             "{},{},{},{},{},{}",
+        //             self.method.id(),
+        //             request_id,
+        //             graph_id,
+        //             slo,
+        //             latency,
+        //             error
+        //         );
+        //     }
+        // }
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {

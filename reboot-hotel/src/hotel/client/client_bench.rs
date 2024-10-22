@@ -185,12 +185,25 @@ impl LoadGenerator {
                         let latency = recv_at - send_at;
                         if Instant::now() > trace_at {
                             let error = response.is_err();
-                            let span = Span::new(request_id, graph_id, slo, latency, error);
+                            let fe_latency = {
+                                if !error {
+                                    let response = response.unwrap();
+                                    let ctx = response.metadata().get_ctx("ctx").unwrap();
+                                    ctx.frontend_elapse().unwrap()
+                                } else {
+                                    0
+                                }
+                            };
+                            let span =
+                                Span::new(request_id, graph_id, slo, latency, fe_latency, error);
                             trace_tx.try_send(span).unwrap();
                         }
                     }
                     Err(_) => {
-                        log::warn!("Request timed out after 3 seconds");
+                        if Instant::now() > trace_at {
+                            let span = Span::new(request_id, graph_id, slo, 0, 0, true);
+                            trace_tx.try_send(span).unwrap();
+                        }
                     }
                 }
             });

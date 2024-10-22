@@ -112,27 +112,33 @@ def plot_pdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
 
 
 def plot_goodput(results: List[Dict[str, Any]], fig_name: str):
-    rps_values = [res["rps"] for res in results]
-    goodput_values = [res["goodput"] for res in results]
+    rps_values = [result["rps"] for result in results]
+    goodputs_load_gen = [result["goodput_load_gen"] for result in results]
+    goodputs_fe = [result["goodput_fe"] for result in results]
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(rps_values, goodput_values, color="tab:blue")
+    fig = plt.figure(figsize=(10, 6))
 
-    ax.set_title("Goodput vs RPS", fontsize=fontsize)
-    ax.set_xlabel("RPS (Requests per Second)", fontsize=fontsize)
-    ax.set_ylabel("Goodput", fontsize=fontsize)
+    plt.plot(
+        rps_values,
+        goodputs_load_gen,
+        label="Goodput Load Gen",
+        color=COLORS[0],
+        marker="o",
+    )
+    plt.plot(
+        rps_values,
+        goodputs_fe,
+        label="Goodput FE",
+        color=COLORS[1],
+        marker="x",
+    )
 
-    for i, value in enumerate(goodput_values):
-        ax.text(
-            rps_values[i],
-            value,
-            value,
-            ha="center",
-            va="bottom",
-            fontsize=fontsize - 3,
-        )
-
-    plt.grid(True, axis="y", linestyle="--", alpha=0.7)
+    plt.xlabel("RPS")
+    plt.ylabel("Goodput")
+    plt.ylim(0, 1500)
+    plt.title("Goodput vs RPS")
+    plt.legend()
+    plt.grid(True)
     plt.savefig(fig_name)
     plt.show()
 
