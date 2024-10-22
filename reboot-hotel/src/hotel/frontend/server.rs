@@ -47,11 +47,7 @@ impl Frontend for FrontendImpl {
 
         let mut search_client = self.search_client.clone();
         let span_request = search::NearbyRequest { ave: request.ave };
-        let span_response = search_client.handle_nearby(span_request).await;
-        if span_response.is_err() {
-            return Err(span_response.unwrap_err());
-        }
-        let span_response = span_response.expect("Failed to call search::nearby");
+        let span_response = search_client.handle_nearby(span_request).await?;
         let response = span_response.into_inner();
 
         // [TODO] Reserve.
@@ -62,11 +58,7 @@ impl Frontend for FrontendImpl {
         let profile_request = profile::ProfileRequest {
             hotels: response.hotels,
         };
-        let profile_response = profile_client.handle_get_profiles(profile_request).await;
-        if profile_response.is_err() {
-            return Err(profile_response.unwrap_err());
-        }
-        let profile_response = profile_response.expect("Failed to call profile::get_profiles");
+        let profile_response = profile_client.handle_get_profiles(profile_request).await?;
         let response = profile_response.into_inner();
 
         let mut hotels = Vec::new();
