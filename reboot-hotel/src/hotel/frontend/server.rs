@@ -10,6 +10,8 @@ pub mod hotel {
     }
 }
 
+use std::time::Instant;
+
 use tonic::{transport::Channel, Request, Response, Status};
 
 use hotel::{
@@ -43,6 +45,8 @@ impl Frontend for FrontendImpl {
         &self,
         request: Request<frontend::SearchRequest>,
     ) -> Result<Response<frontend::SearchResponse>, Status> {
+        let request_start = Instant::now();
+        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let request = request.into_inner();
 
         let mut search_client = self.search_client.clone();
@@ -67,7 +71,13 @@ impl Frontend for FrontendImpl {
                 name: profile.hotel,
             });
         }
+
         let response = frontend::SearchResponse { hotels };
-        Ok(Response::new(response))
+
+        let mut response = Response::new(response);
+        ctx.set_frontend_elapse(request_start.elapsed().as_micros() as u64);
+        response.metadata_mut().insert_ctx("ctx", &ctx);
+
+        Ok(response)
     }
 }
