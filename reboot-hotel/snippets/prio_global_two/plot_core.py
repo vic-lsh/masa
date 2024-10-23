@@ -135,7 +135,7 @@ def plot_goodput(results: List[Dict[str, Any]], fig_name: str):
 
     plt.xlabel("RPS")
     plt.ylabel("Goodput")
-    plt.ylim(0, 1500)
+    plt.ylim(0, 2200)
     plt.title("Goodput vs RPS")
     plt.legend()
     plt.grid(True)
@@ -183,7 +183,7 @@ def plot_throughput(results: List[Dict[str, Any]], fig_name: str):
 
     plt.xlabel("RPS")
     plt.ylabel("Throughput")
-    plt.ylim(0, 1500)
+    plt.ylim(0, 2200)
     plt.title("Throughput vs RPS")
     plt.legend()
     plt.grid(True)

@@ -37,7 +37,7 @@ for mode in MODES:
 
                 df_filtered = df[
                     (df["graph_id"] == graph_id)
-                    & (df["fe_latency"] <= cfg["Slo"])
+                    & (df["latency_fe"] <= cfg["Slo"])
                     & (df["error"] == False)
                 ]
                 result["goodput_fe"] = round(len(df_filtered) / cfg["DurationSecs"])
@@ -55,6 +55,6 @@ for mode in MODES:
                     result["goodput_per_rps"].append(goodput_per_rps)
 
                 rps_to_results.append(result)
-                # plot_goodput_per_rps(result, f"goodput_rps_{rps}_per_rps_{r}.png")
+                # plot_goodput_per_rps(result, f"fig_goodput_rps_{rps}_per_rps_{r}.png")
 
-        plot_goodput(rps_to_results, f"goodput_rps_{r}.png")
+        plot_goodput(rps_to_results, f"fig_goodput_rps_{r}.png")

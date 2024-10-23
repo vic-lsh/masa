@@ -48,4 +48,4 @@ for mode in MODES:
 
                 rps_to_results.append(result)
 
-        plot_throughput(rps_to_results, f"throughput_rps_{r}.png")
+        plot_throughput(rps_to_results, f"fig_throughput_rps_{r}.png")
