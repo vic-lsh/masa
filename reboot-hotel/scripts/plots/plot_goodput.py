@@ -2,7 +2,12 @@ import json
 from typing import *
 
 import pandas as pd
-from plot_core import GRAPH_IDS, parse_args, plot_goodput  # type: ignore
+from plot_core import (  # type: ignore
+    GRAPH_IDS,
+    parse_args,
+    plot_goodput_bar,
+    plot_goodput_line,
+)
 
 args = parse_args()
 cfg = json.load(open(f"{args.path}/gen_config.json"))
@@ -47,4 +52,9 @@ for r in range(cfg["Repeats"]):
             rps_to_results.append(result)
             # plot_goodput_per_rps(result, f"fig_goodput_rps_{rps}_per_rps_{r}.png")
 
-    plot_goodput(rps_to_results, f"{args.path}/fig_goodput_rps_{r}.png", args.mode)
+    plot_goodput_line(
+        rps_to_results, f"{args.path}/fig_goodput_line_rps_{r}.png", args.mode
+    )
+    plot_goodput_bar(
+        rps_to_results, f"{args.path}/fig_goodput_bar_rps_{r}.png", args.mode
+    )
