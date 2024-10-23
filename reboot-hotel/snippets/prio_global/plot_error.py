@@ -33,6 +33,12 @@ for r in range(cfg["Repeats"]):
             ]
             result["error_search"] = round(len(df_filtered) / cfg["DurationSecs"])
 
+            df_filtered = df[
+                (df["graph_id"] == graph_id)
+                & (df["error"] == "/profile.Profile/HandleGetProfiles")
+            ]
+            result["error_profile"] = round(len(df_filtered) / cfg["DurationSecs"])
+
             rps_to_results.append(result)
 
     plot_error(rps_to_results, f"fig_error_rps_{r}.png")

@@ -19,6 +19,7 @@ plt.rcParams.update(
 
 GRAPH_IDS = ["Hotel"]
 COLORS = ["tab:blue", "tab:orange", "tab:purple", "tab:red"]
+MARKERS = ["o", "x", "^", "*"]
 
 
 def plot_cdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
@@ -122,14 +123,14 @@ def plot_goodput(results: List[Dict[str, Any]], fig_name: str):
         goodputs_load_gen,
         label="Goodput Load Gen",
         color=COLORS[0],
-        marker="o",
+        marker=MARKERS[0],
     )
     plt.plot(
         rps_values,
         goodputs_fe,
         label="Goodput FE",
         color=COLORS[1],
-        marker="x",
+        marker=MARKERS[1],
     )
 
     plt.xlabel("RPS")
@@ -156,28 +157,28 @@ def plot_throughput(results: List[Dict[str, Any]], fig_name: str):
         tput_all,
         label="Throughput All",
         color=COLORS[0],
-        marker="o",
+        marker=MARKERS[0],
     )
     plt.plot(
         rps_values,
         tput_good,
         label="Throughput Good",
         color=COLORS[1],
-        marker="x",
+        marker=MARKERS[1],
     )
     plt.plot(
         rps_values,
         tput_neutral,
         label="Throughput Neutral",
         color=COLORS[2],
-        marker="^",
+        marker=MARKERS[2],
     )
     plt.plot(
         rps_values,
         tput_error,
         label="Throughput Error",
         color=COLORS[3],
-        marker=".",
+        marker=MARKERS[3],
     )
 
     plt.xlabel("RPS")
@@ -193,8 +194,9 @@ def plot_throughput(results: List[Dict[str, Any]], fig_name: str):
 def plot_error(results: List[Dict[str, Any]], fig_name: str):
     rps_values = [result["rps"] for result in results]
     error_all = [result["error_all"] for result in results]
-    error_load_gen = [result["error_load_gen"] for result in results]
     error_search = [result["error_search"] for result in results]
+    error_profile = [result["error_profile"] for result in results]
+    error_load_gen = [result["error_load_gen"] for result in results]
 
     fig = plt.figure(figsize=(10, 6))
 
@@ -203,21 +205,28 @@ def plot_error(results: List[Dict[str, Any]], fig_name: str):
         error_all,
         label="Error All",
         color=COLORS[0],
-        marker="o",
-    )
-    plt.plot(
-        rps_values,
-        error_load_gen,
-        label="Error Load Gen",
-        color=COLORS[1],
-        marker="x",
+        marker=MARKERS[0],
     )
     plt.plot(
         rps_values,
         error_search,
         label="Error Search",
+        color=COLORS[1],
+        marker=MARKERS[1],
+    )
+    plt.plot(
+        rps_values,
+        error_profile,
+        label="Error Profile",
         color=COLORS[2],
-        marker="^",
+        marker=MARKERS[2],
+    )
+    plt.plot(
+        rps_values,
+        error_load_gen,
+        label="Error Load Gen",
+        color=COLORS[3],
+        marker=MARKERS[3],
     )
 
     plt.xlabel("RPS")
