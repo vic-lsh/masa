@@ -2,7 +2,12 @@ import json
 from typing import *
 
 import pandas as pd
-from plot_core import GRAPH_IDS, parse_args, plot_error  # type: ignore
+from plot_core import (  # type: ignore
+    GRAPH_IDS,
+    parse_args,
+    plot_error_bar,
+    plot_error_line,
+)
 
 args = parse_args()
 cfg = json.load(open(f"{args.path}/gen_config.json"))
@@ -38,4 +43,7 @@ for r in range(cfg["Repeats"]):
 
             rps_to_results.append(result)
 
-    plot_error(rps_to_results, f"{args.path}/fig_error_rps_{r}.png", args.mode)
+    plot_error_line(
+        rps_to_results, f"{args.path}/fig_error_line_rps_{r}.png", args.mode
+    )
+    plot_error_bar(rps_to_results, f"{args.path}/fig_error_bar_rps_{r}.png", args.mode)
