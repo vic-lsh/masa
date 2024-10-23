@@ -17,7 +17,6 @@ plt.rcParams.update(
     }
 )
 
-MODES = ["prio_global_two"]
 GRAPH_IDS = ["Hotel"]
 COLORS = ["tab:blue", "tab:orange", "tab:purple", "tab:red"]
 
@@ -135,7 +134,7 @@ def plot_goodput(results: List[Dict[str, Any]], fig_name: str):
 
     plt.xlabel("RPS")
     plt.ylabel("Goodput")
-    plt.ylim(0, 2200)
+    plt.ylim(-200, 2200)
     plt.title("Goodput vs RPS")
     plt.legend()
     plt.grid(True)
@@ -183,8 +182,48 @@ def plot_throughput(results: List[Dict[str, Any]], fig_name: str):
 
     plt.xlabel("RPS")
     plt.ylabel("Throughput")
-    plt.ylim(0, 2200)
+    plt.ylim(-200, 2200)
     plt.title("Throughput vs RPS")
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(fig_name)
+    plt.show()
+
+
+def plot_error(results: List[Dict[str, Any]], fig_name: str):
+    rps_values = [result["rps"] for result in results]
+    error_all = [result["error_all"] for result in results]
+    error_load_gen = [result["error_load_gen"] for result in results]
+    error_search = [result["error_search"] for result in results]
+
+    fig = plt.figure(figsize=(10, 6))
+
+    plt.plot(
+        rps_values,
+        error_all,
+        label="Error All",
+        color=COLORS[0],
+        marker="o",
+    )
+    plt.plot(
+        rps_values,
+        error_load_gen,
+        label="Error Load Gen",
+        color=COLORS[1],
+        marker="x",
+    )
+    plt.plot(
+        rps_values,
+        error_search,
+        label="Error Search",
+        color=COLORS[2],
+        marker="^",
+    )
+
+    plt.xlabel("RPS")
+    plt.ylabel("Error")
+    plt.ylim(-200, 2200)
+    plt.title("Error vs RPS")
     plt.legend()
     plt.grid(True)
     plt.savefig(fig_name)
