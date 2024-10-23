@@ -2,7 +2,12 @@ import json
 from typing import *
 
 import pandas as pd
-from plot_core import GRAPH_IDS, parse_args, plot_throughput  # type: ignore
+from plot_core import (  # type: ignore
+    GRAPH_IDS,
+    parse_args,
+    plot_throughput_bar,
+    plot_throughput_line,
+)
 
 args = parse_args()
 cfg = json.load(open(f"{args.path}/gen_config.json"))
@@ -40,4 +45,9 @@ for r in range(cfg["Repeats"]):
 
             rps_to_results.append(result)
 
-    plot_throughput(rps_to_results, f"{args.path}/fig_throughput_rps_{r}.png", args.mode)
+    plot_throughput_line(
+        rps_to_results, f"{args.path}/fig_throughput_line_rps_{r}.png", args.mode
+    )
+    plot_throughput_bar(
+        rps_to_results, f"{args.path}/fig_throughput_bar_rps_{r}.png", args.mode
+    )

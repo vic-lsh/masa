@@ -7,6 +7,7 @@ import numpy as np
 
 plt.rcParams["font.family"] = "Roboto"
 fontsize = 17
+fontsize_small = 13
 plt.rcParams.update(
     {
         "font.size": fontsize,
@@ -31,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def plot_goodput(results: List[Dict[str, Any]], fig_name: str, mode: str):
+def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     goodputs_load_gen = [result["goodput_load_gen"] for result in results]
     goodputs_fe = [result["goodput_fe"] for result in results]
@@ -57,13 +58,55 @@ def plot_goodput(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.ylabel("Goodput")
     plt.ylim(-200, 2200)
     plt.title(f"Goodput vs RPS ({mode})")
-    plt.legend(loc="upper left")
+    plt.legend(loc="upper left", fontsize=fontsize_small)
     plt.grid(True)
     plt.savefig(fig_name)
     plt.show()
 
 
-def plot_throughput(results: List[Dict[str, Any]], fig_name: str, mode: str):
+def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
+    rps_values = [result["rps"] for result in results]
+    goodputs_load_gen = [result["goodput_load_gen"] for result in results]
+    goodputs_fe = [result["goodput_fe"] for result in results]
+
+    x = np.arange(len(rps_values))
+    width = 0.3
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    rects1 = ax.bar(x - width * 0.5, goodputs_load_gen, width, label="Goodput Load Gen")
+    rects2 = ax.bar(x + width * 0.5, goodputs_fe, width, label="Goodput FE")
+
+    ax.set_xlabel("RPS")
+    ax.set_ylabel("Goodput")
+    ax.set_title(f"Goodput vs RPS ({mode})")
+    ax.set_xticks(x)
+    ax.set_xticklabels(rps_values)
+    ax.legend(loc="upper left", fontsize=fontsize_small)
+
+    def autolabel(rects):
+        for rect in rects:
+            height = rect.get_height()
+            ax.annotate(
+                "{}".format(height),
+                xy=(rect.get_x() + rect.get_width() / 2, height),
+                xytext=(0, 3),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=13,
+            )
+
+    autolabel(rects1)
+    autolabel(rects2)
+
+    fig.tight_layout()
+    plt.ylim(-200, 2200)
+    plt.grid(True, linestyle="--", linewidth=0.5)
+    plt.savefig(fig_name)
+    plt.show()
+
+
+def plot_throughput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     tput_all = [result["tput_all"] for result in results]
     tput_good = [result["tput_good"] for result in results]
@@ -105,13 +148,61 @@ def plot_throughput(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.ylabel("Throughput")
     plt.ylim(-200, 2200)
     plt.title(f"Throughput vs RPS ({mode})")
-    plt.legend(loc="upper left")
+    plt.legend(loc="upper left", fontsize=fontsize_small)
     plt.grid(True)
     plt.savefig(fig_name)
     plt.show()
 
 
-def plot_error(results: List[Dict[str, Any]], fig_name: str, mode: str):
+def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
+    rps_values = [result["rps"] for result in results]
+    tput_all = [result["tput_all"] for result in results]
+    tput_good = [result["tput_good"] for result in results]
+    tput_neutral = [result["tput_neutral"] for result in results]
+    tput_error = [result["tput_error"] for result in results]
+
+    x = np.arange(len(rps_values))
+    width = 0.23
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    rects1 = ax.bar(x - width * 1.5, tput_all, width, label="Throughput All")
+    rects2 = ax.bar(x - width * 0.5, tput_good, width, label="Throughput Good")
+    rects3 = ax.bar(x + width * 0.5, tput_neutral, width, label="Throughput Neutral")
+    rects4 = ax.bar(x + width * 1.5, tput_error, width, label="Throughput Error")
+
+    ax.set_xlabel("RPS")
+    ax.set_ylabel("Throughput")
+    ax.set_title(f"Throughput vs RPS ({mode})")
+    ax.set_xticks(x)
+    ax.set_xticklabels(rps_values)
+    ax.legend(loc="upper left", fontsize=fontsize_small)
+
+    def autolabel(rects):
+        for rect in rects:
+            height = rect.get_height()
+            ax.annotate(
+                "{}".format(height),
+                xy=(rect.get_x() + rect.get_width() / 2, height),
+                xytext=(0, 3),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=13,
+            )
+
+    autolabel(rects1)
+    autolabel(rects2)
+    autolabel(rects3)
+    autolabel(rects4)
+
+    fig.tight_layout()
+    plt.ylim(-200, 2200)
+    plt.grid(True, linestyle="--", linewidth=0.5)
+    plt.savefig(fig_name)
+    plt.show()
+
+
+def plot_error_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     error_all = [result["error_all"] for result in results]
     error_search = [result["error_search"] for result in results]
@@ -153,8 +244,56 @@ def plot_error(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.ylabel("Error")
     plt.ylim(-200, 2200)
     plt.title(f"Error vs RPS ({mode})")
-    plt.legend(loc="upper left")
+    plt.legend(loc="upper left", fontsize=fontsize_small)
     plt.grid(True)
+    plt.savefig(fig_name)
+    plt.show()
+
+
+def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
+    rps_values = [result["rps"] for result in results]
+    error_all = [result["error_all"] for result in results]
+    error_search = [result["error_search"] for result in results]
+    error_profile = [result["error_profile"] for result in results]
+    error_load_gen = [result["error_load_gen"] for result in results]
+
+    x = np.arange(len(rps_values))
+    width = 0.23
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    rects1 = ax.bar(x - width * 1.5, error_all, width, label="Error All")
+    rects2 = ax.bar(x - width * 0.5, error_search, width, label="Error Search")
+    rects3 = ax.bar(x + width * 0.5, error_profile, width, label="Error Profile")
+    rects4 = ax.bar(x + width * 1.5, error_load_gen, width, label="Error Load Gen")
+
+    ax.set_xlabel("RPS")
+    ax.set_ylabel("Error")
+    ax.set_title(f"Error vs RPS ({mode})")
+    ax.set_xticks(x)
+    ax.set_xticklabels(rps_values)
+    ax.legend(loc="upper left", fontsize=fontsize_small)
+
+    def autolabel(rects):
+        for rect in rects:
+            height = rect.get_height()
+            ax.annotate(
+                "{}".format(height),
+                xy=(rect.get_x() + rect.get_width() / 2, height),
+                xytext=(0, 3),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=13,
+            )
+
+    autolabel(rects1)
+    autolabel(rects2)
+    autolabel(rects3)
+    autolabel(rects4)
+
+    fig.tight_layout()
+    plt.ylim(-200, 2200)
+    plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
     plt.show()
 
