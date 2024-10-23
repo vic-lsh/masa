@@ -40,4 +40,4 @@ for r in range(cfg["Repeats"]):
 
             rps_to_results.append(result)
 
-    plot_throughput(rps_to_results, f"{args.path}/fig_throughput_rps_{r}.png")
+    plot_throughput(rps_to_results, f"{args.path}/fig_throughput_rps_{r}.png", args.mode)
