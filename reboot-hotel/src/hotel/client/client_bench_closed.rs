@@ -17,7 +17,7 @@ use crossbeam_channel::{unbounded, Sender};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp, Uniform};
 use structopt::StructOpt;
-use tokio::time::{Duration, Instant};
+use tokio::time::{timeout, Duration, Instant};
 
 use tonic::transport::Channel;
 use tonic_masa::{
@@ -191,21 +191,48 @@ impl LoadGenerator {
                 request
             };
 
-            let token = self.token.clone();
-            counter.fetch_add(1, Ordering::Relaxed);
+            // [TODO] Fix token.
+            // let token = self.token.clone();
 
+            counter.fetch_add(1, Ordering::Relaxed);
             let mut client = self.client.clone();
             let trace_tx = self.trace_tx.clone();
+
             tokio::task::spawn(async move {
                 let send_at = time_now();
-                let response = client.handle_search(request).await;
-                let recv_at = time_now();
-                let latency = recv_at - send_at;
-                token.fetch_add(1, Ordering::SeqCst);
-                if Instant::now() > trace_at {
-                    let error = response.is_err();
-                    let span = Span::new(request_id, graph_id, slo, latency, 0, error);
-                    trace_tx.try_send(span).unwrap();
+                let timeout_duration = Duration::from_secs(1);
+                match timeout(timeout_duration, client.handle_search(request)).await {
+                    Ok(response) => {
+                        if Instant::now() > trace_at {
+                            let recv_at = time_now();
+                            let latency = recv_at - send_at;
+                            let fe_latency = {
+                                if let Some(response) = response.as_ref().ok() {
+                                    let ctx = response.metadata().get_ctx("ctx").unwrap();
+                                    ctx.frontend_elapse().unwrap()
+                                } else {
+                                    0
+                                }
+                            };
+                            let error = {
+                                if let Err(ref status) = response {
+                                    status.message().to_string()
+                                } else {
+                                    "/None".to_string()
+                                }
+                            };
+                            let span =
+                                Span::new(request_id, graph_id, slo, latency, fe_latency, error);
+                            trace_tx.try_send(span).unwrap();
+                        }
+                    }
+                    Err(_) => {
+                        if Instant::now() > trace_at {
+                            let error = "/LoadGen".to_string();
+                            let span = Span::new(request_id, graph_id, slo, 0, 0, error);
+                            trace_tx.try_send(span).unwrap();
+                        }
+                    }
                 }
             });
         }

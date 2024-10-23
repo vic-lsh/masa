@@ -96,10 +96,7 @@ impl SimpleParentContext {
 
     #[inline]
     fn issue_early_return<T>(&self) -> Result<Response<T>, Status> {
-        Err(Status::new(
-            Code::DeadlineExceeded,
-            "Could not complete the request before its deadline",
-        ))
+        Err(Status::new(Code::DeadlineExceeded, self.method.id()))
     }
 }
 

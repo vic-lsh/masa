@@ -181,17 +181,22 @@ impl LoadGenerator {
                 let timeout_duration = Duration::from_secs(1);
                 match timeout(timeout_duration, client.handle_search(request)).await {
                     Ok(response) => {
-                        let recv_at = time_now();
-                        let latency = recv_at - send_at;
                         if Instant::now() > trace_at {
-                            let error = response.is_err();
+                            let recv_at = time_now();
+                            let latency = recv_at - send_at;
                             let fe_latency = {
-                                if !error {
-                                    let response = response.unwrap();
+                                if let Some(response) = response.as_ref().ok() {
                                     let ctx = response.metadata().get_ctx("ctx").unwrap();
                                     ctx.frontend_elapse().unwrap()
                                 } else {
                                     0
+                                }
+                            };
+                            let error = {
+                                if let Err(ref status) = response {
+                                    status.message().to_string()
+                                } else {
+                                    "/None".to_string()
                                 }
                             };
                             let span =
@@ -201,7 +206,8 @@ impl LoadGenerator {
                     }
                     Err(_) => {
                         if Instant::now() > trace_at {
-                            let span = Span::new(request_id, graph_id, slo, 0, 0, true);
+                            let error = "/LoadGen".to_string();
+                            let span = Span::new(request_id, graph_id, slo, 0, 0, error);
                             trace_tx.try_send(span).unwrap();
                         }
                     }

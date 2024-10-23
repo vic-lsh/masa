@@ -83,7 +83,7 @@ pub struct Span {
     slo: u64,
     latency: u64,
     latency_fe: u64,
-    error: bool,
+    error: String,
 }
 
 #[allow(dead_code)]
@@ -94,7 +94,7 @@ impl Span {
         slo: u64,
         latency: u64,
         latency_fe: u64,
-        error: bool,
+        error: String,
     ) -> Self {
         Self {
             request_id,
