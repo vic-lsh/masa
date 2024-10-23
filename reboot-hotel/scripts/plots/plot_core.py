@@ -1,3 +1,4 @@
+import argparse
 from typing import *
 
 import matplotlib.pyplot as plt
@@ -22,93 +23,11 @@ COLORS = ["tab:blue", "tab:orange", "tab:purple", "tab:red"]
 MARKERS = ["o", "x", "^", "*"]
 
 
-def plot_cdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
-    assert len(results) <= 3, "Only 3 colors available"
-
-    fig = plt.figure(figsize=(10, 6))
-
-    for i in range(len(results)):
-        label, latencies = results[i]
-        latencies_ms = [latency / 1e3 for latency in latencies]
-        latencies_ms.sort()
-        cdf = np.arange(1, len(latencies_ms) + 1) / len(latencies_ms)
-        plt.plot(latencies_ms, cdf, label=label, color=COLORS[i])
-
-        # p90 = float(np.percentile(latencies_ms, 90))
-        # plt.axvline(
-        #     x=p90,
-        #     linestyle="--",
-        #     label=f"{label} p90: {p90:.2f}ms",
-        #     color="forestgreen",
-        # )
-        # plt.scatter([p90], [0.90], color="forestgreen")
-        p95 = float(np.percentile(latencies_ms, 95))
-        plt.axvline(
-            x=p95,
-            linestyle="--",
-            label=f"{label} p95: {p95:.2f}ms",
-            color="forestgreen",
-        )
-        plt.scatter([p95], [0.95], color="forestgreen")
-
-    plt.xlabel("Latency (ms)")
-    plt.ylabel("CDF")
-    plt.title(title)
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(fig_name)
-    plt.show()
-
-
-def plot_pdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
-    assert len(results) <= 3, "Only 3 colors available"
-
-    fig = plt.figure(figsize=(10, 6))
-
-    for i in range(len(results)):
-        label, latencies = results[i]
-        latencies_ms = [latency / 1e3 for latency in latencies]
-        latencies_ms.sort()
-
-        counts, bin_edges = np.histogram(latencies_ms, bins=1000, density=False)
-        bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
-        # Calculate sum value S[X] = sum(x * c(x))
-        sum_value = np.sum(bin_centers * counts)
-        # Calculate expected value E[X] = sum(x * c(x) / sum(c(x)))
-        sum_counts = np.sum(counts)
-        mean_value = np.sum(bin_centers * counts / sum_counts)
-
-        plt.hist(
-            latencies_ms,
-            bins=1000,
-            density=False,
-            histtype="step",
-            label=f"{label}",
-            color=COLORS[i],
-        )
-
-        plt.plot(
-            [],
-            [],
-            " ",
-            label=f"{label} counts: {sum_counts}",
-            color="forestgreen",
-        )
-        plt.plot(
-            [],
-            [],
-            " ",
-            label=f"{label} mean: {mean_value:.2f}ms",
-            color="forestgreen",
-        )
-
-    plt.xlabel("Latency (ms)")
-    plt.ylabel("Counts")
-    plt.title(title)
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(fig_name)
-    plt.show()
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--path", type=str, required=True)
+    args = parser.parse_args()
+    return args
 
 
 def plot_goodput(results: List[Dict[str, Any]], fig_name: str):
@@ -248,6 +167,95 @@ def plot_goodput_per_rps(result: Dict[str, Any], fig_name: str):
     ax.set_ylabel("Goodput", fontsize=fontsize)
 
     plt.grid(True, linestyle="--", alpha=0.7)
+    plt.savefig(fig_name)
+    plt.show()
+
+
+def plot_cdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
+    assert len(results) <= 3, "Only 3 colors available"
+
+    fig = plt.figure(figsize=(10, 6))
+
+    for i in range(len(results)):
+        label, latencies = results[i]
+        latencies_ms = [latency / 1e3 for latency in latencies]
+        latencies_ms.sort()
+        cdf = np.arange(1, len(latencies_ms) + 1) / len(latencies_ms)
+        plt.plot(latencies_ms, cdf, label=label, color=COLORS[i])
+
+        # p90 = float(np.percentile(latencies_ms, 90))
+        # plt.axvline(
+        #     x=p90,
+        #     linestyle="--",
+        #     label=f"{label} p90: {p90:.2f}ms",
+        #     color="forestgreen",
+        # )
+        # plt.scatter([p90], [0.90], color="forestgreen")
+        p95 = float(np.percentile(latencies_ms, 95))
+        plt.axvline(
+            x=p95,
+            linestyle="--",
+            label=f"{label} p95: {p95:.2f}ms",
+            color="forestgreen",
+        )
+        plt.scatter([p95], [0.95], color="forestgreen")
+
+    plt.xlabel("Latency (ms)")
+    plt.ylabel("CDF")
+    plt.title(title)
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(fig_name)
+    plt.show()
+
+
+def plot_pdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
+    assert len(results) <= 3, "Only 3 colors available"
+
+    fig = plt.figure(figsize=(10, 6))
+
+    for i in range(len(results)):
+        label, latencies = results[i]
+        latencies_ms = [latency / 1e3 for latency in latencies]
+        latencies_ms.sort()
+
+        counts, bin_edges = np.histogram(latencies_ms, bins=1000, density=False)
+        bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+        # Calculate sum value S[X] = sum(x * c(x))
+        sum_value = np.sum(bin_centers * counts)
+        # Calculate expected value E[X] = sum(x * c(x) / sum(c(x)))
+        sum_counts = np.sum(counts)
+        mean_value = np.sum(bin_centers * counts / sum_counts)
+
+        plt.hist(
+            latencies_ms,
+            bins=1000,
+            density=False,
+            histtype="step",
+            label=f"{label}",
+            color=COLORS[i],
+        )
+
+        plt.plot(
+            [],
+            [],
+            " ",
+            label=f"{label} counts: {sum_counts}",
+            color="forestgreen",
+        )
+        plt.plot(
+            [],
+            [],
+            " ",
+            label=f"{label} mean: {mean_value:.2f}ms",
+            color="forestgreen",
+        )
+
+    plt.xlabel("Latency (ms)")
+    plt.ylabel("Counts")
+    plt.title(title)
+    plt.legend()
+    plt.grid(True)
     plt.savefig(fig_name)
     plt.show()
 
