@@ -26,11 +26,12 @@ MARKERS = ["o", "x", "^", "*"]
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--path", type=str, required=True)
+    parser.add_argument("--mode", type=str, required=True)
     args = parser.parse_args()
     return args
 
 
-def plot_goodput(results: List[Dict[str, Any]], fig_name: str):
+def plot_goodput(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     goodputs_load_gen = [result["goodput_load_gen"] for result in results]
     goodputs_fe = [result["goodput_fe"] for result in results]
@@ -55,14 +56,14 @@ def plot_goodput(results: List[Dict[str, Any]], fig_name: str):
     plt.xlabel("RPS")
     plt.ylabel("Goodput")
     plt.ylim(-200, 2200)
-    plt.title("Goodput vs RPS")
-    plt.legend()
+    plt.title(f"Goodput vs RPS ({mode})")
+    plt.legend(loc="upper left")
     plt.grid(True)
     plt.savefig(fig_name)
     plt.show()
 
 
-def plot_throughput(results: List[Dict[str, Any]], fig_name: str):
+def plot_throughput(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     tput_all = [result["tput_all"] for result in results]
     tput_good = [result["tput_good"] for result in results]
@@ -103,14 +104,14 @@ def plot_throughput(results: List[Dict[str, Any]], fig_name: str):
     plt.xlabel("RPS")
     plt.ylabel("Throughput")
     plt.ylim(-200, 2200)
-    plt.title("Throughput vs RPS")
-    plt.legend()
+    plt.title(f"Throughput vs RPS ({mode})")
+    plt.legend(loc="upper left")
     plt.grid(True)
     plt.savefig(fig_name)
     plt.show()
 
 
-def plot_error(results: List[Dict[str, Any]], fig_name: str):
+def plot_error(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     error_all = [result["error_all"] for result in results]
     error_search = [result["error_search"] for result in results]
@@ -151,8 +152,8 @@ def plot_error(results: List[Dict[str, Any]], fig_name: str):
     plt.xlabel("RPS")
     plt.ylabel("Error")
     plt.ylim(-200, 2200)
-    plt.title("Error vs RPS")
-    plt.legend()
+    plt.title(f"Error vs RPS ({mode})")
+    plt.legend(loc="upper left")
     plt.grid(True)
     plt.savefig(fig_name)
     plt.show()

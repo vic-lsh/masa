@@ -38,4 +38,4 @@ for r in range(cfg["Repeats"]):
 
             rps_to_results.append(result)
 
-    plot_error(rps_to_results, f"{args.path}/fig_error_rps_{r}.png")
+    plot_error(rps_to_results, f"{args.path}/fig_error_rps_{r}.png", args.mode)
