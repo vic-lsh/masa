@@ -17,16 +17,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let graph_id: GraphId = "Hotel".to_string();
     let request_id = 2024;
+    let slo = 10_000;
+    let request_class = 0;
+    let start_at = 0;
     let deadline = 10_000;
     let latest_exec_at = deadline;
-    let request_class = 0;
 
     let ctx = Context::new(
         graph_id.clone(),
         request_id,
+        slo,
+        request_class,
+        start_at,
         deadline,
         latest_exec_at,
-        request_class,
     );
 
     let mut request = Request::new(SearchRequest { ave: 61 });

@@ -143,12 +143,13 @@ impl LoadGenerator {
             let slo = self.gen_cfg.slo;
 
             let request = {
+                let start_at = time_now();
                 let deadline = {
                     if PRIO_GLOBAL || PRIO_GLOBAL_TWO || PRIO_LOCAL || PRIO_LOCAL_TWO {
                         // [DEPRECATED] Relative start time.
                         // let start_at = time_now() - init_at_u64;
                         // start_at + slo
-                        time_now() + slo
+                        start_at + slo
                     } else if FIFO_TWO || FIFO {
                         slo
                     } else {
@@ -156,12 +157,15 @@ impl LoadGenerator {
                     }
                 };
                 let latest_exec_at = deadline;
+
                 let ctx = Context::new(
                     graph_id.clone(),
                     request_id,
+                    slo,
+                    request_class,
+                    start_at,
                     deadline,
                     latest_exec_at,
-                    request_class,
                 );
 
                 let ave = (request_id % self.hotel_cfg.hotels as u64) as u32;

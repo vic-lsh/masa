@@ -1,15 +1,17 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{GraphId, RequestClass, RequestId, Timestamp};
+use crate::{GraphId, Latency, RequestClass, RequestId, Timestamp};
 
 /// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Context {
     graph_id: GraphId,
     request_id: RequestId,
+    slo: Latency,
+    request_class: RequestClass,
+    start_at: Timestamp,
     deadline: Timestamp,
     latest_exec_at: Timestamp,
-    request_class: RequestClass,
     frontend_elapse: Option<u64>,
 }
 
@@ -18,16 +20,20 @@ impl Context {
     pub fn new(
         graph_id: GraphId,
         request_id: RequestId,
+        slo: Latency,
+        request_class: RequestClass,
+        start_at: Timestamp,
         deadline: Timestamp,
         latest_exec_at: Timestamp,
-        request_class: RequestClass,
     ) -> Self {
         Self {
             graph_id,
             request_id,
+            slo,
+            request_class,
+            start_at,
             deadline,
             latest_exec_at,
-            request_class,
             frontend_elapse: None,
         }
     }
@@ -42,6 +48,21 @@ impl Context {
         self.request_id
     }
 
+    /// Get the SLO.
+    pub fn slo(&self) -> Latency {
+        self.slo
+    }
+
+    /// Get the request class.
+    pub fn request_class(&self) -> RequestClass {
+        self.request_class
+    }
+
+    /// Get the start timestamp.
+    pub fn start_at(&self) -> Timestamp {
+        self.start_at
+    }
+
     /// Get the deadline.
     pub fn deadline(&self) -> Timestamp {
         self.deadline
@@ -50,11 +71,6 @@ impl Context {
     /// Get the latest execution timestamp.
     pub fn latest_exec_at(&self) -> Timestamp {
         self.latest_exec_at
-    }
-
-    /// Get the request class.
-    pub fn request_class(&self) -> RequestClass {
-        self.request_class
     }
 
     /// Get the frontend elapse time.

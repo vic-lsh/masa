@@ -79,6 +79,7 @@ impl SpanTracker {
     }
 
     /// Estimate the latency.
+    #[inline]
     pub fn estimate(&self) -> Latency {
         if ONLINE_TRACKER {
             self.tracker.as_ref().unwrap().estimate()
@@ -88,6 +89,7 @@ impl SpanTracker {
     }
 
     /// Update the tracker.
+    #[inline]
     pub fn track(&mut self, latency: Latency) {
         if ONLINE_TRACKER {
             self.tracker.as_mut().unwrap().track(latency);
