@@ -16,6 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = FrontendClient::connect("http://[::1]:8660").await?;
 
     let graph_id: GraphId = "Hotel".to_string();
+    let test_id = 0;
     let request_id = 2024;
     let slo = 10_000;
     let request_class = 0;
@@ -25,6 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let ctx = Context::new(
         graph_id.clone(),
+        test_id,
         request_id,
         slo,
         request_class,

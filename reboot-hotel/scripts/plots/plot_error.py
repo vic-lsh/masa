@@ -23,11 +23,13 @@ for r in range(cfg["Repeats"]):
             result["rps"] = rps
             result["graph_id"] = graph_id
 
-            df_filtered = df[(df["graph_id"] == graph_id) & (df["error"] != "/None")]
-            result["error_all"] = round(len(df_filtered) / cfg["DurationSecs"])
+            df_filtered = df[(df["graph_id"] == graph_id) & (df["error"] == "/LGMiss")]
+            result["error_lg_miss"] = round(len(df_filtered) / cfg["DurationSecs"])
 
-            df_filtered = df[(df["graph_id"] == graph_id) & (df["error"] == "/LoadGen")]
-            result["error_load_gen"] = round(len(df_filtered) / cfg["DurationSecs"])
+            df_filtered = df[
+                (df["graph_id"] == graph_id) & (df["error"] == "/LGTimeout")
+            ]
+            result["error_lg_timeout"] = round(len(df_filtered) / cfg["DurationSecs"])
 
             df_filtered = df[
                 (df["graph_id"] == graph_id)
@@ -44,6 +46,6 @@ for r in range(cfg["Repeats"]):
             rps_to_results.append(result)
 
     plot_error_line(
-        rps_to_results, f"{args.path}/fig_error_line_rps_{r}.png", args.mode
+        rps_to_results, f"{args.path}/fig_error_rps_line_{r}.png", args.mode
     )
-    plot_error_bar(rps_to_results, f"{args.path}/fig_error_bar_rps_{r}.png", args.mode)
+    plot_error_bar(rps_to_results, f"{args.path}/fig_error_rps_bar_{r}.png", args.mode)
