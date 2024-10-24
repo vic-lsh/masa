@@ -17,6 +17,7 @@ use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response
 
 use super::{ChildContext, ClientStubHooks, RequestHandlerHooks, ServerContext};
 
+#[inline]
 fn time_now() -> u64 {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -87,8 +88,22 @@ impl SimpleParentContext {
     fn check_early_return(&self) -> bool {
         if self.method.id() != "/frontend.Frontend/HandleSearch" {
             // [NOTE] The frontend should not early return.
+            assert!(self.ctx.deadline() == self.ctx.start_at() + self.ctx.slo());
+            let now = time_now();
+            let check = now >= self.ctx.deadline();
+            if check {
+                log::warn!(
+                    "check_early_return, method: {:?}, request_id: {:?}, slo: {:?}, start_at: {:?}, deadline: {:?}, now: {:?}",
+                    self.method.id(),
+                    self.ctx.request_id(),
+                    self.ctx.slo(),
+                    self.ctx.start_at(),
+                    self.ctx.deadline(),
+                    now
+                );
+            }
             if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
-                return time_now() >= self.ctx.deadline();
+                return check;
             }
         }
         false
@@ -147,9 +162,11 @@ impl RequestHandlerHooks for SimpleParentContext {
         let child_recv_ctx = Context::new(
             self.ctx.graph_id().clone(),
             self.ctx.request_id(),
+            self.ctx.slo(),
+            self.ctx.request_class(),
+            self.ctx.start_at(),
             deadline,
             latest_exec_at,
-            self.ctx.request_class(),
         );
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
     }
