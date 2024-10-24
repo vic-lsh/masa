@@ -115,6 +115,7 @@ impl LoadGenerator {
             }
         });
 
+        let mut counter_test_id = 0;
         let mut elapse = 0f64;
         let exponential = Exp::new(self.rps as f64).unwrap();
         let uniform = Uniform::new(0, 1_000_000_007);
@@ -137,6 +138,8 @@ impl LoadGenerator {
             };
             elapse += value;
 
+            let test_id = counter_test_id;
+            counter_test_id += 1;
             let request_id = uniform.sample(&mut self.rng) as u64;
             let request_class = 0;
             let graph_id = self.graph_id.clone();
@@ -160,6 +163,7 @@ impl LoadGenerator {
 
                 let ctx = Context::new(
                     graph_id.clone(),
+                    test_id,
                     request_id,
                     slo,
                     request_class,
@@ -199,19 +203,22 @@ impl LoadGenerator {
                             let error = {
                                 if let Err(ref status) = response {
                                     status.message().to_string()
+                                } else if latency > slo {
+                                    "/LGMiss".to_string()
                                 } else {
                                     "/None".to_string()
                                 }
                             };
-                            let span =
-                                Span::new(request_id, graph_id, slo, latency, fe_latency, error);
+                            let span = Span::new(
+                                test_id, request_id, graph_id, slo, latency, fe_latency, error,
+                            );
                             trace_tx.try_send(span).unwrap();
                         }
                     }
                     Err(_) => {
                         if Instant::now() > trace_at {
-                            let error = "/LoadGen".to_string();
-                            let span = Span::new(request_id, graph_id, slo, 0, 0, error);
+                            let error = "/LGTimeout".to_string();
+                            let span = Span::new(test_id, request_id, graph_id, slo, 0, 0, error);
                             trace_tx.try_send(span).unwrap();
                         }
                     }

@@ -76,6 +76,7 @@ impl LoadGenerator {
                 loop {
                     rps_cnt.fetch_add(1, Ordering::Relaxed);
 
+                    let test_id = 0;
                     let request_id = uniform.sample(&mut rng);
                     let start_at = time_now();
                     let slo = 10_000;
@@ -85,6 +86,7 @@ impl LoadGenerator {
 
                     let ctx = Context::new(
                         graph_id.clone(),
+                        test_id,
                         request_id,
                         slo,
                         request_class,

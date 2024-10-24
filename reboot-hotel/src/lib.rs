@@ -78,6 +78,7 @@ pub fn time_now() -> u64 {
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Span {
+    test_id: u64,
     request_id: u64,
     graph_id: String,
     slo: u64,
@@ -89,6 +90,7 @@ pub struct Span {
 #[allow(dead_code)]
 impl Span {
     pub fn new(
+        test_id: u64,
         request_id: u64,
         graph_id: String,
         slo: u64,
@@ -97,6 +99,7 @@ impl Span {
         error: String,
     ) -> Self {
         Self {
+            test_id,
             request_id,
             graph_id,
             slo,
@@ -116,12 +119,22 @@ pub async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
         }
     }
     let mut file = File::create(output).unwrap();
-    writeln!(file, "request_id,graph_id,slo,latency,latency_fe,error").unwrap();
+    writeln!(
+        file,
+        "test.id,request_id,graph_id,slo,latency,latency_fe,error"
+    )
+    .unwrap();
     while let Ok(span) = trace_rx.recv() {
         writeln!(
             file,
-            "{},{},{},{},{},{}",
-            span.request_id, span.graph_id, span.slo, span.latency, span.latency_fe, span.error
+            "{},{},{},{},{},{},{}",
+            span.test_id,
+            span.request_id,
+            span.graph_id,
+            span.slo,
+            span.latency,
+            span.latency_fe,
+            span.error
         )
         .unwrap();
     }

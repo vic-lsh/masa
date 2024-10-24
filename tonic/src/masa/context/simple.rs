@@ -93,13 +93,10 @@ impl SimpleParentContext {
             let check = now >= self.ctx.deadline();
             if check {
                 log::warn!(
-                    "check_early_return, method: {:?}, request_id: {:?}, slo: {:?}, start_at: {:?}, deadline: {:?}, now: {:?}",
+                    "check_early_return, method: {:?}, test_id: {:?}, request_id: {:?}",
                     self.method.id(),
+                    self.ctx.test_id(),
                     self.ctx.request_id(),
-                    self.ctx.slo(),
-                    self.ctx.start_at(),
-                    self.ctx.deadline(),
-                    now
                 );
             }
             if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
@@ -161,6 +158,7 @@ impl RequestHandlerHooks for SimpleParentContext {
         }
         let child_recv_ctx = Context::new(
             self.ctx.graph_id().clone(),
+            self.ctx.test_id(),
             self.ctx.request_id(),
             self.ctx.slo(),
             self.ctx.request_class(),
