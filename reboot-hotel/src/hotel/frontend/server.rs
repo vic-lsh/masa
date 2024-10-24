@@ -55,27 +55,27 @@ impl Frontend for FrontendImpl {
         let response = span_response.into_inner();
 
         // [DEBUG] Twice.
-        let span_request = search::NearbyRequest { ave: request.ave };
-        let span_response = search_client.handle_nearby(span_request).await?;
-        let response = span_response.into_inner();
+        // let span_request = search::NearbyRequest { ave: request.ave };
+        // let span_response = search_client.handle_nearby(span_request).await?;
+        // let response = span_response.into_inner();
 
         // [TODO] Reserve.
         // reserve_client.check_availability()
         // ReserveRequest { customer, hotel_ids, in_date, out_date, room_number }
 
-        // let mut profile_client = self.profile_client.clone();
-        // let profile_request = profile::ProfileRequest {
-        //     hotels: response.hotels,
-        // };
-        // let profile_response = profile_client.handle_get_profiles(profile_request).await?;
-        // let response = profile_response.into_inner();
+        let mut profile_client = self.profile_client.clone();
+        let profile_request = profile::ProfileRequest {
+            hotels: response.hotels,
+        };
+        let profile_response = profile_client.handle_get_profiles(profile_request).await?;
+        let response = profile_response.into_inner();
 
         let mut hotels = Vec::new();
-        // for profile in response.profiles {
-        //     hotels.push(frontend::Hotel {
-        //         name: profile.hotel,
-        //     });
-        // }
+        for profile in response.profiles {
+            hotels.push(frontend::Hotel {
+                name: profile.hotel,
+            });
+        }
 
         let response = frontend::SearchResponse { hotels };
 

@@ -108,41 +108,20 @@ def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
 
 def plot_throughput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
-    tput_all = [result["tput_all"] for result in results]
-    tput_good = [result["tput_good"] for result in results]
-    tput_neutral = [result["tput_neutral"] for result in results]
-    tput_error = [result["tput_error"] for result in results]
+    keys = ["tput_good", "tput_lg_miss", "tput_lg_timeout", "tput_svc_early"]
+    labels = [
+        "Throughput Good",
+        "Throughput LG Miss",
+        "Throughput LG Timeout",
+        "Throughput Service Early",
+    ]
+    tputs = [[result[key] for result in results] for key in keys]
 
     fig = plt.figure(figsize=(10, 6))
-
-    plt.plot(
-        rps_values,
-        tput_all,
-        label="Throughput All",
-        color=COLORS[0],
-        marker=MARKERS[0],
-    )
-    plt.plot(
-        rps_values,
-        tput_good,
-        label="Throughput Good",
-        color=COLORS[1],
-        marker=MARKERS[1],
-    )
-    plt.plot(
-        rps_values,
-        tput_neutral,
-        label="Throughput Neutral",
-        color=COLORS[2],
-        marker=MARKERS[2],
-    )
-    plt.plot(
-        rps_values,
-        tput_error,
-        label="Throughput Error",
-        color=COLORS[3],
-        marker=MARKERS[3],
-    )
+    for i in range(len(keys)):
+        plt.plot(
+            rps_values, tputs[i], label=labels[i], color=COLORS[i], marker=MARKERS[i]
+        )
 
     plt.xlabel("RPS")
     plt.ylabel("Throughput")
@@ -156,19 +135,29 @@ def plot_throughput_line(results: List[Dict[str, Any]], fig_name: str, mode: str
 
 def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
-    tput_all = [result["tput_all"] for result in results]
-    tput_good = [result["tput_good"] for result in results]
-    tput_neutral = [result["tput_neutral"] for result in results]
-    tput_error = [result["tput_error"] for result in results]
+    keys = ["tput_good", "tput_lg_miss", "tput_lg_timeout", "tput_svc_early"]
+    labels = [
+        "Throughput Good",
+        "Throughput LG Miss",
+        "Throughput LG Timeout",
+        "Throughput Service Early",
+    ]
+    tputs = [[result[key] for result in results] for key in keys]
 
     x = np.arange(len(rps_values))
-    width = 0.23
+    width = 0.22
+    rects_x = [
+        x - width * 1.5,
+        x - width * 0.5,
+        x + width * 0.5,
+        x + width * 1.5,
+    ]
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    rects1 = ax.bar(x - width * 1.5, tput_all, width, label="Throughput All")
-    rects2 = ax.bar(x - width * 0.5, tput_good, width, label="Throughput Good")
-    rects3 = ax.bar(x + width * 0.5, tput_neutral, width, label="Throughput Neutral")
-    rects4 = ax.bar(x + width * 1.5, tput_error, width, label="Throughput Error")
+    rects_bar = [
+        ax.bar(rect_x, tputs[i], width, label=labels[i], color=COLORS[i])
+        for i, rect_x in enumerate(rects_x)
+    ]
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Throughput")
@@ -190,10 +179,8 @@ def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str)
                 fontsize=13,
             )
 
-    autolabel(rects1)
-    autolabel(rects2)
-    autolabel(rects3)
-    autolabel(rects4)
+    for rects in rects_bar:
+        autolabel(rects)
 
     fig.tight_layout()
     plt.ylim(-200, 2200)
@@ -204,41 +191,15 @@ def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str)
 
 def plot_error_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
-    error_all = [result["error_all"] for result in results]
-    error_search = [result["error_search"] for result in results]
-    error_profile = [result["error_profile"] for result in results]
-    error_load_gen = [result["error_load_gen"] for result in results]
+    keys = ["error_lg_miss", "error_lg_timeout", "error_search", "error_profile"]
+    labels = ["Error LG Miss", "Error LG Timeout", "Error Search", "Error Profile"]
+    errors = [[result[key] for result in results] for key in keys]
 
     fig = plt.figure(figsize=(10, 6))
-
-    plt.plot(
-        rps_values,
-        error_all,
-        label="Error All",
-        color=COLORS[0],
-        marker=MARKERS[0],
-    )
-    plt.plot(
-        rps_values,
-        error_search,
-        label="Error Search",
-        color=COLORS[1],
-        marker=MARKERS[1],
-    )
-    plt.plot(
-        rps_values,
-        error_profile,
-        label="Error Profile",
-        color=COLORS[2],
-        marker=MARKERS[2],
-    )
-    plt.plot(
-        rps_values,
-        error_load_gen,
-        label="Error Load Gen",
-        color=COLORS[3],
-        marker=MARKERS[3],
-    )
+    for i in range(len(keys)):
+        plt.plot(
+            rps_values, errors[i], label=labels[i], color=COLORS[i], marker=MARKERS[i]
+        )
 
     plt.xlabel("RPS")
     plt.ylabel("Error")
@@ -252,19 +213,24 @@ def plot_error_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
 
 def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
-    error_all = [result["error_all"] for result in results]
-    error_search = [result["error_search"] for result in results]
-    error_profile = [result["error_profile"] for result in results]
-    error_load_gen = [result["error_load_gen"] for result in results]
+    keys = ["error_lg_miss", "error_lg_timeout", "error_search", "error_profile"]
+    labels = ["Error LG Miss", "Error LG Timeout", "Error Search", "Error Profile"]
+    errors = [[result[key] for result in results] for key in keys]
 
     x = np.arange(len(rps_values))
-    width = 0.23
+    width = 0.22
+    rects_x = [
+        x - width * 1.5,
+        x - width * 0.5,
+        x + width * 0.5,
+        x + width * 1.5,
+    ]
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    rects1 = ax.bar(x - width * 1.5, error_all, width, label="Error All")
-    rects2 = ax.bar(x - width * 0.5, error_search, width, label="Error Search")
-    rects3 = ax.bar(x + width * 0.5, error_profile, width, label="Error Profile")
-    rects4 = ax.bar(x + width * 1.5, error_load_gen, width, label="Error Load Gen")
+    rects_bar = [
+        ax.bar(rect_x, errors[i], width, label=labels[i], color=COLORS[i])
+        for i, rect_x in enumerate(rects_x)
+    ]
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Error")
@@ -286,10 +252,8 @@ def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
                 fontsize=13,
             )
 
-    autolabel(rects1)
-    autolabel(rects2)
-    autolabel(rects3)
-    autolabel(rects4)
+    for rects in rects_bar:
+        autolabel(rects)
 
     fig.tight_layout()
     plt.ylim(-200, 2200)

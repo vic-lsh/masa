@@ -2,10 +2,7 @@
 	"Repeats": 1,
 	"Slo": 25000,
 	"Rps": [
-		500,
-		600,
-		700,
-		800
+		1300
 	],
 	"WarmupSecs": 30,
 	"DurationSecs": 120,
