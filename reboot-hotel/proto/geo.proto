@@ -9,8 +9,8 @@ service Geo {
 message NearbyRequest {
   // uint32 ave = 1;
 
-  float lat = 1;
-  float lon = 2;
+  double lat = 1;
+  double lon = 2;
 }
 
 message NearbyResponse { repeated string hotelIds = 1; }
