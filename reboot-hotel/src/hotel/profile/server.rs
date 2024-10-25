@@ -245,13 +245,13 @@ impl Profile for ProfileImpl {
             .manager
             .fetch_mixture(ctx.request_id(), request.hotel_ids)
             .await;
-        let mut hotels = Vec::new();
-        for hotel in hotels_resp {
-            hotels.push(profile::Hotel {
-                name: hotel.name,
-                payload: hotel.payload,
-            });
-        }
+        let hotels = hotels_resp
+            .into_iter()
+            .map(|h| profile::Hotel {
+                name: h.name,
+                payload: h.payload,
+            })
+            .collect();
         let response = profile::ProfileResponse { hotels };
         log::info!("response: {:?}", response);
         Ok(Response::new(response))
