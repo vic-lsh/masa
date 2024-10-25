@@ -68,7 +68,7 @@ impl Frontend for FrontendImpl {
             locale: request.locale.unwrap_or("en".to_string()),
         };
         let profile_response = profile_client
-            .handle_get_profiles(profile_request)
+            .get_profiles(profile_request)
             .await
             .expect("Failed to call profile::get_profiles");
         let response = profile_response.into_inner();
