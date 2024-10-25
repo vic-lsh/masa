@@ -4,51 +4,59 @@ pub mod hotel {
     }
 }
 
+use kiddo::KdTree;
+use kiddo::SquaredEuclidean;
 use tonic::{Request, Response, Status};
 
 use hotel::{geo, geo::geo_server::Geo};
 
-#[derive(Debug, Clone)]
-struct Hotel {
-    name: String,
-    _ave: u32,
+use crate::db;
+
+struct GeoIndex {
+    tree: KdTree<f64, 2>,
+    points: Vec<db::Point>,
 }
 
-struct HotelManager {
-    hotels: Vec<Hotel>,
-    range: u32,
-}
-
-impl HotelManager {
-    fn new(n_hotels: u32, range: u32) -> Self {
-        let mut hotels = Vec::new();
-        for i in 0..n_hotels {
-            hotels.push(Hotel {
-                name: format!("Sheraton Ave {}", i),
-                _ave: i as u32,
-            });
+impl GeoIndex {
+    fn new() -> Self {
+        GeoIndex {
+            tree: KdTree::new(),
+            points: Vec::new(),
         }
-        HotelManager { hotels, range }
     }
 
-    fn fetch(&self, lat: f32, lon: f32) -> Vec<Hotel> {
-        todo!()
-        // let ave = ave as usize;
-        // let range = self.range as usize;
-        // let end = (ave + range).min(self.hotels.len());
-        // self.hotels[ave..end].to_vec()
+    fn add_point(&mut self, point: db::Point) {
+        self.tree.add(
+            &[point.lat, point.lon],
+            self.points.len().try_into().unwrap(),
+        );
+        self.points.push(point);
+    }
+
+    fn find_nearest(&self, query_lat: f64, query_lon: f64, k: usize) -> Vec<(&db::Point, f64)> {
+        let query_point = [query_lat, query_lon];
+
+        let nearest = self.tree.nearest_n::<SquaredEuclidean>(&query_point, k);
+
+        nearest
+            .into_iter()
+            .map(|p| (&self.points[p.item as usize], p.distance.sqrt()))
+            .collect()
     }
 }
 
 pub struct GeoImpl {
-    manager: HotelManager,
+    index: GeoIndex,
 }
 
 impl GeoImpl {
-    pub fn new(hotels: u32, range: u32) -> Self {
-        GeoImpl {
-            manager: HotelManager::new(hotels, range),
+    pub fn new(_hotels: u32, _range: u32) -> Self {
+        let points = db::generate_test_data();
+        let mut index = GeoIndex::new();
+        for p in points {
+            index.add_point(p);
         }
+        GeoImpl { index }
     }
 }
 
@@ -58,12 +66,14 @@ impl Geo for GeoImpl {
         &self,
         request: Request<geo::NearbyRequest>,
     ) -> Result<Response<geo::NearbyResponse>, Status> {
+        const MAX_SEARCH_RESULTS: usize = 5;
+
         let request = request.into_inner();
-        let fetched_hotels = self.manager.fetch(request.lat, request.lon);
-        let mut hotel_ids = Vec::new();
-        for hotel in fetched_hotels {
-            hotel_ids.push(hotel.name);
-        }
+        let result = self
+            .index
+            .find_nearest(request.lat, request.lon, MAX_SEARCH_RESULTS);
+
+        let hotel_ids = result.into_iter().map(|r| r.0.pid.to_owned()).collect();
         let response = geo::NearbyResponse { hotel_ids };
         log::info!("response: {:?}", response);
         Ok(Response::new(response))
