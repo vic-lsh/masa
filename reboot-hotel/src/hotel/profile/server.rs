@@ -249,7 +249,7 @@ impl Profile for ProfileImpl {
         for hotel in hotels {
             hotels.push(profile::Hotel {
                 key: "profile".to_string(),
-                hotel: hotel.name,
+                name: hotel.name,
                 payload: hotel.payload,
             });
         }
