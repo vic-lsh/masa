@@ -241,12 +241,12 @@ impl Profile for ProfileImpl {
     ) -> Result<Response<profile::ProfileResponse>, Status> {
         let ctx = request.metadata().get_ctx("ctx").unwrap();
         let request = request.into_inner();
-        let hotels = self
+        let hotels_resp = self
             .manager
             .fetch_mixture(ctx.request_id(), request.hotel_ids)
             .await;
         let mut hotels = Vec::new();
-        for hotel in hotels {
+        for hotel in hotels_resp {
             hotels.push(profile::Hotel {
                 name: hotel.name,
                 payload: hotel.payload,
