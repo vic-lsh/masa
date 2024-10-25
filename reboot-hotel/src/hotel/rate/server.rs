@@ -3,231 +3,51 @@ pub mod hotel {
         tonic::include_proto!("rate");
     }
 }
-
-use std::error::Error;
-
 use futures::StreamExt;
-use mongodb::{bson::doc, Client, Collection, Database, IndexModel};
-use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
+
+use std::{collections::HashSet, error::Error, sync::Arc};
+
+use mongodb::{bson::doc, Client as MongoClient};
 use tonic::{Request, Response, Status};
 
+use crate::db;
 use hotel::{rate, rate::rate_server::Rate};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Hotel {
-    name: String,
-    ave: u32,
-    key: String,
-    payload: Vec<u8>,
-}
-
-#[derive(Clone)]
-pub struct HotelManager {
+#[allow(unused)]
+struct MasaConfig {
     hotels: u32,
-    payload: u32,
     cache_conn: u32,
     cache_miss_rate: u32,
-    memcache: memcache::Client,
-    _database: Database,
-    collection: Collection<Hotel>,
-}
-
-impl HotelManager {
-    pub async fn new(
-        hotels: u32,
-        payload: u32,
-        cache_addr: String,
-        cache_conn: u32,
-        cache_miss_rate: u32,
-        db_addr: String,
-    ) -> Result<Self, Box<dyn Error>> {
-        let memcache = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
-        let client = Client::with_uri_str(db_addr).await?;
-        let database = client.database("sheraton");
-        let collection = database.collection::<Hotel>("collection");
-        collection.delete_many(doc! {}, None).await?;
-        let manager = HotelManager {
-            hotels,
-            payload,
-            cache_conn,
-            cache_miss_rate,
-            memcache,
-            _database: database,
-            collection,
-        };
-        let manager_clone = manager.clone();
-        let cache = tokio::spawn(async move {
-            log::info!("Populating Memcached...");
-            manager_clone
-                .populate_memcache()
-                .await
-                .expect("Failed to populate memcached");
-            log::info!("Populated Memcached");
-        });
-        let manager_clone = manager.clone();
-        let db = tokio::spawn(async move {
-            log::info!("Populating Mongodb...");
-            manager_clone
-                .populate_mongodb(hotels)
-                .await
-                .expect("Failed to populate mongodb");
-            log::info!("Populated Mongodb");
-        });
-        cache.await?;
-        db.await?;
-        Ok(manager)
-    }
-
-    async fn populate_memcache(&self) -> Result<(), Box<dyn Error>> {
-        self.memcache.flush()?;
-        let n_hotels = self.hotels as usize;
-        let payload = self.payload as usize;
-        let conn = self.cache_conn as usize;
-        let mut handles = Vec::new();
-        for i in 0..conn {
-            let memcache = self.memcache.clone();
-            let handle = tokio::spawn(async move {
-                for j in (i..n_hotels).step_by(conn) {
-                    let hotel = Hotel {
-                        key: "rate".to_string(),
-                        name: format!("Sheraton Ave {}", j),
-                        ave: j as u32,
-                        payload: vec![0; payload],
-                    };
-                    let hotel_json =
-                        serde_json::to_string(&hotel).expect("Failed to serialize hotel");
-                    memcache
-                        .set(hotel.name.as_str(), hotel_json, 0)
-                        .expect("Failed to set hotel");
-                }
-            });
-            handles.push(handle);
-        }
-        for handle in handles {
-            handle.await?;
-        }
-        Ok(())
-    }
-
-    async fn populate_mongodb(&self, n_hotels: u32) -> Result<(), Box<dyn Error>> {
-        let payload = self.payload as usize;
-        let mut hotels = Vec::new();
-        for i in 0..n_hotels {
-            hotels.push(Hotel {
-                key: "rate".to_string(),
-                name: format!("Sheraton Ave {}", i),
-                ave: i as u32,
-                payload: vec![0; payload],
-            });
-        }
-        self.collection.insert_many(hotels, None).await?;
-        let index = IndexModel::builder().keys(doc! { "name": 1 }).build();
-        self.collection.create_index(index, None).await?;
-        Ok(())
-    }
-
-    // pub fn fetch_memcache(&self, names: Vec<String>) -> Vec<Hotel> {
-    //     let names_ref = names.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
-    //     let mut hotels = Vec::new();
-    //     if let Ok(hotel_jsons) = self.memcache.gets::<String>(&names_ref) {
-    //         for hotel_json in hotel_jsons.values() {
-    //             let hotel: Hotel =
-    //                 serde_json::from_str(hotel_json).expect("Failed to deserialize hotel");
-    //             hotels.push(hotel);
-    //         }
-    //     }
-    //     hotels.sort_by_key(|hotel| hotel.ave);
-    //     hotels
-    // }
-
-    // pub async fn fetch_mongodb(&self, names: Vec<String>) -> Vec<Hotel> {
-    //     let query = doc! {
-    //         "name": {
-    //             "$in": names
-    //         }
-    //     };
-    //     let mut cursor = self
-    //         .collection
-    //         .find(query, None)
-    //         .await
-    //         .expect("Failed to find hotels");
-    //     let mut hotels = Vec::new();
-    //     while let Some(hotel) = cursor.next().await {
-    //         let hotel = hotel.expect("Failed to get hotel");
-    //         hotels.push(hotel);
-    //     }
-    //     // [OPTIONAL] Clear cache
-    //     hotels
-    // }
-
-    pub async fn fetch_mixture(&self, request_id: u64, names: Vec<String>) -> Vec<Hotel> {
-        let names_db = {
-            if request_id % 100 < self.cache_miss_rate as u64 {
-                names.clone()
-            } else {
-                Vec::new()
-            }
-        };
-
-        let names_ref = names.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
-        let mut hotels = Vec::new();
-        if let Ok(hotel_jsons) = self.memcache.gets::<String>(&names_ref) {
-            for hotel_json in hotel_jsons.values() {
-                let hotel: Hotel =
-                    serde_json::from_str(hotel_json).expect("Failed to deserialize hotel");
-                hotels.push(hotel);
-            }
-        }
-        hotels.sort_by_key(|hotel| hotel.ave);
-
-        if !names_db.is_empty() {
-            let query = doc! {
-                "name": {
-                    "$in": names_db
-                }
-            };
-            let mut cursor = self
-                .collection
-                .find(query, None)
-                .await
-                .expect("Failed to find hotels");
-            while let Some(hotel) = cursor.next().await {
-                let hotel = hotel.expect("Failed to get hotel");
-                let hotel_json = serde_json::to_string(&hotel).expect("Failed to serialize hotel");
-                self.memcache
-                    .set(hotel.name.as_str(), hotel_json, 0)
-                    .expect("Failed to set hotel");
-            }
-        }
-
-        hotels
-    }
 }
 
 pub struct RateImpl {
-    manager: HotelManager,
+    memc_client: Arc<memcache::Client>,
+    mongo_client: Arc<MongoClient>,
+    _config: MasaConfig,
 }
 
 impl RateImpl {
     pub async fn new(
         hotels: u32,
-        payload: u32,
+        _payload: u32,
         cache_addr: String,
         cache_conn: u32,
         cache_miss_rate: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn Error>> {
-        let manager = HotelManager::new(
-            hotels,
-            payload,
-            cache_addr,
-            cache_conn,
-            cache_miss_rate,
-            db_addr,
-        )
-        .await?;
-        let rate = RateImpl { manager };
-        Ok(rate)
+        let memc_client = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
+        let mongo_client = db::initialize_database(&db_addr).await?;
+
+        Ok(Self {
+            memc_client: Arc::new(memc_client),
+            mongo_client: Arc::new(mongo_client),
+            _config: MasaConfig {
+                hotels,
+                cache_conn,
+                cache_miss_rate,
+            },
+        })
     }
 }
 
@@ -237,20 +57,93 @@ impl Rate for RateImpl {
         &self,
         request: Request<rate::RateRequest>,
     ) -> Result<Response<rate::RateResponse>, Status> {
-        let ctx = request.metadata().get_ctx("ctx").unwrap();
         let request = request.into_inner();
-        let hotels = self
-            .manager
-            .fetch_mixture(ctx.request_id(), request.hotel_ids)
-            .await;
+
+        // Create a set of hotel IDs for tracking missing cache entries
+        let mut rate_set: HashSet<String> = request.hotel_ids.iter().cloned().collect();
+
         let mut rate_plans = Vec::new();
-        for hotel in hotels {
-            rate_plans.push(rate::RatePlan {
-                hotel_id: hotel.name,
-                payload: hotel.payload,
-            });
+
+        // Check memcached first
+        let hotel_ids_ref: Vec<_> = request.hotel_ids.iter().map(|id| id.as_str()).collect();
+        let memc_resp = self
+            .memc_client
+            .gets(&hotel_ids_ref)
+            .map_err(|e| tonic::Status::internal(format!("Memcached error: {}", e)))?;
+
+        for (hotel_id, item) in memc_resp {
+            if let Ok(value) = String::from_utf8(item) {
+                for rate_str in value.split('\n') {
+                    if !rate_str.is_empty() {
+                        if let Ok(rate_plan) = serde_json::from_str::<db::RatePlan>(rate_str) {
+                            rate_plans.push(rate_plan);
+                        }
+                    }
+                }
+                rate_set.remove(&hotel_id);
+            }
         }
-        let response = rate::RateResponse { rate_plans };
+
+        let rate_plans = Arc::new(Mutex::new(rate_plans));
+
+        // Handle cache misses
+        let missing_ids: Vec<String> = rate_set.into_iter().collect();
+        let handles: Vec<_> = missing_ids
+            .into_iter()
+            .map(|hotel_id| {
+                let rate_plans_clone = Arc::clone(&rate_plans);
+                let mongo_client = Arc::clone(&self.mongo_client);
+                let memc_client = Arc::clone(&self.memc_client);
+
+                tokio::spawn(async move {
+                    let collection = mongo_client
+                        .database("rate-db")
+                        .collection::<db::RatePlan>("inventory");
+
+                    let mut cursor = collection
+                        .find(doc! {}, None)
+                        .await
+                        .expect("failed to find rate");
+                    let mut tmp_rate_plans = Vec::new();
+                    let mut memc_str = String::new();
+
+                    while let Some(Ok(rate_plan)) = cursor.next().await {
+                        if let Ok(rate_json) = serde_json::to_string(&rate_plan) {
+                            memc_str.push_str(&rate_json);
+                            memc_str.push('\n');
+                        }
+                        tmp_rate_plans.push(rate_plan);
+                    }
+
+                    // Update rate plans
+                    {
+                        let mut rate_plans = rate_plans_clone.lock().await;
+                        rate_plans.extend(tmp_rate_plans);
+                    }
+
+                    // Update memcached asynchronously
+                    if !memc_str.is_empty() {
+                        tokio::spawn(async move {
+                            let _ = memc_client.set(&hotel_id, memc_str.as_bytes(), 0);
+                        });
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        // Sort rate plans
+        let mut final_rate_plans = Arc::into_inner(rate_plans)
+            .expect("rate plan clones should have been dropped")
+            .into_inner();
+        final_rate_plans.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        let response = rate::RateResponse {
+            rate_plans: final_rate_plans.into_iter().map(|p| p.into()).collect(),
+        };
         log::info!("response: {:?}", response);
         Ok(Response::new(response))
     }

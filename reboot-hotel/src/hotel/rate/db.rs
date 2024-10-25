@@ -1,8 +1,10 @@
-use mongodb::{options::ClientOptions, Client};
+use mongodb::{bson::doc, options::ClientOptions, Client};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
-struct RoomType {
+use crate::server::hotel;
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct RoomType {
     #[serde(rename = "bookableRate")]
     bookable_rate: f64,
     code: String,
@@ -14,8 +16,8 @@ struct RoomType {
     total_rate_inclusive: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct RatePlan {
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct RatePlan {
     #[serde(rename = "hotelId")]
     hotel_id: String,
     code: String,
@@ -25,6 +27,39 @@ struct RatePlan {
     out_date: String,
     #[serde(rename = "roomType")]
     room_type: RoomType,
+}
+
+impl PartialOrd for RatePlan {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.room_type
+            .total_rate
+            .partial_cmp(&other.room_type.total_rate)
+    }
+}
+
+impl From<RoomType> for hotel::rate::RoomType {
+    fn from(r: RoomType) -> Self {
+        Self {
+            bookable_rate: r.bookable_rate,
+            total_rate: r.total_rate,
+            total_rate_inclusive: r.total_rate_inclusive,
+            code: r.code,
+            currency: "USD".into(),
+            room_description: r.room_description,
+        }
+    }
+}
+
+impl From<RatePlan> for hotel::rate::RatePlan {
+    fn from(r: RatePlan) -> Self {
+        Self {
+            hotel_id: r.hotel_id,
+            code: r.code,
+            in_date: r.in_date,
+            out_date: r.out_date,
+            room_type: Some(r.room_type.into()),
+        }
+    }
 }
 
 fn generate_test_data() -> Vec<RatePlan> {
@@ -112,7 +147,7 @@ fn generate_test_data() -> Vec<RatePlan> {
     new_rate_plans
 }
 
-async fn initialize_database(url: &str) -> Result<Client, Box<dyn std::error::Error>> {
+pub async fn initialize_database(url: &str) -> Result<Client, Box<dyn std::error::Error>> {
     let uri = format!("mongodb://{}", url);
     log::info!("Attempting connection to {}", uri);
 
@@ -123,9 +158,15 @@ async fn initialize_database(url: &str) -> Result<Client, Box<dyn std::error::Er
     let collection = client
         .database("rate-db")
         .collection::<RatePlan>("inventory");
+
+    // empty collection first
+    collection.delete_many(doc! {}, None).await?;
+
     let new_rate_plans = generate_test_data();
     collection.insert_many(&new_rate_plans, None).await?;
     log::info!("Successfully inserted test data into rate DB");
+
+    // TODO: create index?
 
     Ok(client)
 }
