@@ -61,7 +61,7 @@ impl Search for SearchImpl {
             out_date: request.out_date,
         };
         let rate_response = rate_client
-            .handle_get_rates(Request::new(rate_request))
+            .get_rates(Request::new(rate_request))
             .await
             .unwrap();
         let response = rate_response.into_inner();
