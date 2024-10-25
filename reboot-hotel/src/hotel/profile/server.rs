@@ -248,7 +248,6 @@ impl Profile for ProfileImpl {
         let mut hotels = Vec::new();
         for hotel in hotels {
             hotels.push(profile::Hotel {
-                key: "profile".to_string(),
                 name: hotel.name,
                 payload: hotel.payload,
             });
