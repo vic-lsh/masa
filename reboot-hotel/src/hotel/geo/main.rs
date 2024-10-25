@@ -1,7 +1,7 @@
 #[path = "../config.rs"]
-pub mod config;
+mod config;
 mod db;
-pub mod server;
+mod server;
 
 use std::fs::File;
 use std::io::BufReader;
