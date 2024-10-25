@@ -2,14 +2,14 @@ use mongodb::{options::ClientOptions, Client};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-struct Point {
+pub struct Point {
     #[serde(rename = "hotelId")]
-    pid: String,
-    lat: f64,
-    lon: f64,
+    pub pid: String,
+    pub lat: f64,
+    pub lon: f64,
 }
 
-fn generate_test_data() -> Vec<Point> {
+pub fn generate_test_data() -> Vec<Point> {
     log::info!("Generating test data...");
 
     let mut new_points = vec![
@@ -61,6 +61,7 @@ fn generate_test_data() -> Vec<Point> {
     new_points
 }
 
+#[allow(unused)]
 pub async fn initialize_database(url: &str) -> Result<Client, mongodb::error::Error> {
     let uri = format!("mongodb://{}", url);
     log::info!("Attempting connection to {}", uri);

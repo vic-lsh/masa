@@ -7,8 +7,8 @@ service Frontend {
 }
 
 message SearchRequest {
-  float lat = 1;
-  float lon = 2;
+  double lat = 1;
+  double lon = 2;
   string inDate = 3;
   string outDate = 4;
   optional string locale = 5;
