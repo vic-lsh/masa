@@ -233,7 +233,7 @@ impl RateImpl {
 
 #[tonic::async_trait]
 impl Rate for RateImpl {
-    async fn handle_get_rates(
+    async fn get_rates(
         &self,
         request: Request<rate::RateRequest>,
     ) -> Result<Response<rate::RateResponse>, Status> {
@@ -246,7 +246,6 @@ impl Rate for RateImpl {
         let mut rate_plans = Vec::new();
         for hotel in hotels {
             rate_plans.push(rate::RatePlan {
-                key: "rate".to_string(),
                 hotel_id: hotel.name,
                 payload: hotel.payload,
             });

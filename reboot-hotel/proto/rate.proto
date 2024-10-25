@@ -3,7 +3,7 @@ syntax = "proto3";
 package rate;
 
 service Rate {
-  rpc HandleGetRates(RateRequest) returns (RateResponse) {}
+  rpc GetRates(RateRequest) returns (RateResponse) {}
 }
 
 message RateRequest {
