@@ -75,12 +75,13 @@ impl Frontend for FrontendImpl {
 
         let mut hotels = Vec::new();
         for hotel in response.hotels {
+            let addr = hotel.address.unwrap();
             hotels.push(frontend::Hotel {
                 name: hotel.name,
                 id: hotel.id,
                 phone_number: hotel.phone_number,
-                lat: hotel.address.unwrap().lat,
-                lon: hotel.address.unwrap().lon,
+                lat: addr.lat,
+                lon: addr.lon,
             });
         }
         let response = frontend::SearchResponse { hotels };
