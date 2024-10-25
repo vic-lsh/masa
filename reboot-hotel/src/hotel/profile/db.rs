@@ -1,8 +1,10 @@
 use mongodb::{options::ClientOptions, Client};
 use serde::{Deserialize, Serialize};
 
+use crate::server::hotel;
+
 #[derive(Debug, Serialize, Deserialize)]
-struct Hotel {
+pub struct Hotel {
     #[serde(rename = "id")]
     id: String,
     name: String,
@@ -25,6 +27,34 @@ struct Address {
     postal_code: String,
     lat: f32,
     lon: f32,
+}
+
+impl From<Address> for hotel::profile::Address {
+    fn from(a: Address) -> Self {
+        Self {
+            street_number: a.street_number,
+            street_name: a.street_name,
+            city: a.city,
+            state: a.state,
+            country: a.country,
+            postal_code: a.postal_code,
+            lat: a.lat,
+            lon: a.lon,
+        }
+    }
+}
+
+impl From<Hotel> for hotel::profile::Hotel {
+    fn from(h: Hotel) -> Self {
+        Self {
+            id: h.id,
+            name: h.name,
+            phone_number: h.phone_number,
+            description: h.description,
+            address: Some(h.address.into()),
+            images: vec![],
+        }
+    }
 }
 
 fn generate_test_data() -> Vec<Hotel> {
@@ -156,7 +186,7 @@ fn generate_test_data() -> Vec<Hotel> {
     new_profiles
 }
 
-async fn initialize_database(url: &str) -> Result<Client, mongodb::error::Error> {
+pub async fn initialize_database(url: &str) -> Result<Client, mongodb::error::Error> {
     log::info!("Generating test data...");
 
     let uri = format!("mongodb://{}", url);
