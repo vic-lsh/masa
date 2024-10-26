@@ -1,7 +1,10 @@
 #!/bin/bash
 
-reboot_hotel=~/Masa-Lo-Ding/reboot-hotel
-cd $reboot_hotel
+current_dir=$(pwd)
+if [[ "$current_dir" != */reboot-hotel ]]; then
+    echo "Error: plese run in the reboot-hotel directory" >&2
+    exit 1
+fi
 
 features=""
 output=""
@@ -27,9 +30,15 @@ while [[ "$#" -gt 0 ]]; do
     esac
     shift
 done
+if [ -z "$features" ]; then
+    echo "Error: must specify a masa feature flag using --features."
+    exit 1
+fi
 if [ -z "$output" ]; then
     output=snippets/$features
 fi
+
+cd $current_dir
 
 session_name="hotel"
 
@@ -91,7 +100,7 @@ cargo run --release \
         fi
 
         cmd=" \
-cd ~/Masa-Lo-Ding/reboot-hotel; \
+cd $current_dir; \
 sleep $wait_secs; \
 $run_cmd"
 
@@ -105,6 +114,8 @@ $run_cmd"
         fi
         tmux send-keys -t $session_name "$cmd" C-m
     done
+
+    tmux attach -t $session_name
 
     all_done=false
     while [[ $all_done == false ]]; do
