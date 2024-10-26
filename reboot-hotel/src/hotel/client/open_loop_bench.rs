@@ -16,6 +16,7 @@ use std::sync::{
 
 use crossbeam_channel::{unbounded, Sender};
 use gen::gen_search_request;
+use hotel::SearchRequest;
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Uniform};
 use structopt::StructOpt;
@@ -47,7 +48,7 @@ struct LoadGenerator {
     graph_id: GraphId,
     client: FrontendClient<Channel>,
     trace_tx: Sender<Span>,
-    counter: Arc<AtomicUsize>,
+    reqs_completed: Arc<AtomicUsize>,
     uniform: Uniform<u32>,
 }
 
@@ -90,22 +91,24 @@ impl LoadGenerator {
             graph_id,
             client,
             trace_tx,
-            counter,
+            reqs_completed: counter,
             uniform,
         }
     }
 
+    async fn print_stats(num_reqs_completed: Arc<AtomicUsize>) {
+        let mut counter_before = 0;
+        loop {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            let counter_now = num_reqs_completed.load(Ordering::Relaxed);
+            log::info!("RPS: {}", counter_now - counter_before);
+            counter_before = counter_now;
+        }
+    }
+
     async fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        let counter = self.counter.clone();
-        tokio::task::spawn(async move {
-            let mut counter_before = 0;
-            loop {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                let counter_now = counter.load(Ordering::Relaxed);
-                log::info!("RPS: {}", counter_now - counter_before);
-                counter_before = counter_now;
-            }
-        });
+        let c = self.reqs_completed.clone();
+        tokio::task::spawn(async move { Self::print_stats(c) });
 
         let init_at = Instant::now();
         let init_at_u64 = time_now();
@@ -127,42 +130,14 @@ impl LoadGenerator {
         Ok(())
     }
 
-    async fn gen_and_send_request(&mut self, init_at_u64: u64, trace_at: Instant) {
-        let request_id = self.uniform.sample(&mut self.rng) as u64;
-        let request_class = 0;
-        let graph_id = self.graph_id.clone();
-        let slo = self.gen_cfg.slo;
-
-        let request = {
-            let deadline = {
-                if PRIO_GLOBAL || PRIO_GLOBAL_TWO || PRIO_LOCAL || PRIO_LOCAL_TWO {
-                    let start_at = time_now() - init_at_u64;
-                    start_at + slo
-                } else if FIFO_TWO || FIFO {
-                    slo
-                } else {
-                    panic!("Unimplemented policy")
-                }
-            };
-            let latest_exec_at = deadline;
-            let ctx = Context::new(
-                graph_id.clone(),
-                request_id,
-                deadline,
-                latest_exec_at,
-                request_class,
-            );
-
-            let search_request = gen_search_request();
-            let mut request = tonic::Request::new(search_request);
-            request.metadata_mut().insert_ctx("ctx", &ctx);
-
-            request
-        };
+    async fn gen_and_send_request(&mut self, init_at: u64, trace_at: Instant) {
+        let (request, request_id) = self.make_request(init_at);
 
         let mut client = self.client.clone();
         let trace_tx = self.trace_tx.clone();
-        let counter = self.counter.clone();
+        let counter = self.reqs_completed.clone();
+        let slo = self.gen_cfg.slo;
+        let graph_id = self.graph_id.clone();
         tokio::task::spawn(async move {
             let send_at = time_now();
             let _response = client.handle_search(request).await;
@@ -175,6 +150,43 @@ impl LoadGenerator {
                 trace_tx.try_send(span).unwrap();
             }
         });
+    }
+
+    fn make_request(&mut self, init_at: u64) -> (tonic::Request<SearchRequest>, u64) {
+        let request_id = self.uniform.sample(&mut self.rng) as u64;
+        let request_class = 0;
+        let graph_id = self.graph_id.clone();
+        let slo = self.gen_cfg.slo;
+
+        let deadline = Self::calc_deadline(slo, init_at);
+        let latest_exec_at = deadline;
+        let ctx = Context::new(
+            graph_id.clone(),
+            request_id,
+            deadline,
+            latest_exec_at,
+            request_class,
+        );
+
+        let search_request = gen_search_request();
+        let mut request = tonic::Request::new(search_request);
+        request.metadata_mut().insert_ctx("ctx", &ctx);
+
+        (request, request_id)
+    }
+
+    fn calc_deadline(slo: u64, init_at: u64) -> u64 {
+        let deadline = {
+            if PRIO_GLOBAL || PRIO_GLOBAL_TWO || PRIO_LOCAL || PRIO_LOCAL_TWO {
+                let start_at = time_now() - init_at;
+                start_at + slo
+            } else if FIFO_TWO || FIFO {
+                slo
+            } else {
+                panic!("Unimplemented policy")
+            }
+        };
+        deadline
     }
 }
 
