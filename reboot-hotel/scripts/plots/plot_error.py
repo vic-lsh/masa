@@ -33,6 +33,12 @@ for r in range(cfg["Repeats"]):
 
             df_filtered = df[
                 (df["graph_id"] == graph_id)
+                & (df["error"] == "/frontend.Frontend/HandleSearch")
+            ]
+            result["error_frontend"] = round(len(df_filtered) / cfg["DurationSecs"])
+
+            df_filtered = df[
+                (df["graph_id"] == graph_id)
                 & (df["error"] == "/search.Search/HandleNearby")
             ]
             result["error_search"] = round(len(df_filtered) / cfg["DurationSecs"])
