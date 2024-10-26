@@ -172,13 +172,13 @@ impl ClientStubHooks for SimpleChildContext {
     }
 
     fn before_send<T>(&mut self, _req: &mut Request<T>) {
-        log::info!("child_ctx, before_send, method: {:?}", self.method.id());
+        log::debug!("child_ctx, before_send, method: {:?}", self.method.id());
         self.track_latency.start();
     }
 
     fn after_recv<T>(&mut self, _response: &mut Result<Response<T>, Status>) {
         self.track_latency.record_latency();
-        log::info!(
+        log::debug!(
             "child_ctx, after_recv, method: {:?}, elapsed: {} us",
             self.method.id(),
             self.track_latency.get_latency().unwrap().as_micros(),
