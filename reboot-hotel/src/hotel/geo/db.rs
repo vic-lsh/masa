@@ -63,10 +63,9 @@ pub fn generate_test_data() -> Vec<Point> {
 
 #[allow(unused)]
 pub async fn initialize_database(url: &str) -> Result<Client, mongodb::error::Error> {
-    let uri = format!("mongodb://{}", url);
-    log::info!("Attempting connection to {}", uri);
+    log::info!("Attempting connection to {}", url);
 
-    let client_options = ClientOptions::parse(&uri).await?;
+    let client_options = ClientOptions::parse(&url).await?;
     let client = Client::with_options(client_options)?;
     log::info!("Successfully connected to MongoDB");
 
