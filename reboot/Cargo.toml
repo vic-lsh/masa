@@ -176,7 +176,7 @@ smol = { path = "../3rd_party/smol" }
 futures-lite = { version = "2.0.0" }
 structopt = "0.3.23"
 crossbeam-channel = "0.5"
-mongodb = "2.8.2"
+mongodb = { path = "../3rd_party/mongodb" }
 memcache = "0.16"
 log = "0.4"
 env_logger = "0.9"
