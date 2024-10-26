@@ -7,7 +7,8 @@ import numpy as np
 
 plt.rcParams["font.family"] = "Roboto"
 fontsize = 17
-fontsize_small = 13
+fontsize_medium = 13
+fontsize_small = 11
 plt.rcParams.update(
     {
         "font.size": fontsize,
@@ -20,8 +21,8 @@ plt.rcParams.update(
 )
 
 GRAPH_IDS = ["Hotel"]
-COLORS = ["tab:blue", "tab:orange", "tab:purple", "tab:red"]
-MARKERS = ["o", "x", "^", "*"]
+COLORS = ["tab:blue", "tab:orange", "tab:purple", "tab:red", "tab:green"]
+MARKERS = ["o", "x", "^", "*", "s"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -58,7 +59,7 @@ def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.ylabel("Goodput")
     plt.ylim(-200, 2200)
     plt.title(f"Goodput vs RPS ({mode})")
-    plt.legend(loc="upper left", fontsize=fontsize_small)
+    plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
     plt.show()
@@ -81,7 +82,7 @@ def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     ax.set_title(f"Goodput vs RPS ({mode})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
-    ax.legend(loc="upper left", fontsize=fontsize_small)
+    ax.legend(loc="upper left", fontsize=fontsize_medium)
 
     def autolabel(rects):
         for rect in rects:
@@ -127,7 +128,7 @@ def plot_throughput_line(results: List[Dict[str, Any]], fig_name: str, mode: str
     plt.ylabel("Throughput")
     plt.ylim(-200, 2200)
     plt.title(f"Throughput vs RPS ({mode})")
-    plt.legend(loc="upper left", fontsize=fontsize_small)
+    plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
     plt.show()
@@ -164,7 +165,7 @@ def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str)
     ax.set_title(f"Throughput vs RPS ({mode})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
-    ax.legend(loc="upper left", fontsize=fontsize_small)
+    ax.legend(loc="upper left", fontsize=fontsize_medium)
 
     def autolabel(rects):
         for rect in rects:
@@ -191,8 +192,20 @@ def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str)
 
 def plot_error_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
-    keys = ["error_lg_miss", "error_lg_timeout", "error_search", "error_profile"]
-    labels = ["Error LG Miss", "Error LG Timeout", "Error Search", "Error Profile"]
+    keys = [
+        "error_lg_miss",
+        "error_lg_timeout",
+        "error_frontend",
+        "error_search",
+        "error_profile",
+    ]
+    labels = [
+        "Error LG Miss",
+        "Error LG Timeout",
+        "Error Frontend",
+        "Error Search",
+        "Error Profile",
+    ]
     errors = [[result[key] for result in results] for key in keys]
 
     fig = plt.figure(figsize=(10, 6))
@@ -205,7 +218,7 @@ def plot_error_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.ylabel("Error")
     plt.ylim(-200, 2200)
     plt.title(f"Error vs RPS ({mode})")
-    plt.legend(loc="upper left", fontsize=fontsize_small)
+    plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
     plt.show()
@@ -213,17 +226,30 @@ def plot_error_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
 
 def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
-    keys = ["error_lg_miss", "error_lg_timeout", "error_search", "error_profile"]
-    labels = ["Error LG Miss", "Error LG Timeout", "Error Search", "Error Profile"]
+    keys = [
+        "error_lg_miss",
+        "error_lg_timeout",
+        "error_frontend",
+        "error_search",
+        "error_profile",
+    ]
+    labels = [
+        "Error LG Miss",
+        "Error LG Timeout",
+        "Error Frontend",
+        "Error Search",
+        "Error Profile",
+    ]
     errors = [[result[key] for result in results] for key in keys]
 
     x = np.arange(len(rps_values))
-    width = 0.22
+    width = 0.17
     rects_x = [
-        x - width * 1.5,
-        x - width * 0.5,
-        x + width * 0.5,
-        x + width * 1.5,
+        x - width * 2,
+        x - width,
+        x,
+        x + width,
+        x + width * 2,
     ]
 
     fig, ax = plt.subplots(figsize=(10, 6))
