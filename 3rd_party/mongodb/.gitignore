@@ -1,0 +1,15 @@
+*.swp
+*.tmp
+*.o
+*~
+/target/
+**/*.rs.bk
+Cargo.lock
+.idea
+*.iml
+.vscode
+**/.DS_Store
+# we install cargo and rustup in the project directory on Evergreen.
+.cargo
+.rustup
+mongocryptd.pid

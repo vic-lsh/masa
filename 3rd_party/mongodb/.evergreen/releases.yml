@@ -1,0 +1,87 @@
+exec_timeout_secs: 3600 
+
+functions:
+  "fetch source":
+    - command: git.get_project
+      type: system
+      params:
+        directory: "src"
+    # Make an evergreen expansion file with dynamic values
+    - command: shell.exec
+      params:
+        working_dir: "src"
+        script: |
+           export PROJECT_DIRECTORY="$(pwd)"
+
+           cat <<EOT > expansion.yml
+           PROJECT_DIRECTORY: "$PROJECT_DIRECTORY"
+           PREPARE_SHELL: |
+              set -o errexit
+              set -o xtrace
+              export PROJECT_DIRECTORY="$PROJECT_DIRECTORY"
+
+              export PROJECT="${project}"
+
+           EOT
+           # See what we've done
+           cat expansion.yml
+
+    # Load the expansion file to make an evergreen variable with the current unique version
+    - command: expansions.update
+      params:
+        file: src/expansion.yml
+
+    # Delete the expansion file so cargo release doesn't complain about uncommitted changes
+    - command: shell.exec
+      params:
+        working_dir: "src"
+        script: |
+          ${PREPARE_SHELL}
+          rm expansion.yml
+
+  "install dependencies":
+    command: shell.exec
+    params:
+      working_dir: "src"
+      script: |
+        ${PREPARE_SHELL}
+        .evergreen/install-dependencies.sh rust
+
+  "publish release":
+    - command: shell.exec
+      type: test
+      params:
+        working_dir: "src"
+        script: |
+          set +x
+
+          TAG=${GIT_TAG}           \
+          TOKEN=${CRATES_IO_TOKEN} \
+          PROJECT_DIRECTORY="$(pwd)" \
+            bash .evergreen/release-danger-do-not-run-manually.sh
+
+tasks:
+  - name: "publish-release"
+    commands:
+      - func: "fetch source"
+      - func: "install dependencies"
+      - func: "publish release"
+        vars:
+          GIT_TAG: ${triggered_by_git_tag}
+
+axes:
+  - id: "os"
+    display_name: OS
+    values:
+      - id: ubuntu-20.04
+        display_name: "Ubuntu 20.04"
+        run_on: ubuntu2004-test
+
+buildvariants:
+-
+  matrix_name: "release"
+  matrix_spec:
+    os: "*"
+  display_name: "Publish driver release"
+  tasks:
+    - "publish-release"
