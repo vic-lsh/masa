@@ -24,7 +24,7 @@ fn get_frontend() -> GlobalGraph {
                         TRACKER_CAPACITY,
                     ),
                     Span::new(
-                        "/profile.Profile/HandleGetProfiles".to_string() as MethodId,
+                        "/profile.Profile/GetProfiles".to_string() as MethodId,
                         None,
                         TRACKER_CAPACITY,
                     ),
@@ -54,7 +54,7 @@ fn get_search() -> GlobalGraph {
                         TRACKER_CAPACITY,
                     ),
                     Span::new(
-                        "/rate.Rate/HandleGetRates".to_string() as MethodId,
+                        "/rate.Rate/GetRates".to_string() as MethodId,
                         None,
                         TRACKER_CAPACITY,
                     ),
@@ -86,7 +86,7 @@ fn get_rate() -> GlobalGraph {
     let service_id: ServiceId = "rate.Rate".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/rate.Rate/HandleGetRates".to_string();
+        let method_id: MethodId = "/rate.Rate/GetRates".to_string();
         graphs.insert(
             method_id.clone(),
             LocalGraph::new(service_id.clone(), method_id.clone(), vec![]),
@@ -101,7 +101,7 @@ fn get_profile() -> GlobalGraph {
     let service_id: ServiceId = "profile.Profile".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/profile.Profile/HandleGetProfiles".to_string();
+        let method_id: MethodId = "/profile.Profile/GetProfiles".to_string();
         graphs.insert(
             method_id.clone(),
             LocalGraph::new(service_id.clone(), method_id.clone(), vec![]),
