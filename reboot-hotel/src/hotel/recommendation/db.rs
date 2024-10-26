@@ -92,6 +92,7 @@ pub fn generate_test_data() -> Vec<Hotel> {
     hotels
 }
 
+#[allow(unused)]
 pub async fn initialize_database(url: &str) -> Result<Client> {
     let client = Client::with_uri_str(url).await?;
     info!("New session successful...");
