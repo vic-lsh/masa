@@ -1,6 +1,7 @@
 pub mod hotel {
     tonic::include_proto!("frontend");
 }
+mod gen;
 
 use std::error::Error;
 use std::sync::{
@@ -14,12 +15,13 @@ use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Uniform};
 use structopt::StructOpt;
 
+use gen::gen_search_request;
 use tonic::transport::Channel;
 use tonic_masa::{Context, GraphId};
 
 use reboot_hotel::init_logging;
 
-use hotel::{frontend_client::FrontendClient, SearchRequest};
+use hotel::frontend_client::FrontendClient;
 
 pub fn time_now() -> u64 {
     let now = SystemTime::now()
@@ -36,10 +38,6 @@ pub struct Args {
     pub addr: String,
     #[structopt(long)]
     pub concurrency: usize,
-}
-
-fn gen_search_request() -> SearchRequest {
-    todo!()
 }
 
 #[derive(Debug)]
