@@ -49,7 +49,7 @@ services=(
     "hotel_search"
     "hotel_profile"
     "hotel_frontend"
-    "hotel_client_bench"
+    "hotel_open_loop_bench"
 )
 waits_secs=(
     0
@@ -67,7 +67,7 @@ for i in "${!services[@]}"; do
     service=${services[$i]}
     wait_secs=${waits_secs[$i]}
 
-    if [[ "$service" != "hotel_client_bench" ]]; then
+    if [[ "$service" != "hotel_open_loop_bench" ]]; then
         run_cmd=" \
         RUST_LOG=$rust_log \
         cargo run --release \
@@ -78,7 +78,6 @@ for i in "${!services[@]}"; do
         #> $output/tmp_$service.log 2>&1"
     else
         run_cmd=" \
-        RUST_LOG=$rust_log \
         cargo run --release \
         --features $features \
         --bin $service \
