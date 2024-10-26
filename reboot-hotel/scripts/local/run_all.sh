@@ -74,8 +74,8 @@ for i in "${!services[@]}"; do
         --features $features \
         --bin $service \
         -- \
-        --config scripts/local/hotel_config.json \
-        > $output/tmp_$service.log 2>&1"
+        --config scripts/local/hotel_config.json"
+        #> $output/tmp_$service.log 2>&1"
     else
         run_cmd=" \
         RUST_LOG=$rust_log \
@@ -84,8 +84,8 @@ for i in "${!services[@]}"; do
         --bin $service \
         -- \
         --hotel-config scripts/local/hotel_config.json \
-        --gen-config $output/gen_config.json \
-        > $output/tmp_${service}.log 2>&1"
+        --gen-config $output/gen_config.json"
+        #> $output/tmp_${service}.log 2>&1"
     fi
 
     cmd=" \
