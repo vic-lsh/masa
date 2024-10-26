@@ -1,5 +1,8 @@
 #!/bin/bash
 
+reboot_hotel=~/Masa-Lo-Ding/reboot-hotel
+cd $reboot_hotel
+
 features=""
 output=""
 repeats="1"
@@ -25,7 +28,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 if [ -z "$output" ]; then
-    output="snippets/$features"
+    output=snippets/$features
 fi
 
 session_name="hotel"
@@ -52,8 +55,8 @@ ready_go() {
     run_idx=$1
     rm $output/*.log
 
-    docker compose -f ~/Masa-Lo-Ding/reboot-hotel/scripts/local/containers.yaml down
-    docker compose -f ~/Masa-Lo-Ding/reboot-hotel/scripts/local/containers.yaml up -d
+    docker compose -f scripts/local/containers.yaml down
+    docker compose -f scripts/local/containers.yaml up -d
 
     first_pane=true
 
@@ -116,9 +119,10 @@ $run_cmd"
     done
 }
 
-tmux kill-session -t $session_name
-
 for ((run = 0; run < repeats; run++)); do
+    if tmux has-session -t $session_name 2>/dev/null; then
+        tmux kill-session -t $session_name
+    fi
     echo "Starting run $run/$repeats..."
 
     tmux new-session -d -s $session_name -n "local"
@@ -126,7 +130,4 @@ for ((run = 0; run < repeats; run++)); do
     tmux set-option -s pane-border-format "#{pane_title}"
 
     ready_go $run
-
-    echo "Killing session for run $run..."
-    tmux kill-session -t $session_name
 done

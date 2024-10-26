@@ -125,8 +125,8 @@ impl LoadGenerator {
                 break;
             }
 
-            let start_at = init_at + Duration::from_secs_f64(elapse);
-            tokio::time::sleep_until(start_at).await;
+            let send_at = init_at + Duration::from_secs_f64(elapse);
+            tokio::time::sleep_until(send_at).await;
 
             let value = {
                 if Instant::now() < warm_at {
@@ -138,14 +138,14 @@ impl LoadGenerator {
             };
             elapse += value;
 
-            let test_id = counter_test_id;
-            counter_test_id += 1;
-            let request_id = uniform.sample(&mut self.rng) as u64;
-            let request_class = 0;
-            let graph_id = self.graph_id.clone();
-            let slo = self.gen_cfg.slo;
+            let ctx = {
+                let test_id = counter_test_id;
+                counter_test_id += 1;
+                let request_id = uniform.sample(&mut self.rng) as u64;
+                let request_class = 0;
+                let graph_id = self.graph_id.clone();
+                let slo = self.gen_cfg.slo;
 
-            let request = {
                 let start_at = time_now();
                 let deadline = {
                     if PRIO_GLOBAL || PRIO_GLOBAL_TWO || PRIO_LOCAL || PRIO_LOCAL_TWO {
@@ -161,7 +161,7 @@ impl LoadGenerator {
                 };
                 let latest_exec_at = deadline;
 
-                let ctx = Context::new(
+                Context::new(
                     graph_id.clone(),
                     test_id,
                     request_id,
@@ -170,9 +170,11 @@ impl LoadGenerator {
                     start_at,
                     deadline,
                     latest_exec_at,
-                );
+                )
+            };
 
-                let ave = (request_id % self.hotel_cfg.hotels as u64) as u32;
+            let request = {
+                let ave = (ctx.request_id() % self.hotel_cfg.hotels as u64) as u32;
                 let search_request = SearchRequest { ave };
                 let mut request = tonic::Request::new(search_request);
                 request.metadata_mut().insert_ctx("ctx", &ctx);
@@ -203,22 +205,20 @@ impl LoadGenerator {
                             let error = {
                                 if let Err(ref status) = response {
                                     status.message().to_string()
-                                } else if latency > slo {
+                                } else if latency > ctx.slo() {
                                     "/LGMiss".to_string()
                                 } else {
                                     "/None".to_string()
                                 }
                             };
-                            let span = Span::new(
-                                test_id, request_id, graph_id, slo, latency, fe_latency, error,
-                            );
+                            let span = Span::new(ctx, latency, fe_latency, error);
                             trace_tx.try_send(span).unwrap();
                         }
                     }
                     Err(_) => {
                         if Instant::now() > trace_at {
                             let error = "/LGTimeout".to_string();
-                            let span = Span::new(test_id, request_id, graph_id, slo, 0, 0, error);
+                            let span = Span::new(ctx, 0, 0, error);
                             trace_tx.try_send(span).unwrap();
                         }
                     }

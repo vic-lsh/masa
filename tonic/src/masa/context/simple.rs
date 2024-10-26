@@ -86,9 +86,7 @@ pub struct SimpleServerContext {
 impl SimpleParentContext {
     #[inline]
     fn check_early_return(&self) -> bool {
-        if self.method.id() != "/frontend.Frontend/HandleSearch" {
-            // [NOTE] The frontend should not early return.
-            assert!(self.ctx.deadline() == self.ctx.start_at() + self.ctx.slo());
+        if self.method.id() == "/frontend.Frontend/HandleSearch" {
             let now = time_now();
             let check = now >= self.ctx.deadline();
             if check {
