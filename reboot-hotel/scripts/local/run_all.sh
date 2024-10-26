@@ -1,14 +1,5 @@
 #!/bin/bash
 
-# Restart the containers.
-cd ~/Masa-Lo-Ding/reboot-hotel/scripts/local
-docker compose -f containers.yaml down
-cd ~/Masa-Lo-Ding/reboot-hotel/scripts/local
-docker compose -f containers.yaml up -d
-
-# Enter the reboot-hotel directory.
-cd ~/Masa-Lo-Ding/reboot-hotel
-
 current_dir=$(pwd)
 if [[ "$current_dir" != */reboot-hotel ]]; then
     echo "Error: plese run in the reboot-hotel directory" >&2
@@ -29,6 +20,22 @@ while [[ "$#" -gt 0 ]]; do
     esac
     shift
 done
+
+if [ -z "$features" ]; then
+    echo "Error: must specify a masa feature flag using --features."
+    exit 1
+fi
+
+# Restart the containers.
+cd $current_dir/scripts/local
+docker compose -f containers.yaml down
+cd $current_dir/scripts/local
+docker compose -f containers.yaml up -d
+
+cd $current_dir
+
+
+
 output="snippets/$features"
 
 session_name="hotel"
@@ -82,7 +89,7 @@ for i in "${!services[@]}"; do
     fi
 
     cmd=" \
-    cd ~/Masa-Lo-Ding/reboot-hotel; \
+    cd ${current_dir}; \
     sleep $wait_secs; \
     $run_cmd \
     "
