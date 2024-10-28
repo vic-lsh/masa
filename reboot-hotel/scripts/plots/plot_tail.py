@@ -35,5 +35,9 @@ for r in range(cfg["Repeats"]):
 
             rps_to_results.append(result)
 
-    plot_tail_line(rps_to_results, f"{args.path}/fig_tail_rps_line_{r}.png", args.mode)
-    plot_tail_bar(rps_to_results, f"{args.path}/fig_tail_rps_bar_{r}.png", args.mode)
+    plot_tail_line(
+        rps_to_results, f"{args.path}/fig_tail_rps_line_{r}.png", args.mode, args.alias
+    )
+    plot_tail_bar(
+        rps_to_results, f"{args.path}/fig_tail_rps_bar_{r}.png", args.mode, args.alias
+    )
