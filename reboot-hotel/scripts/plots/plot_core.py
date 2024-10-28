@@ -288,6 +288,79 @@ def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.show()
 
 
+def plot_tail_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
+    rps_values = [result["rps"] for result in results]
+    keys = ["mean", "p90", "p95", "p99"]
+    labels = ["Mean", "P90", "P95", "P99"]
+    errors = [[result[key] for result in results] for key in keys]
+
+    fig = plt.figure(figsize=(10, 6))
+    for i in range(len(keys)):
+        plt.plot(
+            rps_values, errors[i], label=labels[i], color=COLORS[i], marker=MARKERS[i]
+        )
+
+    plt.xlabel("RPS")
+    plt.ylabel("Tail (ms)")
+    plt.ylim(0, 100)
+    plt.title(f"Tail vs RPS ({mode})")
+    plt.legend(loc="upper left", fontsize=fontsize_medium)
+    plt.grid(True)
+    plt.savefig(fig_name)
+    plt.show()
+
+
+def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
+    rps_values = [result["rps"] for result in results]
+    keys = ["mean", "p90", "p95", "p99"]
+    labels = ["Mean", "P90", "P95", "P99"]
+    errors = [[result[key] for result in results] for key in keys]
+
+    x = np.arange(len(rps_values))
+    width = 0.22
+    rects_x = [
+        x - width * 1.5,
+        x - width * 0.5,
+        x + width * 0.5,
+        x + width * 1.5,
+    ]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    rects_bar = [
+        ax.bar(rect_x, errors[i], width, label=labels[i], color=COLORS[i])
+        for i, rect_x in enumerate(rects_x)
+    ]
+
+    ax.set_xlabel("RPS")
+    ax.set_ylabel("Tail (ms)")
+    ax.set_ylim(0, 100)
+    ax.set_title(f"Tail vs RPS ({mode})")
+    ax.set_xticks(x)
+    ax.set_xticklabels(rps_values)
+    ax.legend(loc="upper left", fontsize=fontsize_small)
+
+    def autolabel(rects):
+        for rect in rects:
+            height = rect.get_height()
+            ax.annotate(
+                "{}".format(height),
+                xy=(rect.get_x() + rect.get_width() / 2, height),
+                xytext=(0, 3),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=13,
+            )
+
+    # for rects in rects_bar:
+    #     autolabel(rects)
+
+    fig.tight_layout()
+    plt.grid(True, linestyle="--", linewidth=0.5)
+    plt.savefig(fig_name)
+    plt.show()
+
+
 def plot_goodput_per_rps(result: Dict[str, Any], fig_name: str):
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(result["goodput_per_rps"], color="tab:blue")
