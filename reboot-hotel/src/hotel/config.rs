@@ -65,4 +65,13 @@ pub struct HotelConfig {
     pub profile_mongodb_addr: String,
     #[serde(rename = "ProfileMemcachedAddr")]
     pub profile_memcached_addr: String,
+
+    // #[serde(rename = "ReservationAddr")]
+    // pub reservation_addr: String,
+    // #[serde(rename = "ReservationPort")]
+    // pub reservation_port: String,
+    #[serde(rename = "ReservationMongodbAddr")]
+    pub reservation_mongodb_addr: String,
+    #[serde(rename = "ReservationMemcachedAddr")]
+    pub reservation_memcached_addr: String,
 }
