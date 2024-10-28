@@ -47,8 +47,14 @@ for r in range(cfg["Repeats"]):
             rps_to_results.append(result)
 
     plot_throughput_line(
-        rps_to_results, f"{args.path}/fig_throughput_rps_line_{r}.png", args.mode
+        rps_to_results,
+        f"{args.path}/fig_throughput_rps_line_{r}.png",
+        args.mode,
+        args.alias,
     )
     plot_throughput_bar(
-        rps_to_results, f"{args.path}/fig_throughput_rps_bar_{r}.png", args.mode
+        rps_to_results,
+        f"{args.path}/fig_throughput_rps_bar_{r}.png",
+        args.mode,
+        args.alias,
     )
