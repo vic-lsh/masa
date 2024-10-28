@@ -15,3 +15,8 @@ python $reboot_hotel/scripts/plots/plot_error.py \
 	--path $reboot_hotel/snippets/$mode \
 	--mode $mode
 echo "Error done"
+
+python $reboot_hotel/scripts/plots/plot_tail.py \
+	--path $reboot_hotel/snippets/$mode \
+	--mode $mode
+echo "Tail done"
