@@ -27,4 +27,9 @@ fn main() {
         .file_descriptor_set_path(out_dir.join("profile_descriptor.bin"))
         .compile(&["proto/profile.proto"], &["proto"])
         .unwrap();
+
+    tonic_build::configure()
+        .file_descriptor_set_path(out_dir.join("reservation_descriptor.bin"))
+        .compile(&["proto/reservation.proto"], &["proto"])
+        .unwrap();
 }
