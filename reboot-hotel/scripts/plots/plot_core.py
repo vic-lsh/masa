@@ -62,7 +62,7 @@ def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
-    plt.show()
+    #plt.show()
 
 
 def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
@@ -104,7 +104,7 @@ def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.ylim(-200, 2200)
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
-    plt.show()
+    #plt.show()
 
 
 def plot_throughput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
@@ -131,7 +131,7 @@ def plot_throughput_line(results: List[Dict[str, Any]], fig_name: str, mode: str
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
-    plt.show()
+    #plt.show()
 
 
 def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
@@ -187,7 +187,7 @@ def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str)
     plt.ylim(-200, 2200)
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
-    plt.show()
+    #plt.show()
 
 
 def plot_error_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
@@ -221,7 +221,7 @@ def plot_error_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
-    plt.show()
+    #plt.show()
 
 
 def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
@@ -285,7 +285,7 @@ def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.ylim(-200, 2200)
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
-    plt.show()
+    #plt.show()
 
 
 def plot_tail_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
@@ -307,7 +307,7 @@ def plot_tail_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
-    plt.show()
+    #plt.show()
 
 
 def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
@@ -352,13 +352,13 @@ def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
                 fontsize=13,
             )
 
-    # for rects in rects_bar:
-    #     autolabel(rects)
+    for rects in rects_bar:
+        autolabel(rects)
 
     fig.tight_layout()
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
-    plt.show()
+    #plt.show()
 
 
 def plot_goodput_per_rps(result: Dict[str, Any], fig_name: str):
@@ -371,7 +371,7 @@ def plot_goodput_per_rps(result: Dict[str, Any], fig_name: str):
 
     plt.grid(True, linestyle="--", alpha=0.7)
     plt.savefig(fig_name)
-    plt.show()
+    #plt.show()
 
 
 def plot_cdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
@@ -409,7 +409,7 @@ def plot_cdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
     plt.legend()
     plt.grid(True)
     plt.savefig(fig_name)
-    plt.show()
+    #plt.show()
 
 
 def plot_pdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
@@ -460,7 +460,7 @@ def plot_pdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
     plt.legend()
     plt.grid(True)
     plt.savefig(fig_name)
-    plt.show()
+    #plt.show()
 
 
 def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
@@ -489,7 +489,7 @@ def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
 
     plt.grid(True)
     plt.savefig(fig_name)
-    plt.show()
+    #plt.show()
 
 
 def plot_ratio_cdf(results: List[float], title: str, fig_name: str):
@@ -520,7 +520,7 @@ def plot_ratio_cdf(results: List[float], title: str, fig_name: str):
     plt.title(title)
     plt.grid(True)
     plt.savefig(fig_name)
-    plt.show()
+    #plt.show()
 
 
 def plot_ratio_pdf(results: List[float], title: str, fig_name: str):
@@ -535,4 +535,4 @@ def plot_ratio_pdf(results: List[float], title: str, fig_name: str):
     plt.title(title)
     plt.grid(True)
     plt.savefig(fig_name)
-    plt.show()
+    #plt.show()
