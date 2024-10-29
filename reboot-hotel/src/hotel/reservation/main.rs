@@ -37,10 +37,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let reservation = ReservationImpl::new(
         cfg.hotels,
+        cfg.reservation_prob_hotel_avail,
         cfg.payload,
         cfg.reservation_memcached_addr,
         cfg.cache_conn,
-        cfg.cache_miss_rate,
+        cfg.prob_cache_miss,
         cfg.reservation_mongodb_addr,
     )
     .await?;

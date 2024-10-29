@@ -30,7 +30,7 @@ pub struct HotelManager {
     hotels: u32,
     payload: u32,
     cache_conn: u32,
-    cache_miss_rate: u32,
+    prob_cache_miss: u32,
     memcache: memcache::Client,
     _database: Database,
     collection: Collection<Hotel>,
@@ -42,7 +42,7 @@ impl HotelManager {
         payload: u32,
         cache_addr: String,
         cache_conn: u32,
-        cache_miss_rate: u32,
+        prob_cache_miss: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let seed = 998244353;
@@ -59,7 +59,7 @@ impl HotelManager {
             hotels,
             payload,
             cache_conn,
-            cache_miss_rate,
+            prob_cache_miss,
             memcache,
             _database: database,
             collection,
@@ -173,7 +173,7 @@ impl HotelManager {
         let names_db = {
             let mut rng = self.rng.lock().expect("Failed to lock rng");
             let value = self.uniform.sample(&mut *rng) % 100;
-            if value < self.cache_miss_rate as u64 {
+            if value < self.prob_cache_miss as u64 {
                 names.clone()
             } else {
                 Vec::new()
@@ -225,7 +225,7 @@ impl ProfileImpl {
         payload: u32,
         cache_addr: String,
         cache_conn: u32,
-        cache_miss_rate: u32,
+        prob_cache_miss: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let manager = HotelManager::new(
@@ -233,7 +233,7 @@ impl ProfileImpl {
             payload,
             cache_addr,
             cache_conn,
-            cache_miss_rate,
+            prob_cache_miss,
             db_addr,
         )
         .await?;
