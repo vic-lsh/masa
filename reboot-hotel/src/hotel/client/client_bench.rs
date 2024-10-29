@@ -98,17 +98,47 @@ impl LoadGenerator {
         let pause_at =
             init_at + Duration::from_secs(self.gen_cfg.warmup_secs + self.gen_cfg.duration_secs);
 
-        let counter = Arc::new(AtomicUsize::new(0));
-        let counter_clone = counter.clone();
+        let cnt_all_reqs = Arc::new(AtomicUsize::new(0));
+        let cnt_success = Arc::new(AtomicUsize::new(0));
+        let cnt_err = Arc::new(AtomicUsize::new(0));
+        let cnt_err_client_timeout = Arc::new(AtomicUsize::new(0));
+        let all_reqs = cnt_all_reqs.clone();
+        let succeeded = cnt_success.clone();
+        let failed = cnt_err.clone();
+        let timeout_failed = cnt_err_client_timeout.clone();
         tokio::task::spawn(async move {
-            let mut counter_before = 0;
+            let mut all_prev = 0;
+            let mut succ_prev = 0;
+            let mut err_prev = 0;
+            let mut err_timeout_prev = 0;
             let mut secs = 0;
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                let counter_now = counter_clone.load(Ordering::Relaxed);
+                let all = all_reqs.load(Ordering::Relaxed);
+                let succ = succeeded.load(Ordering::Relaxed);
+                let err = failed.load(Ordering::Relaxed);
+                let err_timeout = timeout_failed.load(Ordering::Relaxed);
+
                 secs += 1;
-                log::warn!("secs: {}, rps: {}", secs, counter_now - counter_before);
-                counter_before = counter_now;
+
+                let rps = all - all_prev;
+                let goodps = succ - succ_prev;
+                let errps = err - err_prev;
+                let errtops = err_timeout - err_timeout_prev;
+                log::warn!(
+                    "secs: {}, rps: {}, good: {}, err: {} err_tmout: {}, err_tot: {}",
+                    secs,
+                    rps,
+                    goodps,
+                    errps,
+                    errtops,
+                    err
+                );
+                all_prev = all;
+                succ_prev = succ;
+                err_prev = err;
+                err_timeout_prev = err_timeout;
+
                 if Instant::now() > pause_at {
                     break;
                 }
@@ -182,10 +212,13 @@ impl LoadGenerator {
                 request
             };
 
-            counter.fetch_add(1, Ordering::Relaxed);
             let mut client = self.client.clone();
             let trace_tx = self.trace_tx.clone();
 
+            let all = cnt_all_reqs.clone();
+            let good = cnt_success.clone();
+            let erred = cnt_err.clone();
+            let err_timeout = cnt_err_client_timeout.clone();
             tokio::task::spawn(async move {
                 let send_at = time_now();
                 let timeout_duration = Duration::from_secs(1);
@@ -211,18 +244,25 @@ impl LoadGenerator {
                                     "/None".to_string()
                                 }
                             };
+                            if error == "/None" {
+                                good.fetch_add(1, Ordering::Relaxed);
+                            } else {
+                                erred.fetch_add(1, Ordering::Relaxed);
+                            }
                             let span = Span::new(ctx, latency, fe_latency, error);
                             trace_tx.try_send(span).unwrap();
                         }
                     }
                     Err(_) => {
                         if Instant::now() > trace_at {
+                            err_timeout.fetch_add(1, Ordering::Relaxed);
                             let error = "/LGTimeout".to_string();
                             let span = Span::new(ctx, 0, 0, error);
                             trace_tx.try_send(span).unwrap();
                         }
                     }
                 }
+                all.fetch_add(1, Ordering::Relaxed);
             });
         }
 
