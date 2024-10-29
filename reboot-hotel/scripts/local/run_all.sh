@@ -75,7 +75,7 @@ ready_go() {
 
         if [[ "$service" == "hotel_client_bench" ]]; then
             run_cmd=" \
-sudo RUST_LOG=$rust_log \
+RUST_LOG=$rust_log \
 cargo run --release \
 --features $features \
 --bin $service \
@@ -87,17 +87,14 @@ cargo run --release \
         elif [[ "$service" == "hotel_frontend" ]]; then
 
             run_cmd=" \
-sudo RUST_LOG=$rust_log \
-cargo run --release \
---features $features \
---bin $service \
--- \
+RUST_LOG=$rust_log \
+perf record --call-graph dwarf ../target/release/$service
 --config scripts/local/hotel_config.json"
 
         else 
 
             run_cmd=" \
-sudo RUST_LOG=$rust_log \
+RUST_LOG=$rust_log \
 cargo run --release \
 --features $features \
 --bin $service \
