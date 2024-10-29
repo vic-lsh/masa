@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cfg.payload,
         cfg.rate_memcached_addr,
         cfg.cache_conn,
-        cfg.cache_miss_rate,
+        cfg.prob_cache_miss,
         cfg.rate_mongodb_addr,
     )
     .await?;

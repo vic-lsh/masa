@@ -30,8 +30,8 @@ pub struct HotelConfig {
     pub payload: u32,
     #[serde(rename = "CacheConn")]
     pub cache_conn: u32,
-    #[serde(rename = "CacheMissRate")]
-    pub cache_miss_rate: u32,
+    #[serde(rename = "ProbMissRate")]
+    pub prob_cache_miss: u32,
 
     // #[serde(rename = "FrontendPort")]
     // pub frontend_port: String,
@@ -70,6 +70,8 @@ pub struct HotelConfig {
     // pub reservation_addr: String,
     // #[serde(rename = "ReservationPort")]
     // pub reservation_port: String,
+    #[serde(rename = "ReservationProbHotelAvail")]
+    pub reservation_prob_hotel_avail: u32,
     #[serde(rename = "ReservationMongodbAddr")]
     pub reservation_mongodb_addr: String,
     #[serde(rename = "ReservationMemcachedAddr")]
