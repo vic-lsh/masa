@@ -4,15 +4,16 @@ package reservation;
 
 service Reservation {
   rpc HandleMakeReservation(ReservationRequest) returns (ReservationResponse) {}
-  rpc HandleCheckAvailability(ReservationRequest) returns (ReservationResponse) {}
+  rpc HandleCheckAvailability(ReservationRequest)
+      returns (ReservationResponse) {}
 }
 
 message ReservationRequest {
-  string customerName = 1;
+  string customer = 1;
   repeated string hotels = 2;
   uint32 inDate = 3;
   uint32 outDate = 4;
-  uint32 roomNumber = 5;
+  uint32 numRooms = 5;
 }
 
 message ReservationResponse { repeated string hotels = 1; }

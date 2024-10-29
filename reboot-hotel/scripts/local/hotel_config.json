@@ -8,6 +8,7 @@
 	"RateMemcachedAddr": "memcache://127.0.0.1:11003",
 	"ProfileMongodbAddr": "mongodb://127.0.0.1:27004",
 	"ProfileMemcachedAddr": "memcache://127.0.0.1:11004",
+	"ReservationProbHotelAvail": 80,
 	"ReservationMongodbAddr": "mongodb://127.0.0.1:27005",
 	"ReservationMemcachedAddr": "memcache://127.0.0.1:11005"
 }
