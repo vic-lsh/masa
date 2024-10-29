@@ -79,6 +79,7 @@ impl LatencyTracker {
 #[allow(dead_code)]
 pub struct SimpleServerContext {
     service_name: &'static str,
+    num_early_returns: Arc<AtomicUsize>,
     local_graphs: HashMap<MethodId, LocalGraph>,
     local_graph_trackers: HashMap<MethodId, RwLock<LocalGraphTracker>>,
 }
@@ -86,21 +87,30 @@ pub struct SimpleServerContext {
 impl SimpleParentContext {
     #[inline]
     fn check_early_return(&self) -> bool {
-        if self.method.id() == "/frontend.Frontend/HandleSearch" {
-            let now = time_now();
-            let check = now >= self.ctx.deadline();
+        //if self.method.id() != "/frontend.Frontend/HandleSearch" {
+        let now = time_now();
+        let check = now >= self.ctx.deadline();
+        // if check {
+        //     let diff_us = now - self.ctx.deadline();
+        //     log::warn!(
+        //         "check_early_return, method: {:?}, test_id: {:?}, request_id: {:?}, ddl: {}, now: {}, overdue: {}us",
+        //         self.method.id(),
+        //         self.ctx.test_id(),
+        //         self.ctx.request_id(),
+        //         self.ctx.deadline(),
+        //         now,
+        //         diff_us
+        //     );
+        // }
+        if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
             if check {
-                log::warn!(
-                    "check_early_return, method: {:?}, test_id: {:?}, request_id: {:?}",
-                    self.method.id(),
-                    self.ctx.test_id(),
-                    self.ctx.request_id(),
-                );
+                self.server_ctx
+                    .num_early_returns
+                    .fetch_add(1, Ordering::Relaxed);
             }
-            if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
-                return check;
-            }
+            return check;
         }
+        //}
         false
     }
 
@@ -289,8 +299,21 @@ impl SimpleServerContext {
             local_graphs
         );
 
+        let num_early_returns = Arc::new(AtomicUsize::new(0));
+        let errs = num_early_returns.clone();
+        tokio::spawn(async move {
+            let mut last = 0;
+            loop {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                let curr = errs.load(Ordering::Relaxed);
+                log::warn!("Num errs: {} (diff {})", curr, curr - last);
+                last = curr;
+            }
+        });
+
         Self {
             service_name,
+            num_early_returns,
             local_graphs,
             local_graph_trackers,
         }
