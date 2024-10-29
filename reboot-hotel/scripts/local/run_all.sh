@@ -73,29 +73,36 @@ ready_go() {
         service=${services[$i]}
         wait_secs=${waits_secs[$i]}
 
-        if [[ "$service" != "hotel_client_bench" ]]; then
-
+        if [[ "$service" == "hotel_client_bench" ]]; then
             run_cmd=" \
-RUST_LOG=$rust_log \
-cargo run --release \
---features $features \
---bin $service \
--- \
---config scripts/local/hotel_config.json \
-> $output/tmp_$service.log 2>&1"
-
-        else
-
-            run_cmd=" \
-RUST_LOG=$rust_log \
+sudo RUST_LOG=$rust_log \
 cargo run --release \
 --features $features \
 --bin $service \
 -- \
 --hotel-config scripts/local/hotel_config.json \
 --gen-config $output/gen_config.json \
---run-idx $run_idx \
-> $output/tmp_$service.log 2>&1"
+--run-idx $run_idx"
+
+        elif [[ "$service" == "hotel_frontend" ]]; then
+
+            run_cmd=" \
+sudo RUST_LOG=$rust_log \
+cargo run --release \
+--features $features \
+--bin $service \
+-- \
+--config scripts/local/hotel_config.json"
+
+        else 
+
+            run_cmd=" \
+sudo RUST_LOG=$rust_log \
+cargo run --release \
+--features $features \
+--bin $service \
+-- \
+--config scripts/local/hotel_config.json"
 
         fi
 
@@ -117,17 +124,17 @@ $run_cmd"
 
     tmux attach -t $session_name
 
-    all_done=false
-    while [[ $all_done == false ]]; do
-        sleep 10
-        service=${services[-1]}
-        if [ ! -f $output/tmp_$service.log ]; then
-            continue
-        fi
-        if tail -n 1 $output/tmp_$service.log | grep -q "Load generator done"; then
-            all_done=true
-        fi
-    done
+    # all_done=false
+    # while [[ $all_done == false ]]; do
+    #     sleep 10
+    #     service=${services[-1]}
+    #     if [ ! -f $output/tmp_$service.log ]; then
+    #         continue
+    #     fi
+    #     if tail -n 1 $output/tmp_$service.log | grep -q "Load generator done"; then
+    #         all_done=true
+    #     fi
+    # done
 }
 
 for ((run = 0; run < repeats; run++)); do
