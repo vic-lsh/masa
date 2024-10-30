@@ -1,4 +1,4 @@
-reboot_hotel=~/projs/masa/reboot-hotel
+reboot_hotel=~/Masa-Lo-Ding/reboot-hotel
 mode=prio_global_two
 
 python3 $reboot_hotel/scripts/plots/plot_goodput.py \
