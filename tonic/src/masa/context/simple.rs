@@ -187,19 +187,19 @@ impl RequestHandlerHooks for SimpleParentContext {
         //    return Some(Status::new(Code::DeadlineExceeded, self.method.id()));
         //}
 
-        // log::info!(
-        //     "parent_ctx, after_child_rpc, method: {:?}",
-        //     child_rpc_method.id()
-        // );
-        //let latency_us = child_ctx.track_latency.get_latency().unwrap().as_micros();
-        // let mut graph = self
-        //     .server_ctx
-        //     .local_graph_trackers
-        //     .get(&self.method.id())
-        //     .unwrap()
-        //     .write()
-        //     .unwrap();
-        // graph.track_span(&child_rpc_method.id(), latency_us as u64);
+        log::info!(
+            "parent_ctx, after_child_rpc, method: {:?}",
+            child_rpc_method.id()
+        );
+        let latency_us = child_ctx.track_latency.get_latency().unwrap().as_micros();
+        let mut graph = self
+            .server_ctx
+            .local_graph_trackers
+            .get(&self.method.id())
+            .unwrap()
+            .write()
+            .unwrap();
+        graph.track_span(&child_rpc_method.id(), latency_us as u64);
         None
     }
 
@@ -262,17 +262,17 @@ impl ClientStubHooks for SimpleChildContext {
     }
 
     fn before_send<T>(&mut self, _req: &mut Request<T>) {
-        // log::info!("child_ctx, before_send, method: {:?}", self.method.id());
-        //self.track_latency.start();
+        log::info!("child_ctx, before_send, method: {:?}", self.method.id());
+        self.track_latency.start();
     }
 
     fn after_recv<T>(&mut self, _response: &mut Result<Response<T>, Status>) {
-        //self.track_latency.record_latency();
-        // log::info!(
-        //     "child_ctx, after_recv, method: {:?}, elapsed: {} us",
-        //     self.method.id(),
-        //     self.track_latency.get_latency().unwrap().as_micros(),
-        // );
+        self.track_latency.record_latency();
+        log::info!(
+            "child_ctx, after_recv, method: {:?}, elapsed: {} us",
+            self.method.id(),
+            self.track_latency.get_latency().unwrap().as_micros(),
+        );
     }
 }
 
