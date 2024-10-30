@@ -109,6 +109,10 @@ mod state;
 mod task;
 mod utils;
 
+use core::future::Future;
+use core::pin::Pin;
+use core::task::{Context, Poll};
+
 pub use crate::raw::{
     get_metadata_from_raw_task, get_task_ddl, get_task_ptr, set_metadata_from_raw_task,
     set_task_ptr,
@@ -121,3 +125,27 @@ pub use crate::task::{task_metadata_from_ptr, FallibleTask, Task};
 
 #[cfg(feature = "std")]
 pub use crate::runnable::spawn_local;
+
+/// Yield now
+pub async fn yield_now() {
+    /// Yield implementation
+    struct YieldNow {
+        yielded: bool,
+    }
+
+    impl Future for YieldNow {
+        type Output = ();
+
+        fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
+            if self.yielded {
+                return Poll::Ready(());
+            }
+
+            self.yielded = true;
+
+            Poll::Pending
+        }
+    }
+
+    YieldNow { yielded: false }.await;
+}
