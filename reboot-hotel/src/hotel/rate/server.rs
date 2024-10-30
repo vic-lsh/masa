@@ -220,7 +220,7 @@ impl HotelManager {
 
 pub struct RateImpl {
     manager: HotelManager,
-    lat: Mutex<LatencyTracker>,
+    // lat: Mutex<LatencyTracker>,
 }
 
 impl RateImpl {
@@ -232,7 +232,7 @@ impl RateImpl {
         cache_miss_rate: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn Error>> {
-        let lat = Mutex::new(LatencyTracker::new("RateSvc".to_string(), 512));
+        // let lat = Mutex::new(LatencyTracker::new("RateSvc".to_string(), 512));
         let manager = HotelManager::new(
             hotels,
             payload,
@@ -242,7 +242,7 @@ impl RateImpl {
             db_addr,
         )
         .await?;
-        let rate = RateImpl { manager, lat };
+        let rate = RateImpl { manager };
         Ok(rate)
     }
 }
@@ -253,7 +253,7 @@ impl Rate for RateImpl {
         &self,
         request: Request<rate::RateRequest>,
     ) -> Result<Response<rate::RateResponse>, Status> {
-        let start = Instant::now();
+        // let start = Instant::now();
         // let ctx = request.metadata().get_ctx("ctx").unwrap();
         let request = request.into_inner();
         let hotels = self.manager.fetch_mixture(request.hotels).await;
@@ -267,13 +267,13 @@ impl Rate for RateImpl {
         }
         let response = rate::RateResponse { plans };
         log::info!("response: {:?}", response);
-        let end = start.elapsed();
-        {
-            self.lat
-                .lock()
-                .unwrap()
-                .track(end.as_micros().try_into().unwrap());
-        }
+        // let end = start.elapsed();
+        // {
+        //     self.lat
+        //         .lock()
+        //         .unwrap()
+        //         .track(end.as_micros().try_into().unwrap());
+        // }
         Ok(Response::new(response))
     }
 }
