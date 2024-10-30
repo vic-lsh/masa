@@ -2,6 +2,7 @@
 pub mod config;
 pub mod hotel {
     tonic::include_proto!("frontend");
+    tonic::include_proto!("search");
 }
 
 use std::error::Error;
@@ -25,7 +26,7 @@ use tonic_masa::{
 };
 
 use config::{GenConfig, HotelConfig};
-use hotel::{frontend_client::FrontendClient, SearchRequest};
+use hotel::{frontend_client::FrontendClient, search_client, SearchRequest};
 use reboot_hotel::{fetch_traces, init_logging, time_now, Span};
 
 #[derive(StructOpt, Debug, Clone)]
@@ -98,46 +99,61 @@ impl LoadGenerator {
         let pause_at =
             init_at + Duration::from_secs(self.gen_cfg.warmup_secs + self.gen_cfg.duration_secs);
 
+        let cnt_all_reqs_generated = Arc::new(AtomicUsize::new(0));
         let cnt_all_reqs = Arc::new(AtomicUsize::new(0));
         let cnt_success = Arc::new(AtomicUsize::new(0));
-        let cnt_err = Arc::new(AtomicUsize::new(0));
-        let cnt_err_client_timeout = Arc::new(AtomicUsize::new(0));
+        let cnt_err_srv = Arc::new(AtomicUsize::new(0));
+        let cnt_err_client = Arc::new(AtomicUsize::new(0));
+        let cnt_err_client_to = Arc::new(AtomicUsize::new(0));
+        let all_reqs_generated = cnt_all_reqs_generated.clone();
         let all_reqs = cnt_all_reqs.clone();
         let succeeded = cnt_success.clone();
-        let failed = cnt_err.clone();
-        let timeout_failed = cnt_err_client_timeout.clone();
+        let failed_srv = cnt_err_srv.clone();
+        let failed_client = cnt_err_client.clone();
+        let failed_client_to = cnt_err_client_to.clone();
         tokio::task::spawn(async move {
+            let mut gen_prev = 0;
             let mut all_prev = 0;
             let mut succ_prev = 0;
-            let mut err_prev = 0;
-            let mut err_timeout_prev = 0;
+            let mut err_srv_prev = 0;
+            let mut err_client_prev = 0;
+            let mut err_client_to_prev = 0;
             let mut secs = 0;
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
+                let gen = all_reqs_generated.load(Ordering::Relaxed);
                 let all = all_reqs.load(Ordering::Relaxed);
                 let succ = succeeded.load(Ordering::Relaxed);
-                let err = failed.load(Ordering::Relaxed);
-                let err_timeout = timeout_failed.load(Ordering::Relaxed);
+                let err_srv = failed_srv.load(Ordering::Relaxed);
+                let err_client = failed_client.load(Ordering::Relaxed);
+                let err_client_to = failed_client_to.load(Ordering::Relaxed);
 
                 secs += 1;
 
+                let genps = gen - gen_prev;
                 let rps = all - all_prev;
                 let goodps = succ - succ_prev;
-                let errps = err - err_prev;
-                let errtops = err_timeout - err_timeout_prev;
+                let err_srv_ps = err_srv - err_srv_prev;
+                let err_cl_ps = err_client - err_client_prev;
+                let err_cl_to_ps = err_client_to - err_client_to_prev;
                 log::warn!(
-                    "secs: {}, rps: {}, good: {}, err: {} err_tmout: {}, err_tot: {}",
+                    "secs: {}, gen: {}, rps: {}, good: {}, err_srv: {} err_cl: {}, err_cl_to: {}, err_srv_tot: {}, cl_tot: {}",
                     secs,
+                    genps,
                     rps,
                     goodps,
-                    errps,
-                    errtops,
-                    err
+                    err_srv_ps,
+                    err_cl_ps,
+                    err_cl_to_ps,
+                    err_srv,
+                    err_client,
                 );
+                gen_prev = gen;
                 all_prev = all;
                 succ_prev = succ;
-                err_prev = err;
-                err_timeout_prev = err_timeout;
+                err_srv_prev = err_srv;
+                err_client_prev = err_client;
+                err_client_to_prev = err_client_to;
 
                 if Instant::now() > pause_at {
                     break;
@@ -146,27 +162,30 @@ impl LoadGenerator {
         });
 
         let mut counter_test_id = 0;
-        let mut elapse = 0f64;
+        let mut elapse_us = 0;
         let exponential = Exp::new(self.rps as f64).unwrap();
         let uniform = Uniform::new(0, 1_000_000_007);
+
+        let sleep_dur_us = 1_000_000 / self.rps;
 
         loop {
             if Instant::now() > pause_at {
                 break;
             }
 
-            let send_at = init_at + Duration::from_secs_f64(elapse);
+            let send_at = init_at + Duration::from_micros(elapse_us);
             tokio::time::sleep_until(send_at).await;
 
-            let value = {
-                if Instant::now() < warm_at {
-                    0.01
-                } else {
-                    exponential.sample(&mut self.rng)
-                    // 1f64 / self.rps as f64
-                }
-            };
-            elapse += value;
+            // let value = {
+            //     if Instant::now() < warm_at {
+            //         0.01
+            //     } else {
+            //         exponential.sample(&mut self.rng)
+            //         // 1f64 / self.rps as f64
+            //     }
+            // };
+            // elapse += value;
+            elapse_us += sleep_dur_us;
 
             let ctx = {
                 let test_id = counter_test_id;
@@ -217,8 +236,9 @@ impl LoadGenerator {
 
             let all = cnt_all_reqs.clone();
             let good = cnt_success.clone();
-            let erred = cnt_err.clone();
-            let err_timeout = cnt_err_client_timeout.clone();
+            let erred_srv = cnt_err_srv.clone();
+            let erred_client = cnt_err_client.clone();
+            let erred_client_to = cnt_err_client_to.clone();
             tokio::task::spawn(async move {
                 let send_at = time_now();
                 let timeout_duration = Duration::from_secs(1);
@@ -237,6 +257,7 @@ impl LoadGenerator {
                             };
                             let error = {
                                 if let Err(ref status) = response {
+                                    //log::error!("Error from {}", status.message());
                                     status.message().to_string()
                                 } else if latency > ctx.slo() {
                                     "/LGMiss".to_string()
@@ -246,8 +267,10 @@ impl LoadGenerator {
                             };
                             if error == "/None" {
                                 good.fetch_add(1, Ordering::Relaxed);
+                            } else if error == "/LGMiss" {
+                                erred_client.fetch_add(1, Ordering::Relaxed);
                             } else {
-                                erred.fetch_add(1, Ordering::Relaxed);
+                                erred_srv.fetch_add(1, Ordering::Relaxed);
                             }
                             let span = Span::new(ctx, latency, fe_latency, error);
                             trace_tx.try_send(span).unwrap();
@@ -255,7 +278,7 @@ impl LoadGenerator {
                     }
                     Err(_) => {
                         if Instant::now() > trace_at {
-                            err_timeout.fetch_add(1, Ordering::Relaxed);
+                            erred_client_to.fetch_add(1, Ordering::Relaxed);
                             let error = "/LGTimeout".to_string();
                             let span = Span::new(ctx, 0, 0, error);
                             trace_tx.try_send(span).unwrap();
@@ -264,6 +287,8 @@ impl LoadGenerator {
                 }
                 all.fetch_add(1, Ordering::Relaxed);
             });
+
+            cnt_all_reqs_generated.fetch_add(1, Ordering::Relaxed);
         }
 
         tokio::time::sleep(Duration::from_secs(3)).await;
