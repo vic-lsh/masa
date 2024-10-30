@@ -53,10 +53,10 @@ services=(
 waits_secs=(
     0
     0
-    10
+    5 
     0
-    20
-    26
+    8 
+    12 
 )
 rust_log=warn
 
@@ -64,8 +64,8 @@ ready_go() {
     run_idx=$1
     rm $output/*.log
 
-    docker compose -f scripts/local/containers.yaml down
-    docker compose -f scripts/local/containers.yaml up -d
+    #docker compose -f scripts/local/containers.yaml down -v --remove-orphans
+    #docker compose -f scripts/local/containers.yaml up -d
 
     first_pane=true
 
@@ -82,14 +82,34 @@ cargo run --release \
 -- \
 --hotel-config scripts/local/hotel_config.json \
 --gen-config $output/gen_config.json \
---run-idx $run_idx"
+--run-idx $run_idx;\
+sleep 3; \
+tmux kill-session"
 
-        elif [[ "$service" == "hotel_frontend" ]]; then
+#       elif [[ "$service" == "hotel_rate" ]]; then
+#
+#            run_cmd=" \
+#cargo build --release --features $features --bin $service; \
+#RUST_LOG=$rust_log \
+#timeout 120s perf record -g --call-graph dwarf ../target/release/$service \
+#--config scripts/local/hotel_config.json; \
+#perf script | inferno-collapse-perf > stacks.$service.$features.folded"
 
-            run_cmd=" \
-RUST_LOG=$rust_log \
-perf record --call-graph dwarf ../target/release/$service
---config scripts/local/hotel_config.json"
+#             run_cmd=" \
+# RUST_LOG=$rust_log \
+# cargo flamegraph \
+# --features $features \
+# --bin $service \
+# -- \
+# --config scripts/local/hotel_config.json"
+
+#             run_cmd=" \
+# cargo build --release \
+# --features $features \
+# --bin $service && \
+# sudo RUST_LOG=$rust_log \
+# perf record --call-graph dwarf ../target/release/$service \
+# --config scripts/local/hotel_config.json"
 
         else 
 
