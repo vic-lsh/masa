@@ -34,7 +34,7 @@ pub struct SimpleParentContext {
     ctx: Context,
     server_ctx: Arc<ServerContext>,
 
-    polled: AtomicUsize,
+    //polled: AtomicUsize,
     request_start: Instant,
 }
 
@@ -87,30 +87,25 @@ pub struct SimpleServerContext {
 impl SimpleParentContext {
     #[inline]
     fn check_early_return(&self) -> bool {
+        // if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
         //if self.method.id() != "/frontend.Frontend/HandleSearch" {
+        //if self.method.id() == "/rate.Rate/HandleGetRates" {
         let now = time_now();
         let check = now >= self.ctx.deadline();
-        // if check {
-        //     let diff_us = now - self.ctx.deadline();
-        //     log::warn!(
-        //         "check_early_return, method: {:?}, test_id: {:?}, request_id: {:?}, ddl: {}, now: {}, overdue: {}us",
-        //         self.method.id(),
-        //         self.ctx.test_id(),
-        //         self.ctx.request_id(),
-        //         self.ctx.deadline(),
-        //         now,
-        //         diff_us
-        //     );
-        // }
+
+        if check {
+            self.server_ctx
+                .num_early_returns
+                .fetch_add(1, Ordering::Relaxed);
+        }
+
         if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
-            if check {
-                self.server_ctx
-                    .num_early_returns
-                    .fetch_add(1, Ordering::Relaxed);
-            }
             return check;
+        } else {
+            return false;
         }
         //}
+        // }
         false
     }
 
@@ -133,7 +128,7 @@ impl RequestHandlerHooks for SimpleParentContext {
             method,
             ctx,
             server_ctx,
-            polled: AtomicUsize::new(0),
+            //polled: AtomicUsize::new(0),
             request_start: Instant::now(),
         }
     }
@@ -143,7 +138,11 @@ impl RequestHandlerHooks for SimpleParentContext {
         method: GrpcMethod,
         request: &mut Request<T>,
         _child_send_ctx: &mut ChildContext,
-    ) {
+    ) -> Option<Status> {
+        if self.check_early_return() {
+            return Some(Status::new(Code::DeadlineExceeded, self.method.id()));
+        }
+
         log::info!("parent_ctx, before_child_rpc, method: {:?}", method.id());
         let graph = self
             .server_ctx
@@ -175,6 +174,7 @@ impl RequestHandlerHooks for SimpleParentContext {
             latest_exec_at,
         );
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
+        None
     }
 
     fn after_child_rpc<T>(
@@ -182,36 +182,45 @@ impl RequestHandlerHooks for SimpleParentContext {
         child_rpc_method: GrpcMethod,
         _resp: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext,
-    ) {
-        log::info!(
-            "parent_ctx, after_child_rpc, method: {:?}",
-            child_rpc_method.id()
-        );
-        let latency_us = child_ctx.track_latency.get_latency().unwrap().as_micros();
-        let mut graph = self
-            .server_ctx
-            .local_graph_trackers
-            .get(&self.method.id())
-            .unwrap()
-            .write()
-            .unwrap();
-        graph.track_span(&child_rpc_method.id(), latency_us as u64);
+    ) -> Option<Status> {
+        //if self.check_early_return() {
+        //    return Some(Status::new(Code::DeadlineExceeded, self.method.id()));
+        //}
+
+        // log::info!(
+        //     "parent_ctx, after_child_rpc, method: {:?}",
+        //     child_rpc_method.id()
+        // );
+        //let latency_us = child_ctx.track_latency.get_latency().unwrap().as_micros();
+        // let mut graph = self
+        //     .server_ctx
+        //     .local_graph_trackers
+        //     .get(&self.method.id())
+        //     .unwrap()
+        //     .write()
+        //     .unwrap();
+        // graph.track_span(&child_rpc_method.id(), latency_us as u64);
+        None
     }
 
     fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
-        if self.check_early_return() {
-            return Some(self.issue_early_return());
-        }
-
-        log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
-        self.polled.fetch_add(1, Ordering::Relaxed);
+        // log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
+        // self.polled.fetch_add(1, Ordering::Relaxed);
         None
     }
 
     fn after_poll<Ret>(
         &self,
-        _poll: &Poll<Result<Response<Ret>, Status>>,
+        poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Option<Result<Response<Ret>, Status>> {
+        match poll {
+            Poll::Pending => {
+                if self.check_early_return() {
+                    return Some(self.issue_early_return());
+                }
+            }
+            Poll::Ready(res) => {}
+        };
         None
 
         // if self.method.id() == "/frontend.Frontend/HandleSearch" {
@@ -235,12 +244,12 @@ impl RequestHandlerHooks for SimpleParentContext {
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
-        log::info!(
-            "parent_ctx, finalize, method: {:?}, polled: {} times, elapsed: {} us",
-            self.method.id(),
-            self.polled.load(Ordering::Relaxed),
-            self.request_start.elapsed().as_micros()
-        );
+        // log::info!(
+        //     "parent_ctx, finalize, method: {:?}, polled: {} times, elapsed: {} us",
+        //     self.method.id(),
+        //     self.polled.load(Ordering::Relaxed),
+        //     self.request_start.elapsed().as_micros()
+        // );
     }
 }
 
@@ -253,17 +262,17 @@ impl ClientStubHooks for SimpleChildContext {
     }
 
     fn before_send<T>(&mut self, _req: &mut Request<T>) {
-        log::info!("child_ctx, before_send, method: {:?}", self.method.id());
-        self.track_latency.start();
+        // log::info!("child_ctx, before_send, method: {:?}", self.method.id());
+        //self.track_latency.start();
     }
 
     fn after_recv<T>(&mut self, _response: &mut Result<Response<T>, Status>) {
-        self.track_latency.record_latency();
-        log::info!(
-            "child_ctx, after_recv, method: {:?}, elapsed: {} us",
-            self.method.id(),
-            self.track_latency.get_latency().unwrap().as_micros(),
-        );
+        //self.track_latency.record_latency();
+        // log::info!(
+        //     "child_ctx, after_recv, method: {:?}, elapsed: {} us",
+        //     self.method.id(),
+        //     self.track_latency.get_latency().unwrap().as_micros(),
+        // );
     }
 }
 
