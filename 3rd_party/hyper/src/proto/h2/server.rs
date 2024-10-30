@@ -538,6 +538,8 @@ where
                             headers::set_content_length_if_missing(res.headers_mut(), len);
                         }
 
+                        // [NOTE(vic)]: reply! send the header eagerly, then
+                        // send the body lazily
                         let body_tx = reply!(me, res, false);
                         H2StreamState::Body {
                             pipe: PipeToSendStream::new(body, body_tx),
