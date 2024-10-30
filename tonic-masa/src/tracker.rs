@@ -49,7 +49,7 @@ impl LatencyTracker {
             self.percentiles.push(values[idx]);
         }
 
-        log::debug!(
+        log::warn!(
             "span_id: {:?}, mean: {}us, p50: {}us, p90: {}us, p95: {}us, p99: {}us",
             self.span_id,
             self.mean,
