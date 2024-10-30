@@ -11,6 +11,21 @@ fn get_frontend() -> GlobalGraph {
     let local_graphs = {
         let mut graphs = HashMap::new();
         let method_id: MethodId = "/frontend.Frontend/HandleSearch";
+        // graphs.insert(
+        //     method_id.clone(),
+        //     LocalGraph::new(
+        //         service_id.clone(),
+        //         method_id.clone(),
+        //         vec![
+        //             Span::new("/geo.Geo/HandleNearby".to_string(), None, TRACKER_CAPACITY),
+        //             Span::new(
+        //                 "/rate.Rate/HandleGetRates".to_string(),
+        //                 None,
+        //                 TRACKER_CAPACITY,
+        //             ),
+        //         ],
+        //     ),
+        // );
         graphs.insert(
             method_id.clone(),
             LocalGraph::new(
