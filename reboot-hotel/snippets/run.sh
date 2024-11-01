@@ -1,11 +1,15 @@
-reboot=~/Masa-Lo-Ding/reboot-hotel
+pwd=$(pwd)
+if [[ "$pwd" != */reboot-hotel ]]; then
+    echo "Error: plese run in the reboot-hotel directory" >&2
+    exit 1
+fi
 
-# echo "Running prio_global..."
-# $reboot/scripts/local/run_all.sh \
-# 	--features prio_global \
-# 	--repeats 1
+echo "Running prio_global..."
+$pwd/scripts/local/run_all.sh \
+	--features prio_global \
+	--repeats 1
 
 echo "Running prio_global_two..."
-$reboot/scripts/local/run_all.sh \
+$pwd/scripts/local/run_all.sh \
 	--features prio_global_two \
 	--repeats 1
