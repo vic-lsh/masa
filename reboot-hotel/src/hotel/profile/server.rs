@@ -11,9 +11,7 @@ use std::sync::{Arc, Mutex};
 use futures::StreamExt;
 use mongodb::{bson::doc, Client, Collection, Database, IndexModel};
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
 use tonic::{Request, Response, Status};
-use tonic_masa::LatencyTracker;
 
 use hotel::{profile, profile::profile_server::Profile};
 
@@ -219,7 +217,6 @@ impl HotelManager {
 
 pub struct ProfileImpl {
     manager: HotelManager,
-    lat: Mutex<LatencyTracker>,
 }
 
 impl ProfileImpl {
@@ -231,7 +228,6 @@ impl ProfileImpl {
         cache_miss_rate: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let lat = Mutex::new(LatencyTracker::new("ProfileSvc".to_string(), 512));
         let manager = HotelManager::new(
             hotels,
             payload,
@@ -241,7 +237,7 @@ impl ProfileImpl {
             db_addr,
         )
         .await?;
-        let profile = ProfileImpl { manager, lat };
+        let profile = ProfileImpl { manager };
         Ok(profile)
     }
 }
@@ -252,7 +248,6 @@ impl Profile for ProfileImpl {
         &self,
         request: Request<profile::ProfileRequest>,
     ) -> Result<Response<profile::ProfileResponse>, Status> {
-        let start = Instant::now();
         // let ctx = request.metadata().get_ctx("ctx").unwrap();
         let request = request.into_inner();
         let hotels = self.manager.fetch_mixture(request.hotels).await;
@@ -266,13 +261,6 @@ impl Profile for ProfileImpl {
         }
         let response = profile::ProfileResponse { profiles };
         log::info!("response: {:?}", response);
-        let end = start.elapsed();
-        {
-            self.lat
-                .lock()
-                .unwrap()
-                .track(end.as_micros().try_into().unwrap());
-        }
         Ok(Response::new(response))
     }
 }

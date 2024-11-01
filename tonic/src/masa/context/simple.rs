@@ -34,7 +34,7 @@ pub struct SimpleParentContext {
     ctx: Context,
     server_ctx: Arc<ServerContext>,
 
-    //polled: AtomicUsize,
+    // polled: AtomicUsize,
     request_start: Instant,
 }
 
@@ -87,9 +87,7 @@ pub struct SimpleServerContext {
 impl SimpleParentContext {
     #[inline]
     fn check_early_return(&self) -> bool {
-        // if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
-        //if self.method.id() != "/frontend.Frontend/HandleSearch" {
-        //if self.method.id() == "/rate.Rate/HandleGetRates" {
+        // if self.method.id() == "/frontend.Frontend/HandleSearch" {
         let now = time_now();
         let check = now >= self.ctx.deadline();
 
@@ -100,13 +98,11 @@ impl SimpleParentContext {
         }
 
         if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
-            return check;
+            check
         } else {
-            return false;
+            false
         }
-        //}
         // }
-        false
     }
 
     #[inline]
@@ -183,9 +179,9 @@ impl RequestHandlerHooks for SimpleParentContext {
         _resp: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext,
     ) -> Option<Status> {
-        //if self.check_early_return() {
-        //    return Some(Status::new(Code::DeadlineExceeded, self.method.id()));
-        //}
+        // if self.check_early_return() {
+        //     return Some(Status::new(Code::DeadlineExceeded, self.method.id()));
+        // }
 
         log::info!(
             "parent_ctx, after_child_rpc, method: {:?}",
@@ -219,28 +215,9 @@ impl RequestHandlerHooks for SimpleParentContext {
                     return Some(self.issue_early_return());
                 }
             }
-            Poll::Ready(res) => {}
+            Poll::Ready(_) => {}
         };
         None
-
-        // if self.method.id() == "/frontend.Frontend/HandleSearch" {
-        //     if let Poll::Ready(resp) = poll {
-        //         let request_id = self.ctx.request_id();
-        //         let graph_id = self.ctx.graph_id();
-        //         let slo = 0; // [TODO]
-        //         let latency = self.request_start.elapsed().as_micros();
-        //         let error = resp.is_err();
-        //         log::warn!(
-        //             "{},{},{},{},{},{}",
-        //             self.method.id(),
-        //             request_id,
-        //             graph_id,
-        //             slo,
-        //             latency,
-        //             error
-        //         );
-        //     }
-        // }
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
@@ -315,7 +292,7 @@ impl SimpleServerContext {
             loop {
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 let curr = errs.load(Ordering::Relaxed);
-                log::warn!("Num errs: {} (diff {})", curr, curr - last);
+                log::warn!("num errs: {}, num errs diff: {})", curr, curr - last);
                 last = curr;
             }
         });

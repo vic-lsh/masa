@@ -53,19 +53,21 @@ services=(
 waits_secs=(
     0
     0
-    5 
+    10
     0
-    8 
-    12 
+    20
+    26
 )
 rust_log=warn
 
+reset() {
+    rm $output/*.log
+    docker compose -f scripts/local/containers.yaml down -v --remove-orphans
+    docker compose -f scripts/local/containers.yaml up -d
+}
+
 ready_go() {
     run_idx=$1
-    rm $output/*.log
-
-    #docker compose -f scripts/local/containers.yaml down -v --remove-orphans
-    #docker compose -f scripts/local/containers.yaml up -d
 
     first_pane=true
 
@@ -86,32 +88,32 @@ cargo run --release \
 sleep 3; \
 tmux kill-session"
 
-#       elif [[ "$service" == "hotel_rate" ]]; then
-#
-#            run_cmd=" \
-#cargo build --release --features $features --bin $service; \
-#RUST_LOG=$rust_log \
-#timeout 120s perf record -g --call-graph dwarf ../target/release/$service \
-#--config scripts/local/hotel_config.json; \
-#perf script | inferno-collapse-perf > stacks.$service.$features.folded"
+            #       elif [[ "$service" == "hotel_rate" ]]; then
+            #
+            #            run_cmd=" \
+            # cargo build --release --features $features --bin $service; \
+            # RUST_LOG=$rust_log \
+            # timeout 120s perf record -g --call-graph dwarf ../target/release/$service \
+            # --config scripts/local/hotel_config.json; \
+            # perf script | inferno-collapse-perf > stacks.$service.$features.folded"
 
-#             run_cmd=" \
-# RUST_LOG=$rust_log \
-# cargo flamegraph \
-# --features $features \
-# --bin $service \
-# -- \
-# --config scripts/local/hotel_config.json"
+            #             run_cmd=" \
+            # RUST_LOG=$rust_log \
+            # cargo flamegraph \
+            # --features $features \
+            # --bin $service \
+            # -- \
+            # --config scripts/local/hotel_config.json"
 
-#             run_cmd=" \
-# cargo build --release \
-# --features $features \
-# --bin $service && \
-# sudo RUST_LOG=$rust_log \
-# perf record --call-graph dwarf ../target/release/$service \
-# --config scripts/local/hotel_config.json"
+            #             run_cmd=" \
+            # cargo build --release \
+            # --features $features \
+            # --bin $service && \
+            # sudo RUST_LOG=$rust_log \
+            # perf record --call-graph dwarf ../target/release/$service \
+            # --config scripts/local/hotel_config.json"
 
-        else 
+        else
 
             run_cmd=" \
 RUST_LOG=$rust_log \
@@ -140,18 +142,6 @@ $run_cmd"
     done
 
     tmux attach -t $session_name
-
-    # all_done=false
-    # while [[ $all_done == false ]]; do
-    #     sleep 10
-    #     service=${services[-1]}
-    #     if [ ! -f $output/tmp_$service.log ]; then
-    #         continue
-    #     fi
-    #     if tail -n 1 $output/tmp_$service.log | grep -q "Load generator done"; then
-    #         all_done=true
-    #     fi
-    # done
 }
 
 for ((run = 0; run < repeats; run++)); do
@@ -159,6 +149,7 @@ for ((run = 0; run < repeats; run++)); do
         tmux kill-session -t $session_name
     fi
     echo "Starting run $run/$repeats..."
+    reset
 
     tmux new-session -d -s $session_name -n "local"
     tmux set-option -s pane-border-status top
