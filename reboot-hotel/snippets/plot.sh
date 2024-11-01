@@ -11,3 +11,6 @@ $pwd/snippets/prio_global/plot.sh
 
 echo "Plotting prio_global_two..."
 $pwd/snippets/prio_global_two/plot.sh
+
+echo "Plotting prio_global_vs_prio_global_two..."
+$pwd/snippets/prio_global_vs_prio_global_two/plot.sh
