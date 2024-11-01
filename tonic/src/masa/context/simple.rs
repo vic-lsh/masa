@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, RwLock,
     },
     task::Poll,
@@ -34,6 +34,7 @@ pub struct SimpleParentContext {
     ctx: Context,
     server_ctx: Arc<ServerContext>,
 
+    will_early_return: AtomicBool,
     polled: AtomicUsize,
     request_start: Instant,
 }
@@ -90,23 +91,40 @@ impl SimpleParentContext {
         // if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
         //if self.method.id() != "/frontend.Frontend/HandleSearch" {
         //if self.method.id() == "/rate.Rate/HandleGetRates" {
-        let now = time_now();
-        let check = now >= self.ctx.deadline();
-
-        if check {
-            self.server_ctx
-                .num_early_returns
-                .fetch_add(1, Ordering::Relaxed);
-        }
 
         if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
-            return check;
+            if self.will_early_return.load(Ordering::Relaxed) {
+                return true;
+            }
+
+            let now = time_now();
+            let should_early_return = now >= self.ctx.deadline();
+
+            if should_early_return {
+                // `check_early_return` may be invoked at multiple lifecycle hooks.
+                //
+                // this will only be read/written on one thread, so we can use the
+                // weakest ordering guarantees.
+                // it is an atomic because the ParentContext type needs to be Sync:
+                // see the docs for RequestHandlerHooks for why.
+                if self
+                    .will_early_return
+                    .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)
+                    .is_ok()
+                {
+                    self.server_ctx
+                        .num_early_returns
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+            }
+
+            should_early_return
         } else {
-            return false;
+            false
         }
         //}
         // }
-        false
+        //        false
     }
 
     #[inline]
@@ -128,6 +146,7 @@ impl RequestHandlerHooks for SimpleParentContext {
             method,
             ctx,
             server_ctx,
+            will_early_return: AtomicBool::new(false),
             polled: AtomicUsize::new(0),
             request_start: Instant::now(),
         }
