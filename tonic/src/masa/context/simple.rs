@@ -34,7 +34,7 @@ pub struct SimpleParentContext {
     ctx: Context,
     server_ctx: Arc<ServerContext>,
 
-    //polled: AtomicUsize,
+    polled: AtomicUsize,
     request_start: Instant,
 }
 
@@ -128,7 +128,7 @@ impl RequestHandlerHooks for SimpleParentContext {
             method,
             ctx,
             server_ctx,
-            //polled: AtomicUsize::new(0),
+            polled: AtomicUsize::new(0),
             request_start: Instant::now(),
         }
     }
@@ -180,13 +180,9 @@ impl RequestHandlerHooks for SimpleParentContext {
     fn after_child_rpc<T>(
         &self,
         child_rpc_method: GrpcMethod,
-        _resp: &mut Result<Response<T>, Status>,
+        resp: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext,
     ) -> Option<Status> {
-        //if self.check_early_return() {
-        //    return Some(Status::new(Code::DeadlineExceeded, self.method.id()));
-        //}
-
         log::info!(
             "parent_ctx, after_child_rpc, method: {:?}",
             child_rpc_method.id()
@@ -200,12 +196,25 @@ impl RequestHandlerHooks for SimpleParentContext {
             .write()
             .unwrap();
         graph.track_span(&child_rpc_method.id(), latency_us as u64);
+
+        if let Err(status) = resp {
+            return Some(status.clone());
+        }
+
+        if self.check_early_return() {
+            return Some(Status::new(Code::DeadlineExceeded, self.method.id()));
+        }
+
         None
     }
 
     fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
         // log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
-        // self.polled.fetch_add(1, Ordering::Relaxed);
+        if self.polled.fetch_add(1, Ordering::Relaxed) == 0 {
+            if self.check_early_return() {
+                return Some(self.issue_early_return());
+            }
+        }
         None
     }
 
