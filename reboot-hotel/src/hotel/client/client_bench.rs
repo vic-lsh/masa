@@ -241,7 +241,7 @@ impl LoadGenerator {
             let erred_client_to = cnt_err_client_to.clone();
             tokio::task::spawn(async move {
                 let send_at = time_now();
-                let timeout_duration = Duration::from_secs(1);
+                let timeout_duration = Duration::from_secs(30);
                 match timeout(timeout_duration, client.handle_search(request)).await {
                     Ok(response) => {
                         if Instant::now() > trace_at {
