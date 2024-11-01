@@ -27,8 +27,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let frontend_addr = "[::1]:8660".parse().expect("Failed to parse address");
     let search_addr = "http://[::1]:8661".to_string();
     let profile_addr = "http://[::1]:8664".to_string();
-    let geo_addr = "http://[::1]:8662".to_string();
-    let rate_addr = "http://[::1]:8663".to_string();
 
     static SMOL_EX: smol::Executor<'static, AsyncTaskMetadata> = smol::Executor::new();
     let ex = Arc::new(ExecImpl::new(&SMOL_EX));
@@ -41,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         rt.block_on(ex_clone.run());
     });
 
-    let frontend = FrontendImpl::new(search_addr, profile_addr, geo_addr, rate_addr).await;
+    let frontend = FrontendImpl::new(search_addr, profile_addr).await;
     log::info!("Server listening on {}...", frontend_addr);
     Server::builder()
         .add_service(FrontendServer::new(frontend))
