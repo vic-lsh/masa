@@ -1,5 +1,11 @@
+pwd=$(pwd)
+if [[ "$pwd" != */reboot-hotel ]]; then
+    echo "Error: plese run in the reboot-hotel directory" >&2
+    exit 1
+fi
+
 echo "Plotting prio_global..."
-prio_global/plot.sh
+$pwd/prio_global/plot.sh
 
 echo "Plotting prio_global_two..."
-prio_global_two/plot.sh
+$pwd/prio_global_two/plot.sh

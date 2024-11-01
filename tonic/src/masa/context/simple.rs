@@ -88,7 +88,7 @@ pub struct SimpleServerContext {
 impl SimpleParentContext {
     #[inline]
     fn check_early_return(&self) -> bool {
-        // if self.method.id() == "/frontend.Frontend/HandleSearch" {
+        // if self.method.id() == "/frontend.Frontend/HandleSearch"
         if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
             if self.will_early_return.load(Ordering::Relaxed) {
                 return true;
@@ -115,11 +115,10 @@ impl SimpleParentContext {
                 }
             }
 
-            should_early_return
+            return should_early_return;
         } else {
-            false
+            return false;
         }
-        // }
     }
 
     #[inline]
@@ -223,7 +222,7 @@ impl RequestHandlerHooks for SimpleParentContext {
     }
 
     fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
-        // log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
+        log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
         if self.polled.fetch_add(1, Ordering::Relaxed) == 0 {
             if self.check_early_return() {
                 return Some(self.issue_early_return());
@@ -248,12 +247,12 @@ impl RequestHandlerHooks for SimpleParentContext {
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
-        // log::info!(
-        //     "parent_ctx, finalize, method: {:?}, polled: {} times, elapsed: {} us",
-        //     self.method.id(),
-        //     self.polled.load(Ordering::Relaxed),
-        //     self.request_start.elapsed().as_micros()
-        // );
+        log::info!(
+            "parent_ctx, finalize, method: {:?}, polled: {} times, elapsed: {} us",
+            self.method.id(),
+            self.polled.load(Ordering::Relaxed),
+            self.request_start.elapsed().as_micros()
+        );
     }
 }
 
@@ -302,7 +301,7 @@ impl SimpleServerContext {
             .iter()
             .map(|(path, local_graph)| {
                 let local_graph = LocalGraphTracker::from(local_graph.clone());
-                (path.clone(), RwLock::new(local_graph))
+                (*path, RwLock::new(local_graph))
             })
             .collect();
 
@@ -313,13 +312,17 @@ impl SimpleServerContext {
         );
 
         let num_early_returns = Arc::new(AtomicUsize::new(0));
-        let errs = num_early_returns.clone();
+        let num_early_returns_clone = num_early_returns.clone();
         tokio::spawn(async move {
             let mut last = 0;
             loop {
                 tokio::time::sleep(Duration::from_secs(2)).await;
-                let curr = errs.load(Ordering::Relaxed);
-                log::warn!("num errs: {}, num errs diff: {})", curr, curr - last);
+                let curr = num_early_returns_clone.load(Ordering::Relaxed);
+                log::warn!(
+                    "num early returns: {}, num early returns diff: {})",
+                    curr,
+                    curr - last
+                );
                 last = curr;
             }
         });
