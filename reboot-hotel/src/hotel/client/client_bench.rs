@@ -2,6 +2,7 @@
 pub mod config;
 pub mod hotel {
     tonic::include_proto!("frontend");
+    tonic::include_proto!("search");
 }
 mod gen;
 
@@ -19,7 +20,7 @@ use gen::gen_search_request;
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp, Uniform};
 use structopt::StructOpt;
-use tokio::time::{Duration, Instant};
+use tokio::time::{timeout, Duration, Instant};
 
 use tonic::transport::Channel;
 use tonic_masa::{
@@ -33,10 +34,12 @@ use reboot_hotel::{fetch_traces, init_logging, time_now, Span};
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Client for benchmarking")]
 pub struct Args {
-    #[structopt(short, long, required = true)]
+    #[structopt(long, required = true)]
     pub hotel_config: PathBuf,
-    #[structopt(short, long, required = true)]
+    #[structopt(long, required = true)]
     pub gen_config: PathBuf,
+    #[structopt(long, required = true)]
+    pub run_idx: String,
 }
 
 #[derive(Debug)]
@@ -45,7 +48,7 @@ struct LoadGenerator {
     gen_cfg: GenConfig,
     rng: StdRng,
     graph_id: GraphId,
-    token: Arc<AtomicUsize>,
+    rps: u64,
     client: FrontendClient<Channel>,
     trace_tx: Sender<Span>,
 }
@@ -56,7 +59,7 @@ impl LoadGenerator {
         gen_cfg: GenConfig,
         rng: StdRng,
         graph_id: GraphId,
-        token: Arc<AtomicUsize>,
+        rps: u64,
         client: FrontendClient<Channel>,
         trace_tx: Sender<Span>,
     ) -> Self {
@@ -84,76 +87,122 @@ impl LoadGenerator {
             gen_cfg,
             rng,
             graph_id,
-            token,
+            rps,
             client,
             trace_tx,
         }
     }
 
     async fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        let counter = Arc::new(AtomicUsize::new(0));
-        let counter_clone = counter.clone();
-        tokio::task::spawn(async move {
-            let mut counter_before = 0;
-            loop {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                let counter_now = counter_clone.load(Ordering::Relaxed);
-                log::info!("RPS: {}", counter_now - counter_before);
-                counter_before = counter_now;
-            }
-        });
-
         let init_at = Instant::now();
-        let init_at_u64 = time_now();
+        // let init_at_u64 = time_now();
+        let warm_at = init_at + Duration::from_secs(self.gen_cfg.warmup_secs / 2);
         let trace_at = init_at + Duration::from_secs(self.gen_cfg.warmup_secs);
         let pause_at =
             init_at + Duration::from_secs(self.gen_cfg.warmup_secs + self.gen_cfg.duration_secs);
 
-        let mut elapse = 0f64;
-        let exponential = Exp::new(self.gen_cfg.rps as f64).unwrap();
+        let cnt_all_reqs_generated = Arc::new(AtomicUsize::new(0));
+        let cnt_all_reqs = Arc::new(AtomicUsize::new(0));
+        let cnt_success = Arc::new(AtomicUsize::new(0));
+        let cnt_err_srv = Arc::new(AtomicUsize::new(0));
+        let cnt_err_client = Arc::new(AtomicUsize::new(0));
+        let cnt_err_client_to = Arc::new(AtomicUsize::new(0));
+        let all_reqs_generated = cnt_all_reqs_generated.clone();
+        let all_reqs = cnt_all_reqs.clone();
+        let succeeded = cnt_success.clone();
+        let failed_srv = cnt_err_srv.clone();
+        let failed_client = cnt_err_client.clone();
+        let failed_client_to = cnt_err_client_to.clone();
+        tokio::task::spawn(async move {
+            let mut gen_prev = 0;
+            let mut all_prev = 0;
+            let mut succ_prev = 0;
+            let mut err_srv_prev = 0;
+            let mut err_client_prev = 0;
+            let mut err_client_to_prev = 0;
+            let mut secs = 0;
+            loop {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                let gen = all_reqs_generated.load(Ordering::Relaxed);
+                let all = all_reqs.load(Ordering::Relaxed);
+                let succ = succeeded.load(Ordering::Relaxed);
+                let err_srv = failed_srv.load(Ordering::Relaxed);
+                let err_client = failed_client.load(Ordering::Relaxed);
+                let err_client_to = failed_client_to.load(Ordering::Relaxed);
+
+                secs += 1;
+
+                let genps = gen - gen_prev;
+                let rps = all - all_prev;
+                let goodps = succ - succ_prev;
+                let err_srv_ps = err_srv - err_srv_prev;
+                let err_cl_ps = err_client - err_client_prev;
+                let err_cl_to_ps = err_client_to - err_client_to_prev;
+                log::warn!(
+                    "secs: {}, gen: {}, rps: {}, good: {}, err_srv: {} err_cl: {}, err_cl_to: {}, err_srv_tot: {}, cl_tot: {}",
+                    secs,
+                    genps,
+                    rps,
+                    goodps,
+                    err_srv_ps,
+                    err_cl_ps,
+                    err_cl_to_ps,
+                    err_srv,
+                    err_client,
+                );
+                gen_prev = gen;
+                all_prev = all;
+                succ_prev = succ;
+                err_srv_prev = err_srv;
+                err_client_prev = err_client;
+                err_client_to_prev = err_client_to;
+
+                if Instant::now() > pause_at {
+                    break;
+                }
+            }
+        });
+
+        let mut counter_test_id = 0;
+        let mut elapse_us = 0;
+        let exponential = Exp::new(self.rps as f64).unwrap();
         let uniform = Uniform::new(0, 1_000_000_007);
+
+        let sleep_dur_us = 1_000_000 / self.rps;
 
         loop {
             if Instant::now() > pause_at {
                 break;
             }
 
-            if self.token.load(Ordering::SeqCst) <= 0 {
-                continue;
-            }
+            let send_at = init_at + Duration::from_micros(elapse_us);
+            tokio::time::sleep_until(send_at).await;
 
-            let start_at = init_at + Duration::from_secs_f64(elapse);
-            tokio::time::sleep_until(start_at).await;
+            // let value = {
+            //     if Instant::now() < warm_at {
+            //         0.01
+            //     } else {
+            //         exponential.sample(&mut self.rng)
+            //         // 1f64 / self.rps as f64
+            //     }
+            // };
+            // elapse += value;
+            elapse_us += sleep_dur_us;
 
-            let value = exponential.sample(&mut self.rng);
-            // let value = 1f64 / self.rps as f64;
-            elapse += value;
+            let ctx = {
+                let test_id = counter_test_id;
+                counter_test_id += 1;
+                let request_id = uniform.sample(&mut self.rng) as u64;
+                let request_class = 0;
+                let graph_id = self.graph_id.clone();
+                let slo = self.gen_cfg.slo;
 
-            // Atomically decrement if we still have remaining concurrency
-            if self
-                .token
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |token| {
-                    if token > 0 {
-                        Some(token - 1)
-                    } else {
-                        None
-                    }
-                })
-                .is_err()
-            {
-                // The token was set at 0 -- we have exhausted our concurrency
-                continue;
-            }
-
-            let request_id = uniform.sample(&mut self.rng) as u64;
-            let request_class = 0;
-            let graph_id = self.graph_id.clone();
-            let slo = self.gen_cfg.slo;
-
-            let request = {
+                let start_at = time_now();
                 let deadline = {
                     if PRIO_GLOBAL || PRIO_GLOBAL_TWO || PRIO_LOCAL || PRIO_LOCAL_TWO {
-                        let start_at = time_now() - init_at_u64;
+                        // [DEPRECATED] Relative start time.
+                        // let start_at = time_now() - init_at_u64;
+                        // start_at + slo
                         start_at + slo
                     } else if FIFO_TWO || FIFO {
                         slo
@@ -162,14 +211,20 @@ impl LoadGenerator {
                     }
                 };
                 let latest_exec_at = deadline;
-                let ctx = Context::new(
+
+                Context::new(
                     graph_id.clone(),
+                    test_id,
                     request_id,
+                    slo,
+                    request_class,
+                    start_at,
                     deadline,
                     latest_exec_at,
-                    request_class,
-                );
+                )
+            };
 
+            let request = {
                 let search_request = gen_search_request();
                 let mut request = tonic::Request::new(search_request);
                 request.metadata_mut().insert_ctx("ctx", &ctx);
@@ -177,24 +232,68 @@ impl LoadGenerator {
                 request
             };
 
-            let token = self.token.clone();
-            counter.fetch_add(1, Ordering::Relaxed);
-
             let mut client = self.client.clone();
             let trace_tx = self.trace_tx.clone();
+
+            let all = cnt_all_reqs.clone();
+            let good = cnt_success.clone();
+            let erred_srv = cnt_err_srv.clone();
+            let erred_client = cnt_err_client.clone();
+            let erred_client_to = cnt_err_client_to.clone();
             tokio::task::spawn(async move {
                 let send_at = time_now();
-                let _response = client.handle_search(request).await;
-                let recv_at = time_now();
-                let latency = recv_at - send_at;
-                token.fetch_add(1, Ordering::SeqCst);
-                if Instant::now() > trace_at {
-                    let span = Span::new(request_id, graph_id, slo, latency);
-                    trace_tx.try_send(span).unwrap();
+                let timeout_duration = Duration::from_secs(1);
+                match timeout(timeout_duration, client.handle_search(request)).await {
+                    Ok(response) => {
+                        if Instant::now() > trace_at {
+                            let recv_at = time_now();
+                            let latency = recv_at - send_at;
+                            let fe_latency = {
+                                if let Some(response) = response.as_ref().ok() {
+                                    let ctx = response.metadata().get_ctx("ctx").unwrap();
+                                    ctx.frontend_elapse().unwrap()
+                                } else {
+                                    0
+                                }
+                            };
+                            let error = {
+                                if let Err(ref status) = response {
+                                    //log::error!("Error from {}", status.message());
+                                    status.message().to_string()
+                                } else if latency > ctx.slo() {
+                                    "/LGMiss".to_string()
+                                } else {
+                                    "/None".to_string()
+                                }
+                            };
+                            if error == "/None" {
+                                good.fetch_add(1, Ordering::Relaxed);
+                            } else if error == "/LGMiss" {
+                                erred_client.fetch_add(1, Ordering::Relaxed);
+                            } else {
+                                erred_srv.fetch_add(1, Ordering::Relaxed);
+                            }
+                            let span = Span::new(ctx, latency, fe_latency, error);
+                            trace_tx.try_send(span).unwrap();
+                        }
+                    }
+                    Err(_) => {
+                        if Instant::now() > trace_at {
+                            erred_client_to.fetch_add(1, Ordering::Relaxed);
+                            let error = "/LGTimeout".to_string();
+                            let span = Span::new(ctx, 0, 0, error);
+                            trace_tx.try_send(span).unwrap();
+                        }
+                    }
                 }
+                all.fetch_add(1, Ordering::Relaxed);
             });
+
+            cnt_all_reqs_generated.fetch_add(1, Ordering::Relaxed);
         }
 
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        log::warn!("Load generated");
         Ok(())
     }
 }
@@ -217,10 +316,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     log::info!("Gen config: {:?}", gen_cfg);
 
-    for i in 0..gen_cfg.repeats {
-        let output_path = gen_cfg.output.clone();
-        let output = format!("{}/r{}_{}.csv", output_path.clone(), gen_cfg.rps, i);
+    for rps in &gen_cfg.rps_values {
+        log::warn!("Running rps: {}", rps);
 
+        let output_path = gen_cfg.output.clone();
+        let output = format!("{}/r{}_{}.csv", output_path, rps, args.run_idx);
         let (trace_tx, trace_rx) = unbounded();
 
         let mut load_gen = {
@@ -228,9 +328,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             const SEED: u64 = 998244353;
 
             let graph_id: GraphId = "Hotel".to_string();
-            let seed = SEED * KEY + gen_cfg.rps;
+            let seed = SEED * KEY + rps;
             let rng = StdRng::seed_from_u64(seed);
-            let token = Arc::new(AtomicUsize::new(gen_cfg.concurrency));
             let client = FrontendClient::connect(gen_cfg.addr.clone()).await?;
 
             let load_gen = LoadGenerator::new(
@@ -238,7 +337,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 gen_cfg.clone(),
                 rng,
                 graph_id,
-                token,
+                *rps,
                 client,
                 trace_tx,
             );
@@ -246,19 +345,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         let mut handles = Vec::new();
-
         handles.push(tokio::spawn(async move {
             load_gen.run().await.unwrap();
         }));
-
         handles.push(tokio::spawn(async move {
             fetch_traces(output, trace_rx).await;
         }));
-
         for h in handles {
             h.await.unwrap();
         }
     }
 
+    log::warn!("Load generator done");
     Ok(())
 }
