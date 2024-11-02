@@ -13,17 +13,7 @@ pub struct HealthCheckResponse {
 }
 /// Nested message and enum types in `HealthCheckResponse`.
 pub mod health_check_response {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum ServingStatus {
         Unknown = 0,
@@ -60,8 +50,8 @@ pub mod health_check_response {
 /// Generated client implementations.
 pub mod health_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct HealthClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -94,9 +84,8 @@ pub mod health_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
         {
             HealthClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -136,23 +125,16 @@ pub mod health_client {
         pub async fn check(
             &mut self,
             request: impl tonic::IntoRequest<super::HealthCheckRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::HealthCheckResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::HealthCheckResponse>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/grpc.health.v1.Health/Check",
-            );
+            let path = http::uri::PathAndQuery::from_static("/grpc.health.v1.Health/Check");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("grpc.health.v1.Health", "Check"));
@@ -180,19 +162,14 @@ pub mod health_client {
             tonic::Response<tonic::codec::Streaming<super::HealthCheckResponse>>,
             tonic::Status,
         > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/grpc.health.v1.Health/Watch",
-            );
+            let path = http::uri::PathAndQuery::from_static("/grpc.health.v1.Health/Watch");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("grpc.health.v1.Health", "Watch"));
@@ -212,15 +189,11 @@ pub mod health_server {
         async fn check(
             &self,
             request: tonic::Request<super::HealthCheckRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::HealthCheckResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::HealthCheckResponse>, tonic::Status>;
         /// Server streaming response type for the Watch method.
         type WatchStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::HealthCheckResponse, tonic::Status>,
-            >
-            + Send
+            > + Send
             + 'static;
         /// Performs a watch for the serving status of the requested service.
         /// The server will immediately send back a message indicating the current
@@ -265,10 +238,7 @@ pub mod health_server {
                 max_encoding_message_size: None,
             }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -324,23 +294,15 @@ pub mod health_server {
                 "/grpc.health.v1.Health/Check" => {
                     #[allow(non_camel_case_types)]
                     struct CheckSvc<T: Health>(pub Arc<T>);
-                    impl<
-                        T: Health,
-                    > tonic::server::UnaryService<super::HealthCheckRequest>
-                    for CheckSvc<T> {
+                    impl<T: Health> tonic::server::UnaryService<super::HealthCheckRequest> for CheckSvc<T> {
                         type Response = super::HealthCheckResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::HealthCheckRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as Health>::check(&inner, request).await
-                            };
+                            let fut = async move { <T as Health>::check(&inner, request).await };
                             Box::pin(fut)
                         }
                     }
@@ -362,7 +324,7 @@ pub mod health_server {
                                 max_decoding_message_size,
                                 max_encoding_message_size,
                             );
-                        let res = grpc.unary(method, req).await;
+                        let res = grpc.unary(method, req, None).await;
                         Ok(res)
                     };
                     Box::pin(fut)
@@ -370,24 +332,17 @@ pub mod health_server {
                 "/grpc.health.v1.Health/Watch" => {
                     #[allow(non_camel_case_types)]
                     struct WatchSvc<T: Health>(pub Arc<T>);
-                    impl<
-                        T: Health,
-                    > tonic::server::ServerStreamingService<super::HealthCheckRequest>
-                    for WatchSvc<T> {
+                    impl<T: Health> tonic::server::ServerStreamingService<super::HealthCheckRequest> for WatchSvc<T> {
                         type Response = super::HealthCheckResponse;
                         type ResponseStream = T::WatchStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::HealthCheckRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as Health>::watch(&inner, request).await
-                            };
+                            let fut = async move { <T as Health>::watch(&inner, request).await };
                             Box::pin(fut)
                         }
                     }
@@ -414,18 +369,14 @@ pub mod health_server {
                     };
                     Box::pin(fut)
                 }
-                _ => {
-                    Box::pin(async move {
-                        Ok(
-                            http::Response::builder()
-                                .status(200)
-                                .header("grpc-status", "12")
-                                .header("content-type", "application/grpc")
-                                .body(empty_body())
-                                .unwrap(),
-                        )
-                    })
-                }
+                _ => Box::pin(async move {
+                    Ok(http::Response::builder()
+                        .status(200)
+                        .header("grpc-status", "12")
+                        .header("content-type", "application/grpc")
+                        .body(empty_body())
+                        .unwrap())
+                }),
             }
         }
     }

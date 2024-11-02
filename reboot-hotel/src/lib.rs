@@ -11,7 +11,7 @@ use futures_lite::future;
 
 use hyper::rt::Executor;
 use tonic::masa::AsyncTaskMetadata;
-use tonic_masa::PriorityHint;
+use tonic_masa::{Context, PriorityHint};
 
 pub fn init_logging() {
     Builder::from_env(Env::default().default_filter_or("info"))
@@ -79,20 +79,20 @@ pub fn time_now() -> u64 {
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Span {
-    request_id: u64,
-    graph_id: String,
-    slo: u64,
+    ctx: Context,
     latency: u64,
+    latency_fe: u64,
+    error: String,
 }
 
 #[allow(dead_code)]
 impl Span {
-    pub fn new(request_id: u64, graph_id: String, slo: u64, latency: u64) -> Self {
+    pub fn new(ctx: Context, latency: u64, latency_fe: u64, error: String) -> Self {
         Self {
-            request_id,
-            graph_id,
-            slo,
+            ctx,
             latency,
+            latency_fe,
+            error,
         }
     }
 }
@@ -106,15 +106,30 @@ pub async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
         }
     }
     let mut file = File::create(output).unwrap();
-    writeln!(file, "request_id,graph_id,slo,latency").unwrap();
+    writeln!(
+        file,
+        "graph_id,test_id,request_id,slo,request_class,start_at,deadline,latest_exec_at,latency,latency_fe,error"
+    )
+    .unwrap();
     while let Ok(span) = trace_rx.recv() {
         writeln!(
             file,
-            "{},{},{},{}",
-            span.request_id, span.graph_id, span.slo, span.latency
+            "{},{},{},{},{},{},{},{},{},{},{}",
+            span.ctx.graph_id(),
+            span.ctx.test_id(),
+            span.ctx.request_id(),
+            span.ctx.slo(),
+            span.ctx.request_class(),
+            span.ctx.start_at(),
+            span.ctx.deadline(),
+            span.ctx.latest_exec_at(),
+            span.latency,
+            span.latency_fe,
+            span.error
         )
         .unwrap();
     }
+    log::warn!("Traces fetched");
 }
 
 pub struct JsonParser {}

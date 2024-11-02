@@ -10,6 +10,7 @@ use std::{collections::HashSet, error::Error, sync::Arc};
 
 use mongodb::{bson::doc, Client as MongoClient};
 use tonic::{Request, Response, Status};
+use tonic_masa::LatencyTracker;
 
 use crate::db;
 use hotel::{rate, rate::rate_server::Rate};
@@ -145,6 +146,13 @@ impl Rate for RateImpl {
             rate_plans: final_rate_plans.into_iter().map(|p| p.into()).collect(),
         };
         log::info!("response: {:?}", response);
+        // let end = start.elapsed();
+        // {
+        //     self.lat
+        //         .lock()
+        //         .unwrap()
+        //         .track(end.as_micros().try_into().unwrap());
+        // }
         Ok(Response::new(response))
     }
 }
