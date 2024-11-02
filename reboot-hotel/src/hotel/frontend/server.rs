@@ -80,10 +80,7 @@ impl Frontend for FrontendImpl {
             in_date: request.in_date,
             out_date: request.out_date,
         };
-        let search_resp = search_client
-            .handle_nearby(search_req)
-            .await
-            .expect("Failed to call search::nearby");
+        let search_resp = search_client.handle_nearby(search_req).await?;
         let response = search_resp.into_inner();
 
         // [TODO] Reserve.
@@ -95,10 +92,7 @@ impl Frontend for FrontendImpl {
             hotel_ids: response.hotel_ids,
             locale: request.locale.unwrap_or("en".to_string()),
         };
-        let profile_response = profile_client
-            .get_profiles(profile_request)
-            .await
-            .expect("Failed to call profile::get_profiles");
+        let profile_response = profile_client.get_profiles(profile_request).await?;
         let response = profile_response.into_inner();
 
         let mut hotels = Vec::new();
