@@ -60,7 +60,7 @@ services=(
     "hotel_search"
     "hotel_profile"
     "hotel_frontend"
-    "hotel_open_loop_bench"
+    "hotel_client_bench"
 )
 waits_secs=(
     0
