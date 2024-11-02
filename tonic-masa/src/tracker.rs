@@ -50,7 +50,7 @@ impl LatencyTracker {
         }
 
         log::warn!(
-            "span_id: {:?}, mean: {}, p50: {}, p90: {}, p95: {}, p99: {}",
+            "span_id: {:?}, mean: {}us, p50: {}us, p90: {}us, p95: {}us, p99: {}us",
             self.span_id,
             self.mean,
             self.percentile(50),
@@ -73,6 +73,7 @@ impl LatencyTracker {
         if self.percentiles.len() == 0 {
             self.mean
         } else {
+            // [KNOB] Different percentiles.
             self.percentile(90)
         }
     }
