@@ -13,9 +13,9 @@ path = "src/hotel/client/client_bench.rs"
 #name = "hotel_open_loop_bench"
 #path = "src/hotel/client/open_loop_bench.rs"
 
-[[bin]]
-name = "hotel_open_loop_bench"
-path = "src/hotel/client/open_loop_bench.rs"
+#[[bin]]
+#name = "hotel_open_loop_bench"
+#path = "src/hotel/client/open_loop_bench.rs"
 
 [[bin]]
 name = "hotel_client_lim"
