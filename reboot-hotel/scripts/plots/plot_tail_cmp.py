@@ -21,8 +21,7 @@ for mode in args.modes:
             result["rps"] = rps
             result["graph_id"] = graph_id
             df_filtered = df[
-                (df["graph_id"] == graph_id)
-                & (df["error"].isin(["/None", "/LGMiss", "/LGTimeout"]))
+                (df["graph_id"] == graph_id) & (df["error"].isin(["/None", "/LGMiss"]))
             ]
             result[f"mean_{mode}"] = round(df_filtered["latency"].mean() / ms)
             result[f"p90_{mode}"] = round(df_filtered["latency"].quantile(0.9) / ms)

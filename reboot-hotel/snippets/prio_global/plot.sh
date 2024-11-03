@@ -20,4 +20,3 @@ echo "Plotting tail..."
 python3 $reboot_hotel/scripts/plots/plot_tail.py \
 	--path $reboot_hotel/snippets/$mode \
 	--mode $mode
-echo "Tail done"

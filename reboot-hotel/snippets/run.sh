@@ -1,3 +1,5 @@
+#!/bin/bash
+
 pwd=$(pwd)
 if [[ "$pwd" != */reboot-hotel ]]; then
     echo "Error: plese run in the reboot-hotel directory" >&2
