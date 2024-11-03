@@ -12,7 +12,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "6"
 
   rate-memcached:
     image: memcached:1.6
@@ -25,7 +25,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "6"
 
   profile-mongo:
     image: mongo:7.0
@@ -40,7 +40,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "6"
 
   profile-memcached:
     image: memcached:1.6
@@ -53,31 +53,31 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "6"
 
-  reservation-mongo:
-    image: mongo:7.0
-    container_name: "reservation_mongo"
-    command: --port 27004
-    network_mode: "host"
-    restart: always
-    volumes:
-      - reservation:/data
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
-
-  reservation-memcached:
-    image: memcached:1.6
-    container_name: "reservation_memcached"
-    command: --port 11004
-    network_mode: "host"
-    restart: always
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+            #   reservation-mongo:
+            #     image: mongo:7.0
+            #     container_name: "reservation_mongo"
+            #     command: --port 27004
+            #     network_mode: "host"
+            #     restart: always
+            #     volumes:
+            #       - reservation:/data
+            #     deploy:
+            #       resources:
+            #         limits:
+            #           cpus: "4"
+            # 
+            #   reservation-memcached:
+            #     image: memcached:1.6
+            #     container_name: "reservation_memcached"
+            #     command: --port 11004
+            #     network_mode: "host"
+            #     restart: always
+            #     deploy:
+            #       resources:
+            #         limits:
+            #           cpus: "4"
 
 volumes:
   rate:
