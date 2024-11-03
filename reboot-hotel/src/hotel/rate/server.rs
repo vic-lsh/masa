@@ -4,6 +4,7 @@ pub mod hotel {
     }
 }
 use futures::StreamExt;
+use reboot_hotel::FanoutTracker;
 use tokio::sync::Mutex;
 
 use std::{collections::HashSet, error::Error, sync::Arc};
@@ -25,6 +26,8 @@ struct MasaConfig {
 pub struct RateImpl {
     memc_client: Arc<memcache::Client>,
     mongo_client: Arc<MongoClient>,
+    latency_tracker: Arc<Mutex<LatencyTracker>>,
+    fanout_tracker: Arc<FanoutTracker>,
     _config: MasaConfig,
 }
 
@@ -40,9 +43,22 @@ impl RateImpl {
         let memc_client = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
         let mongo_client = db::initialize_database(&db_addr).await?;
 
+        let latency_tracker = Arc::new(Mutex::new(LatencyTracker::new("ProfileSvc".into(), 1024)));
+
+        let fanout_tracker = Arc::new(FanoutTracker::default());
+        // let fanout = fanout_tracker.clone();
+        // tokio::spawn(async move {
+        //     loop {
+        //         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        //         log::warn!("Avg fanout {}", fanout.get_average_fanout());
+        //     }
+        // });
+
         Ok(Self {
             memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
+            latency_tracker,
+            fanout_tracker,
             _config: MasaConfig {
                 hotels,
                 cache_conn,
@@ -58,10 +74,14 @@ impl Rate for RateImpl {
         &self,
         request: Request<rate::RateRequest>,
     ) -> Result<Response<rate::RateResponse>, Status> {
+        let start = std::time::Instant::now();
+
         let request = request.into_inner();
 
         // Create a set of hotel IDs for tracking missing cache entries
         let mut rate_set: HashSet<String> = request.hotel_ids.iter().cloned().collect();
+
+        // self.fanout_tracker.track(request.hotel_ids.len());
 
         let mut rate_plans = Vec::new();
 
@@ -146,13 +166,13 @@ impl Rate for RateImpl {
             rate_plans: final_rate_plans.into_iter().map(|p| p.into()).collect(),
         };
         log::info!("response: {:?}", response);
-        // let end = start.elapsed();
-        // {
-        //     self.lat
-        //         .lock()
-        //         .unwrap()
-        //         .track(end.as_micros().try_into().unwrap());
-        // }
+        let end = start.elapsed();
+        {
+            self.latency_tracker
+                .lock()
+                .await
+                .track(end.as_micros().try_into().unwrap());
+        }
         Ok(Response::new(response))
     }
 }

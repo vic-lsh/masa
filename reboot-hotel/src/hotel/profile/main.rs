@@ -24,7 +24,8 @@ pub struct Args {
     pub config: PathBuf,
 }
 
-#[tokio::main(flavor = "current_thread")]
+// #[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
@@ -48,14 +49,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     static SMOL_EX: smol::Executor<'static, AsyncTaskMetadata> = smol::Executor::new();
     let ex = Arc::new(ExecImpl::new(&SMOL_EX));
-    let ex_clone = ex.clone();
-    std::thread::spawn(move || {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        rt.block_on(ex_clone.run());
-    });
+
+    let ex_thread_count = 8;
+    for _ in 0..ex_thread_count {
+        let ex_clone = ex.clone();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(ex_clone.run());
+        });
+    }
 
     let profile_addr = "[::1]:8664".parse().expect("Failed to parse address");
     log::info!("Server listening on {}...", profile_addr);
