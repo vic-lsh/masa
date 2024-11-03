@@ -1,10 +1,11 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, RwLock,
     },
-    time::{Duration, Instant},
+    task::Poll,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use tonic_masa::{
@@ -12,9 +13,18 @@ use tonic_masa::{
     PRIO_LOCAL, PRIO_LOCAL_TWO,
 };
 
-use crate::{body::BoxBody, masa::mock_graph, GrpcMethod, Request, Response, Status};
+use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
 
 use super::{ChildContext, ClientStubHooks, RequestHandlerHooks, ServerContext};
+
+#[inline]
+fn time_now() -> u64 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_micros();
+    now as u64
+}
 
 /// A simple implementation of `RequestHandlerHooks`.
 #[derive(Debug)]
@@ -24,6 +34,7 @@ pub struct SimpleParentContext {
     ctx: Context,
     server_ctx: Arc<ServerContext>,
 
+    will_early_return: AtomicBool,
     polled: AtomicUsize,
     request_start: Instant,
 }
@@ -69,8 +80,57 @@ impl LatencyTracker {
 #[allow(dead_code)]
 pub struct SimpleServerContext {
     service_name: &'static str,
+    num_early_returns: Arc<AtomicUsize>,
     local_graphs: HashMap<MethodId, LocalGraph>,
     local_graph_trackers: HashMap<MethodId, RwLock<LocalGraphTracker>>,
+}
+
+impl SimpleParentContext {
+    #[inline]
+    fn check_early_return(&self) -> bool {
+        // if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
+        //if self.method.id() != "/frontend.Frontend/HandleSearch" {
+        //if self.method.id() == "/rate.Rate/HandleGetRates" {
+
+        if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
+            if self.will_early_return.load(Ordering::Relaxed) {
+                return true;
+            }
+
+            let now = time_now();
+            let should_early_return = now >= self.ctx.deadline();
+
+            if should_early_return {
+                // `check_early_return` may be invoked at multiple lifecycle hooks.
+                //
+                // this will only be read/written on one thread, so we can use the
+                // weakest ordering guarantees.
+                // it is an atomic because the ParentContext type needs to be Sync:
+                // see the docs for RequestHandlerHooks for why.
+                if self
+                    .will_early_return
+                    .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)
+                    .is_ok()
+                {
+                    self.server_ctx
+                        .num_early_returns
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+            }
+
+            should_early_return
+        } else {
+            false
+        }
+        //}
+        // }
+        //        false
+    }
+
+    #[inline]
+    fn issue_early_return<T>(&self) -> Result<Response<T>, Status> {
+        Err(Status::new(Code::DeadlineExceeded, self.method.id()))
+    }
 }
 
 impl RequestHandlerHooks for SimpleParentContext {
@@ -86,6 +146,7 @@ impl RequestHandlerHooks for SimpleParentContext {
             method,
             ctx,
             server_ctx,
+            will_early_return: AtomicBool::new(false),
             polled: AtomicUsize::new(0),
             request_start: Instant::now(),
         }
@@ -96,7 +157,11 @@ impl RequestHandlerHooks for SimpleParentContext {
         method: GrpcMethod,
         request: &mut Request<T>,
         _child_send_ctx: &mut ChildContext,
-    ) {
+    ) -> Option<Status> {
+        if self.check_early_return() {
+            return Some(Status::new(Code::DeadlineExceeded, self.method.id()));
+        }
+
         log::info!("parent_ctx, before_child_rpc, method: {:?}", method.id());
         let graph = self
             .server_ctx
@@ -119,20 +184,24 @@ impl RequestHandlerHooks for SimpleParentContext {
         }
         let child_recv_ctx = Context::new(
             self.ctx.graph_id().clone(),
+            self.ctx.test_id(),
             self.ctx.request_id(),
+            self.ctx.slo(),
+            self.ctx.request_class(),
+            self.ctx.start_at(),
             deadline,
             latest_exec_at,
-            self.ctx.request_class(),
         );
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
+        None
     }
 
     fn after_child_rpc<T>(
         &self,
         child_rpc_method: GrpcMethod,
-        _resp: &mut Result<Response<T>, Status>,
+        resp: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext,
-    ) {
+    ) -> Option<Status> {
         log::info!(
             "parent_ctx, after_child_rpc, method: {:?}",
             child_rpc_method.id()
@@ -146,20 +215,69 @@ impl RequestHandlerHooks for SimpleParentContext {
             .write()
             .unwrap();
         graph.track_span(&child_rpc_method.id(), latency_us as u64);
+
+        if let Err(status) = resp {
+            return Some(status.clone());
+        }
+
+        if self.check_early_return() {
+            return Some(Status::new(Code::DeadlineExceeded, self.method.id()));
+        }
+
+        None
     }
 
-    fn before_poll(&self) {
-        log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
-        self.polled.fetch_add(1, Ordering::Relaxed);
+    fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
+        // log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
+        if self.polled.fetch_add(1, Ordering::Relaxed) == 0 {
+            if self.check_early_return() {
+                return Some(self.issue_early_return());
+            }
+        }
+        None
+    }
+
+    fn after_poll<Ret>(
+        &self,
+        poll: &Poll<Result<Response<Ret>, Status>>,
+    ) -> Option<Result<Response<Ret>, Status>> {
+        match poll {
+            Poll::Pending => {
+                if self.check_early_return() {
+                    return Some(self.issue_early_return());
+                }
+            }
+            Poll::Ready(res) => {}
+        };
+        None
+
+        // if self.method.id() == "/frontend.Frontend/HandleSearch" {
+        //     if let Poll::Ready(resp) = poll {
+        //         let request_id = self.ctx.request_id();
+        //         let graph_id = self.ctx.graph_id();
+        //         let slo = 0; // [TODO]
+        //         let latency = self.request_start.elapsed().as_micros();
+        //         let error = resp.is_err();
+        //         log::warn!(
+        //             "{},{},{},{},{},{}",
+        //             self.method.id(),
+        //             request_id,
+        //             graph_id,
+        //             slo,
+        //             latency,
+        //             error
+        //         );
+        //     }
+        // }
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
-        log::info!(
-            "parent_ctx, finalize, method: {:?}, polled: {} times, elapsed: {} us",
-            self.method.id(),
-            self.polled.load(Ordering::Relaxed),
-            self.request_start.elapsed().as_micros()
-        );
+        // log::info!(
+        //     "parent_ctx, finalize, method: {:?}, polled: {} times, elapsed: {} us",
+        //     self.method.id(),
+        //     self.polled.load(Ordering::Relaxed),
+        //     self.request_start.elapsed().as_micros()
+        // );
     }
 }
 
@@ -218,8 +336,21 @@ impl SimpleServerContext {
             local_graphs
         );
 
+        let num_early_returns = Arc::new(AtomicUsize::new(0));
+        let errs = num_early_returns.clone();
+        tokio::spawn(async move {
+            let mut last = 0;
+            loop {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                let curr = errs.load(Ordering::Relaxed);
+                log::warn!("Num errs: {} (diff {})", curr, curr - last);
+                last = curr;
+            }
+        });
+
         Self {
             service_name,
+            num_early_returns,
             local_graphs,
             local_graph_trackers,
         }
