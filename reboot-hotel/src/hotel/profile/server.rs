@@ -10,6 +10,7 @@ use crate::db;
 use mongodb::{bson::doc, Client as MongoClient};
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
+use tonic_masa::LatencyTracker;
 
 use hotel::{profile, profile::profile_server::Profile};
 

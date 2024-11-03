@@ -60,10 +60,7 @@ impl Search for SearchImpl {
             in_date: request.in_date,
             out_date: request.out_date,
         };
-        let rate_response = rate_client
-            .get_rates(Request::new(rate_request))
-            .await
-            .unwrap();
+        let rate_response = rate_client.get_rates(Request::new(rate_request)).await?;
         let response = rate_response.into_inner();
 
         let mut hotel_ids = Vec::new();
