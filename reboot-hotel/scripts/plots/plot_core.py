@@ -107,7 +107,10 @@ def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.savefig(fig_name)
 
 
-def plot_goodput_cmp_bar(results: List[Dict[str, Any]], fig_name: str, modes: str):
+def plot_goodput_cmp_bar(
+    results: List[Dict[str, Any]], fig_name: str, modes: List[str]
+):
+    modes_str = f"{', '.join(modes)}"
     keys = [f"goodput_{mode}" for mode in modes]
     assert len(keys) == 2, "Only 2 modes available"
     labels = [f"Goodput {mode}" for mode in modes]
@@ -125,7 +128,7 @@ def plot_goodput_cmp_bar(results: List[Dict[str, Any]], fig_name: str, modes: st
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
-    ax.set_title(f"Goodput vs RPS ({modes})")
+    ax.set_title(f"Goodput vs RPS ({modes_str})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
@@ -401,8 +404,9 @@ def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
 
 
 def plot_tail_cmp_bar(
-    results: List[Dict[str, Any]], fig_name: str, modes: str, tail: str
+    results: List[Dict[str, Any]], fig_name: str, modes: List[str], tail: str
 ):
+    modes_str = f"{', '.join(modes)}"
     keys = [f"{tail}_{mode}" for mode in modes]
     labels = [f"{tail} {mode}" for mode in modes]
     assert len(keys) == 2, "Only 2 modes available"
@@ -421,7 +425,7 @@ def plot_tail_cmp_bar(
     ax.set_xlabel("RPS")
     ax.set_ylabel(tail)
     ax.set_ylim(0, 100)
-    ax.set_title(f"{tail} vs RPS ({modes})")
+    ax.set_title(f"{tail} vs RPS ({modes_str})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
