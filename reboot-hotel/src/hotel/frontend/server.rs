@@ -107,8 +107,8 @@ impl Frontend for FrontendImpl {
             });
         }
 
-        // let response = frontend::SearchResponse { hotels };
-        let response = frontend::SearchResponse { hotels: Vec::new() };
+        let response = frontend::SearchResponse { hotels };
+        // let response = frontend::SearchResponse { hotels: Vec::new() };
 
         let mut response = Response::new(response);
         ctx.set_frontend_elapse(request_start.elapsed().as_micros() as u64);
