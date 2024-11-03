@@ -9,8 +9,8 @@ use std::{
 };
 
 use tonic_masa::{
-    Context, LocalGraph, LocalGraphTracker, MethodId, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_TWO,
-    PRIO_LOCAL, PRIO_LOCAL_TWO,
+    Context, LocalGraph, LocalGraphTracker, MethodId, FIFO, FIFO_TWO, PRIO_GLOBAL,
+    PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
 
 use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
@@ -89,7 +89,7 @@ impl SimpleParentContext {
     #[inline]
     fn check_early_return(&self) -> bool {
         // if self.method.id() == "/frontend.Frontend/HandleSearch"
-        if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
+        if PRIO_GLOBAL_EARLY || PRIO_LOCAL_EARLY {
             if self.will_early_return.load(Ordering::Relaxed) {
                 return true;
             }
@@ -166,10 +166,10 @@ impl RequestHandlerHooks for SimpleParentContext {
             .unwrap();
         let deadline;
         let latest_exec_at;
-        if FIFO || FIFO_TWO || PRIO_GLOBAL || PRIO_GLOBAL_TWO {
+        if FIFO || FIFO_TWO || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
             deadline = self.ctx.deadline();
             latest_exec_at = self.ctx.latest_exec_at();
-        } else if PRIO_LOCAL || PRIO_LOCAL_TWO {
+        } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
             deadline = self.ctx.deadline() - graph.estimate_suffix_deadline(&method.id());
             latest_exec_at =
                 self.ctx.deadline() - graph.estimate_suffix_latest_exec_at(&method.id());

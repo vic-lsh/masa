@@ -6,8 +6,8 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 	exit 1
 fi
 
-mode=prio_global_vs_prio_global_two
-modes_cmp="prio_global prio_global_two"
+mode=prio_global_vs_prio_global_early
+modes_cmp="prio_global prio_global_early"
 
 echo "Plotting goodput..."
 python3 $pwd/scripts/plots/plot_goodput_cmp.py \
