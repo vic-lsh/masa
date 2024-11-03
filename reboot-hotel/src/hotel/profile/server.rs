@@ -13,6 +13,7 @@ use tonic::{Request, Response, Status};
 use tonic_masa::LatencyTracker;
 
 use hotel::{profile, profile::profile_server::Profile};
+use reboot_hotel::FanoutTracker;
 
 #[allow(unused)]
 struct MasaConfig {
@@ -24,6 +25,8 @@ struct MasaConfig {
 pub struct ProfileImpl {
     memc_client: Arc<memcache::Client>,
     mongo_client: Arc<MongoClient>,
+    latency_tracker: Arc<Mutex<LatencyTracker>>,
+    fanout_tracker: Arc<FanoutTracker>,
     _config: MasaConfig,
 }
 
@@ -39,9 +42,22 @@ impl ProfileImpl {
         let memc_client = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
         let mongo_client = db::initialize_database(&db_addr).await?;
 
+        let latency_tracker = Arc::new(Mutex::new(LatencyTracker::new("ProfileSvc".into(), 1024)));
+
+        let fanout_tracker = Arc::new(FanoutTracker::default());
+        // let fanout = fanout_tracker.clone();
+        // tokio::spawn(async move {
+        //     loop {
+        //         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        //         log::warn!("Avg fanout {}", fanout.get_average_fanout());
+        //     }
+        // });
+
         Ok(Self {
             memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
+            latency_tracker,
+            fanout_tracker,
             _config: MasaConfig {
                 hotels,
                 cache_conn,
@@ -57,7 +73,10 @@ impl Profile for ProfileImpl {
         &self,
         request: Request<profile::ProfileRequest>,
     ) -> Result<Response<profile::ProfileResponse>, Status> {
+        let start = std::time::Instant::now();
+
         let request = request.into_inner();
+        // self.fanout_tracker.track(request.hotel_ids.len());
 
         // Track which hotels need to be fetched from MongoDB
         let mut profile_map: HashSet<String> = request.hotel_ids.iter().cloned().collect();
@@ -129,6 +148,11 @@ impl Profile for ProfileImpl {
 
         // Create response
         let response = profile::ProfileResponse { hotels };
+
+        let elapsed = start.elapsed().as_micros() as u64;
+        {
+            self.latency_tracker.lock().await.track(elapsed);
+        }
 
         Ok(tonic::Response::new(response))
     }

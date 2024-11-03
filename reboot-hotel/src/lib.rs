@@ -3,6 +3,7 @@ use std::fs::{self, File};
 use std::future::Future;
 use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crossbeam_channel::Receiver;
@@ -143,5 +144,28 @@ impl JsonParser {
         let data = fs::read_to_string(path).expect("Unable to read file");
         let res: serde_json::Value = serde_json::from_str(&data).expect("Unable to parse");
         res
+    }
+}
+
+#[derive(Default)]
+pub struct FanoutTracker {
+    fanout: AtomicUsize,
+    count: AtomicUsize,
+}
+
+impl FanoutTracker {
+    pub fn track(&self, fanout: usize) {
+        self.fanout.fetch_add(fanout, Ordering::Relaxed);
+        self.count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn get_average_fanout(&self) -> usize {
+        let count = self.count.load(Ordering::Relaxed);
+        if count == 0 {
+            0
+        } else {
+            let fanout = self.fanout.load(Ordering::Relaxed);
+            fanout / count
+        }
     }
 }
