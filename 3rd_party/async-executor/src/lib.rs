@@ -753,10 +753,10 @@ impl<'a> Default for LocalExecutor<'a> {
 #[cfg(not(any(
     feature = "prio_class",
     feature = "prio_global",
-    feature = "prio_global_two",
+    feature = "prio_global_early",
     feature = "prio_class_global",
     feature = "prio_local",
-    feature = "prio_local_two",
+    feature = "prio_local_early",
     feature = "fifo_two",
     feature = "fifo"
 )))]
@@ -767,7 +767,7 @@ type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 type GlobalQueue<T> = queue::MutexFifoTwoQueue<T>;
 #[cfg(any(feature = "prio_global", feature = "prio_local"))]
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
-#[cfg(any(feature = "prio_global_two", feature = "prio_local_two"))]
+#[cfg(any(feature = "prio_global_early", feature = "prio_local_early"))]
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
 
 // [NOTE] The original implementation uses a concurrent queue for the global queue.
@@ -800,14 +800,14 @@ impl<M> State<M> {
             log::warn!("Enabled prio_class");
         } else if cfg!(feature = "prio_global") {
             log::warn!("Enabled prio_global");
-        } else if cfg!(feature = "prio_global_two") {
-            log::warn!("Enabled prio_global_two");
+        } else if cfg!(feature = "prio_global_early") {
+            log::warn!("Enabled prio_global_early");
         } else if cfg!(feature = "prio_class_global") {
             log::warn!("Enabled prio_class_global");
         } else if cfg!(feature = "prio_local") {
             log::warn!("Enabled prio_local");
-        } else if cfg!(feature = "prio_local_two") {
-            log::warn!("Enabled prio_local_two");
+        } else if cfg!(feature = "prio_local_early") {
+            log::warn!("Enabled prio_local_early");
         } else if cfg!(feature = "fifo_two") {
             log::warn!("Enabled fifo_two");
         } else if cfg!(feature = "fifo") {
