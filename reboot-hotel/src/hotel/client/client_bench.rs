@@ -231,12 +231,12 @@ impl LoadGenerator {
 
             let mut client = self.client.clone();
             let trace_tx = self.trace_tx.clone();
-
             let all = cnt_all_reqs.clone();
             let good = cnt_success.clone();
             let err_svc = cnt_err_svc.clone();
             let err_client = cnt_err_client.clone();
             let err_client_ot = cnt_err_client_ot.clone();
+
             tokio::task::spawn(async move {
                 let send_at = time_now();
                 let timeout_duration = Duration::from_secs(1);
@@ -284,7 +284,6 @@ impl LoadGenerator {
                 }
                 all.fetch_add(1, Ordering::Relaxed);
             });
-
             cnt_all_reqs_generated.fetch_add(1, Ordering::Relaxed);
         }
 
