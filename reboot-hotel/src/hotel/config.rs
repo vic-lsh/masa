@@ -8,7 +8,7 @@ pub struct GenConfig {
     #[serde(rename = "Slo")]
     pub slo: u64,
     #[serde(rename = "Rps")]
-    pub rps: u64,
+    pub rps_values: Vec<u64>,
     #[serde(rename = "WarmupSecs")]
     pub warmup_secs: u64,
     #[serde(rename = "DurationSecs")]
@@ -65,4 +65,13 @@ pub struct HotelConfig {
     pub profile_mongodb_addr: String,
     #[serde(rename = "ProfileMemcachedAddr")]
     pub profile_memcached_addr: String,
+
+    // #[serde(rename = "ReservationAddr")]
+    // pub reservation_addr: String,
+    // #[serde(rename = "ReservationPort")]
+    // pub reservation_port: String,
+    #[serde(rename = "ReservationMongodbAddr")]
+    pub reservation_mongodb_addr: String,
+    #[serde(rename = "ReservationMemcachedAddr")]
+    pub reservation_memcached_addr: String,
 }

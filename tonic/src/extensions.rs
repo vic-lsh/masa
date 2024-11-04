@@ -78,27 +78,33 @@ impl fmt::Debug for Extensions {
 pub struct GrpcMethod {
     service: &'static str,
     method: &'static str,
+    id: &'static str,
 }
 
 impl GrpcMethod {
     /// Create a new `GrpcMethod` extension.
     #[doc(hidden)]
     pub fn new(service: &'static str, method: &'static str) -> Self {
-        Self { service, method }
+        let id = Box::leak(format!("/{}/{}", service, method).into_boxed_str());
+        Self {
+            service,
+            method,
+            id,
+        }
     }
 
     /// gRPC service name.
-    pub fn service(&self) -> &str {
+    pub fn service(&self) -> &'static str {
         self.service
     }
 
     /// gRPC method name.
-    pub fn method(&self) -> &str {
+    pub fn method(&self) -> &'static str {
         self.method
     }
 
     /// gRPC method id.
-    pub fn id(&self) -> String {
-        format!("/{}/{}", self.service, self.method)
+    pub fn id(&self) -> &'static str {
+        self.id
     }
 }

@@ -217,17 +217,49 @@ where
         this
     }
 
+    /// Obtain the masa parent context associated with a request the server is handling.
+    ///
+    /// This field does not exist if the server is running outside of masa.
+    fn get_masa_request_context<'a>() -> Option<&'a crate::masa::ParentContext> {
+        // SAFETY:
+        // - task-ptr is valid (upheld by `async_task::get_task_ptr`)
+        // - metadata type is correct
+        //      (trust that the application uses this metadata type in the executor)
+        let ctx = unsafe {
+            crate::async_task::get_metadata_from_raw_task::<crate::masa::AsyncTaskMetadata>(
+                crate::async_task::get_task_ptr(),
+            )
+        };
+        ctx.as_ref().map(|r| &**r)
+    }
+
+    /// Takes ownership of the request context and sets it up.
+    fn setup_masa_request_context(context: crate::masa::ParentContext) {
+        let req_ctx = std::sync::Arc::new(context);
+        unsafe {
+            crate::async_task::set_metadata_from_raw_task(
+                crate::async_task::get_task_ptr(),
+                Some(req_ctx),
+            );
+        };
+    }
+
     /// Handle a single unary gRPC request.
     pub async fn unary<S, B>(
         &mut self,
         mut service: S,
         req: http::Request<B>,
+        context: Option<crate::masa::ParentContext>,
     ) -> http::Response<BoxBody>
     where
         S: UnaryService<T::Decode, Response = T::Encode>,
         B: Body + Send + 'static,
         B::Error: Into<crate::Error> + Send,
     {
+        use crate::masa::RequestHandlerHooks;
+
+        context.map(Self::setup_masa_request_context);
+
         let accept_encoding = CompressionEncoding::from_accept_encoding_header(
             req.headers(),
             self.send_compression_encodings,
@@ -246,22 +278,28 @@ where
         };
 
         // [NOTE] Into service call.
-        let fut = service.call(request);
-        // [NOTE] Yield to tokio runtime such that the thread local deadline
-        // is visible to the future queue.
-        // tokio::task::yield_now().await;
-        // [NOTE] Do not need to yield to tokio runtime. The deadline is already
-        // visible to the future queue passed from H2Stream.
+        use crate::util::Hookable;
+        let fut = service
+            .call(request)
+            .hook()
+            .pre_hook(|| Self::get_masa_request_context().and_then(|ctx| ctx.before_poll()))
+            .post_hook(|poll| Self::get_masa_request_context().and_then(|ctx| ctx.after_poll(poll)))
+            .build();
         let response = fut.await.map(|r| r.map(|m| tokio_stream::once(Ok(m))));
 
         let compression_override = compression_override_from_response(&response);
 
-        self.map_response(
+        let mut res = self.map_response(
             response,
             accept_encoding,
             compression_override,
             self.max_encoding_message_size,
-        )
+        );
+
+        // Request-completed lifecycle hook.
+        Self::get_masa_request_context().map(|ctx| ctx.finalize(&mut res));
+        // [TODO:Vic] Unset metadata?
+        res
     }
 
     /// Handle a server side streaming request.
