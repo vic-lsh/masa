@@ -163,7 +163,7 @@ impl LoadGenerator {
         });
 
         let mut counter_test_id = 0;
-        let mut elapse_us = 0;
+        let mut elapse = 0f64;
         // let exponential = Exp::new(self.rps as f64).unwrap();
         let uniform = Uniform::new(0, 1_000_000_007);
 
@@ -172,17 +172,18 @@ impl LoadGenerator {
                 break;
             }
 
-            let send_at = init_at + Duration::from_micros(elapse_us);
-            tokio::time::sleep_until(send_at).await;
+            let start_at = init_at + Duration::from_secs_f64(elapse);
+            tokio::time::sleep_until(start_at).await;
 
             let value = {
                 if Instant::now() < warm_at {
-                    1_000_000 / 100
+                    0.01
                 } else {
-                    1_000_000 / self.rps
+                    // exponential.sample(&mut self.rng)
+                    1f64 / self.rps as f64
                 }
             };
-            elapse_us += value;
+            elapse += value;
 
             let ctx = {
                 let test_id = counter_test_id;
