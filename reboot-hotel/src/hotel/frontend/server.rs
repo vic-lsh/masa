@@ -10,6 +10,8 @@ pub mod hotel {
     }
 }
 
+use std::time::Instant;
+
 use tonic::{transport::Channel, Request, Response, Status};
 
 use hotel::{
@@ -43,14 +45,22 @@ impl Frontend for FrontendImpl {
         &self,
         request: Request<frontend::SearchRequest>,
     ) -> Result<Response<frontend::SearchResponse>, Status> {
+        self.handle_search_inner(request).await
+    }
+}
+
+impl FrontendImpl {
+    async fn handle_search_inner(
+        &self,
+        request: Request<frontend::SearchRequest>,
+    ) -> Result<Response<frontend::SearchResponse>, Status> {
+        let request_start = Instant::now();
+        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let request = request.into_inner();
 
         let mut search_client = self.search_client.clone();
         let span_request = search::NearbyRequest { ave: request.ave };
-        let span_response = search_client
-            .handle_nearby(span_request)
-            .await
-            .expect("Failed to call search::nearby");
+        let span_response = search_client.handle_nearby(span_request).await?;
         let response = span_response.into_inner();
 
         // [TODO] Reserve.
@@ -61,10 +71,7 @@ impl Frontend for FrontendImpl {
         let profile_request = profile::ProfileRequest {
             hotels: response.hotels,
         };
-        let profile_response = profile_client
-            .handle_get_profiles(profile_request)
-            .await
-            .expect("Failed to call profile::get_profiles");
+        let profile_response = profile_client.handle_get_profiles(profile_request).await?;
         let response = profile_response.into_inner();
 
         let mut hotels = Vec::new();
@@ -73,7 +80,13 @@ impl Frontend for FrontendImpl {
                 name: profile.hotel,
             });
         }
+
         let response = frontend::SearchResponse { hotels };
-        Ok(Response::new(response))
+
+        let mut response = Response::new(response);
+        ctx.set_frontend_elapse(request_start.elapsed().as_micros() as u64);
+        response.metadata_mut().insert_ctx("ctx", &ctx);
+
+        Ok(response)
     }
 }

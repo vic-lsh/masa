@@ -3,28 +3,27 @@ use std::sync::OnceLock;
 
 use tonic_masa::{GlobalGraph, LocalGraph, MethodId, ServiceId, Span};
 
-static TRACKER_CAPACITY: Option<usize> = Some(100);
-// static TRACKER_CAPACITY: Option<usize> = Some(1_000);
+static TRACKER_CAPACITY: Option<usize> = Some(1_000);
 static GLOBAL_GRAPHS: OnceLock<HashMap<ServiceId, GlobalGraph>> = OnceLock::new();
 
 fn get_frontend() -> GlobalGraph {
     let service_id: ServiceId = "frontend.Frontend".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/frontend.Frontend/HandleSearch".to_string();
+        let method_id: MethodId = "/frontend.Frontend/HandleSearch";
         graphs.insert(
-            method_id.clone(),
+            method_id,
             LocalGraph::new(
                 service_id.clone(),
-                method_id.clone(),
+                method_id,
                 vec![
                     Span::new(
-                        "/search.Search/HandleNearby".to_string() as MethodId,
+                        "/search.Search/HandleNearby".to_string(),
                         None,
                         TRACKER_CAPACITY,
                     ),
                     Span::new(
-                        "/profile.Profile/HandleGetProfiles".to_string() as MethodId,
+                        "/profile.Profile/HandleGetProfiles".to_string(),
                         None,
                         TRACKER_CAPACITY,
                     ),
@@ -41,20 +40,16 @@ fn get_search() -> GlobalGraph {
     let service_id: ServiceId = "search.Search".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/search.Search/HandleNearby".to_string();
+        let method_id: MethodId = "/search.Search/HandleNearby";
         graphs.insert(
-            method_id.clone(),
+            method_id,
             LocalGraph::new(
                 service_id.clone(),
-                method_id.clone(),
+                method_id,
                 vec![
+                    Span::new("/geo.Geo/HandleNearby".to_string(), None, TRACKER_CAPACITY),
                     Span::new(
-                        "/geo.Geo/HandleNearby".to_string() as MethodId,
-                        None,
-                        TRACKER_CAPACITY,
-                    ),
-                    Span::new(
-                        "/rate.Rate/HandleGetRates".to_string() as MethodId,
+                        "/rate.Rate/HandleGetRates".to_string(),
                         None,
                         TRACKER_CAPACITY,
                     ),
@@ -71,10 +66,10 @@ fn get_geo() -> GlobalGraph {
     let service_id: ServiceId = "geo.Geo".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/geo.Geo/HandleNearby".to_string();
+        let method_id: MethodId = "/geo.Geo/HandleNearby";
         graphs.insert(
-            method_id.clone(),
-            LocalGraph::new(service_id.clone(), method_id.clone(), vec![]),
+            method_id,
+            LocalGraph::new(service_id.clone(), method_id, vec![]),
         );
         graphs
     };
@@ -86,10 +81,10 @@ fn get_rate() -> GlobalGraph {
     let service_id: ServiceId = "rate.Rate".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/rate.Rate/HandleGetRates".to_string();
+        let method_id: MethodId = "/rate.Rate/HandleGetRates";
         graphs.insert(
-            method_id.clone(),
-            LocalGraph::new(service_id.clone(), method_id.clone(), vec![]),
+            method_id,
+            LocalGraph::new(service_id.clone(), method_id, vec![]),
         );
         graphs
     };
@@ -101,10 +96,10 @@ fn get_profile() -> GlobalGraph {
     let service_id: ServiceId = "profile.Profile".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/profile.Profile/HandleGetProfiles".to_string();
+        let method_id: MethodId = "/profile.Profile/HandleGetProfiles";
         graphs.insert(
-            method_id.clone(),
-            LocalGraph::new(service_id.clone(), method_id.clone(), vec![]),
+            method_id,
+            LocalGraph::new(service_id.clone(), method_id, vec![]),
         );
         graphs
     };

@@ -9,13 +9,17 @@ version = "0.1.0"
 name = "hotel_client_bench"
 path = "src/hotel/client/client_bench.rs"
 
-[[bin]]
-name = "hotel_client_lim"
-path = "src/hotel/client/client_lim.rs"
+# [[bin]]
+# name = "hotel_client_bench_closed"
+# path = "src/hotel/client/client_bench_closed.rs"
 
-[[bin]]
-name = "hotel_client"
-path = "src/hotel/client/client.rs"
+# [[bin]]
+# name = "hotel_client_lim"
+# path = "src/hotel/client/client_lim.rs"
+
+# [[bin]]
+# name = "hotel_client"
+# path = "src/hotel/client/client.rs"
 
 [[bin]]
 name = "hotel_frontend"
@@ -38,6 +42,10 @@ name = "hotel_profile"
 path = "src/hotel/profile/main.rs"
 
 [[bin]]
+name = "hotel_reservation"
+path = "src/hotel/reservation/main.rs"
+
+[[bin]]
 name = "recommendation-server"
 path = "src/hotel/recommendation/server.rs"
 
@@ -49,13 +57,19 @@ path = "src/hotel/recommendation/client.rs"
 [features]
 prio_class = ["async-executor/prio_class", "tonic-masa/prio_class"]
 prio_global = ["async-executor/prio_global", "tonic-masa/prio_global"]
-prio_global_two = ["async-executor/prio_global_two", "tonic-masa/prio_global_two"]
+prio_global_early = [
+	"async-executor/prio_global_early",
+	"tonic-masa/prio_global_early",
+]
 prio_class_global = [
 	"async-executor/prio_class_global",
 	"tonic-masa/prio_class_global",
 ]
 prio_local = ["async-executor/prio_local", "tonic-masa/prio_local"]
-prio_local_two = ["async-executor/prio_local_two", "tonic-masa/prio_local_two"]
+prio_local_early = [
+	"async-executor/prio_local_early",
+	"tonic-masa/prio_local_early",
+]
 fifo_two = ["async-executor/fifo_two", "tonic-masa/fifo_two"]
 fifo = ["async-executor/fifo", "tonic-masa/fifo"]
 

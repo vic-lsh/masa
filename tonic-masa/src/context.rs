@@ -1,32 +1,43 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{GraphId, RequestClass, RequestId, Timestamp};
+use crate::{GraphId, Latency, RequestClass, RequestId, TestId, Timestamp};
 
 /// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Context {
     graph_id: GraphId,
+    test_id: TestId,
     request_id: RequestId,
+    slo: Latency,
+    request_class: RequestClass,
+    start_at: Timestamp,
     deadline: Timestamp,
     latest_exec_at: Timestamp,
-    request_class: RequestClass,
+    frontend_elapse: Option<u64>,
 }
 
 impl Context {
     /// Create a new Masa context.
     pub fn new(
         graph_id: GraphId,
+        test_id: TestId,
         request_id: RequestId,
+        slo: Latency,
+        request_class: RequestClass,
+        start_at: Timestamp,
         deadline: Timestamp,
         latest_exec_at: Timestamp,
-        request_class: RequestClass,
     ) -> Self {
         Self {
             graph_id,
+            test_id,
             request_id,
+            slo,
+            request_class,
+            start_at,
             deadline,
             latest_exec_at,
-            request_class,
+            frontend_elapse: None,
         }
     }
 
@@ -35,9 +46,29 @@ impl Context {
         &self.graph_id
     }
 
+    /// Get the test ID.
+    pub fn test_id(&self) -> TestId {
+        self.test_id
+    }
+
     /// Get the request ID.
     pub fn request_id(&self) -> RequestId {
         self.request_id
+    }
+
+    /// Get the SLO.
+    pub fn slo(&self) -> Latency {
+        self.slo
+    }
+
+    /// Get the request class.
+    pub fn request_class(&self) -> RequestClass {
+        self.request_class
+    }
+
+    /// Get the start timestamp.
+    pub fn start_at(&self) -> Timestamp {
+        self.start_at
     }
 
     /// Get the deadline.
@@ -50,9 +81,14 @@ impl Context {
         self.latest_exec_at
     }
 
-    /// Get the request class.
-    pub fn request_class(&self) -> RequestClass {
-        self.request_class
+    /// Get the frontend elapse time.
+    pub fn frontend_elapse(&self) -> Option<u64> {
+        self.frontend_elapse
+    }
+
+    /// Set the frontend elapse time.
+    pub fn set_frontend_elapse(&mut self, elapse: u64) {
+        self.frontend_elapse = Some(elapse);
     }
 
     /// Create a new Masa context from JSON.
