@@ -111,7 +111,7 @@ mod utils;
 
 pub use crate::raw::{
     get_metadata_from_raw_task, get_task_ddl, get_task_ptr, set_metadata_from_raw_task,
-    set_task_ddl, set_task_ptr,
+    set_task_ptr,
 };
 pub use crate::runnable::{
     spawn, spawn_unchecked, spawn_with_deadline, Builder, Runnable, Schedule, ScheduleInfo,
