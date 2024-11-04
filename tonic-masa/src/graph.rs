@@ -197,7 +197,7 @@ impl From<GlobalGraph> for GlobalGraphTracker {
         let local_graphs = global_graph
             .local_graphs
             .iter()
-            .map(|(path, local_graph)| (path.clone(), LocalGraphTracker::from(local_graph.clone())))
+            .map(|(path, local_graph)| (*path, LocalGraphTracker::from(local_graph.clone())))
             .collect();
         Self::new(global_graph.service_id, local_graphs)
     }
@@ -206,7 +206,7 @@ impl From<GlobalGraph> for GlobalGraphTracker {
 impl GlobalGraphTracker {
     /// Create a new graph.
     pub fn new(service_id: ServiceId, local_graphs: HashMap<MethodId, LocalGraphTracker>) -> Self {
-        assert!(local_graphs.contains_key(&"Source".to_string()));
+        assert!(local_graphs.contains_key("Source"));
         Self {
             service_id,
             local_graphs,

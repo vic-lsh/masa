@@ -4,6 +4,10 @@ pub mod hotel {
     }
 }
 
+use rand::{rngs::StdRng, SeedableRng};
+use rand_distr::{Distribution, Uniform};
+use std::sync::{Arc, Mutex};
+
 use futures::StreamExt;
 use mongodb::{bson::doc, Client, Collection, Database, IndexModel};
 use serde::{Deserialize, Serialize};
@@ -21,6 +25,8 @@ pub struct Hotel {
 
 #[derive(Clone)]
 pub struct HotelManager {
+    rng: Arc<Mutex<StdRng>>,
+    uniform: Uniform<u64>,
     hotels: u32,
     payload: u32,
     cache_conn: u32,
@@ -39,12 +45,17 @@ impl HotelManager {
         cache_miss_rate: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        let seed = 998244353;
+        let rng = Arc::new(Mutex::new(StdRng::seed_from_u64(seed)));
+        let uniform = Uniform::new(0, 100);
         let memcache = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
         let client = Client::with_uri_str(db_addr).await?;
         let database = client.database("sheraton");
         let collection = database.collection::<Hotel>("collection");
         collection.delete_many(doc! {}, None).await?;
         let manager = HotelManager {
+            rng,
+            uniform,
             hotels,
             payload,
             cache_conn,
@@ -158,9 +169,11 @@ impl HotelManager {
     //     hotels
     // }
 
-    pub async fn fetch_mixture(&self, request_id: u64, names: Vec<String>) -> Vec<Hotel> {
+    pub async fn fetch_mixture(&self, names: Vec<String>) -> Vec<Hotel> {
         let names_db = {
-            if request_id % 100 < self.cache_miss_rate as u64 {
+            let mut rng = self.rng.lock().expect("Failed to lock rng");
+            let value = self.uniform.sample(&mut *rng) % 100;
+            if value < self.cache_miss_rate as u64 {
                 names.clone()
             } else {
                 Vec::new()
@@ -235,12 +248,9 @@ impl Profile for ProfileImpl {
         &self,
         request: Request<profile::ProfileRequest>,
     ) -> Result<Response<profile::ProfileResponse>, Status> {
-        let ctx = request.metadata().get_ctx("ctx").unwrap();
+        // let ctx = request.metadata().get_ctx("ctx").unwrap();
         let request = request.into_inner();
-        let hotels = self
-            .manager
-            .fetch_mixture(ctx.request_id(), request.hotels)
-            .await;
+        let hotels = self.manager.fetch_mixture(request.hotels).await;
         let mut profiles = Vec::new();
         for hotel in hotels {
             profiles.push(profile::HotelProfile {

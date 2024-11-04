@@ -62,7 +62,6 @@ impl LoadGenerator {
     }
 
     async fn run(&self) -> Result<(), Box<dyn Error>> {
-        let init_at = time_now();
         let mut handles = Vec::with_capacity(self.concurrency);
 
         for i in 0..self.concurrency {
@@ -77,8 +76,9 @@ impl LoadGenerator {
                 loop {
                     rps_cnt.fetch_add(1, Ordering::Relaxed);
 
+                    let test_id = 0;
                     let request_id = uniform.sample(&mut rng);
-                    let start_at = time_now() - init_at;
+                    let start_at = time_now();
                     let slo = 10_000;
                     let deadline = start_at + slo;
                     let latest_exec_at = deadline;
@@ -86,10 +86,13 @@ impl LoadGenerator {
 
                     let ctx = Context::new(
                         graph_id.clone(),
+                        test_id,
                         request_id,
+                        slo,
+                        request_class,
+                        start_at,
                         deadline,
                         latest_exec_at,
-                        request_class,
                     );
                     let mut request = tonic::Request::new(request.clone());
                     request.metadata_mut().insert_ctx("ctx", &ctx);

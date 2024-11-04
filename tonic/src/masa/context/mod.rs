@@ -75,7 +75,8 @@ pub trait RequestHandlerHooks: Sync {
         method: GrpcMethod,
         req: &mut Request<T>,
         child_ctx: &mut ChildContext,
-    ) {
+    ) -> Option<Status> {
+        None
     }
 
     /// Invoked after the request handler receives a response from an RPC it made earlier.
@@ -84,18 +85,32 @@ pub trait RequestHandlerHooks: Sync {
         method: GrpcMethod,
         resp: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext,
-    ) {
+    ) -> Option<Status> {
+        None
     }
 
     /// Invoked each time before the request handler is polled.
     ///
-    /// This indicates that the request handler can make progress.
-    fn before_poll(&self) {}
+    /// Being invoked indicates that the request handler can make progress.
+    ///
+    /// To return early without continuing request processing, return the
+    /// response to write back to the client in this hook.
+    fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
+        None
+    }
 
     /// Invoked each time after the request handler is polled.
     ///
     /// The poll result shows whether the request is blocked or finalized.
-    fn after_poll<T>(&self, poll: &Poll<T>) {}
+    ///
+    /// To return early without continuing request processing, return the
+    /// response to write back to the client in this hook.
+    fn after_poll<Ret>(
+        &self,
+        poll: &Poll<Result<Response<Ret>, Status>>,
+    ) -> Option<Result<Response<Ret>, Status>> {
+        None
+    }
 
     /// The last lifecycle hook to be invoked. Provides a mutable reference to the response about
     /// to be sent back to the client.

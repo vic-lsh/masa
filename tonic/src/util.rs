@@ -42,6 +42,18 @@ pub struct HookedFuture<F, Pre, Post> {
     post_hook: Option<Post>,
 }
 
+/// Hook invoked before a future is polled.
+///
+/// The function can provide an output value. If provided, the future will never
+/// be polled again, and the output value is immediately returned.
+pub trait PreHookBound<F: Future> = Fn() -> Option<F::Output>;
+
+/// Hook invoked after a future is polled.
+///
+/// The function can optionally provide an output value. If provided, this
+/// output value will be the one returned, even if the future is already ready.
+pub trait PostHookBound<F: Future> = Fn(&Poll<F::Output>) -> Option<F::Output>;
+
 /// Struct for building a HookedFuture.
 #[derive(Debug)]
 pub struct HookedFutureBuilder<F, Pre, Post> {
@@ -62,12 +74,16 @@ impl<F: Future> HookedFutureBuilder<F, (), ()> {
         }
     }
 }
+
 impl<F, Pre, Post> HookedFutureBuilder<F, Pre, Post>
 where
     F: Future,
 {
     /// Define hook point before polling.
-    pub fn pre_hook<NewPre: Fn()>(self, hook: NewPre) -> HookedFutureBuilder<F, NewPre, Post> {
+    pub fn pre_hook<NewPre: PreHookBound<F>>(
+        self,
+        hook: NewPre,
+    ) -> HookedFutureBuilder<F, NewPre, Post> {
         HookedFutureBuilder {
             inner: self.inner,
             before_poll: Some(hook),
@@ -82,7 +98,7 @@ where
     F: Future,
 {
     /// Define hook point after polling.
-    pub fn post_hook<NewPost: Fn(&Poll<F::Output>)>(
+    pub fn post_hook<NewPost: PostHookBound<F>>(
         self,
         hook: NewPost,
     ) -> HookedFutureBuilder<F, Pre, NewPost> {
@@ -98,8 +114,8 @@ where
 impl<F, Pre, Post> HookedFutureBuilder<F, Pre, Post>
 where
     F: Future,
-    Pre: Fn(),
-    Post: Fn(&Poll<F::Output>),
+    Pre: PreHookBound<F>,
+    Post: PostHookBound<F>,
 {
     ///
     pub fn build(self) -> HookedFuture<F, Pre, Post> {
@@ -114,8 +130,8 @@ where
 impl<F, Pre, Post> Future for HookedFuture<F, Pre, Post>
 where
     F: Future,
-    Pre: Fn(),
-    Post: Fn(&Poll<F::Output>),
+    Pre: PreHookBound<F>,
+    Post: PostHookBound<F>,
 {
     type Output = F::Output;
 
@@ -125,7 +141,9 @@ where
 
         // Call the pre-hook if it exists
         if let Some(pre_hook) = &this.pre_hook {
-            pre_hook();
+            if let Some(alt_output) = pre_hook() {
+                return Poll::Ready(alt_output);
+            }
         }
 
         // Poll the inner future
@@ -134,7 +152,9 @@ where
 
         // Call the post-hook if it exists
         if let Some(post_hook) = &this.post_hook {
-            post_hook(&poll_result);
+            if let Some(alt_output) = post_hook(&poll_result) {
+                return Poll::Ready(alt_output);
+            }
         }
 
         poll_result
