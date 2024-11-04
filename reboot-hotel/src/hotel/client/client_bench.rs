@@ -104,12 +104,13 @@ impl LoadGenerator {
         let cnt_err_svc = Arc::new(AtomicUsize::new(0));
         let cnt_err_client = Arc::new(AtomicUsize::new(0));
         let cnt_err_client_ot = Arc::new(AtomicUsize::new(0));
-        let all_reqs_generated = cnt_all_reqs_generated.clone();
-        let all_reqs = cnt_all_reqs.clone();
-        let succeeded = cnt_success.clone();
-        let failed_svc = cnt_err_svc.clone();
-        let failed_client = cnt_err_client.clone();
-        let failed_client_ot = cnt_err_client_ot.clone();
+
+        let cnt_all_reqs_generated_clone = cnt_all_reqs_generated.clone();
+        let cnt_all_reqs_clone = cnt_all_reqs.clone();
+        let cnt_success_clone = cnt_success.clone();
+        let cnt_err_svc_clone = cnt_err_svc.clone();
+        let cnt_err_client_clone = cnt_err_client.clone();
+        let cnt_err_client_ot_clone = cnt_err_client_ot.clone();
 
         tokio::task::spawn(async move {
             let mut gen_prev = 0;
@@ -121,27 +122,27 @@ impl LoadGenerator {
             let mut secs = 0;
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                let gen = all_reqs_generated.load(Ordering::Relaxed);
-                let all = all_reqs.load(Ordering::Relaxed);
-                let succ = succeeded.load(Ordering::Relaxed);
-                let err_svc = failed_svc.load(Ordering::Relaxed);
-                let err_client = failed_client.load(Ordering::Relaxed);
-                let err_client_ot = failed_client_ot.load(Ordering::Relaxed);
+                let gen = cnt_all_reqs_generated_clone.load(Ordering::Relaxed);
+                let all = cnt_all_reqs_clone.load(Ordering::Relaxed);
+                let succ = cnt_success_clone.load(Ordering::Relaxed);
+                let err_svc = cnt_err_svc_clone.load(Ordering::Relaxed);
+                let err_client = cnt_err_client_clone.load(Ordering::Relaxed);
+                let err_client_ot = cnt_err_client_ot_clone.load(Ordering::Relaxed);
 
                 secs += 1;
 
-                let genps = gen - gen_prev;
+                let gen_ps = gen - gen_prev;
                 let rps = all - all_prev;
-                let goodps = succ - succ_prev;
+                let good_ps = succ - succ_prev;
                 let err_svc_ps = err_svc - err_svc_prev;
                 let err_cl_ps = err_client - err_client_prev;
                 let err_cl_ot_ps = err_client_ot - err_client_to_prev;
                 log::warn!(
                     "secs: {}, gen: {}, rps: {}, good: {}, err_svc: {} err_cl: {}, err_cl_ot: {}, err_svc_sum: {}, cl_sum: {}",
                     secs,
-                    genps,
+                    gen_ps,
                     rps,
-                    goodps,
+                    good_ps,
                     err_svc_ps,
                     err_cl_ps,
                     err_cl_ot_ps,
@@ -232,9 +233,9 @@ impl LoadGenerator {
 
             let all = cnt_all_reqs.clone();
             let good = cnt_success.clone();
-            let erred_svc = cnt_err_svc.clone();
-            let erred_client = cnt_err_client.clone();
-            let erred_client_to = cnt_err_client_ot.clone();
+            let err_svc = cnt_err_svc.clone();
+            let err_client = cnt_err_client.clone();
+            let err_client_ot = cnt_err_client_ot.clone();
             tokio::task::spawn(async move {
                 let send_at = time_now();
                 let timeout_duration = Duration::from_secs(1);
@@ -253,7 +254,6 @@ impl LoadGenerator {
                             };
                             let error = {
                                 if let Err(ref status) = response {
-                                    //log::error!("Error from {}", status.message());
                                     status.message().to_string()
                                 } else if latency > ctx.slo() {
                                     "/LGMiss".to_string()
@@ -264,9 +264,9 @@ impl LoadGenerator {
                             if error == "/None" {
                                 good.fetch_add(1, Ordering::Relaxed);
                             } else if error == "/LGMiss" {
-                                erred_client.fetch_add(1, Ordering::Relaxed);
+                                err_client.fetch_add(1, Ordering::Relaxed);
                             } else {
-                                erred_svc.fetch_add(1, Ordering::Relaxed);
+                                err_svc.fetch_add(1, Ordering::Relaxed);
                             }
                             let span = Span::new(ctx, latency, fe_latency, error);
                             trace_tx.try_send(span).unwrap();
@@ -274,7 +274,7 @@ impl LoadGenerator {
                     }
                     Err(_) => {
                         if Instant::now() > trace_at {
-                            erred_client_to.fetch_add(1, Ordering::Relaxed);
+                            err_client_ot.fetch_add(1, Ordering::Relaxed);
                             let error = "/LGTimeout".to_string();
                             let span = Span::new(ctx, 0, 0, error);
                             trace_tx.try_send(span).unwrap();
