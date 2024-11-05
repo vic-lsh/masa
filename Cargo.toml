@@ -24,6 +24,7 @@ members = [
   "tests/ambiguous_methods",
   "tests/extern_path/my_application",
   "tests/integration_tests",
+  "tests/masa_integration_tests",
   "tests/stream_conflict",
   "tests/root-crate-path",
   "tests/compression",

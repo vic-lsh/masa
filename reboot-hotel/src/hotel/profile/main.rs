@@ -6,14 +6,12 @@ mod server;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
-use std::sync::Arc;
 
-use hyper::rt::Exec;
 use structopt::StructOpt;
-use tonic::{masa::AsyncTaskMetadata, transport::Server};
+use tonic::transport::Server;
 
 use config::HotelConfig;
-use reboot_hotel::{init_logging, ExecImpl};
+use reboot_hotel::init_logging;
 use server::hotel::profile::profile_server::ProfileServer;
 use server::ProfileImpl;
 
@@ -47,26 +45,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
 
-    static SMOL_EX: smol::Executor<'static, AsyncTaskMetadata> = smol::Executor::new();
-    let ex = Arc::new(ExecImpl::new(&SMOL_EX));
-
-    let ex_thread_count = 8;
-    for _ in 0..ex_thread_count {
-        let ex_clone = ex.clone();
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            rt.block_on(ex_clone.run());
-        });
-    }
-
     let profile_addr = "[::1]:8664".parse().expect("Failed to parse address");
     log::info!("Server listening on {}...", profile_addr);
     Server::builder()
         .add_service(ProfileServer::new(profile))
-        .serve_with_executor(profile_addr, Exec::Executor(ex))
+        .serve_with_masa(profile_addr)
         .await?;
 
     Ok(())

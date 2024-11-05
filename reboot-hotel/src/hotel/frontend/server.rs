@@ -17,7 +17,6 @@ pub mod hotel {
 }
 
 use std::time::Instant;
-use tonic_masa::PriorityHint;
 
 use tonic::{transport::Channel, Request, Response, Status};
 
