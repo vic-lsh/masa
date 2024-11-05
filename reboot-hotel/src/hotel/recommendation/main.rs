@@ -6,14 +6,12 @@ mod server;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
-use std::sync::Arc;
 
-use hyper::rt::Exec;
 use structopt::StructOpt;
-use tonic::{masa::AsyncTaskMetadata, transport::Server};
+use tonic::transport::Server;
 
 use config::HotelConfig;
-use reboot_hotel::{init_logging, ExecImpl};
+use reboot_hotel::init_logging;
 use server::hotel::recommendation::recommendation_server::RecommendationServer;
 use server::RecommendationImpl;
 
@@ -38,22 +36,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let rec = RecommendationImpl::new();
 
-    static SMOL_EX: smol::Executor<'static, AsyncTaskMetadata> = smol::Executor::new();
-    let ex = Arc::new(ExecImpl::new(&SMOL_EX));
-    let ex_clone = ex.clone();
-    std::thread::spawn(move || {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        rt.block_on(ex_clone.run());
-    });
-
     let rec_addr = "[::1]:8665".parse().expect("Failed to parse address");
     log::info!("Server listening on {}...", rec_addr);
     Server::builder()
         .add_service(RecommendationServer::new(rec))
-        .serve_with_executor(rec_addr, Exec::Executor(ex))
+        .serve_with_masa(rec_addr)
         .await?;
 
     Ok(())

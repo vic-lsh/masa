@@ -127,6 +127,7 @@ pub use request::{IntoRequest, IntoStreamingRequest, Request};
 pub use response::Response;
 pub use status::{Code, Status};
 
+pub use async_executor;
 pub use async_task;
 
 pub(crate) type Error = Box<dyn std::error::Error + Send + Sync>;

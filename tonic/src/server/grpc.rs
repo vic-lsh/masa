@@ -8,6 +8,7 @@ use crate::{
     Code, Request, Status,
 };
 use http_body::Body;
+use std::sync::Arc;
 use std::{fmt, pin::pin};
 use tokio_stream::{Stream, StreamExt};
 
@@ -217,48 +218,81 @@ where
         this
     }
 
-    /// Obtain the masa parent context associated with a request the server is handling.
-    ///
-    /// This field does not exist if the server is running outside of masa.
-    fn get_masa_request_context<'a>() -> Option<&'a crate::masa::ParentContext> {
-        // SAFETY:
-        // - task-ptr is valid (upheld by `async_task::get_task_ptr`)
-        // - metadata type is correct
-        //      (trust that the application uses this metadata type in the executor)
-        let ctx = unsafe {
-            crate::async_task::get_metadata_from_raw_task::<crate::masa::AsyncTaskMetadata>(
-                crate::async_task::get_task_ptr(),
-            )
-        };
-        ctx.as_ref().map(|r| &**r)
-    }
-
-    /// Takes ownership of the request context and sets it up.
-    fn setup_masa_request_context(context: crate::masa::ParentContext) {
-        let req_ctx = std::sync::Arc::new(context);
-        unsafe {
-            crate::async_task::set_metadata_from_raw_task(
-                crate::async_task::get_task_ptr(),
-                Some(req_ctx),
-            );
-        };
-    }
-
     /// Handle a single unary gRPC request.
     pub async fn unary<S, B>(
         &mut self,
         mut service: S,
         req: http::Request<B>,
-        context: Option<crate::masa::ParentContext>,
     ) -> http::Response<BoxBody>
     where
         S: UnaryService<T::Decode, Response = T::Encode>,
         B: Body + Send + 'static,
         B::Error: Into<crate::Error> + Send,
     {
-        use crate::masa::RequestHandlerHooks;
+        let accept_encoding = CompressionEncoding::from_accept_encoding_header(
+            req.headers(),
+            self.send_compression_encodings,
+        );
 
-        context.map(Self::setup_masa_request_context);
+        let request = match self.map_request_unary(req).await {
+            Ok(r) => r,
+            Err(status) => {
+                return self.map_response::<tokio_stream::Once<Result<T::Encode, Status>>>(
+                    Err(status),
+                    accept_encoding,
+                    SingleMessageCompressionOverride::default(),
+                    self.max_encoding_message_size,
+                );
+            }
+        };
+
+        let fut = service.call(request);
+        let response = fut.await.map(|r| r.map(|m| tokio_stream::once(Ok(m))));
+
+        let compression_override = compression_override_from_response(&response);
+
+        let res = self.map_response(
+            response,
+            accept_encoding,
+            compression_override,
+            self.max_encoding_message_size,
+        );
+
+        res
+    }
+
+    /// Handle a single unary gRPC request.
+    pub async fn masa_unary<S, B, ServerCtx, ChildCtx, ParentCtx>(
+        &mut self,
+        mut service: S,
+        req: http::Request<B>,
+        req_ctx: ParentCtx,
+    ) -> http::Response<BoxBody>
+    where
+        S: UnaryService<T::Decode, Response = T::Encode>,
+        B: Body + Send + 'static,
+        B::Error: Into<crate::Error> + Send,
+        ServerCtx: crate::masa::ServerHooks,
+        ChildCtx: crate::masa::ClientStubHooks,
+        ParentCtx: crate::masa::RequestHandlerHooks<ChildCtx, ServerCtx>,
+    {
+        let req_ctx = Arc::new(req_ctx);
+
+        // Only construct the following if we're using async-executor.
+        if async_executor::is_runtime_active() {
+            // Bump req-ctx reference count to avoid deallocation.
+            // This ref-count will be decremented when `child_hook` is deallocated,
+            // which would happen when this request finishes and removes this hook.
+            let req_ctx_for_child_task = req_ctx.clone();
+
+            let child_hook =
+                crate::masa::context::runtime::async_executor::make_child_task_poll_hook::<
+                    ServerCtx,
+                    ChildCtx,
+                    ParentCtx,
+                >(req_ctx_for_child_task);
+            async_executor::configure_child_task_poll_hooks(child_hook);
+        }
 
         let accept_encoding = CompressionEncoding::from_accept_encoding_header(
             req.headers(),
@@ -282,9 +316,18 @@ where
         let fut = service
             .call(request)
             .hook()
-            .pre_hook(|| Self::get_masa_request_context().and_then(|ctx| ctx.before_poll()))
-            .post_hook(|poll| Self::get_masa_request_context().and_then(|ctx| ctx.after_poll(poll)))
+            .pre_hook(|| {
+                crate::masa::context::server::set_parent_ctx::<ServerCtx, ChildCtx, ParentCtx>(
+                    req_ctx.as_ref(),
+                );
+                req_ctx.before_poll()
+            })
+            .post_hook(|poll| {
+                crate::masa::context::server::reset_parent_ctx::<ServerCtx, ChildCtx, ParentCtx>();
+                req_ctx.after_poll(poll)
+            })
             .build();
+
         let response = fut.await.map(|r| r.map(|m| tokio_stream::once(Ok(m))));
 
         let compression_override = compression_override_from_response(&response);
@@ -297,8 +340,10 @@ where
         );
 
         // Request-completed lifecycle hook.
-        Self::get_masa_request_context().map(|ctx| ctx.finalize(&mut res));
-        // [TODO:Vic] Unset metadata?
+        req_ctx.finalize(&mut res);
+
+        async_executor::reset_child_task_poll_hook();
+
         res
     }
 

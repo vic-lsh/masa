@@ -133,9 +133,13 @@ impl<'a> GreeterImpl<'a> {
             let request = Request::new(HelloRequest {
                 name: "SayGoodbye".to_string(),
             });
-            tasks.push(self.executor.spawn(async move {
+            request.metadata_mut().insert_ctx("par_ctx", &ctx);
+            tasks.push(async_executor::spawn(async move {
                 client.say_goodbye(request).await.unwrap();
             }));
+            // tasks.push(self.executor.spawn(async move {
+            //     client.say_goodbye(request).await.unwrap();
+            // }));
         }
 
         for (idx, task) in tasks.into_iter().enumerate() {
@@ -167,12 +171,13 @@ impl<'a> ExecImpl<'a> {
         Self { ex }
     }
 
-    pub fn spawn<T: Send + 'a>(
-        &self,
-        future: impl Future<Output = T> + Send + 'a,
-    ) -> async_task::Task<T, AsyncTaskMetadata> {
-        self.ex.spawn(future)
-    }
+    // pub fn spawn<T: Send + 'a>(
+    //     &self,
+    //     future: impl Future<Output = T> + Send + 'a,
+    // ) -> async_task::Task<T> {
+    //     async_executor::spawn(future)
+    //     // self.ex.spawn(future)
+    // }
 
     async fn run(&self) {
         // [NOTE] Only a global queue is used in smol::Executor::tick().
@@ -190,7 +195,7 @@ where
     F::Output: Send,
 {
     fn execute(&self, fut: F, ddl: PriorityHint) {
-        self.ex.spawn_with_prio(fut, ddl).fallible().detach();
+        async_executor::spawn_with_ddl(fut, ddl).fallible().detach();
     }
 }
 
@@ -290,16 +295,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let server = servers[i].clone();
 
         let ex = Arc::new(ExecImpl::new(&SMOL_EXECUTOR));
-        for _ in 0..server.n_threads() {
-            let ex = ex.clone();
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap();
-                rt.block_on(ex.run());
-            });
-        }
+        // for _ in 0..server.n_threads() {
+        //     let ex = ex.clone();
+        //     std::thread::spawn(move || {
+        //         let rt = tokio::runtime::Builder::new_current_thread()
+        //             .enable_all()
+        //             .build()
+        //             .unwrap();
+        //         rt.block_on(ex.run());
+        //     });
+        // }
 
         let h = tokio::spawn(async move {
             let addr = server.addr().parse().unwrap();

@@ -1,4 +1,6 @@
 use alloc::alloc::Layout as StdLayout;
+use alloc::boxed::Box;
+use alloc::sync::Arc;
 use core::cell::UnsafeCell;
 use core::future::Future;
 use core::marker::PhantomData;
@@ -13,7 +15,7 @@ use core::sync::atomic::Ordering;
 #[cfg(feature = "portable-atomic")]
 use portable_atomic::AtomicUsize;
 
-use crate::header::Header;
+use crate::header::{Header, RawPollHook};
 use crate::runnable::{Schedule, ScheduleInfo};
 use crate::state::*;
 use crate::utils::{abort, abort_on_panic, max, Layout};
@@ -250,6 +252,7 @@ where
                     clone_waker: Self::clone_waker,
                     layout_info: &Self::TASK_LAYOUT,
                 },
+                child_poll_hooks: RawPollHook::default(),
                 metadata,
                 #[cfg(feature = "std")]
                 propagate_panic,
@@ -914,4 +917,54 @@ pub unsafe fn set_metadata_from_raw_task<M>(ptr: *const (), metadata: M) {
     let header = unsafe { &mut *(ptr as *mut Header<M>) };
 
     header.metadata = metadata;
+}
+
+/// Safety:
+///
+/// - Caller must supply the metadata type M that is associated with the currently running task.
+pub(crate) unsafe fn with_self_task_header<M, R>(
+    func: impl FnOnce(&mut Header<M>) -> R,
+) -> Option<R> {
+    NonNull::new(get_task_ptr() as *mut ()).map(|ptr| {
+        let ptr = ptr.as_ptr();
+        let header = ptr as *mut Header<M>;
+        let header = unsafe { &mut *header };
+
+        func(header)
+    })
+}
+
+/// Safety:
+///
+/// - Caller must supply the metadata type M that is associated with the currently running task.
+pub unsafe fn set_my_child_task_poll_hooks<'a, M>(poll_hook: RawPollHook) -> bool {
+    with_self_task_header::<M, ()>(move |header| {
+        header.child_poll_hooks = poll_hook;
+    })
+    .is_some()
+}
+
+/// Safety:
+///
+/// - Caller must supply the metadata type M that is associated with the currently running task.
+pub unsafe fn reset_my_child_task_poll_hooks<'a, M>() -> bool {
+    with_self_task_header::<M, ()>(|header| {
+        header.child_poll_hooks.reset();
+    })
+    .is_some()
+}
+
+/// Obtain a copy of child task poll hooks defined on the task in which this function is invoked.
+///
+/// Returns None if this is not invoked in an async-task.
+///
+/// Safety:
+///
+/// - Caller must supply the metadata type M that is associated with the currently running task.
+pub unsafe fn maybe_clone_my_child_task_poll_hooks<'a, M>() -> Option<RawPollHook> {
+    with_self_task_header::<M, RawPollHook>(|header| {
+        // this internally invokes the on_clone handler for the ctx, if the ctx is set.
+        // caller beware of cloning expenses.
+        header.child_poll_hooks.clone()
+    })
 }
