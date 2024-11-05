@@ -33,7 +33,6 @@ pub(crate) fn generate_internal<T: Service>(
     let server_service = quote::format_ident!("{}Server", service.name());
     let server_trait = quote::format_ident!("{}", service.name());
     let server_mod = quote::format_ident!("{}_server", naive_snake_case(service.name()));
-    let server_parent_rpc_ctx = quote::format_ident!("{}_parent_rpc_ctx", service.name());
     let generated_trait = generate_trait(
         service,
         emit_package,
@@ -95,11 +94,6 @@ pub(crate) fn generate_internal<T: Service>(
     };
 
     quote! {
-        thread_local! {
-            #[allow(non_upper_case_globals)]
-             static #server_parent_rpc_ctx: std::cell::Cell<*const tonic::masa::ParentContext> =
-                    std::cell::Cell::new(core::ptr::null());
-        }
 
         /// Generated server implementations.
         #(#mod_attributes)*
@@ -118,25 +112,58 @@ pub(crate) fn generate_internal<T: Service>(
             #service_doc
             #(#struct_attributes)*
             #[derive(Debug)]
-            pub struct #server_service<T: #server_trait> {
+            pub struct #server_service<
+                    T: #server_trait,
+                    S: tonic::masa::ServerHooks = tonic::masa::ServerContext,
+                    C: tonic::masa::ClientStubHooks = tonic::masa::ChildContext,
+                    P: tonic::masa::RequestHandlerHooks<C, S> = tonic::masa::ParentContext
+                > {
                 inner: _Inner<T>,
-                ctx: Arc<tonic::masa::ServerContext>,
+                ctx: Arc<S>,
                 accept_compression_encodings: EnabledCompressionEncodings,
                 send_compression_encodings: EnabledCompressionEncodings,
                 max_decoding_message_size: Option<usize>,
                 max_encoding_message_size: Option<usize>,
+                _ctx_ty: std::marker::PhantomData<(C, P)>,
             }
 
             struct _Inner<T>(Arc<T>);
 
-            impl<T: #server_trait> #server_service<T> {
+            // Methods that don't expect a custom context generic parameter.
+            impl<T: #server_trait> #server_service<T, tonic::masa::ServerContext, tonic::masa::ChildContext, tonic::masa::ParentContext> {
                 pub fn new(inner: T) -> Self {
-                    Self::from_arc(Arc::new(inner))
+                    Self::new_impl(inner)
                 }
 
                 pub fn from_arc(inner: Arc<T>) -> Self {
+                    Self::from_arc_impl(inner)
+                }
+
+                pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
+                where
+                    F: tonic::service::Interceptor,
+                {
+                    Self::with_interceptor_impl(inner, interceptor)
+                }
+            }
+
+            impl<
+                T: #server_trait,
+                S: tonic::masa::ServerHooks,
+                C: tonic::masa::ClientStubHooks,
+                P: tonic::masa::RequestHandlerHooks<C, S>,
+            > #server_service<T, S, C, P> {
+                pub fn with_custom_context(inner: T) -> Self {
+                    Self::new_impl(inner)
+                }
+
+                fn new_impl(inner: T) -> Self {
+                    Self::from_arc_impl(Arc::new(inner))
+                }
+
+                fn from_arc_impl(inner: Arc<T>) -> Self {
                     let inner = _Inner(inner);
-                    let ctx = tonic::masa::ServerContext::new(<Self as tonic::server::NamedService>::NAME);
+                    let ctx = S::new(<Self as tonic::server::NamedService>::NAME);
                     Self {
                         inner,
                         ctx: Arc::new(ctx),
@@ -144,14 +171,15 @@ pub(crate) fn generate_internal<T: Service>(
                         send_compression_encodings: Default::default(),
                         max_decoding_message_size: None,
                         max_encoding_message_size: None,
+                        _ctx_ty: std::marker::PhantomData,
                     }
                 }
 
-                pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
+                fn with_interceptor_impl<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
                 where
                     F: tonic::service::Interceptor,
                 {
-                    InterceptedService::new(Self::new(inner), interceptor)
+                    InterceptedService::new(Self::new_impl(inner), interceptor)
                 }
 
                 #configure_compression_methods
@@ -159,9 +187,12 @@ pub(crate) fn generate_internal<T: Service>(
                 #configure_max_message_size_methods
             }
 
-            impl<T, B> tonic::codegen::Service<http::Request<B>> for #server_service<T>
+            impl<T, S, C, P, B> tonic::codegen::Service<http::Request<B>> for #server_service<T, S, C, P>
                 where
                     T: #server_trait,
+                    S: tonic::masa::ServerHooks,
+                    C: tonic::masa::ClientStubHooks,
+                    P: tonic::masa::RequestHandlerHooks<C, S>,
                     B: Body + Send + 'static,
                     B::Error: Into<StdError> + Send + 'static,
             {
@@ -193,7 +224,12 @@ pub(crate) fn generate_internal<T: Service>(
                 }
             }
 
-            impl<T: #server_trait> Clone for #server_service<T> {
+            impl<
+                T: #server_trait,
+                S: tonic::masa::ServerHooks,
+                C: tonic::masa::ClientStubHooks,
+                P: tonic::masa::RequestHandlerHooks<C, S>,
+            > Clone for #server_service<T, S, C, P> {
                 fn clone(&self) -> Self {
                     let inner = self.inner.clone();
                     let ctx = self.ctx.clone();
@@ -204,6 +240,7 @@ pub(crate) fn generate_internal<T: Service>(
                         send_compression_encodings: self.send_compression_encodings,
                         max_decoding_message_size: self.max_decoding_message_size,
                         max_encoding_message_size: self.max_encoding_message_size,
+                        _ctx_ty: std::marker::PhantomData,
                     }
                 }
             }
@@ -392,7 +429,12 @@ fn generate_named(
     let service_name = syn::LitStr::new(service_name, proc_macro2::Span::call_site());
 
     quote! {
-        impl<T: #server_trait> tonic::server::NamedService for #server_service<T> {
+        impl<
+            T: #server_trait,
+            S: tonic::masa::ServerHooks,
+            C: tonic::masa::ClientStubHooks,
+            P: tonic::masa::RequestHandlerHooks<C, S>,
+        > tonic::server::NamedService for #server_service<T, S, C, P> {
             const NAME: &'static str = #service_name;
         }
     }
@@ -420,6 +462,7 @@ fn generate_methods<T: Service>(
             (false, false) => generate_unary(
                 method,
                 &service_name,
+                &service.package(),
                 proto_path,
                 compile_well_known_types,
                 ident,
@@ -470,6 +513,7 @@ fn generate_methods<T: Service>(
 fn generate_unary<T: Method>(
     method: &T,
     outer_service_name: &str,
+    _package: &str,
     proto_path: &str,
     compile_well_known_types: bool,
     method_ident: Ident,
@@ -526,13 +570,11 @@ fn generate_unary<T: Method>(
                 .apply_compression_config(accept_compression_encodings, send_compression_encodings)
                 .apply_max_message_size_config(max_decoding_message_size, max_encoding_message_size);
 
-            use tonic::masa::RequestHandlerHooks;
-
             // Request-begin lifecycle hook.
             let grpc_method = GrpcMethod::new(#outer_service_name, #grpc_method_ident);
-            let req_ctx = tonic::masa::ParentContext::begin(grpc_method, &req, server_ctx);
+            let req_ctx = P::begin(grpc_method, &req, server_ctx);
 
-            let fut = grpc.unary(method, req, Some(req_ctx));
+            let fut = grpc.masa_unary(method, req, req_ctx);
             let res = fut.await;
 
             Ok(res)
