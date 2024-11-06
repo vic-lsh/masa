@@ -52,8 +52,6 @@ for r in range(cfg["Repeats"]):
             rps_to_results.append(result)
 
     plot_error_line(
-        rps_to_results, f"{args.path}/fig_error_rps_line_{r}.png", args.mode, args.alias
+        rps_to_results, f"{args.path}/fig_error_rps_line_{r}.png", args.mode
     )
-    plot_error_bar(
-        rps_to_results, f"{args.path}/fig_error_rps_bar_{r}.png", args.mode, args.alias
-    )
+    plot_error_bar(rps_to_results, f"{args.path}/fig_error_rps_bar_{r}.png", args.mode)
