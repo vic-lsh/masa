@@ -4,7 +4,8 @@ pub mod hotel {
     }
 }
 use futures::StreamExt;
-use reboot_hotel::FanoutTracker;
+#[cfg(feature = "workload_stats")]
+use reboot_hotel::AvgTracker;
 #[cfg(not(feature = "synthetic"))]
 use std::collections::HashSet;
 use tokio::sync::Mutex;
@@ -43,7 +44,8 @@ pub struct RateImpl {
     memc_client: Arc<memcache::Client>,
     mongo_client: Arc<MongoClient>,
     latency_tracker: Arc<Mutex<LatencyTracker>>,
-    fanout_tracker: Arc<FanoutTracker>,
+    #[cfg(feature = "workload_stats")]
+    fanout_tracker: Arc<AvgTracker>,
     #[cfg(feature = "synthetic")]
     synth: SyntheticRate,
 }
@@ -61,15 +63,18 @@ impl RateImpl {
 
         let latency_tracker = Arc::new(Mutex::new(LatencyTracker::new("ProfileSvc".into(), 1024)));
 
-        let fanout_tracker = Arc::new(FanoutTracker::default());
-        // let fanout = fanout_tracker.clone();
-        // tokio::spawn(async move {
-        //     loop {
-        //         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        //         log::warn!("Avg fanout {}", fanout.get_average_fanout());
-        //     }
-        // });
-        //
+        #[cfg(feature = "workload_stats")]
+        let fanout_tracker = {
+            let fanout_tracker = Arc::new(AvgTracker::default());
+            let fanout = fanout_tracker.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    log::warn!("Avg fanout {}", fanout.get_average_fanout());
+                }
+            });
+            fanout_tracker
+        };
 
         #[cfg(feature = "synthetic")]
         let (rng, uniform) = {
@@ -83,6 +88,7 @@ impl RateImpl {
             memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
             latency_tracker,
+            #[cfg(feature = "workload_stats")]
             fanout_tracker,
             #[cfg(feature = "synthetic")]
             synth: SyntheticRate {
