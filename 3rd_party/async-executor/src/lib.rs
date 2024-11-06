@@ -74,7 +74,7 @@ fn get_static_ex() -> &'static Executor<'static> {
         .is_ok()
     {
         // [TODO] make thread pool size configurable
-        const N_THRS: usize = 1;
+        const N_THRS: usize = 16;
         for _ in 0..N_THRS {
             // std::thread::spawn(|| future::block_on(drive_runtime(&__STATIC_EX)));
             std::thread::spawn(move || {
