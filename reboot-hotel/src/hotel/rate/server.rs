@@ -4,13 +4,18 @@ pub mod hotel {
     }
 }
 use futures::StreamExt;
-use rand::rngs::StdRng;
-use rand::SeedableRng;
-use rand_distr::{Distribution, Uniform};
 use reboot_hotel::FanoutTracker;
+#[cfg(not(feature = "synthetic"))]
+use std::collections::HashSet;
 use tokio::sync::Mutex;
+#[cfg(feature = "synthetic")]
+use {
+    rand::rngs::StdRng,
+    rand::SeedableRng,
+    rand_distr::{Distribution, Uniform},
+};
 
-use std::{collections::HashSet, error::Error, sync::Arc};
+use std::{error::Error, sync::Arc};
 
 use mongodb::{bson::doc, Client as MongoClient};
 use tonic::{Request, Response, Status};
@@ -19,6 +24,7 @@ use tonic_masa::LatencyTracker;
 use crate::db;
 use hotel::{rate, rate::rate_server::Rate};
 
+#[cfg(feature = "synthetic")]
 #[allow(unused)]
 struct MasaConfig {
     hotels: u32,
@@ -26,6 +32,7 @@ struct MasaConfig {
     cache_miss_rate: u32,
 }
 
+#[cfg(feature = "synthetic")]
 struct SyntheticRate {
     rng: Arc<Mutex<StdRng>>,
     uniform: Uniform<u64>,
@@ -37,16 +44,16 @@ pub struct RateImpl {
     mongo_client: Arc<MongoClient>,
     latency_tracker: Arc<Mutex<LatencyTracker>>,
     fanout_tracker: Arc<FanoutTracker>,
+    #[cfg(feature = "synthetic")]
     synth: SyntheticRate,
 }
 
 impl RateImpl {
     pub async fn new(
-        hotels: u32,
-        _payload: u32,
+        #[allow(unused)] hotels: u32,
         cache_addr: String,
         cache_conn: u32,
-        cache_miss_rate: u32,
+        #[allow(unused)] cache_miss_rate: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn Error>> {
         let memc_client = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
@@ -62,15 +69,22 @@ impl RateImpl {
         //         log::warn!("Avg fanout {}", fanout.get_average_fanout());
         //     }
         // });
-        let seed = 998244353;
-        let rng = Arc::new(Mutex::new(StdRng::seed_from_u64(seed)));
-        let uniform = Uniform::new(0, 100);
+        //
+
+        #[cfg(feature = "synthetic")]
+        let (rng, uniform) = {
+            let seed = 998244353;
+            let rng = Arc::new(Mutex::new(StdRng::seed_from_u64(seed)));
+            let uniform = Uniform::new(0, 100);
+            (rng, uniform)
+        };
 
         Ok(Self {
             memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
             latency_tracker,
             fanout_tracker,
+            #[cfg(feature = "synthetic")]
             synth: SyntheticRate {
                 rng,
                 uniform,
@@ -84,6 +98,7 @@ impl RateImpl {
     }
 }
 
+#[cfg(not(feature = "synthetic"))]
 #[tonic::async_trait]
 impl Rate for RateImpl {
     async fn get_rates(
@@ -193,8 +208,10 @@ impl Rate for RateImpl {
     }
 }
 
-impl RateImpl {
-    async fn get_rates_synthetic(
+#[cfg(feature = "synthetic")]
+#[tonic::async_trait]
+impl Rate for RateImpl {
+    async fn get_rates(
         &self,
         request: Request<rate::RateRequest>,
     ) -> Result<Response<rate::RateResponse>, Status> {
@@ -222,7 +239,7 @@ impl RateImpl {
             .gets(&hotel_ids_ref)
             .map_err(|e| tonic::Status::internal(format!("Memcached error: {}", e)))?;
 
-        for (hotel_id, item) in memc_resp {
+        for (_hotel_id, item) in memc_resp {
             if let Ok(value) = String::from_utf8(item) {
                 for rate_str in value.split('\n') {
                     if !rate_str.is_empty() {

@@ -37,7 +37,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let rate = RateImpl::new(
         cfg.hotels,
-        cfg.payload,
         cfg.rate_memcached_addr,
         cfg.cache_conn,
         cfg.cache_miss_rate,
