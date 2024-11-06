@@ -1,6 +1,4 @@
 use alloc::alloc::Layout as StdLayout;
-use alloc::boxed::Box;
-use alloc::sync::Arc;
 use core::cell::UnsafeCell;
 use core::future::Future;
 use core::marker::PhantomData;
@@ -895,6 +893,7 @@ pub(crate) unsafe fn get_prio_from_raw_task<M>(ptr: *const ()) -> PriorityHint {
 /// 1. the `ptr` must point to a RawTask
 /// 2. the RawTask isn't deallocated
 /// 3. The metadata type of the task is the one specified by the generic.
+#[allow(unused)]
 pub unsafe fn get_metadata_from_raw_task<'a, M>(ptr: *const ()) -> &'a M {
     debug_assert!(!ptr.is_null());
 
@@ -910,6 +909,7 @@ pub unsafe fn get_metadata_from_raw_task<'a, M>(ptr: *const ()) -> &'a M {
 /// 1. the `ptr` must point to a RawTask
 /// 2. the RawTask isn't deallocated
 /// 3. The metadata type of the task is the one specified by the generic.
+#[allow(unused)]
 pub unsafe fn set_metadata_from_raw_task<M>(ptr: *const (), metadata: M) {
     debug_assert!(!ptr.is_null());
 
