@@ -4,10 +4,11 @@ pub mod hotel {
     }
 }
 
-use rand::rngs::StdRng;
-use rand::SeedableRng;
-use rand_distr::Uniform;
-use std::{collections::HashSet, sync::Arc};
+#[cfg(not(feature = "synthetic"))]
+use std::collections::HashSet;
+use std::sync::Arc;
+#[cfg(feature = "synthetic")]
+use {rand::rngs::StdRng, rand::SeedableRng, rand_distr::Uniform};
 
 use crate::db;
 use mongodb::{bson::doc, Client as MongoClient};
@@ -18,6 +19,7 @@ use tonic_masa::LatencyTracker;
 use hotel::{profile, profile::profile_server::Profile};
 use reboot_hotel::FanoutTracker;
 
+#[cfg(feature = "synthetic")]
 #[allow(unused)]
 struct MasaConfig {
     hotels: u32,
@@ -25,6 +27,7 @@ struct MasaConfig {
     cache_miss_rate: u32,
 }
 
+#[cfg(feature = "synthetic")]
 struct SyntheticProfile {
     rng: Arc<Mutex<StdRng>>,
     uniform: Uniform<u64>,
@@ -36,16 +39,17 @@ pub struct ProfileImpl {
     mongo_client: Arc<MongoClient>,
     latency_tracker: Arc<Mutex<LatencyTracker>>,
     fanout_tracker: Arc<FanoutTracker>,
+    #[cfg(feature = "synthetic")]
     synth: SyntheticProfile,
 }
 
 impl ProfileImpl {
     pub async fn new(
-        hotels: u32,
+        #[allow(unused)] hotels: u32,
         _payload: u32,
         cache_addr: String,
         cache_conn: u32,
-        cache_miss_rate: u32,
+        #[allow(unused)] cache_miss_rate: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let memc_client = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
@@ -62,15 +66,20 @@ impl ProfileImpl {
         //     }
         // });
         //
-        let seed = 998244353;
-        let rng = Arc::new(Mutex::new(StdRng::seed_from_u64(seed)));
-        let uniform = Uniform::new(0, 100);
+        #[cfg(feature = "synthetic")]
+        let (rng, uniform) = {
+            let seed = 998244353;
+            let rng = Arc::new(Mutex::new(StdRng::seed_from_u64(seed)));
+            let uniform = Uniform::new(0, 100);
+            (rng, uniform)
+        };
 
         Ok(Self {
             memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
             latency_tracker,
             fanout_tracker,
+            #[cfg(feature = "synthetic")]
             synth: SyntheticProfile {
                 rng,
                 uniform,
@@ -84,6 +93,7 @@ impl ProfileImpl {
     }
 }
 
+#[cfg(not(feature = "synthetic"))]
 #[tonic::async_trait]
 impl Profile for ProfileImpl {
     async fn get_profiles(
@@ -175,6 +185,23 @@ impl Profile for ProfileImpl {
     }
 }
 
+#[cfg(feature = "synthetic")]
+#[tonic::async_trait]
+impl Profile for ProfileImpl {
+    async fn get_profiles(
+        &self,
+        request: Request<profile::ProfileRequest>,
+    ) -> Result<Response<profile::ProfileResponse>, Status> {
+        let request = request.into_inner();
+        let hotels = self.fetch_mixture(request.hotel_ids).await;
+        let hotels = hotels.into_iter().map(|h| h.into()).collect();
+        let response = profile::ProfileResponse { hotels };
+        log::info!("response: {:?}", response);
+        Ok(Response::new(response))
+    }
+}
+
+#[cfg(feature = "synthetic")]
 impl ProfileImpl {
     pub async fn fetch_mixture(&self, names: Vec<String>) -> Vec<db::Hotel> {
         use futures::StreamExt;
