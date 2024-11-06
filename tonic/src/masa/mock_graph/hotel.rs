@@ -156,7 +156,7 @@ fn get_global_graphs() -> &'static HashMap<ServiceId, GlobalGraph> {
 /// Get a global graph of Hotel Reservation.
 #[allow(dead_code)]
 pub(crate) fn get_global_graph(service_id: ServiceId) -> GlobalGraph {
-    log::info!("get_global_graph, service_id: {:?}", service_id);
+    log::warn!("get_global_graph, service_id: {:?}", service_id);
     let global_graphs = get_global_graphs();
     global_graphs[&service_id].clone()
 }
