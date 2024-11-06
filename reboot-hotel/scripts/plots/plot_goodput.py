@@ -53,14 +53,8 @@ for r in range(cfg["Repeats"]):
             # plot_goodput_per_rps(result, f"fig_goodput_rps_{rps}_per_rps_{r}.png")
 
     plot_goodput_line(
-        rps_to_results,
-        f"{args.path}/fig_goodput_rps_line_{r}.png",
-        args.mode,
-        args.alias,
+        rps_to_results, f"{args.path}/fig_goodput_rps_line_{r}.png", args.mode
     )
     plot_goodput_bar(
-        rps_to_results,
-        f"{args.path}/fig_goodput_rps_bar_{r}.png",
-        args.mode,
-        args.alias,
+        rps_to_results, f"{args.path}/fig_goodput_rps_bar_{r}.png", args.mode
     )
