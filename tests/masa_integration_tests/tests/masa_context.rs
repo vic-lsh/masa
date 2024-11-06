@@ -231,8 +231,9 @@ async fn test_child_rpc_hooks_invocations() {
             _method: GrpcMethod,
             _req: &mut Request<T>,
             _child_ctx: &mut C,
-        ) {
+        ) -> Option<Status> {
             N_BEFORE_CHILD_RPCS.fetch_add(1, Ordering::Relaxed);
+            None
         }
 
         fn after_child_rpc<T>(
@@ -240,8 +241,9 @@ async fn test_child_rpc_hooks_invocations() {
             _method: GrpcMethod,
             _resp: &mut Result<Response<T>, Status>,
             _child_ctx: C,
-        ) {
+        ) -> Option<Status> {
             N_AFTER_CHILD_RPCS.fetch_add(1, Ordering::Relaxed);
+            None
         }
     }
 
