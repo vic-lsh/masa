@@ -880,8 +880,8 @@ type GlobalQueue<T> = queue::MutexFifoTwoQueue<T>;
 #[cfg(any(
     feature = "prio_global",
     feature = "prio_local",
-    feature = "prio_global_two",
-    feature = "prio_local_two"
+    feature = "prio_global_early",
+    feature = "prio_local_early"
 ))]
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
 
