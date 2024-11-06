@@ -6,27 +6,27 @@ use crate::server::hotel;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Hotel {
     #[serde(rename = "id")]
-    id: String,
-    name: String,
+    pub(crate) id: String,
+    pub(crate) name: String,
     #[serde(rename = "phoneNumber")]
-    phone_number: String,
-    description: String,
-    address: Address,
+    pub(crate) phone_number: String,
+    pub(crate) description: String,
+    pub(crate) address: Address,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct Address {
+pub(crate) struct Address {
     #[serde(rename = "streetNumber")]
-    street_number: String,
+    pub(crate) street_number: String,
     #[serde(rename = "streetName")]
-    street_name: String,
-    city: String,
-    state: String,
-    country: String,
+    pub(crate) street_name: String,
+    pub(crate) city: String,
+    pub(crate) state: String,
+    pub(crate) country: String,
     #[serde(rename = "postalCode")]
-    postal_code: String,
-    lat: f32,
-    lon: f32,
+    pub(crate) postal_code: String,
+    pub(crate) lat: f32,
+    pub(crate) lon: f32,
 }
 
 impl From<Address> for hotel::profile::Address {
