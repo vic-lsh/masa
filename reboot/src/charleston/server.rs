@@ -171,14 +171,6 @@ impl<'a> ExecImpl<'a> {
         Self { ex }
     }
 
-    // pub fn spawn<T: Send + 'a>(
-    //     &self,
-    //     future: impl Future<Output = T> + Send + 'a,
-    // ) -> async_task::Task<T> {
-    //     async_executor::spawn(future)
-    //     // self.ex.spawn(future)
-    // }
-
     async fn run(&self) {
         // [NOTE] Only a global queue is used in smol::Executor::tick().
         loop {
@@ -295,16 +287,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let server = servers[i].clone();
 
         let ex = Arc::new(ExecImpl::new(&SMOL_EXECUTOR));
-        // for _ in 0..server.n_threads() {
-        //     let ex = ex.clone();
-        //     std::thread::spawn(move || {
-        //         let rt = tokio::runtime::Builder::new_current_thread()
-        //             .enable_all()
-        //             .build()
-        //             .unwrap();
-        //         rt.block_on(ex.run());
-        //     });
-        // }
 
         let h = tokio::spawn(async move {
             let addr = server.addr().parse().unwrap();
