@@ -10,6 +10,12 @@ use env_logger::{Builder, Env};
 
 use tonic_masa::Context;
 
+pub const USE_SYNTHETIC: bool = if cfg!(feature = "synthetic") {
+    true
+} else {
+    false
+};
+
 pub fn init_logging() {
     Builder::from_env(Env::default().default_filter_or("info"))
         .format(|buf, record| {
