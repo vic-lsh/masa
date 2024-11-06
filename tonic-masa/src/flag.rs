@@ -10,7 +10,7 @@ pub const PRIO_GLOBAL: bool = if cfg!(feature = "prio_global") {
     false
 };
 
-pub const PRIO_GLOBAL_TWO: bool = if cfg!(feature = "prio_global_two") {
+pub const PRIO_GLOBAL_EARLY: bool = if cfg!(feature = "prio_global_early") {
     true
 } else {
     false
@@ -28,7 +28,7 @@ pub const PRIO_LOCAL: bool = if cfg!(feature = "prio_local") {
     false
 };
 
-pub const PRIO_LOCAL_TWO: bool = if cfg!(feature = "prio_local_two") {
+pub const PRIO_LOCAL_EARLY: bool = if cfg!(feature = "prio_local_early") {
     true
 } else {
     false

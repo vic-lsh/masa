@@ -754,8 +754,8 @@ impl<M> Eq for Runnable<M> {}
 
 impl<M> PartialOrd for Runnable<M> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        //self.priority().partial_cmp(&other.priority())
         Some(self.cmp(other))
+        // self.priority().partial_cmp(&other.priority())
     }
 }
 

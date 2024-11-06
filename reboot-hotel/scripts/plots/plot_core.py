@@ -27,8 +27,10 @@ MARKERS = ["o", "x", "^", "*", "s"]
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--path", type=str, required=True)
-    parser.add_argument("--mode", type=str, required=True)
+    parser.add_argument("--path", type=str)
+    parser.add_argument("--mode", type=str)
+    parser.add_argument("--snippets", type=str)
+    parser.add_argument("--modes", type=str, nargs="+")
     args = parser.parse_args()
     return args
 
@@ -62,7 +64,6 @@ def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
-    #plt.show()
 
 
 def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
@@ -94,7 +95,7 @@ def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
                 textcoords="offset points",
                 ha="center",
                 va="bottom",
-                fontsize=13,
+                fontsize=fontsize_medium,
             )
 
     autolabel(rects1)
@@ -104,7 +105,54 @@ def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.ylim(-200, 2200)
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
-    #plt.show()
+
+
+def plot_goodput_cmp_bar(
+    results: List[Dict[str, Any]], fig_name: str, modes: List[str]
+):
+    modes_str = f"{', '.join(modes)}"
+    keys = [f"goodput_{mode}" for mode in modes]
+    assert len(keys) == 2, "Only 2 modes available"
+    labels = [f"Goodput {mode}" for mode in modes]
+
+    rps_values = [result["rps"] for result in results if keys[0] in result]
+    goodputs_lhs = [result[keys[0]] for result in results if keys[0] in result]
+    goodputs_rhs = [result[keys[1]] for result in results if keys[1] in result]
+
+    x = np.arange(len(rps_values))
+    width = 0.3
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    rects1 = ax.bar(x - width * 0.5, goodputs_lhs, width, label=labels[0])
+    rects2 = ax.bar(x + width * 0.5, goodputs_rhs, width, label=labels[1])
+
+    ax.set_xlabel("RPS")
+    ax.set_ylabel("Goodput")
+    ax.set_title(f"Goodput vs RPS ({modes_str})")
+    ax.set_xticks(x)
+    ax.set_xticklabels(rps_values)
+    ax.legend(loc="upper left", fontsize=fontsize_medium)
+
+    def autolabel(rects):
+        for rect in rects:
+            height = rect.get_height()
+            ax.annotate(
+                "{}".format(height),
+                xy=(rect.get_x() + rect.get_width() / 2, height),
+                xytext=(0, 3),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=fontsize_medium,
+            )
+
+    # autolabel(rects1)
+    autolabel(rects2)
+
+    fig.tight_layout()
+    plt.ylim(-200, 2200)
+    plt.grid(True, linestyle="--", linewidth=0.5)
+    plt.savefig(fig_name)
 
 
 def plot_throughput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
@@ -131,7 +179,6 @@ def plot_throughput_line(results: List[Dict[str, Any]], fig_name: str, mode: str
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
-    #plt.show()
 
 
 def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
@@ -177,7 +224,7 @@ def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str)
                 textcoords="offset points",
                 ha="center",
                 va="bottom",
-                fontsize=13,
+                fontsize=fontsize_medium,
             )
 
     for rects in rects_bar:
@@ -187,7 +234,6 @@ def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str)
     plt.ylim(-200, 2200)
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
-    #plt.show()
 
 
 def plot_error_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
@@ -221,7 +267,6 @@ def plot_error_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
-    #plt.show()
 
 
 def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
@@ -275,7 +320,7 @@ def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
                 textcoords="offset points",
                 ha="center",
                 va="bottom",
-                fontsize=13,
+                fontsize=fontsize_medium,
             )
 
     for rects in rects_bar:
@@ -285,7 +330,6 @@ def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.ylim(-200, 2200)
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
-    #plt.show()
 
 
 def plot_tail_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
@@ -307,7 +351,6 @@ def plot_tail_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
-    #plt.show()
 
 
 def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
@@ -349,7 +392,7 @@ def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
                 textcoords="offset points",
                 ha="center",
                 va="bottom",
-                fontsize=13,
+                fontsize=fontsize_medium,
             )
 
     for rects in rects_bar:
@@ -358,7 +401,54 @@ def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     fig.tight_layout()
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
-    #plt.show()
+
+
+def plot_tail_cmp_bar(
+    results: List[Dict[str, Any]], fig_name: str, modes: List[str], tail: str
+):
+    modes_str = f"{', '.join(modes)}"
+    keys = [f"{tail}_{mode}" for mode in modes]
+    labels = [f"{tail} {mode}" for mode in modes]
+    assert len(keys) == 2, "Only 2 modes available"
+
+    rps_values = [result["rps"] for result in results if keys[0] in result]
+    goodputs_lhs = [result[keys[0]] for result in results if keys[0] in result]
+    goodputs_rhs = [result[keys[1]] for result in results if keys[1] in result]
+
+    x = np.arange(len(rps_values))
+    width = 0.3
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    rects1 = ax.bar(x - width * 0.5, goodputs_lhs, width, label=labels[0])
+    rects2 = ax.bar(x + width * 0.5, goodputs_rhs, width, label=labels[1])
+
+    ax.set_xlabel("RPS")
+    ax.set_ylabel(tail)
+    ax.set_ylim(0, 100)
+    ax.set_title(f"{tail} vs RPS ({modes_str})")
+    ax.set_xticks(x)
+    ax.set_xticklabels(rps_values)
+    ax.legend(loc="upper left", fontsize=fontsize_medium)
+
+    def autolabel(rects):
+        for rect in rects:
+            height = rect.get_height()
+            ax.annotate(
+                "{}".format(height),
+                xy=(rect.get_x() + rect.get_width() / 2, height),
+                xytext=(0, 3),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=fontsize_medium,
+            )
+
+    # autolabel(rects1)
+    autolabel(rects2)
+
+    fig.tight_layout()
+    plt.grid(True, linestyle="--", linewidth=0.5)
+    plt.savefig(fig_name)
 
 
 def plot_goodput_per_rps(result: Dict[str, Any], fig_name: str):
@@ -371,7 +461,6 @@ def plot_goodput_per_rps(result: Dict[str, Any], fig_name: str):
 
     plt.grid(True, linestyle="--", alpha=0.7)
     plt.savefig(fig_name)
-    #plt.show()
 
 
 def plot_cdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
@@ -409,7 +498,6 @@ def plot_cdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
     plt.legend()
     plt.grid(True)
     plt.savefig(fig_name)
-    #plt.show()
 
 
 def plot_pdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
@@ -460,7 +548,6 @@ def plot_pdf(results: List[Tuple[str, List[int]]], title: str, fig_name: str):
     plt.legend()
     plt.grid(True)
     plt.savefig(fig_name)
-    #plt.show()
 
 
 def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
@@ -489,7 +576,6 @@ def plot_2d_histogram(results: Dict[str, List[int]], title, fig_name):
 
     plt.grid(True)
     plt.savefig(fig_name)
-    #plt.show()
 
 
 def plot_ratio_cdf(results: List[float], title: str, fig_name: str):
@@ -520,7 +606,6 @@ def plot_ratio_cdf(results: List[float], title: str, fig_name: str):
     plt.title(title)
     plt.grid(True)
     plt.savefig(fig_name)
-    #plt.show()
 
 
 def plot_ratio_pdf(results: List[float], title: str, fig_name: str):
@@ -535,4 +620,3 @@ def plot_ratio_pdf(results: List[float], title: str, fig_name: str):
     plt.title(title)
     plt.grid(True)
     plt.savefig(fig_name)
-    #plt.show()
