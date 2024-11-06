@@ -2,7 +2,6 @@
 pub mod config;
 pub mod hotel {
     tonic::include_proto!("frontend");
-    tonic::include_proto!("search");
 }
 mod gen;
 
@@ -24,7 +23,7 @@ use tokio::time::{timeout, Duration, Instant};
 
 use tonic::transport::Channel;
 use tonic_masa::{
-    Context, GraphId, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_TWO, PRIO_LOCAL, PRIO_LOCAL_TWO,
+    Context, GraphId, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
 
 use config::{GenConfig, HotelConfig};
@@ -67,14 +66,14 @@ impl LoadGenerator {
             log::warn!("Enabled prio_class");
         } else if cfg!(feature = "prio_global") {
             log::warn!("Enabled prio_global");
-        } else if cfg!(feature = "prio_global_two") {
-            log::warn!("Enabled prio_global_two");
+        } else if cfg!(feature = "prio_global_early") {
+            log::warn!("Enabled prio_global_early");
         } else if cfg!(feature = "prio_class_global") {
             log::warn!("Enabled prio_class_global");
         } else if cfg!(feature = "prio_local") {
             log::warn!("Enabled prio_local");
-        } else if cfg!(feature = "prio_local_two") {
-            log::warn!("Enabled prio_local_two");
+        } else if cfg!(feature = "prio_local_early") {
+            log::warn!("Enabled prio_local_early");
         } else if cfg!(feature = "fifo_two") {
             log::warn!("Enabled fifo_two");
         } else if cfg!(feature = "fifo") {
@@ -104,58 +103,60 @@ impl LoadGenerator {
         let cnt_all_reqs_generated = Arc::new(AtomicUsize::new(0));
         let cnt_all_reqs = Arc::new(AtomicUsize::new(0));
         let cnt_success = Arc::new(AtomicUsize::new(0));
-        let cnt_err_srv = Arc::new(AtomicUsize::new(0));
+        let cnt_err_svc = Arc::new(AtomicUsize::new(0));
         let cnt_err_client = Arc::new(AtomicUsize::new(0));
-        let cnt_err_client_to = Arc::new(AtomicUsize::new(0));
-        let all_reqs_generated = cnt_all_reqs_generated.clone();
-        let all_reqs = cnt_all_reqs.clone();
-        let succeeded = cnt_success.clone();
-        let failed_srv = cnt_err_srv.clone();
-        let failed_client = cnt_err_client.clone();
-        let failed_client_to = cnt_err_client_to.clone();
+        let cnt_err_client_ot = Arc::new(AtomicUsize::new(0));
+
+        let cnt_all_reqs_generated_clone = cnt_all_reqs_generated.clone();
+        let cnt_all_reqs_clone = cnt_all_reqs.clone();
+        let cnt_success_clone = cnt_success.clone();
+        let cnt_err_svc_clone = cnt_err_svc.clone();
+        let cnt_err_client_clone = cnt_err_client.clone();
+        let cnt_err_client_ot_clone = cnt_err_client_ot.clone();
+
         tokio::task::spawn(async move {
             let mut gen_prev = 0;
             let mut all_prev = 0;
             let mut succ_prev = 0;
-            let mut err_srv_prev = 0;
+            let mut err_svc_prev = 0;
             let mut err_client_prev = 0;
             let mut err_client_to_prev = 0;
             let mut secs = 0;
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                let gen = all_reqs_generated.load(Ordering::Relaxed);
-                let all = all_reqs.load(Ordering::Relaxed);
-                let succ = succeeded.load(Ordering::Relaxed);
-                let err_srv = failed_srv.load(Ordering::Relaxed);
-                let err_client = failed_client.load(Ordering::Relaxed);
-                let err_client_to = failed_client_to.load(Ordering::Relaxed);
+                let gen = cnt_all_reqs_generated_clone.load(Ordering::Relaxed);
+                let all = cnt_all_reqs_clone.load(Ordering::Relaxed);
+                let succ = cnt_success_clone.load(Ordering::Relaxed);
+                let err_svc = cnt_err_svc_clone.load(Ordering::Relaxed);
+                let err_client = cnt_err_client_clone.load(Ordering::Relaxed);
+                let err_client_ot = cnt_err_client_ot_clone.load(Ordering::Relaxed);
 
                 secs += 1;
 
-                let genps = gen - gen_prev;
+                let gen_ps = gen - gen_prev;
                 let rps = all - all_prev;
-                let goodps = succ - succ_prev;
-                let err_srv_ps = err_srv - err_srv_prev;
+                let good_ps = succ - succ_prev;
+                let err_svc_ps = err_svc - err_svc_prev;
                 let err_cl_ps = err_client - err_client_prev;
-                let err_cl_to_ps = err_client_to - err_client_to_prev;
+                let err_cl_ot_ps = err_client_ot - err_client_to_prev;
                 log::warn!(
-                    "secs: {}, gen: {}, rps: {}, good: {}, err_srv: {} err_cl: {}, err_cl_to: {}, err_srv_tot: {}, cl_tot: {}",
+                    "secs: {}, gen: {}, rps: {}, good: {}, err_svc: {} err_cl: {}, err_cl_ot: {}, err_svc_sum: {}, cl_sum: {}",
                     secs,
-                    genps,
+                    gen_ps,
                     rps,
-                    goodps,
-                    err_srv_ps,
+                    good_ps,
+                    err_svc_ps,
                     err_cl_ps,
-                    err_cl_to_ps,
-                    err_srv,
+                    err_cl_ot_ps,
+                    err_svc,
                     err_client,
                 );
                 gen_prev = gen;
                 all_prev = all;
                 succ_prev = succ;
-                err_srv_prev = err_srv;
+                err_svc_prev = err_svc;
                 err_client_prev = err_client;
-                err_client_to_prev = err_client_to;
+                err_client_to_prev = err_client_ot;
 
                 if Instant::now() > pause_at {
                     break;
@@ -164,30 +165,27 @@ impl LoadGenerator {
         });
 
         let mut counter_test_id = 0;
-        let mut elapse_us = 0;
-        let exponential = Exp::new(self.rps as f64).unwrap();
+        let mut elapse = 0f64;
+        // let exponential = Exp::new(self.rps as f64).unwrap();
         let uniform = Uniform::new(0, 1_000_000_007);
-
-        let sleep_dur_us = 1_000_000 / self.rps;
 
         loop {
             if Instant::now() > pause_at {
                 break;
             }
 
-            let send_at = init_at + Duration::from_micros(elapse_us);
-            tokio::time::sleep_until(send_at).await;
+            let start_at = init_at + Duration::from_secs_f64(elapse);
+            tokio::time::sleep_until(start_at).await;
 
-            // let value = {
-            //     if Instant::now() < warm_at {
-            //         0.01
-            //     } else {
-            //         exponential.sample(&mut self.rng)
-            //         // 1f64 / self.rps as f64
-            //     }
-            // };
-            // elapse += value;
-            elapse_us += sleep_dur_us;
+            let value = {
+                if Instant::now() < warm_at {
+                    0.01
+                } else {
+                    // exponential.sample(&mut self.rng)
+                    1f64 / self.rps as f64
+                }
+            };
+            elapse += value;
 
             let ctx = {
                 let test_id = counter_test_id;
@@ -199,7 +197,7 @@ impl LoadGenerator {
 
                 let start_at = time_now();
                 let deadline = {
-                    if PRIO_GLOBAL || PRIO_GLOBAL_TWO || PRIO_LOCAL || PRIO_LOCAL_TWO {
+                    if PRIO_GLOBAL || PRIO_GLOBAL_EARLY || PRIO_LOCAL || PRIO_LOCAL_EARLY {
                         // [DEPRECATED] Relative start time.
                         // let start_at = time_now() - init_at_u64;
                         // start_at + slo
@@ -234,12 +232,12 @@ impl LoadGenerator {
 
             let mut client = self.client.clone();
             let trace_tx = self.trace_tx.clone();
-
             let all = cnt_all_reqs.clone();
             let good = cnt_success.clone();
-            let erred_srv = cnt_err_srv.clone();
-            let erred_client = cnt_err_client.clone();
-            let erred_client_to = cnt_err_client_to.clone();
+            let err_svc = cnt_err_svc.clone();
+            let err_client = cnt_err_client.clone();
+            let err_client_ot = cnt_err_client_ot.clone();
+
             tokio::task::spawn(async move {
                 let send_at = time_now();
                 let timeout_duration = Duration::from_secs(1);
@@ -258,7 +256,6 @@ impl LoadGenerator {
                             };
                             let error = {
                                 if let Err(ref status) = response {
-                                    //log::error!("Error from {}", status.message());
                                     status.message().to_string()
                                 } else if latency > ctx.slo() {
                                     "/LGMiss".to_string()
@@ -269,9 +266,9 @@ impl LoadGenerator {
                             if error == "/None" {
                                 good.fetch_add(1, Ordering::Relaxed);
                             } else if error == "/LGMiss" {
-                                erred_client.fetch_add(1, Ordering::Relaxed);
+                                err_client.fetch_add(1, Ordering::Relaxed);
                             } else {
-                                erred_srv.fetch_add(1, Ordering::Relaxed);
+                                err_svc.fetch_add(1, Ordering::Relaxed);
                             }
                             let span = Span::new(ctx, latency, fe_latency, error);
                             trace_tx.try_send(span).unwrap();
@@ -279,7 +276,7 @@ impl LoadGenerator {
                     }
                     Err(_) => {
                         if Instant::now() > trace_at {
-                            erred_client_to.fetch_add(1, Ordering::Relaxed);
+                            err_client_ot.fetch_add(1, Ordering::Relaxed);
                             let error = "/LGTimeout".to_string();
                             let span = Span::new(ctx, 0, 0, error);
                             trace_tx.try_send(span).unwrap();
@@ -288,7 +285,6 @@ impl LoadGenerator {
                 }
                 all.fetch_add(1, Ordering::Relaxed);
             });
-
             cnt_all_reqs_generated.fetch_add(1, Ordering::Relaxed);
         }
 

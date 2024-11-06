@@ -14,10 +14,10 @@ pub(crate) fn get_global_graph_i2(
         let mut graphs = HashMap::new();
         let method_id: MethodId = "/hello.Greeter/SayHello";
         graphs.insert(
-            method_id.clone(),
+            method_id,
             LocalGraph::new(
                 graph_id.clone(),
-                method_id.clone(),
+                method_id,
                 vec![Span::new(
                     "/hello.Greeter/SayGoodbye".to_string(),
                     Some(MasaDistribution::new(mean, Vec::new())),
@@ -27,8 +27,8 @@ pub(crate) fn get_global_graph_i2(
         );
         let method_id: MethodId = "/hello.Greeter/SayGoodbye";
         graphs.insert(
-            method_id.clone(),
-            LocalGraph::new(graph_id.clone(), method_id.clone(), vec![]),
+            method_id,
+            LocalGraph::new(graph_id.clone(), method_id, vec![]),
         );
         graphs
     };

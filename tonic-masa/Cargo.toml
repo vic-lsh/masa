@@ -6,10 +6,10 @@ edition = "2021"
 [features]
 prio_class = []
 prio_global = []
-prio_global_two = []
+prio_global_early = []
 prio_class_global = []
 prio_local = []
-prio_local_two = []
+prio_local_early = []
 fifo_two = []
 fifo = []
 

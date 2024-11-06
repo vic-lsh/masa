@@ -11,26 +11,11 @@ fn get_frontend() -> GlobalGraph {
     let local_graphs = {
         let mut graphs = HashMap::new();
         let method_id: MethodId = "/frontend.Frontend/HandleSearch";
-        // graphs.insert(
-        //     method_id.clone(),
-        //     LocalGraph::new(
-        //         service_id.clone(),
-        //         method_id.clone(),
-        //         vec![
-        //             Span::new("/geo.Geo/HandleNearby".to_string(), None, TRACKER_CAPACITY),
-        //             Span::new(
-        //                 "/rate.Rate/HandleGetRates".to_string(),
-        //                 None,
-        //                 TRACKER_CAPACITY,
-        //             ),
-        //         ],
-        //     ),
-        // );
         graphs.insert(
-            method_id.clone(),
+            method_id,
             LocalGraph::new(
                 service_id.clone(),
-                method_id.clone(),
+                method_id,
                 vec![
                     Span::new(
                         "/search.Search/HandleNearby".to_string(),
@@ -57,10 +42,10 @@ fn get_search() -> GlobalGraph {
         let mut graphs = HashMap::new();
         let method_id: MethodId = "/search.Search/HandleNearby";
         graphs.insert(
-            method_id.clone(),
+            method_id,
             LocalGraph::new(
                 service_id.clone(),
-                method_id.clone(),
+                method_id,
                 vec![
                     Span::new("/geo.Geo/HandleNearby".to_string(), None, TRACKER_CAPACITY),
                     Span::new("/rate.Rate/GetRates".to_string(), None, TRACKER_CAPACITY),
@@ -79,8 +64,8 @@ fn get_geo() -> GlobalGraph {
         let mut graphs = HashMap::new();
         let method_id: MethodId = "/geo.Geo/HandleNearby";
         graphs.insert(
-            method_id.clone(),
-            LocalGraph::new(service_id.clone(), method_id.clone(), vec![]),
+            method_id,
+            LocalGraph::new(service_id.clone(), method_id, vec![]),
         );
         graphs
     };
@@ -94,8 +79,8 @@ fn get_rate() -> GlobalGraph {
         let mut graphs = HashMap::new();
         let method_id: MethodId = "/rate.Rate/GetRates";
         graphs.insert(
-            method_id.clone(),
-            LocalGraph::new(service_id.clone(), method_id.clone(), vec![]),
+            method_id,
+            LocalGraph::new(service_id.clone(), method_id, vec![]),
         );
         graphs
     };
@@ -109,8 +94,8 @@ fn get_profile() -> GlobalGraph {
         let mut graphs = HashMap::new();
         let method_id: MethodId = "/profile.Profile/GetProfiles";
         graphs.insert(
-            method_id.clone(),
-            LocalGraph::new(service_id.clone(), method_id.clone(), vec![]),
+            method_id,
+            LocalGraph::new(service_id.clone(), method_id, vec![]),
         );
         graphs
     };

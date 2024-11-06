@@ -110,9 +110,10 @@ mod state;
 mod task;
 mod utils;
 
-use core::future::Future;
-use core::pin::Pin;
-use core::task::{Context, Poll};
+// [NOTE] Yield to the executor.
+// use core::future::Future;
+// use core::pin::Pin;
+// use core::task::{Context, Poll};
 
 pub use crate::header::RawPollHook;
 pub use crate::poll_hook::{PollHookFuture, WithPollHook};
@@ -129,26 +130,26 @@ pub use crate::task::{task_metadata_from_ptr, FallibleTask, Task};
 #[cfg(feature = "std")]
 pub use crate::runnable::spawn_local;
 
-/// Yield now
-pub async fn yield_now() {
-    /// Yield implementation
-    struct YieldNow {
-        yielded: bool,
-    }
+// /// Yield now
+// pub async fn yield_now() {
+//     /// Yield implementation
+//     struct YieldNow {
+//         yielded: bool,
+//     }
 
-    impl Future for YieldNow {
-        type Output = ();
+//     impl Future for YieldNow {
+//         type Output = ();
 
-        fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
-            if self.yielded {
-                return Poll::Ready(());
-            }
+//         fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
+//             if self.yielded {
+//                 return Poll::Ready(());
+//             }
 
-            self.yielded = true;
+//             self.yielded = true;
 
-            Poll::Pending
-        }
-    }
+//             Poll::Pending
+//         }
+//     }
 
-    YieldNow { yielded: false }.await;
-}
+//     YieldNow { yielded: false }.await;
+// }
