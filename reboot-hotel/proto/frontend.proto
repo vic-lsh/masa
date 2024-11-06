@@ -7,12 +7,13 @@ service Frontend {
 }
 
 message SearchRequest {
-  uint32 ave = 1;
+  string customer = 1;
+  uint32 ave = 2;
   uint32 inDate = 3;
   uint32 outDate = 4;
 
-  // float lat = 1;
-  // float lon = 2;
+  // float lat = 5;
+  // float lon = 6;
 }
 
 message SearchResponse { repeated Hotel hotels = 1; }

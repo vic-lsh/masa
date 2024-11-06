@@ -50,7 +50,7 @@ services:
   reservation-mongo:
     image: mongo:7.0
     container_name: "reservation_mongo"
-    command: --port 27004
+    command: --port 27005
     network_mode: "host"
     restart: always
     volumes:
@@ -63,7 +63,7 @@ services:
   reservation-memcached:
     image: memcached:1.6
     container_name: "reservation_memcached"
-    command: --port 11004
+    command: --port 11005
     network_mode: "host"
     restart: always
     deploy:

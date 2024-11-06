@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cfg.hotels,
         cfg.payload,
         cfg.rate_memcached_addr,
-        cfg.cache_conn,
+        cfg.cache_conns,
         cfg.prob_cache_miss,
         cfg.rate_mongodb_addr,
     )

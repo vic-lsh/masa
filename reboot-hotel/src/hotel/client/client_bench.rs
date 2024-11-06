@@ -221,10 +221,13 @@ impl LoadGenerator {
             };
 
             let request = {
+                let customer = "Sameen".to_string();
                 let ave = (ctx.request_id() % self.hotel_cfg.hotels as u64) as u32;
                 let dates = {
-                    let in_date = uniform.sample(&mut self.rng) % 100 as u32;
-                    let out_date = uniform.sample(&mut self.rng) % 100 as u32;
+                    let in_date =
+                        uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
+                    let out_date =
+                        uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
                     if in_date < out_date {
                         (in_date, out_date + 1)
                     } else {
@@ -232,6 +235,7 @@ impl LoadGenerator {
                     }
                 };
                 let search_request = SearchRequest {
+                    customer,
                     ave,
                     in_date: dates.0,
                     out_date: dates.1,
