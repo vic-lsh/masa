@@ -320,13 +320,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::info!("Hotel config: {:?}", hotel_cfg);
+    log::warn!("Hotel config: {:?}", hotel_cfg);
     let gen_cfg: GenConfig = {
         let file = File::open(args.gen_config).expect("Failed to open file");
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::info!("Gen config: {:?}", gen_cfg);
+    log::warn!("Gen config: {:?}", gen_cfg);
 
     for rps in &gen_cfg.rps_values {
         log::warn!("Running rps: {}", rps);
