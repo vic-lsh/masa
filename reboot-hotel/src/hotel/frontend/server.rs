@@ -45,6 +45,15 @@ impl Frontend for FrontendImpl {
         &self,
         request: Request<frontend::SearchRequest>,
     ) -> Result<Response<frontend::SearchResponse>, Status> {
+        self.handle_search_inner(request).await
+    }
+}
+
+impl FrontendImpl {
+    async fn handle_search_inner(
+        &self,
+        request: Request<frontend::SearchRequest>,
+    ) -> Result<Response<frontend::SearchResponse>, Status> {
         let request_start = Instant::now();
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let request = request.into_inner();
@@ -53,11 +62,6 @@ impl Frontend for FrontendImpl {
         let span_request = search::NearbyRequest { ave: request.ave };
         let span_response = search_client.handle_nearby(span_request).await?;
         let response = span_response.into_inner();
-
-        // [DEBUG] Twice.
-        // let span_request = search::NearbyRequest { ave: request.ave };
-        // let span_response = search_client.handle_nearby(span_request).await?;
-        // let response = span_response.into_inner();
 
         // [TODO] Reserve.
         // reserve_client.check_availability()

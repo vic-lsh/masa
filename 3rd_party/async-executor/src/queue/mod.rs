@@ -4,7 +4,6 @@ mod concurrent_fifo;
 mod mutex_fifo;
 mod mutex_fifo_two;
 mod mutex_prio;
-mod mutex_prio_two;
 mod rw_prio;
 
 #[allow(dead_code)]
@@ -19,9 +18,6 @@ pub(crate) use mutex_fifo_two::MutexFifoTwoQueue;
 #[allow(dead_code)]
 #[allow(unused_imports)]
 pub(crate) use mutex_prio::MutexPriorityQueue;
-#[allow(dead_code)]
-#[allow(unused_imports)]
-pub(crate) use mutex_prio_two::MutexPriorityTwoQueue;
 
 #[allow(dead_code)]
 pub fn time_now() -> u64 {

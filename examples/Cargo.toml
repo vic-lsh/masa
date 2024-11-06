@@ -284,9 +284,6 @@ path = "src/codec_buffers/server.rs"
 name = "codec-buffers-client"
 path = "src/codec_buffers/client.rs"
 
-[profile.release]
-debug = true
-
 [features]
 gcp = ["dep:prost-types", "tonic/tls"]
 routeguide = [
