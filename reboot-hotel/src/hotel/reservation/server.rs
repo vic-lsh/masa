@@ -59,8 +59,8 @@ pub struct HotelManager {
 impl HotelManager {
     pub async fn new(
         hotels: u32,
-        prob_hotel_avail: u32,
         dates: u32,
+        prob_hotel_avail: u32,
         cache_addr: String,
         cache_conns: u32,
         prob_cache_miss: u32,
@@ -255,19 +255,19 @@ pub struct ReservationImpl {
 impl ReservationImpl {
     pub async fn new(
         hotels: u32,
+        dates: u32,
         prob_hotel_avail: u32,
-        payload: u32,
         cache_addr: String,
-        cache_conn: u32,
+        cache_conns: u32,
         prob_cache_miss: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn Error>> {
         let manager = HotelManager::new(
             hotels,
+            dates,
             prob_hotel_avail,
-            payload,
             cache_addr,
-            cache_conn,
+            cache_conns,
             prob_cache_miss,
             db_addr,
         )
@@ -280,13 +280,12 @@ impl ReservationImpl {
         &self,
         request: reservation::ReservationRequest,
     ) -> reservation::ReservationResponse {
-        let num_rooms = request.num_rooms;
         let mut hotels = Vec::new();
         // [NOTE] Optional multi-threading.
         for hotel in &request.hotels {
             for date in request.in_date..request.out_date {
                 self.manager
-                    .check_availability(hotel, date, num_rooms)
+                    .check_availability(hotel, date, request.num_rooms)
                     .await;
             }
             let hotel_avail = {
@@ -299,7 +298,7 @@ impl ReservationImpl {
             }
         }
         let response = reservation::ReservationResponse { hotels };
-        log::info!("response: {:?}", response);
+        log::info!("requeset: {:?}, response: {:?}", request, response);
         response
     }
 }

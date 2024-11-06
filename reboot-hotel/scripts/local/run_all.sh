@@ -46,16 +46,18 @@ services=(
     "hotel_rate"
     "hotel_search"
     "hotel_profile"
+    "hotel_reservation"
     "hotel_frontend"
     "hotel_client_bench"
 )
 waits_secs=(
     0
     0
-    10
-    0
     20
-    26
+    0
+    0
+    30
+    36
 )
 rust_log=warn
 
