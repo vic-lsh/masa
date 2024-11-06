@@ -84,6 +84,7 @@ where
     fn begin<B>(method: GrpcMethod, req: &http::Request<B>, server_ctx: Arc<Server>) -> Self;
 
     /// Invoked before the request handler makes an RPC.
+    #[must_use]
     fn before_child_rpc<T>(
         &self,
         method: GrpcMethod,
@@ -94,6 +95,7 @@ where
     }
 
     /// Invoked after the request handler receives a response from an RPC it made earlier.
+    #[must_use]
     fn after_child_rpc<T>(
         &self,
         method: GrpcMethod,
@@ -109,6 +111,7 @@ where
     ///
     /// To return early without continuing request processing, return the
     /// response to write back to the client in this hook.
+    #[must_use]
     fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
         None
     }
@@ -119,6 +122,7 @@ where
     ///
     /// To return early without continuing request processing, return the
     /// response to write back to the client in this hook.
+    #[must_use]
     fn after_poll<Ret>(
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
