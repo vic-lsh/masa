@@ -4,6 +4,9 @@ pub mod hotel {
     }
 }
 
+use rand::rngs::StdRng;
+use rand::SeedableRng;
+use rand_distr::Uniform;
 use std::{collections::HashSet, sync::Arc};
 
 use crate::db;
@@ -22,12 +25,18 @@ struct MasaConfig {
     cache_miss_rate: u32,
 }
 
+struct SyntheticProfile {
+    rng: Arc<Mutex<StdRng>>,
+    uniform: Uniform<u64>,
+    config: MasaConfig,
+}
+
 pub struct ProfileImpl {
     memc_client: Arc<memcache::Client>,
     mongo_client: Arc<MongoClient>,
     latency_tracker: Arc<Mutex<LatencyTracker>>,
     fanout_tracker: Arc<FanoutTracker>,
-    _config: MasaConfig,
+    synth: SyntheticProfile,
 }
 
 impl ProfileImpl {
@@ -52,16 +61,24 @@ impl ProfileImpl {
         //         log::warn!("Avg fanout {}", fanout.get_average_fanout());
         //     }
         // });
+        //
+        let seed = 998244353;
+        let rng = Arc::new(Mutex::new(StdRng::seed_from_u64(seed)));
+        let uniform = Uniform::new(0, 100);
 
         Ok(Self {
             memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
             latency_tracker,
             fanout_tracker,
-            _config: MasaConfig {
-                hotels,
-                cache_conn,
-                cache_miss_rate,
+            synth: SyntheticProfile {
+                rng,
+                uniform,
+                config: MasaConfig {
+                    hotels,
+                    cache_conn,
+                    cache_miss_rate,
+                },
             },
         })
     }
@@ -155,5 +172,59 @@ impl Profile for ProfileImpl {
         }
 
         Ok(tonic::Response::new(response))
+    }
+}
+
+impl ProfileImpl {
+    pub async fn fetch_mixture(&self, names: Vec<String>) -> Vec<db::Hotel> {
+        use futures::StreamExt;
+        use rand_distr::Distribution;
+
+        let names_db = {
+            let value = {
+                let mut rng = self.synth.rng.lock().await;
+                self.synth.uniform.sample(&mut *rng) % 100
+            };
+            if value < self.synth.config.cache_miss_rate as u64 {
+                names.clone()
+            } else {
+                Vec::new()
+            }
+        };
+
+        let names_ref = names.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
+        let mut hotels = Vec::new();
+        if let Ok(hotel_jsons) = self.memc_client.gets::<String>(&names_ref) {
+            for hotel_json in hotel_jsons.values() {
+                let hotel = serde_json::from_str(hotel_json).expect("Failed to deserialize hotel");
+                hotels.push(hotel);
+            }
+        }
+        // hotels.sort_by_key(|hotel| hotel.ave);
+
+        if !names_db.is_empty() {
+            let query = doc! {
+                "name": {
+                    "$in": names_db
+                }
+            };
+            let collection = self
+                .mongo_client
+                .database("profile-db")
+                .collection::<db::Hotel>("hotels");
+            let mut cursor = collection
+                .find(query, None)
+                .await
+                .expect("Failed to find hotels");
+            while let Some(hotel) = cursor.next().await {
+                let hotel = hotel.expect("Failed to get hotel");
+                let hotel_json = serde_json::to_string(&hotel).expect("Failed to serialize hotel");
+                self.memc_client
+                    .set(hotel.name.as_str(), hotel_json, 0)
+                    .expect("Failed to set hotel");
+            }
+        }
+
+        hotels
     }
 }
