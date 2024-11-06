@@ -9,8 +9,8 @@ use std::{
 };
 
 use tonic_masa::{
-    Context, LocalGraph, LocalGraphTracker, MethodId, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_TWO,
-    PRIO_LOCAL, PRIO_LOCAL_TWO,
+    Context, LocalGraph, LocalGraphTracker, MethodId, FIFO, FIFO_TWO, PRIO_GLOBAL,
+    PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
 
 use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
@@ -88,11 +88,8 @@ pub struct SimpleServerContext {
 impl SimpleParentContext {
     #[inline]
     fn check_early_return(&self) -> bool {
-        // if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
-        //if self.method.id() != "/frontend.Frontend/HandleSearch" {
-        //if self.method.id() == "/rate.Rate/HandleGetRates" {
-
-        if PRIO_GLOBAL_TWO || PRIO_LOCAL_TWO {
+        // if self.method.id() == "/frontend.Frontend/HandleSearch"
+        if PRIO_GLOBAL_EARLY || PRIO_LOCAL_EARLY {
             if self.will_early_return.load(Ordering::Relaxed) {
                 return true;
             }
@@ -118,13 +115,10 @@ impl SimpleParentContext {
                 }
             }
 
-            should_early_return
+            return should_early_return;
         } else {
-            false
+            return false;
         }
-        //}
-        // }
-        //        false
     }
 
     #[inline]
@@ -172,10 +166,10 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
             .unwrap();
         let deadline;
         let latest_exec_at;
-        if FIFO || FIFO_TWO || PRIO_GLOBAL || PRIO_GLOBAL_TWO {
+        if FIFO || FIFO_TWO || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
             deadline = self.ctx.deadline();
             latest_exec_at = self.ctx.latest_exec_at();
-        } else if PRIO_LOCAL || PRIO_LOCAL_TWO {
+        } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
             deadline = self.ctx.deadline() - graph.estimate_suffix_deadline(&method.id());
             latest_exec_at =
                 self.ctx.deadline() - graph.estimate_suffix_latest_exec_at(&method.id());
@@ -228,7 +222,7 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
     }
 
     fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
-        // log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
+        log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
         if self.polled.fetch_add(1, Ordering::Relaxed) == 0 {
             if self.check_early_return() {
                 return Some(self.issue_early_return());
@@ -247,37 +241,18 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
                     return Some(self.issue_early_return());
                 }
             }
-            Poll::Ready(res) => {}
+            Poll::Ready(_) => {}
         };
         None
-
-        // if self.method.id() == "/frontend.Frontend/HandleSearch" {
-        //     if let Poll::Ready(resp) = poll {
-        //         let request_id = self.ctx.request_id();
-        //         let graph_id = self.ctx.graph_id();
-        //         let slo = 0; // [TODO]
-        //         let latency = self.request_start.elapsed().as_micros();
-        //         let error = resp.is_err();
-        //         log::warn!(
-        //             "{},{},{},{},{},{}",
-        //             self.method.id(),
-        //             request_id,
-        //             graph_id,
-        //             slo,
-        //             latency,
-        //             error
-        //         );
-        //     }
-        // }
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
-        // log::info!(
-        //     "parent_ctx, finalize, method: {:?}, polled: {} times, elapsed: {} us",
-        //     self.method.id(),
-        //     self.polled.load(Ordering::Relaxed),
-        //     self.request_start.elapsed().as_micros()
-        // );
+        log::info!(
+            "parent_ctx, finalize, method: {:?}, polled: {} times, elapsed: {} us",
+            self.method.id(),
+            self.polled.load(Ordering::Relaxed),
+            self.request_start.elapsed().as_micros()
+        );
     }
 }
 
@@ -324,7 +299,7 @@ impl ServerHooks for SimpleServerContext {
             .iter()
             .map(|(path, local_graph)| {
                 let local_graph = LocalGraphTracker::from(local_graph.clone());
-                (path.clone(), RwLock::new(local_graph))
+                (*path, RwLock::new(local_graph))
             })
             .collect();
 
@@ -335,13 +310,17 @@ impl ServerHooks for SimpleServerContext {
         );
 
         let num_early_returns = Arc::new(AtomicUsize::new(0));
-        let errs = num_early_returns.clone();
+        let num_early_returns_clone = num_early_returns.clone();
         tokio::spawn(async move {
             let mut last = 0;
             loop {
                 tokio::time::sleep(Duration::from_secs(2)).await;
-                let curr = errs.load(Ordering::Relaxed);
-                log::warn!("Num errs: {} (diff {})", curr, curr - last);
+                let curr = num_early_returns_clone.load(Ordering::Relaxed);
+                log::warn!(
+                    "num early returns: {}, num early returns diff: {})",
+                    curr,
+                    curr - last
+                );
                 last = curr;
             }
         });

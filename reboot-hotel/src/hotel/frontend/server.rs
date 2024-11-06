@@ -8,12 +8,6 @@ pub mod hotel {
     pub mod profile {
         tonic::include_proto!("profile");
     }
-    pub mod rate {
-        tonic::include_proto!("rate");
-    }
-    pub mod geo {
-        tonic::include_proto!("geo");
-    }
 }
 
 use std::time::Instant;
@@ -24,29 +18,14 @@ use hotel::{
     frontend, frontend::frontend_server::Frontend, profile, profile::profile_client::ProfileClient,
     search, search::search_client::SearchClient,
 };
-use hotel::{geo, geo::geo_client::GeoClient, rate, rate::rate_client::RateClient};
 
 pub struct FrontendImpl {
     search_client: SearchClient<Channel>,
     profile_client: ProfileClient<Channel>,
-    geo_client: GeoClient<Channel>,
-    rate_client: RateClient<Channel>,
 }
 
 impl FrontendImpl {
-    pub async fn new(
-        search_addr: String,
-        profile_addr: String,
-        geo_addr: String,
-        rate_addr: String,
-    ) -> Self {
-        let geo_client = GeoClient::connect(geo_addr)
-            .await
-            .expect("Failed to connect to geo");
-        let rate_client = RateClient::connect(rate_addr)
-            .await
-            .expect("Failed to connect to rate");
-
+    pub async fn new(search_addr: String, profile_addr: String) -> Self {
         let search_client = SearchClient::connect(search_addr)
             .await
             .expect("Failed to connect to search");
@@ -54,8 +33,6 @@ impl FrontendImpl {
             .await
             .expect("Failed to connect to search");
         FrontendImpl {
-            geo_client,
-            rate_client,
             search_client,
             profile_client,
         }
@@ -107,7 +84,6 @@ impl Frontend for FrontendImpl {
         }
 
         let response = frontend::SearchResponse { hotels };
-        // let response = frontend::SearchResponse { hotels: Vec::new() };
 
         let mut response = Response::new(response);
         ctx.set_frontend_elapse(request_start.elapsed().as_micros() as u64);

@@ -29,8 +29,8 @@ use crate::upgrade::{OnUpgrade, Pending, Upgraded};
 use crate::{Body, Response};
 
 use tonic_masa::{
-    Context as MasaContext, PriorityHint, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_TWO, PRIO_LOCAL,
-    PRIO_LOCAL_TWO,
+    Context as MasaContext, PriorityHint, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_EARLY,
+    PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
 
 // Our defaults are chosen for the "majority" case, which usually are not
@@ -338,25 +338,17 @@ where
                             req.extensions_mut().insert(Protocol::from_inner(protocol));
                         }
 
-                        // [NOTE] Get deadline from context.
-                        let prio = req
-                            .headers()
-                            .get("ctx")
-                            .map(|ctx_raw| {
-                                let ctx_str =
-                                    ctx_raw.to_str().expect("string conversion should work");
-                                let ctx = MasaContext::from_json(ctx_str);
-                                let prio;
-                                if FIFO || FIFO_TWO || PRIO_GLOBAL || PRIO_GLOBAL_TWO {
-                                    prio = PriorityHint::new(ctx.deadline());
-                                } else if PRIO_LOCAL || PRIO_LOCAL_TWO {
-                                    prio = PriorityHint::new(ctx.latest_exec_at());
-                                } else {
-                                    panic!("Unimplemented policy");
-                                }
-                                prio
-                            })
-                            .unwrap_or(PriorityHint::infra());
+                        // [NOTE] Get priority from context.
+                        let ctx_str = req.headers()["ctx"].to_str().unwrap();
+                        let ctx = MasaContext::from_json(ctx_str);
+                        let prio;
+                        if FIFO || FIFO_TWO || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
+                            prio = PriorityHint::new(ctx.deadline());
+                        } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
+                            prio = PriorityHint::new(ctx.latest_exec_at());
+                        } else {
+                            panic!("Unimplemented policy");
+                        }
 
                         // [NOTE] Into executor.
                         let fut = H2Stream::new(service.call(req), connect_parts, respond);

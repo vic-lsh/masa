@@ -1,7 +1,7 @@
 #!/bin/bash
 
-pwd=$(pwd)
-if [[ "$pwd" != */reboot-hotel ]]; then
+current_dir=$(pwd)
+if [[ "$current_dir" != */reboot-hotel ]]; then
     echo "Error: plese run in the reboot-hotel directory" >&2
     exit 1
 fi
@@ -30,24 +30,11 @@ while [[ "$#" -gt 0 ]]; do
     esac
     shift
 done
-
 if [ -z "$features" ]; then
     echo "Expected a masa feature flag using --features"
     exit 1
 fi
-
-# Restart the containers.
-cd $current_dir/scripts/local
-docker compose -f containers.yaml down
-cd $current_dir/scripts/local
-docker compose -f containers.yaml up -d
-
-cd $current_dir
-
-
-
 if [ -z "$output" ]; then
-    echo "Set --output to snippets/$features"
     output=snippets/$features
 fi
 
@@ -59,7 +46,7 @@ services=(
     "hotel_search"
     "hotel_profile"
     "hotel_frontend"
-    "hotel_open_loop_bench"
+    "hotel_client_bench"
 )
 waits_secs=(
     0
@@ -86,16 +73,43 @@ ready_go() {
         service=${services[$i]}
         wait_secs=${waits_secs[$i]}
 
-        if [[ "$service" != "hotel_client_bench" ]]; then
-
+        if [[ "$service" == "hotel_client_bench" ]]; then
             run_cmd=" \
 RUST_LOG=$rust_log \
 cargo run --release \
 --features $features \
 --bin $service \
 -- \
---config scripts/local/hotel_config.json \
-> $output/tmp_$service.log 2>&1"
+--hotel-config scripts/local/hotel_config.json \
+--gen-config $output/gen_config.json \
+--run-idx $run_idx;\
+sleep 3; \
+tmux kill-session"
+
+            #       elif [[ "$service" == "hotel_rate" ]]; then
+            #
+            #            run_cmd=" \
+            # cargo build --release --features $features --bin $service; \
+            # RUST_LOG=$rust_log \
+            # timeout 120s perf record -g --call-graph dwarf ../target/release/$service \
+            # --config scripts/local/hotel_config.json; \
+            # perf script | inferno-collapse-perf > stacks.$service.$features.folded"
+
+            #             run_cmd=" \
+            # RUST_LOG=$rust_log \
+            # cargo flamegraph \
+            # --features $features \
+            # --bin $service \
+            # -- \
+            # --config scripts/local/hotel_config.json"
+
+            #             run_cmd=" \
+            # cargo build --release \
+            # --features $features \
+            # --bin $service && \
+            # sudo RUST_LOG=$rust_log \
+            # perf record --call-graph dwarf ../target/release/$service \
+            # --config scripts/local/hotel_config.json"
 
         else
 
@@ -105,15 +119,12 @@ cargo run --release \
 --features $features \
 --bin $service \
 -- \
---hotel-config scripts/local/hotel_config.json \
---gen-config $output/gen_config.json \
---run-idx $run_idx \
-> $output/tmp_$service.log 2>&1"
+--config scripts/local/hotel_config.json"
 
         fi
 
         cmd=" \
-cd $pwd; \
+cd $current_dir; \
 sleep $wait_secs; \
 $run_cmd"
 
@@ -128,17 +139,7 @@ $run_cmd"
         tmux send-keys -t $session_name "$cmd" C-m
     done
 
-    all_done=false
-    while [[ $all_done == false ]]; do
-        sleep 10
-        service=${services[-1]}
-        if [ ! -f $output/tmp_$service.log ]; then
-            continue
-        fi
-        if tail -n 1 $output/tmp_$service.log | grep -q "Load generator done"; then
-            all_done=true
-        fi
-    done
+    tmux attach -t $session_name
 }
 
 for ((run = 0; run < repeats; run++)); do

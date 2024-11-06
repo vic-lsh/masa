@@ -39,7 +39,7 @@ pub fn get_task_ddl() -> Option<PriorityHint> {
 }
 
 /// Set the deadline hint for the current task through thread-local storage.
-pub fn set_task_ddl(new_value: Option<PriorityHint>) {
+fn set_task_ddl(new_value: Option<PriorityHint>) {
     THREAD_LOCAL_DDL.with(|value| *value.borrow_mut() = new_value);
 }
 
@@ -642,7 +642,6 @@ where
             }
         };
 
-        *raw.prio = get_task_ddl().expect("ddl must exist");
         set_task_ptr(core::ptr::null());
         raw.reset_ddl_after_poll();
 
