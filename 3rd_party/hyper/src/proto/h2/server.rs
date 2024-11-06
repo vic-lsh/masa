@@ -29,8 +29,8 @@ use crate::upgrade::{OnUpgrade, Pending, Upgraded};
 use crate::{Body, Response};
 
 use tonic_masa::{
-    Context as MasaContext, PriorityHint, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_TWO, PRIO_LOCAL,
-    PRIO_LOCAL_TWO,
+    Context as MasaContext, PriorityHint, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_EARLY,
+    PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
 
 // Our defaults are chosen for the "majority" case, which usually are not
@@ -342,9 +342,9 @@ where
                         let ctx_str = req.headers()["ctx"].to_str().unwrap();
                         let ctx = MasaContext::from_json(ctx_str);
                         let prio;
-                        if FIFO || FIFO_TWO || PRIO_GLOBAL || PRIO_GLOBAL_TWO {
+                        if FIFO || FIFO_TWO || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
                             prio = PriorityHint::new(ctx.deadline());
-                        } else if PRIO_LOCAL || PRIO_LOCAL_TWO {
+                        } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
                             prio = PriorityHint::new(ctx.latest_exec_at());
                         } else {
                             panic!("Unimplemented policy");
@@ -538,6 +538,8 @@ where
                             headers::set_content_length_if_missing(res.headers_mut(), len);
                         }
 
+                        // [NOTE(vic)]: reply! send the header eagerly, then
+                        // send the body lazily
                         let body_tx = reply!(me, res, false);
                         H2StreamState::Body {
                             pipe: PipeToSendStream::new(body, body_tx),

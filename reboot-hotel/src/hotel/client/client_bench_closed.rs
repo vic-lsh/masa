@@ -21,7 +21,7 @@ use tokio::time::{timeout, Duration, Instant};
 
 use tonic::transport::Channel;
 use tonic_masa::{
-    Context, GraphId, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_TWO, PRIO_LOCAL, PRIO_LOCAL_TWO,
+    Context, GraphId, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
 
 use config::{GenConfig, HotelConfig};
@@ -66,14 +66,14 @@ impl LoadGenerator {
             log::warn!("Enabled prio_class");
         } else if cfg!(feature = "prio_global") {
             log::warn!("Enabled prio_global");
-        } else if cfg!(feature = "prio_global_two") {
-            log::warn!("Enabled prio_global_two");
+        } else if cfg!(feature = "prio_global_early") {
+            log::warn!("Enabled prio_global_early");
         } else if cfg!(feature = "prio_class_global") {
             log::warn!("Enabled prio_class_global");
         } else if cfg!(feature = "prio_local") {
             log::warn!("Enabled prio_local");
-        } else if cfg!(feature = "prio_local_two") {
-            log::warn!("Enabled prio_local_two");
+        } else if cfg!(feature = "prio_local_early") {
+            log::warn!("Enabled prio_local_early");
         } else if cfg!(feature = "fifo_two") {
             log::warn!("Enabled fifo_two");
         } else if cfg!(feature = "fifo") {
@@ -164,7 +164,7 @@ impl LoadGenerator {
             let request = {
                 let start_at = time_now();
                 let deadline = {
-                    if PRIO_GLOBAL || PRIO_GLOBAL_TWO || PRIO_LOCAL || PRIO_LOCAL_TWO {
+                    if PRIO_GLOBAL || PRIO_GLOBAL_EARLY || PRIO_LOCAL || PRIO_LOCAL_EARLY {
                         // [DEPRECATED] Relative start time.
                         // let start_at = time_now() - init_at_u64;
                         // start_at + slo

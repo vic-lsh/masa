@@ -37,8 +37,8 @@
     missing_debug_implementations,
     missing_docs
 )]
-#![deny(unreachable_pub, private_in_public)]
-#![allow(elided_lifetimes_in_paths, clippy::type_complexity)]
+#![deny(unreachable_pub, private_interfaces, private_bounds)]
+#![allow(elided_lifetimes_in_paths, clippy::type_complexity, dead_code)]
 #![forbid(unsafe_code)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(test, allow(clippy::float_cmp))]

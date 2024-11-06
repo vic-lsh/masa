@@ -450,6 +450,7 @@ impl fmt::Debug for Body {
         struct Streaming;
         #[derive(Debug)]
         struct Empty;
+        #[allow(dead_code)]
         #[derive(Debug)]
         struct Full<'a>(&'a Bytes);
 

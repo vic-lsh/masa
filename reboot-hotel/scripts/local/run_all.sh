@@ -1,7 +1,10 @@
 #!/bin/bash
 
-reboot_hotel=~/Masa-Lo-Ding/reboot-hotel
-cd $reboot_hotel
+pwd=$(pwd)
+if [[ "$pwd" != */reboot-hotel ]]; then
+    echo "Error: plese run in the reboot-hotel directory" >&2
+    exit 1
+fi
 
 features=""
 output=""
@@ -27,7 +30,12 @@ while [[ "$#" -gt 0 ]]; do
     esac
     shift
 done
+if [ -z "$features" ]; then
+    echo "Expected a masa feature flag using --features"
+    exit 1
+fi
 if [ -z "$output" ]; then
+    echo "Set --output to snippets/$features"
     output=snippets/$features
 fi
 
@@ -51,12 +59,14 @@ waits_secs=(
 )
 rust_log=warn
 
+reset() {
+    rm $output/*.log
+    docker compose -f scripts/local/containers.yaml down -v --remove-orphans
+    docker compose -f scripts/local/containers.yaml up -d
+}
+
 ready_go() {
     run_idx=$1
-    rm $output/*.log
-
-    docker compose -f scripts/local/containers.yaml down
-    docker compose -f scripts/local/containers.yaml up -d
 
     first_pane=true
 
@@ -91,7 +101,7 @@ cargo run --release \
         fi
 
         cmd=" \
-cd ~/Masa-Lo-Ding/reboot-hotel; \
+cd $pwd; \
 sleep $wait_secs; \
 $run_cmd"
 
@@ -124,6 +134,7 @@ for ((run = 0; run < repeats; run++)); do
         tmux kill-session -t $session_name
     fi
     echo "Starting run $run/$repeats..."
+    reset
 
     tmux new-session -d -s $session_name -n "local"
     tmux set-option -s pane-border-status top

@@ -75,7 +75,8 @@ pub trait RequestHandlerHooks: Sync {
         method: GrpcMethod,
         req: &mut Request<T>,
         child_ctx: &mut ChildContext,
-    ) {
+    ) -> Option<Status> {
+        None
     }
 
     /// Invoked after the request handler receives a response from an RPC it made earlier.
@@ -84,7 +85,8 @@ pub trait RequestHandlerHooks: Sync {
         method: GrpcMethod,
         resp: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext,
-    ) {
+    ) -> Option<Status> {
+        None
     }
 
     /// Invoked each time before the request handler is polled.

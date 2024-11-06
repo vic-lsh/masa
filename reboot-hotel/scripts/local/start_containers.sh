@@ -13,7 +13,7 @@ tmux set-option -s pane-border-status top
 tmux set-option -s pane-border-format "#{pane_title}"
 
 CMD=" \
-cd ~/Masa-Lo-Ding/reboot-hotel/scripts/local; \
+cd ${current_dir}/scripts/local; \
 docker compose -f containers.yaml up -d \
 "
 

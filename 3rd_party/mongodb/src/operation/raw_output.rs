@@ -7,6 +7,7 @@ use super::Operation;
 
 /// Forwards all implementation to the wrapped `Operation`, but returns the response unparsed and
 /// unvalidated as a `RawCommandResponse`.
+#[allow(dead_code)]
 #[derive(Clone)]
 pub(crate) struct RawOutput<Op>(pub(crate) Op);
 
