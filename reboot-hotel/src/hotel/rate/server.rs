@@ -4,6 +4,9 @@ pub mod hotel {
     }
 }
 use futures::StreamExt;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
+use rand_distr::{Distribution, Uniform};
 use reboot_hotel::FanoutTracker;
 use tokio::sync::Mutex;
 
@@ -23,12 +26,18 @@ struct MasaConfig {
     cache_miss_rate: u32,
 }
 
+struct SyntheticRate {
+    rng: Arc<Mutex<StdRng>>,
+    uniform: Uniform<u64>,
+    config: MasaConfig,
+}
+
 pub struct RateImpl {
     memc_client: Arc<memcache::Client>,
     mongo_client: Arc<MongoClient>,
     latency_tracker: Arc<Mutex<LatencyTracker>>,
     fanout_tracker: Arc<FanoutTracker>,
-    _config: MasaConfig,
+    synth: SyntheticRate,
 }
 
 impl RateImpl {
@@ -53,16 +62,23 @@ impl RateImpl {
         //         log::warn!("Avg fanout {}", fanout.get_average_fanout());
         //     }
         // });
+        let seed = 998244353;
+        let rng = Arc::new(Mutex::new(StdRng::seed_from_u64(seed)));
+        let uniform = Uniform::new(0, 100);
 
         Ok(Self {
             memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
             latency_tracker,
             fanout_tracker,
-            _config: MasaConfig {
-                hotels,
-                cache_conn,
-                cache_miss_rate,
+            synth: SyntheticRate {
+                rng,
+                uniform,
+                config: MasaConfig {
+                    hotels,
+                    cache_conn,
+                    cache_miss_rate,
+                },
             },
         })
     }
@@ -109,6 +125,118 @@ impl Rate for RateImpl {
 
         // Handle cache misses
         let missing_ids: Vec<String> = rate_set.into_iter().collect();
+        let handles: Vec<_> = missing_ids
+            .into_iter()
+            .map(|hotel_id| {
+                let rate_plans_clone = Arc::clone(&rate_plans);
+                let mongo_client = Arc::clone(&self.mongo_client);
+                let memc_client = Arc::clone(&self.memc_client);
+
+                tokio::spawn(async move {
+                    let collection = mongo_client
+                        .database("rate-db")
+                        .collection::<db::RatePlan>("inventory");
+
+                    let mut cursor = collection
+                        .find(doc! {}, None)
+                        .await
+                        .expect("failed to find rate");
+                    let mut tmp_rate_plans = Vec::new();
+                    let mut memc_str = String::new();
+
+                    while let Some(Ok(rate_plan)) = cursor.next().await {
+                        if let Ok(rate_json) = serde_json::to_string(&rate_plan) {
+                            memc_str.push_str(&rate_json);
+                            memc_str.push('\n');
+                        }
+                        tmp_rate_plans.push(rate_plan);
+                    }
+
+                    // Update rate plans
+                    {
+                        let mut rate_plans = rate_plans_clone.lock().await;
+                        rate_plans.extend(tmp_rate_plans);
+                    }
+
+                    // Update memcached asynchronously
+                    if !memc_str.is_empty() {
+                        tokio::spawn(async move {
+                            let _ = memc_client.set(&hotel_id, memc_str.as_bytes(), 0);
+                        });
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        // Sort rate plans
+        let mut final_rate_plans = Arc::into_inner(rate_plans)
+            .expect("rate plan clones should have been dropped")
+            .into_inner();
+        final_rate_plans.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        let response = rate::RateResponse {
+            rate_plans: final_rate_plans.into_iter().map(|p| p.into()).collect(),
+        };
+        log::info!("response: {:?}", response);
+        let end = start.elapsed();
+        {
+            self.latency_tracker
+                .lock()
+                .await
+                .track(end.as_micros().try_into().unwrap());
+        }
+        Ok(Response::new(response))
+    }
+}
+
+impl RateImpl {
+    async fn get_rates_synthetic(
+        &self,
+        request: Request<rate::RateRequest>,
+    ) -> Result<Response<rate::RateResponse>, Status> {
+        let start = std::time::Instant::now();
+
+        let request = request.into_inner();
+        let missing_ids = {
+            let mut rng = self.synth.rng.lock().await;
+            let value = self.synth.uniform.sample(&mut *rng) % 100;
+            if value < self.synth.config.cache_miss_rate as u64 {
+                request.hotel_ids.clone()
+            } else {
+                Vec::new()
+            }
+        };
+
+        // self.fanout_tracker.track(request.hotel_ids.len());
+
+        let mut rate_plans = Vec::new();
+
+        // Check memcached first
+        let hotel_ids_ref: Vec<_> = request.hotel_ids.iter().map(|id| id.as_str()).collect();
+        let memc_resp = self
+            .memc_client
+            .gets(&hotel_ids_ref)
+            .map_err(|e| tonic::Status::internal(format!("Memcached error: {}", e)))?;
+
+        for (hotel_id, item) in memc_resp {
+            if let Ok(value) = String::from_utf8(item) {
+                for rate_str in value.split('\n') {
+                    if !rate_str.is_empty() {
+                        if let Ok(rate_plan) = serde_json::from_str::<db::RatePlan>(rate_str) {
+                            rate_plans.push(rate_plan);
+                        }
+                    }
+                }
+            }
+        }
+
+        let rate_plans = Arc::new(Mutex::new(rate_plans));
+
+        // Handle cache misses
         let handles: Vec<_> = missing_ids
             .into_iter()
             .map(|hotel_id| {
