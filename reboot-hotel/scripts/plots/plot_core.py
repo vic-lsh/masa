@@ -35,13 +35,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def plot_goodput_line(
-    results: List[Dict[str, Any]], fig_name: str, mode: str, alias: Optional[str] = None
-):
-    title = f"Throughput vs RPS ({mode})"
-    if alias:
-        title = f"{title} ({alias})"
-
+def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     goodputs_load_gen = [result["goodput_load_gen"] for result in results]
     goodputs_fe = [result["goodput_fe"] for result in results]
@@ -66,19 +60,13 @@ def plot_goodput_line(
     plt.xlabel("RPS")
     plt.ylabel("Goodput")
     plt.ylim(-200, 2200)
-    plt.title(title)
+    plt.title(f"Goodput vs RPS ({mode})")
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
 
 
-def plot_goodput_bar(
-    results: List[Dict[str, Any]], fig_name: str, mode: str, alias: Optional[str] = None
-):
-    title = f"Throughput vs RPS ({mode})"
-    if alias:
-        title = f"{title} ({alias})"
-
+def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     goodputs_load_gen = [result["goodput_load_gen"] for result in results]
     goodputs_fe = [result["goodput_fe"] for result in results]
@@ -92,7 +80,7 @@ def plot_goodput_bar(
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
-    ax.set_title(title)
+    ax.set_title(f"Goodput vs RPS ({mode})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
@@ -187,19 +175,13 @@ def plot_throughput_line(results: List[Dict[str, Any]], fig_name: str, mode: str
     plt.xlabel("RPS")
     plt.ylabel("Throughput")
     plt.ylim(-200, 2200)
-    plt.title(title)
+    plt.title(f"Throughput vs RPS ({mode})")
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
 
 
-def plot_throughput_bar(
-    results: List[Dict[str, Any]], fig_name: str, mode: str, alias: Optional[str] = None
-):
-    title = f"Throughput vs RPS ({mode})"
-    if alias:
-        title = f"{title} ({alias})"
-
+def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     keys = ["tput_good", "tput_lg_miss", "tput_lg_timeout", "tput_svc_early"]
     labels = [
@@ -227,7 +209,7 @@ def plot_throughput_bar(
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Throughput")
-    ax.set_title(title)
+    ax.set_title(f"Throughput vs RPS ({mode})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
@@ -254,13 +236,7 @@ def plot_throughput_bar(
     plt.savefig(fig_name)
 
 
-def plot_error_line(
-    results: List[Dict[str, Any]], fig_name: str, mode: str, alias: Optional[str] = None
-):
-    title = f"Throughput vs RPS ({mode})"
-    if alias:
-        title = f"{title} ({alias})"
-
+def plot_error_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     keys = [
         "error_lg_miss",
@@ -287,19 +263,13 @@ def plot_error_line(
     plt.xlabel("RPS")
     plt.ylabel("Error")
     plt.ylim(-200, 2200)
-    plt.title(title)
+    plt.title(f"Error vs RPS ({mode})")
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
 
 
-def plot_error_bar(
-    results: List[Dict[str, Any]], fig_name: str, mode: str, alias: Optional[str] = None
-):
-    title = f"Throughput vs RPS ({mode})"
-    if alias:
-        title = f"{title} ({alias})"
-
+def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     keys = [
         "error_lg_miss",
@@ -335,7 +305,7 @@ def plot_error_bar(
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Error")
-    ax.set_title(title)
+    ax.set_title(f"Error vs RPS ({mode})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_small)
@@ -362,13 +332,7 @@ def plot_error_bar(
     plt.savefig(fig_name)
 
 
-def plot_tail_line(
-    results: List[Dict[str, Any]], fig_name: str, mode: str, alias: Optional[str] = None
-):
-    title = f"Throughput vs RPS ({mode})"
-    if alias:
-        title = f"{title} ({alias})"
-
+def plot_tail_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     keys = ["mean", "p90", "p95", "p99"]
     labels = ["Mean", "P90", "P95", "P99"]
@@ -383,19 +347,13 @@ def plot_tail_line(
     plt.xlabel("RPS")
     plt.ylabel("Tail (ms)")
     plt.ylim(0, 100)
-    plt.title(title)
+    plt.title(f"Tail vs RPS ({mode})")
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
 
 
-def plot_tail_bar(
-    results: List[Dict[str, Any]], fig_name: str, mode: str, alias: Optional[str] = None
-):
-    title = f"Throughput vs RPS ({mode})"
-    if alias:
-        title = f"{title} ({alias})"
-
+def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     keys = ["mean", "p90", "p95", "p99"]
     labels = ["Mean", "P90", "P95", "P99"]
@@ -419,7 +377,7 @@ def plot_tail_bar(
     ax.set_xlabel("RPS")
     ax.set_ylabel("Tail (ms)")
     ax.set_ylim(0, 100)
-    ax.set_title(title)
+    ax.set_title(f"Tail vs RPS ({mode})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_small)
