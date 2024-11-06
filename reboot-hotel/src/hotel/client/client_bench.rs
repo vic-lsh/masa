@@ -17,7 +17,7 @@ use std::sync::{
 use crossbeam_channel::{unbounded, Sender};
 use gen::gen_search_request;
 use rand::{rngs::StdRng, SeedableRng};
-use rand_distr::{Distribution, Exp, Uniform};
+use rand_distr::{Distribution, Uniform};
 use structopt::StructOpt;
 use tokio::time::{timeout, Duration, Instant};
 

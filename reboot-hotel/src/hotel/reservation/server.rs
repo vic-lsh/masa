@@ -212,7 +212,7 @@ impl ReservationImpl {
 impl Reservation for ReservationImpl {
     async fn handle_make_reservation(
         &self,
-        request: Request<reservation::ReservationRequest>,
+        _request: Request<reservation::ReservationRequest>,
     ) -> Result<Response<reservation::ReservationResponse>, Status> {
         // let ctx = request.metadata().get_ctx("ctx").unwrap();
         panic!("Not implemented");
@@ -220,7 +220,7 @@ impl Reservation for ReservationImpl {
 
     async fn handle_check_availability(
         &self,
-        request: Request<reservation::ReservationRequest>,
+        _request: Request<reservation::ReservationRequest>,
     ) -> Result<Response<reservation::ReservationResponse>, Status> {
         // let ctx = request.metadata().get_ctx("ctx").unwrap();
         panic!("Not implemented");
