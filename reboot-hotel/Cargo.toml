@@ -9,14 +9,6 @@ version = "0.1.0"
 name = "hotel_client_bench"
 path = "src/hotel/client/client_bench.rs"
 
-#[[bin]]
-#name = "hotel_open_loop_bench"
-#path = "src/hotel/client/open_loop_bench.rs"
-
-#[[bin]]
-#name = "hotel_open_loop_bench"
-#path = "src/hotel/client/open_loop_bench.rs"
-
 [[bin]]
 name = "hotel_client_lim"
 path = "src/hotel/client/client_lim.rs"
@@ -86,6 +78,7 @@ prio_local_early = [
 fifo_two = ["async-executor/fifo_two", "tonic-masa/fifo_two"]
 fifo = ["async-executor/fifo", "tonic-masa/fifo"]
 synthetic = []
+workload_stats = []
 
 gcp = ["dep:prost-types", "tonic/tls"]
 routeguide = [
