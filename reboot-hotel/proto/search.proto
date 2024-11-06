@@ -11,8 +11,8 @@ message NearbyRequest {
 
   // float lat = 1;
   // float lon = 2;
-  // string inDate = 3;
-  // string outDate = 4;
+  // uint32 inDate = 3;
+  // uint32 outDate = 4;
 }
 
 message NearbyResponse { repeated string hotels = 1; }

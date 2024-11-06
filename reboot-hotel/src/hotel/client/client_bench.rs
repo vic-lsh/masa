@@ -222,7 +222,20 @@ impl LoadGenerator {
 
             let request = {
                 let ave = (ctx.request_id() % self.hotel_cfg.hotels as u64) as u32;
-                let search_request = SearchRequest { ave };
+                let dates = {
+                    let in_date = uniform.sample(&mut self.rng) % 100 as u32;
+                    let out_date = uniform.sample(&mut self.rng) % 100 as u32;
+                    if in_date < out_date {
+                        (in_date, out_date + 1)
+                    } else {
+                        (out_date, in_date + 1)
+                    }
+                };
+                let search_request = SearchRequest {
+                    ave,
+                    in_date: dates.0,
+                    out_date: dates.1,
+                };
                 let mut request = tonic::Request::new(search_request);
                 request.metadata_mut().insert_ctx("ctx", &ctx);
 
