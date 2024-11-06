@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let frontend = FrontendImpl::new(search_addr, reservation_addr, profile_addr).await;
-    log::info!("Server listening on {}...", frontend_addr);
+    log::warn!("Server listening on {}...", frontend_addr);
     Server::builder()
         .add_service(FrontendServer::new(frontend))
         .serve_with_executor(frontend_addr, Exec::Executor(ex))

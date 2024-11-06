@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::info!("Hotel config: {:?}", cfg);
+    log::warn!("Hotel config: {:?}", cfg);
 
     let reservation = ReservationImpl::new(
         cfg.hotels,
@@ -58,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let reservation_addr = "[::1]:8665".parse().expect("Failed to parse address");
-    log::info!("Server listening on {}...", reservation_addr);
+    log::warn!("Server listening on {}...", reservation_addr);
     Server::builder()
         .add_service(ReservationServer::new(reservation))
         .serve_with_executor(reservation_addr, Exec::Executor(ex))

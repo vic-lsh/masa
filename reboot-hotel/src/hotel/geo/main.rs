@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::info!("Hotel config: {:?}", cfg);
+    log::warn!("Hotel config: {:?}", cfg);
 
     let geo = GeoImpl::new(cfg.hotels, cfg.geo_range);
 
@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let geo_addr = "[::1]:8662".parse().expect("Failed to parse address");
-    log::info!("Server listening on {}...", geo_addr);
+    log::warn!("Server listening on {}...", geo_addr);
     Server::builder()
         .add_service(GeoServer::new(geo))
         .serve_with_executor(geo_addr, Exec::Executor(ex))

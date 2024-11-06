@@ -305,7 +305,7 @@ impl SimpleServerContext {
             })
             .collect();
 
-        log::info!(
+        log::warn!(
             "SimpleServerContext, service: {:?}, local_graphs: {:?}",
             service_name,
             local_graphs
@@ -319,7 +319,7 @@ impl SimpleServerContext {
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 let curr = num_early_returns_clone.load(Ordering::Relaxed);
                 log::warn!(
-                    "num early returns: {}, num early returns diff: {})",
+                    "num early returns: {}, num early returns diff: {}",
                     curr,
                     curr - last
                 );
