@@ -312,17 +312,17 @@ where
         };
 
         // [NOTE] Into service call.
-        use crate::util::Hookable;
+        use crate::util::Abortable;
         let fut = service
             .call(request)
-            .hook()
-            .pre_hook(|| {
+            .abortable()
+            .before_poll(|| {
                 crate::masa::context::server::set_parent_ctx::<ServerCtx, ChildCtx, ParentCtx>(
                     req_ctx.as_ref(),
                 );
                 req_ctx.before_poll()
             })
-            .post_hook(|poll| {
+            .after_poll(|poll| {
                 crate::masa::context::server::reset_parent_ctx::<ServerCtx, ChildCtx, ParentCtx>();
                 req_ctx.after_poll(poll)
             })
