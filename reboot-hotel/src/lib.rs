@@ -113,24 +113,24 @@ impl JsonParser {
 }
 
 #[derive(Default)]
-pub struct FanoutTracker {
-    fanout: AtomicUsize,
+pub struct AvgTracker {
+    sum: AtomicUsize,
     count: AtomicUsize,
 }
 
-impl FanoutTracker {
+impl AvgTracker {
     pub fn track(&self, fanout: usize) {
-        self.fanout.fetch_add(fanout, Ordering::Relaxed);
+        self.sum.fetch_add(fanout, Ordering::Relaxed);
         self.count.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn get_average_fanout(&self) -> usize {
+    pub fn get(&self) -> usize {
         let count = self.count.load(Ordering::Relaxed);
         if count == 0 {
             0
         } else {
-            let fanout = self.fanout.load(Ordering::Relaxed);
-            fanout / count
+            let sum = self.sum.load(Ordering::Relaxed);
+            sum / count
         }
     }
 }
