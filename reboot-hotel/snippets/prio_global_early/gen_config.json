@@ -1,0 +1,16 @@
+{
+  "Repeats": 1,
+  "Slo": 25000,
+  "Rps": [
+    1000,
+    1200,
+    1400,
+    1600,
+    1800
+  ],
+  "WarmupSecs": 30,
+  "DurationSecs": 120,
+  "Concurrency": 0,
+  "Output": "snippets/prio_global_early",
+  "Addr": "http://[::1]:8660"
+}

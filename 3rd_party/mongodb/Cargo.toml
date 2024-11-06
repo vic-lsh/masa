@@ -214,3 +214,6 @@ features = [
     "tracing-unstable",
     "in-use-encryption-unstable"
 ]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mongodb_internal_tracking_arc)'] }

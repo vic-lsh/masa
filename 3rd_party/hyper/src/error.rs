@@ -613,8 +613,10 @@ impl From<http::uri::InvalidUriParts> for Parse {
     }
 }
 
+#[allow(dead_code)]
 #[doc(hidden)]
 trait AssertSendSync: Send + Sync + 'static {}
+#[allow(dead_code)]
 #[doc(hidden)]
 impl AssertSendSync for Error {}
 

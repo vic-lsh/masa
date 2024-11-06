@@ -19,7 +19,7 @@ impl Distribution {
     }
 
     /// Sample a latency.
-    pub fn sample(&self, request_id: RequestId) -> Latency {
+    pub fn sample(&self, _request_id: RequestId) -> Latency {
         // let index = request_id as usize % self.percentile_latencies.len();
         // self.percentile_latencies[index]
         self.mean

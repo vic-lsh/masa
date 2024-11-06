@@ -1,3 +1,4 @@
+use serde_json;
 use std::fs::{self, File};
 use std::future::Future;
 use std::io::Write;
@@ -129,4 +130,18 @@ pub async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
         .unwrap();
     }
     log::warn!("Traces fetched");
+}
+
+pub struct JsonParser {}
+
+impl JsonParser {
+    pub fn new() -> JsonParser {
+        JsonParser {}
+    }
+
+    pub fn read(&self, path: &str) -> serde_json::Value {
+        let data = fs::read_to_string(path).expect("Unable to read file");
+        let res: serde_json::Value = serde_json::from_str(&data).expect("Unable to parse");
+        res
+    }
 }
