@@ -928,7 +928,7 @@ impl<M> State<M> {
         } else if cfg!(feature = "fifo") {
             log::warn!("Enabled fifo");
         } else {
-            panic!("Not implemented policy");
+            log::warn!("Not implemented policy");
         }
         State {
             queue: GlobalQueue::default(),
