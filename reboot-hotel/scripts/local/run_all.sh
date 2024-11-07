@@ -129,12 +129,14 @@ $run_cmd"
             all_done=true
         fi
     done
+    tmux kill-session -t $session_name
 }
 
+if tmux has-session -t $session_name 2>/dev/null; then
+    tmux kill-session -t $session_name
+fi
+
 for ((run = 0; run < repeats; run++)); do
-    if tmux has-session -t $session_name 2>/dev/null; then
-        tmux kill-session -t $session_name
-    fi
     echo "Starting run $run/$repeats..."
     reset
 
