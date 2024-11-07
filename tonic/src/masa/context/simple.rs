@@ -133,7 +133,7 @@ impl RequestHandlerHooks for SimpleParentContext {
         req: &http::Request<B>,
         server_ctx: Arc<SimpleServerContext>,
     ) -> Self {
-        log::info!("parent_ctx, begin, method: {:?}", method.id());
+        // log::info!("parent_ctx, begin, method: {:?}", method.id());
         let ctx_str = req.headers()["ctx"].to_str().unwrap();
         let ctx = Context::from_json(ctx_str);
         Self {
@@ -156,7 +156,7 @@ impl RequestHandlerHooks for SimpleParentContext {
             return Some(Status::new(Code::DeadlineExceeded, self.method.id()));
         }
 
-        log::info!("parent_ctx, before_child_rpc, method: {:?}", method.id());
+        // log::info!("parent_ctx, before_child_rpc, method: {:?}", method.id());
         let graph = self
             .server_ctx
             .local_graph_trackers
@@ -196,10 +196,10 @@ impl RequestHandlerHooks for SimpleParentContext {
         resp: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext,
     ) -> Option<Status> {
-        log::info!(
-            "parent_ctx, after_child_rpc, method: {:?}",
-            child_rpc_method.id()
-        );
+        // log::info!(
+        //     "parent_ctx, after_child_rpc, method: {:?}",
+        //     child_rpc_method.id()
+        // );
         let latency_us = child_ctx.track_latency.get_latency().unwrap().as_micros();
         let mut graph = self
             .server_ctx
@@ -222,7 +222,7 @@ impl RequestHandlerHooks for SimpleParentContext {
     }
 
     fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
-        log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
+        // log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
         if self.polled.fetch_add(1, Ordering::Relaxed) == 0 {
             if self.check_early_return() {
                 return Some(self.issue_early_return());
@@ -247,12 +247,12 @@ impl RequestHandlerHooks for SimpleParentContext {
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
-        log::info!(
-            "parent_ctx, finalize, method: {:?}, polled: {} times, elapsed: {} us",
-            self.method.id(),
-            self.polled.load(Ordering::Relaxed),
-            self.request_start.elapsed().as_micros()
-        );
+        // log::info!(
+        //     "parent_ctx, finalize, method: {:?}, polled: {} times, elapsed: {} us",
+        //     self.method.id(),
+        //     self.polled.load(Ordering::Relaxed),
+        //     self.request_start.elapsed().as_micros()
+        // );
     }
 }
 
@@ -265,17 +265,17 @@ impl ClientStubHooks for SimpleChildContext {
     }
 
     fn before_send<T>(&mut self, _req: &mut Request<T>) {
-        log::info!("child_ctx, before_send, method: {:?}", self.method.id());
+        // log::info!("child_ctx, before_send, method: {:?}", self.method.id());
         self.track_latency.start();
     }
 
     fn after_recv<T>(&mut self, _response: &mut Result<Response<T>, Status>) {
         self.track_latency.record_latency();
-        log::info!(
-            "child_ctx, after_recv, method: {:?}, elapsed: {} us",
-            self.method.id(),
-            self.track_latency.get_latency().unwrap().as_micros(),
-        );
+        // log::info!(
+        //     "child_ctx, after_recv, method: {:?}, elapsed: {} us",
+        //     self.method.id(),
+        //     self.track_latency.get_latency().unwrap().as_micros(),
+        // );
     }
 }
 
@@ -312,20 +312,22 @@ impl SimpleServerContext {
         );
 
         let num_early_returns = Arc::new(AtomicUsize::new(0));
-        let num_early_returns_clone = num_early_returns.clone();
-        tokio::spawn(async move {
-            let mut last = 0;
-            loop {
-                tokio::time::sleep(Duration::from_secs(2)).await;
-                let curr = num_early_returns_clone.load(Ordering::Relaxed);
-                log::warn!(
-                    "num early returns: {}, num early returns diff: {}",
-                    curr,
-                    curr - last
-                );
-                last = curr;
-            }
-        });
+        // let num_early_returns_clone = num_early_returns.clone();
+        // tokio::spawn(async move {
+        //     let secs = 10;
+        //     let mut prev = 0;
+        //     loop {
+        //         tokio::time::sleep(Duration::from_secs(secs)).await;
+        //         let curr = num_early_returns_clone.load(Ordering::Relaxed);
+        //         log::info!(
+        //             "num early returns: {}, diff in {} secs: {}",
+        //             curr,
+        //             secs,
+        //             curr - prev
+        //         );
+        //         prev = curr;
+        //     }
+        // });
 
         Self {
             service_name,

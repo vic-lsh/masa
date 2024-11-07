@@ -24,7 +24,7 @@ impl HotelManager {
         let mut hotels = Vec::new();
         for i in 0..n_hotels {
             hotels.push(Hotel {
-                name: format!("Sheraton Ave {}", i),
+                name: format!("Sheraton_Ave_{}", i),
                 _ave: i as u32,
             });
         }
