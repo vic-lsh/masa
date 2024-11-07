@@ -4,6 +4,7 @@ pub mod hotel {
     tonic::include_proto!("frontend");
 }
 
+use std::cmp;
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
@@ -291,14 +292,41 @@ impl LoadGenerator {
                 });
             } else if self.api == "Reservation" {
                 let request = {
+                    let accounts = {
+                        let id = uniform.sample(&mut self.rng) % self.hotel_cfg.user_users as u32;
+                        let username = format!("Username_{}", id);
+                        let password = format!("Password_{}", id);
+                        (username, password)
+                    };
+                    let hotels = {
+                        let lhs = uniform.sample(&mut self.rng) % self.hotel_cfg.hotels as u32;
+                        let rhs = cmp::min(lhs + self.hotel_cfg.geo_range, self.hotel_cfg.hotels);
+                        let mut hotels = Vec::new();
+                        for i in lhs..rhs {
+                            hotels.push(format!("Sheraton_Ave_{}", i));
+                        }
+                        hotels
+                    };
+                    let dates = {
+                        let in_date =
+                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
+                        let out_date =
+                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
+                        if in_date < out_date {
+                            (in_date, out_date + 1)
+                        } else {
+                            (out_date, in_date + 1)
+                        }
+                    };
+                    let num_rooms = 1;
                     let reservation_request = ReservationRequest {
-                        username: "Username".to_string(),
-                        password: "Password".to_string(),
+                        username: accounts.0,
+                        password: accounts.1,
                         customer: "Customer".to_string(),
-                        hotels: Vec::new(),
-                        in_date: 0,
-                        out_date: 0,
-                        num_rooms: 0,
+                        hotels,
+                        in_date: dates.0,
+                        out_date: dates.1,
+                        num_rooms,
                     };
                     let mut request = tonic::Request::new(reservation_request);
                     request.metadata_mut().insert_ctx("ctx", &ctx);

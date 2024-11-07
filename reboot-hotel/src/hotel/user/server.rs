@@ -70,8 +70,8 @@ impl HotelManager {
         let mut users = Vec::new();
         for i in 0..self.users {
             users.push(Account {
-                username: format!("username_{}", i),
-                password: format!("password_{}", i),
+                username: format!("Username_{}", i),
+                password: format!("Password_{}", i),
             });
         }
         self.collection.insert_many(users, None).await?;
