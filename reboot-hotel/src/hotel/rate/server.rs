@@ -136,40 +136,6 @@ impl HotelManager {
         Ok(())
     }
 
-    // pub fn fetch_memcache(&self, names: Vec<String>) -> Vec<Hotel> {
-    //     let names_ref = names.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
-    //     let mut hotels = Vec::new();
-    //     if let Ok(hotel_jsons) = self.memcache.gets::<String>(&names_ref) {
-    //         for hotel_json in hotel_jsons.values() {
-    //             let hotel: Hotel =
-    //                 serde_json::from_str(hotel_json).expect("Failed to deserialize hotel");
-    //             hotels.push(hotel);
-    //         }
-    //     }
-    //     hotels.sort_by_key(|hotel| hotel.ave);
-    //     hotels
-    // }
-
-    // pub async fn fetch_mongodb(&self, names: Vec<String>) -> Vec<Hotel> {
-    //     let query = doc! {
-    //         "name": {
-    //             "$in": names
-    //         }
-    //     };
-    //     let mut cursor = self
-    //         .collection
-    //         .find(query, None)
-    //         .await
-    //         .expect("Failed to find hotels");
-    //     let mut hotels = Vec::new();
-    //     while let Some(hotel) = cursor.next().await {
-    //         let hotel = hotel.expect("Failed to get hotel");
-    //         hotels.push(hotel);
-    //     }
-    //     // [OPTIONAL] Clear cache
-    //     hotels
-    // }
-
     pub async fn fetch_mixture(&self, names: Vec<String>) -> Vec<Hotel> {
         let names_db = {
             let mut rng = self.rng.lock().expect("Failed to lock rng");

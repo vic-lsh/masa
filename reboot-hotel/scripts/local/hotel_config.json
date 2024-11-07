@@ -11,5 +11,8 @@
 	"ReservationDates": 8,
 	"ReservationProbHotelAvail": 80,
 	"ReservationMongodbAddr": "mongodb://127.0.0.1:27005",
-	"ReservationMemcachedAddr": "memcache://127.0.0.1:11005"
+	"ReservationMemcachedAddr": "memcache://127.0.0.1:11005",
+	"UserUsers": 1000,
+	"UserProbCheckUser": 80,
+	"UserMongodbAddr": "mongodb://127.0.0.1:27006"
 }
