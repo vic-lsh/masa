@@ -280,6 +280,7 @@ impl ReservationImpl {
         &self,
         request: reservation::ReservationRequest,
     ) -> reservation::ReservationResponse {
+        log::info!("requeset: {:?}", request);
         let mut hotels = Vec::new();
         // [NOTE] Optional multi-threading.
         for hotel in &request.hotels {
@@ -298,7 +299,7 @@ impl ReservationImpl {
             }
         }
         let response = reservation::ReservationResponse { hotels };
-        log::info!("requeset: {:?}, response: {:?}", request, response);
+        log::info!("response: {:?}", response);
         response
     }
 }

@@ -46,12 +46,16 @@ name = "hotel_reservation"
 path = "src/hotel/reservation/main.rs"
 
 [[bin]]
-name = "recommendation-server"
-path = "src/hotel/recommendation/server.rs"
+name = "hotel_user"
+path = "src/hotel/user/main.rs"
 
-[[bin]]
-name = "recommendation-client"
-path = "src/hotel/recommendation/client.rs"
+# [[bin]]
+# name = "recommendation-server"
+# path = "src/hotel/recommendation/server.rs"
+
+# [[bin]]
+# name = "recommendation-client"
+# path = "src/hotel/recommendation/client.rs"
 
 
 [features]
