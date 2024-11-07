@@ -35,7 +35,7 @@ if [ -z "$features" ]; then
     exit 1
 fi
 if [ -z "$output" ]; then
-    echo "Set --output to snippets/$features"
+    echo "Set output to snippets/$features"
     output=snippets/$features
 fi
 
@@ -54,18 +54,32 @@ services=(
 waits_secs=(
     0
     0
-    20
+    24
     0
     0
     0
+    27
     30
-    36
 )
-rust_log=warn
+rust_log=info
+
+init() {
+    if tmux has-session -t $session_name 2>/dev/null; then
+        tmux kill-session -t $session_name
+    fi
+}
+
+build() {
+    echo "Building $features..."
+    cargo build \
+        --release \
+        --features $features \
+        >$output/build.log 2>&1
+}
 
 reset() {
     rm $output/*.log
-    docker compose -f scripts/local/containers.yaml down -v --remove-orphans
+    docker compose -f scripts/local/containers.yaml down --remove-orphans
     docker compose -f scripts/local/containers.yaml up -d
 }
 
@@ -134,9 +148,8 @@ $run_cmd"
     tmux kill-session -t $session_name
 }
 
-if tmux has-session -t $session_name 2>/dev/null; then
-    tmux kill-session -t $session_name
-fi
+init
+build
 
 for ((run = 0; run < repeats; run++)); do
     echo "Starting run $run/$repeats..."

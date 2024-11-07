@@ -128,7 +128,7 @@ impl HotelManager {
             let handle = tokio::spawn(async move {
                 for ave in (i..n_hotels).step_by(n_conns) {
                     for date in 0..n_dates {
-                        let hotel = Hotel::new(format!("Sheraton Ave {}", ave), date as u32, 0, 0);
+                        let hotel = Hotel::new(format!("Sheraton_Ave_{}", ave), date as u32, 0, 0);
                         let hotel_json =
                             serde_json::to_string(&hotel).expect("Failed to serialize hotel");
                         memcache
@@ -151,7 +151,7 @@ impl HotelManager {
         let mut hotels = Vec::new();
         for ave in 0..n_hotels {
             for date in 0..n_dates {
-                let hotel = Hotel::new(format!("Sheraton Ave {}", ave), date as u32, 0, 0);
+                let hotel = Hotel::new(format!("Sheraton_Ave_{}", ave), date as u32, 0, 0);
                 hotels.push(hotel);
             }
         }
@@ -320,6 +320,7 @@ impl Reservation for ReservationImpl {
         &self,
         request: Request<reservation::ReservationRequest>,
     ) -> Result<Response<reservation::ReservationResponse>, Status> {
+        // let ctx = request.metadata().get_ctx("ctx").unwrap();
         let request = request.into_inner();
         let response = self.check_availability(request.clone()).await;
         // [NOTE] Optional multi-threading.

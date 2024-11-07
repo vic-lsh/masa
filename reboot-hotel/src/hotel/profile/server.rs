@@ -99,7 +99,7 @@ impl HotelManager {
                 for j in (i..n_hotels).step_by(conn) {
                     let hotel = Hotel {
                         key: "profile".to_string(),
-                        name: format!("Sheraton Ave {}", j),
+                        name: format!("Sheraton_Ave_{}", j),
                         ave: j as u32,
                         payload: vec![0; payload],
                     };
@@ -124,7 +124,7 @@ impl HotelManager {
         for i in 0..n_hotels {
             hotels.push(Hotel {
                 key: "profile".to_string(),
-                name: format!("Sheraton Ave {}", i),
+                name: format!("Sheraton_Ave_{}", i),
                 ave: i as u32,
                 payload: vec![0; payload],
             });
