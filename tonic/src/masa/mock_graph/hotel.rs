@@ -35,6 +35,26 @@ fn get_frontend() -> GlobalGraph {
                 ],
             ),
         );
+        let method_id: MethodId = "/frontend.Frontend/HandleReservation";
+        graphs.insert(
+            method_id,
+            LocalGraph::new(
+                service_id.clone(),
+                method_id,
+                vec![
+                    Span::new(
+                        "/user.User/HandleCheckUser".to_string(),
+                        None,
+                        TRACKER_CAPACITY,
+                    ),
+                    Span::new(
+                        "/reservation.Reservation/HandleMakeReservation".to_string(),
+                        None,
+                        TRACKER_CAPACITY,
+                    ),
+                ],
+            ),
+        );
         graphs
     };
     let global_graph = GlobalGraph::new(service_id, local_graphs);
@@ -106,6 +126,11 @@ fn get_reservation() -> GlobalGraph {
             method_id,
             LocalGraph::new(service_id.clone(), method_id, vec![]),
         );
+        let method_id: MethodId = "/reservation.Reservation/HandleMakeReservation";
+        graphs.insert(
+            method_id,
+            LocalGraph::new(service_id.clone(), method_id, vec![]),
+        );
         graphs
     };
     let global_graph = GlobalGraph::new(service_id, local_graphs);
@@ -117,6 +142,21 @@ fn get_profile() -> GlobalGraph {
     let local_graphs = {
         let mut graphs = HashMap::new();
         let method_id: MethodId = "/profile.Profile/HandleGetProfiles";
+        graphs.insert(
+            method_id,
+            LocalGraph::new(service_id.clone(), method_id, vec![]),
+        );
+        graphs
+    };
+    let global_graph = GlobalGraph::new(service_id, local_graphs);
+    global_graph
+}
+
+fn get_user() -> GlobalGraph {
+    let service_id: ServiceId = "user.User".to_string();
+    let local_graphs = {
+        let mut graphs = HashMap::new();
+        let method_id: MethodId = "/user.User/HandleCheckUser";
         graphs.insert(
             method_id,
             LocalGraph::new(service_id.clone(), method_id, vec![]),
@@ -148,6 +188,9 @@ fn get_global_graphs() -> &'static HashMap<ServiceId, GlobalGraph> {
 
         let profile = get_profile();
         m.insert(profile.service_id().clone(), profile);
+
+        let user = get_user();
+        m.insert(user.service_id().clone(), user);
 
         m
     })

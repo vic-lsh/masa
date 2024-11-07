@@ -71,7 +71,21 @@ services:
         limits:
           cpus: "4"
 
+  user-mongo:
+    image: mongo:7.0
+    container_name: "user_mongo"
+    command: --port 27006
+    network_mode: "host"
+    restart: always
+    volumes:
+      - user:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
 volumes:
   rate:
   profile:
   reservation:
+  user:

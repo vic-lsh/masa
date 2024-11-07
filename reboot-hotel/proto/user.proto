@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package user;
+
+service User {
+  rpc HandleCheckUser(UserRequest) returns (UserResponse) {}
+}
+
+message UserRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message UserResponse { bool success = 1; }

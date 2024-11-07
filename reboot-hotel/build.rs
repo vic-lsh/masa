@@ -34,6 +34,11 @@ fn main() {
         .unwrap();
 
     tonic_build::configure()
+        .file_descriptor_set_path(out_dir.join("user_descriptor.bin"))
+        .compile(&["proto/user.proto"], &["proto"])
+        .unwrap();
+
+    tonic_build::configure()
         .file_descriptor_set_path(out_dir.join("recommendation_descriptor.bin"))
         .compile(&["proto/recommendation.proto"], &["proto"])
         .unwrap();

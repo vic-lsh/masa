@@ -47,6 +47,7 @@ services=(
     "hotel_search"
     "hotel_profile"
     "hotel_reservation"
+    "hotel_user"
     "hotel_frontend"
     "hotel_client_bench"
 )
@@ -54,6 +55,7 @@ waits_secs=(
     0
     0
     20
+    0
     0
     0
     30
