@@ -38,7 +38,7 @@ def parse_args() -> argparse.Namespace:
 def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     goodputs_load_gen = [result["goodput_load_gen"] for result in results]
-    goodputs_fe = [result["goodput_fe"] for result in results]
+    # goodputs_fe = [result["goodput_fe"] for result in results]
 
     fig = plt.figure(figsize=(10, 6))
 
@@ -49,13 +49,13 @@ def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
         color=COLORS[0],
         marker=MARKERS[0],
     )
-    plt.plot(
-        rps_values,
-        goodputs_fe,
-        label="Goodput FE",
-        color=COLORS[1],
-        marker=MARKERS[1],
-    )
+    # plt.plot(
+    #     rps_values,
+    #     goodputs_fe,
+    #     label="Goodput FE",
+    #     color=COLORS[1],
+    #     marker=MARKERS[1],
+    # )
 
     plt.xlabel("RPS")
     plt.ylabel("Goodput")
@@ -69,14 +69,14 @@ def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
 def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     goodputs_load_gen = [result["goodput_load_gen"] for result in results]
-    goodputs_fe = [result["goodput_fe"] for result in results]
+    # goodputs_fe = [result["goodput_fe"] for result in results]
 
     x = np.arange(len(rps_values))
     width = 0.3
 
     fig, ax = plt.subplots(figsize=(10, 6))
     rects1 = ax.bar(x - width * 0.5, goodputs_load_gen, width, label="Goodput Load Gen")
-    rects2 = ax.bar(x + width * 0.5, goodputs_fe, width, label="Goodput FE")
+    # rects2 = ax.bar(x + width * 0.5, goodputs_fe, width, label="Goodput FE")
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
@@ -99,7 +99,7 @@ def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
             )
 
     autolabel(rects1)
-    autolabel(rects2)
+    # autolabel(rects2)
 
     fig.tight_layout()
     plt.ylim(-200, 2200)

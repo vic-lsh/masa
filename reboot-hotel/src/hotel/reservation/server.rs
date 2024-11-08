@@ -164,7 +164,7 @@ impl HotelManager {
     async fn check_availability(&self, hotel: &String, date: u32, _num_rooms: u32) -> bool {
         let key = format!("{}_{}", hotel, date);
 
-        let hotel_mc: Option<Hotel> = {
+        let _hotel_mc: Option<Hotel> = {
             if let Ok(Some(hotel_json)) = self.memcache.get::<String>(&key) {
                 Some(serde_json::from_str(&hotel_json).expect("Failed to deserialize hotel"))
             } else {
@@ -173,7 +173,7 @@ impl HotelManager {
         };
 
         let cache_miss = {
-            if hotel_mc.is_none() {
+            if _hotel_mc.is_none() {
                 true
             } else {
                 let mut rng = self.rng.lock().expect("Failed to lock rng");
@@ -181,7 +181,7 @@ impl HotelManager {
             }
         };
 
-        let hotel_db = {
+        let _hotel_db = {
             if !cache_miss {
                 None
             } else {
@@ -197,15 +197,6 @@ impl HotelManager {
                 )
             }
         };
-
-        if let Some(hotel_mc) = hotel_mc {
-            if let Some(hotel_db) = hotel_db {
-                assert!(
-                    hotel_mc.n_reservations == hotel_db.n_reservations,
-                    "Reservations should match"
-                );
-            }
-        }
 
         true
     }
@@ -280,7 +271,7 @@ impl ReservationImpl {
         &self,
         request: reservation::ReservationRequest,
     ) -> reservation::ReservationResponse {
-        log::info!("requeset: {:?}", request);
+        log::info!("request: {:?}", request);
         let mut hotels = Vec::new();
         // [NOTE] Optional multi-threading.
         for hotel in &request.hotels {

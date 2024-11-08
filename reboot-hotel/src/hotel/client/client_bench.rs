@@ -137,15 +137,20 @@ impl LoadGenerator {
                 let err_cl_ps = err_client - err_client_prev;
                 let err_cl_ot_ps = err_client_ot - err_client_to_prev;
                 log::warn!(
-                    "secs: {}, rps: {}, good: {}, err_svc: {} err_cl: {}, err_cl_ot: {}, err_svc_sum: {}, cl_sum: {}",
+                    "secs: {}, rps: {}, good: {}, err_svc: {} err_cl: {}, err_cl_ot: {}",
                     secs,
                     rps,
                     good_ps,
                     err_svc_ps,
                     err_cl_ps,
                     err_cl_ot_ps,
+                );
+                log::warn!(
+                    "secs: {}, err_svc_sum: {}, err_cl_sum: {}, err_cl_ot_sum: {}",
+                    secs,
                     err_svc,
                     err_client,
+                    err_client_ot,
                 );
                 all_prev = all;
                 succ_prev = succ;
@@ -300,7 +305,9 @@ impl LoadGenerator {
                     };
                     let hotels = {
                         let lhs = uniform.sample(&mut self.rng) % self.hotel_cfg.hotels as u32;
-                        let rhs = cmp::min(lhs + self.hotel_cfg.geo_range, self.hotel_cfg.hotels);
+                        // [TODO] Tune reservation_range.
+                        // let rhs = cmp::min(lhs + self.hotel_cfg.geo_range, self.hotel_cfg.hotels);
+                        let rhs = cmp::min(lhs + 1, self.hotel_cfg.hotels);
                         let mut hotels = Vec::new();
                         for i in lhs..rhs {
                             hotels.push(format!("Sheraton_Ave_{}", i));
@@ -310,8 +317,10 @@ impl LoadGenerator {
                     let dates = {
                         let in_date =
                             uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
-                        let out_date =
-                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
+                        // [TODO] Tune reservation_dates.
+                        // let out_date =
+                        //     uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
+                        let out_date = in_date;
                         if in_date < out_date {
                             (in_date, out_date + 1)
                         } else {
@@ -404,7 +413,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::warn!("Gen config: {:?}", gen_cfg);
 
     for rps in &gen_cfg.rps_values {
-        log::warn!("Running rps: {}", rps);
+        log::warn!("Running rps: {}...", rps);
 
         let output_path = gen_cfg.output.clone();
         let output = format!("{}/r{}_{}.csv", output_path, rps, args.run_idx);

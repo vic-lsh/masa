@@ -54,12 +54,12 @@ services=(
 waits_secs=(
     0
     0
-    24
+    15
     0
     0
     0
-    27
-    30
+    18
+    21
 )
 rust_log=info
 
@@ -74,7 +74,7 @@ build() {
     cargo build \
         --release \
         --features $features \
-        >$output/build.log 2>&1
+        >$output/tmp_build.log 2>&1
 }
 
 reset() {
