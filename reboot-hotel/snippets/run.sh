@@ -6,12 +6,12 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 	exit 1
 fi
 
-# echo "Running prio_global..."
-# $pwd/scripts/local/run_all.sh \
-# 	--features prio_global \
-# 	--repeats 1
-
-echo "Running prio_global_early..."
+echo "Running prio_global..."
 $pwd/scripts/local/run_all.sh \
-	--features prio_global_early \
+	--features prio_global \
 	--repeats 1
+
+# echo "Running prio_global_early..."
+# $pwd/scripts/local/run_all.sh \
+# 	--features prio_global_early \
+# 	--repeats 1

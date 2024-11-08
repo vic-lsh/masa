@@ -30,13 +30,6 @@ for r in range(cfg["Repeats"]):
             ]
             result["goodput_load_gen"] = round(len(df_filtered) / cfg["DurationSecs"])
 
-            df_filtered = df[
-                (df["graph_id"] == graph_id)
-                & (df["error"] == "/None")
-                & (df["latency_fe"] <= cfg["Slo"])
-            ]
-            result["goodput_fe"] = round(len(df_filtered) / cfg["DurationSecs"])
-
             # result["goodput_per_rps"] = []
             # for i in range(0, len(df), rps):
             #     df_per_sec = df[i : i + rps]
