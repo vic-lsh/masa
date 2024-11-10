@@ -757,13 +757,13 @@ impl<'a> Default for LocalExecutor<'a> {
     feature = "prio_class_global",
     feature = "prio_local",
     feature = "prio_local_early",
-    feature = "fifo_two",
+    feature = "fifo_infra",
     feature = "fifo"
 )))]
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 #[cfg(feature = "fifo")]
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
-#[cfg(feature = "fifo_two")]
+#[cfg(feature = "fifo_infra")]
 type GlobalQueue<T> = queue::MutexFifoTwoQueue<T>;
 #[cfg(any(feature = "prio_global", feature = "prio_local"))]
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
@@ -808,8 +808,8 @@ impl<M> State<M> {
             log::warn!("Enabled prio_local");
         } else if cfg!(feature = "prio_local_early") {
             log::warn!("Enabled prio_local_early");
-        } else if cfg!(feature = "fifo_two") {
-            log::warn!("Enabled fifo_two");
+        } else if cfg!(feature = "fifo_infra") {
+            log::warn!("Enabled fifo_infra");
         } else if cfg!(feature = "fifo") {
             log::warn!("Enabled fifo");
         } else {

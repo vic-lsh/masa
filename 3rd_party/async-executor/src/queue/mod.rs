@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 mod concurrent_fifo;
 mod mutex_fifo;
-mod mutex_fifo_two;
+mod mutex_fifo_infra;
 mod mutex_prio;
 mod rw_prio;
 
@@ -14,7 +14,7 @@ pub(crate) use concurrent_fifo::ConcurrentFifoQueue;
 pub(crate) use mutex_fifo::MutexFifoQueue;
 #[allow(dead_code)]
 #[allow(unused_imports)]
-pub(crate) use mutex_fifo_two::MutexFifoTwoQueue;
+pub(crate) use mutex_fifo_infra::MutexFifoTwoQueue;
 #[allow(dead_code)]
 #[allow(unused_imports)]
 pub(crate) use mutex_prio::MutexPriorityQueue;

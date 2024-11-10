@@ -17,7 +17,7 @@ plt.rcParams.update(
     }
 )
 
-MODES = ["prio_local", "prio_global", "fifo_two"]
+MODES = ["prio_local", "prio_global", "fifo_infra"]
 GRAPH_IDS = ["I2_melody_1", "I2_melody_2"]
 COLORS = ["tab:blue", "tab:orange", "tab:purple"]
 

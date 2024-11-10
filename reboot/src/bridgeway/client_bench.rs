@@ -74,8 +74,8 @@ impl LoadGenerator {
             log::warn!("Enabled prio_class_global");
         } else if cfg!(feature = "prio_local") {
             log::warn!("Enabled prio_local");
-        } else if cfg!(feature = "fifo_two") {
-            log::warn!("Enabled fifo_two");
+        } else if cfg!(feature = "fifo_infra") {
+            log::warn!("Enabled fifo_infra");
         } else if cfg!(feature = "fifo") {
             log::warn!("Enabled fifo");
         } else {

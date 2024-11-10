@@ -47,7 +47,7 @@ pub struct LocalGraphTracker {
 impl From<LocalGraph> for LocalGraphTracker {
     fn from(local_graph: LocalGraph) -> Self {
         let service_id = local_graph.service_id().clone();
-        let method_id = local_graph.method_id().clone();
+        let method_id = local_graph.method_id();
         let spans = local_graph
             .spans
             .iter()

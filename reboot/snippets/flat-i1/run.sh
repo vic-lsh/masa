@@ -4,7 +4,7 @@ path="snippets/flat-i1"
 
 rps_values=(900)
 
-# modes=("prio_local" "prio_global" "fifo_two")
+# modes=("prio_local" "prio_global" "fifo_infra")
 modes=("prio_local" "prio_global")
 
 server_pid=
