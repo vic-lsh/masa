@@ -305,9 +305,12 @@ impl LoadGenerator {
                     };
                     let hotels = {
                         let lhs = uniform.sample(&mut self.rng) % self.hotel_cfg.hotels as u32;
-                        // [TODO] Tune reservation_range.
-                        // let rhs = cmp::min(lhs + self.hotel_cfg.geo_range, self.hotel_cfg.hotels);
-                        let rhs = cmp::min(lhs + 1, self.hotel_cfg.hotels);
+                        let rhs = cmp::min(
+                            lhs + uniform.sample(&mut self.rng)
+                                % self.hotel_cfg.reservation_hotels as u32
+                                + 1,
+                            self.hotel_cfg.hotels,
+                        );
                         let mut hotels = Vec::new();
                         for i in lhs..rhs {
                             hotels.push(format!("Sheraton_Ave_{}", i));
@@ -317,10 +320,8 @@ impl LoadGenerator {
                     let dates = {
                         let in_date =
                             uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
-                        // [TODO] Tune reservation_dates.
-                        // let out_date =
-                        //     uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
-                        let out_date = in_date;
+                        let out_date =
+                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
                         if in_date < out_date {
                             (in_date, out_date + 1)
                         } else {

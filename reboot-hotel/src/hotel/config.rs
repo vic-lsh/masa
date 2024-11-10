@@ -70,6 +70,8 @@ pub struct HotelConfig {
     // pub reservation_addr: String,
     // #[serde(rename = "ReservationPort")]
     // pub reservation_port: String,
+    #[serde(rename = "ReservationHotels")]
+    pub reservation_hotels: u32,
     #[serde(rename = "ReservationDates")]
     pub reservation_dates: u32,
     #[serde(rename = "ReservationProbHotelAvail")]

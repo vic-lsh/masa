@@ -4,6 +4,11 @@ pub mod hotel {
     }
 }
 
+use std::cmp;
+use std::sync::{Arc, Mutex};
+
+use rand::{rngs::StdRng, SeedableRng};
+use rand_distr::{Distribution, Uniform};
 use tonic::{Request, Response, Status};
 
 use hotel::{geo, geo::geo_server::Geo};
@@ -15,12 +20,16 @@ struct Hotel {
 }
 
 struct HotelManager {
+    rng: Arc<Mutex<StdRng>>,
+    uniform: Uniform<u32>,
     hotels: Vec<Hotel>,
-    range: u32,
 }
 
 impl HotelManager {
     fn new(n_hotels: u32, range: u32) -> Self {
+        let seed = 998244353;
+        let rng = Arc::new(Mutex::new(StdRng::seed_from_u64(seed)));
+        let uniform = Uniform::from(0..range);
         let mut hotels = Vec::new();
         for i in 0..n_hotels {
             hotels.push(Hotel {
@@ -28,14 +37,18 @@ impl HotelManager {
                 _ave: i as u32,
             });
         }
-        HotelManager { hotels, range }
+        HotelManager {
+            rng,
+            uniform,
+            hotels,
+        }
     }
 
     fn fetch(&self, ave: u32) -> Vec<Hotel> {
-        let ave = ave as usize;
-        let range = self.range as usize;
-        let end = (ave + range).min(self.hotels.len());
-        self.hotels[ave..end].to_vec()
+        let lhs = ave as usize;
+        let range = self.uniform.sample(&mut *self.rng.lock().unwrap()) as usize;
+        let rhs = cmp::min(lhs + range, self.hotels.len());
+        self.hotels[lhs..rhs].to_vec()
     }
 }
 
