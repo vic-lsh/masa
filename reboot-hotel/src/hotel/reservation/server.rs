@@ -4,12 +4,12 @@ pub mod hotel {
     }
 }
 
-use rand::{rngs::StdRng, SeedableRng};
-use rand_distr::{Distribution, Uniform};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 
 use mongodb::{bson::doc, Client, Collection, Database, IndexModel};
+use rand::{rngs::StdRng, SeedableRng};
+use rand_distr::{Distribution, Uniform};
 use serde::{Deserialize, Serialize};
 use tonic::{Request, Response, Status};
 
@@ -44,8 +44,8 @@ impl Hotel {
 #[derive(Clone)]
 pub struct HotelManager {
     rng: Arc<Mutex<StdRng>>,
-    uniform_hotel_avail: Uniform<u64>,
-    uniform_cache_miss: Uniform<u64>,
+    uniform_hotel_avail: Uniform<u32>,
+    uniform_cache_miss: Uniform<u32>,
     hotels: u32,
     prob_hotel_avail: u32,
     dates: u32,
@@ -177,7 +177,7 @@ impl HotelManager {
                 true
             } else {
                 let mut rng = self.rng.lock().expect("Failed to lock rng");
-                self.uniform_cache_miss.sample(&mut *rng) < self.prob_cache_miss as u64
+                self.uniform_cache_miss.sample(&mut *rng) < self.prob_cache_miss
             }
         };
 
@@ -282,8 +282,7 @@ impl ReservationImpl {
             }
             let hotel_avail = {
                 let mut rng = self.manager.rng.lock().expect("Failed to lock rng");
-                self.manager.uniform_hotel_avail.sample(&mut *rng)
-                    < self.manager.prob_hotel_avail as u64
+                self.manager.uniform_hotel_avail.sample(&mut *rng) < self.manager.prob_hotel_avail
             };
             if hotel_avail {
                 hotels.push(hotel.clone());
@@ -313,6 +312,8 @@ impl Reservation for ReservationImpl {
     ) -> Result<Response<reservation::ReservationResponse>, Status> {
         // let ctx = request.metadata().get_ctx("ctx").unwrap();
         let request = request.into_inner();
+        // [NOTE] The original implementation only processes the first hotel.
+        assert!(request.hotels.len() == 1);
         let response = self.check_availability(request.clone()).await;
         // [NOTE] Optional multi-threading.
         for hotel in &response.hotels {
