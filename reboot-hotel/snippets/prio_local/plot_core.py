@@ -17,7 +17,7 @@ plt.rcParams.update(
     }
 )
 
-# MODES = ["prio_local", "prio_global", "fifo_two"]
+# MODES = ["prio_local", "prio_global", "fifo_infra"]
 
 REPEATS = 3
 MODES = ["prio_local"]

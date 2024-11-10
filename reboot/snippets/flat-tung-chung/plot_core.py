@@ -17,7 +17,7 @@ plt.rcParams.update(
     }
 )
 
-MODES = ["queue_edf", "queue_fifo_two", "queue_fifo"]
+MODES = ["queue_edf", "queue_fifo_infra", "queue_fifo"]
 COLORS = ["tab:blue", "tab:orange", "tab:purple"]
 
 

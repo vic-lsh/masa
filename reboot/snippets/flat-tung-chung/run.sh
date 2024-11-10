@@ -4,7 +4,7 @@ path="snippets/flat-tung-chung"
 
 rps_values=(50)
 
-modes=("queue_edf" "queue_fifo_two" "queue_fifo")
+modes=("queue_edf" "queue_fifo_infra" "queue_fifo")
 
 server_pid=
 
