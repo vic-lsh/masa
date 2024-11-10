@@ -9,7 +9,6 @@ use rand_distr::{Distribution, Uniform};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 
-use futures::StreamExt;
 use mongodb::{bson::doc, Client, Collection, Database, IndexModel};
 use serde::{Deserialize, Serialize};
 use tonic::{Request, Response, Status};

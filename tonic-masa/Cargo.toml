@@ -10,7 +10,7 @@ prio_global_early = []
 prio_class_global = []
 prio_local = []
 prio_local_early = []
-fifo_two = []
+fifo_infra = []
 fifo = []
 
 [dependencies]

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 path="snippets/flat-i4-two"
-# modes=("prio_local" "prio_global" "fifo_two")
+# modes=("prio_local" "prio_global" "fifo_infra")
 modes=("prio_local" "prio_global")
 rps_values=(300)
 graph_ids="I4_two_1 I4_two_2"

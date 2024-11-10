@@ -1,7 +1,7 @@
 #!/bin/bash
 
 path="snippets/flat-i2-melody"
-modes=("prio_local" "prio_global" "fifo_two")
+modes=("prio_local" "prio_global" "fifo_infra")
 rps_values=(450 500 550)
 graph_ids="I2_melody_1 I2_melody_2"
 slos="80000 80000"
