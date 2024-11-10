@@ -46,7 +46,10 @@ impl HotelManager {
 
     fn fetch(&self, ave: u32) -> Vec<Hotel> {
         let lhs = ave as usize;
-        let range = self.uniform.sample(&mut *self.rng.lock().unwrap()) as usize;
+        let range = {
+            let mut rng = self.rng.lock().expect("Failed to lock rng");
+            self.uniform.sample(&mut *rng) as usize
+        };
         let rhs = cmp::min(lhs + range, self.hotels.len());
         self.hotels[lhs..rhs].to_vec()
     }
