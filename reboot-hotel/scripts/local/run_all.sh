@@ -35,7 +35,7 @@ if [ -z "$features" ]; then
     exit 1
 fi
 if [ -z "$output" ]; then
-    echo "Set output to snippets/$features"
+    echo "Output to snippets/$features"
     output=snippets/$features
 fi
 
