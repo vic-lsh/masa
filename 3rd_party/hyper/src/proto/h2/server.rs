@@ -29,7 +29,7 @@ use crate::upgrade::{OnUpgrade, Pending, Upgraded};
 use crate::{Body, Response};
 
 use tonic_masa::{
-    Context as MasaContext, PriorityHint, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_EARLY,
+    Context as MasaContext, PriorityHint, FIFO, FIFO_INFRA, PRIO_GLOBAL, PRIO_GLOBAL_EARLY,
     PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
 
@@ -342,7 +342,7 @@ where
                         let ctx_str = req.headers()["ctx"].to_str().unwrap();
                         let ctx = MasaContext::from_json(ctx_str);
                         let prio;
-                        if FIFO || FIFO_TWO || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
+                        if FIFO || FIFO_INFRA || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
                             prio = PriorityHint::new(ctx.deadline());
                         } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
                             prio = PriorityHint::new(ctx.latest_exec_at());
