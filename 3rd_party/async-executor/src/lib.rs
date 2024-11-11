@@ -764,7 +764,7 @@ type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 #[cfg(feature = "fifo")]
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 #[cfg(feature = "fifo_infra")]
-type GlobalQueue<T> = queue::MutexFifoTwoQueue<T>;
+type GlobalQueue<T> = queue::MutexFifoInfraQueue<T>;
 #[cfg(any(feature = "prio_global", feature = "prio_local"))]
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
 #[cfg(any(feature = "prio_global_early", feature = "prio_local_early"))]
