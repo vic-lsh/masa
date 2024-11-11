@@ -2,7 +2,7 @@ import json
 from typing import *
 
 import pandas as pd
-from plot_core import GRAPH_IDS, parse_args, plot_goodput_cmp_bar  # type: ignore
+from plot_core import parse_args, plot_goodput_cmp_bar  # type: ignore
 
 args = parse_args()
 r = 0
@@ -15,18 +15,23 @@ for mode in args.modes:
     for rps in cfg["Rps"]:
         file = f"{snippet_path}/r{rps}_{r}.csv"
         df = pd.read_csv(file)
-        for graph_id in GRAPH_IDS:
-            result = {}
-            result["rps"] = rps
-            result["graph_id"] = graph_id
+
+        result = {}
+        result["rps"] = rps
+        result[f"goodput_{mode}"] = 0
+
+        for i in range(len(cfg["Apis"])):
+            api = cfg["Apis"][i]
+            slo = cfg["Slos"][i]
             df_filtered = df[
-                (df["graph_id"] == graph_id)
-                & (df["error"] == "/None")
-                & (df["latency"] <= cfg["Slo"])
+                (df["api"] == api) & (df["error"] == "/None") & (df["latency"] <= slo)
             ]
-            result[f"goodput_{mode}"] = round(len(df_filtered) / cfg["DurationSecs"])
-            rps_to_results.append(result)
+            result[f"goodput_{mode}"] += round(len(df_filtered) / cfg["DurationSecs"])
+
+        rps_to_results.append(result)
 
 plot_goodput_cmp_bar(
-    rps_to_results, f"{args.path}/fig_goodput_rps_bar_{r}.png", args.modes
+    rps_to_results,
+    f"{args.path}/fig_goodput_rps_bar_{args.modes[0]}_{args.modes[1]}_{r}.png",
+    args.modes,
 )

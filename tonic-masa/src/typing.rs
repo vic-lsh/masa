@@ -1,5 +1,5 @@
-/// Type alias for a graph ID.
-pub type GraphId = String;
+/// Type alias for an API.
+pub type Api = String;
 
 /// Type alias for a service ID.
 pub type ServiceId = String;
