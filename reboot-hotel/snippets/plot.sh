@@ -6,6 +6,9 @@ if [[ "$pwd" != */reboot-hotel ]]; then
     exit 1
 fi
 
+echo "Plotting fifo_infra..."
+$pwd/snippets/fifo_infra/plot.sh
+
 echo "Plotting prio_global..."
 $pwd/snippets/prio_global/plot.sh
 
