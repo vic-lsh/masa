@@ -22,7 +22,7 @@ use tokio::time::{timeout, Duration, Instant};
 
 use tonic::transport::Channel;
 use tonic_masa::{
-    Context, GraphId, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
+    Context, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
 
 use config::{GenConfig, HotelConfig};
@@ -45,8 +45,6 @@ struct LoadGenerator {
     hotel_cfg: HotelConfig,
     gen_cfg: GenConfig,
     rng: StdRng,
-    graph_id: GraphId,
-    api: String,
     rps: u64,
     client: FrontendClient<Channel>,
     trace_tx: Sender<Span>,
@@ -57,8 +55,6 @@ impl LoadGenerator {
         hotel_cfg: HotelConfig,
         gen_cfg: GenConfig,
         rng: StdRng,
-        graph_id: GraphId,
-        api: String,
         rps: u64,
         client: FrontendClient<Channel>,
         trace_tx: Sender<Span>,
@@ -86,8 +82,6 @@ impl LoadGenerator {
             hotel_cfg,
             gen_cfg,
             rng,
-            graph_id,
-            api,
             rps,
             client,
             trace_tx,
@@ -167,7 +161,7 @@ impl LoadGenerator {
         let mut counter_test_id = 0;
         let mut elapse = 0f64;
         // let exponential = Exp::new(self.rps as f64).unwrap();
-        let uniform = Uniform::new(0, 1_000_000_007);
+        let uniform = Uniform::<u32>::new(0, 1_000_000_007);
 
         loop {
             if Instant::now() > pause_at {
@@ -187,20 +181,21 @@ impl LoadGenerator {
             };
             elapse += value;
 
+            let api_idx = uniform.sample(&mut self.rng) as usize % self.gen_cfg.apis.len();
+            let api = self.gen_cfg.apis[api_idx].clone();
+            let slo = self.gen_cfg.slos[api_idx];
+
             let ctx = {
                 let test_id = counter_test_id;
                 counter_test_id += 1;
                 let request_id = uniform.sample(&mut self.rng) as u64;
                 let request_class = 0;
-                let graph_id = self.graph_id.clone();
-                let slo = self.gen_cfg.slo;
 
                 let start_at = time_now();
                 let deadline = {
                     if PRIO_GLOBAL || PRIO_GLOBAL_EARLY || PRIO_LOCAL || PRIO_LOCAL_EARLY {
                         // [DEPRECATED] Relative start time.
                         // let start_at = time_now() - init_at_u64;
-                        // start_at + slo
                         start_at + slo
                     } else if FIFO_TWO || FIFO {
                         slo
@@ -211,7 +206,7 @@ impl LoadGenerator {
                 let latest_exec_at = deadline;
 
                 Context::new(
-                    graph_id.clone(),
+                    api.clone(),
                     test_id,
                     request_id,
                     slo,
@@ -230,7 +225,7 @@ impl LoadGenerator {
             let err_client = cnt_err_client.clone();
             let err_client_ot = cnt_err_client_ot.clone();
 
-            if self.api == "Search" {
+            if api == "Search" {
                 let request = {
                     let customer = "Customer".to_string();
                     let ave = (ctx.request_id() % self.hotel_cfg.hotels as u64) as u32;
@@ -295,7 +290,7 @@ impl LoadGenerator {
                         }
                     }
                 });
-            } else if self.api == "Reservation" {
+            } else if api == "Reservation" {
                 let request = {
                     let accounts = {
                         let id = uniform.sample(&mut self.rng) % self.hotel_cfg.user_users as u32;
@@ -424,9 +419,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             const KEY: u64 = 13;
             const SEED: u64 = 998244353;
 
-            let graph_id: GraphId = "Hotel".to_string();
-            let api = "Search".to_string();
-            // let api = "Reservation".to_string();
             let seed = SEED * KEY + rps;
             let rng = StdRng::seed_from_u64(seed);
             let client = FrontendClient::connect(gen_cfg.addr.clone()).await?;
@@ -435,8 +427,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 hotel_cfg.clone(),
                 gen_cfg.clone(),
                 rng,
-                graph_id,
-                api,
                 *rps,
                 client,
                 trace_tx,

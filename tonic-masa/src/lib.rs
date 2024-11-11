@@ -18,6 +18,6 @@ pub use priority::{Prioritize, PriorityHint};
 pub use span::{Span, SpanTracker};
 pub use tracker::LatencyTracker;
 pub use typing::{
-    Address, GraphId, Latency, MethodId, RequestClass, RequestId, ServiceId, SpanId, TestId,
+    Address, Api, Latency, MethodId, RequestClass, RequestId, ServiceId, SpanId, TestId,
     Timestamp,
 };

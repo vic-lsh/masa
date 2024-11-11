@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{GraphId, Latency, RequestClass, RequestId, TestId, Timestamp};
+use crate::{Api, Latency, RequestClass, RequestId, TestId, Timestamp};
 
 /// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Context {
-    graph_id: GraphId,
+    api: Api,
     test_id: TestId,
     request_id: RequestId,
     slo: Latency,
@@ -19,7 +19,7 @@ pub struct Context {
 impl Context {
     /// Create a new Masa context.
     pub fn new(
-        graph_id: GraphId,
+        api: Api,
         test_id: TestId,
         request_id: RequestId,
         slo: Latency,
@@ -29,7 +29,7 @@ impl Context {
         latest_exec_at: Timestamp,
     ) -> Self {
         Self {
-            graph_id,
+            api,
             test_id,
             request_id,
             slo,
@@ -41,9 +41,9 @@ impl Context {
         }
     }
 
-    /// Get the graph ID.
-    pub fn graph_id(&self) -> &GraphId {
-        &self.graph_id
+    /// Get the API.
+    pub fn api(&self) -> &Api {
+        &self.api
     }
 
     /// Get the test ID.
