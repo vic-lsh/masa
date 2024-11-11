@@ -425,8 +425,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             const SEED: u64 = 998244353;
 
             let graph_id: GraphId = "Hotel".to_string();
-            // let api = "Search".to_string();
-            let api = "Reservation".to_string();
+            let api = "Search".to_string();
+            // let api = "Reservation".to_string();
             let seed = SEED * KEY + rps;
             let rng = StdRng::seed_from_u64(seed);
             let client = FrontendClient::connect(gen_cfg.addr.clone()).await?;
