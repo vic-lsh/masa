@@ -765,9 +765,12 @@ type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 #[cfg(feature = "fifo_infra")]
 type GlobalQueue<T> = queue::MutexFifoInfraQueue<T>;
-#[cfg(any(feature = "prio_global", feature = "prio_local"))]
-type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
-#[cfg(any(feature = "prio_global_early", feature = "prio_local_early"))]
+#[cfg(any(
+    feature = "prio_global",
+    feature = "prio_local",
+    feature = "prio_global_early",
+    feature = "prio_local_early"
+))]
 type GlobalQueue<T> = queue::MutexPriorityQueue<T>;
 
 // [NOTE] The original implementation uses a concurrent queue for the global queue.
