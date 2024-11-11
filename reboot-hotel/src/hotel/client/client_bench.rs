@@ -22,7 +22,7 @@ use tokio::time::{timeout, Duration, Instant};
 
 use tonic::transport::Channel;
 use tonic_masa::{
-    Context, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
+    Context, FIFO, FIFO_INFRA, PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
 
 use config::{GenConfig, HotelConfig};
@@ -197,7 +197,7 @@ impl LoadGenerator {
                         // [DEPRECATED] Relative start time.
                         // let start_at = time_now() - init_at_u64;
                         start_at + slo
-                    } else if FIFO_TWO || FIFO {
+                    } else if FIFO_INFRA || FIFO {
                         slo
                     } else {
                         panic!("Unimplemented policy")

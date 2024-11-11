@@ -9,7 +9,7 @@ use std::{
 };
 
 use tonic_masa::{
-    Context, LocalGraph, LocalGraphTracker, MethodId, FIFO, FIFO_TWO, PRIO_GLOBAL,
+    Context, LocalGraph, LocalGraphTracker, MethodId, FIFO, FIFO_INFRA, PRIO_GLOBAL,
     PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
 
@@ -166,7 +166,7 @@ impl RequestHandlerHooks for SimpleParentContext {
             .unwrap();
         let deadline;
         let latest_exec_at;
-        if FIFO || FIFO_TWO || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
+        if FIFO || FIFO_INFRA || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
             deadline = self.ctx.deadline();
             latest_exec_at = self.ctx.latest_exec_at();
         } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {

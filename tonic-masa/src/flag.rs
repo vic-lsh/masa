@@ -36,7 +36,7 @@ pub const PRIO_LOCAL_EARLY: bool = if cfg!(feature = "prio_local_early") {
 
 pub const FIFO: bool = if cfg!(feature = "fifo") { true } else { false };
 
-pub const FIFO_TWO: bool = if cfg!(feature = "fifo_infra") {
+pub const FIFO_INFRA: bool = if cfg!(feature = "fifo_infra") {
     true
 } else {
     false
