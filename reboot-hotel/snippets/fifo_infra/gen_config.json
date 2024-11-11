@@ -1,10 +1,20 @@
 {
-	"Repeats": 3,
-	"Slo": 30000,
-	"Rps": 750,
+	"Repeats": 1,
+	"Slo": 50000,
+	"Rps": [
+		100,
+		200,
+		400,
+		600,
+		800,
+		1000,
+		1200,
+		1400,
+		1600
+	],
 	"WarmupSecs": 30,
 	"DurationSecs": 90,
-	"Concurrency": 512,
+	"Concurrency": 0,
 	"Output": "snippets/fifo_infra",
 	"Addr": "http://[::1]:8660"
 }
