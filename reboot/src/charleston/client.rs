@@ -16,7 +16,7 @@ use rand_distr::{Distribution, Uniform};
 use structopt::StructOpt;
 
 use tonic::transport::Channel;
-use tonic_masa::{Context, GraphId};
+use tonic_masa::{Api, Context};
 
 use hello::{greeter_client::GreeterClient, HelloRequest};
 
@@ -39,7 +39,7 @@ pub struct Args {
 
 #[derive(Debug)]
 struct LoadGenerator {
-    graph_id: GraphId,
+    api: Api,
     client: GreeterClient<Channel>,
     concurrency: usize,
     rps_cnt: Arc<AtomicUsize>,
@@ -47,13 +47,13 @@ struct LoadGenerator {
 
 impl LoadGenerator {
     pub fn new(
-        graph_id: GraphId,
+        api: Api,
         client: GreeterClient<Channel>,
         concurrency: usize,
         rps_cnt: Arc<AtomicUsize>,
     ) -> Self {
         Self {
-            graph_id,
+            api,
             client,
             concurrency,
             rps_cnt,
@@ -65,7 +65,7 @@ impl LoadGenerator {
         let mut handles = Vec::with_capacity(self.concurrency);
 
         for i in 0..self.concurrency {
-            let graph_id = self.graph_id.clone();
+            let api = self.api.clone();
             let rps_cnt = self.rps_cnt.clone();
             let mut client = self.client.clone();
             let request = HelloRequest {
@@ -89,7 +89,7 @@ impl LoadGenerator {
                     let latest_exec_at = deadline;
 
                     let ctx = Context::new(
-                        graph_id.clone(),
+                        api.clone(),
                         test_id,
                         request_id,
                         slo,
@@ -155,9 +155,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     let load_gen = {
-        let graph_id: GraphId = "/hello.Greeter".to_string();
+        let api: Api = "/hello.Greeter".to_string();
         let client = GreeterClient::connect(args.addr).await?;
-        let load_gen = LoadGenerator::new(graph_id, client, args.concurrency, rps_cnt);
+        let load_gen = LoadGenerator::new(api, client, args.concurrency, rps_cnt);
         load_gen
     };
     load_gen.run().await.unwrap();

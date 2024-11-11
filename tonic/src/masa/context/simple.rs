@@ -177,7 +177,7 @@ impl RequestHandlerHooks for SimpleParentContext {
             panic!("Unimplemented policy");
         }
         let child_recv_ctx = Context::new(
-            self.ctx.graph_id().clone(),
+            self.ctx.api().clone(),
             self.ctx.test_id(),
             self.ctx.request_id(),
             self.ctx.slo(),

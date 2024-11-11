@@ -20,9 +20,10 @@ plt.rcParams.update(
     }
 )
 
-GRAPH_IDS = ["Hotel"]
 COLORS = ["tab:blue", "tab:orange", "tab:purple", "tab:red", "tab:green"]
 MARKERS = ["o", "x", "^", "*", "s"]
+Y_MIN = 0
+Y_MAX = 1600
 
 
 def parse_args() -> argparse.Namespace:
@@ -59,7 +60,7 @@ def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
 
     plt.xlabel("RPS")
     plt.ylabel("Goodput")
-    plt.ylim(-200, 2200)
+    plt.ylim(Y_MIN, Y_MAX)
     plt.title(f"Goodput vs RPS ({mode})")
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
@@ -102,7 +103,7 @@ def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     # autolabel(rects2)
 
     fig.tight_layout()
-    plt.ylim(-200, 2200)
+    plt.ylim(Y_MIN, Y_MAX)
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
 
@@ -150,7 +151,7 @@ def plot_goodput_cmp_bar(
     autolabel(rects2)
 
     fig.tight_layout()
-    plt.ylim(-200, 2200)
+    plt.ylim(Y_MIN, Y_MAX)
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
 
@@ -174,7 +175,7 @@ def plot_throughput_line(results: List[Dict[str, Any]], fig_name: str, mode: str
 
     plt.xlabel("RPS")
     plt.ylabel("Throughput")
-    plt.ylim(-200, 2200)
+    plt.ylim(Y_MIN, Y_MAX)
     plt.title(f"Throughput vs RPS ({mode})")
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
@@ -231,7 +232,7 @@ def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str)
         autolabel(rects)
 
     fig.tight_layout()
-    plt.ylim(-200, 2200)
+    plt.ylim(Y_MIN, Y_MAX)
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
 
@@ -262,7 +263,7 @@ def plot_error_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
 
     plt.xlabel("RPS")
     plt.ylabel("Error")
-    plt.ylim(-200, 2200)
+    plt.ylim(Y_MIN, Y_MAX)
     plt.title(f"Error vs RPS ({mode})")
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
@@ -327,7 +328,7 @@ def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
         autolabel(rects)
 
     fig.tight_layout()
-    plt.ylim(-200, 2200)
+    plt.ylim(Y_MIN, Y_MAX)
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
 

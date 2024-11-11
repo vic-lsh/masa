@@ -11,12 +11,12 @@ $pwd/scripts/local/run_all.sh \
 	--features fifo_infra \
 	--repeats 1
 
-# echo "Running prio_global..."
-# $pwd/scripts/local/run_all.sh \
-# 	--features prio_global \
-# 	--repeats 1
+echo "Running prio_global..."
+$pwd/scripts/local/run_all.sh \
+	--features prio_global \
+	--repeats 1
 
-# echo "Running prio_global_early..."
-# $pwd/scripts/local/run_all.sh \
-# 	--features prio_global_early \
-# 	--repeats 1
+echo "Running prio_global_early..."
+$pwd/scripts/local/run_all.sh \
+	--features prio_global_early \
+	--repeats 1

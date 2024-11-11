@@ -5,8 +5,10 @@ use serde::{Deserialize, Serialize};
 pub struct GenConfig {
     #[serde(rename = "Repeats")]
     pub repeats: u64,
-    #[serde(rename = "Slo")]
-    pub slo: u64,
+    #[serde(rename = "Apis")]
+    pub apis: Vec<String>,
+    #[serde(rename = "Slos")]
+    pub slos: Vec<u64>,
     #[serde(rename = "Rps")]
     pub rps_values: Vec<u64>,
     #[serde(rename = "WarmupSecs")]
