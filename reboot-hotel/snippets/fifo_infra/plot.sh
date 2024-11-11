@@ -16,7 +16,7 @@ python3 $reboot_hotel/scripts/plots/plot_goodput.py \
 # 	--path $reboot_hotel/snippets/$mode \
 # 	--mode $mode
 
-# echo "Plotting tail..."
-# python3 $reboot_hotel/scripts/plots/plot_tail.py \
-# 	--path $reboot_hotel/snippets/$mode \
-# 	--mode $mode
+echo "Plotting tail..."
+python3 $reboot_hotel/scripts/plots/plot_tail.py \
+	--path $reboot_hotel/snippets/$mode \
+	--mode $mode

@@ -9,6 +9,7 @@ plt.rcParams["font.family"] = "Roboto"
 fontsize = 17
 fontsize_medium = 13
 fontsize_small = 11
+fontsize_tiny = 9
 plt.rcParams.update(
     {
         "font.size": fontsize,
@@ -76,7 +77,7 @@ def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     width = 0.3
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    rects1 = ax.bar(x - width * 0.5, goodputs_load_gen, width, label="Goodput Load Gen")
+    rects1 = ax.bar(x, goodputs_load_gen, width, label="Goodput Load Gen")
     # rects2 = ax.bar(x + width * 0.5, goodputs_fe, width, label="Goodput FE")
 
     ax.set_xlabel("RPS")
@@ -101,6 +102,52 @@ def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
 
     autolabel(rects1)
     # autolabel(rects2)
+
+    fig.tight_layout()
+    plt.ylim(Y_MIN, Y_MAX)
+    plt.grid(True, linestyle="--", linewidth=0.5)
+    plt.savefig(fig_name)
+
+
+def plot_goodput_apis_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
+    apis = ["Search", "Reservation"]
+    labels = ["Goodput Search", "Goodput Reservation"]
+
+    rps_values = [result["rps"] for result in results if result["api"] == apis[0]]
+    goodputs = [
+        [result["goodput_load_gen"] for result in results if result["api"] == api]
+        for api in apis
+    ]
+
+    x = np.arange(len(rps_values))
+    width = 0.3
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    rects1 = ax.bar(x - width * 0.5, goodputs[0], width, label=labels[0])
+    rects2 = ax.bar(x + width * 0.5, goodputs[1], width, label=labels[1])
+
+    ax.set_xlabel("RPS")
+    ax.set_ylabel("Goodput")
+    ax.set_title(f"Goodput vs RPS ({mode})")
+    ax.set_xticks(x)
+    ax.set_xticklabels(rps_values)
+    ax.legend(loc="upper left", fontsize=fontsize_medium)
+
+    def autolabel(rects):
+        for rect in rects:
+            height = rect.get_height()
+            ax.annotate(
+                "{}".format(height),
+                xy=(rect.get_x() + rect.get_width() / 2, height),
+                xytext=(0, 3),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=fontsize_tiny,
+            )
+
+    autolabel(rects1)
+    autolabel(rects2)
 
     fig.tight_layout()
     plt.ylim(Y_MIN, Y_MAX)
