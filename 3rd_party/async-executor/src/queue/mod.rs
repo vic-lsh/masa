@@ -14,7 +14,7 @@ pub(crate) use concurrent_fifo::ConcurrentFifoQueue;
 pub(crate) use mutex_fifo::MutexFifoQueue;
 #[allow(dead_code)]
 #[allow(unused_imports)]
-pub(crate) use mutex_fifo_infra::MutexFifoTwoQueue;
+pub(crate) use mutex_fifo_infra::MutexFifoInfraQueue;
 #[allow(dead_code)]
 #[allow(unused_imports)]
 pub(crate) use mutex_prio::MutexPriorityQueue;
