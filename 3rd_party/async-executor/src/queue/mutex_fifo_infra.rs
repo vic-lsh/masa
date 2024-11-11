@@ -6,12 +6,12 @@ use std::{
 use super::{PopError, PushError, Queue};
 use tonic_masa::Prioritize;
 
-pub(crate) struct MutexFifoTwoQueue<T> {
+pub(crate) struct MutexFifoInfraQueue<T> {
     q_infra: Mutex<VecDeque<T>>,
     q_others: Mutex<VecDeque<T>>,
 }
 
-impl<T: Ord + PartialOrd + Prioritize> Queue for MutexFifoTwoQueue<T> {
+impl<T: Ord + PartialOrd + Prioritize> Queue for MutexFifoInfraQueue<T> {
     type Item = T;
 
     fn push(&self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
@@ -54,7 +54,7 @@ impl<T: Ord + PartialOrd + Prioritize> Queue for MutexFifoTwoQueue<T> {
     }
 }
 
-impl<T> MutexFifoTwoQueue<T> {
+impl<T> MutexFifoInfraQueue<T> {
     #[inline]
     fn with_locked_q_infra<R>(&self, f: impl FnOnce(MutexGuard<'_, VecDeque<T>>) -> R) -> R {
         let guard = self.q_infra.lock().expect("Mutex should not be poisoned");
@@ -68,7 +68,7 @@ impl<T> MutexFifoTwoQueue<T> {
     }
 }
 
-impl<T: Ord> Default for MutexFifoTwoQueue<T> {
+impl<T: Ord> Default for MutexFifoInfraQueue<T> {
     fn default() -> Self {
         Self {
             q_infra: Mutex::new(VecDeque::new()),
