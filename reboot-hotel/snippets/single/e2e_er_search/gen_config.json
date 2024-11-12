@@ -23,6 +23,6 @@
 	"WarmupSecs": 15,
 	"DurationSecs": 45,
 	"Concurrency": 0,
-	"Output": "snippets/e2e_er_search",
+	"Output": "snippets/single/e2e_er_search",
 	"Addr": "http://[::1]:8660"
 }

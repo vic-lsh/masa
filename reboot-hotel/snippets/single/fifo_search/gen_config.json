@@ -23,6 +23,6 @@
 	"WarmupSecs": 15,
 	"DurationSecs": 45,
 	"Concurrency": 0,
-	"Output": "snippets/fifo_search",
+	"Output": "snippets/single/fifo_search",
 	"Addr": "http://[::1]:8660"
 }
