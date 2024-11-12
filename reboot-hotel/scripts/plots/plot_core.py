@@ -113,7 +113,7 @@ def plot_goodput_bar(
 def plot_goodput_apis_bar(
     apis: List[str], mode: str, results: List[Dict[str, Any]], fig_name: str
 ):
-    labels = [f"{mode} {api}" for api in apis]
+    labels = [(f"{mode} {api}").lower() for api in apis]
     rps_values = [result["rps"] for result in results if result["api"] == apis[0]]
     goodputs = [
         [result["goodput_load_gen"] for result in results if result["api"] == api]

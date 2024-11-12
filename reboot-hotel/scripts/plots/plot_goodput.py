@@ -15,7 +15,7 @@ for r in range(cfg["Repeats"]):
     rps_to_results: List[Dict[str, Any]] = []
 
     for rps in cfg["Rps"]:
-        if args.data:
+        if args.data and args.data != "":
             file = f"{args.path}/{args.data}/r{rps}_{r}.csv"
         else:
             file = f"{args.path}/r{rps}_{r}.csv"
