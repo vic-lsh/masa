@@ -68,19 +68,22 @@ def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.savefig(fig_name)
 
 
-def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
+def plot_goodput_bar(
+    apis: List[str], mode: str, results: List[Dict[str, Any]], fig_name: str
+):
+    label = (mode + " " + " ".join(apis)).lower()
     rps_values = [result["rps"] for result in results]
-    goodputs_load_gen = [result["goodput_load_gen"] for result in results]
+    goodputs = [result["goodput_load_gen"] for result in results]
 
     x = np.arange(len(rps_values))
     width = 0.3
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    rects1 = ax.bar(x, goodputs_load_gen, width, label="Goodput")
+    rects = ax.bar(x, goodputs, width, label=label)
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
-    ax.set_title(f"Goodput vs RPS ({mode})")
+    ax.set_title(f"Goodput vs RPS ({label})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
@@ -98,7 +101,7 @@ def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
                 fontsize=fontsize_medium,
             )
 
-    autolabel(rects1)
+    autolabel(rects)
 
     fig.tight_layout()
     plt.ylim(Y_MIN, Y_MAX)
@@ -107,10 +110,9 @@ def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
 
 
 def plot_goodput_apis_bar(
-    apis: List[str], results: List[Dict[str, Any]], fig_name: str, mode: str
+    apis: List[str], mode: str, results: List[Dict[str, Any]], fig_name: str
 ):
-    labels = [f"Goodput {api}" for api in apis]
-
+    labels = [f"{mode} {api}" for api in apis]
     rps_values = [result["rps"] for result in results if result["api"] == apis[0]]
     goodputs = [
         [result["goodput_load_gen"] for result in results if result["api"] == api]
