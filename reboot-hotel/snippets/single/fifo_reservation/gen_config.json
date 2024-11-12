@@ -26,6 +26,6 @@
 	"WarmupSecs": 15,
 	"DurationSecs": 45,
 	"Concurrency": 0,
-	"Output": "snippets/fifo_reservation",
+	"Output": "snippets/single/fifo_reservation",
 	"Addr": "http://[::1]:8660"
 }
