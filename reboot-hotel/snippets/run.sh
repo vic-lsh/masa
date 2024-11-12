@@ -6,46 +6,38 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 	exit 1
 fi
 
-echo "Running fifo_search..."
-$pwd/scripts/local/run_all.sh \
-	--features fifo \
-	--output snippets/fifo_search \
-	--repeats 1
-
-echo "Running fifo_reservation..."
-$pwd/scripts/local/run_all.sh \
-	--features fifo \
-	--output snippets/fifo_reservation \
-	--repeats 1
-
-echo "Running e2e_search..."
-$pwd/scripts/local/run_all.sh \
-	--features prio_global \
-	--output snippets/e2e_search \
-	--repeats 1
-
-echo "Running e2e_reservation..."
-$pwd/scripts/local/run_all.sh \
-	--features prio_global \
-	--output snippets/e2e_reservation \
-	--repeats 1
-
-# echo "Running fifo..."
+# echo "Running fifo_search..."
 # $pwd/scripts/local/run_all.sh \
 # 	--features fifo \
+# 	--output snippets/fifo_search \
 # 	--repeats 1
 
-# echo "Running fifo_infra..."
+# echo "Running fifo_reservation..."
 # $pwd/scripts/local/run_all.sh \
-# 	--features fifo_infra \
+# 	--features fifo \
+# 	--output snippets/fifo_reservation \
 # 	--repeats 1
 
-# echo "Running prio_global..."
+# echo "Running e2e_search..."
 # $pwd/scripts/local/run_all.sh \
 # 	--features prio_global \
+# 	--output snippets/e2e_search \
 # 	--repeats 1
 
-# echo "Running prio_global_early..."
+# echo "Running e2e_reservation..."
 # $pwd/scripts/local/run_all.sh \
-# 	--features prio_global_early \
+# 	--features prio_global \
+# 	--output snippets/e2e_reservation \
 # 	--repeats 1
+
+echo "Running e2e_er_search..."
+$pwd/scripts/local/run_all.sh \
+	--features prio_global_early \
+	--output snippets/e2e_er_search \
+	--repeats 1
+
+echo "Running e2e_er_reservation..."
+$pwd/scripts/local/run_all.sh \
+	--features prio_global_early \
+	--output snippets/e2e_er_reservation \
+	--repeats 1
