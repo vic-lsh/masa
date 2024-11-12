@@ -15,7 +15,7 @@ for r in range(cfg["Repeats"]):
     rps_to_results: List[Dict[str, Any]] = []
 
     for rps in cfg["Rps"]:
-        if args.data and args.data != "":
+        if args.data:
             file = f"{args.path}/{args.data}/r{rps}_{r}.csv"
         else:
             file = f"{args.path}/r{rps}_{r}.csv"
@@ -39,7 +39,7 @@ for r in range(cfg["Repeats"]):
         cfg["Apis"],
         args.mode,
         rps_to_results,
-        f"{args.path}/fig_goodput_rps_bar_{r}.png",
+        f"{args.path}/fig_goodput_rps_{r}.png",
     )
     if len(cfg["Apis"]) == 1:
         continue
@@ -47,7 +47,7 @@ for r in range(cfg["Repeats"]):
     rps_to_results = []
 
     for rps in cfg["Rps"]:
-        file = f"{args.path}/r{rps}_{r}.csv"
+        file = f"{args.path}/{args.data}/r{rps}_{r}.csv"
         df = pd.read_csv(file)
 
         for i in range(len(cfg["Apis"])):
@@ -68,5 +68,5 @@ for r in range(cfg["Repeats"]):
         cfg["Apis"],
         args.mode,
         rps_to_results,
-        f"{args.path}/fig_goodput_apis_rps_bar_{r}.png",
+        f"{args.path}/fig_goodput_apis_rps_{r}.png",
     )

@@ -5,36 +5,37 @@ if [[ "$pwd" != */reboot-hotel ]]; then
     echo "Error: plese run in the reboot-hotel directory" >&2
     exit 1
 fi
+snippets=snippets/zero
 
 echo "Plotting fifo_search..."
-$pwd/snippets/fifo_search/plot.sh
+$pwd/$snippets/fifo_search/plot.sh
 
 echo "Plotting fifo_reservation..."
-$pwd/snippets/fifo_reservation/plot.sh
+$pwd/$snippets/fifo_reservation/plot.sh
 
 echo "Plotting e2e_search..."
-$pwd/snippets/e2e_search/plot.sh
+$pwd/$snippets/e2e_search/plot.sh
 
 echo "Plotting e2e_reservation..."
-$pwd/snippets/e2e_reservation/plot.sh
+$pwd/$snippets/e2e_reservation/plot.sh
 
 echo "Plotting e2e_er_search..."
-$pwd/snippets/e2e_er_search/plot.sh
+$pwd/$snippets/e2e_er_search/plot.sh
 
 echo "Plotting e2e_er_reservation..."
-$pwd/snippets/e2e_er_reservation/plot.sh
+$pwd/$snippets/e2e_er_reservation/plot.sh
 
 # echo "Plotting all_cmp..."
-# $pwd/snippets/all_cmp/plot.sh
+# $pwd/$snippets/all_cmp/plot.sh
 
 # echo "Plotting fifo..."
-# $pwd/snippets/fifo/plot.sh
+# $pwd/$snippets/fifo/plot.sh
 
 # echo "Plotting fifo_infra..."
-# $pwd/snippets/fifo_infra/plot.sh
+# $pwd/$snippets/fifo_infra/plot.sh
 
 # echo "Plotting prio_global..."
-# $pwd/snippets/prio_global/plot.sh
+# $pwd/$snippets/prio_global/plot.sh
 
 # echo "Plotting prio_global_early..."
-# $pwd/snippets/prio_global_early/plot.sh
+# $pwd/$snippets/prio_global_early/plot.sh
