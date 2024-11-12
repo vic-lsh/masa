@@ -90,7 +90,7 @@ def plot_goodput_bar(
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
-    ax.set_title(f"Goodput vs RPS ({label})")
+    ax.set_title(f"Goodput ({label})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
@@ -158,7 +158,7 @@ def plot_goodput_apis_bar(
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
-    ax.set_title(f"Goodput vs RPS ({mode})")
+    ax.set_title(f"Goodput ({mode})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
@@ -220,7 +220,7 @@ def plot_goodput_cmp_bar(
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
-    ax.set_title(f"Goodput vs RPS ({modes_str})")
+    ax.set_title(f"Goodput ({modes_str})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
