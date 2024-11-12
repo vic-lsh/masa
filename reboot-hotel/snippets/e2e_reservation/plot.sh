@@ -1,6 +1,6 @@
 reboot_hotel=~/Masa-Lo-Ding/reboot-hotel
 path=e2e_reservation
-mode=prio_global
+mode=e2e
 
 echo "Plotting goodput..."
 python3 $reboot_hotel/scripts/plots/plot_goodput.py \
