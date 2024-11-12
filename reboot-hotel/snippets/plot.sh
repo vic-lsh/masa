@@ -18,6 +18,12 @@ $pwd/snippets/e2e_search/plot.sh
 echo "Plotting e2e_reservation..."
 $pwd/snippets/e2e_reservation/plot.sh
 
+echo "Plotting e2e_er_search..."
+$pwd/snippets/e2e_er_search/plot.sh
+
+echo "Plotting e2e_er_reservation..."
+$pwd/snippets/e2e_er_reservation/plot.sh
+
 # echo "Plotting all_cmp..."
 # $pwd/snippets/all_cmp/plot.sh
 
