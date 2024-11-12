@@ -16,6 +16,5 @@ $pwd/$snippets/e2e/plot.sh
 echo "Plotting e2e_er..."
 $pwd/$snippets/e2e_er/plot.sh
 
-# [TODO]
-# echo "Plotting all_cmp..."
-# $pwd/$snippets/all_cmp/plot.sh
+echo "Plotting cmp..."
+$pwd/$snippets/cmp/plot.sh

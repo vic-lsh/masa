@@ -1,7 +1,7 @@
 reboot_hotel=~/Masa-Lo-Ding/reboot-hotel
 snippets=snippets/search_reservation
 path=e2e
-data=./
+data=tmp_1112
 mode=e2e
 
 echo "Plotting goodput..."

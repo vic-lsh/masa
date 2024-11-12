@@ -80,7 +80,13 @@ def plot_goodput_bar(
     width = 0.3
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    rects = ax.bar(x, goodputs, width, label=label)
+    rects = ax.bar(
+        x,
+        goodputs,
+        width,
+        color=COLORS[0],
+        label=label,
+    )
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
@@ -125,10 +131,28 @@ def plot_goodput_apis_bar(
 
     fig, ax = plt.subplots(figsize=(10, 6))
     if len(apis) == 1:
-        rects1 = ax.bar(x, goodputs[0], width, label=labels[0])
+        rects1 = ax.bar(
+            x,
+            goodputs[0],
+            width,
+            color=COLORS[0],
+            label=labels[0],
+        )
     elif len(apis) == 2:
-        rects1 = ax.bar(x - width * 0.5, goodputs[0], width, label=labels[0])
-        rects2 = ax.bar(x + width * 0.5, goodputs[1], width, label=labels[1])
+        rects1 = ax.bar(
+            x - width * 0.5,
+            goodputs[0],
+            width,
+            color=COLORS[0],
+            label=labels[0],
+        )
+        rects2 = ax.bar(
+            x + width * 0.5,
+            goodputs[1],
+            width,
+            color=COLORS[1],
+            label=labels[1],
+        )
     else:
         raise ValueError("Expected 1 or 2 APIs")
 
@@ -165,23 +189,34 @@ def plot_goodput_apis_bar(
 
 
 def plot_goodput_cmp_bar(
-    results: List[Dict[str, Any]], fig_name: str, modes: List[str]
+    modes: List[str], results: List[Dict[str, Any]], fig_name: str
 ):
+    assert len(modes) == 2, "Only 2 modes available"
     modes_str = f"{', '.join(modes)}"
-    keys = [f"goodput_{mode}" for mode in modes]
-    assert len(keys) == 2, "Only 2 modes available"
-    labels = [f"Goodput {mode}" for mode in modes]
+    labels = modes
 
-    rps_values = [result["rps"] for result in results if keys[0] in result]
-    goodputs_lhs = [result[keys[0]] for result in results if keys[0] in result]
-    goodputs_rhs = [result[keys[1]] for result in results if keys[1] in result]
+    rps_values = [result["rps"] for result in results if modes[0] in result]
+    goodputs_lhs = [result[modes[0]] for result in results if modes[0] in result]
+    goodputs_rhs = [result[modes[1]] for result in results if modes[1] in result]
 
     x = np.arange(len(rps_values))
     width = 0.3
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    rects1 = ax.bar(x - width * 0.5, goodputs_lhs, width, label=labels[0])
-    rects2 = ax.bar(x + width * 0.5, goodputs_rhs, width, label=labels[1])
+    rects1 = ax.bar(
+        x - width * 0.5,
+        goodputs_lhs,
+        width,
+        color=COLORS[0],
+        label=labels[0],
+    )
+    rects2 = ax.bar(
+        x + width * 0.5,
+        goodputs_rhs,
+        width,
+        color=COLORS[1],
+        label=labels[1],
+    )
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
