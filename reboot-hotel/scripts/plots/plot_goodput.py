@@ -32,11 +32,11 @@ for r in range(cfg["Repeats"]):
 
         rps_to_results.append(result)
 
-    apis = " ".join(cfg["Apis"]).lower()
     plot_goodput_bar(
+        cfg["Apis"],
+        args.mode,
         rps_to_results,
         f"{args.path}/fig_goodput_rps_bar_{r}.png",
-        f"{args.mode} {apis}",
     )
     if len(cfg["Apis"]) == 1:
         continue
@@ -61,7 +61,7 @@ for r in range(cfg["Repeats"]):
 
     plot_goodput_apis_bar(
         cfg["Apis"],
+        args.mode,
         rps_to_results,
         f"{args.path}/fig_goodput_apis_rps_bar_{r}.png",
-        args.mode,
     )
