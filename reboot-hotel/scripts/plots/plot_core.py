@@ -30,6 +30,7 @@ Y_MAX = 2000
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--path", type=str)
+    parser.add_argument("--data", type=str)
     parser.add_argument("--mode", type=str)
     parser.add_argument("--snippets", type=str)
     parser.add_argument("--modes", type=str, nargs="+")

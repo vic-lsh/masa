@@ -15,7 +15,10 @@ for r in range(cfg["Repeats"]):
     rps_to_results: List[Dict[str, Any]] = []
 
     for rps in cfg["Rps"]:
-        file = f"{args.path}/r{rps}_{r}.csv"
+        if args.data:
+            file = f"{args.path}/{args.data}/r{rps}_{r}.csv"
+        else:
+            file = f"{args.path}/r{rps}_{r}.csv"
         df = pd.read_csv(file)
 
         result = {}
@@ -51,12 +54,14 @@ for r in range(cfg["Repeats"]):
             result = {}
             result["rps"] = rps
             result["api"] = cfg["Apis"][i]
+
             api = cfg["Apis"][i]
             slo = cfg["Slos"][i]
             df_filtered = df[
                 (df["api"] == api) & (df["error"] == "/None") & (df["latency"] <= slo)
             ]
             result["goodput_load_gen"] = round(len(df_filtered) / cfg["DurationSecs"])
+
             rps_to_results.append(result)
 
     plot_goodput_apis_bar(
