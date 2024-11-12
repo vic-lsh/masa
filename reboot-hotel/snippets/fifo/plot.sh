@@ -1,5 +1,5 @@
 reboot_hotel=~/Masa-Lo-Ding/reboot-hotel
-mode=prio_global
+mode=fifo
 
 echo "Plotting goodput..."
 python3 $reboot_hotel/scripts/plots/plot_goodput.py \
