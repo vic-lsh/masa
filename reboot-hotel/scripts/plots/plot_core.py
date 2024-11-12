@@ -6,25 +6,25 @@ import matplotlib.ticker as ticker
 import numpy as np
 
 plt.rcParams["font.family"] = "Roboto"
-fontsize = 17
+fontsize_large = 17
 fontsize_medium = 13
 fontsize_small = 11
 fontsize_tiny = 9
 plt.rcParams.update(
     {
-        "font.size": fontsize,
-        "axes.labelsize": fontsize,
-        "axes.titlesize": fontsize,
-        "xtick.labelsize": fontsize,
-        "ytick.labelsize": fontsize,
-        "legend.fontsize": fontsize,
+        "font.size": fontsize_large,
+        "axes.labelsize": fontsize_large,
+        "axes.titlesize": fontsize_large,
+        "xtick.labelsize": fontsize_medium,
+        "ytick.labelsize": fontsize_medium,
+        "legend.fontsize": fontsize_large,
     }
 )
 
 COLORS = ["tab:blue", "tab:orange", "tab:purple", "tab:red", "tab:green"]
 MARKERS = ["o", "x", "^", "*", "s"]
 Y_MIN = 0
-Y_MAX = 1600
+Y_MAX = 2000
 
 
 def parse_args() -> argparse.Namespace:
@@ -71,14 +71,12 @@ def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
 def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     goodputs_load_gen = [result["goodput_load_gen"] for result in results]
-    # goodputs_fe = [result["goodput_fe"] for result in results]
 
     x = np.arange(len(rps_values))
     width = 0.3
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    rects1 = ax.bar(x, goodputs_load_gen, width, label="Goodput Load Gen")
-    # rects2 = ax.bar(x + width * 0.5, goodputs_fe, width, label="Goodput FE")
+    rects1 = ax.bar(x, goodputs_load_gen, width, label="Goodput")
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
@@ -101,7 +99,6 @@ def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
             )
 
     autolabel(rects1)
-    # autolabel(rects2)
 
     fig.tight_layout()
     plt.ylim(Y_MIN, Y_MAX)
@@ -109,9 +106,10 @@ def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.savefig(fig_name)
 
 
-def plot_goodput_apis_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
-    apis = ["Search", "Reservation"]
-    labels = ["Goodput Search", "Goodput Reservation"]
+def plot_goodput_apis_bar(
+    apis: List[str], results: List[Dict[str, Any]], fig_name: str, mode: str
+):
+    labels = [f"Goodput {api}" for api in apis]
 
     rps_values = [result["rps"] for result in results if result["api"] == apis[0]]
     goodputs = [
@@ -123,8 +121,13 @@ def plot_goodput_apis_bar(results: List[Dict[str, Any]], fig_name: str, mode: st
     width = 0.3
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    rects1 = ax.bar(x - width * 0.5, goodputs[0], width, label=labels[0])
-    rects2 = ax.bar(x + width * 0.5, goodputs[1], width, label=labels[1])
+    if len(apis) == 1:
+        rects1 = ax.bar(x, goodputs[0], width, label=labels[0])
+    elif len(apis) == 2:
+        rects1 = ax.bar(x - width * 0.5, goodputs[0], width, label=labels[0])
+        rects2 = ax.bar(x + width * 0.5, goodputs[1], width, label=labels[1])
+    else:
+        raise ValueError("Expected 1 or 2 APIs")
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
@@ -143,11 +146,14 @@ def plot_goodput_apis_bar(results: List[Dict[str, Any]], fig_name: str, mode: st
                 textcoords="offset points",
                 ha="center",
                 va="bottom",
-                fontsize=fontsize_tiny,
+                fontsize=fontsize_small,
             )
 
-    autolabel(rects1)
-    autolabel(rects2)
+    if len(apis) == 1:
+        autolabel(rects1)
+    elif len(apis) == 2:
+        autolabel(rects1)
+        autolabel(rects2)
 
     fig.tight_layout()
     plt.ylim(Y_MIN, Y_MAX)
@@ -503,9 +509,9 @@ def plot_goodput_per_rps(result: Dict[str, Any], fig_name: str):
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(result["goodput_per_rps"], color="tab:blue")
 
-    ax.set_title(f"Goodput per RPS", fontsize=fontsize)
-    ax.set_xlabel("Time (Seconds)", fontsize=fontsize)
-    ax.set_ylabel("Goodput", fontsize=fontsize)
+    ax.set_title(f"Goodput per RPS", fontsize=fontsize_large)
+    ax.set_xlabel("Time (Seconds)", fontsize=fontsize_large)
+    ax.set_ylabel("Goodput", fontsize=fontsize_large)
 
     plt.grid(True, linestyle="--", alpha=0.7)
     plt.savefig(fig_name)

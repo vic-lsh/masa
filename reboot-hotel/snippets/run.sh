@@ -6,17 +6,17 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 	exit 1
 fi
 
-# echo "Running fifo_search..."
-# $pwd/scripts/local/run_all.sh \
-# 	--features fifo \
-# 	--output snippets/fifo_search \
-# 	--repeats 1
+echo "Running fifo_search..."
+$pwd/scripts/local/run_all.sh \
+	--features fifo \
+	--output snippets/fifo_search \
+	--repeats 1
 
-# echo "Running fifo_reservation..."
-# $pwd/scripts/local/run_all.sh \
-# 	--features fifo \
-# 	--output snippets/fifo_reservation \
-# 	--repeats 1
+echo "Running fifo_reservation..."
+$pwd/scripts/local/run_all.sh \
+	--features fifo \
+	--output snippets/fifo_reservation \
+	--repeats 1
 
 echo "Running e2e_search..."
 $pwd/scripts/local/run_all.sh \
