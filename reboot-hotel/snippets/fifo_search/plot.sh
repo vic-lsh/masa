@@ -1,10 +1,13 @@
 reboot_hotel=~/Masa-Lo-Ding/reboot-hotel
-mode=prio_global
+path=fifo_search
+mode=fifo
 
 echo "Plotting goodput..."
 python3 $reboot_hotel/scripts/plots/plot_goodput.py \
-	--path $reboot_hotel/snippets/$mode \
+	--path $reboot_hotel/snippets/$path \
 	--mode $mode
+
+# [TODO] Change $mode to $path.
 
 # echo "Plotting throughput..."
 # python3 $reboot_hotel/scripts/plots/plot_throughput.py \

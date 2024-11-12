@@ -61,7 +61,7 @@ waits_secs=(
     18
     21
 )
-rust_log=info
+rust_log=warn
 
 init() {
     if tmux has-session -t $session_name 2>/dev/null; then
