@@ -1,7 +1,7 @@
 reboot_hotel=~/Masa-Lo-Ding/reboot-hotel
 snippets=snippets/search_reservation
 path=fifo
-data=./
+data=tmp_1112
 mode=fifo
 
 echo "Plotting goodput..."
