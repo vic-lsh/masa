@@ -6,21 +6,27 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 	exit 1
 fi
 snippets=snippets/single
-data=tmp_1111
+data=tmp_1112
 
-declare -A name_to_modes=(
-	["search_fifo_e2e"]="fifo_search e2e_search"
-	["search_fifo_e2e_er"]="fifo_search e2e_er_search"
-	["search_e2e_e2e_er"]="e2e_search e2e_er_search"
-	["reservation_fifo_e2e"]="fifo_reservation e2e_reservation"
-	["reservation_fifo_e2e_er"]="fifo_reservation e2e_er_reservation"
-	["reservation_e2e_e2e_er"]="e2e_reservation e2e_er_reservation"
+modes_list=(
+	# # search
+	# "fifo_search e2e_search"
+	# "fifo_search e2e_er_search"
+	# "e2e_search e2e_er_search"
+	# [TODO]
+	"fifo_search local_search"
+	"fifo_search local_er_search"
+	"e2e_search local_search"
+	"local_search local_er_search"
+	"e2e_er_search local_er_search"
+	# # reservation
+	# "fifo_reservation e2e_reservation"
+	# "fifo_reservation e2e_er_reservation"
+	# "e2e_reservation e2e_er_reservation"
 )
 
-for name in "${!name_to_modes[@]}"; do
-	modes="${name_to_modes[$name]}"
-
-	echo "Plotting goodput for $name..."
+for modes in "${modes_list[@]}"; do
+	echo "Plotting $modes..."
 	python3 $pwd/scripts/plots/plot_goodput_cmp.py \
 		--path $pwd/$snippets/cmp \
 		--snippets $pwd/$snippets \

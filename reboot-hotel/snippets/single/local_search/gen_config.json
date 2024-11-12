@@ -1,7 +1,7 @@
 {
 	"Repeats": 1,
 	"Apis": [
-		"Reservation"
+		"Search"
 	],
 	"Slos": [
 		50000
@@ -15,17 +15,14 @@
 		1500,
 		1750,
 		2000,
-		4000,
-		6000,
-		8000,
-		10000,
-		12000,
-		14000,
-		16000
+		2500,
+		3000,
+		3500,
+		4000
 	],
 	"WarmupSecs": 15,
 	"DurationSecs": 45,
 	"Concurrency": 0,
-	"Output": "snippets/single/e2e_reservation",
+	"Output": "snippets/single/local_search",
 	"Addr": "http://[::1]:8660"
 }

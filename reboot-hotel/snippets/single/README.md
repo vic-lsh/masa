@@ -6,6 +6,10 @@ Folder `single` runs one of `search`/`reservation` in one of `fifo`/`e2e`/`e2e_e
 * `e2e`: Priority queue using e2e deadlines.
 * `e2e_er`: `e2e` plus early return.
 
+## Ongoing
+
+![search local local_er](cmp/fig_goodput_rps_cmp_local_search_local_er_search_0.png)
+
 ## Search
 
 ![fifo e2e](cmp/fig_goodput_rps_cmp_fifo_search_e2e_search_0.png)
