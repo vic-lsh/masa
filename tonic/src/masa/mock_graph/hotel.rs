@@ -23,7 +23,7 @@ fn get_frontend() -> GlobalGraph {
                         TRACKER_CAPACITY,
                     ),
                     Span::new(
-                        "/reservation.Reservation/HandleCheckAvailability".to_string(),
+                        "/reservation.Reservation/CheckAvailability".to_string(),
                         None,
                         TRACKER_CAPACITY,
                     ),
@@ -48,7 +48,7 @@ fn get_frontend() -> GlobalGraph {
                         TRACKER_CAPACITY,
                     ),
                     Span::new(
-                        "/reservation.Reservation/HandleMakeReservation".to_string(),
+                        "/reservation.Reservation/MakeReservation".to_string(),
                         None,
                         TRACKER_CAPACITY,
                     ),
@@ -117,12 +117,12 @@ fn get_reservation() -> GlobalGraph {
     let service_id: ServiceId = "reservation.Reservation".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/reservation.Reservation/HandleCheckAvailability";
+        let method_id: MethodId = "/reservation.Reservation/CheckAvailability";
         graphs.insert(
             method_id,
             LocalGraph::new(service_id.clone(), method_id, vec![]),
         );
-        let method_id: MethodId = "/reservation.Reservation/HandleMakeReservation";
+        let method_id: MethodId = "/reservation.Reservation/MakeReservation";
         graphs.insert(
             method_id,
             LocalGraph::new(service_id.clone(), method_id, vec![]),
