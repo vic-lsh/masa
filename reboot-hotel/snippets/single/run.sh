@@ -61,8 +61,8 @@ snippets=snippets/single
 # 	--output $snippets/local_er_search \
 # 	--repeats 1
 
-echo "Running local_er_reservation..."
-$pwd/scripts/local/run_all.sh \
-	--features prio_local_early \
-	--output $snippets/local_er_reservation \
-	--repeats 1
+# echo "Running local_er_reservation..."
+# $pwd/scripts/local/run_all.sh \
+# 	--features prio_local_early \
+# 	--output $snippets/local_er_reservation \
+# 	--repeats 1
