@@ -44,7 +44,7 @@ for r in range(cfg["Repeats"]):
     rps_to_results = []
 
     for rps in cfg["Rps"]:
-        file = f"{args.path}/{args.data}/r{rps}_{r}.csv"
+        file = f"{args.path}/r{rps}_{r}.csv"
         df = pd.read_csv(file)
 
         for i in range(len(cfg["Apis"])):

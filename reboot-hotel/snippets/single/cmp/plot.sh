@@ -32,8 +32,8 @@ modes_list=(
 for modes in "${modes_list[@]}"; do
 	echo "Plotting $modes..."
 	python3 $pwd/scripts/plots/plot_goodput_cmp.py \
+		--modes $modes \
 		--path $pwd/$snippets/cmp \
 		--snippets $pwd/$snippets \
-		--data $data \
-		--modes $modes
+		--data $data
 done
