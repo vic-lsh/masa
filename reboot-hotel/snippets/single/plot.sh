@@ -25,16 +25,15 @@ snippets=snippets/single
 # echo "Plotting e2e_er_reservation..."
 # $pwd/$snippets/e2e_er_reservation/plot.sh
 
-echo "Plotting local_search..."
-$pwd/$snippets/local_search/plot.sh
+# echo "Plotting local_search..."
+# $pwd/$snippets/local_search/plot.sh
 
-echo "Plotting local_reservation..."
-$pwd/$snippets/local_reservation/plot.sh
+# echo "Plotting local_reservation..."
+# $pwd/$snippets/local_reservation/plot.sh
 
-echo "Plotting local_er_search..."
-$pwd/$snippets/local_er_search/plot.sh
+# echo "Plotting local_er_search..."
+# $pwd/$snippets/local_er_search/plot.sh
 
-# [TODO]
 # echo "Plotting local_er_reservation..."
 # $pwd/$snippets/local_er_reservation/plot.sh
 
