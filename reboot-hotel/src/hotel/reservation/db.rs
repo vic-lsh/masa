@@ -84,10 +84,9 @@ fn generate_static_data() -> (Vec<Reservation>, Vec<Number>) {
 pub async fn initialize_database(url: &str) -> Result<MongoClient, Box<dyn Error>> {
     let (new_reservations, new_numbers) = generate_static_data();
 
-    let uri = format!("mongodb://{}", url);
-    info!("Attempting connection to {}", uri);
+    info!("Attempting connection to {}", url);
 
-    let client_options = ClientOptions::parse(&uri).await?;
+    let client_options = ClientOptions::parse(&url).await?;
     let client = MongoClient::with_options(client_options)?;
     info!("Successfully connected to MongoDB");
 
