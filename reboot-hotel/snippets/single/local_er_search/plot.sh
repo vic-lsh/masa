@@ -1,28 +1,32 @@
-reboot_hotel=~/Masa-Lo-Ding/reboot-hotel
-snippets=snippets/single
+#!/bin/bash
+
+pwd=$(pwd)
+if [[ "$pwd" != */reboot-hotel ]]; then
+	echo "Error: plese run in the reboot-hotel directory" >&2
+	exit 1
+fi
+snippets=snippets/single/local_er_search
 mode=local_er
-path=local_er_search
 data=tmp_1112
 
 echo "Plotting goodput..."
-python3 $reboot_hotel/scripts/plots/plot_goodput.py \
+python3 $pwd/scripts/plots/plot_goodput.py \
 	--mode $mode \
-	--path $reboot_hotel/$snippets/$path \
-	--data $data
+	--path $pwd/$snippets/$data
 
 # [TODO] Change $mode to $path.
 
 # echo "Plotting throughput..."
-# python3 $reboot_hotel/scripts/plots/plot_throughput.py \
-# 	--path $reboot_hotel/$snippets/$mode \
+# python3 $pwd/scripts/plots/plot_throughput.py \
+# 	--path $pwd/$snippets/$mode \
 # 	--mode $mode
 
 # echo "Plotting error..."
-# python3 $reboot_hotel/scripts/plots/plot_error.py \
-# 	--path $reboot_hotel/$snippets/$mode \
+# python3 $pwd/scripts/plots/plot_error.py \
+# 	--path $pwd/$snippets/$mode \
 # 	--mode $mode
 
 # echo "Plotting tail..."
-# python3 $reboot_hotel/scripts/plots/plot_tail.py \
-# 	--path $reboot_hotel/$snippets/$mode \
+# python3 $pwd/scripts/plots/plot_tail.py \
+# 	--path $pwd/$snippets/$mode \
 # 	--mode $mode
