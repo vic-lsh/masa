@@ -5,10 +5,9 @@ members = [
   "tonic-health",
   "tonic-types",
   "tonic-reflection",
-  "tonic-web",                        # Non-published crates
+  "tonic-web",        # Non-published crates
   "tonic-masa",
   "examples",
-  "reboot",
   "reboot-hotel",
   # socialnetwork eval impl
   "reboot-socialnet/unique_id",

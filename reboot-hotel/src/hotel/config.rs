@@ -5,8 +5,10 @@ use serde::{Deserialize, Serialize};
 pub struct GenConfig {
     #[serde(rename = "Repeats")]
     pub repeats: u64,
-    #[serde(rename = "Slo")]
-    pub slo: u64,
+    #[serde(rename = "Apis")]
+    pub apis: Vec<String>,
+    #[serde(rename = "Slos")]
+    pub slos: Vec<u64>,
     #[serde(rename = "Rps")]
     pub rps_values: Vec<u64>,
     #[serde(rename = "WarmupSecs")]
@@ -28,10 +30,10 @@ pub struct HotelConfig {
     pub hotels: u32,
     #[serde(rename = "Payload")]
     pub payload: u32,
-    #[serde(rename = "CacheConn")]
-    pub cache_conn: u32,
-    #[serde(rename = "CacheMissRate")]
-    pub cache_miss_rate: u32,
+    #[serde(rename = "CacheConns")]
+    pub cache_conns: u32,
+    #[serde(rename = "ProbCacheMiss")]
+    pub prob_cache_miss: u32,
 
     // #[serde(rename = "FrontendPort")]
     // pub frontend_port: String,
@@ -70,8 +72,21 @@ pub struct HotelConfig {
     // pub reservation_addr: String,
     // #[serde(rename = "ReservationPort")]
     // pub reservation_port: String,
+    #[serde(rename = "ReservationHotels")]
+    pub reservation_hotels: u32,
+    #[serde(rename = "ReservationDates")]
+    pub reservation_dates: u32,
+    #[serde(rename = "ReservationProbHotelAvail")]
+    pub reservation_prob_hotel_avail: u32,
     #[serde(rename = "ReservationMongodbAddr")]
     pub reservation_mongodb_addr: String,
     #[serde(rename = "ReservationMemcachedAddr")]
     pub reservation_memcached_addr: String,
+
+    #[serde(rename = "UserUsers")]
+    pub user_users: u32,
+    #[serde(rename = "UserProbCheckUser")]
+    pub user_prob_check_user: u32,
+    #[serde(rename = "UserMongodbAddr")]
+    pub user_mongodb_addr: String,
 }

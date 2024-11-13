@@ -6,28 +6,31 @@ import matplotlib.ticker as ticker
 import numpy as np
 
 plt.rcParams["font.family"] = "Roboto"
-fontsize = 17
+fontsize_large = 17
 fontsize_medium = 13
 fontsize_small = 11
+fontsize_tiny = 9
 plt.rcParams.update(
     {
-        "font.size": fontsize,
-        "axes.labelsize": fontsize,
-        "axes.titlesize": fontsize,
-        "xtick.labelsize": fontsize,
-        "ytick.labelsize": fontsize,
-        "legend.fontsize": fontsize,
+        "font.size": fontsize_large,
+        "axes.labelsize": fontsize_large,
+        "axes.titlesize": fontsize_large,
+        "xtick.labelsize": fontsize_medium,
+        "ytick.labelsize": fontsize_medium,
+        "legend.fontsize": fontsize_large,
     }
 )
 
-GRAPH_IDS = ["Hotel"]
 COLORS = ["tab:blue", "tab:orange", "tab:purple", "tab:red", "tab:green"]
 MARKERS = ["o", "x", "^", "*", "s"]
+Y_MIN = 0
+Y_MAX = 2000
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--path", type=str)
+    parser.add_argument("--data", type=str)
     parser.add_argument("--mode", type=str)
     parser.add_argument("--snippets", type=str)
     parser.add_argument("--modes", type=str, nargs="+")
@@ -38,7 +41,7 @@ def parse_args() -> argparse.Namespace:
 def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     goodputs_load_gen = [result["goodput_load_gen"] for result in results]
-    goodputs_fe = [result["goodput_fe"] for result in results]
+    # goodputs_fe = [result["goodput_fe"] for result in results]
 
     fig = plt.figure(figsize=(10, 6))
 
@@ -49,38 +52,45 @@ def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
         color=COLORS[0],
         marker=MARKERS[0],
     )
-    plt.plot(
-        rps_values,
-        goodputs_fe,
-        label="Goodput FE",
-        color=COLORS[1],
-        marker=MARKERS[1],
-    )
+    # plt.plot(
+    #     rps_values,
+    #     goodputs_fe,
+    #     label="Goodput FE",
+    #     color=COLORS[1],
+    #     marker=MARKERS[1],
+    # )
 
     plt.xlabel("RPS")
     plt.ylabel("Goodput")
-    plt.ylim(-200, 2200)
+    plt.ylim(Y_MIN, Y_MAX)
     plt.title(f"Goodput vs RPS ({mode})")
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)
 
 
-def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
+def plot_goodput_bar(
+    apis: List[str], mode: str, results: List[Dict[str, Any]], fig_name: str
+):
+    label = (mode + " " + " ".join(apis)).lower()
     rps_values = [result["rps"] for result in results]
-    goodputs_load_gen = [result["goodput_load_gen"] for result in results]
-    goodputs_fe = [result["goodput_fe"] for result in results]
+    goodputs = [result["goodput_load_gen"] for result in results]
 
     x = np.arange(len(rps_values))
     width = 0.3
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    rects1 = ax.bar(x - width * 0.5, goodputs_load_gen, width, label="Goodput Load Gen")
-    rects2 = ax.bar(x + width * 0.5, goodputs_fe, width, label="Goodput FE")
+    rects = ax.bar(
+        x,
+        goodputs,
+        width,
+        color=COLORS[0],
+        label=label,
+    )
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
-    ax.set_title(f"Goodput vs RPS ({mode})")
+    ax.set_title(f"Goodput ({label})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
@@ -98,37 +108,119 @@ def plot_goodput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
                 fontsize=fontsize_medium,
             )
 
-    autolabel(rects1)
-    autolabel(rects2)
+    autolabel(rects)
 
     fig.tight_layout()
-    plt.ylim(-200, 2200)
+    plt.ylim(Y_MIN, Y_MAX)
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
 
 
-def plot_goodput_cmp_bar(
-    results: List[Dict[str, Any]], fig_name: str, modes: List[str]
+def plot_goodput_apis_bar(
+    apis: List[str], mode: str, results: List[Dict[str, Any]], fig_name: str
 ):
-    modes_str = f"{', '.join(modes)}"
-    keys = [f"goodput_{mode}" for mode in modes]
-    assert len(keys) == 2, "Only 2 modes available"
-    labels = [f"Goodput {mode}" for mode in modes]
-
-    rps_values = [result["rps"] for result in results if keys[0] in result]
-    goodputs_lhs = [result[keys[0]] for result in results if keys[0] in result]
-    goodputs_rhs = [result[keys[1]] for result in results if keys[1] in result]
+    labels = [(f"{mode} {api}").lower() for api in apis]
+    rps_values = [result["rps"] for result in results if result["api"] == apis[0]]
+    goodputs = [
+        [result["goodput_load_gen"] for result in results if result["api"] == api]
+        for api in apis
+    ]
 
     x = np.arange(len(rps_values))
     width = 0.3
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    rects1 = ax.bar(x - width * 0.5, goodputs_lhs, width, label=labels[0])
-    rects2 = ax.bar(x + width * 0.5, goodputs_rhs, width, label=labels[1])
+    if len(apis) == 1:
+        rects1 = ax.bar(
+            x,
+            goodputs[0],
+            width,
+            color=COLORS[0],
+            label=labels[0],
+        )
+    elif len(apis) == 2:
+        rects1 = ax.bar(
+            x - width * 0.5,
+            goodputs[0],
+            width,
+            color=COLORS[0],
+            label=labels[0],
+        )
+        rects2 = ax.bar(
+            x + width * 0.5,
+            goodputs[1],
+            width,
+            color=COLORS[1],
+            label=labels[1],
+        )
+    else:
+        raise ValueError("Expected 1 or 2 APIs")
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
-    ax.set_title(f"Goodput vs RPS ({modes_str})")
+    ax.set_title(f"Goodput ({mode})")
+    ax.set_xticks(x)
+    ax.set_xticklabels(rps_values)
+    ax.legend(loc="upper left", fontsize=fontsize_medium)
+
+    def autolabel(rects):
+        for rect in rects:
+            height = rect.get_height()
+            ax.annotate(
+                "{}".format(height),
+                xy=(rect.get_x() + rect.get_width() / 2, height),
+                xytext=(0, 3),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=fontsize_small,
+            )
+
+    if len(apis) == 1:
+        autolabel(rects1)
+    elif len(apis) == 2:
+        autolabel(rects1)
+        autolabel(rects2)
+
+    fig.tight_layout()
+    plt.ylim(Y_MIN, Y_MAX)
+    plt.grid(True, linestyle="--", linewidth=0.5)
+    plt.savefig(fig_name)
+
+
+def plot_goodput_cmp_bar(
+    modes: List[str], results: List[Dict[str, Any]], fig_name: str
+):
+    assert len(modes) == 2, "Only 2 modes available"
+    modes_str = f"{', '.join(modes)}"
+    labels = modes
+
+    rps_values = [result["rps"] for result in results if modes[0] in result]
+    goodputs_lhs = [result[modes[0]] for result in results if modes[0] in result]
+    goodputs_rhs = [result[modes[1]] for result in results if modes[1] in result]
+
+    x = np.arange(len(rps_values))
+    width = 0.3
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    rects1 = ax.bar(
+        x - width * 0.5,
+        goodputs_lhs,
+        width,
+        color=COLORS[0],
+        label=labels[0],
+    )
+    rects2 = ax.bar(
+        x + width * 0.5,
+        goodputs_rhs,
+        width,
+        color=COLORS[1],
+        label=labels[1],
+    )
+
+    ax.set_xlabel("RPS")
+    ax.set_ylabel("Goodput")
+    ax.set_title(f"Goodput ({modes_str})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
@@ -150,7 +242,7 @@ def plot_goodput_cmp_bar(
     autolabel(rects2)
 
     fig.tight_layout()
-    plt.ylim(-200, 2200)
+    plt.ylim(Y_MIN, Y_MAX)
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
 
@@ -174,7 +266,7 @@ def plot_throughput_line(results: List[Dict[str, Any]], fig_name: str, mode: str
 
     plt.xlabel("RPS")
     plt.ylabel("Throughput")
-    plt.ylim(-200, 2200)
+    plt.ylim(Y_MIN, Y_MAX)
     plt.title(f"Throughput vs RPS ({mode})")
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
@@ -231,7 +323,7 @@ def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str)
         autolabel(rects)
 
     fig.tight_layout()
-    plt.ylim(-200, 2200)
+    plt.ylim(Y_MIN, Y_MAX)
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
 
@@ -262,7 +354,7 @@ def plot_error_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
 
     plt.xlabel("RPS")
     plt.ylabel("Error")
-    plt.ylim(-200, 2200)
+    plt.ylim(Y_MIN, Y_MAX)
     plt.title(f"Error vs RPS ({mode})")
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
@@ -327,7 +419,7 @@ def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
         autolabel(rects)
 
     fig.tight_layout()
-    plt.ylim(-200, 2200)
+    plt.ylim(Y_MIN, Y_MAX)
     plt.grid(True, linestyle="--", linewidth=0.5)
     plt.savefig(fig_name)
 
@@ -455,9 +547,9 @@ def plot_goodput_per_rps(result: Dict[str, Any], fig_name: str):
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(result["goodput_per_rps"], color="tab:blue")
 
-    ax.set_title(f"Goodput per RPS", fontsize=fontsize)
-    ax.set_xlabel("Time (Seconds)", fontsize=fontsize)
-    ax.set_ylabel("Goodput", fontsize=fontsize)
+    ax.set_title(f"Goodput per RPS", fontsize=fontsize_large)
+    ax.set_xlabel("Time (Seconds)", fontsize=fontsize_large)
+    ax.set_ylabel("Goodput", fontsize=fontsize_large)
 
     plt.grid(True, linestyle="--", alpha=0.7)
     plt.savefig(fig_name)
