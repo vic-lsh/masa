@@ -1,0 +1,27 @@
+{
+	"Repeats": 1,
+	"Apis": [
+		"Search",
+		"Reservation"
+	],
+	"Slos": [
+		50000,
+		50000
+	],
+	"Rps": [
+		500,
+		2000,
+		4000,
+		6000,
+		8000,
+		10000,
+		12000,
+		14000,
+		16000
+	],
+	"WarmupSecs": 15,
+	"DurationSecs": 45,
+	"Concurrency": 0,
+	"Output": "snippets/fifo",
+	"Addr": "http://[::1]:8660"
+}

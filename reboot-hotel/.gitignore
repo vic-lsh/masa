@@ -1,2 +1,3 @@
-tmp*
 __pycache__
+tmp_*.log
+**/tmp_*/*.csv

@@ -74,8 +74,8 @@ impl LoadGenerator {
             log::warn!("Enabled prio_local");
         } else if cfg!(feature = "prio_local_early") {
             log::warn!("Enabled prio_local_early");
-        } else if cfg!(feature = "fifo_two") {
-            log::warn!("Enabled fifo_two");
+        } else if cfg!(feature = "fifo_infra") {
+            log::warn!("Enabled fifo_infra");
         } else if cfg!(feature = "fifo") {
             log::warn!("Enabled fifo");
         } else {
@@ -256,13 +256,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::info!("Hotel config: {:?}", hotel_cfg);
+    log::warn!("Hotel config: {:?}", hotel_cfg);
     let gen_cfg: GenConfig = {
         let file = File::open(args.gen_config).expect("Failed to open file");
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::info!("Gen config: {:?}", gen_cfg);
+    log::warn!("Gen config: {:?}", gen_cfg);
 
     for rps in &gen_cfg.rps_values {
         log::warn!("Running rps: {}", rps);

@@ -47,7 +47,7 @@ cd $current_dir
 
 
 if [ -z "$output" ]; then
-    echo "Set --output to snippets/$features"
+    echo "Output to snippets/$features"
     output=snippets/$features
 fi
 
@@ -58,22 +58,40 @@ services=(
     "hotel_rate"
     "hotel_search"
     "hotel_profile"
+    "hotel_reservation"
+    "hotel_user"
     "hotel_frontend"
     "hotel_open_loop_bench"
 )
 waits_secs=(
     0
     0
-    10
+    15
     0
-    20
-    26
+    0
+    0
+    18
+    21
 )
 rust_log=warn
 
+init() {
+    if tmux has-session -t $session_name 2>/dev/null; then
+        tmux kill-session -t $session_name
+    fi
+}
+
+build() {
+    echo "Building $features..."
+    cargo build \
+        --release \
+        --features $features \
+        >$output/tmp_build.log 2>&1
+}
+
 reset() {
     rm $output/*.log
-    docker compose -f scripts/local/containers.yaml down -v --remove-orphans
+    docker compose -f scripts/local/containers.yaml down --remove-orphans
     docker compose -f scripts/local/containers.yaml up -d
 }
 
@@ -139,12 +157,13 @@ $run_cmd"
             all_done=true
         fi
     done
+    tmux kill-session -t $session_name
 }
 
+init
+build
+
 for ((run = 0; run < repeats; run++)); do
-    if tmux has-session -t $session_name 2>/dev/null; then
-        tmux kill-session -t $session_name
-    fi
     echo "Starting run $run/$repeats..."
     reset
 

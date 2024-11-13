@@ -51,12 +51,16 @@ name = "hotel_reservation"
 path = "src/hotel/reservation/main.rs"
 
 [[bin]]
+name = "hotel_user"
+path = "src/hotel/user/main.rs"
+
+[[bin]]
 name = "recommendation-server"
 path = "src/hotel/recommendation/main.rs"
 
-[[bin]]
-name = "recommendation-client"
-path = "src/hotel/recommendation/client.rs"
+# [[bin]]
+# name = "recommendation-client"
+# path = "src/hotel/recommendation/client.rs"
 
 
 [features]
@@ -75,7 +79,7 @@ prio_local_early = [
 	"async-executor/prio_local_early",
 	"tonic-masa/prio_local_early",
 ]
-fifo_two = ["async-executor/fifo_two", "tonic-masa/fifo_two"]
+fifo_infra = ["async-executor/fifo_infra", "tonic-masa/fifo_infra"]
 fifo = ["async-executor/fifo", "tonic-masa/fifo"]
 synthetic = []
 workload_stats = []

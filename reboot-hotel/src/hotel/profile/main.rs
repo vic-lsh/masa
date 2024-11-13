@@ -33,20 +33,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::info!("Hotel config: {:?}", cfg);
+    log::warn!("Hotel config: {:?}", cfg);
 
     let profile = ProfileImpl::new(
         cfg.hotels,
         cfg.payload,
         cfg.profile_memcached_addr,
-        cfg.cache_conn,
-        cfg.cache_miss_rate,
+        cfg.cache_conns,
+        cfg.prob_cache_miss,
         cfg.profile_mongodb_addr,
     )
     .await?;
 
     let profile_addr = "[::1]:8664".parse().expect("Failed to parse address");
-    log::info!("Server listening on {}...", profile_addr);
+    log::warn!("Server listening on {}...", profile_addr);
     Server::builder()
         .add_service(ProfileServer::new(profile))
         .serve_with_masa(profile_addr)
