@@ -4,7 +4,7 @@ pub mod hotel {
     }
 }
 use chrono::DateTime;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 
@@ -311,11 +311,180 @@ impl Reservation for ReservationImpl {
         &self,
         req: Request<reservation::ReservationRequest>,
     ) -> Result<Response<reservation::ReservationResponse>, Status> {
-        todo!()
+        use futures::StreamExt;
+        // todo!()
         // // let ctx = request.metadata().get_ctx("ctx").unwrap();
         // let request = request.into_inner();
         // let response = self.check_availability(request).await;
         // Ok(Response::new(response))
+
+        let req = req.into_inner();
+        let mut resp = reservation::ReservationResponse {
+            hotel_id: Vec::new(),
+        };
+
+        // Create hotel memory keys and maps
+        let mut hotel_mem_keys = Vec::new();
+        let mut keys_map = HashSet::new();
+        let mut res_map: HashMap<String, bool> = HashMap::new();
+
+        for hotel_id in &req.hotel_id {
+            let cap_key = format!("{}_cap", hotel_id);
+            hotel_mem_keys.push(cap_key.clone());
+            res_map.insert(hotel_id.clone(), true);
+            keys_map.insert(cap_key);
+        }
+
+        // Get capacity from memcached
+        let mut cache_cap = HashMap::new();
+        let mut miss_keys = Vec::new();
+
+        for key in &hotel_mem_keys {
+            match self.memc_client.get(key) {
+                Ok(Some(value)) => {
+                    if let Ok(cap) = String::from_utf8(value).unwrap_or_default().parse::<i32>() {
+                        cache_cap.insert(key.clone(), cap);
+                    }
+                }
+                _ => {
+                    miss_keys.push(key.clone());
+                }
+            }
+        }
+
+        // Handle cache misses with MongoDB
+        if !miss_keys.is_empty() {
+            let num_collection = self
+                .mongo_client
+                .database("reservation-db")
+                .collection::<db::Number>("number");
+
+            let query_miss_keys: Vec<String> = miss_keys
+                .iter()
+                .map(|k| k.split('_').next().unwrap().to_string())
+                .collect();
+
+            let mut cursor = num_collection
+                .find(doc! { "hotelId": { "$in": &query_miss_keys } }, None)
+                .await
+                .map_err(|e| tonic::Status::internal(format!("mongo error: {}", e)))?;
+
+            while let Some(doc) = cursor.next().await {
+                if let Ok(num) = doc {
+                    cache_cap.insert(format!("{}_cap", num.hotel_id), num.number);
+
+                    // Async set to memcached
+                    let key = format!("{}_cap", num.hotel_id);
+                    let value = num.number.to_string();
+                    let mc = self.memc_client.clone();
+                    tokio::spawn(async move {
+                        let _ = mc.set(&key, value.as_bytes(), 0);
+                    });
+                }
+            }
+        }
+
+        // Process date ranges and create queries
+        let mut query_map = HashMap::new();
+        let mut req_commands = Vec::new();
+
+        for hotel_id in &req.hotel_id {
+            let in_date =
+                DateTime::parse_from_rfc3339(&format!("{}T12:00:00+00:00", req.in_date)).unwrap();
+            let out_date =
+                DateTime::parse_from_rfc3339(&format!("{}T12:00:00+00:00", req.out_date)).unwrap();
+
+            let mut current_date = in_date;
+            while current_date < out_date {
+                let in_date_str = current_date.format("%Y-%m-%d").to_string();
+                current_date = current_date + chrono::Duration::days(1);
+                let out_date_str = current_date.format("%Y-%m-%d").to_string();
+
+                let memc_key = format!("{}_{}_{}", hotel_id, out_date_str, out_date_str);
+
+                req_commands.push(memc_key.clone());
+                query_map.insert(memc_key, (hotel_id.clone(), in_date_str, out_date_str));
+            }
+        }
+
+        // Check reservations in parallel
+        let query_map = Arc::new(query_map);
+        let res_map = Arc::new(Mutex::new(res_map));
+        let mut tasks = Vec::new();
+
+        for command in req_commands {
+            let query_map = Arc::clone(&query_map);
+            let res_map = Arc::clone(&res_map);
+            let memc_client = self.memc_client.clone();
+            let mongo_client = self.mongo_client.clone();
+            let cache_cap = cache_cap.clone();
+            let room_number = req.room_number;
+
+            tasks.push(tokio::spawn(async move {
+                // Try memcached first
+                match memc_client.get(&command) {
+                    Ok(Some(value)) => {
+                        if let Ok(count) =
+                            String::from_utf8(value).unwrap_or_default().parse::<i32>()
+                        {
+                            let (hotel_id, _, _) = query_map.get(&command).unwrap();
+                            let cap = cache_cap.get(&format!("{}_cap", hotel_id)).unwrap_or(&0);
+
+                            if count + room_number > *cap {
+                                let mut map = res_map.lock().unwrap();
+                                map.insert(hotel_id.clone(), false);
+                            }
+                        }
+                    }
+                    _ => {
+                        // Query MongoDB on cache miss
+                        if let Some((hotel_id, start_date, end_date)) = query_map.get(&command) {
+                            let collection = mongo_client
+                                .database("reservation-db")
+                                .collection::<db::Reservation>("reservation");
+
+                            let filter = doc! {
+                                "hotelId": hotel_id,
+                                "inDate": start_date,
+                                "outDate": end_date
+                            };
+
+                            if let Ok(mut cursor) = collection.find(filter, None).await {
+                                let mut count = 0;
+                                while let Some(Ok(reservation)) = cursor.next().await {
+                                    count += reservation.number;
+                                }
+
+                                // Update memcached
+                                let _ = memc_client.set(&command, count.to_string().as_bytes(), 0);
+
+                                let cap = cache_cap.get(&format!("{}_cap", hotel_id)).unwrap_or(&0);
+                                if count + room_number > *cap {
+                                    let mut map = res_map.lock().unwrap();
+                                    map.insert(hotel_id.clone(), false);
+                                }
+                            }
+                        }
+                    }
+                }
+            }));
+        }
+
+        // Wait for all tasks to complete
+        for task in tasks {
+            let _ = task.await;
+        }
+
+        // Collect results
+        let res_map = Arc::try_unwrap(res_map).unwrap().into_inner().unwrap();
+
+        for (hotel_id, available) in res_map {
+            if available {
+                resp.hotel_id.push(hotel_id);
+            }
+        }
+
+        Ok(Response::new(resp))
     }
 
     async fn make_reservation(
