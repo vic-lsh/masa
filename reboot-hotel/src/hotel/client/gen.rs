@@ -1,12 +1,24 @@
-use crate::hotel::SearchRequest;
-
-// Randomly generate a new search request.
+// Randomly generate requests.
 //
-// [NOTE] this is a port of the original search request generation logic:
+// [NOTE] this is a port of the original request generation logic:
 // https://github.com/delimitrou/DeathStarBench/blob/6ecb09706140f8730b5385c08f1386c654c3c526/hotelReservation/wrk2/scripts/hotel-reservation/mixed-workload_type_1.lua#L17
-pub fn gen_search_request() -> SearchRequest {
-    use rand::Rng;
 
+use crate::hotel::{ReservationRequest, SearchRequest};
+use rand::Rng;
+
+fn get_user() -> (String, String) {
+    let mut rng = rand::thread_rng();
+    let id = rng.gen_range(0..=500);
+
+    let user_name = format!("Cornell_{}", id);
+
+    // Create password by repeating id 10 times
+    let pass_word = id.to_string().repeat(10);
+
+    (user_name, pass_word)
+}
+
+pub fn gen_search_request() -> SearchRequest {
     let mut rng = rand::thread_rng();
 
     // Generate random dates
@@ -37,5 +49,42 @@ pub fn gen_search_request() -> SearchRequest {
         in_date,
         out_date,
         locale: None,
+    }
+}
+
+pub fn gen_reserve_request() -> ReservationRequest {
+    let mut rng = rand::thread_rng();
+
+    // Generate random dates
+    let in_date = rng.gen_range(9..=23);
+    let out_date = in_date + rng.gen_range(1..=5);
+
+    // Format dates
+    let in_date_str = if in_date <= 9 {
+        format!("2015-04-0{}", in_date)
+    } else {
+        format!("2015-04-{}", in_date)
+    };
+
+    let out_date_str = if out_date <= 9 {
+        format!("2015-04-0{}", out_date)
+    } else {
+        format!("2015-04-{}", out_date)
+    };
+
+    let hotel_id = rng.gen_range(1..=80).to_string();
+
+    let (user_id, password) = get_user();
+    let cust_name = user_id.clone();
+    let num_room = 1;
+
+    ReservationRequest {
+        username: user_id,
+        password,
+        customer: cust_name,
+        hotels: vec![hotel_id],
+        in_date: in_date_str,
+        out_date: out_date_str,
+        num_rooms: num_room,
     }
 }
