@@ -43,8 +43,8 @@ message ReservationRequest {
   string password = 2;
   string customer = 11;
   repeated string hotels = 12;
-  uint32 inDate = 13;
-  uint32 outDate = 14;
+  string inDate = 13;
+  string outDate = 14;
   uint32 numRooms = 15;
 }
 

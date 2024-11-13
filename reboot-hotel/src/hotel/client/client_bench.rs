@@ -236,158 +236,160 @@ impl LoadGenerator {
             let err_client_ot = cnt_err_client_ot.clone();
 
             if api == "Search" {
-                let request = {
-                    let customer = "Customer".to_string();
-                    let ave = (ctx.request_id() % self.hotel_cfg.hotels as u64) as u32;
-                    let dates = {
-                        let in_date =
-                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
-                        let out_date =
-                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
-                        if in_date < out_date {
-                            (in_date, out_date + 1)
-                        } else {
-                            (out_date, in_date + 1)
-                        }
-                    };
-                    let search_request = SearchRequest {
-                        customer,
-                        ave,
-                        in_date: dates.0,
-                        out_date: dates.1,
-                    };
-                    let mut request = tonic::Request::new(search_request);
-                    request.metadata_mut().insert_ctx("ctx", &ctx);
-                    request
-                };
+                todo!();
+                // let request = {
+                //     let customer = "Customer".to_string();
+                //     let ave = (ctx.request_id() % self.hotel_cfg.hotels as u64) as u32;
+                //     let dates = {
+                //         let in_date =
+                //             uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
+                //         let out_date =
+                //             uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
+                //         if in_date < out_date {
+                //             (in_date, out_date + 1)
+                //         } else {
+                //             (out_date, in_date + 1)
+                //         }
+                //     };
+                //     let search_request = SearchRequest {
+                //         customer,
+                //         ave,
+                //         in_date: dates.0,
+                //         out_date: dates.1,
+                //     };
+                //     let mut request = tonic::Request::new(search_request);
+                //     request.metadata_mut().insert_ctx("ctx", &ctx);
+                //     request
+                // };
 
-                tokio::task::spawn(async move {
-                    let send_at = time_now();
-                    let timeout_duration = Duration::from_secs(1);
-                    let response = timeout(timeout_duration, client.handle_search(request)).await;
-                    match response {
-                        Ok(response) => {
-                            if Instant::now() > trace_at {
-                                let recv_at = time_now();
-                                let latency = recv_at - send_at;
-                                let error = {
-                                    if let Err(ref status) = response {
-                                        status.message().to_string()
-                                    } else if latency > ctx.slo() {
-                                        "/LGMiss".to_string()
-                                    } else {
-                                        "/None".to_string()
-                                    }
-                                };
-                                if error == "/None" {
-                                    good.fetch_add(1, Ordering::Relaxed);
-                                } else if error == "/LGMiss" {
-                                    err_client.fetch_add(1, Ordering::Relaxed);
-                                } else {
-                                    err_svc.fetch_add(1, Ordering::Relaxed);
-                                }
-                                let span = Span::new(ctx, latency, error);
-                                trace_tx.try_send(span).unwrap();
-                            }
-                        }
-                        Err(_) => {
-                            if Instant::now() > trace_at {
-                                err_client_ot.fetch_add(1, Ordering::Relaxed);
-                                let error = "/LGTimeout".to_string();
-                                let span = Span::new(ctx, 0, error);
-                                trace_tx.try_send(span).unwrap();
-                            }
-                        }
-                    }
-                });
+                // tokio::task::spawn(async move {
+                //     let send_at = time_now();
+                //     let timeout_duration = Duration::from_secs(1);
+                //     let response = timeout(timeout_duration, client.handle_search(request)).await;
+                //     match response {
+                //         Ok(response) => {
+                //             if Instant::now() > trace_at {
+                //                 let recv_at = time_now();
+                //                 let latency = recv_at - send_at;
+                //                 let error = {
+                //                     if let Err(ref status) = response {
+                //                         status.message().to_string()
+                //                     } else if latency > ctx.slo() {
+                //                         "/LGMiss".to_string()
+                //                     } else {
+                //                         "/None".to_string()
+                //                     }
+                //                 };
+                //                 if error == "/None" {
+                //                     good.fetch_add(1, Ordering::Relaxed);
+                //                 } else if error == "/LGMiss" {
+                //                     err_client.fetch_add(1, Ordering::Relaxed);
+                //                 } else {
+                //                     err_svc.fetch_add(1, Ordering::Relaxed);
+                //                 }
+                //                 let span = Span::new(ctx, latency, error);
+                //                 trace_tx.try_send(span).unwrap();
+                //             }
+                //         }
+                //         Err(_) => {
+                //             if Instant::now() > trace_at {
+                //                 err_client_ot.fetch_add(1, Ordering::Relaxed);
+                //                 let error = "/LGTimeout".to_string();
+                //                 let span = Span::new(ctx, 0, error);
+                //                 trace_tx.try_send(span).unwrap();
+                //             }
+                //         }
+                //     }
+                // });
             } else if api == "Reservation" {
-                let request = {
-                    let accounts = {
-                        let id = uniform.sample(&mut self.rng) % self.hotel_cfg.user_users as u32;
-                        let username = format!("Username_{}", id);
-                        let password = format!("Password_{}", id);
-                        (username, password)
-                    };
-                    let hotels = {
-                        let lhs = uniform.sample(&mut self.rng) % self.hotel_cfg.hotels as u32;
-                        let rhs = cmp::min(
-                            lhs + uniform.sample(&mut self.rng)
-                                % self.hotel_cfg.reservation_hotels as u32
-                                + 1,
-                            self.hotel_cfg.hotels,
-                        );
-                        let mut hotels = Vec::new();
-                        for i in lhs..rhs {
-                            hotels.push(format!("Sheraton_Ave_{}", i));
-                        }
-                        hotels
-                    };
-                    let dates = {
-                        let in_date =
-                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
-                        let out_date =
-                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
-                        if in_date < out_date {
-                            (in_date, out_date + 1)
-                        } else {
-                            (out_date, in_date + 1)
-                        }
-                    };
-                    let num_rooms = 1;
-                    let reservation_request = ReservationRequest {
-                        username: accounts.0,
-                        password: accounts.1,
-                        customer: "Customer".to_string(),
-                        hotels,
-                        in_date: dates.0,
-                        out_date: dates.1,
-                        num_rooms,
-                    };
-                    let mut request = tonic::Request::new(reservation_request);
-                    request.metadata_mut().insert_ctx("ctx", &ctx);
-                    request
-                };
+                todo!();
+                // let request = {
+                //     let accounts = {
+                //         let id = uniform.sample(&mut self.rng) % self.hotel_cfg.user_users as u32;
+                //         let username = format!("Username_{}", id);
+                //         let password = format!("Password_{}", id);
+                //         (username, password)
+                //     };
+                //     let hotels = {
+                //         let lhs = uniform.sample(&mut self.rng) % self.hotel_cfg.hotels as u32;
+                //         let rhs = cmp::min(
+                //             lhs + uniform.sample(&mut self.rng)
+                //                 % self.hotel_cfg.reservation_hotels as u32
+                //                 + 1,
+                //             self.hotel_cfg.hotels,
+                //         );
+                //         let mut hotels = Vec::new();
+                //         for i in lhs..rhs {
+                //             hotels.push(format!("Sheraton_Ave_{}", i));
+                //         }
+                //         hotels
+                //     };
+                //     let dates = {
+                //         let in_date =
+                //             uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
+                //         let out_date =
+                //             uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
+                //         if in_date < out_date {
+                //             (in_date, out_date + 1)
+                //         } else {
+                //             (out_date, in_date + 1)
+                //         }
+                //     };
+                //     let num_rooms = 1;
+                //     let reservation_request = ReservationRequest {
+                //         username: accounts.0,
+                //         password: accounts.1,
+                //         customer: "Customer".to_string(),
+                //         hotels,
+                //         in_date: dates.0,
+                //         out_date: dates.1,
+                //         num_rooms,
+                //     };
+                //     let mut request = tonic::Request::new(reservation_request);
+                //     request.metadata_mut().insert_ctx("ctx", &ctx);
+                //     request
+                // };
 
-                tokio::task::spawn(async move {
-                    let send_at = time_now();
-                    let timeout_duration = Duration::from_secs(1);
-                    let response =
-                        timeout(timeout_duration, client.handle_reservation(request)).await;
-                    match response {
-                        Ok(response) => {
-                            if Instant::now() > trace_at {
-                                let recv_at = time_now();
-                                let latency = recv_at - send_at;
-                                let error = {
-                                    if let Err(ref status) = response {
-                                        status.message().to_string()
-                                    } else if latency > ctx.slo() {
-                                        "/LGMiss".to_string()
-                                    } else {
-                                        "/None".to_string()
-                                    }
-                                };
-                                if error == "/None" {
-                                    good.fetch_add(1, Ordering::Relaxed);
-                                } else if error == "/LGMiss" {
-                                    err_client.fetch_add(1, Ordering::Relaxed);
-                                } else {
-                                    err_svc.fetch_add(1, Ordering::Relaxed);
-                                }
-                                let span = Span::new(ctx, latency, error);
-                                trace_tx.try_send(span).unwrap();
-                            }
-                        }
-                        Err(_) => {
-                            if Instant::now() > trace_at {
-                                err_client_ot.fetch_add(1, Ordering::Relaxed);
-                                let error = "/LGTimeout".to_string();
-                                let span = Span::new(ctx, 0, error);
-                                trace_tx.try_send(span).unwrap();
-                            }
-                        }
-                    }
-                });
+                // tokio::task::spawn(async move {
+                //     let send_at = time_now();
+                //     let timeout_duration = Duration::from_secs(1);
+                //     let response =
+                //         timeout(timeout_duration, client.handle_reservation(request)).await;
+                //     match response {
+                //         Ok(response) => {
+                //             if Instant::now() > trace_at {
+                //                 let recv_at = time_now();
+                //                 let latency = recv_at - send_at;
+                //                 let error = {
+                //                     if let Err(ref status) = response {
+                //                         status.message().to_string()
+                //                     } else if latency > ctx.slo() {
+                //                         "/LGMiss".to_string()
+                //                     } else {
+                //                         "/None".to_string()
+                //                     }
+                //                 };
+                //                 if error == "/None" {
+                //                     good.fetch_add(1, Ordering::Relaxed);
+                //                 } else if error == "/LGMiss" {
+                //                     err_client.fetch_add(1, Ordering::Relaxed);
+                //                 } else {
+                //                     err_svc.fetch_add(1, Ordering::Relaxed);
+                //                 }
+                //                 let span = Span::new(ctx, latency, error);
+                //                 trace_tx.try_send(span).unwrap();
+                //             }
+                //         }
+                //         Err(_) => {
+                //             if Instant::now() > trace_at {
+                //                 err_client_ot.fetch_add(1, Ordering::Relaxed);
+                //                 let error = "/LGTimeout".to_string();
+                //                 let span = Span::new(ctx, 0, error);
+                //                 trace_tx.try_send(span).unwrap();
+                //             }
+                //         }
+                //     }
+                // });
             } else {
                 panic!("Unimplemented API");
             }
