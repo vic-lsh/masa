@@ -377,9 +377,10 @@ impl Reservation for ReservationImpl {
                     let key = format!("{}_cap", num.hotel_id);
                     let value = num.number.to_string();
                     let mc = self.memc_client.clone();
-                    tokio::spawn(async move {
+                    async_executor::spawn(async move {
                         let _ = mc.set(&key, value.as_bytes(), 0);
-                    });
+                    })
+                    .detach();
                 }
             }
         }
@@ -420,7 +421,7 @@ impl Reservation for ReservationImpl {
             let cache_cap = cache_cap.clone();
             let room_number = req.room_number;
 
-            tasks.push(tokio::spawn(async move {
+            tasks.push(async_executor::spawn(async move {
                 // Try memcached first
                 match memc_client.get(&command) {
                     Ok(Some(value)) => {
@@ -546,9 +547,9 @@ impl Reservation for ReservationImpl {
                 Ok(None) => {
                     // Memcached miss
                     let filter = doc! {
-                        "hotel_id": hotel_id,
-                        "in_date": &in_date_str,
-                        "out_date": &out_date_str
+                        "hotelId": hotel_id,
+                        "inDate": &in_date_str,
+                        "outDate": &out_date_str
                     };
 
                     let mut reservations = res_collection.find(filter, None).await.unwrap();
@@ -572,12 +573,12 @@ impl Reservation for ReservationImpl {
                     value.parse::<i32>().unwrap()
                 }
                 Ok(None) => {
-                    let filter = doc! { "hotel_id": hotel_id };
+                    let filter = doc! { "hotelId": hotel_id };
                     let num = num_collection
                         .find_one(filter, None)
                         .await
                         .unwrap()
-                        .unwrap();
+                        .expect(&format!("should find hotel {}", hotel_id));
 
                     let cap = num.number;
                     self.memc_client
