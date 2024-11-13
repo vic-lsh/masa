@@ -30,9 +30,9 @@ services:
   profile-mongo:
     image: mongo:7.0
     container_name: "profile_mongo"
-    command: --port 27008
+    command: --port 27004
     ports:
-      - "27008:27008"
+      - "27004:27004"
     #network_mode: "host"
     restart: always
     volumes:
@@ -45,9 +45,9 @@ services:
   profile-memcached:
     image: memcached:1.6
     container_name: "profile_memcached"
-    command: --port 12004
+    command: --port 11004
     ports:
-      - "12004:12004"
+      - "11004:11004"
       #network_mode: "host"
     restart: always
     deploy:
