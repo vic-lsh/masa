@@ -1,5 +1,6 @@
 #[path = "../config.rs"]
 pub mod config;
+mod db;
 pub mod server;
 
 use std::fs::File;

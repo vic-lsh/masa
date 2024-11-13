@@ -222,6 +222,8 @@ anyhow = "1.0"
 geo = "0.28"
 # used by the geo service
 kiddo = "4.2.1"
+# used by reservation service
+chrono = "0.4.38"
 
 
 [build-dependencies]
