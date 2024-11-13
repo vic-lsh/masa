@@ -13,6 +13,7 @@ Folder `search_reservation` runs `search:reservation=1:1` in one of `fifo`/`e2e`
 ## Ongoing
 
 ![fifo local_er](cmp/fig_goodput_rps_cmp_fifo_local_er_0.png)
+![e2e local](cmp/fig_goodput_rps_cmp_e2e_local_0.png)
 ![local local_er](cmp/fig_goodput_rps_cmp_local_local_er_0.png)
 ![e2e_er local_er](cmp/fig_goodput_rps_cmp_e2e_er_local_er_0.png)
 
