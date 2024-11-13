@@ -14,7 +14,7 @@ python3 $pwd/scripts/plots/plot_goodput.py \
 	--mode $mode \
 	--path $pwd/$snippets/$data
 
-# [TODO] Change $mode to $path.
+# [TODO]
 
 # echo "Plotting throughput..."
 # python3 $pwd/scripts/plots/plot_throughput.py \
