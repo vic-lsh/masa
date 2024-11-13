@@ -25,9 +25,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let frontend_addr = "[::1]:8660".parse().expect("Failed to parse address");
     let search_addr = "http://[::1]:8661".to_string();
+    let reservation_addr = "http://[::1]:8665".to_string();
     let profile_addr = "http://[::1]:8664".to_string();
+    let user_addr = "http://[::1]:8666".to_string();
 
-    let frontend = FrontendImpl::new(search_addr, profile_addr).await;
+    let frontend = FrontendImpl::new(search_addr, reservation_addr, profile_addr, user_addr).await;
     log::info!("Server listening on {}...", frontend_addr);
     Server::builder()
         .add_service(FrontendServer::new(frontend))

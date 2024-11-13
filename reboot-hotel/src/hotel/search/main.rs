@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rate_addr = "http://[::1]:8663".to_string();
 
     let search = SearchImpl::new(geo_addr, rate_addr).await;
-    log::info!("Server listening on {}...", search_addr);
+    log::warn!("Server listening on {}...", search_addr);
     Server::builder()
         .add_service(SearchServer::new(search))
         .serve_with_masa(search_addr)

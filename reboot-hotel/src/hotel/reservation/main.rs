@@ -31,20 +31,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::info!("Hotel config: {:?}", cfg);
+    log::warn!("Hotel config: {:?}", cfg);
 
     let reservation = ReservationImpl::new(
         cfg.hotels,
-        cfg.payload,
+        cfg.reservation_dates,
+        cfg.reservation_prob_hotel_avail,
         cfg.reservation_memcached_addr,
-        cfg.cache_conn,
-        cfg.cache_miss_rate,
+        cfg.cache_conns,
+        cfg.prob_cache_miss,
         cfg.reservation_mongodb_addr,
     )
     .await?;
 
     let reservation_addr = "[::1]:8665".parse().expect("Failed to parse address");
-    log::info!("Server listening on {}...", reservation_addr);
+    log::warn!("Server listening on {}...", reservation_addr);
     Server::builder()
         .add_service(ReservationServer::new(reservation))
         .serve_with_masa(reservation_addr)

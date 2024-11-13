@@ -5,6 +5,7 @@ pub mod hotel {
 }
 mod gen;
 
+use std::cmp;
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
@@ -23,11 +24,11 @@ use tokio::time::{timeout, Duration, Instant};
 
 use tonic::transport::Channel;
 use tonic_masa::{
-    Context, GraphId, FIFO, FIFO_TWO, PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
+    Context, FIFO, FIFO_INFRA, PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
 
 use config::{GenConfig, HotelConfig};
-use hotel::frontend_client::FrontendClient;
+use hotel::{frontend_client::FrontendClient, ReservationRequest, SearchRequest};
 use reboot_hotel::{fetch_traces, init_logging, time_now, Span};
 
 #[derive(StructOpt, Debug, Clone)]
@@ -46,7 +47,6 @@ struct LoadGenerator {
     _hotel_cfg: HotelConfig,
     gen_cfg: GenConfig,
     rng: StdRng,
-    graph_id: GraphId,
     rps: u64,
     client: FrontendClient<Channel>,
     trace_tx: Sender<Span>,
@@ -57,7 +57,6 @@ impl LoadGenerator {
         _hotel_cfg: HotelConfig,
         gen_cfg: GenConfig,
         rng: StdRng,
-        graph_id: GraphId,
         rps: u64,
         client: FrontendClient<Channel>,
         trace_tx: Sender<Span>,
@@ -74,8 +73,8 @@ impl LoadGenerator {
             log::warn!("Enabled prio_local");
         } else if cfg!(feature = "prio_local_early") {
             log::warn!("Enabled prio_local_early");
-        } else if cfg!(feature = "fifo_two") {
-            log::warn!("Enabled fifo_two");
+        } else if cfg!(feature = "fifo_infra") {
+            log::warn!("Enabled fifo_infra");
         } else if cfg!(feature = "fifo") {
             log::warn!("Enabled fifo");
         } else {
@@ -85,7 +84,6 @@ impl LoadGenerator {
             _hotel_cfg,
             gen_cfg,
             rng,
-            graph_id,
             rps,
             client,
             trace_tx,
@@ -100,22 +98,19 @@ impl LoadGenerator {
         let pause_at =
             init_at + Duration::from_secs(self.gen_cfg.warmup_secs + self.gen_cfg.duration_secs);
 
-        let cnt_all_reqs_generated = Arc::new(AtomicUsize::new(0));
-        let cnt_all_reqs = Arc::new(AtomicUsize::new(0));
+        let cnt_all = Arc::new(AtomicUsize::new(0));
         let cnt_success = Arc::new(AtomicUsize::new(0));
         let cnt_err_svc = Arc::new(AtomicUsize::new(0));
         let cnt_err_client = Arc::new(AtomicUsize::new(0));
         let cnt_err_client_ot = Arc::new(AtomicUsize::new(0));
 
-        let cnt_all_reqs_generated_clone = cnt_all_reqs_generated.clone();
-        let cnt_all_reqs_clone = cnt_all_reqs.clone();
+        let cnt_all_clone = cnt_all.clone();
         let cnt_success_clone = cnt_success.clone();
         let cnt_err_svc_clone = cnt_err_svc.clone();
         let cnt_err_client_clone = cnt_err_client.clone();
         let cnt_err_client_ot_clone = cnt_err_client_ot.clone();
 
         tokio::task::spawn(async move {
-            let mut gen_prev = 0;
             let mut all_prev = 0;
             let mut succ_prev = 0;
             let mut err_svc_prev = 0;
@@ -124,8 +119,7 @@ impl LoadGenerator {
             let mut secs = 0;
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                let gen = cnt_all_reqs_generated_clone.load(Ordering::Relaxed);
-                let all = cnt_all_reqs_clone.load(Ordering::Relaxed);
+                let all = cnt_all_clone.load(Ordering::Relaxed);
                 let succ = cnt_success_clone.load(Ordering::Relaxed);
                 let err_svc = cnt_err_svc_clone.load(Ordering::Relaxed);
                 let err_client = cnt_err_client_clone.load(Ordering::Relaxed);
@@ -133,25 +127,27 @@ impl LoadGenerator {
 
                 secs += 1;
 
-                let gen_ps = gen - gen_prev;
                 let rps = all - all_prev;
                 let good_ps = succ - succ_prev;
                 let err_svc_ps = err_svc - err_svc_prev;
                 let err_cl_ps = err_client - err_client_prev;
                 let err_cl_ot_ps = err_client_ot - err_client_to_prev;
                 log::warn!(
-                    "secs: {}, gen: {}, rps: {}, good: {}, err_svc: {} err_cl: {}, err_cl_ot: {}, err_svc_sum: {}, cl_sum: {}",
+                    "secs: {}, rps: {}, good: {}, err_svc: {} err_cl: {}, err_cl_ot: {}",
                     secs,
-                    gen_ps,
                     rps,
                     good_ps,
                     err_svc_ps,
                     err_cl_ps,
                     err_cl_ot_ps,
+                );
+                log::warn!(
+                    "secs: {}, err_svc_sum: {}, err_cl_sum: {}, err_cl_ot_sum: {}",
+                    secs,
                     err_svc,
                     err_client,
+                    err_client_ot,
                 );
-                gen_prev = gen;
                 all_prev = all;
                 succ_prev = succ;
                 err_svc_prev = err_svc;
@@ -167,7 +163,7 @@ impl LoadGenerator {
         let mut counter_test_id = 0;
         let mut elapse = 0f64;
         // let exponential = Exp::new(self.rps as f64).unwrap();
-        let uniform = Uniform::new(0, 1_000_000_007);
+        let uniform = Uniform::<u32>::new(0, 1_000_000_007);
 
         loop {
             if Instant::now() > pause_at {
@@ -187,22 +183,23 @@ impl LoadGenerator {
             };
             elapse += value;
 
+            let api_idx = uniform.sample(&mut self.rng) as usize % self.gen_cfg.apis.len();
+            let api = self.gen_cfg.apis[api_idx].clone();
+            let slo = self.gen_cfg.slos[api_idx];
+
             let ctx = {
                 let test_id = counter_test_id;
                 counter_test_id += 1;
                 let request_id = uniform.sample(&mut self.rng) as u64;
                 let request_class = 0;
-                let graph_id = self.graph_id.clone();
-                let slo = self.gen_cfg.slo;
 
                 let start_at = time_now();
                 let deadline = {
                     if PRIO_GLOBAL || PRIO_GLOBAL_EARLY || PRIO_LOCAL || PRIO_LOCAL_EARLY {
                         // [DEPRECATED] Relative start time.
                         // let start_at = time_now() - init_at_u64;
-                        // start_at + slo
                         start_at + slo
-                    } else if FIFO_TWO || FIFO {
+                    } else if FIFO_INFRA || FIFO {
                         slo
                     } else {
                         panic!("Unimplemented policy")
@@ -211,7 +208,7 @@ impl LoadGenerator {
                 let latest_exec_at = deadline;
 
                 Context::new(
-                    graph_id.clone(),
+                    api.clone(),
                     test_id,
                     request_id,
                     slo,
@@ -222,70 +219,179 @@ impl LoadGenerator {
                 )
             };
 
-            let request = {
-                let search_request = gen_search_request();
-                let mut request = tonic::Request::new(search_request);
-                request.metadata_mut().insert_ctx("ctx", &ctx);
+            // let request = {
+            //     let search_request = gen_search_request();
+            //     let mut request = tonic::Request::new(search_request);
+            //     request.metadata_mut().insert_ctx("ctx", &ctx);
 
-                request
-            };
+            //     request
+            // };
 
             let mut client = self.client.clone();
             let trace_tx = self.trace_tx.clone();
-            let all = cnt_all_reqs.clone();
+            let all = cnt_all.clone();
             let good = cnt_success.clone();
             let err_svc = cnt_err_svc.clone();
             let err_client = cnt_err_client.clone();
             let err_client_ot = cnt_err_client_ot.clone();
 
-            tokio::task::spawn(async move {
-                let send_at = time_now();
-                let timeout_duration = Duration::from_secs(1);
-                match timeout(timeout_duration, client.handle_search(request)).await {
-                    Ok(response) => {
-                        if Instant::now() > trace_at {
-                            let recv_at = time_now();
-                            let latency = recv_at - send_at;
-                            let fe_latency = {
-                                if let Some(response) = response.as_ref().ok() {
-                                    let ctx = response.metadata().get_ctx("ctx").unwrap();
-                                    ctx.frontend_elapse().unwrap()
+            if api == "Search" {
+                let request = {
+                    let customer = "Customer".to_string();
+                    let ave = (ctx.request_id() % self.hotel_cfg.hotels as u64) as u32;
+                    let dates = {
+                        let in_date =
+                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
+                        let out_date =
+                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
+                        if in_date < out_date {
+                            (in_date, out_date + 1)
+                        } else {
+                            (out_date, in_date + 1)
+                        }
+                    };
+                    let search_request = SearchRequest {
+                        customer,
+                        ave,
+                        in_date: dates.0,
+                        out_date: dates.1,
+                    };
+                    let mut request = tonic::Request::new(search_request);
+                    request.metadata_mut().insert_ctx("ctx", &ctx);
+                    request
+                };
+
+                tokio::task::spawn(async move {
+                    let send_at = time_now();
+                    let timeout_duration = Duration::from_secs(1);
+                    let response = timeout(timeout_duration, client.handle_search(request)).await;
+                    match response {
+                        Ok(response) => {
+                            if Instant::now() > trace_at {
+                                let recv_at = time_now();
+                                let latency = recv_at - send_at;
+                                let error = {
+                                    if let Err(ref status) = response {
+                                        status.message().to_string()
+                                    } else if latency > ctx.slo() {
+                                        "/LGMiss".to_string()
+                                    } else {
+                                        "/None".to_string()
+                                    }
+                                };
+                                if error == "/None" {
+                                    good.fetch_add(1, Ordering::Relaxed);
+                                } else if error == "/LGMiss" {
+                                    err_client.fetch_add(1, Ordering::Relaxed);
                                 } else {
-                                    0
+                                    err_svc.fetch_add(1, Ordering::Relaxed);
                                 }
-                            };
-                            let error = {
-                                if let Err(ref status) = response {
-                                    status.message().to_string()
-                                } else if latency > ctx.slo() {
-                                    "/LGMiss".to_string()
-                                } else {
-                                    "/None".to_string()
-                                }
-                            };
-                            if error == "/None" {
-                                good.fetch_add(1, Ordering::Relaxed);
-                            } else if error == "/LGMiss" {
-                                err_client.fetch_add(1, Ordering::Relaxed);
-                            } else {
-                                err_svc.fetch_add(1, Ordering::Relaxed);
+                                let span = Span::new(ctx, latency, error);
+                                trace_tx.try_send(span).unwrap();
                             }
-                            let span = Span::new(ctx, latency, fe_latency, error);
-                            trace_tx.try_send(span).unwrap();
+                        }
+                        Err(_) => {
+                            if Instant::now() > trace_at {
+                                err_client_ot.fetch_add(1, Ordering::Relaxed);
+                                let error = "/LGTimeout".to_string();
+                                let span = Span::new(ctx, 0, error);
+                                trace_tx.try_send(span).unwrap();
+                            }
                         }
                     }
-                    Err(_) => {
-                        if Instant::now() > trace_at {
-                            err_client_ot.fetch_add(1, Ordering::Relaxed);
-                            let error = "/LGTimeout".to_string();
-                            let span = Span::new(ctx, 0, 0, error);
-                            trace_tx.try_send(span).unwrap();
+                });
+            } else if api == "Reservation" {
+                let request = {
+                    let accounts = {
+                        let id = uniform.sample(&mut self.rng) % self.hotel_cfg.user_users as u32;
+                        let username = format!("Username_{}", id);
+                        let password = format!("Password_{}", id);
+                        (username, password)
+                    };
+                    let hotels = {
+                        let lhs = uniform.sample(&mut self.rng) % self.hotel_cfg.hotels as u32;
+                        let rhs = cmp::min(
+                            lhs + uniform.sample(&mut self.rng)
+                                % self.hotel_cfg.reservation_hotels as u32
+                                + 1,
+                            self.hotel_cfg.hotels,
+                        );
+                        let mut hotels = Vec::new();
+                        for i in lhs..rhs {
+                            hotels.push(format!("Sheraton_Ave_{}", i));
+                        }
+                        hotels
+                    };
+                    let dates = {
+                        let in_date =
+                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
+                        let out_date =
+                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
+                        if in_date < out_date {
+                            (in_date, out_date + 1)
+                        } else {
+                            (out_date, in_date + 1)
+                        }
+                    };
+                    let num_rooms = 1;
+                    let reservation_request = ReservationRequest {
+                        username: accounts.0,
+                        password: accounts.1,
+                        customer: "Customer".to_string(),
+                        hotels,
+                        in_date: dates.0,
+                        out_date: dates.1,
+                        num_rooms,
+                    };
+                    let mut request = tonic::Request::new(reservation_request);
+                    request.metadata_mut().insert_ctx("ctx", &ctx);
+                    request
+                };
+
+                tokio::task::spawn(async move {
+                    let send_at = time_now();
+                    let timeout_duration = Duration::from_secs(1);
+                    let response =
+                        timeout(timeout_duration, client.handle_reservation(request)).await;
+                    match response {
+                        Ok(response) => {
+                            if Instant::now() > trace_at {
+                                let recv_at = time_now();
+                                let latency = recv_at - send_at;
+                                let error = {
+                                    if let Err(ref status) = response {
+                                        status.message().to_string()
+                                    } else if latency > ctx.slo() {
+                                        "/LGMiss".to_string()
+                                    } else {
+                                        "/None".to_string()
+                                    }
+                                };
+                                if error == "/None" {
+                                    good.fetch_add(1, Ordering::Relaxed);
+                                } else if error == "/LGMiss" {
+                                    err_client.fetch_add(1, Ordering::Relaxed);
+                                } else {
+                                    err_svc.fetch_add(1, Ordering::Relaxed);
+                                }
+                                let span = Span::new(ctx, latency, error);
+                                trace_tx.try_send(span).unwrap();
+                            }
+                        }
+                        Err(_) => {
+                            if Instant::now() > trace_at {
+                                err_client_ot.fetch_add(1, Ordering::Relaxed);
+                                let error = "/LGTimeout".to_string();
+                                let span = Span::new(ctx, 0, error);
+                                trace_tx.try_send(span).unwrap();
+                            }
                         }
                     }
-                }
-                all.fetch_add(1, Ordering::Relaxed);
-            });
-            cnt_all_reqs_generated.fetch_add(1, Ordering::Relaxed);
+                });
+            } else {
+                panic!("Unimplemented API");
+            }
+            all.fetch_add(1, Ordering::Relaxed);
         }
 
         tokio::time::sleep(Duration::from_secs(3)).await;
@@ -304,16 +410,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::info!("Hotel config: {:?}", hotel_cfg);
+    log::warn!("Hotel config: {:?}", hotel_cfg);
     let gen_cfg: GenConfig = {
         let file = File::open(args.gen_config).expect("Failed to open file");
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::info!("Gen config: {:?}", gen_cfg);
+    log::warn!("Gen config: {:?}", gen_cfg);
 
     for rps in &gen_cfg.rps_values {
-        log::warn!("Running rps: {}", rps);
+        log::warn!("Running rps: {}...", rps);
 
         let output_path = gen_cfg.output.clone();
         let output = format!("{}/r{}_{}.csv", output_path, rps, args.run_idx);
@@ -323,7 +429,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             const KEY: u64 = 13;
             const SEED: u64 = 998244353;
 
-            let graph_id: GraphId = "Hotel".to_string();
             let seed = SEED * KEY + rps;
             let rng = StdRng::seed_from_u64(seed);
             let client = FrontendClient::connect(gen_cfg.addr.clone()).await?;
@@ -332,7 +437,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 hotel_cfg.clone(),
                 gen_cfg.clone(),
                 rng,
-                graph_id,
                 *rps,
                 client,
                 trace_tx,

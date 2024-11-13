@@ -4,6 +4,7 @@ package frontend;
 
 service Frontend {
   rpc HandleSearch(SearchRequest) returns (SearchResponse) {}
+  rpc HandleReservation(ReservationRequest) returns (ReservationResponse) {}
 }
 
 message SearchRequest {
@@ -36,3 +37,15 @@ message Hotel {
 // }
 
 // message Image { string url = 1; }
+
+message ReservationRequest {
+  string username = 1;
+  string password = 2;
+  string customer = 11;
+  repeated string hotels = 12;
+  uint32 inDate = 13;
+  uint32 outDate = 14;
+  uint32 numRooms = 15;
+}
+
+message ReservationResponse { repeated string hotels = 1; }
