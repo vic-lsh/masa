@@ -14,6 +14,7 @@ modes_list=(
 	"fifo local"
 	"fifo local_er"
 	"e2e e2e_er"
+	"e2e local"
 	"local local_er"
 	"e2e_er local_er"
 )
