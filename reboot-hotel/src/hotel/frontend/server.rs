@@ -67,7 +67,7 @@ impl Frontend for FrontendImpl {
         &self,
         request: Request<frontend::SearchRequest>,
     ) -> Result<Response<frontend::SearchResponse>, Status> {
-        let request_start = Instant::now();
+        let start = Instant::now();
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let request = request.into_inner();
 
@@ -75,28 +75,26 @@ impl Frontend for FrontendImpl {
         let search_req = search::NearbyRequest {
             lat: request.lat,
             lon: request.lon,
-            in_date: request.in_date,
-            out_date: request.out_date,
+            in_date: request.in_date.clone(),
+            out_date: request.out_date.clone(),
         };
         let search_resp = search_client.handle_nearby(search_req).await?;
         let response = search_resp.into_inner();
 
         let mut reservation_client = self.reservation_client.clone();
         let span_request = reservation::ReservationRequest {
-            customer: request.customer,
-            hotels: response.hotels.clone(),
+            customer_name: "".into(),
+            hotel_id: response.hotel_ids.clone(),
             in_date: request.in_date,
             out_date: request.out_date,
-            num_rooms: 0,
+            room_number: 1,
         };
-        let span_response = reservation_client
-            .handle_check_availability(span_request)
-            .await?;
+        let span_response = reservation_client.check_availability(span_request).await?;
         let response = span_response.into_inner();
 
         let mut profile_client = self.profile_client.clone();
         let profile_request = profile::ProfileRequest {
-            hotel_ids: response.hotel_ids,
+            hotel_ids: response.hotel_id,
             locale: request.locale.unwrap_or("en".to_string()),
         };
         let profile_response = profile_client.get_profiles(profile_request).await?;
@@ -147,23 +145,23 @@ impl Frontend for FrontendImpl {
 
         let mut reservation_client = self.reservation_client.clone();
         let reservation_request = reservation::ReservationRequest {
-            customer: request.customer,
-            hotels: request.hotels,
+            customer_name: request.customer,
+            hotel_id: request.hotels,
             in_date: request.in_date,
             out_date: request.out_date,
-            num_rooms: request.num_rooms,
+            room_number: 1,
         };
         let reservation_response = reservation_client
-            .handle_make_reservation(reservation_request)
+            .make_reservation(reservation_request)
             .await?;
         let response = reservation_response.into_inner();
 
         let response = frontend::ReservationResponse {
-            hotels: response.hotels,
+            hotels: response.hotel_id,
         };
 
         let mut response = Response::new(response);
-        ctx.set_frontend_elapse(request_start.elapsed().as_micros() as u64);
+        ctx.set_frontend_elapse(start.elapsed().as_micros() as u64);
         response.metadata_mut().insert_ctx("ctx", &ctx);
 
         Ok(response)
