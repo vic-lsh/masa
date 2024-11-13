@@ -17,7 +17,7 @@ use structopt::StructOpt;
 
 use gen::gen_search_request;
 use tonic::transport::Channel;
-use tonic_masa::{Context, GraphId};
+use tonic_masa::Context;
 
 use reboot_hotel::init_logging;
 

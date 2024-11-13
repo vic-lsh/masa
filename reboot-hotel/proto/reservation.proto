@@ -3,17 +3,20 @@ syntax = "proto3";
 package reservation;
 
 service Reservation {
-  rpc HandleMakeReservation(ReservationRequest) returns (ReservationResponse) {}
-  rpc HandleCheckAvailability(ReservationRequest)
-      returns (ReservationResponse) {}
+  // MakeReservation makes a reservation based on given information
+  rpc MakeReservation(ReservationRequest) returns (ReservationResponse);
+  // CheckAvailability checks if given information is available
+  rpc CheckAvailability(ReservationRequest) returns (ReservationResponse);
 }
 
 message ReservationRequest {
-  string customer = 1;
-  repeated string hotels = 2;
-  uint32 inDate = 3;
-  uint32 outDate = 4;
-  uint32 numRooms = 5;
+  string customerName = 1;
+  repeated string hotelId = 2;
+  string inDate = 3;
+  string outDate = 4;
+  int32  roomNumber = 5;
 }
 
-message ReservationResponse { repeated string hotels = 1; }
+message ReservationResponse {
+  repeated string hotelId = 1;
+}

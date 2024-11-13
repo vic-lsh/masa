@@ -267,62 +267,64 @@ impl ReservationImpl {
         Ok(reservation)
     }
 
-    async fn check_availability(
-        &self,
-        request: reservation::ReservationRequest,
-    ) -> reservation::ReservationResponse {
-        log::info!("request: {:?}", request);
-        let mut hotels = Vec::new();
-        // [NOTE] Optional multi-threading.
-        for hotel in &request.hotels {
-            for date in request.in_date..request.out_date {
-                self.manager
-                    .check_availability(hotel, date, request.num_rooms)
-                    .await;
-            }
-            let hotel_avail = {
-                let mut rng = self.manager.rng.lock().expect("Failed to lock rng");
-                self.manager.uniform_hotel_avail.sample(&mut *rng) < self.manager.prob_hotel_avail
-            };
-            if hotel_avail {
-                hotels.push(hotel.clone());
-            }
-        }
-        let response = reservation::ReservationResponse { hotels };
-        log::info!("response: {:?}", response);
-        response
-    }
+    // async fn check_availability(
+    //     &self,
+    //     request: reservation::ReservationRequest,
+    // ) -> reservation::ReservationResponse {
+    //     log::info!("request: {:?}", request);
+    //     let mut hotels = Vec::new();
+    //     // [NOTE] Optional multi-threading.
+    //     for hotel in &request.hotels {
+    //         for date in request.in_date..request.out_date {
+    //             self.manager
+    //                 .check_availability(hotel, date, request.num_rooms)
+    //                 .await;
+    //         }
+    //         let hotel_avail = {
+    //             let mut rng = self.manager.rng.lock().expect("Failed to lock rng");
+    //             self.manager.uniform_hotel_avail.sample(&mut *rng) < self.manager.prob_hotel_avail
+    //         };
+    //         if hotel_avail {
+    //             hotels.push(hotel.clone());
+    //         }
+    //     }
+    //     let response = reservation::ReservationResponse { hotels };
+    //     log::info!("response: {:?}", response);
+    //     response
+    // }
 }
 
 #[tonic::async_trait]
 impl Reservation for ReservationImpl {
-    async fn handle_check_availability(
+    async fn check_availability(
         &self,
         request: Request<reservation::ReservationRequest>,
     ) -> Result<Response<reservation::ReservationResponse>, Status> {
-        // let ctx = request.metadata().get_ctx("ctx").unwrap();
-        let request = request.into_inner();
-        let response = self.check_availability(request).await;
-        Ok(Response::new(response))
+        todo!()
+        // // let ctx = request.metadata().get_ctx("ctx").unwrap();
+        // let request = request.into_inner();
+        // let response = self.check_availability(request).await;
+        // Ok(Response::new(response))
     }
 
-    async fn handle_make_reservation(
+    async fn make_reservation(
         &self,
         request: Request<reservation::ReservationRequest>,
     ) -> Result<Response<reservation::ReservationResponse>, Status> {
-        // let ctx = request.metadata().get_ctx("ctx").unwrap();
-        let request = request.into_inner();
-        // [NOTE] The original implementation only processes the first hotel.
-        assert!(request.hotels.len() == 1);
-        let response = self.check_availability(request.clone()).await;
-        // [NOTE] Optional multi-threading.
-        for hotel in &response.hotels {
-            for date in request.in_date..request.out_date {
-                self.manager
-                    .update_availability(hotel, date, request.num_rooms)
-                    .await;
-            }
-        }
-        Ok(Response::new(response))
+        todo!()
+        // // let ctx = request.metadata().get_ctx("ctx").unwrap();
+        // let request = request.into_inner();
+        // // [NOTE] The original implementation only processes the first hotel.
+        // assert!(request.hotels.len() == 1);
+        // let response = self.check_availability(request.clone()).await;
+        // // [NOTE] Optional multi-threading.
+        // for hotel in &response.hotels {
+        //     for date in request.in_date..request.out_date {
+        //         self.manager
+        //             .update_availability(hotel, date, request.num_rooms)
+        //             .await;
+        //     }
+        // }
+        // Ok(Response::new(response))
     }
 }

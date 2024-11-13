@@ -9,9 +9,9 @@ version = "0.1.0"
 name = "hotel_client_bench"
 path = "src/hotel/client/client_bench.rs"
 
-[[bin]]
-name = "hotel_client_lim"
-path = "src/hotel/client/client_lim.rs"
+# [[bin]]
+# name = "hotel_client_lim"
+# path = "src/hotel/client/client_lim.rs"
 
 # [[bin]]
 # name = "hotel_client_bench_closed"
