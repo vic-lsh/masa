@@ -8,19 +8,21 @@ fi
 snippets=snippets/search_reservation
 data=tmp_1112
 
-declare -A name_to_modes=(
-	["fifo_e2e"]="fifo e2e"
-	["fifo_e2e_er"]="fifo e2e_er"
-	["e2e_e2e_er"]="e2e e2e_er"
+modes_list=(
+	"fifo e2e"
+	"fifo e2e_er"
+	"fifo local"
+	"fifo local_er"
+	"e2e e2e_er"
+	"local local_er"
+	"e2e_er local_er"
 )
 
-for name in "${!name_to_modes[@]}"; do
-	modes="${name_to_modes[$name]}"
-
-	echo "Plotting goodput for $name..."
+for modes in "${modes_list[@]}"; do
+	echo "Plotting $modes..."
 	python3 $pwd/scripts/plots/plot_goodput_cmp.py \
+		--modes $modes \
 		--path $pwd/$snippets/cmp \
 		--snippets $pwd/$snippets \
-		--data $data \
-		--modes $modes
+		--data $data
 done
