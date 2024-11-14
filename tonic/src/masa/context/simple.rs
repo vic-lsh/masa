@@ -42,7 +42,7 @@ pub struct SimpleParentContext {
 /// A simple implementation of `ClientStubHooks`.
 #[derive(Debug)]
 pub struct SimpleChildContext {
-    method: GrpcMethod,
+    _method: GrpcMethod,
     track_latency: LatencyTracker,
 }
 
@@ -260,7 +260,7 @@ impl RequestHandlerHooks for SimpleParentContext {
 impl ClientStubHooks for SimpleChildContext {
     fn new<T>(method: GrpcMethod, _req: &Request<T>) -> Self {
         Self {
-            method,
+            _method: method,
             track_latency: LatencyTracker::NotStarted,
         }
     }
