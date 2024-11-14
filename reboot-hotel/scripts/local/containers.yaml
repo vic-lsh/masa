@@ -3,57 +3,49 @@ services:
     image: mongo:7.0
     container_name: "rate_mongo"
     command: --port 27003
-    ports:
-      - "27003:27003"
-      #network_mode: "host"
+    network_mode: "host"
     restart: always
     volumes:
       - rate:/data
     deploy:
       resources:
         limits:
-          cpus: "6"
+          cpus: "4"
 
   rate-memcached:
     image: memcached:1.6
     container_name: "rate_memcached"
     command: --port 11003
-    ports:
-      - "11003:11003"
-    #network_mode: "host"
+    network_mode: "host"
     restart: always
     deploy:
       resources:
         limits:
-          cpus: "6"
+          cpus: "4"
 
   profile-mongo:
     image: mongo:7.0
     container_name: "profile_mongo"
     command: --port 27004
-    ports:
-      - "27004:27004"
-    #network_mode: "host"
+    network_mode: "host"
     restart: always
     volumes:
       - profile:/data
     deploy:
       resources:
         limits:
-          cpus: "6"
+          cpus: "4"
 
   profile-memcached:
     image: memcached:1.6
     container_name: "profile_memcached"
     command: --port 11004
-    ports:
-      - "11004:11004"
-      #network_mode: "host"
+    network_mode: "host"
     restart: always
     deploy:
       resources:
         limits:
-          cpus: "6"
+          cpus: "4"
 
   reservation-mongo:
     image: mongo:7.0
