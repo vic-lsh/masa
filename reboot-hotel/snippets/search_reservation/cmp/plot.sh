@@ -5,7 +5,9 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 	echo "Error: plese run in the reboot-hotel directory" >&2
 	exit 1
 fi
-snippets=snippets/search_reservation
+
+folder=snippets/search_reservation
+snippet=cmp
 data=tmp_1113
 
 modes_list=(
@@ -29,7 +31,7 @@ for modes in "${modes_list[@]}"; do
 	echo "Plotting $modes..."
 	python3 $pwd/scripts/plots/plot_goodput_cmp.py \
 		--modes $modes \
-		--path $pwd/$snippets/cmp \
-		--snippets $pwd/$snippets \
+		--path $pwd/$folder/$snippet \
+		--snippets $pwd/$folder \
 		--data $data
 done
