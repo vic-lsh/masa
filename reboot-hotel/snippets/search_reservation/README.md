@@ -8,7 +8,7 @@ Folder `search_reservation` runs `search:reservation=1:1` in one of `fifo`/`e2e`
 * `local`: Priority queue using local deadlines/latest_exec_at.
 * `local_er`: `local` plus early return.
 
-[TODO]: We should use different percentiles for local deadlines and latest_exec_at.
+[TODO:LD]: We should use different percentiles for local deadlines and latest_exec_at.
 
 ## Ongoing
 

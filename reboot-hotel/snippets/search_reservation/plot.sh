@@ -22,16 +22,22 @@ snippets=snippets/search_reservation
 # echo "Plotting local_er..."
 # $pwd/$snippets/local_er/plot.sh
 
-# echo "Plotting cmp..."
-# $pwd/$snippets/cmp/plot.sh
-
 # [ONGOING]
+
+echo "Plotting cmp..."
+$pwd/$snippets/cmp/plot.sh
 
 echo "Plotting local_p50..."
 $pwd/$snippets/local_p50/plot.sh
 
 echo "Plotting local_er_p50..."
 $pwd/$snippets/local_er_p50/plot.sh
+
+echo "Plotting local_p75..."
+$pwd/$snippets/local_p75/plot.sh
+
+echo "Plotting local_er_p75..."
+$pwd/$snippets/local_er_p75/plot.sh
 
 echo "Plotting local_p90..."
 $pwd/$snippets/local_p90/plot.sh
