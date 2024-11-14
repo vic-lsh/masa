@@ -30,22 +30,10 @@ while [[ "$#" -gt 0 ]]; do
     esac
     shift
 done
-
 if [ -z "$features" ]; then
     echo "Expected a masa feature flag using --features"
     exit 1
 fi
-
-# Restart the containers.
-cd $current_dir/scripts/local
-docker compose -f containers.yaml down
-cd $current_dir/scripts/local
-docker compose -f containers.yaml up -d
-
-cd $current_dir
-
-
-
 if [ -z "$output" ]; then
     echo "Output to snippets/$features"
     output=snippets/$features
@@ -61,7 +49,7 @@ services=(
     "hotel_reservation"
     "hotel_user"
     "hotel_frontend"
-    "hotel_open_loop_bench"
+    "hotel_client_bench"
 )
 waits_secs=(
     0
