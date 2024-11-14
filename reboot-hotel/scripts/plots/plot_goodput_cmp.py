@@ -13,15 +13,13 @@ for mode in args.modes:
     cfg = json.load(open(f"{path}/gen_config.json"))
 
     for rps in cfg["Rps"]:
-        if args.data:
-            file = f"{path}/{args.data}/r{rps}_{r}.csv"
-        else:
-            file = f"{path}/r{rps}_{r}.csv"
+        file = f"{path}/{args.data}/r{rps}_{r}.csv"
         df = pd.read_csv(file)
 
         result = {}
         result["rps"] = rps
-        result[mode] = 0
+        result["mode"] = mode
+        result["goodput"] = 0
 
         for i in range(len(cfg["Apis"])):
             api = cfg["Apis"][i]
@@ -29,12 +27,13 @@ for mode in args.modes:
             df_filtered = df[
                 (df["api"] == api) & (df["error"] == "/None") & (df["latency"] <= slo)
             ]
-            result[mode] += round(len(df_filtered) / cfg["DurationSecs"])
+            result["goodput"] += round(len(df_filtered) / cfg["DurationSecs"])
 
         rps_to_results.append(result)
 
+modes_str = "_".join(args.modes)
 plot_goodput_cmp_bar(
     args.modes,
     rps_to_results,
-    f"{args.path}/fig_goodput_rps_cmp_{args.modes[0]}_{args.modes[1]}_{r}.png",
+    f"{args.path}/fig_goodput_rps_cmp_{modes_str}_{r}.png",
 )
