@@ -6,17 +6,23 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 	exit 1
 fi
 snippets=snippets/search_reservation
-data=tmp_1112
+data=tmp_1113
 
 modes_list=(
-	"fifo e2e"
-	"fifo e2e_er"
-	"fifo local"
-	"fifo local_er"
-	"e2e e2e_er"
-	"e2e local"
-	"local local_er"
-	"e2e_er local_er"
+	# "fifo e2e"
+	# "fifo e2e_er"
+	# "fifo local"
+	# "fifo local_er"
+	# "e2e e2e_er"
+	# "e2e local"
+	# "local local_er"
+	# "e2e_er local_er"
+	"local_p50 local_p75"
+	"local_p75 local_p90"
+	"local_p90 local_p95"
+	"local_er_p50 local_er_p75"
+	"local_er_p75 local_er_p90"
+	"local_er_p90 local_er_p95"
 )
 
 for modes in "${modes_list[@]}"; do
