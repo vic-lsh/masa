@@ -14,19 +14,11 @@ python3 $pwd/scripts/plots/plot_goodput.py \
 	--mode $mode \
 	--path $pwd/$snippets/$data
 
-# [TODO]
-
 # echo "Plotting throughput..."
 # python3 $pwd/scripts/plots/plot_throughput.py \
-# 	--path $pwd/$snippets/$mode \
-# 	--mode $mode
 
 # echo "Plotting error..."
 # python3 $pwd/scripts/plots/plot_error.py \
-# 	--path $pwd/$snippets/$mode \
-# 	--mode $mode
 
 # echo "Plotting tail..."
 # python3 $pwd/scripts/plots/plot_tail.py \
-# 	--path $pwd/$snippets/$mode \
-# 	--mode $mode
