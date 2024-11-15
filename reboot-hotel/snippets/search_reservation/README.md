@@ -10,18 +10,9 @@ Folder `search_reservation` runs `search:reservation=1:1` in one of `fifo`/`e2e`
 
 [TODO:LD]: We should use different percentiles for local deadlines and latest_exec_at.
 
-## Ongoing
-
-![fifo local_er](cmp/fig_goodput_rps_cmp_fifo_local_er_0.png)
-![e2e local](cmp/fig_goodput_rps_cmp_e2e_local_0.png)
-![local local_er](cmp/fig_goodput_rps_cmp_local_local_er_0.png)
-![e2e_er local_er](cmp/fig_goodput_rps_cmp_e2e_er_local_er_0.png)
-
 ## Done
 
-![fifo e2e](cmp/fig_goodput_rps_cmp_fifo_e2e_0.png)
-![fifo e2e_er](cmp/fig_goodput_rps_cmp_fifo_e2e_er_0.png)
-![e2e e2e_er](cmp/fig_goodput_rps_cmp_e2e_e2e_er_0.png)
-![fifo apis](fifo/fig_goodput_apis_rps_0.png)
-![e2e apis](e2e/fig_goodput_apis_rps_0.png)
-![e2e_er apis](e2e_er/fig_goodput_apis_rps_0.png)
+![fifo e2e local](cmp/fig_goodput_rps_cmp_fifo_e2e_local_0.png)
+![fifo e2e_er local_er](cmp/fig_goodput_rps_cmp_fifo_e2e_er_local_er_0.png)
+![local_p50 local_p75 local_p90 local_p95](cmp/fig_goodput_rps_cmp_local_p50_local_p75_local_p90_local_p95_0.png)
+![local_er_p50 local_er_p75 local_er_p90 local_er_p95](cmp/fig_goodput_rps_cmp_local_er_p50_local_er_p75_local_er_p90_local_er_p95_0.png)
