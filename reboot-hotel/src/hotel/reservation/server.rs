@@ -473,7 +473,7 @@ impl Reservation for ReservationImpl {
             let mongo_client = self.mongo_client.clone();
             let cache_cap = cache_cap.clone();
             let room_number = req.room_number;
-            tasks.push(tokio::spawn(async move {
+            tasks.push(async_executor::spawn(async move {
                 let collection = mongo_client
                     .database("reservation-db")
                     .collection::<db::Reservation>("reservation");
@@ -505,7 +505,7 @@ impl Reservation for ReservationImpl {
 
         // Wait for all tasks to complete
         for task in tasks {
-            let (hotel_id, is_available) = task.await.unwrap();
+            let (hotel_id, is_available) = task.await;
             res_map.insert(hotel_id, is_available);
         }
 
