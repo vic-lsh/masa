@@ -4,9 +4,12 @@ pub mod hotel {
     }
 }
 use chrono::DateTime;
+use reboot_hotel::AvgTracker;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tonic_masa::LatencyTracker;
 
 use crate::db;
 use mongodb::{bson::doc, Client as MongoClient, Collection, Database, IndexModel};
@@ -244,6 +247,12 @@ use hotel::{reservation, reservation::reservation_server::Reservation};
 pub struct ReservationImpl {
     memc_client: Arc<memcache::Client>,
     mongo_client: Arc<MongoClient>,
+    lat_check_avail: Mutex<LatencyTracker>,
+    lat_make_reserve: Mutex<LatencyTracker>,
+    check_avail_hotel_mc: Arc<AvgTracker>,
+    check_avail_hotel_mongo: Arc<AvgTracker>,
+    check_avail_reserve: Arc<AvgTracker>,
+    check_reserve: Arc<AvgTracker>,
     // manager: HotelManager,
 }
 
@@ -259,10 +268,40 @@ impl ReservationImpl {
     ) -> Result<Self, Box<dyn Error>> {
         let memc_client = memcache::Client::with_pool_size(cache_addr, cache_conns)?;
         let mongo_client = crate::db::initialize_database(&db_addr).await?;
+        let lat_check_avail = Mutex::new(LatencyTracker::new("check_availability".into(), 256));
+        let lat_make_reserve = Mutex::new(LatencyTracker::new("make_reservation".into(), 256));
+
+        let check_avail_hotel_mc = Arc::new(AvgTracker::default());
+        let check_avail_hotel_mongo = Arc::new(AvgTracker::default());
+        let check_avail_reserve = Arc::new(AvgTracker::default());
+        let check_reserve = Arc::new(AvgTracker::default());
+
+        let ca_hotel_mc = check_avail_hotel_mc.clone();
+        let ca_hotel_mongo = check_avail_hotel_mongo.clone();
+        let ca_reserve = check_avail_reserve.clone();
+        let reserve = check_reserve.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                println!(
+                    "CheckAvail: mc {} mongo {} reserve {}; MkReserve: {}",
+                    ca_hotel_mc.get(),
+                    ca_hotel_mongo.get(),
+                    ca_reserve.get(),
+                    reserve.get()
+                );
+            }
+        });
 
         Ok(Self {
             memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
+            lat_check_avail,
+            lat_make_reserve,
+            check_avail_reserve,
+            check_avail_hotel_mc,
+            check_avail_hotel_mongo,
+            check_reserve,
         })
         // let manager = HotelManager::new(
         //     hotels,
@@ -318,48 +357,47 @@ impl Reservation for ReservationImpl {
         // let response = self.check_availability(request).await;
         // Ok(Response::new(response))
 
+        let start = Instant::now();
+
         let req = req.into_inner();
-        let mut resp = reservation::ReservationResponse {
-            hotel_id: Vec::new(),
-        };
 
         // Create hotel memory keys and maps
         let mut hotel_mem_keys = Vec::new();
-        let mut keys_map = HashSet::new();
+        let mut missing_keys = HashSet::new();
         let mut res_map: HashMap<String, bool> = HashMap::new();
 
+        self.check_avail_hotel_mc.track(req.hotel_id.len());
         for hotel_id in &req.hotel_id {
             let cap_key = format!("{}_cap", hotel_id);
             hotel_mem_keys.push(cap_key.clone());
+            missing_keys.insert(cap_key);
             res_map.insert(hotel_id.clone(), true);
-            keys_map.insert(cap_key);
         }
 
         // Get capacity from memcached
         let mut cache_cap = HashMap::new();
-        let mut miss_keys = Vec::new();
 
-        for key in &hotel_mem_keys {
-            match self.memc_client.get(key) {
-                Ok(Some(value)) => {
-                    if let Ok(cap) = String::from_utf8(value).unwrap_or_default().parse::<i32>() {
-                        cache_cap.insert(key.clone(), cap);
-                    }
-                }
-                _ => {
-                    miss_keys.push(key.clone());
-                }
+        let mc_req: Vec<&str> = hotel_mem_keys.iter().map(|k| k.as_str()).collect();
+        let mc_resp = self.memc_client.gets(&mc_req).unwrap();
+        for (hotel_id, capacity) in mc_resp {
+            if let Ok(cap) = String::from_utf8(capacity)
+                .unwrap_or_default()
+                .parse::<i32>()
+            {
+                cache_cap.insert(hotel_id.clone(), cap);
+                missing_keys.remove(&hotel_id);
             }
         }
 
+        self.check_avail_hotel_mongo.track(missing_keys.len());
         // Handle cache misses with MongoDB
-        if !miss_keys.is_empty() {
+        if !missing_keys.is_empty() {
             let num_collection = self
                 .mongo_client
                 .database("reservation-db")
                 .collection::<db::Number>("number");
 
-            let query_miss_keys: Vec<String> = miss_keys
+            let query_miss_keys: Vec<String> = missing_keys
                 .iter()
                 .map(|k| k.split('_').next().unwrap().to_string())
                 .collect();
@@ -408,81 +446,82 @@ impl Reservation for ReservationImpl {
             }
         }
 
+        let mc_req: Vec<&str> = req_commands.iter().map(|k| k.as_str()).collect();
+        let mc_resp = self.memc_client.gets(&mc_req).unwrap();
+        for (cmd, value) in mc_resp {
+            let (hotel_id, _, _) = query_map.remove(&cmd).unwrap();
+            if let Ok(count) = String::from_utf8(value).unwrap_or_default().parse::<i32>() {
+                let cap = cache_cap.get(&format!("{}_cap", hotel_id)).unwrap_or(&0);
+                if count + req.room_number > *cap {
+                    res_map
+                        .entry(hotel_id.to_owned())
+                        .and_modify(|e| *e = false);
+                }
+            }
+        }
+
         // Check reservations in parallel
-        let query_map = Arc::new(query_map);
-        let res_map = Arc::new(Mutex::new(res_map));
         let mut tasks = Vec::new();
 
-        for command in req_commands {
-            let query_map = Arc::clone(&query_map);
-            let res_map = Arc::clone(&res_map);
+        self.check_avail_reserve.track(query_map.len());
+        for (command, (hotel_id, start_date, end_date)) in query_map {
+            let hotel_id = hotel_id.to_owned();
+            let start_date = start_date.to_owned();
+            let end_date = end_date.to_owned();
+
             let memc_client = self.memc_client.clone();
             let mongo_client = self.mongo_client.clone();
             let cache_cap = cache_cap.clone();
             let room_number = req.room_number;
+            tasks.push(tokio::spawn(async move {
+                let collection = mongo_client
+                    .database("reservation-db")
+                    .collection::<db::Reservation>("reservation");
 
-            tasks.push(async_executor::spawn(async move {
-                // Try memcached first
-                match memc_client.get(&command) {
-                    Ok(Some(value)) => {
-                        if let Ok(count) =
-                            String::from_utf8(value).unwrap_or_default().parse::<i32>()
-                        {
-                            let (hotel_id, _, _) = query_map.get(&command).unwrap();
-                            let cap = cache_cap.get(&format!("{}_cap", hotel_id)).unwrap_or(&0);
+                let filter = doc! {
+                    "hotelId": hotel_id.clone(),
+                    "inDate": start_date,
+                    "outDate": end_date
+                };
 
-                            if count + room_number > *cap {
-                                let mut map = res_map.lock().unwrap();
-                                map.insert(hotel_id.clone(), false);
-                            }
-                        }
+                if let Ok(mut cursor) = collection.find(filter, None).await {
+                    let mut count = 0;
+                    while let Some(Ok(reservation)) = cursor.next().await {
+                        count += reservation.number;
                     }
-                    _ => {
-                        // Query MongoDB on cache miss
-                        if let Some((hotel_id, start_date, end_date)) = query_map.get(&command) {
-                            let collection = mongo_client
-                                .database("reservation-db")
-                                .collection::<db::Reservation>("reservation");
 
-                            let filter = doc! {
-                                "hotelId": hotel_id,
-                                "inDate": start_date,
-                                "outDate": end_date
-                            };
+                    // Update memcached
+                    let _ = memc_client.set(&command, count.to_string().as_bytes(), 0);
 
-                            if let Ok(mut cursor) = collection.find(filter, None).await {
-                                let mut count = 0;
-                                while let Some(Ok(reservation)) = cursor.next().await {
-                                    count += reservation.number;
-                                }
-
-                                // Update memcached
-                                let _ = memc_client.set(&command, count.to_string().as_bytes(), 0);
-
-                                let cap = cache_cap.get(&format!("{}_cap", hotel_id)).unwrap_or(&0);
-                                if count + room_number > *cap {
-                                    let mut map = res_map.lock().unwrap();
-                                    map.insert(hotel_id.clone(), false);
-                                }
-                            }
-                        }
+                    let hid = hotel_id.clone();
+                    let cap = cache_cap.get(&format!("{}_cap", hid)).unwrap_or(&0);
+                    if count + room_number > *cap {
+                        return (hotel_id, false);
                     }
                 }
+                (hotel_id, true)
             }));
         }
 
         // Wait for all tasks to complete
         for task in tasks {
-            let _ = task.await;
+            let (hotel_id, is_available) = task.await.unwrap();
+            res_map.insert(hotel_id, is_available);
         }
 
         // Collect results
-        let res_map = Arc::try_unwrap(res_map).unwrap().into_inner().unwrap();
-
+        let mut resp = reservation::ReservationResponse {
+            hotel_id: Vec::new(),
+        };
         for (hotel_id, available) in res_map {
             if available {
                 resp.hotel_id.push(hotel_id);
             }
+        }
+
+        {
+            let elapsed = start.elapsed().as_micros();
+            self.lat_check_avail.lock().unwrap().track(elapsed as u64);
         }
 
         Ok(Response::new(resp))
@@ -507,6 +546,9 @@ impl Reservation for ReservationImpl {
         //     }
         // }
         // Ok(Response::new(response))
+
+        let start = Instant::now();
+
         let req = req.into_inner();
 
         let mut res = reservation::ReservationResponse {
@@ -528,7 +570,9 @@ impl Reservation for ReservationImpl {
         let mut current_date = in_date;
         let mut memc_date_num_map = HashMap::new();
 
+        let mut iters = 0;
         while current_date < out_date {
+            iters += 1;
             current_date = current_date + chrono::Duration::days(1);
 
             let in_date_str = current_date.format("%Y-%m-%d").to_string();
@@ -593,6 +637,7 @@ impl Reservation for ReservationImpl {
                 return Ok(Response::new(res));
             }
         }
+        self.check_reserve.track(iters);
 
         // Update reservation number cache
         for (key, val) in memc_date_num_map {
@@ -618,8 +663,13 @@ impl Reservation for ReservationImpl {
 
             res_collection.insert_one(reservation, None).await.unwrap();
         }
-
         res.hotel_id.push(hotel_id.clone());
+
+        {
+            let elapsed = start.elapsed().as_micros();
+            self.lat_make_reserve.lock().unwrap().track(elapsed as u64);
+        }
+
         Ok(Response::new(res))
     }
 }
