@@ -3,6 +3,7 @@ pub mod hotel {
         tonic::include_proto!("reservation");
     }
 }
+use async_memcached::Client as McClient;
 use chrono::DateTime;
 use reboot_hotel::AvgTracker;
 use std::collections::{HashMap, HashSet};
@@ -253,6 +254,7 @@ pub struct ReservationImpl {
     check_avail_hotel_mongo: Arc<AvgTracker>,
     check_avail_reserve: Arc<AvgTracker>,
     check_reserve: Arc<AvgTracker>,
+    cache_addr: String,
     // manager: HotelManager,
 }
 
@@ -266,7 +268,7 @@ impl ReservationImpl {
         prob_cache_miss: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn Error>> {
-        let memc_client = memcache::Client::with_pool_size(cache_addr, cache_conns)?;
+        let memc_client = memcache::Client::with_pool_size(cache_addr.clone(), cache_conns)?;
         let mongo_client = crate::db::initialize_database(&db_addr).await?;
         let lat_check_avail = Mutex::new(LatencyTracker::new("check_availability".into(), 256));
         let lat_make_reserve = Mutex::new(LatencyTracker::new("make_reservation".into(), 256));
@@ -293,9 +295,15 @@ impl ReservationImpl {
             }
         });
 
+        let cache_addr = cache_addr
+            .strip_prefix("memcache://")
+            .map(|addr| format!("tcp://{}", addr))
+            .unwrap()
+            .to_owned();
         Ok(Self {
             memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
+            cache_addr,
             lat_check_avail,
             lat_make_reserve,
             check_avail_reserve,
@@ -359,7 +367,7 @@ impl Reservation for ReservationImpl {
 
         let start = Instant::now();
 
-        let req = req.into_inner();
+        let mut req = req.into_inner();
 
         // Create hotel memory keys and maps
         let mut hotel_mem_keys = Vec::new();
@@ -377,15 +385,18 @@ impl Reservation for ReservationImpl {
         // Get capacity from memcached
         let mut cache_cap = HashMap::new();
 
-        let mc_req: Vec<&str> = hotel_mem_keys.iter().map(|k| k.as_str()).collect();
-        let mc_resp = self.memc_client.gets(&mc_req).unwrap();
-        for (hotel_id, capacity) in mc_resp {
-            if let Ok(cap) = String::from_utf8(capacity)
-                .unwrap_or_default()
-                .parse::<i32>()
-            {
-                cache_cap.insert(hotel_id.clone(), cap);
-                missing_keys.remove(&hotel_id);
+        let mut mc_client = McClient::new(&self.cache_addr).await.unwrap();
+
+        if let Ok(mc_resp) = mc_client.get_multi(hotel_mem_keys).await {
+            for entry in mc_resp {
+                if let Ok(cap) = String::from_utf8(entry.data)
+                    .unwrap_or_default()
+                    .parse::<i32>()
+                {
+                    let hotel_id = String::from_utf8(entry.key).unwrap();
+                    missing_keys.remove(&hotel_id);
+                    cache_cap.insert(hotel_id, cap);
+                }
             }
         }
 
@@ -446,17 +457,22 @@ impl Reservation for ReservationImpl {
             }
         }
 
-        let mc_req: Vec<&str> = req_commands.iter().map(|k| k.as_str()).collect();
-        let mc_resp = self.memc_client.gets(&mc_req).unwrap();
-        for (cmd, value) in mc_resp {
-            let (hotel_id, _, _) = query_map.remove(&cmd).unwrap();
-            if let Ok(count) = String::from_utf8(value).unwrap_or_default().parse::<i32>() {
-                let cap = cache_cap.get(&format!("{}_cap", hotel_id)).unwrap_or(&0);
-                if count + req.room_number > *cap {
-                    res_map
-                        .entry(hotel_id.to_owned())
-                        .and_modify(|e| *e = false);
-                }
+        if let Ok(mc_resp) = mc_client.get_multi(req_commands).await {
+            for entry in mc_resp {
+                let key = String::from_utf8(entry.key).unwrap();
+                query_map.remove(&key).map(|(hotel_id, _, _)| {
+                    if let Ok(count) = String::from_utf8(entry.data)
+                        .unwrap_or_default()
+                        .parse::<i32>()
+                    {
+                        let cap = cache_cap.get(&format!("{}_cap", hotel_id)).unwrap_or(&0);
+                        if count + req.room_number > *cap {
+                            res_map
+                                .entry(hotel_id.to_owned())
+                                .and_modify(|e| *e = false);
+                        }
+                    }
+                });
             }
         }
 
