@@ -23,12 +23,12 @@ fn get_frontend() -> GlobalGraph {
                         TRACKER_CAPACITY,
                     ),
                     Span::new(
-                        "/reservation.Reservation/HandleCheckAvailability".to_string(),
+                        "/reservation.Reservation/CheckAvailability".to_string(),
                         None,
                         TRACKER_CAPACITY,
                     ),
                     Span::new(
-                        "/profile.Profile/HandleGetProfiles".to_string(),
+                        "/profile.Profile/GetProfiles".to_string(),
                         None,
                         TRACKER_CAPACITY,
                     ),
@@ -48,7 +48,7 @@ fn get_frontend() -> GlobalGraph {
                         TRACKER_CAPACITY,
                     ),
                     Span::new(
-                        "/reservation.Reservation/HandleMakeReservation".to_string(),
+                        "/reservation.Reservation/MakeReservation".to_string(),
                         None,
                         TRACKER_CAPACITY,
                     ),
@@ -73,11 +73,7 @@ fn get_search() -> GlobalGraph {
                 method_id,
                 vec![
                     Span::new("/geo.Geo/HandleNearby".to_string(), None, TRACKER_CAPACITY),
-                    Span::new(
-                        "/rate.Rate/HandleGetRates".to_string(),
-                        None,
-                        TRACKER_CAPACITY,
-                    ),
+                    Span::new("/rate.Rate/GetRates".to_string(), None, TRACKER_CAPACITY),
                 ],
             ),
         );
@@ -106,7 +102,7 @@ fn get_rate() -> GlobalGraph {
     let service_id: ServiceId = "rate.Rate".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/rate.Rate/HandleGetRates";
+        let method_id: MethodId = "/rate.Rate/GetRates";
         graphs.insert(
             method_id,
             LocalGraph::new(service_id.clone(), method_id, vec![]),
@@ -121,12 +117,12 @@ fn get_reservation() -> GlobalGraph {
     let service_id: ServiceId = "reservation.Reservation".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/reservation.Reservation/HandleCheckAvailability";
+        let method_id: MethodId = "/reservation.Reservation/CheckAvailability";
         graphs.insert(
             method_id,
             LocalGraph::new(service_id.clone(), method_id, vec![]),
         );
-        let method_id: MethodId = "/reservation.Reservation/HandleMakeReservation";
+        let method_id: MethodId = "/reservation.Reservation/MakeReservation";
         graphs.insert(
             method_id,
             LocalGraph::new(service_id.clone(), method_id, vec![]),
@@ -141,7 +137,7 @@ fn get_profile() -> GlobalGraph {
     let service_id: ServiceId = "profile.Profile".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/profile.Profile/HandleGetProfiles";
+        let method_id: MethodId = "/profile.Profile/GetProfiles";
         graphs.insert(
             method_id,
             LocalGraph::new(service_id.clone(), method_id, vec![]),

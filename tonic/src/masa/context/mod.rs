@@ -2,9 +2,14 @@ use std::{sync::Arc, task::Poll};
 
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
+pub mod runtime;
 mod simple;
+mod tls;
+pub use tls::{client, server};
 
 /// Context struct for an RPC server, instantiated during server startup.
+///
+/// Must implement `ServerHooks`.
 pub type ServerContext = simple::SimpleServerContext;
 
 /// Context struct instantiated once per RPC, when the server invokes a request handler.
@@ -17,8 +22,14 @@ pub type ParentContext = simple::SimpleParentContext;
 /// Must implement `ClientStubHooks`.
 pub type ChildContext = simple::SimpleChildContext;
 
-/// Type of metadata required for async-tasks used in tonic.
-pub type AsyncTaskMetadata = Option<Arc<ParentContext>>;
+/// Lifecycle hooks of a Masa server.
+#[allow(unused_variables)]
+pub trait ServerHooks: Send + Sync + 'static {
+    /// Creates the service-level context.
+    // [TODO] mark this function as async to support fetching resources asynchronously.
+    //        this may require async support in the tonic service constructor.
+    fn new(service_name: &'static str) -> Self;
+}
 
 /// Lifecycle hooks when a client stub executes a request.
 ///
@@ -58,33 +69,38 @@ pub trait ClientStubHooks {
 /// which must be implemented and acts as a constructor). Implementer can choose
 /// to only implement hooks they're interested in.
 ///
-/// The implementation must be multithread-safe (i.e. `Sync`). One reasons is
-/// that child RPCs can run in parallel, and they may invoke hook points
+/// The implementation must be multithread-safe (i.e. `Send+Sync`). One reason
+/// is that child RPCs can run in parallel, and they may invoke hook points
 /// defined below from different threads.
 #[allow(unused_variables)]
-pub trait RequestHandlerHooks: Sync {
+pub trait RequestHandlerHooks<Child, Server>: Send + Sync
+where
+    Child: ClientStubHooks,
+    Server: ServerHooks,
+{
     /// The first lifecycle, marking the start of a request execution.
     ///
     /// This is also the constructor for the hook point struct implementation.
-    fn begin<B>(method: GrpcMethod, req: &http::Request<B>, server_ctx: Arc<ServerContext>)
-        -> Self;
+    fn begin<B>(method: GrpcMethod, req: &http::Request<B>, server_ctx: Arc<Server>) -> Self;
 
     /// Invoked before the request handler makes an RPC.
+    #[must_use]
     fn before_child_rpc<T>(
         &self,
         method: GrpcMethod,
         req: &mut Request<T>,
-        child_ctx: &mut ChildContext,
+        child_ctx: &mut Child,
     ) -> Option<Status> {
         None
     }
 
     /// Invoked after the request handler receives a response from an RPC it made earlier.
+    #[must_use]
     fn after_child_rpc<T>(
         &self,
         method: GrpcMethod,
         resp: &mut Result<Response<T>, Status>,
-        child_ctx: ChildContext,
+        child_ctx: Child,
     ) -> Option<Status> {
         None
     }
@@ -95,6 +111,7 @@ pub trait RequestHandlerHooks: Sync {
     ///
     /// To return early without continuing request processing, return the
     /// response to write back to the client in this hook.
+    #[must_use]
     fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
         None
     }
@@ -105,6 +122,7 @@ pub trait RequestHandlerHooks: Sync {
     ///
     /// To return early without continuing request processing, return the
     /// response to write back to the client in this hook.
+    #[must_use]
     fn after_poll<Ret>(
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
