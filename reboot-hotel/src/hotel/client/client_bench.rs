@@ -59,25 +59,6 @@ impl LoadGenerator {
         client: FrontendClient<Channel>,
         trace_tx: Sender<Span>,
     ) -> Self {
-        if cfg!(feature = "prio_class") {
-            log::warn!("Enabled prio_class");
-        } else if cfg!(feature = "prio_global") {
-            log::warn!("Enabled prio_global");
-        } else if cfg!(feature = "prio_global_early") {
-            log::warn!("Enabled prio_global_early");
-        } else if cfg!(feature = "prio_class_global") {
-            log::warn!("Enabled prio_class_global");
-        } else if cfg!(feature = "prio_local") {
-            log::warn!("Enabled prio_local");
-        } else if cfg!(feature = "prio_local_early") {
-            log::warn!("Enabled prio_local_early");
-        } else if cfg!(feature = "fifo_infra") {
-            log::warn!("Enabled fifo_infra");
-        } else if cfg!(feature = "fifo") {
-            log::warn!("Enabled fifo");
-        } else {
-            panic!("Not implemented policy");
-        }
         Self {
             hotel_cfg,
             gen_cfg,
@@ -160,7 +141,7 @@ impl LoadGenerator {
 
         let mut counter_test_id = 0;
         let mut elapse = 0f64;
-        // let exponential = Exp::new(self.rps as f64).unwrap();
+        let exponential = Exp::new(self.rps as f64).unwrap();
         let uniform = Uniform::<u32>::new(0, 1_000_000_007);
 
         loop {
@@ -175,8 +156,11 @@ impl LoadGenerator {
                 if Instant::now() < warm_at {
                     0.01
                 } else {
-                    // exponential.sample(&mut self.rng)
-                    1f64 / self.rps as f64
+                    if self.gen_cfg.gap == "const" {
+                        1f64 / self.rps as f64
+                    } else {
+                        exponential.sample(&mut self.rng)
+                    }
                 }
             };
             elapse += value;
@@ -203,7 +187,7 @@ impl LoadGenerator {
                         panic!("Unimplemented policy")
                     }
                 };
-                let latest_exec_at = deadline;
+                let latest_exec = deadline;
 
                 Context::new(
                     api.clone(),
@@ -213,7 +197,7 @@ impl LoadGenerator {
                     request_class,
                     start_at,
                     deadline,
-                    latest_exec_at,
+                    latest_exec,
                 )
             };
 
@@ -406,6 +390,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
+    assert!(gen_cfg.gap == "const" || gen_cfg.gap == "exp");
     log::warn!("Gen config: {:?}", gen_cfg);
 
     for rps in &gen_cfg.rps_values {

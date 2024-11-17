@@ -1,9 +1,27 @@
 use std::collections::HashMap;
+use std::env;
 use std::sync::OnceLock;
 
+use once_cell::sync::Lazy;
 use tonic_masa::{GlobalGraph, LocalGraph, MethodId, ServiceId, Span};
 
-static TRACKER_CAPACITY: Option<usize> = Some(1_000);
+static TRACKER_CAPACITY: Lazy<usize> = Lazy::new(|| {
+    env::var("TRACKER_CAPACITY")
+        .ok()
+        .map(|s| s.parse().unwrap())
+        .or(Some(512))
+        .unwrap()
+});
+static PCTL_DEADLINE: Lazy<usize> = Lazy::new(|| {
+    env::var("PCTL_DEADLINE")
+        .map(|s| s.parse().unwrap())
+        .expect("Expect PCTL_DEADLINE to be set")
+});
+static PCTL_LATEST_EXEC: Lazy<usize> = Lazy::new(|| {
+    env::var("PCTL_LATEST_EXEC")
+        .map(|s| s.parse().unwrap())
+        .expect("Expect PCTL_LATEST_EXEC to be set")
+});
 static GLOBAL_GRAPHS: OnceLock<HashMap<ServiceId, GlobalGraph>> = OnceLock::new();
 
 fn get_frontend() -> GlobalGraph {
@@ -20,17 +38,23 @@ fn get_frontend() -> GlobalGraph {
                     Span::new(
                         "/search.Search/HandleNearby".to_string(),
                         None,
-                        TRACKER_CAPACITY,
+                        *TRACKER_CAPACITY,
+                        *PCTL_DEADLINE,
+                        *PCTL_LATEST_EXEC,
                     ),
                     Span::new(
                         "/reservation.Reservation/HandleCheckAvailability".to_string(),
                         None,
-                        TRACKER_CAPACITY,
+                        *TRACKER_CAPACITY,
+                        *PCTL_DEADLINE,
+                        *PCTL_LATEST_EXEC,
                     ),
                     Span::new(
                         "/profile.Profile/HandleGetProfiles".to_string(),
                         None,
-                        TRACKER_CAPACITY,
+                        *TRACKER_CAPACITY,
+                        *PCTL_DEADLINE,
+                        *PCTL_LATEST_EXEC,
                     ),
                 ],
             ),
@@ -45,12 +69,16 @@ fn get_frontend() -> GlobalGraph {
                     Span::new(
                         "/user.User/HandleCheckUser".to_string(),
                         None,
-                        TRACKER_CAPACITY,
+                        *TRACKER_CAPACITY,
+                        *PCTL_DEADLINE,
+                        *PCTL_LATEST_EXEC,
                     ),
                     Span::new(
                         "/reservation.Reservation/HandleMakeReservation".to_string(),
                         None,
-                        TRACKER_CAPACITY,
+                        *TRACKER_CAPACITY,
+                        *PCTL_DEADLINE,
+                        *PCTL_LATEST_EXEC,
                     ),
                 ],
             ),
@@ -72,11 +100,19 @@ fn get_search() -> GlobalGraph {
                 service_id.clone(),
                 method_id,
                 vec![
-                    Span::new("/geo.Geo/HandleNearby".to_string(), None, TRACKER_CAPACITY),
+                    Span::new(
+                        "/geo.Geo/HandleNearby".to_string(),
+                        None,
+                        *TRACKER_CAPACITY,
+                        *PCTL_DEADLINE,
+                        *PCTL_LATEST_EXEC,
+                    ),
                     Span::new(
                         "/rate.Rate/HandleGetRates".to_string(),
                         None,
-                        TRACKER_CAPACITY,
+                        *TRACKER_CAPACITY,
+                        *PCTL_DEADLINE,
+                        *PCTL_LATEST_EXEC,
                     ),
                 ],
             ),
@@ -199,7 +235,13 @@ fn get_global_graphs() -> &'static HashMap<ServiceId, GlobalGraph> {
 /// Get a global graph of Hotel Reservation.
 #[allow(dead_code)]
 pub(crate) fn get_global_graph(service_id: ServiceId) -> GlobalGraph {
-    log::warn!("get_global_graph, service_id: {:?}", service_id);
+    log::warn!(
+        "get_global_graph, service_id: {:?}, tracker_capacity: {:?}, pctl_deadline: {:?}, pctl_exec: {:?}",
+        service_id,
+        *TRACKER_CAPACITY,
+        *PCTL_DEADLINE,
+        *PCTL_LATEST_EXEC
+    );
     let global_graphs = get_global_graphs();
     global_graphs[&service_id].clone()
 }

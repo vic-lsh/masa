@@ -13,7 +13,10 @@ pub struct LatencyTracker {
 }
 
 impl LatencyTracker {
-    pub fn new(span_id: SpanId, capacity: usize) -> Self {
+    pub fn new(
+        span_id: SpanId,
+        capacity: usize,
+    ) -> Self {
         assert!(capacity >= 100, "Capacity should be no less than 100");
         LatencyTracker {
             span_id,
@@ -69,12 +72,11 @@ impl LatencyTracker {
         self.percentiles[p]
     }
 
-    pub fn estimate(&self) -> u64 {
+    pub fn estimate(&self, percentile: usize) -> u64 {
         if self.percentiles.len() == 0 {
             self.mean
         } else {
-            // [TODO:LD] Different percentiles.
-            self.percentile(50)
+            self.percentile(percentile)
         }
     }
 }

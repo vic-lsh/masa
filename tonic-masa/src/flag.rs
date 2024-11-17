@@ -41,5 +41,3 @@ pub const FIFO_INFRA: bool = if cfg!(feature = "fifo_infra") {
 } else {
     false
 };
-
-pub const ONLINE_TRACKER: bool = true;
