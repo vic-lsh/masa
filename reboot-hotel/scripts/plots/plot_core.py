@@ -38,37 +38,6 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
-    rps_values = [result["rps"] for result in results]
-    goodputs_load_gen = [result["goodput_load_gen"] for result in results]
-    # goodputs_fe = [result["goodput_fe"] for result in results]
-
-    fig = plt.figure(figsize=(10, 6))
-
-    plt.plot(
-        rps_values,
-        goodputs_load_gen,
-        label="Goodput Load Gen",
-        color=COLORS[0],
-        marker=MARKERS[0],
-    )
-    # plt.plot(
-    #     rps_values,
-    #     goodputs_fe,
-    #     label="Goodput FE",
-    #     color=COLORS[1],
-    #     marker=MARKERS[1],
-    # )
-
-    plt.xlabel("RPS")
-    plt.ylabel("Goodput")
-    plt.ylim(Y_MIN, Y_MAX)
-    plt.title(f"Goodput vs RPS ({mode})")
-    plt.legend(loc="upper left", fontsize=fontsize_medium)
-    plt.grid(True)
-    plt.savefig(fig_name)
-
-
 def plot_goodput_bar(
     apis: List[str], mode: str, results: List[Dict[str, Any]], fig_name: str
 ):
@@ -191,32 +160,107 @@ def plot_goodput_apis_bar(
 def plot_goodput_cmp_bar(
     modes: List[str], results: List[Dict[str, Any]], fig_name: str
 ):
-    assert len(modes) == 2, "Only 2 modes available"
+    assert len(modes) <= 4
     modes_str = f"{', '.join(modes)}"
     labels = modes
 
-    rps_values = [result["rps"] for result in results if modes[0] in result]
-    goodputs_lhs = [result[modes[0]] for result in results if modes[0] in result]
-    goodputs_rhs = [result[modes[1]] for result in results if modes[1] in result]
+    rps_values = [result["rps"] for result in results if result["mode"] == modes[0]]
+    goodputs: List[List[int]] = []
+    for mode in modes:
+        goodputs.append(
+            [result["goodput"] for result in results if result["mode"] == mode]
+        )
 
     x = np.arange(len(rps_values))
-    width = 0.3
-
     fig, ax = plt.subplots(figsize=(10, 6))
-    rects1 = ax.bar(
-        x - width * 0.5,
-        goodputs_lhs,
-        width,
-        color=COLORS[0],
-        label=labels[0],
-    )
-    rects2 = ax.bar(
-        x + width * 0.5,
-        goodputs_rhs,
-        width,
-        color=COLORS[1],
-        label=labels[1],
-    )
+    bars: List = []
+    if len(modes) == 2:
+        width = 0.3
+        bars.append(
+            ax.bar(
+                x - width * 0.5,
+                goodputs[0],
+                width,
+                color=COLORS[0],
+                label=labels[0],
+            )
+        )
+        bars.append(
+            ax.bar(
+                x + width * 0.5,
+                goodputs[1],
+                width,
+                color=COLORS[1],
+                label=labels[1],
+            )
+        )
+    elif len(modes) == 3:
+        width = 0.2
+        bars.append(
+            ax.bar(
+                x - width,
+                goodputs[0],
+                width,
+                color=COLORS[0],
+                label=labels[0],
+            )
+        )
+        bars.append(
+            ax.bar(
+                x,
+                goodputs[1],
+                width,
+                color=COLORS[1],
+                label=labels[1],
+            )
+        )
+        bars.append(
+            ax.bar(
+                x + width,
+                goodputs[2],
+                width,
+                color=COLORS[2],
+                label=labels[2],
+            )
+        )
+    elif len(modes) == 4:
+        width = 0.15
+        bars.append(
+            ax.bar(
+                x - width * 1.5,
+                goodputs[0],
+                width,
+                color=COLORS[0],
+                label=labels[0],
+            )
+        )
+        bars.append(
+            ax.bar(
+                x - width * 0.5,
+                goodputs[1],
+                width,
+                color=COLORS[1],
+                label=labels[1],
+            )
+        )
+        bars.append(
+            ax.bar(
+                x + width * 0.5,
+                goodputs[2],
+                width,
+                color=COLORS[2],
+                label=labels[2],
+            )
+        )
+        bars.append(
+            ax.bar(
+                x + width * 1.5,
+                goodputs[3],
+                width,
+                color=COLORS[3],
+                label=labels[3],
+            )
+        )
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
@@ -238,8 +282,7 @@ def plot_goodput_cmp_bar(
                 fontsize=fontsize_medium,
             )
 
-    # autolabel(rects1)
-    autolabel(rects2)
+    autolabel(bars[-1])
 
     fig.tight_layout()
     plt.ylim(Y_MIN, Y_MAX)
@@ -540,6 +583,40 @@ def plot_tail_cmp_bar(
 
     fig.tight_layout()
     plt.grid(True, linestyle="--", linewidth=0.5)
+    plt.savefig(fig_name)
+
+
+# [DEPRECATED]
+
+
+def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
+    rps_values = [result["rps"] for result in results]
+    goodputs_load_gen = [result["goodput_load_gen"] for result in results]
+    # goodputs_fe = [result["goodput_fe"] for result in results]
+
+    fig = plt.figure(figsize=(10, 6))
+
+    plt.plot(
+        rps_values,
+        goodputs_load_gen,
+        label="Goodput Load Gen",
+        color=COLORS[0],
+        marker=MARKERS[0],
+    )
+    # plt.plot(
+    #     rps_values,
+    #     goodputs_fe,
+    #     label="Goodput FE",
+    #     color=COLORS[1],
+    #     marker=MARKERS[1],
+    # )
+
+    plt.xlabel("RPS")
+    plt.ylabel("Goodput")
+    plt.ylim(Y_MIN, Y_MAX)
+    plt.title(f"Goodput vs RPS ({mode})")
+    plt.legend(loc="upper left", fontsize=fontsize_medium)
+    plt.grid(True)
     plt.savefig(fig_name)
 
 
