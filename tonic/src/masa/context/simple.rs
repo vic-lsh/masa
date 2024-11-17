@@ -43,7 +43,7 @@ pub struct SimpleParentContext {
 #[derive(Debug)]
 pub struct SimpleChildContext {
     _method: GrpcMethod,
-    track_latency: LatencyTracker,
+    latency_tracker: LatencyTracker,
 }
 
 #[derive(Debug)]
@@ -152,11 +152,11 @@ impl RequestHandlerHooks for SimpleParentContext {
         request: &mut Request<T>,
         _child_send_ctx: &mut ChildContext,
     ) -> Option<Status> {
+        // log::info!("parent_ctx, before_child_rpc, method: {:?}", method.id());
         if self.check_early_return() {
             return Some(Status::new(Code::DeadlineExceeded, self.method.id()));
         }
 
-        // log::info!("parent_ctx, before_child_rpc, method: {:?}", method.id());
         let graph = self
             .server_ctx
             .local_graph_trackers
@@ -176,6 +176,7 @@ impl RequestHandlerHooks for SimpleParentContext {
         } else {
             panic!("Unimplemented policy");
         }
+
         let child_recv_ctx = Context::new(
             self.ctx.api().clone(),
             self.ctx.test_id(),
@@ -187,6 +188,7 @@ impl RequestHandlerHooks for SimpleParentContext {
             latest_exec,
         );
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
+
         None
     }
 
@@ -200,7 +202,12 @@ impl RequestHandlerHooks for SimpleParentContext {
         //     "parent_ctx, after_child_rpc, method: {:?}",
         //     child_rpc_method.id()
         // );
-        let latency_us = child_ctx.track_latency.get_latency().unwrap().as_micros();
+
+        if let Err(status) = resp {
+            return Some(status.clone());
+        }
+
+        let latency_us = child_ctx.latency_tracker.get_latency().unwrap().as_micros();
         let mut graph = self
             .server_ctx
             .local_graph_trackers
@@ -210,14 +217,9 @@ impl RequestHandlerHooks for SimpleParentContext {
             .unwrap();
         graph.track_span(&child_rpc_method.id(), latency_us as u64);
 
-        if let Err(status) = resp {
-            return Some(status.clone());
-        }
-
         if self.check_early_return() {
             return Some(Status::new(Code::DeadlineExceeded, self.method.id()));
         }
-
         None
     }
 
@@ -260,22 +262,22 @@ impl ClientStubHooks for SimpleChildContext {
     fn new<T>(method: GrpcMethod, _req: &Request<T>) -> Self {
         Self {
             _method: method,
-            track_latency: LatencyTracker::NotStarted,
+            latency_tracker: LatencyTracker::NotStarted,
         }
     }
 
     fn before_send<T>(&mut self, _req: &mut Request<T>) {
         // log::info!("child_ctx, before_send, method: {:?}", self.method.id());
-        self.track_latency.start();
+        self.latency_tracker.start();
     }
 
     fn after_recv<T>(&mut self, _response: &mut Result<Response<T>, Status>) {
-        self.track_latency.record_latency();
         // log::info!(
         //     "child_ctx, after_recv, method: {:?}, elapsed: {} us",
         //     self.method.id(),
         //     self.track_latency.get_latency().unwrap().as_micros(),
         // );
+        self.latency_tracker.record_latency();
     }
 }
 
