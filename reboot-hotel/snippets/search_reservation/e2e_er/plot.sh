@@ -5,11 +5,13 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 	echo "Error: plese run in the reboot-hotel directory" >&2
 	exit 1
 fi
-snippets=snippets/search_reservation/e2e_er
+
+folder=snippets/search_reservation
+snippet=e2e_er
 mode=e2e_er
 data=tmp_1112
 
 echo "Plotting goodput..."
 python3 $pwd/scripts/plots/plot_goodput.py \
 	--mode $mode \
-	--path $pwd/$snippets/$data
+	--path $pwd/$folder/$snippet/$data
