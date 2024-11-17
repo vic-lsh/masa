@@ -3,6 +3,7 @@
 # because not all tests build right now, we only test the modules we know to build successfully.
 
 packages=(
+    "masa-integration-tests"
     "tonic"
     "tonic-build"
     "tonic-masa"

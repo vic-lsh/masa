@@ -8,24 +8,21 @@ service Frontend {
 }
 
 message SearchRequest {
-  string customer = 1;
-  uint32 ave = 2;
-  uint32 inDate = 3;
-  uint32 outDate = 4;
-
-  // float lat = 5;
-  // float lon = 6;
+  double lat = 1;
+  double lon = 2;
+  string inDate = 3;
+  string outDate = 4;
+  optional string locale = 5;
 }
 
 message SearchResponse { repeated Hotel hotels = 1; }
 
 message Hotel {
   string name = 1;
-
-  // string phoneNumber = 2;
-  // string description = 3;
-  // Address address = 4;
-  // repeated Image images = 5;
+  string id = 2;
+  string phoneNumber = 3;
+  float lat = 4;
+  float lon = 5;
 }
 
 // message Address {
@@ -46,8 +43,8 @@ message ReservationRequest {
   string password = 2;
   string customer = 11;
   repeated string hotels = 12;
-  uint32 inDate = 13;
-  uint32 outDate = 14;
+  string inDate = 13;
+  string outDate = 14;
   uint32 numRooms = 15;
 }
 

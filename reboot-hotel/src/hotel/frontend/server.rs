@@ -72,34 +72,43 @@ impl Frontend for FrontendImpl {
         let request = request.into_inner();
 
         let mut search_client = self.search_client.clone();
-        let span_request = search::NearbyRequest { ave: request.ave };
-        let span_response = search_client.handle_nearby(span_request).await?;
-        let response = span_response.into_inner();
+        let search_req = search::NearbyRequest {
+            lat: request.lat,
+            lon: request.lon,
+            in_date: request.in_date.clone(),
+            out_date: request.out_date.clone(),
+        };
+        let search_resp = search_client.handle_nearby(search_req).await?;
+        let response = search_resp.into_inner();
 
         let mut reservation_client = self.reservation_client.clone();
         let span_request = reservation::ReservationRequest {
-            customer: request.customer,
-            hotels: response.hotels.clone(),
+            customer_name: "".into(),
+            hotel_id: response.hotel_ids.clone(),
             in_date: request.in_date,
             out_date: request.out_date,
-            num_rooms: 0,
+            room_number: 1,
         };
-        let span_response = reservation_client
-            .handle_check_availability(span_request)
-            .await?;
+        let span_response = reservation_client.check_availability(span_request).await?;
         let response = span_response.into_inner();
 
         let mut profile_client = self.profile_client.clone();
         let profile_request = profile::ProfileRequest {
-            hotels: response.hotels,
+            hotel_ids: response.hotel_id,
+            locale: request.locale.unwrap_or("en".to_string()),
         };
-        let profile_response = profile_client.handle_get_profiles(profile_request).await?;
+        let profile_response = profile_client.get_profiles(profile_request).await?;
         let response = profile_response.into_inner();
 
         let mut hotels = Vec::new();
-        for profile in response.profiles {
+        for hotel in response.hotels {
+            let addr = hotel.address.unwrap();
             hotels.push(frontend::Hotel {
-                name: profile.hotel,
+                name: hotel.name,
+                id: hotel.id,
+                phone_number: hotel.phone_number,
+                lat: addr.lat,
+                lon: addr.lon,
             });
         }
 
@@ -136,19 +145,19 @@ impl Frontend for FrontendImpl {
 
         let mut reservation_client = self.reservation_client.clone();
         let reservation_request = reservation::ReservationRequest {
-            customer: request.customer,
-            hotels: request.hotels,
+            customer_name: request.customer,
+            hotel_id: request.hotels,
             in_date: request.in_date,
             out_date: request.out_date,
-            num_rooms: request.num_rooms,
+            room_number: 1,
         };
         let reservation_response = reservation_client
-            .handle_make_reservation(reservation_request)
+            .make_reservation(reservation_request)
             .await?;
         let response = reservation_response.into_inner();
 
         let response = frontend::ReservationResponse {
-            hotels: response.hotels,
+            hotels: response.hotel_id,
         };
 
         let mut response = Response::new(response);
