@@ -647,6 +647,7 @@ impl Reservation for ReservationImpl {
         }
 
         // Insert reservations
+        let mut reservations = Vec::new();
         let mut current_date = in_date;
         while current_date < out_date {
             current_date = current_date + chrono::Duration::days(1);
@@ -660,9 +661,12 @@ impl Reservation for ReservationImpl {
                 out_date: out_date_str,
                 number: req.room_number,
             };
-
-            res_collection.insert_one(reservation, None).await.unwrap();
+            reservations.push(reservation);
         }
+        res_collection
+            .insert_many(reservations, None)
+            .await
+            .unwrap();
         res.hotel_id.push(hotel_id.clone());
 
         {
