@@ -25,14 +25,68 @@ snippets=snippets/search_reservation
 # 	--output $snippets/e2e_er \
 # 	--repeats 1
 
-echo "Running local..."
+# echo "Running local..."
+# $pwd/scripts/local/run_all.sh \
+# 	--features prio_local \
+# 	--output $snippets/local \
+# 	--repeats 1
+
+# echo "Running local_er..."
+# $pwd/scripts/local/run_all.sh \
+# 	--features prio_local_early \
+# 	--output $snippets/local_er \
+# 	--repeats 1
+
+# [ONGOING]
+
+# P50
+echo "Running local_p50..."
 $pwd/scripts/local/run_all.sh \
 	--features prio_local \
-	--output $snippets/local \
+	--output $snippets/local_p50 \
 	--repeats 1
 
-echo "Running local_er..."
+echo "Running local_er_p50..."
 $pwd/scripts/local/run_all.sh \
 	--features prio_local_early \
-	--output $snippets/local_er \
+	--output $snippets/local_er_p50 \
 	--repeats 1
+
+# # P75
+# echo "Running local_p75..."
+# $pwd/scripts/local/run_all.sh \
+# 	--features prio_local \
+# 	--output $snippets/local_p75 \
+# 	--repeats 1
+
+# echo "Running local_er_p75..."
+# $pwd/scripts/local/run_all.sh \
+# 	--features prio_local_early \
+# 	--output $snippets/local_er_p75 \
+# 	--repeats 1
+
+# # P90
+# echo "Running local_p90..."
+# $pwd/scripts/local/run_all.sh \
+# 	--features prio_local \
+# 	--output $snippets/local_p90 \
+# 	--repeats 1
+
+# echo "Running local_er_p90..."
+# $pwd/scripts/local/run_all.sh \
+# 	--features prio_local_early \
+# 	--output $snippets/local_er_p90 \
+# 	--repeats 1
+
+# # P95
+# echo "Running local_p95..."
+# $pwd/scripts/local/run_all.sh \
+# 	--features prio_local \
+# 	--output $snippets/local_p95 \
+# 	--repeats 1
+
+# echo "Running local_er_p95..."
+# $pwd/scripts/local/run_all.sh \
+# 	--features prio_local_early \
+# 	--output $snippets/local_er_p95 \
+# 	--repeats 1

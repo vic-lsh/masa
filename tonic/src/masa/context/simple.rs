@@ -42,7 +42,7 @@ pub struct SimpleParentContext {
 /// A simple implementation of `ClientStubHooks`.
 #[derive(Debug)]
 pub struct SimpleChildContext {
-    method: GrpcMethod,
+    _method: GrpcMethod,
     track_latency: LatencyTracker,
 }
 
@@ -170,7 +170,7 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
             deadline = self.ctx.deadline();
             latest_exec_at = self.ctx.latest_exec_at();
         } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
-            // [TODO] Return two values at one time.
+            // [TODO:LD] Return two values at one time.
             deadline = self.ctx.deadline() - graph.estimate_suffix_deadline(&method.id());
             latest_exec_at =
                 self.ctx.deadline() - graph.estimate_suffix_latest_exec_at(&method.id());
@@ -260,7 +260,7 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
 impl ClientStubHooks for SimpleChildContext {
     fn new<T>(method: GrpcMethod, _req: &Request<T>) -> Self {
         Self {
-            method,
+            _method: method,
             track_latency: LatencyTracker::NotStarted,
         }
     }
