@@ -175,6 +175,7 @@ structopt = "0.3.23"
 crossbeam-channel = "0.5"
 mongodb = { path = "../3rd_party/mongodb" }
 memcache = "0.16"
+async-memcached = { path = "../3rd_party/async-memcached" }
 log = "0.4"
 env_logger = "0.9"
 
