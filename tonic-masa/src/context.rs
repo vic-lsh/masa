@@ -12,7 +12,7 @@ pub struct Context {
     request_class: RequestClass,
     start_at: Timestamp,
     deadline: Timestamp,
-    latest_exec_at: Timestamp,
+    latest_exec: Timestamp,
     frontend_elapse: Option<u64>,
 }
 
@@ -26,7 +26,7 @@ impl Context {
         request_class: RequestClass,
         start_at: Timestamp,
         deadline: Timestamp,
-        latest_exec_at: Timestamp,
+        latest_exec: Timestamp,
     ) -> Self {
         Self {
             api,
@@ -36,7 +36,7 @@ impl Context {
             request_class,
             start_at,
             deadline,
-            latest_exec_at,
+            latest_exec,
             frontend_elapse: None,
         }
     }
@@ -77,8 +77,8 @@ impl Context {
     }
 
     /// Get the latest execution timestamp.
-    pub fn latest_exec_at(&self) -> Timestamp {
-        self.latest_exec_at
+    pub fn latest_exec(&self) -> Timestamp {
+        self.latest_exec
     }
 
     /// Get the frontend elapse time.

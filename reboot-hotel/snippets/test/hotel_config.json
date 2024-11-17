@@ -1,6 +1,6 @@
 {
-	"ExecutorThreads": 1,
-	"Hotels": 1000,
+	"ExecutorThreads": 2,
+	"Hotels": 1024,
 	"Payload": 1024,
 	"CacheConns": 32,
 	"ProbCacheMiss": 20,
@@ -14,7 +14,7 @@
 	"ReservationProbHotelAvail": 80,
 	"ReservationMongodbAddr": "mongodb://127.0.0.1:27005",
 	"ReservationMemcachedAddr": "memcache://127.0.0.1:11005",
-	"UserUsers": 1000,
+	"UserUsers": 1024,
 	"UserProbCheckUser": 80,
 	"UserMongodbAddr": "mongodb://127.0.0.1:27006"
 }

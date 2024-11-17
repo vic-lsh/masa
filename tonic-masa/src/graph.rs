@@ -81,7 +81,7 @@ impl LocalGraphTracker {
                 existed = true;
                 break;
             }
-            suffix_sum += span.estimate();
+            suffix_sum += span.estimate_deadline();
         }
         log::info!(
             "estimate_suffix_deadline, service_id: {:?}, method_id: {:?}, child_method_id: {:?}, suffix_sum: {}",
@@ -95,18 +95,18 @@ impl LocalGraphTracker {
     }
 
     /// Return the estimated suffix latency no before than a span indexed by its path.
-    pub fn estimate_suffix_latest_exec_at(&self, child_method_id: &MethodId) -> Latency {
+    pub fn estimate_suffix_latest_exec(&self, child_method_id: &MethodId) -> Latency {
         let mut existed = false;
         let mut suffix_sum = 0;
         for span in self.spans.iter().rev() {
-            suffix_sum += span.estimate();
+            suffix_sum += span.estimate_latest_exec();
             if span.span_id() == child_method_id {
                 existed = true;
                 break;
             }
         }
         log::info!(
-            "estimate_suffix_latest_exec_at, service_id: {:?}, method_id: {:?}, child_method_id: {:?}, suffix_sum: {}",
+            "estimate_suffix_latest_exec, service_id: {:?}, method_id: {:?}, child_method_id: {:?}, suffix_sum: {}",
             self.service_id,
             self.method_id,
             child_method_id,

@@ -1,0 +1,39 @@
+#!/bin/bash
+
+pwd=$(pwd)
+if [[ "$pwd" != */reboot-hotel ]]; then
+	echo "Error: plese run in the reboot-hotel directory" >&2
+	exit 1
+fi
+folder=snippets/test
+
+# echo "Running fifo..."
+# $pwd/scripts/local/run_all.sh \
+# 	--rust-log warn \
+# 	--tracker-capacity 1024 \
+# 	--pctl-deadline 50 \
+# 	--pctl-latest-exec 50 \
+# 	--cargo-features fifo \
+# 	--hotel-config $folder/hotel_config.json \
+# 	--output-path $folder/fifo \
+# 	--repeats 1
+
+# echo "Running e2e..."
+# $pwd/scripts/local/run_all.sh \
+
+# echo "Running e2e_er..."
+# $pwd/scripts/local/run_all.sh \
+
+echo "Running local..."
+$pwd/scripts/local/run_all.sh \
+	--rust-log warn \
+	--tracker-capacity 1024 \
+	--pctl-deadline 50 \
+	--pctl-latest-exec 50 \
+	--cargo-features prio_local \
+	--hotel-config $folder/hotel_config.json \
+	--output-path $folder/local \
+	--repeats 1
+
+# echo "Running local_er..."
+# $pwd/scripts/local/run_all.sh \

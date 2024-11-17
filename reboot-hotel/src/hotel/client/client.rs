@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let request_class = 0;
     let start_at = 0;
     let deadline = 10_000;
-    let latest_exec_at = deadline;
+    let latest_exec = deadline;
 
     let ctx = Context::new(
         graph_id.clone(),
@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         request_class,
         start_at,
         deadline,
-        latest_exec_at,
+        latest_exec,
     );
 
     let mut request = Request::new(SearchRequest { ave: 61 });

@@ -1,11 +1,13 @@
-use crate::{Distribution, Latency, LatencyTracker, SpanId, ONLINE_TRACKER};
+use crate::{Distribution, Latency, LatencyTracker, SpanId};
 
 /// Represent a span inner.
 #[derive(Debug, Default, Clone)]
 pub struct Span {
     span_id: SpanId,
     distribution: Option<Distribution>,
-    tracker_capacity: Option<usize>,
+    capacity: usize,
+    pctl_deadline: usize,
+    pctl_latest_exec: usize,
 }
 
 impl Span {
@@ -13,12 +15,16 @@ impl Span {
     pub fn new(
         span_id: SpanId,
         distribution: Option<Distribution>,
-        tracker_capacity: Option<usize>,
+        capacity: usize,
+        pctl_deadline: usize,
+        pctl_latest_exec: usize,
     ) -> Self {
         Self {
             span_id,
             distribution,
-            tracker_capacity,
+            capacity,
+            pctl_deadline,
+            pctl_latest_exec,
         }
     }
 
@@ -39,12 +45,20 @@ impl Span {
 pub struct SpanTracker {
     span_id: SpanId,
     distribution: Option<Distribution>,
-    tracker: Option<LatencyTracker>,
+    tracker: LatencyTracker,
+    pctl_deadline: usize,
+    pctl_latest_exec: usize,
 }
 
 impl From<Span> for SpanTracker {
     fn from(span: Span) -> Self {
-        SpanTracker::new(span.span_id, span.distribution, span.tracker_capacity)
+        SpanTracker::new(
+            span.span_id,
+            span.distribution,
+            span.capacity,
+            span.pctl_deadline,
+            span.pctl_latest_exec,
+        )
     }
 }
 
@@ -53,17 +67,17 @@ impl SpanTracker {
     pub fn new(
         span_id: SpanId,
         distribution: Option<Distribution>,
-        tracker_capacity: Option<usize>,
+        capacity: usize,
+        pctl_deadline: usize,
+        pctl_latest_exec: usize,
     ) -> Self {
-        let mut tracker = None;
-        if ONLINE_TRACKER {
-            let tracker_capacity = tracker_capacity.unwrap();
-            tracker = Some(LatencyTracker::new(span_id.clone(), tracker_capacity));
-        }
+        let tracker = LatencyTracker::new(span_id.clone(), capacity);
         Self {
             span_id,
             distribution,
             tracker,
+            pctl_deadline,
+            pctl_latest_exec,
         }
     }
 
@@ -81,20 +95,25 @@ impl SpanTracker {
     /// Estimate the latency.
     #[inline]
     pub fn estimate(&self) -> Latency {
-        if ONLINE_TRACKER {
-            self.tracker.as_ref().unwrap().estimate()
-        } else {
-            self.distribution().mean()
-        }
+        panic!("Deprecated");
+        // self.distribution().mean()
+    }
+
+    /// Estimate the latency for the deadline.
+    #[inline]
+    pub fn estimate_deadline(&self) -> Latency {
+        self.tracker.estimate(self.pctl_deadline)
+    }
+
+    /// Estimate the latency for the latest exec.
+    #[inline]
+    pub fn estimate_latest_exec(&self) -> Latency {
+        self.tracker.estimate(self.pctl_latest_exec)
     }
 
     /// Update the tracker.
     #[inline]
     pub fn track(&mut self, latency: Latency) {
-        if ONLINE_TRACKER {
-            self.tracker.as_mut().unwrap().track(latency);
-        } else {
-            panic!("Not implemented");
-        }
+        self.tracker.track(latency);
     }
 }

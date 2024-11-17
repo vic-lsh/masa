@@ -345,7 +345,7 @@ where
                         if FIFO || FIFO_INFRA || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
                             prio = PriorityHint::new(ctx.deadline());
                         } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
-                            prio = PriorityHint::new(ctx.latest_exec_at());
+                            prio = PriorityHint::new(ctx.latest_exec());
                         } else {
                             panic!("Unimplemented policy");
                         }

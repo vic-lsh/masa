@@ -170,8 +170,6 @@ mongodb = { path = "../3rd_party/mongodb" }
 memcache = "0.16"
 log = "0.4"
 env_logger = "0.9"
-
-
 # Common dependencies
 tokio = { path = "../3rd_party/tokio/tokio", features = [
 	"rt-multi-thread",

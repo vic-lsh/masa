@@ -5,18 +5,42 @@ if [[ "$pwd" != */reboot-hotel ]]; then
     echo "Error: plese run in the reboot-hotel directory" >&2
     exit 1
 fi
-
-features=""
-output=""
-repeats="1"
+rust_log=warn
+tracker_capacity=512
+pctl_deadline=""
+pctl_latest_exec=""
+cargo_features=""
+output_path=""
+hotel_config=""
+repeats=1
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-    --features)
-        features="$2"
+    --rust-log)
+        rust_log="$2"
         shift
         ;;
-    --output)
-        output="$2"
+    --tracker-capacity)
+        tracker_capacity="$2"
+        shift
+        ;;
+    --pctl-deadline)
+        pctl_deadline="$2"
+        shift
+        ;;
+    --pctl-latest-exec)
+        pctl_latest_exec="$2"
+        shift
+        ;;
+    --cargo-features)
+        cargo_features="$2"
+        shift
+        ;;
+    --output-path)
+        output_path="$2"
+        shift
+        ;;
+    --hotel-config)
+        hotel_config="$2"
         shift
         ;;
     --repeats)
@@ -30,17 +54,28 @@ while [[ "$#" -gt 0 ]]; do
     esac
     shift
 done
-if [ -z "$features" ]; then
-    echo "Expected a masa feature flag using --features"
+if [ -z "$pctl_deadline" ]; then
+    echo "Expected a percentile of deadline using --pctl-deadline"
     exit 1
 fi
-if [ -z "$output" ]; then
-    echo "Output to snippets/$features"
-    output=snippets/$features
+if [ -z "$pctl_latest_exec" ]; then
+    echo "Expected a percentile of execution using --pctl-latest-exec"
+    exit 1
+fi
+if [ -z "$cargo_features" ]; then
+    echo "Expected a masa feature flag using --cargo_features"
+    exit 1
+fi
+if [ -z "$output_path" ]; then
+    echo "Expected an output path using --output-path"
+    exit 1
+fi
+if [ -z "$hotel_config" ]; then
+    echo "Expected a hotel config file using --hotel-config"
+    exit 1
 fi
 
 session_name="hotel"
-
 services=(
     "hotel_geo"
     "hotel_rate"
@@ -61,7 +96,6 @@ waits_secs=(
     18
     21
 )
-rust_log=warn
 
 init() {
     if tmux has-session -t $session_name 2>/dev/null; then
@@ -70,15 +104,15 @@ init() {
 }
 
 build() {
-    echo "Building $features..."
+    echo "Building $cargo_features..."
     cargo build \
         --release \
-        --features $features \
-        >$output/tmp_build.log 2>&1
+        --features $cargo_features \
+        >$output_path/tmp_build.log 2>&1
 }
 
 reset() {
-    rm $output/*.log
+    rm $output_path/*.log
     docker compose -f scripts/local/containers.yaml down --remove-orphans
     docker compose -f scripts/local/containers.yaml up -d
 }
@@ -96,25 +130,31 @@ ready_go() {
 
             run_cmd=" \
 RUST_LOG=$rust_log \
+TRACKER_CAPACITY=$tracker_capacity \
+PCTL_DEADLINE=$pctl_deadline \
+PCTL_LATEST_EXEC=$pctl_latest_exec \
 cargo run --release \
---features $features \
+--features $cargo_features \
 --bin $service \
 -- \
---config scripts/local/hotel_config.json \
-> $output/tmp_$service.log 2>&1"
+--config $hotel_config \
+> $output_path/tmp_$service.log 2>&1"
 
         else
 
             run_cmd=" \
 RUST_LOG=$rust_log \
+TRACKER_CAPACITY=$tracker_capacity \
+PCTL_DEADLINE=$pctl_deadline \
+PCTL_LATEST_EXEC=$pctl_latest_exec \
 cargo run --release \
---features $features \
+--features $cargo_features \
 --bin $service \
 -- \
---hotel-config scripts/local/hotel_config.json \
---gen-config $output/gen_config.json \
+--hotel-config $hotel_config \
+--gen-config $output_path/gen_config.json \
 --run-idx $run_idx \
-> $output/tmp_$service.log 2>&1"
+> $output_path/tmp_$service.log 2>&1"
 
         fi
 
@@ -138,10 +178,10 @@ $run_cmd"
     while [[ $all_done == false ]]; do
         sleep 10
         service=${services[-1]}
-        if [ ! -f $output/tmp_$service.log ]; then
+        if [ ! -f $output_path/tmp_$service.log ]; then
             continue
         fi
-        if tail -n 1 $output/tmp_$service.log | grep -q "Load generator done"; then
+        if tail -n 1 $output_path/tmp_$service.log | grep -q "Load generator done"; then
             all_done=true
         fi
     done

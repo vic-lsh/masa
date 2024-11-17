@@ -81,7 +81,7 @@ impl LoadGenerator {
                     let start_at = time_now();
                     let slo = 10_000;
                     let deadline = start_at + slo;
-                    let latest_exec_at = deadline;
+                    let latest_exec = deadline;
                     let request_class = 0;
 
                     let ctx = Context::new(
@@ -92,7 +92,7 @@ impl LoadGenerator {
                         request_class,
                         start_at,
                         deadline,
-                        latest_exec_at,
+                        latest_exec,
                     );
                     let mut request = tonic::Request::new(request.clone());
                     request.metadata_mut().insert_ctx("ctx", &ctx);

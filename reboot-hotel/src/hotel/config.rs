@@ -11,6 +11,8 @@ pub struct GenConfig {
     pub slos: Vec<u64>,
     #[serde(rename = "Rps")]
     pub rps_values: Vec<u64>,
+    #[serde(rename = "Gap")]
+    pub gap: String,
     #[serde(rename = "WarmupSecs")]
     pub warmup_secs: u64,
     #[serde(rename = "DurationSecs")]
@@ -26,6 +28,9 @@ pub struct GenConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HotelConfig {
+    #[serde(rename = "ExecutorThreads")]
+    pub executor_threads: u32,
+
     #[serde(rename = "Hotels")]
     pub hotels: u32,
     #[serde(rename = "Payload")]

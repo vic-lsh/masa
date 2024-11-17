@@ -165,15 +165,14 @@ impl RequestHandlerHooks for SimpleParentContext {
             .read()
             .unwrap();
         let deadline;
-        let latest_exec_at;
+        let latest_exec;
         if FIFO || FIFO_INFRA || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
             deadline = self.ctx.deadline();
-            latest_exec_at = self.ctx.latest_exec_at();
+            latest_exec = self.ctx.latest_exec();
         } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
             // [TODO:LD] Return two values at one time.
             deadline = self.ctx.deadline() - graph.estimate_suffix_deadline(&method.id());
-            latest_exec_at =
-                self.ctx.deadline() - graph.estimate_suffix_latest_exec_at(&method.id());
+            latest_exec = self.ctx.deadline() - graph.estimate_suffix_latest_exec(&method.id());
         } else {
             panic!("Unimplemented policy");
         }
@@ -185,7 +184,7 @@ impl RequestHandlerHooks for SimpleParentContext {
             self.ctx.request_class(),
             self.ctx.start_at(),
             deadline,
-            latest_exec_at,
+            latest_exec,
         );
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
         None
@@ -289,8 +288,6 @@ impl SimpleServerContext {
         //   - Method
         //    - Span (Method / Compute)
 
-        // let global_graph =
-        //     mock_graph::charleston::get_global_graph_i2(service_name.to_string(), Some(100), 1_000);
         let global_graph = mock_graph::hotel::get_global_graph(service_name.to_string());
 
         // [NOTE] Ideally, trackers should be Hashmap<MethodId, LatencyTracker>.
@@ -305,12 +302,6 @@ impl SimpleServerContext {
                 (*path, RwLock::new(local_graph))
             })
             .collect();
-
-        log::warn!(
-            "SimpleServerContext, service: {:?}, local_graphs: {:?}",
-            service_name,
-            local_graphs
-        );
 
         let num_early_returns = Arc::new(AtomicUsize::new(0));
         // let num_early_returns_clone = num_early_returns.clone();
@@ -329,6 +320,12 @@ impl SimpleServerContext {
         //         prev = curr;
         //     }
         // });
+
+        log::warn!(
+            "SimpleServerContext, service: {:?}, local_graphs: {:?}",
+            service_name,
+            local_graphs
+        );
 
         Self {
             service_name,
