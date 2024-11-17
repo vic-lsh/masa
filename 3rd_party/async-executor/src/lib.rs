@@ -800,21 +800,21 @@ impl<M> State<M> {
     /// Creates state for a new executor.
     fn new() -> State<M> {
         if cfg!(feature = "prio_class") {
-            log::warn!("Enabled prio_class");
+            log::warn!("Using prio_class...");
         } else if cfg!(feature = "prio_global") {
-            log::warn!("Enabled prio_global");
+            log::warn!("Using prio_global...");
         } else if cfg!(feature = "prio_global_early") {
-            log::warn!("Enabled prio_global_early");
+            log::warn!("Using prio_global_early...");
         } else if cfg!(feature = "prio_class_global") {
-            log::warn!("Enabled prio_class_global");
+            log::warn!("Using prio_class_global...");
         } else if cfg!(feature = "prio_local") {
-            log::warn!("Enabled prio_local");
+            log::warn!("Using prio_local...");
         } else if cfg!(feature = "prio_local_early") {
-            log::warn!("Enabled prio_local_early");
+            log::warn!("Using prio_local_early...");
         } else if cfg!(feature = "fifo_infra") {
-            log::warn!("Enabled fifo_infra");
+            log::warn!("Using fifo_infra...");
         } else if cfg!(feature = "fifo") {
-            log::warn!("Enabled fifo");
+            log::warn!("Using fifo...");
         } else {
             panic!("Not implemented policy");
         }

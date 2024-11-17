@@ -3,11 +3,7 @@ use tonic_masa::{Api, Distribution as MasaDistribution, GlobalGraph, LocalGraph,
 
 /// Get a global graph with two hops.
 #[allow(dead_code)]
-pub(crate) fn get_global_graph_i2(
-    api: Api,
-    tracker_capacity: Option<usize>,
-    mean: u64,
-) -> GlobalGraph {
+pub(crate) fn get_global_graph_i2(api: Api, tracker_capacity: usize, mean: u64) -> GlobalGraph {
     let local_graphs = {
         let mut graphs = HashMap::new();
         let method_id: MethodId = "/hello.Greeter/SayHello";
@@ -20,6 +16,8 @@ pub(crate) fn get_global_graph_i2(
                     "/hello.Greeter/SayGoodbye".to_string(),
                     Some(MasaDistribution::new(mean, Vec::new())),
                     tracker_capacity,
+                    50,
+                    50,
                 )],
             ),
         );
