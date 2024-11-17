@@ -103,6 +103,7 @@ macro_rules! leap_unwrap {
 }
 
 mod header;
+mod poll_hook;
 mod raw;
 mod runnable;
 mod state;
@@ -114,9 +115,11 @@ mod utils;
 // use core::pin::Pin;
 // use core::task::{Context, Poll};
 
+pub use crate::header::RawPollHook;
+pub use crate::poll_hook::{PollHookFuture, WithPollHook};
 pub use crate::raw::{
-    get_metadata_from_raw_task, get_task_ddl, get_task_ptr, set_metadata_from_raw_task,
-    set_task_ptr,
+    get_task_ddl, get_task_ptr, maybe_clone_my_child_task_poll_hooks,
+    reset_my_child_task_poll_hooks, set_my_child_task_poll_hooks, set_task_ptr,
 };
 pub use crate::runnable::{
     spawn, spawn_unchecked, spawn_with_deadline, Builder, Runnable, Schedule, ScheduleInfo,

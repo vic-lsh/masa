@@ -3,8 +3,8 @@ pub mod config;
 pub mod hotel {
     tonic::include_proto!("frontend");
 }
+mod gen;
 
-use std::cmp;
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
@@ -15,8 +15,9 @@ use std::sync::{
 };
 
 use crossbeam_channel::{unbounded, Sender};
+use gen::{gen_reserve_request, gen_search_request};
 use rand::{rngs::StdRng, SeedableRng};
-use rand_distr::{Distribution, Exp, Uniform};
+use rand_distr::{Distribution, Uniform};
 use structopt::StructOpt;
 use tokio::time::{timeout, Duration, Instant};
 
@@ -26,7 +27,7 @@ use tonic_masa::{
 };
 
 use config::{GenConfig, HotelConfig};
-use hotel::{frontend_client::FrontendClient, ReservationRequest, SearchRequest};
+use hotel::frontend_client::FrontendClient;
 use reboot_hotel::{fetch_traces, init_logging, time_now, Span};
 
 #[derive(StructOpt, Debug, Clone)]
@@ -42,7 +43,7 @@ pub struct Args {
 
 #[derive(Debug)]
 struct LoadGenerator {
-    hotel_cfg: HotelConfig,
+    _hotel_cfg: HotelConfig,
     gen_cfg: GenConfig,
     rng: StdRng,
     rps: u64,
@@ -52,7 +53,7 @@ struct LoadGenerator {
 
 impl LoadGenerator {
     pub fn new(
-        hotel_cfg: HotelConfig,
+        _hotel_cfg: HotelConfig,
         gen_cfg: GenConfig,
         rng: StdRng,
         rps: u64,
@@ -79,7 +80,7 @@ impl LoadGenerator {
             panic!("Not implemented policy");
         }
         Self {
-            hotel_cfg,
+            _hotel_cfg,
             gen_cfg,
             rng,
             rps,
@@ -102,11 +103,16 @@ impl LoadGenerator {
         let cnt_err_client = Arc::new(AtomicUsize::new(0));
         let cnt_err_client_ot = Arc::new(AtomicUsize::new(0));
 
+        let cnt_err_search = Arc::new(AtomicUsize::new(0));
+        let cnt_err_reserve = Arc::new(AtomicUsize::new(0));
+
         let cnt_all_clone = cnt_all.clone();
         let cnt_success_clone = cnt_success.clone();
         let cnt_err_svc_clone = cnt_err_svc.clone();
         let cnt_err_client_clone = cnt_err_client.clone();
         let cnt_err_client_ot_clone = cnt_err_client_ot.clone();
+        let cnt_err_search_clone = cnt_err_search.clone();
+        let cnt_err_reserve_clone = cnt_err_reserve.clone();
 
         tokio::task::spawn(async move {
             let mut all_prev = 0;
@@ -122,6 +128,8 @@ impl LoadGenerator {
                 let err_svc = cnt_err_svc_clone.load(Ordering::Relaxed);
                 let err_client = cnt_err_client_clone.load(Ordering::Relaxed);
                 let err_client_ot = cnt_err_client_ot_clone.load(Ordering::Relaxed);
+                let err_search = cnt_err_search_clone.load(Ordering::Relaxed);
+                let err_reserve = cnt_err_reserve_clone.load(Ordering::Relaxed);
 
                 secs += 1;
 
@@ -140,11 +148,13 @@ impl LoadGenerator {
                     err_cl_ot_ps,
                 );
                 log::warn!(
-                    "secs: {}, err_svc_sum: {}, err_cl_sum: {}, err_cl_ot_sum: {}",
+                    "secs: {}, err_svc_sum: {}, err_cl_sum: {}, err_cl_ot_sum: {}, err_search: {}, err_reserve: {}",
                     secs,
                     err_svc,
                     err_client,
                     err_client_ot,
+                    err_search,
+                    err_reserve,
                 );
                 all_prev = all;
                 succ_prev = succ;
@@ -227,33 +237,15 @@ impl LoadGenerator {
 
             if api == "Search" {
                 let request = {
-                    let customer = "Customer".to_string();
-                    let ave = (ctx.request_id() % self.hotel_cfg.hotels as u64) as u32;
-                    let dates = {
-                        let in_date =
-                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
-                        let out_date =
-                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
-                        if in_date < out_date {
-                            (in_date, out_date + 1)
-                        } else {
-                            (out_date, in_date + 1)
-                        }
-                    };
-                    let search_request = SearchRequest {
-                        customer,
-                        ave,
-                        in_date: dates.0,
-                        out_date: dates.1,
-                    };
-                    let mut request = tonic::Request::new(search_request);
+                    let mut request = tonic::Request::new(gen_search_request());
                     request.metadata_mut().insert_ctx("ctx", &ctx);
                     request
                 };
 
+                let err_search = cnt_err_search.clone();
                 tokio::task::spawn(async move {
                     let send_at = time_now();
-                    let timeout_duration = Duration::from_secs(1);
+                    let timeout_duration = Duration::from_secs(30);
                     let response = timeout(timeout_duration, client.handle_search(request)).await;
                     match response {
                         Ok(response) => {
@@ -271,10 +263,13 @@ impl LoadGenerator {
                                 };
                                 if error == "/None" {
                                     good.fetch_add(1, Ordering::Relaxed);
-                                } else if error == "/LGMiss" {
-                                    err_client.fetch_add(1, Ordering::Relaxed);
                                 } else {
-                                    err_svc.fetch_add(1, Ordering::Relaxed);
+                                    if error == "/LGMiss" {
+                                        err_client.fetch_add(1, Ordering::Relaxed);
+                                    } else {
+                                        err_svc.fetch_add(1, Ordering::Relaxed);
+                                    }
+                                    err_search.fetch_add(1, Ordering::Relaxed);
                                 }
                                 let span = Span::new(ctx, latency, error);
                                 trace_tx.try_send(span).unwrap();
@@ -282,6 +277,7 @@ impl LoadGenerator {
                         }
                         Err(_) => {
                             if Instant::now() > trace_at {
+                                err_search.fetch_add(1, Ordering::Relaxed);
                                 err_client_ot.fetch_add(1, Ordering::Relaxed);
                                 let error = "/LGTimeout".to_string();
                                 let span = Span::new(ctx, 0, error);
@@ -292,52 +288,12 @@ impl LoadGenerator {
                 });
             } else if api == "Reservation" {
                 let request = {
-                    let accounts = {
-                        let id = uniform.sample(&mut self.rng) % self.hotel_cfg.user_users as u32;
-                        let username = format!("Username_{}", id);
-                        let password = format!("Password_{}", id);
-                        (username, password)
-                    };
-                    let hotels = {
-                        let lhs = uniform.sample(&mut self.rng) % self.hotel_cfg.hotels as u32;
-                        let rhs = cmp::min(
-                            lhs + uniform.sample(&mut self.rng)
-                                % self.hotel_cfg.reservation_hotels as u32
-                                + 1,
-                            self.hotel_cfg.hotels,
-                        );
-                        let mut hotels = Vec::new();
-                        for i in lhs..rhs {
-                            hotels.push(format!("Sheraton_Ave_{}", i));
-                        }
-                        hotels
-                    };
-                    let dates = {
-                        let in_date =
-                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
-                        let out_date =
-                            uniform.sample(&mut self.rng) % self.hotel_cfg.reservation_dates as u32;
-                        if in_date < out_date {
-                            (in_date, out_date + 1)
-                        } else {
-                            (out_date, in_date + 1)
-                        }
-                    };
-                    let num_rooms = 1;
-                    let reservation_request = ReservationRequest {
-                        username: accounts.0,
-                        password: accounts.1,
-                        customer: "Customer".to_string(),
-                        hotels,
-                        in_date: dates.0,
-                        out_date: dates.1,
-                        num_rooms,
-                    };
-                    let mut request = tonic::Request::new(reservation_request);
+                    let mut request = tonic::Request::new(gen_reserve_request());
                     request.metadata_mut().insert_ctx("ctx", &ctx);
                     request
                 };
 
+                let err_reserve = cnt_err_reserve.clone();
                 tokio::task::spawn(async move {
                     let send_at = time_now();
                     let timeout_duration = Duration::from_secs(1);
@@ -359,10 +315,13 @@ impl LoadGenerator {
                                 };
                                 if error == "/None" {
                                     good.fetch_add(1, Ordering::Relaxed);
-                                } else if error == "/LGMiss" {
-                                    err_client.fetch_add(1, Ordering::Relaxed);
                                 } else {
-                                    err_svc.fetch_add(1, Ordering::Relaxed);
+                                    if error == "/LGMiss" {
+                                        err_client.fetch_add(1, Ordering::Relaxed);
+                                    } else {
+                                        err_svc.fetch_add(1, Ordering::Relaxed);
+                                    }
+                                    err_reserve.fetch_add(1, Ordering::Relaxed);
                                 }
                                 let span = Span::new(ctx, latency, error);
                                 trace_tx.try_send(span).unwrap();
@@ -370,6 +329,7 @@ impl LoadGenerator {
                         }
                         Err(_) => {
                             if Instant::now() > trace_at {
+                                err_reserve.fetch_add(1, Ordering::Relaxed);
                                 err_client_ot.fetch_add(1, Ordering::Relaxed);
                                 let error = "/LGTimeout".to_string();
                                 let span = Span::new(ctx, 0, error);

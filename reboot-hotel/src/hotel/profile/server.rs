@@ -4,142 +4,223 @@ pub mod hotel {
     }
 }
 
-use rand::{rngs::StdRng, SeedableRng};
-use rand_distr::{Distribution, Uniform};
-use std::sync::{Arc, Mutex};
+#[cfg(not(feature = "synthetic"))]
+use std::collections::HashSet;
+use std::sync::Arc;
+#[cfg(feature = "synthetic")]
+use {rand::rngs::StdRng, rand::SeedableRng, rand_distr::Uniform};
 
-use futures::StreamExt;
-use mongodb::{bson::doc, Client, Collection, Database, IndexModel};
-use serde::{Deserialize, Serialize};
+use crate::db;
+use mongodb::{bson::doc, Client as MongoClient};
+use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
+use tonic_masa::LatencyTracker;
 
 use hotel::{profile, profile::profile_server::Profile};
+#[cfg(feature = "workload_stats")]
+use reboot_hotel::AvgTracker;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Hotel {
-    name: String,
-    ave: u32,
-    key: String,
-    payload: Vec<u8>,
+#[cfg(feature = "synthetic")]
+#[allow(unused)]
+struct MasaConfig {
+    hotels: u32,
+    cache_conn: u32,
+    cache_miss_rate: u32,
 }
 
-#[derive(Clone)]
-pub struct HotelManager {
+#[cfg(feature = "synthetic")]
+struct SyntheticProfile {
     rng: Arc<Mutex<StdRng>>,
     uniform: Uniform<u64>,
-    hotels: u32,
-    payload: u32,
-    cache_conn: u32,
-    prob_cache_miss: u32,
-    memcache: memcache::Client,
-    _database: Database,
-    collection: Collection<Hotel>,
+    config: MasaConfig,
 }
 
-impl HotelManager {
+pub struct ProfileImpl {
+    memc_client: Arc<memcache::Client>,
+    mongo_client: Arc<MongoClient>,
+    latency_tracker: Arc<Mutex<LatencyTracker>>,
+    #[cfg(feature = "workload_stats")]
+    fanout_tracker: Arc<AvgTracker>,
+    #[cfg(feature = "synthetic")]
+    synth: SyntheticProfile,
+}
+
+impl ProfileImpl {
     pub async fn new(
-        hotels: u32,
-        payload: u32,
+        #[allow(unused)] hotels: u32,
+        _payload: u32,
         cache_addr: String,
         cache_conn: u32,
-        prob_cache_miss: u32,
+        #[allow(unused)] cache_miss_rate: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let seed = 998244353;
-        let rng = Arc::new(Mutex::new(StdRng::seed_from_u64(seed)));
-        let uniform = Uniform::new(0, 100);
-        let memcache = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
-        let client = Client::with_uri_str(db_addr).await?;
-        let database = client.database("sheraton");
-        let collection = database.collection::<Hotel>("collection");
-        collection.delete_many(doc! {}, None).await?;
-        let manager = HotelManager {
-            rng,
-            uniform,
-            hotels,
-            payload,
-            cache_conn,
-            prob_cache_miss,
-            memcache,
-            _database: database,
-            collection,
-        };
-        let manager_clone = manager.clone();
-        let cache = tokio::spawn(async move {
-            log::warn!("Populating Memcached...");
-            manager_clone
-                .populate_memcache()
-                .await
-                .expect("Failed to populate memcached");
-            log::warn!("Populated Memcached");
-        });
-        let manager_clone = manager.clone();
-        let db = tokio::spawn(async move {
-            log::warn!("Populating Mongodb...");
-            manager_clone
-                .populate_mongodb(hotels)
-                .await
-                .expect("Failed to populate mongodb");
-            log::warn!("Populated Mongodb");
-        });
-        cache.await?;
-        db.await?;
-        Ok(manager)
-    }
+        let memc_client = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
+        let mongo_client = db::initialize_database(&db_addr).await?;
 
-    async fn populate_memcache(&self) -> Result<(), Box<dyn std::error::Error>> {
-        self.memcache.flush()?;
-        let n_hotels = self.hotels as usize;
-        let payload = self.payload as usize;
-        let conn = self.cache_conn as usize;
-        let mut handles = Vec::new();
-        for i in 0..conn {
-            let memcache = self.memcache.clone();
-            let handle = tokio::spawn(async move {
-                for j in (i..n_hotels).step_by(conn) {
-                    let hotel = Hotel {
-                        key: "profile".to_string(),
-                        name: format!("Sheraton_Ave_{}", j),
-                        ave: j as u32,
-                        payload: vec![0; payload],
-                    };
-                    let hotel_json =
-                        serde_json::to_string(&hotel).expect("Failed to serialize hotel");
-                    memcache
-                        .set(hotel.name.as_str(), hotel_json, 0)
-                        .expect("Failed to set hotel");
+        let latency_tracker = Arc::new(Mutex::new(LatencyTracker::new("ProfileSvc".into(), 1024)));
+
+        #[cfg(feature = "workload_stats")]
+        let fanout_tracker = {
+            let fanout_tracker = Arc::new(AvgTracker::default());
+            let fanout = fanout_tracker.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    log::warn!("Avg fanout {}", fanout.get_average_fanout());
                 }
             });
+            fanout_tracker
+        };
+
+        #[cfg(feature = "synthetic")]
+        let (rng, uniform) = {
+            let seed = 998244353;
+            let rng = Arc::new(Mutex::new(StdRng::seed_from_u64(seed)));
+            let uniform = Uniform::new(0, 100);
+            (rng, uniform)
+        };
+
+        Ok(Self {
+            memc_client: Arc::new(memc_client),
+            mongo_client: Arc::new(mongo_client),
+            latency_tracker,
+            #[cfg(feature = "workload_stats")]
+            fanout_tracker,
+            #[cfg(feature = "synthetic")]
+            synth: SyntheticProfile {
+                rng,
+                uniform,
+                config: MasaConfig {
+                    hotels,
+                    cache_conn,
+                    cache_miss_rate,
+                },
+            },
+        })
+    }
+}
+
+#[cfg(not(feature = "synthetic"))]
+#[tonic::async_trait]
+impl Profile for ProfileImpl {
+    async fn get_profiles(
+        &self,
+        request: Request<profile::ProfileRequest>,
+    ) -> Result<Response<profile::ProfileResponse>, Status> {
+        let start = std::time::Instant::now();
+
+        let request = request.into_inner();
+        // self.fanout_tracker.track(request.hotel_ids.len());
+
+        // Track which hotels need to be fetched from MongoDB
+        let mut profile_map: HashSet<String> = request.hotel_ids.iter().cloned().collect();
+
+        let mut hotels = Vec::new();
+
+        // Check memcached first
+        let hotel_ids_ref: Vec<_> = request.hotel_ids.iter().map(|id| id.as_str()).collect();
+        let memc_resp = self
+            .memc_client
+            .gets(&hotel_ids_ref)
+            .map_err(|e| tonic::Status::internal(format!("Memcached error: {}", e)))?;
+        for (hotel_id, item) in memc_resp {
+            if let Ok(value) = String::from_utf8(item) {
+                if let Ok(hotel) = serde_json::from_str::<db::Hotel>(&value) {
+                    hotels.push(hotel);
+                    profile_map.remove(&hotel_id);
+                }
+            }
+        }
+
+        // Handle cache misses with MongoDB
+        let missing_ids: Vec<String> = profile_map.iter().cloned().collect();
+
+        let hotels = Arc::new(Mutex::new(hotels));
+
+        let mut handles = Vec::new();
+
+        for hotel_id in missing_ids {
+            let hotels = Arc::clone(&hotels);
+            let mongo_client = Arc::clone(&self.mongo_client);
+            let memc_client = Arc::clone(&self.memc_client);
+
+            // Spawn a task for each missing hotel
+            let handle = async_executor::spawn(async move {
+                let collection = mongo_client
+                    .database("profile-db")
+                    .collection::<db::Hotel>("hotels");
+
+                // Query MongoDB
+                if let Ok(hotel) = collection.find_one(doc! { "id": &hotel_id }, None).await {
+                    if let Some(hotel) = hotel {
+                        // Update memcached asynchronously
+                        if let Ok(prof_json) = serde_json::to_string(&hotel) {
+                            async_executor::spawn(async move {
+                                let _ = memc_client.set(&hotel_id, prof_json.as_bytes(), 0);
+                            })
+                            .detach();
+                        }
+                        // Update shared hotels vector
+                        hotels.lock().await.push(hotel);
+                    }
+                }
+            });
+
             handles.push(handle);
         }
-        for handle in handles {
-            handle.await?;
-        }
-        Ok(())
-    }
 
-    async fn populate_mongodb(&self, n_hotels: u32) -> Result<(), Box<dyn std::error::Error>> {
-        let payload = self.payload as usize;
-        let mut hotels = Vec::new();
-        for i in 0..n_hotels {
-            hotels.push(Hotel {
-                key: "profile".to_string(),
-                name: format!("Sheraton_Ave_{}", i),
-                ave: i as u32,
-                payload: vec![0; payload],
-            });
+        // Wait for all MongoDB queries to complete
+        for h in handles {
+            h.await;
         }
-        self.collection.insert_many(hotels, None).await?;
-        let index = IndexModel::builder().keys(doc! { "name": 1 }).build();
-        self.collection.create_index(index, None).await?;
-        Ok(())
-    }
 
-    pub async fn fetch_mixture(&self, names: Vec<String>) -> Vec<Hotel> {
+        let hotels = Arc::into_inner(hotels)
+            .expect("all clones should have been dropped")
+            .into_inner()
+            .into_iter()
+            .map(|h| h.into())
+            .collect();
+
+        // Create response
+        let response = profile::ProfileResponse { hotels };
+
+        let elapsed = start.elapsed().as_micros() as u64;
+        {
+            self.latency_tracker.lock().await.track(elapsed);
+        }
+
+        Ok(tonic::Response::new(response))
+    }
+}
+
+#[cfg(feature = "synthetic")]
+#[tonic::async_trait]
+impl Profile for ProfileImpl {
+    async fn get_profiles(
+        &self,
+        request: Request<profile::ProfileRequest>,
+    ) -> Result<Response<profile::ProfileResponse>, Status> {
+        let request = request.into_inner();
+        let hotels = self.fetch_mixture(request.hotel_ids).await;
+        let hotels = hotels.into_iter().map(|h| h.into()).collect();
+        let response = profile::ProfileResponse { hotels };
+        log::info!("response: {:?}", response);
+        Ok(Response::new(response))
+    }
+}
+
+#[cfg(feature = "synthetic")]
+impl ProfileImpl {
+    pub async fn fetch_mixture(&self, names: Vec<String>) -> Vec<db::Hotel> {
+        use futures::StreamExt;
+        use rand_distr::Distribution;
+
         let names_db = {
-            let mut rng = self.rng.lock().expect("Failed to lock rng");
-            let value = self.uniform.sample(&mut *rng) % 100;
-            if value < self.prob_cache_miss as u64 {
+            let value = {
+                let mut rng = self.synth.rng.lock().await;
+                self.synth.uniform.sample(&mut *rng) % 100
+            };
+            if value < self.synth.config.cache_miss_rate as u64 {
                 names.clone()
             } else {
                 Vec::new()
@@ -148,14 +229,13 @@ impl HotelManager {
 
         let names_ref = names.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
         let mut hotels = Vec::new();
-        if let Ok(hotel_jsons) = self.memcache.gets::<String>(&names_ref) {
+        if let Ok(hotel_jsons) = self.memc_client.gets::<String>(&names_ref) {
             for hotel_json in hotel_jsons.values() {
-                let hotel: Hotel =
-                    serde_json::from_str(hotel_json).expect("Failed to deserialize hotel");
+                let hotel = serde_json::from_str(hotel_json).expect("Failed to deserialize hotel");
                 hotels.push(hotel);
             }
         }
-        hotels.sort_by_key(|hotel| hotel.ave);
+        // hotels.sort_by_key(|hotel| hotel.ave);
 
         if !names_db.is_empty() {
             let query = doc! {
@@ -163,70 +243,23 @@ impl HotelManager {
                     "$in": names_db
                 }
             };
-            let mut cursor = self
-                .collection
+            let collection = self
+                .mongo_client
+                .database("profile-db")
+                .collection::<db::Hotel>("hotels");
+            let mut cursor = collection
                 .find(query, None)
                 .await
                 .expect("Failed to find hotels");
             while let Some(hotel) = cursor.next().await {
                 let hotel = hotel.expect("Failed to get hotel");
                 let hotel_json = serde_json::to_string(&hotel).expect("Failed to serialize hotel");
-                self.memcache
+                self.memc_client
                     .set(hotel.name.as_str(), hotel_json, 0)
                     .expect("Failed to set hotel");
             }
         }
 
         hotels
-    }
-}
-
-pub struct ProfileImpl {
-    manager: HotelManager,
-}
-
-impl ProfileImpl {
-    pub async fn new(
-        hotels: u32,
-        payload: u32,
-        cache_addr: String,
-        cache_conn: u32,
-        prob_cache_miss: u32,
-        db_addr: String,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let manager = HotelManager::new(
-            hotels,
-            payload,
-            cache_addr,
-            cache_conn,
-            prob_cache_miss,
-            db_addr,
-        )
-        .await?;
-        let profile = ProfileImpl { manager };
-        Ok(profile)
-    }
-}
-
-#[tonic::async_trait]
-impl Profile for ProfileImpl {
-    async fn handle_get_profiles(
-        &self,
-        request: Request<profile::ProfileRequest>,
-    ) -> Result<Response<profile::ProfileResponse>, Status> {
-        // let ctx = request.metadata().get_ctx("ctx").unwrap();
-        let request = request.into_inner();
-        let hotels = self.manager.fetch_mixture(request.hotels).await;
-        let mut profiles = Vec::new();
-        for hotel in hotels {
-            profiles.push(profile::HotelProfile {
-                key: "profile".to_string(),
-                hotel: hotel.name,
-                payload: hotel.payload,
-            });
-        }
-        let response = profile::ProfileResponse { profiles };
-        log::info!("response: {:?}", response);
-        Ok(Response::new(response))
     }
 }
