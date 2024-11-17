@@ -238,9 +238,9 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
     ) -> Option<Result<Response<Ret>, Status>> {
         match poll {
             Poll::Pending => {
-                if self.check_early_return() {
-                    return Some(self.issue_early_return());
-                }
+                // if self.check_early_return() {
+                //     return Some(self.issue_early_return());
+                // }
             }
             Poll::Ready(_) => {}
         };
