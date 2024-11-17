@@ -3,7 +3,6 @@ pub mod hotel {
         tonic::include_proto!("reservation");
     }
 }
-use async_memcached::Client as McClient;
 use chrono::DateTime;
 use reboot_hotel::AvgTracker;
 use std::collections::{HashMap, HashSet};
@@ -16,6 +15,7 @@ use crate::db;
 use mongodb::{bson::doc, Client as MongoClient, Collection, Database, IndexModel};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Uniform};
+use reboot_hotel::McPool;
 use serde::{Deserialize, Serialize};
 use tonic::{Request, Response, Status};
 
@@ -246,7 +246,7 @@ use hotel::{reservation, reservation::reservation_server::Reservation};
 // }
 
 pub struct ReservationImpl {
-    memc_client: Arc<memcache::Client>,
+    mc_pool: Arc<McPool>,
     mongo_client: Arc<MongoClient>,
     lat_check_avail: Mutex<LatencyTracker>,
     lat_make_reserve: Mutex<LatencyTracker>,
@@ -254,7 +254,6 @@ pub struct ReservationImpl {
     check_avail_hotel_mongo: Arc<AvgTracker>,
     check_avail_reserve: Arc<AvgTracker>,
     check_reserve: Arc<AvgTracker>,
-    cache_addr: String,
     // manager: HotelManager,
 }
 
@@ -268,7 +267,6 @@ impl ReservationImpl {
         prob_cache_miss: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn Error>> {
-        let memc_client = memcache::Client::with_pool_size(cache_addr.clone(), cache_conns)?;
         let mongo_client = crate::db::initialize_database(&db_addr).await?;
         let lat_check_avail = Mutex::new(LatencyTracker::new("check_availability".into(), 256));
         let lat_make_reserve = Mutex::new(LatencyTracker::new("make_reservation".into(), 256));
@@ -301,9 +299,8 @@ impl ReservationImpl {
             .unwrap()
             .to_owned();
         Ok(Self {
-            memc_client: Arc::new(memc_client),
+            mc_pool: Arc::new(McPool::new(cache_addr)),
             mongo_client: Arc::new(mongo_client),
-            cache_addr,
             lat_check_avail,
             lat_make_reserve,
             check_avail_reserve,
@@ -385,7 +382,7 @@ impl Reservation for ReservationImpl {
         // Get capacity from memcached
         let mut cache_cap = HashMap::new();
 
-        let mut mc_client = McClient::new(&self.cache_addr).await.unwrap();
+        let mut mc_client = self.mc_pool.get().await;
 
         if let Ok(mc_resp) = mc_client.get_multi(hotel_mem_keys).await {
             for entry in mc_resp {
@@ -425,9 +422,10 @@ impl Reservation for ReservationImpl {
                     // Async set to memcached
                     let key = format!("{}_cap", num.hotel_id);
                     let value = num.number.to_string();
-                    let mc = self.memc_client.clone();
+                    let pool = self.mc_pool.clone();
                     async_executor::spawn(async move {
-                        let _ = mc.set(&key, value.as_bytes(), 0);
+                        let mut mc = pool.get().await;
+                        mc.set(&key, value.as_bytes(), None, None).await.unwrap();
                     })
                     .detach();
                 }
@@ -485,7 +483,7 @@ impl Reservation for ReservationImpl {
             let start_date = start_date.to_owned();
             let end_date = end_date.to_owned();
 
-            let memc_client = self.memc_client.clone();
+            let pool = self.mc_pool.clone();
             let mongo_client = self.mongo_client.clone();
             let cache_cap = cache_cap.clone();
             let room_number = req.room_number;
@@ -493,6 +491,7 @@ impl Reservation for ReservationImpl {
                 let collection = mongo_client
                     .database("reservation-db")
                     .collection::<db::Reservation>("reservation");
+                let mut mc = pool.get().await;
 
                 let filter = doc! {
                     "hotelId": hotel_id.clone(),
@@ -507,7 +506,9 @@ impl Reservation for ReservationImpl {
                     }
 
                     // Update memcached
-                    let _ = memc_client.set(&command, count.to_string().as_bytes(), 0);
+                    let _ = mc
+                        .set(&command, count.to_string().as_bytes(), None, None)
+                        .await;
 
                     let hid = hotel_id.clone();
                     let cap = cache_cap.get(&format!("{}_cap", hid)).unwrap_or(&0);
@@ -574,6 +575,7 @@ impl Reservation for ReservationImpl {
         let database = self.mongo_client.database("reservation-db");
         let res_collection: Collection<db::Reservation> = database.collection("reservation");
         let num_collection: Collection<db::Number> = database.collection("number");
+        let mut mc_client = self.mc_pool.get().await;
 
         let in_date = DateTime::parse_from_rfc3339(&format!("{}T12:00:00+00:00", req.in_date))
             .unwrap()
@@ -596,15 +598,15 @@ impl Reservation for ReservationImpl {
             let memc_key = format!("{}_{}_{}", hotel_id, in_date_str, out_date_str);
 
             // Check memcached
-            let count = match self.memc_client.get::<String>(&memc_key) {
-                Ok(Some(value)) => {
+            let count = match mc_client.get(&memc_key).await.unwrap() {
+                Some(value) => {
                     // Memcached hit
                     // count = String::from_utf8_lossy(&value).parse::<i32>().unwrap();
-                    let count = value.parse::<i32>().unwrap();
+                    let count = String::from_utf8_lossy(&value.data).parse::<i32>().unwrap();
                     memc_date_num_map.insert(memc_key, count + req.room_number);
                     count
                 }
-                Ok(None) => {
+                None => {
                     // Memcached miss
                     let filter = doc! {
                         "hotelId": hotel_id,
@@ -622,17 +624,16 @@ impl Reservation for ReservationImpl {
                     memc_date_num_map.insert(memc_key, reserve_count + req.room_number);
                     reserve_count
                 }
-                Err(e) => panic!("Memcached error: {}", e),
             };
 
             // Check capacity
             let memc_cap_key = format!("{}_cap", hotel_id);
-            let hotel_cap = match self.memc_client.get::<String>(&memc_cap_key) {
-                Ok(Some(value)) => {
+            let hotel_cap = match mc_client.get(&memc_cap_key).await.unwrap() {
+                Some(value) => {
                     // String::from_utf8_lossy(&value).parse::<i32>().unwrap()
-                    value.parse::<i32>().unwrap()
+                    String::from_utf8_lossy(&value.data).parse::<i32>().unwrap()
                 }
-                Ok(None) => {
+                None => {
                     let filter = doc! { "hotelId": hotel_id };
                     let num = num_collection
                         .find_one(filter, None)
@@ -641,12 +642,12 @@ impl Reservation for ReservationImpl {
                         .expect(&format!("should find hotel {}", hotel_id));
 
                     let cap = num.number;
-                    self.memc_client
-                        .set(&memc_cap_key, cap.to_string().as_bytes(), 0)
+                    mc_client
+                        .set(&memc_cap_key, cap.to_string().as_bytes(), None, None)
+                        .await
                         .unwrap();
                     cap
                 }
-                Err(e) => panic!("Memcached error: {}", e),
             };
 
             if count + req.room_number > hotel_cap {
@@ -657,8 +658,9 @@ impl Reservation for ReservationImpl {
 
         // Update reservation number cache
         for (key, val) in memc_date_num_map {
-            self.memc_client
-                .set(&key, val.to_string().as_bytes(), 0)
+            mc_client
+                .set(&key, val.to_string().as_bytes(), None, None)
+                .await
                 .unwrap();
         }
 
