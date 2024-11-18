@@ -22,6 +22,7 @@ plt.rcParams.update(
 )
 
 COLORS = ["tab:blue", "tab:orange", "tab:purple", "tab:red", "tab:green"]
+COLORS_AIO = ["tab:blue", "tab:orange", "tab:orange", "tab:purple", "tab:purple"]
 MARKERS = ["o", "x", "^", "*", "s"]
 Y_MIN = 0
 Y_MAX = 2000
@@ -160,7 +161,7 @@ def plot_goodput_apis_bar(
 def plot_goodput_cmp_bar(
     modes: List[str], results: List[Dict[str, Any]], fig_name: str
 ):
-    assert len(modes) <= 4
+    assert len(modes) <= 5
     modes_str = f"{', '.join(modes)}"
     labels = modes
 
@@ -261,6 +262,55 @@ def plot_goodput_cmp_bar(
                 label=labels[3],
             )
         )
+    elif len(modes) == 5:
+        width = 0.12
+        bars.append(
+            ax.bar(
+                x - width * 2,
+                goodputs[0],
+                width,
+                color=COLORS_AIO[0],
+                label=labels[0],
+            )
+        )
+        bars.append(
+            ax.bar(
+                x - width,
+                goodputs[1],
+                width,
+                color=COLORS_AIO[1],
+                label=labels[1],
+            )
+        )
+        bars.append(
+            ax.bar(
+                x,
+                goodputs[2],
+                width,
+                color=COLORS_AIO[2],
+                hatch="///",
+                label=labels[2],
+            )
+        )
+        bars.append(
+            ax.bar(
+                x + width,
+                goodputs[3],
+                width,
+                color=COLORS_AIO[3],
+                label=labels[3],
+            )
+        )
+        bars.append(
+            ax.bar(
+                x + width * 2,
+                goodputs[4],
+                width,
+                color=COLORS_AIO[4],
+                hatch="///",
+                label=labels[4],
+            )
+        )
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
@@ -282,11 +332,11 @@ def plot_goodput_cmp_bar(
                 fontsize=fontsize_medium,
             )
 
-    autolabel(bars[-1])
+    # autolabel(bars[-1])
 
     fig.tight_layout()
     plt.ylim(Y_MIN, Y_MAX)
-    plt.grid(True, linestyle="--", linewidth=0.5)
+    plt.grid(True, axis="y", linewidth=0.5)
     plt.savefig(fig_name)
 
 
