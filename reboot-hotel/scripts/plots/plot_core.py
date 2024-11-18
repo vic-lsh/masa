@@ -174,141 +174,43 @@ def plot_goodput_cmp_bar(
 
     x = np.arange(len(rps_values))
     fig, ax = plt.subplots(figsize=(10, 6))
+
     bars: List = []
+    xs: List = []
+    colors: List = []
+    hatches: List = []
     if len(modes) == 2:
         width = 0.3
-        bars.append(
-            ax.bar(
-                x - width * 0.5,
-                goodputs[0],
-                width,
-                color=COLORS[0],
-                label=labels[0],
-            )
-        )
-        bars.append(
-            ax.bar(
-                x + width * 0.5,
-                goodputs[1],
-                width,
-                color=COLORS[1],
-                label=labels[1],
-            )
-        )
+        xs = [x - width * 0.5, x + width * 0.5]
+        colors = COLORS
+        hatches = ["", ""]
     elif len(modes) == 3:
         width = 0.2
-        bars.append(
-            ax.bar(
-                x - width,
-                goodputs[0],
-                width,
-                color=COLORS[0],
-                label=labels[0],
-            )
-        )
-        bars.append(
-            ax.bar(
-                x,
-                goodputs[1],
-                width,
-                color=COLORS[1],
-                label=labels[1],
-            )
-        )
-        bars.append(
-            ax.bar(
-                x + width,
-                goodputs[2],
-                width,
-                color=COLORS[2],
-                label=labels[2],
-            )
-        )
+        xs = [x - width, x, x + width]
+        colors = COLORS
+        hatches = ["", "", ""]
     elif len(modes) == 4:
         width = 0.15
-        bars.append(
-            ax.bar(
-                x - width * 1.5,
-                goodputs[0],
-                width,
-                color=COLORS[0],
-                label=labels[0],
-            )
-        )
-        bars.append(
-            ax.bar(
-                x - width * 0.5,
-                goodputs[1],
-                width,
-                color=COLORS[1],
-                label=labels[1],
-            )
-        )
-        bars.append(
-            ax.bar(
-                x + width * 0.5,
-                goodputs[2],
-                width,
-                color=COLORS[2],
-                label=labels[2],
-            )
-        )
-        bars.append(
-            ax.bar(
-                x + width * 1.5,
-                goodputs[3],
-                width,
-                color=COLORS[3],
-                label=labels[3],
-            )
-        )
+        xs = [x - width * 1.5, x - width * 0.5, x + width * 0.5, x + width * 1.5]
+        colors = COLORS
+        hatches = ["", "", "", ""]
     elif len(modes) == 5:
         width = 0.12
+        xs = [x - width * 2, x - width, x, x + width, x + width * 2]
+        colors = COLORS_AIO
+        hatches = ["", "", "///", "", "///"]
+
+    for i in range(len(modes)):
         bars.append(
             ax.bar(
-                x - width * 2,
-                goodputs[0],
+                xs[i],
+                goodputs[i],
                 width,
-                color=COLORS_AIO[0],
-                label=labels[0],
-            )
-        )
-        bars.append(
-            ax.bar(
-                x - width,
-                goodputs[1],
-                width,
-                color=COLORS_AIO[1],
-                label=labels[1],
-            )
-        )
-        bars.append(
-            ax.bar(
-                x,
-                goodputs[2],
-                width,
-                color=COLORS_AIO[2],
-                hatch="///",
-                label=labels[2],
-            )
-        )
-        bars.append(
-            ax.bar(
-                x + width,
-                goodputs[3],
-                width,
-                color=COLORS_AIO[3],
-                label=labels[3],
-            )
-        )
-        bars.append(
-            ax.bar(
-                x + width * 2,
-                goodputs[4],
-                width,
-                color=COLORS_AIO[4],
-                hatch="///",
-                label=labels[4],
+                label=labels[i],
+                color=colors[i],
+                hatch=hatches[i],
+                edgecolor="black",
+                linewidth=1,
             )
         )
 
@@ -580,8 +482,8 @@ def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
                 fontsize=fontsize_medium,
             )
 
-    for rects in rects_bar:
-        autolabel(rects)
+    # for rects in rects_bar:
+    #     autolabel(rects)
 
     fig.tight_layout()
     plt.grid(True, linestyle="--", linewidth=0.5)
@@ -589,23 +491,59 @@ def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
 
 
 def plot_tail_cmp_bar(
-    results: List[Dict[str, Any]], fig_name: str, modes: List[str], tail: str
+    modes: List[str], tail: str, results: List[Dict[str, Any]], fig_name: str
 ):
+    assert len(modes) <= 5
     modes_str = f"{', '.join(modes)}"
     keys = [f"{tail}_{mode}" for mode in modes]
     labels = [f"{tail} {mode}" for mode in modes]
-    assert len(keys) == 2, "Only 2 modes available"
 
     rps_values = [result["rps"] for result in results if keys[0] in result]
-    goodputs_lhs = [result[keys[0]] for result in results if keys[0] in result]
-    goodputs_rhs = [result[keys[1]] for result in results if keys[1] in result]
+    tails: List[List[int]] = []
+    for key in keys:
+        tails.append([result[key] for result in results if key in result])
 
     x = np.arange(len(rps_values))
-    width = 0.3
-
     fig, ax = plt.subplots(figsize=(10, 6))
-    rects1 = ax.bar(x - width * 0.5, goodputs_lhs, width, label=labels[0])
-    rects2 = ax.bar(x + width * 0.5, goodputs_rhs, width, label=labels[1])
+
+    bars: List = []
+    xs: List = []
+    colors: List = []
+    hatches: List = []
+    if len(modes) == 2:
+        width = 0.3
+        xs = [x - width * 0.5, x + width * 0.5]
+        colors = COLORS
+        hatches = ["", ""]
+    elif len(modes) == 3:
+        width = 0.2
+        xs = [x - width, x, x + width]
+        colors = COLORS
+        hatches = ["", "", ""]
+    elif len(modes) == 4:
+        width = 0.15
+        xs = [x - width * 1.5, x - width * 0.5, x + width * 0.5, x + width * 1.5]
+        colors = COLORS
+        hatches = ["", "", "", ""]
+    elif len(modes) == 5:
+        width = 0.12
+        xs = [x - width * 2, x - width, x, x + width, x + width * 2]
+        colors = COLORS_AIO
+        hatches = ["", "", "///", "", "///"]
+
+    for i in range(len(modes)):
+        bars.append(
+            ax.bar(
+                xs[i],
+                tails[i],
+                width,
+                label=labels[i],
+                color=colors[i],
+                hatch=hatches[i],
+                edgecolor="black",
+                linewidth=1,
+            )
+        )
 
     ax.set_xlabel("RPS")
     ax.set_ylabel(tail)
@@ -628,8 +566,8 @@ def plot_tail_cmp_bar(
                 fontsize=fontsize_medium,
             )
 
-    # autolabel(rects1)
-    autolabel(rects2)
+    # for bar in bars:
+    #     autolabel(bar)
 
     fig.tight_layout()
     plt.grid(True, linestyle="--", linewidth=0.5)

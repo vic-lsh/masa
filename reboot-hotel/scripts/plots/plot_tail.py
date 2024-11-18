@@ -17,7 +17,8 @@ for r in range(cfg["Repeats"]):
 
         result = {}
         result["rps"] = rps
-        df_filtered = df[df["error"].isin(["/None", "/LGMiss"])]
+
+        df_filtered = df[df["error"] == "/None"]
         if df_filtered.empty:
             print(f"Empty data for rps: {rps}")
             result["mean"] = 0
@@ -33,12 +34,13 @@ for r in range(cfg["Repeats"]):
         rps_to_results.append(result)
 
     plot_tail_bar(
-        rps_to_results, f"{args.path}/fig_tail_rps_bar_{r}.png", f"{args.mode} all"
+        rps_to_results,
+        f"{args.path}/fig_tail_total_rps_bar_{r}.png",
+        f"{args.mode} total",
     )
 
-    for i in range(len(cfg["Apis"])):
+    for api in cfg["Apis"]:
         rps_to_results = []
-        api = cfg["Apis"][i]
 
         for rps in cfg["Rps"]:
             file = f"{args.path}/r{rps}_{r}.csv"
@@ -46,9 +48,8 @@ for r in range(cfg["Repeats"]):
 
             result = {}
             result["rps"] = rps
-            df_filtered = df[
-                (df["error"].isin(["/None", "/LGMiss"])) & (df["api"] == api)
-            ]
+
+            df_filtered = df[(df["error"] == "/None") & (df["api"] == api)]
             if df_filtered.empty:
                 print(f"Empty data for rps: {rps}")
                 result["mean"] = 0
