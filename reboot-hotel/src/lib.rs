@@ -194,21 +194,19 @@ impl<T> Pool<T> {
 
         // the truly slow path -- wait for capacity to show up
         let mut iters = 0;
-        println!("entering slow path");
         let start = std::time::Instant::now();
         loop {
             {
                 let mut pool = self.inner.lock().unwrap();
                 if let Some(item) = pool.pop_front() {
                     if iters >= 1 {
-                        println!("mc waited for {}", start.elapsed().as_micros());
+                        log::warn!("mc waited for {}", start.elapsed().as_micros());
                     }
                     return PoolItemRef::new(item, self);
                 }
             }
             // wait for capacity
-            // [TODO] fix wait condition
-            tokio::time::sleep(Duration::from_millis(1)).await;
+            self.has_new_item.notified().await;
             iters += 1;
         }
     }
@@ -217,6 +215,7 @@ impl<T> Pool<T> {
         {
             self.inner.lock().unwrap().push_back(item);
         }
+        self.has_new_item.notify_waiters();
     }
 
     pub fn len(&self) -> usize {
