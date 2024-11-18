@@ -7,16 +7,17 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 fi
 folder=snippets/test
 
-# echo "Running fifo..."
-# $pwd/scripts/local/run_all.sh \
-# 	--rust-log warn \
-# 	--tracker-capacity 1024 \
-# 	--pctl-deadline 50 \
-# 	--pctl-latest-exec 50 \
-# 	--cargo-features fifo \
-# 	--hotel-config $folder/hotel_config.json \
-# 	--output-path $folder/fifo \
-# 	--repeats 1
+echo "Running fifo..."
+$pwd/scripts/local/run_all.sh \
+	--rust-log warn \
+	--tracker-capacity 1024 \
+	--pctl-deadline 50 \
+	--pctl-latest-exec 50 \
+	--cargo-features fifo \
+	--gen-config $folder/gen_config.json \
+	--hotel-config $folder/hotel_config.json \
+	--output-path $folder/fifo \
+	--repeats 1
 
 # echo "Running e2e..."
 # $pwd/scripts/local/run_all.sh \
@@ -31,6 +32,7 @@ $pwd/scripts/local/run_all.sh \
 	--pctl-deadline 50 \
 	--pctl-latest-exec 50 \
 	--cargo-features prio_local \
+	--gen-config $folder/gen_config.json \
 	--hotel-config $folder/hotel_config.json \
 	--output-path $folder/local \
 	--repeats 1

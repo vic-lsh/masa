@@ -38,6 +38,8 @@ pub struct Args {
     #[structopt(long, required = true)]
     pub gen_config: PathBuf,
     #[structopt(long, required = true)]
+    pub output_path: String,
+    #[structopt(long, required = true)]
     pub run_idx: String,
 }
 
@@ -356,8 +358,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for rps in &gen_cfg.rps_values {
         log::warn!("Running rps: {}...", rps);
 
-        let output_path = gen_cfg.output.clone();
-        let output = format!("{}/r{}_{}.csv", output_path, rps, args.run_idx);
+        let output = format!("{}/r{}_{}.csv", args.output_path, rps, args.run_idx);
         let (trace_tx, trace_rx) = unbounded();
 
         let mut load_gen = {
