@@ -238,7 +238,7 @@ impl LoadGenerator {
                             if Instant::now() > trace_at {
                                 let recv_at = time_now();
                                 let latency = recv_at - send_at;
-                                let error = {
+                                let mut error = {
                                     if let Err(ref status) = response {
                                         status.message().to_string()
                                     } else if latency > ctx.slo() {
@@ -252,8 +252,11 @@ impl LoadGenerator {
                                 } else {
                                     if error == "/LGMiss" {
                                         err_client.fetch_add(1, Ordering::Relaxed);
-                                    } else {
+                                    } else if error.starts_with("EarlyReturn") {
                                         err_svc.fetch_add(1, Ordering::Relaxed);
+                                    } else {
+                                        log::error!("{}", error);
+                                        error = "/None".into();
                                     }
                                     err_search.fetch_add(1, Ordering::Relaxed);
                                 }
@@ -290,7 +293,7 @@ impl LoadGenerator {
                             if Instant::now() > trace_at {
                                 let recv_at = time_now();
                                 let latency = recv_at - send_at;
-                                let error = {
+                                let mut error = {
                                     if let Err(ref status) = response {
                                         status.message().to_string()
                                     } else if latency > ctx.slo() {
@@ -304,8 +307,11 @@ impl LoadGenerator {
                                 } else {
                                     if error == "/LGMiss" {
                                         err_client.fetch_add(1, Ordering::Relaxed);
-                                    } else {
+                                    } else if error.starts_with("EarlyReturn") {
                                         err_svc.fetch_add(1, Ordering::Relaxed);
+                                    } else {
+                                        log::error!("{}", error);
+                                        error = "/None".into();
                                     }
                                     err_reserve.fetch_add(1, Ordering::Relaxed);
                                 }

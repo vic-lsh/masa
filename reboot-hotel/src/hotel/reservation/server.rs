@@ -299,7 +299,7 @@ impl ReservationImpl {
             .unwrap()
             .to_owned();
         Ok(Self {
-            mc_pool: Arc::new(McPool::new(cache_addr, 64)),
+            mc_pool: Arc::new(McPool::new(cache_addr, 128)),
             mongo_client: Arc::new(mongo_client),
             lat_check_avail,
             lat_make_reserve,
