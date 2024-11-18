@@ -1,0 +1,45 @@
+[package]
+name = "async-memcached"
+version = "0.4.0"
+authors = ["Toby Lawrence <toby@nuclearfurnace.com>"]
+edition = "2018"
+readme = "README.md"
+license = "MIT"
+description = "An Tokio-based memcached client for Rust."
+keywords = ["memcached", "async"]
+homepage = "https://github.com/Shopify/async-memcached"
+documentation = "https://docs.rs/async-memcached"
+repository = "https://github.com/Shopify/async-memcached"
+
+[dependencies]
+bytes = "1.4"
+nom = "7.1"
+dsn = "1.0"
+btoi = "0.4"
+pin-project = "1.0"
+futures = "0.3"
+tokio = { path = "../tokio/tokio", default-features = false, features = ["net", "io-util"] }
+async-stream = "0.3"
+url = "2.5.2"
+serial_test = "3.1.1"
+fxhash = "0.2.1"
+
+[dev-dependencies]
+lazy_static = "1.4"
+tokio = { path = "../tokio/tokio", features = ["full"] }
+rand = "0.8"
+criterion = { version = "0.5.1", features = ["async_tokio"] }
+
+[features]
+default = []
+polonius = []
+tcp = []
+udp = []
+
+[[example]]
+name = "basic"
+path = "examples/tcp.rs"
+
+[[bench]]
+name = "bench"
+harness = false

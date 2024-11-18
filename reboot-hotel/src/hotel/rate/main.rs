@@ -1,18 +1,17 @@
 #[path = "../config.rs"]
-pub mod config;
-pub mod server;
+mod config;
+mod db;
+mod server;
 
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
-use std::sync::Arc;
 
-use hyper::rt::Exec;
 use structopt::StructOpt;
-use tonic::{masa::AsyncTaskMetadata, transport::Server};
+use tonic::transport::Server;
 
 use config::HotelConfig;
-use reboot_hotel::{init_logging, ExecImpl};
+use reboot_hotel::init_logging;
 use server::hotel::rate::rate_server::RateServer;
 use server::RateImpl;
 
@@ -23,6 +22,7 @@ pub struct Args {
     pub config: PathBuf,
 }
 
+// #[tokio::main(flavor = "current_thread")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
@@ -37,7 +37,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let rate = RateImpl::new(
         cfg.hotels,
-        cfg.payload,
         cfg.rate_memcached_addr,
         cfg.cache_conns,
         cfg.prob_cache_miss,
@@ -45,24 +44,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
 
-    static SMOL_EX: smol::Executor<'static, AsyncTaskMetadata> = smol::Executor::new();
-    let ex = Arc::new(ExecImpl::new(&SMOL_EX));
-    for _ in 0..cfg.executor_threads {
-        let ex_clone = ex.clone();
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            rt.block_on(ex_clone.run());
-        });
-    }
-
     let rate_addr = "[::1]:8663".parse().expect("Failed to parse address");
     log::warn!("Server listening on {}...", rate_addr);
     Server::builder()
         .add_service(RateServer::new(rate))
-        .serve_with_executor(rate_addr, Exec::Executor(ex))
+        .serve_with_masa(rate_addr)
         .await?;
 
     Ok(())

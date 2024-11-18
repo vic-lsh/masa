@@ -634,6 +634,21 @@ impl<L> Router<L> {
             .await
     }
 
+    /// Consume this [`Server`] creating a future that will execute on Masa.
+    ///
+    /// [`Server`]: struct.Server.html
+    pub async fn serve_with_masa<ResBody>(self, addr: SocketAddr) -> Result<(), super::Error>
+    where
+        L: Layer<Routes>,
+        L::Service: Service<Request<Body>, Response = Response<ResBody>> + Clone + Send + 'static,
+        <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Future: Send + 'static,
+        <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Error: Into<crate::Error> + Send,
+        ResBody: http_body::Body<Data = Bytes> + Send + 'static,
+        ResBody::Error: Into<crate::Error>,
+    {
+        self.serve_with_executor(addr, Exec::Masa).await
+    }
+
     /// Consume this [`Server`] creating a future that will execute the server
     /// on a user-supplied executor.
     ///

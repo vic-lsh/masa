@@ -10,8 +10,13 @@ name = "hotel_client_bench"
 path = "src/hotel/client/client_bench.rs"
 
 # [[bin]]
+# name = "hotel_client_lim"
+# path = "src/hotel/client/client_lim.rs"
+
+# [[bin]]
 # name = "hotel_client_bench_closed"
 # path = "src/hotel/client/client_bench_closed.rs"
+
 
 # [[bin]]
 # name = "hotel_client_lim"
@@ -49,9 +54,9 @@ path = "src/hotel/reservation/main.rs"
 name = "hotel_user"
 path = "src/hotel/user/main.rs"
 
-# [[bin]]
-# name = "recommendation-server"
-# path = "src/hotel/recommendation/server.rs"
+[[bin]]
+name = "recommendation-server"
+path = "src/hotel/recommendation/main.rs"
 
 # [[bin]]
 # name = "recommendation-client"
@@ -76,6 +81,8 @@ prio_local_early = [
 ]
 fifo_infra = ["async-executor/fifo_infra", "tonic-masa/fifo_infra"]
 fifo = ["async-executor/fifo", "tonic-masa/fifo"]
+synthetic = []
+workload_stats = []
 
 gcp = ["dep:prost-types", "tonic/tls"]
 routeguide = [
@@ -168,6 +175,7 @@ structopt = "0.3.23"
 crossbeam-channel = "0.5"
 mongodb = { path = "../3rd_party/mongodb" }
 memcache = "0.16"
+async-memcached = { path = "../3rd_party/async-memcached" }
 log = "0.4"
 env_logger = "0.9"
 # Common dependencies
@@ -209,7 +217,12 @@ tokio-rustls = { path = "../3rd_party/tokio-rustls", optional = true }
 hyper-rustls = { version = "0.24.0", features = ["http2"], optional = true }
 rustls-pemfile = { version = "1", optional = true }
 tower-http = { version = "0.4", optional = true }
+anyhow = "1.0"
 geo = "0.28"
+# used by the geo service
+kiddo = "4.2.1"
+# used by reservation service
+chrono = "0.4.38"
 
 
 [build-dependencies]
