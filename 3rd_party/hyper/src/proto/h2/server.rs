@@ -338,21 +338,25 @@ where
                             req.extensions_mut().insert(Protocol::from_inner(protocol));
                         }
 
-                        // [NOTE] Get priority from context.
-                        let ctx_str = req.headers()["ctx"].to_str().unwrap();
-                        let ctx = MasaContext::from_json(ctx_str);
-                        let prio;
-                        if FIFO || FIFO_INFRA || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
-                            prio = PriorityHint::new(ctx.deadline());
-                        } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
-                            prio = PriorityHint::new(ctx.latest_exec());
+                        if let Some(ctx) = req.headers().get("ctx") {
+                            // [NOTE] Get priority from context.
+                            let ctx_str = ctx.to_str().unwrap();
+                            let ctx = MasaContext::from_json(ctx_str);
+                            let prio;
+                            if FIFO || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
+                                prio = PriorityHint::new(ctx.deadline());
+                            } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
+                                prio = PriorityHint::new(ctx.latest_exec());
+                            } else {
+                                panic!("Unimplemented policy");
+                            }
+                            // [NOTE] Into executor.
+                            let fut = H2Stream::new(service.call(req), connect_parts, respond);
+                            exec.execute_h2stream_with_prio(fut, prio);
                         } else {
-                            panic!("Unimplemented policy");
+                            let fut = H2Stream::new(service.call(req), connect_parts, respond);
+                            exec.execute_h2stream(fut);
                         }
-
-                        // [NOTE] Into executor.
-                        let fut = H2Stream::new(service.call(req), connect_parts, respond);
-                        exec.execute_h2stream_with_prio(fut, prio);
                     }
                     Some(Err(e)) => {
                         return Poll::Ready(Err(crate::Error::new_h2(e)));

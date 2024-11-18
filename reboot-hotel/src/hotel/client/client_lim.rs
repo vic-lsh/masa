@@ -1,6 +1,7 @@
 pub mod hotel {
     tonic::include_proto!("frontend");
 }
+mod gen;
 
 use std::error::Error;
 use std::sync::{
@@ -14,12 +15,13 @@ use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Uniform};
 use structopt::StructOpt;
 
+use gen::gen_search_request;
 use tonic::transport::Channel;
-use tonic_masa::{Context, GraphId};
+use tonic_masa::Context;
 
 use reboot_hotel::init_logging;
 
-use hotel::{frontend_client::FrontendClient, SearchRequest};
+use hotel::frontend_client::FrontendClient;
 
 pub fn time_now() -> u64 {
     let now = SystemTime::now()
@@ -68,7 +70,7 @@ impl LoadGenerator {
             let graph_id = self.graph_id.clone();
             let rps_cnt = self.rps_cnt.clone();
             let mut client = self.client.clone();
-            let request = SearchRequest { ave: 61 };
+            let request = gen_search_request();
 
             let h = tokio::spawn(async move {
                 let mut rng = StdRng::seed_from_u64(998244353 + i as u64);

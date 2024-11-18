@@ -48,7 +48,7 @@ use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock, TryLockError};
 use std::task::{Poll, Waker};
 
-use async_task::{Builder, Runnable};
+use async_task::{Builder, RawPollHook, Runnable};
 use futures_lite::{future, prelude::*};
 use queue::Queue;
 use slab::Slab;
@@ -64,6 +64,93 @@ mod queue;
 pub use async_task::{FallibleTask, Task};
 #[cfg(feature = "static")]
 pub use static_executors::*;
+
+static __STATIC_EX: Executor<'static> = Executor::new();
+static __INIT: AtomicBool = AtomicBool::new(false);
+
+fn get_static_ex() -> &'static Executor<'static> {
+    if __INIT
+        .compare_exchange(false, true, Ordering::Release, Ordering::Acquire)
+        .is_ok()
+    {
+        // [TODO] make thread pool size configurable
+        const N_THRS: usize = 4;
+        for _ in 0..N_THRS {
+            // std::thread::spawn(|| future::block_on(drive_runtime(&__STATIC_EX)));
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                rt.block_on(drive_runtime(&__STATIC_EX));
+            });
+        }
+    }
+
+    &__STATIC_EX
+}
+
+async fn drive_runtime(ex: &'static Executor<'static>) {
+    loop {
+        ex.tick().await;
+    }
+}
+
+/// Gives users a way to check whether they're currently in an async-executor environment.
+pub fn is_runtime_active() -> bool {
+    __INIT.load(Ordering::Relaxed)
+}
+
+/// Customizes child task's behavior by installing functions to run before and after
+/// the child task is polled.
+///
+/// The returned boolean indicates whether the hook is set. This will only be successful
+/// if it is invoked within an async-task (otherwise there's no child task).
+pub fn configure_child_task_poll_hooks(hooks: RawPollHook) -> bool {
+    get_static_ex().configure_child_task_poll_hooks(hooks)
+}
+
+/// Removes previously-configured poll hooks, if any.
+pub fn reset_child_task_poll_hook() -> bool {
+    get_static_ex().reset_child_task_poll_hooks()
+}
+
+/// Spawns a task onto the executor.
+///
+/// # Examples
+///
+/// ```
+/// use async_executor::Executor;
+///
+/// let ex = Executor::new();
+///
+/// let task = ex.spawn(async {
+///     println!("Hello world");
+/// });
+/// ```
+pub fn spawn<T: Send + 'static>(future: impl Future<Output = T> + Send + 'static) -> Task<T> {
+    get_static_ex().spawn(future)
+}
+
+/// Spawns a task with a deadline hint onto the executor.
+///
+/// # Examples
+///
+/// ```
+/// use async_executor::Executor;
+///
+/// let ex = Executor::new();
+///
+/// let task = ex.spawn(async {
+///     println!("Hello world");
+/// });
+/// ```
+pub fn spawn_with_prio<T: Send + 'static>(
+    future: impl Future<Output = T> + Send + 'static,
+    ddl: PriorityHint,
+) -> Task<T> {
+    get_static_ex().spawn_with_prio(future, ddl)
+}
 
 /// An async executor.
 ///
@@ -117,7 +204,6 @@ where
 // [NOTE] The scheduling latency for concurrent queues is sub-microsecond.
 static SCHED_TIME_US: AtomicUsize = AtomicUsize::new(0);
 static SCHED_COUNT: AtomicUsize = AtomicUsize::new(0);
-// static TIMER_SPAWNED: AtomicBool = AtomicBool::new(false);
 
 impl<'a, M: Default + Clone> Executor<'a, M>
 where
@@ -216,6 +302,24 @@ where
             let meta = unsafe { async_task::task_metadata_from_ptr::<M>(ptr) };
             meta.clone()
         })
+    }
+
+    fn configure_child_task_poll_hooks(&self, hooks: RawPollHook) -> bool {
+        // SAFETY:
+        // - metadata of task is of type M -- all tasks have the same metadata type
+        unsafe { async_task::set_my_child_task_poll_hooks::<M>(hooks) }
+    }
+
+    fn reset_child_task_poll_hooks(&self) -> bool {
+        // SAFETY:
+        // - metadata of task is of type M -- all tasks have the same metadata type
+        unsafe { async_task::reset_my_child_task_poll_hooks::<M>() }
+    }
+
+    fn clone_child_task_poll_hooks(&self) -> Option<async_task::RawPollHook> {
+        // SAFETY:
+        // - metadata of task is of type M -- all tasks have the same metadata type
+        unsafe { async_task::maybe_clone_my_child_task_poll_hooks::<M>() }
     }
 
     /// Spawns many tasks onto the executor.
@@ -319,9 +423,17 @@ where
         let entry = active.vacant_entry();
         let index = entry.key();
         let state = self.state_as_arc();
+
+        // Instrument future with hook point if hook factory is defined.
+        let maybe_hooks = self.clone_child_task_poll_hooks();
+
         let future = async move {
             let _guard = CallOnDrop(move || drop(state.active.lock().unwrap().try_remove(index)));
-            future.await
+            use async_task::WithPollHook;
+            match maybe_hooks {
+                Some(hook) => future.with_poll_hook(hook).await,
+                None => future.await,
+            }
         };
 
         // Create the task and register it in the set of active tasks.
@@ -816,7 +928,7 @@ impl<M> State<M> {
         } else if cfg!(feature = "fifo") {
             log::warn!("Using fifo...");
         } else {
-            panic!("Not implemented policy");
+            log::warn!("Not implemented policy");
         }
         State {
             queue: GlobalQueue::default(),

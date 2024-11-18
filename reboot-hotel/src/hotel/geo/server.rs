@@ -4,66 +4,59 @@ pub mod hotel {
     }
 }
 
-use std::cmp;
-use std::sync::{Arc, Mutex};
-
-use rand::{rngs::StdRng, SeedableRng};
-use rand_distr::{Distribution, Uniform};
+use kiddo::KdTree;
+use kiddo::SquaredEuclidean;
 use tonic::{Request, Response, Status};
 
 use hotel::{geo, geo::geo_server::Geo};
 
-#[derive(Debug, Clone)]
-struct Hotel {
-    name: String,
-    _ave: u32,
+use crate::db;
+
+struct GeoIndex {
+    tree: KdTree<f64, 2>,
+    points: Vec<db::Point>,
 }
 
-struct HotelManager {
-    rng: Arc<Mutex<StdRng>>,
-    uniform: Uniform<u32>,
-    hotels: Vec<Hotel>,
-}
-
-impl HotelManager {
-    fn new(n_hotels: u32, range: u32) -> Self {
-        let seed = 998244353;
-        let rng = Arc::new(Mutex::new(StdRng::seed_from_u64(seed)));
-        let uniform = Uniform::from(0..range);
-        let mut hotels = Vec::new();
-        for i in 0..n_hotels {
-            hotels.push(Hotel {
-                name: format!("Sheraton_Ave_{}", i),
-                _ave: i as u32,
-            });
-        }
-        HotelManager {
-            rng,
-            uniform,
-            hotels,
+impl GeoIndex {
+    fn new() -> Self {
+        GeoIndex {
+            tree: KdTree::new(),
+            points: Vec::new(),
         }
     }
 
-    fn fetch(&self, ave: u32) -> Vec<Hotel> {
-        let lhs = ave as usize;
-        let range = {
-            let mut rng = self.rng.lock().expect("Failed to lock rng");
-            self.uniform.sample(&mut *rng) as usize
-        };
-        let rhs = cmp::min(lhs + range, self.hotels.len());
-        self.hotels[lhs..rhs].to_vec()
+    fn add_point(&mut self, point: db::Point) {
+        self.tree.add(
+            &[point.lat, point.lon],
+            self.points.len().try_into().unwrap(),
+        );
+        self.points.push(point);
+    }
+
+    fn find_nearest(&self, query_lat: f64, query_lon: f64, k: usize) -> Vec<(&db::Point, f64)> {
+        let query_point = [query_lat, query_lon];
+
+        let nearest = self.tree.nearest_n::<SquaredEuclidean>(&query_point, k);
+
+        nearest
+            .into_iter()
+            .map(|p| (&self.points[p.item as usize], p.distance.sqrt()))
+            .collect()
     }
 }
 
 pub struct GeoImpl {
-    manager: HotelManager,
+    index: GeoIndex,
 }
 
 impl GeoImpl {
-    pub fn new(hotels: u32, range: u32) -> Self {
-        GeoImpl {
-            manager: HotelManager::new(hotels, range),
+    pub fn new(_hotels: u32, _range: u32) -> Self {
+        let points = db::generate_test_data();
+        let mut index = GeoIndex::new();
+        for p in points {
+            index.add_point(p);
         }
+        GeoImpl { index }
     }
 }
 
@@ -73,13 +66,15 @@ impl Geo for GeoImpl {
         &self,
         request: Request<geo::NearbyRequest>,
     ) -> Result<Response<geo::NearbyResponse>, Status> {
+        const MAX_SEARCH_RESULTS: usize = 5;
+
         let request = request.into_inner();
-        let fetched_hotels = self.manager.fetch(request.ave);
-        let mut hotels = Vec::new();
-        for hotel in fetched_hotels {
-            hotels.push(hotel.name);
-        }
-        let response = geo::NearbyResponse { hotels };
+        let result = self
+            .index
+            .find_nearest(request.lat, request.lon, MAX_SEARCH_RESULTS);
+
+        let hotel_ids = result.into_iter().map(|r| r.0.pid.to_owned()).collect();
+        let response = geo::NearbyResponse { hotel_ids };
         log::info!("response: {:?}", response);
         Ok(Response::new(response))
     }

@@ -65,14 +65,39 @@ pub(crate) fn generate_internal<T: Service>(
 
             #service_doc
             #(#struct_attributes)*
-            #[derive(Debug, Clone)]
-            pub struct #service_ident<T> {
+            #[derive(Debug)]
+            pub struct #service_ident<
+                T,
+                S: tonic::masa::ServerHooks = tonic::masa::ServerContext,
+                C: tonic::masa::ClientStubHooks = tonic::masa::ChildContext,
+                P: tonic::masa::RequestHandlerHooks<C, S> = tonic::masa::ParentContext,
+            > {
                 inner: tonic::client::Grpc<T>,
+                _parent_ctx_ty: std::marker::PhantomData<P>,
+                _child_ctx_ty: std::marker::PhantomData<C>,
+                _server_ctx_ty: std::marker::PhantomData<S>,
+            }
+
+            impl<T, S, C, P> Clone for #service_ident<T, S, C, P>
+            where
+                T: Clone,
+                S: tonic::masa::ServerHooks,
+                C: tonic::masa::ClientStubHooks,
+                P: tonic::masa::RequestHandlerHooks<C, S>,
+            {
+                fn clone(&self) -> Self {
+                    Self {
+                        inner: self.inner.clone(),
+                        _parent_ctx_ty: std::marker::PhantomData,
+                        _child_ctx_ty: std::marker::PhantomData,
+                        _server_ctx_ty: std::marker::PhantomData,
+                    }
+                }
             }
 
             #connect
 
-            impl<T> #service_ident<T>
+            impl<T> #service_ident<T, tonic::masa::ServerContext, tonic::masa::ChildContext, tonic::masa::ParentContext>
             where
                 T: tonic::client::GrpcService<tonic::body::BoxBody>,
                 T::Error: Into<StdError>,
@@ -80,13 +105,17 @@ pub(crate) fn generate_internal<T: Service>(
                 <T::ResponseBody as Body>::Error: Into<StdError> + Send,
             {
                 pub fn new(inner: T) -> Self {
-                    let inner = tonic::client::Grpc::new(inner);
-                    Self { inner }
+                    Self::new_impl(inner)
                 }
 
                 pub fn with_origin(inner: T, origin: Uri) -> Self {
                     let inner = tonic::client::Grpc::with_origin(inner, origin);
-                    Self { inner }
+                    Self {
+                        inner,
+                        _parent_ctx_ty: std::marker::PhantomData,
+                        _child_ctx_ty: std::marker::PhantomData,
+                        _server_ctx_ty: std::marker::PhantomData,
+                    }
                 }
 
                 pub fn with_interceptor<F>(inner: T, interceptor: F) -> #service_ident<InterceptedService<T, F>>
@@ -100,6 +129,28 @@ pub(crate) fn generate_internal<T: Service>(
                     <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error: Into<StdError> + Send + Sync,
                 {
                     #service_ident::new(InterceptedService::new(inner, interceptor))
+                }
+
+            }
+
+            impl<T, S, C, P> #service_ident<T, S, C, P>
+            where
+                T: tonic::client::GrpcService<tonic::body::BoxBody>,
+                T::Error: Into<StdError>,
+                T::ResponseBody: Body<Data = Bytes> + Send  + 'static,
+                <T::ResponseBody as Body>::Error: Into<StdError> + Send,
+                S: tonic::masa::ServerHooks,
+                C: tonic::masa::ClientStubHooks,
+                P: tonic::masa::RequestHandlerHooks<C, S>,
+            {
+                fn new_impl(inner: T) -> Self {
+                    let inner = tonic::client::Grpc::new(inner);
+                    Self {
+                        inner,
+                        _parent_ctx_ty: std::marker::PhantomData,
+                        _child_ctx_ty: std::marker::PhantomData,
+                        _server_ctx_ty: std::marker::PhantomData,
+                    }
                 }
 
                 /// Compress requests with the given encoding.
@@ -148,18 +199,15 @@ pub(crate) fn generate_internal<T: Service>(
 fn generate_get_parent_rpc_ctx(_service: &impl Service) -> TokenStream {
     quote! {
         /// Internal. Obtain the parent RPC in which this RPC client stub operates.
-        fn get_parent_ctx(&self) -> Option<&'_ tonic::masa::ParentContext> {
-            let task_ptr = tonic::async_task::get_task_ptr();
-            if !task_ptr.is_null() {
-                let req_ctx = unsafe {
-                    tonic::async_task::get_metadata_from_raw_task::<tonic::masa::AsyncTaskMetadata>(
-                        task_ptr
-                    )
-                };
-                req_ctx.as_ref().map(|v| v.as_ref())
-            } else {
-                None
-            }
+        fn get_parent_ctx(&self) -> Option<&'_ P> {
+            // SAFETY:
+            // - same parent ctx type used in client and server
+            //   - if the caller didn't configure P (the normal case where applications
+            //     use clients and servers), code-gen ensures the same P type across
+            //     client and server.
+            //   - if custom P types are configured (e.g., in tests), the user have to
+            //     ensure that. code-gen doesn't enforce this rule yet.
+            unsafe { tonic::masa::context::client::get_parent_ctx() }
         }
     }
 }
@@ -167,7 +215,12 @@ fn generate_get_parent_rpc_ctx(_service: &impl Service) -> TokenStream {
 #[cfg(feature = "transport")]
 fn generate_connect(service_ident: &syn::Ident, enabled: bool) -> TokenStream {
     let connect_impl = quote! {
-        impl #service_ident<tonic::transport::Channel> {
+        impl #service_ident<
+            tonic::transport::Channel,
+            tonic::masa::ServerContext,
+            tonic::masa::ChildContext,
+            tonic::masa::ParentContext
+        > {
             /// Attempt to create a new client by connecting to a given endpoint.
             pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
             where
@@ -175,7 +228,23 @@ fn generate_connect(service_ident: &syn::Ident, enabled: bool) -> TokenStream {
                 D::Error: Into<StdError>,
             {
                 let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
-                Ok(Self::new(conn))
+                Ok(Self::new_impl(conn))
+            }
+        }
+        impl<S, C, P> #service_ident<tonic::transport::Channel, S, C, P>
+        where
+            S: tonic::masa::ServerHooks,
+            C: tonic::masa::ClientStubHooks,
+            P: tonic::masa::RequestHandlerHooks<C, S>,
+        {
+            /// Attempt to create a new client by connecting to a given endpoint.
+            pub async fn connect_with_custom_context<D>(dst: D) -> Result<Self, tonic::transport::Error>
+            where
+                D: TryInto<tonic::transport::Endpoint>,
+                D::Error: Into<StdError>,
+            {
+                let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+                Ok(Self::new_impl(conn))
             }
         }
     };
@@ -262,14 +331,11 @@ fn generate_unary<T: Service>(
 
     let before_child_rpc = if enable_parent_rpc_ctx {
         quote! {
-            use tonic::masa::RequestHandlerHooks;
             if let Some(parent_ctx) = self.get_parent_ctx() {
                 // log::info!("into parent ctx, before rpc, method: {:?}", grpc_method);
                 if let Some(status) = parent_ctx.before_child_rpc(grpc_method, &mut req, &mut child_ctx) {
                     return Err(status);
                 }
-            } else {
-                // log::info!("no parent ctx, before rpc, method: {:?}", grpc_method);
             }
         }
     } else {
@@ -283,8 +349,6 @@ fn generate_unary<T: Service>(
                 if let Some(status) = parent_ctx.after_child_rpc(grpc_method, &mut resp, child_ctx) {
                     return Err(status);
                 }
-            } else {
-                // log::info!("no parent ctx, after rpc, method: {:?}", grpc_method);
             }
         }
     } else {
@@ -306,8 +370,7 @@ fn generate_unary<T: Service>(
            let grpc_method = GrpcMethod::new(#service_name, #method_name);
            req.extensions_mut().insert(grpc_method);
 
-           use tonic::masa::ClientStubHooks;
-           let mut child_ctx = tonic::masa::ChildContext::new(grpc_method, &req);
+           let mut child_ctx = C::new(grpc_method, &req);
 
            #before_child_rpc
 
