@@ -123,7 +123,10 @@ impl SimpleParentContext {
 
     #[inline]
     fn issue_early_return<T>(&self) -> Result<Response<T>, Status> {
-        Err(Status::new(Code::DeadlineExceeded, self.method.id()))
+        Err(Status::new(
+            Code::DeadlineExceeded,
+            format!("EarlyReturn/{}", self.method.id()),
+        ))
     }
 }
 
