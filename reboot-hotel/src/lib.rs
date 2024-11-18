@@ -9,7 +9,8 @@ use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::sync::Notify;
 
 use crossbeam_channel::Receiver;
 use env_logger::{Builder, Env};
@@ -141,14 +142,18 @@ impl AvgTracker {
 #[derive(Default)]
 pub struct Pool<T> {
     inner: Mutex<VecDeque<T>>,
-    // cnt: AtomicUsize,
+    max_size: usize,
+    size: AtomicUsize,
+    has_new_item: Notify,
 }
 
 impl<T> Pool<T> {
-    pub fn new() -> Self {
+    pub fn new(max_size: usize) -> Self {
         Self {
-            inner: Mutex::new(VecDeque::new()),
-            // cnt: AtomicUsize::new(0),
+            inner: Mutex::new(VecDeque::with_capacity(max_size)),
+            max_size,
+            size: AtomicUsize::new(0),
+            has_new_item: Notify::new(),
         }
     }
 
@@ -156,25 +161,62 @@ impl<T> Pool<T> {
         &'a self,
         factory: impl FnOnce() -> Fut,
     ) -> PoolItemRef<'a, T> {
-        // let should_print = self.cnt.fetch_add(1, Ordering::Relaxed) % 1_000 == 0;
         {
             // fast path
             let mut pool = self.inner.lock().unwrap();
-            // if should_print {
-            //     println!("num mcs: {}", pool.len());
-            // }
             if let Some(item) = pool.pop_front() {
                 return PoolItemRef::new(item, self);
             }
         }
 
         // slow path
-        let item = factory().await;
-        return PoolItemRef::new(item, self);
+        let should_create = {
+            if self.size.load(Ordering::Relaxed) < self.max_size {
+                // still have capacity -- try to reserve capacity
+                let prev = self.size.fetch_add(1, Ordering::Relaxed);
+                if prev > self.max_size {
+                    // unlucky -- another thread took our spot and we're at capacity.
+                    // cancel out our increment.
+                    self.size.fetch_sub(1, Ordering::Relaxed);
+                    false
+                } else {
+                    true
+                }
+            } else {
+                false
+            }
+        };
+
+        if should_create {
+            let item = factory().await;
+            return PoolItemRef::new(item, self);
+        }
+
+        // the truly slow path -- wait for capacity to show up
+        let mut iters = 0;
+        println!("entering slow path");
+        let start = std::time::Instant::now();
+        loop {
+            {
+                let mut pool = self.inner.lock().unwrap();
+                if let Some(item) = pool.pop_front() {
+                    if iters >= 1 {
+                        println!("mc waited for {}", start.elapsed().as_micros());
+                    }
+                    return PoolItemRef::new(item, self);
+                }
+            }
+            // wait for capacity
+            // [TODO] fix wait condition
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            iters += 1;
+        }
     }
 
     fn put(&self, item: T) {
-        self.inner.lock().unwrap().push_back(item)
+        {
+            self.inner.lock().unwrap().push_back(item);
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -236,9 +278,9 @@ pub struct McPool {
 }
 
 impl McPool {
-    pub fn new(addr: String) -> Self {
+    pub fn new(addr: String, max_conns: usize) -> Self {
         Self {
-            pool: Pool::new(),
+            pool: Pool::new(max_conns),
             addr,
         }
     }
