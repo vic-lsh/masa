@@ -67,7 +67,7 @@ fn get_frontend() -> GlobalGraph {
                 method_id,
                 vec![
                     Span::new(
-                        "/user.User/HandleCheckUser".to_string(),
+                        "/user.User/CheckUser".to_string(),
                         None,
                         *TRACKER_CAPACITY,
                         *PCTL_DEADLINE,
@@ -101,14 +101,14 @@ fn get_search() -> GlobalGraph {
                 method_id,
                 vec![
                     Span::new(
-                        "/geo.Geo/HandleNearby".to_string(),
+                        "/geo.Geo/GetNearby".to_string(),
                         None,
                         *TRACKER_CAPACITY,
                         *PCTL_DEADLINE,
                         *PCTL_LATEST_EXEC,
                     ),
                     Span::new(
-                        "/rate.Rate/HandleGetRates".to_string(),
+                        "/rate.Rate/GetRates".to_string(),
                         None,
                         *TRACKER_CAPACITY,
                         *PCTL_DEADLINE,
@@ -127,7 +127,7 @@ fn get_geo() -> GlobalGraph {
     let service_id: ServiceId = "geo.Geo".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/geo.Geo/HandleNearby";
+        let method_id: MethodId = "/geo.Geo/GetNearby";
         graphs.insert(
             method_id,
             LocalGraph::new(service_id.clone(), method_id, vec![]),
@@ -192,7 +192,7 @@ fn get_user() -> GlobalGraph {
     let service_id: ServiceId = "user.User".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
-        let method_id: MethodId = "/user.User/HandleCheckUser";
+        let method_id: MethodId = "/user.User/CheckUser";
         graphs.insert(
             method_id,
             LocalGraph::new(service_id.clone(), method_id, vec![]),

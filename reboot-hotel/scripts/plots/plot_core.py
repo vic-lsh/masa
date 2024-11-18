@@ -25,16 +25,17 @@ COLORS = ["tab:blue", "tab:orange", "tab:purple", "tab:red", "tab:green"]
 COLORS_AIO = ["tab:blue", "tab:orange", "tab:orange", "tab:purple", "tab:purple"]
 MARKERS = ["o", "x", "^", "*", "s"]
 Y_MIN = 0
-Y_MAX = 2000
+Y_MAX = 4000
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", type=str)
+    parser.add_argument("--modes", type=str, nargs="+")
+    parser.add_argument("--gen-config", type=str)
+    parser.add_argument("--snippets", type=str)
     parser.add_argument("--path", type=str)
     parser.add_argument("--data", type=str)
-    parser.add_argument("--mode", type=str)
-    parser.add_argument("--snippets", type=str)
-    parser.add_argument("--modes", type=str, nargs="+")
     args = parser.parse_args()
     return args
 
@@ -56,6 +57,8 @@ def plot_goodput_bar(
         width,
         color=COLORS[0],
         label=label,
+        edgecolor="black",
+        linewidth=1,
     )
 
     ax.set_xlabel("RPS")
@@ -82,13 +85,15 @@ def plot_goodput_bar(
 
     fig.tight_layout()
     plt.ylim(Y_MIN, Y_MAX)
-    plt.grid(True, linestyle="--", linewidth=0.5)
+    plt.grid(True, axis="y", linewidth=0.5)
     plt.savefig(fig_name)
 
 
 def plot_goodput_apis_bar(
     apis: List[str], mode: str, results: List[Dict[str, Any]], fig_name: str
 ):
+    if len(apis) != 2:
+        return
     labels = [(f"{mode} {api}").lower() for api in apis]
     rps_values = [result["rps"] for result in results if result["api"] == apis[0]]
     goodputs = [
@@ -96,35 +101,28 @@ def plot_goodput_apis_bar(
         for api in apis
     ]
 
+    fig, ax = plt.subplots(figsize=(10, 6))
+
     x = np.arange(len(rps_values))
     width = 0.3
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    if len(apis) == 1:
-        rects1 = ax.bar(
-            x,
-            goodputs[0],
-            width,
-            color=COLORS[0],
-            label=labels[0],
-        )
-    elif len(apis) == 2:
-        rects1 = ax.bar(
-            x - width * 0.5,
-            goodputs[0],
-            width,
-            color=COLORS[0],
-            label=labels[0],
-        )
-        rects2 = ax.bar(
-            x + width * 0.5,
-            goodputs[1],
-            width,
-            color=COLORS[1],
-            label=labels[1],
-        )
-    else:
-        raise ValueError("Expected 1 or 2 APIs")
+    rects1 = ax.bar(
+        x - width * 0.5,
+        goodputs[0],
+        width,
+        color=COLORS[0],
+        label=labels[0],
+        edgecolor="black",
+        linewidth=1,
+    )
+    rects2 = ax.bar(
+        x + width * 0.5,
+        goodputs[1],
+        width,
+        color=COLORS[1],
+        label=labels[1],
+        edgecolor="black",
+        linewidth=1,
+    )
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
@@ -154,7 +152,7 @@ def plot_goodput_apis_bar(
 
     fig.tight_layout()
     plt.ylim(Y_MIN, Y_MAX)
-    plt.grid(True, linestyle="--", linewidth=0.5)
+    plt.grid(True, axis="y", linewidth=0.5)
     plt.savefig(fig_name)
 
 
@@ -172,9 +170,9 @@ def plot_goodput_cmp_bar(
             [result["goodput"] for result in results if result["mode"] == mode]
         )
 
-    x = np.arange(len(rps_values))
     fig, ax = plt.subplots(figsize=(10, 6))
 
+    x = np.arange(len(rps_values))
     bars: List = []
     xs: List = []
     colors: List = []
@@ -242,224 +240,31 @@ def plot_goodput_cmp_bar(
     plt.savefig(fig_name)
 
 
-def plot_throughput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
-    rps_values = [result["rps"] for result in results]
-    keys = ["tput_good", "tput_lg_miss", "tput_lg_timeout", "tput_svc_early"]
-    labels = [
-        "Throughput Good",
-        "Throughput LG Miss",
-        "Throughput LG Timeout",
-        "Throughput Service Early",
-    ]
-    tputs = [[result[key] for result in results] for key in keys]
-
-    fig = plt.figure(figsize=(10, 6))
-    for i in range(len(keys)):
-        plt.plot(
-            rps_values, tputs[i], label=labels[i], color=COLORS[i], marker=MARKERS[i]
-        )
-
-    plt.xlabel("RPS")
-    plt.ylabel("Throughput")
-    plt.ylim(Y_MIN, Y_MAX)
-    plt.title(f"Throughput vs RPS ({mode})")
-    plt.legend(loc="upper left", fontsize=fontsize_medium)
-    plt.grid(True)
-    plt.savefig(fig_name)
-
-
-def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
-    rps_values = [result["rps"] for result in results]
-    keys = ["tput_good", "tput_lg_miss", "tput_lg_timeout", "tput_svc_early"]
-    labels = [
-        "Throughput Good",
-        "Throughput LG Miss",
-        "Throughput LG Timeout",
-        "Throughput Service Early",
-    ]
-    tputs = [[result[key] for result in results] for key in keys]
-
-    x = np.arange(len(rps_values))
-    width = 0.22
-    rects_x = [
-        x - width * 1.5,
-        x - width * 0.5,
-        x + width * 0.5,
-        x + width * 1.5,
-    ]
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    rects_bar = [
-        ax.bar(rect_x, tputs[i], width, label=labels[i], color=COLORS[i])
-        for i, rect_x in enumerate(rects_x)
-    ]
-
-    ax.set_xlabel("RPS")
-    ax.set_ylabel("Throughput")
-    ax.set_title(f"Throughput vs RPS ({mode})")
-    ax.set_xticks(x)
-    ax.set_xticklabels(rps_values)
-    ax.legend(loc="upper left", fontsize=fontsize_medium)
-
-    def autolabel(rects):
-        for rect in rects:
-            height = rect.get_height()
-            ax.annotate(
-                "{}".format(height),
-                xy=(rect.get_x() + rect.get_width() / 2, height),
-                xytext=(0, 3),
-                textcoords="offset points",
-                ha="center",
-                va="bottom",
-                fontsize=fontsize_medium,
-            )
-
-    for rects in rects_bar:
-        autolabel(rects)
-
-    fig.tight_layout()
-    plt.ylim(Y_MIN, Y_MAX)
-    plt.grid(True, linestyle="--", linewidth=0.5)
-    plt.savefig(fig_name)
-
-
-def plot_error_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
-    rps_values = [result["rps"] for result in results]
-    keys = [
-        "error_lg_miss",
-        "error_lg_timeout",
-        "error_frontend",
-        "error_search",
-        "error_profile",
-    ]
-    labels = [
-        "Error LG Miss",
-        "Error LG Timeout",
-        "Error Frontend",
-        "Error Search",
-        "Error Profile",
-    ]
-    errors = [[result[key] for result in results] for key in keys]
-
-    fig = plt.figure(figsize=(10, 6))
-    for i in range(len(keys)):
-        plt.plot(
-            rps_values, errors[i], label=labels[i], color=COLORS[i], marker=MARKERS[i]
-        )
-
-    plt.xlabel("RPS")
-    plt.ylabel("Error")
-    plt.ylim(Y_MIN, Y_MAX)
-    plt.title(f"Error vs RPS ({mode})")
-    plt.legend(loc="upper left", fontsize=fontsize_medium)
-    plt.grid(True)
-    plt.savefig(fig_name)
-
-
-def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
-    rps_values = [result["rps"] for result in results]
-    keys = [
-        "error_lg_miss",
-        "error_lg_timeout",
-        "error_frontend",
-        "error_search",
-        "error_profile",
-    ]
-    labels = [
-        "Error LG Miss",
-        "Error LG Timeout",
-        "Error Frontend",
-        "Error Search",
-        "Error Profile",
-    ]
-    errors = [[result[key] for result in results] for key in keys]
-
-    x = np.arange(len(rps_values))
-    width = 0.17
-    rects_x = [
-        x - width * 2,
-        x - width,
-        x,
-        x + width,
-        x + width * 2,
-    ]
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    rects_bar = [
-        ax.bar(rect_x, errors[i], width, label=labels[i], color=COLORS[i])
-        for i, rect_x in enumerate(rects_x)
-    ]
-
-    ax.set_xlabel("RPS")
-    ax.set_ylabel("Error")
-    ax.set_title(f"Error vs RPS ({mode})")
-    ax.set_xticks(x)
-    ax.set_xticklabels(rps_values)
-    ax.legend(loc="upper left", fontsize=fontsize_small)
-
-    def autolabel(rects):
-        for rect in rects:
-            height = rect.get_height()
-            ax.annotate(
-                "{}".format(height),
-                xy=(rect.get_x() + rect.get_width() / 2, height),
-                xytext=(0, 3),
-                textcoords="offset points",
-                ha="center",
-                va="bottom",
-                fontsize=fontsize_medium,
-            )
-
-    for rects in rects_bar:
-        autolabel(rects)
-
-    fig.tight_layout()
-    plt.ylim(Y_MIN, Y_MAX)
-    plt.grid(True, linestyle="--", linewidth=0.5)
-    plt.savefig(fig_name)
-
-
-def plot_tail_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
-    rps_values = [result["rps"] for result in results]
-    keys = ["mean", "p90", "p95", "p99"]
-    labels = ["Mean", "P90", "P95", "P99"]
-    errors = [[result[key] for result in results] for key in keys]
-
-    fig = plt.figure(figsize=(10, 6))
-    for i in range(len(keys)):
-        plt.plot(
-            rps_values, errors[i], label=labels[i], color=COLORS[i], marker=MARKERS[i]
-        )
-
-    plt.xlabel("RPS")
-    plt.ylabel("Tail (ms)")
-    plt.ylim(0, 100)
-    plt.title(f"Tail vs RPS ({mode})")
-    plt.legend(loc="upper left", fontsize=fontsize_medium)
-    plt.grid(True)
-    plt.savefig(fig_name)
-
-
 def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
-    keys = ["mean", "p90", "p95", "p99"]
-    labels = ["Mean", "P90", "P95", "P99"]
+    keys = ["mean", "p50", "p90", "p95", "p99"]
+    labels = ["Mean", "P50", "P90", "P95", "P99"]
     errors = [[result[key] for result in results] for key in keys]
 
-    x = np.arange(len(rps_values))
-    width = 0.22
-    rects_x = [
-        x - width * 1.5,
-        x - width * 0.5,
-        x + width * 0.5,
-        x + width * 1.5,
-    ]
-
     fig, ax = plt.subplots(figsize=(10, 6))
-    rects_bar = [
-        ax.bar(rect_x, errors[i], width, label=labels[i], color=COLORS[i])
-        for i, rect_x in enumerate(rects_x)
-    ]
+
+    x = np.arange(len(rps_values))
+    width = 0.2
+    xs = [x - width * 2, x - width * 1, x, x + width, x + width * 2]
+    bars: List = []
+
+    for i in range(5):
+        bars.append(
+            ax.bar(
+                xs[i],
+                errors[i],
+                width,
+                label=labels[i],
+                color=COLORS[i],
+                edgecolor="black",
+                linewidth=1,
+            )
+        )
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Tail (ms)")
@@ -486,7 +291,7 @@ def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     #     autolabel(rects)
 
     fig.tight_layout()
-    plt.grid(True, linestyle="--", linewidth=0.5)
+    plt.grid(True, axis="y", linewidth=0.5)
     plt.savefig(fig_name)
 
 
@@ -503,9 +308,9 @@ def plot_tail_cmp_bar(
     for key in keys:
         tails.append([result[key] for result in results if key in result])
 
-    x = np.arange(len(rps_values))
     fig, ax = plt.subplots(figsize=(10, 6))
 
+    x = np.arange(len(rps_values))
     bars: List = []
     xs: List = []
     colors: List = []
@@ -570,7 +375,125 @@ def plot_tail_cmp_bar(
     #     autolabel(bar)
 
     fig.tight_layout()
-    plt.grid(True, linestyle="--", linewidth=0.5)
+    plt.grid(True, axis="y", linewidth=0.5)
+    plt.savefig(fig_name)
+
+
+def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
+    rps_values = [result["rps"] for result in results]
+    keys = ["tput_good", "tput_lg_miss", "tput_lg_timeout", "tput_svc_early"]
+    labels = [
+        "Throughput Good",
+        "Throughput LG Miss",
+        "Throughput LG Timeout",
+        "Throughput Service Early",
+    ]
+    tputs = [[result[key] for result in results] for key in keys]
+
+    x = np.arange(len(rps_values))
+    width = 0.22
+    rects_x = [
+        x - width * 1.5,
+        x - width * 0.5,
+        x + width * 0.5,
+        x + width * 1.5,
+    ]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    rects_bar = [
+        ax.bar(rect_x, tputs[i], width, label=labels[i], color=COLORS[i])
+        for i, rect_x in enumerate(rects_x)
+    ]
+
+    ax.set_xlabel("RPS")
+    ax.set_ylabel("Throughput")
+    ax.set_title(f"Throughput vs RPS ({mode})")
+    ax.set_xticks(x)
+    ax.set_xticklabels(rps_values)
+    ax.legend(loc="upper left", fontsize=fontsize_medium)
+
+    def autolabel(rects):
+        for rect in rects:
+            height = rect.get_height()
+            ax.annotate(
+                "{}".format(height),
+                xy=(rect.get_x() + rect.get_width() / 2, height),
+                xytext=(0, 3),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=fontsize_medium,
+            )
+
+    for rects in rects_bar:
+        autolabel(rects)
+
+    fig.tight_layout()
+    plt.ylim(Y_MIN, Y_MAX)
+    plt.grid(True, axis="y", linewidth=0.5)
+    plt.savefig(fig_name)
+
+
+def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
+    rps_values = [result["rps"] for result in results]
+    keys = [
+        "error_lg_miss",
+        "error_lg_timeout",
+        "error_frontend",
+        "error_search",
+        "error_profile",
+    ]
+    labels = [
+        "Error LG Miss",
+        "Error LG Timeout",
+        "Error Frontend",
+        "Error Search",
+        "Error Profile",
+    ]
+    errors = [[result[key] for result in results] for key in keys]
+
+    x = np.arange(len(rps_values))
+    width = 0.17
+    rects_x = [
+        x - width * 2,
+        x - width,
+        x,
+        x + width,
+        x + width * 2,
+    ]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    rects_bar = [
+        ax.bar(rect_x, errors[i], width, label=labels[i], color=COLORS[i])
+        for i, rect_x in enumerate(rects_x)
+    ]
+
+    ax.set_xlabel("RPS")
+    ax.set_ylabel("Error")
+    ax.set_title(f"Error vs RPS ({mode})")
+    ax.set_xticks(x)
+    ax.set_xticklabels(rps_values)
+    ax.legend(loc="upper left", fontsize=fontsize_small)
+
+    def autolabel(rects):
+        for rect in rects:
+            height = rect.get_height()
+            ax.annotate(
+                "{}".format(height),
+                xy=(rect.get_x() + rect.get_width() / 2, height),
+                xytext=(0, 3),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=fontsize_medium,
+            )
+
+    for rects in rects_bar:
+        autolabel(rects)
+
+    fig.tight_layout()
+    plt.ylim(Y_MIN, Y_MAX)
+    plt.grid(True, axis="y", linewidth=0.5)
     plt.savefig(fig_name)
 
 
@@ -603,6 +526,86 @@ def plot_goodput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
     plt.ylabel("Goodput")
     plt.ylim(Y_MIN, Y_MAX)
     plt.title(f"Goodput vs RPS ({mode})")
+    plt.legend(loc="upper left", fontsize=fontsize_medium)
+    plt.grid(True)
+    plt.savefig(fig_name)
+
+
+def plot_tail_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
+    rps_values = [result["rps"] for result in results]
+    keys = ["mean", "p90", "p95", "p99"]
+    labels = ["Mean", "P90", "P95", "P99"]
+    errors = [[result[key] for result in results] for key in keys]
+
+    fig = plt.figure(figsize=(10, 6))
+    for i in range(len(keys)):
+        plt.plot(
+            rps_values, errors[i], label=labels[i], color=COLORS[i], marker=MARKERS[i]
+        )
+
+    plt.xlabel("RPS")
+    plt.ylabel("Tail (ms)")
+    plt.ylim(0, 100)
+    plt.title(f"Tail vs RPS ({mode})")
+    plt.legend(loc="upper left", fontsize=fontsize_medium)
+    plt.grid(True)
+    plt.savefig(fig_name)
+
+
+def plot_error_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
+    rps_values = [result["rps"] for result in results]
+    keys = [
+        "error_lg_miss",
+        "error_lg_timeout",
+        "error_frontend",
+        "error_search",
+        "error_profile",
+    ]
+    labels = [
+        "Error LG Miss",
+        "Error LG Timeout",
+        "Error Frontend",
+        "Error Search",
+        "Error Profile",
+    ]
+    errors = [[result[key] for result in results] for key in keys]
+
+    fig = plt.figure(figsize=(10, 6))
+    for i in range(len(keys)):
+        plt.plot(
+            rps_values, errors[i], label=labels[i], color=COLORS[i], marker=MARKERS[i]
+        )
+
+    plt.xlabel("RPS")
+    plt.ylabel("Error")
+    plt.ylim(Y_MIN, Y_MAX)
+    plt.title(f"Error vs RPS ({mode})")
+    plt.legend(loc="upper left", fontsize=fontsize_medium)
+    plt.grid(True)
+    plt.savefig(fig_name)
+
+
+def plot_throughput_line(results: List[Dict[str, Any]], fig_name: str, mode: str):
+    rps_values = [result["rps"] for result in results]
+    keys = ["tput_good", "tput_lg_miss", "tput_lg_timeout", "tput_svc_early"]
+    labels = [
+        "Throughput Good",
+        "Throughput LG Miss",
+        "Throughput LG Timeout",
+        "Throughput Service Early",
+    ]
+    tputs = [[result[key] for result in results] for key in keys]
+
+    fig = plt.figure(figsize=(10, 6))
+    for i in range(len(keys)):
+        plt.plot(
+            rps_values, tputs[i], label=labels[i], color=COLORS[i], marker=MARKERS[i]
+        )
+
+    plt.xlabel("RPS")
+    plt.ylabel("Throughput")
+    plt.ylim(Y_MIN, Y_MAX)
+    plt.title(f"Throughput vs RPS ({mode})")
     plt.legend(loc="upper left", fontsize=fontsize_medium)
     plt.grid(True)
     plt.savefig(fig_name)

@@ -98,7 +98,7 @@ impl UserImpl {
 
 #[tonic::async_trait]
 impl User for UserImpl {
-    async fn handle_check_user(
+    async fn check_user(
         &self,
         request: Request<user::UserRequest>,
     ) -> Result<Response<user::UserResponse>, Status> {
