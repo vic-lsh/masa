@@ -11,6 +11,7 @@ pctl_deadline=""
 pctl_latest_exec=""
 cargo_features=""
 output_path=""
+gen_config=""
 hotel_config=""
 repeats=1
 while [[ "$#" -gt 0 ]]; do
@@ -37,6 +38,10 @@ while [[ "$#" -gt 0 ]]; do
         ;;
     --output-path)
         output_path="$2"
+        shift
+        ;;
+    --gen-config)
+        gen_config="$2"
         shift
         ;;
     --hotel-config)
@@ -68,6 +73,10 @@ if [ -z "$cargo_features" ]; then
 fi
 if [ -z "$output_path" ]; then
     echo "Expected an output path using --output-path"
+    exit 1
+fi
+if [ -z "$gen_config" ]; then
+    echo "Expected a gen config file using --gen-config"
     exit 1
 fi
 if [ -z "$hotel_config" ]; then
@@ -151,8 +160,9 @@ cargo run --release \
 --features $cargo_features \
 --bin $service \
 -- \
+--gen-config $gen_config \
 --hotel-config $hotel_config \
---gen-config $output_path/gen_config.json \
+--output-path $output_path \
 --run-idx $run_idx \
 > $output_path/tmp_$service.log 2>&1"
 

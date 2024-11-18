@@ -19,8 +19,6 @@ pub struct GenConfig {
     pub duration_secs: u64,
     #[serde(rename = "Concurrency")]
     pub concurrency: usize,
-    #[serde(rename = "Output")]
-    pub output: String,
     #[serde(rename = "Addr")]
     pub addr: String,
 }
