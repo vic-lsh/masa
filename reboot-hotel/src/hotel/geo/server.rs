@@ -62,7 +62,7 @@ impl GeoImpl {
 
 #[tonic::async_trait]
 impl Geo for GeoImpl {
-    async fn handle_nearby(
+    async fn get_nearby(
         &self,
         request: Request<geo::NearbyRequest>,
     ) -> Result<Response<geo::NearbyResponse>, Status> {

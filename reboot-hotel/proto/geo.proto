@@ -3,7 +3,7 @@ syntax = "proto3";
 package geo;
 
 service Geo {
-  rpc HandleNearby(NearbyRequest) returns (NearbyResponse) {}
+  rpc GetNearby(NearbyRequest) returns (NearbyResponse) {}
 }
 
 message NearbyRequest {

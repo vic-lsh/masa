@@ -134,7 +134,7 @@ impl Frontend for FrontendImpl {
             username: request.username,
             password: request.password,
         };
-        let user_response = user_client.handle_check_user(user_request).await?;
+        let user_response = user_client.check_user(user_request).await?;
         let response = user_response.into_inner();
 
         if !response.success {

@@ -10,7 +10,7 @@ rps_to_results: List[Dict[str, Any]] = []
 
 for mode in args.modes:
     path = f"{args.snippets}/{mode}"
-    cfg = json.load(open(f"{path}/gen_config.json"))
+    cfg = json.load(open(args.gen_config))
 
     for rps in cfg["Rps"]:
         file = f"{path}/{args.data}/r{rps}_{r}.csv"
