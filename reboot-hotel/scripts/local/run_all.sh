@@ -7,12 +7,17 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 fi
 
 features=""
+gen_cfg=""
 output=""
 repeats="1"
 while [[ "$#" -gt 0 ]]; do
     case $1 in
     --features)
         features="$2"
+        shift
+        ;;
+    --gen-cfg)
+        gen_cfg="$2"
         shift
         ;;
     --output)
@@ -37,6 +42,9 @@ fi
 if [ -z "$output" ]; then
     echo "Output to snippets/$features"
     output=snippets/$features
+fi
+if [ -z "$gen_cfg" ]; then
+    gen_cfg=$output/gen_config.json
 fi
 
 session_name="hotel"
@@ -112,7 +120,7 @@ cargo run --release \
 --bin $service \
 -- \
 --hotel-config scripts/local/hotel_config.json \
---gen-config $output/gen_config.json \
+--gen-config $gen_cfg \
 --run-idx $run_idx \
 > $output/tmp_$service.log 2>&1"
 
