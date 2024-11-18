@@ -200,7 +200,7 @@ impl<T> Pool<T> {
                 let mut pool = self.inner.lock().unwrap();
                 if let Some(item) = pool.pop_front() {
                     if iters >= 1 {
-                        log::warn!("mc waited for {}", start.elapsed().as_micros());
+                        log::debug!("mc waited for {}", start.elapsed().as_micros());
                     }
                     return PoolItemRef::new(item, self);
                 }
@@ -278,6 +278,7 @@ pub struct McPool {
 
 impl McPool {
     pub fn new(addr: String, max_conns: usize) -> Self {
+        log::warn!("MC connect to {}", addr);
         Self {
             pool: Pool::new(max_conns),
             addr,
