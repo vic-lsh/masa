@@ -7,12 +7,12 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 fi
 snippets=snippets/search_reservation
 
-# # echo "Running fifo..."
-# $pwd/scripts/local/run_all.sh \
-# 	--features fifo \
-# 	--gen-cfg $snippets/gen_config.json \
-# 	--output $snippets/fifo \
-# 	--repeats 1
+# echo "Running fifo..."
+$pwd/scripts/local/run_all.sh \
+	--features fifo \
+	--gen-cfg $snippets/gen_config.json \
+	--output $snippets/fifo \
+	--repeats 1
 
 # echo "Running e2e..."
 # $pwd/scripts/local/run_all.sh \
