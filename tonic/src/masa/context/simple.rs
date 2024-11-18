@@ -15,7 +15,7 @@ use tonic_masa::{
 
 use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
 
-use super::{ChildContext, ClientStubHooks, RequestHandlerHooks, ServerContext};
+use super::{ClientStubHooks, RequestHandlerHooks, ServerContext, ServerHooks};
 
 #[inline]
 fn time_now() -> u64 {
@@ -127,7 +127,7 @@ impl SimpleParentContext {
     }
 }
 
-impl RequestHandlerHooks for SimpleParentContext {
+impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContext {
     fn begin<B>(
         method: GrpcMethod,
         req: &http::Request<B>,
@@ -150,7 +150,7 @@ impl RequestHandlerHooks for SimpleParentContext {
         &self,
         method: GrpcMethod,
         request: &mut Request<T>,
-        _child_send_ctx: &mut ChildContext,
+        _child_send_ctx: &mut SimpleChildContext,
     ) -> Option<Status> {
         // log::info!("parent_ctx, before_child_rpc, method: {:?}", method.id());
         if self.check_early_return() {
@@ -196,7 +196,7 @@ impl RequestHandlerHooks for SimpleParentContext {
         &self,
         child_rpc_method: GrpcMethod,
         resp: &mut Result<Response<T>, Status>,
-        child_ctx: ChildContext,
+        child_ctx: SimpleChildContext,
     ) -> Option<Status> {
         // log::info!(
         //     "parent_ctx, after_child_rpc, method: {:?}",
@@ -239,9 +239,9 @@ impl RequestHandlerHooks for SimpleParentContext {
     ) -> Option<Result<Response<Ret>, Status>> {
         match poll {
             Poll::Pending => {
-                if self.check_early_return() {
-                    return Some(self.issue_early_return());
-                }
+                // if self.check_early_return() {
+                //     return Some(self.issue_early_return());
+                // }
             }
             Poll::Ready(_) => {}
         };
@@ -281,9 +281,9 @@ impl ClientStubHooks for SimpleChildContext {
     }
 }
 
-impl SimpleServerContext {
+impl ServerHooks for SimpleServerContext {
     /// Construct a SimpleServerContext.
-    pub fn new(service_name: &'static str) -> Self {
+    fn new(service_name: &'static str) -> Self {
         // [NOTE] Hierarachy:
         // - Application
         //  - Service

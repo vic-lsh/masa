@@ -1,13 +1,15 @@
 pub mod hotel {
     tonic::include_proto!("frontend");
 }
+mod gen;
 
 use tonic::Request;
 use tonic_masa::{Context, GraphId};
 
+use gen::gen_search_request;
 use reboot_hotel::init_logging;
 
-use hotel::{frontend_client::FrontendClient, SearchRequest};
+use hotel::frontend_client::FrontendClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -35,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         latest_exec,
     );
 
-    let mut request = Request::new(SearchRequest { ave: 61 });
+    let mut request = Request::new(gen_search_request());
     request.metadata_mut().insert_ctx("ctx", &ctx);
 
     let response = client.handle_search(request).await?;
