@@ -50,7 +50,7 @@ impl Search for SearchImpl {
             lat: request.lat,
             lon: request.lon,
         };
-        let geo_response = geo_client.handle_nearby(Request::new(geo_request)).await?;
+        let geo_response = geo_client.get_nearby(Request::new(geo_request)).await?;
         let response = geo_response.into_inner();
 
         let hotel_ids = response.hotel_ids;

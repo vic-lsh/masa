@@ -9,11 +9,11 @@
 		50000
 	],
 	"Rps": [
-		1500
+		2000
 	],
-	"Gap": "const",
-	"WarmupSecs": 5,
-	"DurationSecs": 5,
+	"Gap": "exp",
+	"WarmupSecs": 20,
+	"DurationSecs": 40,
 	"Concurrency": 0,
 	"Addr": "http://[::1]:8660"
 }

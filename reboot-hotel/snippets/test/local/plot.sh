@@ -14,4 +14,11 @@ data=.
 echo "Plotting goodput..."
 python3 $pwd/scripts/plots/plot_goodput.py \
 	--mode $mode \
+	--gen-config $pwd/$folder/gen_config.json \
+	--path $pwd/$folder/$snippet/$data
+
+echo "Plotting tail..."
+python3 $pwd/scripts/plots/plot_tail.py \
+	--mode $mode \
+	--gen-config $pwd/$folder/gen_config.json \
 	--path $pwd/$folder/$snippet/$data

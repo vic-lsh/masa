@@ -7,8 +7,8 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 fi
 folder=snippets/test
 
-# echo "Plotting fifo..."
-# $pwd/$folder/fifo/plot.sh
+echo "Plotting fifo..."
+$pwd/$folder/fifo/plot.sh
 
 # echo "Plotting e2e..."
 # $pwd/$folder/e2e/plot.sh
@@ -16,8 +16,8 @@ folder=snippets/test
 # echo "Plotting e2e_er..."
 # $pwd/$folder/e2e_er/plot.sh
 
-# echo "Plotting local..."
-# $pwd/$folder/local/plot.sh
+echo "Plotting local..."
+$pwd/$folder/local/plot.sh
 
 # echo "Plotting local_er..."
 # $pwd/$folder/local_er/plot.sh

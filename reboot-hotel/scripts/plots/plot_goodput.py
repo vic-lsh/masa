@@ -9,7 +9,7 @@ from plot_core import (  # type: ignore
 )
 
 args = parse_args()
-cfg = json.load(open(f"{args.path}/gen_config.json"))
+cfg = json.load(open(args.gen_config))
 
 for r in range(cfg["Repeats"]):
     rps_to_results: List[Dict[str, Any]] = []
