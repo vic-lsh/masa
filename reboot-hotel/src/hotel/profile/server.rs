@@ -12,6 +12,7 @@ use {rand::rngs::StdRng, rand::SeedableRng, rand_distr::Uniform};
 
 use crate::db;
 use mongodb::{bson::doc, Client as MongoClient};
+use reboot_hotel::McPool;
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 use tonic_masa::LatencyTracker;
@@ -36,6 +37,7 @@ struct SyntheticProfile {
 }
 
 pub struct ProfileImpl {
+    mc_pool: Arc<McPool>,
     memc_client: Arc<memcache::Client>,
     mongo_client: Arc<MongoClient>,
     latency_tracker: Arc<Mutex<LatencyTracker>>,
@@ -54,7 +56,7 @@ impl ProfileImpl {
         #[allow(unused)] cache_miss_rate: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let memc_client = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
+        let memc_client = memcache::Client::with_pool_size(cache_addr.clone(), cache_conn)?;
         let mongo_client = db::initialize_database(&db_addr).await?;
 
         let latency_tracker = Arc::new(Mutex::new(LatencyTracker::new("ProfileSvc".into(), 1024)));
@@ -80,7 +82,13 @@ impl ProfileImpl {
             (rng, uniform)
         };
 
+        let cache_addr = cache_addr
+            .strip_prefix("memcache://")
+            .map(|addr| format!("tcp://{}", addr))
+            .unwrap()
+            .to_owned();
         Ok(Self {
+            mc_pool: Arc::new(McPool::new(cache_addr, 64)),
             memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
             latency_tracker,
@@ -117,17 +125,16 @@ impl Profile for ProfileImpl {
 
         let mut hotels = Vec::new();
 
+        let mut mc = self.mc_pool.get().await;
         // Check memcached first
-        let hotel_ids_ref: Vec<_> = request.hotel_ids.iter().map(|id| id.as_str()).collect();
-        let memc_resp = self
-            .memc_client
-            .gets(&hotel_ids_ref)
-            .map_err(|e| tonic::Status::internal(format!("Memcached error: {}", e)))?;
-        for (hotel_id, item) in memc_resp {
-            if let Ok(value) = String::from_utf8(item) {
-                if let Ok(hotel) = serde_json::from_str::<db::Hotel>(&value) {
-                    hotels.push(hotel);
-                    profile_map.remove(&hotel_id);
+        if let Ok(memc_resp) = mc.get_multi(&request.hotel_ids).await {
+            for entry in memc_resp {
+                let hotel_id = String::from_utf8(entry.key).unwrap();
+                if let Ok(value) = String::from_utf8(entry.data) {
+                    if let Ok(hotel) = serde_json::from_str::<db::Hotel>(&value) {
+                        hotels.push(hotel);
+                        profile_map.remove(&hotel_id);
+                    }
                 }
             }
         }
@@ -141,8 +148,8 @@ impl Profile for ProfileImpl {
 
         for hotel_id in missing_ids {
             let hotels = Arc::clone(&hotels);
+            let mc_pool = self.mc_pool.clone();
             let mongo_client = Arc::clone(&self.mongo_client);
-            let memc_client = Arc::clone(&self.memc_client);
 
             // Spawn a task for each missing hotel
             let handle = async_executor::spawn(async move {
@@ -156,7 +163,11 @@ impl Profile for ProfileImpl {
                         // Update memcached asynchronously
                         if let Ok(prof_json) = serde_json::to_string(&hotel) {
                             async_executor::spawn(async move {
-                                let _ = memc_client.set(&hotel_id, prof_json.as_bytes(), 0);
+                                let mut mc = mc_pool.get().await;
+                                let _ = mc
+                                    .set(&hotel_id, prof_json.as_bytes(), None, None)
+                                    .await
+                                    .unwrap();
                             })
                             .detach();
                         }
