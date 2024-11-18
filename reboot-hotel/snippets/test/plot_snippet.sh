@@ -6,21 +6,16 @@ if [[ "$pwd" != */reboot-hotel ]]; then
     exit 1
 fi
 folder=snippets/test
+data=tmp_1118
 
 echo "Plotting fifo..."
-$pwd/$folder/fifo/plot.sh
-
-# echo "Plotting e2e..."
-# $pwd/$folder/e2e/plot.sh
-
-# echo "Plotting e2e_er..."
-# $pwd/$folder/e2e_er/plot.sh
+$pwd/$folder/fifo/plot.sh \
+    --data $data
 
 echo "Plotting local..."
-$pwd/$folder/local/plot.sh
-
-# echo "Plotting local_er..."
-# $pwd/$folder/local_er/plot.sh
+$pwd/$folder/local/plot.sh \
+    --data $data
 
 echo "Plotting cmp..."
-$pwd/$folder/cmp/plot.sh
+$pwd/$folder/cmp/plot.sh \
+    --data $data
