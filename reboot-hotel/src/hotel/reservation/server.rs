@@ -371,8 +371,8 @@ impl Reservation for ReservationImpl {
         let mut missing_keys = HashSet::new();
         let mut res_map: HashMap<String, bool> = HashMap::new();
 
-        self.check_avail_hotel_mc.track(req.hotel_id.len());
-        for hotel_id in &req.hotel_id {
+        self.check_avail_hotel_mc.track(req.hotel_ids.len());
+        for hotel_id in &req.hotel_ids {
             let cap_key = format!("{}_cap", hotel_id);
             hotel_mem_keys.push(cap_key.clone());
             missing_keys.insert(cap_key);
@@ -436,7 +436,7 @@ impl Reservation for ReservationImpl {
         let mut query_map = HashMap::new();
         let mut req_commands = Vec::new();
 
-        for hotel_id in &req.hotel_id {
+        for hotel_id in &req.hotel_ids {
             let in_date =
                 DateTime::parse_from_rfc3339(&format!("{}T12:00:00+00:00", req.in_date)).unwrap();
             let out_date =
@@ -528,11 +528,11 @@ impl Reservation for ReservationImpl {
 
         // Collect results
         let mut resp = reservation::ReservationResponse {
-            hotel_id: Vec::new(),
+            hotel_ids: Vec::new(),
         };
         for (hotel_id, available) in res_map {
             if available {
-                resp.hotel_id.push(hotel_id);
+                resp.hotel_ids.push(hotel_id);
             }
         }
 
@@ -569,7 +569,7 @@ impl Reservation for ReservationImpl {
         let req = req.into_inner();
 
         let mut res = reservation::ReservationResponse {
-            hotel_id: Vec::new(),
+            hotel_ids: Vec::new(),
         };
 
         let database = self.mongo_client.database("reservation-db");
@@ -584,7 +584,7 @@ impl Reservation for ReservationImpl {
             .unwrap()
             .with_timezone(&chrono::Utc);
 
-        let hotel_id = &req.hotel_id[0];
+        let hotel_id = &req.hotel_ids[0];
         let mut current_date = in_date;
         let mut memc_date_num_map = HashMap::new();
 
@@ -685,7 +685,7 @@ impl Reservation for ReservationImpl {
             .insert_many(reservations, None)
             .await
             .unwrap();
-        res.hotel_id.push(hotel_id.clone());
+        res.hotel_ids.push(hotel_id.clone());
 
         {
             let elapsed = start.elapsed().as_micros();

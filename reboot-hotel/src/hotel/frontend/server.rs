@@ -81,10 +81,11 @@ impl Frontend for FrontendImpl {
         let search_resp = search_client.handle_nearby(search_req).await?;
         let response = search_resp.into_inner();
 
+        // [NOTE] Comment out the reservation service.
         let mut reservation_client = self.reservation_client.clone();
         let span_request = reservation::ReservationRequest {
             customer_name: "".into(),
-            hotel_id: response.hotel_ids.clone(),
+            hotel_ids: response.hotel_ids.clone(),
             in_date: request.in_date,
             out_date: request.out_date,
             room_number: 1,
@@ -94,7 +95,7 @@ impl Frontend for FrontendImpl {
 
         let mut profile_client = self.profile_client.clone();
         let profile_request = profile::ProfileRequest {
-            hotel_ids: response.hotel_id,
+            hotel_ids: response.hotel_ids,
             locale: request.locale.unwrap_or("en".to_string()),
         };
         let profile_response = profile_client.get_profiles(profile_request).await?;
@@ -146,7 +147,7 @@ impl Frontend for FrontendImpl {
         let mut reservation_client = self.reservation_client.clone();
         let reservation_request = reservation::ReservationRequest {
             customer_name: request.customer,
-            hotel_id: request.hotels,
+            hotel_ids: request.hotels,
             in_date: request.in_date,
             out_date: request.out_date,
             room_number: 1,
@@ -157,7 +158,7 @@ impl Frontend for FrontendImpl {
         let response = reservation_response.into_inner();
 
         let response = frontend::ReservationResponse {
-            hotels: response.hotel_id,
+            hotels: response.hotel_ids,
         };
 
         let mut response = Response::new(response);

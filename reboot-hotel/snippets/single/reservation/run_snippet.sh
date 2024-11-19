@@ -10,21 +10,16 @@ snippets=snippets/single/search
 data=tmp_1118
 
 # echo "Running fifo..."
-# mkdir -p $folder/fifo/$data
 # $pwd/scripts/local/run_all.sh \
 
 # echo "Running e2e..."
-# mkdir -p $folder/e2e/$data
 # $pwd/scripts/local/run_all.sh \
 
 # echo "Running e2e_er..."
-# mkdir -p $folder/e2e_er/$data
 # $pwd/scripts/local/run_all.sh \
 
 # echo "Running local..."
-# mkdir -p $folder/local/$data
 # $pwd/scripts/local/run_all.sh \
 
 # echo "Running local_er..."
-# mkdir -p $folder/local_er/$data
 # $pwd/scripts/local/run_all.sh \
