@@ -39,6 +39,9 @@ plot_tail_bar(
     f"{args.mode} total",
 )
 
+if len(cfg["Apis"]) == 1:
+    exit()
+
 for api in cfg["Apis"]:
     rps_to_results = []
 
