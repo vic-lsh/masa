@@ -1,9 +1,11 @@
 {
 	"Repeats": 1,
 	"Apis": [
+		"Search",
 		"Reservation"
 	],
 	"Slos": [
+		50000,
 		50000
 	],
 	"Rps": [

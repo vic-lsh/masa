@@ -5,6 +5,7 @@ if [[ "$pwd" != */reboot-hotel ]]; then
     echo "Error: plese run in the reboot-hotel directory" >&2
     exit 1
 fi
+
 rust_log=warn
 tracker_capacity=512
 pctl_deadline=""
@@ -84,16 +85,16 @@ if [ -z "$hotel_config" ]; then
     exit 1
 fi
 
-session_name="hotel"
+session_name=hotel
 services=(
-    "hotel_geo"
-    "hotel_rate"
-    "hotel_search"
-    "hotel_profile"
-    "hotel_reservation"
-    "hotel_user"
-    "hotel_frontend"
-    "hotel_client_bench"
+    hotel_geo
+    hotel_rate
+    hotel_search
+    hotel_profile
+    hotel_reservation
+    hotel_user
+    hotel_frontend
+    hotel_client_bench
 )
 waits_secs=(
     0
@@ -110,6 +111,7 @@ init() {
     if tmux has-session -t $session_name 2>/dev/null; then
         tmux kill-session -t $session_name
     fi
+    mkdir -p $output_path
 }
 
 build() {
@@ -124,6 +126,14 @@ reset() {
     rm $output_path/*.log
     docker compose -f scripts/local/containers.yaml down --remove-orphans
     docker compose -f scripts/local/containers.yaml up -d
+}
+
+cleanup() {
+    echo "Cleaning up..."
+    if tmux has-session -t $session_name 2>/dev/null; then
+        tmux kill-session -t $session_name
+    fi
+    exit 1
 }
 
 ready_go() {
@@ -195,9 +205,11 @@ $run_cmd"
             all_done=true
         fi
     done
+
     tmux kill-session -t $session_name
 }
 
+trap cleanup SIGINT SIGTERM
 init
 build
 
