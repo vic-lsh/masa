@@ -47,6 +47,9 @@ for tail in ["mean", "p50", "p90", "p95", "p99"]:
         f"{args.path}/fig_{tail}_total_rps_cmp_{modes_str}_{r}.png",
     )
 
+if len(args.apis) == 1:
+    exit()
+
 for api in cfg["Apis"]:
     rps_to_results = []
 
