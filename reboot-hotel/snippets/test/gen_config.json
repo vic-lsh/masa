@@ -9,9 +9,9 @@
 		50000
 	],
 	"Rps": [
-		2000
+		100
 	],
-	"Gap": "exp",
+	"Gap": "const",
 	"WarmupSecs": 20,
 	"DurationSecs": 40,
 	"Concurrency": 0,
