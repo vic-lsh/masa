@@ -249,7 +249,7 @@ def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     fig, ax = plt.subplots(figsize=(10, 6))
 
     x = np.arange(len(rps_values))
-    width = 0.2
+    width = 0.16
     xs = [x - width * 2, x - width * 1, x, x + width, x + width * 2]
     bars: List = []
 

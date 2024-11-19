@@ -20,9 +20,8 @@
 		3500,
 		4000
 	],
-	"WarmupSecs": 20,
-	"DurationSecs": 60,
+	"WarmupSecs": 15,
+	"DurationSecs": 45,
 	"Concurrency": 0,
-	"Output": "snippets/single/local_er_search",
 	"Addr": "http://[::1]:8660"
 }
