@@ -5,41 +5,82 @@ if [[ "$pwd" != */reboot-hotel ]]; then
     echo "Error: plese run in the reboot-hotel directory" >&2
     exit 1
 fi
-snippets=snippets/single
 
-# # [DONE]
+folder=snippets/single/reservation
+data=tmp_1112
 
-# echo "Plotting fifo_search..."
-# $pwd/$snippets/fifo_search/plot.sh
+plot_single() {
+    local folder="$1"
+    local mode="$2"
+    local snippet="$3"
+    local data="$4"
 
-# echo "Plotting fifo_reservation..."
-# $pwd/$snippets/fifo_reservation/plot.sh
+    echo "Plotting goodput..."
+    python3 $pwd/scripts/plots/plot_goodput.py \
+        --mode $mode \
+        --gen-config $pwd/$folder/gen_config.json \
+        --path $pwd/$folder/$snippet/$data
 
-# echo "Plotting e2e_search..."
-# $pwd/$snippets/e2e_search/plot.sh
+    echo "Plotting tail..."
+    python3 $pwd/scripts/plots/plot_tail.py \
+        --mode $mode \
+        --gen-config $pwd/$folder/gen_config.json \
+        --path $pwd/$folder/$snippet/$data
+}
 
-# echo "Plotting e2e_reservation..."
-# $pwd/$snippets/e2e_reservation/plot.sh
+plot_multi() {
+    local folder="$1"
+    local modes="$2"
+    local snippet="cmp"
+    local data="$3"
 
-# echo "Plotting e2e_er_search..."
-# $pwd/$snippets/e2e_er_search/plot.sh
+    mkdir -p $pwd/$folder/$snippet
 
-# echo "Plotting e2e_er_reservation..."
-# $pwd/$snippets/e2e_er_reservation/plot.sh
+    echo "Plotting goodput..."
+    python3 $pwd/scripts/plots/plot_goodput_cmp.py \
+        --modes $modes \
+        --gen-config $pwd/$folder/gen_config.json \
+        --path $pwd/$folder/$snippet \
+        --snippets $pwd/$folder \
+        --data $data
 
-# echo "Plotting local_search..."
-# $pwd/$snippets/local_search/plot.sh
+    echo "Plotting tail..."
+    python3 $pwd/scripts/plots/plot_tail_cmp.py \
+        --modes $modes \
+        --gen-config $pwd/$folder/gen_config.json \
+        --path $pwd/$folder/$snippet \
+        --snippets $pwd/$folder \
+        --data $data
+}
 
-# echo "Plotting local_reservation..."
-# $pwd/$snippets/local_reservation/plot.sh
+echo "Analyzing fifo..."
+plot_single $folder fifo fifo $data
+echo ""
 
-# echo "Plotting local_er_search..."
-# $pwd/$snippets/local_er_search/plot.sh
+echo "Analyzing e2e..."
+plot_single $folder e2e e2e $data
+echo ""
 
-# echo "Plotting local_er_reservation..."
-# $pwd/$snippets/local_er_reservation/plot.sh
+echo "Analyzing e2e_er..."
+plot_single $folder e2e_er e2e_er $data
+echo ""
 
-# # [ONGOING]
+echo "Analyzing local..."
+plot_single $folder local local $data
+echo ""
 
-echo "Plotting cmp..."
-$pwd/$snippets/cmp/plot.sh
+# [NOTE] local_er/tmp_1112/gen_config.json is different.
+# echo "Analyzing local_er..."
+# plot $folder local_er local_er $data
+# echo ""
+
+modes_list=(
+    "fifo e2e e2e_er local"
+    # [TODO]
+    # "fifo e2e e2e_er local local_er"
+)
+
+for modes in "${modes_list[@]}"; do
+    echo "Analyzing $modes..."
+    plot_multi $folder "$modes" $data
+done

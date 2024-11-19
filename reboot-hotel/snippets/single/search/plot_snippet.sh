@@ -75,7 +75,9 @@ echo ""
 # echo ""
 
 modes_list=(
-    "fifo e2e e2e_er local local_er"
+    "fifo e2e e2e_er local"
+    # [TODO]
+    # "fifo e2e e2e_er local local_er"
 )
 
 for modes in "${modes_list[@]}"; do
