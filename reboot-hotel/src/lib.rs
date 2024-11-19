@@ -273,7 +273,7 @@ impl<'a, T> Drop for PoolItemRef<'a, T> {
 
 pub struct McPool {
     pool: Pool<McClient>,
-    addr: String,
+    pub addr: String,
 }
 
 impl McPool {

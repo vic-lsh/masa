@@ -1,10 +1,20 @@
 use std::{
     collections::BinaryHeap,
     sync::{Mutex, MutexGuard},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use super::{PopError, PushError, Queue};
 use tonic_masa::Prioritize;
+
+#[inline]
+fn time_now() -> u64 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_micros();
+    now as u64
+}
 
 pub(crate) struct MutexPriorityQueue<T> {
     q: Mutex<BinaryHeap<T>>,
@@ -21,7 +31,11 @@ impl<T: Ord + PartialOrd + Prioritize> Queue for MutexPriorityQueue<T> {
     }
 
     fn pop(&self) -> Result<Self::Item, PopError> {
-        self.with_locked(|mut q| q.pop()).ok_or(PopError::Empty)
+        self.with_locked(|mut q| {
+            // [TODO] Drop a task if it is already expired.
+            q.pop()
+        })
+        .ok_or(PopError::Empty)
     }
 
     fn len(&self) -> usize {

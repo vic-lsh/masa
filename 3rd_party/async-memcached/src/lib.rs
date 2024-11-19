@@ -38,9 +38,10 @@ impl Client {
     /// For UNIX: the DSN should be in the format of `unix://<path>`.
     pub async fn new<S: AsRef<str>>(dsn: S) -> Result<Client, Error> {
         let connection = Connection::new(dsn).await?;
-
+        let mut buf = BytesMut::new();
+        buf.reserve(1024);
         Ok(Client {
-            buf: BytesMut::new(),
+            buf,
             last_read_n: None,
             conn: connection,
         })

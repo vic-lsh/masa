@@ -125,7 +125,10 @@ impl Profile for ProfileImpl {
 
         let mut hotels = Vec::new();
 
-        let mut mc = self.mc_pool.get().await;
+        // let mut mc = self.mc_pool.get().await;
+        let mut mc = async_memcached::Client::new(&self.mc_pool.addr)
+            .await
+            .unwrap();
         // Check memcached first
         if let Ok(memc_resp) = mc.get_multi(&request.hotel_ids).await {
             for entry in memc_resp {
@@ -148,7 +151,8 @@ impl Profile for ProfileImpl {
 
         for hotel_id in missing_ids {
             let hotels = Arc::clone(&hotels);
-            let mc_pool = self.mc_pool.clone();
+            // let mc_pool = self.mc_pool.clone();
+            let mc_addr = self.mc_pool.addr.clone();
             let mongo_client = Arc::clone(&self.mongo_client);
 
             // Spawn a task for each missing hotel
@@ -163,11 +167,12 @@ impl Profile for ProfileImpl {
                         // Update memcached asynchronously
                         if let Ok(prof_json) = serde_json::to_string(&hotel) {
                             async_executor::spawn(async move {
-                                let mut mc = mc_pool.get().await;
+                                // let mut mc = mc_pool.get().await;
+                                let mut mc = async_memcached::Client::new(&mc_addr).await.unwrap();
                                 let _ = mc
                                     .set(&hotel_id, prof_json.as_bytes(), None, None)
                                     .await
-                                    .unwrap();
+                                    .ok();
                             })
                             .detach();
                         }
