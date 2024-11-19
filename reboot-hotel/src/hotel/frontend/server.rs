@@ -115,6 +115,9 @@ impl Frontend for FrontendImpl {
 
         let response = frontend::SearchResponse { hotels };
 
+        // [DEBUG]
+        // let response = frontend::SearchResponse { hotels: Vec::new() };
+
         let mut response = Response::new(response);
         ctx.set_frontend_elapse(start.elapsed().as_micros() as u64);
         response.metadata_mut().insert_ctx("ctx", &ctx);
