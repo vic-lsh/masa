@@ -47,6 +47,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock, TryLockError};
 use std::task::{Poll, Waker};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_task::{Builder, RawPollHook, Runnable};
 use futures_lite::{future, prelude::*};
@@ -88,6 +89,15 @@ fn get_static_ex() -> &'static Executor<'static> {
     }
 
     &__STATIC_EX
+}
+
+#[inline]
+fn time_now() -> u64 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_micros();
+    now as u64
 }
 
 async fn drive_runtime(ex: &'static Executor<'static>) {
@@ -539,12 +549,18 @@ where
         move |runnable| {
             let now = std::time::Instant::now();
 
-            // log::info!(
-            //     "Push runnable to queue, now: {}, task: {:p}, priority: {}",
-            //     time_now(),
-            //     runnable.ptr_to_u64() as *const (),
-            //     runnable.priority().value()
-            // );
+            // [NOTE] `prio` could be the deadline or the latest_exec.
+            // let now = time_now();
+            // let prio = runnable.priority().value();
+            // let budget = prio as isize - now as isize;
+            // if budget <= 0 {
+            //     log::warn!(
+            //         "Push runnable to queue, task: {:p}, priority: {}, budget: {}",
+            //         runnable.ptr_to_u64() as *const (),
+            //         prio,
+            //         budget
+            //     );
+            // }
 
             if state.queue.push(runnable).is_err() {
                 panic!("Failed to push runnable to queue");
