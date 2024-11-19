@@ -26,8 +26,8 @@ pub type ChildContext = simple::SimpleChildContext;
 #[allow(unused_variables)]
 pub trait ServerHooks: Send + Sync + 'static {
     /// Creates the service-level context.
-    // [TODO] mark this function as async to support fetching resources asynchronously.
-    //        this may require async support in the tonic service constructor.
+    // [TODO:Vic] mark this function as async to support fetching resources
+    // asynchronously. this may require async support in the tonic service constructor.
     fn new(service_name: &'static str) -> Self;
 }
 

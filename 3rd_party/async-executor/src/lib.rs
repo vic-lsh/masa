@@ -73,7 +73,7 @@ fn get_static_ex() -> &'static Executor<'static> {
         .compare_exchange(false, true, Ordering::Release, Ordering::Acquire)
         .is_ok()
     {
-        // [TODO] make thread pool size configurable
+        // [TODO:Vic] make thread pool size configurable.
         const N_THRS: usize = 4;
         for _ in 0..N_THRS {
             // std::thread::spawn(|| future::block_on(drive_runtime(&__STATIC_EX)));
