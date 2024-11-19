@@ -5,6 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 #[cfg(feature = "runtime")]
 use std::time::Duration;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
 use h2::server::{Connection, Handshake, SendResponse};
@@ -45,6 +46,15 @@ const DEFAULT_MAX_FRAME_SIZE: u32 = 1024 * 16; // 16kb
 const DEFAULT_MAX_SEND_BUF_SIZE: usize = 1024 * 400; // 400kb
 const DEFAULT_SETTINGS_MAX_HEADER_LIST_SIZE: u32 = 16 << 20; // 16 MB "sane default" taken from golang http2
 const DEFAULT_MAX_LOCAL_ERROR_RESET_STREAMS: usize = 1024;
+
+#[inline]
+fn time_now() -> u64 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_micros();
+    now as u64
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct Config {
@@ -352,6 +362,10 @@ where
                             }
                             // [NOTE] Into executor.
                             let fut = H2Stream::new(service.call(req), connect_parts, respond);
+                            // [TODO:Weixin] Skip if the deadline is already passed.
+                            // if time_now() > prio.value() {
+                            //     panic!();
+                            // }
                             exec.execute_h2stream_with_prio(fut, prio);
                         } else {
                             let fut = H2Stream::new(service.call(req), connect_parts, respond);
