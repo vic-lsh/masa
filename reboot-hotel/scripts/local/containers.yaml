@@ -15,7 +15,7 @@ services:
   rate-memcached:
     image: memcached:1.6
     container_name: "rate_memcached"
-    command: --port 11003 --threads=4
+    command: --port 11003 --threads 4
     network_mode: "host"
     restart: always
     deploy:
@@ -39,7 +39,7 @@ services:
   profile-memcached:
     image: memcached:1.6
     container_name: "profile_memcached"
-    command: --port 11004 --threads=4
+    command: --port 11004 --threads 4
     network_mode: "host"
     restart: always
     deploy:
@@ -63,7 +63,7 @@ services:
   reservation-memcached:
     image: memcached:1.6
     container_name: "reservation_memcached"
-    command: --port 11005 --threads=4
+    command: --port 11005 --threads 4
     network_mode: "host"
     restart: always
     deploy:
