@@ -5,17 +5,67 @@ if [[ "$pwd" != */reboot-hotel ]]; then
     echo "Error: plese run in the reboot-hotel directory" >&2
     exit 1
 fi
+
 folder=snippets/test
 data=tmp_1118
 
-echo "Plotting fifo..."
-$pwd/$folder/fifo/plot.sh \
-    --data $data
+plot_single() {
+    local folder="$1"
+    local mode="$2"
+    local snippet="$3"
+    local data="$4"
 
-echo "Plotting local..."
-$pwd/$folder/local/plot.sh \
-    --data $data
+    echo "Plotting goodput..."
+    python3 $pwd/scripts/plots/plot_goodput.py \
+        --mode $mode \
+        --gen-config $pwd/$folder/gen_config.json \
+        --path $pwd/$folder/$snippet/$data
 
-echo "Plotting cmp..."
-$pwd/$folder/cmp/plot.sh \
-    --data $data
+    echo "Plotting tail..."
+    python3 $pwd/scripts/plots/plot_tail.py \
+        --mode $mode \
+        --gen-config $pwd/$folder/gen_config.json \
+        --path $pwd/$folder/$snippet/$data
+}
+
+plot_multi() {
+    local folder="$1"
+    local modes="$2"
+    local snippet="cmp"
+    local data="$3"
+
+    mkdir -p $pwd/$folder/$snippet
+
+    echo "Plotting goodput..."
+    python3 $pwd/scripts/plots/plot_goodput_cmp.py \
+        --modes $modes \
+        --gen-config $pwd/$folder/gen_config.json \
+        --path $pwd/$folder/$snippet \
+        --snippets $pwd/$folder \
+        --data $data
+
+    echo "Plotting tail..."
+    python3 $pwd/scripts/plots/plot_tail_cmp.py \
+        --modes $modes \
+        --gen-config $pwd/$folder/gen_config.json \
+        --path $pwd/$folder/$snippet \
+        --snippets $pwd/$folder \
+        --data $data
+}
+
+echo "Analyzing fifo..."
+plot_single $folder fifo fifo $data
+echo ""
+
+echo "Analyzing local..."
+plot_single $folder local local $data
+echo ""
+
+modes_list=(
+    "fifo local"
+)
+
+for modes in "${modes_list[@]}"; do
+    echo "Analyzing $modes..."
+    plot_multi $folder "$modes" $data
+done
