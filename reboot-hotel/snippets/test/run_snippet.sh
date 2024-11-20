@@ -7,19 +7,19 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 fi
 
 folder=snippets/test
-data=tmp_1118
+data=tmp_1120
 
-echo "Running fifo..."
-$pwd/scripts/local/run_all.sh \
-	--rust-log warn \
-	--tracker-capacity 1024 \
-	--pctl-deadline 50 \
-	--pctl-latest-exec 50 \
-	--cargo-features fifo \
-	--gen-config $folder/gen_config.json \
-	--hotel-config $folder/hotel_config.json \
-	--output-path $folder/fifo/$data \
-	--repeats 1
+# echo "Running fifo..."
+# $pwd/scripts/local/run_all.sh \
+# 	--rust-log warn \
+# 	--tracker-capacity 1024 \
+# 	--pctl-deadline 50 \
+# 	--pctl-latest-exec 50 \
+# 	--cargo-features fifo \
+# 	--gen-config $folder/gen_config.json \
+# 	--hotel-config $folder/hotel_config.json \
+# 	--output-path $folder/fifo/$data \
+# 	--repeats 1
 
 # echo "Running e2e..."
 # $pwd/scripts/local/run_all.sh \
@@ -39,5 +39,14 @@ $pwd/scripts/local/run_all.sh \
 # 	--output-path $folder/local/$data \
 # 	--repeats 1
 
-# echo "Running local_er..."
-# $pwd/scripts/local/run_all.sh \
+echo "Running local_er..."
+$pwd/scripts/local/run_all.sh \
+	--rust-log warn \
+	--tracker-capacity 1024 \
+	--pctl-deadline 50 \
+	--pctl-latest-exec 50 \
+	--cargo-features prio_local_early \
+	--gen-config $folder/gen_config.json \
+	--hotel-config $folder/hotel_config.json \
+	--output-path $folder/local_er/$data \
+	--repeats 1
