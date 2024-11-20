@@ -221,19 +221,21 @@ cfg_coop! {
         /// Decrements the budget. Returns `true` if successful. Decrementing fails
         /// when there is not enough remaining budget.
         fn decrement(&mut self) -> BudgetDecrement {
-            if let Some(num) = &mut self.0 {
-                if *num > 0 {
-                    *num -= 1;
+            // [TODO:Vic] Revert this hack.
+            BudgetDecrement { success: true, hit_zero: false }
+            // if let Some(num) = &mut self.0 {
+            //     if *num > 0 {
+            //         *num -= 1;
 
-                    let hit_zero = *num == 0;
+            //         let hit_zero = *num == 0;
 
-                    BudgetDecrement { success: true, hit_zero }
-                } else {
-                    BudgetDecrement { success: false, hit_zero: false }
-                }
-            } else {
-                BudgetDecrement { success: true, hit_zero: false }
-            }
+            //         BudgetDecrement { success: true, hit_zero }
+            //     } else {
+            //         BudgetDecrement { success: false, hit_zero: false }
+            //     }
+            // } else {
+            //     BudgetDecrement { success: true, hit_zero: false }
+            // }
         }
 
         fn is_unconstrained(self) -> bool {
