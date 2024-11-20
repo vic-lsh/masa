@@ -83,7 +83,7 @@ def plot_goodput_bar(
 
     fig.tight_layout()
     y_max = max(goodputs)
-    y_max = (y_max // 1000 + 1) * 1000
+    y_max = (y_max // 500 + 1) * 500
     plt.ylim(0, y_max)
     plt.grid(True, axis="y", linewidth=0.5)
     plt.savefig(fig_name)
@@ -152,7 +152,7 @@ def plot_goodput_apis_bar(
 
     fig.tight_layout()
     y_max = max([max(values) for values in goodputs])
-    y_max = (y_max // 1000 + 1) * 1000
+    y_max = (y_max // 500 + 1) * 500
     plt.ylim(0, y_max)
     plt.grid(True, axis="y", linewidth=0.5)
     plt.savefig(fig_name)
@@ -238,7 +238,7 @@ def plot_goodput_cmp_bar(
 
     fig.tight_layout()
     y_max = max([max(values) for values in goodputs])
-    y_max = (y_max // 1000 + 1) * 1000
+    y_max = (y_max // 500 + 1) * 500
     plt.ylim(0, y_max)
     plt.grid(True, axis="y", linewidth=0.5)
     plt.savefig(fig_name)
@@ -440,7 +440,7 @@ def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str)
 
     fig.tight_layout()
     y_max = max([max(values) for values in throughputs])
-    y_max = (y_max // 1000 + 1) * 1000
+    y_max = (y_max // 500 + 1) * 500
     plt.grid(True, axis="y", linewidth=0.5)
     plt.savefig(fig_name)
 
@@ -510,7 +510,7 @@ def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
 
     fig.tight_layout()
     y_max = max([max(values) for values in errors])
-    y_max = (y_max // 1000 + 1) * 1000
+    y_max = (y_max // 500 + 1) * 500
     plt.ylim(0, y_max)
     plt.grid(True, axis="y", linewidth=0.5)
     plt.savefig(fig_name)

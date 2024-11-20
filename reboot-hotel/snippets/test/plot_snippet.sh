@@ -7,7 +7,7 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 fi
 
 folder=snippets/test
-data=tmp_1118
+data=tmp_1120
 
 plot_single() {
     local folder="$1"
@@ -53,16 +53,20 @@ plot_multi() {
         --data $data
 }
 
-echo "Analyzing fifo..."
-plot_single $folder fifo fifo $data
-echo ""
+# echo "Analyzing fifo..."
+# plot_single $folder fifo fifo $data
+# echo ""
 
-echo "Analyzing local..."
-plot_single $folder local local $data
+# echo "Analyzing local..."
+# plot_single $folder local local $data
+# echo ""
+
+echo "Analyzing local_er..."
+plot_single $folder local_er local_er $data
 echo ""
 
 modes_list=(
-    "fifo local"
+    "fifo local local_er"
 )
 
 for modes in "${modes_list[@]}"; do
