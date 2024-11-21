@@ -1,0 +1,45 @@
+# Use minimal debian image
+FROM debian:bookworm-slim
+
+# Define build arguments for binary name and config file
+ARG BINARY_NAME
+ARG BINARY_PATH=.  # Default to current directory, can be overridden
+ARG CONFIG_NAME
+ARG CONFIG_PATH=.  # Default to current directory, can be overridden
+
+
+# Verify required build arguments are provided
+RUN if [ -z "$BINARY_NAME" ]; then \
+    echo "Error: BINARY_NAME build argument is required" && exit 1; \
+    fi
+RUN if [ -z "$CONFIG_NAME" ]; then \
+    echo "Error: CONFIG_NAME build argument is required" && exit 1; \
+    fi
+
+ENV BINARY_NAME=${BINARY_NAME}
+ENV CONFIG_NAME=${CONFIG_NAME}
+
+# Create a non-root user for security
+RUN useradd -r -s /bin/false appuser
+
+# Create directory structure
+RUN mkdir -p /app/config && \
+    chown -R appuser:appuser /app
+
+# Copy the binary and config file from build context
+COPY ${BINARY_PATH}/${BINARY_NAME} /app/
+COPY ${CONFIG_PATH}/${CONFIG_NAME} /app/config/
+
+# Set proper permissions
+RUN chown appuser:appuser /app/${BINARY_NAME} && \
+    chmod +x /app/${BINARY_NAME} && \
+    chown appuser:appuser /app/config/${CONFIG_NAME}
+
+# Switch to non-root user
+USER appuser
+
+# Set working directory
+WORKDIR /app
+
+# Set the entrypoint to run the binary with config file
+CMD ./${BINARY_NAME} --config /app/config/${CONFIG_NAME}
