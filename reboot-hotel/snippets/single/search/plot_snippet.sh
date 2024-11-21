@@ -26,6 +26,12 @@ plot_single() {
         --mode $mode \
         --gen-config $pwd/$folder/gen_config.json \
         --path $pwd/$folder/$snippet/$data
+
+    echo "Plotting throughput..."
+    python3 $pwd/scripts/plots/plot_throughput.py \
+        --mode $mode \
+        --gen-config $pwd/$folder/gen_config.json \
+        --path $pwd/$folder/$snippet/$data
 }
 
 plot_multi() {
