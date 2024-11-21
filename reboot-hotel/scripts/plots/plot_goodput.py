@@ -36,7 +36,7 @@ plot_goodput_bar(
     cfg["Apis"],
     args.mode,
     rps_to_results,
-    f"{args.path}/fig_goodput_rps_{r}.png",
+    f"{args.path}/goodput/fig_goodput_rps_{r}.png",
 )
 if len(cfg["Apis"]) == 1:
     exit()
@@ -65,5 +65,5 @@ plot_goodput_apis_bar(
     cfg["Apis"],
     args.mode,
     rps_to_results,
-    f"{args.path}/fig_goodput_apis_rps_{r}.png",
+    f"{args.path}/goodput/fig_goodput_apis_rps_{r}.png",
 )

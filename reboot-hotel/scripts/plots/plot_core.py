@@ -1,4 +1,5 @@
 import argparse
+import os
 from typing import *
 
 import matplotlib.pyplot as plt
@@ -38,6 +39,20 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def autolabel(ax, rects):
+    for rect in rects:
+        height = rect.get_height()
+        ax.annotate(
+            "{}".format(height),
+            xy=(rect.get_x() + rect.get_width() / 2, height),
+            xytext=(0, 3),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            fontsize=fontsize_medium,
+        )
+
+
 def plot_goodput_bar(
     apis: List[str], mode: str, results: List[Dict[str, Any]], fig_name: str
 ):
@@ -66,26 +81,12 @@ def plot_goodput_bar(
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
 
-    def autolabel(rects):
-        for rect in rects:
-            height = rect.get_height()
-            ax.annotate(
-                "{}".format(height),
-                xy=(rect.get_x() + rect.get_width() / 2, height),
-                xytext=(0, 3),
-                textcoords="offset points",
-                ha="center",
-                va="bottom",
-                fontsize=fontsize_medium,
-            )
-
-    autolabel(rects)
-
     fig.tight_layout()
     y_max = max(goodputs)
     y_max = (y_max // 500 + 1) * 500
     plt.ylim(0, y_max)
     plt.grid(True, axis="y", linewidth=0.5)
+    os.makedirs(os.path.dirname(fig_name), exist_ok=True)
     plt.savefig(fig_name)
 
 
@@ -131,30 +132,12 @@ def plot_goodput_apis_bar(
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
 
-    def autolabel(rects):
-        for rect in rects:
-            height = rect.get_height()
-            ax.annotate(
-                "{}".format(height),
-                xy=(rect.get_x() + rect.get_width() / 2, height),
-                xytext=(0, 3),
-                textcoords="offset points",
-                ha="center",
-                va="bottom",
-                fontsize=fontsize_small,
-            )
-
-    if len(apis) == 1:
-        autolabel(rects1)
-    elif len(apis) == 2:
-        autolabel(rects1)
-        autolabel(rects2)
-
     fig.tight_layout()
     y_max = max([max(values) for values in goodputs])
     y_max = (y_max // 500 + 1) * 500
     plt.ylim(0, y_max)
     plt.grid(True, axis="y", linewidth=0.5)
+    os.makedirs(os.path.dirname(fig_name), exist_ok=True)
     plt.savefig(fig_name)
 
 
@@ -221,26 +204,12 @@ def plot_goodput_cmp_bar(
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
 
-    def autolabel(rects):
-        for rect in rects:
-            height = rect.get_height()
-            ax.annotate(
-                "{}".format(height),
-                xy=(rect.get_x() + rect.get_width() / 2, height),
-                xytext=(0, 3),
-                textcoords="offset points",
-                ha="center",
-                va="bottom",
-                fontsize=fontsize_medium,
-            )
-
-    # autolabel(bars[-1])
-
     fig.tight_layout()
     y_max = max([max(values) for values in goodputs])
     y_max = (y_max // 500 + 1) * 500
     plt.ylim(0, y_max)
     plt.grid(True, axis="y", linewidth=0.5)
+    os.makedirs(os.path.dirname(fig_name), exist_ok=True)
     plt.savefig(fig_name)
 
 
@@ -278,24 +247,9 @@ def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_small)
 
-    def autolabel(rects):
-        for rect in rects:
-            height = rect.get_height()
-            ax.annotate(
-                "{}".format(height),
-                xy=(rect.get_x() + rect.get_width() / 2, height),
-                xytext=(0, 3),
-                textcoords="offset points",
-                ha="center",
-                va="bottom",
-                fontsize=fontsize_medium,
-            )
-
-    # for bar in bars:
-    #     autolabel(bar)
-
     fig.tight_layout()
     plt.grid(True, axis="y", linewidth=0.5)
+    os.makedirs(os.path.dirname(fig_name), exist_ok=True)
     plt.savefig(fig_name)
 
 
@@ -362,24 +316,9 @@ def plot_tail_cmp_bar(
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
 
-    def autolabel(rects):
-        for rect in rects:
-            height = rect.get_height()
-            ax.annotate(
-                "{}".format(height),
-                xy=(rect.get_x() + rect.get_width() / 2, height),
-                xytext=(0, 3),
-                textcoords="offset points",
-                ha="center",
-                va="bottom",
-                fontsize=fontsize_medium,
-            )
-
-    # for bar in bars:
-    #     autolabel(bar)
-
     fig.tight_layout()
     plt.grid(True, axis="y", linewidth=0.5)
+    os.makedirs(os.path.dirname(fig_name), exist_ok=True)
     plt.savefig(fig_name)
 
 
@@ -422,27 +361,12 @@ def plot_throughput_bar(mode: str, results: List[Dict[str, Any]], fig_name: str)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
 
-    def autolabel(rects):
-        for rect in rects:
-            height = rect.get_height()
-            ax.annotate(
-                "{}".format(height),
-                xy=(rect.get_x() + rect.get_width() / 2, height),
-                xytext=(0, 3),
-                textcoords="offset points",
-                ha="center",
-                va="bottom",
-                fontsize=fontsize_medium,
-            )
-
-    # for bar in bars:
-    #     autolabel(bar)
-
     fig.tight_layout()
     y_max = max([max(values) for values in throughputs])
     y_max = (y_max // 500 + 1) * 500
     plt.ylim(0, y_max)
     plt.grid(True, axis="y", linewidth=0.5)
+    os.makedirs(os.path.dirname(fig_name), exist_ok=True)
     plt.savefig(fig_name)
 
 
@@ -493,25 +417,10 @@ def plot_error_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_small)
 
-    def autolabel(rects):
-        for rect in rects:
-            height = rect.get_height()
-            ax.annotate(
-                "{}".format(height),
-                xy=(rect.get_x() + rect.get_width() / 2, height),
-                xytext=(0, 3),
-                textcoords="offset points",
-                ha="center",
-                va="bottom",
-                fontsize=fontsize_medium,
-            )
-
-    for rects in rects_bar:
-        autolabel(rects)
-
     fig.tight_layout()
     y_max = max([max(values) for values in errors])
     y_max = (y_max // 500 + 1) * 500
     plt.ylim(0, y_max)
     plt.grid(True, axis="y", linewidth=0.5)
+    os.makedirs(os.path.dirname(fig_name), exist_ok=True)
     plt.savefig(fig_name)
