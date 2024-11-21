@@ -291,8 +291,8 @@ def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
                 fontsize=fontsize_medium,
             )
 
-    # for rects in rects_bar:
-    #     autolabel(rects)
+    # for bar in bars:
+    #     autolabel(bar)
 
     fig.tight_layout()
     plt.grid(True, axis="y", linewidth=0.5)
@@ -383,41 +383,41 @@ def plot_tail_cmp_bar(
     plt.savefig(fig_name)
 
 
-def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
+def plot_throughput_bar(mode: str, results: List[Dict[str, Any]], fig_name: str):
     rps_values = [result["rps"] for result in results]
-    keys = ["tput_good", "tput_lg_miss", "tput_lg_timeout", "tput_svc_early"]
+    keys = ["goodput", "lg_miss", "lg_timeout", "early_return", "unknown"]
     labels = [
-        "Throughput Good",
-        "Throughput LG Miss",
-        "Throughput LG Timeout",
-        "Throughput Service Early",
+        "Goodput",
+        "LG Miss",
+        "LG Timeout",
+        "Early Return",
+        "Unknown",
     ]
     throughputs = [[result[key] for result in results] for key in keys]
 
-    x = np.arange(len(rps_values))
-    width = 0.22
-    rects_x = [
-        x - width * 1.5,
-        x - width * 0.5,
-        x + width * 0.5,
-        x + width * 1.5,
-    ]
-
     fig, ax = plt.subplots(figsize=(10, 6))
-    rects_bar = [
-        ax.bar(
-            rect_x,
-            throughputs[i],
-            width,
-            label=labels[i],
-            color=COLORS[i],
+
+    x = np.arange(len(rps_values))
+    width = 0.16
+    xs = [x - width * 2, x - width, x, x + width, x + width * 2]
+    bars: List = []
+
+    for i in range(5):
+        bars.append(
+            ax.bar(
+                xs[i],
+                throughputs[i],
+                width,
+                label=labels[i],
+                color=COLORS[i],
+                edgecolor="black",
+                linewidth=1,
+            )
         )
-        for i, rect_x in enumerate(rects_x)
-    ]
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Throughput")
-    ax.set_title(f"Throughput vs RPS ({mode})")
+    ax.set_title(f"Throughput ({mode})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
@@ -435,12 +435,13 @@ def plot_throughput_bar(results: List[Dict[str, Any]], fig_name: str, mode: str)
                 fontsize=fontsize_medium,
             )
 
-    for rects in rects_bar:
-        autolabel(rects)
+    # for bar in bars:
+    #     autolabel(bar)
 
     fig.tight_layout()
     y_max = max([max(values) for values in throughputs])
     y_max = (y_max // 500 + 1) * 500
+    plt.ylim(0, y_max)
     plt.grid(True, axis="y", linewidth=0.5)
     plt.savefig(fig_name)
 
