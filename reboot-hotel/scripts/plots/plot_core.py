@@ -159,7 +159,7 @@ def plot_goodput_apis_bar(
 
 
 def plot_goodput_cmp_bar(
-    modes: List[str], results: List[Dict[str, Any]], fig_name: str
+    modes: List[str], api: str, results: List[Dict[str, Any]], fig_name: str
 ):
     assert len(modes) <= 5
     modes_str = f"{', '.join(modes)}"
@@ -216,7 +216,7 @@ def plot_goodput_cmp_bar(
 
     ax.set_xlabel("RPS")
     ax.set_ylabel("Goodput")
-    ax.set_title(f"Goodput ({modes_str})")
+    ax.set_title(f"Goodput {api} ({modes_str})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
@@ -273,7 +273,7 @@ def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     ax.set_xlabel("RPS")
     ax.set_ylabel("Tail (ms)")
     ax.set_ylim(0, 100)
-    ax.set_title(f"Tail vs RPS ({mode})")
+    ax.set_title(f"Tail ({mode})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_small)
@@ -300,7 +300,7 @@ def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
 
 
 def plot_tail_cmp_bar(
-    modes: List[str], tail: str, results: List[Dict[str, Any]], fig_name: str
+    modes: List[str], tail: str, api: str, results: List[Dict[str, Any]], fig_name: str
 ):
     assert len(modes) <= 5
     modes_str = f"{', '.join(modes)}"
@@ -357,7 +357,7 @@ def plot_tail_cmp_bar(
     ax.set_xlabel("RPS")
     ax.set_ylabel(tail)
     ax.set_ylim(0, 100)
-    ax.set_title(f"{tail} vs RPS ({modes_str})")
+    ax.set_title(f"{tail} {api} ({modes_str})")
     ax.set_xticks(x)
     ax.set_xticklabels(rps_values)
     ax.legend(loc="upper left", fontsize=fontsize_medium)
