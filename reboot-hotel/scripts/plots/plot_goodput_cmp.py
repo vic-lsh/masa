@@ -37,7 +37,7 @@ plot_goodput_cmp_bar(
     args.modes,
     "total",
     rps_to_results,
-    f"{args.path}/fig_goodput_total_rps_cmp_{modes_str}_{r}.png",
+    f"{args.path}/goodput/fig_goodput_total_rps_cmp_{modes_str}_{r}.png",
 )
 
 for api in cfg["Apis"]:
@@ -72,5 +72,5 @@ for api in cfg["Apis"]:
         args.modes,
         api_lower,
         rps_to_results,
-        f"{args.path}/fig_goodput_{api_lower}_rps_cmp_{api}_{modes_str}_{r}.png",
+        f"{args.path}/goodput/fig_goodput_{api_lower}_rps_cmp_{api}_{modes_str}_{r}.png",
     )
