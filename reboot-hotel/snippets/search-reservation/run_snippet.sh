@@ -6,7 +6,7 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 	exit 1
 fi
 
-folder=snippets/test
+folder=snippets/search-reservation
 data=tmp_1120
 
 echo "Running fifo..."
