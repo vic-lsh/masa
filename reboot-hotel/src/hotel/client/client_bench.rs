@@ -238,7 +238,7 @@ impl LoadGenerator {
                             if Instant::now() > trace_at {
                                 let recv_at = time_now();
                                 let latency = recv_at - send_at;
-                                let mut error = {
+                                let error = {
                                     if let Err(ref status) = response {
                                         status.message().to_string()
                                     } else if latency > ctx.slo() {
@@ -250,15 +250,14 @@ impl LoadGenerator {
                                 if error == "/None" {
                                     good.fetch_add(1, Ordering::Relaxed);
                                 } else {
+                                    err_search.fetch_add(1, Ordering::Relaxed);
                                     if error == "/LGMiss" {
                                         err_client.fetch_add(1, Ordering::Relaxed);
-                                    } else if error.starts_with("EarlyReturn") {
+                                    } else if error.contains("EarlyReturn") {
                                         err_svc.fetch_add(1, Ordering::Relaxed);
                                     } else {
-                                        log::error!("{}", error);
-                                        error = "/None".into();
+                                        panic!("Unimplemented error: {}", error);
                                     }
-                                    err_search.fetch_add(1, Ordering::Relaxed);
                                 }
                                 let span = Span::new(ctx, latency, error);
                                 trace_tx.try_send(span).unwrap();
@@ -293,7 +292,7 @@ impl LoadGenerator {
                             if Instant::now() > trace_at {
                                 let recv_at = time_now();
                                 let latency = recv_at - send_at;
-                                let mut error = {
+                                let error = {
                                     if let Err(ref status) = response {
                                         status.message().to_string()
                                     } else if latency > ctx.slo() {
@@ -305,15 +304,14 @@ impl LoadGenerator {
                                 if error == "/None" {
                                     good.fetch_add(1, Ordering::Relaxed);
                                 } else {
+                                    err_reserve.fetch_add(1, Ordering::Relaxed);
                                     if error == "/LGMiss" {
                                         err_client.fetch_add(1, Ordering::Relaxed);
-                                    } else if error.starts_with("EarlyReturn") {
+                                    } else if error.contains("EarlyReturn") {
                                         err_svc.fetch_add(1, Ordering::Relaxed);
                                     } else {
-                                        log::error!("{}", error);
-                                        error = "/None".into();
+                                        panic!("Unimplemented error: {}", error);
                                     }
-                                    err_reserve.fetch_add(1, Ordering::Relaxed);
                                 }
                                 let span = Span::new(ctx, latency, error);
                                 trace_tx.try_send(span).unwrap();
