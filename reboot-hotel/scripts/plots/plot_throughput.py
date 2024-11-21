@@ -46,7 +46,7 @@ for rps in cfg["Rps"]:
 plot_throughput_bar(
     args.mode,
     rps_to_results,
-    f"{args.path}/fig_throughput_total_rps_{r}.png",
+    f"{args.path}/throughput/fig_throughput_total_rps_{r}.png",
 )
 
 if len(cfg["Apis"]) == 1:
@@ -91,5 +91,5 @@ for i, api in enumerate(cfg["Apis"]):
     plot_throughput_bar(
         args.mode,
         rps_to_results,
-        f"{args.path}/fig_throughput_{api_lower}_rps_{r}.png",
+        f"{args.path}/throughput/fig_throughput_{api_lower}_rps_{r}.png",
     )
