@@ -5,7 +5,12 @@ from typing import *
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
+from matplotlib import font_manager
 
+font_paths = ["/usr/share/fonts/truetype/roboto"]
+font_files = font_manager.findSystemFonts(fontpaths=font_paths)
+for font_file in font_files:
+    font_manager.fontManager.addfont(font_file)
 plt.rcParams["font.family"] = "Roboto"
 fontsize_large = 17
 fontsize_medium = 13
