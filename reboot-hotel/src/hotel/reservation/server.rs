@@ -298,6 +298,7 @@ impl ReservationImpl {
             .map(|addr| format!("tcp://{}", addr))
             .unwrap()
             .to_owned();
+
         Ok(Self {
             mc_pool: Arc::new(McPool::new(cache_addr, 128)),
             mongo_client: Arc::new(mongo_client),
@@ -308,6 +309,7 @@ impl ReservationImpl {
             check_avail_hotel_mongo,
             check_reserve,
         })
+
         // let manager = HotelManager::new(
         //     hotels,
         //     dates,
@@ -356,7 +358,6 @@ impl Reservation for ReservationImpl {
         req: Request<reservation::ReservationRequest>,
     ) -> Result<Response<reservation::ReservationResponse>, Status> {
         use futures::StreamExt;
-        // todo!()
         // // let ctx = request.metadata().get_ctx("ctx").unwrap();
         // let request = request.into_inner();
         // let response = self.check_availability(request).await;
@@ -364,7 +365,7 @@ impl Reservation for ReservationImpl {
 
         let start = Instant::now();
 
-        let mut req = req.into_inner();
+        let req = req.into_inner();
 
         // Create hotel memory keys and maps
         let mut hotel_mem_keys = Vec::new();
@@ -554,7 +555,6 @@ impl Reservation for ReservationImpl {
         &self,
         req: Request<reservation::ReservationRequest>,
     ) -> Result<Response<reservation::ReservationResponse>, Status> {
-        // todo!()
         // // let ctx = request.metadata().get_ctx("ctx").unwrap();
         // let request = request.into_inner();
         // // [NOTE] The original implementation only processes the first hotel.
