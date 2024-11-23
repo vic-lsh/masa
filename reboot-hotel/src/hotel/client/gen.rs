@@ -3,7 +3,7 @@
 // [NOTE] this is a port of the original request generation logic:
 // https://github.com/delimitrou/DeathStarBench/blob/6ecb09706140f8730b5385c08f1386c654c3c526/hotelReservation/wrk2/scripts/hotel-reservation/mixed-workload_type_1.lua#L17
 
-use crate::hotel::{ReservationRequest, SearchRequest};
+use crate::hotel::{PingRequest, ReservationRequest, SearchRequest};
 use rand::Rng;
 
 fn get_user() -> (String, String) {
@@ -18,7 +18,13 @@ fn get_user() -> (String, String) {
     (user_name, pass_word)
 }
 
-pub fn gen_search_request() -> SearchRequest {
+pub fn get_ping_request() -> PingRequest {
+    PingRequest {
+        message: "ping".to_string(),
+    }
+}
+
+pub fn get_search_request() -> SearchRequest {
     let mut rng = rand::thread_rng();
 
     // Generate random dates
@@ -52,7 +58,7 @@ pub fn gen_search_request() -> SearchRequest {
     }
 }
 
-pub fn gen_reserve_request() -> ReservationRequest {
+pub fn get_reservation_request() -> ReservationRequest {
     let mut rng = rand::thread_rng();
 
     // Generate random dates
