@@ -35,7 +35,7 @@ for rps in cfg["Rps"]:
 
 plot_tail_bar(
     rps_to_results,
-    f"{args.path}/fig_tail_total_rps_bar_{r}.png",
+    f"{args.path}/tail/fig_tail_total_rps_bar_{r}.png",
     f"{args.mode} total",
 )
 
@@ -68,6 +68,6 @@ for api in cfg["Apis"]:
     api_lower = api.lower()
     plot_tail_bar(
         rps_to_results,
-        f"{args.path}/fig_tail_{api_lower}_rps_bar_{r}.png",
+        f"{args.path}/tail/fig_tail_{api_lower}_rps_{r}.png",
         f"{args.mode} {api_lower}",
     )

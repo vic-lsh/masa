@@ -2,53 +2,94 @@ import json
 from typing import *
 
 import pandas as pd
-from plot_core import (  # type: ignore
-    GRAPH_IDS,
-    parse_args,
-    plot_throughput_bar,
-    plot_throughput_line,
-)
+from plot_core import parse_args, plot_throughput_bar  # type: ignore
 
 args = parse_args()
-cfg = json.load(open(f"{args.path}/gen_config.json"))
+cfg = json.load(open(args.gen_config))
 
-for r in range(cfg["Repeats"]):
-    rps_to_results: List[Dict[str, Any]] = []
+r = 0
+rps_to_results: List[Dict[str, Any]] = []
+
+for rps in cfg["Rps"]:
+    file = f"{args.path}/r{rps}_{r}.csv"
+    df = pd.read_csv(file)
+
+    result = {}
+    result["rps"] = rps
+    result["goodput"] = 0
+
+    for i in range(len(cfg["Apis"])):
+        api = cfg["Apis"][i]
+        slo = cfg["Slos"][i]
+        df_filtered = df[
+            (df["api"] == api) & (df["error"] == "/None") & (df["latency"] <= slo)
+        ]
+        result["goodput"] += round(len(df_filtered) / cfg["DurationSecs"])
+
+    df_filtered = df[df["error"] == "/LGMiss"]
+    result["lg_miss"] = round(len(df_filtered) / cfg["DurationSecs"])
+
+    df_filtered = df[df["error"] == "/LGTimeout"]
+    result["lg_timeout"] = round(len(df_filtered) / cfg["DurationSecs"])
+
+    df_filtered = df[df["error"].str.contains("EarlyReturn")]
+    result["early_return"] = round(len(df_filtered) / cfg["DurationSecs"])
+
+    errors = ["/None", "/LGMiss", "/LGTimeout"]
+    df_filtered = df[
+        (~df["error"].isin(errors)) & (~df["error"].str.contains("EarlyReturn"))
+    ]
+    result["unknown"] = round(len(df_filtered) / cfg["DurationSecs"])
+
+    rps_to_results.append(result)
+
+plot_throughput_bar(
+    args.mode,
+    rps_to_results,
+    f"{args.path}/throughput/fig_throughput_total_rps_{r}.png",
+)
+
+if len(cfg["Apis"]) == 1:
+    exit()
+
+for i, api in enumerate(cfg["Apis"]):
+    rps_to_results = []
 
     for rps in cfg["Rps"]:
         file = f"{args.path}/r{rps}_{r}.csv"
         df = pd.read_csv(file)
-        for graph_id in GRAPH_IDS:
-            result = {}
-            result["rps"] = rps
-            result["graph_id"] = graph_id
 
-            df_filtered = df[
-                (df["graph_id"] == graph_id)
-                & (df["error"] == "/None")
-                & (df["latency"] <= cfg["Slo"])
-            ]
-            result["tput_good"] = round(len(df_filtered) / cfg["DurationSecs"])
+        result = {}
+        result["rps"] = rps
 
-            df_filtered = df[(df["graph_id"] == graph_id) & (df["error"] == "/LGMiss")]
-            result["tput_lg_miss"] = round(len(df_filtered) / cfg["DurationSecs"])
+        slo = cfg["Slos"][i]
+        df_filtered = df[
+            (df["api"] == api) & (df["error"] == "/None") & (df["latency"] <= slo)
+        ]
+        result["goodput"] = round(len(df_filtered) / cfg["DurationSecs"])
 
-            df_filtered = df[
-                (df["graph_id"] == graph_id) & (df["error"] == "/LGTimeout")
-            ]
-            result["tput_lg_timeout"] = round(len(df_filtered) / cfg["DurationSecs"])
+        df_filtered = df[df["error"] == "/LGMiss"]
+        result["lg_miss"] = round(len(df_filtered) / cfg["DurationSecs"])
 
-            df_filtered = df[
-                (df["graph_id"] == graph_id)
-                & (~df["error"].isin(["/None", "/LGMiss", "/LGTimeout"]))
-            ]
-            result["tput_svc_early"] = round(len(df_filtered) / cfg["DurationSecs"])
+        df_filtered = df[df["error"] == "/LGTimeout"]
+        result["lg_timeout"] = round(len(df_filtered) / cfg["DurationSecs"])
 
-            rps_to_results.append(result)
+        df_filtered = df[
+            (df["error"].str.contains("EarlyReturn")) & (df["error"].str.contains(api))
+        ]
+        result["early_return"] = round(len(df_filtered) / cfg["DurationSecs"])
 
-    plot_throughput_line(
-        rps_to_results, f"{args.path}/fig_throughput_rps_line_{r}.png", args.mode
-    )
+        errors = ["/None", "/LGMiss", "/LGTimeout"]
+        df_filtered = df[
+            (~df["error"].isin(errors)) & (~df["error"].str.contains("EarlyReturn"))
+        ]
+        result["unknown"] = round(len(df_filtered) / cfg["DurationSecs"])
+
+        rps_to_results.append(result)
+
+    api_lower = api.lower()
     plot_throughput_bar(
-        rps_to_results, f"{args.path}/fig_throughput_rps_bar_{r}.png", args.mode
+        args.mode,
+        rps_to_results,
+        f"{args.path}/throughput/fig_throughput_{api_lower}_rps_{r}.png",
     )
