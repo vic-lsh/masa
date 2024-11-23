@@ -15,7 +15,7 @@ use std::sync::{
 };
 
 use crossbeam_channel::{unbounded, Sender};
-use gen::{gen_reserve_request, gen_search_request};
+use gen::{get_ping_request, get_reservation_request, get_search_request};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp, Uniform};
 use structopt::StructOpt;
@@ -223,7 +223,7 @@ impl LoadGenerator {
 
             if api == "Search" {
                 let request = {
-                    let mut request = tonic::Request::new(gen_search_request());
+                    let mut request = tonic::Request::new(get_search_request());
                     request.metadata_mut().insert_ctx("ctx", &ctx);
                     request
                 };
@@ -276,7 +276,7 @@ impl LoadGenerator {
                 });
             } else if api == "Reservation" {
                 let request = {
-                    let mut request = tonic::Request::new(gen_reserve_request());
+                    let mut request = tonic::Request::new(get_reservation_request());
                     request.metadata_mut().insert_ctx("ctx", &ctx);
                     request
                 };
@@ -371,7 +371,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let seed = SEED * KEY + rps;
             let rng = StdRng::seed_from_u64(seed);
-            let client = FrontendClient::connect(gen_cfg.addr.clone()).await?;
+            let client = {
+                let mut client = FrontendClient::connect(gen_cfg.addr.clone()).await?;
+                let mut request = tonic::Request::new(get_ping_request());
+                let ctx = {
+                    let test_id = 0;
+                    let request_id = 0;
+                    let slo = 1_000_000;
+                    let request_class = 0;
+                    let start_at = time_now();
+                    let deadline = start_at + slo;
+                    let latest_exec = deadline;
+                    Context::new(
+                        "Ping".to_string(),
+                        test_id,
+                        request_id,
+                        slo,
+                        request_class,
+                        start_at,
+                        deadline,
+                        latest_exec,
+                    )
+                };
+                request.metadata_mut().insert_ctx("ctx", &ctx);
+                client.handle_ping(request).await?;
+                client
+            };
 
             let load_gen = LoadGenerator::new(
                 hotel_cfg.clone(),

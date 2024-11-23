@@ -3,9 +3,14 @@ syntax = "proto3";
 package frontend;
 
 service Frontend {
+  rpc HandlePing(PingRequest) returns (PingResponse) {}
   rpc HandleSearch(SearchRequest) returns (SearchResponse) {}
   rpc HandleReservation(ReservationRequest) returns (ReservationResponse) {}
 }
+
+message PingRequest { string message = 1; }
+
+message PingResponse { string message = 1; }
 
 message SearchRequest {
   double lat = 1;

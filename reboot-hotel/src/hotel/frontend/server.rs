@@ -75,6 +75,18 @@ impl FrontendImpl {
 
 #[tonic::async_trait]
 impl Frontend for FrontendImpl {
+    async fn handle_ping(
+        &self,
+        request: Request<frontend::PingRequest>,
+    ) -> Result<Response<frontend::PingResponse>, Status> {
+        let request = request.into_inner();
+        let response = frontend::PingResponse {
+            message: request.message,
+        };
+        let response = Response::new(response);
+        Ok(response)
+    }
+
     async fn handle_search(
         &self,
         request: Request<frontend::SearchRequest>,
