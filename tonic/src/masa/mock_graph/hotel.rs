@@ -28,6 +28,11 @@ fn get_frontend() -> GlobalGraph {
     let service_id: ServiceId = "frontend.Frontend".to_string();
     let local_graphs = {
         let mut graphs = HashMap::new();
+        let method_id: MethodId = "/frontend.Frontend/HandlePing";
+        graphs.insert(
+            method_id,
+            LocalGraph::new(service_id.clone(), method_id, vec![]),
+        );
         let method_id: MethodId = "/frontend.Frontend/HandleSearch";
         graphs.insert(
             method_id,
