@@ -43,8 +43,9 @@ for tail in ["mean", "p50", "p90", "p95", "p99"]:
     plot_tail_cmp_bar(
         args.modes,
         tail,
+        "total",
         rps_to_results,
-        f"{args.path}/fig_{tail}_total_rps_cmp_{modes_str}_{r}.png",
+        f"{args.path}/tail/fig_{tail}_total_rps_cmp_{modes_str}_{r}.png",
     )
 
 if len(cfg["Apis"]) == 1:
@@ -85,6 +86,7 @@ for api in cfg["Apis"]:
         plot_tail_cmp_bar(
             args.modes,
             tail,
+            api_lower,
             rps_to_results,
-            f"{args.path}/fig_{tail}_{api_lower}_rps_cmp_{modes_str}_{r}.png",
+            f"{args.path}/tail/fig_{tail}_{api_lower}_rps_cmp_{modes_str}_{r}.png",
         )

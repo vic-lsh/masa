@@ -122,11 +122,11 @@ impl SimpleParentContext {
     }
 
     #[inline]
-    fn issue_early_return<T>(&self) -> Result<Response<T>, Status> {
-        Err(Status::new(
+    fn issue_early_return(&self) -> Status {
+        Status::new(
             Code::DeadlineExceeded,
-            format!("EarlyReturn/{}", self.method.id()),
-        ))
+            format!("/EarlyReturn{}", self.method.id()),
+        )
     }
 }
 
@@ -157,7 +157,7 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
     ) -> Option<Status> {
         // log::info!("parent_ctx, before_child_rpc, method: {:?}", method.id());
         if self.check_early_return() {
-            return Some(Status::new(Code::DeadlineExceeded, self.method.id()));
+            return Some(self.issue_early_return());
         }
 
         let graph = self
@@ -221,7 +221,7 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
         graph.track_span(&child_rpc_method.id(), latency_us as u64);
 
         if self.check_early_return() {
-            return Some(Status::new(Code::DeadlineExceeded, self.method.id()));
+            return Some(self.issue_early_return());
         }
         None
     }
@@ -230,11 +230,11 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
         // log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
         // if self.polled.fetch_add(1, Ordering::Relaxed) == 0 {
         //     if self.check_early_return() {
-        //         return Some(self.issue_early_return());
+        //         return Some(Err(self.issue_early_return()));
         //     }
         // }
         if self.check_early_return() {
-            return Some(self.issue_early_return());
+            return Some(Err(self.issue_early_return()));
         }
         None
     }
@@ -246,7 +246,7 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
         match poll {
             Poll::Pending => {
                 if self.check_early_return() {
-                    return Some(self.issue_early_return());
+                    return Some(Err(self.issue_early_return()));
                 }
             }
             Poll::Ready(_) => {}

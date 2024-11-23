@@ -7,7 +7,7 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 fi
 
 folder=snippets/single/search
-data=tmp_1112
+data=tmp_1122
 
 plot_single() {
     local folder="$1"
@@ -23,6 +23,12 @@ plot_single() {
 
     echo "Plotting tail..."
     python3 $pwd/scripts/plots/plot_tail.py \
+        --mode $mode \
+        --gen-config $pwd/$folder/gen_config.json \
+        --path $pwd/$folder/$snippet/$data
+
+    echo "Plotting throughput..."
+    python3 $pwd/scripts/plots/plot_throughput.py \
         --mode $mode \
         --gen-config $pwd/$folder/gen_config.json \
         --path $pwd/$folder/$snippet/$data
@@ -57,28 +63,25 @@ echo "Analyzing fifo..."
 plot_single $folder fifo fifo $data
 echo ""
 
-echo "Analyzing e2e..."
-plot_single $folder e2e e2e $data
-echo ""
-
-echo "Analyzing e2e_er..."
-plot_single $folder e2e_er e2e_er $data
-echo ""
-
-echo "Analyzing local..."
-plot_single $folder local local $data
-echo ""
-
-# [NOTE] local_er/tmp_1112/gen_config.json is different.
-# echo "Analyzing local_er..."
-# plot $folder local_er local_er $data
+# echo "Analyzing e2e..."
+# plot_single $folder e2e e2e $data
 # echo ""
 
-modes_list=(
-    "fifo e2e e2e_er local"
-    # [TODO]
-    # "fifo e2e e2e_er local local_er"
-)
+# echo "Analyzing e2e_er..."
+# plot_single $folder e2e_er e2e_er $data
+# echo ""
+
+# echo "Analyzing local..."
+# plot_single $folder local local $data
+# echo ""
+
+# echo "Analyzing local_er..."
+# plot_single $folder local_er local_er $data
+# echo ""
+
+# modes_list=(
+#     "fifo e2e e2e_er local local_er"
+# )
 
 for modes in "${modes_list[@]}"; do
     echo "Analyzing $modes..."
