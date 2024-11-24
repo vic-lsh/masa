@@ -75,9 +75,9 @@ fn get_static_ex() -> &'static Executor<'static> {
         .is_ok()
     {
         // [TODO:Vic] make thread pool size configurable.
-        const N_THRS: usize = 1;
-        for _ in 0..N_THRS {
-            // std::thread::spawn(|| future::block_on(drive_runtime(&__STATIC_EX)));
+        let num_cpus = num_cpus::get();
+        println!("Number of CPU cores: {}", num_cpus);
+        for _ in 0..num_cpus {
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
