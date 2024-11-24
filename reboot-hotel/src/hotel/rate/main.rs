@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
 
-    let rate_addr = "[::1]:8663".parse().expect("Failed to parse address");
+    let rate_addr = "[::0]:8660".parse().expect("Failed to parse address");
     log::warn!("Server listening on {}...", rate_addr);
     Server::builder()
         .add_service(RateServer::new(rate))

@@ -34,11 +34,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     log::warn!("Hotel config: {:?}", cfg);
 
-    let frontend_addr = "[::1]:8660".parse().expect("Failed to parse address");
-    let search_addr = "http://[::1]:8661".to_string();
-    let reservation_addr = "http://[::1]:8665".to_string();
-    let profile_addr = "http://[::1]:8664".to_string();
-    let user_addr = "http://[::1]:8666".to_string();
+    let frontend_addr = "[::0]:8660".parse().expect("Failed to parse address");
+    let search_addr = cfg.search_addr;
+    let reservation_addr = cfg.reservation_addr;
+    let profile_addr = cfg.profile_addr;
+    let user_addr = cfg.user_addr;
 
     let frontend = FrontendImpl::new(search_addr, reservation_addr, profile_addr, user_addr).await;
     log::info!("Server listening on {}...", frontend_addr);
