@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    kompose.cmd: kompose convert -f containers+svcs.yaml
+    kompose.version: 1.34.0 (cbf2835db)
+  labels:
+    io.kompose.service: reservation-mongo
+  name: reservation-mongo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: reservation-mongo
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        kompose.cmd: kompose convert -f containers+svcs.yaml
+        kompose.version: 1.34.0 (cbf2835db)
+      labels:
+        io.kompose.service: reservation-mongo
+    spec:
+      containers:
+        - args:
+            - --port
+            - "27005"
+          image: mongo:7.0
+          name: reservation-mongo
+          ports:
+            - containerPort: 27005
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "4"
+          volumeMounts:
+            - mountPath: /data
+              name: reservation
+      restartPolicy: Always
+      volumes:
+        - name: reservation
+          persistentVolumeClaim:
+            claimName: reservation
