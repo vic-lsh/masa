@@ -19,6 +19,15 @@ RUN if [ -z "$CONFIG_NAME" ]; then \
 ENV BINARY_NAME=${BINARY_NAME}
 ENV CONFIG_NAME=${CONFIG_NAME}
 
+RUN apt update
+RUN apt install -y openssl libssl-dev
+RUN apt-get install -y libc-bin wget
+RUN ldconfig -p | grep libssl
+
+# install libssl 1.1
+RUN wget http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+RUN dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+
 # Create a non-root user for security
 RUN useradd -r -s /bin/false appuser
 
@@ -41,5 +50,8 @@ USER appuser
 # Set working directory
 WORKDIR /app
 
+env TRACKER_CAPACITY=512
+env PCTL_DEADLINE=50
+env PCTL_LATEST_EXEC=50
 # Set the entrypoint to run the binary with config file
 CMD ./${BINARY_NAME} --config /app/config/${CONFIG_NAME}
