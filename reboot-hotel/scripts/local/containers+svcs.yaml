@@ -197,4 +197,5 @@ volumes:
   user:
 
 networks:
- - hotel_network
+  hotel_network:
+    driver: bridge
