@@ -50,5 +50,8 @@ USER appuser
 # Set working directory
 WORKDIR /app
 
+env TRACKER_CAPACITY=512
+env PCTL_DEADLINE=50
+env PCTL_LATEST_EXEC=50
 # Set the entrypoint to run the binary with config file
 CMD ./${BINARY_NAME} --config /app/config/${CONFIG_NAME}
