@@ -37,6 +37,6 @@ echo "Building docker image for service $binary."
 docker build -f Dockerfile.template \
     --build-arg BINARY_PATH=tmp \
     --build-arg BINARY_NAME=$binary \
-    --build-arg CONFIG_PATH=./snippets/search_reservation \
+    --build-arg CONFIG_PATH=./snippets/search-reservation \
     --build-arg CONFIG_NAME=hotel_config.json \
     -t $binary .
