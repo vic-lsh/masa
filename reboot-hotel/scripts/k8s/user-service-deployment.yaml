@@ -29,5 +29,5 @@ spec:
               protocol: TCP
           resources:
             limits:
-              cpu: "4"
+              cpu: "1"
       restartPolicy: Always

@@ -33,7 +33,7 @@ spec:
               protocol: TCP
           resources:
             limits:
-              cpu: "4"
+              cpu: "1"
           volumeMounts:
             - mountPath: /data
               name: user
