@@ -21,8 +21,9 @@ spec:
         io.kompose.service: rate-service
     spec:
       containers:
-        - image: hotel_rate:latest
+        - image: vicsli/hotel_rate:latest
           name: hotel-rate
+          # imagePullPolicy: Never
           ports:
             - containerPort: 8660
               protocol: TCP

@@ -21,8 +21,9 @@ spec:
         io.kompose.service: geo-service
     spec:
       containers:
-        - image: hotel_geo:latest
+        - image: vicsli/hotel_geo:latest
           name: hotel-geo
+          #imagePullPolicy: Never
           ports:
             - containerPort: 8660
               protocol: TCP
