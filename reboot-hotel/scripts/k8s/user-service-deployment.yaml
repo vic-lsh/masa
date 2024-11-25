@@ -21,8 +21,9 @@ spec:
         io.kompose.service: user-service
     spec:
       containers:
-        - image: hotel_user:latest
+        - image: vicsli/hotel_user:latest
           name: hotel-user
+          # imagePullPolicy: Never
           ports:
             - containerPort: 8660
               protocol: TCP

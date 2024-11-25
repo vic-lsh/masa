@@ -21,8 +21,9 @@ spec:
         io.kompose.service: search-service
     spec:
       containers:
-        - image: hotel_search:latest
+        - image: vicsli/hotel_search:latest
           name: hotel-search
+          # imagePullPolicy: Never
           ports:
             - containerPort: 8660
               protocol: TCP
