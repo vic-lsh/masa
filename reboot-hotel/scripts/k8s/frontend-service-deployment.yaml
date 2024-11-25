@@ -21,8 +21,9 @@ spec:
         io.kompose.service: frontend-service
     spec:
       containers:
-        - image: hotel_frontend:latest
+        - image: vicsli/hotel_frontend:latest
           name: hotel-frontend
+          #imagePullPolicy: Never
           ports:
             - containerPort: 8660
               protocol: TCP

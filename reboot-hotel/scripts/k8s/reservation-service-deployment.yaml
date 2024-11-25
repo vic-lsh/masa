@@ -21,8 +21,9 @@ spec:
         io.kompose.service: reservation-service
     spec:
       containers:
-        - image: hotel_reservation:latest
+        - image: vicsli/hotel_reservation:latest
           name: hotel-reservation
+          # imagePullPolicy: Never
           ports:
             - containerPort: 8660
               protocol: TCP

@@ -19,6 +19,8 @@ fi
 features=""
 parallel=0
 
+docker_username=vicsli
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -127,3 +129,7 @@ else
     fi
 fi
 
+for svc in "${services[@]}"; do
+    docker tag $svc:latest $docker_username/$svc:latest
+    docker push $docker_username/$svc:latest
+done
