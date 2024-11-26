@@ -7,7 +7,6 @@ ARG BINARY_PATH=.  # Default to current directory, can be overridden
 ARG CONFIG_NAME
 ARG CONFIG_PATH=.  # Default to current directory, can be overridden
 
-
 # Verify required build arguments are provided
 RUN if [ -z "$BINARY_NAME" ]; then \
     echo "Error: BINARY_NAME build argument is required" && exit 1; \

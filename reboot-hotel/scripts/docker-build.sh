@@ -13,14 +13,14 @@ features=""
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --binary)
-            binary="$2"
-            shift 2
-            ;;
-        *)
-            echo "Unknown argument: $1"
-            exit 1
-            ;;
+    --binary)
+        binary="$2"
+        shift 2
+        ;;
+    *)
+        echo "Unknown argument: $1"
+        exit 1
+        ;;
     esac
 done
 
