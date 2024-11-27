@@ -63,9 +63,10 @@ impl Exec {
                 }
             }
             Exec::Masa => {
-                async_executor::spawn_with_prio(fut, prio)
-                    .fallible()
-                    .detach();
+                tokio::task::spawn_with_prio(fut, prio);
+                // async_executor::spawn_with_prio(fut, prio)
+                //     .fallible()
+                //     .detach();
             }
             Exec::Executor(ref e) => {
                 e.execute(Box::pin(fut), prio);
