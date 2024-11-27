@@ -25,6 +25,8 @@ cfg_rt_multi_thread! {
     }
 }
 
+use tonic_masa::PriorityHint;
+
 use crate::runtime::driver;
 
 #[derive(Debug, Clone)]
@@ -111,13 +113,13 @@ cfg_rt! {
             match_flavor!(self, Handle(h) => &h.blocking_spawner)
         }
 
-        pub(crate) fn spawn<F>(&self, future: F, id: Id) -> JoinHandle<F::Output>
+        pub(crate) fn spawn<F>(&self, future: F, id: Id, priority: PriorityHint) -> JoinHandle<F::Output>
         where
             F: Future + Send + 'static,
             F::Output: Send + 'static,
         {
             match self {
-                Handle::CurrentThread(h) => current_thread::Handle::spawn(h, future, id),
+                Handle::CurrentThread(h) => current_thread::Handle::spawn(h, future, id, priority),
 
                 #[cfg(feature = "rt-multi-thread")]
                 Handle::MultiThread(h) => multi_thread::Handle::spawn(h, future, id),
