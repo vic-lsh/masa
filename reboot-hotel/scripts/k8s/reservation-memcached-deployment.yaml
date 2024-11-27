@@ -25,7 +25,7 @@ spec:
             - --port
             - "11005"
             - --threads
-            - "4"
+            - "6"
           image: memcached:1.6
           name: reservation-memcached
           ports:
@@ -33,5 +33,5 @@ spec:
               protocol: TCP
           resources:
             limits:
-              cpu: "4"
+              cpu: "6"
       restartPolicy: Always
