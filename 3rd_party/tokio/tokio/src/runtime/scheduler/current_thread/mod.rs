@@ -1,3 +1,5 @@
+use tonic_masa::PriorityHint;
+
 use crate::future::poll_fn;
 use crate::loom::sync::atomic::AtomicBool;
 use crate::loom::sync::Arc;
@@ -421,6 +423,7 @@ impl Handle {
         me: &Arc<Self>,
         future: F,
         id: crate::runtime::task::Id,
+        priority: PriorityHint,
     ) -> JoinHandle<F::Output>
     where
         F: crate::future::Future + Send + 'static,
