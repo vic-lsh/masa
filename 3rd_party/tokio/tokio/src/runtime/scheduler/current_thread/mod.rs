@@ -12,13 +12,16 @@ use crate::util::atomic_cell::AtomicCell;
 use crate::util::{waker_ref, RngSeedGenerator, Wake, WakerRef};
 
 use std::cell::RefCell;
-use std::collections::VecDeque;
 use std::fmt;
 use std::future::Future;
 use std::sync::atomic::Ordering::{AcqRel, Release};
 use std::task::Poll::{Pending, Ready};
 use std::task::Waker;
 use std::time::Duration;
+
+mod queue;
+use queue::LocalRunQueue;
+use queue::Queue;
 
 /// Executes tasks on the current thread
 pub(crate) struct CurrentThread {
@@ -49,7 +52,7 @@ pub(crate) struct Handle {
 /// a function that will perform the scheduling work and acts as a capability token.
 struct Core {
     /// Scheduler run queue
-    tasks: VecDeque<Notified>,
+    tasks: LocalRunQueue<Notified>,
 
     /// Current tick
     tick: u32,
@@ -146,7 +149,7 @@ impl CurrentThread {
         });
 
         let core = AtomicCell::new(Some(Box::new(Core {
-            tasks: VecDeque::with_capacity(INITIAL_CAPACITY),
+            tasks: LocalRunQueue::with_capacity(INITIAL_CAPACITY),
             tick: 0,
             driver: Some(driver),
             metrics: MetricsBatch::new(&handle.shared.worker_metrics),
@@ -305,7 +308,7 @@ impl Core {
     }
 
     fn next_local_task(&mut self, handle: &Handle) -> Option<Notified> {
-        let ret = self.tasks.pop_front();
+        let ret = self.tasks.pop().ok();
         handle
             .shared
             .worker_metrics
@@ -314,7 +317,9 @@ impl Core {
     }
 
     fn push_task(&mut self, handle: &Handle, task: Notified) {
-        self.tasks.push_back(task);
+        self.tasks
+            .push(task)
+            .expect("Queue has infinite capacity and shouldn't be closed");
         self.metrics.inc_local_schedule_count();
         handle
             .shared
