@@ -33,7 +33,7 @@ spec:
               protocol: TCP
           resources:
             limits:
-              cpu: "2"
+              cpu: "4"
           volumeMounts:
             - mountPath: /data
               name: reservation

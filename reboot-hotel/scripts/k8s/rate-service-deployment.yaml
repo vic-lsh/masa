@@ -8,7 +8,7 @@ metadata:
     io.kompose.service: rate-service
   name: rate-service
 spec:
-  replicas: 1
+  replicas: 6
   selector:
     matchLabels:
       io.kompose.service: rate-service
@@ -29,5 +29,5 @@ spec:
               protocol: TCP
           resources:
             limits:
-              cpu: "4"
+              cpu: "1"
       restartPolicy: Always
