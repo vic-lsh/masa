@@ -1,6 +1,7 @@
 use crate::task::JoinHandle;
 
 use std::future::Future;
+use tonic_masa::PriorityHint;
 
 cfg_rt! {
     /// Spawns a new asynchronous task, returning a
@@ -166,18 +167,12 @@ cfg_rt! {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        // preventing stack overflows on debug mode, by quickly sending the
-        // task to the heap.
-        if cfg!(debug_assertions) && std::mem::size_of::<F>() > 2048 {
-            spawn_inner(Box::pin(future), None)
-        } else {
-            spawn_inner(future, None)
-        }
+        spawn_with_prio(future, PriorityHint::infra())
     }
 
     /// Like spawn(), but associates the task with a priority.
     #[track_caller]
-    pub fn spawn_with_prio<F>(future: F, _prio: tonic_masa::PriorityHint) -> JoinHandle<F::Output>
+    pub fn spawn_with_prio<F>(future: F, priority: PriorityHint) -> JoinHandle<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
@@ -185,14 +180,14 @@ cfg_rt! {
         // preventing stack overflows on debug mode, by quickly sending the
         // task to the heap.
         if cfg!(debug_assertions) && std::mem::size_of::<F>() > 2048 {
-            spawn_inner(Box::pin(future), None)
+            spawn_inner(Box::pin(future), None, priority)
         } else {
-            spawn_inner(future, None)
+            spawn_inner(future, None, priority)
         }
     }
 
     #[track_caller]
-    pub(super) fn spawn_inner<T>(future: T, name: Option<&str>) -> JoinHandle<T::Output>
+    pub(super) fn spawn_inner<T>(future: T, name: Option<&str>, priority: PriorityHint) -> JoinHandle<T::Output>
     where
         T: Future + Send + 'static,
         T::Output: Send + 'static,
@@ -214,7 +209,7 @@ cfg_rt! {
         let id = task::Id::next();
         let task = crate::util::trace::task(future, "task", name, id.as_u64());
 
-        match context::with_current(|handle| handle.spawn(task, id)) {
+        match context::with_current(|handle| handle.spawn(task, id, priority)) {
             Ok(join_handle) => join_handle,
             Err(e) => panic!("{}", e),
         }
