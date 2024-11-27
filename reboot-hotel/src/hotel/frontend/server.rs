@@ -16,10 +16,12 @@ pub mod hotel {
     }
 }
 
+use ginepro::LoadBalancedChannel;
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Uniform};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use tonic::transport::Endpoint;
 
 use tonic::{transport::Channel, Request, Response, Status};
 
@@ -31,7 +33,8 @@ use hotel::{
 
 pub struct FrontendImpl {
     search_client: SearchClient<Channel>,
-    reservation_client: ReservationClient<Channel>,
+    //reservation_client: ReservationClient<Channel>,
+    reservation_client: ReservationClient<LoadBalancedChannel>,
     profile_client: ProfileClient<Channel>,
     user_client: UserClient<Channel>,
     // rng: Arc<Mutex<StdRng>>,
@@ -45,12 +48,34 @@ impl FrontendImpl {
         profile_addr: String,
         user_addr: String,
     ) -> Self {
+        const N_CONNS: usize = 8;
+
+        // Old example that uses tonic's balance list directly.
+        // If each connection connects with a different replica, then this should work.
+        // However, this approach seems to only connect to one replica.
+        // let channel = {
+        //     // Ok as we'll keep the connection alive for the rest of the program
+        //     let reservation_addr: &'static str = reservation_addr.leak();
+        //     let channels = (0..N_CONNS).into_iter().map(|_| {
+        //         Endpoint::from_static(&reservation_addr)
+        //             // Configure endpoint settings if needed
+        //             .connect_timeout(Duration::from_secs(10))
+        //             .timeout(Duration::from_secs(30))
+        //             .tcp_keepalive(Some(Duration::from_secs(60)))
+        //             .tcp_nodelay(true)
+        //     });
+        //     Channel::balance_list(channels)
+        // };
+        let channel = LoadBalancedChannel::builder(("reservation-service", 8660))
+            .channel()
+            .await
+            .expect("failed to construct LoadBalancedChannel");
+        let reservation_client = ReservationClient::new(channel);
+
         let search_client = SearchClient::connect(search_addr)
             .await
             .expect("Failed to connect to search");
-        let reservation_client = ReservationClient::connect(reservation_addr)
-            .await
-            .expect("Failed to connect to reservation");
+
         let profile_client = ProfileClient::connect(profile_addr)
             .await
             .expect("Failed to connect to search");
