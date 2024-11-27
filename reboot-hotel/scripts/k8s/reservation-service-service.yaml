@@ -8,6 +8,7 @@ metadata:
     io.kompose.service: reservation-service
   name: reservation-service
 spec:
+  clusterIP: None
   ports:
     - name: "8660"
       port: 8660
