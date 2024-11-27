@@ -175,6 +175,22 @@ cfg_rt! {
         }
     }
 
+    /// Like spawn(), but associates the task with a priority.
+    #[track_caller]
+    pub fn spawn_with_prio<F>(future: F, _prio: tonic_masa::PriorityHint) -> JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        // preventing stack overflows on debug mode, by quickly sending the
+        // task to the heap.
+        if cfg!(debug_assertions) && std::mem::size_of::<F>() > 2048 {
+            spawn_inner(Box::pin(future), None)
+        } else {
+            spawn_inner(future, None)
+        }
+    }
+
     #[track_caller]
     pub(super) fn spawn_inner<T>(future: T, name: Option<&str>) -> JoinHandle<T::Output>
     where
