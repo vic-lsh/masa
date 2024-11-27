@@ -1,0 +1,9 @@
+[workspace]
+
+members = [
+    "ginepro",
+    "tests",
+    "shared_proto"
+]
+
+resolver = "2"
