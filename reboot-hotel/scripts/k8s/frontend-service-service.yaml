@@ -8,6 +8,7 @@ metadata:
     io.kompose.service: frontend-service
   name: frontend-service
 spec:
+  sessionAffinity: None
   ports:
     - name: "8660"
       port: 8660
