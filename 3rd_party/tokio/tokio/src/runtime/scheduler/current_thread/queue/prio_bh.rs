@@ -1,0 +1,62 @@
+use std::{
+    collections::BinaryHeap,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use super::{PopError, PushError, Queue};
+use tonic_masa::Prioritize;
+
+#[inline]
+fn time_now() -> u64 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_micros();
+    now as u64
+}
+
+pub(crate) struct BinaryHeapQueue<T> {
+    q: BinaryHeap<T>,
+}
+
+impl<T: Ord + PartialOrd + Prioritize> Queue for BinaryHeapQueue<T> {
+    type Item = T;
+
+    fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
+        self.q.push(item);
+        Ok(())
+    }
+
+    fn pop(&mut self) -> Result<Self::Item, PopError> {
+        // [TODO] Do something with a task if it is already expired.
+        self.q.pop().ok_or(PopError::Empty)
+    }
+
+    fn len(&self) -> usize {
+        self.q.len()
+    }
+
+    fn is_full(&self) -> bool {
+        false
+    }
+
+    fn capacity(&self) -> Option<usize> {
+        Some(self.q.capacity())
+    }
+}
+
+impl<T: Ord> Default for BinaryHeapQueue<T> {
+    fn default() -> Self {
+        Self {
+            q: BinaryHeap::new(),
+        }
+    }
+}
+
+impl<T: Ord> BinaryHeapQueue<T> {
+    pub(crate) fn with_capacity(cap: usize) -> Self {
+        Self {
+            q: BinaryHeap::with_capacity(cap),
+        }
+    }
+}
