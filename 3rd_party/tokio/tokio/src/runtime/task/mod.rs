@@ -181,6 +181,7 @@ use self::harness::Harness;
 mod id;
 #[cfg_attr(not(tokio_unstable), allow(unreachable_pub, unused_imports))]
 pub use id::{id, try_id, Id};
+use tonic_masa::Prioritize;
 
 #[cfg(feature = "rt")]
 mod abort;
@@ -275,6 +276,62 @@ pub(crate) trait Schedule: Sync + Sized + 'static {
     /// Polling the task resulted in a panic. Should the runtime shutdown?
     fn unhandled_panic(&self) {
         // By default, do nothing. This maintains the 1.0 behavior.
+    }
+}
+
+impl<S> Prioritize for Task<S> {
+    fn priority(&self) -> tonic_masa::PriorityHint {
+        self.header().get_priority()
+    }
+}
+
+// [FIX] this equality check is misleading b/c it is correct only in the context of priority
+// queueing. we may want to fix it by comparing other fields too.
+impl<S> PartialEq for Task<S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.header().get_priority() == other.header().get_priority()
+    }
+}
+
+impl<S> Eq for Task<S> {}
+
+impl<S> PartialOrd for Task<S> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<S: 'static> Ord for Task<S> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.header()
+            .get_priority()
+            .cmp(&other.header().get_priority())
+    }
+}
+
+impl<S> Prioritize for Notified<S> {
+    fn priority(&self) -> tonic_masa::PriorityHint {
+        self.0.priority()
+    }
+}
+
+impl<S> PartialEq for Notified<S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+
+impl<S> Eq for Notified<S> {}
+
+impl<S> PartialOrd for Notified<S> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
+impl<S: 'static> Ord for Notified<S> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
     }
 }
 
