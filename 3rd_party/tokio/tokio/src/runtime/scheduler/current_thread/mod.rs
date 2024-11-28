@@ -434,7 +434,7 @@ impl Handle {
         F: crate::future::Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        let (handle, notified) = me.shared.owned.bind(future, me.clone(), id);
+        let (handle, notified) = me.shared.owned.bind(future, me.clone(), id, priority);
 
         if let Some(notified) = notified {
             me.schedule(notified);

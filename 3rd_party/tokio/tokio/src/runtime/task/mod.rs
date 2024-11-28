@@ -287,13 +287,14 @@ cfg_rt! {
         task: T,
         scheduler: S,
         id: Id,
+        priority: tonic_masa::PriorityHint
     ) -> (Task<S>, Notified<S>, JoinHandle<T::Output>)
     where
         S: Schedule,
         T: Future + 'static,
         T::Output: 'static,
     {
-        let raw = RawTask::new::<T, S>(task, scheduler, id);
+        let raw = RawTask::new::<T, S>(task, scheduler, id, priority);
         let task = Task {
             raw,
             _p: PhantomData,
@@ -317,7 +318,7 @@ cfg_rt! {
         T: Send + Future + 'static,
         T::Output: Send + 'static,
     {
-        let (task, notified, join) = new_task(task, scheduler, id);
+        let (task, notified, join) = new_task(task, scheduler, id, tonic_masa::PriorityHint::infra());
 
         // This transfers the ref-count of task and notified into an UnownedTask.
         // This is valid because an UnownedTask holds two ref-counts.
