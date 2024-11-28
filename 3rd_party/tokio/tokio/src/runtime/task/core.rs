@@ -415,6 +415,17 @@ impl Header {
         unsafe { self.owner_id.with(|ptr| *ptr) }
     }
 
+    // SAFETY: caller must guarantee exclusive access to the field.
+    pub(super) unsafe fn set_priority(&self, priority: PriorityHint) {
+        self.priority.with_mut(|ptr| *ptr = priority);
+    }
+
+    pub(super) fn get_priority(&self) -> PriorityHint {
+        // SAFETY: If there are concurrent writes, then that write has violated
+        // the safety requirements on `set_owner_id`.
+        unsafe { self.priority.with(|ptr| *ptr) }
+    }
+
     /// Gets a pointer to the `Trailer` of the task containing this `Header`.
     ///
     /// # Safety
