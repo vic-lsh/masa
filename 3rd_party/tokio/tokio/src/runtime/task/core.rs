@@ -9,6 +9,8 @@
 //! Make sure to consult the relevant safety section of each function before
 //! use.
 
+use tonic_masa::PriorityHint;
+
 use crate::future::Future;
 use crate::loom::cell::UnsafeCell;
 use crate::runtime::context;
@@ -170,6 +172,9 @@ pub(crate) struct Header {
     /// removed from the list.
     pub(super) owner_id: UnsafeCell<Option<NonZeroU64>>,
 
+    /// Priority associated with this task.
+    pub(super) priority: UnsafeCell<PriorityHint>,
+
     /// The tracing ID for this instrumented task.
     #[cfg(all(tokio_unstable, feature = "tracing"))]
     pub(super) tracing_id: Option<tracing::Id>,
@@ -205,11 +210,18 @@ pub(super) enum Stage<T: Future> {
 impl<T: Future, S: Schedule> Cell<T, S> {
     /// Allocates a new task cell, containing the header, trailer, and core
     /// structures.
-    pub(super) fn new(future: T, scheduler: S, state: State, task_id: Id) -> Box<Cell<T, S>> {
+    pub(super) fn new(
+        future: T,
+        scheduler: S,
+        state: State,
+        task_id: Id,
+        priority: PriorityHint,
+    ) -> Box<Cell<T, S>> {
         // Separated into a non-generic function to reduce LLVM codegen
         fn new_header(
             state: State,
             vtable: &'static Vtable,
+            priority: PriorityHint,
             #[cfg(all(tokio_unstable, feature = "tracing"))] tracing_id: Option<tracing::Id>,
         ) -> Header {
             Header {
@@ -217,6 +229,7 @@ impl<T: Future, S: Schedule> Cell<T, S> {
                 queue_next: UnsafeCell::new(None),
                 vtable,
                 owner_id: UnsafeCell::new(None),
+                priority: UnsafeCell::new(priority),
                 #[cfg(all(tokio_unstable, feature = "tracing"))]
                 tracing_id,
             }
@@ -229,6 +242,7 @@ impl<T: Future, S: Schedule> Cell<T, S> {
             header: new_header(
                 state,
                 vtable,
+                priority,
                 #[cfg(all(tokio_unstable, feature = "tracing"))]
                 tracing_id,
             ),

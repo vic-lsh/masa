@@ -122,7 +122,7 @@ cfg_rt! {
                 Handle::CurrentThread(h) => current_thread::Handle::spawn(h, future, id, priority),
 
                 #[cfg(feature = "rt-multi-thread")]
-                Handle::MultiThread(h) => multi_thread::Handle::spawn(h, future, id),
+                Handle::MultiThread(h) => multi_thread::Handle::spawn(h, future, id, priority),
 
                 #[cfg(all(tokio_unstable, feature = "rt-multi-thread"))]
                 Handle::MultiThreadAlt(h) => multi_thread_alt::Handle::spawn(h, future, id),
