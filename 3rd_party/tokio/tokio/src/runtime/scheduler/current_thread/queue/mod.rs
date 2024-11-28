@@ -1,6 +1,7 @@
 mod fifo;
+mod prio_bh;
 
-pub type LocalRunQueue<T> = fifo::FifoQueue<T>;
+pub(crate) type LocalRunQueue<T> = fifo::FifoQueue<T>;
 
 #[allow(dead_code)]
 pub(crate) trait Queue {
