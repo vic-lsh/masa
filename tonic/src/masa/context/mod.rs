@@ -44,13 +44,13 @@ pub trait ServerHooks: Send + Sync + 'static {
 #[allow(unused_variables)]
 pub trait ClientStubHooks {
     /// Construct a new ClientStubHook.
-    fn new<T>(method: GrpcMethod, req: &Request<T>) -> Self;
+    fn new<T>(method: GrpcMethod, request: &Request<T>) -> Self;
 
     /// Lifecycle hook invoked just before a client stub sends an RPC.
     ///
     /// This is the last lifecycle hook to be called before the request is sent.
     /// For example, it is called _after_ hooks like `RequestHandlerHooks::before_child_rpc`.
-    fn before_send<T>(&mut self, req: &mut Request<T>) {}
+    fn before_send<T>(&mut self, request: &mut Request<T>) {}
 
     /// Lifecycle hook invoked right after a client stub received a response
     /// for this RPC.
@@ -88,7 +88,7 @@ where
     fn before_child_rpc<T>(
         &self,
         method: GrpcMethod,
-        req: &mut Request<T>,
+        request: &mut Request<T>,
         child_ctx: &mut Child,
     ) -> Option<Status> {
         None
@@ -99,7 +99,7 @@ where
     fn after_child_rpc<T>(
         &self,
         method: GrpcMethod,
-        resp: &mut Result<Response<T>, Status>,
+        response: &mut Result<Response<T>, Status>,
         child_ctx: Child,
     ) -> Option<Status> {
         None

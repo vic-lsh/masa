@@ -7,7 +7,7 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 fi
 
 folder=snippets/test
-data=tmp_1122
+data=tmp_1129
 
 # echo "Running fifo..."
 # $pwd/scripts/local/run_all.sh \
