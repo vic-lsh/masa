@@ -283,7 +283,7 @@ impl ReservationImpl {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                println!(
+                log::info!(
                     "CheckAvail: mc {} mongo {} reserve {}; MkReserve: {}",
                     ca_hotel_mc.get(),
                     ca_hotel_mongo.get(),

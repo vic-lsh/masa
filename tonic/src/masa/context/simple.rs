@@ -2,15 +2,15 @@ use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc, RwLock,
+        Arc, Mutex, RwLock,
     },
     task::Poll,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use tonic_masa::{
-    Context, LocalGraph, LocalGraphTracker, MethodId, FIFO, FIFO_INFRA, PRIO_GLOBAL,
-    PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
+    Context, FutureGraphTracker, LocalGraph, LocalGraphTracker, MethodId, FIFO, FIFO_INFRA,
+    PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
 
 use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
@@ -37,16 +37,19 @@ pub struct SimpleParentContext {
     will_early_return: AtomicBool,
     polled: AtomicUsize,
     request_start: Instant,
+
+    child_ctxs: Arc<Mutex<Vec<SimpleChildContext>>>,
 }
 
 /// A simple implementation of `ClientStubHooks`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SimpleChildContext {
-    _method: GrpcMethod,
-    latency_tracker: LatencyTracker,
+    method: GrpcMethod,
+    present_tracker: LatencyTracker,
+    future_tracker: LatencyTracker,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum LatencyTracker {
     NotStarted,
     Started(Instant),
@@ -83,6 +86,7 @@ pub struct SimpleServerContext {
     num_early_returns: Arc<AtomicUsize>,
     local_graphs: HashMap<MethodId, LocalGraph>,
     local_graph_trackers: HashMap<MethodId, RwLock<LocalGraphTracker>>,
+    future_graph_trackers: HashMap<MethodId, RwLock<FutureGraphTracker>>,
 }
 
 impl SimpleParentContext {
@@ -146,6 +150,7 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
             will_early_return: AtomicBool::new(false),
             polled: AtomicUsize::new(0),
             request_start: Instant::now(),
+            child_ctxs: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -153,16 +158,23 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
         &self,
         method: GrpcMethod,
         request: &mut Request<T>,
-        _child_send_ctx: &mut SimpleChildContext,
+        _child_ctx: &mut SimpleChildContext,
     ) -> Option<Status> {
         // log::info!("parent_ctx, before_child_rpc, method: {:?}", method.id());
         if self.check_early_return() {
             return Some(self.issue_early_return());
         }
 
+        // let graph = self
+        //     .server_ctx
+        //     .suffix_sum_trackers
+        //     .get(&self.method.id())
+        //     .unwrap()
+        //     .read()
+        //     .unwrap();
         let graph = self
             .server_ctx
-            .local_graph_trackers
+            .future_graph_trackers
             .get(&self.method.id())
             .unwrap()
             .read()
@@ -173,9 +185,11 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
             deadline = self.ctx.deadline();
             latest_exec = self.ctx.latest_exec();
         } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
-            // [TODO:LD] Return two values at one time.
-            deadline = self.ctx.deadline() - graph.estimate_suffix_deadline(&method.id());
-            latest_exec = self.ctx.deadline() - graph.estimate_suffix_latest_exec(&method.id());
+            // // [TODO:LD] Return two values at one time.
+            // deadline = self.ctx.deadline() - graph.estimate_suffix_deadline(method.id());
+            // latest_exec = self.ctx.deadline() - graph.estimate_suffix_latest_exec(method.id());
+            deadline = self.ctx.deadline() - graph.estimate_future(method.id());
+            latest_exec = deadline - graph.estimate_present(method.id());
         } else {
             panic!("Unimplemented policy");
         }
@@ -198,7 +212,7 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
     fn after_child_rpc<T>(
         &self,
         child_rpc_method: GrpcMethod,
-        resp: &mut Result<Response<T>, Status>,
+        response: &mut Result<Response<T>, Status>,
         child_ctx: SimpleChildContext,
     ) -> Option<Status> {
         // log::info!(
@@ -206,23 +220,28 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
         //     child_rpc_method.id()
         // );
 
-        if let Err(status) = resp {
+        if let Err(status) = response {
             return Some(status.clone());
         }
 
-        let latency_us = child_ctx.latency_tracker.get_latency().unwrap().as_micros();
+        let latency = child_ctx.present_tracker.get_latency().unwrap().as_micros() as u64;
         let mut graph = self
             .server_ctx
-            .local_graph_trackers
+            .future_graph_trackers
             .get(&self.method.id())
             .unwrap()
             .write()
             .unwrap();
-        graph.track_span(&child_rpc_method.id(), latency_us as u64);
+        graph.track_present_span(child_rpc_method.id(), latency);
 
         if self.check_early_return() {
             return Some(self.issue_early_return());
         }
+
+        let mut child_ctx = child_ctx.clone();
+        child_ctx.future_tracker.start();
+        self.child_ctxs.lock().unwrap().push(child_ctx);
+
         None
     }
 
@@ -233,6 +252,7 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
         //         return Some(Err(self.issue_early_return()));
         //     }
         // }
+
         if self.check_early_return() {
             return Some(Err(self.issue_early_return()));
         }
@@ -255,26 +275,61 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
+        if self.check_early_return() {
+            return;
+        }
+
         // log::info!(
         //     "parent_ctx, finalize, method: {:?}, polled: {} times, elapsed: {} us",
         //     self.method.id(),
         //     self.polled.load(Ordering::Relaxed),
         //     self.request_start.elapsed().as_micros()
         // );
+        log::info!(
+            "finalize, ctx: {:?}, method: {:?}, child_ctxs: {}, elapsed: {} us",
+            self as *const _,
+            self.method.id(),
+            self.child_ctxs.lock().unwrap().len(),
+            self.request_start.elapsed().as_micros()
+        );
+
+        for child_ctx in self.child_ctxs.lock().unwrap().iter_mut() {
+            child_ctx.future_tracker.record_latency();
+            let present_latency =
+                child_ctx.present_tracker.get_latency().unwrap().as_micros() as u64;
+            let future_latency = child_ctx.future_tracker.get_latency().unwrap().as_micros() as u64;
+            log::info!(
+                "track_future_span, ctx: {:?}, child_rpc_method: {:?}, present_latency: {} us, future_latency: {} us",
+                self as *const _,
+                child_ctx.method.id(),
+                present_latency,
+                future_latency
+            );
+
+            let mut graph = self
+                .server_ctx
+                .future_graph_trackers
+                .get(&self.method.id())
+                .unwrap()
+                .write()
+                .unwrap();
+            graph.track_future_span(child_ctx.method.id(), future_latency);
+        }
     }
 }
 
 impl ClientStubHooks for SimpleChildContext {
-    fn new<T>(method: GrpcMethod, _req: &Request<T>) -> Self {
+    fn new<T>(method: GrpcMethod, _request: &Request<T>) -> Self {
         Self {
-            _method: method,
-            latency_tracker: LatencyTracker::NotStarted,
+            method,
+            present_tracker: LatencyTracker::NotStarted,
+            future_tracker: LatencyTracker::NotStarted,
         }
     }
 
-    fn before_send<T>(&mut self, _req: &mut Request<T>) {
+    fn before_send<T>(&mut self, _request: &mut Request<T>) {
         // log::info!("child_ctx, before_send, method: {:?}", self.method.id());
-        self.latency_tracker.start();
+        self.present_tracker.start();
     }
 
     fn after_recv<T>(&mut self, _response: &mut Result<Response<T>, Status>) {
@@ -283,7 +338,7 @@ impl ClientStubHooks for SimpleChildContext {
         //     self.method.id(),
         //     self.track_latency.get_latency().unwrap().as_micros(),
         // );
-        self.latency_tracker.record_latency();
+        self.present_tracker.record_latency();
     }
 }
 
@@ -308,6 +363,15 @@ impl ServerHooks for SimpleServerContext {
             .map(|(path, local_graph)| {
                 let local_graph = LocalGraphTracker::from(local_graph.clone());
                 (*path, RwLock::new(local_graph))
+            })
+            .collect();
+
+        let local_graphs = global_graph.local_graphs().clone();
+        let future_graph_trackers = local_graphs
+            .iter()
+            .map(|(path, local_graph)| {
+                let future_graph = FutureGraphTracker::from(local_graph.clone());
+                (*path, RwLock::new(future_graph))
             })
             .collect();
 
@@ -340,6 +404,7 @@ impl ServerHooks for SimpleServerContext {
             num_early_returns,
             local_graphs,
             local_graph_trackers,
+            future_graph_trackers,
         }
     }
 }
