@@ -7,7 +7,7 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 fi
 
 folder=snippets/search-reservation
-data=tmp_1122
+data=tmp_1129_gcp
 
 plot_single() {
     local folder="$1"
@@ -59,17 +59,17 @@ plot_multi() {
         --data $data
 }
 
-# echo "Analyzing fifo..."
-# plot_single $folder fifo fifo $data
-# echo ""
+echo "Analyzing fifo..."
+plot_single $folder fifo fifo $data
+echo ""
 
 # echo "Analyzing e2e..."
 # plot_single $folder e2e e2e $data
 # echo ""
 
-# echo "Analyzing e2e_er..."
-# plot_single $folder e2e_er e2e_er $data
-# echo ""
+echo "Analyzing e2e_er..."
+plot_single $folder e2e_er e2e_er $data
+echo ""
 
 # echo "Analyzing local..."
 # plot_single $folder local local $data
@@ -79,9 +79,10 @@ echo "Analyzing local_er..."
 plot_single $folder local_er local_er $data
 echo ""
 
-# modes_list=(
-#     "fifo e2e e2e_er local local_er"
-# )
+modes_list=(
+    "fifo e2e_er local_er"
+    # "fifo e2e e2e_er local local_er"
+)
 
 for modes in "${modes_list[@]}"; do
     echo "Analyzing $modes..."
