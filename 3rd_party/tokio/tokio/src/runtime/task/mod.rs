@@ -179,6 +179,7 @@ mod harness;
 use self::harness::Harness;
 
 mod id;
+pub(crate) use id::Identifiable;
 #[cfg_attr(not(tokio_unstable), allow(unreachable_pub, unused_imports))]
 pub use id::{id, try_id, Id};
 use tonic_masa::Prioritize;
@@ -309,6 +310,12 @@ impl<S: 'static> Ord for Task<S> {
     }
 }
 
+impl<S: 'static> Identifiable for Task<S> {
+    fn id(&self) -> Id {
+        unsafe { Header::get_id(self.raw.header_ptr()) }
+    }
+}
+
 impl<S> Prioritize for Notified<S> {
     fn priority(&self) -> tonic_masa::PriorityHint {
         self.0.priority()
@@ -332,6 +339,12 @@ impl<S> PartialOrd for Notified<S> {
 impl<S: 'static> Ord for Notified<S> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.0.cmp(&other.0)
+    }
+}
+
+impl<S: 'static> Identifiable for Notified<S> {
+    fn id(&self) -> Id {
+        self.0.id()
     }
 }
 
