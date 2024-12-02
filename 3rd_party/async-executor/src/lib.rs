@@ -93,6 +93,7 @@ fn get_static_ex() -> &'static Executor<'static> {
 }
 
 #[inline]
+#[allow(dead_code)]
 fn time_now() -> u64 {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
