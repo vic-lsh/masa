@@ -4,6 +4,7 @@ use std::{
 };
 
 use super::{PopError, PushError, Queue};
+use crate::runtime::task::Identifiable;
 use tonic_masa::Prioritize;
 
 #[inline]
@@ -15,11 +16,15 @@ fn time_now() -> u64 {
     now as u64
 }
 
+fn ms_since_init(value: u64) -> u64 {
+    (value - *INIT) / 1000
+}
+
 pub(crate) struct BinaryHeapQueue<T> {
     q: BinaryHeap<T>,
 }
 
-impl<T: Ord + PartialOrd + Prioritize> Queue for BinaryHeapQueue<T> {
+impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapQueue<T> {
     type Item = T;
 
     fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
