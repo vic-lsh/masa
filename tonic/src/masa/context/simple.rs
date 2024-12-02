@@ -165,13 +165,6 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
             return Some(self.issue_early_return());
         }
 
-        // let graph = self
-        //     .server_ctx
-        //     .suffix_sum_trackers
-        //     .get(&self.method.id())
-        //     .unwrap()
-        //     .read()
-        //     .unwrap();
         let graph = self
             .server_ctx
             .future_graph_trackers
@@ -185,7 +178,8 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
             deadline = self.ctx.deadline();
             latest_exec = self.ctx.latest_exec();
         } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
-            // // [TODO:LD] Return two values at one time.
+            // [DEPRECATED] This is the old way to estimate the deadline and
+            // latest_exec by summing up percentile latencies.
             // deadline = self.ctx.deadline() - graph.estimate_suffix_deadline(method.id());
             // latest_exec = self.ctx.deadline() - graph.estimate_suffix_latest_exec(method.id());
             deadline = self.ctx.deadline() - graph.estimate_future(method.id());
