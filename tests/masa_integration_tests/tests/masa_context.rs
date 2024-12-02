@@ -215,7 +215,7 @@ async fn test_service_ctx_construction() {
 }
 
 #[tokio::test]
-async fn test_child_rpc_hooks_invocations() {
+async fn test_seq_child_rpc_hooks_invocations() {
     static N_BEFORE_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
     static N_AFTER_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
 
@@ -268,6 +268,55 @@ async fn test_child_rpc_hooks_invocations() {
     assert_eq!(N_AFTER_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
     N_BEFORE_CHILD_RPCS.store(0, Ordering::Relaxed);
     N_AFTER_CHILD_RPCS.store(0, Ordering::Relaxed);
+}
+
+#[tokio::test]
+async fn test_par_child_rpc_hooks_invocations() {
+    static N_BEFORE_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
+    static N_AFTER_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
+
+    struct TestChildRpcParentCtx {}
+
+    impl<C: ClientStubHooks, S: ServerHooks> RequestHandlerHooks<C, S> for TestChildRpcParentCtx {
+        fn begin<B>(_method: GrpcMethod, _req: &http::Request<B>, _server_ctx: Arc<S>) -> Self {
+            Self {}
+        }
+
+        fn before_child_rpc<T>(
+            &self,
+            _method: GrpcMethod,
+            _req: &mut Request<T>,
+            _child_ctx: &mut C,
+        ) -> Option<Status> {
+            N_BEFORE_CHILD_RPCS.fetch_add(1, Ordering::Relaxed);
+            None
+        }
+
+        fn after_child_rpc<T>(
+            &self,
+            _method: GrpcMethod,
+            _resp: &mut Result<Response<T>, Status>,
+            _child_ctx: C,
+        ) -> Option<Status> {
+            N_AFTER_CHILD_RPCS.fetch_add(1, Ordering::Relaxed);
+            None
+        }
+    }
+
+    let parent_svc_addr = "127.0.0.1:4455";
+    let child_svc_addr = "127.0.0.1:4466";
+    let fanout_factor = 10;
+    let (_parent, _child) = make_parent_child_svcs::<
+        MockServerCtx,
+        MockChildCtx,
+        TestChildRpcParentCtx,
+    >(parent_svc_addr, child_svc_addr, fanout_factor)
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
+        .await
+        .unwrap();
 
     parent_cl.fanout_rpc(Request::new(Input1 {})).await.unwrap();
 
