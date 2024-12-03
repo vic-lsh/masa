@@ -1,13 +1,14 @@
 use std::{
     collections::BinaryHeap,
     sync::{Mutex, MutexGuard},
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use super::{PopError, PushError, Queue};
 use tonic_masa::Prioritize;
 
 #[inline]
+#[allow(dead_code)]
 fn time_now() -> u64 {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

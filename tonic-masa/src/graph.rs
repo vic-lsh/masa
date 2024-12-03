@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{Latency, MethodId, ServiceId, Span, SpanTracker};
+use crate::{FutureSpanTracker, Latency, MethodId, ServiceId, Span, SpanId, SpanTracker};
 
 /// Represent a local graph inner.
 #[derive(Debug, Default, Clone)]
@@ -26,7 +26,7 @@ impl LocalGraph {
     }
 
     /// Get the method ID.
-    pub fn method_id(&self) -> &MethodId {
+    pub fn method_id(&self) -> MethodId {
         &self.method_id
     }
 
@@ -45,10 +45,10 @@ pub struct LocalGraphTracker {
 }
 
 impl From<LocalGraph> for LocalGraphTracker {
-    fn from(local_graph: LocalGraph) -> Self {
-        let service_id = local_graph.service_id().clone();
-        let method_id = local_graph.method_id();
-        let spans = local_graph
+    fn from(graph: LocalGraph) -> Self {
+        let service_id = graph.service_id().clone();
+        let method_id = graph.method_id();
+        let spans = graph
             .spans
             .iter()
             .map(|span| SpanTracker::from(span.clone()))
@@ -73,7 +73,7 @@ impl LocalGraphTracker {
     }
 
     /// Return the estimated suffix latency after a span indexed by its path.
-    pub fn estimate_suffix_deadline(&self, child_method_id: &MethodId) -> Latency {
+    pub fn estimate_suffix_deadline(&self, child_method_id: MethodId) -> Latency {
         let mut existed = false;
         let mut suffix_sum = 0;
         for span in self.spans.iter().rev() {
@@ -95,7 +95,7 @@ impl LocalGraphTracker {
     }
 
     /// Return the estimated suffix latency no before than a span indexed by its path.
-    pub fn estimate_suffix_latest_exec(&self, child_method_id: &MethodId) -> Latency {
+    pub fn estimate_suffix_latest_exec(&self, child_method_id: MethodId) -> Latency {
         let mut existed = false;
         let mut suffix_sum = 0;
         for span in self.spans.iter().rev() {
@@ -117,7 +117,7 @@ impl LocalGraphTracker {
     }
 
     /// Track the latency of a span indexed by its path.
-    pub fn track_span(&mut self, child_method_id: &MethodId, latency_us: Latency) {
+    pub fn track_span(&mut self, child_method_id: MethodId, latency_us: Latency) {
         log::info!(
             "tracker, service_id: {:?}, method_id: {:?}, child_method_id: {:?}, latency: {} us",
             self.service_id,
@@ -164,12 +164,12 @@ impl GlobalGraph {
     }
 
     /// Check if a path is contained in the graph.
-    pub fn contains_path(&self, path: &MethodId) -> bool {
+    pub fn contains_path(&self, path: MethodId) -> bool {
         self.local_graphs.contains_key(path)
     }
 
     /// Get a local graph indexed by its path.
-    pub fn get_local_graph(&self, path: &MethodId) -> &LocalGraph {
+    pub fn get_local_graph(&self, path: MethodId) -> &LocalGraph {
         assert!(self.local_graphs.contains_key(path));
         &self.local_graphs[path]
     }
@@ -219,8 +219,89 @@ impl GlobalGraphTracker {
     }
 
     /// Get a local graph indexed by its path.
-    pub fn get_local_graph(&self, path: &MethodId) -> &LocalGraphTracker {
+    pub fn get_local_graph(&self, path: MethodId) -> &LocalGraphTracker {
         assert!(self.local_graphs.contains_key(path));
         &self.local_graphs[path]
+    }
+}
+
+/// Represent a future graph tracker.
+#[derive(Debug, Default)]
+pub struct FutureGraphTracker {
+    service_id: ServiceId,
+    method_id: MethodId,
+    spans: HashMap<SpanId, FutureSpanTracker>,
+}
+
+impl From<LocalGraph> for FutureGraphTracker {
+    fn from(graph: LocalGraph) -> Self {
+        let service_id = graph.service_id().clone();
+        let method_id = graph.method_id();
+        let spans = graph
+            .spans
+            .iter()
+            .map(|span| {
+                (
+                    span.span_id().clone(),
+                    FutureSpanTracker::from(span.clone()),
+                )
+            })
+            .collect();
+        Self::new(service_id, method_id, spans)
+    }
+}
+
+impl FutureGraphTracker {
+    /// Create a new graph.
+    pub fn new(
+        service_id: ServiceId,
+        method_id: MethodId,
+        spans: HashMap<SpanId, FutureSpanTracker>,
+    ) -> Self {
+        Self {
+            service_id,
+            method_id,
+            spans,
+        }
+    }
+
+    /// Estimate the future latency after a span.
+    pub fn estimate_future(&self, child_method_id: MethodId) -> Latency {
+        let span = self.spans.get(child_method_id).unwrap();
+        let latency = span.estimate_future();
+        log::warn!(
+            "estimate_future, service_id: {:?}, method_id: {:?}, child_method_id: {:?}, latency: {} us",
+            self.service_id,
+            self.method_id,
+            child_method_id,
+            latency
+        );
+        return latency;
+    }
+
+    /// Estimate the present latency of a span.
+    pub fn estimate_present(&self, child_method_id: MethodId) -> Latency {
+        let span = self.spans.get(child_method_id).unwrap();
+        let latency = span.estimate_present();
+        log::warn!(
+            "estimate_present, service_id: {:?}, method_id: {:?}, child_method_id: {:?}, latency: {} us",
+            self.service_id,
+            self.method_id,
+            child_method_id,
+            latency
+        );
+        return latency;
+    }
+
+    /// Track the future latency after a span.
+    pub fn track_future_span(&mut self, child_method_id: MethodId, latency_us: Latency) {
+        let span = self.spans.get_mut(child_method_id).unwrap();
+        span.track_future(latency_us);
+    }
+
+    /// Track the present latency of a span.
+    pub fn track_present_span(&mut self, child_method_id: MethodId, latency_us: Latency) {
+        let span = self.spans.get_mut(child_method_id).unwrap();
+        span.track_present(latency_us);
     }
 }
