@@ -63,6 +63,10 @@ plot_multi() {
 # plot_single $folder fifo fifo $data
 # echo ""
 
+echo "Analyzing fifo_er..."
+plot_single $folder fifo_er fifo_er $data
+echo ""
+
 # echo "Analyzing e2e..."
 # plot_single $folder e2e e2e $data
 # echo ""
@@ -75,9 +79,9 @@ plot_multi() {
 # plot_single $folder local local $data
 # echo ""
 
-echo "Analyzing local_er..."
-plot_single $folder local_er local_er $data
-echo ""
+# echo "Analyzing local_er..."
+# plot_single $folder local_er local_er $data
+# echo ""
 
 # modes_list=(
 #     "fifo e2e e2e_er local local_er"
