@@ -49,6 +49,11 @@ struct Context {
     #[cfg(feature = "rt")]
     current_task_id: Cell<Option<Id>>,
 
+    // [TODO(vic)] don't expose all of the task's header here. only expose
+    // relevant fields like priority and poll hooks.
+    #[cfg(feature = "rt")]
+    current_task_header: Cell<Option<&'static crate::runtime::task::Header>>,
+
     /// Tracks if the current thread is currently driving a runtime.
     /// Note, that if this is set to "entered", the current scheduler
     /// handle may not reference the runtime currently executing. This
@@ -91,6 +96,9 @@ tokio_thread_local! {
 
             #[cfg(feature = "rt")]
             current_task_id: Cell::new(None),
+
+            #[cfg(feature = "rt")]
+            current_task_header: Cell::new(None),
 
             // Tracks if the current thread is currently driving a runtime.
             // Note, that if this is set to "entered", the current scheduler
@@ -158,6 +166,15 @@ cfg_rt! {
     pub(crate) fn current_task_id() -> Option<Id> {
         CONTEXT.try_with(|ctx| ctx.current_task_id.get()).unwrap_or(None)
     }
+
+    pub(crate) fn set_current_task_header(header: Option<&'static crate::runtime::task::Header>) -> Option<&'static crate::runtime::task::Header> {
+        CONTEXT.try_with(|ctx| ctx.current_task_header.replace(header)).unwrap_or(None)
+    }
+
+    pub(crate) fn current_task_header() -> Option<&'static crate::runtime::task::Header> {
+        CONTEXT.try_with(|ctx| ctx.current_task_header.get()).unwrap_or(None)
+    }
+
 
     #[track_caller]
     pub(crate) fn defer(waker: &Waker) {
