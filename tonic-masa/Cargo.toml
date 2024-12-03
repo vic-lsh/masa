@@ -10,8 +10,9 @@ prio_global_early = []
 prio_class_global = []
 prio_local = []
 prio_local_early = []
-fifo_infra = []
 fifo = []
+fifo_early = []
+fifo_infra = []
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

@@ -9,8 +9,8 @@ use std::{
 };
 
 use tonic_masa::{
-    Context, FutureGraphTracker, LocalGraph, LocalGraphTracker, MethodId, FIFO, FIFO_INFRA,
-    PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
+    Context, FutureGraphTracker, LocalGraph, LocalGraphTracker, MethodId, FIFO, FIFO_EARLY,
+    FIFO_INFRA, PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
 
 use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
@@ -93,7 +93,7 @@ impl SimpleParentContext {
     #[inline]
     fn check_early_return(&self) -> bool {
         // if self.method.id() == "/frontend.Frontend/HandleSearch"
-        if PRIO_GLOBAL_EARLY || PRIO_LOCAL_EARLY {
+        if FIFO_EARLY || PRIO_GLOBAL_EARLY || PRIO_LOCAL_EARLY {
             if self.will_early_return.load(Ordering::Relaxed) {
                 return true;
             }
@@ -174,7 +174,7 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
             .unwrap();
         let deadline;
         let latest_exec;
-        if FIFO || FIFO_INFRA || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
+        if FIFO || FIFO_EARLY || FIFO_INFRA || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
             deadline = self.ctx.deadline();
             latest_exec = self.ctx.latest_exec();
         } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
