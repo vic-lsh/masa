@@ -1,3 +1,5 @@
+use std::{future::Future, task::Poll};
+
 /// Hooks into a future's execution by running custom logic before and after
 /// it is polled.
 ///
@@ -8,9 +10,9 @@
 /// This is a low-level struct. Use this struct with care.
 /// See the documentation about each internal field for usage.
 #[derive(Debug)]
-pub struct RawPollHook {
+pub struct PollHook {
     // Pointer that will be passed to the polling lifecycle hooks.
-    // RawPollHook does not check for `ctx` pointer's validity.
+    // PollHook does not check for `ctx` pointer's validity.
     ctx: *const (),
 
     // Called when the struct is destroyed to let the user release resources
@@ -24,7 +26,7 @@ pub struct RawPollHook {
     on_destroy: Option<fn(*const ())>,
 
     // Called when the struct is cloned. `ctx` can be shared across multiple
-    // RawPollHook instances, and this function is a place to increase ref-count.
+    // PollHook instances, and this function is a place to increase ref-count.
     //
     // This field must be set if `ctx` is non-null.
     on_clone: Option<fn(*const ())>,
@@ -36,7 +38,7 @@ pub struct RawPollHook {
     after_poll: Option<fn(*const ())>,
 }
 
-impl Default for RawPollHook {
+impl Default for PollHook {
     fn default() -> Self {
         Self {
             ctx: core::ptr::null(),
@@ -48,7 +50,7 @@ impl Default for RawPollHook {
     }
 }
 
-impl Clone for RawPollHook {
+impl Clone for PollHook {
     fn clone(&self) -> Self {
         if !self.ctx.is_null() {
             (self
@@ -66,14 +68,16 @@ impl Clone for RawPollHook {
     }
 }
 
-impl Drop for RawPollHook {
+impl Drop for PollHook {
     fn drop(&mut self) {
         self.reset();
     }
 }
 
-impl RawPollHook {
-    /// Creates a new `RawPollHook`.
+unsafe impl Send for PollHook {}
+
+impl PollHook {
+    /// Creates a new `PollHook`.
     ///
     /// See the struct-level comments for usage.
     pub unsafe fn new(
@@ -83,7 +87,7 @@ impl RawPollHook {
         before_poll: Option<fn(*const ())>,
         after_poll: Option<fn(*const ())>,
     ) -> Self {
-        let mut h = RawPollHook::default();
+        let mut h = PollHook::default();
         h.configure(ctx, on_clone, on_destroy, before_poll, after_poll);
         h
     }
@@ -127,5 +131,45 @@ impl RawPollHook {
         if let Some(hook) = &self.after_poll {
             (hook)(self.ctx);
         }
+    }
+}
+
+/// The main HookedFuture struct
+#[allow(missing_debug_implementations)]
+pub struct PollHookFuture<F> {
+    inner: F,
+    hook: PollHook,
+}
+
+impl<F> Future for PollHookFuture<F>
+where
+    F: Future,
+{
+    type Output = F::Output;
+
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: We're not moving any fields out of self
+        let this = unsafe { self.get_unchecked_mut() };
+
+        this.hook.invoke_before_poll();
+        // Poll the inner future
+        // SAFETY: We're not moving the future, just polling it
+        let poll_result = unsafe { std::pin::Pin::new_unchecked(&mut this.inner) }.poll(cx);
+
+        this.hook.invoke_after_poll();
+
+        poll_result
+    }
+}
+
+/// Trait to add the `hook` method to futures
+pub trait WithPollHook: Sized + Future {
+    ///
+    fn with_poll_hook(self, hook: PollHook) -> PollHookFuture<Self>;
+}
+
+impl<F: Future> WithPollHook for F {
+    fn with_poll_hook(self, hook: PollHook) -> PollHookFuture<F> {
+        PollHookFuture { inner: self, hook }
     }
 }
