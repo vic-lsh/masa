@@ -28,7 +28,6 @@ plt.rcParams.update(
 )
 
 COLORS = ["tab:blue", "tab:orange", "tab:purple", "tab:red", "tab:green"]
-COLORS_AIO = ["tab:blue", "tab:orange", "tab:orange", "tab:purple", "tab:purple"]
 MARKERS = ["o", "x", "^", "*", "s"]
 
 
@@ -149,7 +148,7 @@ def plot_goodput_apis_bar(
 def plot_goodput_cmp_bar(
     modes: List[str], api: str, results: List[Dict[str, Any]], fig_name: str
 ):
-    assert len(modes) <= 5
+    assert len(modes) <= 6
     modes_str = f"{', '.join(modes)}"
     labels = modes
 
@@ -185,8 +184,15 @@ def plot_goodput_cmp_bar(
     elif len(modes) == 5:
         width = 0.12
         xs = [x - width * 2, x - width, x, x + width, x + width * 2]
-        colors = COLORS_AIO
+        colors = [COLORS[0], COLORS[1], COLORS[1], COLORS[2], COLORS[2]]
         hatches = ["", "", "///", "", "///"]
+    elif len(modes) == 6:
+        width = 0.10
+        xs = [x - width * 2, x - width, x, x + width, x + width * 2, x + width * 3]
+        colors = [COLORS[0], COLORS[0], COLORS[1], COLORS[1], COLORS[2], COLORS[2]]
+        hatches = ["", "///", "", "///", "", "///"]
+    else:
+        raise ValueError(f"Invalid number of modes: {len(modes)}")
 
     for i in range(len(modes)):
         bars.append(
@@ -261,7 +267,7 @@ def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
 def plot_tail_cmp_bar(
     modes: List[str], tail: str, api: str, results: List[Dict[str, Any]], fig_name: str
 ):
-    assert len(modes) <= 5
+    assert len(modes) <= 6
     modes_str = f"{', '.join(modes)}"
     keys = [f"{tail}_{mode}" for mode in modes]
     labels = [f"{tail} {mode}" for mode in modes]
@@ -296,8 +302,15 @@ def plot_tail_cmp_bar(
     elif len(modes) == 5:
         width = 0.12
         xs = [x - width * 2, x - width, x, x + width, x + width * 2]
-        colors = COLORS_AIO
+        colors = [COLORS[0], COLORS[1], COLORS[1], COLORS[2], COLORS[2]]
         hatches = ["", "", "///", "", "///"]
+    elif len(modes) == 6:
+        width = 0.10
+        xs = [x - width * 2, x - width, x, x + width, x + width * 2, x + width * 3]
+        colors = [COLORS[0], COLORS[0], COLORS[1], COLORS[1], COLORS[2], COLORS[2]]
+        hatches = ["", "///", "", "///", "", "///"]
+    else:
+        raise ValueError(f"Invalid number of modes: {len(modes)}")
 
     for i in range(len(modes)):
         bars.append(
