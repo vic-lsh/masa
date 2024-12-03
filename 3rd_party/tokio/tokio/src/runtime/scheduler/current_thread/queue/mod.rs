@@ -1,7 +1,8 @@
 mod fifo;
 mod prio_bh;
 
-pub(crate) type LocalRunQueue<T> = fifo::FifoQueue<T>;
+// pub(crate) type LocalRunQueue<T> = fifo::FifoQueue<T>;
+pub(crate) type LocalRunQueue<T> = prio_bh::BinaryHeapQueue<T>;
 
 #[allow(dead_code)]
 pub(crate) trait Queue {
