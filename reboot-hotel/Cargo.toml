@@ -79,8 +79,9 @@ prio_local_early = [
 	"async-executor/prio_local_early",
 	"tonic-masa/prio_local_early",
 ]
-fifo_infra = ["async-executor/fifo_infra", "tonic-masa/fifo_infra"]
 fifo = ["async-executor/fifo", "tonic-masa/fifo"]
+fifo_early = ["async-executor/fifo_early", "tonic-masa/fifo_early"]
+fifo_infra = ["async-executor/fifo_infra", "tonic-masa/fifo_infra"]
 synthetic = []
 workload_stats = []
 
