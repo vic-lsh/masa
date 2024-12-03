@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 #[cfg(feature = "runtime")]
 use std::time::Duration;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
 use h2::server::{Connection, Handshake, SendResponse};
@@ -30,8 +30,8 @@ use crate::upgrade::{OnUpgrade, Pending, Upgraded};
 use crate::{Body, Response};
 
 use tonic_masa::{
-    Context as MasaContext, PriorityHint, FIFO, FIFO_INFRA, PRIO_GLOBAL, PRIO_GLOBAL_EARLY,
-    PRIO_LOCAL, PRIO_LOCAL_EARLY,
+    Context as MasaContext, PriorityHint, FIFO, PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL,
+    PRIO_LOCAL_EARLY,
 };
 
 // Our defaults are chosen for the "majority" case, which usually are not
@@ -48,6 +48,7 @@ const DEFAULT_SETTINGS_MAX_HEADER_LIST_SIZE: u32 = 16 << 20; // 16 MB "sane defa
 const DEFAULT_MAX_LOCAL_ERROR_RESET_STREAMS: usize = 1024;
 
 #[inline]
+#[allow(dead_code)]
 fn time_now() -> u64 {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -364,7 +365,7 @@ where
                             let fut = H2Stream::new(service.call(req), connect_parts, respond);
                             // [TODO:Weixin] Skip if the deadline is already passed.
                             // if time_now() > prio.value() {
-                            //     panic!();
+                            //     panic!("Priority is expired");
                             // }
                             exec.execute_h2stream_with_prio(fut, prio);
                         } else {

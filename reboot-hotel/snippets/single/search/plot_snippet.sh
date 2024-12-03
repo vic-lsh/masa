@@ -7,7 +7,7 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 fi
 
 folder=snippets/single/search
-data=tmp_1122
+data=tmp_1129_gcp
 
 plot_single() {
     local folder="$1"
@@ -75,13 +75,14 @@ echo ""
 # plot_single $folder local local $data
 # echo ""
 
-# echo "Analyzing local_er..."
-# plot_single $folder local_er local_er $data
-# echo ""
+echo "Analyzing local_er..."
+plot_single $folder local_er local_er $data
+echo ""
 
-# modes_list=(
-#     "fifo e2e e2e_er local local_er"
-# )
+modes_list=(
+    "fifo local_er"
+    # "fifo e2e e2e_er local local_er"
+)
 
 for modes in "${modes_list[@]}"; do
     echo "Analyzing $modes..."
