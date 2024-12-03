@@ -339,7 +339,7 @@ where
         // Request-completed lifecycle hook.
         req_ctx.finalize(&mut res);
 
-        async_executor::reset_child_task_poll_hook();
+        tokio::reset_child_task_poll_hook();
 
         res
     }
