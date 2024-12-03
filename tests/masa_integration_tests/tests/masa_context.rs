@@ -303,8 +303,8 @@ async fn test_par_child_rpc_hooks_invocations() {
         }
     }
 
-    let parent_svc_addr = "127.0.0.1:4455";
-    let child_svc_addr = "127.0.0.1:4466";
+    let parent_svc_addr = "127.0.0.1:4477";
+    let child_svc_addr = "127.0.0.1:4488";
     let fanout_factor = 10;
     let (_parent, _child) = make_parent_child_svcs::<
         MockServerCtx,
