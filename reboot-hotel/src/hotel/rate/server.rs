@@ -153,7 +153,7 @@ impl Rate for RateImpl {
                 let mongo_client = Arc::clone(&self.mongo_client);
                 let memc_client = Arc::clone(&self.memc_client);
 
-                async_executor::spawn(async move {
+                tokio::spawn(async move {
                     let collection = mongo_client
                         .database("rate-db")
                         .collection::<db::RatePlan>("inventory");
@@ -181,17 +181,16 @@ impl Rate for RateImpl {
 
                     // Update memcached asynchronously
                     if !memc_str.is_empty() {
-                        async_executor::spawn(async move {
+                        tokio::spawn(async move {
                             let _ = memc_client.set(&hotel_id, memc_str.as_bytes(), 0);
-                        })
-                        .detach();
+                        });
                     }
                 })
             })
             .collect();
 
         for h in handles {
-            h.await;
+            h.await.unwrap();
         }
 
         // Sort rate plans

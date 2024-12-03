@@ -156,7 +156,7 @@ impl Profile for ProfileImpl {
             let mongo_client = Arc::clone(&self.mongo_client);
 
             // Spawn a task for each missing hotel
-            let handle = async_executor::spawn(async move {
+            let handle = tokio::spawn(async move {
                 let collection = mongo_client
                     .database("profile-db")
                     .collection::<db::Hotel>("hotels");
@@ -166,15 +166,14 @@ impl Profile for ProfileImpl {
                     if let Some(hotel) = hotel {
                         // Update memcached asynchronously
                         if let Ok(prof_json) = serde_json::to_string(&hotel) {
-                            async_executor::spawn(async move {
+                            tokio::spawn(async move {
                                 // let mut mc = mc_pool.get().await;
                                 let mut mc = async_memcached::Client::new(&mc_addr).await.unwrap();
                                 let _ = mc
                                     .set(&hotel_id, prof_json.as_bytes(), None, None)
                                     .await
                                     .ok();
-                            })
-                            .detach();
+                            });
                         }
                         // Update shared hotels vector
                         hotels.lock().await.push(hotel);
@@ -187,7 +186,7 @@ impl Profile for ProfileImpl {
 
         // Wait for all MongoDB queries to complete
         for h in handles {
-            h.await;
+            h.await.unwrap();
         }
 
         let hotels = Arc::into_inner(hotels)
