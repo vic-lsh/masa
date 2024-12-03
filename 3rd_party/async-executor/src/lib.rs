@@ -887,11 +887,12 @@ impl<'a> Default for LocalExecutor<'a> {
     feature = "prio_class_global",
     feature = "prio_local",
     feature = "prio_local_early",
+    feature = "fifo",
+    feature = "fifo_early",
     feature = "fifo_infra",
-    feature = "fifo"
 )))]
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
-#[cfg(feature = "fifo")]
+#[cfg(any(feature = "fifo", feature = "fifo_early"))]
 type GlobalQueue<T> = queue::MutexFifoQueue<T>;
 #[cfg(feature = "fifo_infra")]
 type GlobalQueue<T> = queue::MutexFifoInfraQueue<T>;
@@ -941,10 +942,12 @@ impl<M> State<M> {
             log::warn!("Using prio_local...");
         } else if cfg!(feature = "prio_local_early") {
             log::warn!("Using prio_local_early...");
-        } else if cfg!(feature = "fifo_infra") {
-            log::warn!("Using fifo_infra...");
         } else if cfg!(feature = "fifo") {
             log::warn!("Using fifo...");
+        } else if cfg!(feature = "fifo_early") {
+            log::warn!("Using fifo_early...");
+        } else if cfg!(feature = "fifo_infra") {
+            log::warn!("Using fifo_infra...");
         } else {
             log::warn!("Not implemented policy");
         }
