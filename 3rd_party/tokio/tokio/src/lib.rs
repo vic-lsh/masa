@@ -515,6 +515,7 @@ mod blocking;
 
 cfg_rt! {
     pub mod runtime;
+    pub use runtime::is_runtime_active;
 }
 cfg_not_rt! {
     pub(crate) mod runtime;
