@@ -436,8 +436,8 @@ impl Header {
     // [TODO(vic)] limit visibility.
     // Clone the task's poll hook if it exists.
     // SAFETY: caller must guarantee exclusive access to the field.
-    pub(crate) unsafe fn set_poll_hook(&self, poll_hook: PollHook) {
-        self.poll_hook.with_mut(|ph| *ph = Some(poll_hook));
+    pub(crate) unsafe fn set_poll_hook(&self, poll_hook: Option<PollHook>) {
+        self.poll_hook.with_mut(|ph| *ph = poll_hook);
     }
 
     // [TODO(vic)] limit visibility.
