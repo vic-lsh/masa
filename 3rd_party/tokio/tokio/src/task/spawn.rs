@@ -177,6 +177,19 @@ cfg_rt! {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
+
+        let parent_task_hdr = crate::runtime::task::current_task_header();
+        let poll_hook = parent_task_hdr.and_then(|h| h.maybe_clone_poll_hook());
+
+        let future = async move {
+            use crate::runtime::task::poll_hook::WithPollHook;
+            match poll_hook {
+                Some(hook) => future.with_poll_hook(hook).await,
+                None => future.await
+            }
+        };
+
+
         // preventing stack overflows on debug mode, by quickly sending the
         // task to the heap.
         if cfg!(debug_assertions) && std::mem::size_of::<F>() > 2048 {
