@@ -2,10 +2,12 @@ use std::{sync::Arc, task::Poll};
 
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
-pub mod runtime;
+mod runtime;
 mod simple;
 mod tls;
 pub use tls::{client, server};
+
+pub use runtime::make_child_task_poll_hook;
 
 /// Context struct for an RPC server, instantiated during server startup.
 ///
