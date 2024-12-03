@@ -333,7 +333,7 @@ cfg_rt! {
     pub use spawn::spawn_with_prio;
 
     mod poll_hook;
-    pub use poll_hook::configure_child_task_poll_hook;
+    pub use poll_hook::{configure_child_task_poll_hook, reset_child_task_poll_hook};
 
     cfg_rt_multi_thread! {
         pub use blocking::block_in_place;

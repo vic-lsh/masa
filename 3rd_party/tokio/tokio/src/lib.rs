@@ -542,7 +542,7 @@ cfg_not_sync! {
 pub mod task;
 cfg_rt! {
     pub use task::spawn;
-    pub use task::configure_child_task_poll_hook;
+    pub use task::{configure_child_task_poll_hook, reset_child_task_poll_hook};
 }
 
 cfg_time! {
