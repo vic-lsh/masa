@@ -24,6 +24,8 @@ use std::pin::Pin;
 use std::ptr::NonNull;
 use std::task::{Context, Poll, Waker};
 
+use super::poll_hook::PollHook;
+
 /// The task cell. Contains the components of the task.
 ///
 /// It is critical for `Header` to be the first field as the task structure will
@@ -175,6 +177,10 @@ pub(crate) struct Header {
     /// Priority associated with this task.
     pub(super) priority: UnsafeCell<PriorityHint>,
 
+    // [TODO(vic)] should this be in the Trailer?
+    /// Poll behavior customization for this task.
+    pub(super) poll_hook: UnsafeCell<Option<PollHook>>,
+
     /// The tracing ID for this instrumented task.
     #[cfg(all(tokio_unstable, feature = "tracing"))]
     pub(super) tracing_id: Option<tracing::Id>,
@@ -230,6 +236,7 @@ impl<T: Future, S: Schedule> Cell<T, S> {
                 vtable,
                 owner_id: UnsafeCell::new(None),
                 priority: UnsafeCell::new(priority),
+                poll_hook: UnsafeCell::new(None),
                 #[cfg(all(tokio_unstable, feature = "tracing"))]
                 tracing_id,
             }
@@ -422,8 +429,26 @@ impl Header {
 
     pub(super) fn get_priority(&self) -> PriorityHint {
         // SAFETY: If there are concurrent writes, then that write has violated
-        // the safety requirements on `set_owner_id`.
+        // the safety requirements on `set_priority`.
         unsafe { self.priority.with(|ptr| *ptr) }
+    }
+
+    // [TODO(vic)] limit visibility.
+    // Clone the task's poll hook if it exists.
+    // SAFETY: caller must guarantee exclusive access to the field.
+    pub(crate) unsafe fn set_poll_hook(&self, poll_hook: PollHook) {
+        self.poll_hook.with_mut(|ph| *ph = Some(poll_hook));
+    }
+
+    // [TODO(vic)] limit visibility.
+    // Clone the task's poll hook if it exists.
+    pub(crate) fn maybe_clone_poll_hook(&self) -> Option<PollHook> {
+        // SAFETY: If there are concurrent writes, then that write has violated
+        // the safety requirements on `set_poll_hook`.
+        unsafe {
+            self.poll_hook
+                .with(|maybe_hook| (*maybe_hook).as_ref().cloned())
+        }
     }
 
     /// Gets a pointer to the `Trailer` of the task containing this `Header`.
