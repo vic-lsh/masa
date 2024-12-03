@@ -247,7 +247,8 @@ use hotel::{reservation, reservation::reservation_server::Reservation};
 
 pub struct ReservationImpl {
     mc_pool: Arc<McPool>,
-    mongo_client: Arc<MongoClient>,
+    mongo_client: MongoClient,
+    mongo_reserve_client: MongoClient,
     lat_check_avail: Mutex<LatencyTracker>,
     lat_make_reserve: Mutex<LatencyTracker>,
     check_avail_hotel_mc: Arc<AvgTracker>,
@@ -268,6 +269,9 @@ impl ReservationImpl {
         db_addr: String,
     ) -> Result<Self, Box<dyn Error>> {
         let mongo_client = crate::db::initialize_database(&db_addr).await?;
+        let client_options = mongodb::options::ClientOptions::parse(&db_addr).await?;
+        let mongo_reserve_client = MongoClient::with_options(client_options)?;
+
         let lat_check_avail = Mutex::new(LatencyTracker::new("check_availability".into(), 256));
         let lat_make_reserve = Mutex::new(LatencyTracker::new("make_reservation".into(), 256));
 
@@ -301,6 +305,8 @@ impl ReservationImpl {
 
         Ok(Self {
             mc_pool: Arc::new(McPool::new(cache_addr, 768)),
+            mongo_client,
+            mongo_reserve_client,
             lat_check_avail,
             lat_make_reserve,
             check_avail_reserve,
@@ -577,7 +583,7 @@ impl Reservation for ReservationImpl {
             hotel_ids: Vec::new(),
         };
 
-        let database = self.mongo_client.database("reservation-db");
+        let database = self.mongo_reserve_client.database("reservation-db");
         let res_collection: Collection<db::Reservation> = database.collection("reservation");
         let num_collection: Collection<db::Number> = database.collection("number");
         // let mut mc_client = self.mc_pool.get().await;
