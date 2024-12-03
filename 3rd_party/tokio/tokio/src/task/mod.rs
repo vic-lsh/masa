@@ -323,6 +323,7 @@
 
 cfg_rt! {
     pub use crate::runtime::task::{JoinError, JoinHandle};
+    pub use crate::runtime::task::poll_hook::PollHook;
 
     mod blocking;
     pub use blocking::spawn_blocking;
@@ -330,6 +331,9 @@ cfg_rt! {
     mod spawn;
     pub use spawn::spawn;
     pub use spawn::spawn_with_prio;
+
+    mod poll_hook;
+    pub use poll_hook::configure_child_task_poll_hook;
 
     cfg_rt_multi_thread! {
         pub use blocking::block_in_place;
