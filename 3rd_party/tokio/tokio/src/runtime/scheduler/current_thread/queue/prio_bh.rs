@@ -7,6 +7,9 @@ use super::{PopError, PushError, Queue};
 use crate::runtime::task::Identifiable;
 use tonic_masa::Prioritize;
 
+#[allow(dead_code)]
+static INIT: std::sync::LazyLock<u64> = std::sync::LazyLock::new(time_now);
+
 #[inline]
 fn time_now() -> u64 {
     let now = SystemTime::now()
@@ -34,7 +37,17 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapQueue<
 
     fn pop(&mut self) -> Result<Self::Item, PopError> {
         // [TODO] Do something with a task if it is already expired.
-        self.q.pop().ok_or(PopError::Empty)
+        self.q.pop().ok_or(PopError::Empty).map(|e| {
+            // for debugging
+            // let prio = e.priority();
+            // let ms_since_launch = if prio.value() == 0 {
+            //     0
+            // } else {
+            //     ms_since_init(prio.value())
+            // };
+            // println!("Popped elem id {} prio {}", e.id(), ms_since_launch);
+            e
+        })
     }
 
     fn len(&self) -> usize {
