@@ -1,7 +1,26 @@
 mod fifo;
 mod prio_bh;
 
-// pub(crate) type LocalRunQueue<T> = fifo::FifoQueue<T>;
+#[cfg(not(any(
+    feature = "prio_class",
+    feature = "prio_global",
+    feature = "prio_global_early",
+    feature = "prio_class_global",
+    feature = "prio_local",
+    feature = "prio_local_early",
+    feature = "fifo_infra",
+    feature = "fifo"
+)))]
+pub(crate) type LocalRunQueue<T> = fifo::FifoQueue<T>;
+
+#[cfg(feature = "fifo")]
+pub(crate) type LocalRunQueue<T> = fifo::FifoQueue<T>;
+#[cfg(any(
+    feature = "prio_global",
+    feature = "prio_local",
+    feature = "prio_global_early",
+    feature = "prio_local_early"
+))]
 pub(crate) type LocalRunQueue<T> = prio_bh::BinaryHeapQueue<T>;
 
 #[allow(dead_code)]
