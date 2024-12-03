@@ -144,6 +144,7 @@ pub struct Pool<T> {
     inner: Mutex<VecDeque<T>>,
     max_size: usize,
     size: AtomicUsize,
+    puts: AtomicUsize,
     has_new_item: Notify,
 }
 
@@ -153,6 +154,7 @@ impl<T> Pool<T> {
             inner: Mutex::new(VecDeque::with_capacity(max_size)),
             max_size,
             size: AtomicUsize::new(0),
+            puts: AtomicUsize::new(0),
             has_new_item: Notify::new(),
         }
     }
@@ -212,10 +214,18 @@ impl<T> Pool<T> {
     }
 
     fn put(&self, item: T) {
+        let idle_conns;
         {
-            self.inner.lock().unwrap().push_back(item);
+            let mut inner = self.inner.lock().unwrap();
+            inner.push_back(item);
+            idle_conns = inner.len();
         }
         self.has_new_item.notify_waiters();
+
+        if self.puts.fetch_add(1, Ordering::Relaxed) % 2000 == 0 {
+            let sz = self.size.load(Ordering::Relaxed);
+            log::warn!("pool sz {} idle {}", sz, idle_conns);
+        }
     }
 
     pub fn len(&self) -> usize {
