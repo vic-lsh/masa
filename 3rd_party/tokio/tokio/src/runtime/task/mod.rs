@@ -170,13 +170,17 @@
 
 mod core;
 use self::core::Cell;
-use self::core::Header;
+// [TODO(vic)] make this private again.
+// For now, this is made public b/c we expose the whole header in Context.
+pub(crate) use self::core::Header;
 
 mod error;
 pub use self::error::JoinError;
 
 mod harness;
 use self::harness::Harness;
+
+pub(crate) mod poll_hook;
 
 mod id;
 pub(crate) use id::Identifiable;
@@ -215,6 +219,10 @@ use crate::util::sharded_list;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 use std::{fmt, mem};
+
+pub(crate) fn current_task_header() -> Option<&'static Header> {
+    crate::runtime::context::current_task_header()
+}
 
 /// An owned handle to the task, tracked by ref count.
 #[repr(transparent)]
