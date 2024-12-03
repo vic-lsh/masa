@@ -76,12 +76,12 @@ where
         let mut handles: Vec<_> = Vec::new();
         for _ in 0..self.fanout_factor {
             let mut c = client.clone();
-            handles.push(async_executor::spawn(async move {
+            handles.push(tokio::spawn(async move {
                 c.rpc1(Request::new(Input1 {})).await.unwrap();
             }));
         }
         for h in handles {
-            h.await;
+            h.await.unwrap();
         }
 
         Ok(Response::new(Output1 {}))
@@ -101,19 +101,19 @@ impl ChildService for ChildSvc {
     }
 }
 
-struct ExecImpl;
-
-impl<F> Executor<F> for ExecImpl
-where
-    F: std::future::Future + Send + 'static,
-    F::Output: Send,
-{
-    fn execute(&self, fut: F, prio: PriorityHint) {
-        async_executor::spawn_with_prio(fut, prio)
-            .fallible()
-            .detach();
-    }
-}
+// struct ExecImpl;
+//
+// impl<F> Executor<F> for ExecImpl
+// where
+//     F: std::future::Future + Send + 'static,
+//     F::Output: Send,
+// {
+//     fn execute(&self, fut: F, prio: PriorityHint) {
+//         async_executor::spawn_with_prio(fut, prio)
+//             .fallible()
+//             .detach();
+//     }
+// }
 
 struct MockServerCtx;
 
@@ -154,10 +154,7 @@ where
             .add_service(ChildServiceServer::<_, S, C, P>::with_custom_context(
                 ChildSvc,
             ))
-            .serve_with_executor(
-                child_svc_addr.parse().unwrap(),
-                Exec::Executor(Arc::new(ExecImpl)),
-            )
+            .serve(child_svc_addr.parse().unwrap())
             .await
             .unwrap();
     });
@@ -167,10 +164,7 @@ where
             .add_service(ParentServiceServer::<_, S, C, P>::with_custom_context(
                 ParentSvc::<S, C, P>::new(child_svc_addr, fanout_factor),
             ))
-            .serve_with_executor(
-                parent_svc_addr.parse().unwrap(),
-                Exec::Executor(Arc::new(ExecImpl)),
-            )
+            .serve(parent_svc_addr.parse().unwrap())
             .await
             .unwrap();
     });
@@ -203,7 +197,7 @@ async fn test_service_ctx_construction() {
                         MockChildCtx,
                         MockParentCtx,
                     >::with_custom_context(ChildSvc))
-                    .serve_with_executor(addr.parse().unwrap(), Exec::Executor(Arc::new(ExecImpl)))
+                    .serve(addr.parse().unwrap())
                     .await
                     .unwrap();
             });
