@@ -235,11 +235,11 @@ impl LoadGenerator {
                                         "/None".to_string()
                                     }
                                 };
-                                if error == "/None" {
+                                if error.contains("None") {
                                     good.fetch_add(1, Ordering::Relaxed);
                                 } else {
                                     err_search.fetch_add(1, Ordering::Relaxed);
-                                    if error == "/LGMiss" {
+                                    if error.contains("LGMiss") {
                                         err_client.fetch_add(1, Ordering::Relaxed);
                                     } else if error.contains("EarlyReturn") {
                                         err_svc.fetch_add(1, Ordering::Relaxed);
@@ -289,11 +289,11 @@ impl LoadGenerator {
                                         "/None".to_string()
                                     }
                                 };
-                                if error == "/None" {
+                                if error.contains("None") {
                                     good.fetch_add(1, Ordering::Relaxed);
                                 } else {
                                     err_reserve.fetch_add(1, Ordering::Relaxed);
-                                    if error == "/LGMiss" {
+                                    if error.contains("LGMiss") {
                                         err_client.fetch_add(1, Ordering::Relaxed);
                                     } else if error.contains("EarlyReturn") {
                                         err_svc.fetch_add(1, Ordering::Relaxed);
