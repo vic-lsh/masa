@@ -220,18 +220,28 @@ def plot_goodput_cmp_bar(
 
 def plot_time_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
-    keys = ["good_total", "err_svc_er_total"]
-    labels = ["Good Total", "Error Svc Early Return Total"]
+    keys = ["good_total", "err_svc_er_total", "err_cl_miss_total"]
+    labels = ["Good Total", "Error Svc Early Return Total", "Error Client Miss Total"]
     errors = [[result[key] for result in results] for key in keys]
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
     x = np.arange(len(rps_values))
+    xs: List = []
     if len(keys) == 2:
         width = 0.3
         xs = [x - width * 0.5, x + width * 0.5]
-    bars: List = []
+    elif len(keys) == 3:
+        width = 0.2
+        xs = [x - width, x, x + width]
+    elif len(keys) == 4:
+        width = 0.15
+        xs = [x - width * 1.5, x - width * 0.5, x + width * 0.5, x + width * 1.5]
+    elif len(keys) == 5:
+        width = 0.12
+        xs = [x - width * 2, x - width, x, x + width, x + width * 2]
 
+    bars: List = []
     for i in range(len(keys)):
         bars.append(
             ax.bar(

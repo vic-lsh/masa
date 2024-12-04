@@ -33,6 +33,13 @@ for rps in cfg["Rps"]:
     else:
         result["err_svc_er_total"] = sum(df_filtered["latency"])
 
+    df_filtered = df[df["error"] == "/ClientMiss"]
+    if df_filtered.empty:
+        print(f"Got empty data for err_client_miss_total, rps: {rps}")
+        result["err_cl_miss_total"] = 0
+    else:
+        result["err_cl_miss_total"] = sum(df_filtered["latency"])
+
     rps_to_results.append(result)
 
 plot_time_bar(
