@@ -231,7 +231,7 @@ impl LoadGenerator {
                                     if let Err(ref status) = response {
                                         status.message().to_string()
                                     } else if latency > ctx.slo() {
-                                        "/LGMiss".to_string()
+                                        "/ClientMiss".to_string()
                                     } else {
                                         "/None".to_string()
                                     }
@@ -240,7 +240,7 @@ impl LoadGenerator {
                                     good.fetch_add(1, Ordering::Relaxed);
                                 } else {
                                     err_search.fetch_add(1, Ordering::Relaxed);
-                                    if error.contains("LGMiss") {
+                                    if error.contains("ClientMiss") {
                                         err_cl_miss.fetch_add(1, Ordering::Relaxed);
                                     } else if error.contains("EarlyReturn") {
                                         err_svc_er.fetch_add(1, Ordering::Relaxed);
@@ -256,7 +256,7 @@ impl LoadGenerator {
                             if Instant::now() > trace_at {
                                 err_search.fetch_add(1, Ordering::Relaxed);
                                 err_cl_to.fetch_add(1, Ordering::Relaxed);
-                                let error = "/LGTimeout".to_string();
+                                let error = "/ClientTimeout".to_string();
                                 let span = Span::new(ctx, 0, error);
                                 trace_tx.try_send(span).unwrap();
                             }
@@ -285,7 +285,7 @@ impl LoadGenerator {
                                     if let Err(ref status) = response {
                                         status.message().to_string()
                                     } else if latency > ctx.slo() {
-                                        "/LGMiss".to_string()
+                                        "/ClientMiss".to_string()
                                     } else {
                                         "/None".to_string()
                                     }
@@ -294,7 +294,7 @@ impl LoadGenerator {
                                     good.fetch_add(1, Ordering::Relaxed);
                                 } else {
                                     err_reservation.fetch_add(1, Ordering::Relaxed);
-                                    if error.contains("LGMiss") {
+                                    if error.contains("ClientMiss") {
                                         err_cl_miss.fetch_add(1, Ordering::Relaxed);
                                     } else if error.contains("EarlyReturn") {
                                         err_svc_er.fetch_add(1, Ordering::Relaxed);
@@ -310,7 +310,7 @@ impl LoadGenerator {
                             if Instant::now() > trace_at {
                                 err_reservation.fetch_add(1, Ordering::Relaxed);
                                 err_cl_to.fetch_add(1, Ordering::Relaxed);
-                                let error = "/LGTimeout".to_string();
+                                let error = "/ClientTimeout".to_string();
                                 let span = Span::new(ctx, 0, error);
                                 trace_tx.try_send(span).unwrap();
                             }

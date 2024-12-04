@@ -218,6 +218,46 @@ def plot_goodput_cmp_bar(
     plt.savefig(fig_name)
 
 
+def plot_time_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
+    rps_values = [result["rps"] for result in results]
+    keys = ["good_total", "err_svc_er_total"]
+    labels = ["Good Total", "Error Svc Early Return Total"]
+    errors = [[result[key] for result in results] for key in keys]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    x = np.arange(len(rps_values))
+    if len(keys) == 2:
+        width = 0.3
+        xs = [x - width * 0.5, x + width * 0.5]
+    bars: List = []
+
+    for i in range(len(keys)):
+        bars.append(
+            ax.bar(
+                xs[i],
+                errors[i],
+                width,
+                label=labels[i],
+                color=COLORS[i],
+                edgecolor="black",
+                linewidth=1,
+            )
+        )
+
+    ax.set_xlabel("RPS")
+    ax.set_ylabel("Time (ms)")
+    ax.set_title(f"Time ({mode})")
+    ax.set_xticks(x)
+    ax.set_xticklabels(rps_values)
+    ax.legend(loc="upper left", fontsize=fontsize_small)
+
+    fig.tight_layout()
+    plt.grid(True, axis="y", linewidth=0.5)
+    os.makedirs(os.path.dirname(fig_name), exist_ok=True)
+    plt.savefig(fig_name)
+
+
 def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     keys = ["mean", "p50", "p90", "p95", "p99"]

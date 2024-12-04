@@ -23,11 +23,13 @@ for r in range(cfg["Repeats"]):
             result["rps"] = rps
             result["graph_id"] = graph_id
 
-            df_filtered = df[(df["graph_id"] == graph_id) & (df["error"] == "/LGMiss")]
+            df_filtered = df[
+                (df["graph_id"] == graph_id) & (df["error"] == "/ClientMiss")
+            ]
             result["error_lg_miss"] = round(len(df_filtered) / cfg["DurationSecs"])
 
             df_filtered = df[
-                (df["graph_id"] == graph_id) & (df["error"] == "/LGTimeout")
+                (df["graph_id"] == graph_id) & (df["error"] == "/ClientTimeout")
             ]
             result["error_lg_timeout"] = round(len(df_filtered) / cfg["DurationSecs"])
 
