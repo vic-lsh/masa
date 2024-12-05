@@ -52,7 +52,7 @@ def plot_total() -> None:
     )
 
 
-# plot_total()
+plot_total()
 
 
 def get_time_breakdown(data):
