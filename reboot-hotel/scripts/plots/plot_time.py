@@ -9,50 +9,82 @@ MS = 1e3
 
 args = parse_args()
 cfg = json.load(open(args.gen_config))
-
 r = 0
-rps_to_results: List[Dict[str, Any]] = []
 
 
-def plot_total() -> None:
-    for rps in cfg["Rps"]:
-        file = f"{args.path}/r{rps}_{r}.csv"
-        df = pd.read_csv(file)
+def write_csv_with_header(df, filename, header_text):
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    with open(filename, "w") as f:
+        f.write(f"# {header_text}\n\n")
+        f.write(df.to_string())
+        f.write("\n")
 
-        result = {}
-        result["rps"] = rps
 
-        df_filtered = df[df["error"] == "/None"]
-        if df_filtered.empty:
-            print(f"Got empty data for good_total, rps: {rps}")
-            result["good_total"] = 0
-        else:
-            result["good_total"] = sum(df_filtered["latency"])
-
-        df_filtered = df[df["error"].str.contains("EarlyReturn")]
-        if df_filtered.empty:
-            print(f"Got empty data for err_svc_er_total, rps: {rps}")
-            result["err_svc_er_total"] = 0
-        else:
-            result["err_svc_er_total"] = sum(df_filtered["latency"])
-
-        df_filtered = df[df["error"] == "/ClientMiss"]
-        if df_filtered.empty:
-            print(f"Got empty data for err_client_miss_total, rps: {rps}")
-            result["err_cl_miss_total"] = 0
-        else:
-            result["err_cl_miss_total"] = sum(df_filtered["latency"])
-
-        rps_to_results.append(result)
-
-    plot_time_bar(
-        rps_to_results,
-        f"{args.path}/time/fig_time_total_rps_bar_{r}.png",
-        f"{args.mode} total",
+def get_request_breakdown(result: Dict) -> Any:
+    # Calculate total sum
+    total = (
+        result["good_total"] + result["err_svc_er_total"] + result["err_cl_miss_total"]
     )
 
+    # Calculate percentages if total is not zero
+    if total > 0:
+        result["good_total_pct"] = (result["good_total"] / total) * 100
+        result["err_svc_er_total_pct"] = (result["err_svc_er_total"] / total) * 100
+        result["err_cl_miss_total_pct"] = (result["err_cl_miss_total"] / total) * 100
+    else:
+        result["good_total_pct"] = 0
+        result["err_svc_er_total_pct"] = 0
+        result["err_cl_miss_total_pct"] = 0
 
-plot_total()
+    # Create new format data
+    data = {
+        "type": ["good_total", "err_svc_er_total", "err_cl_miss_total"],
+        "sum": [
+            f'{result["good_total"]} ({result["good_total_pct"]:.1f}%)',
+            f'{result["err_svc_er_total"]} ({result["err_svc_er_total_pct"]:.1f}%)',
+            f'{result["err_cl_miss_total"]} ({result["err_cl_miss_total_pct"]:.1f}%)',
+        ],
+    }
+    return pd.DataFrame(data)
+
+
+def analyze_client() -> None:
+    assert len(cfg["Rps"]) == 1
+    rps = cfg["Rps"][0]
+    file = f"{args.path}/r{rps}_{r}.csv"
+    df = pd.read_csv(file)
+
+    result = {}
+
+    df_filtered = df[df["error"] == "/None"]
+    if df_filtered.empty:
+        print(f"Got empty data for good_total, rps: {rps}")
+        result["good_total"] = 0
+    else:
+        result["good_total"] = sum(df_filtered["latency"])
+
+    df_filtered = df[df["error"].str.contains("EarlyReturn")]
+    if df_filtered.empty:
+        print(f"Got empty data for err_svc_er_total, rps: {rps}")
+        result["err_svc_er_total"] = 0
+    else:
+        result["err_svc_er_total"] = sum(df_filtered["latency"])
+
+    df_filtered = df[df["error"] == "/ClientMiss"]
+    if df_filtered.empty:
+        print(f"Got empty data for err_client_miss_total, rps: {rps}")
+        result["err_cl_miss_total"] = 0
+    else:
+        result["err_cl_miss_total"] = sum(df_filtered["latency"])
+
+    df = get_request_breakdown(result)
+    output_file = f"{args.path}/time/all/table_request_breakdown.csv"
+    header_text = f"Request type breakdown in total latency"
+    write_csv_with_header(df, output_file, header_text)
+
+
+analyze_client()
+exit()
 
 
 def get_time_breakdown(data):
@@ -136,15 +168,7 @@ def get_service_breakdown(results_dict, stat_func):
     return pd.DataFrame(breakdown_data).set_index("service")
 
 
-def write_csv_with_header(df, filename, header_text):
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
-    with open(filename, "w") as f:
-        f.write(f"# {header_text}\n\n")
-        f.write(df.to_string())
-        f.write("\n")
-
-
-def plot_breakdown() -> None:
+def analyze_service_logs() -> None:
     assert len(cfg["Rps"]) == 1
     output_path = f"{args.path}/time"
     services = ["frontend", "search", "profile", "reservation", "geo", "rate", "user"]
@@ -202,4 +226,4 @@ def plot_breakdown() -> None:
         )
 
 
-plot_breakdown()
+analyze_service_logs()
