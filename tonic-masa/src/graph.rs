@@ -269,7 +269,7 @@ impl FutureGraphTracker {
     pub fn estimate_future(&self, child_method_id: MethodId) -> Latency {
         let span = self.spans.get(child_method_id).unwrap();
         let latency = span.estimate_future();
-        log::warn!(
+        log::info!(
             "estimate_future, service_id: {:?}, method_id: {:?}, child_method_id: {:?}, latency: {} us",
             self.service_id,
             self.method_id,
@@ -283,7 +283,7 @@ impl FutureGraphTracker {
     pub fn estimate_present(&self, child_method_id: MethodId) -> Latency {
         let span = self.spans.get(child_method_id).unwrap();
         let latency = span.estimate_present();
-        log::warn!(
+        log::info!(
             "estimate_present, service_id: {:?}, method_id: {:?}, child_method_id: {:?}, latency: {} us",
             self.service_id,
             self.method_id,

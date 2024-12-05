@@ -15,11 +15,11 @@ plot_single() {
     local snippet="$3"
     local data="$4"
 
-    echo "Plotting goodput..."
-    python3 $pwd/scripts/plots/plot_goodput.py \
-        --mode $mode \
-        --gen-config $pwd/$folder/gen_config.json \
-        --path $pwd/$folder/$snippet/$data
+    # echo "Plotting goodput..."
+    # python3 $pwd/scripts/plots/plot_goodput.py \
+    #     --mode $mode \
+    #     --gen-config $pwd/$folder/gen_config.json \
+    #     --path $pwd/$folder/$snippet/$data
 
     echo "Plotting time..."
     python3 $pwd/scripts/plots/plot_time.py \
@@ -27,17 +27,17 @@ plot_single() {
         --gen-config $pwd/$folder/gen_config.json \
         --path $pwd/$folder/$snippet/$data
 
-    echo "Plotting tail..."
-    python3 $pwd/scripts/plots/plot_tail.py \
-        --mode $mode \
-        --gen-config $pwd/$folder/gen_config.json \
-        --path $pwd/$folder/$snippet/$data
+    # echo "Plotting tail..."
+    # python3 $pwd/scripts/plots/plot_tail.py \
+    #     --mode $mode \
+    #     --gen-config $pwd/$folder/gen_config.json \
+    #     --path $pwd/$folder/$snippet/$data
 
-    echo "Plotting throughput..."
-    python3 $pwd/scripts/plots/plot_throughput.py \
-        --mode $mode \
-        --gen-config $pwd/$folder/gen_config.json \
-        --path $pwd/$folder/$snippet/$data
+    # echo "Plotting throughput..."
+    # python3 $pwd/scripts/plots/plot_throughput.py \
+    #     --mode $mode \
+    #     --gen-config $pwd/$folder/gen_config.json \
+    #     --path $pwd/$folder/$snippet/$data
 }
 
 plot_multi() {
