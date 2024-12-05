@@ -1,0 +1,11 @@
+# Service breakdown relative to frontend (mean)
+
+            processing_lat    queueing_lat       total_lat
+service                                                   
+frontend               123  40483 (100.0%)  40626 (100.0%)
+search                 200     1508 (3.7%)     1722 (4.2%)
+profile                180      163 (0.4%)      357 (0.9%)
+reservation            788   35516 (87.7%)   36345 (89.5%)
+geo                      3        0 (0.0%)        9 (0.0%)
+rate                   597        0 (0.0%)      607 (1.5%)
+user                    92      276 (0.7%)      376 (0.9%)
