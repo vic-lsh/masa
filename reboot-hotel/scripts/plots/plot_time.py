@@ -12,12 +12,21 @@ cfg = json.load(open(args.gen_config))
 r = 0
 
 
-def write_csv_with_header(df, filename, header_text):
+def write_csv(df, header, filename):
     os.makedirs(os.path.dirname(filename), exist_ok=True)
     with open(filename, "w") as f:
-        f.write(f"# {header_text}\n\n")
+        f.write(f"# {header}\n\n")
         f.write(df.to_string())
         f.write("\n")
+
+
+def write_multiple_csvs(results: List[Tuple[pd.DataFrame, str]], filename: str):
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    with open(filename, "w") as f:
+        for df, header in results:
+            f.write(f"# {header}\n\n")
+            f.write(df.to_string())
+            f.write("\n\n")
 
 
 def get_request_breakdown(result: Dict) -> Any:
@@ -79,15 +88,17 @@ def analyze_client() -> None:
 
     df = get_request_breakdown(result)
     output_file = f"{args.path}/time/all/table_request_breakdown.csv"
-    header_text = f"Request type breakdown in total latency"
-    write_csv_with_header(df, output_file, header_text)
+    header_text = f"Request type breakdown, latency=total"
+    write_csv(df, header_text, output_file)
 
 
 analyze_client()
-exit()
 
 
 def get_time_breakdown(data):
+    if not data:
+        return pd.DataFrame()
+
     df = pd.DataFrame(data)
 
     # Calculate basic statistics
@@ -185,45 +196,59 @@ def analyze_service_logs() -> None:
                     lines,
                 )
             )
-            results: List = []
+            type_to_results: Dict[str, List] = {
+                "all": [],
+                "non_err_svc_er": [],
+                "err_svc_er": [],
+            }
             for line in lines:
                 parts = line.split(",")
                 result = {}
+                check_early_return = None
                 for part in parts:
                     if "_lat" in part:
-                        key, value = part.split(":")
-                        key = key.strip()
+                        type, value = part.split(":")
+                        type = type.strip()
                         value = value.strip()
-                        result[key] = int(value)
-                results.append(result)
+                        result[type] = int(value)
+                    elif "check_early_return" in part:
+                        if "true" in part:
+                            check_early_return = True
+                        else:
+                            check_early_return = False
+                type_to_results["all"].append(result)
+                assert check_early_return is not None
+                if check_early_return:
+                    type_to_results["err_svc_er"].append(result)
+                else:
+                    type_to_results["non_err_svc_er"].append(result)
 
-        service_to_results[svc] = results
+        service_to_results[svc] = type_to_results["all"]
 
-        time_breakdown = get_time_breakdown(results)
-        file = f"{output_path}/{svc}/table_time_breakdown.csv"
-        write_csv_with_header(
-            time_breakdown,
-            file,
-            f"Time breakdown of {svc}",
+        output_csvs: List[Tuple[pd.DataFrame, str]] = []
+        for type, results in type_to_results.items():
+            time_breakdown = get_time_breakdown(results)
+            output_csvs.append(
+                (time_breakdown, f"Time breakdown, svc={svc}, type={type}")
+            )
+        write_multiple_csvs(
+            output_csvs, f"{output_path}/{svc}/table_time_breakdown.csv"
         )
 
+    output_csvs = []
     mean_breakdown = get_service_breakdown(service_to_results, lambda df: df.mean())
-    write_csv_with_header(
-        mean_breakdown,
-        f"{output_path}/all/table_service_breakdown_mean.csv",
-        "Service breakdown relative to frontend (mean)",
+    output_csvs.append(
+        (mean_breakdown, "Service breakdown relative to frontend (mean)")
     )
-
     percentiles = [50, 90, 95, 99]
     for p in percentiles:
         pct_breakdown = get_service_breakdown(
             service_to_results, lambda df: df.quantile(p / 100)
         )
-        write_csv_with_header(
-            pct_breakdown,
-            f"{output_path}/all/table_service_breakdown_p{p}.csv",
-            f"Service breakdown relative to frontend (p{p})",
+        output_csvs.append(
+            (pct_breakdown, f"Service breakdown relative to frontend (p{p})")
         )
+    write_multiple_csvs(output_csvs, f"{output_path}/all/table_service_breakdown.csv")
 
 
 analyze_service_logs()
