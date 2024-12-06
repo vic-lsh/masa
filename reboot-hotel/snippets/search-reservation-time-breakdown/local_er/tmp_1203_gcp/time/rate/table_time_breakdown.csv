@@ -1,9 +1,26 @@
-# Time breakdown of rate
+# Time breakdown, svc=rate, type=all
 
      processing_lat queueing_lat  total_lat
-mean    597 (98.4%)     0 (0.0%)        607
-std      97 (94.2%)   34 (33.0%)        103
-p50     570 (98.4%)     0 (0.0%)        579
-p90     724 (98.5%)     0 (0.0%)        735
-p95     791 (98.6%)     0 (0.0%)        802
-p99     908 (98.2%)     0 (0.0%)        925
+mean    582 (98.5%)     0 (0.0%)        591
+std      87 (93.5%)   29 (31.2%)         93
+p50     551 (98.2%)     0 (0.0%)        561
+p90     702 (98.6%)     0 (0.0%)        712
+p95     748 (98.6%)     0 (0.0%)        759
+p99     849 (98.4%)     0 (0.0%)        863
+
+# Time breakdown, svc=rate, type=non_err_svc_er
+
+     processing_lat queueing_lat  total_lat
+mean    582 (98.5%)     0 (0.0%)        591
+std      87 (93.5%)   29 (31.2%)         93
+p50     551 (98.2%)     0 (0.0%)        561
+p90     702 (98.6%)     0 (0.0%)        712
+p95     748 (98.6%)     0 (0.0%)        759
+p99     849 (98.4%)     0 (0.0%)        863
+
+# Time breakdown, svc=rate, type=err_svc_er
+
+Empty DataFrame
+Columns: []
+Index: []
+
