@@ -115,7 +115,7 @@ def get_time_breakdown(data):
 
     # Calculate percentages and format output
     pct_data = {}
-    for col in ["processing_lat", "queueing_lat"]:
+    for col in ["compute_lat", "io_lat"]:
         pct_data[col] = []
         for idx in combined_stats.index:
             absolute = combined_stats.loc[idx, col]
@@ -126,8 +126,8 @@ def get_time_breakdown(data):
     # Create final result DataFrame
     result = pd.DataFrame(
         {
-            "processing_lat": pct_data["processing_lat"],
-            "queueing_lat": pct_data["queueing_lat"],
+            "compute_lat": pct_data["compute_lat"],
+            "io_lat": pct_data["io_lat"],
             "total_lat": combined_stats["total_lat"],
         },
         index=combined_stats.index,
@@ -153,24 +153,18 @@ def get_service_breakdown(results_dict, stat_func):
     frontend_values = service_stats["frontend"]
 
     for service, values in service_stats.items():
-        queue_pct = (
-            values["queueing_lat"] / frontend_values["queueing_lat"] * 100
-        ).round(1)
+        io_pct = (values["io_lat"] / frontend_values["io_lat"] * 100).round(1)
         total_pct = (values["total_lat"] / frontend_values["total_lat"] * 100).round(1)
 
-        # Format output strings:
-        # - Processing latency: absolute value only
-        # - Queueing latency: absolute value and percentage of frontend queueing
-        # - Total latency: absolute value and percentage of frontend total
-        proc_str = f"{values['processing_lat']}"
-        queue_str = f"{values['queueing_lat']} ({queue_pct}%)"
+        compute_str = f"{values['compute_lat']}"
+        io_str = f"{values['io_lat']} ({io_pct}%)"
         total_str = f"{values['total_lat']} ({total_pct}%)"
 
         # Create row entry for current service
         row = {
             "service": service,
-            "processing_lat": proc_str,
-            "queueing_lat": queue_str,
+            "compute_lat": compute_str,
+            "io_lat": io_str,
             "total_lat": total_str,
         }
         breakdown_data.append(row)
