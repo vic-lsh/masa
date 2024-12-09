@@ -19,23 +19,23 @@ fi
 features=""
 parallel=0
 
-docker_username=vicsli
+docker_username=dengwxn
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --features)
-            features="$2"
-            shift 2
-            ;;
-        --par)
-            parallel=1
-            shift 1
-            ;;
-        *)
-            echo "Unknown argument: $1"
-            exit 1
-            ;;
+    --features)
+        features="$2"
+        shift 2
+        ;;
+    --par)
+        parallel=1
+        shift 1
+        ;;
+    *)
+        echo "Unknown argument: $1"
+        exit 1
+        ;;
     esac
 done
 
@@ -72,9 +72,9 @@ else
     echo "Building docker images in parallel."
 
     declare -A svc_pid_map
-    
+
     declare -a pids
-    
+
     # Function to handle errors
     handle_error() {
         local pid=$1
@@ -87,7 +87,7 @@ else
             fi
         done
     }
-    
+
     build_docker_img() {
         local svc=$1
         local pid=$$
@@ -99,7 +99,7 @@ else
             return 1
         fi
     }
-    
+
     # Build docker images in parallel
     for svc in "${services[@]}"; do
         build_docker_img "$svc" >/dev/null 2>&1 &
@@ -108,9 +108,9 @@ else
         svc_pid_map[$svc]=$pid
         echo "Started building docker image for service '$svc' at pid $pid."
     done
-    
+
     failed=0
-    
+
     # Wait for all processes to complete and check their exit status
     for pid in "${pids[@]}"; do
         if ! wait $pid; then
@@ -118,7 +118,7 @@ else
             failed=1
         fi
     done
-    
+
     echo "-----------------------------------"
     if [ $failed -eq 1 ]; then
         echo "One or more processes failed" >&2
