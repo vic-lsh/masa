@@ -1,0 +1,6 @@
+# Request type breakdown, latency=total
+
+                type                 sum
+0         good_total  1139102760 (37.9%)
+1   err_svc_er_total  1851223879 (61.5%)
+2  err_cl_miss_total     18954137 (0.6%)

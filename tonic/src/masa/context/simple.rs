@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         Arc, Mutex, RwLock,
     },
     task::Poll,
@@ -35,8 +35,12 @@ pub struct SimpleParentContext {
     server_ctx: Arc<ServerContext>,
 
     will_early_return: AtomicBool,
-    polled: AtomicUsize,
-    request_start: Instant,
+    num_polled: AtomicUsize,
+    start_exec: Instant,
+    last_before_poll: AtomicU64,
+    last_after_poll: AtomicU64,
+    compute_lat: AtomicU64,
+    io_lat: AtomicU64,
 
     child_ctxs: Arc<Mutex<Vec<SimpleChildContext>>>,
 }
@@ -148,8 +152,12 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
             ctx,
             server_ctx,
             will_early_return: AtomicBool::new(false),
-            polled: AtomicUsize::new(0),
-            request_start: Instant::now(),
+            num_polled: AtomicUsize::new(0),
+            start_exec: Instant::now(),
+            last_before_poll: AtomicU64::new(0),
+            last_after_poll: AtomicU64::new(0),
+            compute_lat: AtomicU64::new(0),
+            io_lat: AtomicU64::new(0),
             child_ctxs: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -247,6 +255,14 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
         //     }
         // }
 
+        let now = time_now();
+        self.last_before_poll.store(now, Ordering::Release);
+        let last_after_poll = self.last_after_poll.load(Ordering::Acquire);
+        if last_after_poll != 0 {
+            let io_lat = now - last_after_poll;
+            self.io_lat.fetch_add(io_lat, Ordering::Release);
+        }
+
         if self.check_early_return() {
             return Some(Err(self.issue_early_return()));
         }
@@ -257,6 +273,13 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Option<Result<Response<Ret>, Status>> {
+        let now = time_now();
+        self.last_after_poll.store(now, Ordering::Release);
+        let last_before_poll = self.last_before_poll.load(Ordering::Acquire);
+        assert!(last_before_poll != 0);
+        let compute_lat = now - last_before_poll;
+        self.compute_lat.fetch_add(compute_lat, Ordering::Release);
+
         match poll {
             Poll::Pending => {
                 if self.check_early_return() {
@@ -269,22 +292,26 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
-        if self.check_early_return() {
+        let check_early_return = self.check_early_return();
+        log::warn!(
+            "finalize, ctx: {:?}, method: {:?}, check_early_return: {}, compute_lat: {}, io_lat: {}, total_lat: {}",
+            self as *const _,
+            self.method.id(),
+            check_early_return,
+            self.compute_lat.load(Ordering::Acquire),
+            self.io_lat.load(Ordering::Acquire),
+            self.start_exec.elapsed().as_micros()
+        );
+
+        if check_early_return {
             return;
         }
-
-        // log::info!(
-        //     "parent_ctx, finalize, method: {:?}, polled: {} times, elapsed: {} us",
-        //     self.method.id(),
-        //     self.polled.load(Ordering::Relaxed),
-        //     self.request_start.elapsed().as_micros()
-        // );
         log::info!(
             "finalize, ctx: {:?}, method: {:?}, child_ctxs: {}, elapsed: {} us",
             self as *const _,
             self.method.id(),
             self.child_ctxs.lock().unwrap().len(),
-            self.request_start.elapsed().as_micros()
+            self.start_exec.elapsed().as_micros()
         );
 
         for child_ctx in self.child_ctxs.lock().unwrap().iter_mut() {

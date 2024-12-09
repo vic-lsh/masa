@@ -13,10 +13,7 @@ pub struct LatencyTracker {
 }
 
 impl LatencyTracker {
-    pub fn new(
-        span_id: SpanId,
-        capacity: usize,
-    ) -> Self {
+    pub fn new(span_id: SpanId, capacity: usize) -> Self {
         assert!(capacity >= 100, "Capacity should be no less than 100");
         LatencyTracker {
             span_id,
@@ -53,7 +50,7 @@ impl LatencyTracker {
         }
 
         log::warn!(
-            "span_id: {:?}, mean: {}us, p50: {}us, p90: {}us, p95: {}us, p99: {}us",
+            "update, span_id: {:?}, mean: {} us, p50: {} us, p90: {} us, p95: {} us, p99: {} us",
             self.span_id,
             self.mean,
             self.percentile(50),

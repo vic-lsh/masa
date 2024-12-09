@@ -224,6 +224,56 @@ def plot_goodput_cmp_bar(
     plt.savefig(fig_name)
 
 
+def plot_time_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
+    rps_values = [result["rps"] for result in results]
+    keys = ["good_total", "err_svc_er_total", "err_cl_miss_total"]
+    labels = ["Good Total", "Error Svc Early Return Total", "Error Client Miss Total"]
+    errors = [[result[key] for result in results] for key in keys]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    x = np.arange(len(rps_values))
+    xs: List = []
+    if len(keys) == 2:
+        width = 0.3
+        xs = [x - width * 0.5, x + width * 0.5]
+    elif len(keys) == 3:
+        width = 0.2
+        xs = [x - width, x, x + width]
+    elif len(keys) == 4:
+        width = 0.15
+        xs = [x - width * 1.5, x - width * 0.5, x + width * 0.5, x + width * 1.5]
+    elif len(keys) == 5:
+        width = 0.12
+        xs = [x - width * 2, x - width, x, x + width, x + width * 2]
+
+    bars: List = []
+    for i in range(len(keys)):
+        bars.append(
+            ax.bar(
+                xs[i],
+                errors[i],
+                width,
+                label=labels[i],
+                color=COLORS[i],
+                edgecolor="black",
+                linewidth=1,
+            )
+        )
+
+    ax.set_xlabel("RPS")
+    ax.set_ylabel("Time (ms)")
+    ax.set_title(f"Time ({mode})")
+    ax.set_xticks(x)
+    ax.set_xticklabels(rps_values)
+    ax.legend(loc="upper left", fontsize=fontsize_small)
+
+    fig.tight_layout()
+    plt.grid(True, axis="y", linewidth=0.5)
+    os.makedirs(os.path.dirname(fig_name), exist_ok=True)
+    plt.savefig(fig_name)
+
+
 def plot_tail_bar(results: List[Dict[str, Any]], fig_name: str, mode: str):
     rps_values = [result["rps"] for result in results]
     keys = ["mean", "p50", "p90", "p95", "p99"]
