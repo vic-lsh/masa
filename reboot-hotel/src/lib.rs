@@ -99,7 +99,7 @@ pub async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
         )
         .unwrap();
     }
-    log::warn!("Traces fetched");
+    log::warn!("All traces fetched");
 }
 
 pub struct JsonParser {}
@@ -278,7 +278,7 @@ pub struct McPool {
 
 impl McPool {
     pub fn new(addr: String, max_conns: usize) -> Self {
-        log::warn!("MC connect to {}", addr);
+        log::warn!("MC connecting to {}...", addr);
         Self {
             pool: Pool::new(max_conns),
             addr,

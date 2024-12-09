@@ -79,69 +79,70 @@ impl LoadGenerator {
             init_at + Duration::from_secs(self.gen_cfg.warmup_secs + self.gen_cfg.duration_secs);
 
         let cnt_all = Arc::new(AtomicUsize::new(0));
-        let cnt_success = Arc::new(AtomicUsize::new(0));
-        let cnt_err_svc = Arc::new(AtomicUsize::new(0));
-        let cnt_err_client = Arc::new(AtomicUsize::new(0));
-        let cnt_err_client_ot = Arc::new(AtomicUsize::new(0));
+        let cnt_good = Arc::new(AtomicUsize::new(0));
+        let cnt_err_svc_er = Arc::new(AtomicUsize::new(0));
+        let cnt_err_cl_miss = Arc::new(AtomicUsize::new(0));
+        let cnt_err_cl_to = Arc::new(AtomicUsize::new(0));
 
         let cnt_err_search = Arc::new(AtomicUsize::new(0));
-        let cnt_err_reserve = Arc::new(AtomicUsize::new(0));
+        let cnt_err_reservation = Arc::new(AtomicUsize::new(0));
 
         let cnt_all_clone = cnt_all.clone();
-        let cnt_success_clone = cnt_success.clone();
-        let cnt_err_svc_clone = cnt_err_svc.clone();
-        let cnt_err_client_clone = cnt_err_client.clone();
-        let cnt_err_client_ot_clone = cnt_err_client_ot.clone();
+        let cnt_good_clone = cnt_good.clone();
+        let cnt_err_svc_er_clone = cnt_err_svc_er.clone();
+        let cnt_err_cl_miss_clone = cnt_err_cl_miss.clone();
+        let cnt_err_cl_to_clone = cnt_err_cl_to.clone();
+
         let cnt_err_search_clone = cnt_err_search.clone();
-        let cnt_err_reserve_clone = cnt_err_reserve.clone();
+        let cnt_err_reservation_clone = cnt_err_reservation.clone();
 
         tokio::task::spawn(async move {
             let mut all_prev = 0;
-            let mut succ_prev = 0;
-            let mut err_svc_prev = 0;
-            let mut err_client_prev = 0;
-            let mut err_client_to_prev = 0;
+            let mut good_prev = 0;
+            let mut err_svc_er_prev = 0;
+            let mut err_cl_miss_prev = 0;
+            let mut err_cl_to_prev = 0;
             let mut secs = 0;
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 let all = cnt_all_clone.load(Ordering::Relaxed);
-                let succ = cnt_success_clone.load(Ordering::Relaxed);
-                let err_svc = cnt_err_svc_clone.load(Ordering::Relaxed);
-                let err_client = cnt_err_client_clone.load(Ordering::Relaxed);
-                let err_client_ot = cnt_err_client_ot_clone.load(Ordering::Relaxed);
+                let good = cnt_good_clone.load(Ordering::Relaxed);
+                let err_svc_er = cnt_err_svc_er_clone.load(Ordering::Relaxed);
+                let err_cl_miss = cnt_err_cl_miss_clone.load(Ordering::Relaxed);
+                let err_cl_to = cnt_err_cl_to_clone.load(Ordering::Relaxed);
                 let err_search = cnt_err_search_clone.load(Ordering::Relaxed);
-                let err_reserve = cnt_err_reserve_clone.load(Ordering::Relaxed);
+                let err_reserve = cnt_err_reservation_clone.load(Ordering::Relaxed);
 
                 secs += 1;
 
                 let rps = all - all_prev;
-                let good_ps = succ - succ_prev;
-                let err_svc_ps = err_svc - err_svc_prev;
-                let err_cl_ps = err_client - err_client_prev;
-                let err_cl_ot_ps = err_client_ot - err_client_to_prev;
+                let good_ps = good - good_prev;
+                let err_svc_er_ps = err_svc_er - err_svc_er_prev;
+                let err_cl_miss_ps = err_cl_miss - err_cl_miss_prev;
+                let err_cl_to_ps = err_cl_to - err_cl_to_prev;
                 log::warn!(
-                    "secs: {}, rps: {}, good: {}, err_svc: {} err_cl: {}, err_cl_ot: {}",
+                    "secs: {}, rps: {}, good: {}, err_svc_er: {} err_cl_miss: {}, err_cl_to: {}",
                     secs,
                     rps,
                     good_ps,
-                    err_svc_ps,
-                    err_cl_ps,
-                    err_cl_ot_ps,
+                    err_svc_er_ps,
+                    err_cl_miss_ps,
+                    err_cl_to_ps,
                 );
                 log::warn!(
-                    "secs: {}, err_svc_sum: {}, err_cl_sum: {}, err_cl_ot_sum: {}, err_search: {}, err_reserve: {}",
+                    "secs: {}, err_svc_er_sum: {}, err_cl_miss_sum: {}, err_cl_to_sum: {}, err_search: {}, err_reserve: {}",
                     secs,
-                    err_svc,
-                    err_client,
-                    err_client_ot,
+                    err_svc_er,
+                    err_cl_miss,
+                    err_cl_to,
                     err_search,
                     err_reserve,
                 );
                 all_prev = all;
-                succ_prev = succ;
-                err_svc_prev = err_svc;
-                err_client_prev = err_client;
-                err_client_to_prev = err_client_ot;
+                good_prev = good;
+                err_svc_er_prev = err_svc_er;
+                err_cl_miss_prev = err_cl_miss;
+                err_cl_to_prev = err_cl_to;
 
                 if Instant::now() > pause_at {
                     break;
@@ -204,10 +205,10 @@ impl LoadGenerator {
             let mut client = self.client.clone();
             let trace_tx = self.trace_tx.clone();
             let all = cnt_all.clone();
-            let good = cnt_success.clone();
-            let err_svc = cnt_err_svc.clone();
-            let err_client = cnt_err_client.clone();
-            let err_client_ot = cnt_err_client_ot.clone();
+            let good = cnt_good.clone();
+            let err_svc_er = cnt_err_svc_er.clone();
+            let err_cl_miss = cnt_err_cl_miss.clone();
+            let err_cl_to = cnt_err_cl_to.clone();
 
             if api == "Search" {
                 let request = {
@@ -230,19 +231,19 @@ impl LoadGenerator {
                                     if let Err(ref status) = response {
                                         status.message().to_string()
                                     } else if latency > ctx.slo() {
-                                        "/LGMiss".to_string()
+                                        "/ClientMiss".to_string()
                                     } else {
                                         "/None".to_string()
                                     }
                                 };
-                                if error == "/None" {
+                                if error.contains("None") {
                                     good.fetch_add(1, Ordering::Relaxed);
                                 } else {
                                     err_search.fetch_add(1, Ordering::Relaxed);
-                                    if error == "/LGMiss" {
-                                        err_client.fetch_add(1, Ordering::Relaxed);
+                                    if error.contains("ClientMiss") {
+                                        err_cl_miss.fetch_add(1, Ordering::Relaxed);
                                     } else if error.contains("EarlyReturn") {
-                                        err_svc.fetch_add(1, Ordering::Relaxed);
+                                        err_svc_er.fetch_add(1, Ordering::Relaxed);
                                     } else {
                                         panic!("Unimplemented error: {}", error);
                                     }
@@ -254,8 +255,8 @@ impl LoadGenerator {
                         Err(_) => {
                             if Instant::now() > trace_at {
                                 err_search.fetch_add(1, Ordering::Relaxed);
-                                err_client_ot.fetch_add(1, Ordering::Relaxed);
-                                let error = "/LGTimeout".to_string();
+                                err_cl_to.fetch_add(1, Ordering::Relaxed);
+                                let error = "/ClientTimeout".to_string();
                                 let span = Span::new(ctx, 0, error);
                                 trace_tx.try_send(span).unwrap();
                             }
@@ -269,7 +270,7 @@ impl LoadGenerator {
                     request
                 };
 
-                let err_reserve = cnt_err_reserve.clone();
+                let err_reservation = cnt_err_reservation.clone();
                 tokio::task::spawn(async move {
                     let send_at = time_now();
                     let timeout_duration = Duration::from_secs(1);
@@ -284,19 +285,19 @@ impl LoadGenerator {
                                     if let Err(ref status) = response {
                                         status.message().to_string()
                                     } else if latency > ctx.slo() {
-                                        "/LGMiss".to_string()
+                                        "/ClientMiss".to_string()
                                     } else {
                                         "/None".to_string()
                                     }
                                 };
-                                if error == "/None" {
+                                if error.contains("None") {
                                     good.fetch_add(1, Ordering::Relaxed);
                                 } else {
-                                    err_reserve.fetch_add(1, Ordering::Relaxed);
-                                    if error == "/LGMiss" {
-                                        err_client.fetch_add(1, Ordering::Relaxed);
+                                    err_reservation.fetch_add(1, Ordering::Relaxed);
+                                    if error.contains("ClientMiss") {
+                                        err_cl_miss.fetch_add(1, Ordering::Relaxed);
                                     } else if error.contains("EarlyReturn") {
-                                        err_svc.fetch_add(1, Ordering::Relaxed);
+                                        err_svc_er.fetch_add(1, Ordering::Relaxed);
                                     } else {
                                         panic!("Unimplemented error: {}", error);
                                     }
@@ -307,9 +308,9 @@ impl LoadGenerator {
                         }
                         Err(_) => {
                             if Instant::now() > trace_at {
-                                err_reserve.fetch_add(1, Ordering::Relaxed);
-                                err_client_ot.fetch_add(1, Ordering::Relaxed);
-                                let error = "/LGTimeout".to_string();
+                                err_reservation.fetch_add(1, Ordering::Relaxed);
+                                err_cl_to.fetch_add(1, Ordering::Relaxed);
+                                let error = "/ClientTimeout".to_string();
                                 let span = Span::new(ctx, 0, error);
                                 trace_tx.try_send(span).unwrap();
                             }

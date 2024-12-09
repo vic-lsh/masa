@@ -1,0 +1,26 @@
+# Time breakdown, svc=geo, type=all
+
+     processing_lat queueing_lat  total_lat
+mean      3 (33.3%)     0 (0.0%)          9
+std       1 (25.0%)     0 (0.0%)          4
+p50       3 (33.3%)     0 (0.0%)          9
+p90       5 (41.7%)     0 (0.0%)         12
+p95       6 (42.9%)     0 (0.0%)         14
+p99       7 (23.3%)     0 (0.0%)         30
+
+# Time breakdown, svc=geo, type=non_err_svc_er
+
+     processing_lat queueing_lat  total_lat
+mean      3 (33.3%)     0 (0.0%)          9
+std       1 (25.0%)     0 (0.0%)          4
+p50       3 (33.3%)     0 (0.0%)          9
+p90       5 (41.7%)     0 (0.0%)         12
+p95       6 (42.9%)     0 (0.0%)         14
+p99       7 (23.3%)     0 (0.0%)         30
+
+# Time breakdown, svc=geo, type=err_svc_er
+
+Empty DataFrame
+Columns: []
+Index: []
+

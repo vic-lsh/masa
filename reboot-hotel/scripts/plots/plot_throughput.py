@@ -26,16 +26,16 @@ for rps in cfg["Rps"]:
         ]
         result["goodput"] += round(len(df_filtered) / cfg["DurationSecs"])
 
-    df_filtered = df[df["error"] == "/LGMiss"]
+    df_filtered = df[df["error"] == "/ClientMiss"]
     result["lg_miss"] = round(len(df_filtered) / cfg["DurationSecs"])
 
-    df_filtered = df[df["error"] == "/LGTimeout"]
+    df_filtered = df[df["error"] == "/ClientTimeout"]
     result["lg_timeout"] = round(len(df_filtered) / cfg["DurationSecs"])
 
     df_filtered = df[df["error"].str.contains("EarlyReturn")]
     result["early_return"] = round(len(df_filtered) / cfg["DurationSecs"])
 
-    errors = ["/None", "/LGMiss", "/LGTimeout"]
+    errors = ["/None", "/ClientMiss", "/ClientTimeout"]
     df_filtered = df[
         (~df["error"].isin(errors)) & (~df["error"].str.contains("EarlyReturn"))
     ]
@@ -68,10 +68,10 @@ for i, api in enumerate(cfg["Apis"]):
         ]
         result["goodput"] = round(len(df_filtered) / cfg["DurationSecs"])
 
-        df_filtered = df[df["error"] == "/LGMiss"]
+        df_filtered = df[df["error"] == "/ClientMiss"]
         result["lg_miss"] = round(len(df_filtered) / cfg["DurationSecs"])
 
-        df_filtered = df[df["error"] == "/LGTimeout"]
+        df_filtered = df[df["error"] == "/ClientTimeout"]
         result["lg_timeout"] = round(len(df_filtered) / cfg["DurationSecs"])
 
         df_filtered = df[
@@ -79,7 +79,7 @@ for i, api in enumerate(cfg["Apis"]):
         ]
         result["early_return"] = round(len(df_filtered) / cfg["DurationSecs"])
 
-        errors = ["/None", "/LGMiss", "/LGTimeout"]
+        errors = ["/None", "/ClientMiss", "/ClientTimeout"]
         df_filtered = df[
             (~df["error"].isin(errors)) & (~df["error"].str.contains("EarlyReturn"))
         ]

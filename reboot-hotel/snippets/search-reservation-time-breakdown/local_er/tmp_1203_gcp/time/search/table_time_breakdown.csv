@@ -1,0 +1,26 @@
+# Time breakdown, svc=search, type=all
+
+     processing_lat  queueing_lat  total_lat
+mean    200 (12.0%)  1456 (87.3%)       1668
+std       36 (9.7%)  373 (100.5%)        371
+p50     190 (12.4%)  1319 (85.8%)       1538
+p90     257 (11.6%)  2016 (91.1%)       2214
+p95     278 (11.4%)  2228 (91.7%)       2430
+p99     307 (10.4%)  2750 (93.2%)       2951
+
+# Time breakdown, svc=search, type=non_err_svc_er
+
+     processing_lat  queueing_lat  total_lat
+mean    200 (12.0%)  1456 (87.3%)       1668
+std       36 (9.7%)  373 (100.5%)        371
+p50     190 (12.4%)  1319 (85.8%)       1538
+p90     257 (11.6%)  2016 (91.1%)       2214
+p95     278 (11.4%)  2228 (91.7%)       2430
+p99     307 (10.4%)  2750 (93.2%)       2951
+
+# Time breakdown, svc=search, type=err_svc_er
+
+Empty DataFrame
+Columns: []
+Index: []
+
