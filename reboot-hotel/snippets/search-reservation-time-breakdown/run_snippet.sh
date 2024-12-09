@@ -7,7 +7,7 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 fi
 
 folder=snippets/search-reservation-time-breakdown
-data=tmp_1203_gcp
+data=tmp_1209_gcp
 
 # echo "Running fifo..."
 # $pwd/scripts/local/run_all.sh \
