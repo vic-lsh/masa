@@ -111,7 +111,7 @@ impl LoadGenerator {
                 let err_cl_miss = cnt_err_cl_miss_clone.load(Ordering::Relaxed);
                 let err_cl_to = cnt_err_cl_to_clone.load(Ordering::Relaxed);
                 let err_search = cnt_err_search_clone.load(Ordering::Relaxed);
-                let err_reserve = cnt_err_reservation_clone.load(Ordering::Relaxed);
+                let err_reservation = cnt_err_reservation_clone.load(Ordering::Relaxed);
 
                 secs += 1;
 
@@ -130,13 +130,13 @@ impl LoadGenerator {
                     err_cl_to_ps,
                 );
                 log::warn!(
-                    "secs: {}, err_svc_er_sum: {}, err_cl_miss_sum: {}, err_cl_to_sum: {}, err_search: {}, err_reserve: {}",
+                    "secs: {}, err_svc_er_sum: {}, err_cl_miss_sum: {}, err_cl_to_sum: {}, err_search: {}, err_reservation: {}",
                     secs,
                     err_svc_er,
                     err_cl_miss,
                     err_cl_to,
                     err_search,
-                    err_reserve,
+                    err_reservation,
                 );
                 all_prev = all;
                 good_prev = good;
