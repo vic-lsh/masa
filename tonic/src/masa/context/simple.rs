@@ -39,8 +39,8 @@ pub struct SimpleParentContext {
     start_exec: Instant,
     last_before_poll: AtomicU64,
     last_after_poll: AtomicU64,
-    processing_lat: AtomicU64,
-    queueing_lat: AtomicU64,
+    compute_lat: AtomicU64,
+    io_lat: AtomicU64,
 
     child_ctxs: Arc<Mutex<Vec<SimpleChildContext>>>,
 }
@@ -156,8 +156,8 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
             start_exec: Instant::now(),
             last_before_poll: AtomicU64::new(0),
             last_after_poll: AtomicU64::new(0),
-            processing_lat: AtomicU64::new(0),
-            queueing_lat: AtomicU64::new(0),
+            compute_lat: AtomicU64::new(0),
+            io_lat: AtomicU64::new(0),
             child_ctxs: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -259,8 +259,8 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
         self.last_before_poll.store(now, Ordering::Release);
         let last_after_poll = self.last_after_poll.load(Ordering::Acquire);
         if last_after_poll != 0 {
-            let queueing_lat = now - last_after_poll;
-            self.queueing_lat.fetch_add(queueing_lat, Ordering::Release);
+            let io_lat = now - last_after_poll;
+            self.io_lat.fetch_add(io_lat, Ordering::Release);
         }
 
         if self.check_early_return() {
@@ -277,9 +277,8 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
         self.last_after_poll.store(now, Ordering::Release);
         let last_before_poll = self.last_before_poll.load(Ordering::Acquire);
         assert!(last_before_poll != 0);
-        let processing_lat = now - last_before_poll;
-        self.processing_lat
-            .fetch_add(processing_lat, Ordering::Release);
+        let compute_lat = now - last_before_poll;
+        self.compute_lat.fetch_add(compute_lat, Ordering::Release);
 
         match poll {
             Poll::Pending => {
@@ -295,12 +294,12 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
         let check_early_return = self.check_early_return();
         log::warn!(
-            "finalize, ctx: {:?}, method: {:?}, check_early_return: {}, processing_lat: {}, queueing_lat: {}, total_lat: {}",
+            "finalize, ctx: {:?}, method: {:?}, check_early_return: {}, compute_lat: {}, io_lat: {}, total_lat: {}",
             self as *const _,
             self.method.id(),
             check_early_return,
-            self.processing_lat.load(Ordering::Acquire),
-            self.queueing_lat.load(Ordering::Acquire),
+            self.compute_lat.load(Ordering::Acquire),
+            self.io_lat.load(Ordering::Acquire),
             self.start_exec.elapsed().as_micros()
         );
 

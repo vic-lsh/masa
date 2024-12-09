@@ -12,8 +12,8 @@
 		1200
 	],
 	"Gap": "const",
-	"WarmupSecs": 30,
-	"DurationSecs": 60,
+	"WarmupSecs": 20,
+	"DurationSecs": 40,
 	"Concurrency": 0,
 	"Addr": "http://[::1]:8660"
 }
