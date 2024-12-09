@@ -1,0 +1,26 @@
+# Time breakdown, svc=search, type=all
+
+      compute_lat        io_lat  total_lat
+mean  208 (12.1%)  1506 (87.3%)       1726
+std    40 (10.2%)  396 (100.5%)        394
+p50   195 (12.2%)  1365 (85.6%)       1594
+p90   277 (12.1%)  2072 (90.9%)       2280
+p95   294 (11.6%)  2328 (91.5%)       2545
+p99   319 (10.3%)  2889 (93.4%)       3094
+
+# Time breakdown, svc=search, type=non_err_svc_er
+
+      compute_lat        io_lat  total_lat
+mean  208 (12.1%)  1506 (87.3%)       1726
+std    40 (10.2%)  396 (100.5%)        394
+p50   195 (12.2%)  1365 (85.6%)       1594
+p90   277 (12.1%)  2072 (90.9%)       2280
+p95   294 (11.6%)  2328 (91.5%)       2545
+p99   319 (10.3%)  2889 (93.4%)       3094
+
+# Time breakdown, svc=search, type=err_svc_er
+
+Empty DataFrame
+Columns: []
+Index: []
+
