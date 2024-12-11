@@ -1,9 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    kompose.cmd: kompose convert -f containers+svcs.yaml
-    kompose.version: 1.34.0 (cbf2835db)
   labels:
     io.kompose.service: profile-service
   name: profile-service
@@ -14,16 +11,12 @@ spec:
       io.kompose.service: profile-service
   template:
     metadata:
-      annotations:
-        kompose.cmd: kompose convert -f containers+svcs.yaml
-        kompose.version: 1.34.0 (cbf2835db)
       labels:
         io.kompose.service: profile-service
     spec:
       containers:
-        - image: vicsli/hotel_profile:latest
+        - image: dengwxn/hotel_profile:latest
           name: hotel-profile
-          # imagePullPolicy: Never
           ports:
             - containerPort: 8660
               protocol: TCP
