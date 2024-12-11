@@ -1,9 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    kompose.cmd: kompose convert -f containers+svcs.yaml
-    kompose.version: 1.34.0 (cbf2835db)
   labels:
     io.kompose.service: reservation-memcached
   name: reservation-memcached
@@ -14,9 +11,6 @@ spec:
       io.kompose.service: reservation-memcached
   template:
     metadata:
-      annotations:
-        kompose.cmd: kompose convert -f containers+svcs.yaml
-        kompose.version: 1.34.0 (cbf2835db)
       labels:
         io.kompose.service: reservation-memcached
     spec:
@@ -25,7 +19,7 @@ spec:
             - --port
             - "11005"
             - --threads
-            - "6"
+            - "4"
           image: memcached:1.6
           name: reservation-memcached
           ports:
@@ -33,5 +27,5 @@ spec:
               protocol: TCP
           resources:
             limits:
-              cpu: "6"
+              cpu: "4"
       restartPolicy: Always
