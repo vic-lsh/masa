@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: reservation-service
+  name: reservation-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: reservation-service
+  template:
+    metadata:
+      labels:
+        io.kompose.service: reservation-service
+    spec:
+      containers:
+        - image: dengwxn/hotel_reservation:latest
+          name: hotel-reservation
+          ports:
+            - containerPort: 8660
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "1"
+      restartPolicy: Always
