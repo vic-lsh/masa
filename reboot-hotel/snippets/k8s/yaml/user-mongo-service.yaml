@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    io.kompose.service: user-mongo
+  name: user-mongo
+spec:
+  ports:
+    - name: "27006"
+      port: 27006
+      targetPort: 27006
+  selector:
+    io.kompose.service: user-mongo

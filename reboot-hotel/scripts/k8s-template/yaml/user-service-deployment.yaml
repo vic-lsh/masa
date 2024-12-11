@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: user-service
+  name: user-service
+spec:
+  replicas: ${REPLICAS_USER}
+  selector:
+    matchLabels:
+      io.kompose.service: user-service
+  template:
+    metadata:
+      labels:
+        io.kompose.service: user-service
+    spec:
+      containers:
+        - image: dengwxn/hotel_user:latest
+          name: hotel-user
+          ports:
+            - containerPort: 8660
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "1"
+      restartPolicy: Always
