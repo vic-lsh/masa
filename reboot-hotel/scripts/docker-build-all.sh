@@ -19,7 +19,13 @@ fi
 features=""
 parallel=0
 
-docker_username=dengwxn
+whoami=$(whoami)
+if [[ "$whoami" == "wxdeng" ]]; then
+    docker_username="dengwxn"
+else
+    echo "Error: unknown user name" >&2
+    exit 1
+fi
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
