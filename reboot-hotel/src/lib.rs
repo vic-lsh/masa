@@ -161,7 +161,7 @@ impl<T> Pool<T> {
 
     pub async fn get_or_create_async<'a, Fut: Future<Output = T>>(
         &'a self,
-        factory: impl FnOnce() -> Fut,
+        factory: impl Fn() -> Fut,
     ) -> PoolItemRef<'a, T> {
         {
             // fast path
@@ -228,6 +228,10 @@ impl<T> Pool<T> {
         }
     }
 
+    fn release_one(&self) {
+        self.size.fetch_sub(1, Ordering::Relaxed);
+    }
+
     pub fn len(&self) -> usize {
         self.inner.lock().unwrap().len()
     }
@@ -237,6 +241,7 @@ pub struct PoolItemRef<'a, T> {
     // [Note] it is always initialized from the perspective of the users.
     // The field only becomes uninitialized in Drop.
     item: MaybeUninit<T>,
+    discarded: bool,
     pool: &'a Pool<T>,
 }
 
@@ -245,6 +250,7 @@ impl<'a, T> PoolItemRef<'a, T> {
     fn new(item: T, pool: &'a Pool<T>) -> Self {
         Self {
             item: MaybeUninit::new(item),
+            discarded: false,
             pool,
         }
     }
@@ -268,6 +274,25 @@ impl<'a, T> DerefMut for PoolItemRef<'a, T> {
     }
 }
 
+impl<'a, T> PoolItemRef<'a, T> {
+    pub fn discard(mut self) {
+        self.discard_impl();
+    }
+
+    pub async fn replace<Fut>(mut self, factory: impl Fn() -> Fut) -> PoolItemRef<'a, T>
+    where
+        Fut: Future<Output = T>,
+    {
+        self.discard_impl();
+        self.pool.get_or_create_async(factory).await
+    }
+
+    fn discard_impl(&mut self) {
+        self.discarded = true;
+        self.pool.release_one();
+    }
+}
+
 impl<'a, T> Drop for PoolItemRef<'a, T> {
     fn drop(&mut self) {
         let item = {
@@ -277,7 +302,44 @@ impl<'a, T> Drop for PoolItemRef<'a, T> {
             // de-initialized.
             unsafe { item.assume_init() }
         };
-        self.pool.put(item)
+        if !self.discarded {
+            self.pool.put(item);
+        }
+    }
+}
+
+pub struct McPoolItemRef<'a> {
+    item: PoolItemRef<'a, McClient>,
+    addr: &'a str,
+}
+
+impl<'a> McPoolItemRef<'a> {
+    pub async fn replace(mut self) -> McPoolItemRef<'a> {
+        let item = self
+            .item
+            .replace(|| async { McClient::new(&self.addr).await.unwrap() })
+            .await;
+        Self::new(self.addr, item)
+    }
+}
+
+impl<'a> Deref for McPoolItemRef<'a> {
+    type Target = McClient;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.item
+    }
+}
+
+impl<'a> DerefMut for McPoolItemRef<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *self.item
+    }
+}
+
+impl<'a> McPoolItemRef<'a> {
+    fn new(addr: &'a str, item: PoolItemRef<'a, McClient>) -> Self {
+        Self { item, addr }
     }
 }
 
@@ -295,9 +357,11 @@ impl McPool {
         }
     }
 
-    pub async fn get<'a>(&'a self) -> PoolItemRef<'a, McClient> {
-        self.pool
+    pub async fn get<'a>(&'a self) -> McPoolItemRef<'a> {
+        let pool_item_ref = self
+            .pool
             .get_or_create_async(|| async { McClient::new(&self.addr).await.unwrap() })
-            .await
+            .await;
+        McPoolItemRef::new(self.addr.as_str(), pool_item_ref)
     }
 }
