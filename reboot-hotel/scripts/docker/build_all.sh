@@ -16,6 +16,7 @@ if [[ "$pwd" != */reboot-hotel ]]; then
     exit 1
 fi
 
+tag=""
 features=""
 parallel=0
 
@@ -30,11 +31,15 @@ fi
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+    --tag)
+        tag="$2"
+        shift 2
+        ;;
     --features)
         features="$2"
         shift 2
         ;;
-    --par)
+    --parallel)
         parallel=1
         shift 1
         ;;
@@ -46,12 +51,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validate required arguments
+if [[ -z "$tag" ]]; then
+    echo "Error: --tag argument is required"
+    exit 1
+fi
 if [[ -z "$features" ]]; then
-    echo "Warn: --features not set."
+    echo "Error: --features argument is required"
+    exit 1
 fi
 
-echo "Building all hotel services. Feature flags: $features."
-
+echo "Compiling hotel services with features $features..."
 if [[ -z "$features" ]]; then
     cmd="cargo build --release"
 else
@@ -60,25 +69,28 @@ fi
 output=$(eval "$cmd" 2>&1)
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
-    echo "Build failed with exit code $exit_code"
+    echo "Failed to compile hotel services"
     echo "Output:"
     echo "$output"
     exit $exit_code
 fi
 
 if [ $parallel -eq 0 ]; then
-    echo "Building docker images sequentially."
+    echo "Building docker images sequentially..."
 
     set -e
     for svc in "${services[@]}"; do
-        ./scripts/docker-build.sh --binary $svc
+        ./scripts/docker/build.sh --tag $tag --binary $svc
     done
 
+    for svc in "${services[@]}"; do
+        docker tag $svc:$tag $docker_username/$svc:$tag
+        docker push $docker_username/$svc:$tag
+    done
 else
-    echo "Building docker images in parallel."
+    echo "Building docker images in parallel..."
 
     declare -A svc_pid_map
-
     declare -a pids
 
     # Function to handle errors
@@ -94,11 +106,12 @@ else
         done
     }
 
-    build_docker_img() {
+    build_and_push_docker_img() {
         local svc=$1
         local pid=$$
-        if ./scripts/docker-build.sh --binary "$svc"; then
-            #echo "Process $pid completed successfully"
+        if ./scripts/docker/build.sh --tag $tag --binary "$svc"; then
+            docker tag $svc:$tag $docker_username/$svc:$tag
+            docker push $docker_username/$svc:$tag
             return 0
         else
             echo "Process $pid failed"
@@ -108,11 +121,11 @@ else
 
     # Build docker images in parallel
     for svc in "${services[@]}"; do
-        build_docker_img "$svc" >/dev/null 2>&1 &
+        build_and_push_docker_img "$svc" >/dev/null 2>&1 &
         pid=$!
         pids+=($pid)
         svc_pid_map[$svc]=$pid
-        echo "Started building docker image for service '$svc' at pid $pid."
+        echo "Building docker image for service $svc at pid $pid..."
     done
 
     failed=0
@@ -125,17 +138,12 @@ else
         fi
     done
 
-    echo "-----------------------------------"
     if [ $failed -eq 1 ]; then
-        echo "One or more processes failed" >&2
+        echo "Failed to build some of the services" >&2
         exit 1
     else
-        echo "All processes completed successfully"
-        exit 0
+        echo "Successfully built all the services"
     fi
 fi
 
-for svc in "${services[@]}"; do
-    docker tag $svc:latest $docker_username/$svc:latest
-    docker push $docker_username/$svc:latest
-done
+echo "Successfully pushed all the docker images with tag $tag"
