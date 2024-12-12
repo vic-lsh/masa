@@ -6,6 +6,7 @@ pub mod hotel {
 use futures::StreamExt;
 #[cfg(feature = "workload_stats")]
 use reboot_hotel::AvgTracker;
+use reboot_hotel::McPool;
 #[cfg(not(feature = "synthetic"))]
 use std::collections::HashSet;
 use tokio::sync::Mutex;
@@ -41,7 +42,8 @@ struct SyntheticRate {
 }
 
 pub struct RateImpl {
-    memc_client: Arc<memcache::Client>,
+    mc_pool: Arc<McPool>,
+    // memc_client: Arc<memcache::Client>,
     mongo_client: Arc<MongoClient>,
     latency_tracker: Arc<Mutex<LatencyTracker>>,
     #[cfg(feature = "workload_stats")]
@@ -58,7 +60,7 @@ impl RateImpl {
         #[allow(unused)] cache_miss_rate: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn Error>> {
-        let memc_client = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
+        // let memc_client = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
         let mongo_client = db::initialize_database(&db_addr).await?;
 
         let latency_tracker = Arc::new(Mutex::new(LatencyTracker::new("RateSvc".into(), 1024)));
@@ -84,8 +86,14 @@ impl RateImpl {
             (rng, uniform)
         };
 
+        let cache_addr = cache_addr
+            .strip_prefix("memcache://")
+            .map(|addr| format!("tcp://{}", addr))
+            .unwrap()
+            .to_owned();
         Ok(Self {
-            memc_client: Arc::new(memc_client),
+            mc_pool: Arc::new(McPool::new(cache_addr, 256)),
+            // memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
             latency_tracker,
             #[cfg(feature = "workload_stats")]
@@ -122,23 +130,21 @@ impl Rate for RateImpl {
 
         let mut rate_plans = Vec::new();
 
+        let mut mc = self.mc_pool.get().await;
         // Check memcached first
-        let hotel_ids_ref: Vec<_> = request.hotel_ids.iter().map(|id| id.as_str()).collect();
-        let memc_resp = self
-            .memc_client
-            .gets(&hotel_ids_ref)
-            .map_err(|e| tonic::Status::internal(format!("Memcached error: {}", e)))?;
-
-        for (hotel_id, item) in memc_resp {
-            if let Ok(value) = String::from_utf8(item) {
-                for rate_str in value.split('\n') {
-                    if !rate_str.is_empty() {
-                        if let Ok(rate_plan) = serde_json::from_str::<db::RatePlan>(rate_str) {
-                            rate_plans.push(rate_plan);
+        if let Ok(mc_resp) = mc.get_multi(&request.hotel_ids).await {
+            for entry in mc_resp {
+                let hotel_id = String::from_utf8(entry.key).expect("hotel id should be valid");
+                if let Ok(value) = String::from_utf8(entry.data) {
+                    for rate_str in value.split('\n') {
+                        if !rate_str.is_empty() {
+                            if let Ok(rate_plan) = serde_json::from_str::<db::RatePlan>(rate_str) {
+                                rate_plans.push(rate_plan);
+                            }
                         }
                     }
+                    rate_set.remove(&hotel_id);
                 }
-                rate_set.remove(&hotel_id);
             }
         }
 
@@ -151,7 +157,7 @@ impl Rate for RateImpl {
             .map(|hotel_id| {
                 let rate_plans_clone = Arc::clone(&rate_plans);
                 let mongo_client = Arc::clone(&self.mongo_client);
-                let memc_client = Arc::clone(&self.memc_client);
+                let mc_pool = Arc::clone(&self.mc_pool);
 
                 tokio::spawn(async move {
                     let collection = mongo_client
@@ -182,7 +188,8 @@ impl Rate for RateImpl {
                     // Update memcached asynchronously
                     if !memc_str.is_empty() {
                         tokio::spawn(async move {
-                            let _ = memc_client.set(&hotel_id, memc_str.as_bytes(), 0);
+                            let mut mc = mc_pool.get().await;
+                            let _ = mc.set(&hotel_id, memc_str.as_bytes(), None, None).await;
                         });
                     }
                 })
