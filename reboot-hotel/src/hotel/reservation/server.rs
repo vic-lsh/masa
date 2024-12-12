@@ -475,7 +475,7 @@ impl Reservation for ReservationImpl {
                 current_date = current_date + chrono::Duration::days(1);
                 let out_date_str = current_date.format("%Y-%m-%d").to_string();
 
-                let memc_key = format!("{}_{}_{}", hotel_id, out_date_str, out_date_str);
+                let memc_key = format!("{}_{}_{}", hotel_id, in_date_str, out_date_str);
 
                 req_commands.push(memc_key.clone());
                 query_map.insert(memc_key, (hotel_id.clone(), in_date_str, out_date_str));
