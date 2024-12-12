@@ -21,6 +21,10 @@ use tonic::{Request, Response, Status};
 
 use hotel::{reservation, reservation::reservation_server::Reservation};
 
+fn is_mc_protocol_err<T>(mc_resp: &Result<T, async_memcached::Error>) -> bool {
+    matches!(mc_resp, Err(async_memcached::Error::Protocol(_)))
+}
+
 // #[derive(Debug, Clone, Serialize, Deserialize)]
 // pub struct Hotel {
 //     name: String,
@@ -438,10 +442,11 @@ impl Reservation for ReservationImpl {
 
                     let key = format!("{}_cap", num.hotel_id);
                     let value = num.number.to_string();
-                    mc_client
-                        .set(&key, value.as_bytes(), None, None)
-                        .await
-                        .expect("CheckAvail hotel cap writeback should succeed");
+                    let resp = mc_client.set(&key, value.as_bytes(), None, None).await;
+                    if is_mc_protocol_err(&resp) {
+                        log::error!("CheckAvail hotel cap writeback should succeed");
+                        mc_client = mc_client.replace().await;
+                    }
                 }
             }
         }
