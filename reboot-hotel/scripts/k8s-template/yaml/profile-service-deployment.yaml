@@ -15,7 +15,7 @@ spec:
         io.kompose.service: profile-service
     spec:
       containers:
-        - image: dengwxn/hotel_profile:latest
+        - image: dengwxn/hotel_profile:${TAG}
           name: hotel-profile
           ports:
             - containerPort: 8660

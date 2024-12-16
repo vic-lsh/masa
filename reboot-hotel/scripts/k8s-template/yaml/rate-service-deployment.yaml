@@ -15,7 +15,7 @@ spec:
         io.kompose.service: rate-service
     spec:
       containers:
-        - image: dengwxn/hotel_rate:latest
+        - image: dengwxn/hotel_rate:${TAG}
           name: hotel-rate
           ports:
             - containerPort: 8660
