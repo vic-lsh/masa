@@ -15,7 +15,7 @@ spec:
         io.kompose.service: reservation-service
     spec:
       containers:
-        - image: dengwxn/hotel_reservation:latest
+        - image: dengwxn/hotel_reservation:${TAG}
           name: hotel-reservation
           ports:
             - containerPort: 8660

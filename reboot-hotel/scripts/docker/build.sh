@@ -42,8 +42,10 @@ cp ../target/release/$binary tmp/
 
 echo "Building docker image for service $binary..."
 docker build -f Dockerfile.template \
+    --build-arg TAG=$tag \
     --build-arg BINARY_PATH=tmp \
     --build-arg BINARY_NAME=$binary \
     --build-arg SNIPPET_PATH=./snippets/search-reservation \
     --build-arg HOTEL_CONFIG=hotel_config.json \
     -t $binary:$tag .
+# [CL] Update `SNIPPET_PATH`.

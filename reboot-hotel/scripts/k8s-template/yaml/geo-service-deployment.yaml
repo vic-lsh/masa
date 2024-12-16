@@ -15,7 +15,7 @@ spec:
         io.kompose.service: geo-service
     spec:
       containers:
-        - image: dengwxn/hotel_geo:latest
+        - image: dengwxn/hotel_geo:${TAG}
           name: hotel-geo
           ports:
             - containerPort: 8660

@@ -7,6 +7,7 @@ from typing import *
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str)
+    parser.add_argument("--tag", type=str)
     parser.add_argument("--input-path", type=str)
     parser.add_argument("--output-path", type=str)
     args = parser.parse_args()
@@ -15,6 +16,8 @@ def parse_args() -> argparse.Namespace:
 
 args = parse_args()
 cfg = json.load(open(args.config))
+# cfg["TAG"] = args.tag
+cfg["TAG"] = "latest"
 os.makedirs(args.output_path, exist_ok=True)
 
 

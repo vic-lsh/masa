@@ -15,7 +15,7 @@ spec:
         io.kompose.service: user-service
     spec:
       containers:
-        - image: dengwxn/hotel_user:latest
+        - image: dengwxn/hotel_user:${TAG}
           name: hotel-user
           ports:
             - containerPort: 8660

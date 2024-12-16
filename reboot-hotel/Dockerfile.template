@@ -2,12 +2,16 @@
 FROM debian:bookworm-slim
 
 # Define build arguments for binary name and config file
+ARG TAG
 ARG BINARY_PATH
 ARG BINARY_NAME
 ARG SNIPPET_PATH
 ARG HOTEL_CONFIG
 
 # Verify required build arguments are provided
+RUN if [ -z "$TAG" ]; then \
+    echo "Error: TAG argument is required" && exit 1; \
+    fi
 RUN if [ -z "$BINARY_PATH" ]; then \
     echo "Error: BINARY_PATH argument is required" && exit 1; \
     fi
@@ -21,6 +25,7 @@ RUN if [ -z "$HOTEL_CONFIG" ]; then \
     echo "Error: HOTEL_CONFIG argument is required" && exit 1; \
     fi
 
+ENV TAG=${TAG}
 ENV BINARY_NAME=${BINARY_NAME}
 ENV HOTEL_CONFIG=${HOTEL_CONFIG}
 
@@ -42,6 +47,7 @@ RUN mkdir -p /app/config && \
 # Copy the binary and config file from build context
 COPY ${BINARY_PATH}/${BINARY_NAME} /app/
 COPY ${SNIPPET_PATH}/${HOTEL_CONFIG} /app/config/
+# [CL] Copy all the snippet/tag related files into the container.
 
 # Set proper permissions
 RUN chown appuser:appuser /app/${BINARY_NAME} && \
