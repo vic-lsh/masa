@@ -60,7 +60,7 @@ if [[ -z "$features" ]]; then
     exit 1
 fi
 
-echo "Compiling hotel services with features $features..."
+echo "Building hotel services with features $features..."
 if [[ -z "$features" ]]; then
     cmd="cargo build --release"
 else
