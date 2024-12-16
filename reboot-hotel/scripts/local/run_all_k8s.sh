@@ -124,16 +124,17 @@ build_services() {
 
 preprocess_k8s_yaml() {
     echo "Preprocessing k8s yaml..."
-    python3 $pwd/scripts/k8s-template/preprocess.py \
+    python3 $pwd/scripts/k8s-template/preprocess_yaml.py \
+        --tag $tag \
         --config $folder/k8s_config.json \
         --input-path $pwd/scripts/k8s-template/yaml \
-        --output-path $folder/yaml
+        --output-path $folder/$tag/yaml
 }
 
 deploy_k8s_yaml() {
     echo "Deploying k8s yaml..."
-    kubectl apply -f $folder/yaml
-    if ! kubectl rollout status deployment --timeout 180s; then
+    kubectl apply -f $folder/$tag/yaml
+    if ! kubectl rollout status deployment --timeout 360s; then
         kubectl get deployments
         echo "Failed to deploy k8s yaml" >&2
         exit 1
@@ -142,7 +143,7 @@ deploy_k8s_yaml() {
 
 forward_k8s_port() {
     echo "Forwarding k8s port..."
-    kill $(lsof -t -i:8660) > /dev/null 2>&1
+    kill $(lsof -t -i:8660) >/dev/null 2>&1
     kubectl port-forward service/frontend-service 8660:8660
 }
 
@@ -192,9 +193,10 @@ $run_cmd"
     tmux kill-session -t $session_name
 }
 
+reset_k8s &
 init_all &
 build_client &
-# build_services &
+build_services &
 preprocess_k8s_yaml &
 wait
 
@@ -203,3 +205,4 @@ forward_k8s_port &
 pid=$!
 run_client
 kill $pid
+reset_k8s

@@ -46,17 +46,17 @@ impl FrontendImpl {
         profile_addr: String,
         user_addr: String,
     ) -> Self {
-        let channel = LoadBalancedChannel::builder(("reservation-service", 8660))
-            .channel()
-            .await
-            .expect("Failed to connect to reservation");
-        let reservation_client = ReservationClient::new(channel);
-
         let channel = LoadBalancedChannel::builder(("search-service", 8660))
             .channel()
             .await
             .expect("Failed to connect to search");
         let search_client = SearchClient::new(channel);
+
+        let channel = LoadBalancedChannel::builder(("reservation-service", 8660))
+            .channel()
+            .await
+            .expect("Failed to connect to reservation");
+        let reservation_client = ReservationClient::new(channel);
 
         let channel = LoadBalancedChannel::builder(("profile-service", 8660))
             .channel()
