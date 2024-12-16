@@ -5,7 +5,7 @@ metadata:
     io.kompose.service: reservation-service
   name: reservation-service
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       io.kompose.service: reservation-service
@@ -15,7 +15,7 @@ spec:
         io.kompose.service: reservation-service
     spec:
       containers:
-        - image: dengwxn/hotel_reservation:latest
+        - image: dengwxn/hotel_reservation:fifo
           name: hotel-reservation
           ports:
             - containerPort: 8660

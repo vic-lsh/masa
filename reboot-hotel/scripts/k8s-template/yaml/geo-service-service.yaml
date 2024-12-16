@@ -5,6 +5,7 @@ metadata:
     io.kompose.service: geo-service
   name: geo-service
 spec:
+  clusterIP: None
   ports:
     - name: "8660"
       port: 8660

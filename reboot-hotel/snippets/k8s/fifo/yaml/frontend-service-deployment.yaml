@@ -15,7 +15,7 @@ spec:
         io.kompose.service: frontend-service
     spec:
       containers:
-        - image: dengwxn/hotel_frontend:latest
+        - image: dengwxn/hotel_frontend:fifo
           name: hotel-frontend
           ports:
             - containerPort: 8660
