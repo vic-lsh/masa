@@ -142,6 +142,7 @@ deploy_k8s_yaml() {
 
 forward_k8s_port() {
     echo "Forwarding k8s port..."
+    kill $(lsof -t -i:8660) > /dev/null 2>&1
     kubectl port-forward service/frontend-service 8660:8660
 }
 
@@ -192,9 +193,8 @@ $run_cmd"
 }
 
 init_all &
-# reset_k8s &
 build_client &
-build_services &
+# build_services &
 preprocess_k8s_yaml &
 wait
 
@@ -203,5 +203,3 @@ forward_k8s_port &
 pid=$!
 run_client
 kill $pid
-
-# reset_k8s
