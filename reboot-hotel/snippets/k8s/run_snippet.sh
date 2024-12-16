@@ -7,7 +7,7 @@ if [[ "$pwd" != */reboot-hotel ]]; then
 fi
 
 folder=snippets/k8s
-data=tmp_1215_barbell
+data=tmp_1216_barbell
 
 tags=(
 	fifo

@@ -5,7 +5,7 @@ metadata:
     io.kompose.service: search-service
   name: search-service
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       io.kompose.service: search-service
@@ -15,7 +15,7 @@ spec:
         io.kompose.service: search-service
     spec:
       containers:
-        - image: dengwxn/hotel_search:latest
+        - image: dengwxn/hotel_search:fifo
           name: hotel-search
           ports:
             - containerPort: 8660
