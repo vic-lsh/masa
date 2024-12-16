@@ -235,38 +235,38 @@ impl LoadGenerator {
                     let response = timeout(timeout_duration, client.handle_search(request)).await;
                     match response {
                         Ok(response) => {
-                            if Instant::now() > trace_at {
-                                let recv_at = time_now();
-                                let latency = recv_at - send_at;
-                                let error = {
-                                    if let Err(ref status) = response {
-                                        status.message().to_string()
-                                    } else if latency > ctx.slo() {
-                                        "/LGMiss".to_string()
-                                    } else {
-                                        "/None".to_string()
-                                    }
-                                };
-                                if error == "/None" {
-                                    good.fetch_add(1, Ordering::Relaxed);
+                            let recv_at = time_now();
+                            let latency = recv_at - send_at;
+                            let error = {
+                                if let Err(ref status) = response {
+                                    status.message().to_string()
+                                } else if latency > ctx.slo() {
+                                    "/LGMiss".to_string()
                                 } else {
-                                    err_search.fetch_add(1, Ordering::Relaxed);
-                                    if error == "/LGMiss" {
-                                        err_client.fetch_add(1, Ordering::Relaxed);
-                                    } else if error.contains("EarlyReturn") {
-                                        err_svc.fetch_add(1, Ordering::Relaxed);
-                                    } else {
-                                        panic!("Unimplemented error: {}", error);
-                                    }
+                                    "/None".to_string()
                                 }
+                            };
+                            if error == "/None" {
+                                good.fetch_add(1, Ordering::Relaxed);
+                            } else {
+                                err_search.fetch_add(1, Ordering::Relaxed);
+                                if error == "/LGMiss" {
+                                    err_client.fetch_add(1, Ordering::Relaxed);
+                                } else if error.contains("EarlyReturn") {
+                                    err_svc.fetch_add(1, Ordering::Relaxed);
+                                } else {
+                                    panic!("Unimplemented error: {}", error);
+                                }
+                            }
+                            if Instant::now() > trace_at {
                                 let span = Span::new(ctx, latency, error);
                                 trace_tx.try_send(span).unwrap();
                             }
                         }
                         Err(_) => {
+                            err_search.fetch_add(1, Ordering::Relaxed);
+                            err_client_ot.fetch_add(1, Ordering::Relaxed);
                             if Instant::now() > trace_at {
-                                err_search.fetch_add(1, Ordering::Relaxed);
-                                err_client_ot.fetch_add(1, Ordering::Relaxed);
                                 let error = "/LGTimeout".to_string();
                                 let span = Span::new(ctx, 0, error);
                                 trace_tx.try_send(span).unwrap();
@@ -289,38 +289,38 @@ impl LoadGenerator {
                         timeout(timeout_duration, client.handle_reservation(request)).await;
                     match response {
                         Ok(response) => {
-                            if Instant::now() > trace_at {
-                                let recv_at = time_now();
-                                let latency = recv_at - send_at;
-                                let error = {
-                                    if let Err(ref status) = response {
-                                        status.message().to_string()
-                                    } else if latency > ctx.slo() {
-                                        "/LGMiss".to_string()
-                                    } else {
-                                        "/None".to_string()
-                                    }
-                                };
-                                if error == "/None" {
-                                    good.fetch_add(1, Ordering::Relaxed);
+                            let recv_at = time_now();
+                            let latency = recv_at - send_at;
+                            let error = {
+                                if let Err(ref status) = response {
+                                    status.message().to_string()
+                                } else if latency > ctx.slo() {
+                                    "/LGMiss".to_string()
                                 } else {
-                                    err_reserve.fetch_add(1, Ordering::Relaxed);
-                                    if error == "/LGMiss" {
-                                        err_client.fetch_add(1, Ordering::Relaxed);
-                                    } else if error.contains("EarlyReturn") {
-                                        err_svc.fetch_add(1, Ordering::Relaxed);
-                                    } else {
-                                        panic!("Unimplemented error: {}", error);
-                                    }
+                                    "/None".to_string()
                                 }
+                            };
+                            if error == "/None" {
+                                good.fetch_add(1, Ordering::Relaxed);
+                            } else {
+                                err_reserve.fetch_add(1, Ordering::Relaxed);
+                                if error == "/LGMiss" {
+                                    err_client.fetch_add(1, Ordering::Relaxed);
+                                } else if error.contains("EarlyReturn") {
+                                    err_svc.fetch_add(1, Ordering::Relaxed);
+                                } else {
+                                    panic!("Unimplemented error: {}", error);
+                                }
+                            }
+                            if Instant::now() > trace_at {
                                 let span = Span::new(ctx, latency, error);
                                 trace_tx.try_send(span).unwrap();
                             }
                         }
                         Err(_) => {
+                            err_reserve.fetch_add(1, Ordering::Relaxed);
+                            err_client_ot.fetch_add(1, Ordering::Relaxed);
                             if Instant::now() > trace_at {
-                                err_reserve.fetch_add(1, Ordering::Relaxed);
-                                err_client_ot.fetch_add(1, Ordering::Relaxed);
                                 let error = "/LGTimeout".to_string();
                                 let span = Span::new(ctx, 0, error);
                                 trace_tx.try_send(span).unwrap();
