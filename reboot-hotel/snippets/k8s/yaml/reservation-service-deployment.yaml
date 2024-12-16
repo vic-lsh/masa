@@ -5,7 +5,7 @@ metadata:
     io.kompose.service: reservation-service
   name: reservation-service
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       io.kompose.service: reservation-service
