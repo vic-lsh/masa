@@ -132,18 +132,30 @@ preprocess_k8s_yaml() {
 }
 
 deploy_k8s_yaml() {
+    kill $(lsof -t -i:8660) >/dev/null 2>&1
     echo "Deploying k8s yaml..."
     kubectl apply -f $folder/$tag/yaml
     if ! kubectl rollout status deployment --timeout 360s; then
         kubectl get deployments
-        echo "Failed to deploy k8s yaml" >&2
+        echo "Failed to get deployments ready" >&2
         exit 1
     fi
+    if ! kubectl wait --for=condition=Ready pods --all --timeout=360s; then
+        kubectl get pods
+        echo "Failed to get pods ready" >&2
+        exit 1
+    fi
+    until kubectl get endpoints frontend-service -o jsonpath='{.subsets[*].addresses[*]}' | grep -q .; do
+        echo "Waiting for endpoint frontend-service ready..."
+        sleep 3
+    done
+    kubectl get endpoints
+    echo "Waiting for cold war..."
+    sleep 30
 }
 
 forward_k8s_port() {
     echo "Forwarding k8s port..."
-    kill $(lsof -t -i:8660) >/dev/null 2>&1
     kubectl port-forward service/frontend-service 8660:8660
 }
 
@@ -196,7 +208,7 @@ $run_cmd"
 reset_k8s &
 init_all &
 build_client &
-build_services &
+# build_services &
 preprocess_k8s_yaml &
 wait
 
@@ -205,4 +217,4 @@ forward_k8s_port &
 pid=$!
 run_client
 kill $pid
-reset_k8s
+# reset_k8s
