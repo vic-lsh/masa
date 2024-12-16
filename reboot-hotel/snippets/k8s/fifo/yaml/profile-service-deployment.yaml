@@ -5,7 +5,7 @@ metadata:
     io.kompose.service: profile-service
   name: profile-service
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       io.kompose.service: profile-service
@@ -15,7 +15,7 @@ spec:
         io.kompose.service: profile-service
     spec:
       containers:
-        - image: dengwxn/hotel_profile:latest
+        - image: dengwxn/hotel_profile:fifo
           name: hotel-profile
           ports:
             - containerPort: 8660

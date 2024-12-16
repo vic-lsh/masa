@@ -5,7 +5,7 @@ metadata:
     io.kompose.service: geo-service
   name: geo-service
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       io.kompose.service: geo-service
@@ -15,7 +15,7 @@ spec:
         io.kompose.service: geo-service
     spec:
       containers:
-        - image: dengwxn/hotel_geo:latest
+        - image: dengwxn/hotel_geo:fifo
           name: hotel-geo
           ports:
             - containerPort: 8660

@@ -16,8 +16,7 @@ def parse_args() -> argparse.Namespace:
 
 args = parse_args()
 cfg = json.load(open(args.config))
-# cfg["TAG"] = args.tag
-cfg["TAG"] = "latest"
+cfg["TAG"] = args.tag
 os.makedirs(args.output_path, exist_ok=True)
 
 

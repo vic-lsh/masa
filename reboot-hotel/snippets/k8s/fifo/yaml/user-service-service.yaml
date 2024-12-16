@@ -5,6 +5,7 @@ metadata:
     io.kompose.service: user-service
   name: user-service
 spec:
+  clusterIP: None
   ports:
     - name: "8660"
       port: 8660

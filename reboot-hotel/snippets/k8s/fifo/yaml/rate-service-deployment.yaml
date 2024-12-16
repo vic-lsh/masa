@@ -5,7 +5,7 @@ metadata:
     io.kompose.service: rate-service
   name: rate-service
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       io.kompose.service: rate-service
@@ -15,7 +15,7 @@ spec:
         io.kompose.service: rate-service
     spec:
       containers:
-        - image: dengwxn/hotel_rate:latest
+        - image: dengwxn/hotel_rate:fifo
           name: hotel-rate
           ports:
             - containerPort: 8660

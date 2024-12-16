@@ -208,7 +208,7 @@ $run_cmd"
 reset_k8s &
 init_all &
 build_client &
-# build_services &
+build_services &
 preprocess_k8s_yaml &
 wait
 
