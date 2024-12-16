@@ -6,39 +6,35 @@ if [[ "$pwd" != */reboot-hotel ]]; then
     exit 1
 fi
 
+# tracker_capacity=512
+# pctl_deadline=50
+# pctl_latest_exec=50
+
+tag=""
+folder=""
 rust_log=warn
-tracker_capacity=512
-pctl_deadline=""
-pctl_latest_exec=""
 cargo_features=""
-output_path=""
 gen_config=""
 hotel_config=""
-repeats=1
+output_path=""
+session_name=hotel
+
 while [[ "$#" -gt 0 ]]; do
     case $1 in
+    --tag)
+        tag="$2"
+        shift
+        ;;
+    --folder)
+        folder="$2"
+        shift
+        ;;
     --rust-log)
         rust_log="$2"
         shift
         ;;
-    --tracker-capacity)
-        tracker_capacity="$2"
-        shift
-        ;;
-    --pctl-deadline)
-        pctl_deadline="$2"
-        shift
-        ;;
-    --pctl-latest-exec)
-        pctl_latest_exec="$2"
-        shift
-        ;;
     --cargo-features)
         cargo_features="$2"
-        shift
-        ;;
-    --output-path)
-        output_path="$2"
         shift
         ;;
     --gen-config)
@@ -49,8 +45,8 @@ while [[ "$#" -gt 0 ]]; do
         hotel_config="$2"
         shift
         ;;
-    --repeats)
-        repeats="$2"
+    --output-path)
+        output_path="$2"
         shift
         ;;
     *)
@@ -60,20 +56,16 @@ while [[ "$#" -gt 0 ]]; do
     esac
     shift
 done
-if [ -z "$pctl_deadline" ]; then
-    echo "Expected a percentile of deadline using --pctl-deadline"
+if [ -z "$tag" ]; then
+    echo "Expected a tag using --tag"
     exit 1
 fi
-if [ -z "$pctl_latest_exec" ]; then
-    echo "Expected a percentile of execution using --pctl-latest-exec"
+if [ -z "$folder" ]; then
+    echo "Expected a folder using --folder"
     exit 1
 fi
 if [ -z "$cargo_features" ]; then
-    echo "Expected a masa feature flag using --cargo_features"
-    exit 1
-fi
-if [ -z "$output_path" ]; then
-    echo "Expected an output path using --output-path"
+    echo "Expected cargo features using --cargo-features"
     exit 1
 fi
 if [ -z "$gen_config" ]; then
@@ -84,85 +76,84 @@ if [ -z "$hotel_config" ]; then
     echo "Expected a hotel config file using --hotel-config"
     exit 1
 fi
+if [ -z "$output_path" ]; then
+    echo "Expected an output path using --output-path"
+    exit 1
+fi
 
-session_name=hotel
-services=(
-    # hotel_geo
-    # hotel_rate
-    # hotel_search
-    # hotel_profile
-    # hotel_reservation
-    # hotel_user
-    # hotel_frontend
-    hotel_client_bench
-)
-waits_secs=(
-    # 0
-    # 0
-    # 15
-    # 0
-    # 0
-    # 0
-    # 18
-    # 21
-    0
-)
-
-init() {
-    if tmux has-session -t $session_name 2>/dev/null; then
-        tmux kill-session -t $session_name
-    fi
-    mkdir -p $output_path
-}
-
-build() {
-    echo "Building $cargo_features..."
-    cargo build \
-        --release \
-        --features $cargo_features \
-        >$output_path/tmp_build.log 2>&1
-}
-
-reset() {
-    rm $output_path/*.log
-    docker compose -f scripts/local/containers.yaml down --remove-orphans
-    # docker compose -f scripts/local/containers.yaml up -d
-}
-
-cleanup() {
-    echo "Cleaning up..."
+clean_up_session() {
+    echo "Cleaning up session..."
     if tmux has-session -t $session_name 2>/dev/null; then
         tmux kill-session -t $session_name
     fi
     exit 1
 }
 
-ready_go() {
-    run_idx=$1
+trap clean_up_session SIGINT SIGTERM
+
+init_all() {
+    echo "Initializing all..."
+    if tmux has-session -t $session_name 2>/dev/null; then
+        tmux kill-session -t $session_name
+    fi
+    mkdir -p $output_path
+    rm $output_path/*.log
+    docker compose -f scripts/local/containers.yaml down --remove-orphans
+    tmux new-session -d -s $session_name -n "local"
+    tmux set-option -s pane-border-status top
+    tmux set-option -s pane-border-format "#{pane_title}"
+}
+
+reset_k8s() {
+    echo "Resetting k8s..."
+    kubectl delete all --all
+}
+
+build_client() {
+    echo "Building client with features $cargo_features..."
+    cargo build \
+        --release \
+        --features $cargo_features \
+        >$output_path/tmp_build.log 2>&1
+}
+
+build_services() {
+    echo "Building services into docker images..."
+    $pwd/scripts/docker/build_all.sh --tag $tag --features $cargo_features --parallel
+}
+
+preprocess_k8s_yaml() {
+    echo "Preprocessing k8s yaml..."
+    python3 $pwd/scripts/k8s-template/preprocess.py \
+        --config $folder/k8s_config.json \
+        --input-path $pwd/scripts/k8s-template/yaml \
+        --output-path $folder/yaml
+}
+
+deploy_k8s_yaml() {
+    echo "Deploying k8s yaml..."
+    kubectl apply -f $folder/yaml
+    if ! kubectl rollout status deployment --timeout 180s; then
+        kubectl get deployments
+        echo "Failed to deploy k8s yaml" >&2
+        exit 1
+    fi
+}
+
+forward_k8s_port() {
+    echo "Forwarding k8s port..."
+    kubectl port-forward service/frontend-service 8660:8660
+}
+
+run_client() {
+    echo "Running client..."
 
     first_pane=true
 
-    for i in "${!services[@]}"; do
-        service=${services[$i]}
-        wait_secs=${waits_secs[$i]}
+    service=hotel_client_bench
+    waits_secs=0
 
-        if [[ "$service" != "hotel_client_bench" ]]; then
-
-            run_cmd=" \
-RUST_LOG=$rust_log \
-TRACKER_CAPACITY=$tracker_capacity \
-PCTL_DEADLINE=$pctl_deadline \
-PCTL_LATEST_EXEC=$pctl_latest_exec \
-cargo run --release \
---features $cargo_features \
---bin $service \
--- \
---config $hotel_config \
-> $output_path/tmp_$service.log 2>&1"
-
-        else
-
-            run_cmd=" \
+    run_cmd=" \
 RUST_LOG=$rust_log \
 TRACKER_CAPACITY=$tracker_capacity \
 PCTL_DEADLINE=$pctl_deadline \
@@ -174,53 +165,43 @@ cargo run --release \
 --gen-config $gen_config \
 --hotel-config $hotel_config \
 --output-path $output_path \
---run-idx $run_idx \
+--run-idx 0 \
 > $output_path/tmp_$service.log 2>&1"
 
-        fi
-
-        cmd=" \
+    cmd=" \
 cd $pwd; \
 sleep $wait_secs; \
 $run_cmd"
 
-        if [ "$first_pane" = true ]; then
-            tmux select-pane -T $service
-            first_pane=false
-        else
-            tmux split-window -h -t $session_name
-            tmux select-pane -T $service
-            tmux select-layout -t $session_name tiled
-        fi
-        tmux send-keys -t $session_name "$cmd" C-m
-    done
+    tmux select-pane -T $service
+    first_pane=false
+    tmux send-keys -t $session_name "$cmd" C-m
 
-    all_done=false
-    while [[ $all_done == false ]]; do
-        sleep 10
-        service=${services[-1]}
+    done=false
+    while [[ $done == false ]]; do
+        sleep 6
         if [ ! -f $output_path/tmp_$service.log ]; then
             continue
         fi
         if tail -n 1 $output_path/tmp_$service.log | grep -q "Load generator done"; then
-            all_done=true
+            done=true
         fi
     done
 
     tmux kill-session -t $session_name
 }
 
-trap cleanup SIGINT SIGTERM
-init
-build
+init_all &
+# reset_k8s &
+build_client &
+build_services &
+preprocess_k8s_yaml &
+wait
 
-for ((run = 0; run < repeats; run++)); do
-    echo "Starting run $run/$repeats..."
-    reset
+deploy_k8s_yaml
+forward_k8s_port &
+pid=$!
+run_client
+kill $pid
 
-    tmux new-session -d -s $session_name -n "local"
-    tmux set-option -s pane-border-status top
-    tmux set-option -s pane-border-format "#{pane_title}"
-
-    ready_go $run
-done
+# reset_k8s
