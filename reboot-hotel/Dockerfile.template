@@ -15,8 +15,6 @@ RUN if [ -z "$CONFIG_NAME" ]; then \
     echo "Error: CONFIG_NAME build argument is required" && exit 1; \
     fi
 
-ENV BINARY_NAME=${BINARY_NAME}
-ENV CONFIG_NAME=${CONFIG_NAME}
 
 RUN apt update
 RUN apt install -y openssl libssl-dev
@@ -49,8 +47,15 @@ USER appuser
 # Set working directory
 WORKDIR /app
 
-env TRACKER_CAPACITY=512
-env PCTL_DEADLINE=50
-env PCTL_LATEST_EXEC=50
-# Set the entrypoint to run the binary with config file
-CMD ./${BINARY_NAME} --config /app/config/${CONFIG_NAME}
+# masa environment variables
+ENV TRACKER_CAPACITY=512
+ENV PCTL_DEADLINE=50
+ENV PCTL_LATEST_EXEC=50
+
+# expose these build-time args as runtime env vars
+# so that the interpolation works correctly in CMD
+ENV BINARY_NAME=${BINARY_NAME}
+ENV CONFIG_NAME=${CONFIG_NAME}
+
+ENTRYPOINT [ "sh", "-c" ]
+CMD ["./${BINARY_NAME} --config /app/config/${CONFIG_NAME}"]
