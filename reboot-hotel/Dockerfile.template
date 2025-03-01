@@ -2,24 +2,34 @@
 FROM debian:bookworm-slim
 
 # Define build arguments for binary name and config file
+ARG TAG
+ARG BINARY_PATH
 ARG BINARY_NAME
-ARG BINARY_PATH=.  # Default to current directory, can be overridden
-ARG CONFIG_NAME
-ARG CONFIG_PATH=.  # Default to current directory, can be overridden
-
+ARG SNIPPET_PATH
+ARG HOTEL_CONFIG
 
 # Verify required build arguments are provided
+RUN if [ -z "$TAG" ]; then \
+    echo "Error: TAG argument is required" && exit 1; \
+    fi
+RUN if [ -z "$BINARY_PATH" ]; then \
+    echo "Error: BINARY_PATH argument is required" && exit 1; \
+    fi
 RUN if [ -z "$BINARY_NAME" ]; then \
-    echo "Error: BINARY_NAME build argument is required" && exit 1; \
+    echo "Error: BINARY_NAME argument is required" && exit 1; \
     fi
-RUN if [ -z "$CONFIG_NAME" ]; then \
-    echo "Error: CONFIG_NAME build argument is required" && exit 1; \
+RUN if [ -z "$SNIPPET_PATH" ]; then \
+    echo "Error: SNIPPET_PATH argument is required" && exit 1; \
+    fi
+RUN if [ -z "$HOTEL_CONFIG" ]; then \
+    echo "Error: HOTEL_CONFIG argument is required" && exit 1; \
     fi
 
+ENV TAG=${TAG}
 ENV BINARY_NAME=${BINARY_NAME}
-ENV CONFIG_NAME=${CONFIG_NAME}
+ENV HOTEL_CONFIG=${HOTEL_CONFIG}
 
-RUN apt-get update 
+RUN apt-get update
 RUN apt-get install -y openssl libssl-dev
 RUN apt-get install -y libc-bin wget
 
@@ -36,12 +46,13 @@ RUN mkdir -p /app/config && \
 
 # Copy the binary and config file from build context
 COPY ${BINARY_PATH}/${BINARY_NAME} /app/
-COPY ${CONFIG_PATH}/${CONFIG_NAME} /app/config/
+COPY ${SNIPPET_PATH}/${HOTEL_CONFIG} /app/config/
+# [CL] Copy all the snippet/tag related files into the container.
 
 # Set proper permissions
 RUN chown appuser:appuser /app/${BINARY_NAME} && \
     chmod +x /app/${BINARY_NAME} && \
-    chown appuser:appuser /app/config/${CONFIG_NAME}
+    chown appuser:appuser /app/config/${HOTEL_CONFIG}
 
 # Switch to non-root user
 USER appuser
@@ -53,4 +64,4 @@ ENV TRACKER_CAPACITY=512
 ENV PCTL_DEADLINE=50
 ENV PCTL_LATEST_EXEC=50
 # Set the entrypoint to run the binary with config file
-CMD ./${BINARY_NAME} --config /app/config/${CONFIG_NAME}
+CMD ./${BINARY_NAME} --config /app/config/${HOTEL_CONFIG}
