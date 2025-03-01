@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# This script is typically invoked by the k8s run script in snippets/k8s/run_snippet.sh.
+
 services=(
     "hotel_frontend"
     "hotel_geo"
@@ -21,12 +23,18 @@ features=""
 parallel=0
 
 whoami=$(whoami)
-if [[ "$whoami" == "wxdeng" ]]; then
-    docker_username="dengwxn"
-else
-    echo "Error: unknown user name" >&2
-    exit 1
-fi
+case $whoami in
+    wxdeng)
+        docker_username="dengwxn"
+        ;;
+    shli)
+        docker_username="vicsli"
+        ;;
+    *)
+        echo "Error: unknown user name $whoami" >&2
+        exit 1
+        ;;
+esac
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
