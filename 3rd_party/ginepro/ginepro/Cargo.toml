@@ -15,7 +15,7 @@ async-trait = "0.1"
 http = "1"
 thiserror = "1"
 tokio = { path = "../../tokio/tokio", features = ["full"] }
-tonic = { path = "../../../tonic", features = ["tls"] }
+tonic = { path = "../../../libs/tonic/tonic", features = ["tls"] }
 tower = { path = "../../tower/tower", default-features = false, features = ["discover"] }
 tracing = "0.1"
 trust-dns-resolver = { path = "../../trust-dns/crates/resolver" }

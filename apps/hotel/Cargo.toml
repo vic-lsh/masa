@@ -166,7 +166,7 @@ default = ["full"]
 
 [dependencies]
 # Reboot
-tonic-masa = { path = "../../tonic-masa" }
+tonic-masa = { path = "../../libs/tonic/tonic-masa" }
 async-executor = { path = "../../3rd_party/async-executor" }
 async-compat = "0.2.3"
 async-task = { path = "../../3rd_party/async-task" }
@@ -185,13 +185,13 @@ tokio = { path = "../../3rd_party/tokio/tokio", features = [
 	"macros",
 ] }
 prost = "0.12"
-tonic = { path = "../../tonic" }
+tonic = { path = "../../libs/tonic/tonic" }
 futures = "0.3"
 # Optional dependencies
-tonic-web = { path = "../../tonic-web", optional = true }
-tonic-health = { path = "../../tonic-health", optional = true }
-tonic-reflection = { path = "../../tonic-reflection", optional = true }
-tonic-types = { path = "../../tonic-types", optional = true }
+tonic-web = { path = "../../libs/tonic/tonic-web", optional = true }
+tonic-health = { path = "../../libs/tonic/tonic-health", optional = true }
+tonic-reflection = { path = "../../libs/tonic/tonic-reflection", optional = true }
+tonic-types = { path = "../../libs/tonic/tonic-types", optional = true }
 either = { version = "1.9", optional = true }
 async-stream = { version = "0.3", optional = true }
 tokio-stream = { path = "../../3rd_party/tokio/tokio-stream", optional = true }
@@ -229,4 +229,4 @@ ginepro = { path = "../../3rd_party/ginepro/ginepro" }
 
 
 [build-dependencies]
-tonic-build = { path = "../../tonic-build", features = ["prost"] }
+tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
