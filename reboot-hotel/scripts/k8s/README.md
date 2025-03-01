@@ -16,7 +16,7 @@ minikube start --driver=kvm2 --cpus=52 --memory=64g --disk-size=64g
 The first step is to build all docker images. To do so, run
 
 ```
-./scripts/docker-build-all.sh --features <feature-flags>
+./scripts/docker/build_all.sh --features <feature-flags>
 ```
 
 from the `reboot-hotel` directory.

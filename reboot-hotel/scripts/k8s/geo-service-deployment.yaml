@@ -1,9 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    kompose.cmd: kompose convert -f containers+svcs.yaml
-    kompose.version: 1.34.0 (cbf2835db)
   labels:
     io.kompose.service: geo-service
   name: geo-service
@@ -14,16 +11,12 @@ spec:
       io.kompose.service: geo-service
   template:
     metadata:
-      annotations:
-        kompose.cmd: kompose convert -f containers+svcs.yaml
-        kompose.version: 1.34.0 (cbf2835db)
       labels:
         io.kompose.service: geo-service
     spec:
       containers:
-        - image: vicsli/hotel_geo:latest
+        - image: dengwxn/hotel_geo:latest
           name: hotel-geo
-          #imagePullPolicy: Never
           ports:
             - containerPort: 8660
               protocol: TCP
