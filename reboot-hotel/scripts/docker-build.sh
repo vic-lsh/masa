@@ -89,7 +89,7 @@ else
     build_docker_img() {
         local svc=$1
         local pid=$$
-        if ./scripts/docker-build.sh --binary "$svc"; then
+        if ./scripts/docker-build-svc.sh --binary "$svc"; then
             #echo "Process $pid completed successfully"
             return 0
         else
