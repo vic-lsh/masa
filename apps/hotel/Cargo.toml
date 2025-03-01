@@ -166,37 +166,37 @@ default = ["full"]
 
 [dependencies]
 # Reboot
-tonic-masa = { path = "../tonic-masa" }
-async-executor = { path = "../3rd_party/async-executor" }
+tonic-masa = { path = "../../tonic-masa" }
+async-executor = { path = "../../3rd_party/async-executor" }
 async-compat = "0.2.3"
-async-task = { path = "../3rd_party/async-task" }
-smol = { path = "../3rd_party/smol" }
+async-task = { path = "../../3rd_party/async-task" }
+smol = { path = "../../3rd_party/smol" }
 futures-lite = { version = "2.0.0" }
 structopt = "0.3.23"
 crossbeam-channel = "0.5"
-mongodb = { path = "../3rd_party/mongodb" }
+mongodb = { path = "../../3rd_party/mongodb" }
 memcache = "0.16"
-async-memcached = { path = "../3rd_party/async-memcached" }
+async-memcached = { path = "../../3rd_party/async-memcached" }
 log = "0.4"
 env_logger = "0.9"
 # Common dependencies
-tokio = { path = "../3rd_party/tokio/tokio", features = [
+tokio = { path = "../../3rd_party/tokio/tokio", features = [
 	"rt-multi-thread",
 	"macros",
 ] }
 prost = "0.12"
-tonic = { path = "../tonic" }
+tonic = { path = "../../tonic" }
 futures = "0.3"
 # Optional dependencies
-tonic-web = { path = "../tonic-web", optional = true }
-tonic-health = { path = "../tonic-health", optional = true }
-tonic-reflection = { path = "../tonic-reflection", optional = true }
-tonic-types = { path = "../tonic-types", optional = true }
+tonic-web = { path = "../../tonic-web", optional = true }
+tonic-health = { path = "../../tonic-health", optional = true }
+tonic-reflection = { path = "../../tonic-reflection", optional = true }
+tonic-types = { path = "../../tonic-types", optional = true }
 either = { version = "1.9", optional = true }
 async-stream = { version = "0.3", optional = true }
-tokio-stream = { path = "../3rd_party/tokio/tokio-stream", optional = true }
-tokio-util = { path = "../3rd_party/tokio/tokio-util", optional = true }
-tower = { path = "../3rd_party/tower/tower", optional = true }
+tokio-stream = { path = "../../3rd_party/tokio/tokio-stream", optional = true }
+tokio-util = { path = "../../3rd_party/tokio/tokio-util", optional = true }
+tower = { path = "../../3rd_party/tower/tower", optional = true }
 rand = { version = "0.8", optional = true }
 rand_distr = "0.4"
 serde = { version = "1.0", features = ["derive"], optional = true }
@@ -209,12 +209,12 @@ tracing-subscriber = { version = "0.3", features = [
 prost-types = { version = "0.12", optional = true }
 http = { version = "0.2", optional = true }
 http-body = { version = "0.4.2", optional = true }
-hyper = { path = "../3rd_party/hyper", optional = true }
+hyper = { path = "../../3rd_party/hyper", optional = true }
 warp = { version = "0.3.4", default-features = false, optional = true }
 listenfd = { version = "1.0", optional = true }
 bytes = { version = "1", optional = true }
-h2 = { path = "../3rd_party/h2", optional = true }
-tokio-rustls = { path = "../3rd_party/tokio-rustls", optional = true }
+h2 = { path = "../../3rd_party/h2", optional = true }
+tokio-rustls = { path = "../../3rd_party/tokio-rustls", optional = true }
 hyper-rustls = { version = "0.24.0", features = ["http2"], optional = true }
 rustls-pemfile = { version = "1", optional = true }
 tower-http = { version = "0.4", optional = true }
@@ -225,8 +225,8 @@ kiddo = "4.2.1"
 # used by reservation service
 chrono = "0.4.38"
 # Used for client-side load balancing
-ginepro = { path = "../3rd_party/ginepro/ginepro" }
+ginepro = { path = "../../3rd_party/ginepro/ginepro" }
 
 
 [build-dependencies]
-tonic-build = { path = "../tonic-build", features = ["prost"] }
+tonic-build = { path = "../../tonic-build", features = ["prost"] }
