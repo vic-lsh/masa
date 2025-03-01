@@ -366,14 +366,14 @@ default = ["full"]
 
 [dependencies]
 async-compat = "0.2.3"
-smol = { path = "../3rd_party/smol" }
+smol = { path = "../../../3rd_party/smol" }
 futures-lite = { version = "2.0.0" }
 structopt = "0.3.23"
 crossbeam-channel = "0.5"
 tonic-masa = { path = "../tonic-masa" }
 
 # Common dependencies
-tokio = { path = "../3rd_party/tokio/tokio", features = [
+tokio = { path = "../../tokio/tokio", features = [
 	"rt-multi-thread",
 	"macros",
 ] }
@@ -387,9 +387,9 @@ tonic-reflection = { path = "../tonic-reflection", optional = true }
 tonic-types = { path = "../tonic-types", optional = true }
 either = { version = "1.9", optional = true }
 async-stream = { version = "0.3", optional = true }
-tokio-stream = { path = "../3rd_party/tokio/tokio-stream", optional = true }
-tokio-util = { path = "../3rd_party/tokio/tokio-util", optional = true }
-tower = { path = "../3rd_party/tower/tower", optional = true }
+tokio-stream = { path = "../../tokio/tokio-stream", optional = true }
+tokio-util = { path = "../../tokio/tokio-util", optional = true }
+tower = { path = "../../../3rd_party/tower/tower", optional = true }
 rand = { version = "0.8", optional = true }
 rand_distr = "0.4"
 serde = { version = "1.0", features = ["derive"], optional = true }
@@ -402,12 +402,12 @@ tracing-subscriber = { version = "0.3", features = [
 prost-types = { version = "0.12", optional = true }
 http = { version = "0.2", optional = true }
 http-body = { version = "0.4.2", optional = true }
-hyper = { path = "../3rd_party/hyper", optional = true }
+hyper = { path = "../../hyper", optional = true }
 warp = { version = "0.3.4", default-features = false, optional = true }
 listenfd = { version = "1.0", optional = true }
 bytes = { version = "1", optional = true }
-h2 = { path = "../3rd_party/h2", optional = true }
-tokio-rustls = { path = "../3rd_party/tokio-rustls", optional = true }
+h2 = { path = "../../../3rd_party/h2", optional = true }
+tokio-rustls = { path = "../../../3rd_party/tokio-rustls", optional = true }
 hyper-rustls = { version = "0.24.0", features = ["http2"], optional = true }
 rustls-pemfile = { version = "1", optional = true }
 tower-http = { version = "0.4", optional = true }

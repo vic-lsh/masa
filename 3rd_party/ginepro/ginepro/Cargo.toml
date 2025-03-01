@@ -14,8 +14,8 @@ anyhow = "1"
 async-trait = "0.1"
 http = "1"
 thiserror = "1"
-tokio = { path = "../../tokio/tokio", features = ["full"] }
-tonic = { path = "../../../tonic", features = ["tls"] }
+tokio = { path = "../../../libs/tokio/tokio", features = ["full"] }
+tonic = { path = "../../../libs/tonic/tonic", features = ["tls"] }
 tower = { path = "../../tower/tower", default-features = false, features = ["discover"] }
 tracing = "0.1"
 trust-dns-resolver = { path = "../../trust-dns/crates/resolver" }
@@ -26,4 +26,4 @@ shared-proto = { path = "../shared_proto" }
 tests = { path = "../tests" }
 
 [patch.crates-io]
-tokio = { path = "../../tokio/tokio", version = "1" }
+tokio = { path = "../../../libs/tokio/tokio", version = "1" }
