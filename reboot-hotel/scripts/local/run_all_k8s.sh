@@ -150,8 +150,6 @@ deploy_k8s_yaml() {
         sleep 3
     done
     kubectl get endpoints
-    echo "Waiting for cold war..."
-    sleep 30
 }
 
 forward_k8s_port() {
