@@ -10,14 +10,14 @@ Masa is implemented based on [Tonic](https://github.com/hyperium/tonic), [Hyper]
 
 ### Running the Hotel application
 
-Currently, Masa experiments based on the Hotel application in DeathStarBench. We've ported this application to Rust for Masa compatibility. The port is in `./reboot-hotel`.
+Currently, Masa experiments based on the Hotel application in DeathStarBench. We've ported this application to Rust for Masa compatibility. The port is in `./apps/hotel`.
 
 We include tooling to run the Hotel application in the following ways:
 
 #### Docker compose (single-server)
 
 ```bash
-cd reboot-hotel
+cd apps/hotel
 ./scripts/docker-build.sh         # build each svc as a rust binary; place binaries in docker containers.
 ./scripts/docker-start.sh         # start all services and their databases via docker compose
 ./scripts/docker-stop.sh          # stop all containers in docker compose
@@ -31,7 +31,7 @@ Running the Hotel application contains many configuration choices, including but
 2. Server queueing policy (FIFO? Deadline-based?)
 3. Workload generation (How many requests per second? Does this change over time?)
 
-We have included scripts to simplify configuration. The scripts are in the `reboot-hotel/snippets` folder. Snippets are grouped into sub-folders of workflow combinations. For example, `single/search` only runs search, whereas `search-reservation` generates requests for both workflows in parallel.
+We have included scripts to simplify configuration. The scripts are in the `apps/hotel/snippets` folder. Snippets are grouped into sub-folders of workflow combinations. For example, `single/search` only runs search, whereas `search-reservation` generates requests for both workflows in parallel.
 
 Within each workflow subfolder, you will find a `run_snippet.sh` file. This file lists typical configurations one may want to run through (e.g., first run FIFO policy, then run deadline-based.)
 
@@ -41,6 +41,6 @@ You will also find `gen_config.json` in each subfolder. This describes how the u
 
 You should install k8s on your system before running scripts in this section. For local setups, [minikube](https://minikube.sigs.k8s.io/docs/) is recommeded.
 
-For a one-click setup, run `reboot-hotel/snippets/k8s/run_snippet.sh`.
+For a one-click setup, run `apps/hotel/snippets/k8s/run_snippet.sh`.
 
-To see how to run the K8s step by step, read this ![README](reboot-hotel/scripts/k8s/README.md) file in the k8s folder.
+To see how to run the K8s step by step, read this ![README](apps/hotel/scripts/k8s/README.md) file in the k8s folder.
