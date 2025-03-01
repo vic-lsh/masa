@@ -2,8 +2,8 @@
 set -e
 
 pwd=$(pwd)
-if [[ "$pwd" != */reboot-hotel ]]; then
-    echo "Error: plese run in the reboot-hotel directory" >&2
+if [[ "$pwd" != */apps/hotel ]]; then
+    echo "Error: plese run in the apps/hotel directory" >&2
     exit 1
 fi
 
@@ -31,7 +31,7 @@ if [[ -z "$binary" ]]; then
 fi
 
 mkdir -p tmp
-cp ../target/release/$binary tmp/
+cp ../../target/release/$binary tmp/
 
 echo "Building docker image for service $binary."
 docker build -f Dockerfile.template \
