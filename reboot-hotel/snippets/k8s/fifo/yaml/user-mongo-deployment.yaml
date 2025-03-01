@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: user-mongo
+  name: user-mongo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: user-mongo
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.service: user-mongo
+    spec:
+      containers:
+        - args:
+            - --port
+            - "27006"
+          image: mongo:7.0
+          name: user-mongo
+          ports:
+            - containerPort: 27006
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "4"
+          volumeMounts:
+            - mountPath: /data
+              name: user
+      restartPolicy: Always
+      volumes:
+        - name: user
+          persistentVolumeClaim:
+            claimName: user

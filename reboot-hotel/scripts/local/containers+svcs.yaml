@@ -3,8 +3,9 @@ services:
     image: mongo:7.0
     container_name: "rate_mongo"
     command: --port 27003
-    network_mode: "host"
     restart: always
+    networks:
+      - hotel_network
     volumes:
       - rate:/data
     deploy:
@@ -16,8 +17,9 @@ services:
     image: memcached:1.6
     container_name: "rate_memcached"
     command: --port 11003 --threads 4
-    network_mode: "host"
     restart: always
+    networks:
+      - hotel_network
     deploy:
       resources:
         limits:
@@ -27,7 +29,8 @@ services:
     image: hotel_rate:latest
     container_name: "hotel_rate"
     restart: always
-    network_mode: "host"
+    networks:
+      - hotel_network
     depends_on:
       - rate-mongo
       - rate-memcached
@@ -40,8 +43,9 @@ services:
     image: mongo:7.0
     container_name: "profile_mongo"
     command: --port 27004
-    network_mode: "host"
     restart: always
+    networks:
+      - hotel_network
     volumes:
       - profile:/data
     deploy:
@@ -53,8 +57,9 @@ services:
     image: memcached:1.6
     container_name: "profile_memcached"
     command: --port 11004 --threads 4
-    network_mode: "host"
     restart: always
+    networks:
+      - hotel_network
     deploy:
       resources:
         limits:
@@ -64,7 +69,8 @@ services:
     image: hotel_profile:latest
     container_name: "hotel_profile"
     restart: always
-    network_mode: "host"
+    networks:
+      - hotel_network
     depends_on:
       - profile-mongo
       - profile-memcached
@@ -77,8 +83,9 @@ services:
     image: mongo:7.0
     container_name: "reservation_mongo"
     command: --port 27005
-    network_mode: "host"
     restart: always
+    networks:
+      - hotel_network
     volumes:
       - reservation:/data
     deploy:
@@ -90,8 +97,9 @@ services:
     image: memcached:1.6
     container_name: "reservation_memcached"
     command: --port 11005 --threads 4
-    network_mode: "host"
     restart: always
+    networks:
+      - hotel_network
     deploy:
       resources:
         limits:
@@ -101,7 +109,8 @@ services:
     image: hotel_reservation:latest
     container_name: "hotel_reservation"
     restart: always
-    network_mode: "host"
+    networks:
+      - hotel_network
     depends_on:
       - reservation-mongo
       - reservation-memcached
@@ -114,8 +123,9 @@ services:
     image: mongo:7.0
     container_name: "user_mongo"
     command: --port 27006
-    network_mode: "host"
     restart: always
+    networks:
+      - hotel_network
     volumes:
       - user:/data
     deploy:
@@ -127,7 +137,8 @@ services:
     image: hotel_user:latest
     container_name: "hotel_user"
     restart: always
-    network_mode: "host"
+    networks:
+      - hotel_network
     depends_on:
       - user-mongo
     deploy:
@@ -139,7 +150,8 @@ services:
     image: hotel_geo:latest
     container_name: "hotel_geo"
     restart: always
-    network_mode: "host"
+    networks:
+      - hotel_network
     deploy:
       resources:
         limits:
@@ -149,7 +161,8 @@ services:
     image: hotel_search:latest
     container_name: "hotel_search"
     restart: always
-    network_mode: "host"
+    networks:
+      - hotel_network
     depends_on:
       - geo-service
       - rate-service
@@ -162,7 +175,10 @@ services:
     image: hotel_frontend:latest
     container_name: "hotel_frontend"
     restart: always
-    network_mode: "host"
+    networks:
+      - hotel_network
+    ports:
+      - "8660:8660"
     depends_on:
       - user-service
       - reservation-service
@@ -179,3 +195,7 @@ volumes:
   profile:
   reservation:
   user:
+
+networks:
+  hotel_network:
+    driver: bridge
