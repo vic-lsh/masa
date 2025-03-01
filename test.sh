@@ -33,7 +33,7 @@ declare -A package_features=(
 # cargo also downloads another version from crates.io). In this case, we can
 # be precise about our package under test by specifying its Cargo.toml path.
 declare -A package_manifest_paths=(
-    ["async-task"]="./3rd_party/async-task/Cargo.toml"
+    ["async-task"]="./libs/async-task/Cargo.toml"
 )
 
 failed_packages=()
