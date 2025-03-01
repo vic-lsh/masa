@@ -47,7 +47,7 @@ opt-level = 3
 
 [patch.crates-io]
 # rewrite dependencies to use the our version of async-task when running tests
-async-task = { path = "./3rd_party/async-task" }
+async-task = { path = "./libs/async-task" }
 trust-dns-resolver = { path = "./3rd_party/trust-dns/crates/resolver" }
-tokio = { path = "./3rd_party/tokio/tokio", version = "1" }
+tokio = { path = "./libs/tokio/tokio", version = "1" }
 
