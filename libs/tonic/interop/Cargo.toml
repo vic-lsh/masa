@@ -21,10 +21,10 @@ pico-args = {version = "0.5", features = ["eq-separator"]}
 console = "0.15"
 http = "0.2"
 http-body = "0.4.2"
-hyper = { path = "../../../3rd_party/hyper/" }
+hyper = { path = "../../hyper/" }
 prost = "0.12"
-tokio = {path = "../../../3rd_party/tokio/tokio", features = ["rt-multi-thread", "time", "macros"]}
-tokio-stream = { path = "../../../3rd_party/tokio/tokio-stream" }
+tokio = {path = "../../tokio/tokio", features = ["rt-multi-thread", "time", "macros"]}
+tokio-stream = { path = "../../tokio/tokio-stream" }
 tonic = {path = "../tonic", features = ["tls"]}
 tonic-masa = {path = "../tonic-masa"}
 tower = {path = "../../../3rd_party/tower/tower"}

@@ -10,12 +10,12 @@ version = "0.1.0"
 bytes = "1"
 http = "0.2"
 http-body = "0.4"
-hyper = { path = "../../../../3rd_party/hyper" }
+hyper = { path = "../../../hyper" }
 paste = "1.0.12"
 pin-project = "1.0"
 prost = "0.12"
-tokio = {path = "../../../../3rd_party/tokio/tokio", features = ["macros", "rt-multi-thread", "net"]}
-tokio-stream = { path = "../../../../3rd_party/tokio/tokio-stream" }
+tokio = {path = "../../../tokio/tokio", features = ["macros", "rt-multi-thread", "net"]}
+tokio-stream = { path = "../../../tokio/tokio-stream" }
 tonic = {path = "../../tonic", features = ["gzip", "zstd"]}
 tonic-masa = { path = "../../tonic-masa" }
 tower = {path = "../../../../3rd_party/tower/tower", features = []}

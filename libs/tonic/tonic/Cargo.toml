@@ -76,8 +76,8 @@ tower-service = { path = "../../../3rd_party/tower/tower-service" }
 
 # Needed for our code-gen modification
 tonic-masa = { path = "../tonic-masa" }
-async-task = { path = "../../../3rd_party/async-task" }
-async-executor = { path = "../../../3rd_party/async-executor" }
+async-task = { path = "../../async-task" }
+async-executor = { path = "../../async-executor" }
 
 # prost
 prost = { version = "0.12", default-features = false, features = [
@@ -89,10 +89,10 @@ async-trait = { version = "0.1.13", optional = true }
 
 # transport
 h2 = { path = "../../../3rd_party/h2", optional = true }
-hyper = { path = "../../../3rd_party/hyper", features = ["full"], optional = true }
+hyper = { path = "../../hyper", features = ["full"], optional = true }
 hyper-timeout = { path = "../../../3rd_party/hyper-timeout", optional = true }
-tokio = { path = "../../../3rd_party/tokio/tokio", optional = true }
-tokio-stream = { path = "../../../3rd_party/tokio/tokio-stream" }
+tokio = { path = "../../tokio/tokio", optional = true }
+tokio-stream = { path = "../../tokio/tokio-stream" }
 tower = { path = "../../../3rd_party/tower/tower", default-features = false, features = [
   "balance",
   "buffer",
@@ -126,7 +126,7 @@ quickcheck = "1.0"
 quickcheck_macros = "1.0"
 rand = "0.8"
 static_assertions = "1.0"
-tokio = { path = "../../../3rd_party/tokio/tokio", features = ["rt", "macros"] }
+tokio = { path = "../../tokio/tokio", features = ["rt", "macros"] }
 tower = { path = "../../../3rd_party/tower/tower", features = ["full"] }
 
 [package.metadata.docs.rs]

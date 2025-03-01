@@ -107,8 +107,8 @@ thiserror = { version = "1.0.20" }
 tinyvec = { version = "1.1.1", features = ["alloc"] }
 #tracing.workspace = true
 tracing = { version = "0.1.30" }
-tokio = { path = "../../../tokio/tokio", features = ["io-util"], optional = true }
-#tokio-native-tls = { path = "../../../tokio/tokio-native-tls", optional = true }
+tokio = { path = "../../../../libs/tokio/tokio", features = ["io-util"], optional = true }
+#tokio-native-tls = { path = "../../../../libs/tokio-native-tls", optional = true }
 tokio-openssl = { path = "../../../tokio-openssl", optional = true }
 tokio-rustls = { path = "../../../tokio-rustls", optional = true, features = ["early-data"] }
 #url.workspace = true
@@ -120,7 +120,7 @@ webpki-roots = { version = "0.23.0", optional = true }
 [dev-dependencies]
 futures-executor = { version = "0.3.5", default-features = false, features = ["std"] }
 openssl = { version = "0.10.48", features = ["v102", "v110"] }
-tokio = { path = "../../../tokio/tokio", features = ["rt", "time", "macros"] }
+tokio = { path = "../../../../libs/tokio/tokio", features = ["rt", "time", "macros"] }
 tracing-subscriber = { version="0.3", features = ["std", "fmt", "env-filter"] }
 
 [package.metadata.docs.rs]

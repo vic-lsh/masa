@@ -11,12 +11,12 @@ repository = "https://github.com/hjr3/hyper-timeout"
 readme = "README.md"
 
 [dependencies]
-hyper = { path = "../hyper", features = ["client"] }
+hyper = { path = "../../libs/hyper", features = ["client"] }
 pin-project-lite = "0.2"
-tokio = { path = "../tokio/tokio" }
+tokio = { path = "../../libs/tokio/tokio" }
 tokio-io-timeout = { path = "../tokio-io-timeout" }
 
 [dev-dependencies]
-hyper = { path = "../hyper", features = ["client", "http1", "tcp"] }
+hyper = { path = "../../libs/hyper", features = ["client", "http1", "tcp"] }
 hyper-tls = "0.5"
-tokio = { path = "../tokio/tokio", features = ["io-std", "io-util", "macros"] }
+tokio = { path = "../../libs/tokio/tokio", features = ["io-std", "io-util", "macros"] }

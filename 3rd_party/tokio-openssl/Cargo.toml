@@ -13,10 +13,10 @@ An implementation of SSL streams for Tokio backed by OpenSSL
 futures-util = { version = "0.3", default-features = false }
 openssl = "0.10.61"
 openssl-sys = "0.9"
-tokio = { path = "../tokio/tokio" }
+tokio = { path = "../../libs/tokio/tokio" }
 
 [dev-dependencies]
-tokio = { path = "../tokio/tokio", features = ["full"] }
+tokio = { path = "../../libs/tokio/tokio", features = ["full"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(ossl111)'] }
