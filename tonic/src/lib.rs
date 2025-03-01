@@ -129,6 +129,7 @@ pub use status::{Code, Status};
 
 pub use async_executor;
 pub use async_task;
+pub use http;
 
 pub(crate) type Error = Box<dyn std::error::Error + Send + Sync>;
 

@@ -203,7 +203,6 @@ impl Rate for RateImpl {
         let response = rate::RateResponse {
             rate_plans: final_rate_plans.into_iter().map(|p| p.into()).collect(),
         };
-        log::info!("response: {:?}", response);
         let end = start.elapsed();
         {
             self.latency_tracker

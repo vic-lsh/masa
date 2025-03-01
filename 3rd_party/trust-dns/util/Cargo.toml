@@ -1,0 +1,84 @@
+[package]
+name = "trust-dns-util"
+
+# A short blurb about the package. This is not rendered in any format when
+# uploaded to crates.io (aka this is not markdown)
+description = """
+Utilities that complement Trust-DNS.
+"""
+
+# These URLs point to more information about the repository
+documentation = "https://docs.rs/crate/trust-dns-util"
+
+# This points to a file in the repository (relative to this Cargo.toml). The
+# contents of this file are stored and indexed in the registry.
+readme = "README.md"
+
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+license.workspace = true
+
+[badges]
+#github-actions = { repository = "bluejekyll/trust-dns", branch = "main", workflow = "test" }
+codecov = { repository = "bluejekyll/trust-dns", branch = "main", service = "github" }
+maintenance = { status = "actively-developed" }
+
+[features]
+dns-over-rustls = ["rustls", "webpki", "webpki-roots", "trust-dns-proto/dns-over-rustls", "trust-dns-client/dns-over-rustls", "trust-dns-resolver/dns-over-rustls"]
+dns-over-https-rustls = ["dns-over-https", "dns-over-rustls", "trust-dns-proto/dns-over-https-rustls", "trust-dns-client/dns-over-https-rustls", "trust-dns-resolver/dns-over-https-rustls"]
+dns-over-https = ["trust-dns-proto/dns-over-https", "trust-dns-client/dns-over-https","trust-dns-resolver/dns-over-https"]
+
+dns-over-quic = ["dns-over-rustls", "trust-dns-resolver/dns-over-quic"]
+
+dnssec = []
+dnssec-openssl = ["dnssec", "openssl", "trust-dns-client/dnssec-openssl", "trust-dns-proto/dnssec-openssl", "trust-dns-resolver/dnssec-openssl"]
+dnssec-ring = ["dnssec", "trust-dns-client/dnssec-ring", "trust-dns-proto/dnssec-ring", "trust-dns-resolver/dnssec-ring"]
+
+[[bin]]
+name = "dns"
+path = "src/dns.rs"
+
+[[bin]]
+name = "dnskey-to-pem"
+path = "src/bind_dnskey_to_pem.rs"
+required-features = ["dnssec-openssl"]
+
+[[bin]]
+name = "get-root-ksks"
+path = "src/get_root_ksks.rs"
+required-features = ["dnssec-openssl"]
+
+[[bin]]
+name = "pem-to-public-dnskey"
+path = "src/pem_to_public_dnskey.rs"
+required-features = ["dnssec-openssl"]
+
+[[bin]]
+name = "resolve"
+path = "src/resolve.rs"
+
+[[bin]]
+name = "recurse"
+path = "src/recurse.rs"
+
+[dependencies]
+clap = { workspace = true, default-features = false, features = ["std", "cargo", "derive", "color", "suggestions", "help", "usage"] }
+console.workspace = true
+data-encoding.workspace = true
+openssl = { workspace = true, features = ["v102", "v110"], optional = true }
+rustls = { workspace = true, features = ["dangerous_configuration"], optional = true }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["std", "fmt", "env-filter"] }
+trust-dns-client.workspace = true
+trust-dns-proto.workspace = true
+trust-dns-recursor.workspace = true
+trust-dns-resolver = { workspace = true, features = ["system-config"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+webpki = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }

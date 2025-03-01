@@ -383,10 +383,10 @@ impl Reservation for ReservationImpl {
         // Get capacity from memcached
         let mut cache_cap = HashMap::new();
 
-        // let mut mc_client = self.mc_pool.get().await;
-        let mut mc_client = async_memcached::Client::new(&self.mc_pool.addr)
-            .await
-            .unwrap();
+        let mut mc_client = self.mc_pool.get().await;
+        // let mut mc_client = async_memcached::Client::new(&self.mc_pool.addr)
+        //     .await
+        //     .unwrap();
 
         if let Ok(mc_resp) = mc_client.get_multi(hotel_mem_keys).await {
             for entry in mc_resp {
@@ -488,8 +488,8 @@ impl Reservation for ReservationImpl {
             let start_date = start_date.to_owned();
             let end_date = end_date.to_owned();
 
-            // let pool = self.mc_pool.clone();
-            let pool_addr = self.mc_pool.addr.clone();
+            let pool = self.mc_pool.clone();
+            // let pool_addr = self.mc_pool.addr.clone();
             let mongo_client = self.mongo_client.clone();
             let cache_cap = cache_cap.clone();
             let room_number = req.room_number;
@@ -497,7 +497,6 @@ impl Reservation for ReservationImpl {
                 let collection = mongo_client
                     .database("reservation-db")
                     .collection::<db::Reservation>("reservation");
-                // let mut mc = pool.get().await;
 
                 let filter = doc! {
                     "hotelId": hotel_id.clone(),
@@ -511,7 +510,8 @@ impl Reservation for ReservationImpl {
                         count += reservation.number;
                     }
 
-                    let mut mc = async_memcached::Client::new(&pool_addr).await.unwrap();
+                    // let mut mc = async_memcached::Client::new(&pool_addr).await.unwrap();
+                    let mut mc = pool.get().await;
                     // Update memcached
                     mc.set(&command, count.to_string().as_bytes(), None, None)
                         .await
@@ -581,10 +581,11 @@ impl Reservation for ReservationImpl {
         let database = self.mongo_client.database("reservation-db");
         let res_collection: Collection<db::Reservation> = database.collection("reservation");
         let num_collection: Collection<db::Number> = database.collection("number");
-        // let mut mc_client = self.mc_pool.get().await;
-        let mut mc_client = async_memcached::Client::new(&self.mc_pool.addr)
-            .await
-            .unwrap();
+
+        let mut mc_client = self.mc_pool.get().await;
+        // let mut mc_client = async_memcached::Client::new(&self.mc_pool.addr)
+        //     .await
+        //     .unwrap();
 
         let in_date = DateTime::parse_from_rfc3339(&format!("{}T12:00:00+00:00", req.in_date))
             .unwrap()
