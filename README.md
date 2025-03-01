@@ -1,152 +1,42 @@
-![](https://github.com/hyperium/tonic/raw/master/.github/assets/tonic-banner.svg?sanitize=true)
+# Masa
 
-A rust implementation of [gRPC], a high performance, open source, general
-RPC framework that puts mobile and HTTP/2 first.
+Masa is a new RPC system that improves RPC goodput via dynamic RPC prioritization.
+RPCs typically operate with SLO constraints in their end-to-end, user-facing workflow (e.g., a social media feed refresh sets its SLO at 500ms, and all the RPCs in service of the refresh must complete within 500ms).
+Based on this observation, Masa detects which RPCs are _running late_ in runtime, and dynamically adjusts RPC priority accordingly.
 
-[`tonic`] is a gRPC over HTTP/2 implementation focused on high performance, interoperability, and flexibility. This library was created to have first class support of async/await and to act as a core building block for production systems written in Rust.
+Masa is implemented based on [Tonic](https://github.com/hyperium/tonic), [Hyper](https://hyper.rs/), and [Tokio](https://tokio.rs/).
 
-[![Crates.io](https://img.shields.io/crates/v/tonic)](https://crates.io/crates/tonic)
-[![Documentation](https://docs.rs/tonic/badge.svg)](https://docs.rs/tonic)
-[![Crates.io](https://img.shields.io/crates/l/tonic)](LICENSE)
+## Getting started
 
+### Running the Hotel application
 
-[Examples] | [Website] | [Docs] | [Chat]
+Currently, Masa experiments based on the Hotel application in DeathStarBench. We've ported this application to Rust for Masa compatibility. The port is in `./reboot-hotel`.
 
-## Overview
+We include tooling to run the Hotel application in the following ways:
 
-[`tonic`] is composed of three main components: the generic gRPC implementation, the high performance HTTP/2
-implementation and the codegen powered by [`prost`]. The generic implementation can support any HTTP/2
-implementation and any encoding via a set of generic traits. The HTTP/2 implementation is based on [`hyper`],
-a fast HTTP/1.1 and HTTP/2 client and server built on top of the robust [`tokio`] stack. The codegen
-contains the tools to build clients and servers from [`protobuf`] definitions.
-
-## Features
-
-- Bi-directional streaming
-- High performance async io
-- Interoperability
-- TLS backed by [`rustls`]
-- Load balancing
-- Custom metadata
-- Authentication
-- Health Checking
-
-## Getting Started
-
-Examples can be found in [`examples`] and for more complex scenarios [`interop`]
-may be a good resource as it shows examples of many of the gRPC features.
-
-If you're using [rust-analyzer] we recommend you set `"rust-analyzer.cargo.buildScripts.enable": true` to correctly load
-the generated code.
-
-For IntelliJ IDEA users, please refer to [this](https://github.com/intellij-rust/intellij-rust/pull/8056) and enable
-`org.rust.cargo.evaluate.build.scripts`
-[experimental feature](https://plugins.jetbrains.com/plugin/8182-rust/docs/rust-faq.html#experimental-features).
-
-### Rust Version
-
-`tonic`'s MSRV is `1.70`.
+#### Docker compose (single-server)
 
 ```bash
-$ rustup update
-$ cargo build
+cd reboot-hotel
+./scripts/docker-build.sh         # build each svc as a rust binary; place binaries in docker containers.
+./scripts/docker-start.sh         # start all services and their databases via docker compose
+./scripts/docker-stop.sh          # stop all containers in docker compose
 ```
 
-### Dependencies
+#### tmux-based workload run scripts
 
-In order to build `tonic` >= 0.8.0, you need the `protoc` Protocol Buffers compiler, along with Protocol Buffers resource files.
+Running the Hotel application contains many configuration choices, including but not limited to:
 
-#### Ubuntu
+1. How many user-facing workflows to run in parallel (single workflow? multiple?)
+2. Server queueing policy (FIFO? Deadline-based?)
+3. Workload generation (How many requests per second? Does this change over time?)
 
-```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y protobuf-compiler libprotobuf-dev
-```
+We have included scripts to simplify configuration. The scripts are in the `reboot-hotel/snippets` folder. Snippets are grouped into sub-folders of workflow combinations. For example, `single/search` only runs search, whereas `search-reservation` generates requests for both workflows in parallel.
 
-#### Alpine Linux
+Within each workflow subfolder, you will find a `run_snippet.sh` file. This file lists typical configurations one may want to run through (e.g., first run FIFO policy, then run deadline-based.)
 
-```sh
-sudo apk add protoc protobuf-dev
-```
+You will also find `gen_config.json` in each subfolder. This describes how the user workload is generated. The committed `gen_config.json` file incrementally builds up requests-per-second to increase load.
 
-#### macOS
+#### K8s
 
-Assuming [Homebrew](https://brew.sh/) is already installed. (If not, see instructions for installing Homebrew on [the Homebrew website](https://brew.sh/).)
-
-```zsh
-brew install protobuf
-```
-
-#### Windows
-
-- Download the latest version of `protoc-xx.y-win64.zip` from [HERE](https://github.com/protocolbuffers/protobuf/releases/latest)
-- Extract the file `bin\protoc.exe` and put it somewhere in the `PATH`
-- Verify installation by opening a command prompt and enter `protoc --version`
-
-### Tutorials
-
-- The [`helloworld`][helloworld-tutorial] tutorial provides a basic example of using `tonic`, perfect for first time users!
-- The [`routeguide`][routeguide-tutorial] tutorial provides a complete example of using `tonic` and all its
-features.
-
-## Getting Help
-
-First, see if the answer to your question can be found in the API documentation.
-If the answer is not there, there is an active community in
-the [Tonic Discord channel][chat]. We would be happy to try to answer your
-question. If that doesn't work, try opening an [issue] with the question.
-
-[chat]: https://discord.gg/6yGkFeN
-[issue]: https://github.com/hyperium/tonic/issues/new
-
-## Project Layout
-
-- [`tonic`](https://github.com/hyperium/tonic/tree/master/tonic): Generic gRPC and HTTP/2 client/server
-implementation.
-- [`tonic-build`](https://github.com/hyperium/tonic/tree/master/tonic-build): [`prost`] based service codegen.
-- [`tonic-types`](https://github.com/hyperium/tonic/tree/master/tonic-types): [`prost`] based grpc utility types
-  including support for gRPC Well Known Types.
-- [`tonic-health`](https://github.com/hyperium/tonic/tree/master/tonic-health): Implementation of the standard [gRPC
-health checking service][healthcheck]. Also serves as an example of both unary and response streaming.
-- [`tonic-reflection`](https://github.com/hyperium/tonic/tree/master/tonic-reflection): A tonic based gRPC
-reflection implementation.
-- [`examples`](https://github.com/hyperium/tonic/tree/master/examples): Example gRPC implementations showing off
-tls, load balancing and bi-directional streaming.
-- [`interop`](https://github.com/hyperium/tonic/tree/master/interop): Interop tests implementation.
-
-## Contributing
-
-:balloon: Thanks for your help improving the project! We are so happy to have
-you! We have a [contributing guide][guide] to help you get involved in the Tonic
-project.
-
-[guide]: CONTRIBUTING.md
-
-## License
-
-This project is licensed under the [MIT license](LICENSE).
-
-### Contribution
-
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in Tonic by you, shall be licensed as MIT, without any additional
-terms or conditions.
-
-
-[gRPC]: https://grpc.io
-[`tonic`]: https://github.com/hyperium/tonic
-[`tokio`]: https://github.com/tokio-rs/tokio
-[`hyper`]: https://github.com/hyperium/hyper
-[`prost`]: https://github.com/tokio-rs/prost
-[`protobuf`]: https://developers.google.com/protocol-buffers
-[`rustls`]: https://github.com/rustls/rustls
-[`examples`]: https://github.com/hyperium/tonic/tree/master/examples
-[`interop`]: https://github.com/hyperium/tonic/tree/master/interop
-[Examples]: https://github.com/hyperium/tonic/tree/master/examples
-[Website]: https://github.com/hyperium/tonic
-[Docs]: https://docs.rs/tonic
-[Chat]: https://discord.gg/6yGkFeN
-[routeguide-tutorial]: https://github.com/hyperium/tonic/blob/master/examples/routeguide-tutorial.md
-[helloworld-tutorial]: https://github.com/hyperium/tonic/blob/master/examples/helloworld-tutorial.md
-[healthcheck]: https://github.com/grpc/grpc/blob/master/doc/health-checking.md
-[rust-analyzer]: https://rust-analyzer.github.io
+To come.
