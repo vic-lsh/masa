@@ -13,8 +13,8 @@ services=(
 )
 
 pwd=$(pwd)
-if [[ "$pwd" != */reboot-hotel ]]; then
-    echo "Error: plese run in the reboot-hotel directory" >&2
+if [[ "$pwd" != */apps/hotel ]]; then
+    echo "Error: plese run in the apps/hotel directory" >&2
     exit 1
 fi
 

@@ -19,7 +19,7 @@ The first step is to build all docker images. To do so, run
 ./scripts/docker/build_all.sh --features <feature-flags>
 ```
 
-from the `reboot-hotel` directory.
+from the `apps/hotel` directory.
 
 This bash script also pushes the built images to docker hub. Edit the script
 to customize to your docker hub username.
