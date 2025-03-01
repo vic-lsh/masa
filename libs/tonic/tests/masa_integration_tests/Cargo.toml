@@ -9,9 +9,9 @@ version = "0.1.0"
 
 [dependencies]
 prost = "0.12"
-async-executor = { path = "../../3rd_party/async-executor" }
-hyper = { path = "../../3rd_party/hyper" }
-tokio = { path = "../../3rd_party/tokio/tokio", features = ["macros"] }
+async-executor = { path = "../../../../3rd_party/async-executor" }
+hyper = { path = "../../../../3rd_party/hyper" }
+tokio = { path = "../../../../3rd_party/tokio/tokio", features = ["macros"] }
 tonic = { path = "../../tonic" }
 tonic-masa = { path = "../../tonic-masa" }
 http = { version = "0.2" }
