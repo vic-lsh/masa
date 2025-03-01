@@ -17,7 +17,7 @@ version = "0.11.0"
 [dependencies]
 base64 = "0.21"
 bytes = "1"
-tokio-stream = { path = "../../../3rd_party/tokio/tokio-stream" }
+tokio-stream = { path = "../../tokio/tokio-stream" }
 http = "0.2"
 http-body = "0.4"
 hyper = {version = "0.14", default-features = false, features = ["stream"]}

@@ -28,11 +28,11 @@ http = "0.2"
 http-body = "0.4"
 httpdate = "1.0"
 httparse = "1.8"
-h2 = { path = "../h2", optional = true }
+h2 = { path = "../../3rd_party/h2", optional = true }
 itoa = "1"
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 pin-project-lite = "0.2.4"
-tower-service = { path = "../tower/tower-service" }
+tower-service = { path = "../../3rd_party/tower/tower-service" }
 tokio = { path = "../tokio/tokio", features = ["sync"] }
 want = "0.3"
 tonic-masa = { path = "../../libs/tonic/tonic-masa" }
@@ -66,7 +66,7 @@ tokio = { path = "../tokio/tokio", features = [
 ] }
 tokio-test = { path = "../tokio/tokio-test" }
 tokio-util = { path = "../tokio/tokio-util", features = ["codec"] }
-tower = { path = "../tower/tower", default-features = false, features = ["make", "util"] }
+tower = { path = "../../3rd_party/tower/tower", default-features = false, features = ["make", "util"] }
 url = "2.2"
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dev-dependencies]
