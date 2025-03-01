@@ -39,4 +39,8 @@ You will also find `gen_config.json` in each subfolder. This describes how the u
 
 #### K8s
 
-To come.
+You should install k8s on your system before running scripts in this section. For local setups, [minikube](https://minikube.sigs.k8s.io/docs/) is recommeded.
+
+For a one-click setup, run `reboot-hotel/snippets/k8s/run_snippet.sh`.
+
+To see how to run the K8s step by step, read this ![README](reboot-hotel/scripts/k8s/README.md) file in the k8s folder.
