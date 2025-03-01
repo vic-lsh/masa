@@ -1,36 +1,38 @@
 [workspace]
 members = [
-  "tonic",
-  "tonic-build",
-  "tonic-health",
-  "tonic-types",
-  "tonic-reflection",
-  "tonic-web",        # Non-published crates
-  "tonic-masa",
-  "examples",
+  # tonic
+  "libs/tonic/tonic",
+  "libs/tonic/tonic-build",
+  "libs/tonic/tonic-health",
+  "libs/tonic/tonic-types",
+  "libs/tonic/tonic-reflection",
+  "libs/tonic/tonic-web",
+  "libs/tonic/tonic-masa",
+  "libs/tonic/examples",
+  "libs/tonic/codegen",
+  "libs/tonic/interop",
+  "libs/tonic/tests/disable_comments",
+  "libs/tonic/tests/included_service",
+  "libs/tonic/tests/same_name",
+  "libs/tonic/tests/service_named_service",
+  "libs/tonic/tests/wellknown",
+  "libs/tonic/tests/wellknown-compiled",
+  "libs/tonic/tests/extern_path/uuid",
+  "libs/tonic/tests/ambiguous_methods",
+  "libs/tonic/tests/extern_path/my_application",
+  "libs/tonic/tests/integration_tests",
+  "libs/tonic/tests/masa_integration_tests",
+  "libs/tonic/tests/stream_conflict",
+  "libs/tonic/tests/root-crate-path",
+  "libs/tonic/tests/compression",
+  "libs/tonic/tonic-web/tests/integration",
+  "libs/tonic/tests/service_named_result",
+  "libs/tonic/tests/use_arc_self",
+  "libs/tonic/tests/default_stubs",
+
+  # evaluation applications
   "apps/hotel",
-  # socialnetwork eval impl
-  "reboot-socialnet/unique_id",
-  "codegen",
-  "interop",                          # Tests
-  "tests/disable_comments",
-  "tests/included_service",
-  "tests/same_name",
-  "tests/service_named_service",
-  "tests/wellknown",
-  "tests/wellknown-compiled",
-  "tests/extern_path/uuid",
-  "tests/ambiguous_methods",
-  "tests/extern_path/my_application",
-  "tests/integration_tests",
-  "tests/masa_integration_tests",
-  "tests/stream_conflict",
-  "tests/root-crate-path",
-  "tests/compression",
-  "tonic-web/tests/integration",
-  "tests/service_named_result",
-  "tests/use_arc_self",
-  "tests/default_stubs",
+  "apps/socialnet/unique_id",
 ]
 resolver = "2"
 
@@ -45,7 +47,7 @@ opt-level = 3
 
 [patch.crates-io]
 # rewrite dependencies to use the our version of async-task when running tests
-async-task = { path = "./3rd_party/async-task" }
+async-task = { path = "./libs/async-task" }
 trust-dns-resolver = { path = "./3rd_party/trust-dns/crates/resolver" }
-tokio = { path = "./3rd_party/tokio/tokio", version = "1" }
+tokio = { path = "./libs/tokio/tokio", version = "1" }
 

@@ -85,8 +85,8 @@ smallvec = "1.6"
 thiserror = "1.0.20"
 # tracing.workspace = true
 tracing = "0.1.30"
-tokio = { path = "../../../tokio/tokio", optional = true }
-#tokio-native-tls = { path = "../../../tokio/tokio-native-tls", optional = true }
+tokio = { path = "../../../../libs/tokio/tokio", optional = true }
+#tokio-native-tls = { path = "../../../../libs//tokio-native-tls", optional = true }
 tokio-openssl = { path = "../../../tokio-openssl", optional = true }
 tokio-rustls = { path = "../../../tokio-rustls", optional = true }
 trust-dns-proto = { path = "../proto", default-features = false }
