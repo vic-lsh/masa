@@ -34,9 +34,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     log::warn!("Hotel config: {:?}", cfg);
 
-    let search_addr = "[::1]:8661".parse().expect("Failed to parse address");
-    let geo_addr = "http://[::1]:8662".to_string();
-    let rate_addr = "http://[::1]:8663".to_string();
+    let search_addr = "[::0]:8660".parse().expect("Failed to parse address");
+    let geo_addr = cfg.geo_addr;
+    let rate_addr = cfg.rate_addr;
 
     let search = SearchImpl::new(geo_addr, rate_addr).await;
     log::warn!("Server listening on {}...", search_addr);

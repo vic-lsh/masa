@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: reservation-memcached
+  name: reservation-memcached
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: reservation-memcached
+  template:
+    metadata:
+      labels:
+        io.kompose.service: reservation-memcached
+    spec:
+      containers:
+        - args:
+            - --port
+            - "11005"
+            - --threads
+            - "4"
+          image: memcached:1.6
+          name: reservation-memcached
+          ports:
+            - containerPort: 11005
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "4"
+      restartPolicy: Always

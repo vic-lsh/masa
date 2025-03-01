@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let geo = GeoImpl::new(cfg.hotels, cfg.geo_range);
 
-    let geo_addr = "[::1]:8662".parse().expect("Failed to parse address");
+    let geo_addr = "[::0]:8660".parse().expect("Failed to parse address");
     log::warn!("Server listening on {}...", geo_addr);
     Server::builder()
         .add_service(GeoServer::new(geo))

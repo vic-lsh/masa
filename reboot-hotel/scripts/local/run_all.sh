@@ -194,15 +194,15 @@ $run_cmd"
         tmux send-keys -t $session_name "$cmd" C-m
     done
 
-    all_done=false
-    while [[ $all_done == false ]]; do
-        sleep 10
+    done=false
+    while [[ $done == false ]]; do
+        sleep 6
         service=${services[-1]}
         if [ ! -f $output_path/tmp_$service.log ]; then
             continue
         fi
         if tail -n 1 $output_path/tmp_$service.log | grep -q "Load generator done"; then
-            all_done=true
+            done=true
         fi
     done
 

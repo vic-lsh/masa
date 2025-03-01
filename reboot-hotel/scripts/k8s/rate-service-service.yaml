@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    io.kompose.service: rate-service
+  name: rate-service
+spec:
+  ports:
+    - name: "8660"
+      port: 8660
+      targetPort: 8660
+  selector:
+    io.kompose.service: rate-service

@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
 
-    let user_addr = "[::1]:8666".parse().expect("Failed to parse address");
+    let user_addr = "[::0]:8660".parse().expect("Failed to parse address");
     log::warn!("Server listening on {}...", user_addr);
     Server::builder()
         .add_service(UserServer::new(user))

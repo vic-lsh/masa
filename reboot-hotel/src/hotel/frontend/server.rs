@@ -16,10 +16,11 @@ pub mod hotel {
     }
 }
 
+use ginepro::LoadBalancedChannel;
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Uniform};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tonic::{transport::Channel, Request, Response, Status};
 
@@ -30,10 +31,10 @@ use hotel::{
 };
 
 pub struct FrontendImpl {
-    search_client: SearchClient<Channel>,
-    reservation_client: ReservationClient<Channel>,
-    profile_client: ProfileClient<Channel>,
-    user_client: UserClient<Channel>,
+    search_client: SearchClient<LoadBalancedChannel>,
+    reservation_client: ReservationClient<LoadBalancedChannel>,
+    profile_client: ProfileClient<LoadBalancedChannel>,
+    user_client: UserClient<LoadBalancedChannel>,
     // rng: Arc<Mutex<StdRng>>,
     // uniform_send_reserve: Uniform<u32>,
 }
@@ -45,18 +46,29 @@ impl FrontendImpl {
         profile_addr: String,
         user_addr: String,
     ) -> Self {
-        let search_client = SearchClient::connect(search_addr)
+        let channel = LoadBalancedChannel::builder(("search-service", 8660))
+            .channel()
             .await
             .expect("Failed to connect to search");
-        let reservation_client = ReservationClient::connect(reservation_addr)
+        let search_client = SearchClient::new(channel);
+
+        let channel = LoadBalancedChannel::builder(("reservation-service", 8660))
+            .channel()
             .await
             .expect("Failed to connect to reservation");
-        let profile_client = ProfileClient::connect(profile_addr)
+        let reservation_client = ReservationClient::new(channel);
+
+        let channel = LoadBalancedChannel::builder(("profile-service", 8660))
+            .channel()
             .await
-            .expect("Failed to connect to search");
-        let user_client = UserClient::connect(user_addr)
+            .expect("Failed to connect to profile");
+        let profile_client = ProfileClient::new(channel);
+
+        let channel = LoadBalancedChannel::builder(("user-service", 8660))
+            .channel()
             .await
             .expect("Failed to connect to user");
+        let user_client = UserClient::new(channel);
 
         // let seed = 998244353;
         // let rng = Arc::new(Mutex::new(StdRng::seed_from_u64(seed)));

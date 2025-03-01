@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: search-service
+  name: search-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: search-service
+  template:
+    metadata:
+      labels:
+        io.kompose.service: search-service
+    spec:
+      containers:
+        - image: dengwxn/hotel_search:latest
+          name: hotel-search
+          ports:
+            - containerPort: 8660
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "1"
+      restartPolicy: Always

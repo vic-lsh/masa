@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    io.kompose.service: rate-memcached
+  name: rate-memcached
+spec:
+  ports:
+    - name: "11003"
+      port: 11003
+      targetPort: 11003
+  selector:
+    io.kompose.service: rate-memcached
