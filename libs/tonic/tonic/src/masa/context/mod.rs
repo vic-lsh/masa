@@ -19,7 +19,7 @@ pub type ParentContext = simple::SimpleParentContext;
 
 /// Context struct instantiated on RPC transmission.
 ///
-/// Must implement `ClientStubHooks`.
+/// Must implement `ClientHooks`.
 pub type ChildContext = simple::SimpleChildContext;
 
 /// Lifecycle hooks of a Masa server.
@@ -42,7 +42,7 @@ pub trait ServerHooks: Send + Sync + 'static {
 ///
 /// This struct does not need to be thread-safe -- it will not be accessed concurrently.
 #[allow(unused_variables)]
-pub trait ClientStubHooks {
+pub trait ClientHooks {
     /// Construct a new ClientStubHook.
     fn new<T>(method: GrpcMethod, request: &Request<T>) -> Self;
 
@@ -75,7 +75,7 @@ pub trait ClientStubHooks {
 #[allow(unused_variables)]
 pub trait RequestHandlerHooks<Child, Server>: Send + Sync
 where
-    Child: ClientStubHooks,
+    Child: ClientHooks,
     Server: ServerHooks,
 {
     /// The first lifecycle, marking the start of a request execution.

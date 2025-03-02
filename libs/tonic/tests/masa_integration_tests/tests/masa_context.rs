@@ -16,7 +16,7 @@ use masa_integration_tests::pb::{
     Input1, Input2, Output1, Output2,
 };
 use tonic::{
-    masa::{ClientStubHooks, RequestHandlerHooks, ServerHooks},
+    masa::{ClientHooks, RequestHandlerHooks, ServerHooks},
     transport::Server,
     GrpcMethod, Request, Response, Status,
 };
@@ -46,7 +46,7 @@ impl<S, C, P> ParentSvc<S, C, P> {
 impl<S, C, P> ParentService for ParentSvc<S, C, P>
 where
     S: ServerHooks,
-    C: ClientStubHooks + Send + Sync + 'static,
+    C: ClientHooks + Send + Sync + 'static,
     P: RequestHandlerHooks<C, S> + 'static,
 {
     async fn rpc(&self, _req: Request<Input1>) -> Result<Response<Output1>, Status> {
@@ -125,7 +125,7 @@ impl ServerHooks for MockServerCtx {
 
 struct MockParentCtx {}
 
-impl<C: ClientStubHooks, S: ServerHooks> RequestHandlerHooks<C, S> for MockParentCtx {
+impl<C: ClientHooks, S: ServerHooks> RequestHandlerHooks<C, S> for MockParentCtx {
     fn begin<B>(_method: GrpcMethod, _req: &http::Request<B>, _server_ctx: Arc<S>) -> Self {
         Self {}
     }
@@ -133,7 +133,7 @@ impl<C: ClientStubHooks, S: ServerHooks> RequestHandlerHooks<C, S> for MockParen
 
 struct MockChildCtx;
 
-impl ClientStubHooks for MockChildCtx {
+impl ClientHooks for MockChildCtx {
     fn new<T>(_method: GrpcMethod, _req: &Request<T>) -> Self {
         Self {}
     }
@@ -146,7 +146,7 @@ async fn make_parent_child_svcs<S, C, P>(
 ) -> (tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>)
 where
     S: ServerHooks,
-    C: ClientStubHooks + Send + Sync + 'static,
+    C: ClientHooks + Send + Sync + 'static,
     P: RequestHandlerHooks<C, S> + 'static,
 {
     let child_svc = tokio::spawn(async {
@@ -221,7 +221,7 @@ async fn test_child_rpc_hooks_invocations() {
 
     struct TestChildRpcParentCtx {}
 
-    impl<C: ClientStubHooks, S: ServerHooks> RequestHandlerHooks<C, S> for TestChildRpcParentCtx {
+    impl<C: ClientHooks, S: ServerHooks> RequestHandlerHooks<C, S> for TestChildRpcParentCtx {
         fn begin<B>(_method: GrpcMethod, _req: &http::Request<B>, _server_ctx: Arc<S>) -> Self {
             Self {}
         }
@@ -284,7 +284,7 @@ async fn test_child_ctx_hook_invocations() {
 
     struct TestInvocationChildCtx;
 
-    impl ClientStubHooks for TestInvocationChildCtx {
+    impl ClientHooks for TestInvocationChildCtx {
         fn new<T>(_method: GrpcMethod, _req: &Request<T>) -> Self {
             Self {}
         }
