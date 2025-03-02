@@ -11,8 +11,8 @@ use structopt::StructOpt;
 use tonic::transport::Server;
 
 use config::HotelConfig;
-use reboot_hotel::init_logging;
-use server::hotel::reservation::reservation_server::ReservationServer;
+use hotel::init_logging;
+use server::hotel_tonic::reservation::reservation_server::ReservationServer;
 use server::ReservationImpl;
 
 #[derive(StructOpt, Debug, Clone)]

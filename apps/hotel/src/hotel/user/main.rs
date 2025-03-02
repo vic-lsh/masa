@@ -10,7 +10,7 @@ use structopt::StructOpt;
 use tonic::transport::Server;
 
 use config::HotelConfig;
-use reboot_hotel::init_logging;
+use hotel::init_logging;
 use server::hotel::user::user_server::UserServer;
 use server::UserImpl;
 

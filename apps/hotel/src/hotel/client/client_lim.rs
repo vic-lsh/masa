@@ -19,7 +19,7 @@ use gen::gen_search_request;
 use tonic::transport::Channel;
 use tonic_masa::Context;
 
-use reboot_hotel::init_logging;
+use hotel::init_logging;
 
 use hotel::frontend_client::FrontendClient;
 

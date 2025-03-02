@@ -4,13 +4,14 @@ use std::collections::HashMap;
 use tonic::{Request, Response, Status};
 
 use crate::db;
-use hotel::recommendation::recommendation_server::Recommendation;
-use hotel::recommendation::{RecommendationReply, RecommendationRequest};
-pub mod hotel {
+pub mod hotel_tonic {
     pub mod recommendation {
         tonic::include_proto!("recommendation");
     }
 }
+use hotel_tonic::recommendation::recommendation_server::Recommendation;
+use hotel_tonic::recommendation::{RecommendationReply, RecommendationRequest};
+
 #[derive(Debug, Default)]
 pub struct RecommendationImpl {
     hotels: HashMap<String, db::Hotel>,

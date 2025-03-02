@@ -10,8 +10,8 @@ use structopt::StructOpt;
 use tonic::transport::Server;
 
 use config::HotelConfig;
-use reboot_hotel::init_logging;
-use server::hotel::search::search_server::SearchServer;
+use hotel::init_logging;
+use server::hotel_tonic::search::search_server::SearchServer;
 use server::SearchImpl;
 
 #[derive(StructOpt, Debug, Clone)]

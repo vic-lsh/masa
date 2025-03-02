@@ -11,8 +11,8 @@ use structopt::StructOpt;
 use tonic::transport::Server;
 
 use config::HotelConfig;
-use reboot_hotel::init_logging;
-use server::hotel::rate::rate_server::RateServer;
+use hotel::init_logging;
+use server::hotel_tonic::rate::rate_server::RateServer;
 use server::RateImpl;
 
 #[derive(StructOpt, Debug, Clone)]
