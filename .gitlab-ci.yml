@@ -38,6 +38,17 @@ test:cargo:
     - rustc --version && cargo --version  # Print version info for debugging
     - ./test.sh
 
+fmt:cargo:
+  script:
+    - rustup component add rustfmt
+    - ./scripts/check_format.sh
+  # Only run this job if Rust files have changed
+  rules:
+    - changes:
+      - "**/*.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
 # Optional: Use a third party library to generate gitlab junit reports
 # test:junit-report:
 #   script:
