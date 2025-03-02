@@ -11,15 +11,15 @@ use std::sync::Arc;
 use {rand::rngs::StdRng, rand::SeedableRng, rand_distr::Uniform};
 
 use crate::db;
-use mongodb::{bson::doc, Client as MongoClient};
 use hotel::McPool;
+use mongodb::{bson::doc, Client as MongoClient};
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 use tonic_masa::LatencyTracker;
 
-use hotel_tonic::{profile, profile::profile_server::Profile};
 #[cfg(feature = "workload_stats")]
 use hotel::AvgTracker;
+use hotel_tonic::{profile, profile::profile_server::Profile};
 
 #[cfg(feature = "synthetic")]
 #[allow(unused)]

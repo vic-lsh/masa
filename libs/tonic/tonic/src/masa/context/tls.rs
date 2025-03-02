@@ -24,12 +24,8 @@ pub mod client {
     /// SAFETY:
     /// - Caller must ensure that the generic P correct: the same P is used in
     /// setting the parent context as well as in retrieving it.
-    pub unsafe fn get_parent_ctx<
-        'a,
-        S: ServerHooks,
-        C: ClientHooks,
-        P: ParentHooks<C, S>,
-    >() -> Option<&'a P> {
+    pub unsafe fn get_parent_ctx<'a, S: ServerHooks, C: ClientHooks, P: ParentHooks<C, S>>(
+    ) -> Option<&'a P> {
         let p = super::PARENT_CTX.get();
         let parent_ctx = p as *const P;
         parent_ctx.as_ref()
@@ -48,12 +44,7 @@ pub mod server {
     }
 
     ///
-    pub fn reset_parent_ctx<
-        'a,
-        S: ServerHooks,
-        C: ClientHooks,
-        P: ParentHooks<C, S>,
-    >() {
+    pub fn reset_parent_ctx<'a, S: ServerHooks, C: ClientHooks, P: ParentHooks<C, S>>() {
         super::PARENT_CTX.replace(core::ptr::null());
     }
 }
