@@ -6,6 +6,21 @@ Based on this observation, Masa detects which RPCs are _running late_ in runtime
 
 Masa is implemented based on [Tonic](https://github.com/hyperium/tonic), [Hyper](https://hyper.rs/), and [Tokio](https://tokio.rs/).
 
+## Project organization
+
+The codebase is structured as follows:
+
+```
+.
+├── 3rd_party     # vendored in dependencies; not modified
+├── apps          # microservice applications and testbeds       
+└── libs          # Masa libraries (based on Tonic, Tokio, and Hyper)
+```
+
+Masa is implemented by modifying a few crates; these are contained in `libs`. To evaluate Masa, we have a few microservice applications in `apps`.
+
+We have also included the source code of a few 3rd-party crates in `3rd_party`. These crates are included by source to make it simpler to link them against Masa's crates.
+
 ## Getting started
 
 ### Running the Hotel application
