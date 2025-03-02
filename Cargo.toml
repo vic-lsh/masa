@@ -32,7 +32,7 @@ members = [
 
   # evaluation applications
   "apps/hotel",
-  "apps/socialnet/unique_id",
+  "apps/socialnet",
 ]
 resolver = "2"
 
