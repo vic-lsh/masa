@@ -15,7 +15,7 @@ use tonic_masa::{
 
 use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
 
-use super::{ClientHooks, RequestHandlerHooks, ServerContext, ServerHooks};
+use super::{ClientHooks, ParentHooks, ServerContext, ServerHooks};
 
 #[inline]
 fn time_now() -> u64 {
@@ -26,7 +26,7 @@ fn time_now() -> u64 {
     now as u64
 }
 
-/// A simple implementation of `RequestHandlerHooks`.
+/// A simple implementation of `ParentHooks`.
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct SimpleParentContext {
@@ -111,7 +111,7 @@ impl SimpleParentContext {
                 // this will only be read/written on one thread, so we can use the
                 // weakest ordering guarantees.
                 // it is an atomic because the ParentContext type needs to be Sync:
-                // see the docs for RequestHandlerHooks for why.
+                // see the docs for ParentHooks for why.
                 if self
                     .will_early_return
                     .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)
@@ -138,7 +138,7 @@ impl SimpleParentContext {
     }
 }
 
-impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContext {
+impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContext {
     fn begin<B>(
         method: GrpcMethod,
         req: &http::Request<B>,

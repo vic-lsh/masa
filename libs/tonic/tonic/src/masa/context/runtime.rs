@@ -6,7 +6,7 @@
 pub mod async_executor {
     use std::sync::Arc;
 
-    use crate::masa::{ClientHooks, RequestHandlerHooks, ServerHooks};
+    use crate::masa::{ClientHooks, ParentHooks, ServerHooks};
 
     /// Create the poll hook used to propagate parent context in async-executor.
     pub fn make_child_task_poll_hook<S, C, P>(
@@ -15,7 +15,7 @@ pub mod async_executor {
     where
         S: ServerHooks,
         C: ClientHooks,
-        P: RequestHandlerHooks<C, S>,
+        P: ParentHooks<C, S>,
     {
         let hook_ctx = Arc::into_raw(parent_context) as *const ();
         let child_hook = unsafe {
@@ -34,14 +34,14 @@ pub mod async_executor {
     mod hook_impl {
         use std::sync::Arc;
 
-        use crate::masa::{ClientHooks, RequestHandlerHooks, ServerHooks};
+        use crate::masa::{ClientHooks, ParentHooks, ServerHooks};
 
         // Each child task would clone this request context using this fn.
         pub(crate) fn on_clone<S, C, P>(raw_ctx: *const ())
         where
             S: ServerHooks,
             C: ClientHooks,
-            P: RequestHandlerHooks<C, S>,
+            P: ParentHooks<C, S>,
         {
             // Bump req-ctx ref-count without losing the original ref-count.
             let c = unsafe { Arc::from_raw(raw_ctx as *const P) };
@@ -54,7 +54,7 @@ pub mod async_executor {
         where
             S: ServerHooks,
             C: ClientHooks,
-            P: RequestHandlerHooks<C, S>,
+            P: ParentHooks<C, S>,
         {
             unsafe { Arc::from_raw(raw_ctx as *const P) };
         }
@@ -64,7 +64,7 @@ pub mod async_executor {
         where
             S: ServerHooks,
             C: ClientHooks,
-            P: RequestHandlerHooks<C, S>,
+            P: ParentHooks<C, S>,
         {
             // SAFETY: the hook holds one ref-count to the request context.
             let ctx = unsafe { &*(raw_ctx as *const P) };
@@ -77,7 +77,7 @@ pub mod async_executor {
         where
             S: ServerHooks,
             C: ClientHooks,
-            P: RequestHandlerHooks<C, S>,
+            P: ParentHooks<C, S>,
         {
             crate::masa::context::server::reset_parent_ctx::<S, C, P>();
         }

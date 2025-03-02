@@ -14,7 +14,7 @@ pub type ServerContext = simple::SimpleServerContext;
 
 /// Context struct instantiated once per RPC, when the server invokes a request handler.
 ///
-/// Must implement `RequestHandlerHooks`.
+/// Must implement `ParentHooks`.
 pub type ParentContext = simple::SimpleParentContext;
 
 /// Context struct instantiated on RPC transmission.
@@ -49,14 +49,14 @@ pub trait ClientHooks {
     /// Lifecycle hook invoked just before a client stub sends an RPC.
     ///
     /// This is the last lifecycle hook to be called before the request is sent.
-    /// For example, it is called _after_ hooks like `RequestHandlerHooks::before_child_rpc`.
+    /// For example, it is called _after_ hooks like `ParentHooks::before_child_rpc`.
     fn before_send<T>(&mut self, request: &mut Request<T>) {}
 
     /// Lifecycle hook invoked right after a client stub received a response
     /// for this RPC.
     ///
     /// This is the first lifecycle hook to be called after receiving the response.
-    /// For example, it is called _before_ hooks like `RequestHandlerHooks::after_child_rpc`.
+    /// For example, it is called _before_ hooks like `ParentHooks::after_child_rpc`.
     fn after_recv<T>(&mut self, response: &mut Result<Response<T>, Status>) {}
 }
 
@@ -73,7 +73,7 @@ pub trait ClientHooks {
 /// is that child RPCs can run in parallel, and they may invoke hook points
 /// defined below from different threads.
 #[allow(unused_variables)]
-pub trait RequestHandlerHooks<Child, Server>: Send + Sync
+pub trait ParentHooks<Child, Server>: Send + Sync
 where
     Child: ClientHooks,
     Server: ServerHooks,
