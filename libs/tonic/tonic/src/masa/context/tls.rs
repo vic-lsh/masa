@@ -19,7 +19,7 @@ thread_local! {
 ///
 pub mod client {
 
-    use crate::masa::{ClientHooks, RequestHandlerHooks, ServerHooks};
+    use crate::masa::{ClientHooks, ParentHooks, ServerHooks};
 
     /// SAFETY:
     /// - Caller must ensure that the generic P correct: the same P is used in
@@ -28,7 +28,7 @@ pub mod client {
         'a,
         S: ServerHooks,
         C: ClientHooks,
-        P: RequestHandlerHooks<C, S>,
+        P: ParentHooks<C, S>,
     >() -> Option<&'a P> {
         let p = super::PARENT_CTX.get();
         let parent_ctx = p as *const P;
@@ -38,10 +38,10 @@ pub mod client {
 
 ///
 pub mod server {
-    use crate::masa::{ClientHooks, RequestHandlerHooks, ServerHooks};
+    use crate::masa::{ClientHooks, ParentHooks, ServerHooks};
 
     ///
-    pub fn set_parent_ctx<'a, S: ServerHooks, C: ClientHooks, P: RequestHandlerHooks<C, S>>(
+    pub fn set_parent_ctx<'a, S: ServerHooks, C: ClientHooks, P: ParentHooks<C, S>>(
         parent_ctx: &'a P,
     ) {
         super::PARENT_CTX.replace(parent_ctx as *const P as *const ());
@@ -52,7 +52,7 @@ pub mod server {
         'a,
         S: ServerHooks,
         C: ClientHooks,
-        P: RequestHandlerHooks<C, S>,
+        P: ParentHooks<C, S>,
     >() {
         super::PARENT_CTX.replace(core::ptr::null());
     }

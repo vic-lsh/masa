@@ -116,7 +116,7 @@ pub(crate) fn generate_internal<T: Service>(
                     T: #server_trait,
                     S: tonic::masa::ServerHooks = tonic::masa::ServerContext,
                     C: tonic::masa::ClientHooks = tonic::masa::ChildContext,
-                    P: tonic::masa::RequestHandlerHooks<C, S> = tonic::masa::ParentContext
+                    P: tonic::masa::ParentHooks<C, S> = tonic::masa::ParentContext
                 > {
                 inner: _Inner<T>,
                 ctx: Arc<S>,
@@ -151,7 +151,7 @@ pub(crate) fn generate_internal<T: Service>(
                 T: #server_trait,
                 S: tonic::masa::ServerHooks,
                 C: tonic::masa::ClientHooks,
-                P: tonic::masa::RequestHandlerHooks<C, S>,
+                P: tonic::masa::ParentHooks<C, S>,
             > #server_service<T, S, C, P> {
                 pub fn with_custom_context(inner: T) -> Self {
                     Self::new_impl(inner)
@@ -192,7 +192,7 @@ pub(crate) fn generate_internal<T: Service>(
                     T: #server_trait,
                     S: tonic::masa::ServerHooks,
                     C: tonic::masa::ClientHooks,
-                    P: tonic::masa::RequestHandlerHooks<C, S>,
+                    P: tonic::masa::ParentHooks<C, S>,
                     B: Body + Send + 'static,
                     B::Error: Into<StdError> + Send + 'static,
             {
@@ -228,7 +228,7 @@ pub(crate) fn generate_internal<T: Service>(
                 T: #server_trait,
                 S: tonic::masa::ServerHooks,
                 C: tonic::masa::ClientHooks,
-                P: tonic::masa::RequestHandlerHooks<C, S>,
+                P: tonic::masa::ParentHooks<C, S>,
             > Clone for #server_service<T, S, C, P> {
                 fn clone(&self) -> Self {
                     let inner = self.inner.clone();
@@ -433,7 +433,7 @@ fn generate_named(
             T: #server_trait,
             S: tonic::masa::ServerHooks,
             C: tonic::masa::ClientHooks,
-            P: tonic::masa::RequestHandlerHooks<C, S>,
+            P: tonic::masa::ParentHooks<C, S>,
         > tonic::server::NamedService for #server_service<T, S, C, P> {
             const NAME: &'static str = #service_name;
         }

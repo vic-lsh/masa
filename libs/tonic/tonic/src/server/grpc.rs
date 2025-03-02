@@ -274,7 +274,7 @@ where
         B::Error: Into<crate::Error> + Send,
         ServerCtx: crate::masa::ServerHooks,
         ChildCtx: crate::masa::ClientHooks,
-        ParentCtx: crate::masa::RequestHandlerHooks<ChildCtx, ServerCtx>,
+        ParentCtx: crate::masa::ParentHooks<ChildCtx, ServerCtx>,
     {
         let req_ctx = Arc::new(req_ctx);
 
