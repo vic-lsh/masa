@@ -12,10 +12,10 @@ use std::time::{Duration, Instant};
 use tonic_masa::LatencyTracker;
 
 use crate::db;
+use hotel::McPool;
 use mongodb::{bson::doc, Client as MongoClient, Collection, Database, IndexModel};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Uniform};
-use hotel::McPool;
 use serde::{Deserialize, Serialize};
 use tonic::{Request, Response, Status};
 
