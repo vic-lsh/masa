@@ -11,8 +11,8 @@ use structopt::StructOpt;
 use tonic::transport::Server;
 
 use config::HotelConfig;
-use reboot_hotel::init_logging;
-use server::hotel::profile::profile_server::ProfileServer;
+use hotel::init_logging;
+use server::hotel_tonic::profile::profile_server::ProfileServer;
 use server::ProfileImpl;
 
 #[derive(StructOpt, Debug, Clone)]

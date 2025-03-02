@@ -1,7 +1,7 @@
 use mongodb::{options::ClientOptions, Client};
 use serde::{Deserialize, Serialize};
 
-use crate::server::hotel;
+use crate::server::hotel_tonic;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Hotel {
@@ -29,7 +29,7 @@ pub(crate) struct Address {
     pub(crate) lon: f32,
 }
 
-impl From<Address> for hotel::profile::Address {
+impl From<Address> for hotel_tonic::profile::Address {
     fn from(a: Address) -> Self {
         Self {
             street_number: a.street_number,
@@ -44,7 +44,7 @@ impl From<Address> for hotel::profile::Address {
     }
 }
 
-impl From<Hotel> for hotel::profile::Hotel {
+impl From<Hotel> for hotel_tonic::profile::Hotel {
     fn from(h: Hotel) -> Self {
         Self {
             id: h.id,

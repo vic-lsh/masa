@@ -7,7 +7,7 @@ use tonic::Request;
 use tonic_masa::{Context, GraphId};
 
 use gen::gen_search_request;
-use reboot_hotel::init_logging;
+use hotel::init_logging;
 
 use hotel::frontend_client::FrontendClient;
 

@@ -1,4 +1,4 @@
-pub mod hotel {
+pub mod hotel_tonic {
     pub mod geo {
         tonic::include_proto!("geo");
     }
@@ -8,7 +8,7 @@ use kiddo::KdTree;
 use kiddo::SquaredEuclidean;
 use tonic::{Request, Response, Status};
 
-use hotel::{geo, geo::geo_server::Geo};
+use hotel_tonic::{geo, geo::geo_server::Geo};
 
 use crate::db;
 

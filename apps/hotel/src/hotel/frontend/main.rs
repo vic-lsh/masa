@@ -10,8 +10,8 @@ use structopt::StructOpt;
 use tonic::transport::Server;
 
 use config::HotelConfig;
-use reboot_hotel::init_logging;
-use server::hotel::frontend::frontend_server::FrontendServer;
+use hotel::init_logging;
+use server::hotel_tonic::frontend::frontend_server::FrontendServer;
 use server::FrontendImpl;
 
 #[derive(StructOpt, Debug, Clone)]

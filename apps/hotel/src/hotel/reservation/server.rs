@@ -1,10 +1,10 @@
-pub mod hotel {
+pub mod hotel_tonic {
     pub mod reservation {
         tonic::include_proto!("reservation");
     }
 }
 use chrono::DateTime;
-use reboot_hotel::AvgTracker;
+use hotel::AvgTracker;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
@@ -15,11 +15,11 @@ use crate::db;
 use mongodb::{bson::doc, Client as MongoClient, Collection, Database, IndexModel};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Uniform};
-use reboot_hotel::McPool;
+use hotel::McPool;
 use serde::{Deserialize, Serialize};
 use tonic::{Request, Response, Status};
 
-use hotel::{reservation, reservation::reservation_server::Reservation};
+use hotel_tonic::{reservation, reservation::reservation_server::Reservation};
 
 // #[derive(Debug, Clone, Serialize, Deserialize)]
 // pub struct Hotel {

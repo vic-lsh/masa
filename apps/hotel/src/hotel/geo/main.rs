@@ -11,8 +11,8 @@ use structopt::StructOpt;
 use tonic::transport::Server;
 
 use config::HotelConfig;
-use reboot_hotel::init_logging;
-use server::hotel::geo::geo_server::GeoServer;
+use hotel::init_logging;
+use server::hotel_tonic::geo::geo_server::GeoServer;
 use server::GeoImpl;
 
 #[derive(StructOpt, Debug, Clone)]
