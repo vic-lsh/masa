@@ -9,23 +9,6 @@ version = "0.1.0"
 name = "hotel_client_bench"
 path = "src/client/client_bench.rs"
 
-# [[bin]]
-# name = "hotel_client_lim"
-# path = "src/hotel/client/client_lim.rs"
-
-# [[bin]]
-# name = "hotel_client_bench_closed"
-# path = "src/hotel/client/client_bench_closed.rs"
-
-
-# [[bin]]
-# name = "hotel_client_lim"
-# path = "src/hotel/client/client_lim.rs"
-
-# [[bin]]
-# name = "hotel_client"
-# path = "src/hotel/client/client.rs"
-
 [[bin]]
 name = "hotel_frontend"
 path = "src/frontend/main.rs"
@@ -55,7 +38,7 @@ name = "hotel_user"
 path = "src/user/main.rs"
 
 [[bin]]
-name = "recommendation-server"
+name = "hotel_recommendation"
 path = "src/recommendation/main.rs"
 
 # [[bin]]
