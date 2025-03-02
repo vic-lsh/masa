@@ -2,16 +2,12 @@
 FROM debian:bookworm-slim
 
 # Define build arguments for binary name and config file
-ARG TAG
 ARG BINARY_PATH
 ARG BINARY_NAME
 ARG SNIPPET_PATH
 ARG HOTEL_CONFIG
 
 # Verify required build arguments are provided
-RUN if [ -z "$TAG" ]; then \
-    echo "Error: TAG argument is required" && exit 1; \
-    fi
 RUN if [ -z "$BINARY_PATH" ]; then \
     echo "Error: BINARY_PATH argument is required" && exit 1; \
     fi
@@ -65,7 +61,7 @@ ENV PCTL_LATEST_EXEC=50
 # expose these build-time args as runtime env vars
 # so that the interpolation works correctly in CMD
 ENV BINARY_NAME=${BINARY_NAME}
-ENV CONFIG_NAME=${CONFIG_NAME}
+ENV HOTEL_CONFIG=${HOTEL_CONFIG}
 
 ENTRYPOINT [ "sh", "-c" ]
-CMD ["./${BINARY_NAME} --config /app/config/${CONFIG_NAME}"]
+CMD ["./${BINARY_NAME} --config /app/config/${HOTEL_CONFIG}"]
