@@ -16,7 +16,7 @@ use masa_integration_tests::pb::{
     Input1, Input2, Output1, Output2,
 };
 use tonic::{
-    masa::{ClientHooks, RequestHandlerHooks, ServerHooks},
+    masa::{ClientHooks, ParentHooks, ServerHooks},
     transport::Server,
     GrpcMethod, Request, Response, Status,
 };
@@ -47,7 +47,7 @@ impl<S, C, P> ParentService for ParentSvc<S, C, P>
 where
     S: ServerHooks,
     C: ClientHooks + Send + Sync + 'static,
-    P: RequestHandlerHooks<C, S> + 'static,
+    P: ParentHooks<C, S> + 'static,
 {
     async fn rpc(&self, _req: Request<Input1>) -> Result<Response<Output1>, Status> {
         let mut client = ChildServiceClient::<_, S, C, P>::connect_with_custom_context(format!(
@@ -125,7 +125,7 @@ impl ServerHooks for MockServerCtx {
 
 struct MockParentCtx {}
 
-impl<C: ClientHooks, S: ServerHooks> RequestHandlerHooks<C, S> for MockParentCtx {
+impl<C: ClientHooks, S: ServerHooks> ParentHooks<C, S> for MockParentCtx {
     fn begin<B>(_method: GrpcMethod, _req: &http::Request<B>, _server_ctx: Arc<S>) -> Self {
         Self {}
     }
@@ -147,7 +147,7 @@ async fn make_parent_child_svcs<S, C, P>(
 where
     S: ServerHooks,
     C: ClientHooks + Send + Sync + 'static,
-    P: RequestHandlerHooks<C, S> + 'static,
+    P: ParentHooks<C, S> + 'static,
 {
     let child_svc = tokio::spawn(async {
         Server::builder()
@@ -221,7 +221,7 @@ async fn test_child_rpc_hooks_invocations() {
 
     struct TestChildRpcParentCtx {}
 
-    impl<C: ClientHooks, S: ServerHooks> RequestHandlerHooks<C, S> for TestChildRpcParentCtx {
+    impl<C: ClientHooks, S: ServerHooks> ParentHooks<C, S> for TestChildRpcParentCtx {
         fn begin<B>(_method: GrpcMethod, _req: &http::Request<B>, _server_ctx: Arc<S>) -> Self {
             Self {}
         }
