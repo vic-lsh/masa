@@ -25,8 +25,8 @@ use tonic::transport::Channel;
 use tonic_masa::Context;
 
 use config::{GenConfig, HotelConfig};
-use hotel_tonic::frontend_client::FrontendClient;
 use hotel::{fetch_traces, init_logging, time_now, Span};
+use hotel_tonic::frontend_client::FrontendClient;
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Client for benchmarking")]
