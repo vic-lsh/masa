@@ -7,7 +7,7 @@ version = "0.1.0"
 
 [[bin]]
 name = "hotel_client_bench"
-path = "src/hotel/client/client_bench.rs"
+path = "src/client/client_bench.rs"
 
 # [[bin]]
 # name = "hotel_client_lim"
@@ -28,39 +28,39 @@ path = "src/hotel/client/client_bench.rs"
 
 [[bin]]
 name = "hotel_frontend"
-path = "src/hotel/frontend/main.rs"
+path = "src/frontend/main.rs"
 
 [[bin]]
 name = "hotel_geo"
-path = "src/hotel/geo/main.rs"
+path = "src/geo/main.rs"
 
 [[bin]]
 name = "hotel_rate"
-path = "src/hotel/rate/main.rs"
+path = "src/rate/main.rs"
 
 [[bin]]
 name = "hotel_search"
-path = "src/hotel/search/main.rs"
+path = "src/search/main.rs"
 
 [[bin]]
 name = "hotel_profile"
-path = "src/hotel/profile/main.rs"
+path = "src/profile/main.rs"
 
 [[bin]]
 name = "hotel_reservation"
-path = "src/hotel/reservation/main.rs"
+path = "src/reservation/main.rs"
 
 [[bin]]
 name = "hotel_user"
-path = "src/hotel/user/main.rs"
+path = "src/user/main.rs"
 
 [[bin]]
 name = "recommendation-server"
-path = "src/hotel/recommendation/main.rs"
+path = "src/recommendation/main.rs"
 
 # [[bin]]
 # name = "recommendation-client"
-# path = "src/hotel/recommendation/client.rs"
+# path = "src/recommendation/client.rs"
 
 
 [features]
