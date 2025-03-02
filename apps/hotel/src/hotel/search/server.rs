@@ -1,4 +1,4 @@
-pub mod hotel {
+pub mod hotel_tonic {
     pub mod search {
         tonic::include_proto!("search");
     }
@@ -13,7 +13,7 @@ pub mod hotel {
 use ginepro::LoadBalancedChannel;
 use tonic::{transport::Channel, Request, Response, Status};
 
-use hotel::{
+use hotel_tonic::{
     geo, geo::geo_client::GeoClient, rate, rate::rate_client::RateClient, search,
     search::search_server::Search,
 };

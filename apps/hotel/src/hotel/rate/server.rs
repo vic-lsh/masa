@@ -1,11 +1,11 @@
-pub mod hotel {
+pub mod hotel_tonic {
     pub mod rate {
         tonic::include_proto!("rate");
     }
 }
 use futures::StreamExt;
 #[cfg(feature = "workload_stats")]
-use reboot_hotel::AvgTracker;
+use hotel::AvgTracker;
 #[cfg(not(feature = "synthetic"))]
 use std::collections::HashSet;
 use tokio::sync::Mutex;
@@ -23,7 +23,7 @@ use tonic::{Request, Response, Status};
 use tonic_masa::LatencyTracker;
 
 use crate::db;
-use hotel::{rate, rate::rate_server::Rate};
+use hotel_tonic::{rate, rate::rate_server::Rate};
 
 #[cfg(feature = "synthetic")]
 #[allow(unused)]

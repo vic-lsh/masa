@@ -1,7 +1,7 @@
 [package]
 edition = "2021"
 license = "MIT"
-name = "reboot_hotel"
+name = "hotel"
 publish = false
 version = "0.1.0"
 

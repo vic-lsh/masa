@@ -1,7 +1,7 @@
 use mongodb::{bson::doc, options::ClientOptions, Client};
 use serde::{Deserialize, Serialize};
 
-use crate::server::hotel;
+use crate::server::hotel_tonic;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct RoomType {
@@ -37,7 +37,7 @@ impl PartialOrd for RatePlan {
     }
 }
 
-impl From<RoomType> for hotel::rate::RoomType {
+impl From<RoomType> for hotel_tonic::rate::RoomType {
     fn from(r: RoomType) -> Self {
         Self {
             bookable_rate: r.bookable_rate,
@@ -50,7 +50,7 @@ impl From<RoomType> for hotel::rate::RoomType {
     }
 }
 
-impl From<RatePlan> for hotel::rate::RatePlan {
+impl From<RatePlan> for hotel_tonic::rate::RatePlan {
     fn from(r: RatePlan) -> Self {
         Self {
             hotel_id: r.hotel_id,

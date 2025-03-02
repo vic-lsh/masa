@@ -1,6 +1,6 @@
 #[path = "../config.rs"]
 pub mod config;
-pub mod hotel {
+pub mod hotel_tonic {
     tonic::include_proto!("frontend");
 }
 mod gen;
@@ -25,8 +25,8 @@ use tonic::transport::Channel;
 use tonic_masa::Context;
 
 use config::{GenConfig, HotelConfig};
-use hotel::frontend_client::FrontendClient;
-use reboot_hotel::{fetch_traces, init_logging, time_now, Span};
+use hotel_tonic::frontend_client::FrontendClient;
+use hotel::{fetch_traces, init_logging, time_now, Span};
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Client for benchmarking")]

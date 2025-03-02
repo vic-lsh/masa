@@ -3,7 +3,7 @@
 // [NOTE] this is a port of the original request generation logic:
 // https://github.com/delimitrou/DeathStarBench/blob/6ecb09706140f8730b5385c08f1386c654c3c526/hotelReservation/wrk2/scripts/hotel-reservation/mixed-workload_type_1.lua#L17
 
-use crate::hotel::{PingRequest, ReservationRequest, SearchRequest};
+use crate::hotel_tonic::{PingRequest, ReservationRequest, SearchRequest};
 use rand::Rng;
 
 fn get_user() -> (String, String) {

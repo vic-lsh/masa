@@ -1,4 +1,4 @@
-pub mod hotel {
+pub mod hotel_tonic {
     pub mod frontend {
         tonic::include_proto!("frontend");
     }
@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use tonic::{transport::Channel, Request, Response, Status};
 
-use hotel::{
+use hotel_tonic::{
     frontend, frontend::frontend_server::Frontend, profile, profile::profile_client::ProfileClient,
     reservation, reservation::reservation_client::ReservationClient, search,
     search::search_client::SearchClient, user, user::user_client::UserClient,

@@ -1,4 +1,4 @@
-pub mod hotel {
+pub mod hotel_tonic {
     pub mod profile {
         tonic::include_proto!("profile");
     }
@@ -12,14 +12,14 @@ use {rand::rngs::StdRng, rand::SeedableRng, rand_distr::Uniform};
 
 use crate::db;
 use mongodb::{bson::doc, Client as MongoClient};
-use reboot_hotel::McPool;
+use hotel::McPool;
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 use tonic_masa::LatencyTracker;
 
-use hotel::{profile, profile::profile_server::Profile};
+use hotel_tonic::{profile, profile::profile_server::Profile};
 #[cfg(feature = "workload_stats")]
-use reboot_hotel::AvgTracker;
+use hotel::AvgTracker;
 
 #[cfg(feature = "synthetic")]
 #[allow(unused)]
