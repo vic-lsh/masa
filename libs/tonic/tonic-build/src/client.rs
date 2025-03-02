@@ -69,7 +69,7 @@ pub(crate) fn generate_internal<T: Service>(
             pub struct #service_ident<
                 T,
                 S: tonic::masa::ServerHooks = tonic::masa::ServerContext,
-                C: tonic::masa::ClientStubHooks = tonic::masa::ChildContext,
+                C: tonic::masa::ClientHooks = tonic::masa::ChildContext,
                 P: tonic::masa::RequestHandlerHooks<C, S> = tonic::masa::ParentContext,
             > {
                 inner: tonic::client::Grpc<T>,
@@ -82,7 +82,7 @@ pub(crate) fn generate_internal<T: Service>(
             where
                 T: Clone,
                 S: tonic::masa::ServerHooks,
-                C: tonic::masa::ClientStubHooks,
+                C: tonic::masa::ClientHooks,
                 P: tonic::masa::RequestHandlerHooks<C, S>,
             {
                 fn clone(&self) -> Self {
@@ -140,7 +140,7 @@ pub(crate) fn generate_internal<T: Service>(
                 T::ResponseBody: Body<Data = Bytes> + Send  + 'static,
                 <T::ResponseBody as Body>::Error: Into<StdError> + Send,
                 S: tonic::masa::ServerHooks,
-                C: tonic::masa::ClientStubHooks,
+                C: tonic::masa::ClientHooks,
                 P: tonic::masa::RequestHandlerHooks<C, S>,
             {
                 fn new_impl(inner: T) -> Self {
@@ -234,7 +234,7 @@ fn generate_connect(service_ident: &syn::Ident, enabled: bool) -> TokenStream {
         impl<S, C, P> #service_ident<tonic::transport::Channel, S, C, P>
         where
             S: tonic::masa::ServerHooks,
-            C: tonic::masa::ClientStubHooks,
+            C: tonic::masa::ClientHooks,
             P: tonic::masa::RequestHandlerHooks<C, S>,
         {
             /// Attempt to create a new client by connecting to a given endpoint.

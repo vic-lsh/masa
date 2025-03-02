@@ -15,7 +15,7 @@ use tonic_masa::{
 
 use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
 
-use super::{ClientStubHooks, RequestHandlerHooks, ServerContext, ServerHooks};
+use super::{ClientHooks, RequestHandlerHooks, ServerContext, ServerHooks};
 
 #[inline]
 fn time_now() -> u64 {
@@ -45,7 +45,7 @@ pub struct SimpleParentContext {
     child_ctxs: Arc<Mutex<Vec<SimpleChildContext>>>,
 }
 
-/// A simple implementation of `ClientStubHooks`.
+/// A simple implementation of `ClientHooks`.
 #[derive(Debug, Clone)]
 pub struct SimpleChildContext {
     method: GrpcMethod,
@@ -339,7 +339,7 @@ impl RequestHandlerHooks<SimpleChildContext, SimpleServerContext> for SimplePare
     }
 }
 
-impl ClientStubHooks for SimpleChildContext {
+impl ClientHooks for SimpleChildContext {
     fn new<T>(method: GrpcMethod, _request: &Request<T>) -> Self {
         Self {
             method,
