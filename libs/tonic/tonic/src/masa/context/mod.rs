@@ -83,16 +83,15 @@ where
     /// This is also the constructor for the hook point struct implementation.
     fn begin<B>(method: GrpcMethod, req: &http::Request<B>, server_ctx: Arc<Server>) -> Self;
 
-    /// Invoked before the request handler makes an RPC.
+    /// Invoked before the request handler makes an RPC. Returns the deadline to be set on the
+    /// outgoing RPC.
     #[must_use]
     fn before_child_rpc<T>(
         &self,
         method: GrpcMethod,
         request: &mut Request<T>,
         child_ctx: &mut Child,
-    ) -> Option<Status> {
-        None
-    }
+    ) -> Result<Context, Status>;
 
     /// Invoked after the request handler receives a response from an RPC it made earlier.
     #[must_use]
@@ -101,36 +100,30 @@ where
         method: GrpcMethod,
         response: &mut Result<Response<T>, Status>,
         child_ctx: Child,
-    ) -> Option<Status> {
-        None
-    }
+    ) -> Result<(), Status>;
 
-    /// Invoked each time before the request handler is polled.
+    /// Invoked each time before the request handler future is polled.
     ///
     /// Being invoked indicates that the request handler can make progress.
     ///
-    /// To return early without continuing request processing, return the
-    /// response to write back to the client in this hook.
+    /// To return early without continuing request processing, return an error
+    /// with the response to send back to the client.
     #[must_use]
-    fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
-        None
-    }
+    fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>>;
 
-    /// Invoked each time after the request handler is polled.
+    /// Invoked each time after the request handler future is polled.
     ///
     /// The poll result shows whether the request is blocked or finalized.
     ///
-    /// To return early without continuing request processing, return the
-    /// response to write back to the client in this hook.
+    /// To return early without continuing request processing, return an error
+    /// with the response to send back to the client.
     #[must_use]
     fn after_poll<Ret>(
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
-    ) -> Option<Result<Response<Ret>, Status>> {
-        None
-    }
+    ) -> Result<(), Result<Response<Ret>, Status>>;
 
     /// The last lifecycle hook to be invoked. Provides a mutable reference to the response about
     /// to be sent back to the client.
-    fn finalize(&self, response: &mut http::Response<BoxBody>) {}
+    fn finalize(&self, response: &mut http::Response<BoxBody>);
 }

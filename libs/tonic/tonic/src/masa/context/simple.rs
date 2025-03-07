@@ -165,12 +165,11 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
     fn before_child_rpc<T>(
         &self,
         method: GrpcMethod,
-        request: &mut Request<T>,
+        _request: &mut Request<T>,
         _child_ctx: &mut SimpleChildContext,
-    ) -> Option<Status> {
-        // log::info!("parent_ctx, before_child_rpc, method: {:?}", method.id());
+    ) -> Result<Context, Status> {
         if self.check_early_return() {
-            return Some(self.issue_early_return());
+            return Err(self.issue_early_return());
         }
 
         let graph = self
@@ -196,7 +195,7 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
             panic!("Unimplemented policy");
         }
 
-        let child_recv_ctx = Context::new(
+        Ok(Context::new(
             self.ctx.api().clone(),
             self.ctx.test_id(),
             self.ctx.request_id(),
@@ -205,10 +204,7 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
             self.ctx.start_at(),
             deadline,
             latest_exec,
-        );
-        request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
-
-        None
+        ))
     }
 
     fn after_child_rpc<T>(
@@ -216,14 +212,14 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
         child_rpc_method: GrpcMethod,
         response: &mut Result<Response<T>, Status>,
         child_ctx: SimpleChildContext,
-    ) -> Option<Status> {
+    ) -> Result<(), Status> {
         // log::info!(
         //     "parent_ctx, after_child_rpc, method: {:?}",
         //     child_rpc_method.id()
         // );
 
         if let Err(status) = response {
-            return Some(status.clone());
+            return Err(status.clone());
         }
 
         let latency = child_ctx.present_tracker.get_latency().unwrap().as_micros() as u64;
@@ -237,17 +233,17 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
         graph.track_present_span(child_rpc_method.id(), latency);
 
         if self.check_early_return() {
-            return Some(self.issue_early_return());
+            return Err(self.issue_early_return());
         }
 
         let mut child_ctx = child_ctx.clone();
         child_ctx.future_tracker.start();
         self.child_ctxs.lock().unwrap().push(child_ctx);
 
-        None
+        Ok(())
     }
 
-    fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
+    fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         // log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
         // if self.polled.fetch_add(1, Ordering::Relaxed) == 0 {
         //     if self.check_early_return() {
@@ -264,15 +260,16 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
         }
 
         if self.check_early_return() {
-            return Some(Err(self.issue_early_return()));
+            return Err(Err(self.issue_early_return()));
         }
-        None
+
+        Ok(())
     }
 
     fn after_poll<Ret>(
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
-    ) -> Option<Result<Response<Ret>, Status>> {
+    ) -> Result<(), Result<Response<Ret>, Status>> {
         let now = time_now();
         self.last_after_poll.store(now, Ordering::Release);
         let last_before_poll = self.last_before_poll.load(Ordering::Acquire);
@@ -283,12 +280,13 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
         match poll {
             Poll::Pending => {
                 if self.check_early_return() {
-                    return Some(Err(self.issue_early_return()));
+                    return Err(Err(self.issue_early_return()));
                 }
             }
             Poll::Ready(_) => {}
         };
-        None
+
+        Ok(())
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {

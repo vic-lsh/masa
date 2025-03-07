@@ -320,11 +320,17 @@ where
                 crate::masa::context::server::set_parent_ctx::<ServerCtx, ChildCtx, ParentCtx>(
                     req_ctx.as_ref(),
                 );
-                req_ctx.before_poll()
+                match req_ctx.before_poll() {
+                    Ok(()) => None,
+                    Err(e) => Some(e),
+                }
             })
             .after_poll(|poll| {
                 crate::masa::context::server::reset_parent_ctx::<ServerCtx, ChildCtx, ParentCtx>();
-                req_ctx.after_poll(poll)
+                match req_ctx.after_poll(poll) {
+                    Ok(()) => None,
+                    Err(e) => Some(e),
+                }
             })
             .build();
 
