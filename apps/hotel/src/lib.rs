@@ -79,7 +79,7 @@ pub async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
     let mut file = File::create(output).unwrap();
     writeln!(
         file,
-        "api,test_id,request_id,slo,request_class,start_at,deadline,latest_exec,latency,error"
+        "api,test_id,request_id,slo,request_class,start_at,deadline,latency,error"
     )
     .unwrap();
     while let Ok(span) = trace_rx.recv() {
@@ -93,7 +93,6 @@ pub async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
             span.ctx.request_class(),
             span.ctx.start_at(),
             span.ctx.deadline(),
-            span.ctx.latest_exec(),
             span.latency,
             span.error
         )

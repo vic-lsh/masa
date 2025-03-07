@@ -180,17 +180,12 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
             .read()
             .unwrap();
         let deadline;
-        let latest_exec;
         if FIFO || FIFO_EARLY || FIFO_INFRA || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
             deadline = self.ctx.deadline();
-            latest_exec = self.ctx.latest_exec();
         } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
-            // [DEPRECATED] This is the old way to estimate the deadline and
-            // latest_exec by summing up percentile latencies.
-            // deadline = self.ctx.deadline() - graph.estimate_suffix_deadline(method.id());
-            // latest_exec = self.ctx.deadline() - graph.estimate_suffix_latest_exec(method.id());
-            deadline = self.ctx.deadline() - graph.estimate_future(method.id());
-            latest_exec = deadline - graph.estimate_present(method.id());
+            deadline = self.ctx.deadline()
+                - graph.estimate_future(method.id())
+                - graph.estimate_present(method.id());
         } else {
             panic!("Unimplemented policy");
         }
@@ -203,7 +198,6 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
             self.ctx.request_class(),
             self.ctx.start_at(),
             deadline,
-            latest_exec,
         ))
     }
 
