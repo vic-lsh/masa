@@ -8,8 +8,8 @@ use crate::{
     Code, Request, Status,
 };
 use http_body::Body;
+use std::fmt;
 use std::sync::Arc;
-use std::{fmt, pin::pin};
 use tokio_stream::{Stream, StreamExt};
 
 macro_rules! t {
@@ -246,19 +246,19 @@ where
             }
         };
 
-        let fut = service.call(request);
-        let response = fut.await.map(|r| r.map(|m| tokio_stream::once(Ok(m))));
+        let response = service
+            .call(request)
+            .await
+            .map(|r| r.map(|m| tokio_stream::once(Ok(m))));
 
         let compression_override = compression_override_from_response(&response);
 
-        let res = self.map_response(
+        self.map_response(
             response,
             accept_encoding,
             compression_override,
             self.max_encoding_message_size,
-        );
-
-        res
+        )
     }
 
     /// Handle a single unary gRPC request.
@@ -462,12 +462,14 @@ where
 
         let (parts, body) = request.into_parts();
 
-        let mut stream = pin!(Streaming::new_request(
+        let stream = Streaming::new_request(
             self.codec.decoder(),
             body,
             request_compression_encoding,
             self.max_decoding_message_size,
-        ));
+        );
+
+        tokio::pin!(stream);
 
         let message = stream
             .try_next()
