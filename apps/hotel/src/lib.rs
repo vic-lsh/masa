@@ -85,7 +85,7 @@ pub async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
     while let Ok(span) = trace_rx.recv() {
         writeln!(
             file,
-            "{},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{}",
             span.ctx.api(),
             span.ctx.test_id(),
             span.ctx.request_id(),
