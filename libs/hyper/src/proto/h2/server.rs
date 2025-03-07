@@ -353,14 +353,7 @@ where
                             // [NOTE] Get priority from context.
                             let ctx_str = ctx.to_str().unwrap();
                             let ctx = MasaContext::from_json(ctx_str);
-                            let prio;
-                            if FIFO || FIFO_EARLY || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
-                                prio = PriorityHint::new(ctx.deadline());
-                            } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
-                                prio = PriorityHint::new(ctx.latest_exec());
-                            } else {
-                                panic!("Unimplemented policy");
-                            }
+                            let prio = PriorityHint::new(ctx.deadline());
                             // [NOTE] Into executor.
                             let fut = H2Stream::new(service.call(req), connect_parts, respond);
                             // [TODO:Weixin] Skip if the deadline is already passed.
