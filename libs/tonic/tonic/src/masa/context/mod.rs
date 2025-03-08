@@ -6,6 +6,7 @@ pub mod runtime;
 mod simple;
 mod tls;
 pub use tls::{client, server};
+use tonic_masa::Context;
 
 /// Context struct for an RPC server, instantiated during server startup.
 ///
@@ -100,7 +101,9 @@ where
         method: GrpcMethod,
         response: &mut Result<Response<T>, Status>,
         child_ctx: Child,
-    ) -> Result<(), Status>;
+    ) -> Result<(), Status> {
+        Ok(())
+    }
 
     /// Invoked each time before the request handler future is polled.
     ///
@@ -109,7 +112,9 @@ where
     /// To return early without continuing request processing, return an error
     /// with the response to send back to the client.
     #[must_use]
-    fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>>;
+    fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
+        Ok(())
+    }
 
     /// Invoked each time after the request handler future is polled.
     ///
@@ -121,9 +126,11 @@ where
     fn after_poll<Ret>(
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
-    ) -> Result<(), Result<Response<Ret>, Status>>;
+    ) -> Result<(), Result<Response<Ret>, Status>> {
+        Ok(())
+    }
 
     /// The last lifecycle hook to be invoked. Provides a mutable reference to the response about
     /// to be sent back to the client.
-    fn finalize(&self, response: &mut http::Response<BoxBody>);
+    fn finalize(&self, response: &mut http::Response<BoxBody>) {}
 }
