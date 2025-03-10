@@ -22,6 +22,10 @@ name = "hotel_rate"
 path = "src/rate/main.rs"
 
 [[bin]]
+name = "hotel_review"
+path = "src/review/main.rs"
+
+[[bin]]
 name = "hotel_search"
 path = "src/search/main.rs"
 
