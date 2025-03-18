@@ -188,7 +188,6 @@ impl LoadGenerator {
 
                 let start_at = time_now();
                 let deadline = start_at + slo;
-                let latest_exec = deadline;
 
                 Context::new(
                     api.clone(),
@@ -197,8 +196,7 @@ impl LoadGenerator {
                     slo,
                     request_class,
                     start_at,
-                    deadline,
-                    latest_exec,
+                    deadline
                 )
             };
 
@@ -370,7 +368,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let request_class = 0;
                     let start_at = time_now();
                     let deadline = start_at + slo;
-                    let latest_exec = deadline;
                     Context::new(
                         "Ping".to_string(),
                         test_id,
@@ -379,7 +376,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         request_class,
                         start_at,
                         deadline,
-                        latest_exec,
                     )
                 };
                 request.metadata_mut().insert_ctx("ctx", &ctx);
