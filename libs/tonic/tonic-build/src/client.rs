@@ -337,7 +337,7 @@ fn generate_unary<T: Service>(
         quote! {
             if let Some(parent_ctx) = self.get_parent_ctx() {
                 // log::info!("into parent ctx, after rpc, method: {:?}", grpc_method);
-                if let Some(status) = parent_ctx.after_child_rpc(grpc_method, &mut resp, child_ctx) {
+                if let Err(status) = parent_ctx.after_child_rpc(grpc_method, &mut resp, child_ctx) {
                     return Err(status);
                 }
             }
