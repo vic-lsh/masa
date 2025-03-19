@@ -8,20 +8,14 @@ mod tls;
 pub use tls::{client, server};
 use tonic_masa::Context;
 
-/// Context struct for an RPC server, instantiated during server startup.
-///
-/// Must implement `ServerHooks`.
-pub type ServerContext = simple::SimpleServerContext;
+pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
 
-/// Context struct instantiated once per RPC, when the server invokes a request handler.
-///
-/// Must implement `ParentHooks`.
-pub type ParentContext = simple::SimpleParentContext;
-
-/// Context struct instantiated on RPC transmission.
-///
-/// Must implement `ClientHooks`.
-pub type ChildContext = simple::SimpleChildContext;
+// TODO: rename this to be more general
+pub trait PrioritySelector {
+    type ServerContext: ServerHooks;
+    type ChildContext: ClientHooks;
+    type ParentContext: ParentHooks<Self::ChildContext, Self::ServerContext>;
+}
 
 /// Lifecycle hooks of a Masa server.
 #[allow(unused_variables)]

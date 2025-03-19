@@ -15,7 +15,7 @@ use tonic_masa::{
 
 use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
 
-use super::{ClientHooks, ParentHooks, ServerContext, ServerHooks};
+use super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
 
 #[inline]
 fn time_now() -> u64 {
@@ -24,6 +24,15 @@ fn time_now() -> u64 {
         .unwrap()
         .as_micros();
     now as u64
+}
+
+#[derive(Debug)]
+pub struct SimplePrioritySelector;
+
+impl PrioritySelector for SimplePrioritySelector {
+    type ServerContext = SimpleServerContext;
+    type ChildContext = SimpleChildContext;
+    type ParentContext = SimpleParentContext;
 }
 
 /// A simple implementation of `ParentHooks`.
