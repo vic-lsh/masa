@@ -1,6 +1,7 @@
 use crate::codec::compression::{
     CompressionEncoding, EnabledCompressionEncodings, SingleMessageCompressionOverride,
 };
+use crate::masa::{ParentHooks, PrioritySelector};
 use crate::{
     body::BoxBody,
     codec::{encode_server, Codec, Streaming},
@@ -262,19 +263,17 @@ where
     }
 
     /// Handle a single unary gRPC request.
-    pub async fn masa_unary<S, B, ServerCtx, ChildCtx, ParentCtx>(
+    pub async fn masa_unary<S, B, P>(
         &mut self,
         mut service: S,
         req: http::Request<B>,
-        req_ctx: ParentCtx,
+        req_ctx: P::ParentContext,
     ) -> http::Response<BoxBody>
     where
         S: UnaryService<T::Decode, Response = T::Encode>,
         B: Body + Send + 'static,
         B::Error: Into<crate::Error> + Send,
-        ServerCtx: crate::masa::ServerHooks,
-        ChildCtx: crate::masa::ClientHooks,
-        ParentCtx: crate::masa::ParentHooks<ChildCtx, ServerCtx>,
+        P: PrioritySelector,
     {
         let req_ctx = Arc::new(req_ctx);
 
@@ -286,11 +285,9 @@ where
             let req_ctx_for_child_task = req_ctx.clone();
 
             let child_hook =
-                crate::masa::context::runtime::async_executor::make_child_task_poll_hook::<
-                    ServerCtx,
-                    ChildCtx,
-                    ParentCtx,
-                >(req_ctx_for_child_task);
+                crate::masa::context::runtime::async_executor::make_child_task_poll_hook::<P>(
+                    req_ctx_for_child_task,
+                );
             async_executor::configure_child_task_poll_hooks(child_hook);
         }
 
@@ -317,16 +314,14 @@ where
             .call(request)
             .abortable()
             .before_poll(|| {
-                crate::masa::context::server::set_parent_ctx::<ServerCtx, ChildCtx, ParentCtx>(
-                    req_ctx.as_ref(),
-                );
+                crate::masa::context::server::set_parent_ctx::<P>(req_ctx.as_ref());
                 match req_ctx.before_poll() {
                     Ok(()) => None,
                     Err(e) => Some(e),
                 }
             })
             .after_poll(|poll| {
-                crate::masa::context::server::reset_parent_ctx::<ServerCtx, ChildCtx, ParentCtx>();
+                crate::masa::context::server::reset_parent_ctx::<P>();
                 match req_ctx.after_poll(poll) {
                     Ok(()) => None,
                     Err(e) => Some(e),
