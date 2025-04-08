@@ -19,6 +19,14 @@ path = "src/media/main.rs"
 name = "media_client"
 path = "src/media/client.rs"
 
+[[bin]]
+name = "url_shorten_server"
+path = "src/url_shorten/main.rs"
+
+[[bin]]
+name = "url_shorten_client"
+path = "src/url_shorten/client.rs"
+
 [dependencies]
 tonic = "0.12"
 prost = "0.13"
@@ -29,6 +37,10 @@ env_logger = "0.10"
 opentelemetry = { version = "0.20", features = ["trace"] }
 tracing-opentelemetry = "0.20"
 tracing = "0.1"
+chrono = "0.4.23"
+mongodb = "2.6.0"
+serde = { version = "1.0", features = ["derive"] }
+futures = "0.3.28"
 
 [build-dependencies]
 tonic-build = "0.12"
