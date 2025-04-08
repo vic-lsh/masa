@@ -28,8 +28,8 @@ name = "url_shorten_client"
 path = "src/url_shorten/client.rs"
 
 [dependencies]
-tonic = { path = "../../libs/tonic/tonic" }
-prost = "0.12"
+tonic = "0.12"
+prost = "0.13"
 tokio = { path = "../../libs/tokio/tokio", features = ["macros", "rt-multi-thread"] }
 rand = "0.8.5"  
 log = "0.4"
@@ -43,4 +43,4 @@ serde = { version = "1.0", features = ["derive"] }
 futures = "0.3.28"
 
 [build-dependencies]
-tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
+tonic-build = "0.12"
