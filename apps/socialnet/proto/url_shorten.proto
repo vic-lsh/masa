@@ -1,0 +1,46 @@
+syntax = "proto3";
+package url_shorten;
+
+message ServiceException {
+  int32 error_code = 1;
+  string message = 2;
+}
+
+message Url {
+  string shortened_url = 1;
+  string expanded_url = 2;
+}
+
+message ComposeUrlsRequest {
+  int64 req_id = 1;
+  repeated string urls = 2;
+}
+
+message ComposeUrlsResponse {
+  repeated Url urls = 1;
+  optional ServiceException exception = 2;
+}
+
+message GetExtendedUrlsRequest {
+  int64 req_id = 1;
+  repeated string shortened_urls = 2;
+}
+
+message GetExtendedUrlsResponse {
+  repeated string expanded_urls = 1;
+  optional ServiceException exception = 2;
+}
+
+// Error codes from the original C++ implementation
+enum ErrorCode {
+  UNKNOWN = 0;
+  SE_MONGODB_ERROR = 1;
+  SE_MEMCACHED_ERROR = 2;
+  SE_THRIFT_HANDLER_ERROR = 3;
+}
+
+// UrlShortenService definition
+service UrlShortenService {
+  rpc ComposeUrls(ComposeUrlsRequest) returns (ComposeUrlsResponse);
+  rpc GetExtendedUrls(GetExtendedUrlsRequest) returns (GetExtendedUrlsResponse);
+}
