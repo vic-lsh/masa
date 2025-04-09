@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "uniqueid_server"
-path = "src/unique_id/server.rs"
+name = "textservice_server"
+path = "src/text_service/server.rs"
 
 [[bin]]
-name = "uniqueid_client"
-path = "src/unique_id/client.rs"
+name = "textservice_client"
+path = "src/text_service/client.rs"
 
 [[bin]]
 name = "media_server"
