@@ -41,7 +41,7 @@ impl PrioritySelector for SimplePrioritySelector {
 pub struct SimpleParentContext {
     method: GrpcMethod,
     ctx: Context,
-    server_ctx: Arc<ServerContext>,
+    server_ctx: Arc<SimpleServerContext>,
 
     will_early_return: AtomicBool,
     num_polled: AtomicUsize,
@@ -174,9 +174,9 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
     fn before_child_rpc<T>(
         &self,
         method: GrpcMethod,
-        _request: &mut Request<T>,
+        request: &mut Request<T>,
         _child_ctx: &mut SimpleChildContext,
-    ) -> Result<Context, Status> {
+    ) -> Result<(), Status> {
         if self.check_early_return() {
             return Err(self.issue_early_return());
         }
@@ -199,7 +199,7 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
             panic!("Unimplemented policy");
         }
 
-        Ok(Context::new(
+        let child_recv_ctx = Context::new(
             self.ctx.api().clone(),
             self.ctx.test_id(),
             self.ctx.request_id(),
@@ -207,7 +207,10 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
             self.ctx.request_class(),
             self.ctx.start_at(),
             deadline,
-        ))
+        );
+        request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
+
+        Ok(())
     }
 
     fn after_child_rpc<T>(
