@@ -6,7 +6,6 @@ pub mod runtime;
 mod simple;
 mod tls;
 pub use tls::{client, server};
-use tonic_masa::Context;
 
 pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
 
@@ -86,7 +85,7 @@ where
         method: GrpcMethod,
         request: &mut Request<T>,
         child_ctx: &mut Child,
-    ) -> Result<Context, Status>;
+    ) -> Result<(), Status>;
 
     /// Invoked after the request handler receives a response from an RPC it made earlier.
     #[must_use]
