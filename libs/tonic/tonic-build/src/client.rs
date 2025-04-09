@@ -319,14 +319,9 @@ fn generate_unary<T: Service>(
         quote! {
             if let Some(parent_ctx) = self.get_parent_ctx() {
                 // log::info!("into parent ctx, before rpc, method: {:?}", grpc_method);
-                match parent_ctx.before_child_rpc(grpc_method, &mut req, &mut child_ctx) {
-                    Ok(ctx) => {
-                        req.metadata_mut().insert_ctx("ctx", &ctx);
-                    }
-                    Err(s) =>  {
-                        return Err(s)
-                    }
-                };
+                if let Err(s) = parent_ctx.before_child_rpc(grpc_method, &mut req, &mut child_ctx) {
+                    return Err(s);
+                }
             }
         }
     } else {
