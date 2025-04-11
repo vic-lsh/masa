@@ -14,7 +14,8 @@ pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
 // pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
 
 // TODO: rename this to be more general
-pub trait PrioritySelector {
+// TODO: add notes on trait bounds
+pub trait PrioritySelector: Send + Sync + 'static {
     type ServerContext: ServerHooks;
     type ChildContext: ClientHooks;
     type ParentContext: ParentHooks<Self::ChildContext, Self::ServerContext>;
