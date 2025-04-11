@@ -15,7 +15,7 @@ use hotel::McPool;
 use mongodb::{bson::doc, Client as MongoClient};
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
-use tonic_masa::LatencyTracker;
+use tonic_masa::LatencyDistribution;
 
 #[cfg(feature = "workload_stats")]
 use hotel::AvgTracker;
@@ -40,7 +40,7 @@ pub struct ProfileImpl {
     mc_pool: Arc<McPool>,
     memc_client: Arc<memcache::Client>,
     mongo_client: Arc<MongoClient>,
-    latency_tracker: Arc<Mutex<LatencyTracker>>,
+    latency_tracker: Arc<Mutex<LatencyDistribution>>,
     #[cfg(feature = "workload_stats")]
     fanout_tracker: Arc<AvgTracker>,
     #[cfg(feature = "synthetic")]
@@ -59,7 +59,7 @@ impl ProfileImpl {
         let memc_client = memcache::Client::with_pool_size(cache_addr.clone(), cache_conn)?;
         let mongo_client = db::initialize_database(&db_addr).await?;
 
-        let latency_tracker = Arc::new(Mutex::new(LatencyTracker::new("ProfileSvc".into(), 1024)));
+        let latency_tracker = Arc::new(Mutex::new(LatencyDistribution::new("ProfileSvc".into(), 1024)));
 
         #[cfg(feature = "workload_stats")]
         let fanout_tracker = {
