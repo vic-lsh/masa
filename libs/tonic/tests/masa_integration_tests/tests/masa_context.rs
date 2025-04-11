@@ -1,8 +1,10 @@
 use std::{
-    marker::PhantomData, sync::{
+    marker::PhantomData,
+    sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
-    }, time::Duration
+    },
+    time::Duration,
 };
 
 use hyper::rt::{Exec, Executor};
@@ -13,13 +15,17 @@ use masa_integration_tests::pb::{
     parent_service_server::*,
     Input1, Input2, Output1, Output2,
 };
-use tonic::{masa::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks}, transport::Server, GrpcMethod, Request, Response, Status};
+use tonic::{
+    masa::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks},
+    transport::Server,
+    GrpcMethod, Request, Response, Status,
+};
 use tonic_masa::PriorityHint;
 
 struct ParentSvc<P> {
     child_addr: &'static str,
     fanout_factor: usize,
-    _prio_selector: PhantomData<P>
+    _prio_selector: PhantomData<P>,
 }
 
 impl<P> ParentSvc<P> {
@@ -193,10 +199,9 @@ async fn test_service_ctx_construction() {
             let addr = format!("127.0.0.1:{}", 7878 + i);
             tokio::spawn(async move {
                 Server::builder()
-                    .add_service(ChildServiceServer::<
-                        _,
-                        MockPrioSelect,
-                    >::with_custom_context(ChildSvc))
+                    .add_service(
+                        ChildServiceServer::<_, MockPrioSelect>::with_custom_context(ChildSvc),
+                    )
                     .serve_with_executor(addr.parse().unwrap(), Exec::Executor(Arc::new(ExecImpl)))
                     .await
                     .unwrap();
@@ -244,10 +249,9 @@ async fn test_child_rpc_hooks_invocations() {
     let parent_svc_addr = "127.0.0.1:4455";
     let child_svc_addr = "127.0.0.1:4466";
     let fanout_factor = 10;
-    let (_parent, _child) = make_parent_child_svcs::<
-        MockPrioSelect
-    >(parent_svc_addr, child_svc_addr, fanout_factor)
-    .await;
+    let (_parent, _child) =
+        make_parent_child_svcs::<MockPrioSelect>(parent_svc_addr, child_svc_addr, fanout_factor)
+            .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
@@ -294,10 +298,9 @@ async fn test_child_ctx_hook_invocations() {
     let child_svc_addr = "127.0.0.1:4366";
     let fanout_factor = 10;
 
-    let (_parent, _child) = make_parent_child_svcs::<
-        MockPrioSelect
-    >(parent_svc_addr, child_svc_addr, fanout_factor)
-    .await;
+    let (_parent, _child) =
+        make_parent_child_svcs::<MockPrioSelect>(parent_svc_addr, child_svc_addr, fanout_factor)
+            .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
