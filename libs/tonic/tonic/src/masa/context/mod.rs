@@ -8,21 +8,28 @@ mod tls;
 pub use tls::{client, server};
 mod noop;
 
-// TODO: make the contexts instantiated different based on compilation flags
-
 /// Context struct for an RPC server, instantiated during server startup.
 ///
 /// Must implement `ServerHooks`.
+#[cfg(feature = "masa")]
+pub type ServerContext = simple::SimpleServerContext;
+#[cfg(not(feature = "masa"))]
 pub type ServerContext = noop::ServerContext;
 
 /// Context struct instantiated once per RPC, when the server invokes a request handler.
 ///
 /// Must implement `ParentHooks`.
+#[cfg(feature = "masa")]
+pub type ParentContext = simple::SimpleParentContext;
+#[cfg(not(feature = "masa"))]
 pub type ParentContext = noop::ParentContext;
 
 /// Context struct instantiated on RPC transmission.
 ///
 /// Must implement `ClientHooks`.
+#[cfg(feature = "masa")]
+pub type ChildContext = simple::SimpleChildContext;
+#[cfg(not(feature = "masa"))]
 pub type ChildContext = noop::ChildContext;
 
 /// Lifecycle hooks of a Masa server.
