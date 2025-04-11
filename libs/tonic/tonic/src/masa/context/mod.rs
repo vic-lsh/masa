@@ -80,15 +80,16 @@ where
     /// This is also the constructor for the hook point struct implementation.
     fn begin<B>(method: GrpcMethod, req: &http::Request<B>, server_ctx: Arc<Server>) -> Self;
 
-    /// Invoked before the request handler makes an RPC. Returns the deadline to be set on the
-    /// outgoing RPC.
+    /// Invoked before the request handler makes an RPC.
     #[must_use]
     fn before_child_rpc<T>(
         &self,
         method: GrpcMethod,
         request: &mut Request<T>,
         child_ctx: &mut Child,
-    ) -> Result<(), Status>;
+    ) -> Result<(), Status> {
+        Ok(())
+    }
 
     /// Invoked after the request handler receives a response from an RPC it made earlier.
     #[must_use]
