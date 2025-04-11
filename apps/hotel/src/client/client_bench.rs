@@ -196,7 +196,7 @@ impl LoadGenerator {
                     slo,
                     request_class,
                     start_at,
-                    deadline
+                    deadline,
                 )
             };
 
