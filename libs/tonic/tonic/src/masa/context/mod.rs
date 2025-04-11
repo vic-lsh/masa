@@ -10,7 +10,8 @@ mod noop;
 
 // TODO: make the contexts instantiated different based on compilation flags
 
-pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
+pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
+// pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
 
 // TODO: rename this to be more general
 pub trait PrioritySelector {
