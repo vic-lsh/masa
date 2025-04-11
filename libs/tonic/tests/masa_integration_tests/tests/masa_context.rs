@@ -1,10 +1,8 @@
 use std::{
-    marker::PhantomData,
-    sync::{
+    marker::PhantomData, sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
-    },
-    time::Duration,
+    }, time::Duration
 };
 
 use hyper::rt::{Exec, Executor};
@@ -15,28 +13,30 @@ use masa_integration_tests::pb::{
     parent_service_server::*,
     Input1, Input2, Output1, Output2,
 };
-use tonic::{masa::PrioritySelector, transport::Server, GrpcMethod, Request, Response, Status};
+use tonic::{masa::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks}, transport::Server, GrpcMethod, Request, Response, Status};
 use tonic_masa::PriorityHint;
 
-struct ParentSvc {
+struct ParentSvc<P> {
     child_addr: &'static str,
     fanout_factor: usize,
+    _prio_selector: PhantomData<P>
 }
 
-impl ParentSvc {
+impl<P> ParentSvc<P> {
     fn new(child_addr: &'static str, fanout_factor: usize) -> Self {
         Self {
             child_addr,
             fanout_factor,
+            _prio_selector: PhantomData,
         }
     }
 }
 
 #[tonic::async_trait]
-impl<P> ParentService for ParentSvc
+impl<P> ParentService for ParentSvc<P>
 where
     P: PrioritySelector,
-    P::ClientContext: Send + Sync + 'static,
+    P::ChildContext: Send + Sync + 'static,
     P::ParentContext: 'static,
 {
     async fn rpc(&self, _req: Request<Input1>) -> Result<Response<Output1>, Status> {
@@ -105,6 +105,14 @@ where
     }
 }
 
+struct MockPrioSelect;
+
+impl PrioritySelector for MockPrioSelect {
+    type ParentContext = MockParentCtx;
+    type ChildContext = MockChildCtx;
+    type ServerContext = MockServerCtx;
+}
+
 struct MockServerCtx;
 
 impl ServerHooks for MockServerCtx {
@@ -136,7 +144,7 @@ async fn make_parent_child_svcs<P>(
 ) -> (tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>)
 where
     P: PrioritySelector,
-    P::ClientContext: Send + Sync + 'static,
+    P::ChildContext: Send + Sync + 'static,
     P::ParentContext: 'static,
 {
     let child_svc = tokio::spawn(async {
@@ -187,9 +195,7 @@ async fn test_service_ctx_construction() {
                 Server::builder()
                     .add_service(ChildServiceServer::<
                         _,
-                        TestCtorCountServerCtx,
-                        MockChildCtx,
-                        MockParentCtx,
+                        MockPrioSelect,
                     >::with_custom_context(ChildSvc))
                     .serve_with_executor(addr.parse().unwrap(), Exec::Executor(Arc::new(ExecImpl)))
                     .await
@@ -219,9 +225,9 @@ async fn test_child_rpc_hooks_invocations() {
             _method: GrpcMethod,
             _req: &mut Request<T>,
             _child_ctx: &mut C,
-        ) -> Option<Status> {
+        ) -> Result<(), Status> {
             N_BEFORE_CHILD_RPCS.fetch_add(1, Ordering::Relaxed);
-            None
+            Ok(())
         }
 
         fn after_child_rpc<T>(
@@ -229,9 +235,9 @@ async fn test_child_rpc_hooks_invocations() {
             _method: GrpcMethod,
             _resp: &mut Result<Response<T>, Status>,
             _child_ctx: C,
-        ) -> Option<Status> {
+        ) -> Result<(), Status> {
             N_AFTER_CHILD_RPCS.fetch_add(1, Ordering::Relaxed);
-            None
+            Ok(())
         }
     }
 
@@ -239,9 +245,7 @@ async fn test_child_rpc_hooks_invocations() {
     let child_svc_addr = "127.0.0.1:4466";
     let fanout_factor = 10;
     let (_parent, _child) = make_parent_child_svcs::<
-        MockServerCtx,
-        MockChildCtx,
-        TestChildRpcParentCtx,
+        MockPrioSelect
     >(parent_svc_addr, child_svc_addr, fanout_factor)
     .await;
 
@@ -291,9 +295,7 @@ async fn test_child_ctx_hook_invocations() {
     let fanout_factor = 10;
 
     let (_parent, _child) = make_parent_child_svcs::<
-        MockServerCtx,
-        TestInvocationChildCtx,
-        MockParentCtx,
+        MockPrioSelect
     >(parent_svc_addr, child_svc_addr, fanout_factor)
     .await;
 
