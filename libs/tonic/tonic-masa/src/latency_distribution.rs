@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::SpanId;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct LatencyTracker {
+pub struct LatencyDistribution {
     span_id: SpanId,
     capacity: usize,
     cur_queue: Vec<u64>,
@@ -12,10 +12,10 @@ pub struct LatencyTracker {
     percentiles: Vec<u64>,
 }
 
-impl LatencyTracker {
+impl LatencyDistribution {
     pub fn new(span_id: SpanId, capacity: usize) -> Self {
         assert!(capacity >= 100, "Capacity should be no less than 100");
-        LatencyTracker {
+        LatencyDistribution {
             span_id,
             capacity,
             cur_queue: Vec::with_capacity(capacity),

@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tonic_masa::LatencyTracker;
+use tonic_masa::LatencyDistribution;
 
 use crate::db;
 use hotel::McPool;
@@ -248,8 +248,8 @@ use hotel_tonic::{reservation, reservation::reservation_server::Reservation};
 pub struct ReservationImpl {
     mc_pool: Arc<McPool>,
     mongo_client: Arc<MongoClient>,
-    lat_check_avail: Mutex<LatencyTracker>,
-    lat_make_reserve: Mutex<LatencyTracker>,
+    lat_check_avail: Mutex<LatencyDistribution>,
+    lat_make_reserve: Mutex<LatencyDistribution>,
     check_avail_hotel_mc: Arc<AvgTracker>,
     check_avail_hotel_mongo: Arc<AvgTracker>,
     check_avail_reserve: Arc<AvgTracker>,
@@ -268,8 +268,8 @@ impl ReservationImpl {
         db_addr: String,
     ) -> Result<Self, Box<dyn Error>> {
         let mongo_client = crate::db::initialize_database(&db_addr).await?;
-        let lat_check_avail = Mutex::new(LatencyTracker::new("check_availability".into(), 256));
-        let lat_make_reserve = Mutex::new(LatencyTracker::new("make_reservation".into(), 256));
+        let lat_check_avail = Mutex::new(LatencyDistribution::new("check_availability".into(), 256));
+        let lat_make_reserve = Mutex::new(LatencyDistribution::new("make_reservation".into(), 256));
 
         let check_avail_hotel_mc = Arc::new(AvgTracker::default());
         let check_avail_hotel_mongo = Arc::new(AvgTracker::default());

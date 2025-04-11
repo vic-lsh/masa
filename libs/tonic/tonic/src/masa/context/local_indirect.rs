@@ -1,133 +1,102 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
         Arc, Mutex, RwLock,
     },
     task::Poll,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::Instant,
 };
 
 use tonic_masa::{
-    time_now, Context, FutureGraphTracker, LatencyTracker, LocalGraph, LocalGraphTracker, MethodId,
-    FIFO, FIFO_EARLY, FIFO_INFRA, PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
+    Context, FutureGraphTracker, LatencyDistribution, LatencyTracker, LocalGraphTracker, MethodId,
 };
 
-use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
+use crate::{body::BoxBody, masa::mock_graph, GrpcMethod, Request, Response, Status};
 
 use super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
 
 #[derive(Debug)]
-pub struct SimplePrioritySelector;
+// TODO: document
+pub struct LocalDeadlineIndirect;
 
-impl PrioritySelector for SimplePrioritySelector {
-    type ServerContext = SimpleServerContext;
-    type ChildContext = SimpleChildContext;
-    type ParentContext = SimpleParentContext;
+impl PrioritySelector for LocalDeadlineIndirect {
+    type ServerContext = ServerContext;
+    type ChildContext = ChildContext;
+    type ParentContext = ParentContext;
 }
+
+const DISTRIBUTION_CAPACITY: usize = 1024;
+const PERCENTILE: usize = 50;
 
 /// A simple implementation of `ParentHooks`.
 #[derive(Debug)]
 #[allow(dead_code)]
-pub struct SimpleParentContext {
+pub struct ParentContext {
     method: GrpcMethod,
     ctx: Context,
-    server_ctx: Arc<SimpleServerContext>,
+    server_ctx: Arc<ServerContext>,
 
-    will_early_return: AtomicBool,
-    num_polled: AtomicUsize,
-    start_exec: Instant,
-    last_before_poll: AtomicU64,
-    last_after_poll: AtomicU64,
-    compute_lat: AtomicU64,
-    io_lat: AtomicU64,
+    start: Instant,
+    duration_tracker: LatencyTracker,
+    estimated_duration: u64,
 
-    child_ctxs: Arc<Mutex<Vec<SimpleChildContext>>>,
+    child_ctxs: Arc<Mutex<Vec<ChildContext>>>,
 }
 
 /// A simple implementation of `ClientHooks`.
 #[derive(Debug, Clone)]
-pub struct SimpleChildContext {
+pub struct ChildContext {
     method: GrpcMethod,
-    present_tracker: LatencyTracker,
-    future_tracker: LatencyTracker,
+    duration_tracker: LatencyTracker,
 }
 
 #[derive(Debug)]
 #[allow(dead_code)]
-pub struct SimpleServerContext {
+pub struct ServerContext {
     service_name: &'static str,
-    num_early_returns: Arc<AtomicUsize>,
-    local_graphs: HashMap<MethodId, LocalGraph>,
-    local_graph_trackers: HashMap<MethodId, RwLock<LocalGraphTracker>>,
-    future_graph_trackers: HashMap<MethodId, RwLock<FutureGraphTracker>>,
+    parent_distributions: RwLock<HashMap<MethodId, LatencyDistribution>>,
+    child_distributions: RwLock<HashMap<MethodId, HashMap<MethodId, LatencyDistribution>>>,
 }
 
-impl SimpleParentContext {
-    #[inline]
-    fn check_early_return(&self) -> bool {
-        // if self.method.id() == "/frontend.Frontend/HandleSearch"
-        if FIFO_EARLY || PRIO_GLOBAL_EARLY || PRIO_LOCAL_EARLY {
-            if self.will_early_return.load(Ordering::Relaxed) {
-                return true;
-            }
-
-            let now = time_now();
-            let should_early_return = now >= self.ctx.deadline();
-
-            if should_early_return {
-                // `check_early_return` may be invoked at multiple lifecycle hooks.
-                //
-                // this will only be read/written on one thread, so we can use the
-                // weakest ordering guarantees.
-                // it is an atomic because the ParentContext type needs to be Sync:
-                // see the docs for ParentHooks for why.
-                if self
-                    .will_early_return
-                    .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)
-                    .is_ok()
-                {
-                    self.server_ctx
-                        .num_early_returns
-                        .fetch_add(1, Ordering::Relaxed);
-                }
-            }
-
-            return should_early_return;
-        } else {
-            return false;
-        }
-    }
-
-    #[inline]
-    fn issue_early_return(&self) -> Status {
-        Status::new(
-            Code::DeadlineExceeded,
-            format!("/EarlyReturn{}", self.method.id()),
-        )
-    }
-}
-
-impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContext {
+impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn begin<B>(
         method: GrpcMethod,
         req: &http::Request<B>,
-        server_ctx: Arc<SimpleServerContext>,
+        server_ctx: Arc<ServerContext>,
     ) -> Self {
         // log::info!("parent_ctx, begin, method: {:?}", method.id());
         let ctx_str = req.headers()["ctx"].to_str().unwrap();
         let ctx = Context::from_json(ctx_str);
+        let mut duration_tracker = LatencyTracker::NotStarted;
+        duration_tracker.start();
+        let start = Instant::now();
+        let has_method = server_ctx
+            .parent_distributions
+            .read()
+            .unwrap()
+            .contains_key(method.id());
+        if !has_method {
+            // TODO: where to get capacity from?
+            server_ctx.parent_distributions.write().unwrap().insert(
+                method.id(),
+                LatencyDistribution::new(method.id().to_string(), 1024),
+            );
+        }
+        let estimated_duration = server_ctx
+            .parent_distributions
+            .read()
+            .unwrap()
+            .get(method.id())
+            .unwrap()
+            .estimate(PERCENTILE);
         Self {
             method,
             ctx,
             server_ctx,
-            will_early_return: AtomicBool::new(false),
-            num_polled: AtomicUsize::new(0),
-            start_exec: Instant::now(),
-            last_before_poll: AtomicU64::new(0),
-            last_after_poll: AtomicU64::new(0),
-            compute_lat: AtomicU64::new(0),
-            io_lat: AtomicU64::new(0),
+            start,
+            duration_tracker,
+            estimated_duration,
             child_ctxs: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -135,32 +104,18 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
     fn before_child_rpc<T>(
         &self,
         method: GrpcMethod,
-        request: &mut Request<T>,
-        _child_ctx: &mut SimpleChildContext,
+        _request: &mut Request<T>,
+        _child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
-        if self.check_early_return() {
-            return Err(self.issue_early_return());
-        }
+        // TODO: early return logic?
+        let elapsed = Instant::now().duration_since(self.start);
+        let estimate_child = 0;
+        self.server_ctx.child_distributions.
+        let estimate_remaining = self.estimated_duration - ;
 
-        let graph = self
-            .server_ctx
-            .future_graph_trackers
-            .get(&self.method.id())
-            .unwrap()
-            .read()
-            .unwrap();
-        let deadline;
-        if FIFO || FIFO_EARLY || FIFO_INFRA || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
-            deadline = self.ctx.deadline();
-        } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
-            deadline = self.ctx.deadline()
-                - graph.estimate_future(method.id())
-                - graph.estimate_present(method.id());
-        } else {
-            panic!("Unimplemented policy");
-        }
+        let deadline = self.ctx.deadline() - estimate_remaining;
 
-        let child_recv_ctx = Context::new(
+        Ok(Context::new(
             self.ctx.api().clone(),
             self.ctx.test_id(),
             self.ctx.request_id(),
@@ -168,17 +123,14 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
             self.ctx.request_class(),
             self.ctx.start_at(),
             deadline,
-        );
-        request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
-
-        Ok(())
+        ))
     }
 
     fn after_child_rpc<T>(
         &self,
         child_rpc_method: GrpcMethod,
         response: &mut Result<Response<T>, Status>,
-        child_ctx: SimpleChildContext,
+        child_ctx: ChildContext,
     ) -> Result<(), Status> {
         // log::info!(
         //     "parent_ctx, after_child_rpc, method: {:?}",
@@ -189,7 +141,11 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
             return Err(status.clone());
         }
 
-        let latency = child_ctx.present_tracker.get_latency().unwrap().as_micros() as u64;
+        let latency = child_ctx
+            .duration_tracker
+            .get_latency()
+            .unwrap()
+            .as_micros() as u64;
         let mut graph = self
             .server_ctx
             .future_graph_trackers
@@ -257,65 +213,23 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
-        let check_early_return = self.check_early_return();
-        log::warn!(
-            "finalize, ctx: {:?}, method: {:?}, check_early_return: {}, compute_lat: {}, io_lat: {}, total_lat: {}",
-            self as *const _,
-            self.method.id(),
-            check_early_return,
-            self.compute_lat.load(Ordering::Acquire),
-            self.io_lat.load(Ordering::Acquire),
-            self.start_exec.elapsed().as_micros()
-        );
-
-        if check_early_return {
-            return;
-        }
-        log::info!(
-            "finalize, ctx: {:?}, method: {:?}, child_ctxs: {}, elapsed: {} us",
-            self as *const _,
-            self.method.id(),
-            self.child_ctxs.lock().unwrap().len(),
-            self.start_exec.elapsed().as_micros()
-        );
-
-        for child_ctx in self.child_ctxs.lock().unwrap().iter_mut() {
-            child_ctx.future_tracker.record_latency();
-            let present_latency =
-                child_ctx.present_tracker.get_latency().unwrap().as_micros() as u64;
-            let future_latency = child_ctx.future_tracker.get_latency().unwrap().as_micros() as u64;
-            log::info!(
-                "track_future_span, ctx: {:?}, child_rpc_method: {:?}, present_latency: {} us, future_latency: {} us",
-                self as *const _,
-                child_ctx.method.id(),
-                present_latency,
-                future_latency
-            );
-
-            let mut graph = self
-                .server_ctx
-                .future_graph_trackers
-                .get(&self.method.id())
-                .unwrap()
-                .write()
-                .unwrap();
-            graph.track_future_span(child_ctx.method.id(), future_latency);
-        }
+        self.duration_tracker.record_latency();
+        let duration = self.duration_tracker.get_latency().unwrap();
     }
 }
 
-impl ClientHooks for SimpleChildContext {
+impl ClientHooks for ChildContext {
     fn new<T>(method: GrpcMethod, _request: &Request<T>) -> Self {
         Self {
             method,
-            present_tracker: LatencyTracker::NotStarted,
+            duration_tracker: LatencyTracker::NotStarted,
             future_tracker: LatencyTracker::NotStarted,
         }
     }
 
     fn before_send<T>(&mut self, _request: &mut Request<T>) {
         // log::info!("child_ctx, before_send, method: {:?}", self.method.id());
-        self.present_tracker.start();
+        self.duration_tracker.start();
     }
 
     fn after_recv<T>(&mut self, _response: &mut Result<Response<T>, Status>) {
@@ -324,11 +238,11 @@ impl ClientHooks for SimpleChildContext {
         //     self.method.id(),
         //     self.track_latency.get_latency().unwrap().as_micros(),
         // );
-        self.present_tracker.record_latency();
+        self.duration_tracker.record_latency();
     }
 }
 
-impl ServerHooks for SimpleServerContext {
+impl ServerHooks for ServerContext {
     /// Construct a SimpleServerContext.
     fn new(service_name: &'static str) -> Self {
         // [NOTE] Hierarachy:

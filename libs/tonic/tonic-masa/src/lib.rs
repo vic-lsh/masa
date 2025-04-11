@@ -2,9 +2,10 @@ mod context;
 mod distribution;
 mod flag;
 mod graph;
+mod latency_distribution;
 mod priority;
 mod span;
-mod tracker;
+mod timing;
 mod typing;
 
 pub use context::Context;
@@ -16,9 +17,10 @@ pub use flag::{
 pub use graph::{
     FutureGraphTracker, GlobalGraph, GlobalGraphTracker, LocalGraph, LocalGraphTracker,
 };
+pub use latency_distribution::LatencyDistribution;
 pub use priority::{Prioritize, PriorityHint};
 pub use span::{FutureSpanTracker, Span, SpanTracker};
-pub use tracker::LatencyTracker;
+pub use timing::{time_now, LatencyTracker};
 pub use typing::{
     Address, Api, Latency, MethodId, RequestClass, RequestId, ServiceId, SpanId, TestId, Timestamp,
 };

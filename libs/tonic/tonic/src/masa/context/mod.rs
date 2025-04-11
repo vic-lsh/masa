@@ -2,6 +2,7 @@ use std::{sync::Arc, task::Poll};
 
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
+mod local_indirect;
 pub mod runtime;
 mod simple;
 mod tls;
