@@ -111,14 +111,6 @@ where
     }
 }
 
-struct MockPrioSelect;
-
-impl PrioritySelector for MockPrioSelect {
-    type ParentContext = MockParentCtx;
-    type ChildContext = MockChildCtx;
-    type ServerContext = MockServerCtx;
-}
-
 struct MockServerCtx;
 
 impl ServerHooks for MockServerCtx {
@@ -193,6 +185,14 @@ async fn test_service_ctx_construction() {
         }
     }
 
+    struct MockPrioritySelector;
+
+    impl PrioritySelector for MockPrioritySelector {
+        type ParentContext = MockParentCtx;
+        type ChildContext = MockChildCtx;
+        type ServerContext = TestCtorCountServerCtx;
+    }
+
     let n_svcs = 12;
     let _handles: Vec<_> = (0..n_svcs)
         .map(|i| {
@@ -200,7 +200,9 @@ async fn test_service_ctx_construction() {
             tokio::spawn(async move {
                 Server::builder()
                     .add_service(
-                        ChildServiceServer::<_, MockPrioSelect>::with_custom_context(ChildSvc),
+                        ChildServiceServer::<_, MockPrioritySelector>::with_custom_context(
+                            ChildSvc,
+                        ),
                     )
                     .serve_with_executor(addr.parse().unwrap(), Exec::Executor(Arc::new(ExecImpl)))
                     .await
@@ -246,12 +248,23 @@ async fn test_child_rpc_hooks_invocations() {
         }
     }
 
+    struct MockPrioritySelector;
+
+    impl PrioritySelector for MockPrioritySelector {
+        type ParentContext = TestChildRpcParentCtx;
+        type ChildContext = MockChildCtx;
+        type ServerContext = MockServerCtx;
+    }
+
     let parent_svc_addr = "127.0.0.1:4455";
     let child_svc_addr = "127.0.0.1:4466";
     let fanout_factor = 10;
-    let (_parent, _child) =
-        make_parent_child_svcs::<MockPrioSelect>(parent_svc_addr, child_svc_addr, fanout_factor)
-            .await;
+    let (_parent, _child) = make_parent_child_svcs::<MockPrioritySelector>(
+        parent_svc_addr,
+        child_svc_addr,
+        fanout_factor,
+    )
+    .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
@@ -294,13 +307,24 @@ async fn test_child_ctx_hook_invocations() {
         }
     }
 
+    struct MockPrioritySelector;
+
+    impl PrioritySelector for MockPrioritySelector {
+        type ParentContext = MockParentCtx;
+        type ChildContext = TestInvocationChildCtx;
+        type ServerContext = MockServerCtx;
+    }
+
     let parent_svc_addr = "127.0.0.1:4355";
     let child_svc_addr = "127.0.0.1:4366";
     let fanout_factor = 10;
 
-    let (_parent, _child) =
-        make_parent_child_svcs::<MockPrioSelect>(parent_svc_addr, child_svc_addr, fanout_factor)
-            .await;
+    let (_parent, _child) = make_parent_child_svcs::<MockPrioritySelector>(
+        parent_svc_addr,
+        child_svc_addr,
+        fanout_factor,
+    )
+    .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
