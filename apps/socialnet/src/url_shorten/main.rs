@@ -11,13 +11,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50053".parse::<SocketAddr>().unwrap();
 
     let service = create_service().await?;
-    
+
     println!("URL Shortening Service listening on {}", addr);
-    
-    Server::builder()
-        .add_service(service)
-        .serve(addr)
-        .await?;
-    
+
+    Server::builder().add_service(service).serve(addr).await?;
+
     Ok(())
 }
