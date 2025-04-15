@@ -32,7 +32,7 @@ fn time_now() -> u64 {
 pub struct SimpleParentContext {
     method: GrpcMethod,
     ctx: Context,
-    server_ctx: Arc<ServerContext>,
+    server_ctx: Arc<SimpleServerContext>,
 
     will_early_return: AtomicBool,
     num_polled: AtomicUsize,
