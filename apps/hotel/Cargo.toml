@@ -49,6 +49,9 @@ path = "src/recommendation/main.rs"
 # name = "recommendation-client"
 # path = "src/recommendation/client.rs"
 
+[[bin]]
+name = "loadgen"
+path = "src/loadgen/main.rs"
 
 [features]
 prio_class = ["async-executor/prio_class", "tonic-masa/prio_class"]
@@ -213,6 +216,7 @@ kiddo = "4.2.1"
 chrono = "0.4.38"
 # Used for client-side load balancing
 ginepro = { path = "../../3rd_party/ginepro/ginepro" }
+clap = { version = "4.4", features = ["derive"] }
 
 
 [build-dependencies]
