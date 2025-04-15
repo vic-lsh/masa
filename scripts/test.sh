@@ -22,8 +22,8 @@ packages=(
     "async-task"
 
     # our evaluation apps test suite
-    "apps/hotel"
-    "apps/socialnet"
+    "hotel"
+    "socialnet"
 )
 
 # If testing your crate requires special feature flags, set them here
