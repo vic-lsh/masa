@@ -8,29 +8,20 @@ mod tls;
 pub use tls::{client, server};
 mod noop;
 
-/// Context struct for an RPC server, instantiated during server startup.
-///
-/// Must implement `ServerHooks`.
-#[cfg(feature = "masa")]
-pub type ServerContext = simple::SimpleServerContext;
-#[cfg(not(feature = "masa"))]
-pub type ServerContext = noop::ServerContext;
+// TODO: make the contexts instantiated different based on compilation flags
 
-/// Context struct instantiated once per RPC, when the server invokes a request handler.
-///
-/// Must implement `ParentHooks`.
-#[cfg(feature = "masa")]
-pub type ParentContext = simple::SimpleParentContext;
 #[cfg(not(feature = "masa"))]
-pub type ParentContext = noop::ParentContext;
+pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
+#[cfg(feature = "masa")]
+pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
 
-/// Context struct instantiated on RPC transmission.
-///
-/// Must implement `ClientHooks`.
-#[cfg(feature = "masa")]
-pub type ChildContext = simple::SimpleChildContext;
-#[cfg(not(feature = "masa"))]
-pub type ChildContext = noop::ChildContext;
+// TODO: rename this to be more general
+// TODO: add notes on trait bounds
+pub trait PrioritySelector: Send + Sync + 'static {
+    type ServerContext: ServerHooks;
+    type ChildContext: ClientHooks;
+    type ParentContext: ParentHooks<Self::ChildContext, Self::ServerContext>;
+}
 
 /// Lifecycle hooks of a Masa server.
 #[allow(unused_variables)]
@@ -100,8 +91,8 @@ where
         method: GrpcMethod,
         request: &mut Request<T>,
         child_ctx: &mut Child,
-    ) -> Option<Status> {
-        None
+    ) -> Result<(), Status> {
+        Ok(())
     }
 
     /// Invoked after the request handler receives a response from an RPC it made earlier.
@@ -111,33 +102,33 @@ where
         method: GrpcMethod,
         response: &mut Result<Response<T>, Status>,
         child_ctx: Child,
-    ) -> Option<Status> {
-        None
+    ) -> Result<(), Status> {
+        Ok(())
     }
 
-    /// Invoked each time before the request handler is polled.
+    /// Invoked each time before the request handler future is polled.
     ///
     /// Being invoked indicates that the request handler can make progress.
     ///
-    /// To return early without continuing request processing, return the
-    /// response to write back to the client in this hook.
+    /// To return early without continuing request processing, return an error
+    /// with the response to send back to the client.
     #[must_use]
-    fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
-        None
+    fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
+        Ok(())
     }
 
-    /// Invoked each time after the request handler is polled.
+    /// Invoked each time after the request handler future is polled.
     ///
     /// The poll result shows whether the request is blocked or finalized.
     ///
-    /// To return early without continuing request processing, return the
-    /// response to write back to the client in this hook.
+    /// To return early without continuing request processing, return an error
+    /// with the response to send back to the client.
     #[must_use]
     fn after_poll<Ret>(
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
-    ) -> Option<Result<Response<Ret>, Status>> {
-        None
+    ) -> Result<(), Result<Response<Ret>, Status>> {
+        Ok(())
     }
 
     /// The last lifecycle hook to be invoked. Provides a mutable reference to the response about
