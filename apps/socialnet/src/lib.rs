@@ -6,7 +6,7 @@ pub mod media {
 
 pub mod url_shorten {
     tonic::include_proto!("url_shorten");
-    pub mod server;
     pub mod client;
     pub mod db;
+    pub mod server;
 }
