@@ -1,10 +1,10 @@
-use mongodb::{bson::doc, options::ClientOptions, Client, Collection};
-use mongodb::bson::Document;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use futures::TryStreamExt;
+use mongodb::bson::Document;
 use mongodb::options::IndexOptions;
 use mongodb::IndexModel;
+use mongodb::{bson::doc, options::ClientOptions, Client, Collection};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::url_shorten::Url;
 
@@ -32,7 +32,7 @@ pub async fn initialize_database(url: &str) -> Result<Client, Box<dyn std::error
 
     let client_options = ClientOptions::parse(url).await?;
     let client = Client::with_options(client_options)?;
-    
+
     client.database(DB_NAME).list_collection_names(None).await?;
     println!("Successfully connected to MongoDB at {}", url);
 
@@ -54,15 +54,15 @@ pub fn get_collection(client: &Client) -> Collection<Document> {
 }
 
 pub async fn insert_url_mappings(
-    client: &Client, 
-    mappings: Vec<Url>
+    client: &Client,
+    mappings: Vec<Url>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if mappings.is_empty() {
         return Ok(());
     }
 
     let collection = get_collection(client);
-    
+
     let documents: Vec<Document> = mappings
         .iter()
         .map(|url| {
@@ -75,7 +75,7 @@ pub async fn insert_url_mappings(
 
     collection.insert_many(documents, None).await?;
     println!("Inserted {} URL mappings into MongoDB", mappings.len());
-    
+
     Ok(())
 }
 
@@ -107,6 +107,6 @@ pub async fn get_expanded_urls(
     }
 
     println!("Retrieved {} URL mappings from MongoDB", url_map.len());
-    
+
     Ok(url_map)
 }
