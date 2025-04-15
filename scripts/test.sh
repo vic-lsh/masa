@@ -20,6 +20,10 @@ packages=(
     # "tokio-openssl"
     "tower"
     "async-task"
+
+    # our evaluation apps test suite
+    "apps/hotel"
+    "apps/socialnet"
 )
 
 # If testing your crate requires special feature flags, set them here
