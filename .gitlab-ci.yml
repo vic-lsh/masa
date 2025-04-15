@@ -19,6 +19,12 @@ image: "rustlang/rust:nightly"
 #   - redis:latest
 #   - postgres:latest
 
+# Run on default branch as well as on merge requests
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
 # Optional: Install a C compiler, cmake and git into the container.
 # You will often need this when you (or any of your dependencies) depends on C code.
 before_script:

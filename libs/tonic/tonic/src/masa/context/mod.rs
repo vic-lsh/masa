@@ -10,8 +10,10 @@ mod noop;
 
 // TODO: make the contexts instantiated different based on compilation flags
 
+#[cfg(not(feature = "masa"))]
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
-// pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
+#[cfg(feature = "masa")]
+pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
 
 // TODO: rename this to be more general
 // TODO: add notes on trait bounds
