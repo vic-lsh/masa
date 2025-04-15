@@ -14,13 +14,18 @@ pub mod hotel_tonic {
     pub mod user {
         tonic::include_proto!("user");
     }
+    pub mod review {
+        tonic::include_proto!("review");
+    }
 }
 
 use ginepro::LoadBalancedChannel;
+use hotel_tonic::review::review_client::ReviewClient;
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Uniform};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tower::load::Load;
 
 use tonic::{transport::Channel, Request, Response, Status};
 
@@ -35,8 +40,8 @@ pub struct FrontendImpl {
     reservation_client: ReservationClient<LoadBalancedChannel>,
     profile_client: ProfileClient<LoadBalancedChannel>,
     user_client: UserClient<LoadBalancedChannel>,
-    // rng: Arc<Mutex<StdRng>>,
-    // uniform_send_reserve: Uniform<u32>,
+    review_client: ReviewClient<LoadBalancedChannel>, // rng: Arc<Mutex<StdRng>>,
+                                                      // uniform_send_reserve: Uniform<u32>,
 }
 
 impl FrontendImpl {
@@ -45,6 +50,7 @@ impl FrontendImpl {
         reservation_addr: String,
         profile_addr: String,
         user_addr: String,
+        // review_addr: String
     ) -> Self {
         let channel = LoadBalancedChannel::builder(("search-service", 8660))
             .channel()
@@ -70,6 +76,12 @@ impl FrontendImpl {
             .expect("Failed to connect to user");
         let user_client = UserClient::new(channel);
 
+        let channel = LoadBalancedChannel::builder(("review-service", 8660))
+            .channel()
+            .await
+            .expect("Failed to connect to review");
+        let review_client = ReviewClient::new(channel);
+
         // let seed = 998244353;
         // let rng = Arc::new(Mutex::new(StdRng::seed_from_u64(seed)));
         // let uniform_send_reserve = Uniform::new(0, 100);
@@ -79,8 +91,8 @@ impl FrontendImpl {
             reservation_client,
             profile_client,
             user_client,
-            // rng,
-            // uniform_send_reserve,
+            review_client, // rng,
+                           // uniform_send_reserve,
         }
     }
 }
@@ -214,4 +226,42 @@ impl Frontend for FrontendImpl {
 
         Ok(response)
     }
+
+    // async fn handle_review(
+    //     &self,
+    //     request: Request<frontend::ReviewRequest>,
+    // ) -> Result<Response<frontend::ReviewResponse>, Status> {
+    //     let request = request.into_inner();
+    //     let mut review_client = self.review_client.clone();
+
+    //     let review_req = hotel_tonic::review::ReviewRequest {
+    //         hotel_id: request.hotel_id,
+    //     };
+
+    //     let review_resp = review_client.get_reviews(review_req).await?;
+    //     let review_resp = review_resp.into_inner();
+
+    //     // Map review::ReviewComm to frontend::ReviewComm
+    //     let reviews = review_resp
+    //         .reviews
+    //         .into_iter()
+    //         .map(|r| frontend::ReviewComm {
+    //             review_id: r.review_id,
+    //             hotel_id: r.hotel_id,
+    //             name: r.name,
+    //             rating: r.rating,
+    //             description: r.description,
+    //             images: r
+    //                 .images
+    //                 .into_iter()
+    //                 .map(|img| frontend::Image {
+    //                     url: img.url,
+    //                     r#default: img.default,
+    //                 })
+    //                 .collect(),
+    //         })
+    //         .collect();
+
+    //     Ok(Response::new(frontend::ReviewResponse { reviews }))
+    // }
 }
