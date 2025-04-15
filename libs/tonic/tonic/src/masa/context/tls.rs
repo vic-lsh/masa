@@ -19,32 +19,26 @@ thread_local! {
 ///
 pub mod client {
 
-    use crate::masa::{ClientHooks, ParentHooks, ServerHooks};
+    use crate::masa::PrioritySelector;
 
     /// SAFETY:
-    /// - Caller must ensure that the generic P correct: the same P is used in
-    /// setting the parent context as well as in retrieving it.
-    pub unsafe fn get_parent_ctx<'a, S: ServerHooks, C: ClientHooks, P: ParentHooks<C, S>>(
-    ) -> Option<&'a P> {
+    /// - Caller must ensure that the same type parameter P is used when setting and retrieving the parent context.
+    pub unsafe fn get_parent_ctx<'a, P: PrioritySelector>() -> Option<&'a P::ParentContext> {
         let p = super::PARENT_CTX.get();
-        let parent_ctx = p as *const P;
+        let parent_ctx = p as *const P::ParentContext;
         parent_ctx.as_ref()
     }
 }
 
 ///
 pub mod server {
-    use crate::masa::{ClientHooks, ParentHooks, ServerHooks};
+    use crate::masa::PrioritySelector;
 
-    ///
-    pub fn set_parent_ctx<'a, S: ServerHooks, C: ClientHooks, P: ParentHooks<C, S>>(
-        parent_ctx: &'a P,
-    ) {
-        super::PARENT_CTX.replace(parent_ctx as *const P as *const ());
+    pub fn set_parent_ctx<'a, P: PrioritySelector>(parent_ctx: &'a P::ParentContext) {
+        super::PARENT_CTX.replace(parent_ctx as *const P::ParentContext as *const ());
     }
 
-    ///
-    pub fn reset_parent_ctx<'a, S: ServerHooks, C: ClientHooks, P: ParentHooks<C, S>>() {
+    pub fn reset_parent_ctx<'a, P: PrioritySelector>() {
         super::PARENT_CTX.replace(core::ptr::null());
     }
 }
