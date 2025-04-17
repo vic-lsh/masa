@@ -34,6 +34,10 @@ impl LatencyDistribution {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.prev_queue.len() + self.cur_queue.len()
+    }
+
     fn update(&mut self) {
         let mut values = Vec::new();
         values.extend(self.prev_queue.iter());
