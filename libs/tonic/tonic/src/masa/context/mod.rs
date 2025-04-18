@@ -2,12 +2,14 @@ use std::{sync::Arc, task::Poll};
 
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
+mod local_direct;
 mod local_indirect;
-pub mod runtime;
+mod noop;
 mod simple;
+
+pub mod runtime;
 mod tls;
 pub use tls::{client, server};
-mod noop;
 
 // TODO: make the contexts instantiated different based on compilation flags
 
