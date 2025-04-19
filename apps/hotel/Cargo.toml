@@ -47,24 +47,27 @@ path = "src/recommendation/main.rs"
 
 
 [features]
-prio_class = ["async-executor/prio_class", "tonic-masa/prio_class"]
-prio_global = ["async-executor/prio_global", "tonic-masa/prio_global"]
+prio_class = ["async-executor/prio_class", "tonic-masa/prio_class", "tonic/prio_class"]
+prio_global = ["async-executor/prio_global", "tonic-masa/prio_global", "tonic/prio_global"]
 prio_global_early = [
 	"async-executor/prio_global_early",
 	"tonic-masa/prio_global_early",
+	"tonic/prio_global_early",
 ]
 prio_class_global = [
 	"async-executor/prio_class_global",
 	"tonic-masa/prio_class_global",
+	"tonic/prio_class_global",
 ]
-prio_local = ["async-executor/prio_local", "tonic-masa/prio_local"]
+prio_local = ["async-executor/prio_local", "tonic-masa/prio_local", "tonic/prio_local"]
 prio_local_early = [
 	"async-executor/prio_local_early",
 	"tonic-masa/prio_local_early",
+	"tonic/prio_local_early",
 ]
-fifo = ["async-executor/fifo", "tonic-masa/fifo"]
-fifo_early = ["async-executor/fifo_early", "tonic-masa/fifo_early"]
-fifo_infra = ["async-executor/fifo_infra", "tonic-masa/fifo_infra"]
+fifo = ["async-executor/fifo", "tonic-masa/fifo", "tonic/fifo"]
+fifo_early = ["async-executor/fifo_early", "tonic-masa/fifo_early", "tonic/fifo_early"]
+fifo_infra = ["async-executor/fifo_infra", "tonic-masa/fifo_infra", "tonic/fifo_infra"]
 synthetic = []
 workload_stats = []
 

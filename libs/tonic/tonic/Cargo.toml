@@ -55,29 +55,17 @@ transport = [
 channel = []
 
 # masa-specific features
-prio_class = []
-prio_global = []
-prio_global_early = []
-prio_class_global = []
-prio_local = []
-prio_local_early = []
-fifo = []
-fifo_early = []
-fifo_infra = []
+masa = []
+prio_class = ["masa"]
+prio_global = ["masa"]
+prio_global_early = ["masa"]
+prio_class_global = ["masa"]
+prio_local = ["masa"]
+prio_local_early = ["masa"]
+fifo = ["masa"]
+fifo_early = ["masa"]
+fifo_infra = ["masa"]
 
-# unified feature that indicates whether any masa-related feature is enabled.
-# be sure to update this list whenever new masa-related features are added.
-masa = [
-    "prio_class",
-    "prio_global",
-    "prio_global_early",
-    "prio_class_global",
-    "prio_local",
-    "prio_local_early",
-    "fifo",
-    "fifo_early",
-    "fifo_infra"
-]
 
 # [[bench]]
 # name = "bench_main"
