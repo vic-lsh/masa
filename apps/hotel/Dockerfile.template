@@ -1,67 +1,51 @@
-# Use minimal debian image
+FROM rustlang/rust:nightly-slim AS builder
+
+RUN apt-get update
+RUN apt-get install -y\
+        curl\
+        unzip\
+        protobuf-compiler\
+        pkg-config\
+        libssl-dev
+
+# Create a new empty shell project
+WORKDIR /usr/src/app
+RUN cargo init
+
+# Copy over dependencies and libs.
+# Order these from least to most likely to be modified.
+COPY Cargo.toml Cargo.lock* ./
+COPY 3rd_party ./3rd_party
+COPY libs ./libs
+
+COPY apps/hotel/Cargo.toml ./apps/hotel/Cargo.toml
+COPY apps/socialnet/Cargo.toml ./apps/socialnet/Cargo.toml
+
+WORKDIR /usr/src/app/apps/hotel
+RUN mkdir src
+RUN touch src/lib.rs
+
+# Build the dependencies first. This will be cached.
+RUN cargo build --release --lib
+WORKDIR /usr/src/app/
+
+# build every service in hotel
+# Note: we build every service once here. They're cached then reused when we
+# generate per-service image in the second stage below.
+COPY apps ./apps
+WORKDIR /usr/src/app/apps/hotel
+RUN cargo build --release
+
+# Final stage - create a slimmer image
 FROM debian:bookworm-slim
 
-# Define build arguments for binary name and config file
-ARG BINARY_PATH
 ARG BINARY_NAME
-ARG SNIPPET_PATH
-ARG HOTEL_CONFIG
-
-# Verify required build arguments are provided
-RUN if [ -z "$BINARY_PATH" ]; then \
-    echo "Error: BINARY_PATH argument is required" && exit 1; \
-    fi
 RUN if [ -z "$BINARY_NAME" ]; then \
     echo "Error: BINARY_NAME argument is required" && exit 1; \
     fi
-RUN if [ -z "$SNIPPET_PATH" ]; then \
-    echo "Error: SNIPPET_PATH argument is required" && exit 1; \
-    fi
-RUN if [ -z "$HOTEL_CONFIG" ]; then \
-    echo "Error: HOTEL_CONFIG argument is required" && exit 1; \
-    fi
 
+# Copy the built executable from the builder stage
+COPY --from=builder /usr/src/app/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
 
-RUN apt-get update
-RUN apt-get install -y openssl libssl-dev
-RUN apt-get install -y libc-bin wget
-
-# install libssl 1.1
-RUN wget http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
-RUN dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
-
-# Create a non-root user for security
-RUN useradd -r -s /bin/false appuser
-
-# Create directory structure
-RUN mkdir -p /app/config && \
-    chown -R appuser:appuser /app
-
-# Copy the binary and config file from build context
-COPY ${BINARY_PATH}/${BINARY_NAME} /app/
-COPY ${SNIPPET_PATH}/${HOTEL_CONFIG} /app/config/
-# [CL] Copy all the snippet/tag related files into the container.
-
-# Set proper permissions
-RUN chown appuser:appuser /app/${BINARY_NAME} && \
-    chmod +x /app/${BINARY_NAME} && \
-    chown appuser:appuser /app/config/${HOTEL_CONFIG}
-
-# Switch to non-root user
-USER appuser
-
-# Set working directory
-WORKDIR /app
-
-# masa environment variables
-ENV TRACKER_CAPACITY=512
-ENV PCTL_DEADLINE=50
-ENV PCTL_LATEST_EXEC=50
-
-# expose these build-time args as runtime env vars
-# so that the interpolation works correctly in CMD
-ENV BINARY_NAME=${BINARY_NAME}
-ENV HOTEL_CONFIG=${HOTEL_CONFIG}
-
-ENTRYPOINT [ "sh", "-c" ]
-CMD ["./${BINARY_NAME} --config /app/config/${HOTEL_CONFIG}"]
+# Set the command to run your application
+CMD ["${BINARY_NAME}"]
