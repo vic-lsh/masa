@@ -46,7 +46,6 @@ else \
   cargo build --release --features ${FEATURES};\
 fi
 
-
 # Final stage - create a slimmer image
 FROM debian:bookworm-slim
 
@@ -59,6 +58,14 @@ RUN if [ -z "$HOTEL_CONFIG" ]; then \
     echo "Error: HOTEL_CONFIG argument is required" && exit 1; \
     fi
 
+RUN apt-get update
+
+# re-install libssl-dev, because it is a runtime dependency
+# we choose to re-install rather than copy the installed .so file from the
+# prior stage, because we could miss copying some other deps that ssl needs.
+RUN apt-get install -y\
+        libssl-dev
+
 # Copy the built executable from the builder stage
 COPY --from=builder /usr/src/app/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
 COPY ${HOTEL_CONFIG} /usr/hotel_config.json
@@ -68,4 +75,3 @@ ENV HOTEL_CONFIG=${HOTEL_CONFIG}
 
 ENTRYPOINT [ "sh", "-c" ]
 CMD ["/usr/local/bin/${BINARY_NAME} --config /usr/hotel_config.json"]
-
