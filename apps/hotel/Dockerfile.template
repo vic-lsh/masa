@@ -1,5 +1,7 @@
 FROM rustlang/rust:nightly-slim AS builder
 
+ARG FEATURES
+
 RUN apt-get update
 RUN apt-get install -y\
         curl\
@@ -26,7 +28,11 @@ RUN mkdir src
 RUN touch src/lib.rs
 
 # Build the dependencies first. This will be cached.
-RUN cargo build --release --lib
+RUN if [ -z "$FEATURES" ]; then\
+  cargo build --release --lib;\
+else \
+  cargo build --release --lib --features ${FEATURES};\
+fi
 WORKDIR /usr/src/app/
 
 # build every service in hotel
@@ -34,7 +40,12 @@ WORKDIR /usr/src/app/
 # generate per-service image in the second stage below.
 COPY apps ./apps
 WORKDIR /usr/src/app/apps/hotel
-RUN cargo build --release
+RUN if [ -z "$FEATURES" ]; then\
+  cargo build --release;\
+else \
+  cargo build --release --features ${FEATURES};\
+fi
+
 
 # Final stage - create a slimmer image
 FROM debian:bookworm-slim
