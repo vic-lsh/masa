@@ -64,6 +64,7 @@ pub(crate) fn generate_internal<T: Service>(
             use tonic::codegen::http::Uri;
 
             // requried to call functions in the trait, referenced through PrioritySelector
+            #[allow(unused_imports)]
             use tonic::masa::{ClientHooks, ParentHooks};
 
             #service_doc
