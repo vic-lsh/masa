@@ -51,12 +51,21 @@ fi
 FROM debian:bookworm-slim
 
 ARG BINARY_NAME
+ARG HOTEL_CONFIG
 RUN if [ -z "$BINARY_NAME" ]; then \
     echo "Error: BINARY_NAME argument is required" && exit 1; \
+    fi
+RUN if [ -z "$HOTEL_CONFIG" ]; then \
+    echo "Error: HOTEL_CONFIG argument is required" && exit 1; \
     fi
 
 # Copy the built executable from the builder stage
 COPY --from=builder /usr/src/app/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
+COPY ${HOTEL_CONFIG} /usr/hotel_config.json
 
-# Set the command to run your application
-CMD ["${BINARY_NAME}"]
+ENV BINARY_NAME=${BINARY_NAME}
+ENV HOTEL_CONFIG=${HOTEL_CONFIG}
+
+ENTRYPOINT [ "sh", "-c" ]
+CMD ["/usr/local/bin/${BINARY_NAME} --config /usr/hotel_config.json"]
+
