@@ -1,5 +1,6 @@
 {
   "ExecutorThreads": 1,
+  "Hotels": 1000,
   "Payload": 1024,
   "CacheConns": 32,
   "ProbCacheMiss": 20,
