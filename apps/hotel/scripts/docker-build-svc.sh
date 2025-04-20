@@ -43,4 +43,5 @@ docker build -f ./apps/hotel/Dockerfile.template \
     --build-arg FEATURES=$features \
     --build-arg BINARY_NAME=$binary \
     --build-arg HOTEL_CONFIG=./apps/hotel/scripts/local/hotel_config.json \
-    -t $binary .
+    -t $binary \
+    .
