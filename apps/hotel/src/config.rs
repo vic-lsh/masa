@@ -51,12 +51,6 @@ pub struct HotelConfig {
     #[serde(rename = "ProfileMemcachedAddr")]
     pub profile_memcached_addr: String,
 
-    #[serde(rename = "ReservationHotels")]
-    pub reservation_hotels: u32,
-    #[serde(rename = "ReservationDates")]
-    pub reservation_dates: u32,
-    #[serde(rename = "ReservationProbHotelAvail")]
-    pub reservation_prob_hotel_avail: u32,
     #[serde(rename = "ReservationMongodbAddr")]
     pub reservation_mongodb_addr: String,
     #[serde(rename = "ReservationMemcachedAddr")]
