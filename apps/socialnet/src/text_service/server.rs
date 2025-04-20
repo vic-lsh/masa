@@ -35,9 +35,12 @@ impl TextService for TextSvcImpl {
         let mut mention_usernames = Vec::new();
         let re = Regex::new(r"@[a-zA-Z0-9-_]+").unwrap();
         for word in re.find_iter(&text) {
-            let username = &word.as_str();
+            let username = &word.as_str()[1..];
             mention_usernames.push(username.to_string());
         }
+
+        // print the mentions
+        println!("Mentioned usernames: {:?}", mention_usernames);
 
         // regx match url links with http or https
         let mut url_links = Vec::new();
@@ -46,6 +49,9 @@ impl TextService for TextSvcImpl {
             let url = &word.as_str();
             url_links.push(url.to_string());
         }
+
+        // print the urls
+        println!("URLs found: {:?}", url_links);
 
         // async func to get shortened url
         let shortened_url_future = {
@@ -130,9 +136,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn get_url_map() -> HashMap<&'static str, &'static str> {
     let mut map = HashMap::new();
-    map.insert("https://openai.com/research/gpt-4", "http://s.io/gpt4");
-    map.insert("https://www.example.com/articles/rust-tokio", "http://short.ly/abc123");
-    map.insert("https://news.ycombinator.com/item?id=39572710", "http://hnr.cc/39572710");
+    map.insert("https://openai.com", "http://s.io/gpt4");
+    map.insert("https://www.example.com", "http://short.ly/abc123");
+    map.insert("https://news.ycombinator.com", "http://hnr.cc/39572710");
     map
 }
 
