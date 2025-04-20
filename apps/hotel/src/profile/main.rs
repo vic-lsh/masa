@@ -37,7 +37,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let profile = ProfileImpl::new(
         cfg.hotels,
-        cfg.payload,
         cfg.profile_memcached_addr,
         cfg.cache_conns,
         cfg.prob_cache_miss,
