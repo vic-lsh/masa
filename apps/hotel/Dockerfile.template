@@ -49,6 +49,7 @@ fi
 # Final stage - create a slimmer image
 FROM debian:bookworm-slim
 
+ARG LOG_LEVEL=warn
 ARG BINARY_NAME
 ARG HOTEL_CONFIG
 RUN if [ -z "$BINARY_NAME" ]; then \
@@ -72,6 +73,7 @@ COPY ${HOTEL_CONFIG} /usr/hotel_config.json
 
 ENV BINARY_NAME=${BINARY_NAME}
 ENV HOTEL_CONFIG=${HOTEL_CONFIG}
+ENV LOG_LEVEL=${LOG_LEVEL}
 
 ENTRYPOINT [ "sh", "-c" ]
-CMD ["/usr/local/bin/${BINARY_NAME} --config /usr/hotel_config.json"]
+CMD ["RUST_LOG=${LOG_LEVEL} /usr/local/bin/${BINARY_NAME} --config /usr/hotel_config.json"]
