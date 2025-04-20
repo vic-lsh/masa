@@ -41,7 +41,7 @@ mkdir -p tmp
 cp ../../target/release/$binary tmp/
 
 echo "Building docker image for service $binary..."
-docker build -f Dockerfile.template \
+docker build -f Dockerfile \
     --build-arg TAG=$tag \
     --build-arg BINARY_PATH=tmp \
     --build-arg BINARY_NAME=$binary \
