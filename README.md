@@ -27,18 +27,40 @@ We have also included the source code of a few 3rd-party crates in `3rd_party`. 
 
 Currently, Masa experiments based on the Hotel application in DeathStarBench. We've ported this application to Rust for Masa compatibility. The port is in `./apps/hotel`.
 
-We include tooling to run the Hotel application in the following ways:
+Docker compose is the recommended way to run the hotel application. See instructions in the section below.
 
 #### Docker compose (single-server)
 
 ```bash
 cd apps/hotel
-./scripts/docker-build.sh         # build each svc as a rust binary; place binaries in docker containers.
-./scripts/docker-start.sh         # start all services and their databases via docker compose
-./scripts/docker-stop.sh          # stop all containers in docker compose
+
+# Build and start the services (and their databases) as docker containers.
+# Provide feature flags for the configuration you want (see below).
+./scripts/docker-run.sh --features <features>
+
+# Start generating load to the application
+# Note: load generation config in ./scripts/gen_config.json
+./scripts/loadgen-run.sh
+
+# Teardown the docker services and their databases.
+./scripts/docker-stop.sh
 ```
 
-#### tmux-based workload run scripts
+**Feature flags**:
+
+TL;DR: if you just want to get the application to run, you want `fifo`.
+
+You should supply **one** of the following flags to `--features`:
+
+- `fifo`: requests are served in first-in-first-out order.
+- `prio_global`: requests are served based on their end-to-end SLO end time, which is their SLO added to the time at which they arrived at the frontend server.
+- `prio_local`: requests are served based on their local deadline (talk to the project leads if you're interested in how this is calculated).
+- `prio_global_early`: like `prio_global`, but aborts requests if their deadline is past.
+- `prio_local_early`: like `prio_local`, but aborts requests if their deadline is past.
+
+#### tmux-based workload run scripts (legacy)
+
+NOTE: some scripts no longer work out-of-the-box. Please run with docker compose instead.
 
 Running the Hotel application contains many configuration choices, including but not limited to:
 
@@ -52,7 +74,9 @@ Within each workflow subfolder, you will find a `run_snippet.sh` file. This file
 
 You will also find `gen_config.json` in each subfolder. This describes how the user workload is generated. The committed `gen_config.json` file incrementally builds up requests-per-second to increase load.
 
-#### K8s
+#### K8s (work-in-progress)
+
+NOTE: Running with k8s hasn't been well-tested. Please report issues if you find any.
 
 You should install k8s on your system before running scripts in this section. For local setups, [minikube](https://minikube.sigs.k8s.io/docs/) is recommeded.
 
