@@ -17,12 +17,9 @@ pub mod hotel_tonic {
 }
 
 use ginepro::LoadBalancedChannel;
-use rand::{rngs::StdRng, SeedableRng};
-use rand_distr::{Distribution, Uniform};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use tonic::{transport::Channel, Request, Response, Status};
+use tonic::{Request, Response, Status};
 
 use hotel_tonic::{
     frontend, frontend::frontend_server::Frontend, profile, profile::profile_client::ProfileClient,
@@ -35,8 +32,6 @@ pub struct FrontendImpl {
     reservation_client: ReservationClient<LoadBalancedChannel>,
     profile_client: ProfileClient<LoadBalancedChannel>,
     user_client: UserClient<LoadBalancedChannel>,
-    // rng: Arc<Mutex<StdRng>>,
-    // uniform_send_reserve: Uniform<u32>,
 }
 
 impl FrontendImpl {
@@ -65,17 +60,11 @@ impl FrontendImpl {
             .expect("Failed to connect to user");
         let user_client = UserClient::new(channel);
 
-        // let seed = 998244353;
-        // let rng = Arc::new(Mutex::new(StdRng::seed_from_u64(seed)));
-        // let uniform_send_reserve = Uniform::new(0, 100);
-
         FrontendImpl {
             search_client,
             reservation_client,
             profile_client,
             user_client,
-            // rng,
-            // uniform_send_reserve,
         }
     }
 }
@@ -120,19 +109,9 @@ impl Frontend for FrontendImpl {
             out_date: request.out_date,
             room_number: 1,
         };
-        // let debug_send_reserve = {
-        //     let mut rng = self.rng.lock().unwrap();
-        //     self.uniform_send_reserve.sample(&mut *rng) < 88
-        // };
         let response = {
-            // if debug_send_reserve {
             let span_response = reservation_client.check_availability(span_request).await?;
             span_response.into_inner()
-            // } else {
-            //     reservation::ReservationResponse {
-            //         hotel_ids: response.hotel_ids,
-            //     }
-            // }
         };
 
         let mut profile_client = self.profile_client.clone();
