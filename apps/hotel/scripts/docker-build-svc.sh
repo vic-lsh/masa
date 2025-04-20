@@ -9,7 +9,7 @@ fi
 
 binary=""
 features=""
-
+rust_log="warn"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -20,6 +20,10 @@ while [[ $# -gt 0 ]]; do
         ;;
     --features)
         features="$2"
+        shift 2
+        ;;
+    --rust-log)
+        rust_log="$2"
         shift 2
         ;;
     *)
@@ -42,6 +46,7 @@ echo "Building docker image for service $binary. features: '$features'."
 docker build -f ./apps/hotel/Dockerfile.template \
     --build-arg FEATURES=$features \
     --build-arg BINARY_NAME=$binary \
+    --build-arg LOG_LEVEL=$rust_log \
     --build-arg HOTEL_CONFIG=./apps/hotel/scripts/local/hotel_config.json \
     -t $binary \
     .
