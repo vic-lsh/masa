@@ -11,7 +11,7 @@ pub mod hotel_tonic {
 }
 
 use ginepro::LoadBalancedChannel;
-use tonic::{transport::Channel, Request, Response, Status};
+use tonic::{Request, Response, Status};
 
 use hotel_tonic::{
     geo, geo::geo_client::GeoClient, rate, rate::rate_client::RateClient, search,

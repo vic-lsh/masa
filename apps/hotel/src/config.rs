@@ -31,15 +31,11 @@ pub struct HotelConfig {
 
     #[serde(rename = "Hotels")]
     pub hotels: u32,
-    #[serde(rename = "Payload")]
-    pub payload: u32,
+
     #[serde(rename = "CacheConns")]
     pub cache_conns: u32,
     #[serde(rename = "ProbCacheMiss")]
     pub prob_cache_miss: u32,
-
-    #[serde(rename = "GeoRange")]
-    pub geo_range: u32,
 
     #[serde(rename = "RateMongodbAddr")]
     pub rate_mongodb_addr: String,
@@ -51,12 +47,6 @@ pub struct HotelConfig {
     #[serde(rename = "ProfileMemcachedAddr")]
     pub profile_memcached_addr: String,
 
-    #[serde(rename = "ReservationHotels")]
-    pub reservation_hotels: u32,
-    #[serde(rename = "ReservationDates")]
-    pub reservation_dates: u32,
-    #[serde(rename = "ReservationProbHotelAvail")]
-    pub reservation_prob_hotel_avail: u32,
     #[serde(rename = "ReservationMongodbAddr")]
     pub reservation_mongodb_addr: String,
     #[serde(rename = "ReservationMemcachedAddr")]
