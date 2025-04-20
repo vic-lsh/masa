@@ -12,12 +12,12 @@ name = "textservice_client"
 path = "src/text_service/client.rs"
 
 [[bin]]
-name = "media_server"
-path = "src/media/main.rs"
+name = "usermention_server"
+path = "src/user_mention/main.rs"
 
 [[bin]]
-name = "media_client"
-path = "src/media/client.rs"
+name = "usermention_client"
+path = "src/user_mention/client.rs"
 
 [[bin]]
 name = "url_shorten_server"
@@ -27,20 +27,26 @@ path = "src/url_shorten/main.rs"
 name = "url_shorten_client"
 path = "src/url_shorten/client.rs"
 
+
 [dependencies]
 tonic = { path = "../../libs/tonic/tonic" }
 prost = "0.12"
 tokio = { path = "../../libs/tokio/tokio", features = ["full"] }
+mongodb = { path = "../../3rd_party/mongodb" }
+memcache = "0.16"
+async-memcached = { path = "../../3rd_party/async-memcached" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+futures-lite = { version = "2.0.0" }
+futures = "0.3"
 rand = "0.8.5"  
 log = "0.4"
 env_logger = "0.10"
 opentelemetry = { version = "0.20", features = ["trace"] }
 tracing-opentelemetry = "0.20"
 tracing = "0.1"
-chrono = "0.4.23"
-mongodb = { path = "../../3rd_party/mongodb" }
-serde = { version = "1.0", features = ["derive"] }
-futures = "0.3.28"
+regex = "1.11.1"
+async = "0.0.0"
 
 [build-dependencies]
 tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
