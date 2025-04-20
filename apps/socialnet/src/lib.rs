@@ -10,3 +10,11 @@ pub mod url_shorten {
     pub mod db;
     pub mod server;
 }
+
+pub mod user_mention {
+    tonic::include_proto!("usermention");
+
+    pub mod client;
+    pub mod db;
+    pub mod server;
+}

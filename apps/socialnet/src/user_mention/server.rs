@@ -1,0 +1,155 @@
+use tonic::{Request, Response, Status};
+use async_memcached::Client as McClient;
+use mongodb::{Client as MongoClient, options::ClientOptions, Collection};
+use mongodb::bson::{doc, Bson};
+use std::collections::HashSet;
+use std::error::Error;
+use std::sync::Arc;
+use futures::StreamExt;
+use tokio::sync::Mutex;
+
+use user_mention_service::{
+    user_mention_service_server::{UserMentionService, UserMentionServiceServer},
+    ComposeUserMentionRequest, ComposeUserMentionResponse, ErrorCode, UserMention, ServiceException,
+};
+
+pub mod user_mention_service {
+    tonic::include_proto!("usermention");
+}
+
+pub struct UserMentionServiceImpl {
+    mc_client: Arc<Mutex<McClient>>,
+    mongo_client: Arc<MongoClient>,
+}
+
+use crate::user_mention::db::{
+    UserMentionStruct,
+    initialize_database,
+    initialize_memcached,
+};
+
+impl UserMentionServiceImpl {
+    pub async fn new(
+    ) -> Result<Self, Box<dyn Error>> {
+        let mongo_client = match initialize_database().await {
+            Ok(client) => client,
+            Err(e) => {
+                eprintln!("Failed to initialize MongoDB: {:?}", e);
+                return Err(e);
+            }
+        };
+
+        let mc_client = match initialize_memcached().await {
+            Ok(client) => client,
+            Err(e) => {
+                eprintln!("Failed to initialize Memcached: {:?}", e);
+                return Err(e);
+            }
+        };
+        
+        Ok(Self {
+            mc_client: Arc::new(Mutex::new(mc_client)),
+            mongo_client: Arc::new(mongo_client),
+        })
+    }
+}
+
+#[tonic::async_trait]
+impl UserMentionService for UserMentionServiceImpl {
+    async fn compose_user_mentions(
+        &self,
+        request: Request<ComposeUserMentionRequest>,
+    ) -> Result<Response<ComposeUserMentionResponse>, Status> {
+        println!("Got a request: {:?}", request);
+
+        let req = request.into_inner();
+
+        // Return if the request is empty
+        if req.usernames.is_empty() {
+            return Ok(Response::new(ComposeUserMentionResponse {
+                user_mentions: vec![],
+                exception: None,
+            }));
+        }
+
+        let mut user_mentions = Vec::new();
+        let mut exception = None;
+        let mut missing_keys: HashSet<String> = req.usernames.iter().cloned().collect();
+        
+        // Find user mentions in memcached
+        let mut mc_client = self.mc_client.lock().await;
+        if let Ok(mc_resp) = mc_client.get_multi(req.usernames.clone()).await {
+            for entry in mc_resp {
+                if let Ok(usr_id) = String::from_utf8(entry.data){
+                    let username = String::from_utf8(entry.key).unwrap_or_default();
+                    missing_keys.remove(&username);
+                    let user_mention = UserMention {
+                        username: username.clone() + "@memcached",
+                        user_id: usr_id.parse().unwrap_or_default(),
+                    };
+                    user_mentions.push(user_mention);
+                }
+            }
+        }
+
+        // Continue to MongoDB if not found in memcached
+        if !missing_keys.is_empty() {
+            let collection = self
+                .mongo_client
+                .database("usermention-db")
+                .collection::<UserMentionStruct>("usermention");
+            let in_array: Vec<Bson> = missing_keys
+                .iter()
+                .cloned()
+                .map(Bson::String)
+                .collect();
+            let filter = doc! { "username": { "$in": Bson::Array(in_array) } };
+            let cursor = collection.find(filter, None).await;
+
+            if let Ok(mut cursor) = cursor {
+                while let Some(doc) = cursor.next().await {
+                    match doc {
+                        Ok(user_mention_struct) => {
+                            user_mentions.push(UserMention {
+                                username: user_mention_struct.user_name + "@mongodb",
+                                user_id: user_mention_struct.user_id,
+                            });
+                        }
+                        Err(e) => {
+                            exception = Some(ServiceException {
+                                error_code: ErrorCode::Unknown as i32,
+                                message: format!("MongoDB error: {}", e),
+                            });
+                        }
+                    }
+                }
+            } else {
+                exception = Some(ServiceException {
+                    error_code: ErrorCode::Unknown as i32,
+                    message: "Failed to query MongoDB".to_string(),
+                });
+            }
+        }
+
+        // Return the user mentions
+        Ok(Response::new(ComposeUserMentionResponse {
+            user_mentions,
+            exception,
+        }))
+    }
+}
+
+pub async fn create_service(
+) -> UserMentionServiceServer<UserMentionServiceImpl> {
+    // let Ok(service) = UserMentionServiceImpl::new().await else {
+    //     panic!("Failed to create UserMentionServiceImpl");
+    // };
+    let service = match UserMentionServiceImpl::new().await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to create UserMentionServiceImpl: {:?}", e);
+            panic!("Failed to create UserMentionServiceImpl");
+        }
+    };
+    UserMentionServiceServer::new(service)
+}
