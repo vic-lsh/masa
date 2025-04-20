@@ -24,7 +24,7 @@ pub struct SearchImpl {
 }
 
 impl SearchImpl {
-    pub async fn new(geo_addr: String, rate_addr: String) -> Self {
+    pub async fn new() -> Self {
         let channel = LoadBalancedChannel::builder(("geo-service", 8660))
             .channel()
             .await

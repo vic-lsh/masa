@@ -40,12 +40,7 @@ pub struct FrontendImpl {
 }
 
 impl FrontendImpl {
-    pub async fn new(
-        search_addr: String,
-        reservation_addr: String,
-        profile_addr: String,
-        user_addr: String,
-    ) -> Self {
+    pub async fn new() -> Self {
         let channel = LoadBalancedChannel::builder(("search-service", 8660))
             .channel()
             .await
