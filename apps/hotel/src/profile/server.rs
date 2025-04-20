@@ -38,7 +38,7 @@ struct SyntheticProfile {
 
 pub struct ProfileImpl {
     mc_pool: Arc<McPool>,
-    memc_client: Arc<memcache::Client>,
+    // memc_client: Arc<memcache::Client>,
     mongo_client: Arc<MongoClient>,
     latency_tracker: Arc<Mutex<LatencyTracker>>,
     #[cfg(feature = "workload_stats")]
@@ -50,13 +50,12 @@ pub struct ProfileImpl {
 impl ProfileImpl {
     pub async fn new(
         #[allow(unused)] hotels: u32,
-        _payload: u32,
         cache_addr: String,
-        cache_conn: u32,
+        _cache_conn: u32,
         #[allow(unused)] cache_miss_rate: u32,
         db_addr: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let memc_client = memcache::Client::with_pool_size(cache_addr.clone(), cache_conn)?;
+        // let memc_client = memcache::Client::with_pool_size(cache_addr.clone(), cache_conn)?;
         let mongo_client = db::initialize_database(&db_addr).await?;
 
         let latency_tracker = Arc::new(Mutex::new(LatencyTracker::new("ProfileSvc".into(), 1024)));
@@ -89,7 +88,7 @@ impl ProfileImpl {
             .to_owned();
         Ok(Self {
             mc_pool: Arc::new(McPool::new(cache_addr, 128)),
-            memc_client: Arc::new(memc_client),
+            // memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
             latency_tracker,
             #[cfg(feature = "workload_stats")]

@@ -9,7 +9,7 @@ use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Notify;
 
 use crossbeam_channel::Receiver;
