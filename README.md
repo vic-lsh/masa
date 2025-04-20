@@ -39,7 +39,8 @@ cd apps/hotel
 ./scripts/docker-run.sh --features <features>
 
 # Start generating load to the application
-# Note: load generation config in ./scripts/gen_config.json
+# Note: load generation config is expected to be at ./scripts/gen_config.json
+# To start, make a copy of ./scripts/gen_config.template.json.
 ./scripts/loadgen-run.sh
 
 # To view logs from the containers (w/ tmux), run this script in another terminal.
