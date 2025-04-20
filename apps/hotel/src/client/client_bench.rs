@@ -370,13 +370,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 client
             };
 
-            let load_gen = LoadGenerator::new(
-                gen_cfg.clone(),
-                rng,
-                *rps,
-                client,
-                trace_tx,
-            );
+            let load_gen = LoadGenerator::new(gen_cfg.clone(), rng, *rps, client, trace_tx);
             load_gen
         };
 
