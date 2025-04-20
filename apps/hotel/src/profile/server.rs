@@ -50,7 +50,6 @@ pub struct ProfileImpl {
 impl ProfileImpl {
     pub async fn new(
         #[allow(unused)] hotels: u32,
-        _payload: u32,
         cache_addr: String,
         _cache_conn: u32,
         #[allow(unused)] cache_miss_rate: u32,
