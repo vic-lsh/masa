@@ -42,6 +42,9 @@ cd apps/hotel
 # Note: load generation config in ./scripts/gen_config.json
 ./scripts/loadgen-run.sh
 
+# To view logs from the containers (w/ tmux), run this script in another terminal.
+./scripts/docker-view-logs.sh
+
 # Teardown the docker services and their databases.
 ./scripts/docker-stop.sh
 ```
