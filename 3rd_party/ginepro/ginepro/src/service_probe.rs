@@ -118,7 +118,9 @@ impl<Lookup: LookupService> GrpcServiceProbe<Lookup> {
         {
             Ok(endpoints) => {
                 let changeset = self.create_changeset(&endpoints).await;
-                println!("Changeset: {:?}", changeset);
+                if !changeset.is_empty() {
+                    println!("Endpoint update changeset: {:?}", changeset);
+                }
 
                 // Report the changeset to `tonic` and commit the new endpoints
                 // if we succeed to report the changeset.
