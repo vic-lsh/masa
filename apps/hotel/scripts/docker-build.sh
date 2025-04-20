@@ -17,12 +17,17 @@ if [[ "$pwd" != */apps/hotel ]]; then
 fi
 
 features=""
+rust_log="warn"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
     --features)
         features="$2"
+        shift 2
+        ;;
+    --rust-log)
+        rust_log="$2"
         shift 2
         ;;
     *)
@@ -44,8 +49,8 @@ echo "Building docker images sequentially."
 set -e
 for svc in "${services[@]}"; do
     if [[ -z "$features" ]]; then
-        ./scripts/docker-build-svc.sh --binary $svc
+        ./scripts/docker-build-svc.sh --binary $svc --rust-log $rust_log
     else
-        ./scripts/docker-build-svc.sh --binary $svc --features $features
+        ./scripts/docker-build-svc.sh --binary $svc --rust-log $rust_log --features $features
     fi
 done
