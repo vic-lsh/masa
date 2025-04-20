@@ -45,6 +45,9 @@ cd apps/hotel
 # To view logs from the containers (w/ tmux), run this script in another terminal.
 ./scripts/docker-view-logs.sh
 
+# To view resource usage across containers, run this:
+docker stats
+
 # Teardown the docker services and their databases.
 ./scripts/docker-stop.sh
 ```
