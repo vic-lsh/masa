@@ -61,7 +61,7 @@ impl RateImpl {
         let memc_client = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
         let mongo_client = db::initialize_database(&db_addr).await?;
 
-        let latency_tracker = Arc::new(Mutex::new(LatencyDistribution::new("RateSvc".into(), 1024)));
+        let latency_tracker = Arc::new(Mutex::new(LatencyDistribution::new(1024)));
 
         #[cfg(feature = "workload_stats")]
         let fanout_tracker = {
