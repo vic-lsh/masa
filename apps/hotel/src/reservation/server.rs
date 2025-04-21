@@ -268,8 +268,8 @@ impl ReservationImpl {
         db_addr: String,
     ) -> Result<Self, Box<dyn Error>> {
         let mongo_client = crate::db::initialize_database(&db_addr).await?;
-        let lat_check_avail = Mutex::new(LatencyDistribution::new("check_availability".into(), 256));
-        let lat_make_reserve = Mutex::new(LatencyDistribution::new("make_reservation".into(), 256));
+        let lat_check_avail = Mutex::new(LatencyDistribution::new(256));
+        let lat_make_reserve = Mutex::new(LatencyDistribution::new(256));
 
         let check_avail_hotel_mc = Arc::new(AvgTracker::default());
         let check_avail_hotel_mongo = Arc::new(AvgTracker::default());

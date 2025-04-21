@@ -71,7 +71,7 @@ impl SpanTracker {
         pctl_future: usize,
         pctl_present: usize,
     ) -> Self {
-        let tracker = LatencyDistribution::new(span_id.clone(), capacity);
+        let tracker = LatencyDistribution::new(capacity);
         Self {
             span_id,
             distribution,
@@ -135,8 +135,8 @@ impl From<Span> for FutureSpanTracker {
 impl FutureSpanTracker {
     /// Create a new span.
     pub fn new(span_id: SpanId, capacity: usize, pctl_future: usize, pctl_present: usize) -> Self {
-        let tracker_future = LatencyDistribution::new(span_id.clone(), capacity);
-        let tracker_present = LatencyDistribution::new(span_id.clone(), capacity);
+        let tracker_future = LatencyDistribution::new(capacity);
+        let tracker_present = LatencyDistribution::new(capacity);
         Self {
             span_id,
             tracker_future,
