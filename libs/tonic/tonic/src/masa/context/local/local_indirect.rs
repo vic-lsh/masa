@@ -5,7 +5,8 @@ use std::{
     time::Instant,
 };
 
-use super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
+use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
+use super::{estimate_method_latency, track_method_latency};
 use tonic_masa::{Context, LatencyDistribution, LatencyTracker, MethodId};
 
 #[derive(Debug)]
@@ -17,14 +18,12 @@ impl PrioritySelector for LocalDeadlineIndirect {
     type ChildContext = ChildContext;
     type ParentContext = ParentContext;
 }
-// TODO: tweak these values
-const DISTRIBUTION_CAPACITY: usize = 1024;
-const MIN_DISTRIBUTION_SIZE: usize = 500;
-const PERCENTILE: usize = 50;
 
 #[derive(Debug)]
 pub struct ServerContext {
+    // tracks latency distribution for each method provided by this server
     parent_distributions: RwLock<HashMap<MethodId, LatencyDistribution>>,
+    // tracks latency distribution for each method called by this server
     child_distributions: RwLock<HashMap<MethodId, LatencyDistribution>>,
 }
 
@@ -35,41 +34,6 @@ impl ServerHooks for ServerContext {
             child_distributions: RwLock::new(HashMap::new()),
         }
     }
-}
-
-fn estimate_method_duration(
-    map: &RwLock<HashMap<MethodId, LatencyDistribution>>,
-    method: MethodId,
-) -> Option<u64> {
-    let has_method = map.read().unwrap().contains_key(method);
-    if !has_method {
-        // TODO: where to get capacity from?
-        map.write().unwrap().insert(
-            method,
-            LatencyDistribution::new(method.to_string(), DISTRIBUTION_CAPACITY),
-        );
-    } else {
-        let lock = map.read().unwrap();
-        let distribution = lock.get(method).unwrap();
-
-        if distribution.len() > MIN_DISTRIBUTION_SIZE {
-            return Some(distribution.estimate(PERCENTILE));
-        }
-    }
-
-    None
-}
-
-fn track_method_duration(
-    map: &RwLock<HashMap<MethodId, LatencyDistribution>>,
-    method: MethodId,
-    duration: u64,
-) {
-    map.write()
-        .unwrap()
-        .get_mut(method)
-        .unwrap()
-        .track(duration);
 }
 
 #[derive(Debug)]
@@ -92,7 +56,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         let ctx = Context::from_json(ctx_str);
         let start = Instant::now();
         let estimated_duration =
-            estimate_method_duration(&server_ctx.parent_distributions, method.id());
+            estimate_method_latency(&server_ctx.parent_distributions, method.id());
         Self {
             method,
             ctx,
@@ -110,8 +74,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Result<(), Status> {
         // TODO: early return logic?
         let elapsed = Instant::now().duration_since(self.start);
-        let estimate_child =
-            estimate_method_duration(&self.server.child_distributions, method.id());
+        let estimate_child = estimate_method_latency(&self.server.child_distributions, method.id());
         // TODO: we should use nanoseconds for better accuracy, and probably use a Nanosecond type
         // NOTE: if we don't have enough data to estimate the duration of the parent or child
         // request, we set child deadline = parent deadline
@@ -151,7 +114,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             .get_latency()
             .unwrap()
             .as_micros() as u64;
-        track_method_duration(
+        track_method_latency(
             &self.server.child_distributions,
             child_method.id(),
             duration,
@@ -163,7 +126,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
         // track latency of this request
         let duration = self.start.elapsed().as_micros() as u64;
-        track_method_duration(
+        track_method_latency(
             &self.server.parent_distributions,
             self.method.id(),
             duration,
