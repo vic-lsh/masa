@@ -14,13 +14,27 @@ static TRACKER_CAPACITY: Lazy<usize> = Lazy::new(|| {
 });
 static PCTL_DEADLINE: Lazy<usize> = Lazy::new(|| {
     env::var("PCTL_DEADLINE")
-        .map(|s| s.parse().unwrap())
-        .expect("Expect PCTL_DEADLINE to be set")
+        .map(|s| s.parse().expect("PCTL_DEADLINE should be a number"))
+        .unwrap_or_else(|_| {
+            let default = 50;
+            log::warn!(
+                "No PCTL_DEADLINE set. Setting to default value {}.",
+                default
+            );
+            default
+        })
 });
 static PCTL_LATEST_EXEC: Lazy<usize> = Lazy::new(|| {
     env::var("PCTL_LATEST_EXEC")
-        .map(|s| s.parse().unwrap())
-        .expect("Expect PCTL_LATEST_EXEC to be set")
+        .map(|s| s.parse().expect("PCTL_LATEST_EXEC should be a number"))
+        .unwrap_or_else(|_| {
+            let default = 50;
+            log::warn!(
+                "No PCTL_LATEST_EXEC set. Setting to default value {}.",
+                default
+            );
+            50
+        })
 });
 static GLOBAL_GRAPHS: OnceLock<HashMap<ServiceId, GlobalGraph>> = OnceLock::new();
 
