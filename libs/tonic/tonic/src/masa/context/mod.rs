@@ -10,6 +10,7 @@ mod simple;
 pub mod runtime;
 mod tls;
 pub use tls::{client, server};
+use tonic_masa::Context;
 
 #[cfg(any(feature = "fifo", feature = "fifo_infra", feature = "fifo_early"))]
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
@@ -144,4 +145,9 @@ where
     /// The last lifecycle hook to be invoked. Provides a mutable reference to the response about
     /// to be sent back to the client.
     fn finalize(&self, response: &mut http::Response<BoxBody>) {}
+}
+
+fn read_context<B>(req: &http::Request<B>) -> Context {
+    let ctx_str = req.headers()["ctx"].to_str().unwrap();
+    Context::from_json(ctx_str)
 }

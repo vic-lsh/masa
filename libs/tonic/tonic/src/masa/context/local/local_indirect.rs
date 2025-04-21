@@ -1,4 +1,4 @@
-use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
+use crate::{body::BoxBody, masa::context::read_context, GrpcMethod, Request, Response, Status};
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
@@ -52,14 +52,12 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         req: &http::Request<B>,
         server_ctx: Arc<ServerContext>,
     ) -> Self {
-        let ctx_str = req.headers()["ctx"].to_str().unwrap();
-        let ctx = Context::from_json(ctx_str);
         let start = Instant::now();
         let estimated_duration =
             estimate_method_latency(&server_ctx.parent_distributions, method.id());
         Self {
             method,
-            ctx,
+            ctx: read_context(req),
             server: server_ctx,
             estimated_duration,
             start,
