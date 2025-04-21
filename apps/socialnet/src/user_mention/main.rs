@@ -1,8 +1,6 @@
-use crate::server::create_service;
+use socialnet::user_mention::server::create_service;
 use std::net::SocketAddr;
 use tonic::transport::Server;
-mod server;
-mod db;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

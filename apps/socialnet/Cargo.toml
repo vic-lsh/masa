@@ -47,6 +47,7 @@ tracing-opentelemetry = "0.20"
 tracing = "0.1"
 regex = "1.11.1"
 async = "0.0.0"
+chrono = "0.4.23"
 
 [build-dependencies]
 tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
