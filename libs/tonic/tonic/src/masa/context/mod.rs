@@ -2,8 +2,8 @@ use std::{sync::Arc, task::Poll};
 
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
-mod local_direct;
-mod local_indirect;
+mod local;
+use local::{LocalDeadlineDirect, LocalDeadlineIndirect};
 mod noop;
 mod simple;
 
@@ -11,10 +11,19 @@ pub mod runtime;
 mod tls;
 pub use tls::{client, server};
 
-// TODO: make the contexts instantiated different based on compilation flags
-
+#[cfg(any(feature = "fifo", feature = "fifo_infra", feature = "fifo_early"))]
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
-// pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
+#[cfg(any(
+    feature = "prio_global",
+    feature = "prio_global_early",
+    feature = "prio_local",
+    feature = "prio_local_early",
+))]
+pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
+#[cfg(any(feature = "prio_local_direct"))]
+pub type DefaultPrioritySelector = LocalDeadlineDirect;
+#[cfg(any(feature = "prio_local_indirect"))]
+pub type DefaultPrioritySelector = LocalDeadlineIndirect;
 
 // TODO: rename this to be more general
 // TODO: add notes on trait bounds
