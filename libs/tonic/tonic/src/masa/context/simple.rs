@@ -15,7 +15,7 @@ use tonic_masa::{
 
 use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
 
-use super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
+use super::{read_context, ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
 
 #[derive(Debug)]
 pub struct SimplePrioritySelector;
@@ -66,7 +66,6 @@ pub struct SimpleServerContext {
 impl SimpleParentContext {
     #[inline]
     fn check_early_return(&self) -> bool {
-        // if self.method.id() == "/frontend.Frontend/HandleSearch"
         if FIFO_EARLY || PRIO_GLOBAL_EARLY || PRIO_LOCAL_EARLY {
             if self.will_early_return.load(Ordering::Relaxed) {
                 return true;
@@ -114,12 +113,9 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
         req: &http::Request<B>,
         server_ctx: Arc<SimpleServerContext>,
     ) -> Self {
-        // log::info!("parent_ctx, begin, method: {:?}", method.id());
-        let ctx_str = req.headers()["ctx"].to_str().unwrap();
-        let ctx = Context::from_json(ctx_str);
         Self {
             method,
-            ctx,
+            ctx: read_context(req),
             server_ctx,
             will_early_return: AtomicBool::new(false),
             num_polled: AtomicUsize::new(0),
