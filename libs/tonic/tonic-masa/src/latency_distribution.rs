@@ -1,10 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::SpanId;
-
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct LatencyDistribution {
-    span_id: SpanId,
     capacity: usize,
     cur_queue: Vec<u64>,
     prev_queue: Vec<u64>,
@@ -13,10 +10,9 @@ pub struct LatencyDistribution {
 }
 
 impl LatencyDistribution {
-    pub fn new(span_id: SpanId, capacity: usize) -> Self {
+    pub fn new(capacity: usize) -> Self {
         assert!(capacity >= 100, "Capacity should be no less than 100");
         LatencyDistribution {
-            span_id,
             capacity,
             cur_queue: Vec::with_capacity(capacity),
             prev_queue: Vec::with_capacity(capacity),
@@ -54,8 +50,7 @@ impl LatencyDistribution {
         }
 
         log::warn!(
-            "update, span_id: {:?}, mean: {} us, p50: {} us, p90: {} us, p95: {} us, p99: {} us",
-            self.span_id,
+            "update distribution: mean: {} us, p50: {} us, p90: {} us, p95: {} us, p99: {} us",
             self.mean,
             self.percentile(50),
             self.percentile(90),
