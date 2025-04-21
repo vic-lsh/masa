@@ -5,7 +5,8 @@ use std::{
     time::Instant,
 };
 
-use super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
+use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
+use super::{estimate_method_latency, track_method_latency};
 use tonic_masa::{Context, LatencyDistribution, MethodId};
 
 #[derive(Debug)]
@@ -17,14 +18,11 @@ impl PrioritySelector for LocalDeadlineDirect {
     type ChildContext = ChildContext;
     type ParentContext = ParentContext;
 }
-// TODO: tweak these values
-const DISTRIBUTION_CAPACITY: usize = 1024;
-const MIN_DISTRIBUTION_SIZE: usize = 500;
-const PERCENTILE: usize = 50;
 
 #[derive(Debug)]
 pub struct ServerContext {
-    child_distributions: RwLock<HashMap<MethodId, LatencyDistribution>>,
+    // for every method on this server, tracks the remaining duration of the method after an outgoing request has finished
+    child_distributions: RwLock<HashMap<(MethodId, MethodId), LatencyDistribution>>,
 }
 
 impl ServerHooks for ServerContext {
@@ -33,41 +31,6 @@ impl ServerHooks for ServerContext {
             child_distributions: RwLock::new(HashMap::new()),
         }
     }
-}
-
-fn estimate_method_duration(
-    map: &RwLock<HashMap<MethodId, LatencyDistribution>>,
-    method: MethodId,
-) -> Option<u64> {
-    let has_method = map.read().unwrap().contains_key(method);
-    if !has_method {
-        // TODO: where to get capacity from?
-        map.write().unwrap().insert(
-            method,
-            LatencyDistribution::new(method.to_string(), DISTRIBUTION_CAPACITY),
-        );
-    } else {
-        let lock = map.read().unwrap();
-        let distribution = lock.get(method).unwrap();
-
-        if distribution.len() > MIN_DISTRIBUTION_SIZE {
-            return Some(distribution.estimate(PERCENTILE));
-        }
-    }
-
-    None
-}
-
-fn track_method_duration(
-    map: &RwLock<HashMap<MethodId, LatencyDistribution>>,
-    method: MethodId,
-    duration: u64,
-) {
-    map.write()
-        .unwrap()
-        .get_mut(method)
-        .unwrap()
-        .track(duration);
 }
 
 #[derive(Debug)]
@@ -99,16 +62,18 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         &self,
         method: GrpcMethod,
         request: &mut Request<T>,
-        _child_ctx: &mut ChildContext,
+        child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
         // TODO: early return logic?
         // NOTE: if we don't have enough data to estimate the duration of the parent or child
         // request, we set child deadline = parent deadline
-        let estimate_remaining =
-            match estimate_method_duration(&self.server.child_distributions, method.id()) {
-                Some(x) => x,
-                None => 0,
-            };
+        let estimate_remaining = match estimate_method_latency(
+            &self.server.child_distributions,
+            (method.id(), child_ctx.method.id()),
+        ) {
+            Some(x) => x,
+            None => 0,
+        };
         let deadline = self.ctx.deadline() - estimate_remaining;
 
         let child_recv_ctx = Context::new(
@@ -146,10 +111,10 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
         let parent_end = Instant::now();
         // track remaining time after each child
-        for (method, child_end) in self.child_end_times.lock().unwrap().iter() {
-            track_method_duration(
+        for (child_method, child_end) in self.child_end_times.lock().unwrap().iter() {
+            track_method_latency(
                 &self.server.child_distributions,
-                method,
+                (self.method.id(), child_method),
                 parent_end.duration_since(*child_end).as_millis() as u64,
             );
         }
@@ -157,10 +122,12 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 }
 
 #[derive(Debug, Clone)]
-pub struct ChildContext {}
+pub struct ChildContext {
+    method: GrpcMethod,
+}
 
 impl ClientHooks for ChildContext {
-    fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
-        Self {}
+    fn new<T>(method: GrpcMethod, _request: &Request<T>) -> Self {
+        Self { method }
     }
 }

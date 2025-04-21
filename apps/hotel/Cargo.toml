@@ -62,6 +62,14 @@ prio_local_early = [
 	"async-executor/prio_local_early",
 	"tonic-masa/prio_local_early",
 ]
+prio_local_direct = [
+	"async-executor/prio_local_direct",
+	"tonic-masa/prio_local_direct",
+]
+prio_local_indirect = [
+	"async-executor/prio_local_indirect",
+	"tonic-masa/prio_local_indirect",
+]
 fifo = ["async-executor/fifo", "tonic-masa/fifo"]
 fifo_early = ["async-executor/fifo_early", "tonic-masa/fifo_early"]
 fifo_infra = ["async-executor/fifo_infra", "tonic-masa/fifo_infra"]
