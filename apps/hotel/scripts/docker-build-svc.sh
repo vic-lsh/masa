@@ -9,12 +9,21 @@ fi
 
 binary=""
 features=""
+rust_log="warn"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
     --binary)
         binary="$2"
+        shift 2
+        ;;
+    --features)
+        features="$2"
+        shift 2
+        ;;
+    --rust-log)
+        rust_log="$2"
         shift 2
         ;;
     *)
@@ -30,13 +39,14 @@ if [[ -z "$binary" ]]; then
     exit 1
 fi
 
-mkdir -p tmp
-cp ../../target/release/$binary tmp/
+# go to project root. Dockerfile needs context from project root.
+cd ../..
 
-echo "Building docker image for service $binary."
-docker build -f Dockerfile.template \
-    --build-arg BINARY_PATH=tmp \
+echo "Building docker image for service $binary. features: '$features'."
+docker build -f ./apps/hotel/Dockerfile \
+    --build-arg FEATURES=$features \
     --build-arg BINARY_NAME=$binary \
-    --build-arg SNIPPET_PATH=./snippets/search-reservation \
-    --build-arg HOTEL_CONFIG=hotel_config.json \
-    -t $binary .
+    --build-arg LOG_LEVEL=$rust_log \
+    --build-arg HOTEL_CONFIG=./apps/hotel/scripts/local/hotel_config.json \
+    -t $binary \
+    .

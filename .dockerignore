@@ -1,0 +1,2 @@
+# ignore rust build outputs anywhere in the project
+**/target/

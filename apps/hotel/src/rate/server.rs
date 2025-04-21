@@ -52,7 +52,6 @@ pub struct RateImpl {
 
 impl RateImpl {
     pub async fn new(
-        #[allow(unused)] hotels: u32,
         cache_addr: String,
         cache_conn: u32,
         #[allow(unused)] cache_miss_rate: u32,

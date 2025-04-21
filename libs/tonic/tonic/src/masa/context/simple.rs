@@ -254,7 +254,7 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
         let check_early_return = self.check_early_return();
-        log::warn!(
+        log::debug!(
             "finalize, ctx: {:?}, method: {:?}, check_early_return: {}, compute_lat: {}, io_lat: {}, total_lat: {}",
             self as *const _,
             self.method.id(),
@@ -267,7 +267,7 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
         if check_early_return {
             return;
         }
-        log::info!(
+        log::debug!(
             "finalize, ctx: {:?}, method: {:?}, child_ctxs: {}, elapsed: {} us",
             self as *const _,
             self.method.id(),
