@@ -11,7 +11,7 @@ pub mod hotel_tonic {
 }
 
 use ginepro::LoadBalancedChannel;
-use tonic::{transport::Channel, Request, Response, Status};
+use tonic::{Request, Response, Status};
 
 use hotel_tonic::{
     geo, geo::geo_client::GeoClient, rate, rate::rate_client::RateClient, search,
@@ -24,7 +24,7 @@ pub struct SearchImpl {
 }
 
 impl SearchImpl {
-    pub async fn new(geo_addr: String, rate_addr: String) -> Self {
+    pub async fn new() -> Self {
         let channel = LoadBalancedChannel::builder(("geo-service", 8660))
             .channel()
             .await

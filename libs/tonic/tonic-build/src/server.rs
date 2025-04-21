@@ -108,6 +108,7 @@ pub(crate) fn generate_internal<T: Service>(
             use tonic::codegen::*;
 
             // required to call functions in the trait, referenced through PrioritySelector
+            #[allow(unused_imports)]
             use tonic::masa::{ParentHooks, ServerHooks};
 
             #generated_trait

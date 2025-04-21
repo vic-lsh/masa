@@ -12,17 +12,7 @@ mod tls;
 pub use tls::{client, server};
 use tonic_masa::Context;
 
-#[cfg(not(any(
-    feature = "prio_class",
-    feature = "prio_global",
-    feature = "prio_global_early",
-    feature = "prio_class_global",
-    feature = "prio_local",
-    feature = "prio_local_early",
-    feature = "fifo",
-    feature = "fifo_early",
-    feature = "fifo_infra",
-)))]
+#[cfg(not(feature = "masa"))]
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
 #[cfg(any(feature = "fifo", feature = "fifo_infra", feature = "fifo_early"))]
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
