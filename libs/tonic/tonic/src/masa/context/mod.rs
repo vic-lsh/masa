@@ -14,13 +14,14 @@ use tonic_masa::Context;
 
 #[cfg(not(feature = "masa"))]
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
-#[cfg(any(feature = "fifo", feature = "fifo_infra", feature = "fifo_early"))]
+#[cfg(any(feature = "fifo", feature = "fifo_infra"))]
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
 #[cfg(any(
     feature = "prio_global",
     feature = "prio_global_early",
     feature = "prio_local",
     feature = "prio_local_early",
+    feature = "fifo_early"
 ))]
 pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
 #[cfg(any(feature = "prio_local_direct"))]
