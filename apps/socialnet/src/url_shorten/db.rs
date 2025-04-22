@@ -38,6 +38,14 @@ pub async fn initialize_database(url: &str) -> Result<Client, Box<dyn std::error
 
     // Create index on shortened_url for faster lookups
     let collection = get_collection(&client);
+    collection
+        .delete_many(doc! {}, None)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to clean collection {}: {}", COLLECTION_NAME, e);
+            e
+        })?;
+
     let options = IndexOptions::builder().unique(true).build();
     let model = IndexModel::builder()
         .keys(doc! { "shortened_url": 1 })
