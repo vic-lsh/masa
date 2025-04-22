@@ -226,7 +226,12 @@ impl Frontend for FrontendImpl {
 
         Ok(response)
     }
-
+    async fn handle_review(
+        &self,
+        request: Request<frontend::ReviewRequest>,
+    ) -> Result<Response<frontend::ReviewResponse>, Status> {
+        unimplemented!("Oh no!");
+    }
     // async fn handle_review(
     //     &self,
     //     request: Request<frontend::ReviewRequest>,
