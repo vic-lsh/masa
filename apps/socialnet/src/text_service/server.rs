@@ -146,7 +146,6 @@ impl TextService for TextSvcImpl {
         };
 
         println!("Shortened URLs: {:?}", result_urls);        
-        println!("User mentions found: {:?}", user_mentions.len());
 
         let mut updated_text = text.clone();
         let mut shortened_urls: Vec<String> = Vec::new();
@@ -158,10 +157,13 @@ impl TextService for TextSvcImpl {
         let mut user_mention_id: Vec<String> = Vec::new();
         for mention in &user_mentions {
             println!("User mention: {:?}", mention);
-            let username = &mention.username;
+            let Some((username, _)) = mention.username.split_once('@') else {
+                error!("Invalid user mention format: {}", mention.username);
+                continue;
+            };
             let user_id = mention.user_id;
             user_mention_id.push(user_id.to_string());
-            updated_text = updated_text.replace(username, &format!("@{}", user_id));
+            updated_text = updated_text.replace(&format!("@{}", username), &format!("user_id:{}", user_id));
         }
 
         let reply = TextReply {
