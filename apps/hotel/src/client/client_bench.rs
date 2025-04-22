@@ -24,7 +24,7 @@ use tokio::time::{timeout, Duration, Instant};
 use tonic::transport::Channel;
 use tonic_masa::Context;
 
-use config::{GenConfig, HotelConfig};
+use config::GenConfig;
 use hotel::{fetch_traces, init_logging, time_now, Span};
 use hotel_tonic::frontend_client::FrontendClient;
 
@@ -32,18 +32,13 @@ use hotel_tonic::frontend_client::FrontendClient;
 #[structopt(about = "Client for benchmarking")]
 pub struct Args {
     #[structopt(long, required = true)]
-    pub hotel_config: PathBuf,
-    #[structopt(long, required = true)]
     pub gen_config: PathBuf,
     #[structopt(long, required = true)]
     pub output_path: String,
-    #[structopt(long, required = true)]
-    pub run_idx: String,
 }
 
 #[derive(Debug)]
 struct LoadGenerator {
-    _hotel_cfg: HotelConfig,
     gen_cfg: GenConfig,
     rng: StdRng,
     rps: u64,
@@ -53,7 +48,6 @@ struct LoadGenerator {
 
 impl LoadGenerator {
     pub fn new(
-        _hotel_cfg: HotelConfig,
         gen_cfg: GenConfig,
         rng: StdRng,
         rps: u64,
@@ -61,7 +55,6 @@ impl LoadGenerator {
         trace_tx: Sender<Span>,
     ) -> Self {
         Self {
-            _hotel_cfg,
             gen_cfg,
             rng,
             rps,
@@ -188,7 +181,6 @@ impl LoadGenerator {
 
                 let start_at = time_now();
                 let deadline = start_at + slo;
-                let latest_exec = deadline;
 
                 Context::new(
                     api.clone(),
@@ -198,7 +190,6 @@ impl LoadGenerator {
                     request_class,
                     start_at,
                     deadline,
-                    latest_exec,
                 )
             };
 
@@ -334,12 +325,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
     let args = Args::from_args();
-    let hotel_cfg: HotelConfig = {
-        let file = File::open(args.hotel_config).expect("Failed to open file");
-        let reader = BufReader::new(file);
-        serde_json::from_reader(reader)?
-    };
-    log::warn!("Hotel config: {:?}", hotel_cfg);
     let gen_cfg: GenConfig = {
         let file = File::open(args.gen_config).expect("Failed to open file");
         let reader = BufReader::new(file);
@@ -351,7 +336,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for rps in &gen_cfg.rps_values {
         log::warn!("Running rps: {}...", rps);
 
-        let output = format!("{}/r{}_{}.csv", args.output_path, rps, args.run_idx);
+        let output = format!("{}/r{}.csv", args.output_path, rps);
         let (trace_tx, trace_rx) = unbounded();
 
         let mut load_gen = {
@@ -370,7 +355,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let request_class = 0;
                     let start_at = time_now();
                     let deadline = start_at + slo;
-                    let latest_exec = deadline;
                     Context::new(
                         "Ping".to_string(),
                         test_id,
@@ -379,7 +363,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         request_class,
                         start_at,
                         deadline,
-                        latest_exec,
                     )
                 };
                 request.metadata_mut().insert_ctx("ctx", &ctx);
@@ -387,14 +370,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 client
             };
 
-            let load_gen = LoadGenerator::new(
-                hotel_cfg.clone(),
-                gen_cfg.clone(),
-                rng,
-                *rps,
-                client,
-                trace_tx,
-            );
+            let load_gen = LoadGenerator::new(gen_cfg.clone(), rng, *rps, client, trace_tx);
             load_gen
         };
 

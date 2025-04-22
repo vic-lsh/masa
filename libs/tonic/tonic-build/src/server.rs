@@ -107,6 +107,10 @@ pub(crate) fn generate_internal<T: Service>(
             )]
             use tonic::codegen::*;
 
+            // required to call functions in the trait, referenced through PrioritySelector
+            #[allow(unused_imports)]
+            use tonic::masa::{ParentHooks, ServerHooks};
+
             #generated_trait
 
             #service_doc
@@ -114,23 +118,20 @@ pub(crate) fn generate_internal<T: Service>(
             #[derive(Debug)]
             pub struct #server_service<
                     T: #server_trait,
-                    S: tonic::masa::ServerHooks = tonic::masa::ServerContext,
-                    C: tonic::masa::ClientHooks = tonic::masa::ChildContext,
-                    P: tonic::masa::ParentHooks<C, S> = tonic::masa::ParentContext
+                    P: tonic::masa::PrioritySelector = tonic::masa::DefaultPrioritySelector
                 > {
                 inner: _Inner<T>,
-                ctx: Arc<S>,
+                ctx: Arc<P::ServerContext>,
                 accept_compression_encodings: EnabledCompressionEncodings,
                 send_compression_encodings: EnabledCompressionEncodings,
                 max_decoding_message_size: Option<usize>,
                 max_encoding_message_size: Option<usize>,
-                _ctx_ty: std::marker::PhantomData<(C, P)>,
             }
 
             struct _Inner<T>(Arc<T>);
 
             // Methods that don't expect a custom context generic parameter.
-            impl<T: #server_trait> #server_service<T, tonic::masa::ServerContext, tonic::masa::ChildContext, tonic::masa::ParentContext> {
+            impl<T: #server_trait> #server_service<T> {
                 pub fn new(inner: T) -> Self {
                     Self::new_impl(inner)
                 }
@@ -149,10 +150,8 @@ pub(crate) fn generate_internal<T: Service>(
 
             impl<
                 T: #server_trait,
-                S: tonic::masa::ServerHooks,
-                C: tonic::masa::ClientHooks,
-                P: tonic::masa::ParentHooks<C, S>,
-            > #server_service<T, S, C, P> {
+                P: tonic::masa::PrioritySelector
+            > #server_service<T, P> {
                 pub fn with_custom_context(inner: T) -> Self {
                     Self::new_impl(inner)
                 }
@@ -163,7 +162,7 @@ pub(crate) fn generate_internal<T: Service>(
 
                 fn from_arc_impl(inner: Arc<T>) -> Self {
                     let inner = _Inner(inner);
-                    let ctx = S::new(<Self as tonic::server::NamedService>::NAME);
+                    let ctx = P::ServerContext::new(<Self as tonic::server::NamedService>::NAME);
                     Self {
                         inner,
                         ctx: Arc::new(ctx),
@@ -171,7 +170,6 @@ pub(crate) fn generate_internal<T: Service>(
                         send_compression_encodings: Default::default(),
                         max_decoding_message_size: None,
                         max_encoding_message_size: None,
-                        _ctx_ty: std::marker::PhantomData,
                     }
                 }
 
@@ -187,12 +185,10 @@ pub(crate) fn generate_internal<T: Service>(
                 #configure_max_message_size_methods
             }
 
-            impl<T, S, C, P, B> tonic::codegen::Service<http::Request<B>> for #server_service<T, S, C, P>
+            impl<T, P, B> tonic::codegen::Service<http::Request<B>> for #server_service<T, P>
                 where
                     T: #server_trait,
-                    S: tonic::masa::ServerHooks,
-                    C: tonic::masa::ClientHooks,
-                    P: tonic::masa::ParentHooks<C, S>,
+                    P: tonic::masa::PrioritySelector,
                     B: Body + Send + 'static,
                     B::Error: Into<StdError> + Send + 'static,
             {
@@ -226,10 +222,8 @@ pub(crate) fn generate_internal<T: Service>(
 
             impl<
                 T: #server_trait,
-                S: tonic::masa::ServerHooks,
-                C: tonic::masa::ClientHooks,
-                P: tonic::masa::ParentHooks<C, S>,
-            > Clone for #server_service<T, S, C, P> {
+                P: tonic::masa::PrioritySelector
+            > Clone for #server_service<T, P> {
                 fn clone(&self) -> Self {
                     let inner = self.inner.clone();
                     let ctx = self.ctx.clone();
@@ -240,7 +234,6 @@ pub(crate) fn generate_internal<T: Service>(
                         send_compression_encodings: self.send_compression_encodings,
                         max_decoding_message_size: self.max_decoding_message_size,
                         max_encoding_message_size: self.max_encoding_message_size,
-                        _ctx_ty: std::marker::PhantomData,
                     }
                 }
             }
@@ -431,10 +424,8 @@ fn generate_named(
     quote! {
         impl<
             T: #server_trait,
-            S: tonic::masa::ServerHooks,
-            C: tonic::masa::ClientHooks,
-            P: tonic::masa::ParentHooks<C, S>,
-        > tonic::server::NamedService for #server_service<T, S, C, P> {
+            P: tonic::masa::PrioritySelector
+        > tonic::server::NamedService for #server_service<T, P> {
             const NAME: &'static str = #service_name;
         }
     }
@@ -572,9 +563,9 @@ fn generate_unary<T: Method>(
 
             // Request-begin lifecycle hook.
             let grpc_method = GrpcMethod::new(#outer_service_name, #grpc_method_ident);
-            let req_ctx = P::begin(grpc_method, &req, server_ctx);
+            let req_ctx = P::ParentContext::begin(grpc_method, &req, server_ctx);
 
-            let fut = grpc.masa_unary(method, req, req_ctx);
+            let fut = grpc.masa_unary::<_, _, P>(method, req, req_ctx);
             let res = fut.await;
 
             Ok(res)
