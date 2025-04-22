@@ -54,6 +54,19 @@ transport = [
 ]
 channel = []
 
+# masa-specific features
+masa = []
+prio_class = ["masa"]
+prio_global = ["masa"]
+prio_global_early = ["masa"]
+prio_class_global = ["masa"]
+prio_local = ["masa"]
+prio_local_early = ["masa"]
+fifo = ["masa"]
+fifo_early = ["masa"]
+fifo_infra = ["masa"]
+
+
 # [[bench]]
 # name = "bench_main"
 # harness = false

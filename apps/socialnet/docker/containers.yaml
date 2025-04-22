@@ -1,0 +1,17 @@
+services:
+  urlshorten-mongo:
+    image: mongo:7.0
+    container_name: "urlshorten_mongo"
+    command: --port 27003
+    ports:
+      - "27003:27003"
+    restart: always
+    volumes:
+      - urlshorten:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
+volumes:
+  urlshorten:

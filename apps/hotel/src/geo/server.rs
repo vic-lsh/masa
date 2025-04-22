@@ -50,7 +50,7 @@ pub struct GeoImpl {
 }
 
 impl GeoImpl {
-    pub fn new(_hotels: u32, _range: u32) -> Self {
+    pub fn new() -> Self {
         let points = db::generate_test_data();
         let mut index = GeoIndex::new();
         for p in points {
