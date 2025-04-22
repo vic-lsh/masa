@@ -58,6 +58,15 @@ pub async fn initialize_database() -> Result<MongoClient, Box<dyn Error>> {
     let database = client.database("usermention-db");
     let usermention_collection: Collection<UserMentionStruct> = database.collection("usermention");
 
+    usermention_collection
+        .delete_many(doc! {}, None)
+        .await
+        .map_err(|e| {
+            error!("Failed to clean usermention collection: {}", e);
+            e
+        })?;
+
+
     // Insert reservations
     usermention_collection
         .insert_many(new_user_mentions, None)
