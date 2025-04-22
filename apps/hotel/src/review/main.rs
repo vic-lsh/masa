@@ -8,6 +8,7 @@ use tonic::transport::Server;
 
 #[path = "../config.rs"]
 mod config;
+mod db;
 mod server;
 
 #[derive(StructOpt, Debug, Clone)]

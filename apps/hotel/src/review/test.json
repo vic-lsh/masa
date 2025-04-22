@@ -1,0 +1,10 @@
+{
+  "ExecutorThreads": 1,
+  "Hotels": 1,
+  "Payload": 2,
+  "ProbCacheMiss": 5,
+  "CacheConns": 32,
+  "ReviewAddr": "review-service:8080",
+  "ReviewMemcachedAddr": "memcache://review_memcached:11006",
+  "ReviewMongodbAddr": "mongodb://review_mongo:27007"
+}
