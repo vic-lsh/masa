@@ -11,7 +11,10 @@ use tonic::{transport::Server, Request, Response, Status};
 use text_svc::text_service::text_service_server::{TextService, TextServiceServer};
 use text_svc::text_service::{TextReply, TextRequest};
 use text_svc::user_mention_service::{user_mention_service_client::UserMentionServiceClient, 
-                                        ComposeUserMentionRequest, UserMention};
+                                        ComposeUserMentionRequest};
+
+use text_svc::url_shorten_service::{url_shorten_service_client::UrlShortenServiceClient, 
+                                        ComposeUrlsRequest};
 
 pub mod text_svc {
     pub mod text_service {
@@ -20,21 +23,24 @@ pub mod text_svc {
     pub mod user_mention_service {
         tonic::include_proto!("usermention");
     }
+    pub mod url_shorten_service {
+        tonic::include_proto!("url_shorten");
+    }
 }
 
 #[derive(Debug)]
 pub struct TextSvcImpl {
-    url_client_pool: Arc<HashMap<&'static str, &'static str>>,
+    url_shorten_client: UrlShortenServiceClient<tonic::transport::Channel>,
     user_mention_client: UserMentionServiceClient<tonic::transport::Channel>,
 }
 
 impl TextSvcImpl {
     pub fn new(
-        url_client_pool: Arc<HashMap<&'static str, &'static str>>,
+        url_shorten_client: UrlShortenServiceClient<tonic::transport::Channel>,
         user_mention_client: UserMentionServiceClient<tonic::transport::Channel>,
     ) -> Self {
         TextSvcImpl {
-            url_client_pool,
+            url_shorten_client,
             user_mention_client,
         }
     }
@@ -75,22 +81,29 @@ impl TextService for TextSvcImpl {
 
         // async func to get shortened url
         let shortened_url_future = {
-            let url_client_pool = &self.url_client_pool;
+            let mut url_client_pool = self.url_shorten_client.clone();
             let url_links = &url_links;
             async move {
-                let mut shortened_urls = Vec::new();
-                for url in url_links {
-                    match url_client_pool.get(&url as &str) {
-                        Some(shortened_url) => {
-                            shortened_urls.push(shortened_url.to_string());
+                let url_shorten_request = ComposeUrlsRequest {
+                    req_id: 12345,
+                    urls: url_links.clone(),
+                };
+                let response = url_client_pool
+                    .compose_urls(Request::new(url_shorten_request))
+                    .await;
+                match response {
+                    Ok(res) => {
+                        let inner = res.into_inner();
+                        if let Some(exception) = inner.exception {
+                            return Err(Status::internal(exception.message));
                         }
-                        None => {
-                            error!("URL not found for: {}", url);
-                            continue;
-                        }
+                        return Ok(inner.urls);
+                    }
+                    Err(status) => {
+                        error!("Error calling url_shorten service: {}", status);
+                        return Err(status);
                     }
                 }
-                shortened_urls
             }
         };
 
@@ -124,16 +137,22 @@ impl TextService for TextSvcImpl {
 
 
         // process the text with url
-        let shortened_urls = shortened_url_future.await;
+        let Ok(result_urls) = shortened_url_future.await else {
+            return Err(Status::internal("Failed to get shortened urls"));
+        };
+
         let Ok(user_mentions) = user_mention_future.await else {
             return Err(Status::internal("Failed to get user mentions"));
         };
-        // print lenth of user mentions
+
+        println!("Shortened URLs: {:?}", result_urls);        
         println!("User mentions found: {:?}", user_mentions.len());
 
         let mut updated_text = text.clone();
-        for (url, shortened_url) in url_links.iter().zip(shortened_urls.iter()) {
-            updated_text = updated_text.replace(url, shortened_url);
+        let mut shortened_urls: Vec<String> = Vec::new();
+        for url in &result_urls {
+            updated_text = updated_text.replace(&url.expanded_url, &url.shortened_url);
+            shortened_urls.push(url.shortened_url.clone());
         }
 
         let mut user_mention_id: Vec<String> = Vec::new();
@@ -142,13 +161,13 @@ impl TextService for TextSvcImpl {
             let username = &mention.username;
             let user_id = mention.user_id;
             user_mention_id.push(user_id.to_string());
-            updated_text = updated_text.replace(username, &format!("@{}[{}]", username, user_id));
+            updated_text = updated_text.replace(username, &format!("@{}", user_id));
         }
 
         let reply = TextReply {
             user_mentions: user_mention_id,
-            urls: shortened_urls.into_iter().map(String::from).collect(),
-            updated_text: updated_text.into(),
+            urls: shortened_urls,
+            updated_text: updated_text,
         };
 
         // return the processed text
@@ -156,29 +175,9 @@ impl TextService for TextSvcImpl {
     }
 }
 
-
-
-fn get_url_map() -> HashMap<&'static str, &'static str> {
-    let mut map = HashMap::new();
-    map.insert("https://openai.com", "http://s.io/gpt4");
-    map.insert("https://www.example.com", "http://short.ly/abc123");
-    map.insert("https://news.ycombinator.com", "http://hnr.cc/39572710");
-    map
-}
-
-fn get_user_map() -> HashMap<&'static str, &'static str> {
-    let mut map = HashMap::new();
-    map.insert("vic", "001");
-    map.insert("michael", "002");
-    map.insert("jasper", "003");
-    map.insert("baris", "004");
-    map.insert("ratul", "005");
-    map
-}
-
 pub async fn create_service() -> TextServiceServer<TextSvcImpl> {
     let service = TextSvcImpl::new(
-        Arc::new(get_url_map()),
+        UrlShortenServiceClient::connect("http://[::1]:50053").await.unwrap(),
         UserMentionServiceClient::connect("http://[::1]:50052").await.unwrap(),
     );
     TextServiceServer::new(service)

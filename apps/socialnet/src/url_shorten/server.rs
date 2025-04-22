@@ -174,7 +174,7 @@ impl UrlShortenService for UrlShortenServiceImpl {
 
 pub async fn create_service(
 ) -> Result<UrlShortenServiceServer<UrlShortenServiceImpl>, Box<dyn std::error::Error>> {
-    let mongo_client = initialize_database("mongodb://localhost:27003").await?;
+    let mongo_client = initialize_database("mongodb://localhost:27017").await?;
 
     let service = UrlShortenServiceImpl::new(mongo_client);
 
