@@ -46,7 +46,6 @@ opentelemetry = { version = "0.20", features = ["trace"] }
 tracing-opentelemetry = "0.20"
 tracing = "0.1"
 regex = "1.11.1"
-async = "0.0.0"
 chrono = "0.4.23"
 
 [build-dependencies]
