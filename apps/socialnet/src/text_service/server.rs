@@ -80,13 +80,13 @@ impl TextService for TextSvcImpl {
         println!("URLs found: {:?}", url_links);
 
         // async func to get shortened url
-        let shortened_url_future = {
+        let shortened_url_task = {
             let mut url_client_pool = self.url_shorten_client.clone();
-            let url_links = &url_links;
-            async move {
+            let url_links = url_links.clone();
+            tokio::spawn(async move {
                 let url_shorten_request = ComposeUrlsRequest {
                     req_id: 12345,
-                    urls: url_links.clone(),
+                    urls: url_links,
                 };
                 let response = url_client_pool
                     .compose_urls(Request::new(url_shorten_request))
@@ -104,17 +104,17 @@ impl TextService for TextSvcImpl {
                         return Err(status);
                     }
                 }
-            }
+            })
         };
 
         // async func to get user mention、
-        let user_mention_future = {
+        let user_mention_task = {
             let mut user_mention_client = self.user_mention_client.clone();
-            let mention_usernames = &mention_usernames;
-            async move {
+            let mention_usernames = mention_usernames.clone();
+            tokio::spawn(async move {
                 let user_mention_request = ComposeUserMentionRequest {
                     req_id: 12345,
-                    usernames: mention_usernames.clone(),
+                    usernames: mention_usernames,
                 };
                 let response = user_mention_client
                     .compose_user_mentions(Request::new(user_mention_request))
@@ -132,16 +132,16 @@ impl TextService for TextSvcImpl {
                         return Err(status);
                     }
                 }           
-            }
+            })
         };
 
 
         // process the text with url
-        let Ok(result_urls) = shortened_url_future.await else {
+        let Ok(result_urls) = shortened_url_task.await.expect("shortened url task shouldn't fail") else {
             return Err(Status::internal("Failed to get shortened urls"));
         };
 
-        let Ok(user_mentions) = user_mention_future.await else {
+        let Ok(user_mentions) = user_mention_task.await.expect("user mention task shoudln't fail") else {
             return Err(Status::internal("Failed to get user mentions"));
         };
 
