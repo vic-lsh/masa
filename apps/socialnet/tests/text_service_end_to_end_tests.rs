@@ -1,16 +1,16 @@
 use std::net::SocketAddr;
 use tonic::transport::Server;
 
-use socialnet::user_mention::user_mention_service_client::UserMentionServiceClient;
-use socialnet::user_mention::server::create_service;
-use socialnet::user_mention::ComposeUserMentionRequest;
+use socialnet::text_service::text_service_client::TextServiceClient;
+use socialnet::text_service::server::create_service;
+use socialnet::text_service::TextRequest;
 
 // Helper function to set up a test server and return a client
 async fn setup_test_server(
     port: u16,
 ) -> (
     tokio::task::JoinHandle<()>,
-    UserMentionServiceClient<tonic::transport::Channel>,
+    TextServiceClient<tonic::transport::Channel>,
 ) {
     let server_addr = format!("[::1]:{}", port);
     let server_addr_socket: SocketAddr = server_addr.parse().expect("Invalid address");
@@ -32,7 +32,7 @@ async fn setup_test_server(
 
     // Create the client
     let client_addr = format!("http://{}", server_addr);
-    let client = UserMentionServiceClient::connect(client_addr)
+    let client = TextServiceClient::connect(client_addr)
         .await
         .expect("Failed to connect to server");
 
@@ -41,26 +41,19 @@ async fn setup_test_server(
     (server_handle, client)
 }
 
-#[ignore]
 #[tokio::test]
 async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50056).await;
 
     // Test case: Basic successful request
-    let request = tonic::Request::new(ComposeUserMentionRequest {
-        req_id: 1,
-        usernames: vec!["adam".to_string(), "alice".to_string()],
+    let request = tonic::Request::new(TextRequest {
+        text: "@john @bob Hello! Here is the link, https://openai.com".to_string(),
     });
 
-    let response = client.compose_user_mentions(request).await?;
+    let Ok(response) = client.compose_text(request).await else {
+        panic!("Failed to get a response from the server");
+    };
     let result = response.into_inner();
-
-    assert!(
-        result.exception.is_none(),
-        "Unexpected exception: {:?}",
-        result.exception
-    );
-
 
     assert!(
         result.user_mentions.len() == 2,
@@ -69,13 +62,13 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
     );
 
     assert_eq!(
-        result.user_mentions[0].username, "adam@memcached",
-        "Expected adam@memcached, got {}", result.user_mentions[0].username
+        result.user_mentions[0], "3",
+        "Expected user_id: 3, got {}", result.user_mentions[0]
     );
 
     assert_eq!(
-        result.user_mentions[1].username, "alice@mongodb",
-        "Expected alice@mongodb, got {}", result.user_mentions[1].username
+        result.user_mentions[1], "5",
+        "Expected user_id: 5, got {}", result.user_mentions[1]
     );
 
     server_handle.abort();
@@ -83,30 +76,34 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
-#[ignore]
 #[tokio::test]
 async fn test_empty_result() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50057).await;
 
-    let request = tonic::Request::new(ComposeUserMentionRequest {
-        req_id: 1,
-        usernames: vec!["baris".to_string(), "arvind".to_string()],
+    let request = tonic::Request::new(TextRequest {
+        text: "".to_string(),
     });
 
-    let response = client.compose_user_mentions(request).await?;
+    let Ok(response) = client.compose_text(request).await else {
+        panic!("Failed to get a response from the server");
+    };
     let result = response.into_inner();
-
-    assert!(
-        result.exception.is_none(),
-        "Unexpected exception: {:?}",
-        result.exception
-    );
-
 
     assert!(
         result.user_mentions.len() == 0,
         "Expected 0 user mentions, got {}",
         result.user_mentions.len()
+    );
+
+    assert!(
+        result.urls.len() == 0,
+        "Expected 0 shortened, got {}",
+        result.urls.len()
+    );
+
+    assert_eq!(
+        result.updated_text, "",
+        "Expected empty updated text, got {}", result.updated_text
     );
 
     server_handle.abort();
