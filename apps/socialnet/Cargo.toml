@@ -5,7 +5,7 @@ edition = "2021"
 
 [[bin]]
 name = "textservice_server"
-path = "src/text_service/server.rs"
+path = "src/text_service/main.rs"
 
 [[bin]]
 name = "textservice_client"
