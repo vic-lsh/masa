@@ -35,12 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::warn!("Hotel config: {:?}", cfg);
 
     let frontend_addr = "[::0]:8660".parse().expect("Failed to parse address");
-    let search_addr = cfg.search_addr;
-    let reservation_addr = cfg.reservation_addr;
-    let profile_addr = cfg.profile_addr;
-    let user_addr = cfg.user_addr;
-
-    let frontend = FrontendImpl::new(search_addr, reservation_addr, profile_addr, user_addr).await;
+    let frontend = FrontendImpl::new().await;
     log::info!("Server listening on {}...", frontend_addr);
     Server::builder()
         .add_service(FrontendServer::new(frontend))

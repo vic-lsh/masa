@@ -9,7 +9,7 @@ use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Notify;
 
 use crossbeam_channel::Receiver;
@@ -79,13 +79,13 @@ pub async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
     let mut file = File::create(output).unwrap();
     writeln!(
         file,
-        "api,test_id,request_id,slo,request_class,start_at,deadline,latest_exec,latency,error"
+        "api,test_id,request_id,slo,request_class,start_at,deadline,latency,error"
     )
     .unwrap();
     while let Ok(span) = trace_rx.recv() {
         writeln!(
             file,
-            "{},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{}",
             span.ctx.api(),
             span.ctx.test_id(),
             span.ctx.request_id(),
@@ -93,7 +93,6 @@ pub async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
             span.ctx.request_class(),
             span.ctx.start_at(),
             span.ctx.deadline(),
-            span.ctx.latest_exec(),
             span.latency,
             span.error
         )

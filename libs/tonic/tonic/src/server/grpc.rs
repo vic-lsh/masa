@@ -1,6 +1,7 @@
 use crate::codec::compression::{
     CompressionEncoding, EnabledCompressionEncodings, SingleMessageCompressionOverride,
 };
+use crate::masa::{ParentHooks, PrioritySelector};
 use crate::{
     body::BoxBody,
     codec::{encode_server, Codec, Streaming},
@@ -8,8 +9,8 @@ use crate::{
     Code, Request, Status,
 };
 use http_body::Body;
+use std::fmt;
 use std::sync::Arc;
-use std::{fmt, pin::pin};
 use tokio_stream::{Stream, StreamExt};
 
 macro_rules! t {
@@ -246,35 +247,33 @@ where
             }
         };
 
-        let fut = service.call(request);
-        let response = fut.await.map(|r| r.map(|m| tokio_stream::once(Ok(m))));
+        let response = service
+            .call(request)
+            .await
+            .map(|r| r.map(|m| tokio_stream::once(Ok(m))));
 
         let compression_override = compression_override_from_response(&response);
 
-        let res = self.map_response(
+        self.map_response(
             response,
             accept_encoding,
             compression_override,
             self.max_encoding_message_size,
-        );
-
-        res
+        )
     }
 
     /// Handle a single unary gRPC request.
-    pub async fn masa_unary<S, B, ServerCtx, ChildCtx, ParentCtx>(
+    pub async fn masa_unary<S, B, P>(
         &mut self,
         mut service: S,
         req: http::Request<B>,
-        req_ctx: ParentCtx,
+        req_ctx: P::ParentContext,
     ) -> http::Response<BoxBody>
     where
         S: UnaryService<T::Decode, Response = T::Encode>,
         B: Body + Send + 'static,
         B::Error: Into<crate::Error> + Send,
-        ServerCtx: crate::masa::ServerHooks,
-        ChildCtx: crate::masa::ClientHooks,
-        ParentCtx: crate::masa::ParentHooks<ChildCtx, ServerCtx>,
+        P: PrioritySelector,
     {
         let req_ctx = Arc::new(req_ctx);
 
@@ -286,11 +285,9 @@ where
             let req_ctx_for_child_task = req_ctx.clone();
 
             let child_hook =
-                crate::masa::context::runtime::async_executor::make_child_task_poll_hook::<
-                    ServerCtx,
-                    ChildCtx,
-                    ParentCtx,
-                >(req_ctx_for_child_task);
+                crate::masa::context::runtime::async_executor::make_child_task_poll_hook::<P>(
+                    req_ctx_for_child_task,
+                );
             async_executor::configure_child_task_poll_hooks(child_hook);
         }
 
@@ -317,14 +314,18 @@ where
             .call(request)
             .abortable()
             .before_poll(|| {
-                crate::masa::context::server::set_parent_ctx::<ServerCtx, ChildCtx, ParentCtx>(
-                    req_ctx.as_ref(),
-                );
-                req_ctx.before_poll()
+                crate::masa::context::server::set_parent_ctx::<P>(req_ctx.as_ref());
+                match req_ctx.before_poll() {
+                    Ok(()) => None,
+                    Err(e) => Some(e),
+                }
             })
             .after_poll(|poll| {
-                crate::masa::context::server::reset_parent_ctx::<ServerCtx, ChildCtx, ParentCtx>();
-                req_ctx.after_poll(poll)
+                crate::masa::context::server::reset_parent_ctx::<P>();
+                match req_ctx.after_poll(poll) {
+                    Ok(()) => None,
+                    Err(e) => Some(e),
+                }
             })
             .build();
 
@@ -462,12 +463,14 @@ where
 
         let (parts, body) = request.into_parts();
 
-        let mut stream = pin!(Streaming::new_request(
+        let stream = Streaming::new_request(
             self.codec.decoder(),
             body,
             request_compression_encoding,
             self.max_decoding_message_size,
-        ));
+        );
+
+        tokio::pin!(stream);
 
         let message = stream
             .try_next()

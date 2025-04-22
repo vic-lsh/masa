@@ -34,16 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     log::warn!("Hotel config: {:?}", cfg);
 
-    let reservation = ReservationImpl::new(
-        cfg.hotels,
-        cfg.reservation_dates,
-        cfg.reservation_prob_hotel_avail,
-        cfg.reservation_memcached_addr,
-        cfg.cache_conns,
-        cfg.prob_cache_miss,
-        cfg.reservation_mongodb_addr,
-    )
-    .await?;
+    let reservation =
+        ReservationImpl::new(cfg.reservation_memcached_addr, cfg.reservation_mongodb_addr).await?;
 
     let reservation_addr = "[::0]:8660".parse().expect("Failed to parse address");
     log::warn!("Server listening on {}...", reservation_addr);

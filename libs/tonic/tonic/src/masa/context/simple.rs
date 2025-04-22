@@ -15,7 +15,7 @@ use tonic_masa::{
 
 use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
 
-use super::{ClientHooks, ParentHooks, ServerContext, ServerHooks};
+use super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
 
 #[inline]
 fn time_now() -> u64 {
@@ -26,13 +26,22 @@ fn time_now() -> u64 {
     now as u64
 }
 
+#[derive(Debug)]
+pub struct SimplePrioritySelector;
+
+impl PrioritySelector for SimplePrioritySelector {
+    type ServerContext = SimpleServerContext;
+    type ChildContext = SimpleChildContext;
+    type ParentContext = SimpleParentContext;
+}
+
 /// A simple implementation of `ParentHooks`.
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct SimpleParentContext {
     method: GrpcMethod,
     ctx: Context,
-    server_ctx: Arc<ServerContext>,
+    server_ctx: Arc<SimpleServerContext>,
 
     will_early_return: AtomicBool,
     num_polled: AtomicUsize,
@@ -167,10 +176,9 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
         method: GrpcMethod,
         request: &mut Request<T>,
         _child_ctx: &mut SimpleChildContext,
-    ) -> Option<Status> {
-        // log::info!("parent_ctx, before_child_rpc, method: {:?}", method.id());
+    ) -> Result<(), Status> {
         if self.check_early_return() {
-            return Some(self.issue_early_return());
+            return Err(self.issue_early_return());
         }
 
         let graph = self
@@ -181,17 +189,12 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
             .read()
             .unwrap();
         let deadline;
-        let latest_exec;
         if FIFO || FIFO_EARLY || FIFO_INFRA || PRIO_GLOBAL || PRIO_GLOBAL_EARLY {
             deadline = self.ctx.deadline();
-            latest_exec = self.ctx.latest_exec();
         } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
-            // [DEPRECATED] This is the old way to estimate the deadline and
-            // latest_exec by summing up percentile latencies.
-            // deadline = self.ctx.deadline() - graph.estimate_suffix_deadline(method.id());
-            // latest_exec = self.ctx.deadline() - graph.estimate_suffix_latest_exec(method.id());
-            deadline = self.ctx.deadline() - graph.estimate_future(method.id());
-            latest_exec = deadline - graph.estimate_present(method.id());
+            deadline = self.ctx.deadline()
+                - graph.estimate_future(method.id())
+                - graph.estimate_present(method.id());
         } else {
             panic!("Unimplemented policy");
         }
@@ -204,11 +207,10 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
             self.ctx.request_class(),
             self.ctx.start_at(),
             deadline,
-            latest_exec,
         );
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
 
-        None
+        Ok(())
     }
 
     fn after_child_rpc<T>(
@@ -216,14 +218,14 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
         child_rpc_method: GrpcMethod,
         response: &mut Result<Response<T>, Status>,
         child_ctx: SimpleChildContext,
-    ) -> Option<Status> {
+    ) -> Result<(), Status> {
         // log::info!(
         //     "parent_ctx, after_child_rpc, method: {:?}",
         //     child_rpc_method.id()
         // );
 
         if let Err(status) = response {
-            return Some(status.clone());
+            return Err(status.clone());
         }
 
         let latency = child_ctx.present_tracker.get_latency().unwrap().as_micros() as u64;
@@ -237,17 +239,17 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
         graph.track_present_span(child_rpc_method.id(), latency);
 
         if self.check_early_return() {
-            return Some(self.issue_early_return());
+            return Err(self.issue_early_return());
         }
 
         let mut child_ctx = child_ctx.clone();
         child_ctx.future_tracker.start();
         self.child_ctxs.lock().unwrap().push(child_ctx);
 
-        None
+        Ok(())
     }
 
-    fn before_poll<Ret>(&self) -> Option<Result<Response<Ret>, Status>> {
+    fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         // log::info!("parent_ctx, before_poll, method: {:?}", self.method.id());
         // if self.polled.fetch_add(1, Ordering::Relaxed) == 0 {
         //     if self.check_early_return() {
@@ -264,15 +266,16 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
         }
 
         if self.check_early_return() {
-            return Some(Err(self.issue_early_return()));
+            return Err(Err(self.issue_early_return()));
         }
-        None
+
+        Ok(())
     }
 
     fn after_poll<Ret>(
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
-    ) -> Option<Result<Response<Ret>, Status>> {
+    ) -> Result<(), Result<Response<Ret>, Status>> {
         let now = time_now();
         self.last_after_poll.store(now, Ordering::Release);
         let last_before_poll = self.last_before_poll.load(Ordering::Acquire);
@@ -283,17 +286,18 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
         match poll {
             Poll::Pending => {
                 if self.check_early_return() {
-                    return Some(Err(self.issue_early_return()));
+                    return Err(Err(self.issue_early_return()));
                 }
             }
             Poll::Ready(_) => {}
         };
-        None
+
+        Ok(())
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
         let check_early_return = self.check_early_return();
-        log::warn!(
+        log::debug!(
             "finalize, ctx: {:?}, method: {:?}, check_early_return: {}, compute_lat: {}, io_lat: {}, total_lat: {}",
             self as *const _,
             self.method.id(),
@@ -306,7 +310,7 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
         if check_early_return {
             return;
         }
-        log::info!(
+        log::debug!(
             "finalize, ctx: {:?}, method: {:?}, child_ctxs: {}, elapsed: {} us",
             self as *const _,
             self.method.id(),
