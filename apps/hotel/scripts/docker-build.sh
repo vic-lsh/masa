@@ -8,6 +8,7 @@ services=(
     "hotel_profile"
     "hotel_reservation"
     "hotel_user"
+    "hotel_review"
 )
 
 pwd=$(pwd)
