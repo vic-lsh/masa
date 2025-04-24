@@ -88,6 +88,9 @@ pub async fn initialize_memcached(
     let mut client = McClient::new(url).await?;
     info!("Successfully connected to Memcached");
 
+    // Clean the memcached
+    client.flush_all().await?;
+
     let keys = vec![
         "adam", "james", "john"
     ];
