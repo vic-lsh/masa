@@ -87,6 +87,44 @@ pub async fn insert_url_mappings(
     Ok(())
 }
 
+pub async fn get_shortened_urls(
+    client: &Client,
+    expanded_urls: &[String],
+) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+    if expanded_urls.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let collection = get_collection(client);
+    let filter = doc! {
+        "expanded_url": {
+            "$in": expanded_urls
+        }
+    };
+
+    // Return early if no URLs are found
+    let count = collection.count_documents(filter.clone(), None).await?;
+    if count == 0 {
+        return Ok(HashMap::new());
+    }
+
+    let mut cursor = collection.find(filter, None).await?;
+    let mut url_map = HashMap::new();
+
+    while let Some(result) = cursor.try_next().await? {
+        if let (Ok(shortened), Ok(expanded)) = (
+            result.get_str("shortened_url"),
+            result.get_str("expanded_url"),
+        ) {
+            url_map.insert(expanded.to_owned(), shortened.to_owned());
+        }
+    }
+
+    println!("Retrieved {} URL mappings from MongoDB", url_map.len());
+
+    Ok(url_map)
+}
+
 pub async fn get_expanded_urls(
     client: &Client,
     shortened_urls: &[String],
