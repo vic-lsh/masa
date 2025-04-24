@@ -1,12 +1,10 @@
 #![allow(dead_code)]
 
 use log::error;
-use std::sync::Arc;
-use std::collections::HashMap;
 use regex::Regex;
 
 
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{Request, Response, Status};
 
 use text_svc::text_service::text_service_server::{TextService, TextServiceServer};
 use text_svc::text_service::{TextReply, TextRequest};

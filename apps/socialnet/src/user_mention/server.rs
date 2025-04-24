@@ -1,6 +1,6 @@
 use tonic::{Request, Response, Status};
 use async_memcached::Client as McClient;
-use mongodb::{Client as MongoClient, options::ClientOptions, Collection};
+use mongodb::{Client as MongoClient};
 use mongodb::bson::{doc, Bson};
 use std::collections::HashSet;
 use std::error::Error;
@@ -77,17 +77,28 @@ impl UserMentionService for UserMentionServiceImpl {
         let mut missing_keys: HashSet<String> = req.usernames.iter().cloned().collect();
         
         // Find user mentions in memcached
-        let mut mc_client = self.mc_client.lock().await;
-        if let Ok(mc_resp) = mc_client.get_multi(req.usernames.clone()).await {
-            for entry in mc_resp {
-                if let Ok(usr_id) = String::from_utf8(entry.data){
-                    let username = String::from_utf8(entry.key).unwrap_or_default();
-                    missing_keys.remove(&username);
-                    let user_mention = UserMention {
-                        username: username.clone() + "@memcached",
-                        user_id: usr_id.parse().unwrap_or_default(),
-                    };
-                    user_mentions.push(user_mention);
+        let mc_resp = {
+            let mut mc_client = self.mc_client.lock().await;
+            mc_client.get_multi(req.usernames.clone()).await
+        };
+
+        match mc_resp {
+            Err(e) => {
+                exception = Some(ServiceException {
+                    error_code: ErrorCode::Unknown as i32,
+                    message: format!("Memcached error: {}", e),
+                });
+            }
+            Ok(entries) => {
+                for entry in entries {
+                    if let Ok(usr_id) = String::from_utf8(entry.data) {
+                        let username = String::from_utf8(entry.key).unwrap_or_default();
+                        missing_keys.remove(&username);
+                        user_mentions.push(UserMention {
+                            username: username + "@memcached",
+                            user_id: usr_id.parse().unwrap_or_default(),
+                        });
+                    }
                 }
             }
         }
@@ -110,6 +121,20 @@ impl UserMentionService for UserMentionServiceImpl {
                 while let Some(doc) = cursor.next().await {
                     match doc {
                         Ok(user_mention_struct) => {
+                            // Insert into memcached
+                            let key = user_mention_struct.user_name.clone();
+                            let value = user_mention_struct.user_id.to_string();
+                            {
+                                let mut mc_client = self.mc_client.lock().await;
+                                mc_client.set(&key, &value, Some(0), None).await.expect("Failed to set in memcached");
+                            }
+
+                            // Remove from missing keys
+                            if missing_keys.contains(&user_mention_struct.user_name) {
+                                missing_keys.remove(&user_mention_struct.user_name);
+                            }
+
+                            // Add to user mentions
                             user_mentions.push(UserMention {
                                 username: user_mention_struct.user_name + "@mongodb",
                                 user_id: user_mention_struct.user_id,
@@ -141,9 +166,6 @@ impl UserMentionService for UserMentionServiceImpl {
 
 pub async fn create_service(
 ) -> UserMentionServiceServer<UserMentionServiceImpl> {
-    // let Ok(service) = UserMentionServiceImpl::new().await else {
-    //     panic!("Failed to create UserMentionServiceImpl");
-    // };
     let service = match UserMentionServiceImpl::new().await {
         Ok(s) => s,
         Err(e) => {
