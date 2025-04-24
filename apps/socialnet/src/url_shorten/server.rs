@@ -101,6 +101,13 @@ impl UrlShortenService for UrlShortenServiceImpl {
             }
         }
 
+        // If no new URLs to shorten, return the existing ones
+        if urls.is_empty() {
+            return Ok(Response::new(ComposeUrlsResponse {
+                urls: result_urls,
+                exception: None,
+            }));
+        }
 
         let mut new_urls = Vec::with_capacity(urls.len());
         for expanded_url in urls {
