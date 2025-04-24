@@ -84,10 +84,7 @@ impl UserMentionService for UserMentionServiceImpl {
 
         match mc_resp {
             Err(e) => {
-                exception = Some(ServiceException {
-                    error_code: ErrorCode::Unknown as i32,
-                    message: format!("Memcached error: {}", e),
-                });
+                eprintln!("Memcached Unavailable, falling back to Mongodb: {:?}", e);
             }
             Ok(entries) => {
                 for entry in entries {
@@ -127,11 +124,6 @@ impl UserMentionService for UserMentionServiceImpl {
                             {
                                 let mut mc_client = self.mc_client.lock().await;
                                 mc_client.set(&key, &value, Some(0), None).await.expect("Failed to set in memcached");
-                            }
-
-                            // Remove from missing keys
-                            if missing_keys.contains(&user_mention_struct.user_name) {
-                                missing_keys.remove(&user_mention_struct.user_name);
                             }
 
                             // Add to user mentions

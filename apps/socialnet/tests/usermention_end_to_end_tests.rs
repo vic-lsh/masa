@@ -41,7 +41,6 @@ async fn setup_test_server(
     (server_handle, client)
 }
 
-#[ignore]
 #[tokio::test]
 async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50056).await;
@@ -49,7 +48,7 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
     // Test case: Basic successful request
     let request = tonic::Request::new(ComposeUserMentionRequest {
         req_id: 1,
-        usernames: vec!["adam".to_string(), "alice".to_string()],
+        usernames: vec!["adam".to_string(), "james".to_string(), "john".to_string(), "alice".to_string(), "bob".to_string(), "charlie".to_string()],
     });
 
     let response = client.compose_user_mentions(request).await?;
@@ -61,9 +60,11 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
         result.exception
     );
 
+    // print the user mentions
+    println!("User mentions: {:?}", result.user_mentions);
 
     assert!(
-        result.user_mentions.len() == 2,
+        result.user_mentions.len() == 6,
         "Expected 2 user mentions, got {}",
         result.user_mentions.len()
     );
@@ -74,9 +75,75 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
     );
 
     assert_eq!(
-        result.user_mentions[1].username, "alice@mongodb",
-        "Expected alice@mongodb, got {}", result.user_mentions[1].username
+        result.user_mentions[1].username, "james@memcached",
+        "Expected james@memcached, got {}", result.user_mentions[1].username
     );
+
+    assert_eq!(
+        result.user_mentions[2].username, "john@memcached",
+        "Expected john@memcached, got {}", result.user_mentions[2].username
+    );
+
+    assert_eq!(
+        result.user_mentions[3].username, "alice@mongodb",
+        "Expected alice@mongodb, got {}", result.user_mentions[3].username
+    );
+
+    assert_eq!(
+        result.user_mentions[4].username, "bob@mongodb",
+        "Expected bob@mongodb, got {}", result.user_mentions[4].username
+    );
+
+    assert_eq!(
+        result.user_mentions[5].username, "charlie@mongodb",
+        "Expected charlie@mongodb, got {}", result.user_mentions[5].username
+    );
+
+    let request = tonic::Request::new(ComposeUserMentionRequest {
+        req_id: 2,
+        usernames: vec!["adam".to_string(), "james".to_string(), "john".to_string(), "alice".to_string(), "bob".to_string(), "charlie".to_string()],
+    });
+
+
+    let response = client.compose_user_mentions(request).await?;
+    let result = response.into_inner();
+    assert!(
+        result.exception.is_none(),
+        "Unexpected exception: {:?}",
+        result.exception
+    );
+
+    assert_eq!(
+        result.user_mentions[0].username, "adam@memcached",
+        "Expected adam@memcached, got {}", result.user_mentions[0].username
+    );
+
+    assert_eq!(
+        result.user_mentions[1].username, "james@memcached",
+        "Expected james@memcached, got {}", result.user_mentions[1].username
+    );
+
+    assert_eq!(
+        result.user_mentions[2].username, "john@memcached",
+        "Expected john@memcached, got {}", result.user_mentions[2].username
+    );
+
+    assert_eq!(
+        result.user_mentions[3].username, "alice@memcached",
+        "Expected alice@memcached, got {}", result.user_mentions[3].username
+    );
+
+    assert_eq!(
+        result.user_mentions[4].username, "bob@memcached",
+        "Expected bob@memcached, got {}", result.user_mentions[4].username
+    );
+
+    assert_eq!(
+        result.user_mentions[5].username, "charlie@memcached",
+        "Expected charlie@memcached, got {}", result.user_mentions[5].username
+    );
+
+
 
     server_handle.abort();
 
