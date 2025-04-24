@@ -39,7 +39,6 @@ async fn setup_test_server(
     (server_handle, client)
 }
 
-#[ignore]
 #[tokio::test]
 async fn test_compose_urls() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50054).await;
@@ -88,7 +87,6 @@ async fn test_compose_urls() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[ignore]
 #[tokio::test]
 async fn test_get_extended_urls() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50055).await;
@@ -135,7 +133,6 @@ async fn test_get_extended_urls() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[ignore]
 #[tokio::test]
 async fn test_nonexistent_url() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50056).await;
@@ -166,7 +163,6 @@ async fn test_nonexistent_url() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[ignore]
 #[tokio::test]
 async fn test_empty_input() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50057).await;
@@ -216,7 +212,6 @@ async fn test_empty_input() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[ignore]
 #[tokio::test]
 async fn test_full_workflow() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50058).await;
