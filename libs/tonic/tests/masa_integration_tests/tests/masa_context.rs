@@ -8,6 +8,7 @@ use std::{
 };
 
 use hyper::rt::{Exec, Executor};
+use masa::PriorityHint;
 use masa_integration_tests::pb::{
     child_service_client::ChildServiceClient,
     child_service_server::{ChildService, ChildServiceServer},
@@ -20,7 +21,6 @@ use tonic::{
     transport::Server,
     GrpcMethod, Request, Response, Status,
 };
-use masa::PriorityHint;
 
 struct ParentSvc<P> {
     child_addr: &'static str,

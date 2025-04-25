@@ -3,13 +3,13 @@ use futures_lite::future;
 use hello_world::greeter_server::{Greeter, GreeterServer};
 use hello_world::{HelloReply, HelloRequest};
 use hyper::rt::{Exec, Executor};
+use masa::PriorityHint;
 use rand_distr::{Distribution, Normal};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
 use tonic::{transport::Server, Request, Response, Status};
-use masa::PriorityHint;
 
 pub mod hello_world {
     tonic::include_proto!("helloworld");

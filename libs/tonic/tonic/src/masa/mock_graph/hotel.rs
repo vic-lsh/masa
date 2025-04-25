@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::env;
 use std::sync::OnceLock;
 
-use once_cell::sync::Lazy;
 use masa::{GlobalGraph, LocalGraph, MethodId, ServiceId, Span};
+use once_cell::sync::Lazy;
 
 static TRACKER_CAPACITY: Lazy<usize> = Lazy::new(|| {
     env::var("TRACKER_CAPACITY")

@@ -1,10 +1,10 @@
 use crate::db;
 use futures::{lock::Mutex, StreamExt};
 use hotel_tonic::review::{review_server::Review, ReviewComm, ReviewRequest, ReviewResponse};
+use masa::LatencyTracker;
 use mongodb::{bson::doc, Client as MongoClient};
 use std::{error::Error, sync::Arc};
 use tonic::{Request, Response, Status};
-use masa::LatencyTracker;
 pub mod hotel_tonic {
     pub mod review {
         tonic::include_proto!("review");
