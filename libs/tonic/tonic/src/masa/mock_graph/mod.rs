@@ -1,6 +1,6 @@
 use rand::rngs::StdRng;
 use rand_distr::{Distribution, Exp};
-use tonic_masa::Latency;
+use masa::Latency;
 
 pub(crate) mod charleston;
 pub(crate) mod hotel;

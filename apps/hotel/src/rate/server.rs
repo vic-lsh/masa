@@ -20,7 +20,7 @@ use std::{error::Error, sync::Arc};
 
 use mongodb::{bson::doc, Client as MongoClient};
 use tonic::{Request, Response, Status};
-use tonic_masa::LatencyTracker;
+use masa::LatencyTracker;
 
 use crate::db;
 use hotel_tonic::{rate, rate::rate_server::Rate};
