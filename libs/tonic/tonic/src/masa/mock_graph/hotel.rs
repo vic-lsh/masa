@@ -3,7 +3,7 @@ use std::env;
 use std::sync::OnceLock;
 
 use once_cell::sync::Lazy;
-use tonic_masa::{GlobalGraph, LocalGraph, MethodId, ServiceId, Span};
+use masa::{GlobalGraph, LocalGraph, MethodId, ServiceId, Span};
 
 static TRACKER_CAPACITY: Lazy<usize> = Lazy::new(|| {
     env::var("TRACKER_CAPACITY")

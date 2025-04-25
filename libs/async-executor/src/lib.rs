@@ -54,7 +54,7 @@ use futures_lite::{future, prelude::*};
 use queue::Queue;
 use slab::Slab;
 
-use tonic_masa::PriorityHint;
+use masa::PriorityHint;
 
 #[cfg(feature = "static")]
 mod static_executors;

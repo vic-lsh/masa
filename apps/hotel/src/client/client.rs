@@ -4,7 +4,7 @@ pub mod hotel {
 mod gen;
 
 use tonic::Request;
-use tonic_masa::{Context, GraphId};
+use masa::{Context, GraphId};
 
 use gen::gen_search_request;
 use hotel::init_logging;

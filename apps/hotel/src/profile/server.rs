@@ -15,7 +15,7 @@ use hotel::McPool;
 use mongodb::{bson::doc, Client as MongoClient};
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
-use tonic_masa::LatencyTracker;
+use masa::LatencyTracker;
 
 #[cfg(feature = "workload_stats")]
 use hotel::AvgTracker;
