@@ -37,7 +37,7 @@ async fn run_load_test(
     client: Arc<TextServiceClient<tonic::transport::Channel>>,
     csv_writer: tokio::sync::mpsc::UnboundedSender<[u64; 4]>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Track latency and goodput
+    // Track latency and goodput by atomic clones
     let total_latency = Arc::new(AtomicUsize::new(0));
     let goodput = Arc::new(AtomicUsize::new(0));
     let goodput_clone = goodput.clone();
@@ -51,7 +51,7 @@ async fn run_load_test(
             tick.tick().await;
             let count = goodput_clone.swap(0, Ordering::Relaxed) as u64;
             let lat_us = total_latency_clone.swap(0, Ordering::Relaxed) as u64;
-            let avg_latency = if count > 0 { lat_us / count } else { 0 };
+            let avg_latency = if count > 0 { lat_us / (rps * duration) } else { 0 };
             println!("Goodput: {} req/s, Avg Latency: {} us", count, avg_latency);
 
             // Send metrics to CSV writer
@@ -61,6 +61,7 @@ async fn run_load_test(
         }
     });
 
+    // Request with pace
     let mut pace = interval(Duration::from_secs_f64(1.0 / rps as f64));
     let mut handles = Vec::with_capacity((rps * duration) as usize);
     for _ in 0..rps*duration {
@@ -83,8 +84,8 @@ async fn run_load_test(
         handles.push(handle);
     }
 
+    // Wait for all tasks to complete
     future::join_all(handles).await;
-    // Wait for the metric task to complete
     if let Err(e) = metric_handle.await {
         eprintln!("Metric task failed: {:?}", e);
     }
@@ -104,7 +105,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize client with atomic RC
     let client = Arc::new(TextServiceClient::connect(client_port).await?);
-
 
     // mpsc channle for writing to csv
     let (csv_writer_tx, mut csv_writer_rx) = tokio::sync::mpsc::unbounded_channel::<[u64; 4]>();
