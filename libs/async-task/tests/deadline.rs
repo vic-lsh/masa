@@ -1,8 +1,8 @@
 use async_task::{Runnable, Task};
+use masa::PriorityHint;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use masa::PriorityHint;
 
 fn spawn_util() -> (Runnable<()>, Task<()>) {
     fn dispatch(trampoline: extern "C" fn(NonNull<()>), context: NonNull<()>) {
