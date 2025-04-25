@@ -1,16 +1,17 @@
-use tonic::{Request, Response, Status};
 use async_memcached::Client as McClient;
-use mongodb::{Client as MongoClient};
+use futures::StreamExt;
 use mongodb::bson::{doc, Bson};
+use mongodb::Client as MongoClient;
 use std::collections::HashSet;
 use std::error::Error;
 use std::sync::Arc;
-use futures::StreamExt;
 use tokio::sync::Mutex;
+use tonic::{Request, Response, Status};
 
 use user_mention_service::{
     user_mention_service_server::{UserMentionService, UserMentionServiceServer},
-    ComposeUserMentionRequest, ComposeUserMentionResponse, ErrorCode, UserMention, ServiceException,
+    ComposeUserMentionRequest, ComposeUserMentionResponse, ErrorCode, ServiceException,
+    UserMention,
 };
 
 pub mod user_mention_service {
@@ -22,15 +23,10 @@ pub struct UserMentionServiceImpl {
     mongo_client: Arc<MongoClient>,
 }
 
-use crate::user_mention::db::{
-    UserMentionStruct,
-    initialize_database,
-    initialize_memcached,
-};
+use crate::user_mention::db::{initialize_database, initialize_memcached, UserMentionStruct};
 
 impl UserMentionServiceImpl {
-    pub async fn new(
-    ) -> Result<Self, Box<dyn Error>> {
+    pub async fn new() -> Result<Self, Box<dyn Error>> {
         let mongo_client = match initialize_database().await {
             Ok(client) => client,
             Err(e) => {
@@ -46,7 +42,7 @@ impl UserMentionServiceImpl {
                 return Err(e);
             }
         };
-        
+
         Ok(Self {
             mc_client: Arc::new(Mutex::new(mc_client)),
             mongo_client: Arc::new(mongo_client),
@@ -75,7 +71,7 @@ impl UserMentionService for UserMentionServiceImpl {
         let mut user_mentions = Vec::new();
         let mut exception = None;
         let mut missing_keys: HashSet<String> = req.usernames.iter().cloned().collect();
-        
+
         // Find user mentions in memcached
         let mc_resp = {
             let mut mc_client = self.mc_client.lock().await;
@@ -106,11 +102,7 @@ impl UserMentionService for UserMentionServiceImpl {
                 .mongo_client
                 .database("usermention-db")
                 .collection::<UserMentionStruct>("usermention");
-            let in_array: Vec<Bson> = missing_keys
-                .iter()
-                .cloned()
-                .map(Bson::String)
-                .collect();
+            let in_array: Vec<Bson> = missing_keys.iter().cloned().map(Bson::String).collect();
             let filter = doc! { "username": { "$in": Bson::Array(in_array) } };
             let cursor = collection.find(filter, None).await;
 
@@ -123,7 +115,10 @@ impl UserMentionService for UserMentionServiceImpl {
                             let value = user_mention_struct.user_id.to_string();
                             {
                                 let mut mc_client = self.mc_client.lock().await;
-                                mc_client.set(&key, &value, Some(0), None).await.expect("Failed to set in memcached");
+                                mc_client
+                                    .set(&key, &value, Some(0), None)
+                                    .await
+                                    .expect("Failed to set in memcached");
                             }
 
                             // Add to user mentions
@@ -156,8 +151,7 @@ impl UserMentionService for UserMentionServiceImpl {
     }
 }
 
-pub async fn create_service(
-) -> UserMentionServiceServer<UserMentionServiceImpl> {
+pub async fn create_service() -> UserMentionServiceServer<UserMentionServiceImpl> {
     let service = match UserMentionServiceImpl::new().await {
         Ok(s) => s,
         Err(e) => {

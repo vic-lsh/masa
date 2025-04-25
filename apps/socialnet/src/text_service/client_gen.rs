@@ -1,16 +1,19 @@
-use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use std::time::Instant;
-use tokio::time::{Duration, interval};
+use tokio::time::{interval, Duration};
 
 use text_service::text_service_client::TextServiceClient;
 use text_service::TextRequest;
 
-use serde::Deserialize;
-use std::fs::File;
-use std::io::BufReader;
 use csv::WriterBuilder;
 use futures::future;
+use serde::Deserialize;
 use serde_json;
+use std::fs::File;
+use std::io::BufReader;
 
 pub mod text_service {
     tonic::include_proto!("textservice");
@@ -51,7 +54,11 @@ async fn run_load_test(
             tick.tick().await;
             let count = goodput_clone.swap(0, Ordering::Relaxed) as u64;
             let lat_us = total_latency_clone.swap(0, Ordering::Relaxed) as u64;
-            let avg_latency = if count > 0 { lat_us / (rps * duration) } else { 0 };
+            let avg_latency = if count > 0 {
+                lat_us / (rps * duration)
+            } else {
+                0
+            };
             println!("Goodput: {} req/s, Avg Latency: {} us", count, avg_latency);
 
             // Send metrics to CSV writer
@@ -64,7 +71,7 @@ async fn run_load_test(
     // Request with pace
     let mut pace = interval(Duration::from_secs_f64(1.0 / rps as f64));
     let mut handles = Vec::with_capacity((rps * duration) as usize);
-    for _ in 0..rps*duration {
+    for _ in 0..rps * duration {
         pace.tick().await;
         let mut txtsvc_client = (*client).clone();
         let goodput = goodput.clone();
@@ -99,7 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config("/home/jiexiao/research/masa-internal/apps/socialnet/src/text_service/benchmark/config.json")?;
 
     let rps_list: Vec<u64> = config.rps_list; // list of requests per second
-    let duration : u64 = config.duration_per_rps; // seconds
+    let duration: u64 = config.duration_per_rps; // seconds
     let client_port = config.client_port.clone(); // client port
     let output_path = config.output_path.clone(); // output path
 
@@ -113,15 +120,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .has_headers(true)
             .from_path(output_path)
             .expect("Failed to create CSV writer");
-        csv_writer.write_record(&["sec", "rps", "goodput", "avg_latency"]).expect("Failed to write header");
+        csv_writer
+            .write_record(&["sec", "rps", "goodput", "avg_latency"])
+            .expect("Failed to write header");
         while let Some([sec, rps, gp, lat]) = csv_writer_rx.recv().await {
-            csv_writer.write_record(&[sec,rps,gp,lat].map(|v| v.to_string())).unwrap();
+            csv_writer
+                .write_record(&[sec, rps, gp, lat].map(|v| v.to_string()))
+                .unwrap();
         }
         csv_writer.flush().unwrap();
     });
 
     for &rps in &rps_list {
-        println!("Running load test with RPS: {}, Duration: {}, Total Requests: {}", rps, duration, rps * duration);
+        println!(
+            "Running load test with RPS: {}, Duration: {}, Total Requests: {}",
+            rps,
+            duration,
+            rps * duration
+        );
         run_load_test(rps, duration, client.clone(), csv_writer_tx.clone()).await?;
     }
     drop(csv_writer_tx);
@@ -130,5 +146,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Wait for all tasks to complete
     println!("Load test completed.");
     Ok(())
-
 }
