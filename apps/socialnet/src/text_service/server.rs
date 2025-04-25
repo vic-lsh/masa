@@ -3,16 +3,17 @@
 use log::error;
 use regex::Regex;
 
-
 use tonic::{Request, Response, Status};
 
 use text_svc::text_service::text_service_server::{TextService, TextServiceServer};
 use text_svc::text_service::{TextReply, TextRequest};
-use text_svc::user_mention_service::{user_mention_service_client::UserMentionServiceClient, 
-                                        ComposeUserMentionRequest};
+use text_svc::user_mention_service::{
+    user_mention_service_client::UserMentionServiceClient, ComposeUserMentionRequest,
+};
 
-use text_svc::url_shorten_service::{url_shorten_service_client::UrlShortenServiceClient, 
-                                        ComposeUrlsRequest};
+use text_svc::url_shorten_service::{
+    url_shorten_service_client::UrlShortenServiceClient, ComposeUrlsRequest,
+};
 
 pub mod text_svc {
     pub mod text_service {
@@ -44,7 +45,6 @@ impl TextSvcImpl {
     }
 }
 
-
 #[tonic::async_trait]
 impl TextService for TextSvcImpl {
     async fn compose_text(
@@ -53,8 +53,8 @@ impl TextService for TextSvcImpl {
     ) -> Result<Response<TextReply>, Status> {
         println!("Got a request: {:?}", request);
 
-        let text:String = request.into_inner().text;
-        
+        let text: String = request.into_inner().text;
+
         // regx match mentions with @
         let mut mention_usernames = Vec::new();
         let re = Regex::new(r"@[a-zA-Z0-9-_]+").unwrap();
@@ -129,21 +129,26 @@ impl TextService for TextSvcImpl {
                         error!("Error calling user_mention service: {}", status);
                         return Err(status);
                     }
-                }           
+                }
             })
         };
 
-
         // process the text with url
-        let Ok(result_urls) = shortened_url_task.await.expect("shortened url task shouldn't fail") else {
+        let Ok(result_urls) = shortened_url_task
+            .await
+            .expect("shortened url task shouldn't fail")
+        else {
             return Err(Status::internal("Failed to get shortened urls"));
         };
 
-        let Ok(user_mentions) = user_mention_task.await.expect("user mention task shoudln't fail") else {
+        let Ok(user_mentions) = user_mention_task
+            .await
+            .expect("user mention task shoudln't fail")
+        else {
             return Err(Status::internal("Failed to get user mentions"));
         };
 
-        println!("Shortened URLs: {:?}", result_urls);        
+        println!("Shortened URLs: {:?}", result_urls);
 
         let mut updated_text = text.clone();
         let mut shortened_urls: Vec<String> = Vec::new();
@@ -161,7 +166,8 @@ impl TextService for TextSvcImpl {
             };
             let user_id = mention.user_id;
             user_mention_id.push(user_id.to_string());
-            updated_text = updated_text.replace(&format!("@{}", username), &format!("user_id:{}", user_id));
+            updated_text =
+                updated_text.replace(&format!("@{}", username), &format!("user_id:{}", user_id));
         }
 
         let reply = TextReply {
@@ -177,8 +183,12 @@ impl TextService for TextSvcImpl {
 
 pub async fn create_service() -> TextServiceServer<TextSvcImpl> {
     let service = TextSvcImpl::new(
-        UrlShortenServiceClient::connect("http://[::1]:50053").await.unwrap(),
-        UserMentionServiceClient::connect("http://[::1]:50052").await.unwrap(),
+        UrlShortenServiceClient::connect("http://[::1]:50053")
+            .await
+            .unwrap(),
+        UserMentionServiceClient::connect("http://[::1]:50052")
+            .await
+            .unwrap(),
     );
     TextServiceServer::new(service)
 }

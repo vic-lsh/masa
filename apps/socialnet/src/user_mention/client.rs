@@ -1,6 +1,8 @@
 use tonic::{Request, Status};
 
-use user_mention_service::{user_mention_service_client::UserMentionServiceClient, ComposeUserMentionRequest, UserMention};
+use user_mention_service::{
+    user_mention_service_client::UserMentionServiceClient, ComposeUserMentionRequest, UserMention,
+};
 
 pub mod user_mention_service {
     tonic::include_proto!("usermention");
@@ -21,10 +23,7 @@ impl UserMentionClient {
         req_id: u64,
         usernames: Vec<String>,
     ) -> Result<Vec<UserMention>, Status> {
-        let request = Request::new(ComposeUserMentionRequest {
-            req_id,
-            usernames,
-        });
+        let request = Request::new(ComposeUserMentionRequest { req_id, usernames });
 
         let response = self.client.compose_user_mentions(request).await?;
         let inner = response.into_inner();
@@ -42,7 +41,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = UserMentionClient::connect("http://[::1]:50052".to_string()).await?;
 
     let req_id = 12345;
-    let user_names = vec!["adam".to_string(), "alice".to_string(), "john".to_string(), "alice".to_string(), "bob".to_string(), "charlie".to_string()];
+    let user_names = vec![
+        "adam".to_string(),
+        "alice".to_string(),
+        "john".to_string(),
+        "alice".to_string(),
+        "bob".to_string(),
+        "charlie".to_string(),
+    ];
 
     match client.compose_user_mentions(req_id, user_names).await {
         Ok(user_mentions) => {
@@ -62,7 +68,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let req_id = 12345;
-    let user_names = vec!["adam".to_string(), "alice".to_string(), "john".to_string(), "alice".to_string(), "bob".to_string(), "charlie".to_string()];
+    let user_names = vec![
+        "adam".to_string(),
+        "alice".to_string(),
+        "john".to_string(),
+        "alice".to_string(),
+        "bob".to_string(),
+        "charlie".to_string(),
+    ];
 
     match client.compose_user_mentions(req_id, user_names).await {
         Ok(user_mentions) => {
@@ -82,7 +95,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let req_id = 12345;
-    let user_names = vec!["adam".to_string(), "alice".to_string(), "john".to_string(), "alice".to_string(), "bob".to_string(), "charlie".to_string()];
+    let user_names = vec![
+        "adam".to_string(),
+        "alice".to_string(),
+        "john".to_string(),
+        "alice".to_string(),
+        "bob".to_string(),
+        "charlie".to_string(),
+    ];
 
     match client.compose_user_mentions(req_id, user_names).await {
         Ok(user_mentions) => {

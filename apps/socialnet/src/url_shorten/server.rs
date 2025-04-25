@@ -5,7 +5,9 @@ use rand::{Rng, SeedableRng};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
-use crate::url_shorten::db::{get_expanded_urls, get_shortened_urls, initialize_database, insert_url_mappings};
+use crate::url_shorten::db::{
+    get_expanded_urls, get_shortened_urls, initialize_database, insert_url_mappings,
+};
 use crate::url_shorten::{
     url_shorten_service_server::{UrlShortenService, UrlShortenServiceServer},
     ComposeUrlsRequest, ComposeUrlsResponse, ErrorCode, GetExtendedUrlsRequest,

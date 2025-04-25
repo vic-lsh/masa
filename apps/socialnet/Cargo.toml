@@ -32,6 +32,29 @@ name = "url_shorten_client"
 path = "src/url_shorten/client.rs"
 
 
+[features]
+prio_class = ["async-executor/prio_class", "tonic-masa/prio_class", "tonic/prio_class"]
+prio_global = ["async-executor/prio_global", "tonic-masa/prio_global", "tonic/prio_global"]
+prio_global_early = [
+	"async-executor/prio_global_early",
+	"tonic-masa/prio_global_early",
+	"tonic/prio_global_early",
+]
+prio_class_global = [
+	"async-executor/prio_class_global",
+	"tonic-masa/prio_class_global",
+	"tonic/prio_class_global",
+]
+prio_local = ["async-executor/prio_local", "tonic-masa/prio_local", "tonic/prio_local"]
+prio_local_early = [
+	"async-executor/prio_local_early",
+	"tonic-masa/prio_local_early",
+	"tonic/prio_local_early",
+]
+fifo = ["async-executor/fifo", "tonic-masa/fifo", "tonic/fifo"]
+fifo_early = ["async-executor/fifo_early", "tonic-masa/fifo_early", "tonic/fifo_early"]
+fifo_infra = ["async-executor/fifo_infra", "tonic-masa/fifo_infra", "tonic/fifo_infra"]
+
 [dependencies]
 tonic = { path = "../../libs/tonic/tonic" }
 prost = "0.12"
@@ -52,6 +75,10 @@ tracing = "0.1"
 regex = "1.11.1"
 chrono = "0.4.23"
 csv = "1.3"
+async-executor = { path = "../../libs/async-executor" }
+tonic-masa = { path = "../../libs/tonic/tonic-masa" }
+async-task = { path = "../../libs/async-task" }
+
 
 [build-dependencies]
 tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
