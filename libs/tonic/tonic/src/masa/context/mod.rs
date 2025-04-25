@@ -9,8 +9,6 @@ mod tls;
 pub use tls::{client, server};
 mod noop;
 
-// TODO: make the contexts instantiated different based on compilation flags
-
 /// Default priority selector.
 #[cfg(not(feature = "masa"))]
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
