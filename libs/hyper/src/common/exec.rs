@@ -14,7 +14,7 @@ use crate::rt::Executor;
 use crate::server::server::{new_svc::NewSvcTask, Watcher};
 #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
 use crate::service::HttpService;
-use tonic_masa::PriorityHint;
+use masa::PriorityHint;
 
 #[cfg(feature = "server")]
 pub trait ConnStreamExec<F, B: HttpBody>: Clone {

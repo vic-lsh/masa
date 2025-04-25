@@ -4,7 +4,7 @@ use hotel_tonic::review::{review_server::Review, ReviewComm, ReviewRequest, Revi
 use mongodb::{bson::doc, Client as MongoClient};
 use std::{error::Error, sync::Arc};
 use tonic::{Request, Response, Status};
-use tonic_masa::LatencyTracker;
+use masa::LatencyTracker;
 pub mod hotel_tonic {
     pub mod review {
         tonic::include_proto!("review");

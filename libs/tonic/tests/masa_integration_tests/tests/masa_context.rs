@@ -20,7 +20,7 @@ use tonic::{
     transport::Server,
     GrpcMethod, Request, Response, Status,
 };
-use tonic_masa::PriorityHint;
+use masa::PriorityHint;
 
 struct ParentSvc<P> {
     child_addr: &'static str,

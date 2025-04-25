@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use tonic_masa::{Api, Distribution as MasaDistribution, GlobalGraph, LocalGraph, MethodId, Span};
+use masa::{Api, Distribution as MasaDistribution, GlobalGraph, LocalGraph, MethodId, Span};
 
 /// Get a global graph with two hops.
 #[allow(dead_code)]

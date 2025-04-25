@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tonic_masa::LatencyTracker;
+use masa::LatencyTracker;
 
 use crate::db;
 use hotel::McPool;
