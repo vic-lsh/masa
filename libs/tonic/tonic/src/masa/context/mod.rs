@@ -3,23 +3,30 @@ use std::{sync::Arc, task::Poll};
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
 pub mod runtime;
-mod simple;
+#[allow(missing_docs)]
+pub mod simple;
 mod tls;
 pub use tls::{client, server};
 mod noop;
 
 // TODO: make the contexts instantiated different based on compilation flags
 
+/// Default priority selector.
 #[cfg(not(feature = "masa"))]
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
+/// Default priority selector.
 #[cfg(feature = "masa")]
 pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
 
 // TODO: rename this to be more general
 // TODO: add notes on trait bounds
+/// Trait for specifying the set of hooks to apply in a Masa build.
 pub trait PrioritySelector: Send + Sync + 'static {
+    /// The server-level state and hook implementations.
     type ServerContext: ServerHooks;
+    /// The state and hook implementations maintained per child RPC.
     type ChildContext: ClientHooks;
+    /// The state and hook implementations maintained per in the server-side request handlers.
     type ParentContext: ParentHooks<Self::ChildContext, Self::ServerContext>;
 }
 
