@@ -1,8 +1,8 @@
+use async_memcached::Client as McClient;
 use mongodb::{bson::doc, options::ClientOptions, Client as MongoClient, Collection};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use tracing::{error, info};
-use async_memcached::Client as McClient;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserMentionStruct {
@@ -66,7 +66,6 @@ pub async fn initialize_database() -> Result<MongoClient, Box<dyn Error>> {
             e
         })?;
 
-
     // Insert reservations
     usermention_collection
         .insert_many(new_user_mentions, None)
@@ -76,14 +75,12 @@ pub async fn initialize_database() -> Result<MongoClient, Box<dyn Error>> {
             e
         })?;
 
-
     info!("Successfully inserted test data into usermention DB");
 
     Ok(client)
 }
 
-pub async fn initialize_memcached(
-) -> Result<McClient, Box<dyn Error>> {
+pub async fn initialize_memcached() -> Result<McClient, Box<dyn Error>> {
     let url = "tcp://127.0.0.1:11211";
     let mut client = McClient::new(url).await?;
     info!("Successfully connected to Memcached");
@@ -91,9 +88,7 @@ pub async fn initialize_memcached(
     // Clean the memcached
     client.flush_all().await?;
 
-    let keys = vec![
-        "adam", "james", "john"
-    ];
+    let keys = vec!["adam", "james", "john"];
 
     let values = vec!["1", "2", "3"];
 

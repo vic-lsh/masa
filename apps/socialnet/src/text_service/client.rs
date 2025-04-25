@@ -11,7 +11,9 @@ pub mod text_service {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = TextServiceClient::connect("http://[::1]:50051").await?;
 
-    let text_eq = TextRequest{text:"@john @bob Hello! Here is the link, https://openai.com".to_string()};
+    let text_eq = TextRequest {
+        text: "@john @bob Hello! Here is the link, https://openai.com".to_string(),
+    };
     let request: tonic::Request<TextRequest> = tonic::Request::new(text_eq);
 
     let response = client.compose_text(request).await?;

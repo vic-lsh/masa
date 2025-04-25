@@ -1,8 +1,8 @@
 use std::net::SocketAddr;
 use tonic::transport::Server;
 
-use socialnet::text_service::text_service_client::TextServiceClient;
 use socialnet::text_service::server::create_service;
+use socialnet::text_service::text_service_client::TextServiceClient;
 use socialnet::text_service::TextRequest;
 
 // Helper function to set up a test server and return a client
@@ -64,12 +64,14 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
 
     assert_eq!(
         result.user_mentions[0], "3",
-        "Expected user_id: 3, got {}", result.user_mentions[0]
+        "Expected user_id: 3, got {}",
+        result.user_mentions[0]
     );
 
     assert_eq!(
         result.user_mentions[1], "5",
-        "Expected user_id: 5, got {}", result.user_mentions[1]
+        "Expected user_id: 5, got {}",
+        result.user_mentions[1]
     );
 
     server_handle.abort();
@@ -105,11 +107,11 @@ async fn test_empty_result() -> Result<(), Box<dyn std::error::Error>> {
 
     assert_eq!(
         result.updated_text, "",
-        "Expected empty updated text, got {}", result.updated_text
+        "Expected empty updated text, got {}",
+        result.updated_text
     );
 
     server_handle.abort();
 
     Ok(())
 }
-
