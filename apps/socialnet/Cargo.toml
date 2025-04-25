@@ -12,6 +12,10 @@ name = "textservice_client"
 path = "src/text_service/client.rs"
 
 [[bin]]
+name = "textservice_bench"
+path = "src/text_service/client_gen.rs"
+
+[[bin]]
 name = "usermention_server"
 path = "src/user_mention/main.rs"
 
@@ -47,6 +51,7 @@ tracing-opentelemetry = "0.20"
 tracing = "0.1"
 regex = "1.11.1"
 chrono = "0.4.23"
+csv = "1.3"
 
 [build-dependencies]
 tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
