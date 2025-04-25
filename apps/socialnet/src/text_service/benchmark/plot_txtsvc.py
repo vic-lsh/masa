@@ -1,28 +1,37 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Load CSV
-df = pd.read_csv("/home/jiexiao/research/masa-internal/apps/socialnet/src/text_service/benchmark/textservice_bench.csv")
+# --- 1. Load -------------------------------------------------------------
+CSV_PATH = "/home/jiexiao/research/masa-internal/apps/socialnet/src/text_service/benchmark/textservice_bench.csv"
+df = pd.read_csv(CSV_PATH)
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4), sharex=True)
+# (optional) drop the first second where goodput/latency are 0
+df2 = df[df["sec"] > 0]
 
-for rps, grp in df.groupby("rps"):
-    # sec is already 0..duration-1 for each phase
-    ax1.plot(grp["sec"], grp["goodput"], marker="o", label=f"{rps} RPS")
-    ax2.plot(grp["sec"], grp["avg_latency"], marker="s", label=f"{rps} RPS")
+# --- 2. Aggregate: one row per RPS --------------------------------------
+summary = (
+    df2.groupby("rps", as_index=False)
+       .agg(goodput_mean=("goodput", "mean"),
+            latency_mean=("avg_latency", "mean"))
+)
 
-ax1.set_title("Goodput")
-ax1.set_xlabel("second")
-ax1.set_ylabel("requests / s")
+# --- 3. Plot -------------------------------------------------------------
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+
+# Goodput vs RPS
+ax1.plot(summary["rps"], summary["goodput_mean"], marker="o")
+ax1.set_title("Goodput vs RPS")
+ax1.set_xlabel("Target RPS")
+ax1.set_ylabel("Measured goodput (req/s)")
 ax1.grid(True)
-ax1.legend(frameon=False)
 
-ax2.set_title("Average latency")
-ax2.set_xlabel("second")
-ax2.set_ylabel("µs")
+# Latency vs RPS
+ax2.plot(summary["rps"], summary["latency_mean"], marker="s", color="tab:orange")
+ax2.set_title("Latency vs RPS")
+ax2.set_xlabel("Target RPS")
+ax2.set_ylabel("Average latency (µs)")
 ax2.grid(True)
-ax2.legend(frameon=False)
 
-fig.suptitle("Load-test phases by RPS")
+fig.suptitle("Load-test summary (one point per RPS)")
 fig.tight_layout()
-plt.savefig("load_test.png", dpi=300)
+plt.savefig("load_test_summary.png", dpi=300)
