@@ -370,7 +370,7 @@ smol = { path = "../../../3rd_party/smol" }
 futures-lite = { version = "2.0.0" }
 structopt = "0.3.23"
 crossbeam-channel = "0.5"
-tonic-masa = { path = "../tonic-masa" }
+masa = { path = "../../masa" }
 
 # Common dependencies
 tokio = { path = "../../tokio/tokio", features = [

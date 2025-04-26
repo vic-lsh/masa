@@ -1,0 +1,17 @@
+syntax = "proto3";
+package textservice;
+
+service TextService {
+    rpc ComposeText (TextRequest) returns (TextReply);
+}
+
+message TextRequest {
+    string text = 1;
+}
+
+message TextReply {
+    repeated string user_mentions = 1;
+    repeated string urls = 2;
+    string updated_text = 3;
+}
+

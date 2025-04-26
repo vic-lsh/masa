@@ -38,7 +38,7 @@ use tower::{
     Service,
 };
 
-use tonic_masa::PriorityHint;
+use masa::PriorityHint;
 
 type Svc = Either<Connection, BoxService<Request<BoxBody>, Response<hyper::Body>, crate::Error>>;
 

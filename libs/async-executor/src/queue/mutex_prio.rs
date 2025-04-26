@@ -5,7 +5,7 @@ use std::{
 };
 
 use super::{PopError, PushError, Queue};
-use tonic_masa::Prioritize;
+use masa::Prioritize;
 
 #[inline]
 #[allow(dead_code)]

@@ -13,7 +13,7 @@ async-executor = { path = "../../../async-executor" }
 hyper = { path = "../../../hyper" }
 tokio = { path = "../../../tokio/tokio", features = ["macros"] }
 tonic = { path = "../../tonic" }
-tonic-masa = { path = "../../tonic-masa" }
+masa = { path = "../../../masa" }
 http = { version = "0.2" }
 
 [build-dependencies]

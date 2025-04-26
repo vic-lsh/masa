@@ -7,7 +7,7 @@ use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 use core::task::{Context, Poll};
 
-use tonic_masa::PriorityHint;
+use masa::PriorityHint;
 
 use crate::header::Header;
 use crate::raw::{get_prio_from_raw_task, Panic};
