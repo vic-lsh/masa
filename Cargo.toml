@@ -7,7 +7,6 @@ members = [
   "libs/tonic/tonic-types",
   "libs/tonic/tonic-reflection",
   "libs/tonic/tonic-web",
-  "libs/tonic/tonic-masa",
   "libs/tonic/examples",
   "libs/tonic/codegen",
   "libs/tonic/interop",
@@ -29,6 +28,8 @@ members = [
   "libs/tonic/tests/service_named_result",
   "libs/tonic/tests/use_arc_self",
   "libs/tonic/tests/default_stubs",
+  # masa support
+  "libs/masa",
 
   # evaluation applications
   "apps/hotel",

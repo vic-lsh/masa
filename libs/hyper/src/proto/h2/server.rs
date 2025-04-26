@@ -29,7 +29,7 @@ use crate::service::HttpService;
 use crate::upgrade::{OnUpgrade, Pending, Upgraded};
 use crate::{Body, Response};
 
-use tonic_masa::{
+use masa::{
     Context as MasaContext, PriorityHint, FIFO, FIFO_EARLY, PRIO_GLOBAL, PRIO_GLOBAL_EARLY,
     PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
