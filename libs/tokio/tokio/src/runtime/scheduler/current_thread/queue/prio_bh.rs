@@ -5,7 +5,7 @@ use std::{
 
 use super::{PopError, PushError, Queue};
 use crate::runtime::task::Identifiable;
-use tonic_masa::Prioritize;
+use masa::Prioritize;
 
 #[allow(dead_code)]
 static INIT: std::sync::LazyLock<u64> = std::sync::LazyLock::new(time_now);

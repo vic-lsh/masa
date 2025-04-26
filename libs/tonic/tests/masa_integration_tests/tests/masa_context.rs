@@ -280,7 +280,7 @@ async fn test_par_child_rpc_hooks_invocations() {
 
     struct TestChildRpcParentCtx {}
 
-    impl<C: ClientStubHooks, S: ServerHooks> RequestHandlerHooks<C, S> for TestChildRpcParentCtx {
+    impl<C: ClientHooks, S: ServerHooks> ParentHooks<C, S> for TestChildRpcParentCtx {
         fn begin<B>(_method: GrpcMethod, _req: &http::Request<B>, _server_ctx: Arc<S>) -> Self {
             Self {}
         }

@@ -1,4 +1,4 @@
-use tonic_masa::PriorityHint;
+use masa::PriorityHint;
 
 #[cfg(tokio_unstable)]
 use crate::runtime;
