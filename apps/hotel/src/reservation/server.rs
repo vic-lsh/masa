@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use crate::db;
 use app_util_macros::track_latency;
-use app_utils::latency::{new_latency_tracker, SyncLatencyConsumer, SyncLatencyTracker};
+use app_utils::latency::{new_latency_tracker, SyncLatencyTracker};
 use hotel::McPool;
 use mongodb::{bson::doc, Client as MongoClient, Collection};
 use tonic::{Request, Response, Status};
@@ -29,29 +29,75 @@ fn is_mc_protocol_err<T>(mc_resp: &Result<T, async_memcached::Error>) -> bool {
 }
 
 struct CheckAvailStats {
+    e2e: SyncLatencyTracker,
     mc_get_capacity: SyncLatencyTracker,
+    mongo_get_capacity: SyncLatencyTracker,
+    mc_set_capacity: SyncLatencyTracker,
+    mc_get_reservations: SyncLatencyTracker,
+    mongo_get_reservations: SyncLatencyTracker,
+    mc_set_reservations: SyncLatencyTracker,
 }
 
 impl CheckAvailStats {
     fn new() -> Self {
-        let (mc_get_capacity, mut mc_get_capacity_consumer) =
-            new_latency_tracker("mc_get_capacity");
+        let (e2e, e2e_consumer) = new_latency_tracker("e2e");
+        let (mc_get_capacity, mc_get_capacity_consumer) = new_latency_tracker("mc_get_capacity");
+        let (mongo_get_capacity, mongo_get_capacity_consumer) =
+            new_latency_tracker("mongo_get_capacity");
+        let (mc_set_capacity, mc_set_capacity_consumer) = new_latency_tracker("mc_set_capacity");
+        let (mc_get_reservations, mc_get_reservations_consumer) =
+            new_latency_tracker("mc_get_reservations");
+        let (mc_set_reservations, mc_set_reservations_consumer) =
+            new_latency_tracker("mc_set_reservations");
+        let (mongo_get_reservations, mongo_get_reservations_consumer) =
+            new_latency_tracker("mongo_get_reservations");
 
         tokio::spawn(async move {
             let percentiles = [50.0, 90.0, 99.0, 99.9];
+            let mut latency_consumers = [
+                e2e_consumer,
+                mc_get_capacity_consumer,
+                mongo_get_capacity_consumer,
+                mc_set_capacity_consumer,
+                mc_get_reservations_consumer,
+                mongo_get_reservations_consumer,
+                mc_set_reservations_consumer,
+            ];
+
+            let name_width = latency_consumers
+                .iter()
+                .map(|c| c.name.len())
+                .max()
+                .expect("max must exist")
+                + 4;
+
+            let mut secs = 0;
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                let mut dist = mc_get_capacity_consumer.consume();
-                print!("{}:\t", mc_get_capacity_consumer.name);
-                print!("# recs {}\t", dist.len());
-                for p in percentiles {
-                    print!("p{}: {} ", p, dist.percentile(p));
+                secs += 1;
+                println!("#{}", secs);
+                for c in latency_consumers.iter_mut() {
+                    let mut dist = c.consume();
+                    print!("{:.<width$}:", c.name, width = name_width);
+                    print!("# recs {:.<width$}\t", dist.len(), width = 6);
+                    for p in percentiles {
+                        print!("p{}: {} ", p, dist.percentile(p));
+                    }
+                    print!("\n");
                 }
                 print!("\n");
             }
         });
 
-        Self { mc_get_capacity }
+        Self {
+            e2e,
+            mc_get_capacity,
+            mongo_get_capacity,
+            mc_set_capacity,
+            mc_get_reservations,
+            mc_set_reservations,
+            mongo_get_reservations,
+        }
     }
 }
 
@@ -59,9 +105,6 @@ pub struct ReservationImpl {
     mc_pool: Arc<McPool>,
     mongo_client: MongoClient,
     mongo_reserve_client: MongoClient,
-    lat_check_avail: Mutex<LatencyTracker>,
-    lat_check_avail_mc_cap: Mutex<LatencyTracker>,
-    lat_make_reserve: Mutex<LatencyTracker>,
     check_avail_mc_hotel_cap: Arc<AvgTracker>,
     check_avail_mongo_hotel_cap: Arc<AvgTracker>,
     check_avail_mc_reserve: Arc<AvgTracker>,
@@ -69,7 +112,7 @@ pub struct ReservationImpl {
     mk_reserve_mongo: Arc<AvgTracker>,
     mc_err_count: Arc<AtomicUsize>,
 
-    check_avail_stats: CheckAvailStats,
+    check_avail_stats: Arc<CheckAvailStats>,
 }
 
 impl ReservationImpl {
@@ -77,11 +120,6 @@ impl ReservationImpl {
         let mongo_client = crate::db::initialize_database(&db_addr).await?;
         let client_options = mongodb::options::ClientOptions::parse(&db_addr).await?;
         let mongo_reserve_client = MongoClient::with_options(client_options)?;
-
-        let lat_check_avail = Mutex::new(LatencyTracker::new("check_availability".into(), 256));
-        let lat_check_avail_mc_cap =
-            Mutex::new(LatencyTracker::new("check_availability_mc_cap".into(), 256));
-        let lat_make_reserve = Mutex::new(LatencyTracker::new("make_reservation".into(), 256));
 
         let check_avail_mc_hotel_cap = Arc::new(AvgTracker::default());
         let check_avail_mongo_hotel_cap = Arc::new(AvgTracker::default());
@@ -93,30 +131,6 @@ impl ReservationImpl {
 
         let mc_err_count = Arc::new(AtomicUsize::new(0));
 
-        let ca_hotel_mc_hotel_cap = check_avail_mc_hotel_cap.clone();
-        let ca_hotel_mongo_hotel_cap = check_avail_mongo_hotel_cap.clone();
-        let ca_mc_reserve = check_avail_mc_reserve.clone();
-        let ca_mongo_reserve = check_avail_mongo_reserve.clone();
-        let mr_mongo = mk_reserve_mongo.clone();
-        let mc_err = mc_err_count.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(Duration::from_secs(10)).await;
-                println!(
-                    "CheckAvail check capacity: mc {} mongo {}",
-                    ca_hotel_mc_hotel_cap.get(),
-                    ca_hotel_mongo_hotel_cap.get(),
-                );
-                println!(
-                    "CheckAvail check reserve: mc {} mongo {}",
-                    ca_mc_reserve.get(),
-                    ca_mongo_reserve.get()
-                );
-                println!("MkReserve reserve: mongo {}", mr_mongo.get());
-                println!("mc err {}", mc_err.load(Ordering::Relaxed));
-            }
-        });
-
         let cache_addr = cache_addr
             .strip_prefix("memcache://")
             .map(|addr| format!("tcp://{}", addr))
@@ -127,9 +141,6 @@ impl ReservationImpl {
             mc_pool: Arc::new(McPool::new(cache_addr, 256)),
             mongo_client,
             mongo_reserve_client,
-            lat_check_avail,
-            lat_check_avail_mc_cap,
-            lat_make_reserve,
             check_avail_mc_reserve,
             check_avail_mongo_reserve,
             check_avail_mc_hotel_cap,
@@ -137,7 +148,7 @@ impl ReservationImpl {
             mk_reserve_mongo,
             mc_err_count,
 
-            check_avail_stats: CheckAvailStats::new(),
+            check_avail_stats: Arc::new(CheckAvailStats::new()),
         })
     }
 }
@@ -149,6 +160,10 @@ impl Reservation for ReservationImpl {
         req: Request<reservation::ReservationRequest>,
     ) -> Result<Response<reservation::ReservationResponse>, Status> {
         use futures::StreamExt;
+
+        // even with this the app still hangs under high load...
+        // scheduler bug?
+        const MC_TIMEOUT: Duration = Duration::from_millis(100);
 
         let start = Instant::now();
 
@@ -173,9 +188,9 @@ impl Reservation for ReservationImpl {
         let mut mc_client = self.mc_pool.get().await;
 
         let mc_resp = track_latency!(self.check_avail_stats.mc_get_capacity, {
-            mc_client.get_multi(hotel_mem_keys).await
+            tokio::time::timeout(MC_TIMEOUT, mc_client.get_multi(hotel_mem_keys)).await
         });
-        if let Ok(mc_resp) = mc_resp {
+        if let Ok(Ok(mc_resp)) = mc_resp {
             for entry in mc_resp {
                 if let Ok(cap) = String::from_utf8(entry.data)
                     .unwrap_or_default()
@@ -203,23 +218,33 @@ impl Reservation for ReservationImpl {
                 .map(|k| k.split('_').next().unwrap().to_string())
                 .collect();
 
-            let mut cursor = num_collection
+            let cursor = num_collection
                 .find(doc! { "hotelId": { "$in": &query_miss_keys } }, None)
                 .await
                 .map_err(|e| tonic::Status::internal(format!("mongo error: {}", e)))?;
 
-            while let Some(doc) = cursor.next().await {
-                if let Ok(num) = doc {
+            let results = track_latency!(self.check_avail_stats.mongo_get_capacity, {
+                cursor.collect::<Vec<_>>().await
+            });
+
+            for r in results {
+                if let Ok(num) = r {
                     cache_cap.insert(format!("{}_cap", num.hotel_id), num.number);
 
                     let key = format!("{}_cap", num.hotel_id);
                     let value = num.number.to_string();
-                    let mc_start = Instant::now();
-                    let resp = mc_client.set(&key, value.as_bytes(), None, None).await;
-                    log::warn!("mc_client.set {}", mc_start.elapsed().as_micros());
-                    if is_mc_protocol_err(&resp) {
-                        log::error!("CheckAvail hotel cap writeback should succeed");
-                        mc_client = mc_client.replace().await;
+                    let mc_timeout_resp = track_latency!(self.check_avail_stats.mc_set_capacity, {
+                        tokio::time::timeout(
+                            MC_TIMEOUT,
+                            mc_client.set(&key, value.as_bytes(), None, None),
+                        )
+                        .await
+                    });
+                    if let Ok(resp) = mc_timeout_resp {
+                        if is_mc_protocol_err(&resp) {
+                            // log::error!("CheckAvail hotel cap writeback should succeed");
+                            mc_client = mc_client.replace().await;
+                        }
                     }
                 }
             }
@@ -249,9 +274,10 @@ impl Reservation for ReservationImpl {
         }
 
         self.check_avail_mc_reserve.track(req_commands.len());
-        // let mc_start = Instant::now();
-        if let Ok(mc_resp) = mc_client.get_multi(req_commands).await {
-            // log::warn!("mc_client.get_multi {}", mc_start.elapsed().as_micros());
+        let mc_resp = track_latency!(self.check_avail_stats.mc_get_reservations, {
+            tokio::time::timeout(MC_TIMEOUT, mc_client.get_multi(req_commands)).await
+        });
+        if let Ok(Ok(mc_resp)) = mc_resp {
             for entry in mc_resp {
                 let key = String::from_utf8(entry.key).unwrap();
                 query_map.remove(&key).map(|(hotel_id, _, _)| {
@@ -288,6 +314,7 @@ impl Reservation for ReservationImpl {
             let cache_cap = cache_cap.clone();
             let room_number = req.room_number;
             let mc_err = self.mc_err_count.clone();
+            let check_avail_stats = self.check_avail_stats.clone();
             tasks.push(tokio::spawn(async move {
                 let collection = mongo_client
                     .database("reservation-db")
@@ -300,19 +327,31 @@ impl Reservation for ReservationImpl {
                 };
 
                 let mut mc = pool.get().await;
-                if let Ok(mut cursor) = collection.find(filter, None).await {
+                if let Ok(cursor) = collection.find(filter, None).await {
+                    let results = track_latency!(check_avail_stats.mongo_get_reservations, {
+                        cursor.collect::<Vec<_>>().await
+                    });
+
                     let mut count = 0;
-                    while let Some(Ok(reservation)) = cursor.next().await {
-                        count += reservation.number;
+                    for r in results {
+                        if let Ok(reservation) = r {
+                            count += reservation.number;
+                        }
                     }
 
                     // Update memcached
-                    if mc
-                        .set(&command, count.to_string().as_bytes(), None, None)
+
+                    let mc_timeout_res = track_latency!(check_avail_stats.mc_set_reservations, {
+                        tokio::time::timeout(
+                            MC_TIMEOUT,
+                            mc.set(&command, count.to_string().as_bytes(), None, None),
+                        )
                         .await
-                        .is_err()
-                    {
-                        mc_err.fetch_add(1, Ordering::Relaxed);
+                    });
+                    if let Ok(mc_res) = mc_timeout_res {
+                        if mc_res.is_err() {
+                            mc_err.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
 
                     let hid = hotel_id.clone();
@@ -343,7 +382,9 @@ impl Reservation for ReservationImpl {
 
         {
             let elapsed = start.elapsed().as_micros();
-            self.lat_check_avail.lock().unwrap().track(elapsed as u64);
+            self.check_avail_stats
+                .e2e
+                .track(elapsed.try_into().unwrap());
         }
 
         Ok(Response::new(resp))
@@ -475,10 +516,10 @@ impl Reservation for ReservationImpl {
             .unwrap();
         res.hotel_ids.push(hotel_id.clone());
 
-        {
-            let elapsed = start.elapsed().as_micros();
-            self.lat_make_reserve.lock().unwrap().track(elapsed as u64);
-        }
+        // {
+        //     let elapsed = start.elapsed().as_micros();
+        //     self.lat_make_reserve.lock().unwrap().track(elapsed as u64);
+        // }
 
         Ok(Response::new(res))
     }
