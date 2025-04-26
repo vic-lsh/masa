@@ -14,7 +14,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::db::{self};
+use crate::db;
 use hotel::McPool;
 use mongodb::{bson::doc, Client as MongoClient, Collection};
 use tonic::{Request, Response, Status};
