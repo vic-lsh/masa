@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: rate-mongo
+  name: rate-mongo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: rate-mongo
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.service: rate-mongo
+    spec:
+      containers:
+        - args:
+            - --port
+            - "27003"
+          image: mongo:7.0
+          name: rate-mongo
+          ports:
+            - containerPort: 27003
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "4"
+          volumeMounts:
+            - mountPath: /data
+              name: rate
+      restartPolicy: Always
+      volumes:
+        - name: rate
+          persistentVolumeClaim:
+            claimName: rate

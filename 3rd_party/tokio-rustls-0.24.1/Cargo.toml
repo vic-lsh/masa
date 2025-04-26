@@ -12,7 +12,7 @@ edition = "2018"
 rust-version = "1.56"
 
 [dependencies]
-tokio = { path = "../tokio/tokio", features = ["full"] }
+tokio = { path = "../../libs/tokio/tokio", features = ["full"] }
 rustls = { version = "0.21.0", default-features = false }
 
 [features]
@@ -25,7 +25,7 @@ tls12 = ["rustls/tls12"]
 
 [dev-dependencies]
 argh = "0.1"
-tokio = { path = "../tokio/tokio", features = ["full"] }
+tokio = { path = "../../libs/tokio/tokio", features = ["full"] }
 futures-util = "0.3.1"
 lazy_static = "1"
 webpki-roots = "0.23.1"

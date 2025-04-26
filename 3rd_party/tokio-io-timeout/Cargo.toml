@@ -10,7 +10,7 @@ edition = "2018"
 
 [dependencies]
 pin-project-lite = "0.2"
-tokio = { path = "../tokio/tokio", features = ["time"] }
+tokio = { path = "../../libs/tokio/tokio", features = ["time"] }
 
 [dev-dependencies]
-tokio = { path = "../tokio/tokio", features = ["full"] }
+tokio = { path = "../../libs/tokio/tokio", features = ["full"] }

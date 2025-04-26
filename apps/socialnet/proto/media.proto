@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package media;
+
+enum ErrorCode {
+  UNKNOWN = 0;
+  SE_THRIFT_HANDLER_ERROR = 1;
+}
+
+message ServiceException {
+  ErrorCode error_code = 1;
+  string message = 2;
+}
+
+message Media {
+  int64 media_id = 1;
+  string media_type = 2;
+}
+
+message ComposeMediaRequest {
+  int64 req_id = 1;
+  repeated string media_types = 2;
+  repeated int64 media_ids = 3;
+}
+
+message ComposeMediaResponse {
+  repeated Media media = 1;
+  ServiceException exception = 2;
+}
+
+service MediaService {
+  rpc ComposeMedia(ComposeMediaRequest) returns (ComposeMediaResponse) {}
+}
