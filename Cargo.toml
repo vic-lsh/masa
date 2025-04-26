@@ -34,6 +34,8 @@ members = [
   # evaluation applications
   "apps/hotel",
   "apps/socialnet",
+  "apps/app-utils",
+  "apps/app-util-macros",
 ]
 resolver = "2"
 
