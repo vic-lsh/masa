@@ -7,6 +7,8 @@
   "RateMemcachedAddr": "memcache://rate_memcached:11003",
   "ProfileMongodbAddr": "mongodb://profile_mongo:27004",
   "ProfileMemcachedAddr": "memcache://profile_memcached:11004",
+  "ReviewMongodbAddr": "xx",
+  "ReviewMemcachedAddr": "xx",
   "ReservationMongodbAddr": "mongodb://reservation_mongo:27005",
   "ReservationMemcachedAddr": "memcache://reservation_memcached:11005",
   "UserUsers": 1000,
