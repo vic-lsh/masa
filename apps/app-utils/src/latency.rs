@@ -89,6 +89,13 @@ impl LatencyDist {
 
         let data = self.get_raw_dist();
 
+        if data.is_empty() {
+            return 0;
+        }
+        if data.len() == 1 {
+            return data[0];
+        }
+
         // Calculate the index
         // For percentile calculation, we use n = data.len() and k = p/100
         // Index = k * (n - 1)
@@ -110,6 +117,10 @@ impl LatencyDist {
             // TODO: revisit the rounding here.
             return (lower_val + weight * (upper_val - lower_val)) as LatencyUs;
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.records.len()
     }
 }
 
