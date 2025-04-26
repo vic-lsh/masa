@@ -28,7 +28,7 @@ use crate::proto::Dispatched;
 use crate::upgrade::Upgraded;
 use crate::{Body, Request, Response};
 use h2::client::ResponseFuture;
-use tonic_masa::PriorityHint;
+use masa::PriorityHint;
 
 type ClientRx<B> = crate::client::dispatch::Receiver<Request<B>, Response<Body>>;
 
