@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{PopError, PushError, Queue};
-use tonic_masa::Prioritize;
+use masa::Prioritize;
 
 pub(crate) struct MutexFifoInfraQueue<T> {
     q_infra: Mutex<VecDeque<T>>,

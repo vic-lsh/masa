@@ -14,7 +14,7 @@ doctest = false
 [dependencies]
 prost = "0.12"
 tonic = {path = "../../tonic"}
-tonic-masa = { path = "../../tonic-masa" }
+masa = { path = "../../../masa" }
 
 [build-dependencies]
 prost-build = "0.12"

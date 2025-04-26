@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use tonic_masa::{
+use masa::{
     Context, FutureGraphTracker, LocalGraph, LocalGraphTracker, MethodId, FIFO, FIFO_EARLY,
     FIFO_INFRA, PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
