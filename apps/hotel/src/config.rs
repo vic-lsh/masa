@@ -59,8 +59,6 @@ pub struct HotelConfig {
     #[serde(rename = "UserMongodbAddr")]
     pub user_mongodb_addr: String,
 
-    #[serde(rename = "ReviewAddr")]
-    pub review_addr: String,
     // #[serde(rename = "RatePort")]
     // pub rate_port: String,
     #[serde(rename = "ReviewMongodbAddr")]
