@@ -313,7 +313,7 @@ pub struct McPoolItemRef<'a> {
 }
 
 impl<'a> McPoolItemRef<'a> {
-    pub async fn replace(mut self) -> McPoolItemRef<'a> {
+    pub async fn replace(self) -> McPoolItemRef<'a> {
         let item = self
             .item
             .replace(|| async { McClient::new(&self.addr).await.unwrap() })
