@@ -6,7 +6,7 @@ packages=(
     "masa-integration-tests"
     "tonic"
     "tonic-build"
-    "tonic-masa"
+    "masa"
     "tonic-health"
     #"tonic-reflection"
     "tonic-types"

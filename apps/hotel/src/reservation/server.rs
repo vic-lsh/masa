@@ -5,11 +5,11 @@ pub mod hotel_tonic {
 }
 use chrono::DateTime;
 use hotel::AvgTracker;
+use masa::LatencyTracker;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tonic_masa::LatencyTracker;
 
 use crate::db;
 use hotel::McPool;
