@@ -163,7 +163,7 @@ version = "0.11.5"
 optional = true
 
 [dependencies.tokio]
-path = "../tokio/tokio"
+path = "../../libs/tokio/tokio"
 features = ["io-util", "sync", "macros"]
 
 [dependencies.tokio-rustls]
@@ -172,7 +172,7 @@ path = "../tokio-rustls-0.24.1"
 features = ["dangerous_configuration"]
 
 [dependencies.tokio-util]
-path = "../tokio/tokio-util"
+path = "../../libs/tokio/tokio-util"
 features = ["io", "compat"]
 
 [dependencies.uuid]
@@ -194,7 +194,7 @@ serde = { version = ">= 0.0.0", features = ["rc"] }
 serde_json = "1.0.64"
 semver = "1.0.0"
 time = "0.3.9"
-tokio = { path = "../tokio/tokio", features = ["fs", "parking_lot"] }
+tokio = { path = "../../libs/tokio/tokio", features = ["fs", "parking_lot"] }
 tracing-subscriber = "0.3.16"
 regex = "1.6.0"
 serde-hex = "0.1.0"
