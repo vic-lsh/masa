@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: profile-memcached
+  name: profile-memcached
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: profile-memcached
+  template:
+    metadata:
+      labels:
+        io.kompose.service: profile-memcached
+    spec:
+      containers:
+        - args:
+            - --port
+            - "11004"
+            - --threads
+            - "4"
+          image: memcached:1.6
+          name: profile-memcached
+          ports:
+            - containerPort: 11004
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "4"
+      restartPolicy: Always

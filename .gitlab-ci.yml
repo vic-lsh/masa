@@ -1,4 +1,5 @@
 # This file is a template, and might need editing before it works on your project.
+
 # You can copy and paste this template into a new `.gitlab-ci.yml` file.
 # You should not add this template to an existing `.gitlab-ci.yml` file by using the `include:` keyword.
 #
@@ -15,33 +16,56 @@ image: "rustlang/rust:nightly"
 # Only needed when using a docker container to run your tests in.
 # Check out: https://docs.gitlab.com/ee/ci/services/index.html
 # services:
-#   - mysql:latest
-#   - redis:latest
-#   - postgres:latest
+# - mysql:latest
+# - redis:latest
+# - postgres:latest
+
+# Run on default branch as well as on merge requests
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Define stages
+stages:
+  - verify
 
 # Optional: Install a C compiler, cmake and git into the container.
 # You will often need this when you (or any of your dependencies) depends on C code.
 before_script:
   - apt-get update -yqq
   - apt-get install -y protobuf-compiler
-   
-#   - apt-get install -yqq --no-install-recommends build-essential
+  # - apt-get install -yqq --no-install-recommends build-essential
 
 check:cargo:
+  stage: verify
   script:
-    - rustc --version && cargo --version  # Print version info for debugging
+    - rustc --version && cargo --version # Print version info for debugging
     - cargo check
 
 # Use cargo to test the project
 test:cargo:
+  stage: verify
   script:
-    - rustc --version && cargo --version  # Print version info for debugging
-    - ./test.sh
+    - rustc --version && cargo --version # Print version info for debugging
+    - ./scripts/test.sh
+
+fmt:cargo:
+  stage: verify
+  script:
+    - rustup component add rustfmt
+    - ./scripts/check_format.sh
+  # Only run this job if Rust files have changed
+  rules:
+    - changes:
+        - "**/*.rs"
+        - "Cargo.toml"
+        - "Cargo.lock"
 
 # Optional: Use a third party library to generate gitlab junit reports
 # test:junit-report:
 #   script:
-#     Should be specified in Cargo.toml
+#     # Should be specified in Cargo.toml
 #     - cargo install junitify
 #     - cargo test -- --format=json -Z unstable-options --report-time | junitify --out $CI_PROJECT_DIR/tests/
 #   artifacts:

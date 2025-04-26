@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: profile-mongo
+  name: profile-mongo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: profile-mongo
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.service: profile-mongo
+    spec:
+      containers:
+        - args:
+            - --port
+            - "27004"
+          image: mongo:7.0
+          name: profile-mongo
+          ports:
+            - containerPort: 27004
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "4"
+          volumeMounts:
+            - mountPath: /data
+              name: profile
+      restartPolicy: Always
+      volumes:
+        - name: profile
+          persistentVolumeClaim:
+            claimName: profile

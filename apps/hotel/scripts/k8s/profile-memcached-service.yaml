@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    io.kompose.service: profile-memcached
+  name: profile-memcached
+spec:
+  ports:
+    - name: "11004"
+      port: 11004
+      targetPort: 11004
+  selector:
+    io.kompose.service: profile-memcached

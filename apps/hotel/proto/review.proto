@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package review;
+
+service Review {
+    rpc GetReviews(ReviewRequest) returns (ReviewResponse) {}
+}
+
+message ReviewRequest {
+    string hotelId = 1;
+}
+
+message ReviewResponse {
+    repeated ReviewComm reviews = 1;
+}
+
+message ReviewComm {
+    string reviewId = 1;
+    string hotelId = 2;
+    string name = 3;
+    float rating = 4;
+    string description = 5;
+    repeated Image images = 6;
+}
+
+message Image {
+    string url = 1;
+    bool default = 2;
+}

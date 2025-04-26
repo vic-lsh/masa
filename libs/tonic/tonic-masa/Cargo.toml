@@ -1,0 +1,21 @@
+[package]
+name = "tonic-masa"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+prio_class = []
+prio_global = []
+prio_global_early = []
+prio_class_global = []
+prio_local = []
+prio_local_early = []
+fifo = []
+fifo_early = []
+fifo_infra = []
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4"
+http = "0.2"

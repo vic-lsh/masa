@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: rate-memcached
+  name: rate-memcached
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: rate-memcached
+  template:
+    metadata:
+      labels:
+        io.kompose.service: rate-memcached
+    spec:
+      containers:
+        - args:
+            - --port
+            - "11003"
+            - --threads
+            - "4"
+          image: memcached:1.6
+          name: rate-memcached
+          ports:
+            - containerPort: 11003
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "4"
+      restartPolicy: Always
