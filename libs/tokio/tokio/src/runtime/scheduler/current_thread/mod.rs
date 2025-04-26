@@ -1,4 +1,4 @@
-use tonic_masa::PriorityHint;
+use masa::PriorityHint;
 
 use crate::future::poll_fn;
 use crate::loom::sync::atomic::AtomicBool;

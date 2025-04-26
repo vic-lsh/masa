@@ -1,4 +1,4 @@
-use tonic_masa::PriorityHint;
+use masa::PriorityHint;
 
 use crate::future::Future;
 use crate::runtime::task::core::{Core, Trailer};

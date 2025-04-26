@@ -5,18 +5,17 @@ pub mod hotel_tonic {
 }
 use chrono::DateTime;
 use hotel::AvgTracker;
+use hotel_tonic::reservation::{self, reservation_server::Reservation};
 use masa::LatencyTracker;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::db;
+use crate::db::{self};
 use hotel::McPool;
 use mongodb::{bson::doc, Client as MongoClient, Collection};
 use tonic::{Request, Response, Status};
-
-use hotel::{reservation, reservation::reservation_server::Reservation};
 
 fn is_mc_protocol_err<T>(mc_resp: &Result<T, async_memcached::Error>) -> bool {
     matches!(mc_resp, Err(async_memcached::Error::Protocol(_)))

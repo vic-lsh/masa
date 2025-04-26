@@ -25,7 +25,7 @@ cfg_rt_multi_thread! {
     }
 }
 
-use tonic_masa::PriorityHint;
+use masa::PriorityHint;
 
 use crate::runtime::driver;
 

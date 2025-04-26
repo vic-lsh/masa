@@ -5,8 +5,8 @@ pub mod hotel_tonic {
 }
 use futures::StreamExt;
 #[cfg(feature = "workload_stats")]
-use reboot_hotel::AvgTracker;
-use reboot_hotel::McPool;
+use hotel::AvgTracker;
+use hotel::McPool;
 #[cfg(not(feature = "synthetic"))]
 use std::collections::HashSet;
 use tokio::sync::Mutex;
