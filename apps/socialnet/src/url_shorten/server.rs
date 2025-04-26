@@ -5,7 +5,9 @@ use rand::{Rng, SeedableRng};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
-use crate::url_shorten::db::{get_expanded_urls, initialize_database, insert_url_mappings};
+use crate::url_shorten::db::{
+    get_expanded_urls, get_shortened_urls, initialize_database, insert_url_mappings,
+};
 use crate::url_shorten::{
     url_shorten_service_server::{UrlShortenService, UrlShortenServiceServer},
     ComposeUrlsRequest, ComposeUrlsResponse, ErrorCode, GetExtendedUrlsRequest,
@@ -62,7 +64,7 @@ impl UrlShortenService for UrlShortenServiceImpl {
         println!("Got a compose_urls request: {:?}", request);
 
         let req = request.into_inner();
-        let urls = req.urls;
+        let mut urls = req.urls;
 
         if urls.is_empty() {
             return Ok(Response::new(ComposeUrlsResponse {
@@ -74,20 +76,56 @@ impl UrlShortenService for UrlShortenServiceImpl {
         // Create shortened URLs
         let mut result_urls = Vec::with_capacity(urls.len());
 
+        // Fetch shortened URLs from MongoDB
+        match get_shortened_urls(&self.mongo_client, &urls).await {
+            Ok(url_map) => {
+                urls.retain(|url| {
+                    if let Some(shortened) = url_map.get(url) {
+                        result_urls.push(Url {
+                            shortened_url: shortened.clone(),
+                            expanded_url: url.clone(),
+                        });
+                        false
+                    } else {
+                        true
+                    }
+                });
+            }
+            Err(e) => {
+                println!("MongoDB error: {}", e);
+                return Ok(Response::new(ComposeUrlsResponse {
+                    urls: vec![],
+                    exception: Some(ServiceException {
+                        error_code: ErrorCode::SeMongodbError as i32,
+                        message: format!("Failed to query URLs from MongoDB: {}", e),
+                    }),
+                }));
+            }
+        }
+
+        // If no new URLs to shorten, return the existing ones
+        if urls.is_empty() {
+            return Ok(Response::new(ComposeUrlsResponse {
+                urls: result_urls,
+                exception: None,
+            }));
+        }
+
+        let mut new_urls = Vec::with_capacity(urls.len());
         for expanded_url in urls {
             let random_str = self.gen_random_str(RANDOM_STR_LENGTH).await;
             let shortened_url = format!("{}{}", HOSTNAME, random_str);
 
-            result_urls.push(Url {
+            new_urls.push(Url {
                 shortened_url,
                 expanded_url,
             });
         }
 
         // Store mappings in MongoDB
-        match insert_url_mappings(&self.mongo_client, result_urls.clone()).await {
+        match insert_url_mappings(&self.mongo_client, new_urls.clone()).await {
             Ok(_) => {
-                println!("Successfully inserted {} URL mappings", result_urls.len());
+                println!("Successfully inserted {} URL mappings", new_urls.len());
             }
             Err(e) => {
                 println!("MongoDB error: {}", e);
@@ -101,6 +139,7 @@ impl UrlShortenService for UrlShortenServiceImpl {
             }
         }
 
+        result_urls.extend(new_urls);
         Ok(Response::new(ComposeUrlsResponse {
             urls: result_urls,
             exception: None,
@@ -174,7 +213,7 @@ impl UrlShortenService for UrlShortenServiceImpl {
 
 pub async fn create_service(
 ) -> Result<UrlShortenServiceServer<UrlShortenServiceImpl>, Box<dyn std::error::Error>> {
-    let mongo_client = initialize_database("mongodb://localhost:27003").await?;
+    let mongo_client = initialize_database("mongodb://localhost:27017").await?;
 
     let service = UrlShortenServiceImpl::new(mongo_client);
 

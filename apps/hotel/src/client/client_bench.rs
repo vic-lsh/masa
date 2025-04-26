@@ -21,8 +21,8 @@ use rand_distr::{Distribution, Exp, Uniform};
 use structopt::StructOpt;
 use tokio::time::{timeout, Duration, Instant};
 
+use masa::Context;
 use tonic::transport::Channel;
-use tonic_masa::Context;
 
 use config::GenConfig;
 use hotel::{fetch_traces, init_logging, time_now, Span};
