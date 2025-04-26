@@ -19,6 +19,9 @@ use hotel::McPool;
 use mongodb::{bson::doc, Client as MongoClient, Collection};
 use tonic::{Request, Response, Status};
 
+// Seems like it's a memcached library-level bug to have protocol error.
+// This function detects protocol errors.
+// Upon protocol errors, we reset the client connection.
 fn is_mc_protocol_err<T>(mc_resp: &Result<T, async_memcached::Error>) -> bool {
     matches!(mc_resp, Err(async_memcached::Error::Protocol(_)))
 }
@@ -28,6 +31,7 @@ pub struct ReservationImpl {
     mongo_client: MongoClient,
     mongo_reserve_client: MongoClient,
     lat_check_avail: Mutex<LatencyTracker>,
+    lat_check_avail_mc_cap: Mutex<LatencyTracker>,
     lat_make_reserve: Mutex<LatencyTracker>,
     check_avail_mc_hotel_cap: Arc<AvgTracker>,
     check_avail_mongo_hotel_cap: Arc<AvgTracker>,
@@ -44,6 +48,8 @@ impl ReservationImpl {
         let mongo_reserve_client = MongoClient::with_options(client_options)?;
 
         let lat_check_avail = Mutex::new(LatencyTracker::new("check_availability".into(), 256));
+        let lat_check_avail_mc_cap =
+            Mutex::new(LatencyTracker::new("check_availability_mc_cap".into(), 256));
         let lat_make_reserve = Mutex::new(LatencyTracker::new("make_reservation".into(), 256));
 
         let check_avail_mc_hotel_cap = Arc::new(AvgTracker::default());
@@ -91,6 +97,7 @@ impl ReservationImpl {
             mongo_client,
             mongo_reserve_client,
             lat_check_avail,
+            lat_check_avail_mc_cap,
             lat_make_reserve,
             check_avail_mc_reserve,
             check_avail_mongo_reserve,
@@ -131,7 +138,11 @@ impl Reservation for ReservationImpl {
         let mut cache_cap = HashMap::new();
 
         let mut mc_client = self.mc_pool.get().await;
-        if let Ok(mc_resp) = mc_client.get_multi(hotel_mem_keys).await {
+
+        let mc_start = Instant::now();
+        let mc_resp = mc_client.get_multi(hotel_mem_keys).await;
+        log::warn!("mc_client.get_multi {}", mc_start.elapsed().as_micros());
+        if let Ok(mc_resp) = mc_resp {
             for entry in mc_resp {
                 if let Ok(cap) = String::from_utf8(entry.data)
                     .unwrap_or_default()
@@ -170,7 +181,9 @@ impl Reservation for ReservationImpl {
 
                     let key = format!("{}_cap", num.hotel_id);
                     let value = num.number.to_string();
+                    let mc_start = Instant::now();
                     let resp = mc_client.set(&key, value.as_bytes(), None, None).await;
+                    log::warn!("mc_client.set {}", mc_start.elapsed().as_micros());
                     if is_mc_protocol_err(&resp) {
                         log::error!("CheckAvail hotel cap writeback should succeed");
                         mc_client = mc_client.replace().await;
@@ -203,7 +216,9 @@ impl Reservation for ReservationImpl {
         }
 
         self.check_avail_mc_reserve.track(req_commands.len());
+        let mc_start = Instant::now();
         if let Ok(mc_resp) = mc_client.get_multi(req_commands).await {
+            log::warn!("mc_client.get_multi {}", mc_start.elapsed().as_micros());
             for entry in mc_resp {
                 let key = String::from_utf8(entry.key).unwrap();
                 query_map.remove(&key).map(|(hotel_id, _, _)| {
@@ -305,21 +320,6 @@ impl Reservation for ReservationImpl {
         &self,
         req: Request<reservation::ReservationRequest>,
     ) -> Result<Response<reservation::ReservationResponse>, Status> {
-        // // let ctx = request.metadata().get_ctx("ctx").unwrap();
-        // let request = request.into_inner();
-        // // [NOTE] The original implementation only processes the first hotel.
-        // assert!(request.hotels.len() == 1);
-        // let response = self.check_availability(request.clone()).await;
-        // // [NOTE] Optional multi-threading.
-        // for hotel in &response.hotels {
-        //     for date in request.in_date..request.out_date {
-        //         self.manager
-        //             .update_availability(hotel, date, request.num_rooms)
-        //             .await;
-        //     }
-        // }
-        // Ok(Response::new(response))
-
         let start = Instant::now();
 
         let req = req.into_inner();
@@ -332,9 +332,6 @@ impl Reservation for ReservationImpl {
         let res_collection: Collection<db::Reservation> = database.collection("reservation");
         let num_collection: Collection<db::Number> = database.collection("number");
         let mut mc_client = self.mc_pool.get().await;
-        // let mut mc_client = async_memcached::Client::new(&self.mc_pool.addr)
-        //     .await
-        //     .unwrap();
 
         let in_date = DateTime::parse_from_rfc3339(&format!("{}T12:00:00+00:00", req.in_date))
             .unwrap()
