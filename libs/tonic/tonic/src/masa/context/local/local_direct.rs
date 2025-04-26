@@ -58,16 +58,16 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
     fn before_child_rpc<T>(
         &self,
-        method: GrpcMethod,
+        child_method: GrpcMethod,
         request: &mut Request<T>,
-        child_ctx: &mut ChildContext,
+        _child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
         // TODO: early return logic?
         // NOTE: if we don't have enough data to estimate the duration of the parent or child
         // request, we set child deadline = parent deadline
         let estimate_remaining = match estimate_method_latency(
             &self.server.child_distributions,
-            (method.id(), child_ctx.method.id()),
+            (self.method.id(), child_method.id()),
         ) {
             Some(x) => x,
             None => 0,
@@ -120,12 +120,10 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 }
 
 #[derive(Debug, Clone)]
-pub struct ChildContext {
-    method: GrpcMethod,
-}
+pub struct ChildContext {}
 
 impl ClientHooks for ChildContext {
-    fn new<T>(method: GrpcMethod, _request: &Request<T>) -> Self {
-        Self { method }
+    fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
+        Self {}
     }
 }
