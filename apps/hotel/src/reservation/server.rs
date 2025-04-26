@@ -9,6 +9,8 @@ use hotel_tonic::reservation::{self, reservation_server::Reservation};
 use masa::LatencyTracker;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -32,6 +34,7 @@ pub struct ReservationImpl {
     check_avail_mc_reserve: Arc<AvgTracker>,
     check_avail_mongo_reserve: Arc<AvgTracker>,
     mk_reserve_mongo: Arc<AvgTracker>,
+    mc_err_count: Arc<AtomicUsize>,
 }
 
 impl ReservationImpl {
@@ -51,14 +54,17 @@ impl ReservationImpl {
 
         let mk_reserve_mongo = Arc::new(AvgTracker::default());
 
+        let mc_err_count = Arc::new(AtomicUsize::new(0));
+
         let ca_hotel_mc_hotel_cap = check_avail_mc_hotel_cap.clone();
         let ca_hotel_mongo_hotel_cap = check_avail_mongo_hotel_cap.clone();
         let ca_mc_reserve = check_avail_mc_reserve.clone();
         let ca_mongo_reserve = check_avail_mongo_reserve.clone();
         let mr_mongo = mk_reserve_mongo.clone();
+        let mc_err = mc_err_count.clone();
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                tokio::time::sleep(Duration::from_secs(10)).await;
                 println!(
                     "CheckAvail check capacity: mc {} mongo {}",
                     ca_hotel_mc_hotel_cap.get(),
@@ -70,6 +76,7 @@ impl ReservationImpl {
                     ca_mongo_reserve.get()
                 );
                 println!("MkReserve reserve: mongo {}", mr_mongo.get());
+                println!("mc err {}", mc_err.load(Ordering::Relaxed));
             }
         });
 
@@ -90,6 +97,7 @@ impl ReservationImpl {
             check_avail_mc_hotel_cap,
             check_avail_mongo_hotel_cap,
             mk_reserve_mongo,
+            mc_err_count,
         })
     }
 }
@@ -228,10 +236,10 @@ impl Reservation for ReservationImpl {
             let end_date = end_date.to_owned();
 
             let pool = self.mc_pool.clone();
-            let pool_addr = self.mc_pool.addr.clone();
             let mongo_client = self.mongo_client.clone();
             let cache_cap = cache_cap.clone();
             let room_number = req.room_number;
+            let mc_err = self.mc_err_count.clone();
             tasks.push(tokio::spawn(async move {
                 let collection = mongo_client
                     .database("reservation-db")
@@ -251,9 +259,13 @@ impl Reservation for ReservationImpl {
                     }
 
                     // Update memcached
-                    mc.set(&command, count.to_string().as_bytes(), None, None)
+                    if mc
+                        .set(&command, count.to_string().as_bytes(), None, None)
                         .await
-                        .expect("CheckAvail mc reserve writeback should succeed");
+                        .is_err()
+                    {
+                        mc_err.fetch_add(1, Ordering::Relaxed);
+                    }
 
                     let hid = hotel_id.clone();
                     let cap = cache_cap.get(&format!("{}_cap", hid)).unwrap_or(&0);
@@ -385,10 +397,13 @@ impl Reservation for ReservationImpl {
                         .expect(&format!("should find hotel {}", hotel_id));
 
                     let cap = num.number;
-                    mc_client
+                    if mc_client
                         .set(&memc_cap_key, cap.to_string().as_bytes(), None, None)
                         .await
-                        .ok();
+                        .is_err()
+                    {
+                        self.mc_err_count.fetch_add(1, Ordering::Relaxed);
+                    }
                     cap
                 }
             };
