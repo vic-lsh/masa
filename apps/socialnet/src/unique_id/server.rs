@@ -8,7 +8,6 @@ use std::process;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const CUSTOM_EPOCH: i64 = 1514764800000;
 use tonic::{transport::Server, Request, Response, Status};
 
 use unique_id_service::unique_id_service_server::{UniqueIdService, UniqueIdServiceServer};
