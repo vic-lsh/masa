@@ -1,0 +1,6 @@
+{
+    "rps_list": [10, 20],
+    "duration_per_rps": 5, 
+    "client_port": "http://[::1]:50051",
+    "output_path": "/home/jiexiao/research/masa-internal/apps/socialnet/src/text_service/benchmark/textservice_bench.csv"
+}
