@@ -1,4 +1,3 @@
-pub use runtime::make_child_task_poll_hook;
 use std::{sync::Arc, task::Poll};
 
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};

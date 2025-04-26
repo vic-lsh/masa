@@ -18,7 +18,7 @@ use std::rc::Rc;
 use std::task::Poll;
 
 use pin_project_lite::pin_project;
-use tonic_masa::PriorityHint;
+use masa::PriorityHint;
 
 cfg_rt! {
     /// A set of tasks which are executed on the same thread.
@@ -373,7 +373,7 @@ cfg_rt! {
 
 
     #[track_caller]
-    pub(super) fn spawn_local_inner<F>(future: F, name: Option<&str>, priority: tonic_masa::PriorityHint) -> JoinHandle<F::Output>
+    pub(super) fn spawn_local_inner<F>(future: F, name: Option<&str>, priority: masa::PriorityHint) -> JoinHandle<F::Output>
     where F: Future + 'static,
           F::Output: 'static
     {

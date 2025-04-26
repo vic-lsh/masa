@@ -88,7 +88,7 @@ impl ProfileImpl {
             .to_owned();
         Ok(Self {
             mc_pool: Arc::new(McPool::new(cache_addr, 256)),
-            memc_client: Arc::new(memc_client),
+            // memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
             latency_tracker,
             #[cfg(feature = "workload_stats")]

@@ -283,7 +283,7 @@ where
             // which would happen when this request finishes and removes this hook.
             let parent_ctx = req_ctx.clone();
 
-            let child_hook = crate::masa::context::make_child_task_poll_hook::<P>(parent_ctx);
+            let child_hook = crate::masa::runtime::make_child_task_poll_hook::<P>(parent_ctx);
             tokio::configure_child_task_poll_hook(child_hook);
         }
 
