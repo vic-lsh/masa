@@ -15,6 +15,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::db;
+use app_util_macros::track_latency;
+use app_utils::latency::{new_latency_tracker, SyncLatencyConsumer, SyncLatencyTracker};
 use hotel::McPool;
 use mongodb::{bson::doc, Client as MongoClient, Collection};
 use tonic::{Request, Response, Status};
@@ -24,6 +26,33 @@ use tonic::{Request, Response, Status};
 // Upon protocol errors, we reset the client connection.
 fn is_mc_protocol_err<T>(mc_resp: &Result<T, async_memcached::Error>) -> bool {
     matches!(mc_resp, Err(async_memcached::Error::Protocol(_)))
+}
+
+struct CheckAvailStats {
+    mc_get_capacity: SyncLatencyTracker,
+}
+
+impl CheckAvailStats {
+    fn new() -> Self {
+        let (mc_get_capacity, mut mc_get_capacity_consumer) =
+            new_latency_tracker("mc_get_capacity");
+
+        tokio::spawn(async move {
+            let percentiles = [50.0, 90.0, 99.0, 99.9];
+            loop {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                let mut dist = mc_get_capacity_consumer.consume();
+                print!("{}:\t", mc_get_capacity_consumer.name);
+                print!("# recs {}\t", dist.len());
+                for p in percentiles {
+                    print!("p{}: {} ", p, dist.percentile(p));
+                }
+                print!("\n");
+            }
+        });
+
+        Self { mc_get_capacity }
+    }
 }
 
 pub struct ReservationImpl {
@@ -39,6 +68,8 @@ pub struct ReservationImpl {
     check_avail_mongo_reserve: Arc<AvgTracker>,
     mk_reserve_mongo: Arc<AvgTracker>,
     mc_err_count: Arc<AtomicUsize>,
+
+    check_avail_stats: CheckAvailStats,
 }
 
 impl ReservationImpl {
@@ -105,6 +136,8 @@ impl ReservationImpl {
             check_avail_mongo_hotel_cap,
             mk_reserve_mongo,
             mc_err_count,
+
+            check_avail_stats: CheckAvailStats::new(),
         })
     }
 }
@@ -139,9 +172,9 @@ impl Reservation for ReservationImpl {
 
         let mut mc_client = self.mc_pool.get().await;
 
-        let mc_start = Instant::now();
-        let mc_resp = mc_client.get_multi(hotel_mem_keys).await;
-        log::warn!("mc_client.get_multi {}", mc_start.elapsed().as_micros());
+        let mc_resp = track_latency!(self.check_avail_stats.mc_get_capacity, {
+            mc_client.get_multi(hotel_mem_keys).await
+        });
         if let Ok(mc_resp) = mc_resp {
             for entry in mc_resp {
                 if let Ok(cap) = String::from_utf8(entry.data)
@@ -216,9 +249,9 @@ impl Reservation for ReservationImpl {
         }
 
         self.check_avail_mc_reserve.track(req_commands.len());
-        let mc_start = Instant::now();
+        // let mc_start = Instant::now();
         if let Ok(mc_resp) = mc_client.get_multi(req_commands).await {
-            log::warn!("mc_client.get_multi {}", mc_start.elapsed().as_micros());
+            // log::warn!("mc_client.get_multi {}", mc_start.elapsed().as_micros());
             for entry in mc_resp {
                 let key = String::from_utf8(entry.key).unwrap();
                 query_map.remove(&key).map(|(hotel_id, _, _)| {
