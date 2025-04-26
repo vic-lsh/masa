@@ -19,6 +19,8 @@ RUN cargo init
 COPY Cargo.toml Cargo.lock* ./
 COPY 3rd_party ./3rd_party
 COPY libs ./libs
+COPY apps/app-util-macros/ ./apps/app-util-macros/
+COPY apps/app-utils/ ./apps/app-utils/
 
 COPY apps/hotel/Cargo.toml ./apps/hotel/Cargo.toml
 COPY apps/socialnet/Cargo.toml ./apps/socialnet/Cargo.toml
