@@ -28,7 +28,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::warn!("Hotel config: {:?}", cfg);
     let review_addr = format!("{}:{}", cfg.review_ip, cfg.review_port)
         .parse()
         .expect("Failed to parse address");
