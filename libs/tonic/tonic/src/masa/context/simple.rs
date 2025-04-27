@@ -401,28 +401,31 @@ impl ServerHooks for SimpleServerContext {
             .collect();
 
         let num_early_returns = Arc::new(AtomicUsize::new(0));
-        // let num_early_returns_clone = num_early_returns.clone();
-        // tokio::spawn(async move {
-        //     let secs = 10;
-        //     let mut prev = 0;
-        //     loop {
-        //         tokio::time::sleep(Duration::from_secs(secs)).await;
-        //         let curr = num_early_returns_clone.load(Ordering::Relaxed);
-        //         log::info!(
-        //             "num early returns: {}, diff in {} secs: {}",
-        //             curr,
-        //             secs,
-        //             curr - prev
-        //         );
-        //         prev = curr;
-        //     }
-        // });
 
-        log::warn!(
-            "SimpleServerContext, service: {:?}, local_graphs: {:?}",
-            service_name,
-            local_graphs
-        );
+        if FIFO_EARLY || PRIO_GLOBAL_EARLY || PRIO_LOCAL_EARLY {
+            let num_early_returns_clone = num_early_returns.clone();
+            tokio::spawn(async move {
+                let secs = 1;
+                let mut prev = 0;
+                loop {
+                    tokio::time::sleep(Duration::from_secs(secs)).await;
+                    let curr = num_early_returns_clone.load(Ordering::Relaxed);
+                    log::error!(
+                        "num early returns: {}, last {} secs: {}",
+                        curr,
+                        secs,
+                        curr - prev
+                    );
+                    prev = curr;
+                }
+            });
+        }
+
+        // log::warn!(
+        //     "SimpleServerContext, service: {:?}, local_graphs: {:?}",
+        //     service_name,
+        //     local_graphs
+        // );
 
         Self {
             service_name,
