@@ -34,10 +34,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     log::warn!("Hotel config: {:?}", cfg);
 
-    let search_addr = "[::0]:8660".parse().expect("Failed to parse address");
+    let search_addr = format!("{}:{}", cfg.search_ip, cfg.search_port)
+        .parse()
+        .expect("Failed to parse address");
 
-    let search = SearchImpl::new().await;
     log::warn!("Server listening on {}...", search_addr);
+    let search = SearchImpl::new(cfg).await;
     Server::builder()
         .add_service(SearchServer::new(search))
         .serve_with_masa(search_addr)
