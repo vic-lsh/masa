@@ -33,7 +33,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::info!("Hotel config: {:?}", cfg);
 
     let rec_addr = format!("{}:{}", cfg.recommendation_ip, cfg.recommendation_port)
         .parse()
