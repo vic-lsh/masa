@@ -13,12 +13,20 @@ pub use self::error::Error;
 
 mod parser;
 use self::parser::{
-    parse_ascii_metadump_response, parse_ascii_response, parse_ascii_stats_response, Response,
+    parse_ascii_metadump_response, parse_ascii_response, parse_ascii_stats_response,
 };
-pub use self::parser::{ErrorKind, KeyMetadata, MetadumpResponse, StatsResponse, Status, Value};
+pub use self::parser::{
+    ErrorKind, KeyMetadata, MetadumpResponse, Response, StatsResponse, Status, Value,
+};
+
+/// Ascii & Meta protocol implementations
+pub mod proto;
+pub use self::proto::{AsciiProtocol, MetaProtocol};
 
 mod value_serializer;
 pub use self::value_serializer::AsMemcachedValue;
+
+const MAX_KEY_LENGTH: usize = 250; // reference in memcached documentation: https://github.com/memcached/memcached/blob/5609673ed29db98a377749fab469fe80777de8fd/doc/protocol.txt#L46
 
 /// High-level memcached client.
 ///
@@ -38,10 +46,9 @@ impl Client {
     /// For UNIX: the DSN should be in the format of `unix://<path>`.
     pub async fn new<S: AsRef<str>>(dsn: S) -> Result<Client, Error> {
         let connection = Connection::new(dsn).await?;
-        let mut buf = BytesMut::new();
-        buf.reserve(1024);
+
         Ok(Client {
-            buf,
+            buf: BytesMut::new(),
             last_read_n: None,
             conn: connection,
         })
@@ -52,7 +59,17 @@ impl Client {
         F: Fn(&[u8]) -> Result<Option<(usize, R)>, ErrorKind>,
     {
         // If we serviced a previous request, advance our buffer forward.
-        if let Some(n) = self.last_read_n.take() {
+        if let Some(n) = self.last_read_n {
+            // Not sure how this situation occurs, but it seems to be related to transient network
+            // issues. This guard is here to prevent panics, but it's not clear what the correct
+            // behavior is. For now, we just return an error, which allows the caller to retry or
+            // fall back to the uncached data source as they see fit.
+            if n > self.buf.len() {
+                return Err(Status::Error(ErrorKind::Client(
+                    "Buffer length is less than last read length".to_string(),
+                ))
+                .into());
+            }
             let _ = self.buf.split_to(n);
         }
 
@@ -110,6 +127,17 @@ impl Client {
         let mut results = FxHashMap::with_capacity_and_hasher(kv.len(), Default::default());
 
         for (key, _) in kv {
+            let kr = key.as_ref();
+            if kr.len() > MAX_KEY_LENGTH {
+                results.insert(
+                    key,
+                    Err(Error::Protocol(Status::Error(ErrorKind::Client(
+                        "Key exceeds maximum length of 250 bytes".to_string(),
+                    )))),
+                );
+                continue;
+            }
+
             let result = match self.drive_receive(parse_ascii_response).await {
                 Ok(Response::Status(Status::Stored)) => Ok(()),
                 Ok(Response::Status(s)) => Err(s.into()),
@@ -129,405 +157,6 @@ impl Client {
 
     pub(crate) async fn get_stats_response(&mut self) -> Result<StatsResponse, Error> {
         self.drive_receive(parse_ascii_stats_response).await
-    }
-
-    /// Gets the given key.
-    ///
-    /// If the key is found, `Some(Value)` is returned, describing the metadata and data of the key.
-    ///
-    /// Otherwise, [`Error`] is returned.
-    pub async fn get<K: AsRef<[u8]>>(&mut self, key: K) -> Result<Option<Value>, Error> {
-        self.conn.write_all(b"get ").await?;
-        self.conn.write_all(key.as_ref()).await?;
-        self.conn.write_all(b"\r\n").await?;
-        self.conn.flush().await?;
-
-        match self.get_read_write_response().await? {
-            Response::Status(Status::NotFound) => Ok(None),
-            Response::Status(s) => Err(s.into()),
-            Response::Data(d) => d
-                .map(|mut items| {
-                    if items.len() != 1 {
-                        Err(Status::Error(ErrorKind::Protocol(None)).into())
-                    } else {
-                        Ok(items.remove(0))
-                    }
-                })
-                .transpose(),
-            _ => Err(Error::Protocol(Status::Error(ErrorKind::Protocol(None)))),
-        }
-    }
-
-    /// Gets the given keys.
-    ///
-    /// If any of the keys are found, a vector of [`Value`] will be returned, where [`Value`]
-    /// describes the metadata and data of the key.
-    ///
-    /// Otherwise, [`Error`] is returned.
-    pub async fn get_multi<I, K>(&mut self, keys: I) -> Result<Vec<Value>, Error>
-    where
-        I: IntoIterator<Item = K>,
-        K: AsRef<[u8]>,
-    {
-        self.conn.write_all(b"get ").await?;
-        for key in keys {
-            self.conn.write_all(key.as_ref()).await?;
-            self.conn.write_all(b" ").await?;
-        }
-        self.conn.write_all(b"\r\n").await?;
-        self.conn.flush().await?;
-
-        match self.get_read_write_response().await? {
-            Response::Status(s) => Err(s.into()),
-            Response::Data(d) => d.ok_or(Status::NotFound.into()),
-            _ => Err(Status::Error(ErrorKind::Protocol(None)).into()),
-        }
-    }
-
-    /// Gets the given keys.
-    ///
-    /// Deprecated: This is now an alias for `get_multi`, and  will be removed in the future.
-    #[deprecated(
-        since = "0.4.0",
-        note = "This is now an alias for `get_multi`, and will be removed in the future."
-    )]
-    pub async fn get_many<I, K>(&mut self, keys: I) -> Result<Vec<Value>, Error>
-    where
-        I: IntoIterator<Item = K>,
-        K: AsRef<[u8]>,
-    {
-        self.get_multi(keys).await
-    }
-
-    /// Sets the given key.
-    ///
-    /// If `ttl` or `flags` are not specified, they will default to 0.  If the value is set
-    /// successfully, `()` is returned, otherwise [`Error`] is returned.
-    pub async fn set<K, V>(
-        &mut self,
-        key: K,
-        value: V,
-        ttl: Option<i64>,
-        flags: Option<u32>,
-    ) -> Result<(), Error>
-    where
-        K: AsRef<[u8]>,
-        V: AsMemcachedValue,
-    {
-        let kr = key.as_ref();
-        let vr = value.as_bytes();
-
-        self.conn.write_all(b"set ").await?;
-        self.conn.write_all(kr).await?;
-
-        let flags = flags.unwrap_or(0).to_string();
-        self.conn.write_all(b" ").await?;
-        self.conn.write_all(flags.as_ref()).await?;
-
-        let ttl = ttl.unwrap_or(0).to_string();
-        self.conn.write_all(b" ").await?;
-        self.conn.write_all(ttl.as_ref()).await?;
-
-        let vlen = vr.len().to_string();
-        self.conn.write_all(b" ").await?;
-        self.conn.write_all(vlen.as_ref()).await?;
-        self.conn.write_all(b"\r\n").await?;
-
-        self.conn.write_all(vr.as_ref()).await?;
-        self.conn.write_all(b"\r\n").await?;
-
-        self.conn.flush().await?;
-
-        match self.get_read_write_response().await? {
-            Response::Status(Status::Stored) => Ok(()),
-            Response::Status(s) => Err(s.into()),
-            _ => Err(Status::Error(ErrorKind::Protocol(None)).into()),
-        }
-    }
-
-    /// Sets multiple keys and values through pipelined commands.
-    ///
-    /// If `ttl` or `flags` are not specified, they will default to 0. The same values for `ttl` and `flags` will be applied to each key.
-    /// Returns a result with a HashMap of keys mapped to the result of the set operation, or an error.
-    pub async fn set_multi<'a, K, V>(
-        &mut self,
-        kv: &'a [(K, V)],
-        ttl: Option<i64>,
-        flags: Option<u32>,
-    ) -> Result<FxHashMap<&'a K, Result<(), Error>>, Error>
-    where
-        K: AsRef<[u8]> + Eq + std::hash::Hash + std::fmt::Debug,
-        V: AsMemcachedValue,
-    {
-        for (key, value) in kv {
-            let kr = key.as_ref();
-            let vr = value.as_bytes();
-
-            self.conn.write_all(b"set ").await?;
-            self.conn.write_all(kr).await?;
-
-            let flags = flags.unwrap_or(0).to_string();
-            self.conn.write_all(b" ").await?;
-            self.conn.write_all(flags.as_ref()).await?;
-
-            let ttl = ttl.unwrap_or(0).to_string();
-            self.conn.write_all(b" ").await?;
-            self.conn.write_all(ttl.as_ref()).await?;
-
-            let vlen = vr.len().to_string();
-            self.conn.write_all(b" ").await?;
-            self.conn.write_all(vlen.as_ref()).await?;
-            self.conn.write_all(b"\r\n").await?;
-
-            self.conn.write_all(vr.as_ref()).await?;
-            self.conn.write_all(b"\r\n").await?;
-        }
-        self.conn.flush().await?;
-
-        let results = self.map_set_multi_responses(kv).await?;
-
-        Ok(results)
-    }
-
-    /// Add a key. If the value exists, Err(Protocol(NotStored)) is returned.
-    pub async fn add<K, V>(
-        &mut self,
-        key: K,
-        value: V,
-        ttl: Option<i64>,
-        flags: Option<u32>,
-    ) -> Result<(), Error>
-    where
-        K: AsRef<[u8]>,
-        V: AsMemcachedValue,
-    {
-        let kr = key.as_ref();
-        let vr = value.as_bytes();
-
-        self.conn.write_all(b"add ").await?;
-        self.conn.write_all(kr).await?;
-
-        let flags = flags.unwrap_or(0).to_string();
-        self.conn.write_all(b" ").await?;
-        self.conn.write_all(flags.as_ref()).await?;
-
-        let ttl = ttl.unwrap_or(0).to_string();
-        self.conn.write_all(b" ").await?;
-        self.conn.write_all(ttl.as_ref()).await?;
-
-        let vlen = vr.len().to_string();
-        self.conn.write_all(b" ").await?;
-        self.conn.write_all(vlen.as_ref()).await?;
-        self.conn.write_all(b"\r\n").await?;
-
-        self.conn.write_all(vr.as_ref()).await?;
-        self.conn.write_all(b"\r\n").await?;
-
-        self.conn.flush().await?;
-
-        match self.get_read_write_response().await? {
-            Response::Status(Status::Stored) => Ok(()),
-            Response::Status(s) => Err(s.into()),
-            _ => Err(Status::Error(ErrorKind::Protocol(None)).into()),
-        }
-    }
-
-    /// Attempts to add multiple keys and values through pipelined commands.
-    ///
-    /// If `ttl` or `flags` are not specified, they will default to 0. The same values for `ttl` and `flags` will be applied to each key.
-    /// Returns a result with a HashMap of keys mapped to the result of the add operation, or an error.
-    pub async fn add_multi<'a, K, V>(
-        &mut self,
-        kv: &'a [(K, V)],
-        ttl: Option<i64>,
-        flags: Option<u32>,
-    ) -> Result<FxHashMap<&'a K, Result<(), Error>>, Error>
-    where
-        K: AsRef<[u8]> + Eq + std::hash::Hash + std::fmt::Debug,
-        V: AsMemcachedValue,
-    {
-        for (key, value) in kv {
-            let kr = key.as_ref();
-            let vr = value.as_bytes();
-
-            self.conn.write_all(b"add ").await?;
-            self.conn.write_all(kr).await?;
-
-            let flags = flags.unwrap_or(0).to_string();
-            self.conn.write_all(b" ").await?;
-            self.conn.write_all(flags.as_ref()).await?;
-
-            let ttl = ttl.unwrap_or(0).to_string();
-            self.conn.write_all(b" ").await?;
-            self.conn.write_all(ttl.as_ref()).await?;
-
-            let vlen = vr.len().to_string();
-            self.conn.write_all(b" ").await?;
-            self.conn.write_all(vlen.as_ref()).await?;
-            self.conn.write_all(b"\r\n").await?;
-
-            self.conn.write_all(vr.as_ref()).await?;
-            self.conn.write_all(b"\r\n").await?;
-        }
-        self.conn.flush().await?;
-
-        let results = self.map_set_multi_responses(kv).await?;
-
-        Ok(results)
-    }
-
-    /// Delete a key but don't wait for a reply.
-    pub async fn delete_no_reply<K>(&mut self, key: K) -> Result<(), Error>
-    where
-        K: AsRef<[u8]>,
-    {
-        let kr = key.as_ref();
-
-        self.conn
-            .write_all(&[b"delete ", kr, b" noreply\r\n"].concat())
-            .await?;
-        self.conn.flush().await?;
-        Ok(())
-    }
-
-    /// Delete a key and wait for a reply
-    pub async fn delete<K>(&mut self, key: K) -> Result<(), Error>
-    where
-        K: AsRef<[u8]>,
-    {
-        let kr = key.as_ref();
-
-        self.conn
-            .write_all(&[b"delete ", kr, b"\r\n"].concat())
-            .await?;
-        self.conn.flush().await?;
-
-        match self.get_read_write_response().await? {
-            Response::Status(Status::Deleted) => Ok(()),
-            Response::Status(s) => Err(s.into()),
-            _ => Err(Status::Error(ErrorKind::Protocol(None)).into()),
-        }
-    }
-
-    /// Delete multiple keys
-    pub async fn delete_multi_no_reply<K>(&mut self, keys: &[K]) -> Result<(), Error>
-    where
-        K: AsRef<[u8]>,
-    {
-        for key in keys {
-            self.conn.write_all(b"delete ").await?;
-            self.conn.write_all(key.as_ref()).await?;
-            self.conn.write_all(b" noreply\r\n").await?;
-        }
-        self.conn.flush().await?;
-
-        Ok(())
-    }
-
-    /// Increments the given key by the specified amount.
-    /// Can overflow from the max value of u64 (18446744073709551615) -> 0.
-    /// If the key does not exist, the server will return a KeyNotFound error.
-    /// If the key exists but the value is non-numeric, the server will return a ClientError.
-    pub async fn increment<K>(&mut self, key: K, amount: u64) -> Result<u64, Error>
-    where
-        K: AsRef<[u8]>,
-    {
-        self.conn
-            .write_all(
-                &[
-                    b"incr ",
-                    key.as_ref(),
-                    b" ",
-                    amount.to_string().as_bytes(),
-                    b"\r\n",
-                ]
-                .concat(),
-            )
-            .await?;
-        self.conn.flush().await?;
-
-        match self.get_read_write_response().await? {
-            Response::Status(s) => Err(s.into()),
-            Response::IncrDecr(amount) => Ok(amount),
-            _ => Err(Status::Error(ErrorKind::Protocol(None)).into()),
-        }
-    }
-
-    /// Increments the given key by the specified amount with no reply from the server.
-    /// Can overflow from the max value of u64 (18446744073709551615) -> 0.
-    /// Always returns () for a complete request, will not return any indication of success or failure.
-    pub async fn increment_no_reply<K>(&mut self, key: K, amount: u64) -> Result<(), Error>
-    where
-        K: AsRef<[u8]>,
-    {
-        self.conn
-            .write_all(
-                &[
-                    b"incr ",
-                    key.as_ref(),
-                    b" ",
-                    amount.to_string().as_bytes(),
-                    b" noreply\r\n",
-                ]
-                .concat(),
-            )
-            .await?;
-        self.conn.flush().await?;
-
-        Ok(())
-    }
-
-    /// Decrements the given key by the specified amount.
-    /// Will not decrement the counter below 0.
-    /// If the key does not exist, the server will return a KeyNotFound error.
-    /// If the key exists but the value is non-numeric, the server will return a ClientError.
-    pub async fn decrement<K>(&mut self, key: K, amount: u64) -> Result<u64, Error>
-    where
-        K: AsRef<[u8]>,
-    {
-        self.conn
-            .write_all(
-                &[
-                    b"decr ",
-                    key.as_ref(),
-                    b" ",
-                    amount.to_string().as_bytes(),
-                    b"\r\n",
-                ]
-                .concat(),
-            )
-            .await?;
-        self.conn.flush().await?;
-
-        match self.get_read_write_response().await? {
-            Response::Status(s) => Err(s.into()),
-            Response::IncrDecr(amount) => Ok(amount),
-            _ => Err(Status::Error(ErrorKind::Protocol(None)).into()),
-        }
-    }
-
-    /// Decrements the given key by the specified amount with no reply from the server.
-    /// Will not decrement the counter below 0.
-    /// Always returns () for a complete request, will not return any indication of success or failure.
-    pub async fn decrement_no_reply<K>(&mut self, key: K, amount: u64) -> Result<(), Error>
-    where
-        K: AsRef<[u8]>,
-    {
-        self.conn
-            .write_all(
-                &[
-                    b"decr ",
-                    key.as_ref(),
-                    b" ",
-                    amount.to_string().as_bytes(),
-                    b" noreply\r\n",
-                ]
-                .concat(),
-            )
-            .await?;
-        self.conn.flush().await?;
-
-        Ok(())
     }
 
     /// Gets the version of the server.
@@ -598,7 +227,6 @@ impl Client {
     /// This operation invalidates all existing items immediately. Any items with an update time
     /// older than the time of the flush_all operation will be ignored for retrieval purposes.
     /// This operation does not free up memory taken up by the existing items.
-
     pub async fn flush_all(&mut self) -> Result<(), Error> {
         self.conn.write_all(b"flush_all\r\n").await?;
         self.conn.flush().await?;
@@ -614,6 +242,56 @@ impl Client {
             )))))
         }
     }
+
+    fn validate_key_length(kr: &[u8]) -> Result<&[u8], Error> {
+        if kr.len() > MAX_KEY_LENGTH {
+            return Err(Error::from(Status::Error(ErrorKind::KeyTooLong)));
+        }
+        Ok(kr)
+    }
+
+    fn validate_opaque_length(opaque: &[u8]) -> Result<&[u8], Error> {
+        if opaque.len() > 32 {
+            return Err(Error::from(Status::Error(ErrorKind::OpaqueTooLong)));
+        }
+        Ok(opaque)
+    }
+
+    async fn check_and_write_opaque(&mut self, opaque: Option<&[u8]>) -> Result<(), Error> {
+        if let Some(opaque) = &opaque {
+            self.conn.write_all(b" O").await?;
+            self.conn.write_all(opaque.as_ref()).await?;
+        }
+        Ok(())
+    }
+
+    async fn check_and_write_meta_flags(
+        &mut self,
+        meta_flags: Option<&[&str]>,
+        opaque: Option<&[u8]>,
+    ) -> Result<(), Error> {
+        if let Some(meta_flags) = meta_flags {
+            for flag in meta_flags {
+                // Ignore q flag and require use of param, prefer explicit opaque param over O meta flag
+                if flag.starts_with('q') || (flag.starts_with('O') && opaque.is_some()) {
+                    continue;
+                } else {
+                    self.conn.write_all(b" ").await?;
+                    self.conn.write_all(flag.as_bytes()).await?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn check_and_write_quiet_mode(&mut self, is_quiet: bool) -> Result<(), Error> {
+        if is_quiet {
+            self.conn.write_all(b" q\r\nmn\r\n").await?;
+        } else {
+            self.conn.write_all(b"\r\n").await?;
+        }
+        Ok(())
+    }
 }
 
 /// Asynchronous iterator for metadump operations.
@@ -622,7 +300,7 @@ pub struct MetadumpIter<'a> {
     done: bool,
 }
 
-impl<'a> MetadumpIter<'a> {
+impl MetadumpIter<'_> {
     /// Gets the next result for the current operation.
     ///
     /// If there is another key in the dump, `Some(Ok(KeyMetadata))` will be returned.  If there was
