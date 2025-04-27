@@ -1,3 +1,4 @@
+use async_memcached::AsciiProtocol;
 use async_memcached::Client as McClient;
 use futures::StreamExt;
 use mongodb::bson::{doc, Bson};
@@ -84,7 +85,7 @@ impl UserMentionService for UserMentionServiceImpl {
             }
             Ok(entries) => {
                 for entry in entries {
-                    if let Ok(usr_id) = String::from_utf8(entry.data) {
+                    if let Ok(usr_id) = String::from_utf8(entry.data.expect("data must exist")) {
                         let username = String::from_utf8(entry.key).unwrap_or_default();
                         missing_keys.remove(&username);
                         user_mentions.push(UserMention {
