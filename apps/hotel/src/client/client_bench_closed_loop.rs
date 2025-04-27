@@ -16,7 +16,7 @@ use std::sync::{
 };
 
 use crossbeam_channel::{unbounded, Sender};
-use gen::{get_ping_request, get_reservation_request, get_search_request};
+use gen::{get_ping_request, get_search_request};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp, Uniform};
 use structopt::StructOpt;
