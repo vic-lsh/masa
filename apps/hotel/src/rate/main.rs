@@ -35,15 +35,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     log::warn!("Hotel config: {:?}", cfg);
 
-    let rate = RateImpl::new(
-        cfg.rate_memcached_addr,
-        cfg.cache_conns,
-        cfg.prob_cache_miss,
-        cfg.rate_mongodb_addr,
-    )
-    .await?;
-
-    let rate_addr = "[::0]:8660".parse().expect("Failed to parse address");
+    let rate_addr = format!("{}:{}", cfg.rate_ip, cfg.rate_port)
+        .parse()
+        .expect("Failed to parse address");
+    let rate = RateImpl::new(cfg).await?;
     log::warn!("Server listening on {}...", rate_addr);
     Server::builder()
         .add_service(RateServer::new(rate))

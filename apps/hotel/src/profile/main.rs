@@ -35,17 +35,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     log::warn!("Hotel config: {:?}", cfg);
 
-    let profile = ProfileImpl::new(
-        cfg.hotels,
-        cfg.profile_memcached_addr,
-        cfg.cache_conns,
-        cfg.prob_cache_miss,
-        cfg.profile_mongodb_addr,
-    )
-    .await?;
-
-    let profile_addr = "[::0]:8660".parse().expect("Failed to parse address");
+    let profile_addr = format!("{}:{}", cfg.profile_ip, cfg.profile_port)
+        .parse()
+        .expect("Failed to parse address");
     log::warn!("Server listening on {}...", profile_addr);
+    let profile = ProfileImpl::new(cfg).await?;
     Server::builder()
         .add_service(ProfileServer::new(profile))
         .serve_with_masa(profile_addr)

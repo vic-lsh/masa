@@ -37,6 +37,51 @@ pub struct HotelConfig {
     #[serde(rename = "ProbCacheMiss")]
     pub prob_cache_miss: u32,
 
+    #[serde(rename = "FrontendIp")]
+    pub frontend_ip: String,
+    #[serde(rename = "FrontendPort")]
+    pub frontend_port: u16,
+
+    #[serde(rename = "GeoIp")]
+    pub geo_ip: String,
+    #[serde(rename = "GeoPort")]
+    pub geo_port: u16,
+
+    #[serde(rename = "ProfileIp")]
+    pub profile_ip: String,
+    #[serde(rename = "ProfilePort")]
+    pub profile_port: u16,
+
+    #[serde(rename = "RateIp")]
+    pub rate_ip: String,
+    #[serde(rename = "RatePort")]
+    pub rate_port: u16,
+
+    #[serde(rename = "RecommendationIp")]
+    pub recommendation_ip: String,
+    #[serde(rename = "RecommendationPort")]
+    pub recommendation_port: u16,
+
+    #[serde(rename = "ReservationIp")]
+    pub reservation_ip: String,
+    #[serde(rename = "ReservationPort")]
+    pub reservation_port: u16,
+
+    #[serde(rename = "ReviewIp")]
+    pub review_ip: String,
+    #[serde(rename = "ReviewPort")]
+    pub review_port: u16,
+
+    #[serde(rename = "SearchIp")]
+    pub search_ip: String,
+    #[serde(rename = "SearchPort")]
+    pub search_port: u16,
+
+    #[serde(rename = "UserIp")]
+    pub user_ip: String,
+    #[serde(rename = "UserPort")]
+    pub user_port: u16,
+
     #[serde(rename = "RateMongodbAddr")]
     pub rate_mongodb_addr: String,
     #[serde(rename = "RateMemcachedAddr")]
