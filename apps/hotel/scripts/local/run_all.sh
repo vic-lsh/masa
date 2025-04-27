@@ -64,12 +64,12 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 if [ -z "$pctl_deadline" ]; then
-    pctl_deadline=50
+    pctl_deadline=5
     # echo "Expected a percentile of deadline using --pctl-deadline"
     # exit 1
 fi
 if [ -z "$pctl_latest_exec" ]; then
-    pctl_latest_exec=50
+    pctl_latest_exec=5
     # echo "Expected a percentile of execution using --pctl-latest-exec"
     # exit 1
 fi
@@ -129,6 +129,7 @@ build() {
 
 reset() {
     rm $output_path/*.log
+    docker volume prune -a
     docker compose -f scripts/local/containers.yaml down --remove-orphans
     docker compose -f scripts/local/containers.yaml up -d
 }

@@ -96,6 +96,7 @@ impl LoadGenerator {
             let mut err_cl_miss_prev = 0;
             let mut err_cl_to_prev = 0;
             let mut secs = 0;
+
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 let all = cnt_all_clone.load(Ordering::Relaxed);
@@ -313,6 +314,10 @@ impl LoadGenerator {
             }
             all.fetch_add(1, Ordering::Relaxed);
         }
+
+        let good = cnt_good.load(Ordering::Relaxed);
+        let avg_goodput = good / self.gen_cfg.duration_secs as usize;
+        log::warn!("target rps {} goodput per sec {}", self.rps, avg_goodput);
 
         tokio::time::sleep(Duration::from_secs(3)).await;
         log::warn!("Load generated");
