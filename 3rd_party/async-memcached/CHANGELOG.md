@@ -10,6 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## [0.5.0] - 2025-03-31
+
+### Added
+- Added `Toxiproxy` resiliency testing.
+- Added crate-level validation for key lengths.  Allowing a key that is too long through to the memcached protocol can lead to multiple errors being returned for a single operation, which leaves unexpected and unread bytes on the buffer.  Future operations can be parsed incorrectly if this is left unchecked, but validating key length is a simple check to prevent this behaviour.
+- Added parsing capabilities to support all meta flags.
+- Added `meta_get` method to the meta protocol.
+- Implemented Meta NoOp parsing for quiet mode and multi-op.
+- Added `meta_set` method to the meta protocol.
+- Added `meta_delete` method to the meta protocol.
+- Added `meta_increment` and `meta_decrement` methods to the meta protocol to cover Meta Arithmetic functionality.
+- Added panic guard on `drive_receive` to prevent panics on `split_to` calls where the buffer is empty.
+
+### Changed
+- Refactored some wall-clock benchmarks to yield more realistic results for expensive set operations.
+
 ## [0.4.0] - 2024-09-20
 
 ### Added
