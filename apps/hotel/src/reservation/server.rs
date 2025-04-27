@@ -7,12 +7,11 @@ use async_memcached::AsciiProtocol;
 use chrono::DateTime;
 use hotel::AvgTracker;
 use hotel_tonic::reservation::{self, reservation_server::Reservation};
-use masa::LatencyTracker;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::config::HotelConfig;

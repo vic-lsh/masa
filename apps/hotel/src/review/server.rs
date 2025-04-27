@@ -1,6 +1,6 @@
 use crate::{config::HotelConfig, db};
 use futures::{lock::Mutex, StreamExt};
-use hotel_tonic::review::{review_server::Review, ReviewComm, ReviewRequest, ReviewResponse};
+use hotel_tonic::review::{review_server::Review, ReviewRequest, ReviewResponse};
 use masa::LatencyTracker;
 use mongodb::{bson::doc, Client as MongoClient};
 use std::{error::Error, sync::Arc};
