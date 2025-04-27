@@ -3,7 +3,9 @@ services:
     image: mongo:7.0
     container_name: "rate_mongo"
     command: --port 27003
-    network_mode: "host"
+    # network_mode: "host"
+    ports:
+      - "27003:27003"
     restart: always
     volumes:
       - rate:/data
@@ -16,7 +18,9 @@ services:
     image: memcached:1.6
     container_name: "rate_memcached"
     command: --port 11003 --threads 4
-    network_mode: "host"
+    # network_mode: "host"
+    ports:
+      - "11003:11003"
     restart: always
     deploy:
       resources:
@@ -27,7 +31,9 @@ services:
     image: mongo:7.0
     container_name: "profile_mongo"
     command: --port 27004
-    network_mode: "host"
+    # network_mode: "host"
+    ports:
+      - "27004:27004"
     restart: always
     volumes:
       - profile:/data
@@ -40,7 +46,9 @@ services:
     image: memcached:1.6
     container_name: "profile_memcached"
     command: --port 11004 --threads 4
-    network_mode: "host"
+    # network_mode: "host"
+    ports:
+      - "11004:11004"
     restart: always
     deploy:
       resources:
@@ -51,7 +59,9 @@ services:
     image: mongo:7.0
     container_name: "reservation_mongo"
     command: --port 27005
-    network_mode: "host"
+    # network_mode: "host"
+    ports:
+      - "27005:27005"
     restart: always
     volumes:
       - reservation:/data
@@ -64,7 +74,9 @@ services:
     image: memcached:1.6
     container_name: "reservation_memcached"
     command: --port 11005 --threads 4
-    network_mode: "host"
+    # network_mode: "host"
+    ports:
+      - "11005:11005"
     restart: always
     deploy:
       resources:
@@ -75,7 +87,9 @@ services:
     image: mongo:7.0
     container_name: "user_mongo"
     command: --port 27006
-    network_mode: "host"
+    # network_mode: "host"
+    ports:
+      - "27006:27006"
     restart: always
     volumes:
       - user:/data
@@ -84,29 +98,29 @@ services:
         limits:
           cpus: "4"
 
-  review-mongo:
-    image: mongo:7.0
-    container_name: "review_mongo"
-    command: --port 27007
-    network_mode: "host"
-    restart: always
-    volumes:
-      - review:/data
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
-
-  review-memcached:
-    image: memcached:1.6
-    container_name: "review_memcached"
-    command: --port 11006 --threads 4
-    network_mode: "host"
-    restart: always
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+          #   review-mongo:
+          #     image: mongo:7.0
+          #     container_name: "review_mongo"
+          #     command: --port 27007
+          #     network_mode: "host"
+          #     restart: always
+          #     volumes:
+          #       - review:/data
+          #     deploy:
+          #       resources:
+          #         limits:
+          #           cpus: "4"
+          # 
+          #   review-memcached:
+          #     image: memcached:1.6
+          #     container_name: "review_memcached"
+          #     command: --port 11006 --threads 4
+          #     network_mode: "host"
+          #     restart: always
+          #     deploy:
+          #       resources:
+          #         limits:
+          #           cpus: "4"
 
 volumes:
   rate:
