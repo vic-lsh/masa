@@ -26,7 +26,6 @@ use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Uniform};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tower::load::Load;
 
 use tonic::{Request, Response, Status};
 
