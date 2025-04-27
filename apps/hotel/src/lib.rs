@@ -359,7 +359,11 @@ impl McPool {
     pub async fn get<'a>(&'a self) -> McPoolItemRef<'a> {
         let pool_item_ref = self
             .pool
-            .get_or_create_async(|| async { McClient::new(&self.addr).await.unwrap() })
+            .get_or_create_async(|| async {
+                McClient::new(&self.addr)
+                    .await
+                    .expect(&format!("MC connection to '{}' should succeed", self.addr))
+            })
             .await;
         McPoolItemRef::new(self.addr.as_str(), pool_item_ref)
     }

@@ -32,7 +32,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::warn!("Hotel config: {:?}", cfg);
 
     let user_addr = format!("{}:{}", cfg.user_ip, cfg.user_port)
         .parse()

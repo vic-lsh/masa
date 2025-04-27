@@ -80,8 +80,8 @@ impl CheckAvailStats {
                 println!("#{}", secs);
                 for c in latency_consumers.iter_mut() {
                     let mut dist = c.consume();
-                    print!("{:.<width$}:", c.name, width = name_width);
-                    print!("# recs {:.<width$}\t", dist.len(), width = 6);
+                    print!("{: <width$}", c.name, width = name_width);
+                    print!("# recs {: <width$}", dist.len(), width = 6);
                     for p in percentiles {
                         print!("p{}: {} ", p, dist.percentile(p));
                     }
@@ -142,7 +142,7 @@ impl ReservationImpl {
             .to_owned();
 
         Ok(Self {
-            mc_pool: Arc::new(McPool::new(config.reservation_memcached_addr, 256)),
+            mc_pool: Arc::new(McPool::new(cache_addr, 32)),
             mongo_client,
             mongo_reserve_client,
             check_avail_mc_reserve,

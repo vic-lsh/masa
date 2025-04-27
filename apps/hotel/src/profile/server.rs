@@ -82,7 +82,7 @@ impl ProfileImpl {
             .unwrap()
             .to_owned();
         Ok(Self {
-            mc_pool: Arc::new(McPool::new(config.profile_memcached_addr, 256)),
+            mc_pool: Arc::new(McPool::new(cache_addr, 256)),
             // memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
             latency_tracker,
