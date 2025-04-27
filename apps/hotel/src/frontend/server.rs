@@ -22,10 +22,7 @@ pub mod hotel_tonic {
 use crate::config::HotelConfig;
 use ginepro::LoadBalancedChannel;
 use hotel_tonic::review::review_client::ReviewClient;
-use rand::{rngs::StdRng, SeedableRng};
-use rand_distr::{Distribution, Uniform};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use tonic::{Request, Response, Status};
 
