@@ -3,6 +3,7 @@ pub mod hotel_tonic {
         tonic::include_proto!("rate");
     }
 }
+use async_memcached::AsciiProtocol;
 use futures::StreamExt;
 #[cfg(feature = "workload_stats")]
 use hotel::AvgTracker;
@@ -134,7 +135,7 @@ impl Rate for RateImpl {
         if let Ok(mc_resp) = mc.get_multi(&request.hotel_ids).await {
             for entry in mc_resp {
                 let hotel_id = String::from_utf8(entry.key).expect("hotel id should be valid");
-                if let Ok(value) = String::from_utf8(entry.data) {
+                if let Ok(value) = String::from_utf8(entry.data.unwrap()) {
                     for rate_str in value.split('\n') {
                         if !rate_str.is_empty() {
                             if let Ok(rate_plan) = serde_json::from_str::<db::RatePlan>(rate_str) {
