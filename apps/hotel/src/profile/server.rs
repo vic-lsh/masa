@@ -10,7 +10,7 @@ use std::sync::Arc;
 #[cfg(feature = "synthetic")]
 use {rand::rngs::StdRng, rand::SeedableRng, rand_distr::Uniform};
 
-use crate::db;
+use crate::{config::HotelConfig, db};
 use async_memcached::AsciiProtocol;
 use hotel::McPool;
 use masa::LatencyTracker;
@@ -49,15 +49,8 @@ pub struct ProfileImpl {
 }
 
 impl ProfileImpl {
-    pub async fn new(
-        #[allow(unused)] hotels: u32,
-        cache_addr: String,
-        _cache_conn: u32,
-        #[allow(unused)] cache_miss_rate: u32,
-        db_addr: String,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        // let memc_client = memcache::Client::with_pool_size(cache_addr.clone(), cache_conn)?;
-        let mongo_client = db::initialize_database(&db_addr).await?;
+    pub async fn new(config: HotelConfig) -> Result<Self, Box<dyn std::error::Error>> {
+        let mongo_client = db::initialize_database(&config.profile_mongodb_addr).await?;
 
         let latency_tracker = Arc::new(Mutex::new(LatencyTracker::new("ProfileSvc".into(), 1024)));
 
@@ -82,13 +75,14 @@ impl ProfileImpl {
             (rng, uniform)
         };
 
-        let cache_addr = cache_addr
+        let cache_addr = config
+            .profile_memcached_addr
             .strip_prefix("memcache://")
             .map(|addr| format!("tcp://{}", addr))
             .unwrap()
             .to_owned();
         Ok(Self {
-            mc_pool: Arc::new(McPool::new(cache_addr, 256)),
+            mc_pool: Arc::new(McPool::new(config.profile_memcached_addr, 256)),
             // memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
             latency_tracker,
