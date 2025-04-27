@@ -6,6 +6,9 @@ if [[ "$pwd" != */apps/hotel ]]; then
     exit 1
 fi
 
+# TODO: create flag to attach or not attach
+# TODO: create flag to pipe to output files or use stdout
+
 rust_log=warn
 tracker_capacity=512
 pctl_deadline=""
@@ -61,20 +64,23 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 if [ -z "$pctl_deadline" ]; then
-    echo "Expected a percentile of deadline using --pctl-deadline"
-    exit 1
+    pctl_deadline=50
+    # echo "Expected a percentile of deadline using --pctl-deadline"
+    # exit 1
 fi
 if [ -z "$pctl_latest_exec" ]; then
-    echo "Expected a percentile of execution using --pctl-latest-exec"
-    exit 1
+    pctl_latest_exec=50
+    # echo "Expected a percentile of execution using --pctl-latest-exec"
+    # exit 1
 fi
 if [ -z "$cargo_features" ]; then
-    echo "Expected a masa feature flag using --cargo_features"
+    echo "Warning: no cargo features"
     exit 1
 fi
 if [ -z "$output_path" ]; then
-    echo "Expected an output path using --output-path"
-    exit 1
+    output_path=./tmp
+    # echo "Expected an output path using --output-path"
+    # exit 1
 fi
 if [ -z "$gen_config" ]; then
     echo "Expected a gen config file using --gen-config"
@@ -99,12 +105,12 @@ services=(
 waits_secs=(
     0
     0
-    15
+    8
     0
     0
     0
-    18
-    21
+    12
+    16
 )
 
 init() {
@@ -118,8 +124,7 @@ build() {
     echo "Building $cargo_features..."
     cargo build \
         --release \
-        --features $cargo_features \
-        >$output_path/tmp_build.log 2>&1
+        --features $cargo_features 
 }
 
 reset() {
@@ -156,8 +161,7 @@ cargo run --release \
 --features $cargo_features \
 --bin $service \
 -- \
---config $hotel_config \
-> $output_path/tmp_$service.log 2>&1"
+--config $hotel_config"
 
         else
 
@@ -171,11 +175,7 @@ cargo run --release \
 --bin $service \
 -- \
 --gen-config $gen_config \
---hotel-config $hotel_config \
---output-path $output_path \
---run-idx $run_idx \
-> $output_path/tmp_$service.log 2>&1"
-
+--output-path $output_path"
         fi
 
         cmd=" \
@@ -193,18 +193,20 @@ $run_cmd"
         fi
         tmux send-keys -t $session_name "$cmd" C-m
     done
+    
+    tmux attach -t $session_name
 
-    done=false
-    while [[ $done == false ]]; do
-        sleep 6
-        service=${services[-1]}
-        if [ ! -f $output_path/tmp_$service.log ]; then
-            continue
-        fi
-        if tail -n 1 $output_path/tmp_$service.log | grep -q "Load generator done"; then
-            done=true
-        fi
-    done
+    # done=false
+    # while [[ $done == false ]]; do
+    #     sleep 6
+    #     service=${services[${#services[@]}-1]}
+    #     if [ ! -f $output_path/tmp_$service.log ]; then
+    #         continue
+    #     fi
+    #     if tail -n 1 $output_path/tmp_$service.log | grep -q "Load generator done"; then
+    #         done=true
+    #     fi
+    # done
 
     tmux kill-session -t $session_name
 }
