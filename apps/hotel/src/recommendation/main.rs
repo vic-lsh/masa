@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
 
-    let rec_addr = format!("{}:{}", cfg.recommendation_ip, cfg.recommendation_port)
+    let rec_addr = format!("{}:{}", "[::]", cfg.recommendation_port)
         .parse()
         .expect("Failed to parse address");
     let rec = RecommendationImpl::new(cfg);

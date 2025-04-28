@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
 
-    let profile_addr = format!("{}:{}", cfg.profile_ip, cfg.profile_port)
+    let profile_addr = format!("{}:{}", "[::]", cfg.profile_port)
         .parse()
         .expect("Failed to parse address");
     log::warn!("Server listening on {}...", profile_addr);

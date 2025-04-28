@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
 
-    let geo_addr = format!("{}:{}", cfg.geo_ip, cfg.geo_port)
+    let geo_addr = format!("{}:{}", "[::]", cfg.geo_port)
         .parse()
         .expect("Failed to parse address");
     let geo = GeoImpl::new(cfg);
