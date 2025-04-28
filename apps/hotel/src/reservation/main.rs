@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
 
-    let reservation_addr = format!("{}:{}", cfg.reservation_ip, cfg.reservation_port)
+    let reservation_addr = format!("{}:{}", "[::]", cfg.reservation_port)
         .parse()
         .expect("Failed to parse address");
     log::warn!("Server listening on {}...", reservation_addr);

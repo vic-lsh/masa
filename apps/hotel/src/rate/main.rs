@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
 
-    let rate_addr = format!("{}:{}", cfg.rate_ip, cfg.rate_port)
+    let rate_addr = format!("{}:{}", "[::]", cfg.rate_port)
         .parse()
         .expect("Failed to parse address");
     let rate = RateImpl::new(cfg).await?;
