@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
 
-    let search_addr = format!("{}:{}", cfg.search_ip, cfg.search_port)
+    let search_addr = format!("{}:{}", "[::]", cfg.search_port)
         .parse()
         .expect("Failed to parse address");
 
