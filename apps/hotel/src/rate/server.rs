@@ -18,9 +18,9 @@ use {
 
 use std::{error::Error, sync::Arc};
 
+use masa::LatencyDistribution;
 use mongodb::{bson::doc, Client as MongoClient};
 use tonic::{Request, Response, Status};
-use tonic_masa::LatencyDistribution;
 
 use crate::db;
 use hotel_tonic::{rate, rate::rate_server::Rate};

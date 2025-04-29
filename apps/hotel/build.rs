@@ -42,4 +42,9 @@ fn main() {
         .file_descriptor_set_path(out_dir.join("recommendation_descriptor.bin"))
         .compile(&["proto/recommendation.proto"], &["proto"])
         .unwrap();
+    tonic_build::configure()
+        .file_descriptor_set_path(out_dir.join("review_descriptor.bin"))
+        .type_attribute(".", "#[derive(serde::Deserialize, serde::Serialize)]")
+        .compile(&["proto/review.proto"], &["proto"])
+        .unwrap();
 }

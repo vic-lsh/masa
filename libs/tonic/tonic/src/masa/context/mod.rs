@@ -9,8 +9,8 @@ mod simple;
 
 pub mod runtime;
 mod tls;
+use masa::Context;
 pub use tls::{client, server};
-use tonic_masa::Context;
 
 #[cfg(not(feature = "masa"))]
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
@@ -31,9 +31,13 @@ pub type DefaultPrioritySelector = LocalDeadlineIndirect;
 
 // TODO: rename this to be more general
 // TODO: add notes on trait bounds
+/// Trait for specifying the set of hooks to apply in a Masa build.
 pub trait PrioritySelector: Send + Sync + 'static {
+    /// The server-level state and hook implementations.
     type ServerContext: ServerHooks;
+    /// The state and hook implementations maintained per child RPC.
     type ChildContext: ClientHooks;
+    /// The state and hook implementations maintained per in the server-side request handlers.
     type ParentContext: ParentHooks<Self::ChildContext, Self::ServerContext>;
 }
 
