@@ -2,7 +2,7 @@
 
 Masa is a new RPC system that improves RPC goodput via dynamic RPC prioritization.
 RPCs typically operate with SLO constraints in their end-to-end, user-facing workflow (e.g., a social media feed refresh sets its SLO at 500ms, and all the RPCs in service of the refresh must complete within 500ms).
-Based on this observation, Masa detects which RPCs are _running late_ in runtime, and dynamically adjusts RPC priority accordingly.
+Based on this observation, Masa detects which RPCs are _running late_ at runtime, and dynamically adjusts RPC priority accordingly.
 
 Masa is implemented based on [Tonic](https://github.com/hyperium/tonic), [Hyper](https://hyper.rs/), and [Tokio](https://tokio.rs/).
 

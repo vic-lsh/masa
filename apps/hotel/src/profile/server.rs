@@ -12,10 +12,10 @@ use {rand::rngs::StdRng, rand::SeedableRng, rand_distr::Uniform};
 
 use crate::db;
 use hotel::McPool;
+use masa::LatencyDistribution;
 use mongodb::{bson::doc, Client as MongoClient};
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
-use tonic_masa::LatencyDistribution;
 
 #[cfg(feature = "workload_stats")]
 use hotel::AvgTracker;

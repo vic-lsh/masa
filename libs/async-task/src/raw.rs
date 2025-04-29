@@ -19,7 +19,7 @@ use crate::state::*;
 use crate::utils::{abort, abort_on_panic, max, Layout};
 use crate::Runnable;
 
-use tonic_masa::PriorityHint;
+use masa::PriorityHint;
 
 use std::cell::RefCell;
 use std::thread_local;

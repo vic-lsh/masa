@@ -90,7 +90,7 @@ tower-layer = { path = "../../../3rd_party/tower/tower-layer/" }
 tower-service = { path = "../../../3rd_party/tower/tower-service" }
 
 # Needed for our code-gen modification
-tonic-masa = { path = "../tonic-masa" }
+masa = { path = "../../masa" }
 async-task = { path = "../../async-task" }
 async-executor = { path = "../../async-executor" }
 

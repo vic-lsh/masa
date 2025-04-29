@@ -38,6 +38,11 @@ pub async fn initialize_database(url: &str) -> Result<Client, Box<dyn std::error
 
     // Create index on shortened_url for faster lookups
     let collection = get_collection(&client);
+    collection.delete_many(doc! {}, None).await.map_err(|e| {
+        eprintln!("Failed to clean collection {}: {}", COLLECTION_NAME, e);
+        e
+    })?;
+
     let options = IndexOptions::builder().unique(true).build();
     let model = IndexModel::builder()
         .keys(doc! { "shortened_url": 1 })
@@ -77,6 +82,44 @@ pub async fn insert_url_mappings(
     println!("Inserted {} URL mappings into MongoDB", mappings.len());
 
     Ok(())
+}
+
+pub async fn get_shortened_urls(
+    client: &Client,
+    expanded_urls: &[String],
+) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+    if expanded_urls.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let collection = get_collection(client);
+    let filter = doc! {
+        "expanded_url": {
+            "$in": expanded_urls
+        }
+    };
+
+    // Return early if no URLs are found
+    let count = collection.count_documents(filter.clone(), None).await?;
+    if count == 0 {
+        return Ok(HashMap::new());
+    }
+
+    let mut cursor = collection.find(filter, None).await?;
+    let mut url_map = HashMap::new();
+
+    while let Some(result) = cursor.try_next().await? {
+        if let (Ok(shortened), Ok(expanded)) = (
+            result.get_str("shortened_url"),
+            result.get_str("expanded_url"),
+        ) {
+            url_map.insert(expanded.to_owned(), shortened.to_owned());
+        }
+    }
+
+    println!("Retrieved {} URL mappings from MongoDB", url_map.len());
+
+    Ok(url_map)
 }
 
 pub async fn get_expanded_urls(

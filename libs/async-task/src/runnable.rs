@@ -7,13 +7,13 @@ use core::sync::atomic::Ordering;
 use core::task::Waker;
 
 use alloc::boxed::Box;
-use tonic_masa::Prioritize;
+use masa::Prioritize;
 
 use crate::header::Header;
 use crate::raw::RawTask;
 use crate::state::*;
 use crate::Task;
-use tonic_masa::PriorityHint;
+use masa::PriorityHint;
 
 mod sealed {
     use super::*;

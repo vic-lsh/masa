@@ -21,7 +21,7 @@ std = []
 [dependencies]
 # Uses portable-atomic polyfill atomics on targets without them
 portable-atomic = { version = "1", optional = true, default-features = false }
-tonic-masa = { path = "../../libs/tonic/tonic-masa" }
+masa = { path = "../../libs/masa" }
 log = "0.4"
 
 [dev-dependencies]
