@@ -17,8 +17,8 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::task::Poll;
 
-use pin_project_lite::pin_project;
 use masa::PriorityHint;
+use pin_project_lite::pin_project;
 
 cfg_rt! {
     /// A set of tasks which are executed on the same thread.

@@ -1,7 +1,7 @@
 use crate::task::JoinHandle;
 
-use std::future::Future;
 use masa::PriorityHint;
+use std::future::Future;
 
 cfg_rt! {
     /// Spawns a new asynchronous task, returning a
