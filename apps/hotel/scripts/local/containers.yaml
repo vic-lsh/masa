@@ -84,6 +84,30 @@ services:
         limits:
           cpus: "4"
 
+  review-mongo:
+    image: mongo:7.0
+    container_name: "review_mongo"
+    command: --port 27007
+    network_mode: "host"
+    restart: always
+    volumes:
+      - review:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
+  review-memcached:
+    image: memcached:1.6
+    container_name: "review_memcached"
+    command: --port 11006 --threads 4
+    network_mode: "host"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
 volumes:
   rate:
   profile:

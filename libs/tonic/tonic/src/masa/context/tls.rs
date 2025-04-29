@@ -34,10 +34,18 @@ pub mod client {
 pub mod server {
     use crate::masa::PrioritySelector;
 
+    /// Set parent context.
+    ///
+    /// This is an internal API exposed only for the code-generated tonic code.
+    /// Do not call unless you know what it's used for.
     pub fn set_parent_ctx<'a, P: PrioritySelector>(parent_ctx: &'a P::ParentContext) {
         super::PARENT_CTX.replace(parent_ctx as *const P::ParentContext as *const ());
     }
 
+    /// Unset parent context.
+    ///
+    /// This is an internal API exposed only for the code-generated tonic code.
+    /// Do not call unless you know what it's used for.
     pub fn reset_parent_ctx<'a, P: PrioritySelector>() {
         super::PARENT_CTX.replace(core::ptr::null());
     }

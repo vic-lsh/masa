@@ -15,7 +15,7 @@ use tokio::sync::Notify;
 use crossbeam_channel::Receiver;
 use env_logger::{Builder, Env};
 
-use tonic_masa::Context;
+use masa::Context;
 
 pub const USE_SYNTHETIC: bool = if cfg!(feature = "synthetic") {
     true

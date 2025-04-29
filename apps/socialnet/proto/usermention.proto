@@ -1,0 +1,31 @@
+syntax = "proto3";
+package usermention;
+
+enum ErrorCode {
+  UNKNOWN = 0;
+  SE_THRIFT_HANDLER_ERROR = 1;
+}
+
+message ServiceException {
+  ErrorCode error_code = 1;
+  string message = 2;
+}
+
+message UserMention {
+    uint64 user_id = 1;
+    string username = 2;
+}
+
+message ComposeUserMentionRequest {
+    uint64 req_id = 1;
+    repeated string usernames = 2;
+}
+
+message ComposeUserMentionResponse {
+    repeated UserMention user_mentions = 1;
+    ServiceException exception = 2;
+}
+
+service UserMentionService {
+  rpc ComposeUserMentions(ComposeUserMentionRequest) returns (ComposeUserMentionResponse) {}
+}
