@@ -1,3 +1,4 @@
+use async_memcached::AsciiProtocol;
 use async_memcached::Client as McClient;
 use mongodb::{bson::doc, options::ClientOptions, Client as MongoClient, Collection};
 use serde::{Deserialize, Serialize};
