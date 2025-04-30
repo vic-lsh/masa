@@ -3,6 +3,7 @@ pub mod hotel_tonic {
         tonic::include_proto!("rate");
     }
 }
+use async_memcached::AsciiProtocol;
 use futures::StreamExt;
 #[cfg(feature = "workload_stats")]
 use hotel::AvgTracker;
