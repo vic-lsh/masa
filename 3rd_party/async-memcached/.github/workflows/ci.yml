@@ -8,12 +8,15 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-
+  TOXIPROXY_HOST: http://0.0.0.0
+  TOXIPROXY_PORT: 8474
+  MEMCACHED_HOST: 127.0.0.1
+  MEMCACHED_PORT: 11211
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Add rustfmt and clippy
         run: rustup component add rustfmt clippy
       - name: Run cargo fmt
@@ -26,19 +29,34 @@ jobs:
         run: cargo clippy --benches --all-features
       - name: Run clippy (examples)
         run: cargo clippy --examples --all-features
-
   test:
     runs-on: ubuntu-latest
+    services:
+      memcached:
+        image: memcached:latest
+        ports:
+          - 11211:11211
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - name: Run tests
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Run toxiproxy service in main environment
+        run: |
+          wget -qO toxiproxy_2.9.0.deb https://github.com/Shopify/toxiproxy/releases/download/v2.9.0/toxiproxy_2.9.0_linux_amd64.deb
+          sudo dpkg -i toxiproxy_2.9.0.deb
+          toxiproxy-server &
+      - name: Run parser and connection tests
         run: cargo test --all-features
-
+      - name: Run ASCII protocol integration tests
+        run: cargo test --test ascii_proto_integration_tests -- --test-threads=1 --ignored
+      - name: Run meta protocol integration tests
+        run: cargo test --test meta_proto_integration_tests -- --test-threads=1 --ignored
+      - name: Run resiliency tests
+        run: cargo test --test resiliency_tests -- --test-threads=1 --ignored
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Build
         run: cargo build --release --all-features
       - name: Build (examples)
         run: cargo build --release --examples --all-features
+
