@@ -129,7 +129,7 @@ impl LoadGenerator {
 
         let counters = Arc::new(Counters::new());
 
-        let h = tokio::task::spawn(stats_logger(counters.clone(), pause_at));
+        let h = tokio::task::spawn(stats_logger(Arc::clone(&counters), pause_at));
 
         self.generate_load(counters, init_at, trace_at, warm_at, pause_at)
             .await;
@@ -196,7 +196,7 @@ impl LoadGenerator {
 
             let mut client = self.client.clone();
             let trace_tx = self.trace_tx.clone();
-            let ctrs = counters.clone();
+            let ctrs = Arc::clone(&counters);
 
             tokio::task::spawn(async move {
                 let span = send_request(&mut client, &api, ctx).await;
@@ -336,6 +336,7 @@ async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
             counters.get("err_search"),
             counters.get("err_reservation"),
         );
+        // clone the Counters struct itself as opposed to creating another reference
         prev = (*counters).clone();
     }
 }
