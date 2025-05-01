@@ -51,14 +51,14 @@ pub fn time_now() -> u64 {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub struct Span {
-    ctx: Context,
-    latency: u64,
-    error: String,
+pub struct RequestStats {
+    pub ctx: Context,
+    pub latency: u64,
+    pub error: String,
 }
 
 #[allow(dead_code)]
-impl Span {
+impl RequestStats {
     pub fn new(ctx: Context, latency: u64, error: String) -> Self {
         Self {
             ctx,
@@ -69,7 +69,7 @@ impl Span {
 }
 
 #[allow(dead_code)]
-pub async fn fetch_traces(output: String, trace_rx: Receiver<Span>) {
+pub async fn fetch_traces(output: String, trace_rx: Receiver<RequestStats>) {
     let path = Path::new(&output);
     if let Some(parent) = path.parent() {
         if !parent.exists() {
