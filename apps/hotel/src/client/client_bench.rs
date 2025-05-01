@@ -5,6 +5,7 @@ pub mod hotel_tonic {
 }
 mod gen;
 
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
@@ -19,13 +20,15 @@ use gen::{get_ping_request, get_reservation_request, get_search_request};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp, Uniform};
 use structopt::StructOpt;
+use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration, Instant};
 
 use masa::Context;
 use tonic::transport::Channel;
+use tonic::Status;
 
 use config::GenConfig;
-use hotel::{fetch_traces, init_logging, time_now, Span};
+use hotel::{fetch_traces, init_logging, time_now, RequestStats};
 use hotel_tonic::frontend_client::FrontendClient;
 
 #[derive(StructOpt, Debug, Clone)]
@@ -37,13 +40,67 @@ pub struct Args {
     pub output_path: String,
 }
 
+const COUNTER_KEYS: [&'static str; 7] = [
+    // total number of requests
+    "all",
+    // number of requests satisfying SLO
+    "good",
+    // number of early returns
+    "err_svc_er",
+    // number of deadline misses without timing out
+    "err_cl_miss",
+    // number of timeouts
+    "err_cl_to",
+    // total number of errors in search API
+    "err_search",
+    // total number of errors in reservation API
+    "err_reservation",
+];
+
+struct Counters {
+    counters_map: HashMap<&'static str, AtomicUsize>,
+}
+
+impl Clone for Counters {
+    fn clone(&self) -> Self {
+        let mut cloned = HashMap::new();
+        for k in self.counters_map.keys() {
+            cloned.insert(*k, AtomicUsize::new(self.get(k)));
+        }
+        Self {
+            counters_map: cloned,
+        }
+    }
+}
+
+impl Counters {
+    fn new() -> Self {
+        let mut map = HashMap::new();
+        for k in COUNTER_KEYS {
+            map.insert(k, AtomicUsize::new(0));
+        }
+        Self { counters_map: map }
+    }
+
+    fn get(&self, k: &'static str) -> usize {
+        self.counters_map.get(k).unwrap().load(Ordering::SeqCst)
+    }
+
+    fn increment(&self, k: &'static str) {
+        self.counters_map
+            .get(k)
+            .unwrap()
+            .fetch_add(1, Ordering::SeqCst);
+    }
+}
+
 #[derive(Debug)]
 struct LoadGenerator {
     gen_cfg: GenConfig,
     rng: StdRng,
     rps: u64,
     client: FrontendClient<Channel>,
-    trace_tx: Sender<Span>,
+    trace_tx: Sender<RequestStats>,
 }
 
 impl LoadGenerator {
@@ -52,7 +109,7 @@ impl LoadGenerator {
         rng: StdRng,
         rps: u64,
         client: FrontendClient<Channel>,
-        trace_tx: Sender<Span>,
+        trace_tx: Sender<RequestStats>,
     ) -> Self {
         Self {
             gen_cfg,
@@ -65,95 +122,38 @@ impl LoadGenerator {
 
     async fn run(&mut self) -> Result<(), Box<dyn Error>> {
         let init_at = Instant::now();
-        // let init_at_u64 = time_now();
-        let warm_at = init_at + Duration::from_secs(self.gen_cfg.warmup_secs / 2);
+        let warm_at = init_at + Duration::from_secs_f64(self.gen_cfg.warmup_secs as f64 / 2.0);
         let trace_at = init_at + Duration::from_secs(self.gen_cfg.warmup_secs);
         let pause_at =
             init_at + Duration::from_secs(self.gen_cfg.warmup_secs + self.gen_cfg.duration_secs);
 
-        let cnt_all = Arc::new(AtomicUsize::new(0));
-        let cnt_good = Arc::new(AtomicUsize::new(0));
-        let cnt_err_svc_er = Arc::new(AtomicUsize::new(0));
-        let cnt_err_cl_miss = Arc::new(AtomicUsize::new(0));
-        let cnt_err_cl_to = Arc::new(AtomicUsize::new(0));
+        let counters = Arc::new(Counters::new());
 
-        let cnt_err_search = Arc::new(AtomicUsize::new(0));
-        let cnt_err_reservation = Arc::new(AtomicUsize::new(0));
+        let h = tokio::task::spawn(stats_logger(Arc::clone(&counters), pause_at));
 
-        let cnt_all_clone = cnt_all.clone();
-        let cnt_good_clone = cnt_good.clone();
-        let cnt_err_svc_er_clone = cnt_err_svc_er.clone();
-        let cnt_err_cl_miss_clone = cnt_err_cl_miss.clone();
-        let cnt_err_cl_to_clone = cnt_err_cl_to.clone();
+        self.generate_load(counters, init_at, trace_at, warm_at, pause_at)
+            .await;
 
-        let cnt_err_search_clone = cnt_err_search.clone();
-        let cnt_err_reservation_clone = cnt_err_reservation.clone();
+        let _ = h.await;
 
-        tokio::task::spawn(async move {
-            let mut all_prev = 0;
-            let mut good_prev = 0;
-            let mut err_svc_er_prev = 0;
-            let mut err_cl_miss_prev = 0;
-            let mut err_cl_to_prev = 0;
-            let mut secs = 0;
+        log::warn!("Load generated");
+        Ok(())
+    }
 
-            loop {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                let all = cnt_all_clone.load(Ordering::Relaxed);
-                let good = cnt_good_clone.load(Ordering::Relaxed);
-                let err_svc_er = cnt_err_svc_er_clone.load(Ordering::Relaxed);
-                let err_cl_miss = cnt_err_cl_miss_clone.load(Ordering::Relaxed);
-                let err_cl_to = cnt_err_cl_to_clone.load(Ordering::Relaxed);
-                let err_search = cnt_err_search_clone.load(Ordering::Relaxed);
-                let err_reservation = cnt_err_reservation_clone.load(Ordering::Relaxed);
-
-                secs += 1;
-
-                let rps = all - all_prev;
-                let good_ps = good - good_prev;
-                let err_svc_er_ps = err_svc_er - err_svc_er_prev;
-                let err_cl_miss_ps = err_cl_miss - err_cl_miss_prev;
-                let err_cl_to_ps = err_cl_to - err_cl_to_prev;
-                log::warn!(
-                    "secs: {}, rps: {}, good: {}, err_svc_er: {} err_cl_miss: {}, err_cl_to: {}",
-                    secs,
-                    rps,
-                    good_ps,
-                    err_svc_er_ps,
-                    err_cl_miss_ps,
-                    err_cl_to_ps,
-                );
-                log::warn!(
-                    "secs: {}, err_svc_er_sum: {}, err_cl_miss_sum: {}, err_cl_to_sum: {}, err_search: {}, err_reservation: {}",
-                    secs,
-                    err_svc_er,
-                    err_cl_miss,
-                    err_cl_to,
-                    err_search,
-                    err_reservation,
-                );
-                all_prev = all;
-                good_prev = good;
-                err_svc_er_prev = err_svc_er;
-                err_cl_miss_prev = err_cl_miss;
-                err_cl_to_prev = err_cl_to;
-
-                if Instant::now() > pause_at {
-                    break;
-                }
-            }
-        });
-
+    async fn generate_load(
+        &mut self,
+        counters: Arc<Counters>,
+        init_at: Instant,
+        trace_at: Instant,
+        warm_at: Instant,
+        pause_at: Instant,
+    ) {
         let mut counter_test_id = 0;
-        let mut elapse = 0f64;
         let exponential = Exp::new(self.rps as f64).unwrap();
+        let mut elapse = 0f64;
         let uniform = Uniform::<u32>::new(0, 1_000_000_007);
 
-        loop {
-            if Instant::now() > pause_at {
-                break;
-            }
-
+        while Instant::now() < pause_at {
             let start_at = init_at + Duration::from_secs_f64(elapse);
             tokio::time::sleep_until(start_at).await;
 
@@ -196,132 +196,47 @@ impl LoadGenerator {
 
             let mut client = self.client.clone();
             let trace_tx = self.trace_tx.clone();
-            let all = cnt_all.clone();
-            let good = cnt_good.clone();
-            let err_svc_er = cnt_err_svc_er.clone();
-            let err_cl_miss = cnt_err_cl_miss.clone();
-            let err_cl_to = cnt_err_cl_to.clone();
+            let ctrs = Arc::clone(&counters);
 
-            if api == "Search" {
-                let request = {
-                    let mut request = tonic::Request::new(get_search_request());
-                    request.metadata_mut().insert_ctx("ctx", &ctx);
-                    request
+            tokio::task::spawn(async move {
+                let span = send_request(&mut client, &api, ctx).await;
+                ctrs.increment("all");
+
+                if Instant::now() < trace_at {
+                    return;
+                }
+
+                let error = &span.error;
+                match error.as_str() {
+                    "/None" => {
+                        ctrs.increment("good");
+                    }
+                    "/ClientMiss" => {
+                        ctrs.increment("err_cl_miss");
+                    }
+                    "/EarlyReturn" => {
+                        ctrs.increment("err_svc_er");
+                    }
+                    "/ClientTimeout" => {
+                        ctrs.increment("err_cl_to");
+                    }
+                    _ => panic!("Unimplemented error: {}", error),
                 };
 
-                let err_search = cnt_err_search.clone();
-                tokio::task::spawn(async move {
-                    let send_at = time_now();
-                    let timeout_duration = Duration::from_secs(1);
-                    let response = timeout(timeout_duration, client.handle_search(request)).await;
-                    match response {
-                        Ok(response) => {
-                            if Instant::now() > trace_at {
-                                let recv_at = time_now();
-                                let latency = recv_at - send_at;
-                                let error = {
-                                    if let Err(ref status) = response {
-                                        status.message().to_string()
-                                    } else if latency > ctx.slo() {
-                                        "/ClientMiss".to_string()
-                                    } else {
-                                        "/None".to_string()
-                                    }
-                                };
-                                if error.contains("None") {
-                                    good.fetch_add(1, Ordering::Relaxed);
-                                } else {
-                                    err_search.fetch_add(1, Ordering::Relaxed);
-                                    if error.contains("ClientMiss") {
-                                        err_cl_miss.fetch_add(1, Ordering::Relaxed);
-                                    } else if error.contains("EarlyReturn") {
-                                        err_svc_er.fetch_add(1, Ordering::Relaxed);
-                                    } else {
-                                        panic!("Unimplemented error: {}", error);
-                                    }
-                                }
-                                let span = Span::new(ctx, latency, error);
-                                trace_tx.try_send(span).unwrap();
-                            }
+                if error != "None" {
+                    match api.as_str() {
+                        "Search" => {
+                            ctrs.increment("err_search");
                         }
-                        Err(_) => {
-                            if Instant::now() > trace_at {
-                                err_search.fetch_add(1, Ordering::Relaxed);
-                                err_cl_to.fetch_add(1, Ordering::Relaxed);
-                                let error = "/ClientTimeout".to_string();
-                                let span = Span::new(ctx, 0, error);
-                                trace_tx.try_send(span).unwrap();
-                            }
+                        "Reservation" => {
+                            ctrs.increment("err_reservation");
                         }
+                        _ => panic!("Unimplemented API"),
                     }
-                });
-            } else if api == "Reservation" {
-                let request = {
-                    let mut request = tonic::Request::new(get_reservation_request());
-                    request.metadata_mut().insert_ctx("ctx", &ctx);
-                    request
-                };
-
-                let err_reservation = cnt_err_reservation.clone();
-                tokio::task::spawn(async move {
-                    let send_at = time_now();
-                    let timeout_duration = Duration::from_secs(1);
-                    let response =
-                        timeout(timeout_duration, client.handle_reservation(request)).await;
-                    match response {
-                        Ok(response) => {
-                            if Instant::now() > trace_at {
-                                let recv_at = time_now();
-                                let latency = recv_at - send_at;
-                                let error = {
-                                    if let Err(ref status) = response {
-                                        status.message().to_string()
-                                    } else if latency > ctx.slo() {
-                                        "/ClientMiss".to_string()
-                                    } else {
-                                        "/None".to_string()
-                                    }
-                                };
-                                if error.contains("None") {
-                                    good.fetch_add(1, Ordering::Relaxed);
-                                } else {
-                                    err_reservation.fetch_add(1, Ordering::Relaxed);
-                                    if error.contains("ClientMiss") {
-                                        err_cl_miss.fetch_add(1, Ordering::Relaxed);
-                                    } else if error.contains("EarlyReturn") {
-                                        err_svc_er.fetch_add(1, Ordering::Relaxed);
-                                    } else {
-                                        panic!("Unimplemented error: {}", error);
-                                    }
-                                }
-                                let span = Span::new(ctx, latency, error);
-                                trace_tx.try_send(span).unwrap();
-                            }
-                        }
-                        Err(_) => {
-                            if Instant::now() > trace_at {
-                                err_reservation.fetch_add(1, Ordering::Relaxed);
-                                err_cl_to.fetch_add(1, Ordering::Relaxed);
-                                let error = "/ClientTimeout".to_string();
-                                let span = Span::new(ctx, 0, error);
-                                trace_tx.try_send(span).unwrap();
-                            }
-                        }
-                    }
-                });
-            } else {
-                panic!("Unimplemented API");
-            }
-            all.fetch_add(1, Ordering::Relaxed);
+                }
+                trace_tx.try_send(span).unwrap();
+            });
         }
-
-        let good = cnt_good.load(Ordering::Relaxed);
-        let avg_goodput = good / self.gen_cfg.duration_secs as usize;
-        log::warn!("target rps {} goodput per sec {}", self.rps, avg_goodput);
-
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        log::warn!("Load generated");
-        Ok(())
     }
 }
 
@@ -393,4 +308,92 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::warn!("Load generator done");
     Ok(())
+}
+
+async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
+    let mut secs = 0;
+    let mut prev = Counters::new();
+    while Instant::now() < pause_at {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        secs += 1;
+
+        let delta = |k| counters.get(k) - prev.get(k);
+
+        log::warn!(
+            "secs: {}, rps: {}, goodput: {}, early returns: {}, deadline misses: {}, timeouts: {}",
+            secs,
+            delta("all"),
+            delta("good"),
+            delta("err_svc_er"),
+            delta("err_cl_miss"),
+            delta("err_cl_to"),
+        );
+        log::warn!(
+            "total early returns: {}, total deadline misses: {}, total timeouts: {}, total search errors: {}, total reservation errors: {}",
+            counters.get("err_svc_er"),
+            counters.get("err_cl_miss"),
+            counters.get("err_cl_to"),
+            counters.get("err_search"),
+            counters.get("err_reservation"),
+        );
+        // clone the Counters struct itself as opposed to creating another reference
+        prev = (*counters).clone();
+    }
+}
+
+async fn send_request(
+    client: &mut FrontendClient<Channel>,
+    api: &str,
+    ctx: Context,
+) -> RequestStats {
+    let send_at = time_now();
+    let timeout_duration = Duration::from_secs(1);
+
+    let response = match api {
+        "Search" => {
+            let request = {
+                let mut request = tonic::Request::new(get_search_request());
+                request.metadata_mut().insert_ctx("ctx", &ctx);
+                request
+            };
+            map_response(timeout(timeout_duration, client.handle_search(request)).await)
+        }
+        "Reservation" => {
+            let request = {
+                let mut request = tonic::Request::new(get_reservation_request());
+                request.metadata_mut().insert_ctx("ctx", &ctx);
+                request
+            };
+            map_response(timeout(timeout_duration, client.handle_reservation(request)).await)
+        }
+        _ => panic!("Unimplemented API {}", api),
+    };
+    let span = match response {
+        Ok(response) => {
+            let recv_at = time_now();
+            let latency = recv_at - send_at;
+            let error = {
+                if let Err(ref status) = response {
+                    status.message().to_string()
+                } else if latency > ctx.slo() {
+                    "/ClientMiss".to_string()
+                } else {
+                    "/None".to_string()
+                }
+            };
+            RequestStats::new(ctx, latency, error)
+        }
+        Err(_) => {
+            let error = "/ClientTimeout".to_string();
+            RequestStats::new(ctx, timeout_duration.as_micros() as u64, error)
+        }
+    };
+
+    span
+}
+
+fn map_response<T>(
+    timeout_response: Result<Result<T, Status>, Elapsed>,
+) -> Result<Result<(), Status>, Elapsed> {
+    timeout_response.map(|response| response.map(|_r| ()))
 }
