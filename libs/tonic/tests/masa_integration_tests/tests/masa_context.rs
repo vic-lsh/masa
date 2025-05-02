@@ -4,11 +4,10 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
+    task::Poll,
     time::Duration,
 };
 
-use hyper::rt::{Exec, Executor};
-use masa::PriorityHint;
 use masa_integration_tests::pb::{
     child_service_client::ChildServiceClient,
     child_service_server::{ChildService, ChildServiceServer},
@@ -97,20 +96,6 @@ impl ChildService for ChildSvc {
     }
 }
 
-// struct ExecImpl;
-//
-// impl<F> Executor<F> for ExecImpl
-// where
-//     F: std::future::Future + Send + 'static,
-//     F::Output: Send,
-// {
-//     fn execute(&self, fut: F, prio: PriorityHint) {
-//         async_executor::spawn_with_prio(fut, prio)
-//             .fallible()
-//             .detach();
-//     }
-// }
-
 struct MockServerCtx;
 
 impl ServerHooks for MockServerCtx {
@@ -148,7 +133,7 @@ where
     let child_svc = tokio::spawn(async {
         Server::builder()
             .add_service(ChildServiceServer::<_, P>::with_custom_context(ChildSvc))
-            .serve(child_svc_addr.parse().unwrap())
+            .serve_with_masa(child_svc_addr.parse().unwrap())
             .await
             .unwrap();
     });
@@ -158,7 +143,7 @@ where
             .add_service(ParentServiceServer::<_, P>::with_custom_context(
                 ParentSvc::<P>::new(child_svc_addr, fanout_factor),
             ))
-            .serve(parent_svc_addr.parse().unwrap())
+            .serve_with_masa(parent_svc_addr.parse().unwrap())
             .await
             .unwrap();
     });
@@ -198,7 +183,7 @@ async fn test_service_ctx_construction() {
                             ChildSvc,
                         ),
                     )
-                    .serve(addr.parse().unwrap())
+                    .serve_with_masa(addr.parse().unwrap())
                     .await
                     .unwrap();
             });
@@ -210,7 +195,7 @@ async fn test_service_ctx_construction() {
 }
 
 #[tokio::test]
-async fn test_seq_child_rpc_hooks_invocations() {
+async fn test_child_rpc_hooks_invocations() {
     static N_BEFORE_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
     static N_AFTER_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
 
@@ -271,55 +256,6 @@ async fn test_seq_child_rpc_hooks_invocations() {
     assert_eq!(N_AFTER_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
     N_BEFORE_CHILD_RPCS.store(0, Ordering::Relaxed);
     N_AFTER_CHILD_RPCS.store(0, Ordering::Relaxed);
-}
-
-#[tokio::test]
-async fn test_par_child_rpc_hooks_invocations() {
-    static N_BEFORE_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
-    static N_AFTER_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
-
-    struct TestChildRpcParentCtx {}
-
-    impl<C: ClientHooks, S: ServerHooks> ParentHooks<C, S> for TestChildRpcParentCtx {
-        fn begin<B>(_method: GrpcMethod, _req: &http::Request<B>, _server_ctx: Arc<S>) -> Self {
-            Self {}
-        }
-
-        fn before_child_rpc<T>(
-            &self,
-            _method: GrpcMethod,
-            _req: &mut Request<T>,
-            _child_ctx: &mut C,
-        ) -> Option<Status> {
-            N_BEFORE_CHILD_RPCS.fetch_add(1, Ordering::Relaxed);
-            None
-        }
-
-        fn after_child_rpc<T>(
-            &self,
-            _method: GrpcMethod,
-            _resp: &mut Result<Response<T>, Status>,
-            _child_ctx: C,
-        ) -> Option<Status> {
-            N_AFTER_CHILD_RPCS.fetch_add(1, Ordering::Relaxed);
-            None
-        }
-    }
-
-    let parent_svc_addr = "127.0.0.1:4477";
-    let child_svc_addr = "127.0.0.1:4488";
-    let fanout_factor = 10;
-    let (_parent, _child) = make_parent_child_svcs::<
-        MockServerCtx,
-        MockChildCtx,
-        TestChildRpcParentCtx,
-    >(parent_svc_addr, child_svc_addr, fanout_factor)
-    .await;
-
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
-        .await
-        .unwrap();
 
     parent_cl.fanout_rpc(Request::new(Input1 {})).await.unwrap();
 
