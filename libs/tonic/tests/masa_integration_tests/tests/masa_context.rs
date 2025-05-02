@@ -324,3 +324,60 @@ async fn test_child_ctx_before_after_rpc_hooks() {
     N_BEFORE_SEND.store(0, Ordering::Relaxed);
     N_AFTER_RECV.store(0, Ordering::Relaxed);
 }
+
+#[tokio::test]
+async fn test_parent_ctx_before_after_poll_hooks() {
+    static N_BEFORE_POLLS: AtomicUsize = AtomicUsize::new(0);
+    static N_AFTER_POLLS: AtomicUsize = AtomicUsize::new(0);
+
+    struct TestChildRpcParentCtx {}
+
+    impl<C: ClientHooks, S: ServerHooks> ParentHooks<C, S> for TestChildRpcParentCtx {
+        fn begin<B>(_method: GrpcMethod, _req: &http::Request<B>, _server_ctx: Arc<S>) -> Self {
+            Self {}
+        }
+
+        fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
+            N_BEFORE_POLLS.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+
+        fn after_poll<Ret>(
+            &self,
+            _poll: &Poll<Result<Response<Ret>, Status>>,
+        ) -> Result<(), Result<Response<Ret>, Status>> {
+            N_AFTER_POLLS.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    struct MockPrioritySelector;
+
+    impl PrioritySelector for MockPrioritySelector {
+        type ParentContext = TestChildRpcParentCtx;
+        type ChildContext = MockChildCtx;
+        type ServerContext = MockServerCtx;
+    }
+
+    let parent_svc_addr = "127.0.0.1:4477";
+    let child_svc_addr = "127.0.0.1:4488";
+    let fanout_factor = 1;
+    let (_parent, _child) = make_parent_child_svcs::<MockPrioritySelector>(
+        parent_svc_addr,
+        child_svc_addr,
+        fanout_factor,
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
+        .await
+        .unwrap();
+
+    parent_cl.rpc(Request::new(Input1 {})).await.unwrap();
+
+    assert!(N_BEFORE_POLLS.load(Ordering::Relaxed) > 1);
+    assert!(N_AFTER_POLLS.load(Ordering::Relaxed) > 1);
+    N_BEFORE_POLLS.store(0, Ordering::Relaxed);
+    N_AFTER_POLLS.store(0, Ordering::Relaxed);
+}
