@@ -195,7 +195,7 @@ async fn test_service_ctx_construction() {
 }
 
 #[tokio::test]
-async fn test_child_rpc_hooks_invocations() {
+async fn test_parent_ctx_before_after_rpc_hooks() {
     static N_BEFORE_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
     static N_AFTER_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
 
@@ -266,7 +266,7 @@ async fn test_child_rpc_hooks_invocations() {
 }
 
 #[tokio::test]
-async fn test_child_ctx_hook_invocations() {
+async fn test_child_ctx_before_after_rpc_hooks() {
     static N_BEFORE_SEND: AtomicUsize = AtomicUsize::new(0);
     static N_AFTER_RECV: AtomicUsize = AtomicUsize::new(0);
 
