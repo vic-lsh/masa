@@ -381,3 +381,51 @@ async fn test_parent_ctx_before_after_poll_hooks() {
     N_BEFORE_POLLS.store(0, Ordering::Relaxed);
     N_AFTER_POLLS.store(0, Ordering::Relaxed);
 }
+
+#[tokio::test]
+async fn test_parent_ctx_finalize_hook() {
+    static N_FINALIZE: AtomicUsize = AtomicUsize::new(0);
+
+    struct TestChildRpcParentCtx {}
+
+    impl<C: ClientHooks, S: ServerHooks> ParentHooks<C, S> for TestChildRpcParentCtx {
+        fn begin<B>(_method: GrpcMethod, _req: &http::Request<B>, _server_ctx: Arc<S>) -> Self {
+            Self {}
+        }
+
+        fn finalize(&self, _response: &mut http::Response<tonic::body::BoxBody>) {
+            N_FINALIZE.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    struct MockPrioritySelector;
+
+    impl PrioritySelector for MockPrioritySelector {
+        type ParentContext = TestChildRpcParentCtx;
+        type ChildContext = MockChildCtx;
+        type ServerContext = MockServerCtx;
+    }
+
+    let parent_svc_addr = "127.0.0.1:4499";
+    let child_svc_addr = "127.0.0.1:4400";
+    let fanout_factor = 1;
+    let (_parent, _child) = make_parent_child_svcs::<MockPrioritySelector>(
+        parent_svc_addr,
+        child_svc_addr,
+        fanout_factor,
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
+        .await
+        .unwrap();
+
+    parent_cl.rpc(Request::new(Input1 {})).await.unwrap();
+
+    // finalize is called twice:
+    // once in the child service side,
+    // and another on the parent service side.
+    assert!(N_FINALIZE.load(Ordering::Relaxed) == 2);
+    N_FINALIZE.store(0, Ordering::Relaxed);
+}
