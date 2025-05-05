@@ -1,7 +1,7 @@
 use crate::db;
 use futures::{lock::Mutex, StreamExt};
 use hotel_tonic::review::{review_server::Review, ReviewComm, ReviewRequest, ReviewResponse};
-use masa::LatencyTracker;
+use masa::LatencyDistribution;
 use mongodb::{bson::doc, Client as MongoClient};
 use std::{error::Error, sync::Arc};
 use tonic::{Request, Response, Status};
@@ -14,7 +14,7 @@ pub mod hotel_tonic {
 pub struct ReviewImpl {
     memc_client: Arc<memcache::Client>,
     mongo_client: Arc<MongoClient>,
-    latency_tracker: Arc<Mutex<LatencyTracker>>,
+    latency_tracker: Arc<Mutex<LatencyDistribution>>,
 }
 
 impl ReviewImpl {
@@ -25,7 +25,7 @@ impl ReviewImpl {
     ) -> Result<Self, Box<dyn Error>> {
         let memc_client = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
         let mongo_client = db::initialize_database(&db_addr).await?;
-        let latency_tracker = Arc::new(Mutex::new(LatencyTracker::new("ReviewSvc".into(), 1024)));
+        let latency_tracker = Arc::new(Mutex::new(LatencyDistribution::new(1024)));
 
         Ok(Self {
             memc_client: Arc::new(memc_client),
