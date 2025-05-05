@@ -5,7 +5,7 @@ use std::{collections::HashMap, hash::Hash, sync::RwLock};
 
 pub use local_direct::LocalDeadlineDirect;
 pub use local_indirect::LocalDeadlineIndirect;
-use tonic_masa::LatencyDistribution;
+use masa::LatencyDistribution;
 
 // TODO: tweak these values. should they be specific to each local priority selector?
 const DISTRIBUTION_CAPACITY: usize = 1024;
