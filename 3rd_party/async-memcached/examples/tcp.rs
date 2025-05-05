@@ -1,4 +1,4 @@
-use async_memcached::Client;
+use async_memcached::{AsciiProtocol, Client};
 
 #[tokio::main]
 async fn main() {
@@ -41,6 +41,35 @@ async fn main() {
         ),
     }
 
+    let kv = vec![("multi_key1", "bar"), ("multi_key2", "bar")];
+
+    match client.add_multi(&kv, None, None).await {
+        Ok(_) => println!("added 'multi_key1' and 'multi_key2' successfully"),
+        Err(status) => println!("got status during add_multi: {:?}", status),
+    }
+
+    match client.set_multi(&kv, None, None).await {
+        Ok(_) => println!("set_multi 'multi_key1' and 'multi_key2' successfully"),
+        Err(status) => println!("got status during set_multi: {:?}", status),
+    }
+
+    match client.add_multi(&kv, None, None).await {
+        Ok(results) => match results.get(&"multi_key1") {
+            Some(result) => match result {
+                Ok(_) => panic!("should not be able to add 'multi_key1' again"),
+                Err(status) => println!(
+                    "got status during 'multi_key1' add: {:?}, as expected",
+                    status
+                ),
+            },
+            None => panic!("Something else went wrong with add_multi"),
+        },
+        Err(status) => println!(
+            "duplicate add of 'multi_key1' or 'multi_key2' fails as expected with: {:?}",
+            status
+        ),
+    }
+
     match client.delete("foo").await {
         Ok(()) => println!("deleted 'foo' successfully"),
         Err(status) => println!("got status during 'foo' delete: {:?}", status),
@@ -57,7 +86,7 @@ async fn main() {
     client
         .set(increment_key, "0", None, None)
         .await
-        .expect(format!("failed to set {}", increment_key).as_str());
+        .unwrap_or_else(|_| panic!("failed to set {}", increment_key));
 
     match client.increment(increment_key, amount).await {
         Ok(value) => println!(
@@ -86,7 +115,7 @@ async fn main() {
     client
         .set(decrement_key, "10", None, None)
         .await
-        .expect(format!("failed to set {}", decrement_key).as_str());
+        .unwrap_or_else(|_| panic!("failed to set {}", decrement_key));
 
     match client.decrement(decrement_key, amount).await {
         Ok(value) => println!(
@@ -122,4 +151,11 @@ async fn main() {
         }
         Err(e) => println!("error while getting stats: {:?}", e),
     }
+
+    match client.flush_all().await {
+        Ok(_) => println!("flushed all successfully"),
+        Err(status) => println!("got status during flush_all: {:?}", status),
+    }
+
+    println!("✅ All examples completed successfully.");
 }
