@@ -7,7 +7,7 @@ use std::{
 
 use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
 use super::{estimate_method_latency, track_method_latency};
-use tonic_masa::{Context, LatencyDistribution, LatencyTracker, MethodId};
+use masa::{Context, LatencyDistribution, LatencyTracker, MethodId};
 
 #[derive(Debug)]
 // TODO: document
