@@ -9,6 +9,9 @@
   "ProfileMemcachedAddr": "memcache://profile_memcached:11004",
   "ReservationMongodbAddr": "mongodb://reservation_mongo:27005",
   "ReservationMemcachedAddr": "memcache://reservation_memcached:11005",
+  "ReviewAddr": "willfix",
+  "ReviewMongodbAddr": "willfix",
+  "ReviewMemcachedAddr": "willfix",
   "UserUsers": 1000,
   "UserProbCheckUser": 80,
   "UserMongodbAddr": "mongodb://user_mongo:27006"

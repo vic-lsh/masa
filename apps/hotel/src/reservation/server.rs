@@ -3,6 +3,7 @@ pub mod hotel_tonic {
         tonic::include_proto!("reservation");
     }
 }
+use async_memcached::AsciiProtocol;
 use chrono::DateTime;
 use hotel::AvgTracker;
 use masa::LatencyDistribution;
@@ -111,7 +112,7 @@ impl Reservation for ReservationImpl {
 
         if let Ok(mc_resp) = mc_client.get_multi(hotel_mem_keys).await {
             for entry in mc_resp {
-                if let Ok(cap) = String::from_utf8(entry.data)
+                if let Ok(cap) = String::from_utf8(entry.data.expect("data must exist"))
                     .unwrap_or_default()
                     .parse::<i32>()
                 {
@@ -185,7 +186,7 @@ impl Reservation for ReservationImpl {
             for entry in mc_resp {
                 let key = String::from_utf8(entry.key).unwrap();
                 query_map.remove(&key).map(|(hotel_id, _, _)| {
-                    if let Ok(count) = String::from_utf8(entry.data)
+                    if let Ok(count) = String::from_utf8(entry.data.unwrap())
                         .unwrap_or_default()
                         .parse::<i32>()
                     {
@@ -332,7 +333,9 @@ impl Reservation for ReservationImpl {
             let count = match mc_client.get(&memc_key).await {
                 Ok(Some(value)) => {
                     // Memcached hit
-                    let count = String::from_utf8_lossy(&value.data).parse::<i32>().unwrap();
+                    let count = String::from_utf8_lossy(&value.data.unwrap())
+                        .parse::<i32>()
+                        .unwrap();
                     memc_date_num_map.insert(memc_key, count + req.room_number);
                     count
                 }
@@ -359,7 +362,9 @@ impl Reservation for ReservationImpl {
             // Check capacity
             let memc_cap_key = format!("{}_cap", hotel_id);
             let hotel_cap = match mc_client.get(&memc_cap_key).await {
-                Ok(Some(value)) => String::from_utf8_lossy(&value.data).parse::<i32>().unwrap(),
+                Ok(Some(value)) => String::from_utf8_lossy(&value.data.unwrap())
+                    .parse::<i32>()
+                    .unwrap(),
                 _ => {
                     let filter = doc! { "hotelId": hotel_id };
                     let num = num_collection
