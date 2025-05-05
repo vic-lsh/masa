@@ -1,6 +1,6 @@
 [package]
 name = "async-memcached"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Toby Lawrence <toby@nuclearfurnace.com>"]
 edition = "2018"
 readme = "README.md"
@@ -12,7 +12,7 @@ documentation = "https://docs.rs/async-memcached"
 repository = "https://github.com/Shopify/async-memcached"
 
 [dependencies]
-bytes = "1.4"
+bytes = "1.10"
 nom = "7.1"
 dsn = "1.0"
 btoi = "0.4"
@@ -21,14 +21,15 @@ futures = "0.3"
 tokio = { path = "../../libs/tokio/tokio", default-features = false, features = ["net", "io-util"] }
 async-stream = "0.3"
 url = "2.5.2"
-serial_test = "3.1.1"
+toxiproxy_rust = "0.1.6"
 fxhash = "0.2.1"
 
 [dev-dependencies]
 lazy_static = "1.4"
-tokio = { path = "../../libs/tokio/tokio", features = ["full"] }
+tokio = { path = "../../libs/tokio/tokio", default-features = false, features = ["net", "io-util"] }
 rand = "0.8"
 criterion = { version = "0.5.1", features = ["async_tokio"] }
+serial_test = "3.1.1"
 
 [features]
 default = []
@@ -42,4 +43,8 @@ path = "examples/tcp.rs"
 
 [[bench]]
 name = "bench"
+harness = false
+
+[[bench]]
+name = "request_distribution_bench"
 harness = false

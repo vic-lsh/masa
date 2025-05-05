@@ -11,6 +11,7 @@ use std::sync::Arc;
 use {rand::rngs::StdRng, rand::SeedableRng, rand_distr::Uniform};
 
 use crate::db;
+use async_memcached::AsciiProtocol;
 use hotel::McPool;
 use masa::LatencyDistribution;
 use mongodb::{bson::doc, Client as MongoClient};
@@ -132,7 +133,7 @@ impl Profile for ProfileImpl {
         if let Ok(memc_resp) = mc.get_multi(&request.hotel_ids).await {
             for entry in memc_resp {
                 let hotel_id = String::from_utf8(entry.key).unwrap();
-                if let Ok(value) = String::from_utf8(entry.data) {
+                if let Ok(value) = String::from_utf8(entry.data.unwrap()) {
                     if let Ok(hotel) = serde_json::from_str::<db::Hotel>(&value) {
                         hotels.push(hotel);
                         profile_map.remove(&hotel_id);
