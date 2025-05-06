@@ -6,7 +6,6 @@ use mongodb::Client as MongoClient;
 use std::collections::HashSet;
 use std::error::Error;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
 use user_mention_service::{
@@ -20,11 +19,11 @@ pub mod user_mention_service {
 }
 
 pub struct UserMentionServiceImpl {
-    mc_client: Arc<Mutex<McClient>>,
+    mc_pool: Arc<McPool>,
     mongo_client: Arc<MongoClient>,
 }
 
-use crate::user_mention::db::{initialize_database, initialize_memcached, UserMentionStruct};
+use crate::user_mention::db::{initialize_database, initialize_memcached_pool, UserMentionStruct};
 
 impl UserMentionServiceImpl {
     pub async fn new() -> Result<Self, Box<dyn Error>> {
@@ -36,16 +35,15 @@ impl UserMentionServiceImpl {
             }
         };
 
-        let mc_client = match initialize_memcached().await {
-            Ok(client) => client,
+        let mc_pool = match initialize_memcached_pool().await {
+            Ok(pool) => pool,
             Err(e) => {
                 eprintln!("Failed to initialize Memcached: {:?}", e);
                 return Err(e);
             }
         };
-
         Ok(Self {
-            mc_client: Arc::new(Mutex::new(mc_client)),
+            mc_pool: Arc::new(mc_pool),
             mongo_client: Arc::new(mongo_client),
         })
     }
@@ -74,26 +72,37 @@ impl UserMentionService for UserMentionServiceImpl {
         let mut missing_keys: HashSet<String> = req.usernames.iter().cloned().collect();
 
         // Find user mentions in memcached
-        let mc_resp = {
-            let mut mc_client = self.mc_client.lock().await;
-            mc_client.get_multi(req.usernames.clone()).await
-        };
+        let mut mc_client = self.mc_pool.get().await;
+        let mc_resp = mc_client.get_multi(req.usernames.clone()).await;
 
         match mc_resp {
-            Err(e) => {
-                eprintln!("Memcached Unavailable, falling back to Mongodb: {:?}", e);
+            Err(e) if e.to_string().contains("NotFound") => {
+                println!("Keys not found in memcached: {:?}", e);
             }
             Ok(entries) => {
                 for entry in entries {
                     if let Ok(usr_id) = String::from_utf8(entry.data.expect("data must exist")) {
                         let username = String::from_utf8(entry.key).unwrap_or_default();
                         missing_keys.remove(&username);
+
+                        let username_md = if cfg!(debug_assertions) {
+                            format!("{}@memcached", username)
+                        } else {
+                            username
+                        };
                         user_mentions.push(UserMention {
-                            username: username + "@memcached",
+                            username: username_md,
                             user_id: usr_id.parse().unwrap_or_default(),
                         });
                     }
                 }
+            }
+            Err(e) => {
+                println!("Error fetching from memcached: {:?}", e);
+                exception = Some(ServiceException {
+                    error_code: ErrorCode::Unknown as i32,
+                    message: format!("Memcached error: {}", e),
+                });
             }
         }
 
@@ -114,17 +123,19 @@ impl UserMentionService for UserMentionServiceImpl {
                             // Insert into memcached
                             let key = user_mention_struct.user_name.clone();
                             let value = user_mention_struct.user_id.to_string();
-                            {
-                                let mut mc_client = self.mc_client.lock().await;
-                                mc_client
-                                    .set(&key, &value, Some(0), None)
-                                    .await
-                                    .expect("Failed to set in memcached");
-                            }
+                            mc_client
+                                .set(&key, &value, Some(0), None)
+                                .await
+                                .expect("Failed to set in memcached");
 
+                            let username = if cfg!(debug_assertions) {
+                                format!("{}@mongodb", user_mention_struct.user_name)
+                            } else {
+                                user_mention_struct.user_name.clone()
+                            };
                             // Add to user mentions
                             user_mentions.push(UserMention {
-                                username: user_mention_struct.user_name + "@mongodb",
+                                username,
                                 user_id: user_mention_struct.user_id,
                             });
                         }
