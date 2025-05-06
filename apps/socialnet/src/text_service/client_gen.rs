@@ -2,8 +2,6 @@ use std::sync::Arc;
 use tokio::time::sleep_until;
 use std::time::{Duration, Instant}; 
 use tokio::time::Instant as TokioInstant;
-use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
 
 use text_service::text_service_client::TextServiceClient;
 use text_service::TextRequest;

@@ -4,7 +4,7 @@ use tonic::transport::Server;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "[::1]:50052".parse::<SocketAddr>().unwrap();
+    let addr = "0.0.0.0:50051".parse::<SocketAddr>().unwrap();
 
     // Create the service
     let service = create_service().await;
