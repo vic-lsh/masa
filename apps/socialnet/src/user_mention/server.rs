@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
+use tracing::{error, info};
 
 use user_mention_service::{
     user_mention_service_server::{UserMentionService, UserMentionServiceServer},
@@ -55,7 +56,7 @@ impl UserMentionService for UserMentionServiceImpl {
         &self,
         request: Request<ComposeUserMentionRequest>,
     ) -> Result<Response<ComposeUserMentionResponse>, Status> {
-        println!("Got a request: {:?}", request);
+        info!("Got a request: {:?}", request);
 
         let req = request.into_inner();
 
@@ -77,7 +78,7 @@ impl UserMentionService for UserMentionServiceImpl {
 
         match mc_resp {
             Err(e) if e.to_string().contains("NotFound") => {
-                println!("Keys not found in memcached: {:?}", e);
+                error!("Keys not found in memcached: {:?}", e);
             }
             Ok(entries) => {
                 for entry in entries {
@@ -98,7 +99,7 @@ impl UserMentionService for UserMentionServiceImpl {
                 }
             }
             Err(e) => {
-                println!("Error fetching from memcached: {:?}", e);
+                error!("Error fetching from memcached: {:?}", e);
                 exception = Some(ServiceException {
                     error_code: ErrorCode::Unknown as i32,
                     message: format!("Memcached error: {}", e),

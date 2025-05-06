@@ -3,6 +3,9 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
+use tracing::{info, error};
+use std::env;
+
 
 use crate::url_shorten::db::{
     get_expanded_urls, get_shortened_urls, initialize_database, insert_url_mappings,
@@ -59,7 +62,7 @@ impl UrlShortenService for UrlShortenServiceImpl {
         &self,
         request: Request<ComposeUrlsRequest>,
     ) -> Result<Response<ComposeUrlsResponse>, Status> {
-        println!("Got a compose_urls request: {:?}", request);
+        info!("Got a compose_urls request: {:?}", request);
 
         let req = request.into_inner();
         let mut urls = req.urls;
@@ -90,7 +93,7 @@ impl UrlShortenService for UrlShortenServiceImpl {
                 });
             }
             Err(e) => {
-                println!("MongoDB error: {}", e);
+                error!("MongoDB error: {}", e);
                 return Ok(Response::new(ComposeUrlsResponse {
                     urls: vec![],
                     exception: Some(ServiceException {
@@ -123,10 +126,10 @@ impl UrlShortenService for UrlShortenServiceImpl {
         // Store mappings in MongoDB
         match insert_url_mappings(&self.mongo_client, new_urls.clone()).await {
             Ok(_) => {
-                println!("Successfully inserted {} URL mappings", new_urls.len());
+                info!("Successfully inserted {} URL mappings", new_urls.len());
             }
             Err(e) => {
-                println!("MongoDB error: {}", e);
+                error!("MongoDB error: {}", e);
                 return Ok(Response::new(ComposeUrlsResponse {
                     urls: vec![],
                     exception: Some(ServiceException {
@@ -148,7 +151,7 @@ impl UrlShortenService for UrlShortenServiceImpl {
         &self,
         request: Request<GetExtendedUrlsRequest>,
     ) -> Result<Response<GetExtendedUrlsResponse>, Status> {
-        println!("Got a get_extended_urls request: {:?}", request);
+        info!("Got a get_extended_urls request: {:?}", request);
 
         let req = request.into_inner();
         let shortened_urls = req.shortened_urls;
@@ -211,8 +214,8 @@ impl UrlShortenService for UrlShortenServiceImpl {
 
 pub async fn create_service(
 ) -> Result<UrlShortenServiceServer<UrlShortenServiceImpl>, Box<dyn std::error::Error>> {
-    let mongo_client = initialize_database("mongodb://localhost:27017").await?;
-
+    let mongo_url = env::var("MONGO_URL").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
+    let mongo_client = initialize_database(&mongo_url).await?;
     let service = UrlShortenServiceImpl::new(mongo_client);
 
     Ok(UrlShortenServiceServer::new(service))
