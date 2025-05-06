@@ -1,0 +1,70 @@
+services:
+  usermention:
+    build:
+      context: ../../
+      dockerfile: apps/socialnet/Dockerfile
+      args:
+        BINARY_NAME: usermention_server  
+    environment:
+      - RUST_LOG=${LOG_LEVEL:-info}
+      - MONGO_URL=mongodb://usermention_mongodb:27017
+      - MEMCACHED_URL=tcp://usermention_memcached:11211
+    ports:
+      - "50051:50051"
+    depends_on:
+      - usermention_mongodb
+      - usermention_memcached
+
+  urlshorten:
+    build:
+      context: ../../
+      dockerfile: apps/socialnet/Dockerfile
+      args:
+        BINARY_NAME: url_shorten_server
+    environment:
+      - RUST_LOG=${LOG_LEVEL:-info}
+      - MONGO_URL=mongodb://urlshorten_mongodb:27017
+    ports:
+      - "50052:50052"
+    depends_on:
+      - urlshorten_mongodb
+
+  textservice:
+    build:
+      context: ../../
+      dockerfile: apps/socialnet/Dockerfile
+      args:
+        BINARY_NAME: textservice_server
+    environment:
+      - RUST_LOG=${LOG_LEVEL:-info}
+    ports:
+      - "50053:50053"
+    depends_on:
+      - urlshorten
+      - usermention
+
+  usermention_mongodb:
+    image: mongo:6
+    container_name: usermention_mongodb
+    ports:
+      - "27018:27017"
+    volumes:
+      - usermention-mongo-data:/data/db
+
+  urlshorten_mongodb:
+    image: mongo:6
+    container_name: urlshorten_mongodb
+    ports:
+      - "27019:27017"
+    volumes:
+      - urlshorten-mongo-data:/data/db
+
+  usermention_memcached:
+    image: memcached:1.6
+    container_name: usermention_memcached
+    ports:
+      - "11211:11211"
+
+volumes:
+  usermention-mongo-data:
+  urlshorten-mongo-data:
