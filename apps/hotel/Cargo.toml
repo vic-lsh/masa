@@ -170,6 +170,8 @@ default = ["full"]
 [dependencies]
 # Reboot
 masa = { path = "../../libs/masa" }
+app-utils = { path = "../app-utils" }
+app-util-macros = { path = "../app-util-macros" }
 async-executor = { path = "../../libs/async-executor" }
 async-compat = "0.2.3"
 async-task = { path = "../../libs/async-task" }

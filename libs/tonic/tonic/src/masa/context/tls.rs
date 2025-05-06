@@ -38,7 +38,10 @@ pub mod server {
     ///
     /// This is an internal API exposed only for the code-generated tonic code.
     /// Do not call unless you know what it's used for.
-    pub fn set_parent_ctx<'a, P: PrioritySelector>(parent_ctx: &'a P::ParentContext) {
+    pub fn set_parent_ctx<'a, P>(parent_ctx: &'a P::ParentContext)
+    where
+        P: PrioritySelector,
+    {
         super::PARENT_CTX.replace(parent_ctx as *const P::ParentContext as *const ());
     }
 
@@ -46,7 +49,10 @@ pub mod server {
     ///
     /// This is an internal API exposed only for the code-generated tonic code.
     /// Do not call unless you know what it's used for.
-    pub fn reset_parent_ctx<'a, P: PrioritySelector>() {
+    pub fn reset_parent_ctx<'a, P>()
+    where
+        P: PrioritySelector,
+    {
         super::PARENT_CTX.replace(core::ptr::null());
     }
 }
