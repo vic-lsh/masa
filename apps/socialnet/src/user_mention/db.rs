@@ -4,6 +4,7 @@ use mongodb::{bson::doc, options::ClientOptions, Client as MongoClient, Collecti
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use tracing::{error, info};
+use std::env;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserMentionStruct {
@@ -28,10 +29,10 @@ fn generate_static_data() -> Vec<UserMentionStruct> {
 pub async fn initialize_database() -> Result<MongoClient, Box<dyn Error>> {
     let new_user_mentions = generate_static_data();
 
-    let url = "mongodb://127.0.0.1:27017";
-    info!("Attempting connection to {}", url);
+    let mongo_url = env::var("MONGO_URL").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
+    info!("Attempting connection to {}", mongo_url);
 
-    let client_options = ClientOptions::parse(&url).await?;
+    let client_options = ClientOptions::parse(&mongo_url).await?;
     let client = MongoClient::with_options(client_options)?;
     info!("Successfully connected to MongoDB");
 
@@ -61,8 +62,9 @@ pub async fn initialize_database() -> Result<MongoClient, Box<dyn Error>> {
 }
 
 pub async fn initialize_memcached_pool() -> Result<McPool, Box<dyn Error>> {
-    let url = "tcp://127.0.0.1:11211".to_string();
-    let pool = McPool::new(url, 10000000);
+    let memcached_url = env::var("MEMCACHED_URL")
+                                .unwrap_or_else(|_| "tcp://usermention_memcached:11211".to_string());
+    let pool = McPool::new(memcached_url, 10000000);
     info!("Successfully connected to Memcached");
 
     let mut client = pool.get().await;
