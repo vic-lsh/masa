@@ -12,6 +12,9 @@ use serde::Deserialize;
 use serde_json;
 use std::fs::File;
 use std::io::BufReader;
+use rand::prelude::*;
+use rand::SeedableRng;
+use rand_distr::{Zipf, Distribution};
 
 pub mod text_service {
     tonic::include_proto!("textservice");
@@ -38,10 +41,15 @@ fn generate_url(index: u64, seed: u64) -> String {
     const TLDS: [&str; 5] = ["com", "org", "net", "io", "dev"];
     const PATHS: [&str; 6] = ["home", "about", "login", "user", "docs", "contact"];
 
-    let d = DOMAINS[(index.wrapping_mul(seed) as usize) % DOMAINS.len()];
-    let t = TLDS[(index.wrapping_mul(seed ^ 0x5bd1e995) as usize) % TLDS.len()];
-    let p = PATHS[(index.wrapping_mul(seed ^ 0x27d4eb2d) as usize) % PATHS.len()];
-    let id = (index ^ seed) % 10_000;
+    let mut rng = StdRng::seed_from_u64(seed + index);
+    let zipf_d = Zipf::new(DOMAINS.len() as u64, 1.2).unwrap();
+    let zipf_t = Zipf::new(TLDS.len() as u64, 1.2).unwrap();
+    let zipf_p = Zipf::new(PATHS.len() as u64, 1.1).unwrap();
+
+    let d = DOMAINS[zipf_d.sample(&mut rng) as usize - 1];
+    let t = TLDS[zipf_t.sample(&mut rng) as usize - 1];
+    let p = PATHS[zipf_p.sample(&mut rng) as usize - 1];
+    let id = index % 100;
 
     format!("https://{}.{}.{}.{}/{}", d, id, d, t, p)
 }
@@ -64,8 +72,10 @@ async fn run_load_test(
 
         let handle = tokio::spawn(async move {
             sleep_until(scheduled_time).await;
-            let u1 = ((i.wrapping_mul(seed)) % 2000 + 1) as u64;
-            let u2 = (((i + 137).wrapping_mul(seed ^ 0x5bd1e995)) % 2000 + 1) as u64;
+            let mut rng = StdRng::seed_from_u64(seed + i);
+            let zipf = Zipf::new(2000, 1.03).unwrap(); // moderate skew to simulate hot spots
+            let u1 = zipf.sample(&mut rng) as u64;
+            let u2 = zipf.sample(&mut rng) as u64;
             let url = generate_url(i, seed);
             
             let start = Instant::now();
