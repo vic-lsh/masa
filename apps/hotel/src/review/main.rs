@@ -28,14 +28,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::warn!("Hotel config: {:?}", cfg);
-    let review = ReviewImpl::new(
-        cfg.review_memcached_addr,
-        cfg.cache_conns,
-        cfg.review_mongodb_addr,
-    )
-    .await?;
-    let review_addr = "[::0]:8660".parse().expect("Failed to parse address");
+    let review_addr = format!("{}:{}", "[::]", cfg.review_port)
+        .parse()
+        .expect("Failed to parse address");
+    let review = ReviewImpl::new(cfg).await?;
     log::warn!("Server listening on {}...", review_addr);
     Server::builder()
         .add_service(ReviewServer::new(review))

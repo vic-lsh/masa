@@ -496,3 +496,8 @@ cfg_metrics! {
         }
     }
 }
+
+/// Checks if the caller is running within a tokio runtime.
+pub fn is_runtime_active() -> bool {
+    crate::runtime::Handle::try_current().is_ok()
+}

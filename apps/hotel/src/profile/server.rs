@@ -10,7 +10,7 @@ use std::sync::Arc;
 #[cfg(feature = "synthetic")]
 use {rand::rngs::StdRng, rand::SeedableRng, rand_distr::Uniform};
 
-use crate::db;
+use crate::{config::HotelConfig, db};
 use async_memcached::AsciiProtocol;
 use hotel::McPool;
 use masa::LatencyDistribution;
@@ -49,15 +49,8 @@ pub struct ProfileImpl {
 }
 
 impl ProfileImpl {
-    pub async fn new(
-        #[allow(unused)] hotels: u32,
-        cache_addr: String,
-        _cache_conn: u32,
-        #[allow(unused)] cache_miss_rate: u32,
-        db_addr: String,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        // let memc_client = memcache::Client::with_pool_size(cache_addr.clone(), cache_conn)?;
-        let mongo_client = db::initialize_database(&db_addr).await?;
+    pub async fn new(config: HotelConfig) -> Result<Self, Box<dyn std::error::Error>> {
+        let mongo_client = db::initialize_database(&config.profile_mongodb_addr).await?;
 
         let latency_tracker = Arc::new(Mutex::new(LatencyDistribution::new(1024)));
 
@@ -82,13 +75,14 @@ impl ProfileImpl {
             (rng, uniform)
         };
 
-        let cache_addr = cache_addr
+        let cache_addr = config
+            .profile_memcached_addr
             .strip_prefix("memcache://")
             .map(|addr| format!("tcp://{}", addr))
             .unwrap()
             .to_owned();
         Ok(Self {
-            mc_pool: Arc::new(McPool::new(cache_addr, 128)),
+            mc_pool: Arc::new(McPool::new(cache_addr, 256)),
             // memc_client: Arc::new(memc_client),
             mongo_client: Arc::new(mongo_client),
             latency_tracker,
@@ -145,41 +139,39 @@ impl Profile for ProfileImpl {
         // Handle cache misses with MongoDB
         let missing_ids: Vec<String> = profile_map.iter().cloned().collect();
 
-        let hotels = Arc::new(Mutex::new(hotels));
-
         let mut handles = Vec::new();
 
         for hotel_id in missing_ids {
-            let hotels = Arc::clone(&hotels);
             let mc_pool = self.mc_pool.clone();
             // let mc_addr = self.mc_pool.addr.clone();
             let mongo_client = Arc::clone(&self.mongo_client);
 
             // Spawn a task for each missing hotel
-            let handle = async_executor::spawn(async move {
+            let handle = tokio::spawn(async move {
                 let collection = mongo_client
                     .database("profile-db")
                     .collection::<db::Hotel>("hotels");
 
+                let mut hotels = Vec::new();
                 // Query MongoDB
                 if let Ok(hotel) = collection.find_one(doc! { "id": &hotel_id }, None).await {
                     if let Some(hotel) = hotel {
                         // Update memcached asynchronously
                         if let Ok(prof_json) = serde_json::to_string(&hotel) {
-                            async_executor::spawn(async move {
+                            tokio::spawn(async move {
                                 let mut mc = mc_pool.get().await;
                                 // let mut mc = async_memcached::Client::new(&mc_addr).await.unwrap();
                                 let _ = mc
                                     .set(&hotel_id, prof_json.as_bytes(), None, None)
                                     .await
                                     .ok();
-                            })
-                            .detach();
+                            });
                         }
                         // Update shared hotels vector
-                        hotels.lock().await.push(hotel);
+                        hotels.push(hotel);
                     }
                 }
+                hotels
             });
 
             handles.push(handle);
@@ -187,15 +179,11 @@ impl Profile for ProfileImpl {
 
         // Wait for all MongoDB queries to complete
         for h in handles {
-            h.await;
+            let new_hotels = h.await.unwrap();
+            hotels.extend(new_hotels);
         }
 
-        let hotels = Arc::into_inner(hotels)
-            .expect("all clones should have been dropped")
-            .into_inner()
-            .into_iter()
-            .map(|h| h.into())
-            .collect();
+        let hotels = hotels.into_iter().map(|h| h.into()).collect();
 
         // Create response
         let response = profile::ProfileResponse { hotels };
