@@ -153,7 +153,7 @@ lapin = "2.3.1"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 config = { version = "0.14.0", features = ["json"] }
 hotel = { path = "../hotel" }
-
+rand_distr = "0.4"
 
 [build-dependencies]
 tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
