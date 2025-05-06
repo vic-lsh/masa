@@ -21,8 +21,8 @@ pub struct Args {
     pub config: PathBuf,
 }
 
-//#[tokio::main(flavor = "current_thread")]
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
+//#[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
@@ -32,10 +32,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::warn!("Hotel config: {:?}", cfg);
 
-    let frontend_addr = "[::0]:8660".parse().expect("Failed to parse address");
-    let frontend = FrontendImpl::new().await;
+    let frontend_addr = format!("{}:{}", "[::]", cfg.frontend_port)
+        .parse()
+        .expect("Failed to parse address");
+    let frontend = FrontendImpl::new(cfg).await;
     log::info!("Server listening on {}...", frontend_addr);
     Server::builder()
         .add_service(FrontendServer::new(frontend))

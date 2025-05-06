@@ -96,3 +96,7 @@ impl Id {
         self.0
     }
 }
+
+pub(crate) trait Identifiable {
+    fn id(&self) -> Id;
+}

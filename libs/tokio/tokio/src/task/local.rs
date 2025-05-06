@@ -17,6 +17,7 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::task::Poll;
 
+use masa::PriorityHint;
 use pin_project_lite::pin_project;
 
 cfg_rt! {
@@ -367,18 +368,18 @@ cfg_rt! {
         F: Future + 'static,
         F::Output: 'static,
     {
-        spawn_local_inner(future, None)
+        spawn_local_inner(future, None, PriorityHint::infra())
     }
 
 
     #[track_caller]
-    pub(super) fn spawn_local_inner<F>(future: F, name: Option<&str>) -> JoinHandle<F::Output>
+    pub(super) fn spawn_local_inner<F>(future: F, name: Option<&str>, priority: masa::PriorityHint) -> JoinHandle<F::Output>
     where F: Future + 'static,
           F::Output: 'static
     {
         match CURRENT.with(|LocalData { ctx, .. }| ctx.get()) {
             None => panic!("`spawn_local` called from outside of a `task::LocalSet`"),
-            Some(cx) => cx.spawn(future, name)
+            Some(cx) => cx.spawn(future, name, priority)
        }
     }
 }
@@ -645,7 +646,7 @@ impl LocalSet {
         F: Future + 'static,
         F::Output: 'static,
     {
-        let handle = self.context.spawn(future, name);
+        let handle = self.context.spawn(future, name, PriorityHint::infra());
 
         // Because a task was spawned from *outside* the `LocalSet`, wake the
         // `LocalSet` future to execute the new task, if it hasn't been woken.
@@ -932,7 +933,12 @@ impl Drop for LocalSet {
 
 impl Context {
     #[track_caller]
-    fn spawn<F>(&self, future: F, name: Option<&str>) -> JoinHandle<F::Output>
+    fn spawn<F>(
+        &self,
+        future: F,
+        name: Option<&str>,
+        priority: PriorityHint,
+    ) -> JoinHandle<F::Output>
     where
         F: Future + 'static,
         F::Output: 'static,
@@ -946,7 +952,7 @@ impl Context {
             self.shared
                 .local_state
                 .owned
-                .bind(future, self.shared.clone(), id)
+                .bind(future, self.shared.clone(), id, priority)
         };
 
         if let Some(notified) = notified {

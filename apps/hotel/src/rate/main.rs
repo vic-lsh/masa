@@ -22,8 +22,8 @@ pub struct Args {
     pub config: PathBuf,
 }
 
-// #[tokio::main(flavor = "current_thread")]
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
+//#[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
@@ -33,17 +33,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::warn!("Hotel config: {:?}", cfg);
 
-    let rate = RateImpl::new(
-        cfg.rate_memcached_addr,
-        cfg.cache_conns,
-        cfg.prob_cache_miss,
-        cfg.rate_mongodb_addr,
-    )
-    .await?;
-
-    let rate_addr = "[::0]:8660".parse().expect("Failed to parse address");
+    let rate_addr = format!("{}:{}", "[::]", cfg.rate_port)
+        .parse()
+        .expect("Failed to parse address");
+    let rate = RateImpl::new(cfg).await?;
     log::warn!("Server listening on {}...", rate_addr);
     Server::builder()
         .add_service(RateServer::new(rate))

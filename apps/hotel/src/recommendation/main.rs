@@ -22,7 +22,8 @@ pub struct Args {
     pub config: PathBuf,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
+//#[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
@@ -32,11 +33,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::info!("Hotel config: {:?}", cfg);
 
-    let rec = RecommendationImpl::new();
-
-    let rec_addr = "[::1]:8665".parse().expect("Failed to parse address");
+    let rec_addr = format!("{}:{}", "[::]", cfg.recommendation_port)
+        .parse()
+        .expect("Failed to parse address");
+    let rec = RecommendationImpl::new(cfg);
     log::info!("Server listening on {}...", rec_addr);
     Server::builder()
         .add_service(RecommendationServer::new(rec))
