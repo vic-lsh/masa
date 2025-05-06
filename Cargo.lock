@@ -5774,6 +5774,7 @@ dependencies = [
  "futures",
  "futures-lite 2.6.1",
  "hex",
+ "hotel",
  "jsonwebtoken",
  "lapin",
  "log",
