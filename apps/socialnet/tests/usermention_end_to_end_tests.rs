@@ -41,22 +41,14 @@ async fn setup_test_server(
     (server_handle, client)
 }
 
-#[ignore]
 #[tokio::test]
 async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50056).await;
+    let usernames: Vec<String> = (1..=2000).map(|i| format!("user{}", i)).collect();
 
-    // Test case: Basic successful request
     let request = tonic::Request::new(ComposeUserMentionRequest {
-        req_id: 1,
-        usernames: vec![
-            "adam".to_string(),
-            "james".to_string(),
-            "john".to_string(),
-            "alice".to_string(),
-            "bob".to_string(),
-            "charlie".to_string(),
-        ],
+        req_id: 999,
+        usernames: usernames.clone(),
     });
 
     let response = client.compose_user_mentions(request).await?;
@@ -68,63 +60,30 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
         result.exception
     );
 
-    // print the user mentions
-    println!("User mentions: {:?}", result.user_mentions);
-
-    assert!(
-        result.user_mentions.len() == 6,
-        "Expected 2 user mentions, got {}",
+    assert_eq!(
+        result.user_mentions.len(),
+        2000,
+        "Expected 2000 user mentions, got {}",
         result.user_mentions.len()
     );
 
-    assert_eq!(
-        result.user_mentions[0].username, "adam@memcached",
-        "Expected adam@memcached, got {}",
-        result.user_mentions[0].username
-    );
+    // Split and verify where the data came from
+    for (i, mention) in result.user_mentions.iter().enumerate() {
+        let expected_suffix = if i < 1000 { "@memcached" } else { "@mongodb" };
+        assert!(
+            mention.username.ends_with(expected_suffix),
+            "Expected {} for {}, got {}",
+            expected_suffix,
+            usernames[i],
+            mention.username
+        );
+    }
 
-    assert_eq!(
-        result.user_mentions[1].username, "james@memcached",
-        "Expected james@memcached, got {}",
-        result.user_mentions[1].username
-    );
-
-    assert_eq!(
-        result.user_mentions[2].username, "john@memcached",
-        "Expected john@memcached, got {}",
-        result.user_mentions[2].username
-    );
-
-    assert_eq!(
-        result.user_mentions[3].username, "alice@mongodb",
-        "Expected alice@mongodb, got {}",
-        result.user_mentions[3].username
-    );
-
-    assert_eq!(
-        result.user_mentions[4].username, "bob@mongodb",
-        "Expected bob@mongodb, got {}",
-        result.user_mentions[4].username
-    );
-
-    assert_eq!(
-        result.user_mentions[5].username, "charlie@mongodb",
-        "Expected charlie@mongodb, got {}",
-        result.user_mentions[5].username
-    );
-
+    // second round of testing
     let request = tonic::Request::new(ComposeUserMentionRequest {
-        req_id: 2,
-        usernames: vec![
-            "adam".to_string(),
-            "james".to_string(),
-            "john".to_string(),
-            "alice".to_string(),
-            "bob".to_string(),
-            "charlie".to_string(),
-        ],
+        req_id: 999,
+        usernames: usernames.clone(),
     });
-
     let response = client.compose_user_mentions(request).await?;
     let result = response.into_inner();
     assert!(
@@ -132,56 +91,38 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
         "Unexpected exception: {:?}",
         result.exception
     );
-
     assert_eq!(
-        result.user_mentions[0].username, "adam@memcached",
-        "Expected adam@memcached, got {}",
-        result.user_mentions[0].username
+        result.user_mentions.len(),
+        2000,
+        "Expected 2000 user mentions, got {}",
+        result.user_mentions.len()
     );
+    // Split and verify where the data came from
+    for (i, mention) in result.user_mentions.iter().enumerate() {
+        let expected_suffix = "@memcached";
+        assert!(
+            mention.username.ends_with(expected_suffix),
+            "Expected {} for {}, got {}",
+            expected_suffix,
+            usernames[i],
+            mention.username
+        );
+    }
 
-    assert_eq!(
-        result.user_mentions[1].username, "james@memcached",
-        "Expected james@memcached, got {}",
-        result.user_mentions[1].username
-    );
-
-    assert_eq!(
-        result.user_mentions[2].username, "john@memcached",
-        "Expected john@memcached, got {}",
-        result.user_mentions[2].username
-    );
-
-    assert_eq!(
-        result.user_mentions[3].username, "alice@memcached",
-        "Expected alice@memcached, got {}",
-        result.user_mentions[3].username
-    );
-
-    assert_eq!(
-        result.user_mentions[4].username, "bob@memcached",
-        "Expected bob@memcached, got {}",
-        result.user_mentions[4].username
-    );
-
-    assert_eq!(
-        result.user_mentions[5].username, "charlie@memcached",
-        "Expected charlie@memcached, got {}",
-        result.user_mentions[5].username
-    );
+    println!("High-volume user mention test passed with {} entries.", result.user_mentions.len());
 
     server_handle.abort();
-
     Ok(())
 }
 
-#[ignore]
+#[ignore] 
 #[tokio::test]
 async fn test_empty_result() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50057).await;
 
     let request = tonic::Request::new(ComposeUserMentionRequest {
         req_id: 1,
-        usernames: vec!["baris".to_string(), "arvind".to_string()],
+        usernames: vec!["nonexistent_user1".to_string(), "ghost42".to_string()],
     });
 
     let response = client.compose_user_mentions(request).await?;
@@ -193,13 +134,13 @@ async fn test_empty_result() -> Result<(), Box<dyn std::error::Error>> {
         result.exception
     );
 
-    assert!(
-        result.user_mentions.len() == 0,
+    assert_eq!(
+        result.user_mentions.len(),
+        0,
         "Expected 0 user mentions, got {}",
         result.user_mentions.len()
     );
 
     server_handle.abort();
-
     Ok(())
 }
