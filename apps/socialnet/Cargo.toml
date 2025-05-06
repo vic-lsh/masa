@@ -118,6 +118,7 @@ csv = "1.3"
 async-executor = { path = "../../libs/async-executor" }
 masa = { path = "../../libs/masa" }
 async-task = { path = "../../libs/async-task" }
+hotel = { path = "../hotel" }
 
 
 [build-dependencies]

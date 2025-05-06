@@ -2,7 +2,7 @@ use socialnet::user_mention::server::create_service;
 use std::net::SocketAddr;
 use tonic::transport::Server;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50052".parse::<SocketAddr>().unwrap();
 
