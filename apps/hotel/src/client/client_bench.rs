@@ -20,6 +20,7 @@ use gen::{get_ping_request, get_reservation_request, get_search_request};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp, Uniform};
 use structopt::StructOpt;
+use tokio::task::JoinSet;
 use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration, Instant};
 
@@ -41,9 +42,9 @@ pub struct Args {
 }
 
 const COUNTER_KEYS: [&'static str; 7] = [
-    // total number of requests
+    // total number of (sent) requests
     "all",
-    // number of requests satisfying SLO
+    // number of (completed) requests satisfying SLO
     "good",
     // number of early returns
     "err_svc_er",
@@ -153,6 +154,8 @@ impl LoadGenerator {
         let mut elapse = 0f64;
         let uniform = Uniform::<u32>::new(0, 1_000_000_007);
 
+        let mut set = JoinSet::new();
+
         while Instant::now() < pause_at {
             let start_at = init_at + Duration::from_secs_f64(elapse);
             tokio::time::sleep_until(start_at).await;
@@ -198,15 +201,15 @@ impl LoadGenerator {
             let trace_tx = self.trace_tx.clone();
             let ctrs = Arc::clone(&counters);
 
-            tokio::task::spawn(async move {
-                let span = send_request(&mut client, &api, ctx).await;
+            set.spawn(async move {
                 ctrs.increment("all");
+                let stats = send_request(&mut client, &api, ctx).await;
 
                 if Instant::now() < trace_at {
                     return;
                 }
 
-                let error = &span.error;
+                let error = &stats.error;
                 match error.as_str() {
                     "/None" => {
                         ctrs.increment("good");
@@ -234,9 +237,12 @@ impl LoadGenerator {
                         _ => panic!("Unimplemented API"),
                     }
                 }
-                trace_tx.try_send(span).unwrap();
+                trace_tx.try_send(stats).unwrap();
             });
         }
+
+        // wait for all outgoing requests to complete
+        while let Some(_) = set.join_next().await {}
     }
 }
 
@@ -368,7 +374,7 @@ async fn send_request(
         }
         _ => panic!("Unimplemented API {}", api),
     };
-    let span = match response {
+    let stats = match response {
         Ok(response) => {
             let recv_at = time_now();
             let latency = recv_at - send_at;
@@ -389,7 +395,7 @@ async fn send_request(
         }
     };
 
-    span
+    stats
 }
 
 fn map_response<T>(
