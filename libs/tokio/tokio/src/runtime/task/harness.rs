@@ -1,4 +1,5 @@
 use crate::future::Future;
+use crate::runtime::context;
 use crate::runtime::task::core::{Cell, Core, Header, Trailer};
 use crate::runtime::task::state::{Snapshot, State};
 use crate::runtime::task::waker::waker_ref;
@@ -133,6 +134,26 @@ impl RawTask {
     }
 }
 
+/// Set and clear the task id in the context when the future is executed or
+/// dropped, or when the output produced by the future is dropped.
+pub(crate) struct TaskHeaderGuard {
+    parent_task_header: Option<&'static Header>,
+}
+
+impl TaskHeaderGuard {
+    fn enter(header: &'static Header) -> Self {
+        TaskHeaderGuard {
+            parent_task_header: context::set_current_task_header(Some(header)),
+        }
+    }
+}
+
+impl Drop for TaskHeaderGuard {
+    fn drop(&mut self) {
+        context::set_current_task_header(self.parent_task_header);
+    }
+}
+
 impl<T, S> Harness<T, S>
 where
     T: Future,
@@ -205,7 +226,12 @@ where
                 let header_ptr = self.header_ptr();
                 let waker_ref = waker_ref::<S>(&header_ptr);
                 let cx = Context::from_waker(&waker_ref);
-                let res = poll_future(self.core(), cx);
+                let header_ref =
+                    unsafe { std::mem::transmute::<&'_ Header, &'static Header>(self.header()) };
+                let res = {
+                    let _guard = TaskHeaderGuard::enter(header_ref);
+                    poll_future(self.core(), cx)
+                };
 
                 if res == Poll::Ready(()) {
                     // The future completed. Move on to complete the task.

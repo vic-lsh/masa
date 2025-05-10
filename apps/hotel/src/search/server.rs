@@ -18,20 +18,22 @@ use hotel_tonic::{
     search::search_server::Search,
 };
 
+use crate::config::HotelConfig;
+
 pub struct SearchImpl {
     geo_client: GeoClient<LoadBalancedChannel>,
     rate_client: RateClient<LoadBalancedChannel>,
 }
 
 impl SearchImpl {
-    pub async fn new() -> Self {
-        let channel = LoadBalancedChannel::builder(("geo-service", 8660))
+    pub async fn new(config: HotelConfig) -> Self {
+        let channel = LoadBalancedChannel::builder((config.geo_ip, config.geo_port))
             .channel()
             .await
             .expect("Failed to connect to user");
         let geo_client = GeoClient::new(channel);
 
-        let channel = LoadBalancedChannel::builder(("rate-service", 8660))
+        let channel = LoadBalancedChannel::builder((config.rate_ip, config.rate_port))
             .channel()
             .await
             .expect("Failed to connect to rate");

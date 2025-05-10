@@ -4,11 +4,10 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
+    task::Poll,
     time::Duration,
 };
 
-use hyper::rt::{Exec, Executor};
-use masa::PriorityHint;
 use masa_integration_tests::pb::{
     child_service_client::ChildServiceClient,
     child_service_server::{ChildService, ChildServiceServer},
@@ -72,12 +71,12 @@ where
         let mut handles: Vec<_> = Vec::new();
         for _ in 0..self.fanout_factor {
             let mut c = client.clone();
-            handles.push(async_executor::spawn(async move {
+            handles.push(tokio::spawn(async move {
                 c.rpc1(Request::new(Input1 {})).await.unwrap();
             }));
         }
         for h in handles {
-            h.await;
+            h.await.unwrap();
         }
 
         Ok(Response::new(Output1 {}))
@@ -94,20 +93,6 @@ impl ChildService for ChildSvc {
 
     async fn rpc2(&self, _req: Request<Input2>) -> Result<Response<Output2>, Status> {
         Ok(Response::new(Output2 {}))
-    }
-}
-
-struct ExecImpl;
-
-impl<F> Executor<F> for ExecImpl
-where
-    F: std::future::Future + Send + 'static,
-    F::Output: Send,
-{
-    fn execute(&self, fut: F, prio: PriorityHint) {
-        async_executor::spawn_with_prio(fut, prio)
-            .fallible()
-            .detach();
     }
 }
 
@@ -148,10 +133,7 @@ where
     let child_svc = tokio::spawn(async {
         Server::builder()
             .add_service(ChildServiceServer::<_, P>::with_custom_context(ChildSvc))
-            .serve_with_executor(
-                child_svc_addr.parse().unwrap(),
-                Exec::Executor(Arc::new(ExecImpl)),
-            )
+            .serve_with_masa(child_svc_addr.parse().unwrap())
             .await
             .unwrap();
     });
@@ -161,10 +143,7 @@ where
             .add_service(ParentServiceServer::<_, P>::with_custom_context(
                 ParentSvc::<P>::new(child_svc_addr, fanout_factor),
             ))
-            .serve_with_executor(
-                parent_svc_addr.parse().unwrap(),
-                Exec::Executor(Arc::new(ExecImpl)),
-            )
+            .serve_with_masa(parent_svc_addr.parse().unwrap())
             .await
             .unwrap();
     });
@@ -204,7 +183,7 @@ async fn test_service_ctx_construction() {
                             ChildSvc,
                         ),
                     )
-                    .serve_with_executor(addr.parse().unwrap(), Exec::Executor(Arc::new(ExecImpl)))
+                    .serve_with_masa(addr.parse().unwrap())
                     .await
                     .unwrap();
             });
@@ -216,7 +195,7 @@ async fn test_service_ctx_construction() {
 }
 
 #[tokio::test]
-async fn test_child_rpc_hooks_invocations() {
+async fn test_parent_ctx_before_after_rpc_hooks() {
     static N_BEFORE_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
     static N_AFTER_CHILD_RPCS: AtomicUsize = AtomicUsize::new(0);
 
@@ -287,7 +266,7 @@ async fn test_child_rpc_hooks_invocations() {
 }
 
 #[tokio::test]
-async fn test_child_ctx_hook_invocations() {
+async fn test_child_ctx_before_after_rpc_hooks() {
     static N_BEFORE_SEND: AtomicUsize = AtomicUsize::new(0);
     static N_AFTER_RECV: AtomicUsize = AtomicUsize::new(0);
 
@@ -344,4 +323,109 @@ async fn test_child_ctx_hook_invocations() {
     assert_eq!(N_AFTER_RECV.load(Ordering::Relaxed), fanout_factor);
     N_BEFORE_SEND.store(0, Ordering::Relaxed);
     N_AFTER_RECV.store(0, Ordering::Relaxed);
+}
+
+#[tokio::test]
+async fn test_parent_ctx_before_after_poll_hooks() {
+    static N_BEFORE_POLLS: AtomicUsize = AtomicUsize::new(0);
+    static N_AFTER_POLLS: AtomicUsize = AtomicUsize::new(0);
+
+    struct TestChildRpcParentCtx {}
+
+    impl<C: ClientHooks, S: ServerHooks> ParentHooks<C, S> for TestChildRpcParentCtx {
+        fn begin<B>(_method: GrpcMethod, _req: &http::Request<B>, _server_ctx: Arc<S>) -> Self {
+            Self {}
+        }
+
+        fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
+            N_BEFORE_POLLS.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+
+        fn after_poll<Ret>(
+            &self,
+            _poll: &Poll<Result<Response<Ret>, Status>>,
+        ) -> Result<(), Result<Response<Ret>, Status>> {
+            N_AFTER_POLLS.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    struct MockPrioritySelector;
+
+    impl PrioritySelector for MockPrioritySelector {
+        type ParentContext = TestChildRpcParentCtx;
+        type ChildContext = MockChildCtx;
+        type ServerContext = MockServerCtx;
+    }
+
+    let parent_svc_addr = "127.0.0.1:4477";
+    let child_svc_addr = "127.0.0.1:4488";
+    let fanout_factor = 1;
+    let (_parent, _child) = make_parent_child_svcs::<MockPrioritySelector>(
+        parent_svc_addr,
+        child_svc_addr,
+        fanout_factor,
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
+        .await
+        .unwrap();
+
+    parent_cl.rpc(Request::new(Input1 {})).await.unwrap();
+
+    assert!(N_BEFORE_POLLS.load(Ordering::Relaxed) > 1);
+    assert!(N_AFTER_POLLS.load(Ordering::Relaxed) > 1);
+    N_BEFORE_POLLS.store(0, Ordering::Relaxed);
+    N_AFTER_POLLS.store(0, Ordering::Relaxed);
+}
+
+#[tokio::test]
+async fn test_parent_ctx_finalize_hook() {
+    static N_FINALIZE: AtomicUsize = AtomicUsize::new(0);
+
+    struct TestChildRpcParentCtx {}
+
+    impl<C: ClientHooks, S: ServerHooks> ParentHooks<C, S> for TestChildRpcParentCtx {
+        fn begin<B>(_method: GrpcMethod, _req: &http::Request<B>, _server_ctx: Arc<S>) -> Self {
+            Self {}
+        }
+
+        fn finalize(&self, _response: &mut http::Response<tonic::body::BoxBody>) {
+            N_FINALIZE.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    struct MockPrioritySelector;
+
+    impl PrioritySelector for MockPrioritySelector {
+        type ParentContext = TestChildRpcParentCtx;
+        type ChildContext = MockChildCtx;
+        type ServerContext = MockServerCtx;
+    }
+
+    let parent_svc_addr = "127.0.0.1:4499";
+    let child_svc_addr = "127.0.0.1:4400";
+    let fanout_factor = 1;
+    let (_parent, _child) = make_parent_child_svcs::<MockPrioritySelector>(
+        parent_svc_addr,
+        child_svc_addr,
+        fanout_factor,
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
+        .await
+        .unwrap();
+
+    parent_cl.rpc(Request::new(Input1 {})).await.unwrap();
+
+    // finalize is called twice:
+    // once in the child service side,
+    // and another on the parent service side.
+    assert!(N_FINALIZE.load(Ordering::Relaxed) == 2);
+    N_FINALIZE.store(0, Ordering::Relaxed);
 }
