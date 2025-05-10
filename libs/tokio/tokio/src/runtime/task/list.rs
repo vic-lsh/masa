@@ -6,6 +6,8 @@
 //! The collections can be closed to prevent adding new tasks during shutdown of
 //! the scheduler with the collection.
 
+use masa::PriorityHint;
+
 use crate::future::Future;
 use crate::loom::cell::UnsafeCell;
 use crate::runtime::task::{JoinHandle, LocalNotified, Notified, Schedule, Task};
@@ -91,13 +93,14 @@ impl<S: 'static> OwnedTasks<S> {
         task: T,
         scheduler: S,
         id: super::Id,
+        priority: PriorityHint,
     ) -> (JoinHandle<T::Output>, Option<Notified<S>>)
     where
         S: Schedule,
         T: Future + Send + 'static,
         T::Output: Send + 'static,
     {
-        let (task, notified, join) = super::new_task(task, scheduler, id);
+        let (task, notified, join) = super::new_task(task, scheduler, id, priority);
         let notified = unsafe { self.bind_inner(task, notified) };
         (join, notified)
     }
@@ -232,13 +235,14 @@ impl<S: 'static> LocalOwnedTasks<S> {
         task: T,
         scheduler: S,
         id: super::Id,
+        priority: PriorityHint,
     ) -> (JoinHandle<T::Output>, Option<Notified<S>>)
     where
         S: Schedule,
         T: Future + 'static,
         T::Output: 'static,
     {
-        let (task, notified, join) = super::new_task(task, scheduler, id);
+        let (task, notified, join) = super::new_task(task, scheduler, id, priority);
 
         unsafe {
             // safety: We just created the task, so we have exclusive access

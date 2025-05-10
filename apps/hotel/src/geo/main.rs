@@ -22,8 +22,8 @@ pub struct Args {
     pub config: PathBuf,
 }
 
-// #[tokio::main(flavor = "current_thread")]
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
+//#[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
@@ -33,11 +33,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    log::warn!("Hotel config: {:?}", cfg);
 
-    let geo = GeoImpl::new();
-
-    let geo_addr = "[::0]:8660".parse().expect("Failed to parse address");
+    let geo_addr = format!("{}:{}", "[::]", cfg.geo_port)
+        .parse()
+        .expect("Failed to parse address");
+    let geo = GeoImpl::new(cfg);
     log::warn!("Server listening on {}...", geo_addr);
     Server::builder()
         .add_service(GeoServer::new(geo))

@@ -9,6 +9,8 @@
 //! Make sure to consult the relevant safety section of each function before
 //! use.
 
+use masa::PriorityHint;
+
 use crate::future::Future;
 use crate::loom::cell::UnsafeCell;
 use crate::runtime::context;
@@ -21,6 +23,8 @@ use std::num::NonZeroU64;
 use std::pin::Pin;
 use std::ptr::NonNull;
 use std::task::{Context, Poll, Waker};
+
+use super::poll_hook::PollHook;
 
 /// The task cell. Contains the components of the task.
 ///
@@ -170,6 +174,13 @@ pub(crate) struct Header {
     /// removed from the list.
     pub(super) owner_id: UnsafeCell<Option<NonZeroU64>>,
 
+    /// Priority associated with this task.
+    pub(super) priority: UnsafeCell<PriorityHint>,
+
+    // [TODO(vic)] should this be in the Trailer?
+    /// Poll behavior customization for this task.
+    pub(super) poll_hook: UnsafeCell<Option<PollHook>>,
+
     /// The tracing ID for this instrumented task.
     #[cfg(all(tokio_unstable, feature = "tracing"))]
     pub(super) tracing_id: Option<tracing::Id>,
@@ -205,11 +216,18 @@ pub(super) enum Stage<T: Future> {
 impl<T: Future, S: Schedule> Cell<T, S> {
     /// Allocates a new task cell, containing the header, trailer, and core
     /// structures.
-    pub(super) fn new(future: T, scheduler: S, state: State, task_id: Id) -> Box<Cell<T, S>> {
+    pub(super) fn new(
+        future: T,
+        scheduler: S,
+        state: State,
+        task_id: Id,
+        priority: PriorityHint,
+    ) -> Box<Cell<T, S>> {
         // Separated into a non-generic function to reduce LLVM codegen
         fn new_header(
             state: State,
             vtable: &'static Vtable,
+            priority: PriorityHint,
             #[cfg(all(tokio_unstable, feature = "tracing"))] tracing_id: Option<tracing::Id>,
         ) -> Header {
             Header {
@@ -217,6 +235,8 @@ impl<T: Future, S: Schedule> Cell<T, S> {
                 queue_next: UnsafeCell::new(None),
                 vtable,
                 owner_id: UnsafeCell::new(None),
+                priority: UnsafeCell::new(priority),
+                poll_hook: UnsafeCell::new(None),
                 #[cfg(all(tokio_unstable, feature = "tracing"))]
                 tracing_id,
             }
@@ -229,6 +249,7 @@ impl<T: Future, S: Schedule> Cell<T, S> {
             header: new_header(
                 state,
                 vtable,
+                priority,
                 #[cfg(all(tokio_unstable, feature = "tracing"))]
                 tracing_id,
             ),
@@ -399,6 +420,35 @@ impl Header {
         // safety: If there are concurrent writes, then that write has violated
         // the safety requirements on `set_owner_id`.
         unsafe { self.owner_id.with(|ptr| *ptr) }
+    }
+
+    // SAFETY: caller must guarantee exclusive access to the field.
+    pub(super) unsafe fn set_priority(&self, priority: PriorityHint) {
+        self.priority.with_mut(|ptr| *ptr = priority);
+    }
+
+    pub(super) fn get_priority(&self) -> PriorityHint {
+        // SAFETY: If there are concurrent writes, then that write has violated
+        // the safety requirements on `set_priority`.
+        unsafe { self.priority.with(|ptr| *ptr) }
+    }
+
+    // [TODO(vic)] limit visibility.
+    // Clone the task's poll hook if it exists.
+    // SAFETY: caller must guarantee exclusive access to the field.
+    pub(crate) unsafe fn set_poll_hook(&self, poll_hook: Option<PollHook>) {
+        self.poll_hook.with_mut(|ph| *ph = poll_hook);
+    }
+
+    // [TODO(vic)] limit visibility.
+    // Clone the task's poll hook if it exists.
+    pub(crate) fn maybe_clone_poll_hook(&self) -> Option<PollHook> {
+        // SAFETY: If there are concurrent writes, then that write has violated
+        // the safety requirements on `set_poll_hook`.
+        unsafe {
+            self.poll_hook
+                .with(|maybe_hook| (*maybe_hook).as_ref().cloned())
+        }
     }
 
     /// Gets a pointer to the `Trailer` of the task containing this `Header`.

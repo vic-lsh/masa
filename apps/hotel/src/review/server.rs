@@ -1,6 +1,6 @@
-use crate::db;
+use crate::{config::HotelConfig, db};
 use futures::{lock::Mutex, StreamExt};
-use hotel_tonic::review::{review_server::Review, ReviewComm, ReviewRequest, ReviewResponse};
+use hotel_tonic::review::{review_server::Review, ReviewRequest, ReviewResponse};
 use masa::LatencyTracker;
 use mongodb::{bson::doc, Client as MongoClient};
 use std::{error::Error, sync::Arc};
@@ -18,13 +18,10 @@ pub struct ReviewImpl {
 }
 
 impl ReviewImpl {
-    pub async fn new(
-        cache_addr: String,
-        cache_conn: u32,
-        db_addr: String,
-    ) -> Result<Self, Box<dyn Error>> {
-        let memc_client = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
-        let mongo_client = db::initialize_database(&db_addr).await?;
+    pub async fn new(config: HotelConfig) -> Result<Self, Box<dyn Error>> {
+        let memc_client =
+            memcache::Client::with_pool_size(config.review_memcached_addr, config.cache_conns)?;
+        let mongo_client = db::initialize_database(&config.review_mongodb_addr).await?;
         let latency_tracker = Arc::new(Mutex::new(LatencyTracker::new("ReviewSvc".into(), 1024)));
 
         Ok(Self {

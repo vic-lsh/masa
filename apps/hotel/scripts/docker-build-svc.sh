@@ -47,6 +47,6 @@ docker build -f ./apps/hotel/Dockerfile \
     --build-arg FEATURES=$features \
     --build-arg BINARY_NAME=$binary \
     --build-arg LOG_LEVEL=$rust_log \
-    --build-arg HOTEL_CONFIG=./apps/hotel/scripts/local/hotel_config.json \
+    --build-arg HOTEL_CONFIG=./apps/hotel/scripts/local/hotel_config.docker.json \
     -t $binary \
     .
