@@ -15,6 +15,8 @@ use tonic::{Request, Response, Status};
 
 use hotel::{user, user::user_server::User};
 
+use crate::config::HotelConfig;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
     username: String,
@@ -85,12 +87,13 @@ pub struct UserImpl {
 }
 
 impl UserImpl {
-    pub async fn new(
-        users: u32,
-        db_addr: String,
-        prob_check_user: u32,
-    ) -> Result<Self, Box<dyn Error>> {
-        let manager = HotelManager::new(users, db_addr, prob_check_user).await?;
+    pub async fn new(config: HotelConfig) -> Result<Self, Box<dyn Error>> {
+        let manager = HotelManager::new(
+            config.user_users,
+            config.user_mongodb_addr,
+            config.user_prob_check_user,
+        )
+        .await?;
         let user = UserImpl { manager };
         Ok(user)
     }

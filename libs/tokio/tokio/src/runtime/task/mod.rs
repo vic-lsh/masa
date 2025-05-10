@@ -170,7 +170,9 @@
 
 mod core;
 use self::core::Cell;
-use self::core::Header;
+// [TODO(vic)] make this private again.
+// For now, this is made public b/c we expose the whole header in Context.
+pub(crate) use self::core::Header;
 
 mod error;
 pub use self::error::JoinError;
@@ -178,9 +180,13 @@ pub use self::error::JoinError;
 mod harness;
 use self::harness::Harness;
 
+pub(crate) mod poll_hook;
+
 mod id;
+pub(crate) use id::Identifiable;
 #[cfg_attr(not(tokio_unstable), allow(unreachable_pub, unused_imports))]
 pub use id::{id, try_id, Id};
+use masa::Prioritize;
 
 #[cfg(feature = "rt")]
 mod abort;
@@ -213,6 +219,10 @@ use crate::util::sharded_list;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 use std::{fmt, mem};
+
+pub(crate) fn current_task_header() -> Option<&'static Header> {
+    crate::runtime::context::current_task_header()
+}
 
 /// An owned handle to the task, tracked by ref count.
 #[repr(transparent)]
@@ -278,6 +288,74 @@ pub(crate) trait Schedule: Sync + Sized + 'static {
     }
 }
 
+impl<S> Prioritize for Task<S> {
+    fn priority(&self) -> masa::PriorityHint {
+        self.header().get_priority()
+    }
+}
+
+// [FIX] this equality check is misleading b/c it is correct only in the context of priority
+// queueing. we may want to fix it by comparing other fields too.
+impl<S> PartialEq for Task<S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.header().get_priority() == other.header().get_priority()
+    }
+}
+
+impl<S> Eq for Task<S> {}
+
+impl<S> PartialOrd for Task<S> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<S: 'static> Ord for Task<S> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.header()
+            .get_priority()
+            .cmp(&other.header().get_priority())
+    }
+}
+
+impl<S: 'static> Identifiable for Task<S> {
+    fn id(&self) -> Id {
+        unsafe { Header::get_id(self.raw.header_ptr()) }
+    }
+}
+
+impl<S> Prioritize for Notified<S> {
+    fn priority(&self) -> masa::PriorityHint {
+        self.0.priority()
+    }
+}
+
+impl<S> PartialEq for Notified<S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+
+impl<S> Eq for Notified<S> {}
+
+impl<S> PartialOrd for Notified<S> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
+impl<S: 'static> Ord for Notified<S> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl<S: 'static> Identifiable for Notified<S> {
+    fn id(&self) -> Id {
+        self.0.id()
+    }
+}
+
 cfg_rt! {
     /// This is the constructor for a new task. Three references to the task are
     /// created. The first task reference is usually put into an `OwnedTasks`
@@ -287,13 +365,14 @@ cfg_rt! {
         task: T,
         scheduler: S,
         id: Id,
+        priority: masa::PriorityHint
     ) -> (Task<S>, Notified<S>, JoinHandle<T::Output>)
     where
         S: Schedule,
         T: Future + 'static,
         T::Output: 'static,
     {
-        let raw = RawTask::new::<T, S>(task, scheduler, id);
+        let raw = RawTask::new::<T, S>(task, scheduler, id, priority);
         let task = Task {
             raw,
             _p: PhantomData,
@@ -317,7 +396,7 @@ cfg_rt! {
         T: Send + Future + 'static,
         T::Output: Send + 'static,
     {
-        let (task, notified, join) = new_task(task, scheduler, id);
+        let (task, notified, join) = new_task(task, scheduler, id, masa::PriorityHint::infra());
 
         // This transfers the ref-count of task and notified into an UnownedTask.
         // This is valid because an UnownedTask holds two ref-counts.

@@ -383,7 +383,7 @@ cfg_rt! {
     pub use handle::{EnterGuard, Handle, TryCurrentError};
 
     mod runtime;
-    pub use runtime::{Runtime, RuntimeFlavor};
+    pub use runtime::{Runtime, RuntimeFlavor, is_runtime_active};
 
     mod thread_id;
     pub(crate) use thread_id::ThreadId;

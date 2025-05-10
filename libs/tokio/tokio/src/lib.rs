@@ -515,6 +515,7 @@ mod blocking;
 
 cfg_rt! {
     pub mod runtime;
+    pub use runtime::is_runtime_active;
 }
 cfg_not_rt! {
     pub(crate) mod runtime;
@@ -541,6 +542,7 @@ cfg_not_sync! {
 pub mod task;
 cfg_rt! {
     pub use task::spawn;
+    pub use task::{configure_child_task_poll_hook, reset_child_task_poll_hook};
 }
 
 cfg_time! {

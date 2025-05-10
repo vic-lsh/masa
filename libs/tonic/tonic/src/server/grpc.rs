@@ -277,18 +277,14 @@ where
     {
         let req_ctx = Arc::new(req_ctx);
 
-        // Only construct the following if we're using async-executor.
-        if async_executor::is_runtime_active() {
+        if tokio::is_runtime_active() {
             // Bump req-ctx reference count to avoid deallocation.
             // This ref-count will be decremented when `child_hook` is deallocated,
             // which would happen when this request finishes and removes this hook.
-            let req_ctx_for_child_task = req_ctx.clone();
+            let parent_ctx = req_ctx.clone();
 
-            let child_hook =
-                crate::masa::context::runtime::async_executor::make_child_task_poll_hook::<P>(
-                    req_ctx_for_child_task,
-                );
-            async_executor::configure_child_task_poll_hooks(child_hook);
+            let child_hook = crate::masa::runtime::make_child_task_poll_hook::<P>(parent_ctx);
+            tokio::configure_child_task_poll_hook(child_hook);
         }
 
         let accept_encoding = CompressionEncoding::from_accept_encoding_header(
@@ -343,7 +339,7 @@ where
         // Request-completed lifecycle hook.
         req_ctx.finalize(&mut res);
 
-        async_executor::reset_child_task_poll_hook();
+        tokio::reset_child_task_poll_hook();
 
         res
     }
