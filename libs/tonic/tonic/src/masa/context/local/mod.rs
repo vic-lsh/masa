@@ -1,41 +1,46 @@
 mod local_direct;
 mod local_indirect;
 
-use std::{collections::HashMap, hash::Hash, sync::RwLock};
+use std::{collections::HashMap, sync::RwLock};
 
 pub use local_direct::LocalDeadlineDirect;
 pub use local_indirect::LocalDeadlineIndirect;
 use masa::LatencyDistribution;
 
 // TODO: tweak these values. should they be specific to each local priority selector?
-const DISTRIBUTION_CAPACITY: usize = 1024;
-const MIN_DISTRIBUTION_SIZE: usize = 500;
+const DISTRIBUTION_CAPACITY: usize = 512;
 const PERCENTILE: usize = 50;
 
-fn estimate_method_latency<K>(map: &RwLock<HashMap<K, LatencyDistribution>>, key: K) -> Option<u64>
-where
-    K: Hash + Eq + Copy,
-{
-    let has_method = map.read().unwrap().contains_key(&key);
-    if !has_method {
-        map.write()
-            .unwrap()
-            .insert(key, LatencyDistribution::new(DISTRIBUTION_CAPACITY));
-    } else {
-        let lock = map.read().unwrap();
-        let distribution = lock.get(&key).unwrap();
+fn estimate_method_latency(
+    map: &RwLock<HashMap<String, LatencyDistribution>>,
+    key: String,
+) -> Option<u64> {
+    let has_method = {
+        let m = map.read().unwrap();
+        let found = m.contains_key(&key);
+        if found {
+            let distribution = m.get(&key).unwrap();
 
-        if distribution.len() >= MIN_DISTRIBUTION_SIZE {
-            return Some(distribution.estimate(PERCENTILE));
+            if distribution.can_estimate() {
+                return Some(distribution.estimate(PERCENTILE));
+            }
         }
+        found
+    };
+    if !has_method {
+        map.write().unwrap().insert(
+            key.clone(),
+            LatencyDistribution::new(key, DISTRIBUTION_CAPACITY),
+        );
     }
-
     None
 }
 
-fn track_method_latency<K>(map: &RwLock<HashMap<K, LatencyDistribution>>, key: K, duration: u64)
-where
-    K: Hash + Eq,
-{
+// TODO: could reduce lock contention by giving each key it's own lock
+fn track_method_latency(
+    map: &RwLock<HashMap<String, LatencyDistribution>>,
+    key: String,
+    duration: u64,
+) {
     map.write().unwrap().get_mut(&key).unwrap().track(duration);
 }

@@ -5,7 +5,6 @@ pub fn time_now() -> u64 {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        // TODO: shouldn't we use nanoseconds?
         .as_micros();
     now as u64
 }
