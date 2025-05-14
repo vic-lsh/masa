@@ -10,7 +10,11 @@ use super::{estimate_method_latency, track_method_latency};
 use masa::{Context, LatencyDistribution, MethodId};
 
 #[derive(Debug)]
-// TODO: document
+/// This policy computes the deadline d of a child request as  
+///   d = d_p - e_rem
+/// where d_p is the deadline of the parent request and e_rem is an estimate for the remaining time
+/// left in the request after this child request executes. e_rem is estimated by sampling from the
+/// distribution of observed values for e_rem.
 pub struct LocalDeadlineDirect;
 
 impl PrioritySelector for LocalDeadlineDirect {
@@ -22,7 +26,7 @@ impl PrioritySelector for LocalDeadlineDirect {
 #[derive(Debug)]
 pub struct ServerContext {
     // for every method on this server, tracks the remaining duration of the method after an outgoing request has finished
-    child_distributions: RwLock<HashMap<(MethodId, MethodId), LatencyDistribution>>,
+    child_distributions: RwLock<HashMap<String, LatencyDistribution>>,
 }
 
 impl ServerHooks for ServerContext {
@@ -62,16 +66,14 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         request: &mut Request<T>,
         _child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
-        // TODO: early return logic?
+        // TODO: early return logic
         // NOTE: if we don't have enough data to estimate the duration of the parent or child
         // request, we set child deadline = parent deadline
-        let estimate_remaining = match estimate_method_latency(
+        let estimate_remaining = estimate_method_latency(
             &self.server.child_distributions,
-            (self.method.id(), child_method.id()),
-        ) {
-            Some(x) => x,
-            None => 0,
-        };
+            format!("{}/{}", self.method.id(), child_method.id()),
+        )
+        .unwrap_or(0);
         let deadline = self.ctx.deadline() - estimate_remaining;
 
         let child_recv_ctx = Context::new(
@@ -110,10 +112,12 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         let parent_end = Instant::now();
         // track remaining time after each child
         for (child_method, child_end) in self.child_end_times.lock().unwrap().iter() {
+            // TODO: The LatencyDistribution instances will regularly sort their data. Should this
+            // work be done asynchronously?
             track_method_latency(
                 &self.server.child_distributions,
-                (self.method.id(), child_method),
-                parent_end.duration_since(*child_end).as_millis() as u64,
+                format!("{}/{}", self.method.id(), child_method),
+                parent_end.duration_since(*child_end).as_micros() as u64,
             );
         }
     }

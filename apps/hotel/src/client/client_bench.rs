@@ -333,14 +333,13 @@ async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
         let delta = |k| counters.get(k) - prev.get(k);
 
         log::warn!(
-            "secs: {}, rps: {}, goodput: {}, early returns: {}, deadline misses: {}, timeouts: {}, unexpected: {}",
+            "secs: {}, rps: {}, goodput: {}, early returns: {}, deadline misses: {}, timeouts: {}",
             secs,
             delta("all"),
             delta("good"),
             delta("err_svc_er"),
             delta("err_cl_miss"),
             delta("err_cl_to"),
-            delta("unexpected"),
         );
         log::warn!(
             "total early returns: {}, total deadline misses: {}, total timeouts: {}, total search errors: {}, total reservation errors: {}, total unexpected errors: {}",

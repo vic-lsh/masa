@@ -22,7 +22,10 @@ impl ReviewImpl {
         let memc_client =
             memcache::Client::with_pool_size(config.review_memcached_addr, config.cache_conns)?;
         let mongo_client = db::initialize_database(&config.review_mongodb_addr).await?;
-        let latency_tracker = Arc::new(Mutex::new(LatencyDistribution::new(1024)));
+        let latency_tracker = Arc::new(Mutex::new(LatencyDistribution::new(
+            "ReviewSvc".into(),
+            1024,
+        )));
 
         Ok(Self {
             memc_client: Arc::new(memc_client),
