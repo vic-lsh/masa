@@ -20,6 +20,7 @@ use gen::{get_ping_request, get_reservation_request, get_search_request};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp, Uniform};
 use structopt::StructOpt;
+use tokio::task::JoinSet;
 use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration, Instant};
 
@@ -40,10 +41,10 @@ pub struct Args {
     pub output_path: String,
 }
 
-const COUNTER_KEYS: [&'static str; 7] = [
-    // total number of requests
+const COUNTER_KEYS: [&'static str; 8] = [
+    // total number of (sent) requests
     "all",
-    // number of requests satisfying SLO
+    // number of (completed) requests satisfying SLO
     "good",
     // number of early returns
     "err_svc_er",
@@ -55,6 +56,8 @@ const COUNTER_KEYS: [&'static str; 7] = [
     "err_search",
     // total number of errors in reservation API
     "err_reservation",
+    // total number of unexpected errors
+    "unexpected",
 ];
 
 struct Counters {
@@ -153,6 +156,8 @@ impl LoadGenerator {
         let mut elapse = 0f64;
         let uniform = Uniform::<u32>::new(0, 1_000_000_007);
 
+        let mut set = JoinSet::new();
+
         while Instant::now() < pause_at {
             let start_at = init_at + Duration::from_secs_f64(elapse);
             tokio::time::sleep_until(start_at).await;
@@ -198,15 +203,16 @@ impl LoadGenerator {
             let trace_tx = self.trace_tx.clone();
             let ctrs = Arc::clone(&counters);
 
-            tokio::task::spawn(async move {
-                let span = send_request(&mut client, &api, ctx).await;
+            set.spawn(async move {
                 ctrs.increment("all");
+                let stats = send_request(&mut client, &api, ctx).await;
 
                 if Instant::now() < trace_at {
                     return;
                 }
 
-                let error = &span.error;
+                // increment the right counters
+                let error = &stats.error;
                 match error.as_str() {
                     "/None" => {
                         ctrs.increment("good");
@@ -220,10 +226,13 @@ impl LoadGenerator {
                     "/ClientTimeout" => {
                         ctrs.increment("err_cl_to");
                     }
-                    _ => panic!("Unimplemented error: {}", error),
+                    e => {
+                        ctrs.increment("unexpected");
+                        log::error!("unexpected request error '{}'", e);
+                    }
                 };
 
-                if error != "None" {
+                if error != "/None" {
                     match api.as_str() {
                         "Search" => {
                             ctrs.increment("err_search");
@@ -231,12 +240,16 @@ impl LoadGenerator {
                         "Reservation" => {
                             ctrs.increment("err_reservation");
                         }
-                        _ => panic!("Unimplemented API"),
+                        _ => panic!("should never happen"),
                     }
                 }
-                trace_tx.try_send(span).unwrap();
+
+                trace_tx.try_send(stats).unwrap();
             });
         }
+
+        // wait for all outgoing requests to complete
+        while let Some(_) = set.join_next().await {}
     }
 }
 
@@ -329,12 +342,13 @@ async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
             delta("err_cl_to"),
         );
         log::warn!(
-            "total early returns: {}, total deadline misses: {}, total timeouts: {}, total search errors: {}, total reservation errors: {}",
+            "total early returns: {}, total deadline misses: {}, total timeouts: {}, total search errors: {}, total reservation errors: {}, total unexpected errors: {}",
             counters.get("err_svc_er"),
             counters.get("err_cl_miss"),
             counters.get("err_cl_to"),
             counters.get("err_search"),
             counters.get("err_reservation"),
+            counters.get("unexpected"),
         );
         // clone the Counters struct itself as opposed to creating another reference
         prev = (*counters).clone();
@@ -346,7 +360,8 @@ async fn send_request(
     api: &str,
     ctx: Context,
 ) -> RequestStats {
-    let send_at = time_now();
+    let send_at;
+    let recv_at;
     let timeout_duration = Duration::from_secs(1);
 
     let response = match api {
@@ -356,7 +371,10 @@ async fn send_request(
                 request.metadata_mut().insert_ctx("ctx", &ctx);
                 request
             };
-            map_response(timeout(timeout_duration, client.handle_search(request)).await)
+            send_at = time_now();
+            let r = timeout(timeout_duration, client.handle_search(request)).await;
+            recv_at = time_now();
+            map_response(r)
         }
         "Reservation" => {
             let request = {
@@ -364,13 +382,15 @@ async fn send_request(
                 request.metadata_mut().insert_ctx("ctx", &ctx);
                 request
             };
-            map_response(timeout(timeout_duration, client.handle_reservation(request)).await)
+            send_at = time_now();
+            let r = timeout(timeout_duration, client.handle_reservation(request)).await;
+            recv_at = time_now();
+            map_response(r)
         }
         _ => panic!("Unimplemented API {}", api),
     };
-    let span = match response {
+    let stats = match response {
         Ok(response) => {
-            let recv_at = time_now();
             let latency = recv_at - send_at;
             let error = {
                 if let Err(ref status) = response {
@@ -389,7 +409,7 @@ async fn send_request(
         }
     };
 
-    span
+    stats
 }
 
 fn map_response<T>(

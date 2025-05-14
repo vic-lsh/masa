@@ -13,7 +13,7 @@ use {rand::rngs::StdRng, rand::SeedableRng, rand_distr::Uniform};
 use crate::{config::HotelConfig, db};
 use async_memcached::AsciiProtocol;
 use hotel::McPool;
-use masa::LatencyTracker;
+use masa::LatencyDistribution;
 use mongodb::{bson::doc, Client as MongoClient};
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
@@ -41,7 +41,7 @@ pub struct ProfileImpl {
     mc_pool: Arc<McPool>,
     // memc_client: Arc<memcache::Client>,
     mongo_client: Arc<MongoClient>,
-    latency_tracker: Arc<Mutex<LatencyTracker>>,
+    latency_tracker: Arc<Mutex<LatencyDistribution>>,
     #[cfg(feature = "workload_stats")]
     fanout_tracker: Arc<AvgTracker>,
     #[cfg(feature = "synthetic")]
@@ -52,7 +52,10 @@ impl ProfileImpl {
     pub async fn new(config: HotelConfig) -> Result<Self, Box<dyn std::error::Error>> {
         let mongo_client = db::initialize_database(&config.profile_mongodb_addr).await?;
 
-        let latency_tracker = Arc::new(Mutex::new(LatencyTracker::new("ProfileSvc".into(), 1024)));
+        let latency_tracker = Arc::new(Mutex::new(LatencyDistribution::new(
+            "ProfileSvc".into(),
+            1024,
+        )));
 
         #[cfg(feature = "workload_stats")]
         let fanout_tracker = {
