@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct LatencyDistribution {
+    name: String,
     capacity: usize,
     cur_queue: Vec<u64>,
     prev_queue: Vec<u64>,
@@ -10,9 +11,10 @@ pub struct LatencyDistribution {
 }
 
 impl LatencyDistribution {
-    pub fn new(capacity: usize) -> Self {
+    pub fn new(name: String, capacity: usize) -> Self {
         assert!(capacity >= 100, "Capacity should be no less than 100");
         LatencyDistribution {
+            name,
             capacity,
             cur_queue: Vec::with_capacity(capacity),
             prev_queue: Vec::with_capacity(capacity),
@@ -28,10 +30,6 @@ impl LatencyDistribution {
             std::mem::swap(&mut self.cur_queue, &mut self.prev_queue);
             self.cur_queue.clear();
         }
-    }
-
-    pub fn len(&self) -> usize {
-        self.prev_queue.len() + self.cur_queue.len()
     }
 
     fn update(&mut self) {
@@ -50,7 +48,8 @@ impl LatencyDistribution {
         }
 
         log::warn!(
-            "update distribution: mean: {} us, p50: {} us, p90: {} us, p95: {} us, p99: {} us",
+            "update distribution {}: mean: {} us, p50: {} us, p90: {} us, p95: {} us, p99: {} us",
+            self.name,
             self.mean,
             self.percentile(50),
             self.percentile(90),
@@ -66,6 +65,10 @@ impl LatencyDistribution {
     pub fn percentile(&self, p: usize) -> u64 {
         assert!(p < 100, "Percentile should be less than 100");
         self.percentiles[p]
+    }
+
+    pub fn can_estimate(&self) -> bool {
+        self.percentiles.len() > 0
     }
 
     pub fn estimate(&self, percentile: usize) -> u64 {
