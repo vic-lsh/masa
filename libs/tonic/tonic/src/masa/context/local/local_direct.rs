@@ -69,6 +69,9 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         // TODO: early return logic
         // NOTE: if we don't have enough data to estimate the duration of the parent or child
         // request, we set child deadline = parent deadline
+        // NOTE: we need to include the parent method in the key, because the duration until the
+        // end of the parent request after this child request completes will vary for different
+        // parent methods (i.e. endpoints on this server)
         let estimate_remaining = estimate_method_latency(
             &self.server.child_distributions,
             format!("{}/{}", self.method.id(), child_method.id()),
