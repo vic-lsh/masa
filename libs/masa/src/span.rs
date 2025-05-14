@@ -1,4 +1,4 @@
-use crate::{Distribution, Latency, LatencyTracker, SpanId};
+use crate::{Distribution, Latency, LatencyDistribution, SpanId};
 
 /// Represent a span inner.
 #[derive(Debug, Default, Clone)]
@@ -45,7 +45,7 @@ impl Span {
 pub struct SpanTracker {
     span_id: SpanId,
     distribution: Option<Distribution>,
-    tracker: LatencyTracker,
+    tracker: LatencyDistribution,
     pctl_future: usize,
     pctl_present: usize,
 }
@@ -71,7 +71,7 @@ impl SpanTracker {
         pctl_future: usize,
         pctl_present: usize,
     ) -> Self {
-        let tracker = LatencyTracker::new(span_id.clone(), capacity);
+        let tracker = LatencyDistribution::new(span_id.clone(), capacity);
         Self {
             span_id,
             distribution,
@@ -115,8 +115,8 @@ impl SpanTracker {
 #[derive(Debug, Default)]
 pub struct FutureSpanTracker {
     span_id: SpanId,
-    tracker_future: LatencyTracker,
-    tracker_present: LatencyTracker,
+    tracker_future: LatencyDistribution,
+    tracker_present: LatencyDistribution,
     pctl_future: usize,
     pctl_present: usize,
 }
@@ -135,8 +135,8 @@ impl From<Span> for FutureSpanTracker {
 impl FutureSpanTracker {
     /// Create a new span.
     pub fn new(span_id: SpanId, capacity: usize, pctl_future: usize, pctl_present: usize) -> Self {
-        let tracker_future = LatencyTracker::new(span_id.clone(), capacity);
-        let tracker_present = LatencyTracker::new(span_id.clone(), capacity);
+        let tracker_future = LatencyDistribution::new(span_id.clone(), capacity);
+        let tracker_present = LatencyDistribution::new(span_id.clone(), capacity);
         Self {
             span_id,
             tracker_future,

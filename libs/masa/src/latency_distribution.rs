@@ -1,10 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::SpanId;
-
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct LatencyTracker {
-    span_id: SpanId,
+pub struct LatencyDistribution {
+    name: String,
     capacity: usize,
     cur_queue: Vec<u64>,
     prev_queue: Vec<u64>,
@@ -12,11 +10,11 @@ pub struct LatencyTracker {
     percentiles: Vec<u64>,
 }
 
-impl LatencyTracker {
-    pub fn new(span_id: SpanId, capacity: usize) -> Self {
+impl LatencyDistribution {
+    pub fn new(name: String, capacity: usize) -> Self {
         assert!(capacity >= 100, "Capacity should be no less than 100");
-        LatencyTracker {
-            span_id,
+        LatencyDistribution {
+            name,
             capacity,
             cur_queue: Vec::with_capacity(capacity),
             prev_queue: Vec::with_capacity(capacity),
@@ -50,8 +48,8 @@ impl LatencyTracker {
         }
 
         log::warn!(
-            "update, span_id: {:?}, mean: {} us, p50: {} us, p90: {} us, p95: {} us, p99: {} us",
-            self.span_id,
+            "update distribution {}: mean: {} us, p50: {} us, p90: {} us, p95: {} us, p99: {} us",
+            self.name,
             self.mean,
             self.percentile(50),
             self.percentile(90),
@@ -67,6 +65,10 @@ impl LatencyTracker {
     pub fn percentile(&self, p: usize) -> u64 {
         assert!(p < 100, "Percentile should be less than 100");
         self.percentiles[p]
+    }
+
+    pub fn can_estimate(&self) -> bool {
+        self.percentiles.len() > 0
     }
 
     pub fn estimate(&self, percentile: usize) -> u64 {

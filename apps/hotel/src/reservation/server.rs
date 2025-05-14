@@ -7,6 +7,7 @@ use async_memcached::AsciiProtocol;
 use chrono::DateTime;
 use hotel::AvgTracker;
 use hotel_tonic::reservation::{self, reservation_server::Reservation};
+use masa::LatencyDistribution;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::atomic::AtomicUsize;

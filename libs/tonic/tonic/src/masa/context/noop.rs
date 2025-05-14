@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use crate::{GrpcMethod, Request};
-
 use super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
+use crate::{GrpcMethod, Request};
 
 #[derive(Debug)]
 pub struct NoopPrioritySelector;
@@ -13,12 +12,10 @@ impl PrioritySelector for NoopPrioritySelector {
     type ParentContext = ParentContext;
 }
 
-/// A noop implementation of `ParentHooks`.
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct ParentContext {}
 
-/// A simple implementation of `ClientHooks`.
 #[derive(Debug, Clone)]
 pub struct ChildContext {}
 
@@ -43,7 +40,6 @@ impl ClientHooks for ChildContext {
 }
 
 impl ServerHooks for ServerContext {
-    /// Construct a NoopServerContext.
     fn new(_service_name: &'static str) -> Self {
         Self {}
     }

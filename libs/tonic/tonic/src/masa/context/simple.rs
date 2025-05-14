@@ -9,22 +9,13 @@ use std::{
 };
 
 use masa::{
-    Context, FutureGraphTracker, LocalGraph, LocalGraphTracker, MethodId, FIFO, FIFO_EARLY,
-    FIFO_INFRA, PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
+    time_now, Context, FutureGraphTracker, LatencyTracker, LocalGraph, LocalGraphTracker, MethodId,
+    FIFO, FIFO_EARLY, FIFO_INFRA, PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_LOCAL, PRIO_LOCAL_EARLY,
 };
 
 use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
 
-use super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
-
-#[inline]
-fn time_now() -> u64 {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_micros();
-    now as u64
-}
+use super::{read_context, ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
 
 #[derive(Debug)]
 pub struct SimplePrioritySelector;
@@ -62,36 +53,6 @@ pub struct SimpleChildContext {
     future_tracker: LatencyTracker,
 }
 
-#[derive(Debug, Clone)]
-enum LatencyTracker {
-    NotStarted,
-    Started(Instant),
-    Finished(Duration),
-}
-
-impl LatencyTracker {
-    fn start(&mut self) {
-        *self = match self {
-            Self::NotStarted => Self::Started(Instant::now()),
-            _ => panic!("Cannot start tracking latency twice"),
-        }
-    }
-
-    fn record_latency(&mut self) {
-        *self = match self {
-            Self::Started(inst) => Self::Finished(inst.elapsed()),
-            _ => panic!("Cannot record latency if the tracker hasn't started"),
-        }
-    }
-
-    fn get_latency(&self) -> Option<Duration> {
-        match self {
-            Self::Finished(lat) => Some(*lat),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct SimpleServerContext {
@@ -105,7 +66,6 @@ pub struct SimpleServerContext {
 impl SimpleParentContext {
     #[inline]
     fn check_early_return(&self) -> bool {
-        // if self.method.id() == "/frontend.Frontend/HandleSearch"
         if FIFO_EARLY || PRIO_GLOBAL_EARLY || PRIO_LOCAL_EARLY {
             if self.will_early_return.load(Ordering::Relaxed) {
                 return true;
@@ -153,12 +113,9 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
         req: &http::Request<B>,
         server_ctx: Arc<SimpleServerContext>,
     ) -> Self {
-        // log::info!("parent_ctx, begin, method: {:?}", method.id());
-        let ctx_str = req.headers()["ctx"].to_str().unwrap();
-        let ctx = Context::from_json(ctx_str);
         Self {
             method,
-            ctx,
+            ctx: read_context(req),
             server_ctx,
             will_early_return: AtomicBool::new(false),
             num_polled: AtomicUsize::new(0),

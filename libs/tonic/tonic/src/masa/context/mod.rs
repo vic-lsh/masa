@@ -2,19 +2,32 @@ use std::{sync::Arc, task::Poll};
 
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
-pub mod runtime;
-#[allow(missing_docs)]
-pub mod simple;
-mod tls;
-pub use tls::{client, server};
+mod local;
+use local::{LocalDeadlineDirect, LocalDeadlineIndirect};
 mod noop;
+mod simple;
 
-/// Default priority selector.
+pub mod runtime;
+mod tls;
+use masa::Context;
+pub use tls::{client, server};
+
 #[cfg(not(feature = "masa"))]
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
-/// Default priority selector.
-#[cfg(feature = "masa")]
+#[cfg(any(feature = "fifo", feature = "fifo_infra"))]
+pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
+#[cfg(any(
+    feature = "prio_global",
+    feature = "prio_global_early",
+    feature = "prio_local",
+    feature = "prio_local_early",
+    feature = "fifo_early"
+))]
 pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
+#[cfg(any(feature = "prio_local_direct"))]
+pub type DefaultPrioritySelector = LocalDeadlineDirect;
+#[cfg(any(feature = "prio_local_indirect"))]
+pub type DefaultPrioritySelector = LocalDeadlineIndirect;
 
 // TODO: rename this to be more general
 // TODO: add notes on trait bounds
@@ -139,4 +152,9 @@ where
     /// The last lifecycle hook to be invoked. Provides a mutable reference to the response about
     /// to be sent back to the client.
     fn finalize(&self, response: &mut http::Response<BoxBody>) {}
+}
+
+fn read_context<B>(req: &http::Request<B>) -> Context {
+    let ctx_str = req.headers()["ctx"].to_str().unwrap();
+    Context::from_json(ctx_str)
 }
