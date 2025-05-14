@@ -41,7 +41,7 @@ pub struct Args {
     pub output_path: String,
 }
 
-const COUNTER_KEYS: [&'static str; 7] = [
+const COUNTER_KEYS: [&'static str; 8] = [
     // total number of (sent) requests
     "all",
     // number of (completed) requests satisfying SLO
@@ -56,6 +56,8 @@ const COUNTER_KEYS: [&'static str; 7] = [
     "err_search",
     // total number of errors in reservation API
     "err_reservation",
+    // total number of unexpected errors
+    "unexpected",
 ];
 
 struct Counters {
@@ -209,6 +211,7 @@ impl LoadGenerator {
                     return;
                 }
 
+                // increment the right counters
                 let error = &stats.error;
                 match error.as_str() {
                     "/None" => {
@@ -223,10 +226,13 @@ impl LoadGenerator {
                     "/ClientTimeout" => {
                         ctrs.increment("err_cl_to");
                     }
-                    _ => panic!("Unimplemented error: {}", error),
+                    e => {
+                        ctrs.increment("unexpected");
+                        log::error!("unexpected request error '{}'", e);
+                    }
                 };
 
-                if error != "None" {
+                if error != "/None" {
                     match api.as_str() {
                         "Search" => {
                             ctrs.increment("err_search");
@@ -234,9 +240,10 @@ impl LoadGenerator {
                         "Reservation" => {
                             ctrs.increment("err_reservation");
                         }
-                        _ => panic!("Unimplemented API"),
+                        _ => panic!("should never happen"),
                     }
                 }
+
                 trace_tx.try_send(stats).unwrap();
             });
         }
@@ -326,21 +333,23 @@ async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
         let delta = |k| counters.get(k) - prev.get(k);
 
         log::warn!(
-            "secs: {}, rps: {}, goodput: {}, early returns: {}, deadline misses: {}, timeouts: {}",
+            "secs: {}, rps: {}, goodput: {}, early returns: {}, deadline misses: {}, timeouts: {}, unexpected: {}",
             secs,
             delta("all"),
             delta("good"),
             delta("err_svc_er"),
             delta("err_cl_miss"),
             delta("err_cl_to"),
+            delta("unexpected"),
         );
         log::warn!(
-            "total early returns: {}, total deadline misses: {}, total timeouts: {}, total search errors: {}, total reservation errors: {}",
+            "total early returns: {}, total deadline misses: {}, total timeouts: {}, total search errors: {}, total reservation errors: {}, total unexpected errors: {}",
             counters.get("err_svc_er"),
             counters.get("err_cl_miss"),
             counters.get("err_cl_to"),
             counters.get("err_search"),
             counters.get("err_reservation"),
+            counters.get("unexpected"),
         );
         // clone the Counters struct itself as opposed to creating another reference
         prev = (*counters).clone();
@@ -352,7 +361,8 @@ async fn send_request(
     api: &str,
     ctx: Context,
 ) -> RequestStats {
-    let send_at = time_now();
+    let send_at;
+    let recv_at;
     let timeout_duration = Duration::from_secs(1);
 
     let response = match api {
@@ -362,7 +372,10 @@ async fn send_request(
                 request.metadata_mut().insert_ctx("ctx", &ctx);
                 request
             };
-            map_response(timeout(timeout_duration, client.handle_search(request)).await)
+            send_at = time_now();
+            let r = timeout(timeout_duration, client.handle_search(request)).await;
+            recv_at = time_now();
+            map_response(r)
         }
         "Reservation" => {
             let request = {
@@ -370,13 +383,15 @@ async fn send_request(
                 request.metadata_mut().insert_ctx("ctx", &ctx);
                 request
             };
-            map_response(timeout(timeout_duration, client.handle_reservation(request)).await)
+            send_at = time_now();
+            let r = timeout(timeout_duration, client.handle_reservation(request)).await;
+            recv_at = time_now();
+            map_response(r)
         }
         _ => panic!("Unimplemented API {}", api),
     };
     let stats = match response {
         Ok(response) => {
-            let recv_at = time_now();
             let latency = recv_at - send_at;
             let error = {
                 if let Err(ref status) = response {
