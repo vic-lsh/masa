@@ -52,7 +52,10 @@ impl ProfileImpl {
     pub async fn new(config: HotelConfig) -> Result<Self, Box<dyn std::error::Error>> {
         let mongo_client = db::initialize_database(&config.profile_mongodb_addr).await?;
 
-        let latency_tracker = Arc::new(Mutex::new(LatencyDistribution::new("ProfileSvc".into(), 1024)));
+        let latency_tracker = Arc::new(Mutex::new(LatencyDistribution::new(
+            "ProfileSvc".into(),
+            1024,
+        )));
 
         #[cfg(feature = "workload_stats")]
         let fanout_tracker = {
