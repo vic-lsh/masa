@@ -77,6 +77,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             format!("{}/{}", self.method.id(), child_method.id()),
         )
         .unwrap_or(0);
+        // NOTE(vic): could we have passed the deadline at this point?
         let deadline = self.ctx.deadline() - estimate_remaining;
 
         let child_recv_ctx = Context::new(
@@ -100,6 +101,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         _child_ctx: ChildContext,
     ) -> Result<(), Status> {
         if let Err(status) = response {
+            // NOTE(vic): could we avoid cloning here?
             return Err(status.clone());
         }
 
