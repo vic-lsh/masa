@@ -3,9 +3,9 @@ pub mod hotel_tonic {
         tonic::include_proto!("reservation");
     }
 }
+use app_utils::stats::AvgTracker;
 use async_memcached::AsciiProtocol;
 use chrono::DateTime;
-use hotel::AvgTracker;
 use hotel_tonic::reservation::{self, reservation_server::Reservation};
 use masa::LatencyDistribution;
 use std::collections::{HashMap, HashSet};
@@ -18,8 +18,8 @@ use std::time::{Duration, Instant};
 use crate::config::HotelConfig;
 use crate::db;
 use app_util_macros::track_latency;
-use app_utils::latency::{new_latency_tracker, SyncLatencyTracker};
 use app_utils::pool::McPool;
+use app_utils::stats::latency::{new_latency_tracker, SyncLatencyTracker};
 use mongodb::{bson::doc, Client as MongoClient, Collection};
 use tonic::{Request, Response, Status};
 
