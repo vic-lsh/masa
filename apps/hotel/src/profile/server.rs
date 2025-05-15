@@ -11,8 +11,8 @@ use std::sync::Arc;
 use {rand::rngs::StdRng, rand::SeedableRng, rand_distr::Uniform};
 
 use crate::{config::HotelConfig, db};
+use app_utils::pool::McPool;
 use async_memcached::AsciiProtocol;
-use hotel::McPool;
 use masa::LatencyDistribution;
 use mongodb::{bson::doc, Client as MongoClient};
 use tokio::sync::Mutex;
