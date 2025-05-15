@@ -27,7 +27,7 @@ impl Parse for TrackLatencyArgs {
 ///
 /// # Example
 /// ```
-/// use app_utils::latency::new_latency_tracker;
+/// use app_utils::stats::latency::new_latency_tracker;
 /// use app_util_macros::track_latency;
 ///
 /// let (mut tracker, _consumer) = new_latency_tracker("code-block-name");

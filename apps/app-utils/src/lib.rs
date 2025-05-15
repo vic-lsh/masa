@@ -1,2 +1,2 @@
-pub mod latency;
 pub mod pool;
+pub mod stats;
