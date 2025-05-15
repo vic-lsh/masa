@@ -5,3 +5,5 @@ edition = "2021"
 
 [dependencies]
 tokio = { path = "../../libs/tokio/tokio", features = ["full"] }
+async-memcached = { path = "../../3rd_party/async-memcached" }
+log = "0.4"
