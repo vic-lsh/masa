@@ -19,7 +19,7 @@ use crate::config::HotelConfig;
 use crate::db;
 use app_util_macros::track_latency;
 use app_utils::latency::{new_latency_tracker, SyncLatencyTracker};
-use hotel::McPool;
+use app_utils::pool::McPool;
 use mongodb::{bson::doc, Client as MongoClient, Collection};
 use tonic::{Request, Response, Status};
 
