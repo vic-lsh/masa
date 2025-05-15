@@ -47,5 +47,6 @@ fi
 echo "Service build complete. Starting services..."
 
 docker compose -f $SCRIPT_DIR/local/containers+svcs.yaml down
+docker volume prune -a -f
 
 docker compose -f $SCRIPT_DIR/local/containers+svcs.yaml up -d
