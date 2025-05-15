@@ -1,16 +1,8 @@
-use async_memcached::Client as McClient;
 use serde_json;
-use std::collections::VecDeque;
 use std::fs::{self, File};
-use std::future::Future;
 use std::io::Write;
-use std::mem::MaybeUninit;
-use std::ops::{Deref, DerefMut};
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::Notify;
 
 use crossbeam_channel::Receiver;
 use env_logger::{Builder, Env};
@@ -112,28 +104,5 @@ impl JsonParser {
         let data = fs::read_to_string(path).expect("Unable to read file");
         let res: serde_json::Value = serde_json::from_str(&data).expect("Unable to parse");
         res
-    }
-}
-
-#[derive(Default)]
-pub struct AvgTracker {
-    sum: AtomicUsize,
-    count: AtomicUsize,
-}
-
-impl AvgTracker {
-    pub fn track(&self, fanout: usize) {
-        self.sum.fetch_add(fanout, Ordering::Relaxed);
-        self.count.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn get(&self) -> usize {
-        let count = self.count.load(Ordering::Relaxed);
-        if count == 0 {
-            0
-        } else {
-            let sum = self.sum.load(Ordering::Relaxed);
-            sum / count
-        }
     }
 }
