@@ -3,11 +3,11 @@ pub mod hotel_tonic {
         tonic::include_proto!("rate");
     }
 }
+use app_utils::pool::McPool;
 use async_memcached::AsciiProtocol;
 use futures::StreamExt;
 #[cfg(feature = "workload_stats")]
 use hotel::AvgTracker;
-use hotel::McPool;
 #[cfg(not(feature = "synthetic"))]
 use std::collections::HashSet;
 use tokio::sync::Mutex;
