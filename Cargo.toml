@@ -34,6 +34,7 @@ members = [
   # evaluation applications
   "apps/hotel",
   "apps/socialnet",
+  "apps/synthetic",
   "apps/app-utils",
   "apps/app-util-macros",
 ]

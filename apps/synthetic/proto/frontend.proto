@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package frontend;
+
+service Frontend {
+  rpc HandlePing(PingRequest) returns (PingResponse) {}
+  rpc HandleA(ARequest) returns (AResponse) {}
+}
+
+message PingRequest { string message = 1; }
+message PingResponse { string message = 1; }
+
+message ARequest {}
+message AResponse {}

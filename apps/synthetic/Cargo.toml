@@ -1,57 +1,21 @@
 [package]
 edition = "2021"
 license = "MIT"
-name = "hotel"
+name = "synthetic"
 publish = false
 version = "0.1.0"
 
 [[bin]]
-name = "hotel_client_bench"
+name = "synthetic_client_bench"
 path = "src/client/client_bench.rs"
 
 [[bin]]
-name = "hotel_frontend"
+name = "synthetic_frontend"
 path = "src/frontend/main.rs"
 
 [[bin]]
-name = "hotel_geo"
-path = "src/geo/main.rs"
-
-[[bin]]
-name = "hotel_rate"
-path = "src/rate/main.rs"
-
-[[bin]]
-name = "hotel_review"
-path = "src/review/main.rs"
-
-[[bin]]
-name = "hotel_search"
-path = "src/search/main.rs"
-
-[[bin]]
-name = "hotel_profile"
-path = "src/profile/main.rs"
-
-[[bin]]
-name = "hotel_reservation"
-path = "src/reservation/main.rs"
-
-[[bin]]
-name = "hotel_user"
-path = "src/user/main.rs"
-
-[[bin]]
-name = "hotel_recommendation"
-path = "src/recommendation/main.rs"
-
-# [[bin]]
-# name = "recommendation-client"
-# path = "src/recommendation/client.rs"
-
-[[bin]]
-name = "loadgen"
-path = "src/loadgen/main.rs"
+name = "synthetic_child"
+path = "src/child/main.rs"
 
 [features]
 prio_class = ["async-executor/prio_class", "masa/prio_class", "tonic/prio_class"]
@@ -85,7 +49,6 @@ prio_local_indirect = [
 fifo = ["async-executor/fifo", "masa/fifo", "tonic/fifo"]
 fifo_early = ["async-executor/fifo_early", "masa/fifo_early", "tonic/fifo_early"]
 fifo_infra = ["async-executor/fifo_infra", "masa/fifo_infra", "tonic/fifo_infra"]
-synthetic = []
 workload_stats = []
 
 gcp = ["dep:prost-types", "tonic/tls"]

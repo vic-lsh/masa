@@ -1,0 +1,43 @@
+services:
+  child-service:
+    image: synthetic_child:latest
+    container_name: "synthetic_child_0"
+    command: /bin/sh -c 'RUST_LOG=${LOG_LEVEL} /usr/local/bin/${BINARY_NAME} --config /usr/config.json --index 0'
+    restart: always
+    networks:
+      - synthetic_network
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
+  child-service:
+    image: synthetic_child:latest
+    container_name: "synthetic_child_1"
+    command: /bin/sh -c 'RUST_LOG=${LOG_LEVEL} /usr/local/bin/${BINARY_NAME} --config /usr/config.json --index 1'
+    restart: always
+    networks:
+      - synthetic_network
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
+  frontend-service:
+    image: synthetic_frontend:latest
+    container_name: "synthetic_frontend"
+    restart: always
+    networks:
+      - synthetic_network
+    ports:
+      - "8658:8660"
+    depends_on:
+      - child-service
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
+networks:
+  synthetic_network:
+    driver: bridge

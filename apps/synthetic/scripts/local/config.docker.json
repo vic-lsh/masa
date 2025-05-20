@@ -1,0 +1,6 @@
+{
+  "FrontendIp": "127.0.0.1",
+  "FrontendPort": 8658,
+  "ChildIp": "child-service",
+  "ChildPort": 8661
+}
