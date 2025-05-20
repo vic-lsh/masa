@@ -10,7 +10,7 @@ use structopt::StructOpt;
 use tonic::transport::Server;
 
 use config::HotelConfig;
-use hotel::init_logging;
+use app_utils::logging::init_logging;
 use server::hotel_tonic::search::search_server::SearchServer;
 use server::SearchImpl;
 

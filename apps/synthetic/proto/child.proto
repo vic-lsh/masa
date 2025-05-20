@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package child;
+
+service Child {
+  rpc RandomLatency(RandomLatencyRequest) returns (RandomLatencyResponse) {}
+  rpc ConstantLatency(ConstantLatencyRequest)
+      returns (ConstantLatencyResponse) {}
+}
+
+message RandomLatencyRequest {}
+message RandomLatencyResponse {}
+
+message ConstantLatencyRequest {}
+message ConstantLatencyResponse {}

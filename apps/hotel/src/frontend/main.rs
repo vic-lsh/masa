@@ -10,7 +10,7 @@ use structopt::StructOpt;
 use tonic::transport::Server;
 
 use config::HotelConfig;
-use hotel::init_logging;
+use app_utils::logging::init_logging;
 use server::hotel_tonic::frontend::frontend_server::FrontendServer;
 use server::FrontendImpl;
 
