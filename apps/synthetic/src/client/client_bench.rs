@@ -1,41 +1,29 @@
 #[path = "../config.rs"]
 pub mod config;
-pub mod hotel_tonic {
+pub mod frontend {
     tonic::include_proto!("frontend");
 }
-mod gen;
 
-use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::PathBuf;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 
 use crossbeam_channel::{unbounded, Sender};
-use gen::{get_ping_request, get_reservation_request, get_search_request};
-use rand::{rngs::StdRng, SeedableRng};
-use rand_distr::{Distribution, Exp, Uniform};
 use structopt::StructOpt;
 use tokio::task::JoinSet;
-use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration, Instant};
-
-use masa::Context;
 use tonic::transport::Channel;
-use tonic::Status;
 
 use app_utils::{
     load_gen::{fetch_traces, map_response, Counters, GenConfig, LoadGenArgs, RequestStats},
     logging::init_logging,
     timing::time_now,
 };
-use hotel_tonic::frontend_client::FrontendClient;
+use frontend::frontend_client::FrontendClient;
+use masa::Context;
 
-const COUNTER_KEYS: [&'static str; 8] = [
+const COUNTER_KEYS: [&'static str; 7] = [
     // total number of (sent) requests
     "all",
     // number of (completed) requests satisfying SLO
@@ -46,10 +34,8 @@ const COUNTER_KEYS: [&'static str; 8] = [
     "err_cl_miss",
     // number of timeouts
     "err_cl_to",
-    // total number of errors in search API
-    "err_search",
-    // total number of errors in reservation API
-    "err_reservation",
+    // total number of errors in API 'a'
+    "err_a",
     // total number of unexpected errors
     "unexpected",
 ];
@@ -57,7 +43,6 @@ const COUNTER_KEYS: [&'static str; 8] = [
 #[derive(Debug)]
 struct LoadGenerator {
     gen_cfg: GenConfig,
-    rng: StdRng,
     rps: u64,
     client: FrontendClient<Channel>,
     trace_tx: Sender<RequestStats>,
@@ -66,14 +51,12 @@ struct LoadGenerator {
 impl LoadGenerator {
     pub fn new(
         gen_cfg: GenConfig,
-        rng: StdRng,
         rps: u64,
         client: FrontendClient<Channel>,
         trace_tx: Sender<RequestStats>,
     ) -> Self {
         Self {
             gen_cfg,
-            rng,
             rps,
             client,
             trace_tx,
@@ -109,9 +92,7 @@ impl LoadGenerator {
         pause_at: Instant,
     ) {
         let mut counter_test_id = 0;
-        let exponential = Exp::new(self.rps as f64).unwrap();
         let mut elapse = 0f64;
-        let uniform = Uniform::<u32>::new(0, 1_000_000_007);
 
         let mut set = JoinSet::new();
 
@@ -123,23 +104,18 @@ impl LoadGenerator {
                 if Instant::now() < warm_at {
                     0.01
                 } else {
-                    if self.gen_cfg.gap == "const" {
-                        1f64 / self.rps as f64
-                    } else {
-                        exponential.sample(&mut self.rng)
-                    }
+                    1f64 / self.rps as f64
                 }
             };
             elapse += value;
 
-            let api_idx = uniform.sample(&mut self.rng) as usize % self.gen_cfg.apis.len();
-            let api = self.gen_cfg.apis[api_idx].clone();
-            let slo = self.gen_cfg.slos[api_idx];
+            let api = self.gen_cfg.apis[0].clone();
+            let slo = self.gen_cfg.slos[0];
 
             let ctx = {
                 let test_id = counter_test_id;
                 counter_test_id += 1;
-                let request_id = uniform.sample(&mut self.rng) as u64;
+                let request_id = 0;
                 let request_class = 0;
 
                 let start_at = time_now();
@@ -191,11 +167,8 @@ impl LoadGenerator {
 
                 if error != "/None" {
                     match api.as_str() {
-                        "Search" => {
-                            ctrs.increment("err_search");
-                        }
-                        "Reservation" => {
-                            ctrs.increment("err_reservation");
+                        "a" => {
+                            ctrs.increment("err_a");
                         }
                         _ => panic!("should never happen"),
                     }
@@ -230,14 +203,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (trace_tx, trace_rx) = unbounded();
 
         let mut load_gen = {
-            const KEY: u64 = 13;
-            const SEED: u64 = 998244353;
-
-            let seed = SEED * KEY + rps;
-            let rng = StdRng::seed_from_u64(seed);
             let client = {
                 let mut client = FrontendClient::connect(gen_cfg.addr.clone()).await?;
-                let mut request = tonic::Request::new(get_ping_request());
+                let mut request = tonic::Request::new(frontend::PingRequest {
+                    message: "ping".to_string(),
+                });
                 let ctx = {
                     let test_id = 0;
                     let request_id = 0;
@@ -260,7 +230,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 client
             };
 
-            let load_gen = LoadGenerator::new(gen_cfg.clone(), rng, *rps, client, trace_tx);
+            let load_gen = LoadGenerator::new(gen_cfg.clone(), *rps, client, trace_tx);
             load_gen
         };
 
@@ -299,12 +269,11 @@ async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
             delta("err_cl_to"),
         );
         log::warn!(
-            "total early returns: {}, total deadline misses: {}, total timeouts: {}, total search errors: {}, total reservation errors: {}, total unexpected errors: {}",
+            "total early returns: {}, total deadline misses: {}, total timeouts: {}, total x errors: {}, total unexpected errors: {}",
             counters.get("err_svc_er"),
             counters.get("err_cl_miss"),
             counters.get("err_cl_to"),
-            counters.get("err_search"),
-            counters.get("err_reservation"),
+            counters.get("err_a"),
             counters.get("unexpected"),
         );
         // clone the Counters struct itself as opposed to creating another reference
@@ -322,25 +291,14 @@ async fn send_request(
     let timeout_duration = Duration::from_secs(1);
 
     let response = match api {
-        "Search" => {
+        "a" => {
             let request = {
-                let mut request = tonic::Request::new(get_search_request());
+                let mut request = tonic::Request::new(frontend::ARequest {});
                 request.metadata_mut().insert_ctx("ctx", &ctx);
                 request
             };
             send_at = time_now();
-            let r = timeout(timeout_duration, client.handle_search(request)).await;
-            recv_at = time_now();
-            map_response(r)
-        }
-        "Reservation" => {
-            let request = {
-                let mut request = tonic::Request::new(get_reservation_request());
-                request.metadata_mut().insert_ctx("ctx", &ctx);
-                request
-            };
-            send_at = time_now();
-            let r = timeout(timeout_duration, client.handle_reservation(request)).await;
+            let r = timeout(timeout_duration, client.handle_a(request)).await;
             recv_at = time_now();
             map_response(r)
         }

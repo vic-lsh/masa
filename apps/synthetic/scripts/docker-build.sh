@@ -1,15 +1,15 @@
 #!/bin/bash
 
 services=(
-    "hotel_frontend"
-    "hotel_geo"
-    "hotel_rate"
-    "hotel_search"
-    "hotel_profile"
-    "hotel_reservation"
-    "hotel_user"
-    "hotel_review"
+    "synthetic_frontend"
+    "synthetic_child"
 )
+
+pwd=$(pwd)
+if [[ "$pwd" != */apps/synthetic ]]; then
+    echo "Error: please run in the apps/synthetic directory" >&2
+    exit 1
+fi
 
 features=""
 rust_log="warn"
@@ -35,21 +35,16 @@ done
 # Validate required arguments
 if [[ -z "$features" ]]; then
     echo "Warn: --features not set."
+    features_arg=""
+else
+    features_arg="--features $features"
 fi
 
-app="hotel"
-
-echo "Building all hotel services. Feature flags: $features."
+echo "Building all services. Feature flags: $features."
 
 echo "Building docker images sequentially."
 
-if [[ -z "$features" ]]; then
-    features_arg="--features $features"
-else
-    features_arg=""
-fi
-
 set -e
 for svc in "${services[@]}"; do
-    ./scripts/docker-build-svc.sh --binary $svc --app $app --rust-log $rust_log $features_arg
+    ../app-utils/scripts/docker-build-svc.sh --binary $svc --rust-log $rust_log $features_arg
 done
