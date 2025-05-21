@@ -5,11 +5,12 @@ pub mod hotel_tonic {
 }
 mod gen;
 
+use std;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -212,9 +213,15 @@ impl LoadGenerator {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = LoadGenArgs::from_args();
+
+    let path = Path::new(&args.output_path);
+    if !path.exists() {
+        fs::create_dir_all(path).unwrap();
+    }
+
     init_logging();
 
-    let args = LoadGenArgs::from_args();
     let gen_cfg: GenConfig = {
         let file = File::open(args.gen_config).expect("Failed to open file");
         let reader = BufReader::new(file);
