@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 skip_build=false
 features=""
-rust_log="warn"
+rust_log="info"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do

@@ -22,12 +22,14 @@ COPY libs ./libs
 COPY apps/app-util-macros/ ./apps/app-util-macros/
 COPY apps/app-utils/ ./apps/app-utils/
 
+COPY apps/hotel/Cargo.toml ./apps/hotel/Cargo.toml
+COPY apps/socialnet/Cargo.toml ./apps/socialnet/Cargo.toml
+COPY apps/synthetic/Cargo.toml ./apps/synthetic/Cargo.toml
+
 ARG APP
 RUN if [ -z "$APP" ]; then \
     echo "Error: APP argument is required" && exit 1; \
     fi
-COPY apps/${APP}/Cargo.toml ./apps/${APP}/Cargo.toml
-
 WORKDIR /usr/src/app/apps/${APP}
 RUN mkdir src
 RUN touch src/lib.rs
