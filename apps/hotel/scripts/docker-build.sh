@@ -44,12 +44,12 @@ echo "Building all hotel services. Feature flags: $features."
 echo "Building docker images sequentially."
 
 if [[ -z "$features" ]]; then
-    features_arg="--features $features"
-else
     features_arg=""
+else
+    features_arg="--features $features"
 fi
 
 set -e
 for svc in "${services[@]}"; do
-    ./scripts/docker-build-svc.sh --binary $svc --app $app --rust-log $rust_log $features_arg
+    ../app-utils/scripts/docker-build-svc.sh --binary $svc --app $app --rust-log $rust_log $features_arg
 done
