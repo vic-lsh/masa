@@ -178,7 +178,7 @@ services:
     networks:
       - hotel_network
     ports:
-      - "8660:8660"
+      - "8659:8660"
     depends_on:
       - user-service
       - reservation-service
