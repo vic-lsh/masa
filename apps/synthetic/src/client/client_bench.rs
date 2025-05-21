@@ -5,8 +5,10 @@ pub mod frontend {
 }
 
 use std::error::Error;
+use std::fs;
 use std::fs::File;
 use std::io::BufReader;
+use std::path::Path;
 use std::sync::Arc;
 
 use crossbeam_channel::{unbounded, Sender};
@@ -17,7 +19,7 @@ use tonic::transport::Channel;
 
 use app_utils::{
     load_gen::{fetch_traces, map_response, Counters, GenConfig, LoadGenArgs, RequestStats},
-    logging::init_logging,
+    logging::init_logging_file,
     timing::time_now,
 };
 use frontend::frontend_client::FrontendClient;
@@ -185,9 +187,15 @@ impl LoadGenerator {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging();
-
     let args = LoadGenArgs::from_args();
+
+    let path = Path::new(&args.output_path);
+    if !path.exists() {
+        fs::create_dir_all(path).unwrap();
+    }
+
+    init_logging_file(&args.output_path);
+
     let gen_cfg: GenConfig = {
         let file = File::open(args.gen_config).expect("Failed to open file");
         let reader = BufReader::new(file);
