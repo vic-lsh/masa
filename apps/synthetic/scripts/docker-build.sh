@@ -32,6 +32,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+app="synthetic"
+
 # Validate required arguments
 if [[ -z "$features" ]]; then
     echo "Warn: --features not set."
@@ -46,5 +48,5 @@ echo "Building docker images sequentially."
 
 set -e
 for svc in "${services[@]}"; do
-    ../app-utils/scripts/docker-build-svc.sh --binary $svc --rust-log $rust_log $features_arg
+    ../app-utils/scripts/docker-build-svc.sh --binary $svc --app $app --rust-log $rust_log $features_arg
 done

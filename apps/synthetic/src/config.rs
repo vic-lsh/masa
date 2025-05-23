@@ -8,9 +8,9 @@ pub struct SyntheticConfig {
     #[serde(rename = "FrontendPort")]
     pub frontend_port: u16,
 
-    #[serde(rename = "ChildIp")]
+    #[serde(rename = "ChildIps")]
     pub child_ips: Vec<String>,
-    #[serde(rename = "ChildPort")]
+    #[serde(rename = "ChildPorts")]
     pub child_ports: Vec<u16>,
     #[serde(rename = "ChildConstantLatency")]
     pub child_constant_latency: u64,
