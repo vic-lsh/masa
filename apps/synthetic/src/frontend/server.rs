@@ -53,7 +53,7 @@ impl Frontend for FrontendImpl {
     ) -> Result<Response<frontend::PingResponse>, Status> {
         let request = request.into_inner();
         let response = frontend::PingResponse {
-            message: request.message,
+            message: "pong".to_string(),
         };
         let response = Response::new(response);
         Ok(response)

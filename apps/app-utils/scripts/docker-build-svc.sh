@@ -4,6 +4,7 @@ set -e
 binary=""
 features=""
 rust_log="warn"
+app=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
