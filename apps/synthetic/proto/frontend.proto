@@ -11,4 +11,8 @@ message PingRequest { string message = 1; }
 message PingResponse { string message = 1; }
 
 message ARequest {}
-message AResponse {}
+message AResponse { 
+  uint64 child1_latency = 1;
+  uint64 child2_latency = 2;
+  uint64 handler_latency = 3; 
+}

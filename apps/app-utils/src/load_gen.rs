@@ -1,69 +1,8 @@
-use crossbeam_channel::Receiver;
-use masa::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{self, File};
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use structopt::StructOpt;
-use tokio::time::error::Elapsed;
-use tonic::Status;
-
-#[derive(Debug, Clone)]
-pub struct RequestStats {
-    pub ctx: Context,
-    pub latency: u64,
-    pub error: String,
-}
-
-impl RequestStats {
-    pub fn new(ctx: Context, latency: u64, error: String) -> Self {
-        Self {
-            ctx,
-            latency,
-            error,
-        }
-    }
-}
-
-pub async fn fetch_traces(output_file: String, trace_rx: Receiver<RequestStats>) {
-    let path = Path::new(&output_file);
-    if let Some(parent) = path.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent).unwrap();
-        }
-    }
-    let mut file = File::create(output_file).unwrap();
-    writeln!(
-        file,
-        "api,test_id,request_id,slo,request_class,start_at,deadline,latency,error"
-    )
-    .unwrap();
-    while let Ok(span) = trace_rx.recv() {
-        writeln!(
-            file,
-            "{},{},{},{},{},{},{},{},{}",
-            span.ctx.api(),
-            span.ctx.test_id(),
-            span.ctx.request_id(),
-            span.ctx.slo(),
-            span.ctx.request_class(),
-            span.ctx.start_at(),
-            span.ctx.deadline(),
-            span.latency,
-            span.error
-        )
-        .unwrap();
-    }
-    log::warn!("All traces fetched");
-}
-
-pub fn map_response<T>(
-    timeout_response: Result<Result<T, Status>, Elapsed>,
-) -> Result<Result<(), Status>, Elapsed> {
-    timeout_response.map(|response| response.map(|_r| ()))
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

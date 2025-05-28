@@ -8,17 +8,18 @@ use std::error::Error;
 use std::fs;
 use std::fs::File;
 use std::io::BufReader;
+use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
-use crossbeam_channel::{unbounded, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use structopt::StructOpt;
 use tokio::task::JoinSet;
 use tokio::time::{timeout, Duration, Instant};
 use tonic::transport::Channel;
 
 use app_utils::{
-    load_gen::{fetch_traces, map_response, Counters, GenConfig, LoadGenArgs, RequestStats},
+    load_gen::{Counters, GenConfig, LoadGenArgs},
     logging::init_logging_file,
     timing::time_now,
 };
@@ -41,6 +42,94 @@ const COUNTER_KEYS: [&'static str; 7] = [
     // total number of unexpected errors
     "unexpected",
 ];
+
+#[derive(Debug, Clone)]
+struct RequestStats {
+    ctx: Context,
+    latency: u64,
+    frontend_latency: u64,
+    child1_latency: u64,
+    child2_latency: u64,
+    error: String,
+}
+
+impl RequestStats {
+    const HEADERS: [&'static str; 12] = [
+        "api",
+        "test_id",
+        "request_id",
+        "slo",
+        "request_class",
+        "start_at",
+        "deadline",
+        "latency",
+        "error",
+        "frontend_latency",
+        "child1_latency",
+        "child2_latency",
+    ];
+
+    fn new(
+        ctx: Context,
+        latency: u64,
+        response: Option<frontend::AResponse>,
+        error: String,
+    ) -> Self {
+        let mut s = Self {
+            ctx,
+            latency,
+            frontend_latency: 0,
+            child1_latency: 0,
+            child2_latency: 0,
+            error,
+        };
+
+        if let Some(r) = response {
+            s.frontend_latency = r.handler_latency;
+            s.child1_latency = r.child1_latency;
+            s.child2_latency = r.child2_latency;
+        }
+
+        s
+    }
+
+    fn to_row(&self) -> String {
+        format!(
+            "{},{},{},{},{},{},{},{},{},{},{},{}",
+            self.ctx.api(),
+            self.ctx.test_id(),
+            self.ctx.request_id(),
+            self.ctx.slo(),
+            self.ctx.request_class(),
+            self.ctx.start_at(),
+            self.ctx.deadline(),
+            self.latency,
+            self.error,
+            self.frontend_latency,
+            self.child1_latency,
+            self.child2_latency,
+        )
+    }
+
+    fn header_row() -> String {
+        Self::HEADERS.join(",")
+    }
+}
+
+async fn fetch_traces(output_file: String, trace_rx: Receiver<RequestStats>) {
+    let path = Path::new(&output_file);
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent).unwrap();
+        }
+    }
+    let mut file = File::create(output_file).unwrap();
+    writeln!(file, "{}", RequestStats::header_row()).unwrap();
+    while let Ok(stats) = trace_rx.recv() {
+        writeln!(file, "{}", stats.to_row()).unwrap();
+    }
+    log::warn!("All traces fetched");
+}
 
 #[derive(Debug)]
 struct LoadGenerator {
@@ -277,7 +366,7 @@ async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
             delta("err_cl_to"),
         );
         log::warn!(
-            "total early returns: {}, total deadline misses: {}, total timeouts: {}, total x errors: {}, total unexpected errors: {}",
+            "total early returns: {}, total deadline misses: {}, total timeouts: {}, total a errors: {}, total unexpected errors: {}",
             counters.get("err_svc_er"),
             counters.get("err_cl_miss"),
             counters.get("err_cl_to"),
@@ -308,7 +397,7 @@ async fn send_request(
             send_at = time_now();
             let r = timeout(timeout_duration, client.handle_a(request)).await;
             recv_at = time_now();
-            map_response(r)
+            r
         }
         _ => panic!("Unimplemented API {}", api),
     };
@@ -324,11 +413,11 @@ async fn send_request(
                     "/None".to_string()
                 }
             };
-            RequestStats::new(ctx, latency, error)
+            RequestStats::new(ctx, latency, response.map(|r| r.into_inner()).ok(), error)
         }
         Err(_) => {
             let error = "/ClientTimeout".to_string();
-            RequestStats::new(ctx, timeout_duration.as_micros() as u64, error)
+            RequestStats::new(ctx, timeout_duration.as_micros() as u64, None, error)
         }
     };
 

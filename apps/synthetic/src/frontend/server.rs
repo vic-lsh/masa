@@ -8,6 +8,8 @@ pub mod synthetic_tonic {
     }
 }
 
+use std::time::Instant;
+
 use crate::config::SyntheticConfig;
 use ginepro::LoadBalancedChannel;
 
@@ -49,9 +51,8 @@ impl FrontendImpl {
 impl Frontend for FrontendImpl {
     async fn handle_ping(
         &self,
-        request: Request<frontend::PingRequest>,
+        _request: Request<frontend::PingRequest>,
     ) -> Result<Response<frontend::PingResponse>, Status> {
-        let request = request.into_inner();
         let response = frontend::PingResponse {
             message: "pong".to_string(),
         };
@@ -63,16 +64,23 @@ impl Frontend for FrontendImpl {
         &self,
         _request: Request<frontend::ARequest>,
     ) -> Result<Response<frontend::AResponse>, Status> {
+        let start = Instant::now();
         let mut child1_client = self.child1_client.clone();
-        child1_client
+        let response = child1_client
             .random_latency(child::RandomLatencyRequest {})
             .await?;
+        let child1_latency = response.into_inner().handler_latency;
 
         let mut child2_client = self.child2_client.clone();
-        child2_client
+        let response = child2_client
             .constant_latency(child::ConstantLatencyRequest {})
             .await?;
+        let child2_latency = response.into_inner().handler_latency;
 
-        Ok(Response::new(frontend::AResponse {}))
+        Ok(Response::new(frontend::AResponse {
+            child1_latency,
+            child2_latency,
+            handler_latency: Instant::now().duration_since(start).as_micros() as u64,
+        }))
     }
 }
