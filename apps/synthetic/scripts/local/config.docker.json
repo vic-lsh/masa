@@ -1,9 +1,0 @@
-{
-  "FrontendIp": "127.0.0.1",
-  "FrontendPort": 8660,
-  "ChildIps": ["child-service-0", "child-service-1"],
-  "ChildPorts": [8661, 8662],
-  "ChildConstantLatency": 5000,
-  "ChildRandomMean": 5000,
-  "ChildRandomStd": 1000
-}
