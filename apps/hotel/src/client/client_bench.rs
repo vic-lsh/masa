@@ -6,18 +6,15 @@ pub mod hotel_tonic {
 mod gen;
 
 use std;
-use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::{Path, PathBuf};
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-};
+use std::io::Write;
+use std::path::Path;
+use std::sync::Arc;
 
-use crossbeam_channel::{unbounded, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use gen::{get_ping_request, get_reservation_request, get_search_request};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp, Uniform};
@@ -31,7 +28,7 @@ use tonic::transport::Channel;
 use tonic::Status;
 
 use app_utils::{
-    load_gen::{fetch_traces, map_response, Counters, GenConfig, LoadGenArgs, RequestStats},
+    load_gen::{Counters, GenConfig, LoadGenArgs},
     logging::init_logging,
     timing::time_now,
 };
@@ -55,6 +52,70 @@ const COUNTER_KEYS: [&'static str; 8] = [
     // total number of unexpected errors
     "unexpected",
 ];
+
+#[derive(Debug, Clone)]
+struct RequestStats {
+    ctx: Context,
+    latency: u64,
+    error: String,
+}
+
+impl RequestStats {
+    const HEADERS: [&'static str; 9] = [
+        "api",
+        "test_id",
+        "request_id",
+        "slo",
+        "request_class",
+        "start_at",
+        "deadline",
+        "latency",
+        "error",
+    ];
+
+    fn new(ctx: Context, latency: u64, error: String) -> Self {
+        Self {
+            ctx,
+            latency,
+            error,
+        }
+    }
+
+    fn to_row(&self) -> String {
+        format!(
+            "{},{},{},{},{},{},{},{},{}",
+            self.ctx.api(),
+            self.ctx.test_id(),
+            self.ctx.request_id(),
+            self.ctx.slo(),
+            self.ctx.request_class(),
+            self.ctx.start_at(),
+            self.ctx.deadline(),
+            self.latency,
+            self.error
+        )
+    }
+
+    fn header_row() -> String {
+        Self::HEADERS.join(",")
+    }
+}
+
+// TODO: DRY (same function in synthetic/src/client/client_bench.rs)
+async fn fetch_traces(output_file: String, trace_rx: Receiver<RequestStats>) {
+    let path = Path::new(&output_file);
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent).unwrap();
+        }
+    }
+    let mut file = File::create(output_file).unwrap();
+    writeln!(file, "{}", RequestStats::header_row()).unwrap();
+    while let Ok(stats) = trace_rx.recv() {
+        writeln!(file, "{}", stats.to_row()).unwrap();
+    }
+    log::warn!("All traces fetched");
+}
 
 #[derive(Debug)]
 struct LoadGenerator {
@@ -375,4 +436,10 @@ async fn send_request(
     };
 
     stats
+}
+
+fn map_response<T>(
+    timeout_response: Result<Result<T, Status>, Elapsed>,
+) -> Result<Result<(), Status>, Elapsed> {
+    timeout_response.map(|response| response.map(|_r| ()))
 }

@@ -9,7 +9,7 @@ service Child {
 }
 
 message RandomLatencyRequest {}
-message RandomLatencyResponse {}
+message RandomLatencyResponse { uint64 handler_latency = 1; }
 
 message ConstantLatencyRequest {}
-message ConstantLatencyResponse {}
+message ConstantLatencyResponse { uint64 handler_latency = 1; }
