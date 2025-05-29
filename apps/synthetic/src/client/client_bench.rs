@@ -283,7 +283,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::create_dir_all(path).unwrap();
     }
 
-    init_logging_file(&args.output_path);
+    let log_file = if args.save_logs {
+        Some(format!("{}/loadgen.log", args.output_path))
+    } else {
+        None
+    };
+    init_logging_file(log_file);
 
     let gen_cfg: GenConfig = {
         let file = File::open(args.gen_config).expect("Failed to open file");

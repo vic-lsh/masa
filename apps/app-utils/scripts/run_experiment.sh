@@ -36,7 +36,7 @@ for policy in $policies;
 do
 	echo "policy = $policy"
 	./scripts/docker-run.sh --features $policy
-	./scripts/loadgen-run.sh $app $out_dir/$policy
+	./scripts/loadgen-run.sh --output $out_dir/$policy --save-logs
 	./scripts/docker-save-logs.sh $out_dir/$policy
 	./scripts/docker-stop.sh
 done

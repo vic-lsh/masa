@@ -4,10 +4,10 @@ pub mod hotel_tonic {
     }
 }
 use app_utils::pool::McPool;
-use async_memcached::AsciiProtocol;
-use futures::StreamExt;
 #[cfg(feature = "workload_stats")]
 use app_utils::AvgTracker;
+use async_memcached::AsciiProtocol;
+use futures::StreamExt;
 #[cfg(not(feature = "synthetic"))]
 use std::collections::HashSet;
 use tokio::sync::Mutex;
