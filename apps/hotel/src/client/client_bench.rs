@@ -114,7 +114,7 @@ async fn fetch_traces(output_file: String, trace_rx: Receiver<RequestStats>) {
     while let Ok(stats) = trace_rx.recv() {
         writeln!(file, "{}", stats.to_row()).unwrap();
     }
-    log::warn!("All traces fetched");
+    log::info!("All traces fetched");
 }
 
 #[derive(Debug)]
@@ -159,7 +159,7 @@ impl LoadGenerator {
 
         let _ = h.await;
 
-        log::warn!("Load generated");
+        log::info!("Load generated");
         Ok(())
     }
 
@@ -295,10 +295,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
     assert!(gen_cfg.gap == "const" || gen_cfg.gap == "exp");
-    log::warn!("Gen config: {:?}", gen_cfg);
+    log::info!("Gen config: {:?}", gen_cfg);
 
     for rps in &gen_cfg.rps_values {
-        log::warn!("Running rps: {}...", rps);
+        log::info!("Running rps: {}...", rps);
 
         let output = format!("{}/r{}.csv", args.output_path, rps);
         let (trace_tx, trace_rx) = unbounded();
@@ -350,7 +350,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    log::warn!("Load generator done");
+    log::info!("Load generator done");
     Ok(())
 }
 
@@ -363,7 +363,7 @@ async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
 
         let delta = |k| counters.get(k) - prev.get(k);
 
-        log::warn!(
+        log::info!(
             "secs: {}, rps: {}, goodput: {}, early returns: {}, deadline misses: {}, timeouts: {}",
             secs,
             delta("all"),
@@ -372,7 +372,7 @@ async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
             delta("err_cl_miss"),
             delta("err_cl_to"),
         );
-        log::warn!(
+        log::info!(
             "total early returns: {}, total deadline misses: {}, total timeouts: {}, total search errors: {}, total reservation errors: {}, total unexpected errors: {}",
             counters.get("err_svc_er"),
             counters.get("err_cl_miss"),
