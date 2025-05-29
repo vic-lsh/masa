@@ -2,6 +2,7 @@ services:
   child-service-0:
     image: synthetic_child:latest
     container_name: "synthetic_child_0"
+    # customize command in order to pass the 'index' argument
     command: "'RUST_LOG=$${LOG_LEVEL} /usr/local/bin/$${BINARY_NAME} --config /usr/config.json --index 0'"
     networks:
       - synthetic_network
@@ -13,6 +14,7 @@ services:
   child-service-1:
     image: synthetic_child:latest
     container_name: "synthetic_child_1"
+    # ditto above
     command: "'RUST_LOG=$${LOG_LEVEL} /usr/local/bin/$${BINARY_NAME} --config /usr/config.json --index 1'"
     networks:
       - synthetic_network

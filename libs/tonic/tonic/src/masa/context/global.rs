@@ -5,11 +5,9 @@ use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
 use masa::Context;
 
 #[derive(Debug)]
-/// This policy computes the deadline d of a child request as  
-///   d = d_p - e_rem
-/// where d_p is the deadline of the parent request and e_rem is an estimate for the remaining time
-/// left in the request after this child request executes. e_rem is estimated by sampling from the
-/// distribution of observed values for e_rem.
+/// This policy always sets the deadline of each request as
+///   d = start + SLO
+/// where d is the point in time when the original request from the client was sent out
 pub struct Global;
 
 impl PrioritySelector for Global {
