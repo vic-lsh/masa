@@ -81,7 +81,7 @@ Execute the folowing command to run the experiment:
 For every policy, the script generates a folder with the following structure
 ```
 ./data/out/<experiment>/<policy>
-├── client.log          # logs from load gen
+├── loadgen.log         # logs from load gen
 ├── r<rps1>.csv         # trace for each RPS level provided in the load gen config
 ├── ...                 
 ├── r<rpsN>.csv         
