@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 use tonic::transport::Server;
 
-use config::HotelConfig;
 use app_utils::logging::init_logging;
+use config::HotelConfig;
 use server::hotel_tonic::recommendation::recommendation_server::RecommendationServer;
 use server::RecommendationImpl;
 
