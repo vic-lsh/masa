@@ -28,7 +28,7 @@ We have also included the source code of a few 3rd-party crates in `3rd_party`. 
 Currently, Masa has three applications for performing experiments under `apps/<app>`:
 - `hotel`: Based on the Hotel application in Deathstarbench. We've ported this application to Rust for Masa compatibility.
 - `socialnet`: TODO
-- `synthetic`: A synthetic application with very predictable behavior, for understanding Masa in the simplest scenario.
+- `synthetic`: A synthetic application with very simple behavior, for understanding Masa in the simplest scenario.
 
 Docker compose is the recommended way to run an application. See instructions in the section below.
 
@@ -40,7 +40,7 @@ NOTE: This is currently only supported for `hotel` and `synthetic`.
 cd apps/<app>
 
 # Build and start the services (and their databases) as docker containers.
-# Provide feature flags for the configuration you want (see below).
+# Specify the policy you want Masa to use
 ./scripts/docker-run.sh --features <policy>
 
 # Start generating load to the application
@@ -68,8 +68,8 @@ We have some basic scripts to automate running experiments on an application. As
 ```
 ./data/in/<experiment>
 ├── gen_config.json     # load gen config
-├── policies            # list of policies to run the experiment on
-└── config.docker.json  # optional: app config (if not provided, whatever config is already present in `./scripts/local/config.docker.json`)
+├── policies            # list of policies to run the experiment with
+└── config.docker.json  # optional: app config (if not provided, whatever config is already present in ./scripts/local/config.docker.json will be used)
 ```
 See `./data/in/template` for an example experiment.
 
@@ -81,7 +81,7 @@ Execute the folowing command to run the experiment:
 For every policy, the script generates a folder with the following structure
 ```
 ./data/out/<experiment>/<policy>
-├── client.log          # output (mostly logs) from load gen
+├── client.log          # logs from load gen
 ├── r<rps1>.csv         # trace for each RPS level provided in the load gen config
 ├── ...                 
 ├── r<rpsN>.csv         
@@ -90,7 +90,7 @@ For every policy, the script generates a folder with the following structure
 └── <serviceM>.log 
 ```
 
-To run multiple experiments sequentially, run
+To run multiple experiments sequentially, execute
 ```bash
 ./scripts/queue_experiments.sh "<experiment1> ... <experimentN>"
 ```
