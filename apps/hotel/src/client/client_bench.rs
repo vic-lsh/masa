@@ -275,6 +275,7 @@ impl LoadGenerator {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // TODO: DRY (same logic in synthetic/src/client/client_bench.rs)
     let args = LoadGenArgs::from_args();
 
     let path = Path::new(&args.output_path);
