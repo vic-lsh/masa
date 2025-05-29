@@ -1,40 +1,43 @@
 #!/usr/bin/bash
 
-
 pwd=$(pwd)
 if [[ "$pwd" != */apps/* ]]; then
     echo "Error: please run in an application directory" >&2
     exit 1
 fi
+
 app=$(basename $pwd)
-dir=~/masa/data/$app/$1
-mkdir -p $dir
-mkdir -p /tmp/save/
+experiment=$1
+in_dir=data/in/$experiment
+out_dir=data/out/$experiment
+mkdir -p $out_dir
+backup=/tmp/masa-save
+mkdir -p $backup
 # save previous config
 if [[ -f ./scripts/gen_config.json ]]; then
-    cp ./scripts/gen_config.json /tmp/save/gen_config.json
+    cp ./scripts/gen_config.json /tmp/masa-save/
 fi
 if [[ -f ./scripts/local/config.docker.json ]]; then
-    cp ./scripts/local/config.docker.json /tmp/save/config.docker.json
+    cp ./scripts/local/config.docker.json /tmp/masa-save/
 fi
-# load config from $1
-cp $dir/gen_config.json ./scripts/gen_config.json
-cp $dir/config.docker.json ./scripts/local/config.docker.json
+# load gen config and app config (if present) from $experiment
+cp $in_dir/gen_config.json ./scripts/
+if [[ -f $in_dir/config.docker.json ]]; then
+    cp $in_dir/config.docker.json ./scripts/local/
+fi
+# save old output just in case
+cp -r $out_dir /tmp/masa-save/
+# clear $out_dir
+rm -rf $out_dir/*
 
-# save old contents of $1 just in case
-cp -r $dir /tmp/save/
-# clean $dir
-shopt -s extglob
-rm -rf $dir/!(gen_config.json|policies|config.docker.json)
-
-policies=$(cat $dir/policies | tr -d '\n')
+policies=$(cat $in_dir/policies | tr -d '\n')
 
 for policy in $policies;
 do
 	echo "policy = $policy"
 	./scripts/docker-run.sh --features $policy
-	./scripts/loadgen-run.sh $app $dir/$policy
-	./scripts/docker-save-logs.sh $dir/$policy
+	./scripts/loadgen-run.sh $app $out_dir/$policy
+	./scripts/docker-save-logs.sh $out_dir/$policy
 	./scripts/docker-stop.sh
 done
-touch $dir/done
+touch $out_dir/done
