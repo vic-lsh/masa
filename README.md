@@ -13,7 +13,7 @@ The codebase is structured as follows:
 ```
 .
 ├── 3rd_party     # vendored in dependencies; not modified
-├── apps          # microservice applications and testbeds       
+├── apps          # microservice applications and testbeds
 └── libs          # Masa libraries (based on Tonic, Tokio, and Hyper)
 ```
 
@@ -26,6 +26,7 @@ We have also included the source code of a few 3rd-party crates in `3rd_party`. 
 ### Running an application
 
 Currently, Masa has three applications for performing experiments under `apps/<app>`:
+
 - `hotel`: Based on the Hotel application in Deathstarbench. We've ported this application to Rust for Masa compatibility.
 - `socialnet`: TODO
 - `synthetic`: A synthetic application with very simple behavior, for understanding Masa in the simplest scenario.
@@ -65,32 +66,37 @@ where `<policy>` is one of the policy feature flags. If you just want to get the
 NOTE: This is currently only supported for `hotel` and `synthetic`.
 
 We have some basic scripts to automate running experiments on an application. Assuming you are in `apps/<app>`, an experiment takes the following files as input:
+
 ```
 ./data/in/<experiment>
 ├── gen_config.json     # load gen config
 ├── policies            # list of policies to run the experiment with
 └── config.docker.json  # optional: app config (if not provided, whatever config is already present in ./scripts/local/config.docker.json will be used)
 ```
+
 See `./data/in/template` for an example experiment.
 
 Execute the folowing command to run the experiment:
+
 ```bash
 ./scripts/run_experiment.sh "<experiment>"
 ```
 
 For every policy, the script generates a folder with the following structure
+
 ```
 ./data/out/<experiment>/<policy>
 ├── loadgen.log         # logs from load gen
 ├── r<rps1>.csv         # trace for each RPS level provided in the load gen config
-├── ...                 
-├── r<rpsN>.csv         
+├── ...
+├── r<rpsN>.csv
 ├── <service1>.log      # logs for each container
 ├── ...
-└── <serviceM>.log 
+└── <serviceM>.log
 ```
 
 To run multiple experiments sequentially, execute
+
 ```bash
 ./scripts/queue_experiments.sh "<experiment1> ... <experimentN>"
 ```
@@ -129,8 +135,8 @@ Each key in the following list corresponds to a feature flag in the codebase.
 
 - `fifo`: requests are served in first-in-first-out order.
 - `prio_global`: requests are served based on their end-to-end SLO end time, which is their SLO added to the time at which they arrived at the frontend server.
-- `prio_local`: requests are served based on their local deadline (talk to the project leads if you're interested in how this is calculated).
-- `prio_local_direct`: similar to `prio_local`
-- `prio_local_indirect`: similar to `prio_local` 
+- `prio_local`: requests are served based on their local deadline (talk to the project leads if you're interested in how this is calculated); currently this only works for the `hotel` application, as it requires a description of the call graph.
+- `prio_local_direct`: similar to `prio_local`, but without using the callgraph.
+- `prio_local_indirect`: similar to `prio_local`, but without using the callgraph.
 - `prio_global_early`: same as `prio_global`, but aborts requests if their deadline is past.
 - `prio_local_early`: same as `prio_local`, but aborts requests if their deadline is past.

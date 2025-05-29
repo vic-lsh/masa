@@ -28,7 +28,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-cargo run --release --bin $app_client_bench -- \
+
+# disable compiler warnings
+export RUSTFLAGS="-Awarnings"
+
+cargo run --release --bin ${app}_client_bench -- \
    --gen-config ./scripts/gen_config.json \
    $output_arg \
    $save_logs_arg
