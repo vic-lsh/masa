@@ -1,21 +1,19 @@
 {
   "Repeats": 1,
   "Apis": [
-    "a",
+    "a"
   ],
   "Slos": [
-    50000,
+    50000
   ],
   "Rps": [
     100,
     200,
-    400,
-    600,
-    800
+    400
   ],
   "Gap": "const",
-  "WarmupSecs": 20,
-  "DurationSecs": 40,
+  "WarmupSecs": 5,
+  "DurationSecs": 10,
   "Concurrency": 0,
   "Addr": "http://[::1]:8658"
 }

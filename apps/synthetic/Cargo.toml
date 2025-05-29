@@ -49,7 +49,6 @@ prio_local_indirect = [
 fifo = ["async-executor/fifo", "masa/fifo", "tonic/fifo"]
 fifo_early = ["async-executor/fifo_early", "masa/fifo_early", "tonic/fifo_early"]
 fifo_infra = ["async-executor/fifo_infra", "masa/fifo_infra", "tonic/fifo_infra"]
-workload_stats = []
 
 gcp = ["dep:prost-types", "tonic/tls"]
 routeguide = [

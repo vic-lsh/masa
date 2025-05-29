@@ -23,20 +23,25 @@ We have also included the source code of a few 3rd-party crates in `3rd_party`. 
 
 ## Getting started
 
-### Running the Hotel application
+### Running an application
 
-Currently, Masa experiments based on the Hotel application in DeathStarBench. We've ported this application to Rust for Masa compatibility. The port is in `./apps/hotel`.
+Currently, Masa has three applications for performing experiments under `apps/<app>`:
+- `hotel`: Based on the Hotel application in Deathstarbench. We've ported this application to Rust for Masa compatibility.
+- `socialnet`: TODO
+- `synthetic`: A synthetic application with very predictable behavior, for understanding Masa in the simplest scenario.
 
-Docker compose is the recommended way to run the hotel application. See instructions in the section below.
+Docker compose is the recommended way to run an application. See instructions in the section below.
 
 #### Docker compose (single-server)
 
+NOTE: This is currently only supported for `hotel` and `synthetic`.
+
 ```bash
-cd apps/hotel
+cd apps/<app>
 
 # Build and start the services (and their databases) as docker containers.
 # Provide feature flags for the configuration you want (see below).
-./scripts/docker-run.sh --features <features>
+./scripts/docker-run.sh --features <policy>
 
 # Start generating load to the application
 # Note: load generation config is expected to be at ./scripts/gen_config.json
@@ -53,20 +58,46 @@ docker stats
 ./scripts/docker-stop.sh
 ```
 
-**Feature flags**:
+where `<policy>` is one of the policy feature flags. If you just want to get the application to run, use `fifo`.
 
-TL;DR: if you just want to get the application to run, you want `fifo`.
+#### Docker compose automated (single-server)
 
-You should supply **one** of the following flags to `--features`:
+NOTE: This is currently only supported for `hotel` and `synthetic`.
 
-- `fifo`: requests are served in first-in-first-out order.
-- `prio_global`: requests are served based on their end-to-end SLO end time, which is their SLO added to the time at which they arrived at the frontend server.
-- `prio_local`: requests are served based on their local deadline (talk to the project leads if you're interested in how this is calculated).
-- `prio_global_early`: like `prio_global`, but aborts requests if their deadline is past.
-- `prio_local_early`: like `prio_local`, but aborts requests if their deadline is past.
+We have some basic scripts to automate running experiments on an application. Assuming you are in `apps/<app>`, an experiment takes the following files as input:
+```
+./data/in/<experiment>
+├── gen_config.json     # load gen config
+├── policies            # list of policies to run the experiment on
+└── config.docker.json  # optional: app config (if not provided, whatever config is already present in `./scripts/local/config.docker.json`)
+```
+See `./data/in/template` for an example experiment.
+
+Execute the folowing command to run the experiment:
+```bash
+./scripts/run_experiment.sh "<experiment>"
+```
+
+For every policy, the script generates a folder with the following structure
+```
+./data/out/<experiment>/<policy>
+├── client.log          # output (mostly logs) from load gen
+├── r<rps1>.csv         # trace for each RPS level provided in the load gen config
+├── ...                 
+├── r<rpsN>.csv         
+├── <service1>.log      # logs for each container
+├── ...
+└── <serviceM>.log 
+```
+
+To run multiple experiments sequentially, run
+```bash
+./scripts/queue_experiments.sh "<experiment1> ... <experimentN>"
+```
 
 #### tmux-based workload run scripts (legacy)
 
+NOTE: This is currently only supported for `hotel`.
 NOTE: some scripts no longer work out-of-the-box. Please run with docker compose instead.
 
 Running the Hotel application contains many configuration choices, including but not limited to:
@@ -83,6 +114,7 @@ You will also find `gen_config.json` in each subfolder. This describes how the u
 
 #### K8s (work-in-progress)
 
+NOTE: This is currently only supported for `hotel`.
 NOTE: Running with k8s hasn't been well-tested. Please report issues if you find any.
 
 You should install k8s on your system before running scripts in this section. For local setups, [minikube](https://minikube.sigs.k8s.io/docs/) is recommeded.
@@ -90,3 +122,15 @@ You should install k8s on your system before running scripts in this section. Fo
 For a one-click setup, run `apps/hotel/snippets/k8s/run_snippet.sh`.
 
 To see how to run the K8s step by step, read this ![README](apps/hotel/scripts/k8s/README.md) file in the k8s folder.
+
+## List of policies
+
+Each key in the following list corresponds to a feature flag in the codebase.
+
+- `fifo`: requests are served in first-in-first-out order.
+- `prio_global`: requests are served based on their end-to-end SLO end time, which is their SLO added to the time at which they arrived at the frontend server.
+- `prio_local`: requests are served based on their local deadline (talk to the project leads if you're interested in how this is calculated).
+- `prio_local_direct`: similar to `prio_local`
+- `prio_local_indirect`: similar to `prio_local` 
+- `prio_global_early`: same as `prio_global`, but aborts requests if their deadline is past.
+- `prio_local_early`: same as `prio_local`, but aborts requests if their deadline is past.
