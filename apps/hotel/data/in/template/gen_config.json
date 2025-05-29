@@ -1,0 +1,11 @@
+{
+  "Repeats": 1,
+  "Apis": ["Search", "Reservation"],
+  "Slos": [50000, 50000],
+  "Rps": [1000, 1200, 140, 1600],
+  "Gap": "const",
+  "WarmupSecs": 10,
+  "DurationSecs": 20,
+  "Concurrency": 0,
+  "Addr": "http://[::1]:8660"
+}
