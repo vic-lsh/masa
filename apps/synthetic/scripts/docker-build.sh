@@ -48,5 +48,5 @@ echo "Building docker images sequentially."
 
 set -e
 for svc in "${services[@]}"; do
-    ../app-utils/scripts/docker-build-svc.sh --binary $svc --app $app --rust-log $rust_log $features_arg
+    ../scripts/docker-build-svc.sh --binary $svc --app $app --rust-log $rust_log $features_arg
 done
