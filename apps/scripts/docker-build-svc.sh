@@ -1,15 +1,10 @@
 #!/bin/bash
 set -e
 
-pwd=$(pwd)
-if [[ "$pwd" != */apps/hotel ]]; then
-    echo "Error: plese run in the apps/hotel directory" >&2
-    exit 1
-fi
-
 binary=""
 features=""
 rust_log="warn"
+app=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -26,12 +21,22 @@ while [[ $# -gt 0 ]]; do
         rust_log="$2"
         shift 2
         ;;
+    --app)
+        app="$2"
+        shift 2
+        ;;
     *)
         echo "Unknown argument: $1"
         exit 1
         ;;
     esac
 done
+
+pwd=$(pwd)
+if [[ "$pwd" != */apps/${app} ]]; then
+    echo "Error: please run in the apps/$app directory" >&2
+    exit 1
+fi
 
 # Validate required arguments
 if [[ -z "$binary" ]]; then
@@ -43,10 +48,11 @@ fi
 cd ../..
 
 echo "Building docker image for service $binary. features: '$features'."
-docker build -f ./apps/hotel/Dockerfile \
+docker build -f ./apps/app-utils/Dockerfile \
     --build-arg FEATURES=$features \
     --build-arg BINARY_NAME=$binary \
     --build-arg LOG_LEVEL=$rust_log \
-    --build-arg HOTEL_CONFIG=./apps/hotel/scripts/local/hotel_config.docker.json \
+    --build-arg APP=$app \
+    --build-arg CONFIG=./apps/$app/scripts/local/config.docker.json \
     -t $binary \
     .

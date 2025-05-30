@@ -19,7 +19,7 @@ use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
 #[cfg(feature = "workload_stats")]
-use hotel::AvgTracker;
+use app_utils::AvgTracker;
 use hotel_tonic::{profile, profile::profile_server::Profile};
 
 #[cfg(feature = "synthetic")]

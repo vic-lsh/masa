@@ -1,7 +1,7 @@
 use std::{fs::File, io::BufReader, path::PathBuf};
 
+use app_utils::logging::init_logging;
 use config::HotelConfig;
-use hotel::init_logging;
 use server::{hotel_tonic::review::review_server::ReviewServer, ReviewImpl};
 use structopt::StructOpt;
 use tonic::transport::Server;

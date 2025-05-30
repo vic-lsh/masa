@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 use tonic::transport::Server;
 
+use app_utils::logging::init_logging;
 use config::HotelConfig;
-use hotel::init_logging;
 use server::hotel_tonic::geo::geo_server::GeoServer;
 use server::GeoImpl;
 
