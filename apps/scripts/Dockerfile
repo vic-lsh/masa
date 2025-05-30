@@ -24,8 +24,13 @@ COPY apps/app-utils/ ./apps/app-utils/
 
 COPY apps/hotel/Cargo.toml ./apps/hotel/Cargo.toml
 COPY apps/socialnet/Cargo.toml ./apps/socialnet/Cargo.toml
+COPY apps/synthetic/Cargo.toml ./apps/synthetic/Cargo.toml
 
-WORKDIR /usr/src/app/apps/hotel
+ARG APP
+RUN if [ -z "$APP" ]; then \
+    echo "Error: APP argument is required" && exit 1; \
+    fi
+WORKDIR /usr/src/app/apps/${APP}
 RUN mkdir src
 RUN touch src/lib.rs
 
@@ -37,11 +42,11 @@ else \
 fi
 WORKDIR /usr/src/app/
 
-# build every service in hotel
+# build every service in the app
 # Note: we build every service once here. They're cached then reused when we
 # generate per-service image in the second stage below.
 COPY apps ./apps
-WORKDIR /usr/src/app/apps/hotel
+WORKDIR /usr/src/app/apps/${APP}
 RUN if [ -z "$FEATURES" ]; then\
   cargo build --release;\
 else \
@@ -53,12 +58,12 @@ FROM debian:bookworm-slim
 
 ARG LOG_LEVEL=warn
 ARG BINARY_NAME
-ARG HOTEL_CONFIG
+ARG CONFIG
 RUN if [ -z "$BINARY_NAME" ]; then \
     echo "Error: BINARY_NAME argument is required" && exit 1; \
     fi
-RUN if [ -z "$HOTEL_CONFIG" ]; then \
-    echo "Error: HOTEL_CONFIG argument is required" && exit 1; \
+RUN if [ -z "$CONFIG" ]; then \
+    echo "Error: CONFIG argument is required" && exit 1; \
     fi
 
 RUN apt-get update
@@ -71,11 +76,11 @@ RUN apt-get install -y\
 
 # Copy the built executable from the builder stage
 COPY --from=builder /usr/src/app/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
-COPY ${HOTEL_CONFIG} /usr/hotel_config.json
+COPY ${CONFIG} /usr/config.json
 
 ENV BINARY_NAME=${BINARY_NAME}
-ENV HOTEL_CONFIG=${HOTEL_CONFIG}
+ENV CONFIG=${CONFIG}
 ENV LOG_LEVEL=${LOG_LEVEL}
 
 ENTRYPOINT [ "sh", "-c" ]
-CMD ["RUST_LOG=${LOG_LEVEL} /usr/local/bin/${BINARY_NAME} --config /usr/hotel_config.json"]
+CMD ["RUST_LOG=${LOG_LEVEL} /usr/local/bin/${BINARY_NAME} --config /usr/config.json"]

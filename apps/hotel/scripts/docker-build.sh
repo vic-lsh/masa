@@ -11,12 +11,6 @@ services=(
     "hotel_review"
 )
 
-pwd=$(pwd)
-if [[ "$pwd" != */apps/hotel ]]; then
-    echo "Error: plese run in the apps/hotel directory" >&2
-    exit 1
-fi
-
 features=""
 rust_log="warn"
 
@@ -43,15 +37,19 @@ if [[ -z "$features" ]]; then
     echo "Warn: --features not set."
 fi
 
+app="hotel"
+
 echo "Building all hotel services. Feature flags: $features."
 
 echo "Building docker images sequentially."
 
+if [[ -z "$features" ]]; then
+    features_arg=""
+else
+    features_arg="--features $features"
+fi
+
 set -e
 for svc in "${services[@]}"; do
-    if [[ -z "$features" ]]; then
-        ./scripts/docker-build-svc.sh --binary $svc --rust-log $rust_log
-    else
-        ./scripts/docker-build-svc.sh --binary $svc --rust-log $rust_log --features $features
-    fi
+    ../scripts/docker-build-svc.sh --binary $svc --app $app --rust-log $rust_log $features_arg
 done

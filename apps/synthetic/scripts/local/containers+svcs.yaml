@@ -1,0 +1,44 @@
+services:
+  child-service-0:
+    image: synthetic_child:latest
+    container_name: "synthetic_child_0"
+    # customize command in order to pass the 'index' argument
+    command: "'RUST_LOG=$${LOG_LEVEL} /usr/local/bin/$${BINARY_NAME} --config /usr/config.json --index 0'"
+    networks:
+      - synthetic_network
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
+  child-service-1:
+    image: synthetic_child:latest
+    container_name: "synthetic_child_1"
+    # ditto above
+    command: "'RUST_LOG=$${LOG_LEVEL} /usr/local/bin/$${BINARY_NAME} --config /usr/config.json --index 1'"
+    networks:
+      - synthetic_network
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
+  frontend-service:
+    image: synthetic_frontend:latest
+    container_name: "synthetic_frontend"
+    restart: always
+    networks:
+      - synthetic_network
+    ports:
+      - "8658:8660"
+    depends_on:
+      - child-service-0
+      - child-service-1
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
+networks:
+  synthetic_network:
+    driver: bridge

@@ -2,8 +2,8 @@ use std::{sync::Arc, task::Poll};
 
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
+mod global;
 mod local;
-use local::{LocalDeadlineDirect, LocalDeadlineIndirect};
 mod noop;
 mod simple;
 
@@ -17,17 +17,17 @@ pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
 #[cfg(any(feature = "fifo", feature = "fifo_infra"))]
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
 #[cfg(any(
-    feature = "prio_global",
-    feature = "prio_global_early",
     feature = "prio_local",
     feature = "prio_local_early",
     feature = "fifo_early"
 ))]
 pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
+#[cfg(any(feature = "prio_global", feature = "prio_global_early",))]
+pub type DefaultPrioritySelector = global::Global;
 #[cfg(any(feature = "prio_local_direct"))]
-pub type DefaultPrioritySelector = LocalDeadlineDirect;
+pub type DefaultPrioritySelector = local::LocalDeadlineDirect;
 #[cfg(any(feature = "prio_local_indirect"))]
-pub type DefaultPrioritySelector = LocalDeadlineIndirect;
+pub type DefaultPrioritySelector = local::LocalDeadlineIndirect;
 
 // TODO: rename this to be more general
 // TODO: add notes on trait bounds
