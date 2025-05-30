@@ -1,3 +1,5 @@
+.env
+
 */data/in/*
 !*/data/in/template
 
