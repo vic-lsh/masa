@@ -5,17 +5,16 @@ pub mod hotel_tonic {
 }
 mod gen;
 
-use std::collections::HashMap;
+use std;
 use std::error::Error;
+use std::fs;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::PathBuf;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-};
+use std::io::Write;
+use std::path::Path;
+use std::sync::Arc;
 
-use crossbeam_channel::{unbounded, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use gen::{get_ping_request, get_reservation_request, get_search_request};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Exp, Uniform};
@@ -28,18 +27,12 @@ use masa::Context;
 use tonic::transport::Channel;
 use tonic::Status;
 
-use config::GenConfig;
-use hotel::{fetch_traces, init_logging, time_now, RequestStats};
+use app_utils::{
+    load_gen::{Counters, GenConfig, LoadGenArgs},
+    logging::init_logging_file,
+    timing::time_now,
+};
 use hotel_tonic::frontend_client::FrontendClient;
-
-#[derive(StructOpt, Debug, Clone)]
-#[structopt(about = "Client for benchmarking")]
-pub struct Args {
-    #[structopt(long, required = true)]
-    pub gen_config: PathBuf,
-    #[structopt(long, required = true)]
-    pub output_path: String,
-}
 
 const COUNTER_KEYS: [&'static str; 8] = [
     // total number of (sent) requests
@@ -60,41 +53,68 @@ const COUNTER_KEYS: [&'static str; 8] = [
     "unexpected",
 ];
 
-struct Counters {
-    counters_map: HashMap<&'static str, AtomicUsize>,
+#[derive(Debug, Clone)]
+struct RequestStats {
+    ctx: Context,
+    latency: u64,
+    error: String,
 }
 
-impl Clone for Counters {
-    fn clone(&self) -> Self {
-        let mut cloned = HashMap::new();
-        for k in self.counters_map.keys() {
-            cloned.insert(*k, AtomicUsize::new(self.get(k)));
-        }
+impl RequestStats {
+    const HEADERS: [&'static str; 9] = [
+        "api",
+        "test_id",
+        "request_id",
+        "slo",
+        "request_class",
+        "start_at",
+        "deadline",
+        "latency",
+        "error",
+    ];
+
+    fn new(ctx: Context, latency: u64, error: String) -> Self {
         Self {
-            counters_map: cloned,
+            ctx,
+            latency,
+            error,
         }
+    }
+
+    fn to_row(&self) -> String {
+        format!(
+            "{},{},{},{},{},{},{},{},{}",
+            self.ctx.api(),
+            self.ctx.test_id(),
+            self.ctx.request_id(),
+            self.ctx.slo(),
+            self.ctx.request_class(),
+            self.ctx.start_at(),
+            self.ctx.deadline(),
+            self.latency,
+            self.error
+        )
+    }
+
+    fn header_row() -> String {
+        Self::HEADERS.join(",")
     }
 }
 
-impl Counters {
-    fn new() -> Self {
-        let mut map = HashMap::new();
-        for k in COUNTER_KEYS {
-            map.insert(k, AtomicUsize::new(0));
+// TODO: DRY (same function in synthetic/src/client/client_bench.rs)
+async fn fetch_traces(output_file: String, trace_rx: Receiver<RequestStats>) {
+    let path = Path::new(&output_file);
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent).unwrap();
         }
-        Self { counters_map: map }
     }
-
-    fn get(&self, k: &'static str) -> usize {
-        self.counters_map.get(k).unwrap().load(Ordering::SeqCst)
+    let mut file = File::create(output_file).unwrap();
+    writeln!(file, "{}", RequestStats::header_row()).unwrap();
+    while let Ok(stats) = trace_rx.recv() {
+        writeln!(file, "{}", stats.to_row()).unwrap();
     }
-
-    fn increment(&self, k: &'static str) {
-        self.counters_map
-            .get(k)
-            .unwrap()
-            .fetch_add(1, Ordering::SeqCst);
-    }
+    log::info!("All traces fetched");
 }
 
 #[derive(Debug)]
@@ -130,7 +150,7 @@ impl LoadGenerator {
         let pause_at =
             init_at + Duration::from_secs(self.gen_cfg.warmup_secs + self.gen_cfg.duration_secs);
 
-        let counters = Arc::new(Counters::new());
+        let counters = Arc::new(Counters::new(&COUNTER_KEYS));
 
         let h = tokio::task::spawn(stats_logger(Arc::clone(&counters), pause_at));
 
@@ -139,7 +159,7 @@ impl LoadGenerator {
 
         let _ = h.await;
 
-        log::warn!("Load generated");
+        log::info!("Load generated");
         Ok(())
     }
 
@@ -255,19 +275,31 @@ impl LoadGenerator {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging();
+    // TODO: DRY (same logic in synthetic/src/client/client_bench.rs)
+    let args = LoadGenArgs::from_args();
 
-    let args = Args::from_args();
+    let path = Path::new(&args.output_path);
+    if !path.exists() {
+        fs::create_dir_all(path).unwrap();
+    }
+
+    let log_file = if args.save_logs {
+        Some(format!("{}/loadgen.log", args.output_path))
+    } else {
+        None
+    };
+    init_logging_file(log_file);
+
     let gen_cfg: GenConfig = {
         let file = File::open(args.gen_config).expect("Failed to open file");
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
     assert!(gen_cfg.gap == "const" || gen_cfg.gap == "exp");
-    log::warn!("Gen config: {:?}", gen_cfg);
+    log::info!("Gen config: {:?}", gen_cfg);
 
     for rps in &gen_cfg.rps_values {
-        log::warn!("Running rps: {}...", rps);
+        log::info!("Running rps: {}...", rps);
 
         let output = format!("{}/r{}.csv", args.output_path, rps);
         let (trace_tx, trace_rx) = unbounded();
@@ -319,20 +351,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    log::warn!("Load generator done");
+    log::info!("Load generator done");
     Ok(())
 }
 
 async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
     let mut secs = 0;
-    let mut prev = Counters::new();
+    let mut prev = Counters::new(&COUNTER_KEYS);
     while Instant::now() < pause_at {
         tokio::time::sleep(Duration::from_secs(1)).await;
         secs += 1;
 
         let delta = |k| counters.get(k) - prev.get(k);
 
-        log::warn!(
+        log::info!(
             "secs: {}, rps: {}, goodput: {}, early returns: {}, deadline misses: {}, timeouts: {}",
             secs,
             delta("all"),
@@ -341,7 +373,7 @@ async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
             delta("err_cl_miss"),
             delta("err_cl_to"),
         );
-        log::warn!(
+        log::info!(
             "total early returns: {}, total deadline misses: {}, total timeouts: {}, total search errors: {}, total reservation errors: {}, total unexpected errors: {}",
             counters.get("err_svc_er"),
             counters.get("err_cl_miss"),
