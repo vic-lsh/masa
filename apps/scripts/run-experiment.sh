@@ -8,6 +8,7 @@ fi
 
 app=$(basename $pwd)
 experiment=$1
+
 in_dir=data/in/$experiment
 out_dir=data/out/$experiment
 mkdir -p $out_dir
