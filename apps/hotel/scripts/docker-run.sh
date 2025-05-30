@@ -1,1 +1,1 @@
-../../app-utils/scripts/docker-run.sh
+../../scripts/docker-run.sh

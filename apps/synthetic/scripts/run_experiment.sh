@@ -1,1 +1,0 @@
-../../app-utils/scripts/run_experiment.sh

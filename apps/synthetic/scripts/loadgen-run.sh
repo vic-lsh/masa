@@ -1,1 +1,1 @@
-../../app-utils/scripts/loadgen-run.sh
+../../scripts/loadgen-run.sh

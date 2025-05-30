@@ -1,1 +1,1 @@
-../../app-utils/scripts/docker-stop.sh
+../../scripts/docker-stop.sh
