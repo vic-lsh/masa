@@ -1,3 +1,5 @@
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
@@ -107,8 +109,10 @@ def generate_plots(args):
                 # Add labels and title
                 plt.xlabel("Latency (milliseconds)")
                 plt.title(f"Latency Histogram for {api} API - {policy} - {rps} RPS")
+                dir = os.path.join(output_dir, policy)
+                os.makedirs(dir, exist_ok=True)
                 plt.savefig(
-                    f"{output_dir}/latency_histogram_{policy}_{rps}rps_{api}.png",
+                    os.path.join(dir, f"latency_histogram_{rps}rps_{api}.png"),
                     dpi=300,
                 )
                 plt.close()
