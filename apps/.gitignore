@@ -4,3 +4,7 @@
 !*/data/in/template
 
 */data/out/*
+
+*/data/plots/*
+
+__pycache__

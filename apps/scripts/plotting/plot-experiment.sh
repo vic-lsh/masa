@@ -7,4 +7,4 @@ if [[ "$pwd" != */apps/* ]]; then
 fi
 experiment=$1
 
-python3 ../scripts/all.py --config-dir data/in/$1 --data-dir data/out/$1 --output-dir data/plots/$1
+python3 ../scripts/plotting/all.py --config-dir data/in/$1 --data-dir data/out/$1 --output-dir data/plots/$1
