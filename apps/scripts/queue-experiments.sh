@@ -1,5 +1,9 @@
 #!/bin/bash
 
+
+experiments="$1"
+shift 1
+
 plot_arg=""
 
 while [[ $# -gt 0 ]]; do
@@ -15,7 +19,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-for exp in $1;
+for exp in $experiments;
 do
 	echo "running experiment $exp"
 	./scripts/run-experiment.sh $exp $plot_arg
