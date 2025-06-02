@@ -1,4 +1,10 @@
+.env
+
 */data/in/*
 !*/data/in/template
 
 */data/out/*
+
+*/data/plots/*
+
+__pycache__
