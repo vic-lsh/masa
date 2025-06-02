@@ -5,9 +5,23 @@ if [[ "$pwd" != */apps/* ]]; then
     echo "Error: please run in an application directory" >&2
     exit 1
 fi
-
 app=$(basename $pwd)
 experiment=$1
+plot="false"
+shift 1
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --plot)
+        plot="true"
+        shift 1
+        ;;
+    *)
+        echo "Unknown argument: $1"
+        exit 1
+        ;;
+    esac
+done
 
 in_dir=data/in/$experiment
 out_dir=data/out/$experiment
@@ -42,3 +56,7 @@ do
 	./scripts/docker-stop.sh
 done
 touch $out_dir/done
+
+if [[ "$plot" = "true" ]]; then
+    ../scripts/plotting/plot-experiment.sh "$experiment"
+fi
