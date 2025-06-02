@@ -101,6 +101,49 @@ To run multiple experiments sequentially, execute
 ./scripts/queue_experiments.sh "<experiment1> ... <experimentN>"
 ```
 
+##### Generating plots for an experiment
+
+###### Installing python dependencies
+
+We use python to generate plots. To setup a new virtual environment and install the necessary dependencies, at the root of the repository run
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate # activates the virtual environment
+python3 -m pip install -r apps/scripts/plotting/requirements.txt
+```
+
+###### Generating the plots
+
+To generate plots for visualizing goodput and latency of an experiment, run
+
+```
+source .venv/bin/activate                               # if not activated already
+../scripts/plotting/plot-experiment.sh "<experiment>"
+```
+
+from an application folder. The plots will be saved at `data/plots/<experiment>`.
+
+You can also pass a `--plot` option to the `run-experiment` and `queue-experiment` scripts above.
+
+##### Syncing experiment output and plots from a remote machine
+
+If you setup the file `apps/.env` with the following variables
+
+```
+remote_user="<remote-user>"
+server="<remote-machine>"
+remote_masa_path="remote/path/to/masa"
+```
+
+then you can run
+
+```
+../scripts/sync-data.sh
+```
+
+from an application folder to sync everything in the `data` folder from your remote machine to your local machine over ssh.
+
 #### tmux-based workload run scripts (legacy)
 
 NOTE: This is currently only supported for `hotel`.
