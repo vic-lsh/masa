@@ -7,5 +7,5 @@
   "WarmupSecs": 20,
   "DurationSecs": 40,
   "Concurrency": 0,
-  "Addr": "http://[::1]:8660"
+  "Addr": "http://[::1]:8659"
 }
