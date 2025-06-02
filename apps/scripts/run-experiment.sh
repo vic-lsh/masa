@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/bin/bash
 
 pwd=$(pwd)
 if [[ "$pwd" != */apps/* ]]; then
