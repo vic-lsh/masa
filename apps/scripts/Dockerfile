@@ -1,3 +1,5 @@
+ARG APP
+
 FROM rustlang/rust:nightly-slim AS builder
 
 ARG FEATURES
@@ -56,14 +58,11 @@ fi
 # Final stage - create a slimmer image
 FROM debian:bookworm-slim
 
+ARG APP
 ARG LOG_LEVEL=warn
 ARG BINARY_NAME
-ARG CONFIG
 RUN if [ -z "$BINARY_NAME" ]; then \
     echo "Error: BINARY_NAME argument is required" && exit 1; \
-    fi
-RUN if [ -z "$CONFIG" ]; then \
-    echo "Error: CONFIG argument is required" && exit 1; \
     fi
 
 RUN apt-get update
@@ -76,10 +75,9 @@ RUN apt-get install -y\
 
 # Copy the built executable from the builder stage
 COPY --from=builder /usr/src/app/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
-COPY ${CONFIG} /usr/config.json
+COPY apps/${APP}/scripts/local/config.docker.json /usr/config.json
 
 ENV BINARY_NAME=${BINARY_NAME}
-ENV CONFIG=${CONFIG}
 ENV LOG_LEVEL=${LOG_LEVEL}
 
 ENTRYPOINT [ "sh", "-c" ]

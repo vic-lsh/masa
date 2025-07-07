@@ -1,2 +1,6 @@
 # ignore rust build outputs anywhere in the project
 **/target/
+
+apps/*/data
+apps/*/snippets
+apps/scripts
