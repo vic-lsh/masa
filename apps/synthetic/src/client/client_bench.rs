@@ -48,13 +48,16 @@ struct RequestStats {
     ctx: Context,
     latency: u64,
     frontend_latency: u64,
-    child1_latency: u64,
-    child2_latency: u64,
+    child1_queueing_latency: u64,
+    child1_sleep_latency: u64,
+    child1_handler_latency: u64,
+    child2_queueing_latency: u64,
+    child2_handler_latency: u64,
     error: String,
 }
 
 impl RequestStats {
-    const HEADERS: [&'static str; 12] = [
+    const HEADERS: [&'static str; 15] = [
         "api",
         "test_id",
         "request_id",
@@ -65,8 +68,11 @@ impl RequestStats {
         "latency",
         "error",
         "frontend_latency",
-        "child1_latency",
-        "child2_latency",
+        "child1_queueing_latency",
+        "child1_sleep_latency",
+        "child1_handler_latency",
+        "child2_queueing_latency",
+        "child2_handler_latency",
     ];
 
     fn new(
@@ -79,15 +85,21 @@ impl RequestStats {
             ctx,
             latency,
             frontend_latency: 0,
-            child1_latency: 0,
-            child2_latency: 0,
+            child1_queueing_latency: 0,
+            child1_sleep_latency: 0,
+            child1_handler_latency: 0,
+            child2_queueing_latency: 0,
+            child2_handler_latency: 0,
             error,
         };
 
         if let Some(r) = response {
             s.frontend_latency = r.handler_latency;
-            s.child1_latency = r.child1_latency;
-            s.child2_latency = r.child2_latency;
+            s.child1_queueing_latency = r.child1_queueing_latency;
+            s.child1_sleep_latency = r.child1_sleep_latency;
+            s.child1_handler_latency = r.child1_handler_latency;
+            s.child2_queueing_latency = r.child2_queueing_latency;
+            s.child2_handler_latency = r.child2_handler_latency;
         }
 
         s
@@ -95,7 +107,7 @@ impl RequestStats {
 
     fn to_row(&self) -> String {
         format!(
-            "{},{},{},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             self.ctx.api(),
             self.ctx.test_id(),
             self.ctx.request_id(),
@@ -106,8 +118,11 @@ impl RequestStats {
             self.latency,
             self.error,
             self.frontend_latency,
-            self.child1_latency,
-            self.child2_latency,
+            self.child1_queueing_latency,
+            self.child1_sleep_latency,
+            self.child1_handler_latency,
+            self.child2_queueing_latency,
+            self.child2_handler_latency,
         )
     }
 
