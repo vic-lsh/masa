@@ -8,8 +8,19 @@ service Child {
       returns (ConstantLatencyResponse) {}
 }
 
-message RandomLatencyRequest {}
-message RandomLatencyResponse { uint64 handler_latency = 1; }
+message RandomLatencyRequest {
+  uint64 sent_at = 1;
+}
+message RandomLatencyResponse { 
+  uint64 queueing_latency = 1;
+  uint64 sleep_latency = 2;
+  uint64 handler_latency = 3;
+}
 
-message ConstantLatencyRequest {}
-message ConstantLatencyResponse { uint64 handler_latency = 1; }
+message ConstantLatencyRequest {
+  uint64 sent_at = 1;
+}
+message ConstantLatencyResponse { 
+  uint64 queueing_latency = 1;
+  uint64 handler_latency = 2;
+}

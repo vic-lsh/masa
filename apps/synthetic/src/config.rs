@@ -14,6 +14,8 @@ pub struct SyntheticConfig {
     pub child_ports: Vec<u16>,
     #[serde(rename = "ChildConstantLatency")]
     pub child_constant_latency: u64,
+    #[serde(rename = "ChildConstantLatencySlowdownDuration")]
+    pub child_constant_latency_slowdown_duration: u16, // ms
     #[serde(rename = "ChildRandomMean")]
     pub child_random_mean: u64,
     #[serde(rename = "ChildRandomStd")]

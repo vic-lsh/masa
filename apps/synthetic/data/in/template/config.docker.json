@@ -4,6 +4,7 @@
   "ChildIps": ["child-service-0", "child-service-1"],
   "ChildPorts": [8661, 8662],
   "ChildConstantLatency": 5000,
+  "ChildConstantLatencySlowdownDuration": 0,
   "ChildRandomMean": 5000,
   "ChildRandomStd": 5000
 }

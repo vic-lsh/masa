@@ -11,6 +11,7 @@ pub mod synthetic_tonic {
 use std::time::Instant;
 
 use crate::config::SyntheticConfig;
+use app_utils::timing::time_now;
 use ginepro::LoadBalancedChannel;
 
 use tonic::{Request, Response, Status};
@@ -67,19 +68,26 @@ impl Frontend for FrontendImpl {
         let start = Instant::now();
         let mut child1_client = self.child1_client.clone();
         let response = child1_client
-            .random_latency(child::RandomLatencyRequest {})
+            .random_latency(child::RandomLatencyRequest {
+                sent_at: time_now(),
+            })
             .await?;
-        let child1_latency = response.into_inner().handler_latency;
+        let child1_response = response.into_inner();
 
         let mut child2_client = self.child2_client.clone();
         let response = child2_client
-            .constant_latency(child::ConstantLatencyRequest {})
+            .constant_latency(child::ConstantLatencyRequest {
+                sent_at: time_now(),
+            })
             .await?;
-        let child2_latency = response.into_inner().handler_latency;
+        let child2_response = response.into_inner();
 
         Ok(Response::new(frontend::AResponse {
-            child1_latency,
-            child2_latency,
+            child1_queueing_latency: child1_response.queueing_latency,
+            child1_sleep_latency: child1_response.sleep_latency,
+            child1_handler_latency: child1_response.handler_latency,
+            child2_queueing_latency: child2_response.queueing_latency,
+            child2_handler_latency: child2_response.handler_latency,
             handler_latency: Instant::now().duration_since(start).as_micros() as u64,
         }))
     }
