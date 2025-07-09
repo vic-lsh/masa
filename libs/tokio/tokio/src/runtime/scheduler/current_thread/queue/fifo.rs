@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use super::{PopError, PushError, Queue};
+use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
 
 pub(crate) struct FifoQueue<T> {
     inner: VecDeque<T>,
@@ -36,5 +36,21 @@ impl<T> Queue for FifoQueue<T> {
 
     fn capacity(&self) -> Option<usize> {
         Some(self.inner.capacity())
+    }
+}
+
+impl<T> IntoSchedFlavor for FifoQueue<T> {
+    fn into_sched_flavor() -> SchedFlavor {
+        SchedFlavor::Fifo
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fifo_queue_sched_flavor() {
+        assert_eq!(FifoQueue::<u64>::into_sched_flavor(), SchedFlavor::Fifo);
     }
 }
