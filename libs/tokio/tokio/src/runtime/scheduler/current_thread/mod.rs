@@ -23,6 +23,9 @@ mod queue;
 use queue::LocalRunQueue;
 use queue::Queue;
 
+pub use queue::get_sched_flavor;
+pub use queue::SchedFlavor;
+
 /// Executes tasks on the current thread
 pub(crate) struct CurrentThread {
     /// Core scheduler data is acquired by a thread entering `block_on`.

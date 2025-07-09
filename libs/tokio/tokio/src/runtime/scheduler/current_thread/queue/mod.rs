@@ -15,6 +15,7 @@ pub(crate) type LocalRunQueue<T> = fifo::FifoQueue<T>;
 
 #[cfg(feature = "fifo")]
 pub(crate) type LocalRunQueue<T> = fifo::FifoQueue<T>;
+
 #[cfg(any(
     feature = "prio_global",
     feature = "prio_local",
@@ -22,6 +23,26 @@ pub(crate) type LocalRunQueue<T> = fifo::FifoQueue<T>;
     feature = "prio_local_early"
 ))]
 pub(crate) type LocalRunQueue<T> = prio_bh::BinaryHeapQueue<T>;
+
+/// Describes the different strategies implemented by Masa.
+#[derive(PartialEq, Eq, Debug)]
+pub enum SchedFlavor {
+    /// The scheduler executes tasks in first-in-first-out order.
+    Fifo,
+    /// The scheduler executes tasks based on priority.
+    Prio,
+}
+
+trait IntoSchedFlavor {
+    // Note that this does not operate on a concrete struct instance. It operates
+    // on the struct type information only.
+    fn into_sched_flavor() -> SchedFlavor;
+}
+
+/// Get the scheduling flavor used by this runtime instantiation.
+pub fn get_sched_flavor() -> SchedFlavor {
+    LocalRunQueue::<u64>::into_sched_flavor()
+}
 
 #[allow(dead_code)]
 pub(crate) trait Queue {
