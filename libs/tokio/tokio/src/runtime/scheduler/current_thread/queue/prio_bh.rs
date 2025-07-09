@@ -3,7 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use super::{PopError, PushError, Queue};
+use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
 use crate::runtime::task::Identifiable;
 use masa::Prioritize;
 
@@ -76,5 +76,24 @@ impl<T: Ord> BinaryHeapQueue<T> {
         Self {
             q: BinaryHeap::with_capacity(cap),
         }
+    }
+}
+
+impl<T> IntoSchedFlavor for BinaryHeapQueue<T> {
+    fn into_sched_flavor() -> SchedFlavor {
+        SchedFlavor::Prio
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_prio_queue_sched_flavor() {
+        assert_eq!(
+            BinaryHeapQueue::<u64>::into_sched_flavor(),
+            SchedFlavor::Prio
+        );
     }
 }
