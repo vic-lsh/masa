@@ -25,6 +25,7 @@ done
 
 in_dir=data/in/$experiment
 out_dir=data/out/$experiment
+plot_dir=data/plots/$experiment
 mkdir -p $out_dir
 backup=/tmp/masa-save
 mkdir -p $backup
@@ -42,8 +43,9 @@ if [[ -f $in_dir/config.docker.json ]]; then
 fi
 # save old output just in case
 cp -r $out_dir /tmp/masa-save/
-# clear $out_dir
+# clear $out_dir and $plot_dir
 rm -rf $out_dir/*
+rm -rf $plot_dir
 
 policies=$(cat $in_dir/policies | tr -d '\n')
 
