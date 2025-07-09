@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# First, run tests from scripts for specialized purposes.
+./scripts/test_sched_policy.sh
+
 # because not all tests build right now, we only test the modules we know to build successfully.
 
 packages=(
