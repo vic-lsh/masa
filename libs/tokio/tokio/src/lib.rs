@@ -516,6 +516,7 @@ mod blocking;
 cfg_rt! {
     pub mod runtime;
     pub use runtime::is_runtime_active;
+    pub use runtime::{get_sched_flavor, SchedFlavor};
 }
 cfg_not_rt! {
     pub(crate) mod runtime;

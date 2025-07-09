@@ -7,6 +7,9 @@ cfg_rt! {
 
     pub(crate) mod inject;
     pub(crate) use inject::Inject;
+
+    pub use current_thread::get_sched_flavor;
+    pub use current_thread::SchedFlavor;
 }
 
 cfg_rt_multi_thread! {
