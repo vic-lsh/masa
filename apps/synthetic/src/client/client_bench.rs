@@ -53,11 +53,12 @@ struct RequestStats {
     child1_handler_latency: u64,
     child2_queueing_latency: u64,
     child2_handler_latency: u64,
+    child2_reply_latency: u64,
     error: String,
 }
 
 impl RequestStats {
-    const HEADERS: [&'static str; 15] = [
+    const HEADERS: [&'static str; 16] = [
         "api",
         "test_id",
         "request_id",
@@ -73,6 +74,7 @@ impl RequestStats {
         "child1_handler_latency",
         "child2_queueing_latency",
         "child2_handler_latency",
+        "child2_reply_latency",
     ];
 
     fn new(
@@ -90,6 +92,7 @@ impl RequestStats {
             child1_handler_latency: 0,
             child2_queueing_latency: 0,
             child2_handler_latency: 0,
+            child2_reply_latency: 0,
             error,
         };
 
@@ -100,6 +103,7 @@ impl RequestStats {
             s.child1_handler_latency = r.child1_handler_latency;
             s.child2_queueing_latency = r.child2_queueing_latency;
             s.child2_handler_latency = r.child2_handler_latency;
+            s.child2_reply_latency = r.child2_reply_latency;
         }
 
         s
@@ -107,7 +111,7 @@ impl RequestStats {
 
     fn to_row(&self) -> String {
         format!(
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             self.ctx.api(),
             self.ctx.test_id(),
             self.ctx.request_id(),
@@ -123,6 +127,7 @@ impl RequestStats {
             self.child1_handler_latency,
             self.child2_queueing_latency,
             self.child2_handler_latency,
+            self.child2_reply_latency,
         )
     }
 
