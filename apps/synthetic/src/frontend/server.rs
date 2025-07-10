@@ -88,6 +88,7 @@ impl Frontend for FrontendImpl {
             child1_handler_latency: child1_response.handler_latency,
             child2_queueing_latency: child2_response.queueing_latency,
             child2_handler_latency: child2_response.handler_latency,
+            child2_reply_latency: time_now() - child2_response.finished_at,
             handler_latency: Instant::now().duration_since(start).as_micros() as u64,
         }))
     }
