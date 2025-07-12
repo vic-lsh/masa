@@ -1,4 +1,3 @@
-use chrono::Utc;
 use mongodb::Client as MongoClient;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
