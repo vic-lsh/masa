@@ -202,47 +202,42 @@ impl Frontend for FrontendImpl {
 
         Ok(response)
     }
+
     async fn handle_review(
         &self,
         request: Request<frontend::ReviewRequest>,
     ) -> Result<Response<frontend::ReviewResponse>, Status> {
-        unimplemented!("Oh no!");
+        let request = request.into_inner();
+        let mut review_client = self.review_client.clone();
+
+        let review_req = hotel_tonic::review::ReviewRequest {
+            hotel_id: request.hotel_id,
+        };
+
+        let review_resp = review_client.get_reviews(review_req).await?;
+        let review_resp = review_resp.into_inner();
+
+        // Map review::ReviewComm to frontend::ReviewComm
+        let reviews = review_resp
+            .reviews
+            .into_iter()
+            .map(|r| frontend::ReviewComm {
+                review_id: r.review_id,
+                hotel_id: r.hotel_id,
+                name: r.name,
+                rating: r.rating,
+                description: r.description,
+                images: r
+                    .images
+                    .into_iter()
+                    .map(|img| frontend::Image {
+                        url: img.url,
+                        r#default: img.default,
+                    })
+                    .collect(),
+            })
+            .collect();
+
+        Ok(Response::new(frontend::ReviewResponse { reviews }))
     }
-    // async fn handle_review(
-    //     &self,
-    //     request: Request<frontend::ReviewRequest>,
-    // ) -> Result<Response<frontend::ReviewResponse>, Status> {
-    //     let request = request.into_inner();
-    //     let mut review_client = self.review_client.clone();
-
-    //     let review_req = hotel_tonic::review::ReviewRequest {
-    //         hotel_id: request.hotel_id,
-    //     };
-
-    //     let review_resp = review_client.get_reviews(review_req).await?;
-    //     let review_resp = review_resp.into_inner();
-
-    //     // Map review::ReviewComm to frontend::ReviewComm
-    //     let reviews = review_resp
-    //         .reviews
-    //         .into_iter()
-    //         .map(|r| frontend::ReviewComm {
-    //             review_id: r.review_id,
-    //             hotel_id: r.hotel_id,
-    //             name: r.name,
-    //             rating: r.rating,
-    //             description: r.description,
-    //             images: r
-    //                 .images
-    //                 .into_iter()
-    //                 .map(|img| frontend::Image {
-    //                     url: img.url,
-    //                     r#default: img.default,
-    //                 })
-    //                 .collect(),
-    //         })
-    //         .collect();
-
-    //     Ok(Response::new(frontend::ReviewResponse { reviews }))
-    // }
 }
