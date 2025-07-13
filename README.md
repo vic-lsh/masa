@@ -128,7 +128,7 @@ You can also pass a `--plot` option to the `run-experiment` and `queue-experimen
 
 ##### Syncing experiment output and plots from a remote machine
 
-If you setup the file `apps/.env` with the following variables
+If you setup the file `.env` with the following variables
 
 ```
 remote_user="<remote-user>"

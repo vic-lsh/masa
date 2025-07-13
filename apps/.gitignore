@@ -8,3 +8,4 @@
 */data/plots/*
 
 __pycache__
+scripts/plotting/test.py
