@@ -41,7 +41,7 @@ check:cargo:
   stage: verify
   script:
     - rustc --version && cargo --version # Print version info for debugging
-    - cargo check
+    - ./scripts/check.sh
 
 # Use cargo to test the project
 test:cargo:
