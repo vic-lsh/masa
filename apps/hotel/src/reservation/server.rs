@@ -7,7 +7,6 @@ use app_utils::stats::AvgTracker;
 use async_memcached::AsciiProtocol;
 use chrono::DateTime;
 use hotel_tonic::reservation::{self, reservation_server::Reservation};
-use masa::LatencyDistribution;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::atomic::AtomicUsize;
@@ -398,8 +397,6 @@ impl Reservation for ReservationImpl {
         &self,
         req: Request<reservation::ReservationRequest>,
     ) -> Result<Response<reservation::ReservationResponse>, Status> {
-        let start = Instant::now();
-
         let req = req.into_inner();
 
         let mut res = reservation::ReservationResponse {

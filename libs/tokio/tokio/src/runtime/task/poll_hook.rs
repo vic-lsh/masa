@@ -136,7 +136,7 @@ impl PollHook {
 
 /// The main HookedFuture struct
 #[allow(missing_debug_implementations)]
-pub struct PollHookFuture<F> {
+pub(crate) struct PollHookFuture<F> {
     inner: F,
     hook: PollHook,
 }
@@ -163,7 +163,7 @@ where
 }
 
 /// Trait to add the `hook` method to futures
-pub trait WithPollHook: Sized + Future {
+pub(crate) trait WithPollHook: Sized + Future {
     ///
     fn with_poll_hook(self, hook: PollHook) -> PollHookFuture<Self>;
 }

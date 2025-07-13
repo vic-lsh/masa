@@ -1,4 +1,3 @@
-use chrono::Utc;
 use mongodb::Client as MongoClient;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -30,7 +29,6 @@ pub struct UrlShortenServiceImpl {
 impl UrlShortenServiceImpl {
     pub fn new(mongo_client: MongoClient) -> Self {
         // Seed the RNG with the current timestamp
-        let timestamp = Utc::now().timestamp_millis() as u64;
         let rng = StdRng::from_entropy();
 
         Self {
