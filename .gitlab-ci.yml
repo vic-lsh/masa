@@ -37,6 +37,18 @@ before_script:
   - apt-get install -y protobuf-compiler
   # - apt-get install -yqq --no-install-recommends build-essential
 
+fmt:cargo:
+  stage: verify
+  script:
+    - rustup component add rustfmt
+    - ./scripts/check_format.sh
+  # Only run this job if Rust files have changed
+  rules:
+    - changes:
+        - "**/*.rs"
+        - "Cargo.toml"
+        - "Cargo.lock"
+
 check:cargo:
   stage: verify
   script:
@@ -49,18 +61,6 @@ test:cargo:
   script:
     - rustc --version && cargo --version # Print version info for debugging
     - ./scripts/test.sh
-
-fmt:cargo:
-  stage: verify
-  script:
-    - rustup component add rustfmt
-    - ./scripts/check_format.sh
-  # Only run this job if Rust files have changed
-  rules:
-    - changes:
-        - "**/*.rs"
-        - "Cargo.toml"
-        - "Cargo.lock"
 
 # Optional: Use a third party library to generate gitlab junit reports
 # test:junit-report:
