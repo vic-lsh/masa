@@ -7,6 +7,7 @@ pub(crate) struct FifoQueue<T> {
 }
 
 impl<T> FifoQueue<T> {
+    #[allow(dead_code)]
     pub(crate) fn with_capacity(cap: usize) -> Self {
         Self {
             inner: VecDeque::with_capacity(cap),
