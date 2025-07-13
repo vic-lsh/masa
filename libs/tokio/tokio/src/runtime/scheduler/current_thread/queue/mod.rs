@@ -65,12 +65,14 @@ pub(crate) trait Queue {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(crate) enum PushError<T> {
     Full(T),
     Closed(T),
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(crate) enum PopError {
     Empty,
     Closed,
