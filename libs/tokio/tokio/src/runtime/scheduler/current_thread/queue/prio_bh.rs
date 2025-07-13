@@ -19,6 +19,7 @@ fn time_now() -> u64 {
     now as u64
 }
 
+#[allow(dead_code)]
 fn ms_since_init(value: u64) -> u64 {
     (value - *INIT) / 1000
 }
@@ -72,6 +73,7 @@ impl<T: Ord> Default for BinaryHeapQueue<T> {
 }
 
 impl<T: Ord> BinaryHeapQueue<T> {
+    #[allow(dead_code)]
     pub(crate) fn with_capacity(cap: usize) -> Self {
         Self {
             q: BinaryHeap::with_capacity(cap),
