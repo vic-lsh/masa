@@ -19,6 +19,7 @@ fn time_now() -> u64 {
     now as u64
 }
 
+#[allow(dead_code)]
 fn ms_since_init(value: u64) -> u64 {
     (value - *INIT) / 1000
 }
