@@ -13,7 +13,7 @@ mod prio_bh;
 )))]
 pub(crate) type LocalRunQueue<T> = fifo::FifoQueue<T>;
 
-#[cfg(feature = "fifo")]
+#[cfg(any(feature = "fifo", feature = "fifo_infra"))]
 pub(crate) type LocalRunQueue<T> = fifo::FifoQueue<T>;
 
 #[cfg(any(
