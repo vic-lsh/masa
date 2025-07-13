@@ -1,4 +1,11 @@
 mod fifo;
+
+#[cfg(any(
+    feature = "prio_global",
+    feature = "prio_local",
+    feature = "prio_global_early",
+    feature = "prio_local_early"
+))]
 mod prio_bh;
 
 #[cfg(not(any(

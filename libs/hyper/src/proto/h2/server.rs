@@ -29,10 +29,7 @@ use crate::service::HttpService;
 use crate::upgrade::{OnUpgrade, Pending, Upgraded};
 use crate::{Body, Response};
 
-use masa::{
-    Context as MasaContext, PriorityHint, FIFO, FIFO_EARLY, PRIO_GLOBAL, PRIO_GLOBAL_EARLY,
-    PRIO_LOCAL, PRIO_LOCAL_EARLY,
-};
+use masa::{Context as MasaContext, PriorityHint};
 
 // Our defaults are chosen for the "majority" case, which usually are not
 // resource constrained, and so the spec default of 64kb can be too limiting
