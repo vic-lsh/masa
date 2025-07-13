@@ -1,4 +1,11 @@
 mod fifo;
+
+#[cfg(any(
+    feature = "prio_global",
+    feature = "prio_local",
+    feature = "prio_global_early",
+    feature = "prio_local_early"
+))]
 mod prio_bh;
 
 #[cfg(not(any(
@@ -13,7 +20,7 @@ mod prio_bh;
 )))]
 pub(crate) type LocalRunQueue<T> = fifo::FifoQueue<T>;
 
-#[cfg(feature = "fifo")]
+#[cfg(any(feature = "fifo", feature = "fifo_infra"))]
 pub(crate) type LocalRunQueue<T> = fifo::FifoQueue<T>;
 
 #[cfg(any(
@@ -65,12 +72,14 @@ pub(crate) trait Queue {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(crate) enum PushError<T> {
     Full(T),
     Closed(T),
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(crate) enum PopError {
     Empty,
     Closed,
