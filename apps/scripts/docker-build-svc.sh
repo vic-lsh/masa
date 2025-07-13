@@ -53,6 +53,6 @@ docker build -f ./apps/scripts/Dockerfile \
     --build-arg BINARY_NAME=$binary \
     --build-arg LOG_LEVEL=$rust_log \
     --build-arg APP=$app \
-    --build-arg CONFIG=./apps/$app/scripts/local/config.docker.json \
+    --ulimit nofile=4096:4096 \
     -t $binary \
     .
