@@ -73,6 +73,7 @@ impl<T: Ord> Default for BinaryHeapQueue<T> {
 }
 
 impl<T: Ord> BinaryHeapQueue<T> {
+    #[allow(dead_code)]
     pub(crate) fn with_capacity(cap: usize) -> Self {
         Self {
             q: BinaryHeap::with_capacity(cap),
