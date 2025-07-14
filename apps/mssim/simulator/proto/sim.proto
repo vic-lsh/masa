@@ -1,0 +1,65 @@
+// In proto/sim.proto
+syntax = "proto3";
+
+package sim;
+
+// Service for the orchestrator to receive configurations
+service SimulatorOrchestrator {
+  // Send the YAML configuration to the orchestrator
+  rpc SubmitConfiguration(ConfigurationRequest) returns (ConfigurationResponse);
+  
+  // Check the status of the orchestrator
+  rpc CheckStatus(StatusRequest) returns (StatusResponse);
+}
+
+// Service for clients to parse and validate configurations
+service InputParser {
+  // Parse JSON input and convert to YAML
+  rpc ParseInput(ParseRequest) returns (ParseResponse);
+}
+
+message ParseRequest {
+  string json_config = 1;
+  bool forward_to_orchestrator = 2;  // Whether to forward the config to orchestrator
+}
+
+message ParseResponse {
+  bool success = 1;
+  string yaml_config = 2;  // Generated YAML config
+  string simulation_id = 3;  // Simulation ID if forwarded to orchestrator
+  string error_message = 4;  // Error message if any
+}
+
+message ConfigurationRequest {
+  string yaml_config = 1;  // YAML configuration as string
+  bool start_immediately = 2;  // Whether to start simulation immediately
+}
+
+message ConfigurationResponse {
+  bool success = 1;
+  string message = 2;
+  string simulation_id = 3;  // Unique ID for this simulation run
+}
+
+message StatusRequest {
+  string simulation_id = 1;  // Optional - if not provided, returns overall status
+}
+
+message StatusResponse {
+  enum Status {
+    UNKNOWN = 0;
+    READY = 1;
+    RUNNING = 2;
+    COMPLETED = 3;
+    ERROR = 4;
+  }
+  Status status = 1;
+  string message = 2;
+  repeated ServiceStatus services = 3;  // Status of individual services
+}
+
+message ServiceStatus {
+  string name = 1;
+  bool running = 2;
+  string status_message = 3;
+}

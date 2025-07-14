@@ -1,0 +1,62 @@
+{
+    "service_a": {
+        "ip": "0.0.0.0",
+        "port": "50051",
+        "methods": {
+            "process_order": {
+                "calls": [["service_b.validate_payment"]],
+                "latency_distribution": {
+                    "distribution_type": "normal",
+                    "parameters": {
+                        "mean": 150,
+                        "stddev": 25
+                    }
+                },
+                "error_rate": {
+                    "distribution_type": "bernoulli",
+                    "parameters": {
+                        "p": 0.0
+                    }
+                }
+            },
+            "get_order_status": {
+                "calls": [],
+                "latency_distribution": {
+                    "distribution_type": "normal",
+                    "parameters": {
+                        "mean": 250,
+                        "stddev": 50
+                    }
+                },
+                "error_rate": {
+                    "distribution_type": "bernoulli",
+                    "parameters": {
+                        "p": 0.5
+                    }
+                }
+            }
+        }
+    },
+    "service_b": {
+        "ip": "0.0.0.0",
+        "port": "50052",
+        "methods": {
+            "validate_payment": {
+                "calls": [],
+                "latency_distribution": {
+                    "distribution_type": "normal",
+                    "parameters": {
+                        "mean": 80,
+                        "stddev": 10
+                    }
+                },
+                "error_rate": {
+                    "distribution_type": "bernoulli",
+                    "parameters": {
+                        "p": 0.5
+                    }
+                }
+            }
+        }
+    }
+}
