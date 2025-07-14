@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #32006d;
+  --secondary: #4b2e82;
+  --accent-1: #b7a57a;
+  --accent-2: #84754d;
+  --accent-3: #fec700;
+}
+
+body {
+  background-color: white;
+  color: var(--primary);
+}
+
+.react-flow__node {
+  border-radius: 8px;
+  border: 2px solid var(--primary);
+  background: white;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
+
+.react-flow__node.selected {
+  border-color: var(--accent-3);
+  box-shadow: 0 0 0 2px var(--accent-3);
+}
+
+.react-flow__edge {
+  stroke: var(--primary);
+  stroke-width: 2;
+}
+
+.react-flow__edge.selected {
+  stroke: var(--accent-3);
+  stroke-width: 3;
+}
+
+.react-flow__controls {
+  background: var(--primary);
+  border-radius: 8px;
+}
+
+.react-flow__controls button {
+  background: var(--primary);
+  color: white;
+  border: none;
+}
+
+.react-flow__controls button:hover {
+  background: var(--secondary);
+}
+
+.react-flow__minimap {
+  background: white;
+  border: 2px solid var(--primary);
+  border-radius: 8px;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--secondary);
+}
+
+/* Add focus ring styles */
+input:focus {
+  outline: none;
+  ring: 2px;
+  ring-color: #fec700;
+  border-color: #fec700;
+}
+
+select:focus {
+  outline: none;
+  ring: 2px;
+  ring-color: #fec700;
+  border-color: #fec700;
+}

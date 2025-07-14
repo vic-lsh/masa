@@ -35,6 +35,8 @@ members = [
   "apps/hotel",
   "apps/socialnet",
   "apps/synthetic",
+  "apps/mssim/generic-service",
+  "apps/mssim/simulator",
   "apps/app-utils",
   "apps/app-util-macros",
 ]
