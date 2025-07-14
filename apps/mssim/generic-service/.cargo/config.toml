@@ -1,0 +1,4 @@
+[env]
+CONFIG_PATH = "config/config.json"
+SERVICE_NAME = "service_b"
+SERVICE_PORT = "50052"
