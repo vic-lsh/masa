@@ -1,0 +1,24 @@
+syntax = "proto3";
+package service;
+
+import "google/protobuf/timestamp.proto";
+
+service Service {
+  rpc GetData (ServiceRequest) returns (ServiceResponse);
+}
+
+message ServiceRequest {
+  string method_name = 1;
+}
+
+message ServiceResponse {
+  repeated CallData calls = 1;
+  string method_name = 2;
+}
+
+message CallData {
+  string method_name = 1;
+  google.protobuf.Timestamp request_sent_at = 2;
+  google.protobuf.Timestamp response_received_at = 3;
+  bool was_an_error = 4;
+}

@@ -1,0 +1,69 @@
+{
+  "services": {
+    "service1": {
+      "port": 50051,
+      "methods": {
+        "method1": {
+          "calls": [["service2.method2", "service2.method3"]],
+          "latency_distribution": {
+            "type": "normal",
+            "parameters": {
+              "mean": 100.0,
+              "stddev": 15.0
+            }
+          },
+          "error_rate": {
+            "type": "bernoulli",
+            "parameters": {
+              "p": 0.0
+            }
+          }
+        }
+      }
+    },
+    "service2": {
+      "port": 50052,
+      "methods": {
+        "method2": {
+          "calls": [],
+          "latency_distribution": {
+            "type": "constant",
+            "parameters": {
+              "value": 50.0
+            }
+          },
+          "error_rate": {
+            "type": "bernoulli",
+            "parameters": {
+              "p": 0.0
+            }
+          }
+        },
+        "method3": {
+          "calls": [],
+          "latency_distribution": {
+            "type": "constant",
+            "parameters": {
+              "value": 50.0
+            }
+          },
+          "error_rate": {
+            "type": "bernoulli",
+            "parameters": {
+              "p": 0.0
+            }
+          }
+        }
+      }
+    }
+  },
+  "load": {
+    "entry_points": [
+      {
+        "service": "service1",
+        "method": "method1",
+        "requests_per_second": 10
+      }
+    ]
+  }
+}
