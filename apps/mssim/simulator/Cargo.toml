@@ -1,0 +1,26 @@
+[package]
+name = "runner"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+yaml-rust = "0.4"
+tokio = { version = "1", features = ["full"] }
+clap = "4.0"
+warp = "0.3"
+tonic = "0.13.0"
+prost = "0.13.5"
+tonic-build = "0.13.0"
+futures = "0.3.31"
+anyhow = "1.0.98"
+thiserror = "2.0.12"
+structopt = "0.3.26"
+reqwest = "0.12.15"
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
+
+[build-dependencies]
+tonic-build = '0.13.0'

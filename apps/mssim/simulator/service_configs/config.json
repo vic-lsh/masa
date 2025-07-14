@@ -1,0 +1,518 @@
+{
+  "service_delta": {
+    "ip": "service_delta",
+    "port": "50054",
+    "methods": {
+      "fetch_details": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "mean": 220.0,
+            "stddev": 50.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.12
+          }
+        }
+      },
+      "check_schema": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "stddev": 7.0,
+            "mean": 35.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.01
+          }
+        }
+      },
+      "insert_record": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "mean": 70.0,
+            "stddev": 18.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.05
+          }
+        }
+      },
+      "query_database": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "mean": 160.0,
+            "stddev": 30.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.08
+          }
+        }
+      },
+      "log_action": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "stddev": 6.0,
+            "mean": 28.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.008
+          }
+        }
+      },
+      "perform_action_x": {
+        "calls": [
+          [
+            "service_epsilon.log_action"
+          ]
+        ],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "stddev": 40.0,
+            "mean": 180.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.09
+          }
+        }
+      }
+    }
+  },
+  "service_beta": {
+    "ip": "service_beta",
+    "port": "50052",
+    "methods": {
+      "cleanup_session": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "mean": 30.0,
+            "stddev": 5.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.01
+          }
+        }
+      },
+      "validate_request": {
+        "calls": [
+          [
+            "service_delta.check_schema"
+          ]
+        ],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "stddev": 8.0,
+            "mean": 40.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.1
+          }
+        }
+      },
+      "authenticate_user": {
+        "calls": [
+          [
+            "service_gamma.verify_credentials"
+          ]
+        ],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "mean": 110.0,
+            "stddev": 25.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.0
+          }
+        }
+      },
+      "fetch_summary": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "stddev": 20.0,
+            "mean": 90.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.04
+          }
+        }
+      },
+      "update_user_profile": {
+        "calls": [
+          [
+            "service_epsilon.log_user_activity"
+          ]
+        ],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "mean": 65.0,
+            "stddev": 10.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.06
+          }
+        }
+      }
+    }
+  },
+  "service_epsilon": {
+    "ip": "service_epsilon",
+    "port": "50059",
+    "methods": {
+      "check_cache": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "stddev": 3.0,
+            "mean": 15.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.01
+          }
+        }
+      },
+      "log_user_activity": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "stddev": 5.0,
+            "mean": 25.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.005
+          }
+        }
+      },
+      "generate_report_data": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "stddev": 60.0,
+            "mean": 250.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.18
+          }
+        }
+      },
+      "log_action": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "mean": 28.0,
+            "stddev": 6.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.008
+          }
+        }
+      },
+      "update_cache": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "stddev": 8.0,
+            "mean": 30.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.02
+          }
+        }
+      },
+      "finalize_status": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "mean": 45.0,
+            "stddev": 10.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.03
+          }
+        }
+      }
+    }
+  },
+  "service_alpha": {
+    "ip": "service_alpha",
+    "port": "50051",
+    "methods": {
+      "initiate_workflow": {
+        "calls": [
+          [
+            "service_beta.validate_request",
+            "service_gamma.lookup_resources"
+          ]
+        ],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "stddev": 10.0,
+            "mean": 50.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.0
+          }
+        }
+      },
+      "process_step_1": {
+        "calls": [
+          [
+            "service_delta.perform_action_x"
+          ]
+        ],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "stddev": 15.0,
+            "mean": 75.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.05
+          }
+        }
+      },
+      "process_step_2": {
+        "calls": [
+          [
+            "service_epsilon.generate_report_data"
+          ],
+          [
+            "service_gamma.archive_intermediate_result"
+          ]
+        ],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "stddev": 12.0,
+            "mean": 60.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.03
+          }
+        }
+      },
+      "health_check": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "stddev": 2.0,
+            "mean": 10.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.0
+          }
+        }
+      },
+      "aggregate_results": {
+        "calls": [
+          [
+            "service_beta.fetch_summary"
+          ],
+          [
+            "service_delta.fetch_details"
+          ],
+          [
+            "service_epsilon.finalize_status"
+          ]
+        ],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "mean": 120.0,
+            "stddev": 30.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.02
+          }
+        }
+      }
+    }
+  },
+  "service_gamma": {
+    "ip": "service_gamma",
+    "port": "50053",
+    "methods": {
+      "verify_credentials": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "mean": 85.0,
+            "stddev": 20.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.15
+          }
+        }
+      },
+      "lookup_resources": {
+        "calls": [
+          [
+            "service_delta.query_database",
+            "service_epsilon.check_cache"
+          ]
+        ],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "mean": 150.0,
+            "stddev": 35.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.07
+          }
+        }
+      },
+      "archive_intermediate_result": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "stddev": 15.0,
+            "mean": 55.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.02
+          }
+        }
+      },
+      "register_new_resource": {
+        "calls": [
+          [
+            "service_delta.insert_record"
+          ],
+          [
+            "service_epsilon.update_cache"
+          ]
+        ],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "stddev": 20.0,
+            "mean": 100.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.04
+          }
+        }
+      },
+      "get_configuration": {
+        "calls": [],
+        "latency_distribution": {
+          "type": "normal",
+          "parameters": {
+            "mean": 20.0,
+            "stddev": 5.0
+          }
+        },
+        "error_rate": {
+          "type": "bernoulli",
+          "parameters": {
+            "p": 0.0
+          }
+        }
+      }
+    }
+  }
+}
