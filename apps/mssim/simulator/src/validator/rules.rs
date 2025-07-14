@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use std::collections::HashSet;
 
 use crate::parser::{Distribution, EntryPoint, LoadConfig, SimulatorConfig};
