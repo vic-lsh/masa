@@ -27,6 +27,12 @@ COPY apps/app-utils/ ./apps/app-utils/
 COPY apps/hotel/Cargo.toml ./apps/hotel/Cargo.toml
 COPY apps/socialnet/Cargo.toml ./apps/socialnet/Cargo.toml
 COPY apps/synthetic/Cargo.toml ./apps/synthetic/Cargo.toml
+COPY apps/mssim/generic-service/Cargo.toml ./apps/mssim/generic-service/Cargo.toml
+RUN mkdir apps/mssim/generic-service/src 
+RUN touch apps/mssim/generic-service/src/lib.rs
+COPY apps/mssim/simulator/Cargo.toml ./apps/mssim/simulator/Cargo.toml
+RUN mkdir apps/mssim/simulator/src 
+RUN touch apps/mssim/simulator/src/lib.rs
 
 ARG APP
 RUN if [ -z "$APP" ]; then \
