@@ -7,7 +7,6 @@ if [[ "$pwd" != */apps/* ]]; then
 fi
 app=$(basename $pwd)
 experiment=$1
-repeat="1"
 plot="false"
 shift 1
 
@@ -16,10 +15,6 @@ while [[ $# -gt 0 ]]; do
     --plot)
         plot="true"
         shift 1
-        ;;
-    --repeat)
-        repeat="$2"
-        shift 2
         ;;
     *)
         echo "Unknown argument: $1"
@@ -53,6 +48,7 @@ rm -rf $out_dir/*
 rm -rf $plot_dir
 
 policies=$(cat $in_dir/policies | tr -d '\n')
+repeat=$(cat $in_dir/gen_config.json | jq -r ".Repeats")
 
 for i in $(seq 0 $((repeat - 1))); 
 do
