@@ -393,10 +393,10 @@ async fn send_request(
     client: &mut FrontendClient<Channel>,
     api: &str,
     ctx: Context,
+    timeout_duration: Duration,
 ) -> RequestStats {
     let send_at;
     let recv_at;
-    let timeout_duration = Duration::from_secs(1);
 
     let response = match api {
         "Search" => {
