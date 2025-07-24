@@ -2,7 +2,7 @@ use crate::{masa::context::read_context, GrpcMethod, Request, Status};
 use std::sync::Arc;
 
 use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
-use masa::Context;
+use masa::{time_now, Context};
 
 #[derive(Debug)]
 /// This policy always sets the deadline of each request as
@@ -71,5 +71,11 @@ pub struct ChildContext {}
 impl ClientHooks for ChildContext {
     fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
         Self {}
+    }
+
+    fn before_send<T>(&mut self, request: &mut Request<T>) {
+        request
+            .metadata_mut()
+            .insert("sent_at", time_now().to_string().parse().unwrap());
     }
 }

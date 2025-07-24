@@ -4,6 +4,8 @@ pub mod hotel_tonic {
     tonic::include_proto!("frontend");
 }
 mod gen;
+#[path = "../util.rs"]
+pub mod util;
 
 use std;
 use std::error::Error;
@@ -25,7 +27,7 @@ use tokio::time::{timeout, Duration, Instant};
 
 use masa::Context;
 use tonic::transport::Channel;
-use tonic::Status;
+use tonic::{Response, Status};
 
 use app_utils::{
     load_gen::{Counters, GenConfig, LoadGenArgs},
@@ -33,6 +35,8 @@ use app_utils::{
     timing::time_now,
 };
 use hotel_tonic::frontend_client::FrontendClient;
+
+use crate::util::ReservationRequestStats;
 
 const COUNTER_KEYS: [&'static str; 8] = [
     // total number of (sent) requests
@@ -58,10 +62,12 @@ struct RequestStats {
     ctx: Context,
     latency: u64,
     error: String,
+    reservation_stats: ReservationRequestStats,
+    check_user_latency: u64,
 }
 
 impl RequestStats {
-    const HEADERS: [&'static str; 9] = [
+    const HEADERS: [&'static str; 24] = [
         "api",
         "test_id",
         "request_id",
@@ -71,19 +77,44 @@ impl RequestStats {
         "deadline",
         "latency",
         "error",
+        //
+        "check_user_latency",
+        "reservation_latency",
+        "queueing_latency",
+        "get_database_client",
+        "get_mc_client",
+        "reservation_requests",
+        "reservation_mc_misses",
+        "reservation_total_mc_latency",
+        "reservation_total_mongo_latency",
+        "capacity_requests",
+        "capacity_mc_misses",
+        "capacity_total_mc_latency",
+        "capacity_total_mongo_latency",
+        "mc_bulk_insert_latency",
+        "reservation_bulk_insert_latency",
     ];
 
-    fn new(ctx: Context, latency: u64, error: String) -> Self {
+    fn new(
+        ctx: Context,
+        latency: u64,
+        error: String,
+        reservation_stats: ReservationRequestStats,
+        check_user_latency: u64,
+    ) -> Self {
         Self {
             ctx,
             latency,
             error,
+
+            reservation_stats,
+            check_user_latency,
         }
     }
 
     fn to_row(&self) -> String {
         format!(
-            "{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             self.ctx.api(),
             self.ctx.test_id(),
             self.ctx.request_id(),
@@ -92,7 +123,23 @@ impl RequestStats {
             self.ctx.start_at(),
             self.ctx.deadline(),
             self.latency,
-            self.error
+            self.error,
+            //
+            self.check_user_latency,
+            self.reservation_stats.latency,
+            self.reservation_stats.queueing_latency,
+            self.reservation_stats.get_database_client,
+            self.reservation_stats.get_mc_client,
+            self.reservation_stats.reservation_requests,
+            self.reservation_stats.reservation_mc_misses,
+            self.reservation_stats.reservation_total_mc_latency,
+            self.reservation_stats.reservation_total_mongo_latency,
+            self.reservation_stats.capacity_requests,
+            self.reservation_stats.capacity_mc_misses,
+            self.reservation_stats.capacity_total_mc_latency,
+            self.reservation_stats.capacity_total_mongo_latency,
+            self.reservation_stats.mc_bulk_insert_latency,
+            self.reservation_stats.reservation_bulk_insert_latency,
         )
     }
 
@@ -396,6 +443,8 @@ async fn send_request(
     let recv_at;
     let timeout_duration = Duration::from_secs(1);
 
+    let check_user_latency: u64;
+    let reservation_stats;
     let response = match api {
         "Search" => {
             let request = {
@@ -406,6 +455,8 @@ async fn send_request(
             send_at = time_now();
             let r = timeout(timeout_duration, client.handle_search(request)).await;
             recv_at = time_now();
+            check_user_latency = 0;
+            reservation_stats = ReservationRequestStats::new();
             map_response(r)
         }
         "Reservation" => {
@@ -417,6 +468,27 @@ async fn send_request(
             send_at = time_now();
             let r = timeout(timeout_duration, client.handle_reservation(request)).await;
             recv_at = time_now();
+            if let Ok(Ok(ref r)) = r {
+                reservation_stats = serde_json::from_str(
+                    r.metadata()
+                        .get("reservation_request_stats")
+                        .unwrap()
+                        .to_str()
+                        .unwrap(),
+                )
+                .unwrap();
+                check_user_latency = r
+                    .metadata()
+                    .get("check_user_latency")
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+            } else {
+                reservation_stats = ReservationRequestStats::new();
+                check_user_latency = 0;
+            };
             map_response(r)
         }
         _ => panic!("Unimplemented API {}", api),
@@ -433,11 +505,18 @@ async fn send_request(
                     "/None".to_string()
                 }
             };
-            RequestStats::new(ctx, latency, error)
+
+            RequestStats::new(ctx, latency, error, reservation_stats, check_user_latency)
         }
         Err(_) => {
             let error = "/ClientTimeout".to_string();
-            RequestStats::new(ctx, timeout_duration.as_micros() as u64, error)
+            RequestStats::new(
+                ctx,
+                timeout_duration.as_micros() as u64,
+                error,
+                reservation_stats,
+                check_user_latency,
+            )
         }
     };
 
@@ -445,7 +524,7 @@ async fn send_request(
 }
 
 fn map_response<T>(
-    timeout_response: Result<Result<T, Status>, Elapsed>,
+    timeout_response: Result<Result<Response<T>, Status>, Elapsed>,
 ) -> Result<Result<(), Status>, Elapsed> {
     timeout_response.map(|response| response.map(|_r| ()))
 }

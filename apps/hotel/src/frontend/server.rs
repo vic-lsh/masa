@@ -20,11 +20,14 @@ pub mod hotel_tonic {
 }
 
 use crate::config::HotelConfig;
+use app_util_macros::track_latency;
 use ginepro::LoadBalancedChannel;
 use hotel_tonic::review::review_client::ReviewClient;
 use std::time::Instant;
 
 use tonic::{Request, Response, Status};
+
+use app_utils::{stats::latency::StatsTracker, timing::time_now};
 
 use hotel_tonic::{
     frontend, frontend::frontend_server::Frontend, profile, profile::profile_client::ProfileClient,
@@ -32,12 +35,16 @@ use hotel_tonic::{
     search::search_client::SearchClient, user, user::user_client::UserClient,
 };
 
+use crate::util::ReservationRequestStats;
+
 pub struct FrontendImpl {
     search_client: SearchClient<LoadBalancedChannel>,
     reservation_client: ReservationClient<LoadBalancedChannel>,
     profile_client: ProfileClient<LoadBalancedChannel>,
     user_client: UserClient<LoadBalancedChannel>,
     review_client: ReviewClient<LoadBalancedChannel>,
+
+    reservation_stats: StatsTracker,
 }
 
 impl FrontendImpl {
@@ -79,6 +86,7 @@ impl FrontendImpl {
             profile_client,
             user_client,
             review_client,
+            reservation_stats: StatsTracker::new(vec!["check_user", "make_reservation"], true),
         }
     }
 }
@@ -161,7 +169,7 @@ impl Frontend for FrontendImpl {
         &self,
         request: Request<frontend::ReservationRequest>,
     ) -> Result<Response<frontend::ReservationResponse>, Status> {
-        let start = Instant::now();
+        let request_start = Instant::now();
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let request = request.into_inner();
 
@@ -170,13 +178,28 @@ impl Frontend for FrontendImpl {
             username: request.username,
             password: request.password,
         };
-        let user_response = user_client.check_user(user_request).await?;
+        let start = time_now();
+        let user_response = track_latency!(self.reservation_stats.get("check_user"), {
+            user_client.check_user(user_request).await?
+        });
+        let check_user_latency = time_now() - start;
+
         let response = user_response.into_inner();
 
         if !response.success {
-            return Ok(Response::new(frontend::ReservationResponse {
-                hotels: Vec::new(),
-            }));
+            let mut r = Response::new(frontend::ReservationResponse { hotels: Vec::new() });
+            r.metadata_mut().insert(
+                "reservation_request_stats",
+                serde_json::to_string(&ReservationRequestStats::new())
+                    .unwrap()
+                    .parse()
+                    .unwrap(),
+            );
+            r.metadata_mut().insert(
+                "check_user_latency",
+                check_user_latency.to_string().parse().unwrap(),
+            );
+            return Ok(r);
         }
 
         let mut reservation_client = self.reservation_client.clone();
@@ -187,20 +210,36 @@ impl Frontend for FrontendImpl {
             out_date: request.out_date,
             room_number: 1,
         };
-        let reservation_response = reservation_client
-            .make_reservation(reservation_request)
-            .await?;
+
+        let reservation_response =
+            track_latency!(self.reservation_stats.get("make_reservation"), {
+                reservation_client
+                    .make_reservation(reservation_request)
+                    .await?
+            });
+        let reservation_request_stats = reservation_response
+            .metadata()
+            .get("request_stats")
+            .unwrap()
+            .clone();
         let response = reservation_response.into_inner();
 
         let response = frontend::ReservationResponse {
             hotels: response.hotel_ids,
         };
 
-        let mut response = Response::new(response);
-        ctx.set_frontend_elapse(start.elapsed().as_micros() as u64);
-        response.metadata_mut().insert_ctx("ctx", &ctx);
+        let mut r = Response::new(response);
+        r.metadata_mut()
+            .insert("reservation_request_stats", reservation_request_stats);
+        let elapsed = request_start.elapsed().as_micros() as u64;
+        ctx.set_frontend_elapse(elapsed);
+        r.metadata_mut().insert_ctx("ctx", &ctx);
+        r.metadata_mut().insert(
+            "check_user_latency",
+            check_user_latency.to_string().parse().unwrap(),
+        );
 
-        Ok(response)
+        Ok(r)
     }
 
     async fn handle_review(

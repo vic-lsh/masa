@@ -1,6 +1,8 @@
 #[path = "../config.rs"]
 pub mod config;
 pub mod server;
+#[path = "../util.rs"]
+pub mod util;
 
 use std::fs::File;
 use std::io::BufReader;

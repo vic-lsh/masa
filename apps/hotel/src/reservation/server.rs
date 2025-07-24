@@ -16,9 +16,11 @@ use std::time::{Duration, Instant};
 
 use crate::config::HotelConfig;
 use crate::db;
+use crate::util::ReservationRequestStats;
 use app_util_macros::track_latency;
 use app_utils::pool::McPool;
 use app_utils::stats::latency::StatsTracker;
+use masa::time_now;
 use mongodb::{bson::doc, Client as MongoClient, Collection};
 use tonic::{Request, Response, Status};
 
@@ -88,7 +90,7 @@ impl ReservationImpl {
                     "mongo_get_reservations",
                     "mc_set_reservations",
                 ],
-                true,
+                false,
             )),
         })
     }
@@ -338,16 +340,28 @@ impl Reservation for ReservationImpl {
         &self,
         req: Request<reservation::ReservationRequest>,
     ) -> Result<Response<reservation::ReservationResponse>, Status> {
+        let mut request_stats = ReservationRequestStats::new();
+
+        let sent_at = req.metadata().get("sent_at").unwrap();
+        let sent_at: u64 = sent_at.to_str().unwrap().parse().unwrap();
+        request_stats.queueing_latency = time_now() - sent_at;
+
+        let request_start = time_now();
         let req = req.into_inner();
 
         let mut res = reservation::ReservationResponse {
             hotel_ids: Vec::new(),
         };
 
+        // NOTE: negligible duration
+        let start = time_now();
         let database = self.mongo_reserve_client.database("reservation-db");
         let res_collection: Collection<db::Reservation> = database.collection("reservation");
         let num_collection: Collection<db::Number> = database.collection("number");
+        request_stats.get_database_client = time_now() - start;
+        let start = time_now();
         let mut mc_client = self.mc_pool.get().await;
+        request_stats.get_mc_client = time_now() - start;
 
         let in_date = DateTime::parse_from_rfc3339(&format!("{}T12:00:00+00:00", req.in_date))
             .unwrap()
@@ -369,17 +383,21 @@ impl Reservation for ReservationImpl {
             let out_date_str = current_date.format("%Y-%m-%d").to_string();
             let memc_key = format!("{}_{}_{}", hotel_id, in_date_str, out_date_str);
 
+            request_stats.reservation_requests += 1;
+            let start = time_now();
             // Check memcached
-            let count = match mc_client.get(&memc_key).await {
+            let result = mc_client.get(&memc_key).await;
+            request_stats.reservation_total_mc_latency += time_now() - start;
+            let count = match result {
                 Ok(Some(value)) => {
                     // Memcached hit
                     let count = String::from_utf8_lossy(&value.data.unwrap())
                         .parse::<i32>()
                         .unwrap();
-                    memc_date_num_map.insert(memc_key, count + req.room_number);
                     count
                 }
                 _ => {
+                    request_stats.reservation_mc_misses += 1;
                     // Memcached miss
                     let filter = doc! {
                         "hotelId": hotel_id,
@@ -387,6 +405,7 @@ impl Reservation for ReservationImpl {
                         "outDate": &out_date_str
                     };
 
+                    let start = time_now();
                     let mut reservations = res_collection.find(filter, None).await.unwrap();
 
                     let mut reserve_count = 0;
@@ -394,25 +413,34 @@ impl Reservation for ReservationImpl {
                     while let Some(reservation) = reservations.next().await {
                         reserve_count += reservation.unwrap().number;
                     }
-                    memc_date_num_map.insert(memc_key, reserve_count + req.room_number);
+                    request_stats.reservation_total_mongo_latency += time_now() - start;
                     reserve_count
                 }
             };
+            memc_date_num_map.insert(memc_key, count + req.room_number);
 
+            request_stats.capacity_requests += 1;
             // Check capacity
             let memc_cap_key = format!("{}_cap", hotel_id);
-            let hotel_cap = match mc_client.get(&memc_cap_key).await {
+            let start = time_now();
+            let result = mc_client.get(&memc_cap_key).await;
+            request_stats.capacity_total_mc_latency += time_now() - start;
+            let hotel_cap = match result {
                 Ok(Some(value)) => String::from_utf8_lossy(&value.data.unwrap())
                     .parse::<i32>()
                     .unwrap(),
                 _ => {
+                    request_stats.capacity_mc_misses += 1;
                     let filter = doc! { "hotelId": hotel_id };
+                    let start = time_now();
                     let num = num_collection
                         .find_one(filter, None)
                         .await
                         .unwrap()
                         .expect(&format!("should find hotel {}", hotel_id));
+                    request_stats.capacity_total_mongo_latency += time_now() - start;
 
+                    let start = time_now();
                     let cap = num.number;
                     if mc_client
                         .set(&memc_cap_key, cap.to_string().as_bytes(), None, None)
@@ -421,12 +449,24 @@ impl Reservation for ReservationImpl {
                     {
                         self.mc_err_count.fetch_add(1, Ordering::Relaxed);
                     }
+                    request_stats.capacity_total_mc_latency += time_now() - start;
                     cap
                 }
             };
 
             if count + req.room_number > hotel_cap {
-                return Ok(Response::new(res));
+                let elapsed = time_now() - request_start;
+                request_stats.latency = elapsed;
+                let mut r = Response::new(res);
+
+                r.metadata_mut().insert(
+                    "request_stats",
+                    serde_json::to_string(&request_stats)
+                        .unwrap()
+                        .parse()
+                        .unwrap(),
+                );
+                return Ok(r);
             }
         }
         self.mk_reserve_mongo.track(iters);
@@ -437,7 +477,9 @@ impl Reservation for ReservationImpl {
             .map(|(k, v)| (k, v.to_string()))
             .collect();
         let mc_kvs: Vec<_> = kvs.iter().map(|(k, v)| (k, v)).collect();
+        let start = time_now();
         mc_client.set_multi(&mc_kvs, None, None).await.ok();
+        request_stats.mc_bulk_insert_latency = time_now() - start;
 
         // Insert reservations
         let mut reservations = Vec::new();
@@ -456,17 +498,29 @@ impl Reservation for ReservationImpl {
             };
             reservations.push(reservation);
         }
+
+        let start = time_now();
         res_collection
             .insert_many(reservations, None)
             .await
             .unwrap();
+        request_stats.reservation_bulk_insert_latency = time_now() - start;
         res.hotel_ids.push(hotel_id.clone());
 
-        // {
-        //     let elapsed = start.elapsed().as_micros();
-        //     self.lat_make_reserve.lock().unwrap().track(elapsed as u64);
-        // }
+        {
+            let elapsed = time_now() - request_start;
+            request_stats.latency = elapsed;
+        }
 
-        Ok(Response::new(res))
+        let mut r = Response::new(res);
+
+        r.metadata_mut().insert(
+            "request_stats",
+            serde_json::to_string(&request_stats)
+                .unwrap()
+                .parse()
+                .unwrap(),
+        );
+        Ok(r)
     }
 }

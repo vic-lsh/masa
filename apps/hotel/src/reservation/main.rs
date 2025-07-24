@@ -2,6 +2,8 @@
 pub mod config;
 mod db;
 pub mod server;
+#[path = "../util.rs"]
+pub mod util;
 
 use std::fs::File;
 use std::io::BufReader;

@@ -1,4 +1,6 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
+
+use masa::time_now;
 
 use super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
 use crate::{GrpcMethod, Request};
@@ -36,6 +38,12 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 impl ClientHooks for ChildContext {
     fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
         Self {}
+    }
+
+    fn before_send<T>(&mut self, request: &mut Request<T>) {
+        request
+            .metadata_mut()
+            .insert("sent_at", time_now().to_string().parse().unwrap());
     }
 }
 
