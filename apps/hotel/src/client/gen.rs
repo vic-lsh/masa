@@ -10,7 +10,7 @@ fn get_user() -> (String, String) {
     let mut rng = rand::thread_rng();
     let id = rng.gen_range(0..=500);
 
-    let user_name = format!("Cornell_{}", id);
+    let user_name = format!("Username_{}", id);
 
     // Create password by repeating id 10 times
     let pass_word = id.to_string().repeat(10);
