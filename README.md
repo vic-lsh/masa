@@ -76,16 +76,17 @@ We have some basic scripts to automate running experiments on an application. As
 
 See `./data/in/template` for an example experiment.
 
-Execute the folowing command to run the experiment:
+Execute the following command to run the experiment:
 
 ```bash
 ./scripts/run_experiment.sh "<experiment>"
 ```
 
-For every policy, the script generates a folder with the following structure
+The load gen configuration allows you to specify the number of times that the experiment should be repeated.
+For the i-th repetition of the experiment, the script generates a folder with the following structure for every policy
 
 ```
-./data/out/<experiment>/<policy>
+./data/out/<experiment>/i/<policy>
 ├── loadgen.log         # logs from load gen
 ├── r<rps1>.csv         # trace for each RPS level provided in the load gen config
 ├── ...
