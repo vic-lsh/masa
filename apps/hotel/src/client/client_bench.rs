@@ -196,6 +196,7 @@ impl LoadGenerator {
             elapse += value;
 
             let api_idx = uniform.sample(&mut self.rng) as usize % self.gen_cfg.apis.len();
+            let timeout = self.gen_cfg.timeouts_ms[api_idx];
             let api = self.gen_cfg.apis[api_idx].clone();
             let slo = self.gen_cfg.slos[api_idx];
 
@@ -225,7 +226,8 @@ impl LoadGenerator {
 
             set.spawn(async move {
                 ctrs.increment("all");
-                let stats = send_request(&mut client, &api, ctx).await;
+                let stats =
+                    send_request(&mut client, &api, ctx, Duration::from_millis(timeout)).await;
 
                 if Instant::now() < trace_at {
                     return;

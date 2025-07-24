@@ -13,6 +13,8 @@ pub struct GenConfig {
     pub apis: Vec<String>,
     #[serde(rename = "Slos")]
     pub slos: Vec<u64>,
+    #[serde(rename = "Timeouts_ms")]
+    pub timeouts_ms: Vec<u64>,
     #[serde(rename = "Rps")]
     pub rps_values: Vec<u64>,
     #[serde(rename = "Gap")]
