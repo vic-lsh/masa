@@ -3,137 +3,169 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-from util import parse_args, read_data
+from util import parse_args, prepare_output_dir, read_data
 
 
 def generate_plots(args):
-    output_dir = args.output_dir
-    apis, policies, rps_values, results = read_data(args.config_dir, args.data_dir)
+    prepare_output_dir(args)
+
+    repeats, apis, policies, rps_values, results = read_data(
+        args.config_dir, args.data_dir
+    )
 
     MS_TO_US = 10**3
-    for api in apis:
-        data = results[api]
-        # microseconds to milliseconds
-        for rps in rps_values:
-            for policy in policies:
-                df = data[policy][rps]
-                df["latency"] /= MS_TO_US
-                df["slo"] /= MS_TO_US
-                df["start_at"] /= MS_TO_US
-                df["deadline"] /= MS_TO_US
+    for i in range(repeats):
+        output_dir = os.path.join(args.output_dir, str(i))
+        for api in apis:
+            data = results[i][api]
+            # microseconds to milliseconds
+            for rps in rps_values:
+                for policy in policies:
+                    df = data[policy][rps]
+                    df["latency"] /= MS_TO_US
+                    df["slo"] /= MS_TO_US
+                    df["start_at"] /= MS_TO_US
+                    df["deadline"] /= MS_TO_US
 
-        slo = data[policies[0]][rps_values[0]]["slo"].max()
-        max_y = slo * 4
+            slo = data[policies[0]][rps_values[0]]["slo"].max()
+            max_y = slo * 4
 
-        # plot CDF of latency distribution
-        for rps in rps_values:
-            plt.figure(figsize=(12, 8))
-
-            for policy in policies:
-                df = data[policy][rps]
-
-                latencies = sorted(df["latency"].values)
-                percentiles = np.linspace(0, 100, len(latencies))
-
-                plt.plot(percentiles, latencies, label=f"{policy}")
-
-            # Add labels and title
-            plt.xlabel("Percentile (%)")
-            plt.ylabel("Latency (milliseconds)")
-            plt.title(f"Latency Distribution for {api} API - {rps} RPS")
-            plt.grid(True, alpha=0.3)
-            plt.legend()
-            plt.ylim(top=max_y)
-            # Save the plot
-            plt.savefig(
-                f"{output_dir}/latency_distribution_{rps}rps_{api}.png", dpi=300
-            )
-
-            # # Optional: Add log scale version for better visibility of tail latencies
-            # plt.yscale("log")
-            # plt.title(f"Latency Distribution (Log Scale) for {api} API - {rps} RPS")
-            # plt.savefig(
-            #     f"{output_dir}/latency_distribution_{rps}rps_{api}_log.png", dpi=300
-            # )
-            plt.close()
-
-        # TODO: DRY
-        # plot CDF of GOODPUT latency distribution
-        for rps in rps_values:
-            plt.figure(figsize=(12, 8))
-
-            for policy in policies:
-                df = data[policy][rps]
-                df = df[df["error"] == "/None"]
-
-                latencies = sorted(df["latency"].values)
-                percentiles = np.linspace(0, 100, len(latencies))
-
-                plt.plot(percentiles, latencies, label=f"{policy}")
-
-            # Add labels and title
-            plt.xlabel("Percentile (%)")
-            plt.ylabel("Latency (milliseconds)")
-            plt.title(f"Goodput Latency Distribution for {api} API - {rps} RPS")
-            plt.grid(True, alpha=0.3)
-            plt.ylim(top=max_y)
-            plt.legend()
-
-            # Save the plot
-            plt.savefig(
-                f"{output_dir}/goodput_latency_distribution_{rps}rps_{api}.png", dpi=300
-            )
-
-            # # Optional: Add log scale version for better visibility of tail latencies
-            # plt.yscale("log")
-            # plt.title(f"Latency Distribution for {api} API (Log Scale) - {rps} RPS")
-            # plt.savefig(
-            #     f"{output_dir}/latency_distribution_{rps}rps_{api}_log.png", dpi=300
-            # )
-            plt.close()
-
-        # plot histogram
-        for rps in rps_values:
-            for policy in policies:
+            # plot CDF of latency distribution
+            for rps in rps_values:
                 plt.figure(figsize=(12, 8))
-                df = data[policy][rps]
-                df["met_slo"] = df["error"] == "/None"
 
-                sns.histplot(
-                    data=df,
-                    x="latency",
-                    hue="met_slo",
-                    hue_order=[True, False],
-                )
+                for policy in policies:
+                    df = data[policy][rps]
+
+                    latencies = sorted(df["latency"].values)
+                    percentiles = np.linspace(0, 100, len(latencies))
+
+                    plt.plot(percentiles, latencies, label=f"{policy}")
 
                 # Add labels and title
-                plt.xlabel("Latency (milliseconds)")
-                plt.title(f"Latency Histogram for {api} API - {policy} - {rps} RPS")
-                dir = os.path.join(output_dir, policy)
-                os.makedirs(dir, exist_ok=True)
+                plt.xlabel("Percentile (%)")
+                plt.ylabel("Latency (milliseconds)")
+                plt.title(f"Latency Distribution for {api} API - {rps} RPS")
+                plt.grid(True, alpha=0.3)
+                plt.legend()
+                plt.ylim(top=max_y)
+                # Save the plot
                 plt.savefig(
-                    os.path.join(dir, f"latency_histogram_{rps}rps_{api}.png"),
-                    dpi=300,
+                    f"{output_dir}/latency_distribution_{rps}rps_{api}.png", dpi=300
                 )
+
+                # # Optional: Add log scale version for better visibility of tail latencies
+                # plt.yscale("log")
+                # plt.title(f"Latency Distribution (Log Scale) for {api} API - {rps} RPS")
+                # plt.savefig(
+                #     f"{output_dir}/latency_distribution_{rps}rps_{api}_log.png", dpi=300
+                # )
                 plt.close()
 
-        # Create a summary plot for 99th percentile latencies
+            # TODO: DRY
+            # plot CDF of GOODPUT latency distribution
+            for rps in rps_values:
+                plt.figure(figsize=(12, 8))
+
+                for policy in policies:
+                    df = data[policy][rps]
+                    df = df[df["error"] == "/None"]
+
+                    latencies = sorted(df["latency"].values)
+                    percentiles = np.linspace(0, 100, len(latencies))
+
+                    plt.plot(percentiles, latencies, label=f"{policy}")
+
+                # Add labels and title
+                plt.xlabel("Percentile (%)")
+                plt.ylabel("Latency (milliseconds)")
+                plt.title(f"Goodput Latency Distribution for {api} API - {rps} RPS")
+                plt.grid(True, alpha=0.3)
+                plt.ylim(top=max_y)
+                plt.legend()
+
+                # Save the plot
+                plt.savefig(
+                    f"{output_dir}/goodput_latency_distribution_{rps}rps_{api}.png",
+                    dpi=300,
+                )
+
+                # # Optional: Add log scale version for better visibility of tail latencies
+                # plt.yscale("log")
+                # plt.title(f"Latency Distribution for {api} API (Log Scale) - {rps} RPS")
+                # plt.savefig(
+                #     f"{output_dir}/latency_distribution_{rps}rps_{api}_log.png", dpi=300
+                # )
+                plt.close()
+
+            # plot histogram
+            for rps in rps_values:
+                for policy in policies:
+                    plt.figure(figsize=(12, 8))
+                    df = data[policy][rps]
+                    df["met_slo"] = df["error"] == "/None"
+
+                    sns.histplot(
+                        data=df,
+                        x="latency",
+                        hue="met_slo",
+                        hue_order=[True, False],
+                    )
+
+                    # Add labels and title
+                    plt.xlabel("Latency (milliseconds)")
+                    plt.title(f"Latency Histogram for {api} API - {policy} - {rps} RPS")
+                    dir = os.path.join(output_dir, policy)
+                    os.makedirs(dir, exist_ok=True)
+                    plt.savefig(
+                        os.path.join(dir, f"latency_histogram_{rps}rps_{api}.png"),
+                        dpi=300,
+                    )
+                    plt.close()
+
+            # Create a summary plot for 99th percentile latencies
+            plt.figure(figsize=(12, 6))
+            for policy in policies:
+                p99_values = []
+                for rps in rps_values:
+                    df = data[policy][rps]
+                    p99_latency = df["latency"].quantile(0.99)
+                    p99_values.append(p99_latency)
+                plt.plot(rps_values, p99_values, "o-", label=f"{policy}")
+
+            plt.xlabel("Requests Per Second (RPS)")
+            plt.ylabel("p99 latency (milliseconds)")
+            plt.title(f"p99 latency by policy and RPS for {api} API")
+            plt.grid(True, alpha=0.3)
+            plt.legend()
+            plt.ylim(top=max_y)
+            plt.savefig(f"{output_dir}/p99_latency_by_rps_{api}.png", dpi=300)
+            plt.close()
+
+    output_dir = args.output_dir
+    # averaged p99 latencies
+    for api in apis:
         plt.figure(figsize=(12, 6))
         for policy in policies:
-            p99_values = []
-            for rps in rps_values:
-                df = data[policy][rps]
-                p99_latency = df["latency"].quantile(0.99)
-                p99_values.append(p99_latency)
-            plt.plot(rps_values, p99_values, "o-", label=f"{policy} P99")
+            averaged_p99 = np.zeros(len(rps_values))
+            for i in range(repeats):
+                p99_values = []
+                for rps in rps_values:
+                    df = data[policy][rps]
+                    p99_latency = df["latency"].quantile(0.99)
+                    p99_values.append(p99_latency)
+                averaged_p99 += np.array(p99_values)
+            plt.plot(rps_values, averaged_p99 / repeats, "o-", label=f"{policy}")
 
         plt.xlabel("Requests Per Second (RPS)")
-        plt.ylabel("99th Percentile Latency (milliseconds)")
-        plt.title(f"99th Percentile Latency by Policy and RPS for {api} API")
+        plt.ylabel("average p99 latency (milliseconds)")
+        plt.title(
+            f"p99 latency by policy and RPS for {api} API averaged over {repeats} runs"
+        )
         plt.grid(True, alpha=0.3)
         plt.legend()
         plt.ylim(top=max_y)
-        plt.savefig(f"{output_dir}/p99_latency_by_rps_{api}.png", dpi=300)
+        plt.savefig(f"{args.output_dir}/p99_latency_by_rps_{api}_averaged.png", dpi=300)
         plt.close()
 
 

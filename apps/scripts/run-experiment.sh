@@ -48,14 +48,18 @@ rm -rf $out_dir/*
 rm -rf $plot_dir
 
 policies=$(cat $in_dir/policies | tr -d '\n')
+repeat=$(cat $in_dir/gen_config.json | jq -r ".Repeats")
 
-for policy in $policies;
+for i in $(seq 0 $((repeat - 1))); 
 do
-	echo "policy = $policy"
-	./scripts/docker-run.sh --features $policy
-	./scripts/loadgen-run.sh --output $out_dir/$policy --save-logs
-	./scripts/docker-save-logs.sh $out_dir/$policy
-	./scripts/docker-stop.sh
+    for policy in $policies;
+    do
+            echo "policy = $policy"
+            ./scripts/docker-run.sh --features $policy
+            ./scripts/loadgen-run.sh --output $out_dir/$i/$policy --save-logs
+            ./scripts/docker-save-logs.sh $out_dir/$i/$policy
+            ./scripts/docker-stop.sh
+    done
 done
 touch $out_dir/done
 
