@@ -11,13 +11,12 @@ use std::time::{Duration, Instant};
 use tokio;
 use tonic::{Request, Response, Status};
 
-use crate::{config::SyntheticConfig, util};
+use crate::{config::SyntheticConfig, server::synthetic_tonic::child::Periodic, util};
 use app_utils::timing::time_now;
 use synthetic_tonic::{child, child::child_server::Child};
 
 pub struct ChildImpl {
-    constant_latency: u64,
-    constant_latency_slowdown_duration: u16,
+    constant_latency: util::LatencyDistribution,
     random_latency: util::LatencyDistribution,
 }
 
@@ -28,20 +27,12 @@ impl ChildImpl {
         let random_latency = util::LatencyDistribution::from(config.child_random_latency);
 
         ChildImpl {
-            constant_latency: config.child_constant_latency,
-            constant_latency_slowdown_duration: config.child_constant_latency_slowdown_duration,
+            constant_latency: util::LatencyDistribution::Periodic {
+                fast_latency: config.child_constant_latency,
+                slow_latency: 2 * config.child_constant_latency,
+                slow_duration_ms: config.child_constant_latency_slowdown_duration,
+            },
             random_latency,
-        }
-    }
-
-    // slow down for constant_latency_slowdown_duration ms every second
-    fn get_constant_latency(&self) -> u64 {
-        let now_ms = (time_now() / 1000) % 1000;
-
-        if now_ms < self.constant_latency_slowdown_duration as u64 {
-            self.constant_latency * 2
-        } else {
-            self.constant_latency
         }
     }
 }
@@ -61,7 +52,7 @@ impl Child for ChildImpl {
         let queueing_latency = time_now() - request.into_inner().sent_at;
         let start = Instant::now();
 
-        let duration = Duration::from_micros(self.get_constant_latency());
+        let duration = Duration::from_micros(self.constant_latency.sample());
 
         busy_spin(duration);
 
@@ -98,7 +89,20 @@ impl Child for ChildImpl {
         let request = request.into_inner();
         let start = Instant::now();
 
-        let duration = Duration::from_micros(request.latency);
+        let duration = match request.latency.unwrap().latency_type.unwrap() {
+            child::latency::LatencyType::Fixed(fixed) => fixed.latency,
+            child::latency::LatencyType::Periodic(Periodic {
+                slow_latency,
+                fast_latency,
+                slow_duration_ms,
+            }) => util::LatencyDistribution::Periodic {
+                slow_latency,
+                fast_latency,
+                slow_duration_ms: slow_duration_ms as u16,
+            }
+            .sample(),
+        };
+        let duration = Duration::from_micros(duration);
         if request.sleep {
             tokio::time::sleep(duration).await;
         } else {

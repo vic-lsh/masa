@@ -123,18 +123,41 @@ impl Frontend for FrontendImpl {
         let request_type = request.into_inner().request_type;
         let hops = self.presampled_request_types.get(&request_type).unwrap();
         // sample latencies
-        let latencies = hops.iter().map(|hop| hop.latency_distribution.sample());
+        let latencies = hops.iter().map(|hop| hop.latency_distribution.presample());
         for (hop, latency) in zip(hops, latencies) {
             let server = self.presampled_servers_offset as usize + hop.server;
             let _response = self.children[server]
                 .clone()
                 .presampled(child::PresampledRequest {
-                    latency,
+                    latency: Some(latency),
                     sleep: hop.sleep,
                 })
                 .await?;
         }
 
         Ok(Response::new(frontend::PresampledResponse {}))
+    }
+}
+
+impl util::LatencyDistribution {
+    fn presample(&self) -> child::Latency {
+        let latency = match self {
+            util::LatencyDistribution::Periodic {
+                slow_latency,
+                fast_latency,
+                slow_duration_ms,
+            } => child::latency::LatencyType::Periodic(Periodic {
+                slow_latency: *slow_latency,
+                fast_latency: *fast_latency,
+                slow_duration_ms: *slow_duration_ms as u32,
+            }),
+            x => child::latency::LatencyType::Fixed(Fixed {
+                latency: x.sample(),
+            }),
+        };
+
+        child::Latency {
+            latency_type: Some(latency),
+        }
     }
 }

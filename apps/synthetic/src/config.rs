@@ -9,21 +9,27 @@ pub enum LatencyDistribution {
         std: f64,
     },
     Discrete {
-        values: Vec<f64>,
+        values: Vec<u64>,
         weights: Vec<f64>,
     },
     Periodic {
-        slow_latency: f64,
-        fast_latency: f64,
-        slow_duration_ms: u64,
+        slow_latency: u64,
+        fast_latency: u64,
+        slow_duration_ms: u16,
     },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hop {
     pub server: usize,
+    #[serde(default = "zero")]
+    pub replicas: usize,
     pub sleep: bool,
     pub latency_distribution: LatencyDistribution,
+}
+
+fn zero() -> usize {
+    0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
