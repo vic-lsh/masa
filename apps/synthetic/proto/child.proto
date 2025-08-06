@@ -24,7 +24,24 @@ message ConstantLatencyResponse {
 }
 
 message PresampledRequest {
-  uint64 latency = 1;
+  Latency latency = 1;
   bool sleep = 2;
 }
 message PresampledResponse {}
+
+message Latency {
+  oneof latency_type {
+    Fixed fixed = 1;
+    Periodic periodic = 2;
+  }
+}
+
+message Fixed {
+  uint64 latency = 1;
+}
+
+message Periodic {
+  uint64 slow_latency = 1;
+  uint64 fast_latency = 2;
+  uint32 slow_duration_ms = 3;
+}
