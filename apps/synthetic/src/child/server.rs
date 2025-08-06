@@ -11,44 +11,21 @@ use std::time::{Duration, Instant};
 use tokio;
 use tonic::{Request, Response, Status};
 
-use crate::config;
-use crate::config::SyntheticConfig;
+use crate::{config::SyntheticConfig, util};
 use app_utils::timing::time_now;
 use synthetic_tonic::{child, child::child_server::Child};
-
-enum LatencyDistribution {
-    Normal(Normal<f64>),
-    Discrete(WeightedIndex<f64>, Vec<f64>),
-}
-
-impl LatencyDistribution {
-    fn sample(&self) -> f64 {
-        match self {
-            LatencyDistribution::Normal(d) => d.sample(&mut thread_rng()),
-            LatencyDistribution::Discrete(d, values) => values[d.sample(&mut thread_rng())],
-        }
-    }
-}
 
 pub struct ChildImpl {
     constant_latency: u64,
     constant_latency_slowdown_duration: u16,
-    random_latency: LatencyDistribution,
+    random_latency: util::LatencyDistribution,
 }
 
 impl ChildImpl {
     pub fn new(config: SyntheticConfig) -> Self {
         assert!(config.child_constant_latency_slowdown_duration <= 1000);
 
-        let random_latency = match config.child_random_latency {
-            config::LatencyDistribution::Normal { mean, std } => {
-                LatencyDistribution::Normal(Normal::new(mean, std).unwrap())
-            }
-            config::LatencyDistribution::Discrete { weights, values } => {
-                assert_eq!(weights.len(), values.len());
-                LatencyDistribution::Discrete(WeightedIndex::new(weights).unwrap(), values)
-            }
-        };
+        let random_latency = util::LatencyDistribution::from(config.child_random_latency);
 
         ChildImpl {
             constant_latency: config.child_constant_latency,
@@ -69,8 +46,7 @@ impl ChildImpl {
     }
 }
 
-// busy spin duration time
-fn do_work(duration: Duration) {
+fn busy_spin(duration: Duration) {
     let end = Instant::now() + duration;
 
     while Instant::now() < end {}
@@ -87,7 +63,7 @@ impl Child for ChildImpl {
 
         let duration = Duration::from_micros(self.get_constant_latency());
 
-        do_work(duration);
+        busy_spin(duration);
 
         Ok(Response::new(child::ConstantLatencyResponse {
             queueing_latency,
@@ -105,7 +81,7 @@ impl Child for ChildImpl {
 
         let duration_us = self.random_latency.sample();
         // sleep has millisecond granularity so we round the duration time
-        let duration = Duration::from_millis((duration_us / 1_000.0).round() as u64);
+        let duration = Duration::from_millis(duration_us / 1_000);
         tokio::time::sleep(duration).await;
 
         Ok(Response::new(child::RandomLatencyResponse {
@@ -113,5 +89,22 @@ impl Child for ChildImpl {
             sleep_latency: duration.as_micros() as u64,
             handler_latency: Instant::now().duration_since(start).as_micros() as u64,
         }))
+    }
+
+    async fn presampled(
+        &self,
+        request: Request<child::PresampledRequest>,
+    ) -> Result<Response<child::PresampledResponse>, Status> {
+        let request = request.into_inner();
+        let start = Instant::now();
+
+        let duration = Duration::from_micros(request.latency);
+        if request.sleep {
+            tokio::time::sleep(duration).await;
+        } else {
+            busy_spin(duration);
+        }
+
+        Ok(Response::new(child::PresampledResponse {}))
     }
 }

@@ -1,6 +1,8 @@
 #[path = "../config.rs"]
 mod config;
 mod server;
+#[path = "../util.rs"]
+mod util;
 
 use std::fs::File;
 use std::io::BufReader;
@@ -15,13 +17,10 @@ use server::synthetic_tonic::child::child_server::ChildServer;
 use server::ChildImpl;
 
 #[derive(StructOpt, Debug, Clone)]
-#[structopt(about = "Hotel Args")]
+#[structopt(about = "Synthetic Args")]
 pub struct Args {
     #[structopt(short, long, required = true)]
     pub config: PathBuf,
-
-    #[structopt(short, long, required = true)]
-    pub index: usize,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -35,7 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
 
-    let child_addr = format!("{}:{}", "[::]", cfg.child_ports[args.index])
+    const PORT: usize = 8000;
+    let child_addr = format!("{}:{}", "[::]", PORT)
         .parse()
         .expect("Failed to parse address");
     let child = ChildImpl::new(cfg);
