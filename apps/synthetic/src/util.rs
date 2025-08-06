@@ -1,3 +1,4 @@
+use app_utils::timing::time_now;
 use rand::thread_rng;
 use rand_distr::{Distribution, Normal, WeightedIndex};
 
@@ -21,7 +22,12 @@ impl From<config::Hop> for Hop {
 
 pub enum LatencyDistribution {
     Normal(Normal<f64>),
-    Discrete(WeightedIndex<f64>, Vec<f64>),
+    Discrete(WeightedIndex<f64>, Vec<u64>),
+    Periodic {
+        slow_latency: u64,
+        fast_latency: u64,
+        slow_duration_ms: u16,
+    },
 }
 
 impl LatencyDistribution {
@@ -29,8 +35,19 @@ impl LatencyDistribution {
     pub fn sample(&self) -> u64 {
         match self {
             LatencyDistribution::Normal(d) => d.sample(&mut thread_rng()).round() as u64,
-            LatencyDistribution::Discrete(d, values) => {
-                values[d.sample(&mut thread_rng())].round() as u64
+            LatencyDistribution::Discrete(d, values) => values[d.sample(&mut thread_rng())],
+            LatencyDistribution::Periodic {
+                slow_latency,
+                fast_latency,
+                slow_duration_ms,
+            } => {
+                let now_ms = (time_now() / 1000) % 1000;
+
+                if now_ms < *slow_duration_ms as u64 {
+                    *slow_latency
+                } else {
+                    *fast_latency
+                }
             }
         }
     }
@@ -50,7 +67,11 @@ impl From<config::LatencyDistribution> for LatencyDistribution {
                 slow_latency,
                 fast_latency,
                 slow_duration_ms,
-            } => todo!(),
+            } => LatencyDistribution::Periodic {
+                slow_latency,
+                fast_latency,
+                slow_duration_ms,
+            },
         }
     }
 }
