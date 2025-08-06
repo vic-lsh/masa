@@ -23,9 +23,16 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+
 in_dir=data/in/$experiment
 out_dir=data/out/$experiment
 plot_dir=data/plots/$experiment
+
+if [[ ! -d $in_dir ]]; then
+    echo "expected configuration for experiment at '$in_dir'"
+    exit 1
+fi
+
 mkdir -p $out_dir
 backup=/tmp/masa-save
 mkdir -p $backup
@@ -48,17 +55,23 @@ rm -rf $out_dir/*
 rm -rf $plot_dir
 
 policies=$(cat $in_dir/policies | tr -d '\n')
-repeat=$(cat $in_dir/gen_config.json | jq -r ".Repeats")
+repeat=$(cat ./scripts/gen_config.json | jq -r ".Repeats")
 
 for i in $(seq 0 $((repeat - 1))); 
 do
+    echo "---------- iteration $i ----------"
     for policy in $policies;
     do
-            echo "policy = $policy"
+            echo "***** policy = $policy *****"
+            touch ./scripts/local/.env
+            if [[ -f ./scripts/get-env.sh ]]; then
+                ./scripts/get-env.sh > ./scripts/local/.env
+            fi
             ./scripts/docker-run.sh --features $policy
             ./scripts/loadgen-run.sh --output $out_dir/$i/$policy --save-logs
             ./scripts/docker-save-logs.sh $out_dir/$i/$policy
             ./scripts/docker-stop.sh
+            rm ./scripts/local/.env 
     done
 done
 touch $out_dir/done
