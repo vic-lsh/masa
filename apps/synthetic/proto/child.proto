@@ -6,22 +6,25 @@ service Child {
   rpc RandomLatency(RandomLatencyRequest) returns (RandomLatencyResponse) {}
   rpc ConstantLatency(ConstantLatencyRequest)
       returns (ConstantLatencyResponse) {}
+  rpc Presampled(PresampledRequest) returns (PresampledResponse) {}
 }
 
-message RandomLatencyRequest {
-  uint64 sent_at = 1;
-}
-message RandomLatencyResponse { 
+message RandomLatencyRequest { uint64 sent_at = 1; }
+message RandomLatencyResponse {
   uint64 queueing_latency = 1;
   uint64 sleep_latency = 2;
   uint64 handler_latency = 3;
 }
 
-message ConstantLatencyRequest {
-  uint64 sent_at = 1;
-}
-message ConstantLatencyResponse { 
+message ConstantLatencyRequest { uint64 sent_at = 1; }
+message ConstantLatencyResponse {
   uint64 queueing_latency = 1;
   uint64 handler_latency = 2;
   uint64 finished_at = 3;
 }
+
+message PresampledRequest {
+  uint64 latency = 1;
+  bool sleep = 2;
+}
+message PresampledResponse {}

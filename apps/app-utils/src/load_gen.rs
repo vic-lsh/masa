@@ -72,7 +72,7 @@ impl Counters {
     pub fn increment(&self, k: &str) {
         self.counters_map
             .get(k)
-            .unwrap()
+            .expect(&format!("key '{}' not present", k))
             .fetch_add(1, Ordering::SeqCst);
     }
 }
