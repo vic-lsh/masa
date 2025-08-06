@@ -22,14 +22,21 @@ def read_data(config_dir, data_dir):
             results[i][api] = {policy: {} for policy in policies}
         for policy in policies:
             policy_folder = os.path.join(data_dir, str(i), policy)
-
             # process each CSV file
             for rps in rps_values:
-                file_path = os.path.join(policy_folder, f"r{rps}.csv")
-                df = pd.read_csv(file_path)
+                combined = None
                 for api in apis:
-                    results[i][api][policy][rps] = df[df["api"] == api].copy()
-                results[i]["ALL"][policy][rps] = df
+                    file_path = os.path.join(policy_folder, f"r{rps}_{api}.csv")
+                    df = pd.read_csv(file_path)
+                    results[i][api][policy][rps] = df
+                    if combined is None:
+                        combined = df.copy()
+                    else:
+                        common_cols = combined.columns.intersection(df.columns)
+                        combined = pd.concat(
+                            [combined[common_cols], df[common_cols]], ignore_index=True
+                        )
+                results[i]["ALL"][policy][rps] = combined
 
     apis.append("ALL")
 
