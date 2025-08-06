@@ -82,7 +82,7 @@ where
         let stats = RequestStats::new(ctx, latency, error.clone(), response);
 
         if trace {
-            self.trace_tx().send(stats).unwrap();
+            self.trace_tx().unwrap().send(stats).unwrap();
         }
 
         error
@@ -100,7 +100,9 @@ where
 
     fn timeout(&self) -> Duration;
 
-    fn trace_tx(&self) -> &UnboundedSender<RequestStats<Self>>;
+    fn trace_tx(&self) -> Option<&UnboundedSender<RequestStats<Self>>>;
+
+    fn drop_trace_tx(&mut self);
 
     fn trace_rx(&mut self) -> &mut UnboundedReceiver<RequestStats<Self>>;
 
@@ -111,6 +113,8 @@ where
     }
 
     async fn fetch_traces(&mut self, output_path: &Path) {
+        // must drop so that channel closes
+        self.drop_trace_tx();
         let mut file =
             File::create(output_path.join(format!("r{}_{}.csv", self.rps(), self.api()))).unwrap();
         writeln!(file, "{}", self.header_row()).unwrap();
@@ -120,22 +124,6 @@ where
         log::info!("All traces fetched");
     }
 }
-
-// async fn fetch_traces<T>(
-//     output_path: &Path,
-//     rps: u64,
-//     api: &str,
-//     trace_receiver: &mut Receiver<RequestStats<T>>,
-// ) where
-//     T: RequestType,
-// {
-// let mut file = File::create(output_path.join(format!("r{}_{}.csv", rps, api))).unwrap();
-// writeln!(file, "{}", RequestStats::<T>::header_row()).unwrap();
-// while let Ok(stats) = trace_receiver.recv() {
-//     writeln!(file, "{}", stats.to_row()).unwrap();
-// }
-// log::info!("All traces fetched");
-// }
 
 enum RequestHandler {
     ARequest(ARequest),
@@ -188,7 +176,7 @@ impl RequestHandler {
 }
 
 struct ARequest {
-    trace_tx: UnboundedSender<RequestStats<Self>>,
+    trace_tx: Option<UnboundedSender<RequestStats<Self>>>,
     trace_rx: UnboundedReceiver<RequestStats<Self>>,
     rps: u64,
     timeout: Duration,
@@ -215,7 +203,7 @@ impl RequestType for ARequest {
     fn new(_api: &str, rps: u64, timeout: Duration, slo: u64) -> Self {
         let (tx, rx) = unbounded_channel();
         Self {
-            trace_tx: tx,
+            trace_tx: Some(tx),
             trace_rx: rx,
             rps,
             timeout,
@@ -265,8 +253,12 @@ impl RequestType for ARequest {
         self.timeout
     }
 
-    fn trace_tx(&self) -> &UnboundedSender<RequestStats<Self>> {
-        &self.trace_tx
+    fn trace_tx(&self) -> Option<&UnboundedSender<RequestStats<Self>>> {
+        self.trace_tx.as_ref()
+    }
+
+    fn drop_trace_tx(&mut self) {
+        self.trace_tx.take();
     }
 
     fn trace_rx(&mut self) -> &mut UnboundedReceiver<RequestStats<Self>> {
@@ -275,7 +267,7 @@ impl RequestType for ARequest {
 }
 
 struct PresampledRequest {
-    trace_tx: UnboundedSender<RequestStats<Self>>,
+    trace_tx: Option<UnboundedSender<RequestStats<Self>>>,
     trace_rx: UnboundedReceiver<RequestStats<Self>>,
     rps: u64,
     timeout: Duration,
@@ -291,7 +283,7 @@ impl RequestType for PresampledRequest {
     fn new(api: &str, rps: u64, timeout: Duration, slo: u64) -> Self {
         let (tx, rx) = unbounded_channel();
         Self {
-            trace_tx: tx,
+            trace_tx: Some(tx),
             trace_rx: rx,
             rps,
             timeout,
@@ -332,8 +324,12 @@ impl RequestType for PresampledRequest {
         self.slo
     }
 
-    fn trace_tx(&self) -> &UnboundedSender<RequestStats<Self>> {
-        &self.trace_tx
+    fn trace_tx(&self) -> Option<&UnboundedSender<RequestStats<Self>>> {
+        self.trace_tx.as_ref()
+    }
+
+    fn drop_trace_tx(&mut self) {
+        self.trace_tx.take();
     }
 
     fn trace_rx(&mut self) -> &mut UnboundedReceiver<RequestStats<Self>> {
@@ -352,13 +348,6 @@ where
 {
     ctx: Context,
     latency: u64,
-    // frontend_latency: u64,
-    // child1_queueing_latency: u64,
-    // child1_sleep_latency: u64,
-    // child1_handler_latency: u64,
-    // child2_queueing_latency: u64,
-    // child2_handler_latency: u64,
-    // child2_reply_latency: u64,
     error: String,
     response: Option<(MetadataMap, T::R)>,
 }
