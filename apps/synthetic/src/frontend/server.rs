@@ -17,35 +17,38 @@ use std::{
 
 use crate::config::SyntheticConfig;
 use crate::util;
+use app_utils::channel::LoadBalancedChannel;
 use app_utils::timing::time_now;
-use ginepro::LoadBalancedChannel;
 
 use tonic::{Request, Response, Status};
 
 use synthetic_tonic::{
-    child, child::child_client::ChildClient, frontend, frontend::frontend_server::Frontend,
+    child, child::child_client::ChildClient, child::Fixed, child::Periodic, frontend,
+    frontend::frontend_server::Frontend,
 };
 
 pub struct FrontendImpl {
     children: Vec<ChildClient<LoadBalancedChannel>>,
     constant_replicas: u8,
     next_constant_replica: AtomicU8,
-    presampled_replicas: u8,
-    presampled_servers_offset: u8,
+    presampled_services: usize,
+    presampled_services_offset: usize,
     presampled_request_types: HashMap<String, Vec<util::Hop>>,
 }
 
 impl FrontendImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
-        let replicas = 1 + config.child_constant_replicas + config.child_presampled_replicas;
+        let presampled_services = config.child_presampled_services.len();
+        let mut services = vec![1];
+        services.extend(vec![config.child_constant_replicas]);
+        let presampled_services_offset = services.len();
+        services.extend(config.child_presampled_services);
         let mut children = Vec::new();
-        for i in 1..(replicas + 1) {
-            let hostname = format!("local-child-service-{}", i);
-            let channel = LoadBalancedChannel::builder((hostname, 8000))
-                .channel()
-                .await
-                .expect(&format!("Failed to connect to child {}", i));
-            children.push(ChildClient::new(channel))
+        for r in services {
+            let hostname_base = "local-child-service";
+            children.push(ChildClient::new(
+                LoadBalancedChannel::new(hostname_base.to_string(), 8000, r).await,
+            ));
         }
 
         let mut presampled_request_types = HashMap::new();
@@ -61,8 +64,8 @@ impl FrontendImpl {
             constant_replicas: config.child_constant_replicas,
             next_constant_replica: AtomicU8::new(0),
             presampled_request_types,
-            presampled_replicas: config.child_presampled_replicas,
-            presampled_servers_offset: 1 + config.child_constant_replicas,
+            presampled_services,
+            presampled_services_offset,
         }
     }
 }
@@ -125,8 +128,8 @@ impl Frontend for FrontendImpl {
         // sample latencies
         let latencies = hops.iter().map(|hop| hop.latency_distribution.presample());
         for (hop, latency) in zip(hops, latencies) {
-            let server = self.presampled_servers_offset as usize + hop.server;
-            let _response = self.children[server]
+            let service = self.presampled_services_offset + hop.service;
+            let _response = self.children[service]
                 .clone()
                 .presampled(child::PresampledRequest {
                     latency: Some(latency),

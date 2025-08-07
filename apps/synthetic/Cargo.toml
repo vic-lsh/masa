@@ -225,8 +225,6 @@ geo = "0.28"
 kiddo = "4.2.1"
 # used by reservation service
 chrono = "0.4.38"
-# Used for client-side load balancing
-ginepro = { path = "../../3rd_party/ginepro/ginepro" }
 clap = { version = "4.4", features = ["derive"] }
 
 
