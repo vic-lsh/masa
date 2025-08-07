@@ -24,11 +24,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 
-in_dir=data/in/$experiment
-out_dir=data/out/$experiment
-plot_dir=data/plots/$experiment
+in_dir="data/in/$experiment"
+out_dir="data/out/$experiment"
+plot_dir="data/plots/$experiment"
 
-if [[ ! -d $in_dir ]]; then
+if [[ ! -d "$in_dir" ]]; then
     echo "expected configuration for experiment at '$in_dir'"
     exit 1
 fi
