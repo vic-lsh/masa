@@ -46,41 +46,57 @@ pub struct HotelConfig {
     pub geo_ip: String,
     #[serde(rename = "GeoPort")]
     pub geo_port: u16,
+    #[serde(rename = "GeoReplicas", default = "one")]
+    pub geo_replicas: u8,
 
     #[serde(rename = "ProfileIp")]
     pub profile_ip: String,
     #[serde(rename = "ProfilePort")]
     pub profile_port: u16,
+    #[serde(rename = "ProfileReplicas", default = "one")]
+    pub profile_replicas: u8,
 
     #[serde(rename = "RateIp")]
     pub rate_ip: String,
     #[serde(rename = "RatePort")]
     pub rate_port: u16,
+    #[serde(rename = "RateReplicas", default = "one")]
+    pub rate_replicas: u8,
 
     #[serde(rename = "RecommendationIp")]
     pub recommendation_ip: String,
     #[serde(rename = "RecommendationPort")]
     pub recommendation_port: u16,
+    #[serde(rename = "RecommendationReplicas", default = "one")]
+    pub recommendation_replicas: u8,
 
     #[serde(rename = "ReservationIp")]
     pub reservation_ip: String,
     #[serde(rename = "ReservationPort")]
     pub reservation_port: u16,
+    #[serde(rename = "ReservationReplicas", default = "one")]
+    pub reservation_replicas: u8,
 
     #[serde(rename = "ReviewIp")]
     pub review_ip: String,
     #[serde(rename = "ReviewPort")]
     pub review_port: u16,
+    #[serde(rename = "ReviewReplicas", default = "one")]
+    pub review_replicas: u8,
 
     #[serde(rename = "SearchIp")]
     pub search_ip: String,
     #[serde(rename = "SearchPort")]
     pub search_port: u16,
+    #[serde(rename = "SearchReplicas", default = "one")]
+    pub search_replicas: u8,
 
     #[serde(rename = "UserIp")]
     pub user_ip: String,
     #[serde(rename = "UserPort")]
     pub user_port: u16,
+    #[serde(rename = "UserReplicas", default = "one")]
+    pub user_replicas: u8,
 
     #[serde(rename = "RateMongodbAddr")]
     pub rate_mongodb_addr: String,
@@ -104,10 +120,12 @@ pub struct HotelConfig {
     #[serde(rename = "UserMongodbAddr")]
     pub user_mongodb_addr: String,
 
-    // #[serde(rename = "RatePort")]
-    // pub rate_port: String,
     #[serde(rename = "ReviewMongodbAddr")]
     pub review_mongodb_addr: String,
     #[serde(rename = "ReviewMemcachedAddr")]
     pub review_memcached_addr: String,
+}
+
+fn one() -> u8 {
+    1
 }
