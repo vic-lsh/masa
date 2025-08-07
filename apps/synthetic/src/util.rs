@@ -5,7 +5,7 @@ use rand_distr::{Distribution, Normal, WeightedIndex};
 use crate::config;
 
 pub struct Hop {
-    pub server: usize,
+    pub service: usize,
     pub sleep: bool,
     pub latency_distribution: LatencyDistribution,
 }
@@ -13,7 +13,7 @@ pub struct Hop {
 impl From<config::Hop> for Hop {
     fn from(value: config::Hop) -> Self {
         Self {
-            server: value.server,
+            service: value.service,
             sleep: value.sleep,
             latency_distribution: LatencyDistribution::from(value.latency_distribution),
         }

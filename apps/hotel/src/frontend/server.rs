@@ -20,7 +20,7 @@ pub mod hotel_tonic {
 }
 
 use crate::config::HotelConfig;
-use ginepro::LoadBalancedChannel;
+use app_utils::channel::LoadBalancedChannel;
 use hotel_tonic::review::review_client::ReviewClient;
 use std::time::Instant;
 
@@ -42,35 +42,34 @@ pub struct FrontendImpl {
 
 impl FrontendImpl {
     pub async fn new(config: HotelConfig) -> Self {
-        let channel = LoadBalancedChannel::builder((config.search_ip, config.search_port))
-            .channel()
-            .await
-            .expect("Failed to connect to search");
+        let channel =
+            LoadBalancedChannel::new(config.search_ip, config.search_port, config.search_replicas)
+                .await;
         let search_client = SearchClient::new(channel);
 
-        let channel =
-            LoadBalancedChannel::builder((config.reservation_ip, config.reservation_port))
-                .channel()
-                .await
-                .expect("Failed to connect to reservation");
+        let channel = LoadBalancedChannel::new(
+            config.reservation_ip,
+            config.reservation_port,
+            config.reservation_replicas,
+        )
+        .await;
         let reservation_client = ReservationClient::new(channel);
 
-        let channel = LoadBalancedChannel::builder((config.profile_ip, config.profile_port))
-            .channel()
-            .await
-            .expect("Failed to connect to profile");
+        let channel = LoadBalancedChannel::new(
+            config.profile_ip,
+            config.profile_port,
+            config.profile_replicas,
+        )
+        .await;
         let profile_client = ProfileClient::new(channel);
 
-        let channel = LoadBalancedChannel::builder((config.user_ip, config.user_port))
-            .channel()
-            .await
-            .expect("Failed to connect to user");
+        let channel =
+            LoadBalancedChannel::new(config.user_ip, config.user_port, config.user_replicas).await;
         let user_client = UserClient::new(channel);
 
-        let channel = LoadBalancedChannel::builder((config.review_ip, config.review_port))
-            .channel()
-            .await
-            .expect("Failed to connect to review");
+        let channel =
+            LoadBalancedChannel::new(config.review_ip, config.review_port, config.review_replicas)
+                .await;
         let review_client = ReviewClient::new(channel);
 
         FrontendImpl {
