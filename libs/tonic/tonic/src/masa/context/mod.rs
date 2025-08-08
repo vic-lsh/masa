@@ -2,19 +2,10 @@ use std::{sync::Arc, task::Poll};
 
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
-#[cfg(any(feature = "prio_global", feature = "prio_global_early",))]
 mod global;
-
-#[cfg(any(feature = "prio_local_direct", feature = "prio_local_indirect"))]
 mod local;
-
 mod noop;
-
-#[cfg(any(
-    feature = "prio_local",
-    feature = "prio_local_early",
-    feature = "fifo_early"
-))]
+mod perfect_lsf;
 mod simple;
 
 pub mod runtime;
@@ -43,6 +34,9 @@ pub type DefaultPrioritySelector = local::LocalDeadlineDirect;
 
 #[cfg(any(feature = "prio_local_indirect"))]
 pub type DefaultPrioritySelector = local::LocalDeadlineIndirect;
+
+#[cfg(feature = "perfect_lsf")]
+pub type DefaultPrioritySelector = perfect_lsf::PerfectLSF;
 
 // TODO: rename this to be more general
 // TODO: add notes on trait bounds
