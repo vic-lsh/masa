@@ -102,6 +102,11 @@ prio_local_indirect = [
   "masa/prio_local_indirect",
   "tonic/prio_local_indirect",
 ]
+perfect_lsf = [
+  "tokio/perfect_lsf",
+  "masa/perfect_lsf",
+  "tonic/perfect_lsf",
+]
 fifo = ["tokio/fifo", "async-executor/fifo", "masa/fifo", "tonic/fifo"]
 fifo_early = [
   "tokio/fifo_early",
