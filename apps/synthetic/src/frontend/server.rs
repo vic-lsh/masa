@@ -126,19 +126,55 @@ impl Frontend for FrontendImpl {
         let request_type = request.into_inner().request_type;
         let hops = self.presampled_request_types.get(&request_type).unwrap();
         // sample latencies
-        let latencies = hops.iter().map(|hop| hop.latency_distribution.presample());
-        for (hop, latency) in zip(hops, latencies) {
+        let latencies: Vec<child::Latency> = hops
+            .iter()
+            .map(|hop| hop.latency_distribution.presample())
+            .collect();
+        let concrete_latencies = latencies.iter().map(child_latency_to_value).collect();
+        let remaining_execution_times = reversed_prefix_sum(&concrete_latencies);
+        for (hop, (latency, remaining)) in zip(hops, zip(latencies, remaining_execution_times)) {
             let service = self.presampled_services_offset + hop.service;
-            let _response = self.children[service]
-                .clone()
-                .presampled(child::PresampledRequest {
+            let mut request = Request::new({
+                child::PresampledRequest {
                     latency: Some(latency),
                     sleep: hop.sleep,
-                })
-                .await?;
+                }
+            });
+            request
+                .metadata_mut()
+                .insert("remaining_execution_time", remaining.into());
+            let _response = self.children[service].clone().presampled(request).await?;
         }
 
         Ok(Response::new(frontend::PresampledResponse {}))
+    }
+}
+
+fn reversed_prefix_sum(v: &Vec<u64>) -> Vec<u64> {
+    let mut result = Vec::new();
+    result.push(*v.last().expect("array is empty"));
+
+    for x in v.iter().rev().skip(1) {
+        result.push(x + *result.last().unwrap());
+    }
+
+    result.reverse();
+    result
+}
+
+fn child_latency_to_value(latency: &child::Latency) -> u64 {
+    match latency.latency_type.as_ref().unwrap() {
+        child::latency::LatencyType::Periodic(Periodic {
+            slow_latency,
+            fast_latency,
+            slow_duration_ms,
+        }) => {
+            let slow_fraction = *slow_duration_ms as f64 / 1000.0;
+            let average =
+                slow_fraction * *slow_latency as f64 + (1.0 - slow_fraction) * *fast_latency as f64;
+            average.round() as u64
+        }
+        child::latency::LatencyType::Fixed(Fixed { latency }) => *latency,
     }
 }
 
