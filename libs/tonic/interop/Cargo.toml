@@ -27,7 +27,7 @@ tokio = {path = "../../tokio/tokio", features = ["rt-multi-thread", "time", "mac
 tokio-stream = { path = "../../tokio/tokio-stream" }
 tonic = {path = "../tonic", features = ["tls"]}
 masa = {path = "../../masa"}
-tower = {path = "../../../3rd_party/tower/tower"}
+tower = {path = "../../../libs/tower/tower"}
 tracing-subscriber = {version = "0.3"}
 
 [build-dependencies]

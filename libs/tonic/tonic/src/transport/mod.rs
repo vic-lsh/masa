@@ -88,6 +88,7 @@
 //! [rustls]: https://docs.rs/rustls/0.16.0/rustls/
 
 pub mod channel;
+pub mod masa_channel;
 pub mod server;
 
 mod error;
