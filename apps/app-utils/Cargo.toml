@@ -14,7 +14,7 @@ default = ["full"]
 masa = { path = "../../libs/masa" }
 tokio = { path = "../../libs/tokio/tokio", features = ["full"] }
 tonic = { path = "../../libs/tonic/tonic" }
-tower = { path = "../../3rd_party/tower/tower" }
+tower = { path = "../../libs/tower/tower" }
 async-memcached = { path = "../../3rd_party/async-memcached" }
 rand = { version = "0.8", optional = true }
 structopt = "0.3.23"
