@@ -1,38 +1,33 @@
 use std::task::{Context, Poll};
 
-use tonic::{
-    body::BoxBody,
-    client::GrpcService,
-    http,
-    transport::{Channel, Endpoint},
-};
+use tonic::body::BoxBody;
+use tonic::http;
+use tonic::transport::Endpoint;
+use tonic::{client::GrpcService, transport::masa_channel::Channel};
 use tower::Service;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct LoadBalancedChannel {
-    channels: Vec<Channel>,
-    next: usize,
+    channel: Channel,
 }
 
 impl LoadBalancedChannel {
-    pub async fn new(hostname_base: String, port: u16, replicas: u8) -> Self {
-        let mut channels = Vec::new();
-
-        for i in 1..=replicas {
-            channels.push(
-                Endpoint::from_shared(format!("http://{}-{}:{}", hostname_base, i, port))
-                    .unwrap()
-                    .connect()
-                    .await
-                    .unwrap(),
-            )
+    pub async fn new_from(hostname_base: String, port: u16, replicas: u8, start: u8) -> Self {
+        let mut endpoints = Vec::new();
+        for i in 0..replicas {
+            let endpoint =
+                Endpoint::from_shared(format!("http://{}-{}:{}", hostname_base, i + start, port))
+                    .unwrap();
+            endpoints.push(endpoint);
         }
 
-        Self { channels, next: 0 }
+        let channel = Channel::new(endpoints.into_iter()).await;
+
+        Self { channel }
     }
 
-    fn update_next(&mut self) {
-        self.next = (self.next + 1) % self.channels.len();
+    pub async fn new(hostname_base: String, port: u16, replicas: u8) -> Self {
+        Self::new_from(hostname_base, port, replicas, 1).await
     }
 }
 
@@ -42,12 +37,10 @@ impl Service<http::Request<BoxBody>> for LoadBalancedChannel {
     type Future = <Channel as GrpcService<BoxBody>>::Future;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        GrpcService::poll_ready(&mut self.channels[self.next], cx)
+        GrpcService::poll_ready(&mut self.channel, cx)
     }
 
     fn call(&mut self, request: http::Request<BoxBody>) -> Self::Future {
-        let r = GrpcService::call(&mut self.channels[self.next], request);
-        self.update_next();
-        r
+        GrpcService::call(&mut self.channel, request)
     }
 }
