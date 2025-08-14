@@ -4,15 +4,19 @@
 
 declare -a container_names=(
   "synthetic_frontend"
-  "synthetic_child_0"
-  "synthetic_child_1"
 )
+
+source ./scripts/local/.env
+
+for i in $(seq 1 $CHILD_REPLICAS); do
+  container_names+=("local-child-service-$i")
+done
 
 for ((i=0; i<${#container_names[@]}; i++)); do
   service=${container_names[$i]}
   
   # Get the container ID for the current container
-  container_id=$(docker ps --filter "name=$service" --format "{{.ID}}")
+  container_id=$(docker ps -a --filter "name=$service\$" --format "{{.ID}}")
   
   # Send the command to follow logs
   if [ -n "$container_id" ]; then
