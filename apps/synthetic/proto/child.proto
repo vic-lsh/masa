@@ -25,7 +25,7 @@ message ConstantLatencyResponse {
 
 message PresampledRequest {
   Latency latency = 1;
-  bool sleep = 2;
+  double sleep = 2;
 }
 message PresampledResponse {}
 
