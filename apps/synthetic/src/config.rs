@@ -8,6 +8,9 @@ pub enum LatencyDistribution {
         mean: f64,
         std: f64,
     },
+    Exponential {
+        lambda: f64,
+    },
     Discrete {
         values: Vec<u64>,
         weights: Vec<f64>,
@@ -24,7 +27,7 @@ pub struct Hop {
     pub service: usize,
     #[serde(default = "zero")]
     pub replicas: usize,
-    pub sleep: bool,
+    pub sleep: f64,
     pub latency_distribution: LatencyDistribution,
 }
 
@@ -40,4 +43,10 @@ pub struct SyntheticConfig {
     pub child_random_latency: LatencyDistribution,
     pub child_presampled_services: Vec<u8>,
     pub child_presampled_request_types: HashMap<String, Vec<Hop>>,
+    #[serde(default = "onef64")]
+    pub child_cpus_per_replica: f64,
+}
+
+fn onef64() -> f64 {
+    1.0
 }

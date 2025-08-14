@@ -1,12 +1,12 @@
 use app_utils::timing::time_now;
 use rand::thread_rng;
-use rand_distr::{Distribution, Normal, WeightedIndex};
+use rand_distr::{Distribution, Exp, Normal, WeightedIndex};
 
 use crate::config;
 
 pub struct Hop {
     pub service: usize,
-    pub sleep: bool,
+    pub sleep: f64,
     pub latency_distribution: LatencyDistribution,
 }
 
@@ -22,6 +22,7 @@ impl From<config::Hop> for Hop {
 
 pub enum LatencyDistribution {
     Normal(Normal<f64>),
+    Exponential(Exp<f64>),
     Discrete(WeightedIndex<f64>, Vec<u64>),
     Periodic {
         slow_latency: u64,
@@ -34,7 +35,17 @@ impl LatencyDistribution {
     // returns latency in us
     pub fn sample(&self) -> u64 {
         match self {
-            LatencyDistribution::Normal(d) => d.sample(&mut thread_rng()).round() as u64,
+            LatencyDistribution::Normal(d) => {
+                let mut l = d.sample(&mut thread_rng()).round();
+
+                // make sure latency is non-negative
+                if l < 0.0 {
+                    l = 0.0;
+                }
+
+                l as u64
+            }
+            LatencyDistribution::Exponential(d) => d.sample(&mut thread_rng()).round() as u64,
             LatencyDistribution::Discrete(d, values) => values[d.sample(&mut thread_rng())],
             LatencyDistribution::Periodic {
                 slow_latency,
@@ -58,6 +69,9 @@ impl From<config::LatencyDistribution> for LatencyDistribution {
         match value {
             config::LatencyDistribution::Normal { mean, std } => {
                 LatencyDistribution::Normal(Normal::new(mean, std).unwrap())
+            }
+            config::LatencyDistribution::Exponential { lambda } => {
+                LatencyDistribution::Exponential(Exp::new(lambda).unwrap())
             }
             config::LatencyDistribution::Discrete { weights, values } => {
                 assert_eq!(weights.len(), values.len());
