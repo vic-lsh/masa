@@ -4,8 +4,6 @@ pub mod synthetic_tonic {
     }
 }
 
-use rand::thread_rng;
-use rand_distr::{Distribution, Normal, WeightedIndex};
 use std::time::{Duration, Instant};
 
 use tokio;
@@ -87,9 +85,8 @@ impl Child for ChildImpl {
         request: Request<child::PresampledRequest>,
     ) -> Result<Response<child::PresampledResponse>, Status> {
         let request = request.into_inner();
-        let start = Instant::now();
 
-        let duration = match request.latency.unwrap().latency_type.unwrap() {
+        let total_duration = match request.latency.unwrap().latency_type.unwrap() {
             child::latency::LatencyType::Fixed(fixed) => fixed.latency,
             child::latency::LatencyType::Periodic(Periodic {
                 slow_latency,
@@ -102,12 +99,20 @@ impl Child for ChildImpl {
             }
             .sample(),
         };
-        let duration = Duration::from_micros(duration);
-        if request.sleep {
-            tokio::time::sleep(duration).await;
-        } else {
-            busy_spin(duration);
+        let sleep_duration = (request.sleep * total_duration as f64).round() as u64;
+        let spin_duration = total_duration - sleep_duration;
+
+        if spin_duration > 0 {
+            busy_spin(Duration::from_micros(spin_duration));
         }
+        
+        // TODO: might want to update slack here
+
+        if sleep_duration > 0 {
+            tokio::time::sleep(Duration::from_micros(sleep_duration)).await;
+        }
+
+        // TODO: ... and here
 
         Ok(Response::new(child::PresampledResponse {}))
     }
