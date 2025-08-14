@@ -27,7 +27,7 @@ services:
 
   rate-service:
     image: hotel_rate:latest
-    container_name: "hotel_rate"
+    scale: ${RATE_REPLICAS}
     restart: always
     networks:
       - hotel_network
@@ -67,7 +67,7 @@ services:
 
   profile-service:
     image: hotel_profile:latest
-    container_name: "hotel_profile"
+    scale: ${PROFILE_REPLICAS}
     restart: always
     networks:
       - hotel_network
@@ -107,7 +107,7 @@ services:
 
   reservation-service:
     image: hotel_reservation:latest
-    container_name: "hotel_reservation"
+    scale: ${RESERVATION_REPLICAS}
     restart: always
     networks:
       - hotel_network
@@ -135,7 +135,7 @@ services:
 
   user-service:
     image: hotel_user:latest
-    container_name: "hotel_user"
+    scale: ${USER_REPLICAS}
     restart: always
     networks:
       - hotel_network
@@ -148,7 +148,7 @@ services:
 
   geo-service:
     image: hotel_geo:latest
-    container_name: "hotel_geo"
+    scale: ${GEO_REPLICAS}
     restart: always
     networks:
       - hotel_network
@@ -159,7 +159,7 @@ services:
 
   search-service:
     image: hotel_search:latest
-    container_name: "hotel_search"
+    scale: ${SEARCH_REPLICAS}
     restart: always
     networks:
       - hotel_network
@@ -178,7 +178,7 @@ services:
     networks:
       - hotel_network
     ports:
-      - "8659:8660"
+      - "${FRONTEND_PORT}:8660"
     depends_on:
       - user-service
       - reservation-service
