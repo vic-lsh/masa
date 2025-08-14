@@ -7,7 +7,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${CPUS_PER_REPLICA}"
 
   frontend-service:
     image: synthetic_frontend:latest
