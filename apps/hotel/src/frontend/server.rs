@@ -37,7 +37,7 @@ pub struct FrontendImpl {
     reservation_client: ReservationClient<LoadBalancedChannel>,
     profile_client: ProfileClient<LoadBalancedChannel>,
     user_client: UserClient<LoadBalancedChannel>,
-    review_client: ReviewClient<LoadBalancedChannel>,
+    // review_client: ReviewClient<LoadBalancedChannel>,
 }
 
 impl FrontendImpl {
@@ -67,17 +67,17 @@ impl FrontendImpl {
             LoadBalancedChannel::new(config.user_ip, config.user_port, config.user_replicas).await;
         let user_client = UserClient::new(channel);
 
-        let channel =
-            LoadBalancedChannel::new(config.review_ip, config.review_port, config.review_replicas)
-                .await;
-        let review_client = ReviewClient::new(channel);
+        // let channel =
+        //     LoadBalancedChannel::new(config.review_ip, config.review_port, config.review_replicas)
+        //         .await;
+        // let review_client = ReviewClient::new(channel);
 
         FrontendImpl {
             search_client,
             reservation_client,
             profile_client,
             user_client,
-            review_client,
+            // review_client,
         }
     }
 }
@@ -202,41 +202,47 @@ impl Frontend for FrontendImpl {
         Ok(response)
     }
 
+    // async fn handle_review(
+    //     &self,
+    //     request: Request<frontend::ReviewRequest>,
+    // ) -> Result<Response<frontend::ReviewResponse>, Status> {
+    //     let request = request.into_inner();
+    //     let mut review_client = self.review_client.clone();
+    //
+    //     let review_req = hotel_tonic::review::ReviewRequest {
+    //         hotel_id: request.hotel_id,
+    //     };
+    //
+    //     let review_resp = review_client.get_reviews(review_req).await?;
+    //     let review_resp = review_resp.into_inner();
+    //
+    //     // Map review::ReviewComm to frontend::ReviewComm
+    //     let reviews = review_resp
+    //         .reviews
+    //         .into_iter()
+    //         .map(|r| frontend::ReviewComm {
+    //             review_id: r.review_id,
+    //             hotel_id: r.hotel_id,
+    //             name: r.name,
+    //             rating: r.rating,
+    //             description: r.description,
+    //             images: r
+    //                 .images
+    //                 .into_iter()
+    //                 .map(|img| frontend::Image {
+    //                     url: img.url,
+    //                     r#default: img.default,
+    //                 })
+    //                 .collect(),
+    //         })
+    //         .collect();
+    //
+    //     Ok(Response::new(frontend::ReviewResponse { reviews }))
+    // }
     async fn handle_review(
         &self,
-        request: Request<frontend::ReviewRequest>,
+        _request: Request<frontend::ReviewRequest>,
     ) -> Result<Response<frontend::ReviewResponse>, Status> {
-        let request = request.into_inner();
-        let mut review_client = self.review_client.clone();
-
-        let review_req = hotel_tonic::review::ReviewRequest {
-            hotel_id: request.hotel_id,
-        };
-
-        let review_resp = review_client.get_reviews(review_req).await?;
-        let review_resp = review_resp.into_inner();
-
-        // Map review::ReviewComm to frontend::ReviewComm
-        let reviews = review_resp
-            .reviews
-            .into_iter()
-            .map(|r| frontend::ReviewComm {
-                review_id: r.review_id,
-                hotel_id: r.hotel_id,
-                name: r.name,
-                rating: r.rating,
-                description: r.description,
-                images: r
-                    .images
-                    .into_iter()
-                    .map(|img| frontend::Image {
-                        url: img.url,
-                        r#default: img.default,
-                    })
-                    .collect(),
-            })
-            .collect();
-
-        Ok(Response::new(frontend::ReviewResponse { reviews }))
+        Ok(Response::new(frontend::ReviewResponse { reviews: vec![] }))
     }
 }
