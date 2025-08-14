@@ -10,6 +10,10 @@ name = "hotel_client_bench"
 path = "src/client/client_bench.rs"
 
 [[bin]]
+name = "hotel_client_bench_new"
+path = "src/client/client_bench_new.rs"
+
+[[bin]]
 name = "hotel_frontend"
 path = "src/frontend/main.rs"
 
