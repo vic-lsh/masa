@@ -14,8 +14,8 @@ use tower::{
 
 use masa::PriorityHint;
 
-// minimal reimplementation of crate::transport::channel::Channel: 
-// - uses a fixed list of services for load balancing and eagerly connects to them 
+// minimal reimplementation of crate::transport::channel::Channel:
+// - uses a fixed list of services for load balancing and eagerly connects to them
 // - uses our custom load balancing logic in tower (the Balance struct)
 #[derive(Clone)]
 pub struct Channel {
@@ -32,9 +32,10 @@ impl Channel {
             http.set_connect_timeout(endpoint.connect_timeout);
             http.enforce_http(false);
 
+            let uri = endpoint.uri.clone();
             let connection = Connection::connect(endpoint.connector(http), endpoint)
                 .await
-                .unwrap();
+                .expect(&format!("failed to connect to endpoint {}", uri));
             connections.push(connection);
         }
         let svc = Balance::new(connections.into_iter());
