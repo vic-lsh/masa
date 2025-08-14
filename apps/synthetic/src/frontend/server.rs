@@ -44,11 +44,13 @@ impl FrontendImpl {
         let presampled_services_offset = services.len();
         services.extend(config.child_presampled_services);
         let mut children = Vec::new();
+        let mut start_id = 1;
         for r in services {
             let hostname_base = "local-child-service";
             children.push(ChildClient::new(
-                LoadBalancedChannel::new(hostname_base.to_string(), 8000, r).await,
+                LoadBalancedChannel::new_from(hostname_base.to_string(), 8000, r, start_id).await,
             ));
+            start_id += r;
         }
 
         let mut presampled_request_types = HashMap::new();
@@ -121,8 +123,6 @@ impl Frontend for FrontendImpl {
         &self,
         request: Request<frontend::PresampledRequest>,
     ) -> Result<Response<frontend::PresampledResponse>, Status> {
-        // let start = Instant::now();
-
         let request_type = request.into_inner().request_type;
         let hops = self.presampled_request_types.get(&request_type).unwrap();
         // sample latencies
