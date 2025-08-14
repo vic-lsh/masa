@@ -56,7 +56,7 @@ where
 
     fn new(api: &str, rps: u64, timeout: Duration, slo: u64) -> Self;
 
-    async fn get_request(
+    async fn create_request(
         &self,
         client: FrontendClient<Channel>,
         ctx: &Context,
@@ -71,7 +71,7 @@ where
         let latency;
         let response = {
             let send_at = time_now();
-            let r = timeout(self.timeout(), self.get_request(client, &ctx)).await;
+            let r = timeout(self.timeout(), self.create_request(client, &ctx)).await;
             let recv_at = time_now();
             latency = recv_at - send_at;
             r
@@ -211,7 +211,7 @@ impl RequestType for ARequest {
         }
     }
 
-    async fn get_request(
+    async fn create_request(
         &self,
         mut client: FrontendClient<Channel>,
         ctx: &Context,
@@ -292,7 +292,7 @@ impl RequestType for PresampledRequest {
         }
     }
 
-    async fn get_request(
+    async fn create_request(
         &self,
         mut client: FrontendClient<Channel>,
         ctx: &Context,
@@ -568,6 +568,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for rps in &gen_cfg.rps_values {
         log::info!("Running rps: {}...", rps);
 
+        assert_eq!(gen_cfg.apis.len(), gen_cfg.timeouts_ms.len());
+        assert_eq!(gen_cfg.apis.len(), gen_cfg.slos.len());
         let mut api_handlers = Vec::new();
         for (api, (timeout_ms, slo)) in zip(&gen_cfg.apis, zip(&gen_cfg.timeouts_ms, &gen_cfg.slos))
         {
