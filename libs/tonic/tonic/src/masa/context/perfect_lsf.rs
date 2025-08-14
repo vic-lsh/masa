@@ -50,13 +50,15 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         request: &mut Request<T>,
         _child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
-        log::warn!("using LSF!!!");
         let remaining_execution_time = request.metadata().get("remaining_execution_time").unwrap();
         let remaining_execution_time: u64 =
             remaining_execution_time.to_str().unwrap().parse().unwrap();
         let deadline = self.ctx.start_at() + self.ctx.slo();
-        let sub = time_now() + remaining_execution_time;
-        let slack = if deadline >= sub { deadline - sub } else { 0 };
+        let slack = if deadline >= remaining_execution_time {
+            deadline - remaining_execution_time
+        } else {
+            0
+        };
 
         let child_recv_ctx = Context::new(
             self.ctx.api().clone(),

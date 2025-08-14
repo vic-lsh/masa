@@ -7,7 +7,7 @@ use masa::Context;
 #[derive(Debug)]
 /// This policy always sets the deadline of each request as
 ///   d = start + SLO
-/// where d is the point in time when the original request from the client was sent out
+/// where start is the point in time when the original request from the client was sent out
 pub struct Global;
 
 impl PrioritySelector for Global {
