@@ -1,48 +1,33 @@
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::fs::File;
-use std::fs::{self, File};
-use std::io::BufReader;
+use std::future::Future;
 use std::io::BufReader;
 use std::io::Write;
 use std::iter::zip;
-use std::iter::zip;
 use std::path::Path;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::sync::Arc;
+use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::time::{timeout, Duration, Instant};
 
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use structopt::StructOpt;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinSet;
 use tokio::time::error::Elapsed;
 use tonic::metadata::MetadataMap;
-use tonic::transport::Channel;
 
-use app_utils::{
-    load_gen::{Counters, GenConfig, LoadGenArgs},
-    logging::init_logging_file,
-    timing::time_now,
-};
+use crate::{logging::init_logging_file, timing::time_now};
 use masa::Context;
 use tonic::Response;
 use tonic::Status;
 
-use masa::Context;
 use serde::{Deserialize, Serialize};
-use structopt::StructOpt;
-use tonic::metadata::MetadataMap;
-use tonic::transport::Channel;
-use tonic::Response;
-use tonic::Status;
-
-use crate::logging::init_logging_file;
-use crate::timing::time_now;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -86,11 +71,11 @@ const DEFAULT_COUNTER_KEYS: [&'static str; 6] = [
     // number of (completed) requests satisfying SLO
     "good",
     // number of early returns
-    "err_svc_er",
+    "early_return",
     // number of deadline misses without timing out
-    "err_cl_miss",
+    "deadline_miss",
     // number of timeouts
-    "err_cl_to",
+    "timeout",
     // total number of unexpected errors
     "unexpected",
 ];
@@ -133,19 +118,21 @@ impl Counters {
 }
 
 #[derive(Debug)]
-struct RequestStats<T>
+pub struct RequestStats<R, C>
 where
-    T: RequestType,
+    R: RequestType<C>,
+    C: Client,
 {
     ctx: Context,
     latency: u64,
     error: String,
-    response: Option<(MetadataMap, T::R)>,
+    response: Option<(MetadataMap, R::ResponseType)>,
 }
 
-impl<T> RequestStats<T>
+impl<R, C> RequestStats<R, C>
 where
-    T: RequestType,
+    R: RequestType<C>,
+    C: Client,
 {
     const HEADERS: [&'static str; 7] = [
         "api",
@@ -161,7 +148,7 @@ where
         ctx: Context,
         latency: u64,
         error: String,
-        response: Option<(MetadataMap, T::R)>,
+        response: Option<(MetadataMap, R::ResponseType)>,
     ) -> Self {
         Self {
             ctx,
@@ -184,7 +171,7 @@ where
         );
 
         let specific = match &self.response {
-            Some((m, r)) => T::response_to_row(&m, &r).join(","),
+            Some((m, r)) => R::response_to_row(&m, &r).join(","),
             None => "".to_string(),
         };
 
@@ -192,22 +179,43 @@ where
     }
 }
 
-trait RequestType<R, C>
+pub struct Handler<R, C>
 where
-    Self: Sized,
+    R: RequestType<C>,
+    C: Client,
 {
-    type R;
+    pub api: String,
+    pub rps: u64,
+    pub timeout: Duration,
+    pub slo: u64,
 
-    fn new(api: &str, rps: u64, timeout: Duration, slo: u64) -> Self;
+    inner: R,
+    trace_tx: Option<UnboundedSender<RequestStats<R, C>>>,
+    trace_rx: UnboundedReceiver<RequestStats<R, C>>,
+}
 
-    async fn create_request(
+impl<R, C> Handler<R, C>
+where
+    R: RequestType<C>,
+    C: Client,
+{
+    pub fn new(api: &str, rps: u64, timeout: Duration, slo: u64) -> Self {
+        let (tx, rx) = unbounded_channel();
+        Self {
+            inner: R::new(api),
+            api: api.to_string(),
+            rps,
+            timeout,
+            slo,
+
+            trace_tx: Some(tx),
+            trace_rx: rx,
+        }
+    }
+
+    pub async fn send_request(
         &self,
-        client: C::FrontendClient,
-        ctx: &Context,
-    ) -> Result<Response<Self::R>, Status>;
-
-    async fn send_request(
-        &self,
+        mut rng: StdRng,
         client: C::FrontendClient,
         ctx: Context,
         trace: bool,
@@ -215,115 +223,131 @@ where
         let latency;
         let response = {
             let send_at = time_now();
-            let r = timeout(self.timeout(), self.create_request(client, &ctx)).await;
+            let r = timeout(
+                self.timeout,
+                self.inner.create_request(&mut rng, client, &ctx),
+            )
+            .await;
             let recv_at = time_now();
             latency = recv_at - send_at;
             r
         };
 
-        let (response, error) = map_response(response, latency <= self.slo());
+        let (response, error) = map_response(response, latency <= self.slo);
 
         let stats = RequestStats::new(ctx, latency, error.clone(), response);
 
         if trace {
-            self.trace_tx().unwrap().send(stats).unwrap();
+            self.trace_tx.as_ref().unwrap().send(stats).unwrap();
         }
 
         error
     }
 
-    fn response_output_headers(&self) -> Vec<String>;
-
-    fn response_to_row(metadata: &MetadataMap, response: &Self::R) -> Vec<String>;
-
-    fn rps(&self) -> u64;
-
-    fn slo(&self) -> u64;
-
-    fn api(&self) -> &str;
-
-    fn timeout(&self) -> Duration;
-
-    fn trace_tx(&self) -> Option<&UnboundedSender<RequestStats<Self>>>;
-
-    fn drop_trace_tx(&mut self);
-
-    fn trace_rx(&mut self) -> &mut UnboundedReceiver<RequestStats<Self>>;
-
-    fn header_row(&self) -> String {
-        let generic = RequestStats::<Self>::HEADERS.join(",");
-        let specific = self.response_output_headers().join(",");
-        format!("{},{}", generic, specific)
-    }
-
-    async fn fetch_traces(&mut self, output_path: &Path) {
+    pub async fn fetch_traces(&mut self, output_path: &Path) {
         // must drop so that channel closes
-        self.drop_trace_tx();
+        {
+            self.trace_tx.take()
+        };
         let mut file =
-            File::create(output_path.join(format!("r{}_{}.csv", self.rps(), self.api()))).unwrap();
+            File::create(output_path.join(format!("r{}_{}.csv", self.rps, self.api))).unwrap();
         writeln!(file, "{}", self.header_row()).unwrap();
-        while let Some(stats) = self.trace_rx().recv().await {
+        while let Some(stats) = self.trace_rx.recv().await {
             writeln!(file, "{}", stats.to_row()).unwrap();
         }
         log::info!("All traces fetched");
     }
+
+    pub fn header_row(&self) -> String {
+        let generic = RequestStats::<R, C>::HEADERS.join(",");
+        let specific = self.inner.response_output_headers().join(",");
+        format!("{},{}", generic, specific)
+    }
 }
 
-trait Client 
+pub trait RequestType<C>
+where
+    Self: Sized,
+    C: Client,
+{
+    type ResponseType;
+
+    fn new(api: &str) -> Self;
+
+    fn create_request(
+        &self,
+        rng: &mut StdRng,
+        client: C::FrontendClient,
+        ctx: &Context,
+    ) -> impl Future<Output = Result<Response<Self::ResponseType>, Status>>;
+
+    fn response_output_headers(&self) -> Vec<String>;
+
+    fn response_to_row(metadata: &MetadataMap, response: &Self::ResponseType) -> Vec<String>;
+}
+
+#[allow(async_fn_in_trait)]
+pub trait Client
+where
+    Self::FrontendClient: Send + Clone + 'static,
+    Self: 'static,
 {
     type FrontendClient;
 
-    pub async fn connect(dst: String) -> Result<Self, tonic::transport::Error>;
+    async fn connect(dst: String) -> Result<Self::FrontendClient, tonic::transport::Error>;
 
-    pub async fn ping(client: Self::FrontendClient) -> Result<(), tonic::Status>;
-
+    async fn ping(client: &mut Self::FrontendClient) -> Result<(), tonic::Status>;
 }
 
-trait Handler<C> where C: Client {
-    fn new(api: &str, rps: u64, timeout: Duration, slo: u64) -> Self; 
+#[allow(async_fn_in_trait)]
+pub trait HandlerOuter<C>
+where
+    C: Client,
+    Self: Send + Sync + 'static,
+{
+    fn new(api: &str, rps: u64, timeout: Duration, slo: u64) -> Self;
 
-    async fn send_request(
+    fn send_request(
         &self,
+        rng: StdRng,
         client: C::FrontendClient,
         ctx: Context,
         trace: bool,
-    );
+    ) -> impl Future<Output = String> + Send;
 
     async fn fetch_traces(&mut self, output_path: &Path);
 
-    fn api(&self) -> &str; 
+    fn api(&self) -> &str;
 
     fn slo(&self) -> u64;
 }
 
-pub struct LoadGenerator<R, H, C>
+pub struct LoadGenerator<H, C>
 where
-        R: Rng,
-    H: Handler,
+    H: HandlerOuter<C>,
     C: Client,
 {
-    rng: R,
+    rng: StdRng,
     gen_cfg: GenConfig,
     rps: u64,
     client: C::FrontendClient,
     api_handlers: Vec<Arc<H>>,
 }
 
-impl<R, H, C> LoadGenerator<R, H, C>
+impl<H, C> LoadGenerator<H, C>
 where
-    R: Rng,
-    H: Handler,
+    H: HandlerOuter<C> + Send + Sync,
     C: Client,
 {
     pub fn new(
-        rng: Rng, 
+        seed: u64,
         gen_cfg: GenConfig,
         rps: u64,
         client: C::FrontendClient,
         api_handlers: Vec<Arc<H>>,
     ) -> Self {
         Self {
-            rng,
+            rng: StdRng::seed_from_u64(seed + rps),
             gen_cfg,
             rps,
             client,
@@ -414,13 +438,13 @@ where
 
             let client = self.client.clone();
             let ctrs = Arc::clone(&counters);
+            let rng = self.rng.clone();
+            let trace = Instant::now() > trace_at;
 
             set.spawn(async move {
                 ctrs.increment("all");
 
-                let trace = Instant::now() > trace_at;
-
-                let error = handler.send_request(client, ctx, trace).await;
+                let error = handler.send_request(rng, client, ctx, trace).await;
 
                 // TODO: count error per handler
                 if trace {
@@ -430,13 +454,13 @@ where
                             ctrs.increment("good");
                         }
                         "/ClientMiss" => {
-                            ctrs.increment("err_cl_miss");
+                            ctrs.increment("deadline_miss");
                         }
                         "/EarlyReturn" => {
-                            ctrs.increment("err_svc_er");
+                            ctrs.increment("early_return");
                         }
                         "/ClientTimeout" => {
-                            ctrs.increment("err_cl_to");
+                            ctrs.increment("timeout");
                         }
                         e => {
                             ctrs.increment("unexpected");
@@ -452,10 +476,12 @@ where
     }
 }
 
-pub async fn load_gen_main<R, H, C>(args: LoadGenArgs, rng: R) -> Result<(), Box<dyn std::error::Error>>
+pub async fn load_gen_main<H, C>(
+    args: LoadGenArgs,
+    seed: u64,
+) -> Result<(), Box<dyn std::error::Error>>
 where
-    R: Rng
-    H: Handler,
+    H: HandlerOuter<C>,
     C: Client,
 {
     let output_path = Path::new(&args.output_path);
@@ -496,11 +522,11 @@ where
         let mut load_gen = {
             let client = {
                 let mut client = C::connect(gen_cfg.addr.clone()).await?;
-                C::ping(client).await?;
+                C::ping(&mut client).await?;
                 client
             };
 
-            let load_gen = LoadGenerator::new::<R, H, C>(rng, gen_cfg.clone(), *rps, client, api_handlers);
+            let load_gen = LoadGenerator::new(seed, gen_cfg.clone(), *rps, client, api_handlers);
             load_gen
         };
 
@@ -525,15 +551,15 @@ async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
             secs,
             delta("all"),
             delta("good"),
-            delta("err_svc_er"),
-            delta("err_cl_miss"),
-            delta("err_cl_to"),
+            delta("early_return"),
+            delta("deadline_miss"),
+            delta("timeout"),
         );
         log::warn!(
             "total early returns: {}, total deadline misses: {}, total timeouts: {}, total unexpected errors: {}",
-            counters.get("err_svc_er"),
-            counters.get("err_cl_miss"),
-            counters.get("err_cl_to"),
+            counters.get("early_return"),
+            counters.get("deadline_miss"),
+            counters.get("timeout"),
             counters.get("unexpected"),
         );
         // clone the Counters struct itself as opposed to creating another reference
