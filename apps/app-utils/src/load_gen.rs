@@ -22,7 +22,10 @@ use tokio::task::JoinSet;
 use tokio::time::error::Elapsed;
 use tonic::metadata::MetadataMap;
 
-use crate::{logging::init_logging_file, timing::time_now};
+use crate::{
+    logging::init_logging_file,
+    timing::{get_timestamp, time_now},
+};
 use masa::Context;
 use tonic::Response;
 use tonic::Status;
@@ -446,7 +449,6 @@ where
 
                 let error = handler.send_request(rng, client, ctx, trace).await;
 
-                // TODO: count error per handler
                 if trace {
                     // increment the right counters
                     match error.as_str() {
@@ -504,7 +506,7 @@ where
     assert!(gen_cfg.gap == "const" || gen_cfg.gap == "exp");
 
     for rps in &gen_cfg.rps_values {
-        log::info!("Running rps: {}...", rps);
+        log::info!("Running rps: {}... ({})", rps, get_timestamp());
 
         assert_eq!(gen_cfg.apis.len(), gen_cfg.timeouts_ms.len());
         assert_eq!(gen_cfg.apis.len(), gen_cfg.slos.len());
