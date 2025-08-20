@@ -105,7 +105,7 @@ impl Child for ChildImpl {
         if spin_duration > 0 {
             busy_spin(Duration::from_micros(spin_duration));
         }
-        
+
         // TODO: might want to update slack here
 
         if sleep_duration > 0 {
