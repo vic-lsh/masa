@@ -9,7 +9,7 @@ services:
         limits:
           cpus: "${CPUS_PER_REPLICA}"
 
-  frontend-service:
+  synthetic-frontend-service:
     image: synthetic_frontend:latest
     container_name: "synthetic_frontend"
     restart: always
