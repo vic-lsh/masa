@@ -40,7 +40,8 @@ use tower::{
 
 use masa::PriorityHint;
 
-pub type Svc = Either<Connection, BoxService<Request<BoxBody>, Response<hyper::Body>, crate::Error>>;
+pub type Svc =
+    Either<Connection, BoxService<Request<BoxBody>, Response<hyper::Body>, crate::Error>>;
 
 pub const DEFAULT_BUFFER_SIZE: usize = 1024;
 

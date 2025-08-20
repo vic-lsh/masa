@@ -6,8 +6,7 @@
 use crate::frontend::{PingRequest, ReservationRequest, SearchRequest};
 use rand::{rngs::StdRng, Rng};
 
-fn get_user() -> (String, String) {
-    let mut rng = rand::thread_rng();
+fn get_user(rng: &mut StdRng) -> (String, String) {
     let id = rng.gen_range(0..=500);
 
     let user_name = format!("Username_{}", id);
@@ -76,7 +75,7 @@ pub fn get_reservation_request(rng: &mut StdRng) -> ReservationRequest {
 
     let hotel_id = rng.gen_range(1..=80).to_string();
 
-    let (user_id, password) = get_user();
+    let (user_id, password) = get_user(rng);
     let cust_name = user_id.clone();
     let num_room = 1;
 
