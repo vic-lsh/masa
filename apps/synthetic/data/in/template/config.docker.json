@@ -7,54 +7,5 @@
       "weights": [0.95, 0.05],
       "values": [5000, 30000]
     }
-  },
-  "child_presampled_replicas": 3,
-  "child_presampled_request_types": {
-    "x": [
-      {
-        "server": 0,
-        "sleep": false,
-        "latency_distribution": {
-          "Periodic": {
-            "slow_latency": 1000,
-            "fast_latency": 500,
-            "slow_duration_ms": 200
-          }
-        }
-      },
-      {
-        "server": 1,
-        "sleep": true,
-        "latency_distribution": {
-          "Discrete": {
-            "weights": [1],
-            "values": [5000]
-          }
-        }
-      }
-    ],
-    "y": [
-      {
-        "server": 0,
-        "sleep": false,
-        "latency_distribution": {
-          "Periodic": {
-            "slow_latency": 1000,
-            "fast_latency": 500,
-            "slow_duration_ms": 200
-          }
-        }
-      },
-      {
-        "server": 2,
-        "sleep": true,
-        "latency_distribution": {
-          "Discrete": {
-            "weights": [1],
-            "values": [10000]
-          }
-        }
-      }
-    ]
   }
 }
