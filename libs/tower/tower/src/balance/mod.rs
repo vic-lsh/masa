@@ -57,6 +57,6 @@
 //! [`poll_ready`]: crate::Service::poll_ready
 
 pub mod error;
+pub mod masa_balance;
 pub mod p2c;
 pub mod pool;
-pub mod masa_balance;
