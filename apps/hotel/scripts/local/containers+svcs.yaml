@@ -171,14 +171,14 @@ services:
         limits:
           cpus: "4"
 
-  frontend-service:
+  hotel-frontend-service:
     image: hotel_frontend:latest
     container_name: "hotel_frontend"
     restart: always
     networks:
       - hotel_network
     ports:
-      - "${FRONTEND_PORT}:8660"
+      - "${FRONTEND_PORT}:8000"
     depends_on:
       - user-service
       - reservation-service
