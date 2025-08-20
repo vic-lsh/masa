@@ -42,7 +42,7 @@ impl FrontendImpl {
         let mut services = vec![1];
         services.extend(vec![config.child_constant_replicas]);
         let presampled_services_offset = services.len();
-        services.extend(config.child_presampled_services);
+        services.extend(config.child_presampled_services.iter().map(|v| v[0] as u8));
         let mut children = Vec::new();
         let mut start_id = 1;
         for r in services {
