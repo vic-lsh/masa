@@ -20,8 +20,10 @@ use std::task::Waker;
 use std::time::Duration;
 
 mod queue;
-use queue::LocalRunQueue;
 use queue::Queue;
+
+mod timed_queue;
+use timed_queue::TimedQueue;
 
 pub use queue::get_sched_flavor;
 pub use queue::SchedFlavor;
@@ -55,7 +57,7 @@ pub(crate) struct Handle {
 /// a function that will perform the scheduling work and acts as a capability token.
 struct Core {
     /// Scheduler run queue
-    tasks: LocalRunQueue<Notified>,
+    tasks: TimedQueue,
 
     /// Current tick
     tick: u32,
@@ -152,7 +154,7 @@ impl CurrentThread {
         });
 
         let core = AtomicCell::new(Some(Box::new(Core {
-            tasks: LocalRunQueue::with_capacity(INITIAL_CAPACITY),
+            tasks: TimedQueue::with_capacity(INITIAL_CAPACITY),
             tick: 0,
             driver: Some(driver),
             metrics: MetricsBatch::new(&handle.shared.worker_metrics),
