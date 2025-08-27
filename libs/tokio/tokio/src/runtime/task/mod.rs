@@ -173,6 +173,7 @@ use self::core::Cell;
 // [TODO(vic)] make this private again.
 // For now, this is made public b/c we expose the whole header in Context.
 pub(crate) use self::core::Header;
+pub(crate) use self::core::TraceTimer;
 
 mod error;
 pub use self::error::JoinError;
@@ -470,8 +471,12 @@ impl<S: 'static> Task<S> {
 }
 
 impl<S: 'static> Notified<S> {
-    fn header(&self) -> &Header {
+    pub(crate) fn header(&self) -> &Header {
         self.0.header()
+    }
+
+    pub(crate) fn timer(&self) -> &mut TraceTimer {
+        self.0.header().get_timer_mut()
     }
 }
 
