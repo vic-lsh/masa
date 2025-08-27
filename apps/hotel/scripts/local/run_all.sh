@@ -130,8 +130,8 @@ build() {
 reset() {
     rm $output_path/*.log
     docker volume prune -a -f
-    docker compose -f scripts/local/containers.yaml down --remove-orphans
-    docker compose -f scripts/local/containers.yaml up -d
+    docker-compose -f scripts/local/containers.yaml down --remove-orphans
+    docker-compose -f scripts/local/containers.yaml up -d
 }
 
 cleanup() {
