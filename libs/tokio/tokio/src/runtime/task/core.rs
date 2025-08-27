@@ -26,6 +26,8 @@ use std::task::{Context, Poll, Waker};
 
 use super::poll_hook::PollHook;
 
+use std::time::{Duration, Instant};
+
 /// The task cell. Contains the components of the task.
 ///
 /// It is critical for `Header` to be the first field as the task structure will
@@ -181,10 +183,39 @@ pub(crate) struct Header {
     /// Poll behavior customization for this task.
     pub(super) poll_hook: UnsafeCell<Option<PollHook>>,
 
+    // Timer for this task
+    pub(super) timer: UnsafeCell<TraceTimer>,
+
     /// The tracing ID for this instrumented task.
     #[cfg(all(tokio_unstable, feature = "tracing"))]
     pub(super) tracing_id: Option<tracing::Id>,
 }
+
+#[derive(Clone)]
+pub(crate) struct TraceTimer {
+    q_lat: Duration,
+    last_enqueue: Option<Instant>,
+}
+
+impl TraceTimer {
+    pub(crate) fn new() -> Self {
+        TraceTimer {
+            q_lat: Duration::ZERO,
+            last_enqueue: None,
+        }
+    }
+
+    pub(crate) fn set_enqueue_time(&mut self) {
+        self.last_enqueue = Some(Instant::now());
+    }
+
+    pub(crate) fn record_queue_lat(&mut self) {
+        let latency = Instant::now().duration_since(self.last_enqueue.unwrap());
+        self.q_lat += latency;
+    }
+}
+
+impl Copy for TraceTimer {}
 
 unsafe impl Send for Header {}
 unsafe impl Sync for Header {}
@@ -237,6 +268,7 @@ impl<T: Future, S: Schedule> Cell<T, S> {
                 owner_id: UnsafeCell::new(None),
                 priority: UnsafeCell::new(priority),
                 poll_hook: UnsafeCell::new(None),
+                timer: UnsafeCell::new(TraceTimer::new()),
                 #[cfg(all(tokio_unstable, feature = "tracing"))]
                 tracing_id,
             }
@@ -495,6 +527,10 @@ impl Header {
     pub(super) unsafe fn get_id(me: NonNull<Header>) -> Id {
         let ptr = Header::get_id_ptr(me).as_ptr();
         *ptr
+    }
+
+    pub(super) fn get_timer_mut(&self) -> &mut TraceTimer {
+        unsafe { self.timer.with_mut(|ptr| &mut *ptr) }
     }
 
     /// Gets the tracing id of the task containing this `Header`.
