@@ -1,10 +1,10 @@
 use async_memcached::AsciiProtocol;
-use async_memcached::Client as McClient;
 use mongodb::{bson::doc, options::ClientOptions, Client as MongoClient, Collection};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use tracing::{error, info};
 use std::env;
+use app_utils::pool::McPool;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserMentionStruct {

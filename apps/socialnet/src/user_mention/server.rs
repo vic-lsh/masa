@@ -1,5 +1,4 @@
 use async_memcached::AsciiProtocol;
-use async_memcached::Client as McClient;
 use futures::StreamExt;
 use mongodb::bson::{doc, Bson};
 use mongodb::Client as MongoClient;
@@ -8,6 +7,7 @@ use std::error::Error;
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 use tracing::{error, info};
+use app_utils::pool::McPool;
 
 use user_mention_service::{
     user_mention_service_server::{UserMentionService, UserMentionServiceServer},
