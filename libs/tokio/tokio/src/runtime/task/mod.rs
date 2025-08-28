@@ -219,10 +219,16 @@ use crate::util::sharded_list;
 
 use std::marker::PhantomData;
 use std::ptr::NonNull;
+use std::time::Duration;
 use std::{fmt, mem};
 
 pub(crate) fn current_task_header() -> Option<&'static Header> {
     crate::runtime::context::current_task_header()
+}
+
+pub(crate) fn current_task_queue_latency() -> Duration {
+    let header = current_task_header().unwrap();
+    header.get_timer().q_lat()
 }
 
 /// An owned handle to the task, tracked by ref count.

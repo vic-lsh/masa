@@ -78,7 +78,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         let e2e_latency = self.start_exec.elapsed().as_micros() as u64;
         let compute_latency = self.compute_latency.load(Ordering::Acquire);
         // obtain the queue lat from header
-        let queue_latency = 0;
+        let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
         let io_latency = e2e_latency.saturating_sub(compute_latency).saturating_sub(queue_latency);
 
         // Get the task of the request
