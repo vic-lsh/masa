@@ -213,6 +213,10 @@ impl TraceTimer {
         let latency = Instant::now().duration_since(self.last_enqueue.unwrap());
         self.q_lat += latency;
     }
+
+    pub(crate) fn q_lat(&self) -> Duration {
+        self.q_lat
+    }
 }
 
 impl Copy for TraceTimer {}
@@ -531,6 +535,10 @@ impl Header {
 
     pub(super) fn get_timer_mut(&self) -> &mut TraceTimer {
         unsafe { self.timer.with_mut(|ptr| &mut *ptr) }
+    }
+
+    pub(super) fn get_timer(&self) -> &TraceTimer {
+        unsafe { self.timer.with(|ptr| &*ptr) }
     }
 
     /// Gets the tracing id of the task containing this `Header`.
