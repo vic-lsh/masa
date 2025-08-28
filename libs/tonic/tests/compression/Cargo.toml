@@ -18,7 +18,7 @@ tokio = {path = "../../../tokio/tokio", features = ["macros", "rt-multi-thread",
 tokio-stream = { path = "../../../tokio/tokio-stream" }
 tonic = {path = "../../tonic", features = ["gzip", "zstd"]}
 masa = { path = "../../../masa" }
-tower = {path = "../../../../3rd_party/tower/tower", features = []}
+tower = {path = "../../../../libs/tower/tower", features = []}
 tower-http = {path = "../../../../3rd_party/tower-http/tower-http", features = ["map-response-body", "map-request-body"]}
 
 [build-dependencies]

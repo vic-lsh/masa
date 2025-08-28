@@ -102,6 +102,11 @@ prio_local_indirect = [
   "masa/prio_local_indirect",
   "tonic/prio_local_indirect",
 ]
+perfect_lsf = [
+  "tokio/perfect_lsf",
+  "masa/perfect_lsf",
+  "tonic/perfect_lsf",
+]
 fifo = ["tokio/fifo", "async-executor/fifo", "masa/fifo", "tonic/fifo"]
 fifo_early = [
   "tokio/fifo_early",
@@ -231,7 +236,7 @@ either = { version = "1.9", optional = true }
 async-stream = { version = "0.3", optional = true }
 tokio-stream = { path = "../../libs/tokio/tokio-stream", optional = true }
 tokio-util = { path = "../../libs/tokio/tokio-util", optional = true }
-tower = { path = "../../3rd_party/tower/tower", optional = true }
+tower = { path = "../../libs/tower/tower", optional = true }
 rand = { version = "0.8", optional = true }
 rand_distr = "0.4"
 serde = { version = "1.0", features = ["derive"], optional = true }
@@ -259,8 +264,6 @@ geo = "0.28"
 kiddo = "4.2.1"
 # used by reservation service
 chrono = "0.4.38"
-# Used for client-side load balancing
-ginepro = { path = "../../3rd_party/ginepro/ginepro" }
 clap = { version = "4.4", features = ["derive"] }
 
 

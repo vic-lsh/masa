@@ -3,14 +3,13 @@
 // [NOTE] this is a port of the original request generation logic:
 // https://github.com/delimitrou/DeathStarBench/blob/6ecb09706140f8730b5385c08f1386c654c3c526/hotelReservation/wrk2/scripts/hotel-reservation/mixed-workload_type_1.lua#L17
 
-use crate::hotel_tonic::{PingRequest, ReservationRequest, SearchRequest};
-use rand::Rng;
+use crate::frontend::{PingRequest, ReservationRequest, SearchRequest};
+use rand::{rngs::StdRng, Rng};
 
-fn get_user() -> (String, String) {
-    let mut rng = rand::thread_rng();
+fn get_user(rng: &mut StdRng) -> (String, String) {
     let id = rng.gen_range(0..=500);
 
-    let user_name = format!("Cornell_{}", id);
+    let user_name = format!("Username_{}", id);
 
     // Create password by repeating id 10 times
     let pass_word = id.to_string().repeat(10);
@@ -24,9 +23,7 @@ pub fn get_ping_request() -> PingRequest {
     }
 }
 
-pub fn get_search_request() -> SearchRequest {
-    let mut rng = rand::thread_rng();
-
+pub fn get_search_request(rng: &mut StdRng) -> SearchRequest {
     // Generate random dates
     let in_date_day_num: i32 = rng.gen_range(9..=23);
     let out_date_day_num: i32 = rng.gen_range((in_date_day_num + 1)..=24);
@@ -58,9 +55,7 @@ pub fn get_search_request() -> SearchRequest {
     }
 }
 
-pub fn get_reservation_request() -> ReservationRequest {
-    let mut rng = rand::thread_rng();
-
+pub fn get_reservation_request(rng: &mut StdRng) -> ReservationRequest {
     // Generate random dates
     let in_date = rng.gen_range(9..=23);
     let out_date = in_date + rng.gen_range(1..=5);
@@ -80,7 +75,7 @@ pub fn get_reservation_request() -> ReservationRequest {
 
     let hotel_id = rng.gen_range(1..=80).to_string();
 
-    let (user_id, password) = get_user();
+    let (user_id, password) = get_user(rng);
     let cust_name = user_id.clone();
     let num_room = 1;
 

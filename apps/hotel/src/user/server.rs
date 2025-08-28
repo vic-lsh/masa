@@ -106,7 +106,6 @@ impl User for UserImpl {
         request: Request<user::UserRequest>,
     ) -> Result<Response<user::UserResponse>, Status> {
         let request = request.into_inner();
-        log::info!("request: {:?}", request);
 
         let success = {
             let query = doc! { "username": request.username };
@@ -114,20 +113,12 @@ impl User for UserImpl {
             if account.is_err() {
                 false
             } else {
-                let check_user = {
-                    let mut rng = self.manager.rng.lock().unwrap();
-                    self.manager.uniform_check_user.sample(&mut *rng) < self.manager.prob_check_user
-                };
-                if check_user {
-                    true
-                } else {
-                    false
-                }
+                let mut rng = self.manager.rng.lock().unwrap();
+                self.manager.uniform_check_user.sample(&mut *rng) < self.manager.prob_check_user
             }
         };
 
         let response = user::UserResponse { success };
-        log::info!("response: {:?}", response);
         Ok(Response::new(response))
     }
 }

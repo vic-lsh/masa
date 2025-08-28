@@ -15,6 +15,7 @@ prio_local_indirect = []
 fifo = []
 fifo_early = []
 fifo_infra = []
+perfect_lsf = []
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

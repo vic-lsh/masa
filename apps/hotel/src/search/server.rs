@@ -10,7 +10,7 @@ pub mod hotel_tonic {
     }
 }
 
-use ginepro::LoadBalancedChannel;
+use app_utils::channel::LoadBalancedChannel;
 use tonic::{Request, Response, Status};
 
 use hotel_tonic::{
@@ -27,16 +27,12 @@ pub struct SearchImpl {
 
 impl SearchImpl {
     pub async fn new(config: HotelConfig) -> Self {
-        let channel = LoadBalancedChannel::builder((config.geo_ip, config.geo_port))
-            .channel()
-            .await
-            .expect("Failed to connect to user");
+        let channel =
+            LoadBalancedChannel::new(config.geo_ip, config.geo_port, config.geo_replicas).await;
         let geo_client = GeoClient::new(channel);
 
-        let channel = LoadBalancedChannel::builder((config.rate_ip, config.rate_port))
-            .channel()
-            .await
-            .expect("Failed to connect to rate");
+        let channel =
+            LoadBalancedChannel::new(config.rate_ip, config.rate_port, config.rate_replicas).await;
         let rate_client = RateClient::new(channel);
 
         SearchImpl {

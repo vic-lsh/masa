@@ -14,12 +14,12 @@ The codebase is structured as follows:
 .
 ├── 3rd_party     # vendored in dependencies; not modified
 ├── apps          # microservice applications and testbeds
-└── libs          # Masa libraries (based on Tonic, Tokio, and Hyper)
+└── libs          # Masa libraries and modified libraries
 ```
 
 Masa is implemented by modifying a few crates; these are contained in `libs`. To evaluate Masa, we have a few microservice applications in `apps`.
 
-We have also included the source code of a few 3rd-party crates in `3rd_party`. These crates are included by source to make it simpler to link them against Masa's crates.
+We have also included the source code of a few 3rd-party crates in `3rd_party`. These crates are included by source to make it simpler to link them against Masa's modified crates in `libs`.
 
 ## Getting started
 
@@ -29,37 +29,9 @@ Currently, Masa has three applications for performing experiments under `apps/<a
 
 - `hotel`: Based on the Hotel application in Deathstarbench. We've ported this application to Rust for Masa compatibility.
 - `socialnet`: TODO
-- `synthetic`: A synthetic application with very simple behavior, for understanding Masa in the simplest scenario.
+- `synthetic`: A synthetic application with configurable behavior, for understanding Masa in simple scenarios.
 
 Docker compose is the recommended way to run an application. See instructions in the section below.
-
-#### Docker compose (single-server)
-
-NOTE: This is currently only supported for `hotel` and `synthetic`.
-
-```bash
-cd apps/<app>
-
-# Build and start the services (and their databases) as docker containers.
-# Specify the policy you want Masa to use
-./scripts/docker-run.sh --features <policy>
-
-# Start generating load to the application
-# Note: load generation config is expected to be at ./scripts/gen_config.json
-# To start, make a copy of ./scripts/gen_config.template.json.
-./scripts/loadgen-run.sh
-
-# To view logs from the containers (w/ tmux), run this script in another terminal.
-./scripts/docker-view-logs.sh
-
-# To view resource usage across containers, run this:
-docker stats
-
-# Teardown the docker services and their databases.
-./scripts/docker-stop.sh
-```
-
-where `<policy>` is one of the policy feature flags. If you just want to get the application to run, use `fifo`.
 
 #### Docker compose automated (single-server)
 
@@ -83,14 +55,16 @@ Execute the following command to run the experiment:
 ```
 
 The load gen configuration allows you to specify the number of times that the experiment should be repeated.
-For the i-th repetition of the experiment, the script generates a folder with the following structure for every policy
+For the `i`-th repetition of the experiment, the script generates a folder with the following structure for every policy
 
 ```
 ./data/out/<experiment>/i/<policy>
 ├── loadgen.log         # logs from load gen
-├── r<rps1>.csv         # trace for each RPS level provided in the load gen config
+├── r<rps1>_<api1>.csv         # trace for each RPS level provided in the load gen config
+├── ...                        # traces for different APIs are stored in different files
+├── r<rps1>_<apiK>.csv
 ├── ...
-├── r<rpsN>.csv
+├── r<rpsN>_<apiK>.csv
 ├── <service1>.log      # logs for each container
 ├── ...
 └── <serviceM>.log
@@ -145,7 +119,40 @@ then you can run
 
 from an application folder to sync everything in the `data` folder from your remote machine to your local machine over ssh.
 
+#### Docker compose manual (single-server)
+
+NOTE: This is currently only supported for `hotel` and `synthetic`.
+
+```bash
+cd apps/<app>
+
+# Set variables used by the docker compose file, based on the contents of the app config
+./scripts/get-env.sh > ./scripts/local/.env
+
+# Build and start the services (and their databases) as docker containers.
+# Specify the policy you want Masa to use
+./scripts/docker-run.sh --features <policy>
+
+# Start generating load to the application
+# Note: load generation config is expected to be at ./scripts/gen_config.json
+# To start, make a copy of ./scripts/gen_config.template.json.
+./scripts/loadgen-run.sh
+
+# To view logs from the containers (w/ tmux), run this script in another terminal.
+./scripts/docker-view-logs.sh
+
+# To view resource usage across containers, run this:
+docker stats
+
+# Teardown the docker services and their databases.
+./scripts/docker-stop.sh
+```
+
+where `<policy>` is one of the policy feature flags. If you just want to get the application to run, use `fifo`.
+
 #### tmux-based workload run scripts (legacy)
+
+WARNING: This section is outdated and the functionality is likely broken.
 
 NOTE: This is currently only supported for `hotel`.
 NOTE: some scripts no longer work out-of-the-box. Please run with docker compose instead.
@@ -163,6 +170,8 @@ Within each workflow subfolder, you will find a `run_snippet.sh` file. This file
 You will also find `gen_config.json` in each subfolder. This describes how the user workload is generated. The committed `gen_config.json` file incrementally builds up requests-per-second to increase load.
 
 #### K8s (work-in-progress)
+
+WARNING: This section is outdated and the functionality is likely broken.
 
 NOTE: This is currently only supported for `hotel`.
 NOTE: Running with k8s hasn't been well-tested. Please report issues if you find any.

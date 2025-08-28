@@ -142,31 +142,38 @@ def generate_plots(args):
             plt.savefig(f"{output_dir}/p99_latency_by_rps_{api}.png", dpi=300)
             plt.close()
 
-    output_dir = args.output_dir
-    # averaged p99 latencies
-    for api in apis:
-        plt.figure(figsize=(12, 6))
-        for policy in policies:
-            averaged_p99 = np.zeros(len(rps_values))
-            for i in range(repeats):
-                p99_values = []
-                for rps in rps_values:
-                    df = data[policy][rps]
-                    p99_latency = df["latency"].quantile(0.99)
-                    p99_values.append(p99_latency)
-                averaged_p99 += np.array(p99_values)
-            plt.plot(rps_values, averaged_p99 / repeats, "o-", label=f"{policy}")
+    # averaged pX latencies
+    percentiles = [0.80, 0.90, 0.99]
+    for percentile in percentiles:
+        for api in apis:
+            plt.figure(figsize=(12, 6))
+            for policy in policies:
+                averaged_percentile = np.zeros(len(rps_values))
+                for i in range(repeats):
+                    data = results[i][api]
+                    percentile_values = []
+                    for rps in rps_values:
+                        df = data[policy][rps]
+                        percentile_latency = df["latency"].quantile(percentile)
+                        percentile_values.append(percentile_latency)
+                    averaged_percentile += np.array(percentile_values)
+                plt.plot(rps_values, averaged_percentile / repeats, "o-", label=f"{policy}")
 
-        plt.xlabel("Requests Per Second (RPS)")
-        plt.ylabel("average p99 latency (milliseconds)")
-        plt.title(
-            f"p99 latency by policy and RPS for {api} API averaged over {repeats} runs"
-        )
-        plt.grid(True, alpha=0.3)
-        plt.legend()
-        plt.ylim(top=max_y)
-        plt.savefig(f"{args.output_dir}/p99_latency_by_rps_{api}_averaged.png", dpi=300)
-        plt.close()
+            p = int(percentile * 100)
+            plt.xlabel("Requests Per Second (RPS)")
+            plt.ylabel(f"average p{p} latency (milliseconds)")
+            plt.title(
+                f"p{p} latency by policy and RPS for {api} API averaged over {repeats} runs"
+            )
+            plt.grid(True, alpha=0.3)
+            plt.legend()
+            for max_y in [int(slo * 4), 1000]:
+                plt.ylim(bottom=0, top=max_y)
+                plt.savefig(
+                    f"{args.output_dir}/p{p}_latency_by_rps_{api}_averaged_maxy-{max_y}.png",
+                    dpi=300,
+                )
+            plt.close()
 
 
 if __name__ == "__main__":
