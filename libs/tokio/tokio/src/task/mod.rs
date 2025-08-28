@@ -335,6 +335,9 @@ cfg_rt! {
     mod poll_hook;
     pub use poll_hook::{configure_child_task_poll_hook, reset_child_task_poll_hook};
 
+    mod queue_latency;
+    pub use queue_latency::obtain_task_queue_latency;
+
     cfg_rt_multi_thread! {
         pub use blocking::block_in_place;
     }
