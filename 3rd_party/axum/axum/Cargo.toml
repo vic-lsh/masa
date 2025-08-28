@@ -47,9 +47,9 @@ percent-encoding = "2.1"
 pin-project-lite = "0.2.7"
 serde = "1.0"
 sync_wrapper = "0.1.1"
-tower = { path = "../../tower/tower", default-features = false, features = ["util"] }
-tower-layer = { path = "../../tower/tower-layer" }
-tower-service = { path = "../../tower/tower-service" }
+tower = { path = "../../../libs/tower/tower", default-features = false, features = ["util"] }
+tower-layer = { path = "../../../libs/tower/tower-layer" }
+tower-service = { path = "../../../libs/tower/tower-service" }
 
 # optional dependencies
 axum-macros = { path = "../axum-macros", version = "0.3.8", optional = true }
@@ -124,7 +124,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies.tower]
 package = "tower"
-path = "../../tower/tower"
+path = "../../../libs/tower/tower"
 #version = "0.4.10"
 features = [
     "util",

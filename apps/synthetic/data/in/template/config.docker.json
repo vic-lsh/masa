@@ -1,14 +1,11 @@
 {
-  "FrontendIp": "127.0.0.1",
-  "FrontendPort": 8660,
-  "ChildIps": ["child-service-0", "child-service-1"],
-  "ChildPorts": [8661, 8662],
-  "ChildConstantLatency": 500,
-  "ChildConstantLatencySlowdownDuration": 100,
-  "ChildRandomLatency": {
-    "Normal": {
-      "mean": 10000,
-      "std": 5000
+  "child_constant_replicas": 1,
+  "child_constant_latency": 500,
+  "child_constant_latency_slowdown_duration": 200,
+  "child_random_latency": {
+    "Discrete": {
+      "weights": [0.95, 0.05],
+      "values": [5000, 30000]
     }
   }
 }

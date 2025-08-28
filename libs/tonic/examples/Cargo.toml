@@ -389,7 +389,7 @@ either = { version = "1.9", optional = true }
 async-stream = { version = "0.3", optional = true }
 tokio-stream = { path = "../../tokio/tokio-stream", optional = true }
 tokio-util = { path = "../../tokio/tokio-util", optional = true }
-tower = { path = "../../../3rd_party/tower/tower", optional = true }
+tower = { path = "../../../libs/tower/tower", optional = true }
 rand = { version = "0.8", optional = true }
 rand_distr = "0.4"
 serde = { version = "1.0", features = ["derive"], optional = true }
