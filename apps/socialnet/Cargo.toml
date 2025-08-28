@@ -125,6 +125,7 @@ masa = { path = "../../libs/masa" }
 async-task = { path = "../../libs/async-task" }
 hotel = { path = "../hotel" }
 rand_distr = "0.4"
+app-utils = { path = "../app-utils" }
 
 [build-dependencies]
 tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
