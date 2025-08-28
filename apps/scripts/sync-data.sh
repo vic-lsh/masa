@@ -7,6 +7,12 @@ if [[ "$pwd" != */apps/* ]]; then
 fi
 app=$(basename $pwd)
 
+if [[ -z "$1" ]]; then
+    datapath="data"
+else
+    datapath="data/$1"
+fi
+
 source ../../.env
 
-rsync -av ${remote_user}@${server}:${remote_masa_path}/apps/${app}/data/ data
+rsync -av ${remote_user}@${server}:${remote_masa_path}/apps/${app}/${datapath}/ $datapath

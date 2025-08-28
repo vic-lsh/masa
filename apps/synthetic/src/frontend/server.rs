@@ -8,42 +8,66 @@ pub mod synthetic_tonic {
     }
 }
 
-use std::time::Instant;
+use std::collections::HashMap;
+use std::iter::zip;
+use std::{
+    sync::atomic::{AtomicU8, Ordering},
+    time::Instant,
+};
 
 use crate::config::SyntheticConfig;
+use crate::util;
+use app_utils::channel::LoadBalancedChannel;
 use app_utils::timing::time_now;
-use ginepro::LoadBalancedChannel;
 
 use tonic::{Request, Response, Status};
 
 use synthetic_tonic::{
-    child, child::child_client::ChildClient, frontend, frontend::frontend_server::Frontend,
+    child, child::child_client::ChildClient, child::Fixed, child::Periodic, frontend,
+    frontend::frontend_server::Frontend,
 };
 
 pub struct FrontendImpl {
-    child1_client: ChildClient<LoadBalancedChannel>,
-    child2_client: ChildClient<LoadBalancedChannel>,
+    children: Vec<ChildClient<LoadBalancedChannel>>,
+    constant_replicas: u8,
+    next_constant_replica: AtomicU8,
+    presampled_services: usize,
+    presampled_services_offset: usize,
+    presampled_request_types: HashMap<String, Vec<util::Hop>>,
 }
 
 impl FrontendImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
-        let channel =
-            LoadBalancedChannel::builder((config.child_ips[0].clone(), config.child_ports[0]))
-                .channel()
-                .await
-                .expect("Failed to connect to child");
-        let child1_client = ChildClient::new(channel);
+        let presampled_services = config.child_presampled_services.len();
+        let mut services = vec![1];
+        services.extend(vec![config.child_constant_replicas]);
+        let presampled_services_offset = services.len();
+        services.extend(config.child_presampled_services.iter().map(|v| v[0] as u8));
+        let mut children = Vec::new();
+        let mut start_id = 1;
+        for r in services {
+            let hostname_base = "local-child-service";
+            children.push(ChildClient::new(
+                LoadBalancedChannel::new_from(hostname_base.to_string(), 8000, r, start_id).await,
+            ));
+            start_id += r;
+        }
 
-        let channel =
-            LoadBalancedChannel::builder((config.child_ips[1].clone(), config.child_ports[1]))
-                .channel()
-                .await
-                .expect("Failed to connect to child");
-        let child2_client = ChildClient::new(channel);
+        let mut presampled_request_types = HashMap::new();
+        for (key, value) in config.child_presampled_request_types {
+            presampled_request_types.insert(
+                key,
+                value.into_iter().map(|hop| util::Hop::from(hop)).collect(),
+            );
+        }
 
         FrontendImpl {
-            child1_client,
-            child2_client,
+            children,
+            constant_replicas: config.child_constant_replicas,
+            next_constant_replica: AtomicU8::new(0),
+            presampled_request_types,
+            presampled_services,
+            presampled_services_offset,
         }
     }
 }
@@ -66,30 +90,113 @@ impl Frontend for FrontendImpl {
         _request: Request<frontend::ARequest>,
     ) -> Result<Response<frontend::AResponse>, Status> {
         let start = Instant::now();
-        let mut child1_client = self.child1_client.clone();
-        let response = child1_client
+        let mut child_random_client = self.children.last().unwrap().clone();
+        let response = child_random_client
             .random_latency(child::RandomLatencyRequest {
                 sent_at: time_now(),
             })
             .await?;
-        let child1_response = response.into_inner();
+        let child_random_response = response.into_inner();
 
-        let mut child2_client = self.child2_client.clone();
-        let response = child2_client
+        let next =
+            self.next_constant_replica.fetch_add(1, Ordering::SeqCst) % self.constant_replicas;
+        let mut child_constant_client = self.children[next as usize].clone();
+        let response = child_constant_client
             .constant_latency(child::ConstantLatencyRequest {
                 sent_at: time_now(),
             })
             .await?;
-        let child2_response = response.into_inner();
+        let child_constant_response = response.into_inner();
 
         Ok(Response::new(frontend::AResponse {
-            child1_queueing_latency: child1_response.queueing_latency,
-            child1_sleep_latency: child1_response.sleep_latency,
-            child1_handler_latency: child1_response.handler_latency,
-            child2_queueing_latency: child2_response.queueing_latency,
-            child2_handler_latency: child2_response.handler_latency,
-            child2_reply_latency: time_now() - child2_response.finished_at,
+            child1_queueing_latency: child_random_response.queueing_latency,
+            child1_sleep_latency: child_random_response.sleep_latency,
+            child1_handler_latency: child_random_response.handler_latency,
+            child2_queueing_latency: child_constant_response.queueing_latency,
+            child2_handler_latency: child_constant_response.handler_latency,
+            child2_reply_latency: time_now() - child_constant_response.finished_at,
             handler_latency: Instant::now().duration_since(start).as_micros() as u64,
         }))
+    }
+
+    async fn handle_presampled(
+        &self,
+        request: Request<frontend::PresampledRequest>,
+    ) -> Result<Response<frontend::PresampledResponse>, Status> {
+        let request_type = request.into_inner().request_type;
+        let hops = self.presampled_request_types.get(&request_type).unwrap();
+        // sample latencies
+        let latencies: Vec<child::Latency> = hops
+            .iter()
+            .map(|hop| hop.latency_distribution.presample())
+            .collect();
+        let concrete_latencies = latencies.iter().map(child_latency_to_value).collect();
+        let remaining_execution_times = reversed_prefix_sum(&concrete_latencies);
+        for (hop, (latency, remaining)) in zip(hops, zip(latencies, remaining_execution_times)) {
+            let service = self.presampled_services_offset + hop.service;
+            let mut request = Request::new({
+                child::PresampledRequest {
+                    latency: Some(latency),
+                    sleep: hop.sleep,
+                }
+            });
+            request
+                .metadata_mut()
+                .insert("remaining_execution_time", remaining.into());
+            let _response = self.children[service].clone().presampled(request).await?;
+        }
+
+        Ok(Response::new(frontend::PresampledResponse {}))
+    }
+}
+
+fn reversed_prefix_sum(v: &Vec<u64>) -> Vec<u64> {
+    let mut result = Vec::new();
+    result.push(*v.last().expect("array is empty"));
+
+    for x in v.iter().rev().skip(1) {
+        result.push(x + *result.last().unwrap());
+    }
+
+    result.reverse();
+    result
+}
+
+fn child_latency_to_value(latency: &child::Latency) -> u64 {
+    match latency.latency_type.as_ref().unwrap() {
+        child::latency::LatencyType::Periodic(Periodic {
+            slow_latency,
+            fast_latency,
+            slow_duration_ms,
+        }) => {
+            let slow_fraction = *slow_duration_ms as f64 / 1000.0;
+            let average =
+                slow_fraction * *slow_latency as f64 + (1.0 - slow_fraction) * *fast_latency as f64;
+            average.round() as u64
+        }
+        child::latency::LatencyType::Fixed(Fixed { latency }) => *latency,
+    }
+}
+
+impl util::LatencyDistribution {
+    fn presample(&self) -> child::Latency {
+        let latency = match self {
+            util::LatencyDistribution::Periodic {
+                slow_latency,
+                fast_latency,
+                slow_duration_ms,
+            } => child::latency::LatencyType::Periodic(Periodic {
+                slow_latency: *slow_latency,
+                fast_latency: *fast_latency,
+                slow_duration_ms: *slow_duration_ms as u32,
+            }),
+            x => child::latency::LatencyType::Fixed(Fixed {
+                latency: x.sample(),
+            }),
+        };
+
+        child::Latency {
+            latency_type: Some(latency),
+        }
     }
 }

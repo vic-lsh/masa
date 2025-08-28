@@ -2,15 +2,18 @@ use crate::{masa::context::read_context, GrpcMethod, Request, Status};
 use std::sync::Arc;
 
 use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
-use masa::Context;
+use masa::{time_now, Context};
 
 #[derive(Debug)]
 /// This policy always sets the deadline of each request as
-///   d = start + SLO
-/// where start is the point in time when the original request from the client was sent out
-pub struct Global;
+///   d = (start + SLO) - rem // slack
+/// where start is the point in time when the end-to-end request from the client was sent out
+/// and `rem` is the sum of all latencies at the remainig hops of the
+/// end-to-end request.
+/// This policy expects that `rem` is known in advance and is placed in the request header.
+pub struct PerfectLSF;
 
-impl PrioritySelector for Global {
+impl PrioritySelector for PerfectLSF {
     type ServerContext = ServerContext;
     type ChildContext = ChildContext;
     type ParentContext = ParentContext;
@@ -47,8 +50,15 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         request: &mut Request<T>,
         _child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
-        // TODO: early return logic
-        let deadline = self.ctx.deadline();
+        let remaining_execution_time = request.metadata().get("remaining_execution_time").unwrap();
+        let remaining_execution_time: u64 =
+            remaining_execution_time.to_str().unwrap().parse().unwrap();
+        let deadline = self.ctx.start_at() + self.ctx.slo();
+        let slack = if deadline >= remaining_execution_time {
+            deadline - remaining_execution_time
+        } else {
+            0
+        };
 
         let child_recv_ctx = Context::new(
             self.ctx.api().clone(),
@@ -57,7 +67,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             self.ctx.slo(),
             self.ctx.request_class(),
             self.ctx.start_at(),
-            deadline,
+            slack,
         );
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
 

@@ -44,9 +44,9 @@ mime = "0.3"
 pin-project-lite = "0.2"
 serde = "1.0"
 tokio = "1.19"
-tower = { path = "../../tower/tower", default-features = false, features = ["util"] }
-tower-layer = { path = "../../tower/tower-layer" }
-tower-service = { path = "../../tower/tower-service" }
+tower = { path = "../../../libs/tower/tower", default-features = false, features = ["util"] }
+tower-layer = { path = "../../../libs/tower/tower-layer" }
+tower-service = { path = "../../../libs/tower/tower-service" }
 
 # optional dependencies
 axum-macros = { path = "../axum-macros", version = "0.3.8", optional = true }
@@ -69,7 +69,7 @@ reqwest = { version = "0.11", default-features = false, features = ["json", "str
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.71"
 tokio = { version = "1.14", features = ["full"] }
-tower = { path = "../../tower/tower", features = ["util"] }
+tower = { path = "../../../libs/tower/tower", features = ["util"] }
 tower-http = { version = "0.4", features = ["map-response-body", "timeout"] }
 
 [package.metadata.docs.rs]

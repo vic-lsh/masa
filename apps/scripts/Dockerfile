@@ -62,7 +62,7 @@ else \
 fi
 
 # Final stage - create a slimmer image
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 ARG APP
 ARG LOG_LEVEL=warn

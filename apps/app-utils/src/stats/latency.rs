@@ -1,6 +1,10 @@
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Duration,
 };
 
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -119,6 +123,10 @@ impl LatencyDist {
         }
     }
 
+    pub fn average(&self) -> f64 {
+        self.records.iter().sum::<u64>() as f64 / self.records.len() as f64
+    }
+
     pub fn len(&self) -> usize {
         self.records.len()
     }
@@ -138,6 +146,64 @@ impl LatencyDist {
             self.sorted = true;
         }
         &self.records
+    }
+}
+
+pub struct StatsTracker {
+    trackers: HashMap<String, SyncLatencyTracker>,
+}
+
+impl StatsTracker {
+    pub fn new(keys: Vec<&str>, print: bool) -> Self {
+        let mut trackers = HashMap::new();
+        let mut consumers = HashMap::new();
+        for k in &keys {
+            let (tracker, consumer) = new_latency_tracker(k.to_string());
+            trackers.insert(k.to_string(), tracker);
+            consumers.insert(k.to_string(), consumer);
+        }
+
+        tokio::spawn(async move {
+            const PERCENTILES: [f64; 4] = [50.0, 90.0, 99.0, 99.9];
+            const DELTA_MS: u64 = 100;
+
+            let name_width = consumers
+                .iter()
+                .map(|(k, _)| k.len())
+                .max()
+                .expect("max must exist")
+                + 4;
+
+            let mut millis = 0;
+            loop {
+                tokio::time::sleep(Duration::from_millis(DELTA_MS)).await;
+                if !print {
+                    for (_k, c) in consumers.iter_mut() {
+                        let _ = c.consume();
+                    }
+                    continue;
+                };
+                millis += DELTA_MS;
+                println!("#{}", millis);
+                for (k, c) in consumers.iter_mut() {
+                    let mut dist = c.consume();
+                    print!("{: <width$}", k, width = name_width);
+                    print!("# recs {: <width$}", dist.len(), width = 6);
+                    print!("avg: {} ", dist.average());
+                    for p in PERCENTILES {
+                        print!("p{}: {} ", p, dist.percentile(p));
+                    }
+                    print!("\n");
+                }
+                print!("\n");
+            }
+        });
+
+        Self { trackers }
+    }
+
+    pub fn get(&self, k: &str) -> &SyncLatencyTracker {
+        self.trackers.get(k).unwrap()
     }
 }
 

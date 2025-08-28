@@ -3,28 +3,28 @@
 # Script to write docker container logs for each service to a file
 
 # Define the image names and a single tag
-declare -a image_names=(
+declare -a container_names=(
   "hotel_frontend"
-  "hotel_search"
-  "hotel_profile"
-  "hotel_rate" 
-  "hotel_reservation"
-  "hotel_user"
 )
 
-IMAGE_TAG="latest"
+source ./scripts/local/.env
 
-for ((i=0; i<${#image_names[@]}; i++)); do
-  service=${image_names[$i]}
-  
-  # Get the container ID for the current image
-  current_image="${image_names[$i]}:${IMAGE_TAG}"
-  container_id=$(docker ps --filter "ancestor=${current_image}" --format "{{.ID}}")
-  
-  # Send the command to follow logs
-  if [ -n "$container_id" ]; then
-    docker logs $container_id &> $1/$service.log
-  else
-    echo "Container with image ${image_names[$i]}:${IMAGE_TAG} not found"
-  fi
+declare -A replicated_services
+replicated_services["rate"]=$RATE_REPLICAS
+replicated_services["profile"]=$PROFILE_REPLICAS
+replicated_services["reservation"]=$RESERVATION_REPLICAS
+replicated_services["geo"]=$GEO_REPLICAS
+replicated_services["search"]=$SEARCH_REPLICAS
+replicated_services["user"]=$USER_REPLICAS
+
+for service in "${!replicated_services[@]}"; do
+    count="${replicated_services[$service]}"
+    for i in $(seq 1 $count); do
+      container_names+=("local-$service-service-$i")
+    done
+done
+
+for ((i=0; i<${#container_names[@]}; i++)); do
+  name=${container_names[$i]}
+  docker logs $name &> $1/$name.log
 done

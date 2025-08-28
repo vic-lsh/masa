@@ -1,6 +1,8 @@
 #[path = "../config.rs"]
 pub mod config;
 pub mod server;
+#[path = "../util.rs"]
+mod util;
 
 use std::fs::File;
 use std::io::BufReader;
@@ -32,7 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
 
-    let frontend_addr = format!("{}:{}", "[::]", cfg.frontend_port)
+    const PORT: u16 = 8000;
+    let frontend_addr = format!("{}:{}", "[::]", PORT)
         .parse()
         .expect("Failed to parse address");
     let frontend = FrontendImpl::new(cfg).await;
