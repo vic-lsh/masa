@@ -9,8 +9,10 @@ use std::time::{Duration, Instant};
 use tokio;
 use tonic::{Request, Response, Status};
 
-use crate::{config::SyntheticConfig, server::synthetic_tonic::child::Periodic, util};
+use crate::server::synthetic_tonic::child::Periodic;
 use app_utils::timing::time_now;
+use synthetic_app::config::SyntheticConfig;
+use synthetic_app::util;
 use synthetic_tonic::{child, child::child_server::Child};
 
 pub struct ChildImpl {
