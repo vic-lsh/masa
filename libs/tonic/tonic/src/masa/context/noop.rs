@@ -6,11 +6,11 @@ use crate::masa::context::read_context;
 use crate::{GrpcMethod, Request};
 
 use crate::body::BoxBody;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use crate::Response;
 use crate::Status;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
-use masa::{time_now};
+use masa::time_now;
 
 #[derive(Debug)]
 pub struct NoopPrioritySelector;
@@ -31,7 +31,6 @@ pub struct ParentContext {
     start_exec: Instant,
     last_before_poll: AtomicU64,
     compute_latency: AtomicU64,
-
 }
 
 #[derive(Debug, Clone)]
@@ -60,19 +59,20 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         let now = time_now();
         self.last_before_poll.store(now, Ordering::Release);
-        
+
         Ok(())
     }
 
     fn after_poll<Ret>(
-            &self,
-            poll: &std::task::Poll<Result<Response<Ret>, Status>>,
-        ) -> Result<(), Result<Response<Ret>, Status>> {
+        &self,
+        _poll: &std::task::Poll<Result<Response<Ret>, Status>>,
+    ) -> Result<(), Result<Response<Ret>, Status>> {
         let now = time_now();
         let last_before_poll = self.last_before_poll.load(Ordering::Acquire);
         assert!(last_before_poll != 0);
         let compute_latency = now - last_before_poll;
-        self.compute_latency.fetch_add(compute_latency, Ordering::AcqRel);
+        self.compute_latency
+            .fetch_add(compute_latency, Ordering::AcqRel);
 
         Ok(())
     }
@@ -83,7 +83,9 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         let compute_latency = self.compute_latency.load(Ordering::Acquire);
         // obtain the queue lat from header
         let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
-        let io_latency = e2e_latency.saturating_sub(compute_latency).saturating_sub(queue_latency);
+        let io_latency = e2e_latency
+            .saturating_sub(compute_latency)
+            .saturating_sub(queue_latency);
 
         // Get the task of the request
         log::info!("Request {:?} completed. E2E latency: {}, Compute latency: {}, IO latency: {}, Queue latency: {}",
