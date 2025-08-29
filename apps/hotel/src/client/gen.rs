@@ -17,6 +17,7 @@ fn get_user(rng: &mut StdRng) -> (String, String) {
     (user_name, pass_word)
 }
 
+#[allow(dead_code)]
 pub fn get_ping_request() -> PingRequest {
     PingRequest {
         message: "ping".to_string(),
