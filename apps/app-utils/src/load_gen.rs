@@ -521,12 +521,16 @@ where
             )));
         }
 
+        log::info!("Before Connection");
+
         let mut load_gen = {
             let client = {
                 let mut client = C::connect(gen_cfg.addr.clone()).await?;
                 C::ping(&mut client).await?;
                 client
             };
+
+            log::info!("Connected to {}", gen_cfg.addr);
 
             let load_gen = LoadGenerator::new(seed, gen_cfg.clone(), *rps, client, api_handlers);
             load_gen
