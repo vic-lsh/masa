@@ -27,6 +27,7 @@ impl PrioritySelector for LocalDeadlineIndirect {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ServerContext {
     // tracks latency distribution for each method provided by this server
     parent_distributions: RwLock<HashMap<String, LatencyDistribution>>,
@@ -44,6 +45,7 @@ impl ServerHooks for ServerContext {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ParentContext {
     method: GrpcMethod,
     ctx: Context,
@@ -155,6 +157,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ChildContext {
     duration_tracker: LatencyTracker,
 }
