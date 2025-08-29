@@ -1,8 +1,12 @@
+use crate::tonic;
 use app_utils::timing::time_now;
 use rand::thread_rng;
 use rand_distr::{Distribution, Exp, Normal, WeightedIndex};
 
-use crate::config;
+use crate::{
+    config,
+    util::tonic::child::{Fixed, Periodic},
+};
 
 pub struct Hop {
     pub service: usize,
@@ -86,6 +90,29 @@ impl From<config::LatencyDistribution> for LatencyDistribution {
                 fast_latency,
                 slow_duration_ms,
             },
+        }
+    }
+}
+
+impl LatencyDistribution {
+    pub fn presample(&self) -> tonic::child::Latency {
+        let latency = match self {
+            LatencyDistribution::Periodic {
+                slow_latency,
+                fast_latency,
+                slow_duration_ms,
+            } => tonic::child::latency::LatencyType::Periodic(Periodic {
+                slow_latency: *slow_latency,
+                fast_latency: *fast_latency,
+                slow_duration_ms: *slow_duration_ms as u32,
+            }),
+            x => tonic::child::latency::LatencyType::Fixed(Fixed {
+                latency: x.sample(),
+            }),
+        };
+
+        tonic::child::Latency {
+            latency_type: Some(latency),
         }
     }
 }
