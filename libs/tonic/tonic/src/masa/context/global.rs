@@ -8,6 +8,7 @@ use masa::Context;
 /// This policy always sets the deadline of each request as
 ///   d = start + SLO
 /// where start is the point in time when the original request from the client was sent out
+#[allow(unreachable_pub)]
 pub struct Global;
 
 impl PrioritySelector for Global {
@@ -17,6 +18,7 @@ impl PrioritySelector for Global {
 }
 
 #[derive(Debug)]
+#[allow(unreachable_pub)]
 pub struct ServerContext {}
 
 impl ServerHooks for ServerContext {
@@ -26,6 +28,7 @@ impl ServerHooks for ServerContext {
 }
 
 #[derive(Debug)]
+#[allow(unreachable_pub)]
 pub struct ParentContext {
     ctx: Context,
 }
@@ -66,6 +69,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 }
 
 #[derive(Debug, Clone)]
+#[allow(unreachable_pub)]
 pub struct ChildContext {}
 
 impl ClientHooks for ChildContext {

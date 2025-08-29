@@ -1,10 +1,10 @@
-mod local_direct;
-mod local_indirect;
+pub(crate) mod local_direct;
+pub(crate) mod local_indirect;
 
 use std::{collections::HashMap, sync::RwLock};
 
-pub use local_direct::LocalDeadlineDirect;
-pub use local_indirect::LocalDeadlineIndirect;
+pub(crate) use local_direct::LocalDeadlineDirect;
+pub(crate) use local_indirect::LocalDeadlineIndirect;
 use masa::LatencyDistribution;
 
 // TODO: tweak these values. should they be specific to each local priority selector?
