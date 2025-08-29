@@ -7,6 +7,7 @@ use yaml_rust::{Yaml, YamlEmitter};
 
 use crate::parser::{MethodConfig, ServiceConfig, SimulatorConfig};
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug, serde::Serialize, Clone)] // Added serde::Serialize and Clone
 pub struct ErrorRate {
     #[serde(rename = "distribution_type")]
