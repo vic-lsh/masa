@@ -38,6 +38,7 @@ impl ServerHooks for ServerContext {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ParentContext {
     method: GrpcMethod,
     ctx: Context,
@@ -129,6 +130,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ChildContext {}
 
 impl ClientHooks for ChildContext {
