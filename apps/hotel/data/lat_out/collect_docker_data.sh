@@ -2,7 +2,7 @@
 
 # Set rps and feature 
 RPS=5000
-FEATURE=prio_global
+FEATURE=fifo
 
 # change work dir 
 cd ../..
