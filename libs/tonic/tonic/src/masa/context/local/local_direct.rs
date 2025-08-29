@@ -15,6 +15,7 @@ use masa::{Context, LatencyDistribution, MethodId};
 /// where d_p is the deadline of the parent request and e_rem is an estimate for the remaining time
 /// left in the request after this child request executes. e_rem is estimated by sampling from the
 /// distribution of observed values for e_rem.
+#[allow(unreachable_pub)]
 pub struct LocalDeadlineDirect;
 
 impl PrioritySelector for LocalDeadlineDirect {
@@ -24,6 +25,8 @@ impl PrioritySelector for LocalDeadlineDirect {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
+#[allow(unreachable_pub)]
 pub struct ServerContext {
     // for every method on this server, tracks the remaining duration of the method after an outgoing request has finished
     child_distributions: RwLock<HashMap<String, LatencyDistribution>>,
@@ -39,6 +42,7 @@ impl ServerHooks for ServerContext {
 
 #[derive(Debug)]
 #[allow(dead_code)]
+#[allow(unreachable_pub)]
 pub struct ParentContext {
     method: GrpcMethod,
     ctx: Context,
@@ -131,6 +135,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
+#[allow(unreachable_pub)]
 pub struct ChildContext {}
 
 impl ClientHooks for ChildContext {

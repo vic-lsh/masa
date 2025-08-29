@@ -18,6 +18,7 @@ use masa::{Context, LatencyDistribution, LatencyTracker};
 ///   the distribution of observed durations
 ///   - t_now is the amount of time the parent request has already executed for
 ///   - e_curr is an estimate of the total duration of the child request, computed analogous to e_p
+#[allow(unreachable_pub)]
 pub struct LocalDeadlineIndirect;
 
 impl PrioritySelector for LocalDeadlineIndirect {
@@ -28,6 +29,7 @@ impl PrioritySelector for LocalDeadlineIndirect {
 
 #[derive(Debug)]
 #[allow(dead_code)]
+#[allow(unreachable_pub)]
 pub struct ServerContext {
     // tracks latency distribution for each method provided by this server
     parent_distributions: RwLock<HashMap<String, LatencyDistribution>>,
@@ -46,6 +48,7 @@ impl ServerHooks for ServerContext {
 
 #[derive(Debug)]
 #[allow(dead_code)]
+#[allow(unreachable_pub)]
 pub struct ParentContext {
     method: GrpcMethod,
     ctx: Context,
@@ -158,6 +161,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
+#[allow(unreachable_pub)]
 pub struct ChildContext {
     duration_tracker: LatencyTracker,
 }
