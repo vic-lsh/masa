@@ -1,5 +1,3 @@
-#[path = "../config.rs"]
-pub mod config;
 pub mod frontend {
     tonic::include_proto!("frontend");
 }
