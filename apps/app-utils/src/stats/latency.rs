@@ -165,7 +165,7 @@ impl StatsTracker {
 
         tokio::spawn(async move {
             const PERCENTILES: [f64; 4] = [50.0, 90.0, 99.0, 99.9];
-            const DELTA_MS: u64 = 100;
+            const DELTA_MS: u64 = 1000;
 
             let name_width = consumers
                 .iter()
