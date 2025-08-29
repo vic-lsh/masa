@@ -18,6 +18,7 @@ use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response
 use super::{read_context, ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
 
 #[derive(Debug)]
+#[allow(unreachable_pub)]
 pub struct SimplePrioritySelector;
 
 impl PrioritySelector for SimplePrioritySelector {
@@ -29,6 +30,7 @@ impl PrioritySelector for SimplePrioritySelector {
 /// A simple implementation of `ParentHooks`.
 #[derive(Debug)]
 #[allow(dead_code)]
+#[allow(unreachable_pub)]
 pub struct SimpleParentContext {
     method: GrpcMethod,
     ctx: Context,
@@ -47,6 +49,7 @@ pub struct SimpleParentContext {
 
 /// A simple implementation of `ClientHooks`.
 #[derive(Debug, Clone)]
+#[allow(unreachable_pub)]
 pub struct SimpleChildContext {
     method: GrpcMethod,
     present_tracker: LatencyTracker,
@@ -55,6 +58,7 @@ pub struct SimpleChildContext {
 
 #[derive(Debug)]
 #[allow(dead_code)]
+#[allow(unreachable_pub)]
 pub struct SimpleServerContext {
     service_name: &'static str,
     num_early_returns: Arc<AtomicUsize>,

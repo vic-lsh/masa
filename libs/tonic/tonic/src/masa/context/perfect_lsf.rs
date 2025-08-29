@@ -11,6 +11,7 @@ use masa::{time_now, Context};
 /// and `rem` is the sum of all latencies at the remainig hops of the
 /// end-to-end request.
 /// This policy expects that `rem` is known in advance and is placed in the request header.
+#[allow(unreachable_pub)]
 pub struct PerfectLSF;
 
 impl PrioritySelector for PerfectLSF {
@@ -20,6 +21,7 @@ impl PrioritySelector for PerfectLSF {
 }
 
 #[derive(Debug)]
+#[allow(unreachable_pub)]
 pub struct ServerContext {}
 
 impl ServerHooks for ServerContext {
@@ -29,6 +31,7 @@ impl ServerHooks for ServerContext {
 }
 
 #[derive(Debug)]
+#[allow(unreachable_pub)]
 pub struct ParentContext {
     ctx: Context,
 }
@@ -76,6 +79,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 }
 
 #[derive(Debug, Clone)]
+#[allow(unreachable_pub)]
 pub struct ChildContext {}
 
 impl ClientHooks for ChildContext {
