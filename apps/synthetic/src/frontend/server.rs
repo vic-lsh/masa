@@ -31,14 +31,12 @@ pub struct FrontendImpl {
     children: Vec<ChildClient<LoadBalancedChannel>>,
     constant_replicas: u8,
     next_constant_replica: AtomicU8,
-    presampled_services: usize,
     presampled_services_offset: usize,
     presampled_request_types: HashMap<String, Vec<util::Hop>>,
 }
 
 impl FrontendImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
-        let presampled_services = config.child_presampled_services.len();
         let mut services = vec![1];
         services.extend(vec![config.child_constant_replicas]);
         let presampled_services_offset = services.len();
@@ -66,7 +64,6 @@ impl FrontendImpl {
             constant_replicas: config.child_constant_replicas,
             next_constant_replica: AtomicU8::new(0),
             presampled_request_types,
-            presampled_services,
             presampled_services_offset,
         }
     }
