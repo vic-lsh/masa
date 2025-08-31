@@ -178,7 +178,7 @@ services:
     networks:
       - hotel_network
     ports:
-      - "${FRONTEND_PORT}:8000"
+      - "${FRONTEND_PORT}:8660"
     depends_on:
       - user-service
       - reservation-service
