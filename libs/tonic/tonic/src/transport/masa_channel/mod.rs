@@ -33,9 +33,19 @@ impl Channel {
             http.enforce_http(false);
 
             let uri = endpoint.uri.clone();
-            let connection = Connection::connect(endpoint.connector(http), endpoint)
-                .await
-                .expect(&format!("failed to connect to endpoint {}", uri));
+            let connection = loop {
+                match Connection::connect(endpoint.connector(http.clone()), endpoint.clone()).await {
+                    Ok(conn) => {
+                        log::info!("connected to endpoint {}", uri);
+                        break conn;
+                    },
+                    Err(e) => {
+                        eprintln!("failed to connect to endpoint {}: {}. Retrying...", uri, e);
+                        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    }
+                }
+            };
+
             connections.push(connection);
         }
         let svc = Balance::new(connections.into_iter());
