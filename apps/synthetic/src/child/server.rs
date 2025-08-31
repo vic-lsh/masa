@@ -1,19 +1,14 @@
-pub mod synthetic_tonic {
-    pub mod child {
-        tonic::include_proto!("child");
-    }
-}
-
 use std::time::{Duration, Instant};
 
 use tokio;
 use tonic::{Request, Response, Status};
 
-use crate::server::synthetic_tonic::child::Periodic;
 use app_utils::timing::time_now;
 use synthetic_app::config::SyntheticConfig;
+use synthetic_app::tonic::{child, child::child_server::Child};
 use synthetic_app::util;
-use synthetic_tonic::{child, child::child_server::Child};
+
+use synthetic_app::tonic::child::Periodic;
 
 pub struct ChildImpl {
     constant_latency: util::LatencyDistribution,

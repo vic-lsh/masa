@@ -8,9 +8,9 @@ use structopt::StructOpt;
 use tonic::transport::Server;
 
 use app_utils::logging::init_logging;
-use server::synthetic_tonic::child::child_server::ChildServer;
 use server::ChildImpl;
 use synthetic_app::config::SyntheticConfig;
+use synthetic_app::tonic::child::child_server::ChildServer;
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Synthetic Args")]
