@@ -21,7 +21,7 @@ pub mod hotel_tonic {
 
 use crate::config::HotelConfig;
 use app_utils::channel::LoadBalancedChannel;
-use hotel_tonic::review::review_client::ReviewClient;
+// use hotel_tonic::review::review_client::ReviewClient;
 use std::time::Instant;
 
 use tonic::{Request, Response, Status};
