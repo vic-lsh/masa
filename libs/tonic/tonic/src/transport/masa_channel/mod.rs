@@ -34,11 +34,12 @@ impl Channel {
 
             let uri = endpoint.uri.clone();
             let connection = loop {
-                match Connection::connect(endpoint.connector(http.clone()), endpoint.clone()).await {
+                match Connection::connect(endpoint.connector(http.clone()), endpoint.clone()).await
+                {
                     Ok(conn) => {
                         log::info!("connected to endpoint {}", uri);
                         break conn;
-                    },
+                    }
                     Err(e) => {
                         eprintln!("failed to connect to endpoint {}: {}. Retrying...", uri, e);
                         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
