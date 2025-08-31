@@ -1,7 +1,7 @@
-ARG APP
 
 FROM rustlang/rust:nightly-slim AS builder
 
+ARG APP
 ARG FEATURES
 
 RUN apt-get update
@@ -13,52 +13,17 @@ RUN apt-get install -y\
         libssl-dev
 
 # Create a new empty shell project
-WORKDIR /usr/src/app
-RUN cargo init
-
-# Copy over dependencies and libs.
-# Order these from least to most likely to be modified.
-COPY Cargo.toml Cargo.lock* ./
-COPY 3rd_party ./3rd_party
-COPY libs ./libs
-COPY apps/app-util-macros/ ./apps/app-util-macros/
-COPY apps/app-utils/ ./apps/app-utils/
-
-COPY apps/hotel/Cargo.toml ./apps/hotel/Cargo.toml
-COPY apps/socialnet/Cargo.toml ./apps/socialnet/Cargo.toml
-COPY apps/synthetic/Cargo.toml ./apps/synthetic/Cargo.toml
-COPY apps/mssim/generic-service/Cargo.toml ./apps/mssim/generic-service/Cargo.toml
-RUN mkdir apps/mssim/generic-service/src 
-RUN touch apps/mssim/generic-service/src/lib.rs
-COPY apps/mssim/simulator/Cargo.toml ./apps/mssim/simulator/Cargo.toml
-RUN mkdir apps/mssim/simulator/src 
-RUN touch apps/mssim/simulator/src/lib.rs
-
-ARG APP
-RUN if [ -z "$APP" ]; then \
-    echo "Error: APP argument is required" && exit 1; \
-    fi
-WORKDIR /usr/src/app/apps/${APP}
-RUN mkdir src
-RUN touch src/lib.rs
-
-# Build the dependencies first. This will be cached.
-RUN if [ -z "$FEATURES" ]; then\
-  cargo build --release --lib;\
-else \
-  cargo build --release --lib --features ${FEATURES};\
-fi
-WORKDIR /usr/src/app/
+WORKDIR /usr/src/masa
 
 # build every service in the app
 # Note: we build every service once here. They're cached then reused when we
 # generate per-service image in the second stage below.
-COPY apps ./apps
-WORKDIR /usr/src/app/apps/${APP}
+COPY . .
+WORKDIR /usr/src/masa/apps/${APP}
 RUN if [ -z "$FEATURES" ]; then\
-  cargo build --release;\
+  cargo build -p ${APP} --bins --release;\
 else \
-  cargo build --release --features ${FEATURES};\
+  cargo build -p ${APP} --bins --release --features ${FEATURES};\
 fi
 
 # Final stage - create a slimmer image
@@ -80,7 +45,7 @@ RUN apt-get install -y\
         libssl-dev
 
 # Copy the built executable from the builder stage
-COPY --from=builder /usr/src/app/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
+COPY --from=builder /usr/src/masa/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
 COPY apps/${APP}/scripts/local/config.docker.json /usr/config.json
 
 ENV BINARY_NAME=${BINARY_NAME}
