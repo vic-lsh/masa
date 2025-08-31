@@ -1,8 +1,4 @@
-#[path = "../config.rs"]
-mod config;
 mod server;
-#[path = "../util.rs"]
-mod util;
 
 use std::fs::File;
 use std::io::BufReader;
@@ -12,9 +8,9 @@ use structopt::StructOpt;
 use tonic::transport::Server;
 
 use app_utils::logging::init_logging;
-use config::SyntheticConfig;
 use server::synthetic_tonic::child::child_server::ChildServer;
 use server::ChildImpl;
+use synthetic_app::config::SyntheticConfig;
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Synthetic Args")]
