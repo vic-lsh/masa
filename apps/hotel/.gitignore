@@ -3,3 +3,4 @@ tmp_*.log
 **/tmp_*/*.csv
 
 tmp
+data/lat_out

@@ -1,5 +1,4 @@
 {
-  "ExecutorThreads": 1,
   "Hotels": 1000,
   "CacheConns": 32,
   "ProbCacheMiss": 20,
