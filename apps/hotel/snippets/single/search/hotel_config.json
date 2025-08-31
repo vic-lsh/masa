@@ -1,5 +1,4 @@
 {
-	"ExecutorThreads": 0,
 	"Hotels": 1024,
 	"Payload": 1024,
 	"CacheConns": 32,
