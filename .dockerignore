@@ -5,6 +5,8 @@ apps/*/data
 apps/*/snippets
 apps/scripts
 
-apps/scripts/hotel
-!apps/hotel/scripts/docker
-!apps/hotel/scripts/local
+apps/hotel/scripts
+!apps/hotel/scripts/gen_config.json
+!apps/hotel/scripts/docker/entrypoint.sh
+!apps/hotel/scripts/local/config.docker.json
+
