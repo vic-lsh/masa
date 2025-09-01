@@ -33,7 +33,8 @@ assert_file_exists() {
 }
 
 ls -la "data/out/$exp_name"
-ls -la "data/out/$exp_name/0"
+ls -la "data/out/$exp_name/done"
+ls -la "data/out/$exp_name/0/fifo"
 # assert result files exist
 assert_file_exists "data/out/$exp_name/done"
 assert_file_exists "data/out/$exp_name/0/fifo/r1000_Reservation.csv"
