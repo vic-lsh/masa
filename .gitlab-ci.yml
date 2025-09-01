@@ -67,6 +67,7 @@ test_e2e_hotel:
   tags:
     - on-host
   script:
+    - groups $(whoami)
     - ./scripts/test_e2e_hotel.sh
 
 # Optional: Use a third party library to generate gitlab junit reports
