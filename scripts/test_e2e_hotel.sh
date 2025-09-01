@@ -33,10 +33,10 @@ assert_file_exists() {
 }
 
 # assert result files exist
-assert_file_exists "data/out/ci/done"
-assert_file_exists "data/out/ci/0/fifo/r1000_Reservation.csv"
-assert_file_exists "data/out/ci/0/fifo/r1000_Search.csv"
-assert_file_exists "data/out/ci/0/prio_local/r1000_Reservation.csv"
-assert_file_exists "data/out/ci/0/prio_local/r1000_Search.csv"
-assert_file_exists "data/out/ci/0/prio_global/r1000_Reservation.csv"
-assert_file_exists "data/out/ci/0/prio_global/r1000_Search.csv"
+assert_file_exists "data/out/$exp_name/done"
+assert_file_exists "data/out/$exp_name/0/fifo/r1000_Reservation.csv"
+assert_file_exists "data/out/$exp_name/0/fifo/r1000_Search.csv"
+assert_file_exists "data/out/$exp_name/0/prio_local/r1000_Reservation.csv"
+assert_file_exists "data/out/$exp_name/0/prio_local/r1000_Search.csv"
+assert_file_exists "data/out/$exp_name/0/prio_global/r1000_Reservation.csv"
+assert_file_exists "data/out/$exp_name/0/prio_global/r1000_Search.csv"
