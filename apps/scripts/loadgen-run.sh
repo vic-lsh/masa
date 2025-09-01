@@ -28,11 +28,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+container_name=hotel_client_bench
+network=local_hotel_network
 
-# disable compiler warnings
-export RUSTFLAGS="-Awarnings"
+docker rm -f $container_name
 
-cargo run --release --bin ${app}_client_bench -- \
-   --gen-config ./scripts/gen_config.json \
-   $output_arg \
-   $save_logs_arg
+# Make sure that this is consistent with the network name created by docker compose
+docker run \
+    --name $container_name \
+    --network $network \
+    hotel_client_bench
