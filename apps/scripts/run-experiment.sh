@@ -64,16 +64,23 @@ do
     echo "---------- iteration $i ----------"
     for policy in $policies;
     do
-            echo "***** policy = $policy *****"
-            touch ./scripts/local/.env
-            if [[ -f ./scripts/get-env.sh ]]; then
-                ./scripts/get-env.sh > ./scripts/local/.env
-            fi
-            ./scripts/docker-run.sh --features $policy
-            ./scripts/loadgen-run.sh --output $out_dir/$i/$policy --save-logs
-            ./scripts/docker-save-logs.sh $out_dir/$i/$policy
-            ./scripts/docker-stop.sh
-            rm ./scripts/local/.env 
+        echo "***** policy = $policy *****"
+        touch ./scripts/local/.env
+        if [[ -f ./scripts/get-env.sh ]]; then
+            ./scripts/get-env.sh > ./scripts/local/.env
+        fi
+        ./scripts/docker-run.sh --features $policy
+
+        ./scripts/loadgen-run.sh --output $out_dir/$i/$policy --save-logs &
+        loadgen_pid=$!
+
+        # set up log file pipes so that container logs stream in as they run
+        ./scripts/docker-save-logs.sh --output $out_dir/$i/$policy --follow
+
+        wait $loadgen_pid
+
+        ./scripts/docker-stop.sh
+        rm ./scripts/local/.env
     done
 done
 touch $out_dir/done
