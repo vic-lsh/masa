@@ -177,8 +177,6 @@ services:
     restart: always
     networks:
       - hotel_network
-    ports:
-      - "${FRONTEND_PORT}:8660"
     depends_on:
       - user-service
       - reservation-service
