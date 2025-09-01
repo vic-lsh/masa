@@ -80,9 +80,12 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
         let io_latency = e2e_latency.saturating_sub(compute_latency).saturating_sub(queue_latency);
 
-        // Get the task of the request
-        log::info!("Request {:?} completed. E2E latency: {}, Compute latency: {}, IO latency: {}, Queue latency: {}",
-            self.method.id(), e2e_latency, compute_latency, io_latency, queue_latency);
+        let latency_str = format!("{},{},{}", e2e_latency, compute_latency, io_latency);
+
+        // insert the latency info to header
+        let res_header = _response.headers_mut();
+        let header_val = http::HeaderValue::from_str(&latency_str).unwrap();
+        res_header.insert("X-Request-Latency", header_val);
     }
 }
 
