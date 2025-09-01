@@ -1,6 +1,26 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Script to write docker container logs for each service to a file
+
+output_path=""
+follow="false"
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --follow)
+        follow="true"
+        shift 1
+        ;;
+    --output)
+        output_path=$2
+        shift 2
+        ;;
+    *)
+        echo "Unknown argument: $1"
+        exit 1
+        ;;
+    esac
+done
+
 
 # Define the image names and a single tag
 declare -a container_names=(
@@ -24,7 +44,12 @@ for service in "${!replicated_services[@]}"; do
     done
 done
 
+mkdir -p $output_path
 for ((i=0; i<${#container_names[@]}; i++)); do
-  name=${container_names[$i]}
-  docker logs $name &> $1/$name.log
+    name=${container_names[$i]}
+    if [[ "$follow" = "true" ]]; then
+        docker logs -f $name &> $output_path/$name.log &
+    else
+        docker logs $name &> $output_path/$name.log
+    fi
 done

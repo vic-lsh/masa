@@ -1,6 +1,7 @@
 #!/bin/bash
 
 services=(
+    "hotel_client_bench"
     "hotel_frontend"
     "hotel_geo"
     "hotel_rate"
