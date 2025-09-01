@@ -66,6 +66,7 @@ test_e2e_hotel:
   stage: verify
   script:
     - rustc --version && cargo --version # Print version info for debugging
+    - apt-get install -y jq
     - ./scripts/test_e2e_hotel.sh
 
 # Optional: Use a third party library to generate gitlab junit reports
