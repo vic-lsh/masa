@@ -26,15 +26,12 @@ echo "fifo" > $policy_config
 
 assert_file_exists() {
     if [ -f "$1" ]; then
-        echo "Error: File '$1' not found." >&2; exit 1;
-    else
         echo "Assertion passed: File '$1' exists"
+    else
+        echo "Error: File '$1' not found." >&2; exit 1;
     fi
 }
 
-ls -la "data/out/$exp_name"
-ls -la "data/out/$exp_name/done"
-ls -la "data/out/$exp_name/0/fifo"
 # assert result files exist
 assert_file_exists "data/out/$exp_name/done"
 assert_file_exists "data/out/$exp_name/0/fifo/r1000_Reservation.csv"
