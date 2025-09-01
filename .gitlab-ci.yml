@@ -66,7 +66,7 @@ test_e2e_hotel:
   image: docker:latest
   stage: verify
   script:
-    - apk update && apk add jq
+    - apk update && apk add jq file
     - ls
     - ls scripts
     - file ./scripts/test_e2e_hotel.sh
