@@ -62,6 +62,12 @@ test:cargo:
     - rustc --version && cargo --version # Print version info for debugging
     - ./scripts/test.sh
 
+test_e2e_hotel:
+  stage: verify
+  script:
+    - rustc --version && cargo --version # Print version info for debugging
+    - ./scripts/test_e2e_hotel.sh
+
 # Optional: Use a third party library to generate gitlab junit reports
 # test:junit-report:
 #   script:
