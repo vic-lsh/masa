@@ -66,8 +66,7 @@ test_e2e_hotel:
   image: docker:latest
   stage: verify
   script:
-    - rustc --version && cargo --version # Print version info for debugging
-    - apt-get install -y jq
+    - apk update && apk add jq
     - ./scripts/test_e2e_hotel.sh
 
 # Optional: Use a third party library to generate gitlab junit reports
