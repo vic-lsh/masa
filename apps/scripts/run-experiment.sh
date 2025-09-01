@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 pwd=$(pwd)
 if [[ "$pwd" != */apps/* ]]; then
     echo "Error: please run in an application directory" >&2

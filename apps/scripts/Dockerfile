@@ -46,10 +46,12 @@ RUN apt-get install -y\
 
 # Copy the built executable from the builder stage
 COPY --from=builder /usr/src/masa/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
+COPY --from=builder /usr/src/masa/apps/${APP}/scripts/docker/entrypoint.sh /usr/entrypoint.sh
 COPY apps/${APP}/scripts/local/config.docker.json /usr/config.json
+COPY apps/${APP}/scripts/gen_config.json /usr/gen_config.json
 
 ENV BINARY_NAME=${BINARY_NAME}
 ENV LOG_LEVEL=${LOG_LEVEL}
 
 ENTRYPOINT [ "sh", "-c" ]
-CMD ["RUST_LOG=${LOG_LEVEL} /usr/local/bin/${BINARY_NAME} --config /usr/config.json"]
+CMD ["/usr/entrypoint.sh"]
