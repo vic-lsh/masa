@@ -67,6 +67,8 @@ test_e2e_hotel:
   stage: verify
   script:
     - apk update && apk add jq
+    - ls
+    - ls scripts
     - ./scripts/test_e2e_hotel.sh
 
 # Optional: Use a third party library to generate gitlab junit reports
