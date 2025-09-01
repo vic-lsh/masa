@@ -1,3 +1,5 @@
+use log::info;
+use log::warn;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use std::collections::HashMap;
@@ -300,6 +302,32 @@ where
     async fn connect(dst: String) -> Result<Self::FrontendClient, tonic::transport::Error>;
 
     async fn ping(client: &mut Self::FrontendClient) -> Result<(), tonic::Status>;
+
+    async fn connect_with_retry(
+        dst: String,
+    ) -> Result<Self::FrontendClient, tonic::transport::Error> {
+        const MAX_RETRIES: usize = 5;
+        let mut retries = 0;
+        let mut backoff_secs = 1;
+        loop {
+            match Self::connect(dst.clone()).await {
+                Ok(c) => return Ok(c),
+                Err(e) => {
+                    retries += 1;
+                    if retries == MAX_RETRIES {
+                        return Err(e);
+                    }
+                    warn!(
+                        "Failed to connect to {}; {}/{} attempts; {}",
+                        dst, retries, MAX_RETRIES, e
+                    );
+
+                    tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+                    backoff_secs *= 2;
+                }
+            };
+        }
+    }
 }
 
 #[allow(async_fn_in_trait)]
@@ -523,8 +551,13 @@ where
 
         let mut load_gen = {
             let client = {
-                let mut client = C::connect(gen_cfg.addr.clone()).await?;
-                C::ping(&mut client).await?;
+                let mut client = C::connect_with_retry(gen_cfg.addr.clone())
+                    .await
+                    .expect(&format!("Should be able to connect to {}", gen_cfg.addr));
+                C::ping(&mut client)
+                    .await
+                    .expect("Should be able to ping to client");
+                info!("Connected to {}", gen_cfg.addr);
                 client
             };
 
