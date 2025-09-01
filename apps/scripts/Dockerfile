@@ -18,7 +18,13 @@ WORKDIR /usr/src/masa
 # build every service in the app
 # Note: we build every service once here. They're cached then reused when we
 # generate per-service image in the second stage below.
-COPY . .
+# COPY . .
+COPY Cargo.toml Cargo.toml
+COPY Cargo.lock Cargo.lock
+COPY 3rd_party 3rd_party
+COPY apps apps
+COPY libs libs
+
 WORKDIR /usr/src/masa/apps/${APP}
 RUN if [ -z "$FEATURES" ]; then\
   cargo build -p ${APP} --bins --release;\
