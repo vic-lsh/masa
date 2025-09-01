@@ -63,6 +63,7 @@ before_script:
 #     - ./scripts/test.sh
 
 test_e2e_hotel:
+  image: docker:latest
   stage: verify
   script:
     - rustc --version && cargo --version # Print version info for debugging
