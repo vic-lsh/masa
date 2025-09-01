@@ -25,7 +25,6 @@ impl PrioritySelector for NoopPrioritySelector {
 #[allow(dead_code)]
 pub struct ParentContext {
     method: GrpcMethod,
-    ctx: masa::Context,
 
     num_polled: AtomicUsize,
     start_exec: Instant,
@@ -49,7 +48,6 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Self {
         Self {
             method: _method,
-            ctx: read_context(_req),
             num_polled: AtomicUsize::new(0),
             start_exec: Instant::now(),
             last_before_poll: AtomicU64::new(0),
