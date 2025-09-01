@@ -8,7 +8,9 @@ cd apps/hotel
 
 exp_name=ci
 ci_config_path=./data/in/$exp_name
+exp_out_path=./data/out/$exp_name
 
+rm -rf $exp_out_path
 rm -rf $ci_config_path
 cp -r ./data/in/template $ci_config_path
 
@@ -22,12 +24,12 @@ echo "fifo" > $policy_config
 
 # run experiment
 
-measure_runtime() {
-    { time $cmd; } 2>&1 | awk '/real/ {print $2}'
-}
 
-runtime=$(measure_runtime "./scripts/run-experiment.sh $exp_name")
-echo "Experiment run took $runtime"
+temp_file=$(mktemp)
+/usr/bin/time -o "$temp_file" ./scripts/run-experiment.sh $exp_name
+echo "Experiment runtime:"
+cat "$temp_file"
+rm "$temp_file"
 
 assert_file_exists() {
     if [ -f "$1" ]; then
