@@ -63,13 +63,10 @@ stages:
 #     - ./scripts/test.sh
 
 test_e2e_hotel:
-  image: docker:latest
   stage: verify
+  tags:
+    - on-host
   script:
-    - apk update && apk add jq file bash
-    - ls
-    - ls scripts
-    - file ./scripts/test_e2e_hotel.sh
     - ./scripts/test_e2e_hotel.sh
 
 # Optional: Use a third party library to generate gitlab junit reports
