@@ -67,7 +67,7 @@ test_e2e_hotel:
   tags:
     - on-host
   script:
-    - ls
+    - ls -la
     - groups $(whoami) # make sure that gitlab runner is in the 'docker' group
     - ./scripts/test_e2e_hotel.sh
 
