@@ -14,9 +14,11 @@ use masa::Context;
 pub use tls::{client, server};
 
 #[cfg(not(feature = "masa"))]
+#[allow(missing_docs)]
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
 
 #[cfg(any(feature = "fifo", feature = "fifo_infra"))]
+#[allow(missing_docs)]
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
 
 #[cfg(any(
@@ -24,18 +26,23 @@ pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
     feature = "prio_local_early",
     feature = "fifo_early"
 ))]
+#[allow(missing_docs)]
 pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
 
 #[cfg(any(feature = "prio_global", feature = "prio_global_early",))]
+#[allow(missing_docs)]
 pub type DefaultPrioritySelector = global::Global;
 
 #[cfg(any(feature = "prio_local_direct"))]
+#[allow(missing_docs)]
 pub type DefaultPrioritySelector = local::LocalDeadlineDirect;
 
 #[cfg(any(feature = "prio_local_indirect"))]
+#[allow(missing_docs)]
 pub type DefaultPrioritySelector = local::LocalDeadlineIndirect;
 
 #[cfg(feature = "perfect_lsf")]
+#[allow(missing_docs)]
 pub type DefaultPrioritySelector = perfect_lsf::PerfectLSF;
 
 // TODO: rename this to be more general

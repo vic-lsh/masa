@@ -1,13 +1,3 @@
-pub mod synthetic_tonic {
-    pub mod frontend {
-        tonic::include_proto!("frontend");
-    }
-
-    pub mod child {
-        tonic::include_proto!("child");
-    }
-}
-
 use std::collections::HashMap;
 use std::iter::zip;
 use std::{
@@ -15,14 +5,14 @@ use std::{
     time::Instant,
 };
 
-use crate::config::SyntheticConfig;
-use crate::util;
 use app_utils::channel::LoadBalancedChannel;
 use app_utils::timing::time_now;
+use synthetic_app::config::SyntheticConfig;
+use synthetic_app::util;
 
 use tonic::{Request, Response, Status};
 
-use synthetic_tonic::{
+use synthetic_app::tonic::{
     child, child::child_client::ChildClient, child::Fixed, child::Periodic, frontend,
     frontend::frontend_server::Frontend,
 };
@@ -31,14 +21,12 @@ pub struct FrontendImpl {
     children: Vec<ChildClient<LoadBalancedChannel>>,
     constant_replicas: u8,
     next_constant_replica: AtomicU8,
-    presampled_services: usize,
     presampled_services_offset: usize,
     presampled_request_types: HashMap<String, Vec<util::Hop>>,
 }
 
 impl FrontendImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
-        let presampled_services = config.child_presampled_services.len();
         let mut services = vec![1];
         services.extend(vec![config.child_constant_replicas]);
         let presampled_services_offset = services.len();
@@ -66,7 +54,6 @@ impl FrontendImpl {
             constant_replicas: config.child_constant_replicas,
             next_constant_replica: AtomicU8::new(0),
             presampled_request_types,
-            presampled_services,
             presampled_services_offset,
         }
     }
@@ -175,28 +162,5 @@ fn child_latency_to_value(latency: &child::Latency) -> u64 {
             average.round() as u64
         }
         child::latency::LatencyType::Fixed(Fixed { latency }) => *latency,
-    }
-}
-
-impl util::LatencyDistribution {
-    fn presample(&self) -> child::Latency {
-        let latency = match self {
-            util::LatencyDistribution::Periodic {
-                slow_latency,
-                fast_latency,
-                slow_duration_ms,
-            } => child::latency::LatencyType::Periodic(Periodic {
-                slow_latency: *slow_latency,
-                fast_latency: *fast_latency,
-                slow_duration_ms: *slow_duration_ms as u32,
-            }),
-            x => child::latency::LatencyType::Fixed(Fixed {
-                latency: x.sample(),
-            }),
-        };
-
-        child::Latency {
-            latency_type: Some(latency),
-        }
     }
 }
