@@ -26,6 +26,7 @@ echo "fifo prio_global prio_local" > $policy_config
 
 assert_file_exists() {
     if [ -f "$1" ]; then
+        ls -la "data/out"
         echo "Error: File '$1' not found." >&2; exit 1;
     else
         echo "Assertion passed: File '$1' exists"
