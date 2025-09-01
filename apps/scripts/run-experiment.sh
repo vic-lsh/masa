@@ -16,6 +16,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
     --plot)
         plot="true"
+        echo "--plot provided: going to plot"
         shift 1
         ;;
     *)
@@ -87,5 +88,7 @@ done
 touch $out_dir/done
 
 if [[ "$plot" = "true" ]]; then
+    echo "Drawing experiment plots"
     ../scripts/plotting/plot-experiment.sh "$experiment"
+    echo "Finished drawing experiment plots"
 fi
