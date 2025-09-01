@@ -133,6 +133,20 @@ impl RequestType<HotelClient> for ReservationRequest {
 
 struct SearchRequest {}
 
+impl SearchRequest {
+    const HEADERS: [&'static str; 9] = [
+        "child_search_e2e_latency",
+        "child_search_io_latency",
+        "child_search_queue_latency",
+        "child_reserve_e2e_latency",
+        "child_reserve_io_latency",
+        "child_reserve_queue_latency",
+        "child_profile_e2e_latency",
+        "child_profile_io_latency",
+        "child_profile_queue_latency",
+    ];
+}
+
 impl RequestType<HotelClient> for SearchRequest {
     type ResponseType = frontend::SearchResponse;
 
@@ -152,11 +166,21 @@ impl RequestType<HotelClient> for SearchRequest {
     }
 
     fn response_output_headers(&self) -> Vec<String> {
-        Vec::new()
+        Self::HEADERS.iter().map(|s| s.to_string()).collect()
     }
 
     fn response_to_row(_metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
-        Vec::new()
+        vec![
+            _r.child_search_e2e_latency.to_string(),
+            _r.child_search_io_latency.to_string(),
+            _r.child_search_queue_latency.to_string(),
+            _r.child_reserve_e2e_latency.to_string(),
+            _r.child_reserve_io_latency.to_string(),
+            _r.child_reserve_queue_latency.to_string(),
+            _r.child_profile_e2e_latency.to_string(),
+            _r.child_profile_io_latency.to_string(),
+            _r.child_profile_queue_latency.to_string(),
+        ]
     }
 }
 
