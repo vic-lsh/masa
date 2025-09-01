@@ -22,7 +22,12 @@ echo "fifo" > $policy_config
 
 # run experiment
 
-./scripts/run-experiment.sh $exp_name
+measure_runtime() {
+    { time $cmd; } 2>&1 | awk '/real/ {print $2}'
+}
+
+runtime=$(measure_runtime "./scripts/run-experiment.sh $exp_name")
+echo "Experiment run took $runtime"
 
 assert_file_exists() {
     if [ -f "$1" ]; then
