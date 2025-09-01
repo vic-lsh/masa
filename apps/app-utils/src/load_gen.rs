@@ -526,7 +526,7 @@ where
         let mut load_gen = {
             let client = {
                 let mut client = C::connect(gen_cfg.addr.clone()).await?;
-                C::ping(&mut client).await?;
+                // C::ping(&mut client).await?;
                 client
             };
 
