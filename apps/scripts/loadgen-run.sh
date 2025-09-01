@@ -7,14 +7,14 @@ if [[ "$pwd" != */apps/* ]]; then
 fi
 app=$(basename $pwd)
 
-output_arg="--output-path /tmp/masa-load-gen"
 save_logs_arg=""
+output_path=
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
     --output)
-        output_arg="--output-path $2"
+        output_path=$2
         shift 2
         ;;
     --save-logs)
@@ -38,3 +38,13 @@ docker run \
     --name $container_name \
     --network $network \
     hotel_client_bench
+
+# this should be hard-coded in the docker entrypoint.sh
+container_trace_path="/tmp/masa-load-gen"
+
+# Copy traces from inside the container to outside
+mkdir -p $output_path
+docker cp $container_name:$container_trace_path $output_path
+# hacky way to make sure that the trace files are actually placed in $output_path
+mv $output_path/masa-load-gen/* $output_path
+rm -rf $output_path/masa-load-gen
