@@ -26,7 +26,7 @@ echo "fifo" > $policy_config
 
 
 temp_file=$(mktemp)
-/usr/bin/time -o "$temp_file" ./scripts/run-experiment.sh $exp_name
+/usr/bin/time -o "$temp_file" ./scripts/run-experiment.sh $exp_name --prefix ci
 echo "Experiment runtime:"
 cat "$temp_file"
 rm "$temp_file"

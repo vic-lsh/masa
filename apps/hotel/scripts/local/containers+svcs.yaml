@@ -1,7 +1,7 @@
 services:
   rate-mongo:
     image: mongo:7.0
-    container_name: "rate_mongo"
+    container_name: "${CONTAINER_PREFIX:-}rate_mongo"
     command: --port 27003
     restart: always
     networks:
@@ -15,7 +15,7 @@ services:
 
   rate-memcached:
     image: memcached:1.6
-    container_name: "rate_memcached"
+    container_name: "${CONTAINER_PREFIX:-}rate_memcached"
     command: --port 11003 --threads 4
     restart: always
     networks:
@@ -41,7 +41,7 @@ services:
 
   profile-mongo:
     image: mongo:7.0
-    container_name: "profile_mongo"
+    container_name: "${CONTAINER_PREFIX:-}profile_mongo"
     command: --port 27004
     restart: always
     networks:
@@ -55,7 +55,7 @@ services:
 
   profile-memcached:
     image: memcached:1.6
-    container_name: "profile_memcached"
+    container_name: "${CONTAINER_PREFIX:-}profile_memcached"
     command: --port 11004 --threads 4
     restart: always
     networks:
@@ -81,7 +81,7 @@ services:
 
   reservation-mongo:
     image: mongo:7.0
-    container_name: "reservation_mongo"
+    container_name: "${CONTAINER_PREFIX:-}reservation_mongo"
     command: --port 27005
     restart: always
     networks:
@@ -95,7 +95,7 @@ services:
 
   reservation-memcached:
     image: memcached:1.6
-    container_name: "reservation_memcached"
+    container_name: "${CONTAINER_PREFIX:-}reservation_memcached"
     command: --port 11005 --threads 4
     restart: always
     networks:
@@ -121,7 +121,7 @@ services:
 
   user-mongo:
     image: mongo:7.0
-    container_name: "user_mongo"
+    container_name: "${CONTAINER_PREFIX:-}user_mongo"
     command: --port 27006
     restart: always
     networks:
@@ -173,7 +173,7 @@ services:
 
   hotel-frontend-service:
     image: hotel_frontend:latest
-    container_name: "hotel_frontend"
+    container_name: "${CONTAINER_PREFIX:-}hotel_frontend"
     restart: always
     networks:
       - hotel_network

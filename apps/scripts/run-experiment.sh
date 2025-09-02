@@ -10,12 +10,22 @@ fi
 app=$(basename $pwd)
 experiment=$1
 plot="false"
+prefix=""
+skip_build=""
 shift 1
 
 while [[ $# -gt 0 ]]; do
     case $1 in
     --plot)
         plot="true"
+        shift 1
+        ;;
+    --prefix)
+        prefix="--prefix $2"
+        shift 2
+        ;;
+    --skip-build)
+        skip_build="--skip-build"
         shift 1
         ;;
     *)
@@ -70,7 +80,7 @@ do
         if [[ -f ./scripts/get-env.sh ]]; then
             ./scripts/get-env.sh > ./scripts/local/.env
         fi
-        ./scripts/docker-run.sh --features $policy
+        ./scripts/docker-run.sh --features $policy $prefix $skip_build
 
         ./scripts/loadgen-run.sh --output $out_dir/$i/$policy --save-logs &
         loadgen_pid=$!
@@ -80,7 +90,7 @@ do
 
         wait $loadgen_pid
 
-        ./scripts/docker-stop.sh
+        ./scripts/docker-stop.sh $prefix
         rm ./scripts/local/.env
     done
 done
