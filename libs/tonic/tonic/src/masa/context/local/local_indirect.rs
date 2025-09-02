@@ -18,6 +18,7 @@ use masa::{Context, LatencyDistribution, LatencyTracker};
 ///   the distribution of observed durations
 ///   - t_now is the amount of time the parent request has already executed for
 ///   - e_curr is an estimate of the total duration of the child request, computed analogous to e_p
+#[allow(dead_code)]
 #[allow(unreachable_pub)]
 pub struct LocalDeadlineIndirect;
 
