@@ -8,6 +8,7 @@ use masa::Context;
 /// This policy always sets the deadline of each request as
 ///   d = start + SLO
 /// where start is the point in time when the original request from the client was sent out
+#[allow(dead_code)]
 #[allow(unreachable_pub)]
 pub struct Global;
 

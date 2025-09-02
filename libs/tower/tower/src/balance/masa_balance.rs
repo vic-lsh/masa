@@ -1,3 +1,5 @@
+//! Masa's reimplementation of tower's balance module.
+
 use std::{
     marker::PhantomData,
     task::{Context, Poll},
@@ -5,9 +7,10 @@ use std::{
 
 use tower_service::Service;
 
-// minimal reimplementation of crate::balance::p2c::Balance:
-// - doesn't support changes to the set of services
-// - uses round-robin for load balancing
+/// minimal reimplementation of crate::balance::p2c::Balance:
+/// - doesn't support changes to the set of services
+/// - uses round-robin for load balancing
+#[allow(missing_debug_implementations)]
 pub struct Balance<S, Req> {
     services: Vec<S>,
     next: usize,
@@ -15,6 +18,7 @@ pub struct Balance<S, Req> {
 }
 
 impl<S, Req> Balance<S, Req> {
+    /// Create a new Masa balance.
     pub fn new(list: impl Iterator<Item = S>) -> Self {
         let services = list.collect();
         Self {
