@@ -40,10 +40,10 @@ use tower::{
 
 use masa::PriorityHint;
 
-pub type Svc =
+pub(crate) type Svc =
     Either<Connection, BoxService<Request<BoxBody>, Response<hyper::Body>, crate::Error>>;
 
-pub const DEFAULT_BUFFER_SIZE: usize = 1024;
+pub(crate) const DEFAULT_BUFFER_SIZE: usize = 1024;
 
 /// A default batteries included `transport` channel.
 ///
@@ -77,7 +77,7 @@ pub struct Channel {
 ///
 /// This is returned by the `Service::call` on [`Channel`].
 pub struct ResponseFuture {
-    pub inner: buffer::future::ResponseFuture<<Svc as Service<Request<BoxBody>>>::Future>,
+    pub(crate) inner: buffer::future::ResponseFuture<<Svc as Service<Request<BoxBody>>>::Future>,
 }
 
 impl Channel {
