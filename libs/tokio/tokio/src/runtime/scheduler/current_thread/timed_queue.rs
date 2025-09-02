@@ -22,8 +22,7 @@ impl Queue for TimedQueue {
     type Item = Notified;
 
     fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
-        let timer = item.timer();
-        timer.set_enqueue_time();
+        item.timer().set_enqueue_time();
         self.inner.push(item)
     }
 
