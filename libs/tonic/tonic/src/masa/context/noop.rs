@@ -4,6 +4,8 @@ use super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
 use crate::{GrpcMethod, Request};
 
 #[derive(Debug)]
+#[allow(dead_code)]
+#[allow(unreachable_pub)]
 pub struct NoopPrioritySelector;
 
 impl PrioritySelector for NoopPrioritySelector {
@@ -14,13 +16,16 @@ impl PrioritySelector for NoopPrioritySelector {
 
 #[derive(Debug)]
 #[allow(dead_code)]
+#[allow(unreachable_pub)]
 pub struct ParentContext {}
 
 #[derive(Debug, Clone)]
+#[allow(unreachable_pub)]
 pub struct ChildContext {}
 
 #[derive(Debug)]
 #[allow(dead_code)]
+#[allow(unreachable_pub)]
 pub struct ServerContext {}
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
