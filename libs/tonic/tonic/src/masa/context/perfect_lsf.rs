@@ -2,7 +2,7 @@ use crate::{masa::context::read_context, GrpcMethod, Request, Status};
 use std::sync::Arc;
 
 use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
-use masa::{time_now, Context};
+use masa::Context;
 
 #[derive(Debug)]
 /// This policy always sets the deadline of each request as
@@ -11,6 +11,7 @@ use masa::{time_now, Context};
 /// and `rem` is the sum of all latencies at the remainig hops of the
 /// end-to-end request.
 /// This policy expects that `rem` is known in advance and is placed in the request header.
+#[allow(dead_code)]
 #[allow(unreachable_pub)]
 pub struct PerfectLSF;
 
@@ -21,6 +22,7 @@ impl PrioritySelector for PerfectLSF {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 #[allow(unreachable_pub)]
 pub struct ServerContext {}
 
@@ -31,6 +33,7 @@ impl ServerHooks for ServerContext {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 #[allow(unreachable_pub)]
 pub struct ParentContext {
     ctx: Context,
@@ -79,6 +82,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 #[allow(unreachable_pub)]
 pub struct ChildContext {}
 
