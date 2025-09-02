@@ -13,6 +13,6 @@ It supports:
 Minimal example to run this project:
 
 ``` bash
-$ cd runner
+$ cd simulator
 $ cargo run -- --input ./test_config.json
 ```

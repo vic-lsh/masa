@@ -58,7 +58,7 @@ pub fn generate_service_configs(config: &SimulatorConfig) -> Result<()> {
     }
 
     // making hashmap to store the configs for each service
-    let mut all_service_configs: HashMap<String, GenericServiceServiceConfig> = HashMap::new();
+    let mut all_service_configs: HashMap<&str, GenericServiceServiceConfig> = HashMap::new();
 
     // populating the hashmap
     for (service_name, service_config) in &config.services {
@@ -70,7 +70,7 @@ pub fn generate_service_configs(config: &SimulatorConfig) -> Result<()> {
         };
 
         // Insert the service's config into the map, using the service name as the key
-        all_service_configs.insert(service_name.clone(), generic_service_config);
+        all_service_configs.insert(service_name.as_str(), generic_service_config);
     }
 
     // Serialize the entire map containing all service configs

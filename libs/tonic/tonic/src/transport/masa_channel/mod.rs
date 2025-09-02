@@ -1,3 +1,5 @@
+//! Masa's implementation of tonic's channel.
+
 use super::service::{Connection, SharedExec};
 use crate::body::BoxBody;
 use crate::transport::channel::{ResponseFuture, Svc, DEFAULT_BUFFER_SIZE};
@@ -14,15 +16,17 @@ use tower::{
 
 use masa::PriorityHint;
 
-// minimal reimplementation of crate::transport::channel::Channel:
-// - uses a fixed list of services for load balancing and eagerly connects to them
-// - uses our custom load balancing logic in tower (the Balance struct)
+/// minimal reimplementation of crate::transport::channel::Channel:
+/// - uses a fixed list of services for load balancing and eagerly connects to them
+/// - uses our custom load balancing logic in tower (the Balance struct)
 #[derive(Clone)]
+#[allow(missing_debug_implementations)]
 pub struct Channel {
     svc: Buffer<Svc, Request<BoxBody>>,
 }
 
 impl Channel {
+    /// Create a new Masa channel.
     pub async fn new(list: impl Iterator<Item = Endpoint>) -> Self {
         let mut connections = Vec::new();
         for endpoint in list {
