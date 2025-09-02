@@ -18,6 +18,7 @@ use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response
 use super::{read_context, ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
 
 #[derive(Debug)]
+#[allow(dead_code)]
 #[allow(unreachable_pub)]
 pub struct SimplePrioritySelector;
 
