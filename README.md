@@ -150,25 +150,6 @@ docker stats
 
 where `<policy>` is one of the policy feature flags. If you just want to get the application to run, use `fifo`.
 
-#### tmux-based workload run scripts (legacy)
-
-WARNING: This section is outdated and the functionality is likely broken.
-
-NOTE: This is currently only supported for `hotel`.
-NOTE: some scripts no longer work out-of-the-box. Please run with docker compose instead.
-
-Running the Hotel application contains many configuration choices, including but not limited to:
-
-1. How many user-facing workflows to run in parallel (single workflow? multiple?)
-2. Server queueing policy (FIFO? Deadline-based?)
-3. Workload generation (How many requests per second? Does this change over time?)
-
-We have included scripts to simplify configuration. The scripts are in the `apps/hotel/snippets` folder. Snippets are grouped into sub-folders of workflow combinations. For example, `single/search` only runs search, whereas `search-reservation` generates requests for both workflows in parallel.
-
-Within each workflow subfolder, you will find a `run_snippet.sh` file. This file lists typical configurations one may want to run through (e.g., first run FIFO policy, then run deadline-based.)
-
-You will also find `gen_config.json` in each subfolder. This describes how the user workload is generated. The committed `gen_config.json` file incrementally builds up requests-per-second to increase load.
-
 #### K8s (work-in-progress)
 
 WARNING: This section is outdated and the functionality is likely broken.
