@@ -4122,6 +4122,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "mssim"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.16",
+ "futures",
+ "prost 0.13.5",
+ "reqwest 0.12.23",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "structopt",
+ "thiserror 2.0.16",
+ "tokio 1.47.1",
+ "tonic 0.13.1",
+ "tonic-build 0.13.1",
+ "tracing",
+ "tracing-subscriber",
+ "warp",
+ "yaml-rust",
+]
+
+[[package]]
 name = "multer"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6031,29 +6054,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9e9e0b4211b72e7b8b6e85c807d36c212bdb33ea8587f7569562a84df5465b1"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "simulator"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap 4.5.16",
- "futures",
- "prost 0.13.5",
- "reqwest 0.12.23",
- "serde",
- "serde_json",
- "serde_yaml",
- "structopt",
- "thiserror 2.0.16",
- "tokio 1.47.1",
- "tonic 0.13.1",
- "tonic-build 0.13.1",
- "tracing",
- "tracing-subscriber",
- "warp",
- "yaml-rust",
 ]
 
 [[package]]
