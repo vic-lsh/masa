@@ -36,14 +36,15 @@ if [[ ! -d "$in_dir" ]]; then
 fi
 
 mkdir -p $out_dir
-backup=/tmp/masa-save
+curr_ts=$(date +%s)
+backup=/tmp/masa-save-$curr_ts
 mkdir -p $backup
 # save previous config
 if [[ -f ./scripts/gen_config.json ]]; then
-    cp ./scripts/gen_config.json /tmp/masa-save/
+    cp ./scripts/gen_config.json $backup
 fi
 if [[ -f ./scripts/local/config.docker.json ]]; then
-    cp ./scripts/local/config.docker.json /tmp/masa-save/
+    cp ./scripts/local/config.docker.json $backup
 fi
 # load gen config and app config (if present) from $experiment
 cp $in_dir/gen_config.json ./scripts/
@@ -51,7 +52,7 @@ if [[ -f $in_dir/config.docker.json ]]; then
     cp $in_dir/config.docker.json ./scripts/local/
 fi
 # save old output just in case
-cp -r $out_dir /tmp/masa-save/
+cp -r $out_dir $backup
 # clear $out_dir and $plot_dir
 rm -rf $out_dir/*
 rm -rf $plot_dir
