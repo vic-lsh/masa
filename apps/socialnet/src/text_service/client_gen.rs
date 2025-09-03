@@ -1,6 +1,6 @@
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::time::sleep_until;
-use std::time::{Duration, Instant}; 
 use tokio::time::Instant as TokioInstant;
 
 use text_service::text_service_client::TextServiceClient;
@@ -8,13 +8,13 @@ use text_service::TextRequest;
 
 use csv::WriterBuilder;
 use futures::future;
+use rand::prelude::*;
+use rand::SeedableRng;
+use rand_distr::{Distribution, Zipf};
 use serde::Deserialize;
 use serde_json;
 use std::fs::File;
 use std::io::BufReader;
-use rand::prelude::*;
-use rand::SeedableRng;
-use rand_distr::{Zipf, Distribution};
 
 pub mod text_service {
     tonic::include_proto!("textservice");
@@ -77,7 +77,7 @@ async fn run_load_test(
             let u1 = zipf.sample(&mut rng) as u64;
             let u2 = zipf.sample(&mut rng) as u64;
             let url = generate_url(i, seed);
-            
+
             let start = Instant::now();
             let request = tonic::Request::new(TextRequest {
                 text: format!("@user{} @user{} Hello! Check {}", u1, u2, url),
@@ -86,7 +86,8 @@ async fn run_load_test(
             if let Ok(_) = txtsvc_client.compose_text(request).await {
                 let elapsed = start.elapsed().as_micros() as u64;
                 let is_good: u64 = {
-                    if elapsed < 50000 { // 50ms
+                    if elapsed < 50000 {
+                        // 50ms
                         1
                     } else {
                         0
@@ -94,7 +95,7 @@ async fn run_load_test(
                 };
                 let _ = csv_writer.send([rps, i, is_good, elapsed]);
                 if i % 1000 == 0 {
-                    println!("Request {} completed",i);
+                    println!("Request {} completed", i);
                 }
             }
         });
@@ -128,7 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .from_path(output_path)
             .expect("Failed to create CSV writer");
         csv_writer
-            .write_record(&["rps", "index", "is_good" ,"latency"])
+            .write_record(&["rps", "index", "is_good", "latency"])
             .expect("Failed to write header");
         while let Some([rps, i, is_good, lat]) = csv_writer_rx.recv().await {
             csv_writer

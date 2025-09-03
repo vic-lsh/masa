@@ -1,11 +1,10 @@
 use mongodb::Client as MongoClient;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use std::env;
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
-use tracing::{info, error};
-use std::env;
-
+use tracing::{error, info};
 
 use crate::url_shorten::db::{
     get_expanded_urls, get_shortened_urls, initialize_database, insert_url_mappings,
@@ -214,7 +213,8 @@ impl UrlShortenService for UrlShortenServiceImpl {
 
 pub async fn create_service(
 ) -> Result<UrlShortenServiceServer<UrlShortenServiceImpl>, Box<dyn std::error::Error>> {
-    let mongo_url = env::var("MONGO_URL").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
+    let mongo_url =
+        env::var("MONGO_URL").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
     let mongo_client = initialize_database(&mongo_url).await?;
     let service = UrlShortenServiceImpl::new(mongo_client);
 
