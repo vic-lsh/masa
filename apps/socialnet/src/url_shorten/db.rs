@@ -8,7 +8,6 @@ use std::collections::HashMap;
 
 use crate::url_shorten::Url;
 
-
 // Constants
 const DB_NAME: &str = "url-shorten";
 const COLLECTION_NAME: &str = "url-mappings";
