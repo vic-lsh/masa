@@ -20,7 +20,9 @@ pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
 
 #[cfg(any(feature = "fifo", feature = "fifo_infra"))]
 #[allow(missing_docs)]
-pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
+// TODO: revert back to noop for Fifo. Add another feature flag for tracing.
+// pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
+pub type DefaultPrioritySelector = tracing::Tracing;
 
 #[cfg(any(
     feature = "prio_local",
