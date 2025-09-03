@@ -9,6 +9,7 @@ mod timing;
 mod typing;
 
 pub use context::Context;
+pub use context::LatencyTrace;
 pub use distribution::Distribution;
 pub use flag::{
     FIFO, FIFO_EARLY, FIFO_INFRA, PRIO_CLASS, PRIO_CLASS_GLOBAL, PRIO_GLOBAL, PRIO_GLOBAL_EARLY,

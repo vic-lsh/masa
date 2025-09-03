@@ -5,10 +5,11 @@ use serde::{Deserialize, Serialize};
 use crate::{Api, Latency, RequestClass, RequestId, TestId, Timestamp};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct Trace {
-    pub io_latency_us: usize,
-    pub compute_latency_us: usize,
-    pub queue_latency_us: usize,
+pub struct LatencyTrace {
+    pub e2e_latency_us: u64,
+    pub io_latency_us: u64,
+    pub compute_latency_us: u64,
+    pub queue_latency_us: u64,
 }
 
 /// Represent a Masa context.
@@ -22,7 +23,7 @@ pub struct Context {
     start_at: Timestamp,
     deadline: Timestamp,
     frontend_elapse: Option<u64>,
-    traces: Option<HashMap<String, Trace>>,
+    latency_traces: Option<HashMap<String, LatencyTrace>>,
 }
 
 impl Context {
@@ -45,7 +46,7 @@ impl Context {
             start_at,
             deadline,
             frontend_elapse: None,
-            traces: None,
+            latency_traces: None,
         }
     }
 
@@ -104,8 +105,8 @@ impl Context {
         serde_json::to_string(&self).unwrap()
     }
 
-    pub fn record_trace(&mut self, id: &'static str, trace: Trace) {
-        let traces = self.traces.get_or_insert_with(HashMap::default);
+    pub fn record_trace(&mut self, id: &'static str, trace: LatencyTrace) {
+        let traces = self.latency_traces.get_or_insert_with(HashMap::default);
         traces.insert(id.into(), trace);
     }
 }

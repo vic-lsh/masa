@@ -3,6 +3,7 @@
 use crate::body::BoxBody;
 use crate::Response;
 use crate::{masa::context::read_context, GrpcMethod, Request, Status};
+use std::sync::Mutex;
 use std::{
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
@@ -12,7 +13,7 @@ use std::{
 };
 
 use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
-use masa::{time_now, Context};
+use masa::{time_now, Context, LatencyTrace};
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -40,7 +41,11 @@ impl ServerHooks for ServerContext {
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
 pub struct ParentContext {
-    ctx: Context,
+    // NOTE: this mutex should never be contended.
+    // We only access the ctx in the `finalize()` hook, which should only
+    // be invoked by one thread, and when all other accesses to ParentContext
+    // should have been dropped.
+    ctx: Mutex<Context>,
     method: GrpcMethod,
 
     num_polled: AtomicUsize,
@@ -57,7 +62,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Self {
         Self {
             method: _method,
-            ctx: read_context(req),
+            ctx: Mutex::new(read_context(req)),
             num_polled: AtomicUsize::new(0),
             start_exec: Instant::now(),
             last_before_poll: AtomicU64::new(0),
@@ -84,23 +89,28 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
-        // read the timer from the header
-        let e2e_latency = self.start_exec.elapsed().as_micros() as u64;
-        let compute_latency = self.compute_latency.load(Ordering::Acquire);
-        // obtain the queue lat from header
-        let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
-        let io_latency = e2e_latency
-            .saturating_sub(compute_latency)
-            .saturating_sub(queue_latency);
+        self.ctx
+            .lock()
+            .expect("taking ctx lock should succeed")
+            .record_trace(self.method.id(), self.get_latency_trace());
+    }
+}
 
-        let latency_str = format!(
-            "{},{},{},{}",
-            e2e_latency, compute_latency, io_latency, queue_latency
-        );
-        // insert the latency info to header
-        let res_header = _response.headers_mut();
-        let header_val = http::HeaderValue::from_str(&latency_str).unwrap();
-        res_header.insert("X-Request-Latency", header_val);
+impl ParentContext {
+    fn get_latency_trace(&self) -> LatencyTrace {
+        let e2e_latency_us = self.start_exec.elapsed().as_micros() as u64;
+        let compute_latency_us = self.compute_latency.load(Ordering::Acquire);
+        let queue_latency_us = tokio::task::obtain_task_queue_latency().as_micros() as u64;
+        let io_latency_us = e2e_latency_us
+            .saturating_sub(compute_latency_us)
+            .saturating_sub(queue_latency_us);
+
+        LatencyTrace {
+            e2e_latency_us,
+            compute_latency_us,
+            queue_latency_us,
+            io_latency_us,
+        }
     }
 }
 
