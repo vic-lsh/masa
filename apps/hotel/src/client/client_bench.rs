@@ -172,7 +172,14 @@ impl RequestType<HotelClient> for SearchRequest {
         Self::HEADERS.iter().map(|s| s.to_string()).collect()
     }
 
-    fn response_to_row(_metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
+    fn response_to_row(metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
+        let ctx_str = metadata
+            .get("ctx")
+            .expect("Masa context should exist")
+            .to_str()
+            .expect("Masa context should be readable as a string");
+        let _ctx = Context::from_json(ctx_str);
+
         // access the trace hashmap from the dederialized masa context
         todo!()
     }
