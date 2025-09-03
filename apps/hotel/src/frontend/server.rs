@@ -112,8 +112,6 @@ impl Frontend for FrontendImpl {
             out_date: request.out_date.clone(),
         };
         let search_resp = search_client.handle_nearby(search_req).await?;
-        let search_header = search_resp.metadata();
-
         let response = search_resp.into_inner();
 
         let mut reservation_client = self.reservation_client.clone();
