@@ -23,22 +23,7 @@ message SearchRequest {
 
 message SearchResponse { 
   repeated Hotel hotels = 1;
-
-  uint64 child_search_e2e_latency = 2;
-  uint64 child_search_compute_latency = 3;
-  uint64 child_search_io_latency = 4;
-  uint64 child_search_queue_latency = 5;
-
-  uint64 child_reserve_e2e_latency = 6;
-  uint64 child_reserve_compute_latency = 7;
-  uint64 child_reserve_io_latency = 8;
-  uint64 child_reserve_queue_latency = 9;
-
-  uint64 child_profile_e2e_latency = 10;
-  uint64 child_profile_compute_latency = 11;
-  uint64 child_profile_io_latency = 12;
-  uint64 child_profile_queue_latency = 13;
-  }
+}
 
 message Hotel {
   string name = 1;

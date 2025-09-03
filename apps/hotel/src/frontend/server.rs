@@ -82,17 +82,6 @@ impl FrontendImpl {
     }
 }
 
-// Helper function that obtain the e2e, io, and queue latencies from the metadata
-fn extract_latencies(metadata: &tonic::metadata::MetadataMap) -> (u64, u64, u64, u64) {
-    let latency = metadata.get("X-Request-Latency").unwrap().to_str().unwrap();
-    let latencies = latency.split(',').collect::<Vec<&str>>();
-    let e2e_latency = latencies.get(0).unwrap_or(&"0").parse().unwrap_or(0);
-    let compute_latency = latencies.get(1).unwrap_or(&"0").parse().unwrap_or(0);
-    let io_latency = latencies.get(2).unwrap_or(&"0").parse().unwrap_or(0);
-    let queue_latency = latencies.get(3).unwrap_or(&"0").parse().unwrap_or(0);
-    (e2e_latency, compute_latency, io_latency, queue_latency)
-}
-
 #[tonic::async_trait]
 impl Frontend for FrontendImpl {
     async fn handle_ping(
@@ -124,12 +113,6 @@ impl Frontend for FrontendImpl {
         };
         let search_resp = search_client.handle_nearby(search_req).await?;
         let search_header = search_resp.metadata();
-        let (
-            child_search_e2e_lat,
-            child_search_compute_lat,
-            child_search_io_lat,
-            child_search_queue_lat,
-        ) = extract_latencies(search_header);
 
         let response = search_resp.into_inner();
 
@@ -143,12 +126,6 @@ impl Frontend for FrontendImpl {
         };
 
         let span_response = reservation_client.check_availability(span_request).await?;
-        let (
-            child_reserve_e2e_lat,
-            child_reserve_compute_lat,
-            child_reserve_io_lat,
-            child_reserve_queue_lat,
-        ) = extract_latencies(span_response.metadata());
         let response = span_response.into_inner();
 
         let mut profile_client = self.profile_client.clone();
@@ -157,12 +134,6 @@ impl Frontend for FrontendImpl {
             locale: request.locale.unwrap_or("en".to_string()),
         };
         let profile_response = profile_client.get_profiles(profile_request).await?;
-        let (
-            child_profile_e2e_lat,
-            child_profile_compute_lat,
-            child_profile_io_lat,
-            child_profile_queue_lat,
-        ) = extract_latencies(profile_response.metadata());
         let response = profile_response.into_inner();
 
         let mut hotels = Vec::new();
@@ -177,23 +148,7 @@ impl Frontend for FrontendImpl {
             });
         }
 
-        let response = frontend::SearchResponse {
-            hotels,
-            child_search_e2e_latency: child_search_e2e_lat,
-            child_search_compute_latency: child_search_compute_lat,
-            child_search_io_latency: child_search_io_lat,
-            child_search_queue_latency: child_search_queue_lat,
-
-            child_reserve_e2e_latency: child_reserve_e2e_lat,
-            child_reserve_compute_latency: child_reserve_compute_lat,
-            child_reserve_io_latency: child_reserve_io_lat,
-            child_reserve_queue_latency: child_reserve_queue_lat,
-
-            child_profile_e2e_latency: child_profile_e2e_lat,
-            child_profile_compute_latency: child_profile_compute_lat,
-            child_profile_io_latency: child_profile_io_lat,
-            child_profile_queue_latency: child_profile_queue_lat,
-        };
+        let response = frontend::SearchResponse { hotels };
 
         let mut response = Response::new(response);
         ctx.set_frontend_elapse(start.elapsed().as_micros() as u64);
