@@ -173,20 +173,8 @@ impl RequestType<HotelClient> for SearchRequest {
     }
 
     fn response_to_row(_metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
-        vec![
-            _r.child_search_e2e_latency.to_string(),
-            _r.child_search_compute_latency.to_string(),
-            _r.child_search_io_latency.to_string(),
-            _r.child_search_queue_latency.to_string(),
-            _r.child_reserve_e2e_latency.to_string(),
-            _r.child_reserve_compute_latency.to_string(),
-            _r.child_reserve_io_latency.to_string(),
-            _r.child_reserve_queue_latency.to_string(),
-            _r.child_profile_e2e_latency.to_string(),
-            _r.child_profile_compute_latency.to_string(),
-            _r.child_profile_io_latency.to_string(),
-            _r.child_profile_queue_latency.to_string(),
-        ]
+        // access the trace hashmap from the dederialized masa context
+        todo!()
     }
 }
 
