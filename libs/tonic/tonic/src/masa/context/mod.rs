@@ -7,6 +7,7 @@ mod local;
 mod noop;
 mod perfect_lsf;
 mod simple;
+mod tracing;
 
 pub mod runtime;
 mod tls;
