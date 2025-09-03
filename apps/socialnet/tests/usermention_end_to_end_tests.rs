@@ -109,13 +109,16 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
         );
     }
 
-    println!("High-volume user mention test passed with {} entries.", result.user_mentions.len());
+    println!(
+        "High-volume user mention test passed with {} entries.",
+        result.user_mentions.len()
+    );
 
     server_handle.abort();
     Ok(())
 }
 
-#[ignore] 
+#[ignore]
 #[tokio::test]
 async fn test_empty_result() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50057).await;

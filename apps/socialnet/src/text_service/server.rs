@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use tracing::{error, info};
 use regex::Regex;
+use tracing::{error, info};
 
 use tonic::{Request, Response, Status};
 
@@ -185,7 +185,7 @@ pub async fn create_service() -> TextServiceServer<TextSvcImpl> {
     let (url_shorten_client, user_mention_client) = loop {
         let shorten = UrlShortenServiceClient::connect("http://urlshorten:50052").await;
         let mention = UserMentionServiceClient::connect("http://usermention:50051").await;
-    
+
         match (shorten, mention) {
             (Ok(shorten_client), Ok(mention_client)) => break (shorten_client, mention_client),
             _ => {
@@ -195,9 +195,6 @@ pub async fn create_service() -> TextServiceServer<TextSvcImpl> {
         }
     };
 
-    let service = TextSvcImpl::new(
-        url_shorten_client,
-        user_mention_client,
-    );
+    let service = TextSvcImpl::new(url_shorten_client, user_mention_client);
     TextServiceServer::new(service)
 }
