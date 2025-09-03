@@ -2,7 +2,7 @@ use anyhow::Result;
 use tonic::{Request, Status};
 
 use crate::proto::{
-    simulator_orchestrator_client::SimulatorOrchestratorClient, ConfigurationRequest,
+    ConfigurationRequest, simulator_orchestrator_client::SimulatorOrchestratorClient,
 };
 
 pub async fn submit_config_to_orchestrator(

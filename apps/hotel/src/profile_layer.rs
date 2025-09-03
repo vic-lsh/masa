@@ -1,14 +1,14 @@
-use tokio::sync::mpsc;
-use tower::{Layer, Service};
-use tokio::time::{Duration, Instant};
-use tokio::io::AsyncWriteExt;
-use tokio::fs::File;
-use pin_project::pin_project;
-use std::pin::Pin;
-use std::future::Future;
-use std::task::{Context, Poll};
 use http::Request;
+use pin_project::pin_project;
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc;
+use tokio::time::{Duration, Instant};
+use tower::{Layer, Service};
 
 pub enum LatencyMetric {
     Queue(String, Duration),
@@ -16,8 +16,8 @@ pub enum LatencyMetric {
 }
 
 #[derive(Clone)]
-pub struct LatencyLayer{
-    tx: mpsc::Sender<LatencyMetric>
+pub struct LatencyLayer {
+    tx: mpsc::Sender<LatencyMetric>,
 }
 
 impl LatencyLayer {
@@ -37,7 +37,7 @@ impl LatencyLayer {
                             LatencyMetric::Queue(path, duration) => (path, duration, "Queue"),
                             LatencyMetric::Response(path, duration) => (path, duration, "Response"),
                         };
-                        
+
                         let fname = format!("{}_latencies.log", path.rsplit('/').next().unwrap());
 
                         // Check if file already exists
@@ -84,7 +84,7 @@ impl LatencyLayer {
                                 println!("Service: {:<40} | Avg Response: {:>10.2?} ({} requests)", path, avg_in_ms, count);
                             }
                         }
-                        
+
                         for (path, durations) in &queue_latencies {
                              let count = durations.len();
                              if count > 0 {
@@ -111,7 +111,7 @@ impl<S> Layer<S> for LatencyLayer {
     type Service = LatencyService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        LatencyService { 
+        LatencyService {
             inner,
             tx: self.tx.clone(),
         }
@@ -132,7 +132,10 @@ where
     type Error = S::Error;
     type Future = ResponseFuture<S::Future>;
 
-    fn poll_ready(&mut self, cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+    fn poll_ready(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
@@ -170,13 +173,17 @@ where
             *this.first_poll_time = Some(now);
             let queue_lat = now - *this.entry_time;
 
-            let _ = this.tx.try_send(LatencyMetric::Queue(this.rpc_path.clone(), queue_lat));
+            let _ = this
+                .tx
+                .try_send(LatencyMetric::Queue(this.rpc_path.clone(), queue_lat));
         }
 
         let poll_result = this.response_future.poll(cx);
         if poll_result.is_ready() {
             let response_lat = this.entry_time.elapsed();
-            let _ = this.tx.try_send(LatencyMetric::Response(this.rpc_path.clone(), response_lat));
+            let _ = this
+                .tx
+                .try_send(LatencyMetric::Response(this.rpc_path.clone(), response_lat));
         }
 
         poll_result
