@@ -70,6 +70,19 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         }
     }
 
+    fn before_child_rpc<T>(
+            &self,
+            method: GrpcMethod,
+            request: &mut Request<T>,
+            child_ctx: &mut ChildContext,
+        ) -> Result<(), Status> {
+
+        request
+            .metadata_mut()
+            .insert_ctx("ctx", &self.ctx.lock().expect("taking ctx lock should succeed"));
+        Ok(())
+    }
+
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         self.last_before_poll.store(time_now(), Ordering::Release);
 

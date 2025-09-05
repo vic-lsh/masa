@@ -181,7 +181,17 @@ impl RequestType<HotelClient> for SearchRequest {
         let _ctx = Context::from_json(ctx_str);
 
         // access the trace hashmap from the dederialized masa context
-        todo!()
+        let latency_traces = _ctx.latency_traces().expect("latency traces should exist");
+        let mut latencie_vec = Vec::new();
+        for lat_id in latency_traces.keys() {
+            latencie_vec.push(lat_id.to_string());
+            let lat = latency_traces.get(lat_id).unwrap();
+            latencie_vec.push(lat.e2e_latency_us.to_string());
+            latencie_vec.push(lat.compute_latency_us.to_string());
+            latencie_vec.push(lat.io_latency_us.to_string());
+            latencie_vec.push(lat.queue_latency_us.to_string());
+        }
+        latencie_vec
     }
 }
 
