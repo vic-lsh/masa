@@ -109,4 +109,8 @@ impl Context {
         let traces = self.latency_traces.get_or_insert_with(HashMap::default);
         traces.insert(id.into(), trace);
     }
+
+    pub fn latency_traces(&self) -> Option<&HashMap<String, LatencyTrace>> {
+        self.latency_traces.as_ref()
+    }
 }
