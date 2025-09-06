@@ -76,7 +76,7 @@ impl Geo for GeoImpl {
 
         let hotel_ids = result.into_iter().map(|r| r.0.pid.to_owned()).collect();
         let response = geo::NearbyResponse { hotel_ids };
-        log::info!("response: {:?}", response);
+        log::debug!("response: {:?}", response);
         Ok(Response::new(response))
     }
 }

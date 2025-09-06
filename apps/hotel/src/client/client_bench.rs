@@ -134,17 +134,17 @@ impl RequestType<HotelClient> for ReservationRequest {
 struct SearchRequest {}
 
 impl SearchRequest {
-    const HEADERS: [&'static str; 12] = [
+    const HEADERS: [&'static str; 14] = [
         "child_search_e2e_latency",
         "child_search_compute_latency",
         "child_search_io_latency",
         "child_search_queue_latency",
-
+        "child_reserve_e2e_latency_frontend",
         "child_reserve_e2e_latency",
+        "child_reserve_e2e_latency_in_handler",
         "child_reserve_compute_latency",
         "child_reserve_io_latency",
         "child_reserve_queue_latency",
-        
         "child_profile_e2e_latency",
         "child_profile_compute_latency",
         "child_profile_io_latency",
@@ -180,12 +180,12 @@ impl RequestType<HotelClient> for SearchRequest {
             _r.child_search_compute_latency.to_string(),
             _r.child_search_io_latency.to_string(),
             _r.child_search_queue_latency.to_string(),
-
+            _r.child_reserve_e2e_latency_frontend.to_string(),
             _r.child_reserve_e2e_latency.to_string(),
+            _r.child_reserve_e2e_latency_in_handler.to_string(),
             _r.child_reserve_compute_latency.to_string(),
             _r.child_reserve_io_latency.to_string(),
             _r.child_reserve_queue_latency.to_string(),
-
             _r.child_profile_e2e_latency.to_string(),
             _r.child_profile_compute_latency.to_string(),
             _r.child_profile_io_latency.to_string(),

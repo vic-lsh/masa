@@ -13,6 +13,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tracing::info;
 
 use crate::config::HotelConfig;
 use crate::db;
@@ -106,6 +107,7 @@ impl Reservation for ReservationImpl {
         // scheduler bug?
         const MC_TIMEOUT: Duration = Duration::from_millis(100);
 
+        info!("check_availability start");
         let start = Instant::now();
 
         let req = req.into_inner();
@@ -314,22 +316,26 @@ impl Reservation for ReservationImpl {
             res_map.insert(hotel_id, is_available);
         }
 
+        let mut hotel_ids = Vec::new();
         // Collect results
-        let mut resp = reservation::ReservationResponse {
-            hotel_ids: Vec::new(),
-        };
         for (hotel_id, available) in res_map {
             if available {
-                resp.hotel_ids.push(hotel_id);
+                hotel_ids.push(hotel_id);
             }
         }
 
-        {
+        let elapsed = {
             let elapsed = start.elapsed().as_micros();
             self.check_avail_stats
                 .get("e2e")
                 .track(elapsed.try_into().unwrap());
-        }
+            elapsed
+        };
+
+        let resp = reservation::ReservationResponse {
+            hotel_ids,
+            latency: elapsed as u64,
+        };
 
         Ok(Response::new(resp))
     }
@@ -342,6 +348,7 @@ impl Reservation for ReservationImpl {
 
         let mut res = reservation::ReservationResponse {
             hotel_ids: Vec::new(),
+            latency: 0,
         };
 
         let database = self.mongo_reserve_client.database("reservation-db");

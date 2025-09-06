@@ -17,4 +17,7 @@ message ReservationRequest {
   int32 roomNumber = 5;
 }
 
-message ReservationResponse { repeated string hotelIds = 1; }
+message ReservationResponse {
+  repeated string hotelIds = 1;
+  uint64 latency = 2;
+}
