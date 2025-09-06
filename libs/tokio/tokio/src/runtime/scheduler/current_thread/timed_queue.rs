@@ -23,6 +23,7 @@ impl Queue for TimedQueue {
 
     fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
         item.timer().set_enqueue_time();
+        
         self.inner.push(item)
     }
 

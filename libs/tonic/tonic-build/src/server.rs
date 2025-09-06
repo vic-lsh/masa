@@ -550,6 +550,11 @@ fn generate_unary<T: Method>(
         let max_encoding_message_size = self.max_encoding_message_size;
         let inner = self.inner.clone();
         let server_ctx = self.ctx.clone();
+
+        // Request-begin lifecycle hook.
+        let grpc_method = GrpcMethod::new(#outer_service_name, #grpc_method_ident);
+        let req_ctx = P::ParentContext::begin(grpc_method, &req, server_ctx);
+        
         let fut = async move {
             let inner = inner.0;
             let method = #service_ident {
@@ -560,10 +565,6 @@ fn generate_unary<T: Method>(
             let mut grpc = tonic::server::Grpc::new(codec)
                 .apply_compression_config(accept_compression_encodings, send_compression_encodings)
                 .apply_max_message_size_config(max_decoding_message_size, max_encoding_message_size);
-
-            // Request-begin lifecycle hook.
-            let grpc_method = GrpcMethod::new(#outer_service_name, #grpc_method_ident);
-            let req_ctx = P::ParentContext::begin(grpc_method, &req, server_ctx);
 
             let fut = grpc.masa_unary::<_, _, P>(method, req, req_ctx);
             let res = fut.await;

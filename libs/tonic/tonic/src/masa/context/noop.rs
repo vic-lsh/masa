@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
@@ -26,9 +26,8 @@ impl PrioritySelector for NoopPrioritySelector {
 pub struct ParentContext {
     method: GrpcMethod,
 
-    num_polled: AtomicUsize,
     start_exec: Instant,
-    last_before_poll: AtomicU64,
+    last_before_poll: Mutex<Option<Instant>>,
     compute_latency: AtomicU64,
 
 }
@@ -48,16 +47,14 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Self {
         Self {
             method: _method,
-            num_polled: AtomicUsize::new(0),
             start_exec: Instant::now(),
-            last_before_poll: AtomicU64::new(0),
+            last_before_poll: Mutex::new(None),
             compute_latency: AtomicU64::new(0),
         }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        self.last_before_poll.store(time_now(), Ordering::Release);
-        
+        self.last_before_poll.lock().unwrap().replace(Instant::now());
         Ok(())
     }
 
@@ -65,10 +62,11 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             &self,
             poll: &std::task::Poll<Result<Response<Ret>, Status>>,
         ) -> Result<(), Result<Response<Ret>, Status>> {
-        let last_before_poll = self.last_before_poll.load(Ordering::Acquire);
-        assert!(last_before_poll != 0);
-        let compute_latency = time_now() - last_before_poll;
-        self.compute_latency.fetch_add(compute_latency, Ordering::AcqRel);
+        let mut last_before_poll_guard = self.last_before_poll.lock().unwrap();
+        if let Some(start_time) = last_before_poll_guard.take() {
+            let compute_latency = start_time.elapsed().as_micros() as u64;
+            self.compute_latency.fetch_add(compute_latency, Ordering::AcqRel);
+        }
         Ok(())
     }
 

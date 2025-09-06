@@ -123,9 +123,12 @@ impl Frontend for FrontendImpl {
             in_date: request.in_date.clone(),
             out_date: request.out_date.clone(),
         };
+        let search_start = Instant::now();
         let search_resp = search_client.handle_nearby(search_req).await?;
+        let search_e2e = search_start.elapsed().as_micros() as u64;
         let search_header = search_resp.metadata();
-        let (child_search_e2e_lat, child_search_compute_lat, child_search_io_lat, child_search_queue_lat) = extract_latencies(search_header);
+        let (_, child_search_compute_lat, _, child_search_queue_lat) = extract_latencies(search_header);
+        let search_io = search_e2e.saturating_sub(child_search_compute_lat + child_search_queue_lat);
 
         let response = search_resp.into_inner();
 
@@ -137,9 +140,11 @@ impl Frontend for FrontendImpl {
             out_date: request.out_date,
             room_number: 1,
         };
-
+        let reservation_start = Instant::now();
         let span_response = reservation_client.check_availability(span_request).await?;
-        let (child_reserve_e2e_lat, child_reserve_compute_lat, child_reserve_io_lat, child_reserve_queue_lat) = extract_latencies(span_response.metadata());
+        let reservation_e2e = reservation_start.elapsed().as_micros() as u64;
+        let (_, child_reserve_compute_lat, _, child_reserve_queue_lat) = extract_latencies(span_response.metadata());
+        let reservation_io = reservation_e2e.saturating_sub(child_reserve_compute_lat + child_reserve_queue_lat);
         let response = span_response.into_inner();
 
         let mut profile_client = self.profile_client.clone();
@@ -147,8 +152,12 @@ impl Frontend for FrontendImpl {
             hotel_ids: response.hotel_ids,
             locale: request.locale.unwrap_or("en".to_string()),
         };
+
+        let profile_start = Instant::now();
         let profile_response = profile_client.get_profiles(profile_request).await?;
-        let (child_profile_e2e_lat, child_profile_compute_lat, child_profile_io_lat, child_profile_queue_lat) = extract_latencies(profile_response.metadata());
+        let profile_e2e = profile_start.elapsed().as_micros() as u64;
+        let (_, child_profile_compute_lat, _, child_profile_queue_lat) = extract_latencies(profile_response.metadata());
+        let profile_io = profile_e2e.saturating_sub(child_profile_compute_lat + child_profile_queue_lat);
         let response = profile_response.into_inner();
 
         let mut hotels = Vec::new();
@@ -165,19 +174,19 @@ impl Frontend for FrontendImpl {
 
         let response = frontend::SearchResponse { 
             hotels,
-            child_search_e2e_latency: child_search_e2e_lat,
+            child_search_e2e_latency: search_e2e,
             child_search_compute_latency: child_search_compute_lat,
-            child_search_io_latency: child_search_io_lat,
+            child_search_io_latency: search_io,
             child_search_queue_latency: child_search_queue_lat,
 
-            child_reserve_e2e_latency: child_reserve_e2e_lat,
+            child_reserve_e2e_latency: reservation_e2e,
             child_reserve_compute_latency: child_reserve_compute_lat,
-            child_reserve_io_latency: child_reserve_io_lat,
+            child_reserve_io_latency: reservation_io,
             child_reserve_queue_latency: child_reserve_queue_lat,
 
-            child_profile_e2e_latency: child_profile_e2e_lat,
+            child_profile_e2e_latency: profile_e2e,
             child_profile_compute_latency: child_profile_compute_lat,
-            child_profile_io_latency: child_profile_io_lat,
+            child_profile_io_latency: profile_io,
             child_profile_queue_latency: child_profile_queue_lat,
          };
 
