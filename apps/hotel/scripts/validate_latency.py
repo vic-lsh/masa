@@ -16,7 +16,8 @@ def validate_latency_chain(file_path):
             required_cols = [
                 'child_reserve_e2e_latency_frontend',
                 'child_reserve_e2e_latency',
-                'child_reserve_e2e_latency_in_handler'
+                'child_reserve_e2e_latency_in_handler',
+                'child_reserve_queue_latency',
             ]
 
             # Verify that the required columns exist in the CSV header
@@ -32,9 +33,10 @@ def validate_latency_chain(file_path):
                     frontend_latency = float(row['child_reserve_e2e_latency_frontend'])
                     e2e_latency = float(row['child_reserve_e2e_latency'])
                     handler_latency = float(row['child_reserve_e2e_latency_in_handler'])
-                    
+                    queue_latency = float(row['child_reserve_queue_latency'])
+
                     # The main assertion logic
-                    assert frontend_latency >= e2e_latency >= handler_latency
+                    assert frontend_latency >= e2e_latency >= handler_latency >= queue_latency
 
                 except ValueError:
                     print(f"⚠️  Warning: Non-numeric data found in row {row_num}. Skipping assertion.")
@@ -42,7 +44,7 @@ def validate_latency_chain(file_path):
                 except AssertionError:
                     # If the assertion fails, print a detailed error and exit
                     print(f"❌ Assertion failed at row {row_num}:")
-                    print(f"   Condition not met: {frontend_latency} >= {e2e_latency} >= {handler_latency}")
+                    print(f"   Condition not met: (Frontend){frontend_latency} >= (E2E){e2e_latency} >= (Handler){handler_latency} >= (Queue){queue_latency}")
                     sys.exit(1) # Exit with a non-zero status code to indicate failure
                 except Exception as e:
                     sys.exit(f"❌ An unexpected error occurred: {e}, row {row}")
