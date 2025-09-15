@@ -173,23 +173,20 @@ impl RequestType<HotelClient> for SearchRequest {
     }
 
     fn response_to_row(metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
-        let ctx_str = metadata
-            .get("ctx")
-            .expect("Masa context should exist")
+        let lat_trace_str = metadata
+            .get("X-Latency-Traces")
+            .unwrap()
             .to_str()
-            .expect("Masa context should be readable as a string");
-        let _ctx = Context::from_json(ctx_str);
-
-        // access the trace hashmap from the dederialized masa context
-        let latency_traces = _ctx.latency_traces().expect("latency traces should exist");
+            .expect("invalid header");
+        let lat_traces: Vec<masa::LatencyTrace> =
+            serde_json::from_str(lat_trace_str).expect("invalid json");
+        // access the trace hashmap from the deserialized masa context
         let mut latencie_vec = Vec::new();
-        for lat_id in latency_traces.keys() {
-            latencie_vec.push(lat_id.to_string());
-            let lat = latency_traces.get(lat_id).unwrap();
-            latencie_vec.push(lat.e2e_latency_us.to_string());
-            latencie_vec.push(lat.compute_latency_us.to_string());
-            latencie_vec.push(lat.io_latency_us.to_string());
-            latencie_vec.push(lat.queue_latency_us.to_string());
+        for trace in lat_traces {
+            latencie_vec.push(trace.e2e_latency_us.to_string());
+            latencie_vec.push(trace.compute_latency_us.to_string());
+            latencie_vec.push(trace.io_latency_us.to_string());
+            latencie_vec.push(trace.queue_latency_us.to_string());
         }
         latencie_vec
     }

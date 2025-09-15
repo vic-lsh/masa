@@ -178,3 +178,4 @@ fn read_context<B>(req: &http::Request<B>) -> Context {
     let ctx_str = req.headers()["ctx"].to_str().unwrap();
     Context::from_json(ctx_str)
 }
+
