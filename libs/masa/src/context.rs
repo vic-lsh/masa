@@ -4,8 +4,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Api, Latency, RequestClass, RequestId, TestId, Timestamp};
 
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct LatencyTrace {
+    pub method_id: String,
     pub e2e_latency_us: u64,
     pub io_latency_us: u64,
     pub compute_latency_us: u64,
@@ -113,4 +115,5 @@ impl Context {
     pub fn latency_traces(&self) -> Option<&HashMap<String, LatencyTrace>> {
         self.latency_traces.as_ref()
     }
+
 }
