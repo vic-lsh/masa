@@ -2,6 +2,7 @@
 
 use crate::body::BoxBody;
 use crate::Response;
+use crate::metadata::MetadataMap;
 use crate::{masa::context::read_context, GrpcMethod, Request, Status};
 use std::sync::Mutex;
 use std::{
@@ -14,6 +15,16 @@ use std::{
 
 use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
 use masa::{time_now, Context, LatencyTrace};
+
+// Extract latency traces from the response headers
+fn extract_latency_traces(
+    metadata: &MetadataMap,
+) -> Option<Vec<LatencyTrace>> {
+    let header_value = metadata.get("X-Latency-Traces").expect("missing X-Latency-Traces header").to_str().unwrap();
+    let traces: Vec<LatencyTrace> = serde_json::from_str(header_value).ok()?;
+    Some(traces)
+}
+
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -45,13 +56,13 @@ pub struct ParentContext {
     // We only access the ctx in the `finalize()` hook, which should only
     // be invoked by one thread, and when all other accesses to ParentContext
     // should have been dropped.
-    ctx: Mutex<Context>,
     method: GrpcMethod,
 
     num_polled: AtomicUsize,
     start_exec: Instant,
     last_before_poll: AtomicU64,
     compute_latency: AtomicU64,
+    latency_traces: Mutex<Vec<LatencyTrace>>,
 }
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
@@ -62,24 +73,28 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Self {
         Self {
             method: _method,
-            ctx: Mutex::new(read_context(req)),
             num_polled: AtomicUsize::new(0),
             start_exec: Instant::now(),
             last_before_poll: AtomicU64::new(0),
             compute_latency: AtomicU64::new(0),
+            latency_traces: Mutex::new(Vec::new()),
         }
     }
 
-    fn before_child_rpc<T>(
+    fn after_child_rpc<T>(
             &self,
             method: GrpcMethod,
-            request: &mut Request<T>,
-            child_ctx: &mut ChildContext,
+            response: &mut Result<Response<T>, Status>,
+            child_ctx: ChildContext,
         ) -> Result<(), Status> {
 
-        request
-            .metadata_mut()
-            .insert_ctx("ctx", &self.ctx.lock().expect("taking ctx lock should succeed"));
+        // Obtain the vector of latency traces from the child context
+        if let Ok(res)= response {
+            if let Some(child_traces) = extract_latency_traces(res.metadata()) {
+                let mut traces = self.latency_traces.lock().unwrap();
+                traces.extend(child_traces);
+            }
+        }
         Ok(())
     }
 
@@ -101,11 +116,22 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         Ok(())
     }
 
+    // expect frontend method, all other method are going send back their latency trace
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
-        self.ctx
-            .lock()
-            .expect("taking ctx lock should succeed")
-            .record_trace(self.method.id(), self.get_latency_trace());
+        let lat_trace = self.get_latency_trace();
+        {
+            let mut traces = self.latency_traces.lock().unwrap();
+            traces.push(lat_trace);
+            // Print size of the traces vector
+            println!(
+                "Finalizing. Total traces to send back: {}",
+                traces.len()
+            );
+            let res_header = _response.headers_mut();
+            let traces_json = serde_json::to_string(&*traces).unwrap();
+            let header_val = http::HeaderValue::from_str(&traces_json).unwrap();
+            res_header.insert("X-Latency-Traces", header_val);
+       }
     }
 }
 
@@ -119,6 +145,7 @@ impl ParentContext {
             .saturating_sub(queue_latency_us);
 
         LatencyTrace {
+            method_id: self.method.id().to_string(),
             e2e_latency_us,
             compute_latency_us,
             queue_latency_us,
