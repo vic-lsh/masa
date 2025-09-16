@@ -23,7 +23,7 @@ use app_utils::{
     timing::time_now,
 };
 use frontend::frontend_client::FrontendClient;
-use masa::Context;
+use masa::{Context, FutureSpan};
 use tonic::Response;
 use tonic::Status;
 
@@ -150,6 +150,21 @@ impl SearchRequest {
     ];
 }
 
+// Extract latency traces from the response headers
+fn extract_latency_traces(
+    metadata: &MetadataMap,
+) -> Option<Vec<String>> {
+    let header_value = metadata.get("X-Latency-Traces").expect("missing X-Latency-Traces header").to_str().unwrap();
+    let traces: Vec<FutureSpan> = serde_json::from_str(header_value).ok()?;
+    traces.iter().map(|span| {
+        match span {
+            FutureSpan::Compute(duration) => format!("Compute({}us)", duration),
+            FutureSpan::Block(duration) => format!("Block({}us)", duration),
+            FutureSpan::Queueing(duration) => format!("Queueing({}us)", duration),
+        }
+    }).collect::<Vec<String>>().into()
+}
+
 impl RequestType<HotelClient> for SearchRequest {
     type ResponseType = frontend::SearchResponse;
 
@@ -173,22 +188,7 @@ impl RequestType<HotelClient> for SearchRequest {
     }
 
     fn response_to_row(metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
-        let lat_trace_str = metadata
-            .get("X-Latency-Traces")
-            .unwrap()
-            .to_str()
-            .expect("invalid header");
-        let lat_traces: Vec<masa::LatencyTrace> =
-            serde_json::from_str(lat_trace_str).expect("invalid json");
-        // access the trace hashmap from the deserialized masa context
-        let mut latencie_vec = Vec::new();
-        for trace in lat_traces {
-            latencie_vec.push(trace.e2e_latency_us.to_string());
-            latencie_vec.push(trace.compute_latency_us.to_string());
-            latencie_vec.push(trace.io_latency_us.to_string());
-            latencie_vec.push(trace.queue_latency_us.to_string());
-        }
-        latencie_vec
+        extract_latency_traces(metadata).unwrap_or_default()
     }
 }
 
