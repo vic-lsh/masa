@@ -211,8 +211,7 @@ impl TraceTimer {
     }
 
     pub(crate) fn record_queue_lat(&mut self) {
-        let latency = Instant::now().duration_since(self.last_enqueue.unwrap());
-        self.q_lat = latency;
+        self.q_lat = Instant::now().duration_since(self.last_enqueue.unwrap());
     }
 
     pub(crate) fn q_lat(&self) -> Duration {
