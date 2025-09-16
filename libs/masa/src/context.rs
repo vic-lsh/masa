@@ -1,17 +1,18 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
 use crate::{Api, Latency, RequestClass, RequestId, TestId, Timestamp};
 
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct LatencyTrace {
-    pub method_id: String,
-    pub e2e_latency_us: u64,
-    pub io_latency_us: u64,
-    pub compute_latency_us: u64,
-    pub queue_latency_us: u64,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", content = "duration")]
+pub enum FutureSpan {
+    #[serde(rename = "compute")]
+    Compute(u64),
+    #[serde(rename = "block")]
+    Block(u64),
+    #[serde(rename = "queueing")]
+    Queueing(u64),
 }
 
 /// Represent a Masa context.
@@ -25,7 +26,6 @@ pub struct Context {
     start_at: Timestamp,
     deadline: Timestamp,
     frontend_elapse: Option<u64>,
-    latency_traces: Option<HashMap<String, LatencyTrace>>,
 }
 
 impl Context {
@@ -48,7 +48,6 @@ impl Context {
             start_at,
             deadline,
             frontend_elapse: None,
-            latency_traces: None,
         }
     }
 
@@ -105,15 +104,6 @@ impl Context {
     /// Convert a Masa context to JSON.
     pub fn to_json(&self) -> String {
         serde_json::to_string(&self).unwrap()
-    }
-
-    pub fn record_trace(&mut self, id: &'static str, trace: LatencyTrace) {
-        let traces = self.latency_traces.get_or_insert_with(HashMap::default);
-        traces.insert(id.into(), trace);
-    }
-
-    pub fn latency_traces(&self) -> Option<&HashMap<String, LatencyTrace>> {
-        self.latency_traces.as_ref()
     }
 
 }
