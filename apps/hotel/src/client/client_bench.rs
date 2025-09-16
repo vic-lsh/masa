@@ -133,22 +133,22 @@ impl RequestType<HotelClient> for ReservationRequest {
 
 struct SearchRequest {}
 
-impl SearchRequest {
-    const HEADERS: [&'static str; 12] = [
-        "child_search_e2e_latency",
-        "child_search_compute_latency",
-        "child_search_io_latency",
-        "child_search_queue_latency",
-        "child_reserve_e2e_latency",
-        "child_reserve_compute_latency",
-        "child_reserve_io_latency",
-        "child_reserve_queue_latency",
-        "child_profile_e2e_latency",
-        "child_profile_compute_latency",
-        "child_profile_io_latency",
-        "child_profile_queue_latency",
-    ];
-}
+// impl SearchRequest {
+//     const HEADERS: [&'static str; 12] = [
+//         "child_search_e2e_latency",
+//         "child_search_compute_latency",
+//         "child_search_io_latency",
+//         "child_search_queue_latency",
+//         "child_reserve_e2e_latency",
+//         "child_reserve_compute_latency",
+//         "child_reserve_io_latency",
+//         "child_reserve_queue_latency",
+//         "child_profile_e2e_latency",
+//         "child_profile_compute_latency",
+//         "child_profile_io_latency",
+//         "child_profile_queue_latency",
+//     ];
+// }
 
 // Extract latency traces from the response headers
 fn extract_latency_traces(metadata: &MetadataMap) -> Option<Vec<String>> {
@@ -188,7 +188,7 @@ impl RequestType<HotelClient> for SearchRequest {
     }
 
     fn response_output_headers(&self) -> Vec<String> {
-        Self::HEADERS.iter().map(|s| s.to_string()).collect()
+        Vec::new()
     }
 
     fn response_to_row(metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
