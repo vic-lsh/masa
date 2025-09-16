@@ -1,8 +1,8 @@
 //! Initial hook implementation that traces a request's compute, IO, and queueing latencies.
 
 use crate::body::BoxBody;
-use crate::Response;
 use crate::metadata::MetadataMap;
+use crate::Response;
 use crate::{GrpcMethod, Request, Status};
 use std::sync::Mutex;
 use std::{
@@ -15,9 +15,6 @@ use std::{
 
 use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
 use masa::{time_now, Context, FutureSpan};
-
-
-
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -73,25 +70,23 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     }
 
     fn before_child_rpc<T>(
-            &self,
-            method: GrpcMethod,
-            request: &mut Request<T>,
-            child_ctx: &mut ChildContext,
-        ) -> Result<(), Status> {
-
+        &self,
+        method: GrpcMethod,
+        request: &mut Request<T>,
+        child_ctx: &mut ChildContext,
+    ) -> Result<(), Status> {
         self.last_before_block.store(time_now(), Ordering::Release);
         Ok(())
     }
 
     fn after_child_rpc<T>(
-            &self,
-            method: GrpcMethod,
-            response: &mut Result<Response<T>, Status>,
-            child_ctx: ChildContext,
-        ) -> Result<(), Status> {
-
+        &self,
+        method: GrpcMethod,
+        response: &mut Result<Response<T>, Status>,
+        child_ctx: ChildContext,
+    ) -> Result<(), Status> {
         // Obtain the vector of latency traces from the child context
-        if let Ok(res)= response {
+        if let Ok(res) = response {
             let block_latency = time_now() - self.last_before_block.load(Ordering::Acquire);
             {
                 let mut traces = self.latency_traces.lock().unwrap();
