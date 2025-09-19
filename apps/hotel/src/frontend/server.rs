@@ -32,6 +32,8 @@ use hotel_tonic::{
     search::search_client::SearchClient, user, user::user_client::UserClient,
 };
 
+use hotel::profile_layer::extract_latency_traces;
+
 pub struct FrontendImpl {
     search_client: SearchClient<LoadBalancedChannel>,
     reservation_client: ReservationClient<LoadBalancedChannel>,
@@ -123,7 +125,13 @@ impl Frontend for FrontendImpl {
             room_number: 1,
         };
 
+        use masa::time_now;
+        let reservation_start_time = time_now();
         let span_response = reservation_client.check_availability(span_request).await?;
+        let reservation_header = span_response.metadata();
+        let mut reservation_traces = extract_latency_traces(reservation_header).expect("missing X-Latency-Traces header");
+        reservation_traces.insert(0, reservation_start_time.to_string());
+        reservation_traces.insert(0, "reservation".to_string());
         let response = span_response.into_inner();
 
         let mut profile_client = self.profile_client.clone();
@@ -146,7 +154,10 @@ impl Frontend for FrontendImpl {
             });
         }
 
-        let response = frontend::SearchResponse { hotels };
+        let response = frontend::SearchResponse { 
+            hotels,
+            reservation_traces: reservation_traces,
+        };
 
         let mut response = Response::new(response);
         ctx.set_frontend_elapse(start.elapsed().as_micros() as u64);
