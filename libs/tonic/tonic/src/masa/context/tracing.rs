@@ -79,6 +79,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         Ok(())
     }
 
+    // TODO: Happens after the before poll
     fn after_child_rpc<T>(
         &self,
         method: GrpcMethod,
@@ -86,16 +87,27 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         child_ctx: ChildContext,
     ) -> Result<(), Status> {
         // Obtain the vector of latency traces from the child context
-        if let Ok(res) = response {
-            let block_latency = time_now() - self.last_before_block.load(Ordering::Acquire);
-            {
-                let mut traces = self.latency_traces.lock().unwrap();
-                traces.push(FutureSpan::Block(block_latency));
-            }
-        }
+        // if let Ok(res) = response {
+        //     let now = time_now();
+        //     {
+        //         let mut traces = self.latency_traces.lock().unwrap();
+        //         let prev_queue = traces.pop().unwrap_or(FutureSpan::Queueing(0));
+        //         let queue_latency = match prev_queue {
+        //             FutureSpan::Queueing(dur) => dur,
+        //             _ => 0,
+        //         };
+
+        //         let block_latency = now.saturating_sub(
+        //             self.last_before_block.load(Ordering::Acquire),
+        //         ).saturating_sub(queue_latency);
+        //         traces.push(FutureSpan::Block(block_latency));
+        //         traces.push(prev_queue);
+        //     }
+        // }
         Ok(())
     }
 
+    // TODO: Add the block latency here
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         self.last_before_poll.store(time_now(), Ordering::Release);
         let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
