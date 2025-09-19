@@ -9,6 +9,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant};
 use tower::{Layer, Service};
+use masa::FutureSpan;
+use tonic::metadata::MetadataMap;
 
 pub enum LatencyMetric {
     Queue(String, Duration),
@@ -188,4 +190,24 @@ where
 
         poll_result
     }
+}
+
+
+// Extract latency traces from the response headers
+pub fn extract_latency_traces(metadata: &MetadataMap) -> Option<Vec<String>> {
+    let header_value = metadata
+        .get("X-Latency-Traces")
+        .expect("missing X-Latency-Traces header")
+        .to_str() 
+        .unwrap();
+    let traces: Vec<FutureSpan> = serde_json::from_str(header_value).ok()?;
+    traces
+        .iter()
+        .map(|span| match span {
+            FutureSpan::Compute(duration) => format!("Compute({}us)", duration),
+            FutureSpan::Block(duration) => format!("Block({}us)", duration),
+            FutureSpan::Queueing(duration) => format!("Queueing({}us)", duration),
+        })
+        .collect::<Vec<String>>()
+        .into()
 }
