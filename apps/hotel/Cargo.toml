@@ -56,49 +56,41 @@ path = "src/loadgen/main.rs"
 [features]
 prio_class = [
   "tokio/prio_class",
-  "async-executor/prio_class",
   "masa/prio_class",
   "tonic/prio_class",
 ]
 prio_global = [
   "tokio/prio_global",
-  "async-executor/prio_global",
   "masa/prio_global",
   "tonic/prio_global",
 ]
 prio_global_early = [
   "tokio/prio_global_early",
-  "async-executor/prio_global_early",
   "masa/prio_global_early",
   "tonic/prio_global_early",
 ]
 prio_class_global = [
   "tokio/prio_class_global",
-  "async-executor/prio_class_global",
   "masa/prio_class_global",
   "tonic/prio_class_global",
 ]
 prio_local = [
   "tokio/prio_local",
-  "async-executor/prio_local",
   "masa/prio_local",
   "tonic/prio_local",
 ]
 prio_local_early = [
   "tokio/prio_local_early",
-  "async-executor/prio_local_early",
   "masa/prio_local_early",
   "tonic/prio_local_early",
 ]
 prio_local_direct = [
   "tokio/prio_local_direct",
-  "async-executor/prio_local_direct",
   "masa/prio_local_direct",
   "tonic/prio_local_direct",
 ]
 prio_local_indirect = [
   "tokio/prio_local_indirect",
-  "async-executor/prio_local_indirect",
   "masa/prio_local_indirect",
   "tonic/prio_local_indirect",
 ]
@@ -107,16 +99,14 @@ perfect_lsf = [
   "masa/perfect_lsf",
   "tonic/perfect_lsf",
 ]
-fifo = ["tokio/fifo", "async-executor/fifo", "masa/fifo", "tonic/fifo"]
+fifo = ["tokio/fifo", "masa/fifo", "tonic/fifo"]
 fifo_early = [
   "tokio/fifo_early",
-  "async-executor/fifo_early",
   "masa/fifo_early",
   "tonic/fifo_early",
 ]
 fifo_infra = [
   "tokio/fifo_infra",
-  "async-executor/fifo_infra",
   "masa/fifo_infra",
   "tonic/fifo_infra",
 ]
@@ -208,10 +198,8 @@ default = ["full"]
 masa = { path = "../../libs/masa" }
 app-utils = { path = "../app-utils" }
 app-util-macros = { path = "../app-util-macros" }
-async-executor = { path = "../../libs/async-executor" }
 async-compat = "0.2.3"
 async-task = { path = "../../libs/async-task" }
-smol = { path = "../../3rd_party/smol" }
 futures-lite = { version = "2.0.0" }
 structopt = "0.3.23"
 crossbeam-channel = "0.5"

@@ -389,27 +389,6 @@ dependencies = [
 
 [[package]]
 name = "async-executor"
-version = "1.11.0"
-dependencies = [
- "async-channel 2.3.1",
- "async-io 2.3.4",
- "async-lock 3.4.0",
- "async-task",
- "concurrent-queue",
- "criterion",
- "easy-parallel",
- "fastrand 2.1.0",
- "futures-lite 2.3.0",
- "log",
- "masa",
- "num_cpus",
- "once_cell",
- "slab",
- "tokio 1.37.0",
-]
-
-[[package]]
-name = "async-executor"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7ebdfa2ebdab6b1760375fa7d6f382b9f486eac35fc994625a00e89280bdbb7"
@@ -439,7 +418,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05b1b633a2115cd122d73b955eadd9916c18c8f510ec9cd1686404c60ad1c29c"
 dependencies = [
  "async-channel 2.3.1",
- "async-executor 1.13.0",
+ "async-executor",
  "async-io 2.3.4",
  "async-lock 3.4.0",
  "blocking",
@@ -2795,7 +2774,6 @@ dependencies = [
  "app-util-macros",
  "app-utils",
  "async-compat",
- "async-executor 1.11.0",
  "async-memcached",
  "async-stream",
  "async-task",
@@ -2825,7 +2803,6 @@ dependencies = [
  "rustls-pemfile 1.0.4",
  "serde",
  "serde_json",
- "smol 2.0.0",
  "structopt",
  "tokio 1.37.0",
  "tokio-rustls 0.26.0",
@@ -2991,8 +2968,6 @@ checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 name = "hyper"
 version = "0.14.28"
 dependencies = [
- "async-executor 1.11.0",
- "async-task",
  "bytes",
  "futures-channel",
  "futures-core",
@@ -3711,7 +3686,6 @@ dependencies = [
 name = "masa-integration-tests"
 version = "0.1.0"
 dependencies = [
- "async-executor 1.11.0",
  "http 0.2.12",
  "hyper 0.14.28",
  "masa",
@@ -5851,7 +5825,6 @@ dependencies = [
  "anyhow",
  "async-channel 2.3.1",
  "async-dup",
- "async-executor 1.11.0",
  "async-fs",
  "async-h1",
  "async-io 2.3.4",
@@ -5892,7 +5865,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aad24f41392790e6ac67f4f4cd871da61f7d758e07b5622431e491e897d9c8a7"
 dependencies = [
  "async-channel 2.3.1",
- "async-executor 1.13.0",
+ "async-executor",
  "async-fs",
  "async-io 2.3.4",
  "async-lock 3.4.0",
@@ -5908,7 +5881,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7428a49d323867702cd12b97b08a6b0104f39ec13b49117911f101271321bc1a"
 dependencies = [
- "async-executor 1.13.0",
+ "async-executor",
  "async-io 2.3.4",
  "futures-io",
  "hyper 1.7.0",
@@ -5921,7 +5894,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfcaedb62e0475a6898988138995ec7b1e5d116167a72bb12c7b59d0649fbbc2"
 dependencies = [
- "async-executor 1.13.0",
+ "async-executor",
  "async-io 2.3.4",
  "async-lock 3.4.0",
  "event-listener 5.3.1",
@@ -5932,7 +5905,6 @@ dependencies = [
 name = "socialnet"
 version = "0.1.0"
 dependencies = [
- "async-executor 1.11.0",
  "async-memcached",
  "async-task",
  "chrono",
@@ -6273,11 +6245,8 @@ dependencies = [
  "anyhow",
  "app-util-macros",
  "app-utils",
- "async-compat",
- "async-executor 1.11.0",
  "async-memcached",
  "async-stream",
- "async-task",
  "bytes",
  "chrono",
  "clap 4.5.16",
@@ -6304,7 +6273,6 @@ dependencies = [
  "rustls-pemfile 1.0.4",
  "serde",
  "serde_json",
- "smol 2.0.0",
  "structopt",
  "tokio 1.37.0",
  "tokio-rustls 0.26.0",
@@ -6837,9 +6805,7 @@ dependencies = [
 name = "tonic"
 version = "0.11.0"
 dependencies = [
- "async-executor 1.11.0",
  "async-stream",
- "async-task",
  "async-trait",
  "axum 0.6.20",
  "base64 0.21.7",
