@@ -92,8 +92,6 @@ tower-service = { path = "../../../libs/tower/tower-service" }
 
 # Needed for our code-gen modification
 masa = { path = "../../masa" }
-async-task = { path = "../../async-task" }
-async-executor = { path = "../../async-executor" }
 
 # prost
 prost = { version = "0.12", default-features = false, features = [
