@@ -22,7 +22,6 @@ packages=(
     # "tokio-io-timeout"
     # "tokio-openssl"
     "tower"
-    "async-task"
 
     # our evaluation apps test suite
     "hotel"
@@ -40,7 +39,8 @@ declare -A package_features=(
 # cargo also downloads another version from crates.io). In this case, we can
 # be precise about our package under test by specifying its Cargo.toml path.
 declare -A package_manifest_paths=(
-    ["async-task"]="./libs/async-task/Cargo.toml"
+    # This is an example; async-task has been removed
+    #["async-task"]="./libs/async-task/Cargo.toml"
 )
 
 failed_packages=()

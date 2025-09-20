@@ -9,7 +9,6 @@ version = "0.1.0"
 
 [dependencies]
 prost = "0.12"
-async-executor = { path = "../../../async-executor" }
 hyper = { path = "../../../hyper" }
 tokio = { path = "../../../tokio/tokio", features = ["macros"] }
 tonic = { path = "../../tonic" }
