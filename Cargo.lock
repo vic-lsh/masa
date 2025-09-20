@@ -1472,7 +1472,7 @@ dependencies = [
  "either",
  "futures",
  "futures-lite",
- "h2 0.3.26",
+ "h2 0.3.27",
  "http 0.2.12",
  "http-body 0.4.6",
  "hyper 0.14.28",
@@ -1876,32 +1876,6 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "h2"
-version = "0.3.26"
-dependencies = [
- "bytes",
- "env_logger 0.10.2",
- "fnv",
- "futures-core",
- "futures-sink",
- "futures-util",
- "hex",
- "http 0.2.12",
- "indexmap 2.11.4",
- "quickcheck",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "slab",
- "tokio",
- "tokio-rustls 0.26.0",
- "tokio-util 0.7.11",
- "tracing",
- "walkdir",
- "webpki-roots 0.25.4",
-]
-
-[[package]]
-name = "h2"
 version = "0.3.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0beca50380b1fc32983fc1cb4587bfa4bb9e78fc259aad4a0032d2080309222d"
@@ -2117,7 +2091,7 @@ dependencies = [
  "futures",
  "futures-lite",
  "geo",
- "h2 0.3.26",
+ "h2 0.3.27",
  "http 0.2.12",
  "http-body 0.4.6",
  "hyper 0.14.28",
@@ -2250,7 +2224,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
- "h2 0.3.26",
+ "h2 0.3.27",
  "http 0.2.12",
  "http-body 0.4.6",
  "httparse",
@@ -5010,7 +4984,7 @@ dependencies = [
  "futures",
  "futures-lite",
  "geo",
- "h2 0.3.26",
+ "h2 0.3.27",
  "http 0.2.12",
  "http-body 0.4.6",
  "hyper 0.14.28",
@@ -5498,7 +5472,7 @@ dependencies = [
  "bencher",
  "bytes",
  "flate2",
- "h2 0.3.26",
+ "h2 0.3.27",
  "http 0.2.12",
  "http-body 0.4.6",
  "hyper 0.14.28",
