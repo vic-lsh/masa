@@ -52,7 +52,5 @@ opt-level = 3
 
 
 [patch.crates-io]
-# rewrite dependencies to use the our version of async-task when running tests
-async-task = { path = "./libs/async-task" }
 tokio = { path = "./libs/tokio/tokio", version = "1" }
 

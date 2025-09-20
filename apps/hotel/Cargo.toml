@@ -199,7 +199,6 @@ masa = { path = "../../libs/masa" }
 app-utils = { path = "../app-utils" }
 app-util-macros = { path = "../app-util-macros" }
 async-compat = "0.2.3"
-async-task = { path = "../../libs/async-task" }
 futures-lite = { version = "2.0.0" }
 structopt = "0.3.23"
 crossbeam-channel = "0.5"
