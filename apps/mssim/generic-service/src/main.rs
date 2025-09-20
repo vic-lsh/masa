@@ -303,11 +303,19 @@ impl Service for GenericService {
                                         for c in &r.res.calls {
                                             call_list.push(c.clone());
                                         }
-                                        (r.res.method_name.clone(), r.sent_at, r.received_at, false)
+                                        (
+                                            r.res.method_name.clone(),
+                                            r.sent_at.clone(),
+                                            r.received_at.clone(),
+                                            false,
+                                        )
                                     }
-                                    Err(r) => {
-                                        (r.method_name.clone(), r.sent_at, r.received_at, true)
-                                    }
+                                    Err(r) => (
+                                        r.method_name.clone(),
+                                        r.sent_at.clone(),
+                                        r.received_at.clone(),
+                                        true,
+                                    ),
                                 };
                                 call_list.push(CallData {
                                     method_name,
