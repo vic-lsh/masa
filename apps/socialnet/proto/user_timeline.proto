@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package user_timeline;
+
+import "user.proto";
+import "media.proto";
+import "url_shorten.proto";
+import "usermention.proto";
+
+// Defines the type of post stored in timelines.
+enum PostType {
+  POST = 0;
+  REPOST = 1;
+  REPLY = 2;
+  DM = 3;
+}
+
+// Represents a timeline post.
+message Post {
+  int64 post_id = 1;
+  user.Creator creator = 2;
+  int64 req_id = 3;
+  string text = 4;
+  repeated usermention.UserMention user_mentions = 5;
+  repeated media.Media media = 6;
+  repeated url_shorten.Url urls = 7;
+  int64 timestamp = 8;
+  PostType post_type = 9;
+}
+
+message WriteUserTimelineRequest {
+  int64 req_id = 1;
+  int64 post_id = 2;
+  int64 user_id = 3;
+  int64 timestamp = 4;
+  map<string, string> carrier = 5;
+}
+
+message WriteUserTimelineResponse {}
+
+message ReadUserTimelineRequest {
+  int64 req_id = 1;
+  int64 user_id = 2;
+  int32 start = 3;
+  int32 stop = 4;
+  map<string, string> carrier = 5;
+}
+
+message ReadUserTimelineResponse {
+  repeated Post posts = 1;
+}
+
+service UserTimelineService {
+  rpc WriteUserTimeline(WriteUserTimelineRequest) returns (WriteUserTimelineResponse);
+  rpc ReadUserTimeline(ReadUserTimelineRequest) returns (ReadUserTimelineResponse);
+}
