@@ -39,6 +39,10 @@ path = "src/user/main.rs"
 name = "user_timeline_server"
 path = "src/user_timeline/main.rs"
 
+[[bin]]
+name = "post_storage_server"
+path = "src/post_storage/main.rs"
+
 
 [features]
 prio_class = [
