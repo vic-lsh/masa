@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::sync::Arc;
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{Request, Response, Status, transport::Server};
 
 use crate::client::grpc as orchestrator_client;
 use crate::generator::yaml;
