@@ -1,0 +1,120 @@
+syntax = "proto3";
+
+package social_graph;
+
+// The SocialGraph service handles the social graph operations,
+// such as following, unfollowing, and retrieving follower/followee lists.
+service SocialGraphService {
+  // Retrieves the list of followers for a given user.
+  rpc GetFollowers(GetFollowersRequest) returns (GetFollowersResponse);
+
+  // Retrieves the list of users that a given user is following.
+  rpc GetFollowees(GetFolloweesRequest) returns (GetFolloweesResponse);
+
+  // Creates a follow relationship between two users.
+  rpc Follow(FollowRequest) returns (FollowResponse);
+
+  // Removes a follow relationship between two users.
+  rpc Unfollow(UnfollowRequest) returns (UnfollowResponse);
+
+  // Creates a follow relationship using usernames.
+  rpc FollowWithUsername(FollowWithUsernameRequest) returns (FollowWithUsernameResponse);
+
+  // Removes a follow relationship using usernames.
+  rpc UnfollowWithUsername(UnfollowWithUsernameRequest) returns (UnfollowWithUsernameResponse);
+
+  // Inserts a new user into the social graph.
+  rpc InsertUser(InsertUserRequest) returns (InsertUserResponse);
+}
+
+// ----------------------------------------------------------------
+// GetFollowers Messages
+// ----------------------------------------------------------------
+
+message GetFollowersRequest {
+  int64 req_id = 1;
+  int64 user_id = 2;
+  map<string, string> carrier = 3;
+}
+
+message GetFollowersResponse {
+  repeated int64 user_ids = 1;
+}
+
+// ----------------------------------------------------------------
+// GetFollowees Messages
+// ----------------------------------------------------------------
+
+message GetFolloweesRequest {
+  int64 req_id = 1;
+  int64 user_id = 2;
+  map<string, string> carrier = 3;
+}
+
+message GetFolloweesResponse {
+  repeated int64 user_ids = 1;
+}
+
+// ----------------------------------------------------------------
+// Follow Messages
+// ----------------------------------------------------------------
+
+message FollowRequest {
+  int64 req_id = 1;
+  int64 user_id = 2;
+  int64 followee_id = 3;
+  map<string, string> carrier = 4;
+}
+
+message FollowResponse {}
+
+// ----------------------------------------------------------------
+// Unfollow Messages
+// ----------------------------------------------------------------
+
+message UnfollowRequest {
+  int64 req_id = 1;
+  int64 user_id = 2;
+  int64 followee_id = 3;
+  map<string, string> carrier = 4;
+}
+
+message UnfollowResponse {}
+
+// ----------------------------------------------------------------
+// FollowWithUsername Messages
+// ----------------------------------------------------------------
+
+message FollowWithUsernameRequest {
+  int64 req_id = 1;
+  string user_username = 2;
+  string followee_username = 3;
+  map<string, string> carrier = 4;
+}
+
+message FollowWithUsernameResponse {}
+
+// ----------------------------------------------------------------
+// UnfollowWithUsername Messages
+// ----------------------------------------------------------------
+
+message UnfollowWithUsernameRequest {
+  int64 req_id = 1;
+  string user_username = 2;
+  string followee_username = 3;
+  map<string, string> carrier = 4;
+}
+
+message UnfollowWithUsernameResponse {}
+
+// ----------------------------------------------------------------
+// InsertUser Messages
+// ----------------------------------------------------------------
+
+message InsertUserRequest {
+  int64 req_id = 1;
+  int64 user_id = 2;
+  map<string, string> carrier = 3;
+}
+
+message InsertUserResponse {}
