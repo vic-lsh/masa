@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package user;
+
+// The user service definition.
+service UserService {
+  // Registers a new user with a system-generated user_id
+  rpc RegisterUser(RegisterUserRequest) returns (RegisterUserResponse);
+
+  // Registers a new user with a provided user_id
+  rpc RegisterUserWithId(RegisterUserWithIdRequest) returns (RegisterUserWithIdResponse);
+
+  // Logs in a user and returns a JWT token
+  rpc Login(LoginRequest) returns (LoginResponse);
+
+  // Composes a creator object from a user_id and username
+  rpc ComposeCreatorWithUserId(ComposeCreatorWithUserIdRequest) returns (ComposeCreatorResponse);
+
+  // Composes a creator object by looking up a username
+  rpc ComposeCreatorWithUsername(ComposeCreatorWithUsernameRequest) returns (ComposeCreatorResponse);
+
+  // Retrieves a user_id for a given username
+  rpc GetUserId(GetUserIdRequest) returns (GetUserIdResponse);
+}
+
+// Reusable Creator message
+message Creator {
+  int64 user_id = 1;
+  string username = 2;
+}
+
+// Request and Response Messages
+
+message RegisterUserRequest {
+  int64 req_id = 1;
+  string first_name = 2;
+  string last_name = 3;
+  string username = 4;
+  string password = 5;
+  map<string, string> carrier = 6;
+}
+
+message RegisterUserResponse {}
+
+message RegisterUserWithIdRequest {
+  int64 req_id = 1;
+  string first_name = 2;
+  string last_name = 3;
+  string username = 4;
+  string password = 5;
+  int64 user_id = 6;
+  map<string, string> carrier = 7;
+}
+
+message RegisterUserWithIdResponse {}
+
+message LoginRequest {
+  int64 req_id = 1;
+  string username = 2;
+  string password = 3;
+  map<string, string> carrier = 4;
+}
+
+message LoginResponse {
+  string token = 1;
+}
+
+message ComposeCreatorWithUserIdRequest {
+  int64 req_id = 1;
+  int64 user_id = 2;
+  string username = 3;
+  map<string, string> carrier = 4;
+}
+
+message ComposeCreatorWithUsernameRequest {
+  int64 req_id = 1;
+  string username = 2;
+  map<string, string> carrier = 3;
+}
+
+message ComposeCreatorResponse {
+  Creator creator = 1;
+}
+
+message GetUserIdRequest {
+  int64 req_id = 1;
+  string username = 2;
+  map<string, string> carrier = 3;
+}
+
+message GetUserIdResponse {
+  int64 user_id = 1;
+}
+
