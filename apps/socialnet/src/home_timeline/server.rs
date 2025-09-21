@@ -195,12 +195,10 @@ impl GrpcService for HomeTimelineService {
             pipe.zadd(user_id.to_string(), req.post_id.to_string(), req.timestamp);
         }
 
-        pipe.query_async::<_, ()>(&mut redis_conn)
-            .await
-            .map_err(|e| {
-                error!("Redis pipeline ZADD failed: {}", e);
-                Status::internal("Failed to write timeline to cache")
-            })?;
+        pipe.query_async::<()>(&mut redis_conn).await.map_err(|e| {
+            error!("Redis pipeline ZADD failed: {}", e);
+            Status::internal("Failed to write timeline to cache")
+        })?;
 
         Ok(Response::new(WriteHomeTimelineResponse {}))
     }
