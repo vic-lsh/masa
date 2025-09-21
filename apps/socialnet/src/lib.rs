@@ -36,6 +36,10 @@ pub mod user_timeline {
     pub mod server;
 }
 
+pub mod home_timeline {
+    tonic::include_proto!("home_timeline");
+}
+
 pub mod post_storage {
     tonic::include_proto!("post_storage");
 
@@ -44,6 +48,12 @@ pub mod post_storage {
     pub use crate::user;
     pub use crate::user_mention as usermention;
     pub use crate::user_timeline;
+
+    pub mod server;
+}
+
+pub mod compose_post {
+    tonic::include_proto!("compose_post");
 
     pub mod server;
 }
