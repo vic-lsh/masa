@@ -51,6 +51,10 @@ path = "src/compose_post/main.rs"
 name = "home_timeline_server"
 path = "src/home_timeline/main.rs"
 
+[[bin]]
+name = "social_graph_server"
+path = "src/social_graph/main.rs"
+
 
 [features]
 prio_class = [
@@ -134,7 +138,7 @@ masa = { path = "../../libs/masa" }
 jsonwebtoken = "9.3.1"
 hex = "0.4.3"
 redis-async = "0.18.0"
-redis = { version = "0.24", features = ["aio", "tokio-comp", "cluster-async"] }
+redis = { version = "0.32", features = ["aio", "tokio-comp", "cluster-async"] }
 sha2 = "0.10.9"
 once_cell = "1.20"
 clap = { version = "4.5.48", features = ["derive", "env"] }
