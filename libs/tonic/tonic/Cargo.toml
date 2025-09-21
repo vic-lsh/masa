@@ -102,7 +102,7 @@ prost = { version = "0.12", default-features = false, features = [
 async-trait = { version = "0.1.13", optional = true }
 
 # transport
-h2 = { path = "../../../3rd_party/h2", optional = true }
+h2 = { version = "0.3.27", optional = true }
 hyper = { path = "../../hyper", features = ["full"], optional = true }
 hyper-timeout = { path = "../../../3rd_party/hyper-timeout", optional = true }
 tokio = { path = "../../tokio/tokio", optional = true }
