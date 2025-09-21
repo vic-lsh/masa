@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package post_storage;
+
+import "user_timeline.proto";
+
+message StorePostRequest {
+  int64 req_id = 1;
+  user_timeline.Post post = 2;
+  map<string, string> carrier = 3;
+}
+
+message StorePostResponse {}
+
+message ReadPostRequest {
+  int64 req_id = 1;
+  int64 post_id = 2;
+  map<string, string> carrier = 3;
+}
+
+message ReadPostResponse {
+  user_timeline.Post post = 1;
+}
+
+message ReadPostsRequest {
+  int64 req_id = 1;
+  repeated int64 post_ids = 2;
+  map<string, string> carrier = 3;
+}
+
+message ReadPostsResponse {
+  repeated user_timeline.Post posts = 1;
+}
+
+service PostStorageService {
+  rpc StorePost(StorePostRequest) returns (StorePostResponse);
+  rpc ReadPost(ReadPostRequest) returns (ReadPostResponse);
+  rpc ReadPosts(ReadPostsRequest) returns (ReadPostsResponse);
+}
