@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package home_timeline;
+
+import "user_timeline.proto";
+
+message WriteHomeTimelineRequest {
+  int64 req_id = 1;
+  int64 post_id = 2;
+  int64 user_id = 3;
+  int64 timestamp = 4;
+  repeated int64 user_mentions_id = 5;
+  map<string, string> carrier = 6;
+}
+
+message WriteHomeTimelineResponse {}
+
+message ReadHomeTimelineRequest {
+  int64 req_id = 1;
+  int64 user_id = 2;
+  int32 start = 3;
+  int32 stop = 4;
+  map<string, string> carrier = 5;
+}
+
+message ReadHomeTimelineResponse {
+  repeated user_timeline.Post posts = 1;
+}
+
+service HomeTimelineService {
+  rpc WriteHomeTimeline(WriteHomeTimelineRequest) returns (WriteHomeTimelineResponse);
+  rpc ReadHomeTimeline(ReadHomeTimelineRequest) returns (ReadHomeTimelineResponse);
+}

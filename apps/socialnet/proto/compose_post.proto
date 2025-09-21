@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package compose_post;
+
+import "user_timeline.proto";
+
+message ComposePostRequest {
+  int64 req_id = 1;
+  string username = 2;
+  int64 user_id = 3;
+  string text = 4;
+  repeated int64 media_ids = 5;
+  repeated string media_types = 6;
+  user_timeline.PostType post_type = 7;
+  map<string, string> carrier = 8;
+}
+
+message ComposePostResponse {}
+
+service ComposePostService {
+  rpc ComposePost(ComposePostRequest) returns (ComposePostResponse);
+}
