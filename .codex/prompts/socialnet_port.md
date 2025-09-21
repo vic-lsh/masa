@@ -350,4 +350,4 @@ beyond apps/socialnet/<service_name>, where <service_name> is the new service yo
 
 Do not stop until your new binary compiles.
 
-The implementation to port follows below:
+Please ask the user for the implementation source code to port from now:
