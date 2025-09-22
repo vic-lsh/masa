@@ -315,21 +315,18 @@ def report_latency_by_edge_for_graph(
         df_edges = pd.DataFrame(edges_rows, columns=["service", "caller", "callee"]).drop_duplicates()
         df_edges.to_csv(svc_dir / "edges.csv", index=False)
 
-    # (2) interface_distribution.csv
-    iface_rows = []
-    for (service, callee), ctr in iface_counts_by_callee.items():
-        total = sum(ctr.values())
-        if total == 0:
+    # (2) interface_distribution.json — EXACT SHAPE: { [callee]: { [interface]: [call_count] } }
+    iface_json: dict[str, dict[str, int]] = {}
+    for (_service, callee), ctr in iface_counts_by_callee.items():
+        if not ctr:
             continue
+        callee_map = iface_json.setdefault(callee, {})
         for iface, cnt in ctr.items():
-            frac = cnt / total
-            iface_rows.append((service, callee, iface, cnt, total, frac))
-    if iface_rows:
-        df_iface = pd.DataFrame(
-            iface_rows,
-            columns=["service", "callee", "interface", "count", "total_count_for_callee", "fraction"],
-        ).sort_values(["service", "callee", "count"], ascending=[True, True, False])
-        df_iface.to_csv(svc_dir / "interface_distribution.csv", index=False)
+            callee_map[iface] = int(cnt)
+
+    if iface_json:
+        with open(svc_dir / "interface_distribution.json", "w") as f:
+            json.dump(iface_json, f, indent=2)
 
     # (3) latency_percentiles.json
     lat_json: dict[str, dict[str, dict[str, float]]] = {}
