@@ -95,7 +95,9 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             let mut traces = self.latency_traces.lock().unwrap();
             let last_after_poll = self.last_after_poll.swap(0, Ordering::AcqRel);
             if last_after_poll != 0 {
-                let block_latency = now.saturating_sub(last_after_poll).saturating_sub(queue_latency);
+                let block_latency = now
+                    .saturating_sub(last_after_poll)
+                    .saturating_sub(queue_latency);
                 traces.push(FutureSpan::Block(block_latency));
             }
             traces.push(FutureSpan::Queueing(queue_latency));

@@ -23,10 +23,10 @@ use app_utils::{
     timing::time_now,
 };
 use frontend::frontend_client::FrontendClient;
+use hotel::profile_layer::extract_latency_traces;
+use masa::Context;
 use tonic::Response;
 use tonic::Status;
-use masa::Context;
-use hotel::profile_layer::extract_latency_traces;
 
 struct HotelClient;
 
@@ -150,8 +150,6 @@ struct SearchRequest {}
 //         "child_profile_queue_latency",
 //     ];
 // }
-
-
 
 impl RequestType<HotelClient> for SearchRequest {
     type ResponseType = frontend::SearchResponse;
