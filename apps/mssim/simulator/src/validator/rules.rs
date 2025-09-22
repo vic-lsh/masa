@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use std::collections::HashSet;
 
-use crate::parser::{Distribution, EntryPoint, LoadConfig, SimulatorConfig};
+use crate::parser::{EntryPoint, LoadConfig, SimpleDistribution, SimulatorConfig};
 
 /// Validate that the configuration has at least one service
 pub fn validate_has_services(config: &SimulatorConfig) -> Result<()> {
@@ -77,7 +77,7 @@ pub fn validate_latency_distributions(config: &SimulatorConfig) -> Result<()> {
 
 /// Validate a single distribution
 fn validate_single_distribution(
-    distribution: &Distribution,
+    distribution: &SimpleDistribution,
     service_name: &str,
     method_name: &str,
 ) -> Result<()> {
