@@ -4,7 +4,7 @@
 
 #![allow(dead_code)]
 
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{borrow::Cow, collections::HashMap, fs, path::PathBuf};
 
 use anyhow::{Context, Result};
 
@@ -12,37 +12,51 @@ use dist::Distribution;
 
 mod dist;
 
+pub(crate) type MethodId = Cow<'static, str>;
+
+/// Stores the distribution configuration for this service
+#[derive(Debug)]
+pub(crate) struct DistConfig {
+    methods: HashMap<MethodId, Distribution>,
+}
+
 /// Raw deserialization shape matching the file:
 /// HashMap<microservice, HashMap<method, HashMap<percentile_string, latency_f64>>>
 type RawFileShape = HashMap<String, HashMap<String, HashMap<String, f64>>>;
 
-/// Final shape:
-/// HashMap<microservice, HashMap<method, Distribution>>
-type DistMap = HashMap<String, HashMap<String, Distribution>>;
-
-fn parse_distributions(raw: RawFileShape) -> Result<DistMap> {
-    let mut out: DistMap = HashMap::new();
-    for (svc, methods) in raw {
-        let mut method_map: HashMap<String, Distribution> = HashMap::new();
-        for (method, p2l) in methods {
-            let dist = Distribution::from_percentile_map(&p2l)
-                .with_context(|| format!("While parsing {svc}.{method}"))?;
-            method_map.insert(method, dist);
-        }
-        out.insert(svc, method_map);
+// parsing logic
+impl DistConfig {
+    pub fn from_file_path(path: &PathBuf, service_name: &str) -> Result<Self> {
+        let config_str = fs::read_to_string(path)
+            .with_context(|| format!("Failed to read file: {}", path.display()))?;
+        Self::from_str(&config_str, service_name)
     }
-    Ok(out)
+
+    fn from_str(config_str: &str, service_name: &str) -> Result<Self> {
+        let raw: RawFileShape = serde_json::from_str(config_str).context("Invalid JSON")?;
+        Self::parse_distributions(raw, service_name)
+    }
+
+    fn parse_distributions(mut raw: RawFileShape, service_name: &str) -> Result<Self> {
+        let our_svc = raw
+            .remove(service_name)
+            .with_context(|| format!("Service name {} doesn't exist in config", service_name))?;
+
+        let mut methods = HashMap::new();
+        for (method, p2l) in our_svc {
+            let dist = Distribution::from_percentile_map(&p2l)
+                .with_context(|| format!("While parsing {service_name}.{method}"))?;
+            methods.insert(method.into(), dist);
+        }
+
+        Ok(DistConfig { methods })
+    }
 }
 
-fn load_from_str(s: &str) -> Result<DistMap> {
-    let raw: RawFileShape = serde_json::from_str(s).context("Invalid JSON")?;
-    parse_distributions(raw)
-}
-
-fn load_from_file(path: &PathBuf) -> Result<DistMap> {
-    let data = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read file: {}", path.display()))?;
-    load_from_str(&data)
+impl DistConfig {
+    pub fn get_method_dist(&self, method: &MethodId) -> Option<&Distribution> {
+        self.methods.get(method)
+    }
 }
 
 #[cfg(test)]
@@ -55,17 +69,16 @@ mod tests {
 
     #[test]
     fn test_parsing() {
+        let svc_name = "MS_11603";
         let path =
             workspace_root().join("./trace-analysis/golden/S_32048416/latency_percentiles.json");
-        let dist_map = load_from_file(&path).expect("Parsing should not fail");
 
-        let svc_name = "MS_11603";
+        let dist_map =
+            DistConfig::from_file_path(&path, svc_name).expect("Parsing should not fail");
 
-        let svc_map = dist_map.get(svc_name).expect("Service should exist");
-
-        let method = "47lZCv__NT:TDDL_QUERY";
-        let dist = svc_map
-            .get(method)
+        let method = "47lZCv__NT:TDDL_QUERY".into();
+        let dist = dist_map
+            .get_method_dist(&method)
             .expect("Method distribution should exist");
 
         // The min and max are manually derived from the distribution in the golden file.
