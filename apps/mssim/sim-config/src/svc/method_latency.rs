@@ -1,9 +1,8 @@
+use crate::svc::MethodId;
 use anyhow::{Context, Result};
-use std::{borrow::Cow, collections::HashMap, fs, path::PathBuf};
+use std::{collections::HashMap, fs, path::PathBuf};
 
 use crate::dist::Distribution;
-
-pub type MethodId = Cow<'static, str>;
 
 /// Stores the distribution configuration for this service
 #[derive(Debug)]
