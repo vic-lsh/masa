@@ -7,7 +7,7 @@ pub type MethodId = Cow<'static, str>;
 
 /// Stores the distribution configuration for this service
 #[derive(Debug)]
-pub struct DistConfig {
+pub struct MethodLatencyDistMap {
     methods: HashMap<MethodId, Distribution>,
 }
 
@@ -16,7 +16,7 @@ pub struct DistConfig {
 type RawFileShape = HashMap<String, HashMap<String, HashMap<String, f64>>>;
 
 // parsing logic
-impl DistConfig {
+impl MethodLatencyDistMap {
     pub fn from_file_path(path: &PathBuf, service_name: &str) -> Result<Self> {
         let config_str = fs::read_to_string(path)
             .with_context(|| format!("Failed to read file: {}", path.display()))?;
@@ -40,11 +40,11 @@ impl DistConfig {
             methods.insert(method.into(), dist);
         }
 
-        Ok(DistConfig { methods })
+        Ok(MethodLatencyDistMap { methods })
     }
 }
 
-impl DistConfig {
+impl MethodLatencyDistMap {
     pub fn get_method_dist(&self, method: &MethodId) -> Option<&Distribution> {
         self.methods.get(method)
     }
@@ -65,7 +65,7 @@ mod tests {
             workspace_root().join("./trace-analysis/golden/S_32048416/latency_percentiles.json");
 
         let dist_map =
-            DistConfig::from_file_path(&path, svc_name).expect("Parsing should not fail");
+            MethodLatencyDistMap::from_file_path(&path, svc_name).expect("Parsing should not fail");
 
         let method = "47lZCv__NT:TDDL_QUERY".into();
         let dist = dist_map
