@@ -129,7 +129,8 @@ impl Frontend for FrontendImpl {
         let reservation_start_time = time_now();
         let span_response = reservation_client.check_availability(span_request).await?;
         let reservation_header = span_response.metadata();
-        let mut reservation_traces = extract_latency_traces(reservation_header).expect("missing X-Latency-Traces header");
+        let mut reservation_traces =
+            extract_latency_traces(reservation_header).expect("missing X-Latency-Traces header");
         reservation_traces.insert(0, reservation_start_time.to_string());
         reservation_traces.insert(0, "reservation".to_string());
         let response = span_response.into_inner();
@@ -154,7 +155,7 @@ impl Frontend for FrontendImpl {
             });
         }
 
-        let response = frontend::SearchResponse { 
+        let response = frontend::SearchResponse {
             hotels,
             reservation_traces: reservation_traces,
         };

@@ -1,4 +1,5 @@
 use http::Request;
+use masa::FutureSpan;
 use pin_project::pin_project;
 use std::collections::HashMap;
 use std::future::Future;
@@ -8,9 +9,8 @@ use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant};
-use tower::{Layer, Service};
-use masa::FutureSpan;
 use tonic::metadata::MetadataMap;
+use tower::{Layer, Service};
 
 pub enum LatencyMetric {
     Queue(String, Duration),
@@ -192,13 +192,12 @@ where
     }
 }
 
-
 // Extract latency traces from the response headers
 pub fn extract_latency_traces(metadata: &MetadataMap) -> Option<Vec<String>> {
     let header_value = metadata
         .get("X-Latency-Traces")
         .expect("missing X-Latency-Traces header")
-        .to_str() 
+        .to_str()
         .unwrap();
     let traces: Vec<FutureSpan> = serde_json::from_str(header_value).ok()?;
     traces
