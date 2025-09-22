@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
 use client::cli::CliOptions;
 use orchestrator::launch_simulation_from_yaml;
@@ -15,9 +17,9 @@ pub mod proto {
     tonic::include_proto!("sim");
 }
 
-async fn run_from_input(opts: &CliOptions) -> Result<()> {
+async fn run_from_input(input_path: &PathBuf) -> Result<()> {
     // Parse JSON file
-    let config = parser::json::parse_json_file(&opts.input)?;
+    let config = parser::json::parse_json_file(input_path)?;
 
     // Validate config
     validator::validate_config(&config)?;
@@ -71,8 +73,8 @@ async fn main() -> Result<()> {
     let opts = client::cli::parse_cli_args();
 
     // If input file is provided, process it directly
-    if opts.input.exists() {
-        run_from_input(&opts).await?;
+    if let Some(path) = opts.input {
+        run_from_input(&path).await?;
     } else {
         run_as_server(&opts).await?;
     }
