@@ -13,6 +13,8 @@ use tokio::time::sleep;
 use tonic::transport::Channel;
 use tonic::{transport::Server, Request, Response, Status};
 
+mod config;
+
 pub mod service_stubs {
     tonic::include_proto!("service");
 }
