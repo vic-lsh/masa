@@ -12,6 +12,9 @@ import pandas as pd
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import partial
 from pathlib import Path
+import re
+import json
+from collections import Counter, defaultdict
 from tqdm import tqdm
 
 def _read_one(path: str | Path, **read_csv_kwargs) -> pd.DataFrame:
@@ -363,31 +366,86 @@ def draw_and_report_graphs(graphs: list[CallGraph], outdir: Path) -> None:
             outfile=outdir / f"{call_graph.service_name}_dag.png"
         )
 
-def report_latency_by_edge(graphs: list[CallGraph], latency_dists: dict) -> None:
+def _slugify(name: str) -> str:
+    s = re.sub(r"[^\w\-]+", "_", name.strip())
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s or "service"
+
+def report_latency_by_edge(
+    graphs: list["CallGraph"],
+    latency_dists: dict,
+    output_root: str | Path = "graph_reports",
+) -> None:
+    """
+    For each graph:
+      - writes <output_root>/<service>/edges.csv
+      - writes <output_root>/<service>/interface_distribution.csv
+      - writes <output_root>/<service>/latency_percentiles.json
+    """
+    output_root = Path(output_root)
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    # Percentiles: 1..100 plus extra tail points
+    base = list(range(1, 101))
+    tails = [99.5, 99.9, 99.95, 99.99]
+    percentiles = sorted(set(base + tails))
+
     for graph in graphs:
-        print("\n\n\n---------------------------------")
-        print("Service:", graph.service_name)
+        # Per-graph collectors
+        edges_rows: list[tuple[str, str, str]] = []
+        iface_counts_by_callee: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
+        seen_callee_ifaces: set[tuple[str, str]] = set()  # (callee, iface)
 
         for caller, callee, data in graph.reachable_subgraph().edges(data=True):
-            iface_counts = data.get("interface_counts", {})
-            n_interfaces = len(iface_counts)
-            print("Data from edge:", (caller, callee), "number of interfaces:", n_interfaces)
+            edges_rows.append((graph.service_name, caller, callee))
 
-            for iface, count in iface_counts.items():
-                latencies = query_latency_distribution(latency_dists, callee, iface)
-                if latencies:
-                    print(
-                        f"  Edge {caller} -> ({callee}, {iface}): {count} calls, "
-                        f"latencies (ms): min={min(latencies):.2f}, "
-                        f"max={max(latencies):.2f}, "
-                        f"mean={sum(latencies)/len(latencies):.2f}, "
-                        f"p99={np.percentile(latencies, 99):.2f}"
-                    )
-                else:
-                    print(
-                        f"  Edge {caller} -> ({callee}, {iface}): {count} calls, "
-                        f"No latency data available."
-                    )
+            iface_counts = data.get("interface_counts", {}) or {}
+            if iface_counts:
+                iface_counts_by_callee[(graph.service_name, callee)].update(iface_counts)
+
+            for iface in iface_counts.keys():
+                seen_callee_ifaces.add((callee, iface))
+
+        # Per-graph output dir
+        svc_dir = output_root / _slugify(graph.service_name)
+        svc_dir.mkdir(parents=True, exist_ok=True)
+
+        # (1) edges.csv
+        if edges_rows:
+            df_edges = pd.DataFrame(edges_rows, columns=["service", "caller", "callee"]).drop_duplicates()
+            df_edges.to_csv(svc_dir / "edges.csv", index=False)
+
+        # (2) interface_distribution.csv
+        iface_rows = []
+        for (service, callee), ctr in iface_counts_by_callee.items():
+            total = sum(ctr.values())
+            if total == 0:
+                continue
+            for iface, cnt in ctr.items():
+                frac = cnt / total
+                iface_rows.append((service, callee, iface, cnt, total, frac))
+        if iface_rows:
+            df_iface = pd.DataFrame(
+                iface_rows,
+                columns=["service", "callee", "interface", "count", "total_count_for_callee", "fraction"],
+            ).sort_values(["service", "callee", "count"], ascending=[True, True, False])
+            df_iface.to_csv(svc_dir / "interface_distribution.csv", index=False)
+
+        # (3) latency_percentiles.json
+        lat_json: dict[str, dict[str, dict[str, float]]] = {}
+        for (callee, iface) in sorted(seen_callee_ifaces):
+            latencies = query_latency_distribution(latency_dists, callee, iface)
+            if not latencies:
+                continue
+            arr = np.asarray(latencies, dtype=float)
+            vals = np.percentile(arr, percentiles)
+            lat_json.setdefault(callee, {})[iface] = {
+                str(p): float(v) for p, v in zip(percentiles, vals)
+            }
+
+        if lat_json:
+            with open(svc_dir / "latency_percentiles.json", "w") as f:
+                json.dump(lat_json, f, indent=2)
 
 
 # ----------------------------
@@ -395,7 +453,7 @@ def report_latency_by_edge(graphs: list[CallGraph], latency_dists: dict) -> None
 # ----------------------------
 
 def main():
-    max_dataset = 9
+    max_dataset = 3
 
     # Load & concat
     df = load_concat_datasets(max_dataset)
