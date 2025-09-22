@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
+from __future__ import annotations
 
 from pathlib import Path
 import copy
@@ -7,6 +8,49 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import networkx as nx
+import pandas as pd
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from functools import partial
+from pathlib import Path
+from tqdm import tqdm
+
+def _read_one(path: str | Path, **read_csv_kwargs) -> pd.DataFrame:
+    """Read a single CSV into a DataFrame."""
+    return pd.read_csv(path, **read_csv_kwargs)
+
+def read_csvs_parallel(
+    paths: list[str | Path],
+    n_workers: int | None = None,
+    show_errors: bool = True,
+    **read_csv_kwargs,
+) -> pd.DataFrame:
+    """
+    Read many CSVs in parallel and concatenate.
+    - paths: list of CSV file paths
+    - n_workers: number of worker processes (default: os.cpu_count())
+    - **read_csv_kwargs: forwarded to pandas.read_csv (e.g., dtype=..., usecols=...)
+    """
+    paths = list(paths)
+    read_fn = partial(_read_one, **read_csv_kwargs)
+    dfs = []
+
+    with ProcessPoolExecutor(max_workers=n_workers) as ex:
+        futures = {ex.submit(read_fn, p): p for p in paths}
+        for fut in tqdm(as_completed(futures), total=len(futures), desc="Reading CSVs"):
+            path = futures[fut]
+            try:
+                df = fut.result()
+                dfs.append(df)
+            except Exception as e:
+                if show_errors:
+                    print(f"[WARN] Failed to read {path}: {e!r}")
+
+    if not dfs:
+        # No files succeeded
+        return pd.DataFrame()
+
+    # Concatenate; allow differing columns across files
+    return pd.concat(dfs, ignore_index=True, sort=False)
 
 
 # ----------------------------
@@ -14,15 +58,6 @@ import networkx as nx
 # ----------------------------
 
 PROJECT_HOME = Path("..").resolve()
-CSV_PATH = (
-    PROJECT_HOME
-    / "traces"
-    / "alibaba"
-    / "cluster-trace-microservices-v2022"
-    / "data"
-    / "CallGraph"
-    / "CallGraph_0.csv"
-)
 
 def get_csv_path(dataset_number: int) -> Path:
     return (
@@ -41,10 +76,10 @@ def get_csv_path(dataset_number: int) -> Path:
 # ----------------------------
 
 def load_concat_datasets(max_dataset: int) -> pd.DataFrame:
-    dfs = []
-    for i in range(max_dataset):
-        dfs.append(pd.read_csv(get_csv_path(i), on_bad_lines="skip"))
-    return pd.concat(dfs)
+    return read_csvs_parallel(
+        [get_csv_path(i) for i in range(max_dataset+1)],
+        on_bad_lines="skip",
+    )
 
 def filter_unknowns(df: pd.DataFrame) -> pd.DataFrame:
     df = df[df["um"] != "UNKNOWN"]
@@ -61,10 +96,6 @@ def select_rpc_rows(df: pd.DataFrame) -> pd.DataFrame:
 # ----------------------------
 # Metrics & prints
 # ----------------------------
-
-def print_basic_stats(df: pd.DataFrame) -> None:
-    print(len(df))
-    print(df["rpctype"].unique())
 
 def print_rpc_stats(rpc_df: pd.DataFrame, df: pd.DataFrame) -> None:
     print("Number of RPC calls:", len(rpc_df))
@@ -364,17 +395,10 @@ def report_latency_by_edge(graphs: list[CallGraph], latency_dists: dict) -> None
 # ----------------------------
 
 def main():
-    # Mirror the original print of CSV_PATH
-    print(CSV_PATH)
-
-    # Original parameter
-    max_dataset = 2
+    max_dataset = 9
 
     # Load & concat
     df = load_concat_datasets(max_dataset)
-
-    # Original basic stats
-    print_basic_stats(df)
 
     # Filter unknowns, then select RPC rows
     df = filter_unknowns(df)
