@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # coding: utf-8
-from networkx.classes.digraph import DiGraph
 from __future__ import annotations
+
+from networkx.classes.digraph import DiGraph
+
 
 # Headless/parallel-safe plotting
 import matplotlib
