@@ -1,3 +1,6 @@
+from jinja2.utils import Namespace
+from argparse import Namespace
+from multiprocessing.managers import Namespace
 import argparse
 import json
 import os
@@ -25,6 +28,7 @@ def read_data(config_dir, data_dir):
             # process each CSV file
             for rps in rps_values:
                 combined = None
+                # pyrefly: ignore  # bad-assignment
                 for api in apis:
                     file_path = os.path.join(policy_folder, f"r{rps}_{api}.csv")
                     df = pd.read_csv(file_path)
@@ -43,7 +47,7 @@ def read_data(config_dir, data_dir):
     return repeats, apis, policies, rps_values, results
 
 
-def prepare_output_dir(args):
+def prepare_output_dir(args) -> None:
     os.makedirs(args.output_dir, exist_ok=True)
 
     with open(os.path.join(args.config_dir, "gen_config.json")) as f:
@@ -54,7 +58,7 @@ def prepare_output_dir(args):
         os.makedirs(os.path.join(args.output_dir, str(i)), exist_ok=True)
 
 
-def parse_args():
+def parse_args() -> Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config-dir", type=Path, required=True)
     parser.add_argument("--data-dir", type=Path, required=True)
