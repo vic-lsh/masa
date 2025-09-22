@@ -1,3 +1,0 @@
-[submodule "traces/alibaba"]
-	path = traces/alibaba
-	url = git@github.com:alibaba/clusterdata.git
