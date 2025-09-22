@@ -410,6 +410,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = DistConfig::from_file_path(&path, &args.service_name)
         .expect("Loading config should succeed");
 
+    // NOTE: currently this breaks the overall simulator.
+    // To test the existing simulator, run with the GenericService instead.
     let svc = AlibabaService::new(config);
 
     let port = env::var("SERVICE_PORT").unwrap_or_else(|_| "50051".to_string());
