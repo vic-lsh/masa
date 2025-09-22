@@ -4,7 +4,7 @@ use prost_types::Timestamp;
 use rand_distr::{Bernoulli, Distribution, Normal};
 use serde::{Deserialize, Serialize};
 use service_stubs::service_client::ServiceClient;
-use sim_config::svc::DistConfig;
+use sim_config::svc::MethodLatencyDistMap;
 use std::collections::HashMap;
 use std::env;
 use std::path::Path;
@@ -343,11 +343,11 @@ impl Service for GenericService {
 }
 
 struct AlibabaService {
-    dist_config: DistConfig,
+    dist_config: MethodLatencyDistMap,
 }
 
 impl AlibabaService {
-    pub fn new(dist_config: DistConfig) -> Self {
+    pub fn new(dist_config: MethodLatencyDistMap) -> Self {
         AlibabaService { dist_config }
     }
 }
@@ -407,7 +407,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let path = args.config_path.into();
-    let config = DistConfig::from_file_path(&path, &args.service_name)
+    let config = MethodLatencyDistMap::from_file_path(&path, &args.service_name)
         .expect("Loading config should succeed");
 
     // NOTE: currently this breaks the overall simulator.
