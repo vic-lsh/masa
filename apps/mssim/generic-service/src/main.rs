@@ -4,7 +4,7 @@ use prost_types::Timestamp;
 use rand_distr::{Bernoulli, Distribution, Normal};
 use serde::{Deserialize, Serialize};
 use service_stubs::service_client::ServiceClient;
-use sim_config::DistConfig;
+use sim_config::svc::DistConfig;
 use std::collections::HashMap;
 use std::env;
 use std::path::Path;
