@@ -1,0 +1,3 @@
+[submodule "traces/alibaba"]
+	path = traces/alibaba
+	url = git@github.com:vic-lsh/alibaba-clusterdata.git
