@@ -2,6 +2,7 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
+# pyrefly: ignore  # import-error
 from util import parse_args, prepare_output_dir, read_data
 
 
