@@ -14,7 +14,15 @@ import networkx as nx
 # ----------------------------
 
 PROJECT_HOME = Path("..").resolve()
-CSV_PATH = PROJECT_HOME / "traces" / "alibaba" / "cluster-trace-microservices-v2022" / "data" / "CallGraph" / "CallGraph_0.csv"
+CSV_PATH = (
+    PROJECT_HOME
+    / "traces"
+    / "alibaba"
+    / "cluster-trace-microservices-v2022"
+    / "data"
+    / "CallGraph"
+    / "CallGraph_0.csv"
+)
 
 def get_csv_path(dataset_number: int) -> Path:
     return (
@@ -146,6 +154,7 @@ def get_service_graph(df: pd.DataFrame, service_name: str):
 def plot_dag_plot(
     G: nx.DiGraph,
     mode: str = "thickness",           # "thickness" or "labels"
+    outfile: Path | None = None,       # if provided, save to file instead of showing
     min_width: float = 0.8,
     max_width: float = 6.0,
     uniform_width: float = 2.0,
@@ -159,6 +168,7 @@ def plot_dag_plot(
 ):
     """
     Plot a DAG with Graphviz 'dot' layout.
+
     mode="thickness": edges use log-scaled thickness from 'weight' (no edge labels)
     mode="labels":    edges use uniform thickness and display 'weight' as labels (pre-log)
     """
@@ -171,7 +181,7 @@ def plot_dag_plot(
         for u, v in G.edges():
             w = G[u][v].get("weight", 1.0)
             if w <= 0:
-                w = 1e-6
+                w = 1e-6  # avoid log(0) / negatives
             raw_weights.append(w)
 
         log_w = np.log1p(raw_weights)
@@ -189,8 +199,6 @@ def plot_dag_plot(
             node_color=node_color, arrowsize=arrowsize,
             width=widths,
         )
-        plt.tight_layout()
-        plt.show()
 
     elif mode == "labels":
         widths = [uniform_width] * G.number_of_edges()
@@ -206,10 +214,16 @@ def plot_dag_plot(
         )
         if edge_labels:
             nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
-        plt.tight_layout()
-        plt.show()
     else:
         raise ValueError("mode must be 'thickness' or 'labels'")
+
+    plt.tight_layout()
+    if outfile:
+        outfile.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(outfile)
+        plt.close()
+    else:
+        plt.show()
 
 def reachable_subgraph(G: nx.DiGraph, source: str = "USER") -> nx.DiGraph:
     """
@@ -255,13 +269,16 @@ class CallGraph:
         self.G_iface = G_iface
         self._reachable_subgraph = None
 
-    def draw_svc_plot(self, **kwargs):
-        plot_dag_plot(self.G_pair, **kwargs)
+    def draw_svc_plot(self, outfile: Path | None = None, **kwargs):
+        """Draw a plot with all the service nodes included."""
+        plot_dag_plot(self.G_pair, outfile=outfile, **kwargs)
 
-    def draw_dag(self, **kwargs):
-        plot_dag_plot(self.reachable_subgraph(), **kwargs)
+    def draw_dag(self, outfile: Path | None = None, **kwargs):
+        """Draw a plot with only nodes reachable from 'USER'."""
+        plot_dag_plot(self.reachable_subgraph(), outfile=outfile, **kwargs)
 
     def reachable_subgraph(self, source: str = "USER") -> nx.DiGraph:
+        """Get the reachable subgraph from `source`."""
         return reachable_subgraph(self.G_pair, source=source)
 
 
@@ -297,7 +314,7 @@ def build_call_graphs_for_top_services(rpc_df: pd.DataFrame, top_services: pd.Se
         graphs.append(CallGraph(svc, G_svc, G_iface))
     return graphs
 
-def draw_and_report_graphs(graphs: list[CallGraph]) -> None:
+def draw_and_report_graphs(graphs: list[CallGraph], outdir: Path) -> None:
     for call_graph in graphs:
         print("Service:", call_graph.service_name)
         print(
@@ -306,8 +323,14 @@ def draw_and_report_graphs(graphs: list[CallGraph]) -> None:
             "Number of edges:",
             len(call_graph.G_pair.edges),
         )
-        call_graph.draw_svc_plot(mode="labels", figsize=(32, 12))
-        call_graph.draw_dag(mode="thickness", figsize=(20, 8))
+        call_graph.draw_svc_plot(
+            mode="labels", figsize=(32, 12),
+            outfile=outdir / f"{call_graph.service_name}_svc.png"
+        )
+        call_graph.draw_dag(
+            mode="thickness", figsize=(20, 8),
+            outfile=outdir / f"{call_graph.service_name}_dag.png"
+        )
 
 def report_latency_by_edge(graphs: list[CallGraph], latency_dists: dict) -> None:
     for graph in graphs:
@@ -364,12 +387,12 @@ def main():
     # Build graphs for top services
     graphs = build_call_graphs_for_top_services(rpc_df, top_services)
 
-    # Draw plots and print node/edge counts
-    draw_and_report_graphs(graphs)
+    # Draw plots and print node/edge counts (saved to files)
+    outdir = Path("plots")
+    draw_and_report_graphs(graphs, outdir)
 
     # Latency distributions and per-edge reporting
     latency_dists = compute_latency_distributions(rpc_df)
-    print(latency_dists)
     report_latency_by_edge(graphs, latency_dists)
 
 
