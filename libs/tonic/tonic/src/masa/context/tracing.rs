@@ -49,8 +49,8 @@ pub struct ParentContext {
     method: GrpcMethod,
 
     start_exec: Instant,
-    last_before_block: AtomicU64,
     last_before_poll: AtomicU64,
+    last_after_poll: AtomicU64,
     latency_traces: Mutex<Vec<FutureSpan>>,
 }
 
@@ -63,8 +63,8 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         Self {
             method: _method,
             start_exec: Instant::now(),
-            last_before_block: AtomicU64::new(0),
             last_before_poll: AtomicU64::new(0),
+            last_after_poll: AtomicU64::new(0),
             latency_traces: Mutex::new(Vec::new()),
         }
     }
@@ -75,44 +75,29 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         request: &mut Request<T>,
         child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
-        self.last_before_block.store(time_now(), Ordering::Release);
         Ok(())
     }
 
-    // TODO: Happens after the before poll
     fn after_child_rpc<T>(
         &self,
         method: GrpcMethod,
         response: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext,
     ) -> Result<(), Status> {
-        // Obtain the vector of latency traces from the child context
-        // if let Ok(res) = response {
-        //     let now = time_now();
-        //     {
-        //         let mut traces = self.latency_traces.lock().unwrap();
-        //         let prev_queue = traces.pop().unwrap_or(FutureSpan::Queueing(0));
-        //         let queue_latency = match prev_queue {
-        //             FutureSpan::Queueing(dur) => dur,
-        //             _ => 0,
-        //         };
-
-        //         let block_latency = now.saturating_sub(
-        //             self.last_before_block.load(Ordering::Acquire),
-        //         ).saturating_sub(queue_latency);
-        //         traces.push(FutureSpan::Block(block_latency));
-        //         traces.push(prev_queue);
-        //     }
-        // }
         Ok(())
     }
 
-    // TODO: Add the block latency here
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        self.last_before_poll.store(time_now(), Ordering::Release);
+        let now = time_now();
+        self.last_before_poll.store(now, Ordering::Release);
         let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
         {
             let mut traces = self.latency_traces.lock().unwrap();
+            let last_after_poll = self.last_after_poll.swap(0, Ordering::AcqRel);
+            if last_after_poll != 0 {
+                let block_latency = now.saturating_sub(last_after_poll).saturating_sub(queue_latency);
+                traces.push(FutureSpan::Block(block_latency));
+            }
             traces.push(FutureSpan::Queueing(queue_latency));
         }
         Ok(())
@@ -122,9 +107,10 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         &self,
         _poll: &std::task::Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
+        let now = time_now();
+        self.last_after_poll.store(now, Ordering::Release);
         let last_before_poll = self.last_before_poll.load(Ordering::Acquire);
-        assert!(last_before_poll != 0);
-        let compute_latency = time_now() - last_before_poll;
+        let compute_latency = now - last_before_poll;
         self.latency_traces
             .lock()
             .unwrap()
@@ -140,25 +126,6 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         res_header.insert("X-Latency-Traces", header_val);
     }
 }
-
-// impl ParentContext {
-//     fn get_latency_trace(&self) -> LatencyTrace {
-//         let e2e_latency_us = self.start_exec.elapsed().as_micros() as u64;
-//         let compute_latency_us = self.compute_latency.load(Ordering::Acquire);
-//         let queue_latency_us = tokio::task::obtain_task_queue_latency().as_micros() as u64;
-//         let io_latency_us = e2e_latency_us
-//             .saturating_sub(compute_latency_us)
-//             .saturating_sub(queue_latency_us);
-
-//         LatencyTrace {
-//             method_id: self.method.id().to_string(),
-//             e2e_latency_us,
-//             compute_latency_us,
-//             queue_latency_us,
-//             io_latency_us,
-//         }
-//     }
-// }
 
 #[derive(Debug, Clone)]
 #[allow(unreachable_pub)]
