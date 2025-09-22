@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
+from networkx.classes.digraph import DiGraph
 from __future__ import annotations
 
 # Headless/parallel-safe plotting
@@ -123,7 +124,7 @@ def top_10_services(rpc_df: pd.DataFrame) -> pd.Series:
 # Graph building & plotting
 # ----------------------------
 
-def get_service_graphs(df: pd.DataFrame, service_name: str, interface_col: str = "interface"):
+def get_service_graphs(df: pd.DataFrame, service_name: str, interface_col: str = "interface") -> tuple[DiGraph, DiGraph]:
     svc_df = df[df["service"] == service_name]
     iface_series = svc_df[interface_col].fillna("<none>")
 
@@ -168,7 +169,7 @@ def plot_dag_plot(
     arrowsize: int = 20,
     node_color: str = "lightblue",
     figsize=(8, 6),
-):
+) -> None:
     pos = nx.nx_agraph.graphviz_layout(
         G, prog="dot", args=f"-Granksep={ranksep} -Gnodesep={nodesep}"
     )
@@ -254,15 +255,15 @@ class CallGraph:
     G_pair: nx.DiGraph
     G_iface: nx.DiGraph
 
-    def __init__(self, service_name: str, G_pair: nx.DiGraph, G_iface: nx.DiGraph):
+    def __init__(self, service_name: str, G_pair: nx.DiGraph, G_iface: nx.DiGraph) -> None:
         self.service_name = service_name
         self.G_pair = G_pair
         self.G_iface = G_iface
 
-    def draw_svc_plot(self, outfile: Path | None = None, **kwargs):
+    def draw_svc_plot(self, outfile: Path | None = None, **kwargs) -> None:
         plot_dag_plot(self.G_pair, outfile=outfile, **kwargs)
 
-    def draw_dag(self, outfile: Path | None = None, **kwargs):
+    def draw_dag(self, outfile: Path | None = None, **kwargs) -> None:
         plot_dag_plot(reachable_subgraph(self.G_pair, source="USER"), outfile=outfile, **kwargs)
 
 # ----------------------------
@@ -452,7 +453,7 @@ def run_for_services_process_pool(
 # main()
 # ----------------------------
 
-def main():
+def main() -> None:
     max_dataset = 9
 
     # Load & concat
