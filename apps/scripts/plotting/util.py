@@ -25,6 +25,7 @@ def read_data(config_dir, data_dir):
             # process each CSV file
             for rps in rps_values:
                 combined = None
+                # pyrefly: ignore  # bad-assignment
                 for api in apis:
                     file_path = os.path.join(policy_folder, f"r{rps}_{api}.csv")
                     df = pd.read_csv(file_path)
