@@ -26,6 +26,10 @@ packages=(
     # our evaluation apps test suite
     "hotel"
     "socialnet"
+    
+    # simulator
+    "mssim"
+    "generic-service"
 )
 
 # If testing your crate requires special feature flags, set them here
