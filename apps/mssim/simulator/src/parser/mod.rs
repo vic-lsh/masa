@@ -18,12 +18,12 @@ pub struct ServiceConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MethodConfig {
     pub calls: Vec<Vec<String>>,
-    pub latency_distribution: Distribution,
-    pub error_rate: Option<Distribution>,
+    pub latency_distribution: SimpleDistribution,
+    pub error_rate: Option<SimpleDistribution>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Distribution {
+pub struct SimpleDistribution {
     #[serde(rename = "type")]
     pub distribution_type: String,
     pub parameters: HashMap<String, f64>,
