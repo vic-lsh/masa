@@ -272,7 +272,7 @@ class CallGraph:
 def compute_latency_distributions(df: pd.DataFrame):
     return (
         df.groupby(["dm", "interface"])["rt"]
-        .apply(list)
+        .agg(list)
         .to_dict()
     )
 
@@ -341,7 +341,6 @@ def report_latency_by_edge_for_graph(
     if lat_json:
         with open(svc_dir / "latency_percentiles.json", "w") as f:
             json.dump(lat_json, f, indent=2)
-
 # ----------------------------
 # Per-service worker (PROCESS)
 # ----------------------------
