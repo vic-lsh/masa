@@ -4,6 +4,7 @@ use prost_types::Timestamp;
 use rand_distr::{Bernoulli, Distribution, Normal};
 use serde::{Deserialize, Serialize};
 use service_stubs::service_client::ServiceClient;
+use sim_config::DistConfig;
 use std::collections::HashMap;
 use std::env;
 use std::path::Path;
@@ -13,8 +14,6 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tonic::transport::Channel;
 use tonic::{transport::Server, Request, Response, Status};
-
-mod config;
 
 pub mod service_stubs {
     tonic::include_proto!("service");
@@ -344,11 +343,11 @@ impl Service for GenericService {
 }
 
 struct AlibabaService {
-    dist_config: config::DistConfig,
+    dist_config: DistConfig,
 }
 
 impl AlibabaService {
-    pub fn new(dist_config: config::DistConfig) -> Self {
+    pub fn new(dist_config: DistConfig) -> Self {
         AlibabaService { dist_config }
     }
 }
@@ -408,7 +407,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let path = args.config_path.into();
-    let config = config::DistConfig::from_file_path(&path, &args.service_name)
+    let config = DistConfig::from_file_path(&path, &args.service_name)
         .expect("Loading config should succeed");
 
     let svc = AlibabaService::new(config);
