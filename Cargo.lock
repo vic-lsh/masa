@@ -2291,6 +2291,7 @@ name = "generic-service"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap 4.5.48",
  "futures",
  "ordered-float 5.0.0",
  "prost 0.12.6",
