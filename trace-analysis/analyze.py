@@ -2,23 +2,29 @@
 # coding: utf-8
 from __future__ import annotations
 
+# Headless/parallel-safe plotting
+import matplotlib
+matplotlib.use("Agg")
+
 from pathlib import Path
 import copy
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import networkx as nx
-import pandas as pd
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import partial
-from pathlib import Path
 import re
 import json
+import time
 from collections import Counter, defaultdict
 from tqdm import tqdm
 
+# ----------------------------
+# Parallel CSV loading (processes)
+# ----------------------------
+
 def _read_one(path: str | Path, **read_csv_kwargs) -> pd.DataFrame:
-    """Read a single CSV into a DataFrame."""
     return pd.read_csv(path, **read_csv_kwargs)
 
 def read_csvs_parallel(
@@ -27,12 +33,6 @@ def read_csvs_parallel(
     show_errors: bool = True,
     **read_csv_kwargs,
 ) -> pd.DataFrame:
-    """
-    Read many CSVs in parallel and concatenate.
-    - paths: list of CSV file paths
-    - n_workers: number of worker processes (default: os.cpu_count())
-    - **read_csv_kwargs: forwarded to pandas.read_csv (e.g., dtype=..., usecols=...)
-    """
     paths = list(paths)
     read_fn = partial(_read_one, **read_csv_kwargs)
     dfs = []
@@ -49,15 +49,11 @@ def read_csvs_parallel(
                     print(f"[WARN] Failed to read {path}: {e!r}")
 
     if not dfs:
-        # No files succeeded
         return pd.DataFrame()
-
-    # Concatenate; allow differing columns across files
     return pd.concat(dfs, ignore_index=True, sort=False)
 
-
 # ----------------------------
-# Paths & basic utilities
+# Paths & utilities
 # ----------------------------
 
 PROJECT_HOME = Path("..").resolve()
@@ -73,6 +69,10 @@ def get_csv_path(dataset_number: int) -> Path:
         / f"CallGraph_{dataset_number}.csv"
     )
 
+def _slugify(name: str) -> str:
+    s = re.sub(r"[^\w\-]+", "_", name.strip())
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s or "service"
 
 # ----------------------------
 # Data loading & filtering
@@ -80,24 +80,20 @@ def get_csv_path(dataset_number: int) -> Path:
 
 def load_concat_datasets(max_dataset: int) -> pd.DataFrame:
     return read_csvs_parallel(
-        [get_csv_path(i) for i in range(max_dataset+1)],
+        [get_csv_path(i) for i in range(max_dataset + 1)],
         on_bad_lines="skip",
     )
 
 def filter_unknowns(df: pd.DataFrame) -> pd.DataFrame:
-    df = df[df["um"] != "UNKNOWN"]
-    df = df[df["dm"] != "UNKNOWN"]
-    df = df[df["um"] != "UNAVAILABLE"]
-    df = df[df["dm"] != "UNAVAILABLE"]
+    df = df[df["um"].isin(["UNKNOWN", "UNAVAILABLE"]) == False]
+    df = df[df["dm"].isin(["UNKNOWN", "UNAVAILABLE"]) == False]
     return df
 
 def select_rpc_rows(df: pd.DataFrame) -> pd.DataFrame:
-    # Ignore unknown calls and message queue calls (not supported by our system)
     return df[~df["rpctype"].isin(["UNKNOWN", "mq"])]
 
-
 # ----------------------------
-# Metrics & prints
+# Metrics
 # ----------------------------
 
 def print_rpc_stats(rpc_df: pd.DataFrame, df: pd.DataFrame) -> None:
@@ -123,24 +119,11 @@ def top_10_services(rpc_df: pd.DataFrame) -> pd.Series:
     print(top_services)
     return top_services
 
-
 # ----------------------------
 # Graph building & plotting
 # ----------------------------
 
 def get_service_graphs(df: pd.DataFrame, service_name: str, interface_col: str = "interface"):
-    """
-    Build two service graphs for a given `service_name` from `df`.
-
-    Returns
-    -------
-    (G_pair, G_iface) : tuple(networkx.DiGraph, networkx.DiGraph)
-        G_pair: edges (um -> dm) with attributes:
-            - weight : int (total calls)
-            - interface_counts : dict(interface -> int)
-        G_iface: edges (um -> (dm, interface)) with attribute:
-            - weight : int (total calls)
-    """
     svc_df = df[df["service"] == service_name]
     iface_series = svc_df[interface_col].fillna("<none>")
 
@@ -150,9 +133,8 @@ def get_service_graphs(df: pd.DataFrame, service_name: str, interface_col: str =
     for (_, row), iface in zip(svc_df.iterrows(), iface_series):
         caller = row["um"]
         callee = row["dm"]
-        dm_iface_node = (callee, iface)  # structured tuple node
+        dm_iface_node = (callee, iface)
 
-        # Graph 1: (um -> dm)
         if G_pair.has_edge(caller, callee):
             G_pair[caller][callee]["weight"] += 1
             hist = G_pair[caller][callee]["interface_counts"]
@@ -165,7 +147,6 @@ def get_service_graphs(df: pd.DataFrame, service_name: str, interface_col: str =
                 interface_counts={iface: 1},
             )
 
-        # Graph 2: (um -> (dm, interface))
         if G_iface.has_edge(caller, dm_iface_node):
             G_iface[caller][dm_iface_node]["weight"] += 1
         else:
@@ -173,22 +154,10 @@ def get_service_graphs(df: pd.DataFrame, service_name: str, interface_col: str =
 
     return G_pair, G_iface
 
-def get_service_graph(df: pd.DataFrame, service_name: str):
-    G = nx.DiGraph()
-    svc_df = df[df["service"] == service_name]
-    for _, row in svc_df.iterrows():
-        caller = row["um"]
-        callee = row["dm"]
-        if G.has_edge(caller, callee):
-            G[caller][callee]["weight"] += 1
-        else:
-            G.add_edge(caller, callee, weight=1)
-    return G
-
 def plot_dag_plot(
     G: nx.DiGraph,
-    mode: str = "thickness",           # "thickness" or "labels"
-    outfile: Path | None = None,       # if provided, save to file instead of showing
+    mode: str = "thickness",
+    outfile: Path | None = None,
     min_width: float = 0.8,
     max_width: float = 6.0,
     uniform_width: float = 2.0,
@@ -200,12 +169,6 @@ def plot_dag_plot(
     node_color: str = "lightblue",
     figsize=(8, 6),
 ):
-    """
-    Plot a DAG with Graphviz 'dot' layout.
-
-    mode="thickness": edges use log-scaled thickness from 'weight' (no edge labels)
-    mode="labels":    edges use uniform thickness and display 'weight' as labels (pre-log)
-    """
     pos = nx.nx_agraph.graphviz_layout(
         G, prog="dot", args=f"-Granksep={ranksep} -Gnodesep={nodesep}"
     )
@@ -215,7 +178,7 @@ def plot_dag_plot(
         for u, v in G.edges():
             w = G[u][v].get("weight", 1.0)
             if w <= 0:
-                w = 1e-6  # avoid log(0) / negatives
+                w = 1e-6
             raw_weights.append(w)
 
         log_w = np.log1p(raw_weights)
@@ -260,17 +223,13 @@ def plot_dag_plot(
         plt.show()
 
 def reachable_subgraph(G: nx.DiGraph, source: str = "USER") -> nx.DiGraph:
-    """
-    Return a DiGraph induced by all nodes reachable from `source`
-    (including `source`). Works with cycles and self-edges.
-    """
     if source not in G:
         raise ValueError(f"Source node {source!r} not found in graph.")
 
     reachable = {source} | nx.descendants(G, source)
     view = G.subgraph(reachable)
 
-    H = G.__class__()                     # preserve DiGraph/MultiDiGraph
+    H = G.__class__()
     H.graph.update(copy.deepcopy(G.graph))
     H.add_nodes_from((n, copy.deepcopy(view.nodes[n])) for n in view.nodes)
 
@@ -286,7 +245,6 @@ def reachable_subgraph(G: nx.DiGraph, source: str = "USER") -> nx.DiGraph:
         )
     return H
 
-
 # ----------------------------
 # CallGraph wrapper
 # ----------------------------
@@ -295,165 +253,211 @@ class CallGraph:
     service_name: str
     G_pair: nx.DiGraph
     G_iface: nx.DiGraph
-    _reachable_subgraph: nx.DiGraph | None
 
     def __init__(self, service_name: str, G_pair: nx.DiGraph, G_iface: nx.DiGraph):
         self.service_name = service_name
         self.G_pair = G_pair
         self.G_iface = G_iface
-        self._reachable_subgraph = None
 
     def draw_svc_plot(self, outfile: Path | None = None, **kwargs):
-        """Draw a plot with all the service nodes included."""
         plot_dag_plot(self.G_pair, outfile=outfile, **kwargs)
 
     def draw_dag(self, outfile: Path | None = None, **kwargs):
-        """Draw a plot with only nodes reachable from 'USER'."""
-        plot_dag_plot(self.reachable_subgraph(), outfile=outfile, **kwargs)
-
-    def reachable_subgraph(self, source: str = "USER") -> nx.DiGraph:
-        """Get the reachable subgraph from `source`."""
-        return reachable_subgraph(self.G_pair, source=source)
-
+        plot_dag_plot(reachable_subgraph(self.G_pair, source="USER"), outfile=outfile, **kwargs)
 
 # ----------------------------
 # Latency distributions
 # ----------------------------
 
 def compute_latency_distributions(df: pd.DataFrame):
-    """
-    Precompute latency distributions for each (dm, interface) pair.
-    Returns: dict[(dm, interface)] -> list of rt
-    """
-    latency_groups = (
+    return (
         df.groupby(["dm", "interface"])["rt"]
         .apply(list)
         .to_dict()
     )
-    return latency_groups
 
 def query_latency_distribution(latency_dict, dm_name: str, iface_name: str):
     return latency_dict.get((dm_name, iface_name), [])
 
-
 # ----------------------------
-# Orchestration
+# Reporting (per-graph)
 # ----------------------------
 
-def build_call_graphs_for_top_services(rpc_df: pd.DataFrame, top_services: pd.Series) -> list[CallGraph]:
-    graphs = []
-    for svc in top_services.index:
-        print(f"Service: {svc}")
-        G_svc, G_iface = get_service_graphs(rpc_df, svc)
-        graphs.append(CallGraph(svc, G_svc, G_iface))
-    return graphs
-
-def draw_and_report_graphs(graphs: list[CallGraph], outdir: Path) -> None:
-    for call_graph in graphs:
-        print("Service:", call_graph.service_name)
-        print(
-            "Number of nodes:",
-            len(call_graph.G_pair.nodes),
-            "Number of edges:",
-            len(call_graph.G_pair.edges),
-        )
-        call_graph.draw_svc_plot(
-            mode="labels", figsize=(32, 12),
-            outfile=outdir / f"{call_graph.service_name}_svc.png"
-        )
-        call_graph.draw_dag(
-            mode="thickness", figsize=(20, 8),
-            outfile=outdir / f"{call_graph.service_name}_dag.png"
-        )
-
-def _slugify(name: str) -> str:
-    s = re.sub(r"[^\w\-]+", "_", name.strip())
-    s = re.sub(r"_+", "_", s).strip("_")
-    return s or "service"
-
-def report_latency_by_edge(
-    graphs: list["CallGraph"],
+def report_latency_by_edge_for_graph(
+    graph: CallGraph,
     latency_dists: dict,
     output_root: str | Path = "graph_reports",
 ) -> None:
-    """
-    For each graph:
-      - writes <output_root>/<service>/edges.csv
-      - writes <output_root>/<service>/interface_distribution.csv
-      - writes <output_root>/<service>/latency_percentiles.json
-    """
     output_root = Path(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
 
-    # Percentiles: 1..100 plus extra tail points
     base = list(range(1, 101))
     tails = [99.5, 99.9, 99.95, 99.99]
     percentiles = sorted(set(base + tails))
 
-    for graph in graphs:
-        # Per-graph collectors
-        edges_rows: list[tuple[str, str, str]] = []
-        iface_counts_by_callee: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
-        seen_callee_ifaces: set[tuple[str, str]] = set()  # (callee, iface)
+    edges_rows: list[tuple[str, str, str]] = []
+    iface_counts_by_callee: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
+    seen_callee_ifaces: set[tuple[str, str]] = set()
 
-        for caller, callee, data in graph.reachable_subgraph().edges(data=True):
-            edges_rows.append((graph.service_name, caller, callee))
-
-            iface_counts = data.get("interface_counts", {}) or {}
-            if iface_counts:
-                iface_counts_by_callee[(graph.service_name, callee)].update(iface_counts)
-
+    for caller, callee, data in reachable_subgraph(graph.G_pair, source="USER").edges(data=True):
+        edges_rows.append((graph.service_name, caller, callee))
+        iface_counts = data.get("interface_counts", {}) or {}
+        if iface_counts:
+            iface_counts_by_callee[(graph.service_name, callee)].update(iface_counts)
             for iface in iface_counts.keys():
                 seen_callee_ifaces.add((callee, iface))
 
-        # Per-graph output dir
-        svc_dir = output_root / _slugify(graph.service_name)
-        svc_dir.mkdir(parents=True, exist_ok=True)
+    svc_dir = output_root / _slugify(graph.service_name)
+    svc_dir.mkdir(parents=True, exist_ok=True)
 
-        # (1) edges.csv
-        if edges_rows:
-            df_edges = pd.DataFrame(edges_rows, columns=["service", "caller", "callee"]).drop_duplicates()
-            df_edges.to_csv(svc_dir / "edges.csv", index=False)
+    # (1) edges.csv
+    if edges_rows:
+        df_edges = pd.DataFrame(edges_rows, columns=["service", "caller", "callee"]).drop_duplicates()
+        df_edges.to_csv(svc_dir / "edges.csv", index=False)
 
-        # (2) interface_distribution.csv
-        iface_rows = []
-        for (service, callee), ctr in iface_counts_by_callee.items():
-            total = sum(ctr.values())
-            if total == 0:
-                continue
-            for iface, cnt in ctr.items():
-                frac = cnt / total
-                iface_rows.append((service, callee, iface, cnt, total, frac))
-        if iface_rows:
-            df_iface = pd.DataFrame(
-                iface_rows,
-                columns=["service", "callee", "interface", "count", "total_count_for_callee", "fraction"],
-            ).sort_values(["service", "callee", "count"], ascending=[True, True, False])
-            df_iface.to_csv(svc_dir / "interface_distribution.csv", index=False)
+    # (2) interface_distribution.csv
+    iface_rows = []
+    for (service, callee), ctr in iface_counts_by_callee.items():
+        total = sum(ctr.values())
+        if total == 0:
+            continue
+        for iface, cnt in ctr.items():
+            frac = cnt / total
+            iface_rows.append((service, callee, iface, cnt, total, frac))
+    if iface_rows:
+        df_iface = pd.DataFrame(
+            iface_rows,
+            columns=["service", "callee", "interface", "count", "total_count_for_callee", "fraction"],
+        ).sort_values(["service", "callee", "count"], ascending=[True, True, False])
+        df_iface.to_csv(svc_dir / "interface_distribution.csv", index=False)
 
-        # (3) latency_percentiles.json
-        lat_json: dict[str, dict[str, dict[str, float]]] = {}
-        for (callee, iface) in sorted(seen_callee_ifaces):
-            latencies = query_latency_distribution(latency_dists, callee, iface)
-            if not latencies:
-                continue
-            arr = np.asarray(latencies, dtype=float)
-            vals = np.percentile(arr, percentiles)
-            lat_json.setdefault(callee, {})[iface] = {
-                str(p): float(v) for p, v in zip(percentiles, vals)
-            }
+    # (3) latency_percentiles.json
+    lat_json: dict[str, dict[str, dict[str, float]]] = {}
+    for (callee, iface) in sorted(seen_callee_ifaces):
+        latencies = query_latency_distribution(latency_dists, callee, iface)
+        if not latencies:
+            continue
+        arr = np.asarray(latencies, dtype=float)
+        vals = np.percentile(arr, percentiles)
+        lat_json.setdefault(callee, {})[iface] = {str(p): float(v) for p, v in zip(percentiles, vals)}
 
-        if lat_json:
-            with open(svc_dir / "latency_percentiles.json", "w") as f:
-                json.dump(lat_json, f, indent=2)
+    if lat_json:
+        with open(svc_dir / "latency_percentiles.json", "w") as f:
+            json.dump(lat_json, f, indent=2)
 
+# ----------------------------
+# Per-service worker (PROCESS)
+# ----------------------------
+
+def _process_one_service_proc(
+    service_name: str,
+    svc_df_min: pd.DataFrame,
+    latency_dists_filtered: dict,
+    plots_outdir: Path,
+    reports_root: Path,
+) -> tuple[str, int, int]:
+    """
+    Build graphs for one service, draw plots, and write reports.
+    Runs in a separate process. Returns (service, num_nodes, num_edges).
+    """
+    # Build graphs from the minimal per-service slice
+    G_pair, G_iface = get_service_graphs(svc_df_min, service_name)
+    cg = CallGraph(service_name, G_pair, G_iface)
+
+    # Plots
+    plots_outdir.mkdir(parents=True, exist_ok=True)
+    cg.draw_svc_plot(
+        mode="labels", figsize=(32, 12),
+        outfile=plots_outdir / f"{_slugify(service_name)}_svc.png",
+    )
+    cg.draw_dag(
+        mode="thickness", figsize=(20, 8),
+        outfile=plots_outdir / f"{_slugify(service_name)}_dag.png",
+    )
+
+    # Reports
+    report_latency_by_edge_for_graph(cg, latency_dists_filtered, output_root=reports_root)
+
+    return (service_name, len(cg.G_pair.nodes), len(cg.G_pair.edges))
+
+# ----------------------------
+# Orchestration (process pool)
+# ----------------------------
+
+def run_for_services_process_pool(
+    rpc_df: pd.DataFrame,
+    top_services: pd.Series,
+    n_workers: int | None = None,
+    plots_outdir: Path = Path("plots"),
+    reports_root: Path = Path("graph_reports"),
+) -> list[tuple[str, int, int]]:
+    """
+    Parallelizes the per-service work (graphs, plots, reports) over top_services
+    using a **ProcessPoolExecutor**. To reduce IPC overhead:
+      * The parent builds a minimal per-service dataframe slice (only needed columns).
+      * The parent computes global latency distributions once, then filters that dict
+        per service to just the (dm, interface) keys used by that service.
+    """
+    plots_outdir.mkdir(parents=True, exist_ok=True)
+    reports_root.mkdir(parents=True, exist_ok=True)
+
+    # Precompute global latency distributions once
+    latency_dists_all = compute_latency_distributions(rpc_df)
+
+    # Prepare minimal per-service data and the subset of latency dict each service needs
+    services = list(top_services.index)
+
+    # Only columns required to build graphs (+ service for get_service_graphs filter)
+    needed_cols = ["service", "um", "dm", "interface"]
+    # Optional: keep "rt" out of svc_df_min (not required by workers—latency comes from latency_dists)
+    svc_frames: dict[str, pd.DataFrame] = {
+        svc: rpc_df.loc[rpc_df["service"] == svc, needed_cols].copy()
+        for svc in services
+    }
+
+    # Precompute (dm, interface) pairs per service to trim latency dict size
+    svc_keys: dict[str, set[tuple[str, str]]] = {
+        svc: set(zip(svc_frames[svc]["dm"], svc_frames[svc]["interface"].fillna("<none>")))
+        for svc in services
+    }
+
+    def _filter_latency(lat_all: dict, keys: set[tuple[str, str]]) -> dict:
+        if not keys:
+            return {}
+        return {k: v for k, v in lat_all.items() if k in keys}
+
+    results: list[tuple[str, int, int]] = []
+
+    with ProcessPoolExecutor(max_workers=n_workers) as ex:
+        futures = {}
+        for svc in services:
+            lat_sub = _filter_latency(latency_dists_all, svc_keys[svc])
+            # Submit minimal payload to the process
+            futures[ex.submit(
+                _process_one_service_proc,
+                svc,
+                svc_frames[svc],
+                lat_sub,
+                plots_outdir,
+                reports_root,
+            )] = svc
+
+        for fut in tqdm(as_completed(futures), total=len(futures), desc="Per-service (proc)"):
+            svc = futures[fut]
+            try:
+                results.append(fut.result())
+            except Exception as e:
+                print(f"[WARN] Service {svc} failed: {e!r}")
+
+    results.sort(key=lambda x: x[0])
+    return results
 
 # ----------------------------
 # main()
 # ----------------------------
 
 def main():
-    max_dataset = 3
+    max_dataset = 9
 
     # Load & concat
     df = load_concat_datasets(max_dataset)
@@ -466,17 +470,19 @@ def main():
     print_rpc_stats(rpc_df, df)
     top_services = top_10_services(rpc_df)
 
-    # Build graphs for top services
-    graphs = build_call_graphs_for_top_services(rpc_df, top_services)
+    start = time.perf_counter()
+    results = run_for_services_process_pool(
+        rpc_df,
+        top_services,
+        n_workers=None,               # set an int to cap processes
+        plots_outdir=Path("plots"),
+        reports_root=Path("graph_reports"),
+    )
+    elapsed = time.perf_counter() - start
+    print(f"Elapsed: {elapsed:.6f} s")
 
-    # Draw plots and print node/edge counts (saved to files)
-    outdir = Path("plots")
-    draw_and_report_graphs(graphs, outdir)
-
-    # Latency distributions and per-edge reporting
-    latency_dists = compute_latency_distributions(rpc_df)
-    report_latency_by_edge(graphs, latency_dists)
-
+    for svc, n_nodes, n_edges in results:
+        print(f"[OK] {svc}: nodes={n_nodes}, edges={n_edges}")
 
 if __name__ == "__main__":
     main()
