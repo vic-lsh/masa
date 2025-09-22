@@ -8,7 +8,7 @@ import seaborn as sns
 from util import parse_args, prepare_output_dir, read_data
 
 
-def generate_plots(args):
+def generate_plots(args) -> None:
     prepare_output_dir(args)
 
     repeats, apis, policies, rps_values, results = read_data(

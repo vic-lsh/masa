@@ -16,7 +16,7 @@ def compute_goodput(df):
     return df["met_slo"].sum() / duration_us * s_to_us
 
 
-def generate_plots(args):
+def generate_plots(args) -> None:
     prepare_output_dir(args)
 
     repeats, apis, policies, rps_values, results = read_data(
