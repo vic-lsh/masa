@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+mod call_graph;
 mod method_freq;
 mod method_latency;
 
