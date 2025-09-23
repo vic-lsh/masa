@@ -547,7 +547,7 @@ impl AlibabaService {
     }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO: make log level configurable
     tracing_subscriber::registry()
