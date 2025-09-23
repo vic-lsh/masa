@@ -38,6 +38,10 @@ impl Serialize for ServiceName {
 }
 
 impl ServiceName {
+    pub fn new<S: Into<String>>(s: S) -> Self {
+        Self::from_string(s.into())
+    }
+
     pub fn from_string(s: String) -> Self {
         ServiceName(Cow::Owned(Self::format_svc_name(s)))
     }
@@ -110,13 +114,12 @@ mod tests {
 
     #[test]
     fn test_read_config() {
-        let svc_name = "MS_49817";
+        let svc_name = ServiceName::from_string("MS_49817".into());
         let path = workspace_root().join("./trace-analysis/golden/S_32048416/");
 
-        let config = ServiceTraceConfig::from_config_dir(&path, Some(svc_name))
+        let config = ServiceTraceConfig::from_config_dir(&path, Some(svc_name.clone()))
             .expect("Reading should not fail");
 
-        let svc_name = ServiceName::from_string(svc_name.to_string());
         assert!(config.call_graph.callees_of(&svc_name).len() > 0);
 
         let method = "daq6sEhEBy".into();
