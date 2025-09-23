@@ -369,7 +369,7 @@ impl AlibabaService {
         let children = config.call_graph.callees_of(&self_svc_name);
 
         println!("Connecting to children: {:?}", children);
-        let clients = Self::connect_to_children(&children, &deployment).await?;
+        let clients = Self::connect_to_children(children, &deployment).await?;
         println!("Children connected");
 
         Ok(AlibabaService {
@@ -381,14 +381,15 @@ impl AlibabaService {
     }
 
     async fn connect_to_children(
-        children: &[ServiceName],
+        children: impl IntoIterator<Item = ServiceName>,
         deployment: &Deployment,
     ) -> Result<HashMap<ServiceName, ServiceClient<Channel>>> {
         let max_timeout = Duration::from_secs(120);
 
         let mut clients = HashMap::new();
-        for child_svc_name in children {
-            let svc = deployment.services.get(child_svc_name).with_context(|| {
+        let children_it = children.into_iter();
+        for child_svc_name in children_it {
+            let svc = deployment.services.get(&child_svc_name).with_context(|| {
                 format!("Child service {} not found in deployment", child_svc_name)
             })?;
             let addr = format!("http://{}:{}", svc.ip, svc.port);

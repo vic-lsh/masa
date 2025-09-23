@@ -60,16 +60,13 @@ impl CallGraph {
     }
 
     /// Return the distinct list of callees that `service` calls (i.e., out-neighbors).
-    ///
-    /// The result is sorted for stable output. If the service has no outgoing edges
-    /// (or does not exist as a caller), an empty Vec is returned.
-    pub fn callees_of(&self, service: &ServiceName) -> Vec<ServiceName> {
+    pub fn callees_of(&self, service: &ServiceName) -> HashSet<ServiceName> {
         match self.outgoing.get(service) {
             Some(set) => {
                 let v = set.iter().cloned().collect();
                 v
             }
-            None => Vec::new(),
+            None => HashSet::new(),
         }
     }
 
@@ -104,11 +101,20 @@ S3,C,D
 "#;
         let g = CallGraph::from_reader(data.as_bytes()).unwrap();
 
-        assert_eq!(g.callees_of("A"), vec!["B".to_string(), "C".to_string()]);
-        assert_eq!(g.callees_of("B"), vec!["C".to_string()]);
-        assert_eq!(g.callees_of("C"), vec!["D".to_string()]);
-        assert!(g.callees_of("D").is_empty()); // no outgoing
-        assert!(g.callees_of("Z").is_empty()); // unknown service
+        let svc_a = ServiceName::new("A");
+        let svc_b = ServiceName::new("B");
+        let svc_c = ServiceName::new("C");
+        let svc_d = ServiceName::new("D");
+        let svc_z = ServiceName::new("Z");
+
+        assert_eq!(
+            g.callees_of(&svc_a),
+            HashSet::from([svc_b.clone(), svc_c.clone()])
+        );
+        assert_eq!(g.callees_of(&svc_b), HashSet::from([svc_c.clone()]));
+        assert_eq!(g.callees_of(&svc_c), HashSet::from([svc_d.clone()]));
+        assert!(g.callees_of(&svc_d).is_empty()); // no outgoing
+        assert!(g.callees_of(&svc_z).is_empty()); // unknown service
     }
 
     #[test]
@@ -122,7 +128,15 @@ S, A ,C
 S, A , C
 "#;
         let g = CallGraph::from_reader(data.as_bytes()).unwrap();
-        assert_eq!(g.callees_of("A"), vec!["B".to_string(), "C".to_string()]);
+
+        let svc_a = ServiceName::new("A");
+        let svc_b = ServiceName::new("B");
+        let svc_c = ServiceName::new("C");
+
+        assert_eq!(
+            g.callees_of(&svc_a),
+            HashSet::from([svc_b.clone(), svc_c.clone()])
+        );
     }
 
     #[test]
@@ -135,7 +149,11 @@ S1,  ,
 S1,A,B
 "#;
         let g = CallGraph::from_reader(data.as_bytes()).unwrap();
-        assert_eq!(g.callees_of("A"), vec!["B".to_string()]);
+
+        let svc_a = ServiceName::new("A");
+        let svc_b = ServiceName::new("B");
+
+        assert_eq!(g.callees_of(&svc_a), HashSet::from([svc_b.clone()]));
     }
 
     #[test]
@@ -144,8 +162,16 @@ S1,A,B
         writeln!(tmp, "service,caller,callee\nS,A,B\nS,A,C\nS,B,C\n").unwrap();
 
         let g = CallGraph::from_path(tmp.path()).unwrap();
-        assert_eq!(g.callees_of("A"), vec!["B".to_string(), "C".to_string()]);
-        assert_eq!(g.callees_of("B"), vec!["C".to_string()]);
+
+        let svc_a = ServiceName::new("A");
+        let svc_b = ServiceName::new("B");
+        let svc_c = ServiceName::new("C");
+
+        assert_eq!(
+            g.callees_of(&svc_a),
+            HashSet::from([svc_b.clone(), svc_c.clone()])
+        );
+        assert_eq!(g.callees_of(&svc_b), HashSet::from([svc_c.clone()]));
     }
 
     #[test]
@@ -157,7 +183,15 @@ S,A,C,foo,bar
 S,B,C,zzz,qqq
 "#;
         let g = CallGraph::from_reader(data.as_bytes()).unwrap();
-        assert_eq!(g.callees_of("A"), vec!["B".to_string(), "C".to_string()]);
+
+        let svc_a = ServiceName::new("A");
+        let svc_b = ServiceName::new("B");
+        let svc_c = ServiceName::new("C");
+
+        assert_eq!(
+            g.callees_of(&svc_a),
+            HashSet::from([svc_b.clone(), svc_c.clone()])
+        );
     }
 
     #[test]

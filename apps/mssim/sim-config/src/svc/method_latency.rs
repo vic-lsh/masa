@@ -59,7 +59,7 @@ mod tests {
 
     #[test]
     fn test_parsing() {
-        let svc_name = "MS_11603";
+        let svc_name = ServiceName::new("MS_11603");
         let path =
             workspace_root().join("./trace-analysis/golden/S_32048416/latency_percentiles.json");
 
