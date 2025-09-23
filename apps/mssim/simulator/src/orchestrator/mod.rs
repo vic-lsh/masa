@@ -47,7 +47,7 @@ pub fn generate_service_configs(config: &SimulatorConfig) -> Result<()> {
 
     // Define the path for the single config file
     let mut service_config_path = config_dir.clone();
-    let output_filename = "config.json";
+    let output_filename = "deployment.json";
     service_config_path.push(output_filename);
 
     let deployment = make_deployment_config(config);
@@ -152,20 +152,37 @@ pub fn generate_docker_compose(
         );
 
         // Define the path where the config file will be mounted INSIDE the container
-        let container_config_path = "/app/config.json"; // Example path inside the container
+        let in_container_config_path = "/app/config"; // Example path inside the container
         environment.insert(
             Yaml::String("CONFIG_PATH".into()),
-            Yaml::String(container_config_path.into()),
+            Yaml::String(in_container_config_path.into()),
+        );
+        let in_container_deployment_config_path = "/app/config/deployment.json"; // Example path inside the container
+        environment.insert(
+            Yaml::String("DEPLOYMEN_CONFIG_PATH".into()),
+            Yaml::String(in_container_deployment_config_path.into()),
         );
 
         service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
 
         // Configure volumes to mount the service-specific config file
         let mut volumes: Vec<Yaml> = Vec::new();
-        // Path on the host: ./service_configs/config.json
-        let host_config_path = format!("./service_configs/config.json");
-        // Mount point inside the container: /app/config.json (matches CONFIG_PATH)
-        let volume_mapping = format!("{}:{}", host_config_path, container_config_path);
+
+        // add config volume
+        // TODO: make the configuration directory path configurable
+        let host_config_dir = workspace_root()
+            .join("./trace-analysis/golden/S_32048416/")
+            .to_string_lossy()
+            .into_owned();
+        let volume_mapping = format!("{}:{}", host_config_dir, in_container_config_path);
+        volumes.push(Yaml::String(volume_mapping.into()));
+
+        // Add deployment config volume
+        let host_config_path = format!("./service_configs/deployment.json");
+        let volume_mapping = format!(
+            "{}:{}",
+            host_config_path, in_container_deployment_config_path
+        );
         volumes.push(Yaml::String(volume_mapping.into()));
 
         service_def.insert(Yaml::String("volumes".into()), Yaml::Array(volumes));
@@ -316,4 +333,8 @@ pub async fn launch_simulation_from_yaml(config: SimulatorConfig) -> Result<()> 
     info!("Collecting and reporting output...");
 
     Ok(())
+}
+
+fn workspace_root() -> PathBuf {
+    env!("CARGO_WORKSPACE_DIR").into()
 }
