@@ -17,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
     let addr = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
     let port = env::var("PORT").unwrap_or_else(|_| "50051".to_string());
     let rps: f64 = env::var("RPS")
-        .unwrap_or_else(|_| "100".to_string())
+        .unwrap_or_else(|_| "10".to_string())
         .parse()?;
     let max_in_flight: usize = env::var("MAX_IN_FLIGHT")
         .unwrap_or_else(|_| "10000".to_string())
