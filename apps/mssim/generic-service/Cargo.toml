@@ -5,8 +5,8 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.100"
+clap = { version = "4.5.48", features = ["derive"] }
 futures = "0.3.31"
-ordered-float = "5.0.0"
 prost = "0.12"
 prost-types = "0.12"
 rand = "0.9.0"
@@ -15,6 +15,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 tokio = { path = "../../../libs/tokio/tokio", features = ["full"] }
 tonic = { path = "../../../libs/tonic/tonic" }
+sim-config = { path = "../sim-config" }
 
 [build-dependencies]
 tonic-build = { path = "../../../libs/tonic/tonic-build" }
