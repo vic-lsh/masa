@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use rand::Rng;
 use std::{collections::HashMap, path::PathBuf};
 
@@ -9,21 +9,14 @@ type RawInvokeFreq = HashMap<String, MethodInvokeFreq>;
 
 type MethodInvokeFreq = HashMap<MethodId, u64>;
 
-fn parse_invoke_freq(path: &PathBuf, svc_name: &str) -> Result<MethodInvokeFreq> {
+fn parse_invoke_freq(path: &PathBuf) -> Result<RawInvokeFreq> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read method frequency file: {:?}", path))?;
 
     let raw_map: RawInvokeFreq = serde_json::from_str(&content)
         .with_context(|| format!("Failed to parse method frequency file: {:?}", path))?;
 
-    let freq_map = raw_map.get(svc_name).cloned().with_context(|| {
-        format!(
-            "Service name '{}' not found in method frequency file: {:?}",
-            svc_name, path
-        )
-    })?;
-
-    Ok(freq_map)
+    Ok(raw_map)
 }
 
 /// Errors you might encounter when building or using the sampler.
@@ -114,6 +107,10 @@ impl WeightedSampler {
     pub fn sample_many<R: Rng + ?Sized>(&self, rng: &mut R, n: usize) -> Vec<&str> {
         (0..n).map(|_| self.sample(rng)).collect()
     }
+
+    pub fn contains(&self, key: &str) -> bool {
+        self.keys.contains(&key.to_string())
+    }
 }
 
 pub struct MethodFreqSampler {
@@ -121,17 +118,6 @@ pub struct MethodFreqSampler {
 }
 
 impl MethodFreqSampler {
-    pub fn from_config_path(path: &PathBuf, svc_name: &str) -> Result<Self> {
-        let freq_map = parse_invoke_freq(path, svc_name)?;
-        Self::from_invoke_freq_map(freq_map).map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to build method frequency sampler for service {}: {:?}",
-                svc_name,
-                e
-            )
-        })
-    }
-
     fn from_invoke_freq_map(freq_map: MethodInvokeFreq) -> Result<Self, SamplerError> {
         // Convert MethodId keys to String for the sampler.
         let str_map: HashMap<String, u64> = freq_map
@@ -145,6 +131,33 @@ impl MethodFreqSampler {
     /// Draw one sample. Returns a reference to the chosen method id string.
     pub fn sample<'a, R: Rng + ?Sized>(&'a self, rng: &mut R) -> &'a str {
         self.sampler.sample(rng)
+    }
+
+    pub fn contains(&self, method: &str) -> bool {
+        self.sampler.contains(method)
+    }
+}
+
+pub struct MethodFreqMap {
+    map: HashMap<String, MethodFreqSampler>,
+}
+
+impl MethodFreqMap {
+    pub fn from_file_path(path: &PathBuf) -> Result<Self> {
+        let raw_map = parse_invoke_freq(path)?;
+
+        let mut map = HashMap::new();
+        for (svc, freq_map) in raw_map.into_iter() {
+            let sampler = MethodFreqSampler::from_invoke_freq_map(freq_map)
+                .map_err(|_| anyhow!(format!("While building sampler for service {}", svc)))?;
+            map.insert(svc, sampler);
+        }
+
+        Ok(Self { map })
+    }
+
+    pub fn get_service(&self, svc_name: &str) -> Option<&MethodFreqSampler> {
+        self.map.get(svc_name)
     }
 }
 
@@ -162,22 +175,21 @@ mod tests {
         let path =
             workspace_root().join("./trace-analysis/golden/S_32048416/interface_distribution.json");
 
-        let freq_map = parse_invoke_freq(&path, svc_name).expect("Parsing should not fail");
+        let map = MethodFreqMap::from_file_path(&path).expect("Parsing should not fail");
+
+        let freq_map = map.get_service(svc_name).expect("Service should exist");
 
         // Raw data obtained from the golden file.
         let expected = vec![
-            ("29wNwTk-EQ:TDDL_QUERY", 3),
-            ("ExNQLwkRHI:TDDL_QUERY", 1),
-            ("OuyvbrayuW:TDDL_QUERY", 5),
-            ("8aZ9IqfaWX:TDDL_QUERY", 1),
+            "29wNwTk-EQ:TDDL_QUERY",
+            "ExNQLwkRHI:TDDL_QUERY",
+            "OuyvbrayuW:TDDL_QUERY",
+            "8aZ9IqfaWX:TDDL_QUERY",
         ];
 
-        for (method, freq) in expected {
+        for method in expected {
             let method_id: MethodId = method.into();
-            let actual_freq = freq_map
-                .get(&method_id)
-                .expect("Method should exist in frequency map");
-            assert_eq!(*actual_freq, freq);
+            assert!(freq_map.contains(&method_id));
         }
     }
 
