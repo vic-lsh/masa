@@ -21,6 +21,7 @@ structopt = "0.3.26"
 reqwest = "0.12.15"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
+sim-config = { path = "../sim-config" }
 
 [build-dependencies]
 tonic-build = '0.13.0'

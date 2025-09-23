@@ -1,11 +1,12 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
+use sim_config::deployment::Deployment;
 use std::{collections::HashMap, fs, path::PathBuf, process::Command};
 use tracing::{debug, error, info};
 use yaml_rust::yaml::Hash;
 use yaml_rust::{Yaml, YamlEmitter};
 
-use crate::parser::{MethodConfig, ServiceConfig, SimulatorConfig};
+use crate::parser::{ServiceConfig, SimulatorConfig};
 
 #[allow(dead_code)]
 #[derive(Deserialize, Debug, serde::Serialize, Clone)] // Added serde::Serialize and Clone
@@ -49,41 +50,16 @@ pub fn generate_service_configs(config: &SimulatorConfig) -> Result<()> {
     let output_filename = "config.json";
     service_config_path.push(output_filename);
 
-    // New struct that matches the format expected *inside* the service name key in the output JSON
-    #[derive(serde::Serialize, Clone)] // Only needs Serialize and Clone for generating the output file
-    pub struct GenericServiceServiceConfig {
-        pub ip: String,                             // Matches "ip" in example JSON
-        pub port: String,                           // Matches "port" in example JSON (as String)
-        pub methods: HashMap<String, MethodConfig>, // Matches "methods" in example JSON (MethodConfig already has derives)
-    }
+    let deployment = make_deployment_config(config);
 
-    // making hashmap to store the configs for each service
-    let mut all_service_configs: HashMap<&str, GenericServiceServiceConfig> = HashMap::new();
-
-    // populating the hashmap
-    for (service_name, service_config) in &config.services {
-        // Create the config object for this service in the desired output format
-        let generic_service_config = GenericServiceServiceConfig {
-            ip: service_name.clone(),
-            port: service_config.port.to_string(),
-            methods: service_config.methods.clone(),
-        };
-
-        // Insert the service's config into the map, using the service name as the key
-        all_service_configs.insert(service_name.as_str(), generic_service_config);
-    }
-
-    // Serialize the entire map containing all service configs
-    let config_json = serde_json::to_string_pretty(&all_service_configs)
-        .with_context(|| "Failed to serialize all service configurations")?;
-
-    // Write the entire config to the single file
-    fs::write(&service_config_path, config_json).with_context(|| {
-        format!(
-            "Failed to write the single config file to {:?}",
-            service_config_path
-        )
-    })?;
+    deployment
+        .export_to_file(&service_config_path)
+        .map_err(|_| {
+            anyhow!(
+                "Failed to write deployment config to {:?}",
+                service_config_path
+            )
+        })?;
 
     info!(
         "Created config file containing all service configurations at {:?}",
@@ -91,6 +67,25 @@ pub fn generate_service_configs(config: &SimulatorConfig) -> Result<()> {
     );
 
     Ok(())
+}
+
+fn make_deployment_config(config: &SimulatorConfig) -> Deployment {
+    let mut services = HashMap::new();
+
+    for (service_name, service_config) in &config.services {
+        println!("Service: {}, Port: {}", service_name, service_config.port);
+
+        services.insert(
+            service_name.clone(),
+            sim_config::deployment::ServiceDiscoveryInfo {
+                // in our docker config, service name is the ip
+                ip: service_name.clone(),
+                port: service_config.port,
+            },
+        );
+    }
+
+    Deployment { services }
 }
 
 pub fn generate_docker_compose(
