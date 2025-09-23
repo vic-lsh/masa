@@ -2,8 +2,6 @@ use anyhow::{bail, Result};
 use sim_config::{svc::ServiceName, trace::TraceConfig};
 use std::collections::HashSet;
 
-use crate::parser::SimulatorConfig;
-
 /// Validate that the configuration has at least one service
 pub fn validate_has_services(config: &TraceConfig) -> Result<()> {
     if config.call_graph.services().is_empty() {
@@ -67,31 +65,6 @@ fn detect_cycles_dfs(
             }
         }
     }
-
-    // for method in service.methods.values() {
-    //     for call_sequence in &method.calls {
-    //         for call in call_sequence {
-    //             let parts: Vec<&str> = call.split('.').collect();
-    //             let called_service = parts[0].to_string();
-
-    //             // If this called service is already in our call stack, we have a cycle
-    //             if stack.contains(&called_service) {
-    //                 bail!(
-    //                     "Circular dependency detected: Service '{}' and '{}' depend on each other",
-    //                     service_name,
-    //                     called_service
-    //                 );
-    //             }
-
-    //             // If we haven't visited this called service yet, recursively check it
-    //             if !visited.contains(&called_service) {
-    //                 if detect_cycles_dfs(config, &called_service, visited, stack)? {
-    //                     return Ok(true);
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
 
     // Remove from current path stack when we're done exploring this service
     stack.remove(service_name);
