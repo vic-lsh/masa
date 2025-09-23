@@ -22,7 +22,7 @@ pub mod service_stubs {
 }
 
 use service_stubs::service_server::{Service, ServiceServer};
-use service_stubs::{CallData, ServiceRequest, ServiceResponse};
+use service_stubs::{CallData, RootRequest, RootResponse, ServiceRequest, ServiceResponse};
 
 #[derive(Serialize, Deserialize)]
 struct ServiceConfigFromJSON {
@@ -342,6 +342,10 @@ impl Service for GenericService {
             method_name,
         }))
     }
+
+    async fn root(&self, _request: Request<RootRequest>) -> Result<Response<RootResponse>, Status> {
+        unimplemented!()
+    }
 }
 
 #[allow(dead_code)]
@@ -401,6 +405,24 @@ impl Service for AlibabaService {
             calls: vec![],
             method_name: method_name,
         }))
+    }
+
+    async fn root(&self, _request: Request<RootRequest>) -> Result<Response<RootResponse>, Status> {
+        // TODO: remove this coupling with alibaba's data
+        const ROOT_SVC_NAME: &'static str = "user";
+
+        if self.self_svc_name.as_str() != ROOT_SVC_NAME {
+            return Err(Status::permission_denied(format!(
+                "Root endpoint can only be called on service {}, not {}",
+                ROOT_SVC_NAME,
+                self.self_svc_name.as_str()
+            )));
+        }
+
+        // All the root service does is calling into internal services
+        self.fanout().await?;
+
+        Ok(Response::new(RootResponse {}))
     }
 }
 
