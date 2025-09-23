@@ -16,6 +16,12 @@ serde_json = "1.0.140"
 tokio = { path = "../../../libs/tokio/tokio", features = ["full"] }
 tonic = { path = "../../../libs/tonic/tonic" }
 sim-config = { path = "../sim-config" }
+tracing = "0.1.41"
+tracing-subscriber = "0.3.20"
 
 [build-dependencies]
 tonic-build = { path = "../../../libs/tonic/tonic-build" }
+
+[[bin]]
+name = "mssim-loadgen"
+path = "src/loadgen.rs"
