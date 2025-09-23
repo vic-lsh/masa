@@ -1,12 +1,68 @@
-use std::{borrow::Cow, path::PathBuf};
+use std::{borrow::Cow, fmt::Display, path::PathBuf};
 
 pub mod call_graph;
 pub mod method_freq;
 pub mod method_latency;
 
 use method_latency::MethodLatencyDistMap;
+use serde::{Deserialize, Serialize};
 
 pub type MethodId = Cow<'static, str>;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ServiceName(Cow<'static, str>);
+
+impl Display for ServiceName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ServiceName {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s: String = Deserialize::deserialize(deserializer)?;
+        Ok(ServiceName::from_string(s))
+    }
+}
+
+impl Serialize for ServiceName {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl ServiceName {
+    pub fn from_string(s: String) -> Self {
+        ServiceName(Cow::Owned(Self::format_svc_name(s)))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    fn format_svc_name(s: String) -> String {
+        // Format the name such that it is a legal docker container name
+        s.replace('_', "-").to_lowercase()
+    }
+}
+
+impl Into<String> for ServiceName {
+    fn into(self) -> String {
+        self.0.into_owned()
+    }
+}
+
+impl Into<String> for &ServiceName {
+    fn into(self) -> String {
+        self.0.to_owned().into_owned()
+    }
+}
 
 pub struct ServiceTraceConfig {
     pub method_latency: MethodLatencyDistMap,

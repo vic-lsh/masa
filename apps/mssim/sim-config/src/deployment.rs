@@ -4,6 +4,8 @@ use std::{collections::HashMap, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::svc::ServiceName;
+
 // TODO: support replicas
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ServiceDiscoveryInfo {
@@ -13,7 +15,7 @@ pub struct ServiceDiscoveryInfo {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Deployment {
-    pub services: HashMap<String, ServiceDiscoveryInfo>,
+    pub services: HashMap<ServiceName, ServiceDiscoveryInfo>,
 }
 
 impl Deployment {
@@ -29,7 +31,7 @@ impl Deployment {
         Ok(())
     }
 
-    pub fn add_service(&mut self, name: String, info: ServiceDiscoveryInfo) {
+    pub fn add_service(&mut self, name: ServiceName, info: ServiceDiscoveryInfo) {
         self.services.insert(name, info);
     }
 }
