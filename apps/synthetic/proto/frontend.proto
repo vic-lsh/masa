@@ -6,6 +6,7 @@ service Frontend {
   rpc HandlePing(PingRequest) returns (PingResponse) {}
   rpc HandleA(ARequest) returns (AResponse) {}
   rpc HandlePresampled(PresampledRequest) returns (PresampledResponse) {}
+  rpc HandleTraced(TracedRequest) returns (TracedResponse) {}
 }
 
 message PingRequest { string message = 1; }
@@ -26,3 +27,11 @@ message AResponse {
 
 message PresampledRequest { string request_type = 1; }
 message PresampledResponse {}
+
+message TracedRequest {
+  uint64 req_id = 1;
+}
+
+message TracedResponse {
+  uint64 req_id = 1;
+}
