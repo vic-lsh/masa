@@ -6,6 +6,7 @@ import "google/protobuf/timestamp.proto";
 service Service {
   rpc GetData(ServiceRequest) returns (ServiceResponse);
   rpc Root(RootRequest) returns (RootResponse);
+  rpc Replay(ReplayRequest) returns (ReplayResponse);
 }
 
 message RootRequest {}
@@ -24,4 +25,34 @@ message CallData {
   google.protobuf.Timestamp request_sent_at = 2;
   google.protobuf.Timestamp response_received_at = 3;
   bool was_an_error = 4;
+}
+
+message Span {
+  enum Type {
+    UNKNOWN = 0;
+    COMPUTE = 1;
+    BLOCK = 2;
+  }
+
+  Type type = 1;
+  uint64 val = 2;
+}
+
+message SpanVector {
+  string name = 1;
+  repeated Span spans = 2;
+}
+
+message ReplayTrace {
+  oneof kind {
+    Span span = 1;
+    SpanVector span_vector = 2;
+  }
+}
+
+message ReplayRequest {
+  repeated ReplayTrace traces = 1;
+}
+
+message ReplayResponse {
 }
