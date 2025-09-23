@@ -4,18 +4,18 @@ pub mod call_graph;
 pub mod method_freq;
 pub mod method_latency;
 
-pub use method_latency::MethodLatencyDistMap;
+use method_latency::MethodLatencyDistMap;
 
 pub type MethodId = Cow<'static, str>;
 
 pub struct ServiceTraceConfig {
     pub method_latency: MethodLatencyDistMap,
-    pub method_freq: method_freq::MethodFreqSampler,
+    pub method_freq_map: method_freq::MethodFreqMap,
     pub call_graph: call_graph::CallGraph,
 }
 
 impl ServiceTraceConfig {
-    pub fn read_config_dir(
+    pub fn from_config_dir(
         dir: &PathBuf,
         svc_name: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -28,14 +28,13 @@ impl ServiceTraceConfig {
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
         let method_freq_path = dir.join("interface_distribution.json");
-        let method_freq =
-            method_freq::MethodFreqSampler::from_config_path(&method_freq_path, svc_name)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let method_freq = method_freq::MethodFreqMap::from_file_path(&method_freq_path)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
         Ok(ServiceTraceConfig {
             call_graph,
             method_latency,
-            method_freq,
+            method_freq_map: method_freq,
         })
     }
 }
@@ -54,7 +53,7 @@ mod tests {
         let path = workspace_root().join("./trace-analysis/golden/S_32048416/");
 
         let config =
-            ServiceTraceConfig::read_config_dir(&path, svc_name).expect("Reading should not fail");
+            ServiceTraceConfig::from_config_dir(&path, svc_name).expect("Reading should not fail");
 
         assert!(config.call_graph.callees_of(svc_name).len() > 0);
 
@@ -67,7 +66,11 @@ mod tests {
         let p50 = dist.sample(&mut rand::rng());
         assert!(p50 > 0.0);
 
-        let sampled_method = config.method_freq.sample(&mut rand::rng());
+        let sampled_method = config
+            .method_freq_map
+            .get_service(&svc_name)
+            .expect("service must exist")
+            .sample(&mut rand::rng());
         assert!(!sampled_method.is_empty());
 
         let valid_methods = vec!["wZa2gEnTxC", "daq6sEhEBy"];
