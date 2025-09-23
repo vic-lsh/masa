@@ -7,18 +7,17 @@ use std::path::Path;
 use csv::ReaderBuilder;
 use serde::Deserialize;
 
+use crate::svc::ServiceName;
+
 /// In-memory representation of a directed call graph (caller -> {callees})
 #[derive(Debug, Default)]
 pub struct CallGraph {
     /// Outgoing adjacency: caller -> distinct set of callees
-    outgoing: HashMap<String, HashSet<String>>,
+    outgoing: HashMap<ServiceName, HashSet<ServiceName>>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Row {
-    // Present in the file but ignored for the graph.
-    #[serde(default)]
-    service: Option<String>,
     caller: String,
     callee: String,
 }
@@ -35,7 +34,7 @@ impl CallGraph {
             .trim(csv::Trim::All)
             .from_reader(reader);
 
-        let mut outgoing: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut outgoing: HashMap<ServiceName, HashSet<ServiceName>> = HashMap::new();
 
         for rec in rdr.deserialize::<Row>() {
             let Row { caller, callee, .. } = rec?;
@@ -45,6 +44,8 @@ impl CallGraph {
                 // skip malformed/blank entries
                 continue;
             }
+            let caller = ServiceName::from_string(caller);
+            let callee = ServiceName::from_string(callee);
             outgoing.entry(caller).or_default().insert(callee);
         }
 
@@ -62,16 +63,20 @@ impl CallGraph {
     ///
     /// The result is sorted for stable output. If the service has no outgoing edges
     /// (or does not exist as a caller), an empty Vec is returned.
-    pub fn callees_of<S: AsRef<str>>(&self, service: S) -> Vec<String> {
-        let s = service.as_ref();
-        match self.outgoing.get(s) {
+    pub fn callees_of(&self, service: &ServiceName) -> Vec<ServiceName> {
+        match self.outgoing.get(service) {
             Some(set) => {
-                let mut v: Vec<String> = set.iter().cloned().collect();
-                v.sort_unstable();
+                let v = set.iter().cloned().collect();
                 v
             }
             None => Vec::new(),
         }
+    }
+
+    // TODO: create a variant of this that returns an iterator
+    pub fn services(&self) -> Vec<ServiceName> {
+        let svcs: Vec<ServiceName> = self.outgoing.keys().cloned().collect();
+        svcs
     }
 }
 
@@ -159,6 +164,23 @@ S,A,B
         assert!(
             msg.contains("caller") || msg.contains("deserialize"),
             "unexpected error message: {msg}"
+        );
+    }
+
+    #[test]
+    fn services_list() {
+        let data = r#"service,caller,callee
+S1,A,B
+S1,A,C
+S2,B,C
+S3,C,D
+"#;
+        let g = CallGraph::from_reader(data.as_bytes()).unwrap();
+        let mut svcs = g.services();
+        svcs.sort_unstable();
+        assert_eq!(
+            svcs,
+            vec!["A".to_string(), "B".to_string(), "C".to_string()]
         );
     }
 }

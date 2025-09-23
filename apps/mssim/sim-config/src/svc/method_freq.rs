@@ -2,10 +2,10 @@ use anyhow::{anyhow, Context, Result};
 use rand::Rng;
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::svc::MethodId;
+use crate::svc::{MethodId, ServiceName};
 
 /// File representation: { [service_name]: { [method_id]: freq, ... } , ... }
-type RawInvokeFreq = HashMap<String, MethodInvokeFreq>;
+type RawInvokeFreq = HashMap<ServiceName, MethodInvokeFreq>;
 
 type MethodInvokeFreq = HashMap<MethodId, u64>;
 
@@ -30,7 +30,7 @@ pub enum SamplerError {
 /// Construction is O(n); each sample is O(log n).
 // TODO: make the sampling O(1)
 struct WeightedSampler {
-    keys: Vec<String>,
+    keys: Vec<MethodId>,
     /// Inclusive cumulative sums: cum[i] = sum_{j<=i} freq[j]
     cum: Vec<u64>,
     total: u64,
@@ -52,7 +52,7 @@ impl WeightedSampler {
                 // We still include the key to keep stable ordering with the map's iteration,
                 // but it will never be picked unless all weights are zero.
             }
-            keys.push(k.clone());
+            keys.push(k.to_owned().into());
             running = running.saturating_add(f);
             cum.push(running);
         }
@@ -108,8 +108,8 @@ impl WeightedSampler {
         (0..n).map(|_| self.sample(rng)).collect()
     }
 
-    pub fn contains(&self, key: &str) -> bool {
-        self.keys.contains(&key.to_string())
+    pub fn contains(&self, key: &MethodId) -> bool {
+        self.keys.contains(key)
     }
 }
 
@@ -133,13 +133,13 @@ impl MethodFreqSampler {
         self.sampler.sample(rng)
     }
 
-    pub fn contains(&self, method: &str) -> bool {
+    pub fn contains(&self, method: &MethodId) -> bool {
         self.sampler.contains(method)
     }
 }
 
 pub struct MethodFreqMap {
-    map: HashMap<String, MethodFreqSampler>,
+    map: HashMap<ServiceName, MethodFreqSampler>,
 }
 
 impl MethodFreqMap {
@@ -156,7 +156,7 @@ impl MethodFreqMap {
         Ok(Self { map })
     }
 
-    pub fn get_service(&self, svc_name: &str) -> Option<&MethodFreqSampler> {
+    pub fn get_service(&self, svc_name: &ServiceName) -> Option<&MethodFreqSampler> {
         self.map.get(svc_name)
     }
 }
