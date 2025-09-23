@@ -10,6 +10,8 @@ use yaml_rust::{Yaml, YamlEmitter};
 
 const LOADGEN_SERVICE_NAME: &str = "load_generator";
 
+const CONTAINER_CPU_LIMIT: usize = 1;
+
 #[allow(dead_code)]
 #[derive(Deserialize, Debug, serde::Serialize, Clone)] // Added serde::Serialize and Clone
 pub struct ErrorRate {
@@ -133,6 +135,24 @@ pub fn generate_docker_compose(
             Yaml::String("container_name".into()),
             Yaml::String(service_name.clone().into()),
         );
+
+        let mut deploy_def = Hash::new();
+        let mut resources_def = Hash::new();
+        let mut limits_def = Hash::new();
+
+        // TODO: make these configurable
+        limits_def.insert(
+            Yaml::String("cpus".into()),
+            Yaml::String(CONTAINER_CPU_LIMIT.to_string()),
+        );
+        // TODO: do we need memory limits?
+        // limits_def.insert(
+        //     Yaml::String("memory".into()),
+        //     Yaml::String("512M".into()), // Limit to 512MB memory
+        // );
+        resources_def.insert(Yaml::String("limits".into()), Yaml::Hash(limits_def));
+        deploy_def.insert(Yaml::String("resources".into()), Yaml::Hash(resources_def));
+        service_def.insert(Yaml::String("deploy".into()), Yaml::Hash(deploy_def));
 
         if let Some(&host_port) = ports.get(service_name) {
             let ports_mapping = format!("{}:{}", host_port, svc_port);
