@@ -1,12 +1,11 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
 use client::cli::CliOptions;
-use orchestrator::launch_simulation_from_yaml;
 use tokio;
 
 mod client;
-mod generator;
 mod orchestrator;
-mod parser;
 mod server;
 mod validator;
 
@@ -15,19 +14,13 @@ pub mod proto {
     tonic::include_proto!("sim");
 }
 
-async fn run_from_input(opts: &CliOptions) -> Result<()> {
-    // Parse JSON file
-    let config = parser::json::parse_json_file(&opts.input)?;
+async fn run_from_alibaba_trace(trace_dir: &PathBuf) -> Result<()> {
+    let config = sim_config::trace::TraceConfig::from_config_dir(trace_dir)
+        .map_err(|e| anyhow::anyhow!("Failed to parse Alibaba input directory: {}", e))?;
 
-    // Validate config
     validator::validate_config(&config)?;
 
-    // Generate YAML
-    // let yaml_str = generator::yaml::generate_simulator_yaml(&config)?;
-    // let path = "submitted_config.yaml";
-    // tokio::fs::write(path, &yaml_str).await?;
-
-    launch_simulation_from_yaml(config).await?;
+    orchestrator::alibaba::launch_simulation_from_yaml(config, trace_dir).await?;
 
     Ok(())
 }
@@ -70,9 +63,8 @@ async fn main() -> Result<()> {
     // Parse command line arguments
     let opts = client::cli::parse_cli_args();
 
-    // If input file is provided, process it directly
-    if opts.input.exists() {
-        run_from_input(&opts).await?;
+    if let Some(path) = opts.alibaba_trace {
+        run_from_alibaba_trace(&path).await?;
     } else {
         run_as_server(&opts).await?;
     }
