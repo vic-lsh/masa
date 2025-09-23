@@ -399,12 +399,6 @@ pub async fn launch_simulation_from_yaml(config: TraceConfig, trace_dir: &PathBu
     Ok(())
 }
 
-// Transform any service name string to a format that docker accepts as a
-// service (and/or container) name
-fn to_service_name_in_docker(original_name: &str) -> String {
-    original_name.to_lowercase()
-}
-
 fn workspace_root() -> PathBuf {
     env!("CARGO_WORKSPACE_DIR").into()
 }
