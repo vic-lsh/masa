@@ -30,6 +30,7 @@ packages=(
     # simulator
     "mssim"
     "generic-service"
+    "sim-config"
 )
 
 # If testing your crate requires special feature flags, set them here

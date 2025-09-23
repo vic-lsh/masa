@@ -1,8 +1,10 @@
+use clap::Parser;
 use futures::future;
 use prost_types::Timestamp;
 use rand_distr::{Bernoulli, Distribution, Normal};
 use serde::{Deserialize, Serialize};
 use service_stubs::service_client::ServiceClient;
+use sim_config::DistConfig;
 use std::collections::HashMap;
 use std::env;
 use std::path::Path;
@@ -12,8 +14,6 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tonic::transport::Channel;
 use tonic::{transport::Server, Request, Response, Status};
-
-mod config;
 
 pub mod service_stubs {
     tonic::include_proto!("service");
@@ -342,17 +342,85 @@ impl Service for GenericService {
     }
 }
 
+struct AlibabaService {
+    dist_config: DistConfig,
+}
+
+impl AlibabaService {
+    pub fn new(dist_config: DistConfig) -> Self {
+        AlibabaService { dist_config }
+    }
+}
+
+#[tonic::async_trait]
+impl Service for AlibabaService {
+    async fn get_data(
+        &self,
+        request: Request<ServiceRequest>,
+    ) -> Result<Response<ServiceResponse>, Status> {
+        let method_name = request.into_inner().method_name;
+
+        self.handle_method(method_name.clone())?;
+
+        Ok(Response::new(ServiceResponse {
+            calls: vec![],
+            method_name: method_name,
+        }))
+    }
+}
+
+fn busy_spin(duration_ms: f64) {
+    let start = std::time::Instant::now();
+    let duration = std::time::Duration::from_millis(duration_ms as u64);
+    while std::time::Instant::now() - start < duration {
+        // Busy spin
+    }
+}
+
+impl AlibabaService {
+    fn handle_method(&self, method_name: String) -> Result<(), Status> {
+        let name = method_name.into();
+        let latency_dist = self
+            .dist_config
+            .get_method_dist(&name)
+            .ok_or(Status::not_found("Method not found"))?;
+
+        let latency = latency_dist.sample(&mut rand::rng());
+
+        // TODO: add calling into child as well
+        busy_spin(latency);
+
+        Ok(())
+    }
+}
+
+#[derive(Parser)]
+struct Args {
+    #[clap(long)]
+    config_path: String,
+    #[clap(long)]
+    service_name: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+
+    let path = args.config_path.into();
+    let config = DistConfig::from_file_path(&path, &args.service_name)
+        .expect("Loading config should succeed");
+
+    // NOTE: currently this breaks the overall simulator.
+    // To test the existing simulator, run with the GenericService instead.
+    let svc = AlibabaService::new(config);
+
     let port = env::var("SERVICE_PORT").unwrap_or_else(|_| "50051".to_string());
     let addr = format!("0.0.0.0:{}", port).parse()?;
-
-    let service = GenericService::new().await;
 
     println!("🚀 Generic Service listening on {}", addr);
 
     Server::builder()
-        .add_service(ServiceServer::new(service))
+        .add_service(ServiceServer::new(svc))
         .serve(addr)
         .await?;
 
