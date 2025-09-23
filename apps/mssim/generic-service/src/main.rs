@@ -15,6 +15,7 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tonic::transport::Channel;
 use tonic::{transport::Server, Request, Response, Status};
+use tracing::{error, warn};
 
 pub mod service_stubs {
     tonic::include_proto!("service");
@@ -431,7 +432,7 @@ impl AlibabaService {
         if remaining > 0.0 {
             busy_spin(remaining);
         } else {
-            eprintln!(
+            warn!(
                 "Warning: fanout took longer ({:?}) than total latency ({:.2} ms)",
                 elapsed, total_latency_ms
             );
@@ -458,11 +459,10 @@ impl AlibabaService {
             });
 
             let handle = tokio::spawn(async move {
-                let response = client.get_data(request).await;
-                match response {
-                    Ok(res) => Ok(()),
-                    Err(e) => Err(Status::internal("Child service call failed")),
-                }
+                client
+                    .get_data(request)
+                    .await
+                    .map_err(|e| Status::internal(format!("RPC to child service failed: {:?}", e)))
             });
             tasks.push((child_svc_name, handle));
         }
@@ -471,7 +471,7 @@ impl AlibabaService {
                 .await
                 .map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
             rpc_result.map_err(|e| {
-                eprintln!("RPC to child service {} failed", child_svc);
+                error!("RPC to child service {} failed", child_svc);
                 e
             })?;
         }
@@ -481,6 +481,8 @@ impl AlibabaService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt::init();
+
     let deployment_path_str =
         env::var("DEPLOYMENT_CONFIG_PATH").unwrap_or_else(|_| "config/deployment.json".to_string());
     let config_dir_str = env::var("CONFIG_PATH").unwrap_or_else(|_| "config/".to_string());
