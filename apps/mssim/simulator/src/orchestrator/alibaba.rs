@@ -8,6 +8,8 @@ use tracing::{debug, error, info};
 use yaml_rust::yaml::Hash;
 use yaml_rust::{Yaml, YamlEmitter};
 
+const LOADGEN_SERVICE_NAME: &str = "load_generator";
+
 #[allow(dead_code)]
 #[derive(Deserialize, Debug, serde::Serialize, Clone)] // Added serde::Serialize and Clone
 pub struct ErrorRate {
@@ -221,6 +223,18 @@ pub fn generate_docker_compose(
         );
     }
 
+    const FRONTEND_SERVICE_NAME: &str = "USER";
+    let frontend_port = *ports
+        .get(&ServiceName::from_string(FRONTEND_SERVICE_NAME.to_string()))
+        .ok_or_else(|| anyhow::anyhow!("Port not assigned for frontend service"))?;
+
+    let loadgen_config = make_load_generator_config(frontend_port)?;
+    // Add load generator
+    services.insert(
+        Yaml::String(LOADGEN_SERVICE_NAME.into()),
+        Yaml::Hash(loadgen_config),
+    );
+
     doc_hash.insert(Yaml::String("services".into()), Yaml::Hash(services));
 
     // Add the networks definition at the top level
@@ -252,6 +266,44 @@ pub fn generate_docker_compose(
     info!("docker-compose.yml file generated successfully.");
 
     Ok(())
+}
+
+fn make_load_generator_config(frontend_port: u16) -> Result<Hash> {
+    let mut service_def = Hash::new();
+
+    let mut build_def = Hash::new();
+    build_def.insert(
+        Yaml::String("context".into()),
+        Yaml::String(workspace_root().to_string_lossy().to_string()),
+    );
+    let dockerfile_path = workspace_root().join("apps/mssim/generic-service/Dockerfile.loadgen");
+    build_def.insert(
+        Yaml::String("dockerfile".into()),
+        Yaml::String(dockerfile_path.to_string_lossy().to_string()),
+    );
+
+    service_def.insert(Yaml::String("build".into()), Yaml::Hash(build_def));
+    service_def.insert(
+        Yaml::String("container_name".into()),
+        Yaml::String(LOADGEN_SERVICE_NAME.into()),
+    );
+
+    let mut environment = Hash::new();
+    environment.insert(
+        Yaml::String("PORT".into()),
+        Yaml::String(frontend_port.to_string()),
+    );
+    environment.insert(Yaml::String("IP".into()), Yaml::String("user".into()));
+
+    service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
+
+    // Add networks (using 'microservice_net' as in the example)
+    service_def.insert(
+        Yaml::String("networks".into()),
+        Yaml::Array(vec![Yaml::String("microservice_net".into())]),
+    );
+
+    Ok(service_def)
 }
 
 fn run_docker_compose() -> Result<()> {
