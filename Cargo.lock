@@ -5764,6 +5764,7 @@ name = "socialnet"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "app-utils",
  "async-memcached",
  "bb8",
  "bb8-redis",
