@@ -413,7 +413,8 @@ impl AlibabaService {
             match ServiceClient::connect(addr.clone()).await {
                 Ok(client) => return Ok(client),
                 Err(e) => {
-                    let jitter = rand::rng().gen_range(Duration::from_secs(0)..max_jitter_interval);
+                    let jitter =
+                        rand::rng().random_range(Duration::from_secs(0)..max_jitter_interval);
                     let retry_wait = std::cmp::min(retry_interval * 2, max_retry_interval) + jitter;
 
                     warn!(
