@@ -24,7 +24,7 @@ COPY apps apps
 COPY libs libs
 
 # Build the generic service
-RUN cargo build --release -p generic-service
+RUN cargo build --release --bin generic-service
 
 # Declare the build argument for the container port (providing a default value of 8000)
 ARG SERVICE_CONTAINER_PORT=8000 

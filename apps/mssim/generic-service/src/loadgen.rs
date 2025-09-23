@@ -26,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "2".to_string())
         .parse()?;
     let hc_timeout_sec: u64 = env::var("HEALTHCHECK_TIMEOUT_SEC")
-        .unwrap_or_else(|_| "60".to_string())
+        .unwrap_or_else(|_| "180".to_string())
         .parse()?;
     let hc_backoff_ms: u64 = env::var("HEALTHCHECK_BACKOFF_MS")
         .unwrap_or_else(|_| "1000".to_string())

@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use futures::future;
 use prost_types::Timestamp;
+use rand::Rng;
 use rand_distr::{Bernoulli, Distribution, Normal};
 use serde::{Deserialize, Serialize};
 use service_stubs::service_client::ServiceClient;
@@ -10,12 +11,15 @@ use std::collections::HashMap;
 use std::env;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tonic::transport::Channel;
 use tonic::{transport::Server, Request, Response, Status};
+use tracing::level_filters::LevelFilter;
 use tracing::{error, warn};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 pub mod service_stubs {
     tonic::include_proto!("service");
@@ -364,7 +368,9 @@ impl AlibabaService {
     ) -> Result<Self> {
         let children = config.call_graph.callees_of(&self_svc_name);
 
+        println!("Connecting to children: {:?}", children);
         let clients = Self::connect_to_children(&children, &deployment).await?;
+        println!("Children connected");
 
         Ok(AlibabaService {
             config,
@@ -378,16 +384,51 @@ impl AlibabaService {
         children: &[ServiceName],
         deployment: &Deployment,
     ) -> Result<HashMap<ServiceName, ServiceClient<Channel>>> {
+        let max_timeout = Duration::from_secs(120);
+
         let mut clients = HashMap::new();
         for child_svc_name in children {
             let svc = deployment.services.get(child_svc_name).with_context(|| {
                 format!("Child service {} not found in deployment", child_svc_name)
             })?;
             let addr = format!("http://{}:{}", svc.ip, svc.port);
-            let client = ServiceClient::connect(addr).await?;
+            let client = Self::connect_to_child_retried(addr, max_timeout).await?;
+            println!("Connected to child service {}", child_svc_name);
             clients.insert(child_svc_name.clone(), client);
         }
         Ok(clients)
+    }
+
+    async fn connect_to_child_retried(
+        addr: String,
+        max_timeout: Duration,
+    ) -> Result<ServiceClient<Channel>> {
+        let retry_interval = Duration::from_secs(2);
+        let max_retry_interval = Duration::from_secs(15);
+        let max_jitter_interval = Duration::from_secs(2);
+
+        let start = Instant::now();
+        while start.elapsed() < max_timeout {
+            match ServiceClient::connect(addr.clone()).await {
+                Ok(client) => return Ok(client),
+                Err(e) => {
+                    let jitter = rand::rng().gen_range(Duration::from_secs(0)..max_jitter_interval);
+                    let retry_wait = std::cmp::min(retry_interval * 2, max_retry_interval) + jitter;
+
+                    warn!(
+                        "Failed to connect to child service at {}: {:?}. Retrying in {:?}...",
+                        addr, e, retry_wait,
+                    );
+                    sleep(retry_wait).await;
+                }
+            }
+        }
+
+        return Err(anyhow::anyhow!(
+            "Failed to connect to child service at {} within {:?}",
+            addr,
+            max_timeout
+        ));
     }
 }
 
@@ -440,6 +481,10 @@ impl AlibabaService {
         let latency_dist = self
             .config
             .method_latency
+            .as_ref()
+            .ok_or(Status::internal(
+                "Configuration error: method latency not configured",
+            ))?
             .get_method_dist(&name)
             .ok_or(Status::not_found("Method not found"))?;
 
@@ -502,7 +547,11 @@ impl AlibabaService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
+    // TODO: make log level configurable
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(LevelFilter::INFO)
+        .init();
 
     let deployment_path_str =
         env::var("DEPLOYMENT_CONFIG_PATH").unwrap_or_else(|_| "config/deployment.json".to_string());
@@ -511,14 +560,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port = env::var("SERVICE_PORT").unwrap_or_else(|_| "50051".to_string());
 
     let path = config_dir_str.into();
-    let config = ServiceTraceConfig::from_config_dir(&path, &service_name)
-        .expect("Loading config should succeed");
+
+    let svc_name = ServiceName::from_string(service_name);
+
+    // NOTE: HACK. Either make the root service name configurable, or
+    // configure the config files such that the root service has the same schema.
+    //
+    // Right now, the root service is "user" in Alibaba traces.
+    let config = {
+        const ROOT_SVC_NAME: &'static str = "user";
+        let root_svc_name = ServiceName::from_string(ROOT_SVC_NAME.to_string());
+        let svc_name_for_config = if svc_name == root_svc_name {
+            None
+        } else {
+            Some(svc_name.clone())
+        };
+
+        ServiceTraceConfig::from_config_dir(&path, svc_name_for_config)
+            .expect("Loading config should succeed")
+    };
+
+    println!("Config parsed");
 
     let deployment_path = deployment_path_str.into();
     let deployment = Deployment::read_from_file(&deployment_path)?;
 
-    let svc =
-        AlibabaService::new(ServiceName::from_string(service_name), config, deployment).await?;
+    let svc = AlibabaService::new(svc_name, config, deployment).await?;
 
     let addr = format!("0.0.0.0:{}", port).parse()?;
     println!("🚀 Generic Service listening on {}", addr);
