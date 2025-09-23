@@ -9,6 +9,7 @@ use std::fs::File;
 use std::future::Future;
 use std::io::BufReader;
 use std::io::Write;
+use std::io::{self, BufRead};
 use std::iter::zip;
 use std::path::Path;
 use std::path::PathBuf;
@@ -57,6 +58,8 @@ pub struct GenConfig {
     pub concurrency: usize,
     #[serde(rename = "Addr")]
     pub addr: String,
+    #[serde(rename = "IsOracle")]
+    pub is_oracle: bool,
 }
 
 #[derive(StructOpt, Debug, Clone)]
@@ -84,6 +87,25 @@ const DEFAULT_COUNTER_KEYS: [&'static str; 6] = [
     // total number of unexpected errors
     "unexpected",
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FutureSpanType {
+    Compute,
+    Block,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FutureSpan {
+    pub kind: FutureSpanType,
+    pub duration: Duration,
+}
+
+#[derive(Debug)]
+pub struct Task {
+    pub id: u64,
+    pub start_at: u64,
+    pub spans: Vec<FutureSpan>,
+}
 
 pub struct Counters {
     counters_map: HashMap<String, AtomicUsize>,
@@ -418,6 +440,40 @@ where
         Ok(())
     }
 
+    async fn oracle_run(&mut self, output_path: &Path) -> Result<(), Box<dyn Error>> {
+        let init_at = Instant::now();
+        let trace_at = init_at;
+        let pause_at =
+            init_at + Duration::from_secs(self.gen_cfg.warmup_secs + self.gen_cfg.duration_secs);
+
+        let counter_keys = &DEFAULT_COUNTER_KEYS;
+        let counters = Arc::new(Counters::new(counter_keys));
+
+        let path: &str = "apps/hotel/data/out/queue-experiment01/0/fifo/r1050_Search_trace.csv";
+        let tasks = parse_tasks_from_file(path).expect("Failed to parse tasks");
+
+        let h = tokio::task::spawn(stats_logger(Arc::clone(&counters), pause_at));
+
+        self.generate_oracle_load(counters, init_at, trace_at, tasks)
+            .await;
+
+        let _ = h.await;
+
+        log::info!("Load generated, writing trace");
+
+        let handlers = self
+            .api_handlers
+            .drain(..)
+            .map(|h| Arc::into_inner(h).unwrap());
+
+        // output traces
+        for mut handler in handlers {
+            handler.fetch_traces(output_path).await
+        }
+
+        Ok(())
+    }
+
     async fn generate_load(
         &mut self,
         counters: Arc<Counters>,
@@ -445,6 +501,82 @@ where
                 }
             };
             elapse += value;
+
+            let i = self.rng.gen_range(0..self.api_handlers.len());
+            let handler = Arc::clone(&self.api_handlers[i]);
+
+            let ctx = {
+                let request_id = counter_request_id;
+                counter_request_id += 1;
+
+                let start_at = time_now();
+                let deadline = start_at + handler.slo();
+
+                Context::new(
+                    handler.api().to_string(),
+                    0,
+                    request_id,
+                    handler.slo(),
+                    0,
+                    start_at,
+                    deadline,
+                )
+            };
+
+            let client = self.client.clone();
+            let ctrs = Arc::clone(&counters);
+            let rng = self.rng.clone();
+            let trace = Instant::now() > trace_at;
+
+            set.spawn(async move {
+                ctrs.increment("all");
+
+                let error = handler.send_request(rng, client, ctx, trace).await;
+
+                if trace {
+                    // increment the right counters
+                    match error.as_str() {
+                        "/None" => {
+                            ctrs.increment("good");
+                        }
+                        "/ClientMiss" => {
+                            ctrs.increment("deadline_miss");
+                        }
+                        "/EarlyReturn" => {
+                            ctrs.increment("early_return");
+                        }
+                        "/ClientTimeout" => {
+                            ctrs.increment("timeout");
+                        }
+                        e => {
+                            ctrs.increment("unexpected");
+                            log::error!("unexpected request error '{}'", e);
+                        }
+                    };
+                }
+            });
+        }
+
+        // wait for all outgoing requests to complete
+        while let Some(_) = set.join_next().await {}
+    }
+
+    async fn generate_oracle_load(
+        &mut self,
+        counters: Arc<Counters>,
+        init_at: Instant,
+        trace_at: Instant,
+        tasks: Vec<Task>,
+    ) {
+        let mut counter_request_id = 0;
+
+        let mut set = JoinSet::new();
+
+        for task in tasks {
+            // XXX: tokio's sleep has millisecond granularity, so for small `elapse` this may be
+            // inaccurate
+            let start_at = init_at + Duration::from_micros(task.start_at);
+            tokio::time::sleep_until(start_at).await;
 
             let i = self.rng.gen_range(0..self.api_handlers.len());
             let handler = Arc::clone(&self.api_handlers[i]);
@@ -569,7 +701,11 @@ where
             load_gen
         };
 
-        load_gen.run(output_path).await.unwrap();
+        if gen_cfg.is_oracle {
+            load_gen.oracle_run(output_path).await.unwrap();
+        } else {
+            load_gen.run(output_path).await.unwrap();
+        }
     }
 
     log::info!("Load generator done");
@@ -633,3 +769,52 @@ fn map_response<T>(
     };
     (response, error)
 }
+
+pub fn parse_tasks_from_file<P: AsRef<Path>>(path: P) -> io::Result<Vec<Task>> {
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+
+    reader
+        .lines()
+        .enumerate()
+        .map(|(i, line_result)| {
+            let line = line_result?;
+            parse_line(&line).map_err(|e| {
+                io::Error::new(io::ErrorKind::InvalidData, format!("Error on line {}: {}", i + 1, e))
+            })
+        })
+        .collect()
+}
+
+
+fn parse_line(line: &str) -> Result<Task, String> {
+    let mut parts = line.split(',');
+    let id_str = parts.next().ok_or("Line is empty")?;
+    let id = id_str
+        .parse::<u64>()
+        .map_err(|e| format!("Invalid Task ID '{}': {}", id_str, e))?;
+
+    let mut spans = Vec::new();
+    for part in parts {-
+        let (type_str, duration_part) = part
+            .split('(')
+            .ok_or(format!("Malformed stage: '{}'", part))?;
+        let kind = match type_str {
+            "Compute" => FutureSpanType::Compute,
+            "Block" => FutureSpanType::Block,
+            _ => return Err(format!("Unknown stage type: '{}'", type_str)),
+        };
+        let duration_str = duration_part
+            .strip_suffix("us)")
+            .ok_or(format!("Malformed duration: '{}'", duration_part))?;
+        let micros = duration_str
+            .parse::<u64>()
+            .map_err(|e| format!("Invalid duration value '{}': {}", duration_str, e))?;
+        spans.push(FutureSpan {
+            kind,
+            duration: Duration::from_micros(micros),
+        });
+    }
+    Ok(Task { id, spans })
+}
+
