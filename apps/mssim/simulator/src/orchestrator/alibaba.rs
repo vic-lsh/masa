@@ -1,13 +1,12 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
+use sim_config::deployment::Deployment;
+use sim_config::svc::ServiceName;
+use sim_config::trace::TraceConfig;
 use std::{collections::HashMap, fs, path::PathBuf, process::Command};
 use tracing::{debug, error, info};
 use yaml_rust::yaml::Hash;
 use yaml_rust::{Yaml, YamlEmitter};
-
-pub mod alibaba;
-
-use crate::parser::{MethodConfig, ServiceConfig, SimulatorConfig};
 
 #[allow(dead_code)]
 #[derive(Deserialize, Debug, serde::Serialize, Clone)] // Added serde::Serialize and Clone
@@ -18,12 +17,14 @@ pub struct ErrorRate {
     pub parameters: HashMap<String, f64>, // This maps the YAML key 'parameters' to a HashMap
 }
 
-pub fn assign_ports(services: &HashMap<String, ServiceConfig>) -> Result<HashMap<String, u16>> {
+pub fn assign_ports(
+    service_names: impl Iterator<Item = ServiceName>,
+) -> Result<HashMap<ServiceName, u16>> {
     info!("Assigning ports to services.");
     let mut port_assignments = HashMap::new();
     let mut available_ports = (50051..60000).collect::<Vec<u16>>(); // Define a range of ports
 
-    for service_name in services.keys() {
+    for service_name in service_names {
         if let Some(index) = available_ports.pop() {
             port_assignments.insert(service_name.clone(), index);
             debug!("Assigned port {} to service {}", index, service_name);
@@ -38,7 +39,7 @@ pub fn assign_ports(services: &HashMap<String, ServiceConfig>) -> Result<HashMap
 }
 
 // New function to generate individual config files for each service
-pub fn generate_service_configs(config: &SimulatorConfig) -> Result<()> {
+pub fn generate_service_configs(port_assignments: &HashMap<ServiceName, u16>) -> Result<()> {
     info!("Generating service-specific configuration files.");
     let config_dir = PathBuf::from("./service_configs"); // Directory to store individual configs
 
@@ -48,44 +49,19 @@ pub fn generate_service_configs(config: &SimulatorConfig) -> Result<()> {
 
     // Define the path for the single config file
     let mut service_config_path = config_dir.clone();
-    let output_filename = "config.json";
+    let output_filename = "deployment.json";
     service_config_path.push(output_filename);
 
-    // New struct that matches the format expected *inside* the service name key in the output JSON
-    #[derive(serde::Serialize, Clone)] // Only needs Serialize and Clone for generating the output file
-    pub struct GenericServiceServiceConfig {
-        pub ip: String,                             // Matches "ip" in example JSON
-        pub port: String,                           // Matches "port" in example JSON (as String)
-        pub methods: HashMap<String, MethodConfig>, // Matches "methods" in example JSON (MethodConfig already has derives)
-    }
+    let deployment = make_deployment_config(port_assignments);
 
-    // making hashmap to store the configs for each service
-    let mut all_service_configs: HashMap<&str, GenericServiceServiceConfig> = HashMap::new();
-
-    // populating the hashmap
-    for (service_name, service_config) in &config.services {
-        // Create the config object for this service in the desired output format
-        let generic_service_config = GenericServiceServiceConfig {
-            ip: service_name.clone(),
-            port: service_config.port.to_string(),
-            methods: service_config.methods.clone(),
-        };
-
-        // Insert the service's config into the map, using the service name as the key
-        all_service_configs.insert(service_name.as_str(), generic_service_config);
-    }
-
-    // Serialize the entire map containing all service configs
-    let config_json = serde_json::to_string_pretty(&all_service_configs)
-        .with_context(|| "Failed to serialize all service configurations")?;
-
-    // Write the entire config to the single file
-    fs::write(&service_config_path, config_json).with_context(|| {
-        format!(
-            "Failed to write the single config file to {:?}",
-            service_config_path
-        )
-    })?;
+    deployment
+        .export_to_file(&service_config_path)
+        .map_err(|_| {
+            anyhow!(
+                "Failed to write deployment config to {:?}",
+                service_config_path
+            )
+        })?;
 
     info!(
         "Created config file containing all service configurations at {:?}",
@@ -95,9 +71,29 @@ pub fn generate_service_configs(config: &SimulatorConfig) -> Result<()> {
     Ok(())
 }
 
+fn make_deployment_config(port_assignments: &HashMap<ServiceName, u16>) -> Deployment {
+    let mut services = HashMap::new();
+
+    for (service_name, port) in port_assignments {
+        println!("Service: {}, Port: {}", service_name, port);
+
+        services.insert(
+            service_name.clone(),
+            sim_config::deployment::ServiceDiscoveryInfo {
+                // in our docker config, service name is the ip
+                ip: service_name.to_string(),
+                port: *port,
+            },
+        );
+    }
+
+    Deployment { services }
+}
+
 pub fn generate_docker_compose(
-    config: &SimulatorConfig,
-    ports: &HashMap<String, u16>,
+    config: &TraceConfig,
+    ports: &HashMap<ServiceName, u16>,
+    trace_dir: &PathBuf,
 ) -> Result<()> {
     info!("Generating docker-compose.yml file.");
     let mut doc_hash = Hash::new();
@@ -105,23 +101,28 @@ pub fn generate_docker_compose(
     doc_hash.insert(Yaml::String("version".into()), Yaml::String("3".into()));
 
     let mut services = Hash::new();
-    for (service_name, service_config) in &config.services {
+    for service_name in &config.call_graph.services() {
+        let svc_port = ports
+            .get(service_name)
+            .ok_or_else(|| anyhow::anyhow!("Port not assigned for service: {}", service_name))?;
+
         let mut service_def = Hash::new();
 
         let mut build_def = Hash::new();
         build_def.insert(
             Yaml::String("context".into()),
-            Yaml::String("../generic-service".into()),
+            Yaml::String(workspace_root().to_string_lossy().to_string()),
         );
+        let dockerfile_path = workspace_root().join("apps/mssim/generic-service/Dockerfile");
         build_def.insert(
             Yaml::String("dockerfile".into()),
-            Yaml::String("Dockerfile".into()),
+            Yaml::String(dockerfile_path.to_string_lossy().to_string()),
         );
         // Pass the port as a build argument (still useful for EXPOSE in Dockerfile)
         let mut build_args = Hash::new();
         build_args.insert(
             Yaml::String("SERVICE_CONTAINER_PORT".into()),
-            Yaml::String(service_config.port.to_string()),
+            Yaml::String(svc_port.to_string()),
         );
         build_def.insert(Yaml::String("args".into()), Yaml::Hash(build_args));
 
@@ -132,7 +133,7 @@ pub fn generate_docker_compose(
         );
 
         if let Some(&host_port) = ports.get(service_name) {
-            let ports_mapping = format!("{}:{}", host_port, service_config.port);
+            let ports_mapping = format!("{}:{}", host_port, svc_port);
             service_def.insert(
                 Yaml::String("ports".into()),
                 Yaml::Array(vec![Yaml::String(ports_mapping)]),
@@ -149,30 +150,47 @@ pub fn generate_docker_compose(
         // Add the SERVICE_NAME environment variable
         environment.insert(
             Yaml::String("SERVICE_NAME".into()),
-            Yaml::String(service_name.clone().into()),
+            Yaml::String(service_name.into()),
         );
 
         // Add the SERVICE_PORT environment variable
         environment.insert(
             Yaml::String("SERVICE_PORT".into()),
-            Yaml::String(service_config.port.to_string()),
+            Yaml::String(svc_port.to_string()),
         );
 
         // Define the path where the config file will be mounted INSIDE the container
-        let container_config_path = "/app/config.json"; // Example path inside the container
+        let in_container_config_path = "/app/config"; // Example path inside the container
         environment.insert(
             Yaml::String("CONFIG_PATH".into()),
-            Yaml::String(container_config_path.into()),
+            Yaml::String(in_container_config_path.into()),
+        );
+        let in_container_deployment_config_path = "/app/config/deployment.json"; // Example path inside the container
+        environment.insert(
+            Yaml::String("DEPLOYMEN_CONFIG_PATH".into()),
+            Yaml::String(in_container_deployment_config_path.into()),
         );
 
         service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
 
         // Configure volumes to mount the service-specific config file
         let mut volumes: Vec<Yaml> = Vec::new();
-        // Path on the host: ./service_configs/config.json
-        let host_config_path = format!("./service_configs/config.json");
-        // Mount point inside the container: /app/config.json (matches CONFIG_PATH)
-        let volume_mapping = format!("{}:{}", host_config_path, container_config_path);
+
+        // add config volume
+        // let host_config_dir = workspace_root()
+        //     .join("./trace-analysis/golden/S_32048416/")
+        //     .to_string_lossy()
+        //     .into_owned();
+        let host_config_dir = trace_dir.to_string_lossy().into_owned();
+        let volume_mapping = format!("{}:{}", host_config_dir, in_container_config_path);
+        volumes.push(Yaml::String(volume_mapping.into()));
+
+        // Add deployment config volume
+        let host_config_path = format!("./service_configs/deployment.json");
+        let volume_mapping = format!(
+            "{}:{}",
+            host_config_path, in_container_deployment_config_path
+        );
         volumes.push(Yaml::String(volume_mapping.into()));
 
         service_def.insert(Yaml::String("volumes".into()), Yaml::Array(volumes));
@@ -197,7 +215,10 @@ pub fn generate_docker_compose(
         }
         */
 
-        services.insert(Yaml::String(service_name.clone()), Yaml::Hash(service_def));
+        services.insert(
+            Yaml::String(service_name.to_string()),
+            Yaml::Hash(service_def),
+        );
     }
 
     doc_hash.insert(Yaml::String("services".into()), Yaml::Hash(services));
@@ -301,16 +322,16 @@ fn stop_docker_compose() -> Result<(), anyhow::Error> {
     }
 }
 
-pub async fn launch_simulation_from_yaml(config: SimulatorConfig) -> Result<()> {
+pub async fn launch_simulation_from_yaml(config: TraceConfig, trace_dir: &PathBuf) -> Result<()> {
     // assign ports
-    let port_assignments = assign_ports(&config.services)?;
+    let port_assignments = assign_ports(config.call_graph.services().into_iter())?;
     info!("Port assignments: {:?}", port_assignments);
 
     // Generate service-specific config files
-    generate_service_configs(&config)?;
+    generate_service_configs(&port_assignments)?;
 
     // generate docker-compose.yml
-    generate_docker_compose(&config, &port_assignments)?;
+    generate_docker_compose(&config, &port_assignments, trace_dir)?;
 
     // running Docker Compose
     run_docker_compose()?;
@@ -324,4 +345,14 @@ pub async fn launch_simulation_from_yaml(config: SimulatorConfig) -> Result<()> 
     info!("Collecting and reporting output...");
 
     Ok(())
+}
+
+// Transform any service name string to a format that docker accepts as a
+// service (and/or container) name
+fn to_service_name_in_docker(original_name: &str) -> String {
+    original_name.to_lowercase()
+}
+
+fn workspace_root() -> PathBuf {
+    env!("CARGO_WORKSPACE_DIR").into()
 }

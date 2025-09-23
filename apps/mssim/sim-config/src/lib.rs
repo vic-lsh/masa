@@ -7,3 +7,4 @@
 pub mod deployment;
 pub mod dist;
 pub mod svc;
+pub mod trace;

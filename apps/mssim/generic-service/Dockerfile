@@ -12,22 +12,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy manifest files
-COPY Cargo.toml ./
+RUN rustup override set nightly
 
-# Create dummy source file for initial fetch
-RUN mkdir src && echo 'fn main() {}' > src/main.rs
-
-# Fetch dependencies
-RUN cargo fetch
-
-# Copy the actual source code
-COPY src ./src
-COPY proto ./proto 
-COPY build.rs .
+# We need to copy the entire project (from workspace root)
+# This is because we want to link the generic-service with our runtime,
+# as well as other crates (e.g., sim-config)
+COPY Cargo.toml Cargo.toml
+COPY Cargo.lock Cargo.lock
+COPY 3rd_party 3rd_party
+COPY apps apps
+COPY libs libs
 
 # Build the generic service
-RUN cargo build --release
+RUN cargo build --release -p generic-service
 
 # Declare the build argument for the container port (providing a default value of 8000)
 ARG SERVICE_CONTAINER_PORT=8000 
@@ -37,4 +34,4 @@ EXPOSE ${SERVICE_CONTAINER_PORT}
 
 # Command to run the service
 # The service code should read the port from the SERVICE_PORT environment variable
-CMD ["cargo", "run", "--release"]
+CMD ["cargo", "run", "--release", "--bin", "generic-service"]

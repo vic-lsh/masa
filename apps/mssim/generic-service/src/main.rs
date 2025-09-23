@@ -5,7 +5,7 @@ use rand_distr::{Bernoulli, Distribution, Normal};
 use serde::{Deserialize, Serialize};
 use service_stubs::service_client::ServiceClient;
 use sim_config::deployment::Deployment;
-use sim_config::svc::ServiceTraceConfig;
+use sim_config::svc::{ServiceName, ServiceTraceConfig};
 use std::collections::HashMap;
 use std::env;
 use std::path::Path;
@@ -347,15 +347,14 @@ impl Service for GenericService {
 #[allow(dead_code)]
 struct AlibabaService {
     config: ServiceTraceConfig,
-    // TODO: make ServiceId struct; use Cow to make cloning cheap
-    clients: HashMap<String, ServiceClient<Channel>>,
+    clients: HashMap<ServiceName, ServiceClient<Channel>>,
     deployment: Deployment,
-    self_svc_name: String,
+    self_svc_name: ServiceName,
 }
 
 impl AlibabaService {
     pub async fn new(
-        self_svc_name: String,
+        self_svc_name: ServiceName,
         config: ServiceTraceConfig,
         deployment: Deployment,
     ) -> Result<Self> {
@@ -372,9 +371,9 @@ impl AlibabaService {
     }
 
     async fn connect_to_children(
-        children: &[String],
+        children: &[ServiceName],
         deployment: &Deployment,
-    ) -> Result<HashMap<String, ServiceClient<Channel>>> {
+    ) -> Result<HashMap<ServiceName, ServiceClient<Channel>>> {
         let mut clients = HashMap::new();
         for child_svc_name in children {
             let svc = deployment.services.get(child_svc_name).with_context(|| {
@@ -496,7 +495,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deployment_path = deployment_path_str.into();
     let deployment = Deployment::read_from_file(&deployment_path)?;
 
-    let svc = AlibabaService::new(service_name, config, deployment).await?;
+    let svc =
+        AlibabaService::new(ServiceName::from_string(service_name), config, deployment).await?;
 
     let addr = format!("0.0.0.0:{}", port).parse()?;
     println!("🚀 Generic Service listening on {}", addr);
