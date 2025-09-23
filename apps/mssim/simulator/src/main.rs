@@ -18,20 +18,21 @@ pub mod proto {
 }
 
 async fn run_from_input(input_path: &PathBuf) -> Result<()> {
-    // Parse JSON file
-    let config = parser::json::parse_json_file(input_path)?;
+    todo!()
+    // // Parse JSON file
+    // let config = parser::json::parse_json_file(input_path)?;
 
-    // Validate config
-    validator::validate_config(&config)?;
+    // // Validate config
+    // validator::validate_config(&config)?;
 
-    // Generate YAML
-    // let yaml_str = generator::yaml::generate_simulator_yaml(&config)?;
-    // let path = "submitted_config.yaml";
-    // tokio::fs::write(path, &yaml_str).await?;
+    // // Generate YAML
+    // // let yaml_str = generator::yaml::generate_simulator_yaml(&config)?;
+    // // let path = "submitted_config.yaml";
+    // // tokio::fs::write(path, &yaml_str).await?;
 
-    launch_simulation_from_yaml(config).await?;
+    // launch_simulation_from_yaml(config).await?;
 
-    Ok(())
+    // Ok(())
 }
 
 async fn run_from_alibaba_trace(trace_dir: &PathBuf) -> Result<()> {
@@ -41,7 +42,7 @@ async fn run_from_alibaba_trace(trace_dir: &PathBuf) -> Result<()> {
 
     // TODO: reintroduce validation logic
     // Validate config
-    // validator::validate_config(&config)?;
+    validator::validate_config(&config)?;
 
     orchestrator::alibaba::launch_simulation_from_yaml(config, trace_dir).await?;
 
