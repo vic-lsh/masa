@@ -258,6 +258,22 @@ def moore_algo(tasks: List[Dict[str, Any]], slo: int = 50000) -> Dict[str, Any]:
     dropped = len(tasks_sorted) - goodput
     return {"goodput_count": goodput, "dropped_count": dropped}
 
+def sort_log_file_by_timestamp(input_path, output_path):
+    """
+    Reads a log file, sorts its lines based on the initial timestamp,
+    and writes the result to a new file.
+    """
+    try:
+        with open(input_path, 'r') as f:
+            lines = f.readlines()
+        lines.sort(key=lambda line: int(line.split(',', 1)[0]))
+        with open(output_path, 'w') as f:
+            f.writelines(lines)
+        print(f"Successfully sorted '{input_path}' into '{output_path}'.")
+    except FileNotFoundError:
+        print(f"Error: Input file not found at '{input_path}'")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 def frontend_opt():
     # Read json config file for rps values
@@ -266,16 +282,20 @@ def frontend_opt():
     result_arr = []
     for rps in rps_values:
         log_input_path = f"data/out/queue-experiment01/0/fifo/r{rps}_Search.csv"
+        
         log_output_path_1 = f"data/out/queue-experiment01/0/fifo/r{rps}_Search_orig.csv"
         log_output_path_2 = f"data/out/queue-experiment01/0/fifo/r{rps}_Search_trace.csv"
+        
+        log_output_path_2_sorted = f"data/out/queue-experiment01/0/fifo/r{rps}_Search_trace_sorted.csv"
+        sort_log_file_by_timestamp(log_output_path_2, log_output_path_2_sorted)
+        
         log_output_path_3 = f"data/out/queue-experiment01/0/fifo/r{rps}_reservation_trace.csv"
 
-        # Process the file, split into two.
-        first_arrival_time, _ = split_log_file(log_input_path, log_output_path_1, log_output_path_2, log_output_path_3)
+        first_arrival_time, _ = split_log_file(log_input_path, log_output_path_1, log_output_path_2_sorted, log_output_path_3)
         print(f"First arrival time recorded: {first_arrival_time}")
         
         # Process the trace file to extract task traces
-        task_traces = process_traces(log_output_path_2, first_arrival_time)
+        task_traces = process_traces(log_output_path_2_sorted, first_arrival_time)
 
         # Apply Moore's algorithm
         sim = moore_algo(task_traces, slo=50000)
