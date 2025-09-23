@@ -1,15 +1,16 @@
-use clap::Parser;
+use anyhow::{Context, Result};
 use futures::future;
 use prost_types::Timestamp;
 use rand_distr::{Bernoulli, Distribution, Normal};
 use serde::{Deserialize, Serialize};
 use service_stubs::service_client::ServiceClient;
-use sim_config::svc::MethodLatencyDistMap;
+use sim_config::deployment::Deployment;
+use sim_config::svc::ServiceTraceConfig;
 use std::collections::HashMap;
 use std::env;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tonic::transport::Channel;
@@ -342,13 +343,47 @@ impl Service for GenericService {
     }
 }
 
+#[allow(dead_code)]
 struct AlibabaService {
-    dist_config: MethodLatencyDistMap,
+    config: ServiceTraceConfig,
+    // TODO: make ServiceId struct; use Cow to make cloning cheap
+    clients: HashMap<String, ServiceClient<Channel>>,
+    deployment: Deployment,
+    self_svc_name: String,
 }
 
 impl AlibabaService {
-    pub fn new(dist_config: MethodLatencyDistMap) -> Self {
-        AlibabaService { dist_config }
+    pub async fn new(
+        self_svc_name: String,
+        config: ServiceTraceConfig,
+        deployment: Deployment,
+    ) -> Result<Self> {
+        let children = config.call_graph.callees_of(&self_svc_name);
+
+        let clients = Self::connect_to_children(&children, &deployment).await?;
+
+        Ok(AlibabaService {
+            config,
+            clients,
+            deployment,
+            self_svc_name,
+        })
+    }
+
+    async fn connect_to_children(
+        children: &[String],
+        deployment: &Deployment,
+    ) -> Result<HashMap<String, ServiceClient<Channel>>> {
+        let mut clients = HashMap::new();
+        for child_svc_name in children {
+            let svc = deployment.services.get(child_svc_name).with_context(|| {
+                format!("Child service {} not found in deployment", child_svc_name)
+            })?;
+            let addr = format!("http://{}:{}", svc.ip, svc.port);
+            let client = ServiceClient::connect(addr).await?;
+            clients.insert(child_svc_name.clone(), client);
+        }
+        Ok(clients)
     }
 }
 
@@ -360,7 +395,7 @@ impl Service for AlibabaService {
     ) -> Result<Response<ServiceResponse>, Status> {
         let method_name = request.into_inner().method_name;
 
-        self.handle_method(method_name.clone())?;
+        self.handle_method(method_name.clone()).await?;
 
         Ok(Response::new(ServiceResponse {
             calls: vec![],
@@ -378,45 +413,90 @@ fn busy_spin(duration_ms: f64) {
 }
 
 impl AlibabaService {
-    fn handle_method(&self, method_name: String) -> Result<(), Status> {
+    async fn handle_method(&self, method_name: String) -> Result<(), Status> {
         let name = method_name.into();
         let latency_dist = self
-            .dist_config
+            .config
+            .method_latency
             .get_method_dist(&name)
             .ok_or(Status::not_found("Method not found"))?;
 
-        let latency = latency_dist.sample(&mut rand::rng());
+        let total_latency_ms = latency_dist.sample(&mut rand::rng());
 
-        // TODO: add calling into child as well
-        busy_spin(latency);
+        let start = Instant::now();
+        self.fanout().await?;
+        let elapsed = start.elapsed();
 
+        let remaining = total_latency_ms - (elapsed.as_millis() as f64);
+        if remaining > 0.0 {
+            busy_spin(remaining);
+        } else {
+            eprintln!(
+                "Warning: fanout took longer ({:?}) than total latency ({:.2} ms)",
+                elapsed, total_latency_ms
+            );
+        }
+
+        Ok(())
+    }
+
+    async fn fanout(&self) -> Result<(), Status> {
+        let mut tasks = Vec::new();
+        for (child_svc_name, client) in &self.clients {
+            let method_to_call = self
+                .config
+                .method_freq_map
+                .get_service(child_svc_name)
+                .and_then(|sampler| Some(sampler.sample(&mut rand::rng()).to_string()))
+                .ok_or(Status::not_found(format!(
+                    "Configuration error: Service {child_svc_name} has no method to call"
+                )))?;
+
+            let mut client = client.clone();
+            let request = tonic::Request::new(ServiceRequest {
+                method_name: method_to_call,
+            });
+
+            let handle = tokio::spawn(async move {
+                let response = client.get_data(request).await;
+                match response {
+                    Ok(res) => Ok(()),
+                    Err(e) => Err(Status::internal("Child service call failed")),
+                }
+            });
+            tasks.push((child_svc_name, handle));
+        }
+        for (child_svc, handle) in tasks {
+            let rpc_result = handle
+                .await
+                .map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
+            rpc_result.map_err(|e| {
+                eprintln!("RPC to child service {} failed", child_svc);
+                e
+            })?;
+        }
         Ok(())
     }
 }
 
-#[derive(Parser)]
-struct Args {
-    #[clap(long)]
-    config_path: String,
-    #[clap(long)]
-    service_name: String,
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
+    let deployment_path_str =
+        env::var("DEPLOYMENT_CONFIG_PATH").unwrap_or_else(|_| "config/deployment.json".to_string());
+    let config_dir_str = env::var("CONFIG_PATH").unwrap_or_else(|_| "config/".to_string());
+    let service_name = env::var("SERVICE_NAME").expect("Failed to get SERVICE_NAME");
+    let port = env::var("SERVICE_PORT").unwrap_or_else(|_| "50051".to_string());
 
-    let path = args.config_path.into();
-    let config = MethodLatencyDistMap::from_file_path(&path, &args.service_name)
+    let path = config_dir_str.into();
+    let config = ServiceTraceConfig::from_config_dir(&path, &service_name)
         .expect("Loading config should succeed");
 
-    // NOTE: currently this breaks the overall simulator.
-    // To test the existing simulator, run with the GenericService instead.
-    let svc = AlibabaService::new(config);
+    let deployment_path = deployment_path_str.into();
+    let deployment = Deployment::read_from_file(&deployment_path)?;
 
-    let port = env::var("SERVICE_PORT").unwrap_or_else(|_| "50051".to_string());
+    let svc = AlibabaService::new(service_name, config, deployment).await?;
+
     let addr = format!("0.0.0.0:{}", port).parse()?;
-
     println!("🚀 Generic Service listening on {}", addr);
 
     Server::builder()
