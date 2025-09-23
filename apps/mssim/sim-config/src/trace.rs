@@ -25,6 +25,8 @@ impl TraceConfig {
 
 #[cfg(test)]
 mod tests {
+    use crate::svc::ServiceName;
+
     use super::*;
 
     fn workspace_root() -> PathBuf {
@@ -37,9 +39,9 @@ mod tests {
 
         let config = TraceConfig::from_config_dir(&path).expect("Reading should not fail");
 
-        let svc_name = "MS_49817";
+        let svc_name = ServiceName::from_string("MS_49817".into());
 
-        assert!(config.call_graph.callees_of(svc_name).len() > 0);
+        assert!(config.call_graph.callees_of(&svc_name).len() > 0);
 
         let sampled_method = config
             .method_freq_map

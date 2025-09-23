@@ -171,13 +171,13 @@ mod tests {
 
     #[test]
     fn test_parse_method_invoke_freq() {
-        let svc_name = "MS_9287";
+        let svc_name = ServiceName::new("MS_9287");
         let path =
             workspace_root().join("./trace-analysis/golden/S_32048416/interface_distribution.json");
 
         let map = MethodFreqMap::from_file_path(&path).expect("Parsing should not fail");
 
-        let freq_map = map.get_service(svc_name).expect("Service should exist");
+        let freq_map = map.get_service(&svc_name).expect("Service should exist");
 
         // Raw data obtained from the golden file.
         let expected = vec![
