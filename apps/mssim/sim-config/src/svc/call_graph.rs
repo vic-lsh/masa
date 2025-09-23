@@ -74,9 +74,17 @@ impl CallGraph {
     }
 
     // TODO: create a variant of this that returns an iterator
-    pub fn services(&self) -> Vec<ServiceName> {
-        let svcs: Vec<ServiceName> = self.outgoing.keys().cloned().collect();
-        svcs
+    pub fn services(&self) -> HashSet<ServiceName> {
+        let mut services = HashSet::new();
+
+        for (caller, callees) in &self.outgoing {
+            services.insert(caller.clone());
+            for callee in callees {
+                services.insert(callee.clone());
+            }
+        }
+
+        services
     }
 }
 
@@ -176,11 +184,10 @@ S2,B,C
 S3,C,D
 "#;
         let g = CallGraph::from_reader(data.as_bytes()).unwrap();
-        let mut svcs = g.services();
-        svcs.sort_unstable();
-        assert_eq!(
-            svcs,
-            vec!["A".to_string(), "B".to_string(), "C".to_string()]
-        );
+        let svcs = g.services();
+
+        let expected =
+            HashSet::from(["A", "B", "C", "D"].map(|s| ServiceName::from_string(s.to_string())));
+        assert_eq!(svcs, expected);
     }
 }

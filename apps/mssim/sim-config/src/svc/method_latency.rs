@@ -1,4 +1,4 @@
-use crate::svc::MethodId;
+use crate::svc::{MethodId, ServiceName};
 use anyhow::{Context, Result};
 use std::{collections::HashMap, fs, path::PathBuf};
 
@@ -12,24 +12,24 @@ pub struct MethodLatencyDistMap {
 
 /// Raw deserialization shape matching the file:
 /// HashMap<microservice, HashMap<method, HashMap<percentile_string, latency_f64>>>
-type RawFileShape = HashMap<String, HashMap<String, HashMap<String, f64>>>;
+type RawFileShape = HashMap<ServiceName, HashMap<String, HashMap<String, f64>>>;
 
 // parsing logic
 impl MethodLatencyDistMap {
-    pub fn from_file_path(path: &PathBuf, service_name: &str) -> Result<Self> {
+    pub fn from_file_path(path: &PathBuf, service_name: ServiceName) -> Result<Self> {
         let config_str = fs::read_to_string(path)
             .with_context(|| format!("Failed to read file: {}", path.display()))?;
         Self::from_str(&config_str, service_name)
     }
 
-    fn from_str(config_str: &str, service_name: &str) -> Result<Self> {
+    fn from_str(config_str: &str, service_name: ServiceName) -> Result<Self> {
         let raw: RawFileShape = serde_json::from_str(config_str).context("Invalid JSON")?;
         Self::parse_distributions(raw, service_name)
     }
 
-    fn parse_distributions(mut raw: RawFileShape, service_name: &str) -> Result<Self> {
+    fn parse_distributions(mut raw: RawFileShape, service_name: ServiceName) -> Result<Self> {
         let our_svc = raw
-            .remove(service_name)
+            .remove(&service_name)
             .with_context(|| format!("Service name {} doesn't exist in config", service_name))?;
 
         let mut methods = HashMap::new();

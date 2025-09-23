@@ -65,7 +65,7 @@ impl Into<String> for &ServiceName {
 }
 
 pub struct ServiceTraceConfig {
-    pub method_latency: MethodLatencyDistMap,
+    pub method_latency: Option<MethodLatencyDistMap>,
     pub method_freq_map: method_freq::MethodFreqMap,
     pub call_graph: call_graph::CallGraph,
 }
@@ -73,15 +73,20 @@ pub struct ServiceTraceConfig {
 impl ServiceTraceConfig {
     pub fn from_config_dir(
         dir: &PathBuf,
-        svc_name: &str,
+        svc_name: Option<ServiceName>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let call_graph_path = dir.join("edges.csv");
         let call_graph = call_graph::CallGraph::from_path(call_graph_path)?;
 
-        let method_latency_path = dir.join("latency_percentiles.json");
-        let method_latency =
-            MethodLatencyDistMap::from_file_path(&method_latency_path, svc_name)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let method_latency = match svc_name {
+            Some(svc_name) => {
+                let method_latency_path = dir.join("latency_percentiles.json");
+                let map = MethodLatencyDistMap::from_file_path(&method_latency_path, svc_name)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                Some(map)
+            }
+            None => None,
+        };
 
         let method_freq_path = dir.join("interface_distribution.json");
         let method_freq = method_freq::MethodFreqMap::from_file_path(&method_freq_path)
@@ -108,14 +113,17 @@ mod tests {
         let svc_name = "MS_49817";
         let path = workspace_root().join("./trace-analysis/golden/S_32048416/");
 
-        let config =
-            ServiceTraceConfig::from_config_dir(&path, svc_name).expect("Reading should not fail");
+        let config = ServiceTraceConfig::from_config_dir(&path, Some(svc_name))
+            .expect("Reading should not fail");
 
-        assert!(config.call_graph.callees_of(svc_name).len() > 0);
+        let svc_name = ServiceName::from_string(svc_name.to_string());
+        assert!(config.call_graph.callees_of(&svc_name).len() > 0);
 
         let method = "daq6sEhEBy".into();
         let dist = config
             .method_latency
+            .as_ref()
+            .expect("Method latency should be present")
             .get_method_dist(&method)
             .expect("Method distribution should exist");
 
