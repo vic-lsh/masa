@@ -1,20 +1,19 @@
 //! Initial hook implementation that traces a request's compute, IO, and queueing latencies.
 
 use crate::body::BoxBody;
-use crate::metadata::MetadataMap;
 use crate::Response;
 use crate::{GrpcMethod, Request, Status};
 use std::sync::Mutex;
 use std::{
     sync::{
-        atomic::{AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc,
     },
     time::Instant,
 };
 
 use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
-use masa::{time_now, Context, FutureSpan};
+use masa::{time_now, FutureSpan};
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -67,24 +66,6 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             last_after_poll: AtomicU64::new(0),
             latency_traces: Mutex::new(Vec::new()),
         }
-    }
-
-    fn before_child_rpc<T>(
-        &self,
-        method: GrpcMethod,
-        request: &mut Request<T>,
-        child_ctx: &mut ChildContext,
-    ) -> Result<(), Status> {
-        Ok(())
-    }
-
-    fn after_child_rpc<T>(
-        &self,
-        method: GrpcMethod,
-        response: &mut Result<Response<T>, Status>,
-        child_ctx: ChildContext,
-    ) -> Result<(), Status> {
-        Ok(())
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
