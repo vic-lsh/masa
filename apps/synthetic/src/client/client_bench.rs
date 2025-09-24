@@ -48,7 +48,6 @@ const PRESAMPLED_PREFIX: &'static str = "presampled_";
 enum RequestHandler {
     ARequest(Handler<ARequest, SyntheticClient>),
     PresampledRequest(Handler<PresampledRequest, SyntheticClient>),
-    TracedRequest(Handler<TracedRequest, SyntheticClient>),
 }
 
 impl HandlerOuter<SyntheticClient> for RequestHandler {
@@ -72,7 +71,6 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
         match self {
             Self::ARequest(h) => h.send_request(rng, client, ctx, trace).await,
             Self::PresampledRequest(h) => h.send_request(rng, client, ctx, trace).await,
-            Self::TracedRequest(h) => h.send_request(rng, client, ctx, trace).await,
         }
     }
 
@@ -80,7 +78,6 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
         match self {
             Self::ARequest(h) => h.fetch_traces(output_path).await,
             Self::PresampledRequest(h) => h.fetch_traces(output_path).await,
-            Self::TracedRequest(h) => h.fetch_traces(output_path).await,
         }
     }
 
@@ -88,7 +85,6 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
         match self {
             Self::ARequest(h) => h.api.as_str(),
             Self::PresampledRequest(h) => h.api.as_str(),
-            Self::TracedRequest(h) => h.api.as_str(),
         }
     }
 
@@ -96,7 +92,6 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
         match self {
             Self::ARequest(h) => h.slo,
             Self::PresampledRequest(h) => h.slo,
-            Self::TracedRequest(h) => h.slo,
         }
     }
 }
@@ -188,36 +183,36 @@ impl RequestType<SyntheticClient> for PresampledRequest {
     }
 }
 
-struct TracedRequest {
-    req_id: u64,
-}
+// struct TracedRequest {
+//     req_id: u64,
+// }
 
-impl RequestType<SyntheticClient> for TracedRequest {
-    type ResponseType = frontend::TracedResponse;
+// impl RequestType<SyntheticClient> for TracedRequest {
+//     type ResponseType = frontend::TracedResponse;
 
-    fn new(req_id: u64) -> Self {
-        Self { req_id }
-    }
+//     fn new(req_id: u64) -> Self {
+//         Self { req_id }
+//     }
 
-    async fn create_request(
-        &self,
-        _rng: &mut StdRng,
-        mut client: <SyntheticClient as Client>::FrontendClient,
-        ctx: &Context,
-    ) -> Result<Response<Self::ResponseType>, Status> {
-        let mut r = tonic::Request::new(frontend::TracedRequest { req_id: self.req_id });
-        r.metadata_mut().insert_ctx("ctx", &ctx);
-        client.handle_traced(r).await
-    }
+//     async fn create_request(
+//         &self,
+//         _rng: &mut StdRng,
+//         mut client: <SyntheticClient as Client>::FrontendClient,
+//         ctx: &Context,
+//     ) -> Result<Response<Self::ResponseType>, Status> {
+//         let mut r = tonic::Request::new(frontend::TracedRequest { req_id: self.req_id });
+//         r.metadata_mut().insert_ctx("ctx", &ctx);
+//         client.handle_traced(r).await
+//     }
 
-    fn response_output_headers(&self) -> Vec<String> {
-        Vec::new()
-    }
+//     fn response_output_headers(&self) -> Vec<String> {
+//         Vec::new()
+//     }
 
-    fn response_to_row(_metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
-        Vec::new()
-    }
-}
+//     fn response_to_row(_metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
+//         Vec::new()
+//     }
+// }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

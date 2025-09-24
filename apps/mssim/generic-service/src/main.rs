@@ -19,7 +19,7 @@ pub mod service_stubs {
 }
 
 use service_stubs::service_server::{Service, ServiceServer};
-use service_stubs::{RootRequest, RootResponse, ServiceRequest, ServiceResponse};
+use service_stubs::{RootRequest, RootResponse, ServiceRequest, ServiceResponse, ReplayRequest, ReplayResponse};
 
 #[allow(dead_code)]
 struct AlibabaService {
@@ -135,6 +135,13 @@ impl Service for AlibabaService {
         self.fanout().await?;
 
         Ok(Response::new(RootResponse {}))
+    }
+
+    async fn replay(
+        &self,
+        _request: tonic::Request<ReplayRequest>,
+    ) -> Result<Response<ReplayResponse>, Status> {
+        Err(Status::unimplemented("Not implemented"))
     }
 }
 

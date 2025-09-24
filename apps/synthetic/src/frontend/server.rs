@@ -136,17 +136,17 @@ impl Frontend for FrontendImpl {
         Ok(Response::new(frontend::PresampledResponse {}))
     }
 
-    async fn handle_traced(
-        &self,
-        request: Request<frontend::TracedRequest>,
-    ) -> Result<Response<frontend::TracedResponse>, Status> {
-        let mut r = tonic::Request::new(frontend::TracedRequest { req_id: request.get_ref().req_id });
-        r.metadata_mut().extend(request.metadata().clone());
-        let response = r;
-        Ok(Response::new(frontend::TracedResponse {
-            echo_req_id: response.get_ref().req_id,
-        }))
-    }
+    // async fn handle_traced(
+    //     &self,
+    //     request: Request<frontend::TracedRequest>,
+    // ) -> Result<Response<frontend::TracedResponse>, Status> {
+    //     let mut r = tonic::Request::new(frontend::TracedRequest { req_id: request.get_ref().req_id });
+    //     r.metadata_mut().extend(request.metadata().clone());
+    //     let response = r;
+    //     Ok(Response::new(frontend::TracedResponse {
+    //         echo_req_id: response.get_ref().req_id,
+    //     }))
+    // }
 }
 
 fn reversed_prefix_sum(v: &Vec<u64>) -> Vec<u64> {

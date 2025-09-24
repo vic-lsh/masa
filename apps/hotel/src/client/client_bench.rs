@@ -175,7 +175,7 @@ impl RequestType<HotelClient> for SearchRequest {
 
     fn response_to_row(metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
         let mut traces = extract_latency_traces(metadata).unwrap_or_default();
-        traces.extend(_r.reservation_traces.iter().cloned());
+        traces.extend(_r.child_traces.iter().cloned());
         traces
     }
 }
