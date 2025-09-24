@@ -23,7 +23,7 @@ message SearchRequest {
 
 message SearchResponse { 
   repeated Hotel hotels = 1;
-  repeated string reservationTraces = 2;
+  repeated string childTraces = 2;
 }
 
 message Hotel {
