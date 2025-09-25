@@ -10,7 +10,7 @@ use tokio::time::sleep;
 use tonic::transport::Channel;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::level_filters::LevelFilter;
-use tracing::{error, warn};
+use tracing::{error, span, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -19,7 +19,9 @@ pub mod service_stubs {
 }
 
 use service_stubs::service_server::{Service, ServiceServer};
-use service_stubs::{RootRequest, RootResponse, ServiceRequest, ServiceResponse, ReplayRequest, ReplayResponse};
+use service_stubs::{RootRequest, RootResponse, ServiceRequest, 
+    ServiceResponse, ReplayRequest, ReplayResponse, 
+    local_span::SpanType, span::Kind};
 
 #[allow(dead_code)]
 struct AlibabaService {
@@ -141,7 +143,49 @@ impl Service for AlibabaService {
         &self,
         _request: tonic::Request<ReplayRequest>,
     ) -> Result<Response<ReplayResponse>, Status> {
-        Err(Status::unimplemented("Not implemented"))
+        let req = _request.into_inner();
+        let spans = req.spans;
+
+        use std::convert::TryFrom;
+        for span in spans {
+            if let Some(kind) = span.kind{
+                match kind {
+                    Kind::LocalSpan(single_span) => {
+                        match SpanType::try_from(single_span.r#type) {
+                            Ok(SpanType::Compute) => {
+                                busy_spin(single_span.val as f64);
+                            }
+                            Ok(SpanType::Block) => {
+                                sleep(Duration::from_millis(single_span.val)).await;
+                            }
+                            Ok(SpanType::Unknown) => {
+                                warn!("Unknown span type, skipping");
+                            }
+                            Err(_) => {
+                                warn!("Invalid span type, skipping");
+                            }
+                        } 
+                    }
+                    Kind::ChildSpans(span_vector) => {
+                        let child_name = span_vector.name;
+                        let child_channel = self
+                            .clients
+                            .get(&ServiceName::from_string(child_name.clone()))
+                            .ok_or(Status::not_found(format!(
+                                "Child service {} not found",
+                                child_name
+                            )))?;
+
+                        let child_req = tonic::Request::new(ReplayRequest {
+                            spans: span_vector.spans.clone(),
+                        });
+                        child_channel.replay(child_req).await?;
+                    }
+                }
+            }            
+        }
+
+        Ok(Response::new(ReplayResponse {}))
     }
 }
 
