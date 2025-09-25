@@ -51,8 +51,16 @@ message Span {
 }
 
 message ReplayRequest {
-  repeated Span spans = 1;
+  uint64 request_latency = 1;
+  repeated Span spans = 2;
+}
+
+enum ResponseStatus {
+  OK = 0;
+  ERROR = 1;
 }
 
 message ReplayResponse {
+  ResponseStatus status = 1;
 }
+
