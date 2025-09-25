@@ -10,7 +10,7 @@ use tokio::time::sleep;
 use tonic::transport::Channel;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::level_filters::LevelFilter;
-use tracing::{error, span, warn};
+use tracing::{error, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -20,7 +20,7 @@ pub mod service_stubs {
 
 use service_stubs::service_server::{Service, ServiceServer};
 use service_stubs::{RootRequest, RootResponse, ServiceRequest, 
-    ServiceResponse, ReplayRequest, ReplayResponse, 
+    ServiceResponse, ReplayRequest, ReplayResponse, ResponseStatus,
     local_span::SpanType, span::Kind};
 
 #[allow(dead_code)]
@@ -144,6 +144,13 @@ impl Service for AlibabaService {
         _request: tonic::Request<ReplayRequest>,
     ) -> Result<Response<ReplayResponse>, Status> {
         let req = _request.into_inner();
+
+        if req.request_latency > 50000 {
+            return Ok(Response::new(ReplayResponse {
+                status: ResponseStatus::Error as i32,
+            }));
+        }
+
         let spans = req.spans;
 
         use std::convert::TryFrom;
@@ -176,16 +183,21 @@ impl Service for AlibabaService {
                                 child_name
                             )))?;
 
-                        let child_req = tonic::Request::new(ReplayRequest {
+                        let child_req = Request::new(ReplayRequest {
+                            request_latency: req.request_latency,
                             spans: span_vector.spans.clone(),
                         });
+
+                        let mut child_channel = child_channel.clone();
                         child_channel.replay(child_req).await?;
                     }
                 }
             }            
         }
 
-        Ok(Response::new(ReplayResponse {}))
+        Ok(Response::new(ReplayResponse {
+            status: ResponseStatus::Ok as i32,
+        }))
     }
 }
 
