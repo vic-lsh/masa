@@ -27,31 +27,31 @@ message CallData {
   bool was_an_error = 4;
 }
 
-message Span {
-  enum Type {
+message LocalSpan {
+  enum SpanType {
     UNKNOWN = 0;
     COMPUTE = 1;
     BLOCK = 2;
   }
 
-  Type type = 1;
+  SpanType type = 1;
   uint64 val = 2;
 }
 
-message SpanVector {
+message ChildSpans {
   string name = 1;
   repeated Span spans = 2;
 }
 
-message ReplayTrace {
+message Span {
   oneof kind {
-    Span span = 1;
-    SpanVector span_vector = 2;
+    LocalSpan local_span = 1;
+    ChildSpans child_spans = 2;
   }
 }
 
 message ReplayRequest {
-  repeated ReplayTrace traces = 1;
+  repeated Span spans = 1;
 }
 
 message ReplayResponse {
