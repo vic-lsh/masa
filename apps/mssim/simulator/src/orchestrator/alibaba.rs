@@ -243,7 +243,7 @@ pub fn generate_docker_compose(
         );
     }
 
-    const FRONTEND_SERVICE_NAME: &str = "USER";
+    const FRONTEND_SERVICE_NAME: &str = "frontend";
     let frontend_port = *ports
         .get(&ServiceName::from_string(FRONTEND_SERVICE_NAME.to_string()))
         .ok_or_else(|| anyhow::anyhow!("Port not assigned for frontend service"))?;
@@ -313,7 +313,7 @@ fn make_load_generator_config(frontend_port: u16) -> Result<Hash> {
         Yaml::String("PORT".into()),
         Yaml::String(frontend_port.to_string()),
     );
-    environment.insert(Yaml::String("IP".into()), Yaml::String("user".into()));
+    environment.insert(Yaml::String("IP".into()), Yaml::String("frontend".into()));
 
     service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
 

@@ -1,19 +1,195 @@
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::{env, sync::Arc, time::Duration};
+use std::{env, fs::File, io::BufReader, path::Path, sync::Arc, time::Duration};
+
+use anyhow::Context;
+use serde::Deserialize;
+use serde_json::Value;
 use tokio::sync::Semaphore;
-use tokio::time::Instant;
+use tokio::time::{Instant, MissedTickBehavior};
 use tonic::transport::{Channel, Endpoint};
 use tonic::Request;
 
 mod service {
     tonic::include_proto!("service");
 }
+use service::local_span::SpanType as ProtoSpanType;
 use service::service_client::ServiceClient;
-use service::RootRequest;
+use service::{
+    span::Kind as ProtoSpanKind, LocalSpan as ProtoLocalSpan, ReplayRequest as ProtoReplayRequest,
+    RootRequest, Span as ProtoSpan,
+};
+
+const DEFAULT_REPLAY_PATH: &str = "apps/hotel/assets/r1100_Search_frontend.json";
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct FrontendSpan {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default, deserialize_with = "deserialize_opt_u64")]
+    latency_us: Option<u64>,
+    #[serde(default)]
+    service_name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_opt_u64")]
+    start_timestamp: Option<u64>,
+    #[serde(default)]
+    spans: Vec<FrontendSpan>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct FrontendRequest {
+    service_name: String,
+    #[serde(default, deserialize_with = "deserialize_opt_u64")]
+    request_id: Option<u64>,
+    #[serde(default, deserialize_with = "deserialize_opt_u64")]
+    start_at: Option<u64>,
+    #[serde(default, deserialize_with = "deserialize_opt_u64")]
+    latency_us: Option<u64>,
+    #[serde(default)]
+    spans: Vec<FrontendSpan>,
+}
+
+#[derive(Clone)]
+struct ReplayWorkItem {
+    offset_us: u64,
+    payload: ProtoReplayRequest,
+}
+
+#[derive(Clone)]
+enum LoadMode {
+    Root,
+    Replay {
+        work_items: Arc<Vec<ReplayWorkItem>>,
+    },
+}
+
+fn deserialize_opt_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<Value>::deserialize(deserializer)?;
+    match opt {
+        Some(Value::Number(num)) => num
+            .as_u64()
+            .ok_or_else(|| serde::de::Error::custom("expected unsigned integer"))
+            .map(Some),
+        Some(Value::String(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                Ok(None)
+            } else {
+                trimmed
+                    .parse::<u64>()
+                    .map(Some)
+                    .map_err(|e| serde::de::Error::custom(e.to_string()))
+            }
+        }
+        Some(Value::Null) => Ok(None),
+        Some(other) => Err(serde::de::Error::custom(format!(
+            "unsupported value for u64: {}",
+            other
+        ))),
+        None => Ok(None),
+    }
+}
+
+fn load_frontend_replay_items(path: &Path) -> anyhow::Result<Vec<ReplayWorkItem>> {
+    let file = File::open(path)
+        .with_context(|| format!("failed to open frontend replay file {}", path.display()))?;
+    let reader = BufReader::new(file);
+    let mut requests: Vec<FrontendRequest> = serde_json::from_reader(reader)
+        .with_context(|| format!("failed to parse frontend replay file {}", path.display()))?;
+
+    if requests.is_empty() {
+        anyhow::bail!(
+            "frontend replay file {} contained no entries",
+            path.display()
+        );
+    }
+
+    requests.sort_by_key(|req| req.start_at.unwrap_or(u64::MAX));
+
+    let base_start = requests
+        .iter()
+        .filter_map(|req| req.start_at)
+        .min()
+        .context("frontend replay file did not contain start_at values")?;
+
+    let mut work_items = Vec::with_capacity(requests.len());
+    for request in requests {
+        let start_at = match request.start_at {
+            Some(ts) => ts,
+            None => continue,
+        };
+
+        let mut proto_spans = Vec::new();
+        let mut local_latency = 0u64;
+        for span in &request.spans {
+            if span.kind == "ChildCall" {
+                break;
+            }
+
+            if let Some((proto_span, latency)) = convert_root_span_to_proto(span) {
+                proto_spans.push(proto_span);
+                local_latency += latency;
+            }
+        }
+
+        if proto_spans.is_empty() {
+            continue;
+        }
+
+        let request_latency = request.latency_us.unwrap_or(local_latency);
+
+        work_items.push(ReplayWorkItem {
+            offset_us: start_at.saturating_sub(base_start),
+            payload: ProtoReplayRequest {
+                request_latency,
+                spans: proto_spans,
+            },
+        });
+    }
+
+    if work_items.is_empty() {
+        anyhow::bail!(
+            "frontend replay file {} did not have usable non-child spans",
+            path.display()
+        );
+    }
+
+    work_items.sort_by_key(|item| item.offset_us);
+
+    Ok(work_items)
+}
+
+fn convert_root_span_to_proto(span: &FrontendSpan) -> Option<(ProtoSpan, u64)> {
+    let latency = span.latency_us.unwrap_or(0);
+    match span.kind.as_str() {
+        "Compute" => Some((
+            ProtoSpan {
+                kind: Some(ProtoSpanKind::LocalSpan(ProtoLocalSpan {
+                    r#type: ProtoSpanType::Compute as i32,
+                    val: latency,
+                })),
+            },
+            latency,
+        )),
+        "Block" => Some((
+            ProtoSpan {
+                kind: Some(ProtoSpanKind::LocalSpan(ProtoLocalSpan {
+                    r#type: ProtoSpanType::Block as i32,
+                    val: latency,
+                })),
+            },
+            latency,
+        )),
+        _ => None,
+    }
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Read env vars (with defaults where sensible)
     let addr = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
     let port = env::var("PORT").unwrap_or_else(|_| "50051".to_string());
     let rps: f64 = env::var("RPS")
@@ -32,10 +208,54 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "1000".to_string())
         .parse()?;
 
-    if rps <= 0.0 {
-        anyhow::bail!("RPS must be > 0");
-    }
-    let per_req = Duration::from_secs_f64(1.0 / rps);
+    let force_root = false;
+
+    let replay_env = env::var("REPLAY_TRACE_PATH")
+        .ok()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty());
+
+    let (load_mode, replay_meta) = if force_root {
+        (LoadMode::Root, None)
+    } else {
+        let replay_target = replay_env.or_else(|| {
+            let default_path = Path::new(DEFAULT_REPLAY_PATH);
+            if default_path.exists() {
+                Some(default_path.to_string_lossy().into_owned())
+            } else {
+                None
+            }
+        });
+
+        let path_str = match replay_target {
+            Some(path) => path,
+            None => {
+                anyhow::bail!(
+                    "Replay mode is default, but no trace file found. Provide REPLAY_TRACE_PATH or place a file at {}.",
+                    DEFAULT_REPLAY_PATH
+                );
+            }
+        };
+
+        let path = Path::new(&path_str);
+        let work_items = load_frontend_replay_items(path)?;
+        let count = work_items.len();
+        (
+            LoadMode::Replay {
+                work_items: Arc::new(work_items),
+            },
+            Some((path_str, count)),
+        )
+    };
+
+    let per_req = if matches!(load_mode, LoadMode::Root) {
+        if rps <= 0.0 {
+            anyhow::bail!("RPS must be > 0");
+        }
+        Some(Duration::from_secs_f64(1.0 / rps))
+    } else {
+        None
+    };
 
     let addr = format!("http://{}:{}", addr, port);
 
@@ -48,13 +268,38 @@ async fn main() -> anyhow::Result<()> {
 
     let client = ServiceClient::new(channel);
 
-    // Counters
+    match (&load_mode, &replay_meta) {
+        (LoadMode::Root, _) => println!("Operating in root() load mode."),
+        (LoadMode::Replay { .. }, Some((source, count))) => println!(
+            "Operating in replay() load mode with {} requests from {}.",
+            count, source
+        ),
+        (LoadMode::Replay { work_items }, None) => println!(
+            "Operating in replay() load mode with {} requests.",
+            work_items.len()
+        ),
+    }
+
+    if per_req.is_some() {
+        println!(
+            "Starting loadgen: addr={}, rps={}, max_in_flight={}",
+            addr, rps, max_in_flight
+        );
+        println!("Press Ctrl-C to stop.");
+    } else if let LoadMode::Replay { work_items } = &load_mode {
+        println!(
+            "Starting replay: addr={}, requests={}, max_in_flight={}",
+            addr,
+            work_items.len(),
+            max_in_flight
+        );
+    }
+
     let sent = Arc::new(AtomicU64::new(0));
     let ok = Arc::new(AtomicU64::new(0));
     let err = Arc::new(AtomicU64::new(0));
     let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
 
-    // Stats printer
     {
         let sent = sent.clone();
         let ok = ok.clone();
@@ -85,22 +330,55 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    // Open-loop ticker
+    match load_mode {
+        LoadMode::Root => {
+            // run_root_load(
+            //     client,
+            //     per_req.expect("per_req available in root mode"),
+            //     sent.clone(),
+            //     ok.clone(),
+            //     err.clone(),
+            //     inflight_guard.clone(),
+            //     max_in_flight,
+            // )
+            // .await?;
+            unimplemented!()
+        }
+        LoadMode::Replay { work_items } => {
+            run_replay_load(
+                client,
+                work_items,
+                sent.clone(),
+                ok.clone(),
+                err.clone(),
+                inflight_guard.clone(),
+            )
+            .await?;
+        }
+    }
+
+    let s = sent.load(Ordering::Relaxed);
+    let o = ok.load(Ordering::Relaxed);
+    let e = err.load(Ordering::Relaxed);
+    println!("Final stats: sent={}, ok={}, err={}", s, o, e);
+
+    Ok(())
+}
+
+async fn run_root_load(
+    client: ServiceClient<Channel>,
+    per_req: Duration,
+    sent: Arc<AtomicU64>,
+    ok: Arc<AtomicU64>,
+    err: Arc<AtomicU64>,
+    inflight_guard: Arc<Semaphore>,
+    max_in_flight: usize,
+) -> anyhow::Result<()> {
     let mut ticker = tokio::time::interval(per_req);
-    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
     ticker.reset();
 
-    println!(
-        "Starting loadgen: addr={}, rps={}, max_in_flight={}",
-        addr, rps, max_in_flight
-    );
-    println!("Press Ctrl-C to stop.");
-
-    let shutdown = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("ctrl-c handler failed");
-    };
+    let shutdown = tokio::signal::ctrl_c();
     tokio::pin!(shutdown);
 
     loop {
@@ -115,21 +393,16 @@ async fn main() -> anyhow::Result<()> {
                     Err(_) => continue,
                 };
 
-                let client = client.clone();
                 let sent = sent.clone();
                 let ok = ok.clone();
                 let err = err.clone();
+                let mut rpc_client = client.clone();
 
                 sent.fetch_add(1, Ordering::Relaxed);
 
-                let mut rpc_client = client.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
-                    let req = Request::new(RootRequest {});
-
-                    let _t0 = Instant::now();
-                    let res = rpc_client.root(req).await;
-
+                    let res = rpc_client.root(Request::new(RootRequest {})).await;
                     match res {
                         Ok(_) => ok.fetch_add(1, Ordering::Relaxed),
                         Err(_) => err.fetch_add(1, Ordering::Relaxed),
@@ -139,19 +412,57 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // Drain in-flight requests before exit
     let _ = inflight_guard.acquire_many(max_in_flight as u32).await;
-
-    let s = sent.load(Ordering::Relaxed);
-    let o = ok.load(Ordering::Relaxed);
-    let e = err.load(Ordering::Relaxed);
-    println!("Final stats: sent={}, ok={}, err={}", s, o, e);
 
     Ok(())
 }
 
-/// Try to connect and successfully invoke `root()` within `timeout`.
-/// Retries every `backoff` until both (1) connect and (2) RPC response succeed.
+async fn run_replay_load(
+    client: ServiceClient<Channel>,
+    work_items: Arc<Vec<ReplayWorkItem>>,
+    sent: Arc<AtomicU64>,
+    ok: Arc<AtomicU64>,
+    err: Arc<AtomicU64>,
+    inflight_guard: Arc<Semaphore>,
+) -> anyhow::Result<()> {
+    let start_instant = Instant::now();
+    let mut handles = Vec::with_capacity(work_items.len());
+
+    for item in work_items.iter().cloned() {
+        let schedule_time = start_instant + Duration::from_micros(item.offset_us);
+        let permit_pool = inflight_guard.clone();
+        let sent = sent.clone();
+        let ok = ok.clone();
+        let err = err.clone();
+        let mut rpc_client = client.clone();
+
+        let handle = tokio::spawn(async move {
+            tokio::time::sleep_until(schedule_time).await;
+            let permit = match permit_pool.acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => return,
+            };
+            let _permit = permit;
+
+            sent.fetch_add(1, Ordering::Relaxed);
+
+            let res = rpc_client.replay(Request::new(item.payload)).await;
+            match res {
+                Ok(_) => ok.fetch_add(1, Ordering::Relaxed),
+                Err(_) => err.fetch_add(1, Ordering::Relaxed),
+            };
+        });
+
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        let _ = handle.await;
+    }
+
+    Ok(())
+}
+
 async fn health_check_connect_and_call(
     addr: &str,
     timeout: Duration,
@@ -162,15 +473,12 @@ async fn health_check_connect_and_call(
         timeout.as_secs()
     );
 
-    // Build a reusable Endpoint once (Clone is cheap)
     let endpoint = Endpoint::from_shared(addr.to_string())?.tcp_nodelay(true);
 
     let deadline = Instant::now() + timeout;
     loop {
-        // (1) Connect
         match endpoint.clone().connect().await {
             Ok(ch) => {
-                // (2) Issue a root() call and expect a response
                 let mut client = ServiceClient::new(ch.clone());
                 match client.root(Request::new(RootRequest {})).await {
                     Ok(_) => {
