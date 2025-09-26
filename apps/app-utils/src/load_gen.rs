@@ -555,81 +555,81 @@ where
         while let Some(_) = set.join_next().await {}
     }
 
-//     async fn generate_oracle_load(
-//         &mut self,
-//         counters: Arc<Counters>,
-//         init_at: Instant,
-//         trace_at: Instant,
-//         tasks: Vec<Task>,
-//     ) {
-//         let mut counter_request_id = 0;
+    //     async fn generate_oracle_load(
+    //         &mut self,
+    //         counters: Arc<Counters>,
+    //         init_at: Instant,
+    //         trace_at: Instant,
+    //         tasks: Vec<Task>,
+    //     ) {
+    //         let mut counter_request_id = 0;
 
-//         let mut set = JoinSet::new();
+    //         let mut set = JoinSet::new();
 
-//         for task in tasks {
-//             // XXX: tokio's sleep has millisecond granularity, so for small `elapse` this may be
-//             // inaccurate
-//             let start_at = init_at + Duration::from_micros(task.start_at);
-//             tokio::time::sleep_until(start_at).await;
+    //         for task in tasks {
+    //             // XXX: tokio's sleep has millisecond granularity, so for small `elapse` this may be
+    //             // inaccurate
+    //             let start_at = init_at + Duration::from_micros(task.start_at);
+    //             tokio::time::sleep_until(start_at).await;
 
-//             let i = self.rng.gen_range(0..self.api_handlers.len());
-//             let handler = Arc::clone(&self.api_handlers[i]);
+    //             let i = self.rng.gen_range(0..self.api_handlers.len());
+    //             let handler = Arc::clone(&self.api_handlers[i]);
 
-//             let ctx = {
-//                 let request_id = counter_request_id;
-//                 counter_request_id += 1;
+    //             let ctx = {
+    //                 let request_id = counter_request_id;
+    //                 counter_request_id += 1;
 
-//                 let start_at = time_now();
-//                 let deadline = start_at + handler.slo();
+    //                 let start_at = time_now();
+    //                 let deadline = start_at + handler.slo();
 
-//                 Context::new(
-//                     handler.api().to_string(),
-//                     0,
-//                     request_id,
-//                     handler.slo(),
-//                     0,
-//                     start_at,
-//                     deadline,
-//                 )
-//             };
+    //                 Context::new(
+    //                     handler.api().to_string(),
+    //                     0,
+    //                     request_id,
+    //                     handler.slo(),
+    //                     0,
+    //                     start_at,
+    //                     deadline,
+    //                 )
+    //             };
 
-//             let client = self.client.clone();
-//             let ctrs = Arc::clone(&counters);
-//             let rng = self.rng.clone();
-//             let trace = Instant::now() > trace_at;
+    //             let client = self.client.clone();
+    //             let ctrs = Arc::clone(&counters);
+    //             let rng = self.rng.clone();
+    //             let trace = Instant::now() > trace_at;
 
-//             set.spawn(async move {
-//                 ctrs.increment("all");
+    //             set.spawn(async move {
+    //                 ctrs.increment("all");
 
-//                 let error = handler.send_request(rng, client, ctx, trace).await;
+    //                 let error = handler.send_request(rng, client, ctx, trace).await;
 
-//                 if trace {
-//                     // increment the right counters
-//                     match error.as_str() {
-//                         "/None" => {
-//                             ctrs.increment("good");
-//                         }
-//                         "/ClientMiss" => {
-//                             ctrs.increment("deadline_miss");
-//                         }
-//                         "/EarlyReturn" => {
-//                             ctrs.increment("early_return");
-//                         }
-//                         "/ClientTimeout" => {
-//                             ctrs.increment("timeout");
-//                         }
-//                         e => {
-//                             ctrs.increment("unexpected");
-//                             log::error!("unexpected request error '{}'", e);
-//                         }
-//                     };
-//                 }
-//             });
-//         }
+    //                 if trace {
+    //                     // increment the right counters
+    //                     match error.as_str() {
+    //                         "/None" => {
+    //                             ctrs.increment("good");
+    //                         }
+    //                         "/ClientMiss" => {
+    //                             ctrs.increment("deadline_miss");
+    //                         }
+    //                         "/EarlyReturn" => {
+    //                             ctrs.increment("early_return");
+    //                         }
+    //                         "/ClientTimeout" => {
+    //                             ctrs.increment("timeout");
+    //                         }
+    //                         e => {
+    //                             ctrs.increment("unexpected");
+    //                             log::error!("unexpected request error '{}'", e);
+    //                         }
+    //                     };
+    //                 }
+    //             });
+    //         }
 
-//         // wait for all outgoing requests to complete
-//         while let Some(_) = set.join_next().await {}
-//     }
+    //         // wait for all outgoing requests to complete
+    //         while let Some(_) = set.join_next().await {}
+    //     }
 }
 
 pub async fn load_gen_main<H, C>(
@@ -776,7 +776,6 @@ fn map_response<T>(
 //         .collect()
 // }
 
-
 // fn parse_line(line: &str) -> Result<Task, String> {
 //     let mut parts = line.split(',');
 //     let id_str = parts.next().ok_or("Line is empty")?;
@@ -807,4 +806,3 @@ fn map_response<T>(
 //     }
 //     Ok(Task { id, spans })
 // }
-

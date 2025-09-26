@@ -1,5 +1,3 @@
-use std::{collections::HashMap, time::Duration};
-
 use serde::{Deserialize, Serialize};
 
 use crate::{Api, Latency, RequestClass, RequestId, TestId, Timestamp};
@@ -9,9 +7,11 @@ use crate::{Api, Latency, RequestClass, RequestId, TestId, Timestamp};
 pub enum FutureSpan {
     #[serde(rename = "compute")]
     Compute(u64),
-    #[serde(rename = "block")]
-    Block(u64),
-    #[serde(rename = "queueing")]
+    #[serde(rename = "local_block")]
+    LocalBlock(u64),
+    #[serde(rename = "child_block")]
+    ChildBlock(u64),
+    #[serde(rename = "queue")]
     Queueing(u64),
 }
 

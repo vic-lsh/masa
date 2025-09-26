@@ -142,8 +142,7 @@ impl Frontend for FrontendImpl {
         child_traces.push("reservation".to_string());
         child_traces.push(reservation_start_time.to_string());
         child_traces.extend(
-            extract_latency_traces(reservation_header)
-                .expect("missing X-Latency-Traces header"),
+            extract_latency_traces(reservation_header).expect("missing X-Latency-Traces header"),
         );
         let availability_response = span_response.into_inner();
 
@@ -158,8 +157,7 @@ impl Frontend for FrontendImpl {
         child_traces.push("profile".to_string());
         child_traces.push(profile_start_time.to_string());
         child_traces.extend(
-            extract_latency_traces(profile_header)
-                .expect("missing X-Latency-Traces header"),
+            extract_latency_traces(profile_header).expect("missing X-Latency-Traces header"),
         );
         let response = profile_response.into_inner();
 
