@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use sim_config::{svc::ServiceName, trace::TraceConfig};
 use std::collections::HashSet;
 

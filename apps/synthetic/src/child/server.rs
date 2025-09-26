@@ -119,7 +119,6 @@ impl Child for ChildImpl {
         Ok(Response::new(child::PresampledResponse {}))
     }
 
-
     async fn traced(
         &self,
         _request: Request<child::TracedRequest>,

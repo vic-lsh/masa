@@ -19,9 +19,10 @@ pub mod service_stubs {
 }
 
 use service_stubs::service_server::{Service, ServiceServer};
-use service_stubs::{RootRequest, RootResponse, ServiceRequest, 
-    ServiceResponse, ReplayRequest, ReplayResponse, ResponseStatus,
-    local_span::SpanType, span::Kind};
+use service_stubs::{
+    local_span::SpanType, span::Kind, ReplayRequest, ReplayResponse, ResponseStatus, RootRequest,
+    RootResponse, ServiceRequest, ServiceResponse,
+};
 
 #[allow(dead_code)]
 struct AlibabaService {
@@ -155,24 +156,22 @@ impl Service for AlibabaService {
 
         use std::convert::TryFrom;
         for span in spans {
-            if let Some(kind) = span.kind{
+            if let Some(kind) = span.kind {
                 match kind {
-                    Kind::LocalSpan(single_span) => {
-                        match SpanType::try_from(single_span.r#type) {
-                            Ok(SpanType::Compute) => {
-                                busy_spin(single_span.val as f64);
-                            }
-                            Ok(SpanType::Block) => {
-                                sleep(Duration::from_millis(single_span.val)).await;
-                            }
-                            Ok(SpanType::Unknown) => {
-                                warn!("Unknown span type, skipping");
-                            }
-                            Err(_) => {
-                                warn!("Invalid span type, skipping");
-                            }
-                        } 
-                    }
+                    Kind::LocalSpan(single_span) => match SpanType::try_from(single_span.r#type) {
+                        Ok(SpanType::Compute) => {
+                            busy_spin(single_span.val as f64);
+                        }
+                        Ok(SpanType::Block) => {
+                            sleep(Duration::from_millis(single_span.val)).await;
+                        }
+                        Ok(SpanType::Unknown) => {
+                            warn!("Unknown span type, skipping");
+                        }
+                        Err(_) => {
+                            warn!("Invalid span type, skipping");
+                        }
+                    },
                     Kind::ChildSpans(span_vector) => {
                         let child_name = span_vector.name;
                         let child_channel = self
@@ -192,7 +191,7 @@ impl Service for AlibabaService {
                         child_channel.replay(child_req).await?;
                     }
                 }
-            }            
+            }
         }
 
         Ok(Response::new(ReplayResponse {
@@ -247,6 +246,8 @@ impl AlibabaService {
             let method_to_call = self
                 .config
                 .method_freq_map
+                .as_ref()
+                .unwrap()
                 .get_service(child_svc_name)
                 .and_then(|sampler| Some(sampler.sample(&mut rand::rng()).to_string()))
                 .ok_or(Status::not_found(format!(
