@@ -10,6 +10,11 @@ use yaml_rust::{Yaml, YamlEmitter};
 
 const LOADGEN_SERVICE_NAME: &str = "load_generator";
 
+/// Hard-coded name of the service that is the root of the call graph
+///
+// TODO: make this configurable
+const FRONTEND_SERVICE_NAME: &str = "USER";
+
 const CONTAINER_CPU_LIMIT: usize = 1;
 
 #[allow(dead_code)]
@@ -243,7 +248,6 @@ pub fn generate_docker_compose(
         );
     }
 
-    const FRONTEND_SERVICE_NAME: &str = "USER";
     let frontend_port = *ports
         .get(&ServiceName::from_string(FRONTEND_SERVICE_NAME.to_string()))
         .ok_or_else(|| anyhow::anyhow!("Port not assigned for frontend service"))?;
