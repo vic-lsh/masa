@@ -256,10 +256,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deployment_path = deployment_path_str.into();
     let deployment = Deployment::read_from_file(&deployment_path)?;
 
-    let svc = AlibabaService::new(svc_name, config, deployment).await?;
+    let svc = AlibabaService::new(svc_name.clone(), config, deployment).await?;
 
     let addr = format!("0.0.0.0:{}", port).parse()?;
-    println!("🚀 Generic Service listening on {}", addr);
+    println!("🚀 Generic Service {:?} listening on {}", svc_name, addr);
 
     Server::builder()
         .add_service(ServiceServer::new(svc))
