@@ -204,7 +204,8 @@ pub fn extract_latency_traces(metadata: &MetadataMap) -> Option<Vec<String>> {
         .iter()
         .map(|span| match span {
             FutureSpan::Compute(duration) => format!("Compute({}us)", duration),
-            FutureSpan::Block(duration) => format!("Block({}us)", duration),
+            FutureSpan::LocalBlock(duration) => format!("LocalBlock({}us)", duration),
+            FutureSpan::ChildBlock(duration) => format!("ChildBlock({}us)", duration),
             FutureSpan::Queueing(duration) => format!("Queueing({}us)", duration),
         })
         .collect::<Vec<String>>()

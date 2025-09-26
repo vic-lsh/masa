@@ -70,7 +70,7 @@ impl Into<String> for &ServiceName {
 
 pub struct ServiceTraceConfig {
     pub method_latency: Option<MethodLatencyDistMap>,
-    pub method_freq_map: method_freq::MethodFreqMap,
+    pub method_freq_map: Option<method_freq::MethodFreqMap>,
     pub call_graph: call_graph::CallGraph,
 }
 
@@ -85,22 +85,34 @@ impl ServiceTraceConfig {
         let method_latency = match svc_name {
             Some(svc_name) => {
                 let method_latency_path = dir.join("latency_percentiles.json");
-                let map = MethodLatencyDistMap::from_file_path(&method_latency_path, svc_name)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-                Some(map)
+                if method_latency_path.exists() {
+                    let map = MethodLatencyDistMap::from_file_path(&method_latency_path, svc_name)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                    Some(map)
+                } else {
+                    None
+                }
             }
             None => None,
         };
 
         let method_freq_path = dir.join("interface_distribution.json");
-        let method_freq = method_freq::MethodFreqMap::from_file_path(&method_freq_path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        if method_freq_path.exists() {
+            let method_freq = method_freq::MethodFreqMap::from_file_path(&method_freq_path)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
-        Ok(ServiceTraceConfig {
-            call_graph,
-            method_latency,
-            method_freq_map: method_freq,
-        })
+            return Ok(ServiceTraceConfig {
+                call_graph,
+                method_latency,
+                method_freq_map: Some(method_freq),
+            });
+        } else {
+            return Ok(ServiceTraceConfig {
+                call_graph,
+                method_latency,
+                method_freq_map: None,
+            });
+        }
     }
 }
 

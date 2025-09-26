@@ -50,7 +50,10 @@ pub struct ParentContext {
     start_exec: Instant,
     last_before_poll: AtomicU64,
     last_after_poll: AtomicU64,
-    latency_traces: Mutex<Vec<FutureSpan>>,
+    first_rpc_stamp: AtomicU64,
+    second_rpc_stamp: AtomicU64,
+   latency_traces: Mutex<Vec<FutureSpan>>,
+    is_rpc: std::sync::atomic::AtomicBool,
 }
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
@@ -64,13 +67,49 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             start_exec: Instant::now(),
             last_before_poll: AtomicU64::new(0),
             last_after_poll: AtomicU64::new(0),
+            first_rpc_stamp: AtomicU64::new(0),
+            second_rpc_stamp: AtomicU64::new(0),
             latency_traces: Mutex::new(Vec::new()),
+            is_rpc: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    fn before_child_rpc<T>(
+        &self,
+        method: GrpcMethod,
+        request: &mut Request<T>,
+        child_ctx: &mut ChildContext,
+    ) -> Result<(), Status> {
+        self.is_rpc.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    fn after_child_rpc<T>(
+        &self,
+        method: GrpcMethod,
+        response: &mut Result<Response<T>, Status>,
+        child_ctx: ChildContext,
+    ) -> Result<(), Status> {
+        let now = time_now();
+        let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
+        let block_latency = self.second_rpc_stamp.swap(now, Ordering::AcqRel)
+            .saturating_sub(self.first_rpc_stamp.swap(now, Ordering::AcqRel))
+            .saturating_sub(queue_latency);
+        self.latency_traces.lock().unwrap().push(FutureSpan::ChildBlock(block_latency));
+        self.latency_traces.lock().unwrap().push(FutureSpan::Queueing(queue_latency));
+        self.is_rpc.store(false, Ordering::Release);
+        Ok(())
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         let now = time_now();
         self.last_before_poll.store(now, Ordering::Release);
+        if self.is_rpc.load(Ordering::Acquire) {
+            // if we are in an rpc, we do not count the queueing time
+            self.second_rpc_stamp.store(now, Ordering::Release);
+            return Ok(());
+        }
+
         let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
         {
             let mut traces = self.latency_traces.lock().unwrap();
@@ -79,18 +118,35 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
                 let block_latency = now
                     .saturating_sub(last_after_poll)
                     .saturating_sub(queue_latency);
-                traces.push(FutureSpan::Block(block_latency));
+                traces.push(FutureSpan::LocalBlock(block_latency));
             }
             traces.push(FutureSpan::Queueing(queue_latency));
         }
+
         Ok(())
     }
-
     fn after_poll<Ret>(
         &self,
         _poll: &std::task::Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
         let now = time_now();
+
+        if self.is_rpc.load(Ordering::Acquire){
+            // if we are in an rpc, we do not count the polling time
+            if self.first_rpc_stamp.load(Ordering::Acquire) == 0 {
+                self.first_rpc_stamp.store(now, Ordering::Release);
+                
+                self.last_after_poll.store(now, Ordering::Release);
+                let last_before_poll = self.last_before_poll.load(Ordering::Acquire);
+                let compute_latency = now - last_before_poll;
+                self.latency_traces
+                    .lock()
+                    .unwrap()
+                    .push(FutureSpan::Compute(compute_latency));
+            }
+            return Ok(());
+        }
+
         self.last_after_poll.store(now, Ordering::Release);
         let last_before_poll = self.last_before_poll.load(Ordering::Acquire);
         let compute_latency = now - last_before_poll;
