@@ -5,6 +5,7 @@ use sim_config::deployment::Deployment;
 use sim_config::svc::{ServiceName, ServiceTraceConfig};
 use std::collections::HashMap;
 use std::env;
+use std::sync::atomic::AtomicUsize;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tonic::transport::Channel;
@@ -30,6 +31,7 @@ struct AlibabaService {
     clients: HashMap<ServiceName, ServiceClient<Channel>>,
     deployment: Deployment,
     self_svc_name: ServiceName,
+    overshot_counter: AtomicUsize,
 }
 
 impl AlibabaService {
@@ -49,6 +51,7 @@ impl AlibabaService {
             clients,
             deployment,
             self_svc_name,
+            overshot_counter: AtomicUsize::new(0),
         })
     }
 
@@ -115,7 +118,6 @@ impl Service for AlibabaService {
         // let method_name = request.into_inner().method_name;
 
         // self.handle_method(method_name.clone()).await?;
-        
 
         // Ok(Response::new(ServiceResponse {
         //     calls: vec![],
@@ -156,6 +158,8 @@ impl Service for AlibabaService {
             }));
         }
 
+        let start = Instant::now();
+
         let spans = req.spans;
 
         use std::convert::TryFrom;
@@ -164,7 +168,7 @@ impl Service for AlibabaService {
                 match kind {
                     Kind::LocalSpan(single_span) => match SpanType::try_from(single_span.r#type) {
                         Ok(SpanType::Compute) => {
-                            busy_spin(single_span.val as f64);
+                            busy_spin(Duration::from_micros(single_span.val));
                         }
                         Ok(SpanType::Block) => {
                             sleep(Duration::from_micros(single_span.val)).await;
@@ -198,15 +202,27 @@ impl Service for AlibabaService {
             }
         }
 
+        let elapsed = start.elapsed();
+        if elapsed.as_millis() > req.request_latency as u128 {
+            let old = self
+                .overshot_counter
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if old % 10 == 0 {
+                warn!(
+                    "Warning {}: processing took longer ({:?}) than request latency ({} us)",
+                    old, elapsed, req.request_latency
+                );
+            }
+        }
+
         Ok(Response::new(ReplayResponse {
             status: ResponseStatus::Ok as i32,
         }))
     }
 }
 
-fn busy_spin(duration_ms: f64) {
+fn busy_spin(duration: Duration) {
     let start = std::time::Instant::now();
-    let duration = std::time::Duration::from_millis(duration_ms as u64);
     while std::time::Instant::now() - start < duration {
         // Busy spin
     }
@@ -233,7 +249,7 @@ impl AlibabaService {
 
         let remaining = total_latency_ms - (elapsed.as_millis() as f64);
         if remaining > 0.0 {
-            busy_spin(remaining);
+            busy_spin(Duration::from_millis(remaining as u64));
         } else {
             warn!(
                 "Warning: fanout took longer ({:?}) than total latency ({:.2} ms)",
