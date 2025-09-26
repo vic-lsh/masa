@@ -52,7 +52,7 @@ pub struct ParentContext {
     last_after_poll: AtomicU64,
     first_rpc_stamp: AtomicU64,
     second_rpc_stamp: AtomicU64,
-   latency_traces: Mutex<Vec<FutureSpan>>,
+    latency_traces: Mutex<Vec<FutureSpan>>,
     is_rpc: std::sync::atomic::AtomicBool,
 }
 
@@ -92,11 +92,19 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Result<(), Status> {
         let now = time_now();
         let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
-        let block_latency = self.second_rpc_stamp.swap(now, Ordering::AcqRel)
+        let block_latency = self
+            .second_rpc_stamp
+            .swap(now, Ordering::AcqRel)
             .saturating_sub(self.first_rpc_stamp.swap(now, Ordering::AcqRel))
             .saturating_sub(queue_latency);
-        self.latency_traces.lock().unwrap().push(FutureSpan::ChildBlock(block_latency));
-        self.latency_traces.lock().unwrap().push(FutureSpan::Queueing(queue_latency));
+        self.latency_traces
+            .lock()
+            .unwrap()
+            .push(FutureSpan::ChildBlock(block_latency));
+        self.latency_traces
+            .lock()
+            .unwrap()
+            .push(FutureSpan::Queueing(queue_latency));
         self.is_rpc.store(false, Ordering::Release);
         Ok(())
     }
@@ -131,11 +139,11 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Result<(), Result<Response<Ret>, Status>> {
         let now = time_now();
 
-        if self.is_rpc.load(Ordering::Acquire){
+        if self.is_rpc.load(Ordering::Acquire) {
             // if we are in an rpc, we do not count the polling time
             if self.first_rpc_stamp.load(Ordering::Acquire) == 0 {
                 self.first_rpc_stamp.store(now, Ordering::Release);
-                
+
                 self.last_after_poll.store(now, Ordering::Release);
                 let last_before_poll = self.last_before_poll.load(Ordering::Acquire);
                 let compute_latency = now - last_before_poll;
