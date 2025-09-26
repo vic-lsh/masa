@@ -90,12 +90,11 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         response: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext,
     ) -> Result<(), Status> {
-        let now = time_now();
         let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
         let block_latency = self
             .second_rpc_stamp
-            .swap(now, Ordering::AcqRel)
-            .saturating_sub(self.first_rpc_stamp.swap(now, Ordering::AcqRel))
+            .swap(0, Ordering::AcqRel)
+            .saturating_sub(self.first_rpc_stamp.swap(0, Ordering::AcqRel))
             .saturating_sub(queue_latency);
         self.latency_traces
             .lock()
