@@ -17,13 +17,21 @@ Minimal example to run Alibaba trace replay:
 ```bash
 $ cd <this-directory>/simulator
 $ cargo run -- --alibaba-trace <masa-project-root>/trace-analysis/golden/S_86516878 --config-dir ./example_config
->>>>>>> ae4dd6d9 (docs(mssim): update readme)
 ```
 
 Once the Docker compose cluster has started, you can view each service container's
 resource usage via `docker stats`.
 
 To monitor logs from the load generator, run `docker logs -f load_generator`.
+
+## Orchestrator backends
+
+The simulator supports multiple execution backends when replaying traces. By default it
+generates a `docker-compose.yml` file and runs the workload with Docker Compose. To opt
+into the Kubernetes backend pass `--orchestrator-backend k8s` to the simulator (for
+example `cargo run -- --alibaba-trace ./traces/... --orchestrator-backend k8s`). The K8s
+path builds the local Docker images, writes a `k8s-manifest.yaml`, applies it with
+`kubectl`, and tears it down on Ctrl-C.
 
 ## Running on new Alibaba call graphs
 

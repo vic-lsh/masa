@@ -1,5 +1,7 @@
+use super::Backend;
 use anyhow::{Context, Result, anyhow};
 use serde::Deserialize;
+use serde_json::json;
 use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
 use sim_config::svc::ServiceName;
 use sim_config::trace::TraceConfig;
@@ -25,6 +27,10 @@ const CONTAINER_CPU_LIMIT: usize = 1;
 const CONTAINER_MEM_LIMIT: &str = "512MB";
 
 const DEFAULT_SVC_PORT: u16 = 50051;
+
+const GENERIC_SERVICE_IMAGE_TAG: &str = "mssim/generic-service:latest";
+const LOAD_GENERATOR_IMAGE_TAG: &str = "mssim/load-generator:latest";
+const K8S_MANIFEST_FILENAME: &str = "k8s-manifest.yaml";
 
 #[allow(dead_code)]
 #[derive(Deserialize, Debug, serde::Serialize, Clone)] // Added serde::Serialize and Clone
@@ -91,6 +97,12 @@ fn make_deployment_config(
     }
 
     deployment
+}
+
+#[derive(Debug)]
+struct K8sImages {
+    generic_service: String,
+    load_generator: String,
 }
 
 pub fn generate_docker_compose(
@@ -365,6 +377,328 @@ fn make_load_generator_config_yaml(
     Ok(Yaml::Hash(service_def))
 }
 
+fn build_k8s_images() -> Result<K8sImages> {
+    info!("Building Docker images for Kubernetes backend.");
+
+    let generic_dockerfile = workspace_root().join("apps/mssim/generic-service/Dockerfile");
+    build_docker_image(
+        GENERIC_SERVICE_IMAGE_TAG,
+        &generic_dockerfile,
+        &[("SERVICE_CONTAINER_PORT", "50051".to_string())],
+    )?;
+
+    let loadgen_dockerfile = workspace_root().join("apps/mssim/generic-service/Dockerfile.loadgen");
+    build_docker_image(LOAD_GENERATOR_IMAGE_TAG, &loadgen_dockerfile, &[])?;
+
+    Ok(K8sImages {
+        generic_service: GENERIC_SERVICE_IMAGE_TAG.to_string(),
+        load_generator: LOAD_GENERATOR_IMAGE_TAG.to_string(),
+    })
+}
+
+fn build_docker_image(tag: &str, dockerfile: &Path, build_args: &[(&str, String)]) -> Result<()> {
+    info!("Building Docker image {} using {:?}", tag, dockerfile);
+
+    let mut cmd = Command::new("docker");
+    cmd.arg("build")
+        .arg("-t")
+        .arg(tag)
+        .arg("-f")
+        .arg(dockerfile);
+
+    for (key, value) in build_args {
+        cmd.arg("--build-arg").arg(format!("{}={}", key, value));
+    }
+
+    cmd.arg(workspace_root());
+
+    let output = cmd
+        .output()
+        .with_context(|| format!("Failed to execute docker build for {}", tag))?;
+
+    if output.status.success() {
+        debug!(
+            "docker build ({}) stdout:\n{}",
+            tag,
+            String::from_utf8_lossy(&output.stdout)
+        );
+        if !output.stderr.is_empty() {
+            debug!(
+                "docker build ({}) stderr:\n{}",
+                tag,
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        Ok(())
+    } else {
+        error!(
+            "docker build ({}) stdout:\n{}",
+            tag,
+            String::from_utf8_lossy(&output.stdout)
+        );
+        error!(
+            "docker build ({}) stderr:\n{}",
+            tag,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        Err(anyhow!("Failed to build Docker image {}", tag))
+    }
+}
+
+fn generate_k8s_manifest(
+    config: &TraceConfig,
+    deployment: &Deployment,
+    trace_dir: &PathBuf,
+    images: &K8sImages,
+) -> Result<PathBuf> {
+    info!("Generating Kubernetes manifest file.");
+
+    let trace_dir_abs = trace_dir.canonicalize().with_context(|| {
+        format!(
+            "Failed to canonicalize trace directory for Kubernetes manifest: {:?}",
+            trace_dir
+        )
+    })?;
+
+    let service_config_dir = PathBuf::from("./service_configs");
+    let service_config_dir_abs = service_config_dir.canonicalize().with_context(|| {
+        format!(
+            "Failed to canonicalize service config directory: {:?}",
+            service_config_dir
+        )
+    })?;
+
+    let trace_dir_str = trace_dir_abs.to_string_lossy().to_string();
+    let service_config_dir_str = service_config_dir_abs.to_string_lossy().to_string();
+
+    let mut manifest_docs: Vec<serde_json::Value> = Vec::new();
+
+    for service_name in &config.call_graph.services() {
+        let svc_info = deployment
+            .services
+            .get(service_name)
+            .ok_or_else(|| anyhow::anyhow!("Service not found in deployment: {}", service_name))?;
+        let svc_port = svc_info.port;
+        let svc_name = service_name.to_string();
+        let labels = json!({"app": "mssim", "service": svc_name.clone()});
+        let svc_port_str = svc_port.to_string();
+
+        let deployment = json!({
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "name": svc_name.clone(),
+                "labels": labels.clone()
+            },
+            "spec": {
+                "replicas": 1,
+                "selector": {"matchLabels": labels.clone()},
+                "template": {
+                    "metadata": {"labels": labels.clone()},
+                    "spec": {
+                        "containers": [{
+                            "name": svc_name.clone(),
+                            "image": images.generic_service.clone(),
+                            "imagePullPolicy": "Never",
+                            "env": [
+                                {"name": "SERVICE_NAME", "value": svc_name.clone()},
+                                {"name": "SERVICE_PORT", "value": svc_port_str},
+                                {"name": "CONFIG_PATH", "value": "/app/config"},
+                                {"name": "DEPLOYMEN_CONFIG_PATH", "value": "/app/config/deployment.json"}
+                            ],
+                            "ports": [{"containerPort": svc_port}],
+                            "resources": {
+                                "limits": {"cpu": CONTAINER_CPU_LIMIT.to_string()}
+                            },
+                            "volumeMounts": [
+                                {"name": "trace-config", "mountPath": "/app/config"},
+                                {
+                                    "name": "deployment-config",
+                                    "mountPath": "/app/config/deployment.json",
+                                    "subPath": "deployment.json"
+                                }
+                            ]
+                        }],
+                        "volumes": [
+                            {
+                                "name": "trace-config",
+                                "hostPath": {
+                                    "path": trace_dir_str.clone(),
+                                    "type": "Directory"
+                                }
+                            },
+                            {
+                                "name": "deployment-config",
+                                "hostPath": {
+                                    "path": service_config_dir_str.clone(),
+                                    "type": "Directory"
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        });
+
+        let service = json!({
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "name": svc_name.clone(),
+                "labels": labels.clone()
+            },
+            "spec": {
+                "selector": labels,
+                "ports": [{
+                    "name": "grpc",
+                    "port": svc_port,
+                    "targetPort": svc_port
+                }]
+            }
+        });
+
+        manifest_docs.push(deployment);
+        manifest_docs.push(service);
+    }
+
+    let frontend_service_name = ServiceName::from_string(FRONTEND_SERVICE_NAME.to_string());
+    let frontend_info = deployment
+        .services
+        .get(&frontend_service_name)
+        .ok_or_else(|| anyhow::anyhow!("Frontend service not found in deployment"))?;
+    let frontend_port = frontend_info.port;
+    let frontend_dns = frontend_info.ip.clone();
+
+    let loadgen_labels = json!({"app": "mssim", "service": LOADGEN_SERVICE_NAME});
+    let loadgen_deployment = json!({
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "name": LOADGEN_SERVICE_NAME,
+            "labels": loadgen_labels
+        },
+        "spec": {
+            "replicas": 1,
+            "selector": {"matchLabels": loadgen_labels},
+            "template": {
+                "metadata": {"labels": loadgen_labels},
+                "spec": {
+                    "containers": [{
+                        "name": LOADGEN_SERVICE_NAME,
+                        "image": images.load_generator.clone(),
+                        "imagePullPolicy": "Never",
+                        "env": [
+                            {"name": "PORT", "value": frontend_port.to_string()},
+                            {"name": "IP", "value": frontend_dns}
+                        ]
+                    }]
+                }
+            }
+        }
+    });
+
+    manifest_docs.push(loadgen_deployment);
+
+    let mut manifest_contents = String::new();
+    for doc in manifest_docs {
+        let yaml_doc = serde_yaml::to_string(&doc)
+            .with_context(|| "Failed to serialize Kubernetes manifest segment")?;
+        if !manifest_contents.is_empty() {
+            manifest_contents.push_str("---\n");
+        }
+        manifest_contents.push_str(&yaml_doc);
+        if !manifest_contents.ends_with('\n') {
+            manifest_contents.push('\n');
+        }
+    }
+
+    let manifest_path = PathBuf::from(K8S_MANIFEST_FILENAME);
+    fs::write(&manifest_path, manifest_contents).with_context(|| {
+        format!(
+            "Failed to write Kubernetes manifest file to {:?}",
+            manifest_path
+        )
+    })?;
+
+    info!("Kubernetes manifest generated at {:?}", manifest_path);
+    Ok(manifest_path)
+}
+
+fn kubectl_apply(manifest_path: &Path) -> Result<()> {
+    info!("Applying Kubernetes manifest {:?}", manifest_path);
+    let output = Command::new("kubectl")
+        .arg("apply")
+        .arg("-f")
+        .arg(manifest_path)
+        .output()
+        .with_context(|| format!("Failed to execute kubectl apply for {:?}", manifest_path))?;
+
+    if output.status.success() {
+        debug!(
+            "kubectl apply stdout:\n{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        if !output.stderr.is_empty() {
+            debug!(
+                "kubectl apply stderr:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        Ok(())
+    } else {
+        error!(
+            "kubectl apply stdout:\n{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        error!(
+            "kubectl apply stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        Err(anyhow!(
+            "Failed to apply Kubernetes manifest. Check kubectl output for details."
+        ))
+    }
+}
+
+fn kubectl_delete(manifest_path: &Path) -> Result<()> {
+    info!(
+        "Deleting Kubernetes resources defined in {:?}",
+        manifest_path
+    );
+    let output = Command::new("kubectl")
+        .arg("delete")
+        .arg("-f")
+        .arg(manifest_path)
+        .output()
+        .with_context(|| format!("Failed to execute kubectl delete for {:?}", manifest_path))?;
+
+    if output.status.success() {
+        debug!(
+            "kubectl delete stdout:\n{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        if !output.stderr.is_empty() {
+            debug!(
+                "kubectl delete stderr:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        Ok(())
+    } else {
+        error!(
+            "kubectl delete stdout:\n{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        error!(
+            "kubectl delete stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        Err(anyhow!(
+            "Failed to delete Kubernetes resources. Check kubectl output for details."
+        ))
+    }
+}
+
 fn run_docker_compose() -> Result<()> {
     info!("Stopping prior docker compose (if any)...");
     let _output = Command::new("docker")
@@ -453,6 +787,7 @@ pub async fn launch_simulation_from_yaml(
     trace_dir: &PathBuf,
     sim_config: SimulatorConfig,
     replay_path: Option<&Path>,
+    backend: Backend,
 ) -> Result<()> {
     // Generate service-specific config files
     let deployment =
@@ -463,21 +798,39 @@ pub async fn launch_simulation_from_yaml(
         info!("  Service: {}, Info: {:?}", d.0, d.1);
     }
 
-    // generate docker-compose.yml
-    generate_docker_compose(&config, trace_dir, &sim_config, &deployment, replay_path)?;
+    match backend {
+        Backend::DockerCompose => {
+            // generate docker-compose.yml
+            generate_docker_compose(&config, trace_dir, &sim_config, &deployment, replay_path)?;
 
-    // running Docker Compose
-    run_docker_compose()?;
+            // running Docker Compose
+            run_docker_compose()?;
 
-    // wait for termination signal (ctrl-c in this case) and then stopping docker compose
-    tokio::signal::ctrl_c().await?;
-    info!("Received termination signal.");
-    stop_docker_compose()?;
+            // wait for termination signal (ctrl-c in this case) and then stopping docker compose
+            tokio::signal::ctrl_c().await?;
+            info!("Received termination signal.");
+            stop_docker_compose()?;
 
-    // collect and report output (TODO)
-    info!("Collecting and reporting output...");
+            // collect and report output (TODO)
+            info!("Collecting and reporting output...");
+            Ok(())
+        }
+        Backend::Kubernetes => {
+            let images = build_k8s_images()?;
+            let manifest_path =
+                generate_k8s_manifest(&config, &deployment, trace_dir, &images)?;
 
-    Ok(())
+            kubectl_apply(&manifest_path)?;
+
+            tokio::signal::ctrl_c().await?;
+            info!("Received termination signal.");
+
+            kubectl_delete(&manifest_path)?;
+
+            info!("Collecting and reporting output...");
+            Ok(())
+        }
+    }
 }
 
 fn workspace_root() -> PathBuf {

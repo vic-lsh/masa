@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use structopt::StructOpt;
 
+use crate::orchestrator::Backend;
+
 #[derive(Debug, StructOpt)]
 #[structopt(
     name = "microservice-simulator-parser",
@@ -22,6 +24,15 @@ pub struct CliOptions {
     #[structopt(short, long, default_value = "localhost:50051")]
     /// Address of the orchestrator service
     pub orchestrator: String,
+
+    #[structopt(
+        long = "orchestrator-backend",
+        default_value = "docker-compose",
+        possible_values = Backend::variants(),
+        case_insensitive = true
+    )]
+    /// Execution backend used to orchestrate the simulation (docker-compose | k8s)
+    pub orchestrator_backend: Backend,
 }
 
 pub fn parse_cli_args() -> CliOptions {

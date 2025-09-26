@@ -16,8 +16,9 @@ pub mod proto {
 
 async fn run_from_alibaba_trace(
     trace_dir: &PathBuf,
-    replay_path: Option<PathBuf>,
     config_dir: &PathBuf,
+    replay_path: Option<PathBuf>,
+    backend: orchestrator::Backend,
 ) -> Result<()> {
     let trace_config = sim_config::trace::TraceConfig::from_config_dir(trace_dir)
         .map_err(|e| anyhow::anyhow!("Failed to parse Alibaba input directory: {}", e))?;
@@ -31,6 +32,7 @@ async fn run_from_alibaba_trace(
         trace_dir,
         sim_config,
         replay_path.as_deref(),
+        backend,
     )
     .await?;
 
@@ -75,8 +77,14 @@ async fn main() -> Result<()> {
     // Parse command line arguments
     let opts = client::cli::parse_cli_args();
 
-    if let Some(path) = opts.alibaba_trace {
-        run_from_alibaba_trace(&path, opts.replay_path.clone(), &opts.config_dir).await?;
+    if let Some(ref path) = opts.alibaba_trace {
+        run_from_alibaba_trace(
+            path,
+            &opts.config_dir,
+            opts.replay_path.clone(),
+            opts.orchestrator_backend,
+        )
+        .await?;
     } else {
         run_as_server(&opts).await?;
     }
