@@ -112,31 +112,35 @@ impl Service for AlibabaService {
         &self,
         request: Request<ServiceRequest>,
     ) -> Result<Response<ServiceResponse>, Status> {
-        let method_name = request.into_inner().method_name;
+        // let method_name = request.into_inner().method_name;
 
-        self.handle_method(method_name.clone()).await?;
+        // self.handle_method(method_name.clone()).await?;
+        
 
-        Ok(Response::new(ServiceResponse {
-            calls: vec![],
-            method_name: method_name,
-        }))
+        // Ok(Response::new(ServiceResponse {
+        //     calls: vec![],
+        //     method_name: method_name,
+        // }))
+        unimplemented!()
     }
 
     async fn root(&self, _request: Request<RootRequest>) -> Result<Response<RootResponse>, Status> {
         // TODO: remove this coupling with alibaba's data
-        const ROOT_SVC_NAME: &'static str = "user";
+        // const ROOT_SVC_NAME: &'static str = "user";
 
-        if self.self_svc_name.as_str() != ROOT_SVC_NAME {
-            return Err(Status::permission_denied(format!(
-                "Root endpoint can only be called on service {}, not {}",
-                ROOT_SVC_NAME,
-                self.self_svc_name.as_str()
-            )));
-        }
+        // if self.self_svc_name.as_str() != ROOT_SVC_NAME {
+        //     return Err(Status::permission_denied(format!(
+        //         "Root endpoint can only be called on service {}, not {}",
+        //         ROOT_SVC_NAME,
+        //         self.self_svc_name.as_str()
+        //     )));
+        // }
 
-        // All the root service does is calling into internal services
-        self.fanout().await?;
+        // // All the root service does is calling into internal services
+        // self.fanout().await?;
 
+        // Ok(Response::new(RootResponse {}))
+        print!("Root request received");
         Ok(Response::new(RootResponse {}))
     }
 
@@ -163,7 +167,7 @@ impl Service for AlibabaService {
                             busy_spin(single_span.val as f64);
                         }
                         Ok(SpanType::Block) => {
-                            sleep(Duration::from_millis(single_span.val)).await;
+                            sleep(Duration::from_micros(single_span.val)).await;
                         }
                         Ok(SpanType::Unknown) => {
                             warn!("Unknown span type, skipping");
