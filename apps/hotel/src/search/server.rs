@@ -10,8 +10,7 @@ pub mod hotel_tonic {
     }
 }
 
-use app_utils::channel::LoadBalancedChannel;
-use tonic::{Request, Response, Status};
+use tonic::{transport::masa_channel::LoadBalancedChannel, Request, Response, Status};
 
 use hotel_tonic::{
     geo, geo::geo_client::GeoClient, rate, rate::rate_client::RateClient, search,
