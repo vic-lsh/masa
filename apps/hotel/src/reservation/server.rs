@@ -14,7 +14,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::config::HotelConfig;
+use crate::config::ReservationConfig;
 use crate::db;
 use app_util_macros::track_latency;
 use app_utils::pool::McPool;
@@ -44,10 +44,9 @@ pub struct ReservationImpl {
 }
 
 impl ReservationImpl {
-    pub async fn new(config: HotelConfig) -> Result<Self, Box<dyn Error>> {
-        let mongo_client = crate::db::initialize_database(&config.reservation_mongodb_addr).await?;
-        let client_options =
-            mongodb::options::ClientOptions::parse(&config.reservation_mongodb_addr).await?;
+    pub async fn new(config: ReservationConfig) -> Result<Self, Box<dyn Error>> {
+        let mongo_client = crate::db::initialize_database(&config.mongodb_addr).await?;
+        let client_options = mongodb::options::ClientOptions::parse(&config.mongodb_addr).await?;
         let mongo_reserve_client = MongoClient::with_options(client_options)?;
 
         let check_avail_mc_hotel_cap = Arc::new(AvgTracker::default());
@@ -61,7 +60,7 @@ impl ReservationImpl {
         let mc_err_count = Arc::new(AtomicUsize::new(0));
 
         let cache_addr = config
-            .reservation_memcached_addr
+            .memcached_addr
             .strip_prefix("memcache://")
             .map(|addr| format!("tcp://{}", addr))
             .unwrap()

@@ -1,21 +1,30 @@
-FRONTEND_PORT=$(cat ./scripts/gen_config.json | jq -r ".Addr" | sed -r 's/.*:([0-9]+)$/\1/')
-echo "FRONTEND_PORT=$FRONTEND_PORT"
-HOTEL_CONFIG=./scripts/local/hotel.json
+#!/usr/bin/env bash
 
-if [[ ! -f "$HOTEL_CONFIG" ]]; then
-    echo "Error: expected hotel config at '$HOTEL_CONFIG'" >&2
+set -euo pipefail
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+GEN_CONFIG="$SCRIPT_DIR/gen_config.json"
+
+if [[ ! -f "$GEN_CONFIG" ]]; then
+    echo "Error: expected load generator config at '$GEN_CONFIG'" >&2
     exit 1
 fi
 
-RATE_REPLICAS=$(cat "$HOTEL_CONFIG" | jq -r ".RateReplicas // 1")
-echo "RATE_REPLICAS=$RATE_REPLICAS"
-PROFILE_REPLICAS=$(cat "$HOTEL_CONFIG" | jq -r ".ProfileReplicas // 1")
-echo "PROFILE_REPLICAS=$PROFILE_REPLICAS"
-RESERVATION_REPLICAS=$(cat "$HOTEL_CONFIG" | jq -r ".ReservationReplicas // 1")
-echo "RESERVATION_REPLICAS=$RESERVATION_REPLICAS"
-GEO_REPLICAS=$(cat "$HOTEL_CONFIG" | jq -r ".GeoReplicas // 1")
-echo "GEO_REPLICAS=$GEO_REPLICAS"
-SEARCH_REPLICAS=$(cat "$HOTEL_CONFIG" | jq -r ".SearchReplicas // 1")
-echo "SEARCH_REPLICAS=$SEARCH_REPLICAS"
-USER_REPLICAS=$(cat "$HOTEL_CONFIG" | jq -r ".UserReplicas // 1")
-echo "USER_REPLICAS=$USER_REPLICAS"
+FRONTEND_PORT=$(jq -r '.Addr' "$GEN_CONFIG" | sed -r 's/.*:([0-9]+)$/\1/')
+echo "FRONTEND_PORT=$FRONTEND_PORT"
+
+HOTEL_CONFIG_PATH=${HOTEL_CONFIG:-"$SCRIPT_DIR/local/hotel.json"}
+DEFAULT_REPLICAS=1
+
+if [[ ! -f "$HOTEL_CONFIG_PATH" ]]; then
+    echo "Error: expected hotel config at '$HOTEL_CONFIG_PATH'" >&2
+    exit 1
+fi
+
+services=(rate profile reservation geo search user recommendation review)
+
+for service_key in "${services[@]}"; do
+    env_key="$(echo "${service_key}_replicas" | tr '[:lower:]' '[:upper:]')"
+    replicas=$(jq -r --argjson default_replicas "$DEFAULT_REPLICAS" ".${service_key}.replicas // \$default_replicas" "$HOTEL_CONFIG_PATH")
+    echo "${env_key}=${replicas}"
+done
