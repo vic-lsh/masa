@@ -3,6 +3,7 @@ use serde::Deserialize;
 use sim_config::deployment::Deployment;
 use sim_config::svc::ServiceName;
 use sim_config::trace::TraceConfig;
+use sim_config::SimulatorConfig;
 use std::{collections::HashMap, fs, path::PathBuf, process::Command};
 use tracing::{debug, error, info};
 use yaml_rust::yaml::Hash;
@@ -398,7 +399,11 @@ fn stop_docker_compose() -> Result<(), anyhow::Error> {
     }
 }
 
-pub async fn launch_simulation_from_yaml(config: TraceConfig, trace_dir: &PathBuf) -> Result<()> {
+pub async fn launch_simulation_from_yaml(
+    config: TraceConfig,
+    trace_dir: &PathBuf,
+    sim_config: SimulatorConfig,
+) -> Result<()> {
     // assign ports
     let port_assignments = assign_ports(config.call_graph.services().into_iter())?;
     info!("Port assignments: {:?}", port_assignments);
