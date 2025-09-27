@@ -43,7 +43,8 @@ We have some basic scripts to automate running experiments on an application. As
 ./data/in/<experiment>
 ├── gen_config.json     # load gen config
 ├── policies            # list of policies to run the experiment with
-└── config.docker.json  # optional: app config (if not provided, whatever config is already present in ./scripts/local/config.docker.json will be used)
+├── config.docker.json  # optional: app config for non-hotel apps (falls back to ./scripts/local/config.docker.json)
+└── hotel.json          # required: hotel app config copied to ./scripts/local/hotel.json
 ```
 
 See `./data/in/template` for an example experiment.

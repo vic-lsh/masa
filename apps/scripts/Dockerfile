@@ -37,6 +37,7 @@ FROM debian:trixie-slim
 ARG APP
 ARG LOG_LEVEL=warn
 ARG BINARY_NAME
+ARG APP_CONFIG_FILE=config.docker.json
 RUN if [ -z "$BINARY_NAME" ]; then \
     echo "Error: BINARY_NAME argument is required" && exit 1; \
     fi
@@ -52,7 +53,7 @@ RUN apt-get install -y\
 # Copy the built executable from the builder stage
 COPY --from=builder /usr/src/masa/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
 COPY --from=builder /usr/src/masa/apps/${APP}/scripts/docker/entrypoint.sh /usr/entrypoint.sh
-COPY apps/${APP}/scripts/local/config.docker.json /usr/config.json
+COPY apps/${APP}/scripts/local/${APP_CONFIG_FILE} /usr/config.json
 COPY apps/${APP}/scripts/gen_config.json /usr/gen_config.json
 
 ENV BINARY_NAME=${BINARY_NAME}
