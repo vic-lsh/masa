@@ -15,7 +15,7 @@ NOTE: the following docs are up-to-date as of commit 6aad65c3fb6b6472d593eaff8af
 Minimal example to run Alibaba trace replay:
 
 ```bash
-$ cd <this-directory>
+$ cd <this-directory>/simulator
 $ cargo run -- --alibaba-trace <masa-project-root>/trace-analysis/golden/S_86516878
 ```
 
