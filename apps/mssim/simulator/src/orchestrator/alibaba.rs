@@ -1,8 +1,9 @@
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
-use sim_config::deployment::Deployment;
+use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
 use sim_config::svc::ServiceName;
 use sim_config::trace::TraceConfig;
+use sim_config::{SimulatorConfig, PROJECT_NAME};
 use std::{collections::HashMap, fs, path::PathBuf, process::Command};
 use tracing::{debug, error, info};
 use yaml_rust::yaml::Hash;
@@ -17,6 +18,8 @@ const FRONTEND_SERVICE_NAME: &str = "USER";
 
 const CONTAINER_CPU_LIMIT: usize = 1;
 
+const DEFAULT_SVC_PORT: u16 = 50051;
+
 #[allow(dead_code)]
 #[derive(Deserialize, Debug, serde::Serialize, Clone)] // Added serde::Serialize and Clone
 pub struct ErrorRate {
@@ -29,26 +32,18 @@ pub struct ErrorRate {
 pub fn assign_ports(
     service_names: impl Iterator<Item = ServiceName>,
 ) -> Result<HashMap<ServiceName, u16>> {
-    info!("Assigning ports to services.");
     let mut port_assignments = HashMap::new();
-    let mut available_ports = (50051..60000).collect::<Vec<u16>>(); // Define a range of ports
-
     for service_name in service_names {
-        if let Some(index) = available_ports.pop() {
-            port_assignments.insert(service_name.clone(), index);
-            debug!("Assigned port {} to service {}", index, service_name);
-        } else {
-            error!("Ran out of available ports.");
-            return Err(anyhow::anyhow!("Ran out of available ports."));
-        }
+        port_assignments.insert(service_name.clone(), DEFAULT_SVC_PORT);
     }
-
-    info!("Port assignment complete: {:?}", port_assignments);
     Ok(port_assignments)
 }
 
 // New function to generate individual config files for each service
-pub fn generate_service_configs(port_assignments: &HashMap<ServiceName, u16>) -> Result<()> {
+pub fn generate_service_configs(
+    port_assignments: &HashMap<ServiceName, u16>,
+    sim_cfg: &SimulatorConfig,
+) -> Result<Deployment> {
     info!("Generating service-specific configuration files.");
     let config_dir = PathBuf::from("./service_configs"); // Directory to store individual configs
 
@@ -61,7 +56,7 @@ pub fn generate_service_configs(port_assignments: &HashMap<ServiceName, u16>) ->
     let output_filename = "deployment.json";
     service_config_path.push(output_filename);
 
-    let deployment = make_deployment_config(port_assignments);
+    let deployment = make_deployment_config(port_assignments, sim_cfg);
 
     deployment
         .export_to_file(&service_config_path)
@@ -77,32 +72,37 @@ pub fn generate_service_configs(port_assignments: &HashMap<ServiceName, u16>) ->
         service_config_path
     );
 
-    Ok(())
+    Ok(deployment)
 }
 
-fn make_deployment_config(port_assignments: &HashMap<ServiceName, u16>) -> Deployment {
-    let mut services = HashMap::new();
+fn make_deployment_config(
+    port_assignments: &HashMap<ServiceName, u16>,
+    sim_cfg: &SimulatorConfig,
+) -> Deployment {
+    let mut deployment = Deployment::new();
 
     for (service_name, port) in port_assignments {
         println!("Service: {}, Port: {}", service_name, port);
 
-        services.insert(
+        deployment.add_service(
             service_name.clone(),
-            sim_config::deployment::ServiceDiscoveryInfo {
-                // in our docker config, service name is the ip
-                ip: service_name.to_string(),
+            ServiceDiscoveryInfo {
+                ip: format!("{}-{}", PROJECT_NAME, service_name),
                 port: *port,
+                replicas: sim_cfg.replicas.get(service_name).unwrap_or(1) as usize,
             },
         );
     }
 
-    Deployment { services }
+    deployment
 }
 
 pub fn generate_docker_compose(
     config: &TraceConfig,
     ports: &HashMap<ServiceName, u16>,
     trace_dir: &PathBuf,
+    sim_cfg: &SimulatorConfig,
+    deployment: Deployment,
 ) -> Result<()> {
     info!("Generating docker-compose.yml file.");
     let mut doc_hash = Hash::new();
@@ -136,9 +136,10 @@ pub fn generate_docker_compose(
         build_def.insert(Yaml::String("args".into()), Yaml::Hash(build_args));
 
         service_def.insert(Yaml::String("build".into()), Yaml::Hash(build_def));
+        let replica_count = sim_cfg.replicas.get(service_name).unwrap_or(1);
         service_def.insert(
-            Yaml::String("container_name".into()),
-            Yaml::String(service_name.clone().into()),
+            Yaml::String("scale".into()),
+            Yaml::Integer(replica_count.into()),
         );
 
         let mut deploy_def = Hash::new();
@@ -158,20 +159,6 @@ pub fn generate_docker_compose(
         resources_def.insert(Yaml::String("limits".into()), Yaml::Hash(limits_def));
         deploy_def.insert(Yaml::String("resources".into()), Yaml::Hash(resources_def));
         service_def.insert(Yaml::String("deploy".into()), Yaml::Hash(deploy_def));
-
-        if let Some(&host_port) = ports.get(service_name) {
-            let ports_mapping = format!("{}:{}", host_port, svc_port);
-            service_def.insert(
-                Yaml::String("ports".into()),
-                Yaml::Array(vec![Yaml::String(ports_mapping)]),
-            );
-        } else {
-            error!("Port not assigned for service: {}", service_name);
-            return Err(anyhow::anyhow!(
-                "Port not assigned for service: {}",
-                service_name
-            ));
-        }
 
         let mut environment = Hash::new();
         // Add the SERVICE_NAME environment variable
@@ -204,10 +191,6 @@ pub fn generate_docker_compose(
         let mut volumes: Vec<Yaml> = Vec::new();
 
         // add config volume
-        // let host_config_dir = workspace_root()
-        //     .join("./trace-analysis/golden/S_32048416/")
-        //     .to_string_lossy()
-        //     .into_owned();
         let host_config_dir = trace_dir.to_string_lossy().into_owned();
         let volume_mapping = format!("{}:{}", host_config_dir, in_container_config_path);
         volumes.push(Yaml::String(volume_mapping.into()));
@@ -248,11 +231,7 @@ pub fn generate_docker_compose(
         );
     }
 
-    let frontend_port = *ports
-        .get(&ServiceName::from_string(FRONTEND_SERVICE_NAME.to_string()))
-        .ok_or_else(|| anyhow::anyhow!("Port not assigned for frontend service"))?;
-
-    let loadgen_config = make_load_generator_config(frontend_port)?;
+    let loadgen_config = make_load_generator_config(&deployment)?;
     // Add load generator
     services.insert(
         Yaml::String(LOADGEN_SERVICE_NAME.into()),
@@ -292,7 +271,7 @@ pub fn generate_docker_compose(
     Ok(())
 }
 
-fn make_load_generator_config(frontend_port: u16) -> Result<Hash> {
+fn make_load_generator_config(deployment: &Deployment) -> Result<Hash> {
     let mut service_def = Hash::new();
 
     let mut build_def = Hash::new();
@@ -313,11 +292,21 @@ fn make_load_generator_config(frontend_port: u16) -> Result<Hash> {
     );
 
     let mut environment = Hash::new();
+
+    let frontend_info = deployment
+        .services
+        .get(&ServiceName::from_string(FRONTEND_SERVICE_NAME.to_string()))
+        .ok_or_else(|| anyhow::anyhow!("Frontend service not found in deployment"))?;
+
     environment.insert(
         Yaml::String("PORT".into()),
-        Yaml::String(frontend_port.to_string()),
+        Yaml::String(frontend_info.port.to_string()),
     );
-    environment.insert(Yaml::String("IP".into()), Yaml::String("user".into()));
+
+    environment.insert(
+        Yaml::String("IP".into()),
+        Yaml::String(frontend_info.ip.clone()),
+    );
 
     service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
 
@@ -336,6 +325,8 @@ fn run_docker_compose() -> Result<()> {
         .arg("compose")
         .arg("-f")
         .arg("./docker-compose.yml")
+        .arg("-p")
+        .arg(PROJECT_NAME) // configure project name to add docker container name prefix
         .arg("up")
         .arg("--build")
         .arg("-d")
@@ -398,16 +389,26 @@ fn stop_docker_compose() -> Result<(), anyhow::Error> {
     }
 }
 
-pub async fn launch_simulation_from_yaml(config: TraceConfig, trace_dir: &PathBuf) -> Result<()> {
+pub async fn launch_simulation_from_yaml(
+    config: TraceConfig,
+    trace_dir: &PathBuf,
+    sim_config: SimulatorConfig,
+) -> Result<()> {
     // assign ports
     let port_assignments = assign_ports(config.call_graph.services().into_iter())?;
     info!("Port assignments: {:?}", port_assignments);
 
     // Generate service-specific config files
-    generate_service_configs(&port_assignments)?;
+    let deployment = generate_service_configs(&port_assignments, &sim_config)?;
 
     // generate docker-compose.yml
-    generate_docker_compose(&config, &port_assignments, trace_dir)?;
+    generate_docker_compose(
+        &config,
+        &port_assignments,
+        trace_dir,
+        &sim_config,
+        deployment,
+    )?;
 
     // running Docker Compose
     run_docker_compose()?;
