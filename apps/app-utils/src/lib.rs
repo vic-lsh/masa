@@ -1,4 +1,3 @@
-pub mod channel;
 pub mod load_gen;
 pub mod logging;
 pub mod pool;
