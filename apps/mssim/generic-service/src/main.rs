@@ -19,7 +19,9 @@ pub mod service_stubs {
 }
 
 use service_stubs::service_server::{Service, ServiceServer};
-use service_stubs::{RootRequest, RootResponse, ServiceRequest, ServiceResponse};
+use service_stubs::{
+    PingRequest, PingResponse, RootRequest, RootResponse, ServiceRequest, ServiceResponse,
+};
 
 #[allow(dead_code)]
 struct AlibabaService {
@@ -135,6 +137,10 @@ impl Service for AlibabaService {
         self.fanout().await?;
 
         Ok(Response::new(RootResponse {}))
+    }
+
+    async fn ping(&self, _request: Request<PingRequest>) -> Result<Response<PingResponse>, Status> {
+        Ok(Response::new(PingResponse {}))
     }
 }
 
