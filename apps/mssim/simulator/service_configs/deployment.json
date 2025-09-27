@@ -1,0 +1,74 @@
+{
+  "services": {
+    "ms-27421": {
+      "ip": "mssim-ms-27421",
+      "port": 50051,
+      "replicas": 1
+    },
+    "ms-53154": {
+      "ip": "mssim-ms-53154",
+      "port": 50051,
+      "replicas": 1
+    },
+    "ms-18473": {
+      "ip": "mssim-ms-18473",
+      "port": 50051,
+      "replicas": 1
+    },
+    "user": {
+      "ip": "mssim-user",
+      "port": 50051,
+      "replicas": 1
+    },
+    "ms-2842": {
+      "ip": "mssim-ms-2842",
+      "port": 50051,
+      "replicas": 1
+    },
+    "ms-18495": {
+      "ip": "mssim-ms-18495",
+      "port": 50051,
+      "replicas": 1
+    },
+    "ms-28737": {
+      "ip": "mssim-ms-28737",
+      "port": 50051,
+      "replicas": 1
+    },
+    "ms-15284": {
+      "ip": "mssim-ms-15284",
+      "port": 50051,
+      "replicas": 1
+    },
+    "ms-28467": {
+      "ip": "mssim-ms-28467",
+      "port": 50051,
+      "replicas": 1
+    },
+    "ms-21883": {
+      "ip": "mssim-ms-21883",
+      "port": 50051,
+      "replicas": 10
+    },
+    "ms-65374": {
+      "ip": "mssim-ms-65374",
+      "port": 50051,
+      "replicas": 4
+    },
+    "ms-48904": {
+      "ip": "mssim-ms-48904",
+      "port": 50051,
+      "replicas": 1
+    },
+    "ms-37691": {
+      "ip": "mssim-ms-37691",
+      "port": 50051,
+      "replicas": 1
+    },
+    "ms-37027": {
+      "ip": "mssim-ms-37027",
+      "port": 50051,
+      "replicas": 1
+    }
+  }
+}
