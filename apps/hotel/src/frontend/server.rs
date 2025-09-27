@@ -42,34 +42,44 @@ pub struct FrontendImpl {
 
 impl FrontendImpl {
     pub async fn new(config: HotelConfig) -> Self {
-        let channel =
-            LoadBalancedChannel::new(config.search_ip, config.search_port, config.search_replicas)
-                .await;
+        let channel = LoadBalancedChannel::new(
+            config.search.ip.clone(),
+            config.search.port,
+            config.search.replicas,
+        )
+        .await;
         let search_client = SearchClient::new(channel);
 
         let channel = LoadBalancedChannel::new(
-            config.reservation_ip,
-            config.reservation_port,
-            config.reservation_replicas,
+            config.reservation.ip.clone(),
+            config.reservation.port,
+            config.reservation.replicas,
         )
         .await;
         let reservation_client = ReservationClient::new(channel);
 
         let channel = LoadBalancedChannel::new(
-            config.profile_ip,
-            config.profile_port,
-            config.profile_replicas,
+            config.profile.ip.clone(),
+            config.profile.port,
+            config.profile.replicas,
         )
         .await;
         let profile_client = ProfileClient::new(channel);
 
-        let channel =
-            LoadBalancedChannel::new(config.user_ip, config.user_port, config.user_replicas).await;
+        let channel = LoadBalancedChannel::new(
+            config.user.ip.clone(),
+            config.user.port,
+            config.user.replicas,
+        )
+        .await;
         let user_client = UserClient::new(channel);
 
-        // let channel =
-        //     LoadBalancedChannel::new(config.review_ip, config.review_port, config.review_replicas)
-        //         .await;
+        // let channel = LoadBalancedChannel::new(
+        //     config.review.ip.clone(),
+        //     config.review.port,
+        //     config.review.replicas,
+        // )
+        // .await;
         // let review_client = ReviewClient::new(channel);
 
         FrontendImpl {

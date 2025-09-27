@@ -34,13 +34,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
 
-    let profile_addr = format!("{}:{}", "[::]", cfg.profile_port)
+    let HotelConfig {
+        profile, global, ..
+    } = cfg;
+
+    let profile_addr = format!("{}:{}", "[::]", profile.port)
         .parse()
         .expect("Failed to parse address");
     log::warn!("Server listening on {}...", profile_addr);
-    let profile = ProfileImpl::new(cfg).await?;
+    let profile_service = ProfileImpl::new(profile, global).await?;
     Server::builder()
-        .add_service(ProfileServer::new(profile))
+        .add_service(ProfileServer::new(profile_service))
         .serve_with_masa(profile_addr)
         .await?;
 
