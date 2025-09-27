@@ -18,6 +18,8 @@ const FRONTEND_SERVICE_NAME: &str = "USER";
 
 const CONTAINER_CPU_LIMIT: usize = 1;
 
+const DEFAULT_SVC_PORT: u16 = 50051;
+
 #[allow(dead_code)]
 #[derive(Deserialize, Debug, serde::Serialize, Clone)] // Added serde::Serialize and Clone
 pub struct ErrorRate {
@@ -30,21 +32,10 @@ pub struct ErrorRate {
 pub fn assign_ports(
     service_names: impl Iterator<Item = ServiceName>,
 ) -> Result<HashMap<ServiceName, u16>> {
-    info!("Assigning ports to services.");
     let mut port_assignments = HashMap::new();
-    let mut available_ports = (50051..60000).collect::<Vec<u16>>(); // Define a range of ports
-
     for service_name in service_names {
-        if let Some(index) = available_ports.pop() {
-            port_assignments.insert(service_name.clone(), index);
-            debug!("Assigned port {} to service {}", index, service_name);
-        } else {
-            error!("Ran out of available ports.");
-            return Err(anyhow::anyhow!("Ran out of available ports."));
-        }
+        port_assignments.insert(service_name.clone(), DEFAULT_SVC_PORT);
     }
-
-    info!("Port assignment complete: {:?}", port_assignments);
     Ok(port_assignments)
 }
 
@@ -160,20 +151,6 @@ pub fn generate_docker_compose(
         deploy_def.insert(Yaml::String("resources".into()), Yaml::Hash(resources_def));
         service_def.insert(Yaml::String("deploy".into()), Yaml::Hash(deploy_def));
 
-        if let Some(&host_port) = ports.get(service_name) {
-            let ports_mapping = format!("{}:{}", host_port, svc_port);
-            service_def.insert(
-                Yaml::String("ports".into()),
-                Yaml::Array(vec![Yaml::String(ports_mapping)]),
-            );
-        } else {
-            error!("Port not assigned for service: {}", service_name);
-            return Err(anyhow::anyhow!(
-                "Port not assigned for service: {}",
-                service_name
-            ));
-        }
-
         let mut environment = Hash::new();
         // Add the SERVICE_NAME environment variable
         environment.insert(
@@ -205,10 +182,6 @@ pub fn generate_docker_compose(
         let mut volumes: Vec<Yaml> = Vec::new();
 
         // add config volume
-        // let host_config_dir = workspace_root()
-        //     .join("./trace-analysis/golden/S_32048416/")
-        //     .to_string_lossy()
-        //     .into_owned();
         let host_config_dir = trace_dir.to_string_lossy().into_owned();
         let volume_mapping = format!("{}:{}", host_config_dir, in_container_config_path);
         volumes.push(Yaml::String(volume_mapping.into()));
