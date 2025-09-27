@@ -88,7 +88,8 @@ pub struct LoadBalancedChannel {
 }
 
 impl LoadBalancedChannel {
-    async fn new_from(hostname_base: String, port: u16, replicas: u8, start: u8) -> Self {
+    /// Construct a new LoadBalancedChannel with a custom start index
+    pub async fn new_from(hostname_base: String, port: u16, replicas: u8, start: u8) -> Self {
         let mut endpoints = Vec::new();
         for i in 0..replicas {
             let endpoint =
