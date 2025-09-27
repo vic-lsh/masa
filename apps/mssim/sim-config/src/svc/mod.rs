@@ -52,7 +52,8 @@ impl ServiceName {
 
     fn format_svc_name(s: String) -> String {
         // Format the name such that it is a legal docker container name
-        s.replace('_', "-").to_lowercase()
+        let formatted = s.replace('_', "-").to_lowercase();
+        formatted
     }
 }
 
