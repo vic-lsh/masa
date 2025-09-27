@@ -1,10 +1,14 @@
 //! Parsing simulation configuration.
-//!
-//! (Note: this is a new configuration schema that is different from what's parsed in main.rs now)
 
 #![allow(dead_code)]
 
 pub mod deployment;
 pub mod dist;
+pub mod replica;
+pub mod run;
 pub mod svc;
 pub mod trace;
+
+pub use run::SimulatorConfig;
+
+pub const PROJECT_NAME: &str = "mssim";

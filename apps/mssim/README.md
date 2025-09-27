@@ -16,7 +16,8 @@ Minimal example to run Alibaba trace replay:
 
 ```bash
 $ cd <this-directory>/simulator
-$ cargo run -- --alibaba-trace <masa-project-root>/trace-analysis/golden/S_86516878
+$ cargo run -- --alibaba-trace <masa-project-root>/trace-analysis/golden/S_86516878 --config-dir ./example_config
+>>>>>>> ae4dd6d9 (docs(mssim): update readme)
 ```
 
 Once the Docker compose cluster has started, you can view each service container's
