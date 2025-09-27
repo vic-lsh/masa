@@ -6,7 +6,11 @@ import "google/protobuf/timestamp.proto";
 service Service {
   rpc GetData(ServiceRequest) returns (ServiceResponse);
   rpc Root(RootRequest) returns (RootResponse);
+  rpc Ping(PingRequest) returns (PingResponse);
 }
+message PingRequest {}
+
+message PingResponse {}
 
 message RootRequest {}
 

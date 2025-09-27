@@ -9,7 +9,7 @@ mod service {
     tonic::include_proto!("service");
 }
 use service::service_client::ServiceClient;
-use service::RootRequest;
+use service::{PingRequest, RootRequest};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -17,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
     let addr = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
     let port = env::var("PORT").unwrap_or_else(|_| "50051".to_string());
     let rps: f64 = env::var("RPS")
-        .unwrap_or_else(|_| "10".to_string())
+        .unwrap_or_else(|_| "100".to_string())
         .parse()?;
     let max_in_flight: usize = env::var("MAX_IN_FLIGHT")
         .unwrap_or_else(|_| "10000".to_string())
@@ -170,9 +170,9 @@ async fn health_check_connect_and_call(
         // (1) Connect
         match endpoint.clone().connect().await {
             Ok(ch) => {
-                // (2) Issue a root() call and expect a response
+                // (2) Issue a ping() call and expect a response
                 let mut client = ServiceClient::new(ch.clone());
-                match client.root(Request::new(RootRequest {})).await {
+                match client.ping(Request::new(PingRequest {})).await {
                     Ok(_) => {
                         println!("Health check passed: connected and root() responded.");
                         return Ok(ch);
