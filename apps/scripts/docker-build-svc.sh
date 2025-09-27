@@ -5,6 +5,7 @@ binary=""
 features=""
 rust_log="warn"
 app=""
+app_config_file="config.docker.json"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -23,6 +24,10 @@ while [[ $# -gt 0 ]]; do
         ;;
     --app)
         app="$2"
+        shift 2
+        ;;
+    --app-config)
+        app_config_file="$2"
         shift 2
         ;;
     *)
@@ -53,6 +58,7 @@ docker build -f ./apps/scripts/Dockerfile \
     --build-arg BINARY_NAME=$binary \
     --build-arg LOG_LEVEL=$rust_log \
     --build-arg APP=$app \
+    --build-arg APP_CONFIG_FILE=$app_config_file \
     --ulimit nofile=4096:4096 \
     -t $binary \
     .
