@@ -34,10 +34,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
 
-    let rec_addr = format!("{}:{}", "[::]", cfg.recommendation_port)
+    let HotelConfig { recommendation, .. } = cfg;
+
+    let rec_addr = format!("{}:{}", "[::]", recommendation.port)
         .parse()
         .expect("Failed to parse address");
-    let rec = RecommendationImpl::new(cfg);
+    let rec = RecommendationImpl::new(recommendation);
     log::info!("Server listening on {}...", rec_addr);
     Server::builder()
         .add_service(RecommendationServer::new(rec))
