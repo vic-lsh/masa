@@ -5,11 +5,11 @@ use std::{
     time::Instant,
 };
 
-use app_utils::channel::LoadBalancedChannel;
 use app_utils::timing::time_now;
 use synthetic_app::config::SyntheticConfig;
 use synthetic_app::util;
 
+use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{Request, Response, Status};
 
 use synthetic_app::tonic::{
