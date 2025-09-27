@@ -34,13 +34,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
 
-    let reservation_addr = format!("{}:{}", "[::]", cfg.reservation_port)
+    let HotelConfig { reservation, .. } = cfg;
+
+    let reservation_addr = format!("{}:{}", "[::]", reservation.port)
         .parse()
         .expect("Failed to parse address");
     log::warn!("Server listening on {}...", reservation_addr);
-    let reservation = ReservationImpl::new(cfg).await?;
+    let reservation_service = ReservationImpl::new(reservation).await?;
     Server::builder()
-        .add_service(ReservationServer::new(reservation))
+        .add_service(ReservationServer::new(reservation_service))
         .serve_with_masa(reservation_addr)
         .await?;
 
