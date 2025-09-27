@@ -10,3 +10,5 @@ pub mod svc;
 pub mod trace;
 
 pub use run::SimulatorConfig;
+
+pub const PROJECT_NAME: &str = "mssim";
