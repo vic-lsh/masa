@@ -33,13 +33,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
 
-    let frontend_addr = format!("{}:{}", "[::]", cfg.frontend_port)
+    let frontend_addr = format!("{}:{}", "[::]", cfg.frontend.port)
         .parse()
         .expect("Failed to parse address");
-    let frontend = FrontendImpl::new(cfg).await;
+    let frontend_service = FrontendImpl::new(cfg).await;
     log::info!("Server listening on {}...", frontend_addr);
     Server::builder()
-        .add_service(FrontendServer::new(frontend))
+        .add_service(FrontendServer::new(frontend_service))
         .serve_with_masa(frontend_addr)
         .await?;
 
