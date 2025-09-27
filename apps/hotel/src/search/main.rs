@@ -33,14 +33,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
 
-    let search_addr = format!("{}:{}", "[::]", cfg.search_port)
+    let HotelConfig {
+        search, geo, rate, ..
+    } = cfg;
+
+    let search_addr = format!("{}:{}", "[::]", search.port)
         .parse()
         .expect("Failed to parse address");
 
     log::warn!("Server listening on {}...", search_addr);
-    let search = SearchImpl::new(cfg).await;
+    let search_service = SearchImpl::new(geo, rate).await;
     Server::builder()
-        .add_service(SearchServer::new(search))
+        .add_service(SearchServer::new(search_service))
         .serve_with_masa(search_addr)
         .await?;
 

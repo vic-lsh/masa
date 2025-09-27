@@ -10,7 +10,7 @@ use tonic::{Request, Response, Status};
 
 use hotel_tonic::{geo, geo::geo_server::Geo};
 
-use crate::config::HotelConfig;
+use crate::config::GeoConfig;
 use crate::db;
 
 struct GeoIndex {
@@ -51,7 +51,7 @@ pub struct GeoImpl {
 }
 
 impl GeoImpl {
-    pub fn new(_config: HotelConfig) -> Self {
+    pub fn new(_config: GeoConfig) -> Self {
         let points = db::generate_test_data();
         let mut index = GeoIndex::new();
         for p in points {
