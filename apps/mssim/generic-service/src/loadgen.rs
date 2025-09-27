@@ -2,14 +2,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::{env, sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
 use tokio::time::Instant;
-use tonic::transport::{Channel, Endpoint};
+use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::Request;
 
 mod service {
     tonic::include_proto!("service");
 }
 use service::service_client::ServiceClient;
-use service::{PingRequest, RootRequest};
+use service::RootRequest;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -25,26 +25,14 @@ async fn main() -> anyhow::Result<()> {
     let stats_interval_sec: u64 = env::var("STATS_INTERVAL_SEC")
         .unwrap_or_else(|_| "2".to_string())
         .parse()?;
-    let hc_timeout_sec: u64 = env::var("HEALTHCHECK_TIMEOUT_SEC")
-        .unwrap_or_else(|_| "180".to_string())
-        .parse()?;
-    let hc_backoff_ms: u64 = env::var("HEALTHCHECK_BACKOFF_MS")
-        .unwrap_or_else(|_| "1000".to_string())
-        .parse()?;
 
     if rps <= 0.0 {
         anyhow::bail!("RPS must be > 0");
     }
     let per_req = Duration::from_secs_f64(1.0 / rps);
 
-    let addr = format!("http://{}:{}", addr, port);
-
-    let channel = health_check_connect_and_call(
-        &addr,
-        Duration::from_secs(hc_timeout_sec),
-        Duration::from_millis(hc_backoff_ms),
-    )
-    .await?;
+    let port = port.parse().unwrap();
+    let channel = LoadBalancedChannel::new(addr.clone(), port, 1).await;
 
     let client = ServiceClient::new(channel);
 
@@ -148,53 +136,4 @@ async fn main() -> anyhow::Result<()> {
     println!("Final stats: sent={}, ok={}, err={}", s, o, e);
 
     Ok(())
-}
-
-/// Try to connect and successfully invoke `root()` within `timeout`.
-/// Retries every `backoff` until both (1) connect and (2) RPC response succeed.
-async fn health_check_connect_and_call(
-    addr: &str,
-    timeout: Duration,
-    backoff: Duration,
-) -> anyhow::Result<Channel> {
-    println!(
-        "Health check: ensuring connectivity and root() response (timeout={}s)...",
-        timeout.as_secs()
-    );
-
-    // Build a reusable Endpoint once (Clone is cheap)
-    let endpoint = Endpoint::from_shared(addr.to_string())?.tcp_nodelay(true);
-
-    let deadline = Instant::now() + timeout;
-    loop {
-        // (1) Connect
-        match endpoint.clone().connect().await {
-            Ok(ch) => {
-                // (2) Issue a ping() call and expect a response
-                let mut client = ServiceClient::new(ch.clone());
-                match client.ping(Request::new(PingRequest {})).await {
-                    Ok(_) => {
-                        println!("Health check passed: connected and root() responded.");
-                        return Ok(ch);
-                    }
-                    Err(e) => {
-                        eprintln!("Health check: root() RPC failed: {e}");
-                        if Instant::now() >= deadline {
-                            anyhow::bail!(
-                                "Health check failed: RPC did not succeed before timeout"
-                            );
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("Health check: connect to {} failed: {e}", addr);
-                if Instant::now() >= deadline {
-                    anyhow::bail!("Health check failed: could not connect before timeout");
-                }
-            }
-        }
-
-        tokio::time::sleep(backoff).await;
-    }
 }
