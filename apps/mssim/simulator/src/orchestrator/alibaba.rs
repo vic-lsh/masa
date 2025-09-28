@@ -132,7 +132,6 @@ pub fn generate_docker_compose(
 
 fn make_docker_compose_doc(services: Hash) -> Yaml {
     let mut doc_hash = Hash::new();
-    doc_hash.insert(Yaml::String("version".into()), Yaml::String("3".into()));
     doc_hash.insert(Yaml::String("services".into()), Yaml::Hash(services));
     doc_hash.insert(Yaml::String("networks".into()), make_networks_def());
     Yaml::Hash(doc_hash)
