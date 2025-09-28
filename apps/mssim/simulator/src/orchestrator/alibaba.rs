@@ -17,6 +17,7 @@ const LOADGEN_SERVICE_NAME: &str = "load_generator";
 const FRONTEND_SERVICE_NAME: &str = "USER";
 
 const CONTAINER_CPU_LIMIT: usize = 1;
+const CONTAINER_MEM_LIMIT: &str = "512MB";
 
 const DEFAULT_SVC_PORT: u16 = 50051;
 
@@ -204,6 +205,10 @@ fn make_deploy_def() -> Yaml {
         Yaml::String("cpus".into()),
         Yaml::String(CONTAINER_CPU_LIMIT.to_string()),
     );
+    limits_def.insert(
+        Yaml::String("memory".into()),
+        Yaml::String(CONTAINER_MEM_LIMIT.to_string()),
+    );
     resources_def.insert(Yaml::String("limits".into()), Yaml::Hash(limits_def));
     deploy_def.insert(Yaml::String("resources".into()), Yaml::Hash(resources_def));
     Yaml::Hash(deploy_def)
@@ -306,7 +311,6 @@ fn run_docker_compose() -> Result<()> {
         .arg(PROJECT_NAME) // important: no container is rmed without the project name
         .arg("./docker-compose.yml")
         .arg("down")
-        .arg("--volumes")
         .output()
         .with_context(|| "Failed to execute 'docker-compose down'")?;
 
@@ -351,9 +355,9 @@ fn stop_docker_compose() -> Result<(), anyhow::Error> {
     let output = Command::new("docker")
         .arg("compose")
         .arg("-f")
+        .arg("./docker-compose.yml")
         .arg("-p")
         .arg(PROJECT_NAME) // important: no container is rmed without the project name
-        .arg("./docker-compose.yml")
         .arg("down")
         .output()
         .with_context(|| "Failed to execute 'docker-compose down'")?;
