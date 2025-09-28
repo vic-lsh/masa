@@ -1,0 +1,40 @@
+{{- $ctx := . -}}
+{{- range $name, $svc := .Values.appServices }}
+{{- if $svc.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hotel.componentName" (dict "context" $ctx "name" (printf "%s-service" $name)) }}
+  labels:
+    {{- include "hotel.labels" (dict "context" $ctx "component" (printf "%s-service" $name)) | nindent 4 }}
+spec:
+  replicas: {{ $svc.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "hotel.selectorLabels" (dict "context" $ctx "component" (printf "%s-service" $name)) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hotel.selectorLabels" (dict "context" $ctx "component" (printf "%s-service" $name)) | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ $name }}
+          image: {{ include "hotel.image" (dict "context" $ctx "image" $svc.image) }}
+          imagePullPolicy: {{ include "hotel.pullPolicy" (dict "context" $ctx "image" $svc.image) }}
+          ports:
+            - containerPort: {{ $svc.port }}
+              name: grpc
+          volumeMounts:
+            - name: hotel-config
+              mountPath: /usr/config.json
+              subPath: hotel-config.json
+      volumes:
+        - name: hotel-config
+          configMap:
+            name: {{ include "hotel.configMapName" $ctx }}
+            items:
+              - key: hotel-config.json
+                path: hotel-config.json
+{{- end }}
+{{- end }}

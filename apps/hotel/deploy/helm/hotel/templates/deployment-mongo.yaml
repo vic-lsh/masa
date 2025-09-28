@@ -1,0 +1,38 @@
+{{- $ctx := . -}}
+{{- range $name, $store := .Values.datastores.mongo }}
+{{- if $store.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hotel.componentName" (dict "context" $ctx "name" (printf "%s-mongo" $name)) }}
+  labels:
+    {{- include "hotel.labels" (dict "context" $ctx "component" (printf "%s-mongo" $name)) | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "hotel.selectorLabels" (dict "context" $ctx "component" (printf "%s-mongo" $name)) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hotel.selectorLabels" (dict "context" $ctx "component" (printf "%s-mongo" $name)) | nindent 8 }}
+    spec:
+      containers:
+        - name: mongo
+          image: {{ include "hotel.image" (dict "context" $ctx "image" $store.image) }}
+          imagePullPolicy: {{ include "hotel.pullPolicy" (dict "context" $ctx "image" $store.image) }}
+          args:
+            - "--port"
+            - "{{ $store.port }}"
+          ports:
+            - containerPort: {{ $store.port }}
+              name: mongo
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+      volumes:
+        - name: mongo-data
+          emptyDir: {}
+{{- end }}
+{{- end }}

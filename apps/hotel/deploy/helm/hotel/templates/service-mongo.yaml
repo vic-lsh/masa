@@ -1,0 +1,20 @@
+{{- $ctx := . -}}
+{{- range $name, $store := .Values.datastores.mongo }}
+{{- if $store.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hotel.componentName" (dict "context" $ctx "name" (printf "%s-mongo" $name)) }}
+  labels:
+    {{- include "hotel.labels" (dict "context" $ctx "component" (printf "%s-mongo" $name)) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "hotel.selectorLabels" (dict "context" $ctx "component" (printf "%s-mongo" $name)) | nindent 4 }}
+  ports:
+    - name: mongo
+      port: {{ $store.port }}
+      targetPort: {{ $store.port }}
+{{- end }}
+{{- end }}

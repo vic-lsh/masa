@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hotel.configMapName" . }}
+  labels:
+    {{- include "hotel.labels" (dict "context" . "component" "hotel-config") | nindent 4 }}
+data:
+  hotel-config.json: |
+    {
+      "global": {
+        "hotels": {{ .Values.hotelConfig.global.hotels }},
+        "cacheConns": {{ .Values.hotelConfig.global.cacheConns }},
+        "probCacheMiss": {{ .Values.hotelConfig.global.probCacheMiss }}
+      },
+      "frontend": {
+        "ip": "{{ include "hotel.componentHostname" (dict "context" . "name" "frontend-service") }}",
+        "port": {{ (index .Values.appServices "frontend").port }},
+        "replicas": {{ (index .Values.appServices "frontend").replicaCount }}
+      },
+      "geo": {
+        "ip": "{{ include "hotel.componentHostname" (dict "context" . "name" "geo-service") }}",
+        "port": {{ (index .Values.appServices "geo").port }},
+        "replicas": {{ (index .Values.appServices "geo").replicaCount }}
+      },
+      "profile": {
+        "ip": "{{ include "hotel.componentHostname" (dict "context" . "name" "profile-service") }}",
+        "port": {{ (index .Values.appServices "profile").port }},
+        "replicas": {{ (index .Values.appServices "profile").replicaCount }},
+        "mongodbAddr": "mongodb://{{ include "hotel.componentHostname" (dict "context" . "name" "profile-mongo") }}:{{ (index .Values.datastores.mongo "profile").port }}",
+        "memcachedAddr": "memcache://{{ include "hotel.componentHostname" (dict "context" . "name" "profile-memcached") }}:{{ (index .Values.datastores.memcached "profile").port }}"
+      },
+      "rate": {
+        "ip": "{{ include "hotel.componentHostname" (dict "context" . "name" "rate-service") }}",
+        "port": {{ (index .Values.appServices "rate").port }},
+        "replicas": {{ (index .Values.appServices "rate").replicaCount }},
+        "mongodbAddr": "mongodb://{{ include "hotel.componentHostname" (dict "context" . "name" "rate-mongo") }}:{{ (index .Values.datastores.mongo "rate").port }}",
+        "memcachedAddr": "memcache://{{ include "hotel.componentHostname" (dict "context" . "name" "rate-memcached") }}:{{ (index .Values.datastores.memcached "rate").port }}"
+      },
+      "recommendation": {
+        "ip": "{{ include "hotel.componentHostname" (dict "context" . "name" "recommendation-service") }}",
+        "port": {{ (index .Values.appServices "recommendation").port }},
+        "replicas": {{ (index .Values.appServices "recommendation").replicaCount }}
+      },
+      "reservation": {
+        "ip": "{{ include "hotel.componentHostname" (dict "context" . "name" "reservation-service") }}",
+        "port": {{ (index .Values.appServices "reservation").port }},
+        "replicas": {{ (index .Values.appServices "reservation").replicaCount }},
+        "mongodbAddr": "mongodb://{{ include "hotel.componentHostname" (dict "context" . "name" "reservation-mongo") }}:{{ (index .Values.datastores.mongo "reservation").port }}",
+        "memcachedAddr": "memcache://{{ include "hotel.componentHostname" (dict "context" . "name" "reservation-memcached") }}:{{ (index .Values.datastores.memcached "reservation").port }}"
+      },
+      "review": {
+        "ip": "{{ include "hotel.componentHostname" (dict "context" . "name" "review-service") }}",
+        "port": {{ (index .Values.appServices "review").port }},
+        "replicas": {{ (index .Values.appServices "review").replicaCount }},
+        "mongodbAddr": "mongodb://{{ include "hotel.componentHostname" (dict "context" . "name" "review-mongo") }}:{{ (index .Values.datastores.mongo "review").port }}",
+        "memcachedAddr": "memcache://{{ include "hotel.componentHostname" (dict "context" . "name" "review-memcached") }}:{{ (index .Values.datastores.memcached "review").port }}"
+      },
+      "search": {
+        "ip": "{{ include "hotel.componentHostname" (dict "context" . "name" "search-service") }}",
+        "port": {{ (index .Values.appServices "search").port }},
+        "replicas": {{ (index .Values.appServices "search").replicaCount }}
+      },
+      "user": {
+        "ip": "{{ include "hotel.componentHostname" (dict "context" . "name" "user-service") }}",
+        "port": {{ (index .Values.appServices "user").port }},
+        "replicas": {{ (index .Values.appServices "user").replicaCount }},
+        "users": {{ .Values.hotelConfig.user.users }},
+        "probCheckUser": {{ .Values.hotelConfig.user.probCheckUser }},
+        "mongodbAddr": "mongodb://{{ include "hotel.componentHostname" (dict "context" . "name" "user-mongo") }}:{{ (index .Values.datastores.mongo "user").port }}"
+      }
+    }

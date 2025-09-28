@@ -1,0 +1,132 @@
+global:
+  image:
+    registry: ""
+    tag: latest
+    pullPolicy: IfNotPresent
+
+hotelConfig:
+  global:
+    hotels: 1000
+    cacheConns: 32
+    probCacheMiss: 20
+  user:
+    users: 1000
+    probCheckUser: 80
+
+appServices:
+  frontend:
+    enabled: true
+    replicaCount: 1
+    port: 8660
+    image:
+      repository: hotel_frontend
+  geo:
+    enabled: true
+    replicaCount: 1
+    port: 8661
+    image:
+      repository: hotel_geo
+  profile:
+    enabled: true
+    replicaCount: 1
+    port: 8662
+    image:
+      repository: hotel_profile
+  rate:
+    enabled: true
+    replicaCount: 1
+    port: 8663
+    image:
+      repository: hotel_rate
+  recommendation:
+    enabled: false
+    replicaCount: 1
+    port: 8664
+    image:
+      repository: hotel_recommendation
+  reservation:
+    enabled: true
+    replicaCount: 1
+    port: 8666
+    image:
+      repository: hotel_reservation
+  review:
+    enabled: false
+    replicaCount: 1
+    port: 8667
+    image:
+      repository: hotel_review
+  search:
+    enabled: true
+    replicaCount: 1
+    port: 8668
+    image:
+      repository: hotel_search
+  user:
+    enabled: true
+    replicaCount: 1
+    port: 8669
+    image:
+      repository: hotel_user
+
+datastores:
+  mongo:
+    rate:
+      enabled: true
+      port: 27003
+      image:
+        repository: mongo
+        tag: "7.0"
+    profile:
+      enabled: true
+      port: 27004
+      image:
+        repository: mongo
+        tag: "7.0"
+    reservation:
+      enabled: true
+      port: 27005
+      image:
+        repository: mongo
+        tag: "7.0"
+    user:
+      enabled: true
+      port: 27006
+      image:
+        repository: mongo
+        tag: "7.0"
+    review:
+      enabled: false
+      port: 27007
+      image:
+        repository: mongo
+        tag: "7.0"
+  memcached:
+    rate:
+      enabled: true
+      port: 11003
+      threads: 4
+      image:
+        repository: memcached
+        tag: "1.6"
+    profile:
+      enabled: true
+      port: 11004
+      threads: 4
+      image:
+        repository: memcached
+        tag: "1.6"
+    reservation:
+      enabled: true
+      port: 11005
+      threads: 4
+      image:
+        repository: memcached
+        tag: "1.6"
+    review:
+      enabled: false
+      port: 11006
+      threads: 4
+      image:
+        repository: memcached
+        tag: "1.6"

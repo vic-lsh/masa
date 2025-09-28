@@ -1,0 +1,7 @@
+1. Get the status of the deployed release:
+   kubectl get pods --namespace {{ .Release.Namespace }}
+
+2. Forward the frontend service to your local machine:
+   kubectl port-forward svc/{{ include "hotel.componentName" (dict "context" . "name" "frontend-service") }} 8660:{{ (index .Values.appServices "frontend").port }} --namespace {{ .Release.Namespace }}
+
+3. Open http://localhost:8660 to interact with the hotel frontend or run the load generator against the forwarded port.

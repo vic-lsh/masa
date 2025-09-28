@@ -1,0 +1,6 @@
+apiVersion: v2
+name: hotel
+description: Helm chart for running the hotel demo services locally
+version: 0.1.0
+appVersion: "0.1.0"
+type: application

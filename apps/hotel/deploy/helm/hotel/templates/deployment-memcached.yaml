@@ -1,0 +1,34 @@
+{{- $ctx := . -}}
+{{- range $name, $store := .Values.datastores.memcached }}
+{{- if $store.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hotel.componentName" (dict "context" $ctx "name" (printf "%s-memcached" $name)) }}
+  labels:
+    {{- include "hotel.labels" (dict "context" $ctx "component" (printf "%s-memcached" $name)) | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "hotel.selectorLabels" (dict "context" $ctx "component" (printf "%s-memcached" $name)) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hotel.selectorLabels" (dict "context" $ctx "component" (printf "%s-memcached" $name)) | nindent 8 }}
+    spec:
+      containers:
+        - name: memcached
+          image: {{ include "hotel.image" (dict "context" $ctx "image" $store.image) }}
+          imagePullPolicy: {{ include "hotel.pullPolicy" (dict "context" $ctx "image" $store.image) }}
+          args:
+            - "--port"
+            - "{{ $store.port }}"
+            - "--threads"
+            - "{{ default 4 $store.threads }}"
+          ports:
+            - containerPort: {{ $store.port }}
+              name: memcached
+{{- end }}
+{{- end }}

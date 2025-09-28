@@ -1,0 +1,20 @@
+{{- $ctx := . -}}
+{{- range $name, $svc := .Values.appServices }}
+{{- if $svc.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hotel.componentName" (dict "context" $ctx "name" (printf "%s-service" $name)) }}
+  labels:
+    {{- include "hotel.labels" (dict "context" $ctx "component" (printf "%s-service" $name)) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "hotel.selectorLabels" (dict "context" $ctx "component" (printf "%s-service" $name)) | nindent 4 }}
+  ports:
+    - name: grpc
+      port: {{ $svc.port }}
+      targetPort: {{ $svc.port }}
+{{- end }}
+{{- end }}

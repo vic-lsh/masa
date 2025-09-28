@@ -1,0 +1,20 @@
+{{- $ctx := . -}}
+{{- range $name, $store := .Values.datastores.memcached }}
+{{- if $store.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hotel.componentName" (dict "context" $ctx "name" (printf "%s-memcached" $name)) }}
+  labels:
+    {{- include "hotel.labels" (dict "context" $ctx "component" (printf "%s-memcached" $name)) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "hotel.selectorLabels" (dict "context" $ctx "component" (printf "%s-memcached" $name)) | nindent 4 }}
+  ports:
+    - name: memcached
+      port: {{ $store.port }}
+      targetPort: {{ $store.port }}
+{{- end }}
+{{- end }}
