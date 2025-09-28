@@ -4,6 +4,13 @@ global:
     tag: latest
     pullPolicy: IfNotPresent
 
+serviceAccount:
+  create: true
+  name: ""
+
+rbac:
+  create: true
+
 hotelConfig:
   global:
     hotels: 1000

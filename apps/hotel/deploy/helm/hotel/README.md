@@ -51,6 +51,7 @@ Open `http://localhost:8660` in a browser or use the existing load generator/pro
 - Each cached service (rate/profile/reservation/review) gets dedicated MongoDB and Memcached `Deployment + Service` pairs. By default they use `emptyDir` storage so data resets between deployments; adjust these templates if you need persistence.
 - `recommendation` and `review` services are defined but disabled by default to match the previous Compose setup. To enable them, set `appServices.recommendation.enabled=true` (and likewise for `review`) and load their images into the cluster.
 - If you push images to a registry prefix (for example `localhost:5001/hotel_frontend`), set `global.image.registry` in your values override, or override individual `appServices.<svc>.image.repository`/`tag` fields.
+- Every workload uses a dedicated service account (created by default) that is bound to a cluster role granting `get/list/watch` on `endpointslices` and `endpoints`, so the binaries can query the Kubernetes API for peer discovery. Override `serviceAccount.create/name` or disable the RBAC with `rbac.create=false` if you have your own setup.
 
 ## Useful commands
 

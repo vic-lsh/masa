@@ -18,6 +18,7 @@ spec:
       labels:
         {{- include "hotel.selectorLabels" (dict "context" $ctx "component" (printf "%s-service" $name)) | nindent 8 }}
     spec:
+      serviceAccountName: {{ include "hotel.serviceAccountName" $ctx }}
       containers:
         - name: {{ $name }}
           image: {{ include "hotel.image" (dict "context" $ctx "image" $svc.image) }}

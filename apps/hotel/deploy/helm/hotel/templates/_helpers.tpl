@@ -64,6 +64,22 @@ app.kubernetes.io/component: {{ .component }}
 {{- printf "%s-config" (include "hotel.fullname" .) -}}
 {{- end -}}
 
+{{- define "hotel.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create -}}
+  {{- if .Values.serviceAccount.name -}}
+    {{- .Values.serviceAccount.name | trunc 63 | trimSuffix "-" -}}
+  {{- else -}}
+    {{- include "hotel.fullname" . -}}
+  {{- end -}}
+{{- else -}}
+  {{- if .Values.serviceAccount.name -}}
+    {{- .Values.serviceAccount.name | trunc 63 | trimSuffix "-" -}}
+  {{- else -}}
+    default
+  {{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "hotel.serviceAnnotations" -}}
 {{- if .annotations -}}
 {{- toYaml .annotations -}}
