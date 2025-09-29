@@ -17,6 +17,7 @@ const LOADGEN_SERVICE_NAME: &str = "load_generator";
 const FRONTEND_SERVICE_NAME: &str = "USER";
 
 const CONTAINER_CPU_LIMIT: usize = 1;
+const CONTAINER_MEM_LIMIT: &str = "512MB";
 
 const DEFAULT_SVC_PORT: u16 = 50051;
 
@@ -29,19 +30,9 @@ pub struct ErrorRate {
     pub parameters: HashMap<String, f64>, // This maps the YAML key 'parameters' to a HashMap
 }
 
-pub fn assign_ports(
-    service_names: impl Iterator<Item = ServiceName>,
-) -> Result<HashMap<ServiceName, u16>> {
-    let mut port_assignments = HashMap::new();
-    for service_name in service_names {
-        port_assignments.insert(service_name.clone(), DEFAULT_SVC_PORT);
-    }
-    Ok(port_assignments)
-}
-
 // New function to generate individual config files for each service
 pub fn generate_service_configs(
-    port_assignments: &HashMap<ServiceName, u16>,
+    services: impl Iterator<Item = ServiceName>,
     sim_cfg: &SimulatorConfig,
 ) -> Result<Deployment> {
     info!("Generating service-specific configuration files.");
@@ -56,7 +47,7 @@ pub fn generate_service_configs(
     let output_filename = "deployment.json";
     service_config_path.push(output_filename);
 
-    let deployment = make_deployment_config(port_assignments, sim_cfg);
+    let deployment = make_deployment_config(services, sim_cfg);
 
     deployment
         .export_to_file(&service_config_path)
@@ -76,20 +67,20 @@ pub fn generate_service_configs(
 }
 
 fn make_deployment_config(
-    port_assignments: &HashMap<ServiceName, u16>,
+    services: impl Iterator<Item = ServiceName>,
     sim_cfg: &SimulatorConfig,
 ) -> Deployment {
     let mut deployment = Deployment::new();
 
-    for (service_name, port) in port_assignments {
-        println!("Service: {}, Port: {}", service_name, port);
+    for service_name in services {
+        println!("Service: {}, Port: {}", &service_name, DEFAULT_SVC_PORT);
 
         deployment.add_service(
             service_name.clone(),
             ServiceDiscoveryInfo {
-                ip: format!("{}-{}", PROJECT_NAME, service_name),
-                port: *port,
-                replicas: sim_cfg.replicas.get(service_name).unwrap_or(1) as usize,
+                ip: format!("{}-{}", PROJECT_NAME, &service_name),
+                port: DEFAULT_SVC_PORT,
+                replicas: sim_cfg.replicas.get(&service_name).unwrap_or(1) as usize,
             },
         );
     }
@@ -99,165 +90,34 @@ fn make_deployment_config(
 
 pub fn generate_docker_compose(
     config: &TraceConfig,
-    ports: &HashMap<ServiceName, u16>,
     trace_dir: &PathBuf,
     sim_cfg: &SimulatorConfig,
-    deployment: Deployment,
+    deployment: &Deployment,
 ) -> Result<()> {
     info!("Generating docker-compose.yml file.");
-    let mut doc_hash = Hash::new();
 
-    doc_hash.insert(Yaml::String("version".into()), Yaml::String("3".into()));
+    let mut services_hash = Hash::new();
+    for service_name in config.call_graph.services() {
+        let svc_info = deployment
+            .services
+            .get(&service_name)
+            .ok_or_else(|| anyhow::anyhow!("Service not found in deployment: {}", service_name))?;
+        let svc_port = svc_info.port;
 
-    let mut services = Hash::new();
-    for service_name in &config.call_graph.services() {
-        let svc_port = ports
-            .get(service_name)
-            .ok_or_else(|| anyhow::anyhow!("Port not assigned for service: {}", service_name))?;
-
-        let mut service_def = Hash::new();
-
-        let mut build_def = Hash::new();
-        build_def.insert(
-            Yaml::String("context".into()),
-            Yaml::String(workspace_root().to_string_lossy().to_string()),
-        );
-        let dockerfile_path = workspace_root().join("apps/mssim/generic-service/Dockerfile");
-        build_def.insert(
-            Yaml::String("dockerfile".into()),
-            Yaml::String(dockerfile_path.to_string_lossy().to_string()),
-        );
-        // Pass the port as a build argument (still useful for EXPOSE in Dockerfile)
-        let mut build_args = Hash::new();
-        build_args.insert(
-            Yaml::String("SERVICE_CONTAINER_PORT".into()),
-            Yaml::String(svc_port.to_string()),
-        );
-        build_def.insert(Yaml::String("args".into()), Yaml::Hash(build_args));
-
-        service_def.insert(Yaml::String("build".into()), Yaml::Hash(build_def));
-        let replica_count = sim_cfg.replicas.get(service_name).unwrap_or(1);
-        service_def.insert(
-            Yaml::String("scale".into()),
-            Yaml::Integer(replica_count.into()),
-        );
-
-        let mut deploy_def = Hash::new();
-        let mut resources_def = Hash::new();
-        let mut limits_def = Hash::new();
-
-        // TODO: make these configurable
-        limits_def.insert(
-            Yaml::String("cpus".into()),
-            Yaml::String(CONTAINER_CPU_LIMIT.to_string()),
-        );
-        // TODO: do we need memory limits?
-        // limits_def.insert(
-        //     Yaml::String("memory".into()),
-        //     Yaml::String("512M".into()), // Limit to 512MB memory
-        // );
-        resources_def.insert(Yaml::String("limits".into()), Yaml::Hash(limits_def));
-        deploy_def.insert(Yaml::String("resources".into()), Yaml::Hash(resources_def));
-        service_def.insert(Yaml::String("deploy".into()), Yaml::Hash(deploy_def));
-
-        let mut environment = Hash::new();
-        // Add the SERVICE_NAME environment variable
-        environment.insert(
-            Yaml::String("SERVICE_NAME".into()),
-            Yaml::String(service_name.into()),
-        );
-
-        // Add the SERVICE_PORT environment variable
-        environment.insert(
-            Yaml::String("SERVICE_PORT".into()),
-            Yaml::String(svc_port.to_string()),
-        );
-
-        // Define the path where the config file will be mounted INSIDE the container
-        let in_container_config_path = "/app/config"; // Example path inside the container
-        environment.insert(
-            Yaml::String("CONFIG_PATH".into()),
-            Yaml::String(in_container_config_path.into()),
-        );
-        let in_container_deployment_config_path = "/app/config/deployment.json"; // Example path inside the container
-        environment.insert(
-            Yaml::String("DEPLOYMEN_CONFIG_PATH".into()),
-            Yaml::String(in_container_deployment_config_path.into()),
-        );
-
-        service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
-
-        // Configure volumes to mount the service-specific config file
-        let mut volumes: Vec<Yaml> = Vec::new();
-
-        // add config volume
-        let host_config_dir = trace_dir.to_string_lossy().into_owned();
-        let volume_mapping = format!("{}:{}", host_config_dir, in_container_config_path);
-        volumes.push(Yaml::String(volume_mapping.into()));
-
-        // Add deployment config volume
-        let host_config_path = format!("./service_configs/deployment.json");
-        let volume_mapping = format!(
-            "{}:{}",
-            host_config_path, in_container_deployment_config_path
-        );
-        volumes.push(Yaml::String(volume_mapping.into()));
-
-        service_def.insert(Yaml::String("volumes".into()), Yaml::Array(volumes));
-
-        // Add networks (using 'microservice_net' as in the example)
-        service_def.insert(
-            Yaml::String("networks".into()),
-            Yaml::Array(vec![Yaml::String("microservice_net".into())]),
-        );
-
-        // depends_on logic can be adjusted or removed based on whether Docker Compose startup order is critical
-        // Based on previous errors and the new config method, removing automatic depends_on from calls might be necessary
-        // or implementing more sophisticated dependency analysis.
-        // Keeping it commented out for now as per previous discussion.
-        /*
-        let mut dependencies: Vec<Yaml> = Vec::new();
-         // ... dependency logic ...
-        if !dependencies.is_empty() {
-             service_def.insert(Yaml::String("depends_on".into()), Yaml::Array(dependencies));
-        } else {
-              service_def.insert(Yaml::String("depends_on".into()), Yaml::Null);
-        }
-        */
-
-        services.insert(
-            Yaml::String(service_name.to_string()),
-            Yaml::Hash(service_def),
-        );
+        let service_def = make_service_def(&service_name, svc_port, sim_cfg, trace_dir);
+        services_hash.insert(Yaml::String(service_name.to_string()), service_def);
     }
 
-    let loadgen_config = make_load_generator_config(&deployment)?;
-    // Add load generator
-    services.insert(
-        Yaml::String(LOADGEN_SERVICE_NAME.into()),
-        Yaml::Hash(loadgen_config),
-    );
+    let loadgen_config = make_load_generator_config_yaml(deployment)?;
+    services_hash.insert(Yaml::String(LOADGEN_SERVICE_NAME.into()), loadgen_config);
 
-    doc_hash.insert(Yaml::String("services".into()), Yaml::Hash(services));
-
-    // Add the networks definition at the top level
-    let mut networks_def = Hash::new();
-    let mut microservice_net_def = Hash::new();
-    microservice_net_def.insert(Yaml::String("driver".into()), Yaml::String("bridge".into()));
-    networks_def.insert(
-        Yaml::String("microservice_net".into()),
-        Yaml::Hash(microservice_net_def),
-    );
-    doc_hash.insert(Yaml::String("networks".into()), Yaml::Hash(networks_def));
-
-    let doc = Yaml::Hash(doc_hash);
+    let doc = make_docker_compose_doc(services_hash);
 
     let mut output_string = String::new();
     let mut emitter = YamlEmitter::new(&mut output_string);
     emitter.dump(&doc).unwrap();
 
-    let mut compose_path = PathBuf::from(".");
-    compose_path.push("docker-compose.yml");
+    let compose_path = PathBuf::from("./docker-compose.yml");
 
     fs::write(&compose_path, output_string).with_context(|| {
         format!(
@@ -271,7 +131,131 @@ pub fn generate_docker_compose(
     Ok(())
 }
 
-fn make_load_generator_config(deployment: &Deployment) -> Result<Hash> {
+fn make_docker_compose_doc(services: Hash) -> Yaml {
+    let mut doc_hash = Hash::new();
+    doc_hash.insert(Yaml::String("services".into()), Yaml::Hash(services));
+    doc_hash.insert(Yaml::String("networks".into()), make_networks_def());
+    Yaml::Hash(doc_hash)
+}
+
+fn make_networks_def() -> Yaml {
+    let mut networks_def = Hash::new();
+    let mut microservice_net_def = Hash::new();
+    microservice_net_def.insert(Yaml::String("driver".into()), Yaml::String("bridge".into()));
+    networks_def.insert(
+        Yaml::String("microservice_net".into()),
+        Yaml::Hash(microservice_net_def),
+    );
+    Yaml::Hash(networks_def)
+}
+
+fn make_service_def(
+    service_name: &ServiceName,
+    svc_port: u16,
+    sim_cfg: &SimulatorConfig,
+    trace_dir: &PathBuf,
+) -> Yaml {
+    let mut service_def = Hash::new();
+
+    service_def.insert(Yaml::String("build".into()), make_build_def(svc_port));
+    let replica_count = sim_cfg.replicas.get(service_name).unwrap_or(1);
+    service_def.insert(
+        Yaml::String("scale".into()),
+        Yaml::Integer(replica_count.into()),
+    );
+    service_def.insert(Yaml::String("deploy".into()), make_deploy_def());
+    service_def.insert(
+        Yaml::String("environment".into()),
+        make_environment_def(service_name, svc_port),
+    );
+    service_def.insert(Yaml::String("volumes".into()), make_volumes_def(trace_dir));
+    service_def.insert(
+        Yaml::String("networks".into()),
+        Yaml::Array(vec![Yaml::String("microservice_net".into())]),
+    );
+
+    Yaml::Hash(service_def)
+}
+
+fn make_build_def(svc_port: u16) -> Yaml {
+    let mut build_def = Hash::new();
+    build_def.insert(
+        Yaml::String("context".into()),
+        Yaml::String(workspace_root().to_string_lossy().to_string()),
+    );
+    let dockerfile_path = workspace_root().join("apps/mssim/generic-service/Dockerfile");
+    build_def.insert(
+        Yaml::String("dockerfile".into()),
+        Yaml::String(dockerfile_path.to_string_lossy().to_string()),
+    );
+    let mut build_args = Hash::new();
+    build_args.insert(
+        Yaml::String("SERVICE_CONTAINER_PORT".into()),
+        Yaml::String(svc_port.to_string()),
+    );
+    build_def.insert(Yaml::String("args".into()), Yaml::Hash(build_args));
+    Yaml::Hash(build_def)
+}
+
+fn make_deploy_def() -> Yaml {
+    let mut deploy_def = Hash::new();
+    let mut resources_def = Hash::new();
+    let mut limits_def = Hash::new();
+    limits_def.insert(
+        Yaml::String("cpus".into()),
+        Yaml::String(CONTAINER_CPU_LIMIT.to_string()),
+    );
+    limits_def.insert(
+        Yaml::String("memory".into()),
+        Yaml::String(CONTAINER_MEM_LIMIT.to_string()),
+    );
+    resources_def.insert(Yaml::String("limits".into()), Yaml::Hash(limits_def));
+    deploy_def.insert(Yaml::String("resources".into()), Yaml::Hash(resources_def));
+    Yaml::Hash(deploy_def)
+}
+
+fn make_environment_def(service_name: &ServiceName, svc_port: u16) -> Yaml {
+    let mut environment = Hash::new();
+    environment.insert(
+        Yaml::String("SERVICE_NAME".into()),
+        Yaml::String(service_name.into()),
+    );
+    environment.insert(
+        Yaml::String("SERVICE_PORT".into()),
+        Yaml::String(svc_port.to_string()),
+    );
+    let in_container_config_path = "/app/config";
+    environment.insert(
+        Yaml::String("CONFIG_PATH".into()),
+        Yaml::String(in_container_config_path.into()),
+    );
+    let in_container_deployment_config_path = "/app/config/deployment.json";
+    environment.insert(
+        Yaml::String("DEPLOYMEN_CONFIG_PATH".into()),
+        Yaml::String(in_container_deployment_config_path.into()),
+    );
+    Yaml::Hash(environment)
+}
+
+fn make_volumes_def(trace_dir: &PathBuf) -> Yaml {
+    let in_container_config_path = "/app/config";
+    let host_config_dir = trace_dir.to_string_lossy();
+    let volume_mapping_config = format!("{}:{}", host_config_dir, in_container_config_path);
+
+    let in_container_deployment_config_path = "/app/config/deployment.json";
+    let host_config_path = "./service_configs/deployment.json";
+    let volume_mapping_deployment = format!(
+        "{}:{}",
+        host_config_path, in_container_deployment_config_path
+    );
+
+    Yaml::Array(vec![
+        Yaml::String(volume_mapping_config),
+        Yaml::String(volume_mapping_deployment),
+    ])
+}
+
+fn make_load_generator_config_yaml(deployment: &Deployment) -> Result<Yaml> {
     let mut service_def = Hash::new();
 
     let mut build_def = Hash::new();
@@ -310,17 +294,27 @@ fn make_load_generator_config(deployment: &Deployment) -> Result<Hash> {
 
     service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
 
-    // Add networks (using 'microservice_net' as in the example)
     service_def.insert(
         Yaml::String("networks".into()),
         Yaml::Array(vec![Yaml::String("microservice_net".into())]),
     );
 
-    Ok(service_def)
+    Ok(Yaml::Hash(service_def))
 }
 
 fn run_docker_compose() -> Result<()> {
-    info!("Starting Docker Compose.");
+    info!("Stopping prior docker compose (if any)...");
+    let _output = Command::new("docker")
+        .arg("compose")
+        .arg("-f")
+        .arg("-p")
+        .arg(PROJECT_NAME) // important: no container is rmed without the project name
+        .arg("./docker-compose.yml")
+        .arg("down")
+        .output()
+        .with_context(|| "Failed to execute 'docker-compose down'")?;
+
+    info!("Building and starting Docker compose...");
     let output = Command::new("docker")
         .arg("compose")
         .arg("-f")
@@ -362,6 +356,8 @@ fn stop_docker_compose() -> Result<(), anyhow::Error> {
         .arg("compose")
         .arg("-f")
         .arg("./docker-compose.yml")
+        .arg("-p")
+        .arg(PROJECT_NAME) // important: no container is rmed without the project name
         .arg("down")
         .output()
         .with_context(|| "Failed to execute 'docker-compose down'")?;
@@ -394,21 +390,17 @@ pub async fn launch_simulation_from_yaml(
     trace_dir: &PathBuf,
     sim_config: SimulatorConfig,
 ) -> Result<()> {
-    // assign ports
-    let port_assignments = assign_ports(config.call_graph.services().into_iter())?;
-    info!("Port assignments: {:?}", port_assignments);
-
     // Generate service-specific config files
-    let deployment = generate_service_configs(&port_assignments, &sim_config)?;
+    let deployment =
+        generate_service_configs(config.call_graph.services().into_iter(), &sim_config)?;
+
+    info!("Generated deployment:");
+    for d in deployment.services.iter() {
+        info!("  Service: {}, Info: {:?}", d.0, d.1);
+    }
 
     // generate docker-compose.yml
-    generate_docker_compose(
-        &config,
-        &port_assignments,
-        trace_dir,
-        &sim_config,
-        deployment,
-    )?;
+    generate_docker_compose(&config, trace_dir, &sim_config, &deployment)?;
 
     // running Docker Compose
     run_docker_compose()?;
