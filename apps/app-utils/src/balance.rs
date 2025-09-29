@@ -42,7 +42,7 @@ pub async fn spawn_endpointslice_task(
     namespace: String,
     service: String,
     named_port: Option<String>,
-    mut tx: tokio::sync::mpsc::Sender<Change<Uri, Endpoint>>,
+    tx: tokio::sync::mpsc::Sender<Change<Uri, Endpoint>>,
 ) -> Result<()> {
     // NOTE: this is necessary to prevent a panic when instantiating a K8sClient
     install_rustls_provider();
@@ -52,9 +52,9 @@ pub async fn spawn_endpointslice_task(
         let api: Api<EndpointSlice> = Api::namespaced(client, &namespace);
 
         let mut seen: HashSet<SocketAddr> = HashSet::new();
-        let mut stream = watcher(api, watcher::Config::default())
-            .applied_objects()
-            .boxed();
+        let cfg =
+            watcher::Config::default().labels(&format!("kubernetes.io/service-name={service}"));
+        let mut stream = watcher(api, cfg).applied_objects().boxed();
 
         loop {
             select! {
