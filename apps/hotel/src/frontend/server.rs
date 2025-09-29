@@ -20,10 +20,13 @@ pub mod hotel_tonic {
 }
 
 use crate::config::HotelConfig;
+use tracing::{error, info};
 // use hotel_tonic::review::review_client::ReviewClient;
+use std::time::Duration;
 use std::time::Instant;
 
-use tonic::{transport::masa_channel::LoadBalancedChannel, Request, Response, Status};
+use app_utils::retry::retry_until_ok;
+use tonic::{transport::Channel, Request, Response, Status};
 
 use hotel_tonic::{
     frontend, frontend::frontend_server::Frontend, profile, profile::profile_client::ProfileClient,
@@ -32,61 +35,90 @@ use hotel_tonic::{
 };
 
 pub struct FrontendImpl {
-    search_client: SearchClient<LoadBalancedChannel>,
-    reservation_client: ReservationClient<LoadBalancedChannel>,
-    profile_client: ProfileClient<LoadBalancedChannel>,
-    user_client: UserClient<LoadBalancedChannel>,
-    // review_client: ReviewClient<LoadBalancedChannel>,
+    search_client: SearchClient<Channel>,
+    reservation_client: ReservationClient<Channel>,
+    profile_client: ProfileClient<Channel>,
+    user_client: UserClient<Channel>,
 }
 
 impl FrontendImpl {
     pub async fn new(config: HotelConfig) -> Self {
-        let channel = LoadBalancedChannel::new(
-            config.search.ip.clone(),
-            config.search.port,
-            config.search.replicas,
+        let base_delay = Duration::from_secs(1);
+        let max_delay = Duration::from_secs(10);
+
+        let search_addr = format!("http://{}:{}", config.search.ip.clone(), config.search.port);
+        let search_client = retry_until_ok(
+            || async {
+                SearchClient::connect(search_addr.clone())
+                    .await
+                    .map_err(|e| {
+                        error!("Failed to connect to {}", search_addr.clone());
+                        e
+                    })
+            },
+            base_delay,
+            max_delay,
         )
         .await;
-        let search_client = SearchClient::new(channel);
 
-        let channel = LoadBalancedChannel::new(
+        let reservation_addr = format!(
+            "http://{}:{}",
             config.reservation.ip.clone(),
-            config.reservation.port,
-            config.reservation.replicas,
+            config.reservation.port
+        );
+        let reservation_client = retry_until_ok(
+            || async {
+                ReservationClient::connect(reservation_addr.clone())
+                    .await
+                    .map_err(|e| {
+                        error!("Failed to connect to {}", reservation_addr.clone());
+                        e
+                    })
+            },
+            base_delay,
+            max_delay,
         )
         .await;
-        let reservation_client = ReservationClient::new(channel);
 
-        let channel = LoadBalancedChannel::new(
+        let profile_addr = format!(
+            "http://{}:{}",
             config.profile.ip.clone(),
-            config.profile.port,
-            config.profile.replicas,
+            config.profile.port
+        );
+        let profile_client = retry_until_ok(
+            || async {
+                ProfileClient::connect(profile_addr.clone())
+                    .await
+                    .map_err(|e| {
+                        error!("Failed to connect to {}", profile_addr.clone());
+                        e
+                    })
+            },
+            base_delay,
+            max_delay,
         )
         .await;
-        let profile_client = ProfileClient::new(channel);
 
-        let channel = LoadBalancedChannel::new(
-            config.user.ip.clone(),
-            config.user.port,
-            config.user.replicas,
+        let user_addr = format!("http://{}:{}", config.user.ip.clone(), config.user.port);
+        let user_client = retry_until_ok(
+            || async {
+                UserClient::connect(user_addr.clone()).await.map_err(|e| {
+                    error!("Failed to connect to {}", user_addr.clone());
+                    e
+                })
+            },
+            base_delay,
+            max_delay,
         )
         .await;
-        let user_client = UserClient::new(channel);
 
-        // let channel = LoadBalancedChannel::new(
-        //     config.review.ip.clone(),
-        //     config.review.port,
-        //     config.review.replicas,
-        // )
-        // .await;
-        // let review_client = ReviewClient::new(channel);
+        info!("FrontendService launched");
 
         FrontendImpl {
             search_client,
             reservation_client,
             profile_client,
             user_client,
-            // review_client,
         }
     }
 }

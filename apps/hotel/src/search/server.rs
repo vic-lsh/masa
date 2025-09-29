@@ -10,33 +10,55 @@ pub mod hotel_tonic {
     }
 }
 
-use tonic::{transport::masa_channel::LoadBalancedChannel, Request, Response, Status};
+use app_utils::retry::retry_until_ok;
+use std::time::Duration;
+use tonic::{transport::Channel, Request, Response, Status};
 
 use hotel_tonic::{
     geo, geo::geo_client::GeoClient, rate, rate::rate_client::RateClient, search,
     search::search_server::Search,
 };
+use tracing::{error, info};
 
 use crate::config::{GeoConfig, RateConfig};
 
 pub struct SearchImpl {
-    geo_client: GeoClient<LoadBalancedChannel>,
-    rate_client: RateClient<LoadBalancedChannel>,
+    geo_client: GeoClient<Channel>,
+    rate_client: RateClient<Channel>,
 }
 
 impl SearchImpl {
     pub async fn new(geo: GeoConfig, rate: RateConfig) -> Self {
-        let channel = LoadBalancedChannel::new(geo.ip.clone(), geo.port, geo.replicas).await;
-        let geo_client = GeoClient::new(channel);
+        let base_delay = Duration::from_secs(1);
+        let max_delay = Duration::from_secs(10);
 
-        let rate_endpoint = rate.endpoint.clone();
-        let channel = LoadBalancedChannel::new(
-            rate_endpoint.ip.clone(),
-            rate_endpoint.port,
-            rate_endpoint.replicas,
+        let geo_addr = format!("http://{}:{}", geo.ip.clone(), geo.port);
+        let geo_client = retry_until_ok(
+            || async {
+                GeoClient::connect(geo_addr.clone()).await.map_err(|e| {
+                    error!("Failed to connect to {}", geo_addr.clone());
+                    e
+                })
+            },
+            base_delay,
+            max_delay,
         )
         .await;
-        let rate_client = RateClient::new(channel);
+
+        let rate_addr = format!("http://{}:{}", rate.ip.clone(), rate.port);
+        let rate_client = retry_until_ok(
+            || async {
+                RateClient::connect(rate_addr.clone()).await.map_err(|e| {
+                    error!("Failed to connect to {}", rate_addr.clone());
+                    e
+                })
+            },
+            base_delay,
+            max_delay,
+        )
+        .await;
+
+        info!("SearchService launched");
 
         SearchImpl {
             geo_client,

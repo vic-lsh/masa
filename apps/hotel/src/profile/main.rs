@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         profile, global, ..
     } = cfg;
 
-    let profile_addr = format!("{}:{}", "[::]", profile.port)
+    let profile_addr = format!("{}:{}", "0.0.0.0", profile.port)
         .parse()
         .expect("Failed to parse address");
     log::warn!("Server listening on {}...", profile_addr);

@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let HotelConfig { recommendation, .. } = cfg;
 
-    let rec_addr = format!("{}:{}", "[::]", recommendation.port)
+    let rec_addr = format!("{}:{}", "0.0.0.0", recommendation.port)
         .parse()
         .expect("Failed to parse address");
     let rec = RecommendationImpl::new(recommendation);

@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
 
-    let frontend_addr = format!("{}:{}", "[::]", cfg.frontend.port)
+    let frontend_addr = format!("{}:{}", "0.0.0.0", cfg.frontend.port)
         .parse()
         .expect("Failed to parse address");
     let frontend_service = FrontendImpl::new(cfg).await;

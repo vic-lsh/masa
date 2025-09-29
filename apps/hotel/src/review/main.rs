@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let HotelConfig { review, global, .. } = cfg;
 
-    let review_addr = format!("{}:{}", "[::]", review.port)
+    let review_addr = format!("{}:{}", "0.0.0.0", review.port)
         .parse()
         .expect("Failed to parse address");
     let review_service = ReviewImpl::new(review, global).await?;

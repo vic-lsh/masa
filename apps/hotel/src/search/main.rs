@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         search, geo, rate, ..
     } = cfg;
 
-    let search_addr = format!("{}:{}", "[::]", search.port)
+    let search_addr = format!("{}:{}", "0.0.0.0", search.port)
         .parse()
         .expect("Failed to parse address");
 

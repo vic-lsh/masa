@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let HotelConfig { reservation, .. } = cfg;
 
-    let reservation_addr = format!("{}:{}", "[::]", reservation.port)
+    let reservation_addr = format!("{}:{}", "0.0.0.0", reservation.port)
         .parse()
         .expect("Failed to parse address");
     log::warn!("Server listening on {}...", reservation_addr);

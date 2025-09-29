@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let HotelConfig { geo, .. } = cfg;
 
-    let geo_addr = format!("{}:{}", "[::]", geo.port)
+    let geo_addr = format!("{}:{}", "0.0.0.0", geo.port)
         .parse()
         .expect("Failed to parse address");
     let geo = GeoImpl::new(geo);

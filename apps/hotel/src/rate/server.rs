@@ -19,6 +19,7 @@ use {
 };
 
 use std::{error::Error, sync::Arc};
+use tracing::info;
 
 use masa::LatencyDistribution;
 use mongodb::{bson::doc, Client as MongoClient};
@@ -102,6 +103,9 @@ impl RateImpl {
             .map(|addr| format!("tcp://{}", addr))
             .unwrap()
             .to_owned();
+
+        info!("RateService launched");
+
         Ok(Self {
             mc_pool: Arc::new(McPool::new(cache_addr, 256)),
             // memc_client: Arc::new(memc_client),
