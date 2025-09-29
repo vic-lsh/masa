@@ -46,20 +46,32 @@ impl FrontendImpl {
         let base_delay = Duration::from_secs(1);
         let max_delay = Duration::from_secs(10);
 
-        let search_addr = format!("http://{}:{}", config.search.ip.clone(), config.search.port);
-        let search_client = retry_until_ok(
-            || async {
-                SearchClient::connect(search_addr.clone())
-                    .await
-                    .map_err(|e| {
-                        error!("Failed to connect to {}", search_addr.clone());
-                        e
-                    })
-            },
-            base_delay,
-            max_delay,
+        let (channel, tx) = Channel::balance_channel(32);
+
+        app_utils::balance::spawn_endpointslice_task(
+            "hotel".to_string(),
+            config.search.ip.clone(),
+            None,
+            tx,
         )
-        .await;
+        .await
+        .ok();
+
+        // let search_addr = format!("http://{}:{}", config.search.ip.clone(), config.search.port);
+        // let search_client = retry_until_ok(
+        //     || async {
+        //         SearchClient::connect(search_addr.clone())
+        //             .await
+        //             .map_err(|e| {
+        //                 error!("Failed to connect to {}", search_addr.clone());
+        //                 e
+        //             })
+        //     },
+        //     base_delay,
+        //     max_delay,
+        // )
+        // .await;
+        let search_client = SearchClient::new(channel);
 
         let reservation_addr = format!(
             "http://{}:{}",
