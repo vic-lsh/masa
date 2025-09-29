@@ -6,8 +6,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::Semaphore;
 use tokio::time::{Instant, MissedTickBehavior};
-use tonic::transport::{Channel, Endpoint};
 use tonic::Request;
+use tonic::transport::{Channel, Endpoint};
 
 mod service {
     tonic::include_proto!("service");
@@ -15,11 +15,13 @@ mod service {
 use service::local_span::SpanType as ProtoSpanType;
 use service::service_client::ServiceClient;
 use service::{
-    span::Kind as ProtoSpanKind, LocalSpan as ProtoLocalSpan, ReplayRequest as ProtoReplayRequest,
-    RootRequest, Span as ProtoSpan,
+    ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
+    ReplayRequest as ProtoReplayRequest, RootRequest, Span as ProtoSpan,
+    span::Kind as ProtoSpanKind,
 };
 
-const DEFAULT_REPLAY_PATH: &str = "apps/hotel/assets/r1100_Search_frontend.json";
+const DEFAULT_REPLAY_PATH: &str =
+    "apps/hotel/data/out/queue-experiment01/0/fifo/r1150_Search_frontend_original.json";
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -118,29 +120,33 @@ fn load_frontend_replay_items(path: &Path) -> anyhow::Result<Vec<ReplayWorkItem>
 
     let mut work_items = Vec::with_capacity(requests.len());
     for request in requests {
-        let start_at = match request.start_at {
+        let FrontendRequest {
+            service_name,
+            request_id,
+            start_at,
+            latency_us,
+            spans,
+        } = request;
+
+        let start_at = match start_at {
             Some(ts) => ts,
             None => continue,
         };
 
-        let mut proto_spans = Vec::new();
-        let mut local_latency = 0u64;
-        for span in &request.spans {
-            if span.kind == "ChildCall" {
-                break;
-            }
-
-            if let Some((proto_span, latency)) = convert_root_span_to_proto(span) {
-                proto_spans.push(proto_span);
-                local_latency += latency;
-            }
+        if spans.is_empty() {
+            continue;
         }
+
+        let request_label = request_id.map(|id| id.to_string()).unwrap_or(service_name);
+
+        let (proto_spans, total_span_latency) = convert_spans_to_proto(&spans)
+            .with_context(|| format!("failed to convert spans for request {request_label}"))?;
 
         if proto_spans.is_empty() {
             continue;
         }
 
-        let request_latency = request.latency_us.unwrap_or(local_latency);
+        let request_latency = latency_us.unwrap_or(total_span_latency);
 
         work_items.push(ReplayWorkItem {
             offset_us: start_at.saturating_sub(base_start),
@@ -153,7 +159,7 @@ fn load_frontend_replay_items(path: &Path) -> anyhow::Result<Vec<ReplayWorkItem>
 
     if work_items.is_empty() {
         anyhow::bail!(
-            "frontend replay file {} did not have usable non-child spans",
+            "frontend replay file {} did not have usable spans",
             path.display()
         );
     }
@@ -163,28 +169,65 @@ fn load_frontend_replay_items(path: &Path) -> anyhow::Result<Vec<ReplayWorkItem>
     Ok(work_items)
 }
 
-fn convert_root_span_to_proto(span: &FrontendSpan) -> Option<(ProtoSpan, u64)> {
-    let latency = span.latency_us.unwrap_or(0);
+fn convert_spans_to_proto(spans: &[FrontendSpan]) -> anyhow::Result<(Vec<ProtoSpan>, u64)> {
+    let mut proto_spans = Vec::with_capacity(spans.len());
+    let mut total_latency = 0u64;
+
+    for span in spans {
+        let (proto_span, span_latency) = convert_span_to_proto(span)?;
+        total_latency = total_latency.saturating_add(span_latency);
+        proto_spans.push(proto_span);
+    }
+
+    Ok((proto_spans, total_latency))
+}
+
+fn convert_span_to_proto(span: &FrontendSpan) -> anyhow::Result<(ProtoSpan, u64)> {
     match span.kind.as_str() {
-        "Compute" => Some((
-            ProtoSpan {
-                kind: Some(ProtoSpanKind::LocalSpan(ProtoLocalSpan {
-                    r#type: ProtoSpanType::Compute as i32,
-                    val: latency,
-                })),
-            },
-            latency,
-        )),
-        "Block" => Some((
-            ProtoSpan {
-                kind: Some(ProtoSpanKind::LocalSpan(ProtoLocalSpan {
-                    r#type: ProtoSpanType::Block as i32,
-                    val: latency,
-                })),
-            },
-            latency,
-        )),
-        _ => None,
+        "Compute" => {
+            let latency = span.latency_us.unwrap_or(0);
+            Ok((
+                ProtoSpan {
+                    kind: Some(ProtoSpanKind::LocalSpan(ProtoLocalSpan {
+                        r#type: ProtoSpanType::Compute as i32,
+                        val: latency,
+                    })),
+                },
+                latency,
+            ))
+        }
+        "Block" => {
+            let latency = span.latency_us.unwrap_or(0);
+            Ok((
+                ProtoSpan {
+                    kind: Some(ProtoSpanKind::LocalSpan(ProtoLocalSpan {
+                        r#type: ProtoSpanType::Block as i32,
+                        val: latency,
+                    })),
+                },
+                latency,
+            ))
+        }
+        "ChildCall" => {
+            let service_name = span
+                .service_name
+                .clone()
+                .with_context(|| format!("child span missing service_name: {span:?}"))?;
+
+            let (child_spans, child_latency) = convert_spans_to_proto(&span.spans)?;
+            let latency = span.latency_us.unwrap_or(child_latency);
+
+            Ok((
+                ProtoSpan {
+                    kind: Some(ProtoSpanKind::ChildSpans(ProtoChildSpans {
+                        name: service_name,
+                        spans: child_spans,
+                    })),
+                },
+                latency,
+            ))
+        }
+        other => anyhow::bail!("unsupported span type {other}"),
     }
 }
 
