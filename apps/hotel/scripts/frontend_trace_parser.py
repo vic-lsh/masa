@@ -27,9 +27,6 @@ class LocalSpan:
     def to_trace_span(self) -> dict:
         return {"type": self.normalised_kind(), "latency_us": self.latency_us}
 
-    def to_dict(self) -> dict:
-        return {"kind": self.raw_kind, "latency_us": self.latency_us}
-
 
 @dataclass
 class ServiceNode:
@@ -45,7 +42,20 @@ class ServiceNode:
         child = sum(child.total_latency_us() for child in self.children)
         return local + child
 
-    def to_trace_spans(self) -> List[dict]:
+    def get_all_descendants(self) -> List["ServiceNode"]:
+        """Recursively collects all children and their descendants into a flat list."""
+        descendants = []
+        for child in self.children:
+            descendants.append(child)
+            descendants.extend(child.get_all_descendants())
+        return descendants
+
+    def get_local_spans_as_trace(self) -> List[dict]:
+        """Renders only the local spans of this node for trace output."""
+        return [span.to_trace_span() for span in self.local_spans]
+
+    def to_trace_spans_original(self) -> List[dict]:
+        """Generates spans with the original logic (children appended at the end)."""
         spans: List[dict] = [span.to_trace_span() for span in self.local_spans]
         for child in self.children:
             spans.append(
@@ -54,19 +64,10 @@ class ServiceNode:
                     "service_name": child.name,
                     "latency_us": child.total_latency_us(),
                     "start_timestamp": child.start_timestamp,
-                    "spans": child.to_trace_spans(),
+                    "spans": child.to_trace_spans_original(),  # Recursive call
                 }
             )
         return spans
-
-    def to_dict(self) -> dict:
-        return {
-            "service_name": self.name,
-            "start_timestamp": self.start_timestamp,
-            "latency_us": self.total_latency_us(),
-            "spans": [span.to_dict() for span in self.local_spans],
-            "children": [child.to_dict() for child in self.children],
-        }
 
 
 def parse_args() -> argparse.Namespace:
@@ -144,7 +145,6 @@ def parse_service(tokens: Sequence[str], index: int) -> Tuple[ServiceNode, int]:
     while idx < len(tokens):
         token = tokens[idx]
         if SPAN_PATTERN.fullmatch(token):
-            # Encountering a span means we've reached the parent's continuation.
             break
         child, idx = parse_service(tokens, idx)
         children.append(child)
@@ -167,135 +167,91 @@ def parse_child_nodes(tokens: Sequence[str]) -> List[ServiceNode]:
     return children
 
 
-def prepare_output_paths(args: argparse.Namespace) -> Tuple[Path, Path, Path]:
+def prepare_output_paths(args: argparse.Namespace) -> Tuple[Path, Path]:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     prefix = args.prefix if args.prefix else Path(args.input).stem
-    basic_path = output_dir / f"{prefix}_basic.json"
-    frontend_path = output_dir / f"{prefix}_frontend.json"
-    children_path = output_dir / f"{prefix}_children.json"
-    return basic_path, frontend_path, children_path
+    original_path = output_dir / f"{prefix}_frontend_original.json"
+    modified_path = output_dir / f"{prefix}_frontend_modified.json"
+    return original_path, modified_path
 
 
-def process_trace_file(input_path: Path) -> Tuple[List[dict], List[dict], List[dict]]:
-    basic_records: List[dict] = []
-    frontend_requests: List[dict] = []
-    child_records: List[dict] = []
+def process_trace_file(input_path: Path) -> Tuple[List[dict], List[dict]]:
+    frontend_requests_original: List[dict] = []
+    frontend_requests_modified: List[dict] = []
 
     with input_path.open(newline="") as f:
         reader = csv.reader(f)
         for row in reader:
-            if not row:
+            if not row or row[0].strip().lower() == "api":
                 continue
-
-            # Handle header row if present
-            header_candidate = row[0].strip().lower()
-            if header_candidate == "api":
-                continue
-
             if len(row) < 7:
                 raise ValueError(f"Row has insufficient columns: {row}")
 
-            api = row[0].strip()
-            request_id = int(row[1])
-            slo = int(row[2])
-            start_at = int(row[3])
-            deadline = int(row[4])
-            latency = int(row[5])
-            raw_error = row[6].strip()
-            error = None if raw_error in {"/None", "None", ""} else raw_error
-
+            api, request_id, _, start_at, _, latency, *_ = row
+            request_id, start_at, latency = int(request_id), int(start_at), int(latency)
             tail_tokens = [token.strip() for token in row[7:] if token.strip()]
+
+            root_node = ServiceNode(name=api.strip(), start_timestamp=start_at)
             frontend_tokens, remainder_tokens = split_tokens(tail_tokens)
+            root_node.local_spans = parse_local_spans(frontend_tokens)
+            root_node.children = parse_child_nodes(remainder_tokens)
 
-            frontend_spans = parse_local_spans(frontend_tokens)
-            child_nodes = parse_child_nodes(remainder_tokens) if remainder_tokens else []
+            # --- Generate MODIFIED output ---
+            modified_spans: List[dict] = []
+            has_child_block_at_root = any(s.raw_kind == "ChildBlock" for s in root_node.local_spans)
 
-            basic_records.append(
-                {
-                    "api": api,
-                    "request_id": request_id,
-                    "slo_us": slo,
-                    "start_at": start_at,
-                    "deadline": deadline,
-                    "latency_us": latency,
-                    "error": error,
-                }
-            )
-
-            node_repr = [child.to_dict() for child in child_nodes]
-            child_records.append(
-                {
-                    "api": api,
-                    "request_id": request_id,
-                    "children": node_repr,
-                }
-            )
-
-            frontend_trace_spans = [span.to_trace_span() for span in frontend_spans]
-            for child in child_nodes:
-                frontend_trace_spans.append(
-                    {
-                        "type": "ChildCall",
-                        "service_name": child.name,
-                        "latency_us": child.total_latency_us(),
-                        "start_timestamp": child.start_timestamp,
-                        "spans": child.to_trace_spans(),
-                    }
-                )
-
-            frontend_requests.append(
-                {
-                    "service_name": api,
-                    "request_id": request_id,
-                    "start_at": start_at,
-                    "latency_us": latency,
-                    "spans": frontend_trace_spans,
-                }
-            )
-
-    return basic_records, frontend_requests, child_records
-
-
-def frontend_local_only_json(frontend_requests: List[dict]) -> str:
-    """Return frontend replay payload with child calls collapsed to local blocks."""
-
-    def rewrite_spans(spans: List[dict]) -> List[dict]:
-        collapsed: List[dict] = []
-        for span in spans:
-            span_type = span.get("type")
-            if span_type == "ChildCall":
-                collapsed.append({
-                    "type": "Block",
-                    "latency_us": span.get("latency_us", 0),
-                })
+            if has_child_block_at_root:
+                all_descendants = root_node.get_all_descendants()
+                descendant_iterator = iter(all_descendants)
+                for span in root_node.local_spans:
+                    if span.raw_kind == "ChildBlock":
+                        try:
+                            child_node = next(descendant_iterator)
+                            modified_spans.append({
+                                "type": "ChildCall",
+                                "service_name": child_node.name,
+                                "latency_us": child_node.total_latency_us(),
+                                "start_timestamp": child_node.start_timestamp,
+                                "spans": child_node.get_local_spans_as_trace(),
+                            })
+                        except StopIteration:
+                            modified_spans.append({"type": "Block", "latency_us": span.latency_us})
+                    else:
+                        modified_spans.append(span.to_trace_span())
             else:
-                collapsed.append(dict(span))
-        return collapsed
+                modified_spans = root_node.to_trace_spans_original()
 
-    rewritten: List[dict] = []
-    for request in frontend_requests:
-        updated = dict(request)
-        updated["spans"] = rewrite_spans(request.get("spans", []))
-        rewritten.append(updated)
+            frontend_requests_modified.append({
+                "service_name": root_node.name,
+                "request_id": request_id,
+                "start_at": start_at,
+                "latency_us": latency,
+                "spans": modified_spans,
+            })
 
-    return json.dumps(rewritten, indent=2)
+            # --- Generate ORIGINAL output ---
+            frontend_requests_original.append({
+                "service_name": root_node.name,
+                "request_id": request_id,
+                "start_at": start_at,
+                "latency_us": latency,
+                "spans": root_node.to_trace_spans_original(),
+            })
+
+    return frontend_requests_original, frontend_requests_modified
 
 
 def main() -> None:
     args = parse_args()
     input_path = Path(args.input)
-    basic_path, frontend_path, children_path = prepare_output_paths(args)
+    original_path, modified_path = prepare_output_paths(args)
 
-    basic, frontend, children = process_trace_file(input_path)
+    frontend_original, frontend_modified = process_trace_file(input_path)
 
-    for path, payload in [
-        (basic_path, basic),
-        (frontend_path, frontend),
-        (children_path, children),
-    ]:
-        path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    original_path.write_text(json.dumps(frontend_original, indent=2) + "\n", encoding="utf-8")
+    modified_path.write_text(json.dumps(frontend_modified, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
