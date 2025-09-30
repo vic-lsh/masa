@@ -6,8 +6,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::Semaphore;
 use tokio::time::{Instant, MissedTickBehavior};
-use tonic::Request;
 use tonic::transport::{Channel, Endpoint};
+use tonic::Request;
 
 mod service {
     tonic::include_proto!("service");
@@ -15,13 +15,11 @@ mod service {
 use service::local_span::SpanType as ProtoSpanType;
 use service::service_client::ServiceClient;
 use service::{
-    ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
+    span::Kind as ProtoSpanKind, ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
     ReplayRequest as ProtoReplayRequest, RootRequest, Span as ProtoSpan,
-    span::Kind as ProtoSpanKind,
 };
 
-const DEFAULT_REPLAY_PATH: &str =
-    "apps/hotel/data/out/queue-experiment01/0/fifo/r1150_Search_frontend_original.json";
+const DEFAULT_REPLAY_PATH: &str = "apps/hotel/assets/r1150_Search_frontend_modified.json";
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -46,8 +44,14 @@ struct FrontendRequest {
     request_id: Option<u64>,
     #[serde(default, deserialize_with = "deserialize_opt_u64")]
     start_at: Option<u64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_opt_u64",
+        alias = "latency_us"
+    )]
+    traced_latency_us: Option<u64>,
     #[serde(default, deserialize_with = "deserialize_opt_u64")]
-    latency_us: Option<u64>,
+    span_latency_us: Option<u64>,
     #[serde(default)]
     spans: Vec<FrontendSpan>,
 }
@@ -124,8 +128,9 @@ fn load_frontend_replay_items(path: &Path) -> anyhow::Result<Vec<ReplayWorkItem>
             service_name,
             request_id,
             start_at,
-            latency_us,
+            span_latency_us,
             spans,
+            ..
         } = request;
 
         let start_at = match start_at {
@@ -146,7 +151,7 @@ fn load_frontend_replay_items(path: &Path) -> anyhow::Result<Vec<ReplayWorkItem>
             continue;
         }
 
-        let request_latency = latency_us.unwrap_or(total_span_latency);
+        let request_latency = span_latency_us.unwrap_or(total_span_latency);
 
         work_items.push(ReplayWorkItem {
             offset_us: start_at.saturating_sub(base_start),
