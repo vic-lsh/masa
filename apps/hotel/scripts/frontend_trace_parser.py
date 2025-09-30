@@ -9,7 +9,15 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from typing import List, Sequence
+
+
+def sum_span_latency(spans: Sequence[dict]) -> int:
+    """Recursively sum latency across spans and their children."""
+    total = 0
+    for span in spans:
+        total += int(span.get("latency_us", 0) or 0)
+    return total
 
 SPAN_PATTERN = re.compile(r"(?P<kind>\w+)\((?P<value>\d+)us\)")
 
@@ -42,6 +50,10 @@ class ServiceNode:
         child = sum(child.total_latency_us() for child in self.children)
         return local + child
 
+    def local_latency_us(self) -> int:
+        """Return the latency attributable to spans on this node only."""
+        return sum(span.latency_us for span in self.local_spans)
+
     def get_all_descendants(self) -> List["ServiceNode"]:
         """Recursively collects all children and their descendants into a flat list."""
         descendants = []
@@ -62,7 +74,7 @@ class ServiceNode:
                 {
                     "type": "ChildCall",
                     "service_name": child.name,
-                    "latency_us": child.total_latency_us(),
+                    "latency_us": child.local_latency_us(),
                     "start_timestamp": child.start_timestamp,
                     "spans": child.to_trace_spans_original(),  # Recursive call
                 }
@@ -167,18 +179,15 @@ def parse_child_nodes(tokens: Sequence[str]) -> List[ServiceNode]:
     return children
 
 
-def prepare_output_paths(args: argparse.Namespace) -> Tuple[Path, Path]:
+def prepare_output_path(args: argparse.Namespace) -> Path:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     prefix = args.prefix if args.prefix else Path(args.input).stem
-    original_path = output_dir / f"{prefix}_frontend_original.json"
-    modified_path = output_dir / f"{prefix}_frontend_modified.json"
-    return original_path, modified_path
+    return output_dir / f"{prefix}_frontend_modified.json"
 
 
-def process_trace_file(input_path: Path) -> Tuple[List[dict], List[dict]]:
-    frontend_requests_original: List[dict] = []
+def process_trace_file(input_path: Path) -> List[dict]:
     frontend_requests_modified: List[dict] = []
 
     with input_path.open(newline="") as f:
@@ -199,6 +208,7 @@ def process_trace_file(input_path: Path) -> Tuple[List[dict], List[dict]]:
             root_node.children = parse_child_nodes(remainder_tokens)
 
             # --- Generate MODIFIED output ---
+            original_spans = root_node.to_trace_spans_original()
             modified_spans: List[dict] = []
             has_child_block_at_root = any(s.raw_kind == "ChildBlock" for s in root_node.local_spans)
 
@@ -212,7 +222,7 @@ def process_trace_file(input_path: Path) -> Tuple[List[dict], List[dict]]:
                             modified_spans.append({
                                 "type": "ChildCall",
                                 "service_name": child_node.name,
-                                "latency_us": child_node.total_latency_us(),
+                                "latency_us": child_node.local_latency_us(),
                                 "start_timestamp": child_node.start_timestamp,
                                 "spans": child_node.get_local_spans_as_trace(),
                             })
@@ -221,36 +231,28 @@ def process_trace_file(input_path: Path) -> Tuple[List[dict], List[dict]]:
                     else:
                         modified_spans.append(span.to_trace_span())
             else:
-                modified_spans = root_node.to_trace_spans_original()
+                modified_spans = original_spans
 
+            modified_span_latency = sum_span_latency(modified_spans)
             frontend_requests_modified.append({
                 "service_name": root_node.name,
                 "request_id": request_id,
                 "start_at": start_at,
-                "latency_us": latency,
+                "traced_latency_us": latency,
+                "span_latency_us": modified_span_latency,
                 "spans": modified_spans,
             })
 
-            # --- Generate ORIGINAL output ---
-            frontend_requests_original.append({
-                "service_name": root_node.name,
-                "request_id": request_id,
-                "start_at": start_at,
-                "latency_us": latency,
-                "spans": root_node.to_trace_spans_original(),
-            })
-
-    return frontend_requests_original, frontend_requests_modified
+    return frontend_requests_modified
 
 
 def main() -> None:
     args = parse_args()
     input_path = Path(args.input)
-    original_path, modified_path = prepare_output_paths(args)
+    modified_path = prepare_output_path(args)
 
-    frontend_original, frontend_modified = process_trace_file(input_path)
+    frontend_modified = process_trace_file(input_path)
 
-    original_path.write_text(json.dumps(frontend_original, indent=2) + "\n", encoding="utf-8")
     modified_path.write_text(json.dumps(frontend_modified, indent=2) + "\n", encoding="utf-8")
 
 
