@@ -19,7 +19,7 @@ use service::{
     ReplayRequest as ProtoReplayRequest, RootRequest, Span as ProtoSpan,
 };
 
-const DEFAULT_REPLAY_PATH: &str = "apps/hotel/assets/r1150_Search_frontend_modified.json";
+const DEFAULT_REPLAY_PATH: &str = "apps/hotel/assets/fifo_r850_Search_frontend_modified.json";
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
