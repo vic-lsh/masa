@@ -174,10 +174,16 @@ impl RequestType<HotelClient> for SearchRequest {
     }
 
     fn response_to_row(metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
-        let mut traces = extract_latency_traces(metadata).unwrap_or_default();
-        traces.extend(_r.child_traces.iter().cloned());
-        traces
+        match metadata.get("X-Latency-Traces") {
+            None => Vec::new(),
+            Some(_) => {
+                let mut traces = extract_latency_traces(metadata).unwrap_or_default();
+                traces.extend(_r.child_traces.iter().cloned());
+                traces
+            }
+        }
     }
+
 }
 
 #[tokio::main]
