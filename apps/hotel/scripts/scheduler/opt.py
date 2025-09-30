@@ -121,6 +121,50 @@ def split_log_file(input_file, output_file_columns, keyword_output_paths):
     }
     return result
 
+def calculate_goodput_from_log(input_file: str) -> float:
+    """
+    Calculates the goodput ratio directly from a combined log file without
+    generating intermediate files.
+
+    Goodput is defined as the percentage of requests with no errors ("/None").
+
+    Args:
+        input_file (str): Path to the source log file with combined traces.
+
+    Returns:
+        float: The goodput ratio (between 0.0 and 1.0). Returns 0.0 if the file
+               is empty, not found, or has no 'error' column.
+    """
+    total_requests = 0
+    successful_requests = 0
+
+    try:
+        with open(input_file, 'r') as f:
+            # Read header to find 'error' column index
+            header = f.readline().strip().split(',')
+            try:
+                error_col_idx = header.index("error")
+            except ValueError:
+                print(f"Warning: 'error' column not found in header of {input_file}. Goodput cannot be calculated.")
+                return 0.0
+
+            for line in f:
+                if not line.strip():
+                    continue
+                parts = line.strip().split(',')
+                if len(parts) > error_col_idx:
+                    total_requests += 1
+                    if parts[error_col_idx] == "/None":
+                        successful_requests += 1
+
+    except FileNotFoundError:
+        print(f"Warning: Input file not found at {input_file}. Goodput cannot be calculated.")
+        return 0.0
+
+    return successful_requests / total_requests if total_requests > 0 else 0.0
+
+
+
 def process_traces(trace_file, first_arrival_time):
     """Parses a service-specific trace file to extract compute and block tasks."""
     tasks = []
@@ -301,55 +345,57 @@ if __name__ == "__main__":
             "reservation": f"data/out/queue-experiment01/0/fifo/r{rps}_reservation_trace.csv",
             "profile": f"data/out/queue-experiment01/0/fifo/r{rps}_profile_trace.csv",
         }
+
+        print("Goodput Ratio:", calculate_goodput_from_log(log_input_path))
+
+    #     # 1. Split the combined log file ONCE for this RPS value.
+    #     print(f"Splitting combined log file: {log_input_path}")
+    #     arrival_times = split_log_file(
+    #         log_input_path,
+    #         columns_output_path,
+    #         trace_output_paths,
+    #     )
+    #     print("First arrival times recorded:", arrival_times)
         
-        # 1. Split the combined log file ONCE for this RPS value.
-        print(f"Splitting combined log file: {log_input_path}")
-        arrival_times = split_log_file(
-            log_input_path,
-            columns_output_path,
-            trace_output_paths,
-        )
-        print("First arrival times recorded:", arrival_times)
-        
-        # 2. Run optimization analysis for each service using the generated trace files.
-        for service_name in services:
-            first_arrival = arrival_times.get(service_name)
+    #     # 2. Run optimization analysis for each service using the generated trace files.
+    #     for service_name in services:
+    #         first_arrival = arrival_times.get(service_name)
             
-            if first_arrival is not None:
-                print(f"\n--- Optimizing for Service: {service_name.capitalize()} ---")
+    #         if first_arrival is not None:
+    #             print(f"\n--- Optimizing for Service: {service_name.capitalize()} ---")
                 
-                trace_path = trace_output_paths[service_name]
-                sorted_trace_path = trace_path.replace(".csv", "_sorted.csv")
+    #             trace_path = trace_output_paths[service_name]
+    #             sorted_trace_path = trace_path.replace(".csv", "_sorted.csv")
                 
-                sort_log_file_by_timestamp(trace_path, sorted_trace_path)
-                task_traces = process_traces(sorted_trace_path, first_arrival)
+    #             sort_log_file_by_timestamp(trace_path, sorted_trace_path)
+    #             task_traces = process_traces(sorted_trace_path, first_arrival)
                 
-                if not task_traces:
-                    print(f"No tasks to process for '{service_name}'.")
-                    continue
+    #             if not task_traces:
+    #                 print(f"No tasks to process for '{service_name}'.")
+    #                 continue
                 
-                sim_results = moore_algo(task_traces, slo=50000)
+    #             sim_results = moore_algo(task_traces, slo=50000)
                 
-                total_tasks = len(task_traces)
-                goodput_count = sim_results['goodput_count']
-                goodput_ratio = goodput_count / total_tasks if total_tasks > 0 else 0
+    #             total_tasks = len(task_traces)
+    #             goodput_count = sim_results['goodput_count']
+    #             goodput_ratio = goodput_count / total_tasks if total_tasks > 0 else 0
 
-                print(f"Offline Scheduler Dropped Count: {sim_results['dropped_count']}")
-                print(f"Offline Scheduler Goodput: {goodput_count} / {total_tasks} = {goodput_ratio:.2%}")
+    #             print(f"Offline Scheduler Dropped Count: {sim_results['dropped_count']}")
+    #             print(f"Offline Scheduler Goodput: {goodput_count} / {total_tasks} = {goodput_ratio:.2%}")
                 
-                result = {
-                    "rps": rps,
-                    "service": service_name,
-                    "dropped_count": sim_results['dropped_count'],
-                    "goodput_count": goodput_count,
-                    "total_count": total_tasks,
-                    "goodput_ratio": goodput_ratio
-                }
-                all_results[service_name].append(result)
-            else:
-                print(f"\n--- No traces found for Service: {service_name.capitalize()}. Skipping. ---")
+    #             result = {
+    #                 "rps": rps,
+    #                 "service": service_name,
+    #                 "dropped_count": sim_results['dropped_count'],
+    #                 "goodput_count": goodput_count,
+    #                 "total_count": total_tasks,
+    #                 "goodput_ratio": goodput_ratio
+    #             }
+    #             all_results[service_name].append(result)
+    #         else:
+    #             print(f"\n--- No traces found for Service: {service_name.capitalize()}. Skipping. ---")
 
-    print("\n\n==================== FINAL SUMMARY ====================")
-    for service, results in all_results.items():
-        print(f"\n=== Results for {service.capitalize()} ===")
-        print(json.dumps(results, indent=2))
+    # print("\n\n==================== FINAL SUMMARY ====================")
+    # for service, results in all_results.items():
+    #     print(f"\n=== Results for {service.capitalize()} ===")
+    #     print(json.dumps(results, indent=2))

@@ -153,9 +153,7 @@ impl Service for AlibabaService {
         let req = _request.into_inner();
 
         if req.request_latency > 50000 {
-            return Ok(Response::new(ReplayResponse {
-                status: ResponseStatus::Error as i32,
-            }));
+            return Err(Status::cancelled("Request latency too high (> 50 ms)"));
         }
 
         let start = Instant::now();
@@ -196,7 +194,18 @@ impl Service for AlibabaService {
                         });
 
                         let mut child_channel = child_channel.clone();
-                        child_channel.replay(child_req).await?;
+                        match child_channel.replay(child_req).await {
+                            Ok(_response) => {
+                                // Child call succeeded
+                            }
+                            Err(e) => {
+                                return Err(Status::internal(format!(
+                                    "RPC to child service {} dropped or failed: {:?}",
+                                    child_name, e
+                                )));
+                            }
+                        }
+                    
                     }
                 }
             }
@@ -213,6 +222,8 @@ impl Service for AlibabaService {
                     old, elapsed, req.request_latency
                 );
             }
+        } else if elapsed.as_micros() > 50000 { 
+            return Err(Status::cancelled("Processing took more than SLO"));
         }
 
         Ok(Response::new(ReplayResponse {

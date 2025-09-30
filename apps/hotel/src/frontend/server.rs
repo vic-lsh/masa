@@ -120,11 +120,16 @@ impl Frontend for FrontendImpl {
         let search_start_time = time_now();
         let search_resp = search_client.handle_nearby(search_req).await?;
         let search_header = search_resp.metadata();
-        child_traces.push("search".to_string());
-        child_traces.push(search_start_time.to_string());
-        child_traces.extend(
-            extract_latency_traces(search_header).expect("missing X-Latency-Traces header"),
-        );
+        match search_header.get("X-Latency-Traces") {
+            Some(_) => {
+                child_traces.push("search".to_string());
+                child_traces.push(search_start_time.to_string());
+                child_traces.extend(
+                    extract_latency_traces(search_header).expect("missing X-Latency-Traces header"),
+                );
+            },
+            None => {},
+        }
         let nearby_response = search_resp.into_inner();
 
         let mut reservation_client = self.reservation_client.clone();
@@ -139,11 +144,16 @@ impl Frontend for FrontendImpl {
         let reservation_start_time = time_now();
         let span_response = reservation_client.check_availability(span_request).await?;
         let reservation_header = span_response.metadata();
-        child_traces.push("reservation".to_string());
-        child_traces.push(reservation_start_time.to_string());
-        child_traces.extend(
-            extract_latency_traces(reservation_header).expect("missing X-Latency-Traces header"),
-        );
+        match reservation_header.get("X-Latency-Traces") {
+            Some(_) => {
+                child_traces.push("reservation".to_string());
+                child_traces.push(reservation_start_time.to_string());
+                child_traces.extend(
+                    extract_latency_traces(reservation_header).expect("missing X-Latency-Traces header"),
+                );
+            },
+            None => {},
+        }
         let availability_response = span_response.into_inner();
 
         let mut profile_client = self.profile_client.clone();
@@ -154,11 +164,16 @@ impl Frontend for FrontendImpl {
         let profile_start_time = time_now();
         let profile_response = profile_client.get_profiles(profile_request).await?;
         let profile_header = profile_response.metadata();
-        child_traces.push("profile".to_string());
-        child_traces.push(profile_start_time.to_string());
-        child_traces.extend(
-            extract_latency_traces(profile_header).expect("missing X-Latency-Traces header"),
-        );
+        match profile_header.get("X-Latency-Traces") {
+            Some(_) => {
+                child_traces.push("profile".to_string());
+                child_traces.push(profile_start_time.to_string());
+                child_traces.extend(
+                    extract_latency_traces(profile_header).expect("missing X-Latency-Traces header"),
+                );
+            },
+            None => {},
+        }
         let response = profile_response.into_inner();
 
         let mut hotels = Vec::new();
