@@ -5,3 +5,4 @@ tmp_*.log
 tmp
 data/lat_out
 rps*
+fifo*.json
