@@ -9,6 +9,8 @@ use yaml_rust::yaml::Hash;
 use yaml_rust::{Yaml, YamlEmitter};
 
 const LOADGEN_SERVICE_NAME: &str = "load_generator";
+const LOADGEN_TRACE_MOUNT: &str = "/trace-data";
+const DEFAULT_REPLAY_FILE: &str = "fifo_r850_Search_frontend_modified.json";
 
 const CONTAINER_CPU_LIMIT: usize = 1;
 
@@ -248,7 +250,7 @@ pub fn generate_docker_compose(
         .get(&ServiceName::from_string(FRONTEND_SERVICE_NAME.to_string()))
         .ok_or_else(|| anyhow::anyhow!("Port not assigned for frontend service"))?;
 
-    let loadgen_config = make_load_generator_config(frontend_port)?;
+    let loadgen_config = make_load_generator_config(frontend_port, trace_dir)?;
     // Add load generator
     services.insert(
         Yaml::String(LOADGEN_SERVICE_NAME.into()),
@@ -288,7 +290,7 @@ pub fn generate_docker_compose(
     Ok(())
 }
 
-fn make_load_generator_config(frontend_port: u16) -> Result<Hash> {
+fn make_load_generator_config(frontend_port: u16, trace_dir: &PathBuf) -> Result<Hash> {
     let mut service_def = Hash::new();
 
     let mut build_def = Hash::new();
@@ -315,7 +317,23 @@ fn make_load_generator_config(frontend_port: u16) -> Result<Hash> {
     );
     environment.insert(Yaml::String("IP".into()), Yaml::String("frontend".into()));
 
+    let host_trace_dir = trace_dir.to_string_lossy().into_owned();
+    let replay_path = format!("{}/{}", LOADGEN_TRACE_MOUNT, DEFAULT_REPLAY_FILE);
+    environment.insert(
+        Yaml::String("REPLAY_TRACE_PATH".into()),
+        Yaml::String(replay_path),
+    );
+    environment.insert(
+        Yaml::String("QUEUE_LATENCY_OUTPUT_DIR".into()),
+        Yaml::String(LOADGEN_TRACE_MOUNT.into()),
+    );
+
     service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
+
+    let mut volumes: Vec<Yaml> = Vec::new();
+    let volume_mapping = format!("{}:{}", host_trace_dir, LOADGEN_TRACE_MOUNT);
+    volumes.push(Yaml::String(volume_mapping.into()));
+    service_def.insert(Yaml::String("volumes".into()), Yaml::Array(volumes));
 
     // Add networks (using 'microservice_net' as in the example)
     service_def.insert(

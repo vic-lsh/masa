@@ -14,6 +14,7 @@ use tracing::level_filters::LevelFilter;
 use tracing::{error, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+use masa::{Context as MasaContext, time_now};
 
 pub mod service_stubs {
     tonic::include_proto!("service");
@@ -152,9 +153,9 @@ impl Service for AlibabaService {
     ) -> Result<Response<ReplayResponse>, Status> {
         let req = _request.into_inner();
 
-        if req.exclude_queue_latency > req.slo {
-            return Err(Status::cancelled("Request latency too high (> 50 ms)"));
-        }
+        // if req.exclude_queue_latency > req.slo {
+        //     return Err(Status::cancelled("Request latency too high (> 50 ms)"));
+        // }
 
         let start = Instant::now();
 
@@ -188,12 +189,30 @@ impl Service for AlibabaService {
                                 child_name
                             )))?;
 
-                        let child_req = Request::new(ReplayRequest {
+                        let mut child_req = Request::new(ReplayRequest {
                             req_id: req.req_id,
                             exclude_queue_latency: req.exclude_queue_latency,
                             slo: req.slo,
+                            start_at: req.start_at,
+                            deadline: req.deadline,
                             spans: span_vector.spans.clone(),
                         });
+
+                        let ctx = {
+                            MasaContext::new(
+                                "replay".to_string(),
+                                0,
+                                req.req_id,
+                                req.slo,
+                                0,
+                                req.start_at,
+                                req.deadline,
+                            )
+                        };
+
+                        child_req
+                            .metadata_mut()
+                            .insert_ctx("ctx", &ctx);
 
                         let mut child_channel = child_channel.clone();
                         match child_channel.replay(child_req).await {
@@ -223,7 +242,7 @@ impl Service for AlibabaService {
                     old, elapsed, req.exclude_queue_latency
                 );
             }
-        } else if elapsed.as_micros() > 50000 {
+        } else if elapsed.as_micros() > req.slo as u128 {
             return Err(Status::cancelled("Processing took more than SLO"));
         }
 
