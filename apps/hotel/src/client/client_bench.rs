@@ -183,7 +183,6 @@ impl RequestType<HotelClient> for SearchRequest {
             }
         }
     }
-
 }
 
 #[tokio::main]
