@@ -51,8 +51,10 @@ message Span {
 }
 
 message ReplayRequest {
-  uint64 request_latency = 1;
-  repeated Span spans = 2;
+  uint64 req_id = 1;
+  uint64 exclude_queue_latency = 2;
+  uint64 slo = 3;
+  repeated Span spans = 4;
 }
 
 enum ResponseStatus {
@@ -61,6 +63,7 @@ enum ResponseStatus {
 }
 
 message ReplayResponse {
-  ResponseStatus status = 1;
+  uint64 req_id = 1;
+  ResponseStatus status = 2;
 }
 

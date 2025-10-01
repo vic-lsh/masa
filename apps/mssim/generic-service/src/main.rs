@@ -152,7 +152,7 @@ impl Service for AlibabaService {
     ) -> Result<Response<ReplayResponse>, Status> {
         let req = _request.into_inner();
 
-        if req.request_latency > 50000 {
+        if req.exclude_queue_latency > req.slo {
             return Err(Status::cancelled("Request latency too high (> 50 ms)"));
         }
 
@@ -189,7 +189,9 @@ impl Service for AlibabaService {
                             )))?;
 
                         let child_req = Request::new(ReplayRequest {
-                            request_latency: req.request_latency,
+                            req_id: req.req_id,
+                            exclude_queue_latency: req.exclude_queue_latency,
+                            slo: req.slo,
                             spans: span_vector.spans.clone(),
                         });
 
@@ -205,28 +207,28 @@ impl Service for AlibabaService {
                                 )));
                             }
                         }
-                    
                     }
                 }
             }
         }
 
         let elapsed = start.elapsed();
-        if elapsed.as_millis() > req.request_latency as u128 {
+        if elapsed.as_millis() > req.exclude_queue_latency as u128 {
             let old = self
                 .overshot_counter
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             if old % 10 == 0 {
                 warn!(
                     "Warning {}: processing took longer ({:?}) than request latency ({} us)",
-                    old, elapsed, req.request_latency
+                    old, elapsed, req.exclude_queue_latency
                 );
             }
-        } else if elapsed.as_micros() > 50000 { 
+        } else if elapsed.as_micros() > 50000 {
             return Err(Status::cancelled("Processing took more than SLO"));
         }
 
         Ok(Response::new(ReplayResponse {
+            req_id: req.req_id,
             status: ResponseStatus::Ok as i32,
         }))
     }
