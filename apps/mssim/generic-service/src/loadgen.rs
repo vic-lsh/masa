@@ -1,13 +1,23 @@
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::{env, fs::File, io::BufReader, path::Path, sync::Arc, time::Duration};
+use std::{
+    env,
+    fs::File,
+    io::BufReader,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use anyhow::Context;
+use masa::{Context as MasaContext, time_now};
 use serde::Deserialize;
 use serde_json::Value;
-use tokio::sync::Semaphore;
+use tokio::fs;
+use tokio::sync::{Mutex, Semaphore};
 use tokio::time::{Instant, MissedTickBehavior};
-use tonic::transport::{Channel, Endpoint};
 use tonic::Request;
+use tonic::metadata::MetadataMap;
+use tonic::transport::{Channel, Endpoint};
 
 mod service {
     tonic::include_proto!("service");
@@ -15,8 +25,9 @@ mod service {
 use service::local_span::SpanType as ProtoSpanType;
 use service::service_client::ServiceClient;
 use service::{
-    span::Kind as ProtoSpanKind, ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
+    ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
     ReplayRequest as ProtoReplayRequest, RootRequest, Span as ProtoSpan,
+    span::Kind as ProtoSpanKind,
 };
 
 const DEFAULT_REPLAY_PATH: &str = "apps/hotel/assets/fifo_r850_Search_frontend_modified.json";
@@ -68,6 +79,12 @@ enum LoadMode {
     Replay {
         work_items: Arc<Vec<ReplayWorkItem>>,
     },
+}
+
+#[derive(Debug, Clone)]
+struct QueueLatencySample {
+    req_id: u64,
+    queue_latency_us: u64,
 }
 
 fn deserialize_opt_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
@@ -142,7 +159,10 @@ fn load_frontend_replay_items(path: &Path) -> anyhow::Result<Vec<ReplayWorkItem>
             continue;
         }
 
-        let request_label = request_id.map(|id| id.to_string()).unwrap_or(service_name);
+        let request_label = request_id
+            .clone()
+            .map(|id| id.to_string())
+            .unwrap_or(service_name);
 
         let (proto_spans, total_span_latency) = convert_spans_to_proto(&spans)
             .with_context(|| format!("failed to convert spans for request {request_label}"))?;
@@ -151,12 +171,14 @@ fn load_frontend_replay_items(path: &Path) -> anyhow::Result<Vec<ReplayWorkItem>
             continue;
         }
 
-        let request_latency = span_latency_us.unwrap_or(total_span_latency);
+        let exclude_queue_latency = span_latency_us.unwrap_or(total_span_latency);
 
         work_items.push(ReplayWorkItem {
             offset_us: start_at.saturating_sub(base_start),
             payload: ProtoReplayRequest {
-                request_latency,
+                req_id: request_id.unwrap_or(0),
+                exclude_queue_latency,
+                slo: 50_000,
                 spans: proto_spans,
             },
         });
@@ -347,6 +369,11 @@ async fn main() -> anyhow::Result<()> {
     let ok = Arc::new(AtomicU64::new(0));
     let err = Arc::new(AtomicU64::new(0));
     let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
+    let queue_samples = Arc::new(Mutex::new(Vec::<QueueLatencySample>::new()));
+
+    let queue_csv_path = replay_meta
+        .as_ref()
+        .map(|(path_str, _)| queue_latency_output_path(path_str));
 
     {
         let sent = sent.clone();
@@ -400,6 +427,7 @@ async fn main() -> anyhow::Result<()> {
                 ok.clone(),
                 err.clone(),
                 inflight_guard.clone(),
+                queue_samples.clone(),
             )
             .await?;
         }
@@ -409,6 +437,26 @@ async fn main() -> anyhow::Result<()> {
     let o = ok.load(Ordering::Relaxed);
     let e = err.load(Ordering::Relaxed);
     println!("Final stats: sent={}, ok={}, err={}", s, o, e);
+
+    if let Some(output_path) = queue_csv_path {
+        let samples = {
+            let guard = queue_samples.lock().await;
+            guard.clone()
+        };
+        if !samples.is_empty() {
+            write_queue_latency_csv(&output_path, &samples).await?;
+            println!(
+                "Wrote queue latency samples for {} requests to {}",
+                samples.len(),
+                output_path.display()
+            );
+        } else {
+            println!(
+                "No queue latency samples recorded; skipping CSV write to {}",
+                output_path.display()
+            );
+        }
+    }
 
     Ok(())
 }
@@ -472,16 +520,21 @@ async fn run_replay_load(
     ok: Arc<AtomicU64>,
     err: Arc<AtomicU64>,
     inflight_guard: Arc<Semaphore>,
+    queue_samples: Arc<Mutex<Vec<QueueLatencySample>>>,
 ) -> anyhow::Result<()> {
     let start_instant = Instant::now();
     let mut handles = Vec::with_capacity(work_items.len());
 
     for item in work_items.iter().cloned() {
-        let schedule_time = start_instant + Duration::from_micros(item.offset_us);
+        let ReplayWorkItem { offset_us, payload } = item;
+
+        let req_id = payload.req_id;
+        let schedule_time = start_instant + Duration::from_micros(offset_us);
         let permit_pool = inflight_guard.clone();
         let sent = sent.clone();
         let ok = ok.clone();
         let err = err.clone();
+        let queue_samples = queue_samples.clone();
         let mut rpc_client = client.clone();
 
         let handle = tokio::spawn(async move {
@@ -493,10 +546,29 @@ async fn run_replay_load(
             let _permit = permit;
 
             sent.fetch_add(1, Ordering::Relaxed);
+            let mut request = Request::new(payload);
 
-            let res = rpc_client.replay(Request::new(item.payload)).await;
+            let ctx = {
+                let slo = 50_000;
+                let start_at = time_now();
+                let deadline = start_at + slo;
+                MasaContext::new("replay".to_string(), 0, 0, slo, 0, start_at, deadline)
+            };
+
+            request.metadata_mut().insert_ctx("ctx", &ctx);
+            let res = rpc_client.replay(request).await;
+
             match res {
-                Ok(_) => ok.fetch_add(1, Ordering::Relaxed),
+                Ok(resp) => {
+                    if let Some(latency) = extract_queue_latency(resp.metadata()) {
+                        let mut samples = queue_samples.lock().await;
+                        samples.push(QueueLatencySample {
+                            req_id,
+                            queue_latency_us: latency,
+                        });
+                    }
+                    ok.fetch_add(1, Ordering::Relaxed)
+                }
                 Err(_) => err.fetch_add(1, Ordering::Relaxed),
             };
         });
@@ -553,4 +625,39 @@ async fn health_check_connect_and_call(
 
         tokio::time::sleep(backoff).await;
     }
+}
+
+fn queue_latency_output_path(trace_path: &str) -> PathBuf {
+    let path = Path::new(trace_path);
+    let parent = path.parent().unwrap_or_else(|| Path::new(""));
+    let mut file_name = match path.file_stem() {
+        Some(stem) => stem.to_os_string(),
+        None => std::ffi::OsString::from("queue_latency"),
+    };
+    file_name.push("_queue_latency.csv");
+    parent.join(file_name)
+}
+
+fn extract_queue_latency(metadata: &MetadataMap) -> Option<u64> {
+    metadata
+        .get("x-queue-latency")
+        .or_else(|| metadata.get("X-Queue-Latency"))
+        .and_then(|value| value.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
+}
+
+async fn write_queue_latency_csv(
+    path: &Path,
+    samples: &[QueueLatencySample],
+) -> anyhow::Result<()> {
+    let mut sorted = samples.to_vec();
+    sorted.sort_by_key(|sample| sample.req_id);
+
+    let mut csv_data = String::from("request_id,queue_latency_us\n");
+    for sample in sorted {
+        csv_data.push_str(&format!("{},{}\n", sample.req_id, sample.queue_latency_us));
+    }
+
+    fs::write(path, csv_data).await?;
+    Ok(())
 }

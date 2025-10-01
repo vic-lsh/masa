@@ -6,6 +6,7 @@ mod global;
 mod local;
 mod noop;
 mod perfect_lsf;
+mod queue_tracing;
 mod simple;
 mod tracing;
 
@@ -17,6 +18,7 @@ pub use tls::{client, server};
 #[cfg(not(feature = "masa"))]
 #[allow(missing_docs)]
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
+// pub type DefaultPrioritySelector = queue_tracing::QueueTracing;
 
 #[cfg(any(feature = "fifo", feature = "fifo_infra"))]
 #[allow(missing_docs)]
