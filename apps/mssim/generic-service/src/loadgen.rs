@@ -5,19 +5,19 @@ use std::{
     io::BufReader,
     path::{Path, PathBuf},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant as StdInstant},
 };
 
 use anyhow::Context;
-use masa::{Context as MasaContext, time_now};
+use masa::{time_now, Context as MasaContext};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::fs;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::{Instant, MissedTickBehavior};
-use tonic::Request;
 use tonic::metadata::MetadataMap;
 use tonic::transport::{Channel, Endpoint};
+use tonic::Request;
 
 mod service {
     tonic::include_proto!("service");
@@ -25,12 +25,12 @@ mod service {
 use service::local_span::SpanType as ProtoSpanType;
 use service::service_client::ServiceClient;
 use service::{
-    ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
+    span::Kind as ProtoSpanKind, ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
     ReplayRequest as ProtoReplayRequest, RootRequest, Span as ProtoSpan,
-    span::Kind as ProtoSpanKind,
 };
 
-const DEFAULT_REPLAY_PATH: &str = "apps/hotel/assets/fifo_r850_Search_frontend_modified.json";
+const DEFAULT_REPLAY_PATH: &str =
+    "/trace-analysis/golden/hotel/fifo_r850_Search_frontend_modified.json";
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -85,6 +85,7 @@ enum LoadMode {
 struct QueueLatencySample {
     req_id: u64,
     queue_latency_us: u64,
+    e2e_latency_us: u64,
 }
 
 fn deserialize_opt_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
@@ -172,13 +173,15 @@ fn load_frontend_replay_items(path: &Path) -> anyhow::Result<Vec<ReplayWorkItem>
         }
 
         let exclude_queue_latency = span_latency_us.unwrap_or(total_span_latency);
-
+        let deadline = start_at.saturating_add(exclude_queue_latency);
         work_items.push(ReplayWorkItem {
             offset_us: start_at.saturating_sub(base_start),
             payload: ProtoReplayRequest {
                 req_id: request_id.unwrap_or(0),
                 exclude_queue_latency,
                 slo: 50_000,
+                start_at,
+                deadline,
                 spans: proto_spans,
             },
         });
@@ -552,11 +555,13 @@ async fn run_replay_load(
                 let slo = 50_000;
                 let start_at = time_now();
                 let deadline = start_at + slo;
-                MasaContext::new("replay".to_string(), 0, 0, slo, 0, start_at, deadline)
+                MasaContext::new("replay".to_string(), 0, req_id, slo, 0, start_at, deadline)
             };
 
             request.metadata_mut().insert_ctx("ctx", &ctx);
+            let send_started = StdInstant::now();
             let res = rpc_client.replay(request).await;
+            let e2e_latency_us = send_started.elapsed().as_micros().min(u64::MAX as u128) as u64;
 
             match res {
                 Ok(resp) => {
@@ -565,6 +570,7 @@ async fn run_replay_load(
                         samples.push(QueueLatencySample {
                             req_id,
                             queue_latency_us: latency,
+                            e2e_latency_us,
                         });
                     }
                     ok.fetch_add(1, Ordering::Relaxed)
@@ -600,7 +606,17 @@ async fn health_check_connect_and_call(
         match endpoint.clone().connect().await {
             Ok(ch) => {
                 let mut client = ServiceClient::new(ch.clone());
-                match client.root(Request::new(RootRequest {})).await {
+                let mut request = Request::new(RootRequest {});
+                let ctx = {
+                    let slo = 1_000_000;
+                    let start_at = time_now();
+                    let deadline = start_at + slo;
+                    MasaContext::new("ping".to_string(), 0, 0, slo, 0, start_at, deadline)
+                };
+
+                request.metadata_mut().insert_ctx("ctx", &ctx);
+
+                match client.root(request).await {
                     Ok(_) => {
                         println!("Health check passed: connected and root() responded.");
                         return Ok(ch);
@@ -628,6 +644,16 @@ async fn health_check_connect_and_call(
 }
 
 fn queue_latency_output_path(trace_path: &str) -> PathBuf {
+    if let Ok(dir) = env::var("QUEUE_LATENCY_OUTPUT_DIR") {
+        let target_dir = Path::new(&dir);
+        let mut file_name = match Path::new(trace_path).file_stem() {
+            Some(stem) => stem.to_os_string(),
+            None => std::ffi::OsString::from("queue_latency"),
+        };
+        file_name.push("_queue_latency.csv");
+        return target_dir.join(file_name);
+    }
+
     let path = Path::new(trace_path);
     let parent = path.parent().unwrap_or_else(|| Path::new(""));
     let mut file_name = match path.file_stem() {
@@ -653,9 +679,12 @@ async fn write_queue_latency_csv(
     let mut sorted = samples.to_vec();
     sorted.sort_by_key(|sample| sample.req_id);
 
-    let mut csv_data = String::from("request_id,queue_latency_us\n");
+    let mut csv_data = String::from("request_id,queue_latency_us,e2e_latency_us\n");
     for sample in sorted {
-        csv_data.push_str(&format!("{},{}\n", sample.req_id, sample.queue_latency_us));
+        csv_data.push_str(&format!(
+            "{},{},{}\n",
+            sample.req_id, sample.queue_latency_us, sample.e2e_latency_us
+        ));
     }
 
     fs::write(path, csv_data).await?;

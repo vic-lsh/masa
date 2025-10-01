@@ -54,7 +54,9 @@ message ReplayRequest {
   uint64 req_id = 1;
   uint64 exclude_queue_latency = 2;
   uint64 slo = 3;
-  repeated Span spans = 4;
+  uint64 start_at = 4;
+  uint64 deadline = 5;
+  repeated Span spans = 6;
 }
 
 enum ResponseStatus {
