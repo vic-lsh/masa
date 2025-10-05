@@ -26,8 +26,12 @@ use std::time::Duration;
 use std::time::Instant;
 
 use app_utils::retry::retry_until_ok;
-use tonic::{transport::{Channel, Endpoint}, Request, Response, Status};
+use tonic::{
+    transport::{Channel, Endpoint},
+    Request, Response, Status,
+};
 use tower::discover::Change;
+
 
 use hotel_tonic::{
     frontend, frontend::frontend_server::Frontend, profile, profile::profile_client::ProfileClient,
@@ -52,24 +56,10 @@ impl FrontendImpl {
         Self::setup_search_service_discovery(&config, tx).await;
         let search_client = SearchClient::new(channel);
 
-        let reservation_addr = format!(
-            "http://{}:{}",
-            config.reservation.ip.clone(),
-            config.reservation.port
-        );
-        let reservation_client = retry_until_ok(
-            || async {
-                ReservationClient::connect(reservation_addr.clone())
-                    .await
-                    .map_err(|e| {
-                        error!("Failed to connect to {}", reservation_addr.clone());
-                        e
-                    })
-            },
-            base_delay,
-            max_delay,
-        )
-        .await;
+        // Setup reservation service with load balancing
+        let (reservation_channel, reservation_tx) = Channel::balance_channel(32);
+        Self::setup_reservation_service_discovery(&config, reservation_tx).await;
+        let reservation_client = ReservationClient::new(reservation_channel);
 
         let profile_addr = format!(
             "http://{}:{}",
@@ -118,54 +108,75 @@ impl FrontendImpl {
         config: &HotelConfig,
         tx: tokio::sync::mpsc::Sender<Change<tonic::transport::Uri, Endpoint>>,
     ) {
+        let mut endpoint = config.search.clone();
+        Self::setup_service_discovery(endpoint, tx).await;
+    }
+
+    /// Generic service discovery setup that works for both Docker Compose and Kubernetes
+    async fn setup_service_discovery(
+        endpoint: crate::config::BasicServiceConfig,
+        tx: tokio::sync::mpsc::Sender<Change<tonic::transport::Uri, Endpoint>>,
+    ) {
         if std::env::var("DOCKER_COMPOSE").is_ok() {
-            Self::setup_docker_compose_discovery(config, tx).await;
+            Self::setup_docker_compose_service_discovery(endpoint, tx).await;
         } else {
-            Self::setup_kubernetes_discovery(config, tx).await;
+            Self::setup_kubernetes_service_discovery(endpoint, tx).await;
         }
     }
 
-    /// Sets up Docker Compose service discovery
-    async fn setup_docker_compose_discovery(
-        config: &HotelConfig,
+    /// Sets up Docker Compose service discovery for any service
+    async fn setup_docker_compose_service_discovery(
+        endpoint: crate::config::BasicServiceConfig,
         tx: tokio::sync::mpsc::Sender<Change<tonic::transport::Uri, Endpoint>>,
     ) {
-        const HOSTNAME_BASE: &str = "hotel-search-service";
-        
-        let port = config.search.port;
-        let replicas = config.search.replicas;
-        
-        info!("Docker Compose mode: creating {} replicas for search service", replicas);
-        
+        let port = endpoint.port;
+        let replicas = endpoint.replicas;
+        let hostname_base = endpoint.ip;
+
+        info!(
+            "Docker Compose mode: creating {} replicas for {} service",
+            replicas, hostname_base
+        );
+
         tokio::spawn(async move {
             for i in 1..=replicas {
-                let endpoint_uri = format!("http://{}-{}:{}", HOSTNAME_BASE, i, port);
+                let endpoint_uri = format!("http://{}-{}:{}", hostname_base, i, port);
                 let uri = endpoint_uri.parse().unwrap();
                 let endpoint = Endpoint::from_shared(endpoint_uri.clone())
                     .unwrap()
                     .tcp_nodelay(true)
                     .connect_timeout(Duration::from_secs(2));
-                
-                info!("Adding Docker Compose endpoint: {}", endpoint_uri);
+
+                info!("Adding Docker Compose {} endpoint: {}", hostname_base, endpoint_uri);
                 let _ = tx.send(Change::Insert(uri, endpoint)).await;
             }
         });
     }
 
-    /// Sets up Kubernetes service discovery
-    async fn setup_kubernetes_discovery(
-        config: &HotelConfig,
+    /// Sets up Kubernetes service discovery for any service
+    async fn setup_kubernetes_service_discovery(
+        endpoint: crate::config::BasicServiceConfig,
         tx: tokio::sync::mpsc::Sender<Change<tonic::transport::Uri, Endpoint>>,
     ) {
         app_utils::balance::spawn_endpointslice_task(
             "hotel".to_string(),
-            config.search.ip.clone(),
+            endpoint.ip,
             None,
             tx,
         )
         .await
         .ok();
     }
+
+    /// Sets up service discovery for the reservation service based on deployment mode
+    async fn setup_reservation_service_discovery(
+        config: &HotelConfig,
+        tx: tokio::sync::mpsc::Sender<Change<tonic::transport::Uri, Endpoint>>,
+    ) {
+        let mut endpoint = config.reservation.endpoint.clone();
+        Self::setup_service_discovery(endpoint, tx).await;
+    }
+
 }
 
 #[tonic::async_trait]
