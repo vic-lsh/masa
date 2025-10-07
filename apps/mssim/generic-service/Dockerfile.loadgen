@@ -25,7 +25,7 @@ COPY libs libs
 COPY trace-analysis /trace-analysis
 
 # Build the generic service
-RUN cargo build --release --bin mssim-loadgen
+RUN cargo build --release --bin mssim-loadgen --features prio_global
 
 # Command to run the load generator
-CMD ["cargo", "run", "--release", "--bin", "mssim-loadgen"]
+CMD ["cargo", "run", "--release", "--bin", "mssim-loadgen", "--features", "prio_global"]
