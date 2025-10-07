@@ -3,15 +3,18 @@ use serde::Deserialize;
 use sim_config::deployment::Deployment;
 use sim_config::svc::ServiceName;
 use sim_config::trace::TraceConfig;
-use std::{collections::HashMap, fs, path::PathBuf, process::Command};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 use tracing::{debug, error, info};
 use yaml_rust::yaml::Hash;
 use yaml_rust::{Yaml, YamlEmitter};
 
 const LOADGEN_SERVICE_NAME: &str = "load_generator";
 const LOADGEN_TRACE_MOUNT: &str = "/trace-data";
-const DEFAULT_REPLAY_FILE: &str = "fifo_r850_Search_frontend_modified.json";
-
 const CONTAINER_CPU_LIMIT: usize = 1;
 
 #[allow(dead_code)]
@@ -100,6 +103,7 @@ pub fn generate_docker_compose(
     config: &TraceConfig,
     ports: &HashMap<ServiceName, u16>,
     trace_dir: &PathBuf,
+    replay_path: Option<&Path>,
 ) -> Result<()> {
     info!("Generating docker-compose.yml file.");
     let mut doc_hash = Hash::new();
@@ -250,7 +254,7 @@ pub fn generate_docker_compose(
         .get(&ServiceName::from_string(FRONTEND_SERVICE_NAME.to_string()))
         .ok_or_else(|| anyhow::anyhow!("Port not assigned for frontend service"))?;
 
-    let loadgen_config = make_load_generator_config(frontend_port, trace_dir)?;
+    let loadgen_config = make_load_generator_config(frontend_port, trace_dir, replay_path)?;
     // Add load generator
     services.insert(
         Yaml::String(LOADGEN_SERVICE_NAME.into()),
@@ -290,7 +294,11 @@ pub fn generate_docker_compose(
     Ok(())
 }
 
-fn make_load_generator_config(frontend_port: u16, trace_dir: &PathBuf) -> Result<Hash> {
+fn make_load_generator_config(
+    frontend_port: u16,
+    trace_dir: &PathBuf,
+    replay_path: Option<&Path>,
+) -> Result<Hash> {
     let mut service_def = Hash::new();
 
     let mut build_def = Hash::new();
@@ -317,12 +325,48 @@ fn make_load_generator_config(frontend_port: u16, trace_dir: &PathBuf) -> Result
     );
     environment.insert(Yaml::String("IP".into()), Yaml::String("frontend".into()));
 
-    let host_trace_dir = trace_dir.to_string_lossy().into_owned();
-    let replay_path = format!("{}/{}", LOADGEN_TRACE_MOUNT, DEFAULT_REPLAY_FILE);
-    environment.insert(
-        Yaml::String("REPLAY_TRACE_PATH".into()),
-        Yaml::String(replay_path),
-    );
+    let trace_dir_canon = trace_dir
+        .canonicalize()
+        .with_context(|| format!("Failed to resolve trace directory {:?}", trace_dir))?;
+    let host_trace_dir = trace_dir_canon.to_string_lossy().into_owned();
+
+    let replay_env = if let Some(override_path) = replay_path {
+        let resolved = if override_path.is_absolute() {
+            override_path.to_path_buf()
+        } else {
+            trace_dir_canon.join(override_path)
+        };
+
+        let replay_canon = resolved
+            .canonicalize()
+            .with_context(|| format!("Failed to resolve replay trace path {:?}", resolved))?;
+
+        let relative = replay_canon
+            .strip_prefix(&trace_dir_canon)
+            .with_context(|| {
+                anyhow!(
+                    "Replay trace path {:?} must be located under {:?}",
+                    replay_canon,
+                    trace_dir_canon
+                )
+            })?;
+
+        Some(
+            Path::new(LOADGEN_TRACE_MOUNT)
+                .join(relative)
+                .to_string_lossy()
+                .into_owned(),
+        )
+    } else {
+        None
+    };
+
+    if let Some(replay_path) = replay_env {
+        environment.insert(
+            Yaml::String("REPLAY_TRACE_PATH".into()),
+            Yaml::String(replay_path),
+        );
+    }
     environment.insert(
         Yaml::String("QUEUE_LATENCY_OUTPUT_DIR".into()),
         Yaml::String(LOADGEN_TRACE_MOUNT.into()),
@@ -412,7 +456,11 @@ fn stop_docker_compose() -> Result<(), anyhow::Error> {
     }
 }
 
-pub async fn launch_simulation_from_yaml(config: TraceConfig, trace_dir: &PathBuf) -> Result<()> {
+pub async fn launch_simulation_from_yaml(
+    config: TraceConfig,
+    trace_dir: &PathBuf,
+    replay_path: Option<&Path>,
+) -> Result<()> {
     // assign ports
     let port_assignments = assign_ports(config.call_graph.services().into_iter())?;
     info!("Port assignments: {:?}", port_assignments);
@@ -421,7 +469,7 @@ pub async fn launch_simulation_from_yaml(config: TraceConfig, trace_dir: &PathBu
     generate_service_configs(&port_assignments)?;
 
     // generate docker-compose.yml
-    generate_docker_compose(&config, &port_assignments, trace_dir)?;
+    generate_docker_compose(&config, &port_assignments, trace_dir, replay_path)?;
 
     // running Docker Compose
     run_docker_compose()?;

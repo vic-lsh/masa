@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use masa::{time_now, Context as MasaContext};
 use rand::Rng;
 use service_stubs::service_client::ServiceClient;
 use sim_config::deployment::Deployment;
@@ -14,7 +15,6 @@ use tracing::level_filters::LevelFilter;
 use tracing::{error, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use masa::{Context as MasaContext, time_now};
 
 pub mod service_stubs {
     tonic::include_proto!("service");
@@ -210,9 +210,7 @@ impl Service for AlibabaService {
                             )
                         };
 
-                        child_req
-                            .metadata_mut()
-                            .insert_ctx("ctx", &ctx);
+                        child_req.metadata_mut().insert_ctx("ctx", &ctx);
 
                         let mut child_channel = child_channel.clone();
                         match child_channel.replay(child_req).await {

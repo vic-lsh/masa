@@ -29,9 +29,6 @@ use service::{
     ReplayRequest as ProtoReplayRequest, RootRequest, Span as ProtoSpan,
 };
 
-const DEFAULT_REPLAY_PATH: &str =
-    "/trace-analysis/golden/hotel/fifo_r850_Search_frontend_modified.json";
-
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct FrontendSpan {
@@ -281,44 +278,24 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "1000".to_string())
         .parse()?;
 
-    let force_root = false;
-
     let replay_env = env::var("REPLAY_TRACE_PATH")
         .ok()
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty());
 
-    let (load_mode, replay_meta) = if force_root {
-        (LoadMode::Root, None)
-    } else {
-        let replay_target = replay_env.or_else(|| {
-            let default_path = Path::new(DEFAULT_REPLAY_PATH);
-            if default_path.exists() {
-                Some(default_path.to_string_lossy().into_owned())
-            } else {
-                None
-            }
-        });
-
-        let path_str = match replay_target {
-            Some(path) => path,
-            None => {
-                anyhow::bail!(
-                    "Replay mode is default, but no trace file found. Provide REPLAY_TRACE_PATH or place a file at {}.",
-                    DEFAULT_REPLAY_PATH
-                );
-            }
-        };
-
-        let path = Path::new(&path_str);
-        let work_items = load_frontend_replay_items(path)?;
-        let count = work_items.len();
-        (
-            LoadMode::Replay {
-                work_items: Arc::new(work_items),
-            },
-            Some((path_str, count)),
-        )
+    let (load_mode, replay_meta) = match replay_env {
+        Some(path_str) => {
+            let path = Path::new(&path_str);
+            let work_items = load_frontend_replay_items(path)?;
+            let count = work_items.len();
+            (
+                LoadMode::Replay {
+                    work_items: Arc::new(work_items),
+                },
+                Some((path_str, count)),
+            )
+        }
+        None => (LoadMode::Root, None),
     };
 
     let per_req = if matches!(load_mode, LoadMode::Root) {
@@ -410,17 +387,16 @@ async fn main() -> anyhow::Result<()> {
 
     match load_mode {
         LoadMode::Root => {
-            // run_root_load(
-            //     client,
-            //     per_req.expect("per_req available in root mode"),
-            //     sent.clone(),
-            //     ok.clone(),
-            //     err.clone(),
-            //     inflight_guard.clone(),
-            //     max_in_flight,
-            // )
-            // .await?;
-            unimplemented!()
+            run_root_load(
+                client,
+                per_req.expect("per_req available in root mode"),
+                sent.clone(),
+                ok.clone(),
+                err.clone(),
+                inflight_guard.clone(),
+                max_in_flight,
+            )
+            .await?;
         }
         LoadMode::Replay { work_items } => {
             run_replay_load(
