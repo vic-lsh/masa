@@ -16,7 +16,7 @@ use tokio::fs;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::{Instant, MissedTickBehavior};
 use tonic::metadata::MetadataMap;
-use tonic::transport::{Channel, Endpoint, masa_channel::LoadBalancedChannel};
+use tonic::transport::{masa_channel::LoadBalancedChannel, Channel, Endpoint};
 use tonic::Request;
 
 mod service {
@@ -264,7 +264,7 @@ async fn main() -> anyhow::Result<()> {
     let addr = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
     let port = env::var("PORT").unwrap_or_else(|_| "50051".to_string());
     let rps: f64 = env::var("RPS")
-        .unwrap_or_else(|_| "100".to_string())
+        .unwrap_or_else(|_| "400".to_string())
         .parse()?;
     let max_in_flight: usize = env::var("MAX_IN_FLIGHT")
         .unwrap_or_else(|_| "10000".to_string())
