@@ -14,7 +14,11 @@ pub mod proto {
     tonic::include_proto!("sim");
 }
 
-async fn run_from_alibaba_trace(trace_dir: &PathBuf, replay_path: Option<PathBuf>, config_dir: &PathBuf) -> Result<()> {
+async fn run_from_alibaba_trace(
+    trace_dir: &PathBuf,
+    replay_path: Option<PathBuf>,
+    config_dir: &PathBuf,
+) -> Result<()> {
     let trace_config = sim_config::trace::TraceConfig::from_config_dir(trace_dir)
         .map_err(|e| anyhow::anyhow!("Failed to parse Alibaba input directory: {}", e))?;
 
@@ -22,8 +26,13 @@ async fn run_from_alibaba_trace(trace_dir: &PathBuf, replay_path: Option<PathBuf
 
     validator::validate_config(&trace_config)?;
 
-    orchestrator::alibaba::launch_simulation_from_yaml(trace_config, trace_dir, sim_config, replay_path.as_deref())
-        .await?;
+    orchestrator::alibaba::launch_simulation_from_yaml(
+        trace_config,
+        trace_dir,
+        sim_config,
+        replay_path.as_deref(),
+    )
+    .await?;
 
     Ok(())
 }

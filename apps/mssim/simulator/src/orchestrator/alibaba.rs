@@ -3,7 +3,7 @@ use serde::Deserialize;
 use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
 use sim_config::svc::ServiceName;
 use sim_config::trace::TraceConfig;
-use sim_config::{SimulatorConfig, PROJECT_NAME};
+use sim_config::{PROJECT_NAME, SimulatorConfig};
 use std::{
     collections::HashMap,
     fs,
@@ -261,7 +261,11 @@ fn make_volumes_def(trace_dir: &PathBuf) -> Yaml {
     ])
 }
 
-fn make_load_generator_config_yaml(trace_dir: &PathBuf, deployment: &Deployment, replay_path: Option<&Path>) -> Result<Yaml> {
+fn make_load_generator_config_yaml(
+    trace_dir: &PathBuf,
+    deployment: &Deployment,
+    replay_path: Option<&Path>,
+) -> Result<Yaml> {
     let mut service_def = Hash::new();
 
     let mut build_def = Hash::new();
