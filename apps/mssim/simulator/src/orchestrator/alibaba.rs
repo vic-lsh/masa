@@ -114,7 +114,7 @@ pub fn generate_docker_compose(
         services_hash.insert(Yaml::String(service_name.to_string()), service_def);
     }
 
-    let loadgen_config = make_load_generator_config_yaml(deployment)?;
+    let loadgen_config = make_load_generator_config_yaml(trace_dir, deployment, replay_path)?;
     services_hash.insert(Yaml::String(LOADGEN_SERVICE_NAME.into()), loadgen_config);
 
     let doc = make_docker_compose_doc(services_hash);
@@ -261,7 +261,7 @@ fn make_volumes_def(trace_dir: &PathBuf) -> Yaml {
     ])
 }
 
-fn make_load_generator_config_yaml(deployment: &Deployment) -> Result<Yaml> {
+fn make_load_generator_config_yaml(trace_dir: &PathBuf, deployment: &Deployment, replay_path: Option<&Path>) -> Result<Yaml> {
     let mut service_def = Hash::new();
 
     let mut build_def = Hash::new();
@@ -448,6 +448,7 @@ pub async fn launch_simulation_from_yaml(
     config: TraceConfig,
     trace_dir: &PathBuf,
     sim_config: SimulatorConfig,
+    replay_path: Option<&Path>,
 ) -> Result<()> {
     // Generate service-specific config files
     let deployment =
