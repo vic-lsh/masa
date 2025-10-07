@@ -33,6 +33,22 @@ example `cargo run -- --alibaba-trace ./traces/... --orchestrator-backend k8s`).
 path builds the local Docker images, writes a `k8s-manifest.yaml`, applies it with
 `kubectl`, and tears it down on Ctrl-C.
 
+### Kubernetes (Minikube) Setup
+
+When using the Kubernetes backend with Minikube, you need to mount the trace and config directories into the Minikube VM. In separate terminal windows, start the mounts:
+
+```bash
+# Terminal 1: Mount trace directory (replace <trace_id> with your trace ID)
+minikube mount /path/to/trace-analysis/golden/S_<trace_id>:/trace-data
+
+# Terminal 2: Mount service configs directory
+minikube mount /path/to/masa-internal/apps/mssim/simulator/service_configs:/service-configs
+```
+
+**Important:** Keep these terminal windows open while running the simulator - the mount processes must stay alive for pods to access the files. The simulator expects these exact mount paths (`/trace-data` and `/service-configs`) in the Minikube VM.
+
+The simulator automatically builds Docker images in Minikube's Docker daemon using `minikube docker-env`, so images are immediately available to the cluster.
+
 ## Running on new Alibaba call graphs
 
 The above example uses pre-generated call graphs ran from previous Alibaba trace
