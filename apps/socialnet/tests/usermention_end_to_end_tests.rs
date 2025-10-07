@@ -67,11 +67,6 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
         result.user_mentions.len(),
         2000,
         "Expected 2000 user mentions, got {}",
-    assert_eq!(
-        result.user_mentions.len(),
-        2000,
-        "Expected 2000 user mentions, got {}",
-        result.user_mentions.len()
     );
 
     // Split and verify where the data came from
@@ -114,10 +109,6 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
         result.exception
     );
     assert_eq!(
-        result.user_mentions.len(),
-        2000,
-        "Expected 2000 user mentions, got {}",
-        result.user_mentions.len()
         result.user_mentions.len(),
         2000,
         "Expected 2000 user mentions, got {}",
@@ -144,14 +135,13 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
-#[ignore] 
+#[ignore]
 #[tokio::test]
 async fn test_empty_result() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50057).await;
 
     let request = tonic::Request::new(ComposeUserMentionRequest {
         req_id: 1,
-        usernames: vec!["nonexistent_user1".to_string(), "ghost42".to_string()],
         usernames: vec!["nonexistent_user1".to_string(), "ghost42".to_string()],
     });
 
@@ -164,9 +154,6 @@ async fn test_empty_result() -> Result<(), Box<dyn std::error::Error>> {
         result.exception
     );
 
-    assert_eq!(
-        result.user_mentions.len(),
-        0,
     assert_eq!(
         result.user_mentions.len(),
         0,

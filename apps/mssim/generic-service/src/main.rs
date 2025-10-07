@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use masa::{Context as MasaContext};
+use masa::Context as MasaContext;
 use service_stubs::service_client::ServiceClient;
 use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
 use sim_config::svc::{ServiceName, ServiceTraceConfig};
@@ -7,13 +7,13 @@ use std::collections::HashMap;
 use std::env;
 use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
+use tokio::time::{sleep, Duration};
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::level_filters::LevelFilter;
 use tracing::{error, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tokio::time::{sleep, Duration};
 
 pub mod service_stubs {
     tonic::include_proto!("service");
@@ -21,9 +21,8 @@ pub mod service_stubs {
 
 use service_stubs::service_server::{Service, ServiceServer};
 use service_stubs::{
-    PingRequest, PingResponse, 
-    local_span::SpanType, span::Kind, ReplayRequest, ReplayResponse, ResponseStatus, RootRequest,
-    RootResponse, ServiceRequest, ServiceResponse,
+    local_span::SpanType, span::Kind, PingRequest, PingResponse, ReplayRequest, ReplayResponse,
+    ResponseStatus, RootRequest, RootResponse, ServiceRequest, ServiceResponse,
 };
 
 type RpcClient = ServiceClient<LoadBalancedChannel>;
@@ -100,7 +99,8 @@ impl Service for AlibabaService {
         let _req = request.into_inner();
         let method_name = _req.method_name;
 
-        self.handle_method(method_name.clone(), _req.req_id, _req.start_at).await?;
+        self.handle_method(method_name.clone(), _req.req_id, _req.start_at)
+            .await?;
 
         Ok(Response::new(ServiceResponse {
             calls: vec![],
@@ -242,7 +242,12 @@ fn busy_spin(duration: Duration) {
 }
 
 impl AlibabaService {
-    async fn handle_method(&self, method_name: String, req_id: u64, start_at: u64) -> Result<(), Status> {
+    async fn handle_method(
+        &self,
+        method_name: String,
+        req_id: u64,
+        start_at: u64,
+    ) -> Result<(), Status> {
         let name = method_name.into();
         let latency_dist = self
             .config
