@@ -9,7 +9,7 @@ use std::{
 };
 use tracing::{debug, error, info};
 
-const LOADGEN_SERVICE_NAME: &str = "load_generator";
+const LOADGEN_SERVICE_NAME: &str = "load-generator";
 const GENERIC_SERVICE_IMAGE_TAG: &str = "mssim/generic-service:latest";
 const LOAD_GENERATOR_IMAGE_TAG: &str = "mssim/load-generator:latest";
 const K8S_MANIFEST_FILENAME: &str = "k8s-manifest.yaml";
@@ -21,10 +21,10 @@ pub struct Images {
 }
 
 pub fn build_images(workspace_root: &Path) -> Result<Images> {
-    info!("Building Docker images for Kubernetes backend.");
+    info!("Building Docker images for Kubernetes backend using minikube docker.");
 
     let generic_dockerfile = workspace_root.join("apps/mssim/generic-service/Dockerfile");
-    build_docker_image(
+    build_docker_image_minikube(
         GENERIC_SERVICE_IMAGE_TAG,
         &generic_dockerfile,
         &[("SERVICE_CONTAINER_PORT", "50051".to_string())],
@@ -32,7 +32,7 @@ pub fn build_images(workspace_root: &Path) -> Result<Images> {
     )?;
 
     let loadgen_dockerfile = workspace_root.join("apps/mssim/generic-service/Dockerfile.loadgen");
-    build_docker_image(
+    build_docker_image_minikube(
         LOAD_GENERATOR_IMAGE_TAG,
         &loadgen_dockerfile,
         &[],
@@ -55,22 +55,10 @@ pub fn generate_manifest(
 ) -> Result<PathBuf> {
     info!("Generating Kubernetes manifest file.");
 
-    let trace_dir_abs = trace_dir.canonicalize().with_context(|| {
-        format!(
-            "Failed to canonicalize trace directory for Kubernetes manifest: {:?}",
-            trace_dir
-        )
-    })?;
-
-    let service_config_dir_abs = service_config_dir.canonicalize().with_context(|| {
-        format!(
-            "Failed to canonicalize service config directory: {:?}",
-            service_config_dir
-        )
-    })?;
-
-    let trace_dir_str = trace_dir_abs.to_string_lossy().to_string();
-    let service_config_dir_str = service_config_dir_abs.to_string_lossy().to_string();
+    // For Minikube, use the mounted paths instead of host paths
+    // These directories must be mounted using: minikube mount <host-path>:<mount-path>
+    let trace_dir_str = "/trace-data".to_string();
+    let service_config_dir_str = "/service-configs".to_string();
 
     let mut manifest_docs: Vec<serde_json::Value> = Vec::new();
     let service_names = config.call_graph.services();
@@ -109,7 +97,7 @@ pub fn generate_manifest(
                             ],
                             "ports": [{"containerPort": svc_port}],
                             "resources": {
-                                "limits": {"cpu": container_cpu_limit.to_string()}
+                                "limits": {"cpu": format!("{}m", container_cpu_limit * 100)}
                             },
                             "volumeMounts": [
                                 {"name": "trace-config", "mountPath": "/app/config"},
@@ -304,20 +292,62 @@ pub fn delete(manifest_path: &Path) -> Result<()> {
     }
 }
 
-fn build_docker_image(
+fn build_docker_image_minikube(
     tag: &str,
     dockerfile: &Path,
     build_args: &[(&str, String)],
     workspace_root: &Path,
 ) -> Result<()> {
-    info!("Building Docker image {} using {:?}", tag, dockerfile);
+    info!("Building Docker image {} for minikube using {:?}", tag, dockerfile);
 
+    // Get minikube's docker environment variables
+    let docker_env_output = Command::new("minikube")
+        .arg("docker-env")
+        .arg("--shell=none")
+        .output()
+        .with_context(|| "Failed to get minikube docker-env")?;
+
+    if !docker_env_output.status.success() {
+        return Err(anyhow!(
+            "Failed to get minikube docker environment: {}",
+            String::from_utf8_lossy(&docker_env_output.stderr)
+        ));
+    }
+
+    // Parse environment variables from minikube docker-env output
+    let env_output = String::from_utf8_lossy(&docker_env_output.stdout);
+    let mut docker_host = None;
+    let mut docker_cert_path = None;
+    let mut docker_tls_verify = None;
+
+    for line in env_output.lines() {
+        if let Some(value) = line.strip_prefix("DOCKER_HOST=") {
+            docker_host = Some(value.trim_matches('"').to_string());
+        } else if let Some(value) = line.strip_prefix("DOCKER_CERT_PATH=") {
+            docker_cert_path = Some(value.trim_matches('"').to_string());
+        } else if let Some(value) = line.strip_prefix("DOCKER_TLS_VERIFY=") {
+            docker_tls_verify = Some(value.trim_matches('"').to_string());
+        }
+    }
+
+    // Build docker command with minikube's environment
     let mut cmd = Command::new("docker");
     cmd.arg("build")
         .arg("-t")
         .arg(tag)
         .arg("-f")
         .arg(dockerfile);
+
+    // Set minikube docker environment variables
+    if let Some(host) = docker_host {
+        cmd.env("DOCKER_HOST", host);
+    }
+    if let Some(cert_path) = docker_cert_path {
+        cmd.env("DOCKER_CERT_PATH", cert_path);
+    }
+    if let Some(tls_verify) = docker_tls_verify {
+        cmd.env("DOCKER_TLS_VERIFY", tls_verify);
+    }
 
     for (key, value) in build_args {
         cmd.arg("--build-arg").arg(format!("{}={}", key, value));
@@ -354,6 +384,6 @@ fn build_docker_image(
             tag,
             String::from_utf8_lossy(&output.stderr)
         );
-        Err(anyhow!("Failed to build Docker image {}", tag))
+        Err(anyhow!("Failed to build Docker image {} for minikube", tag))
     }
 }
