@@ -62,6 +62,7 @@ impl UrlShortenService for UrlShortenServiceImpl {
         request: Request<ComposeUrlsRequest>,
     ) -> Result<Response<ComposeUrlsResponse>, Status> {
         info!("Got a compose_urls request: {:?}", request);
+        info!("Got a compose_urls request: {:?}", request);
 
         let req = request.into_inner();
         let mut urls = req.urls;
@@ -92,6 +93,7 @@ impl UrlShortenService for UrlShortenServiceImpl {
                 });
             }
             Err(e) => {
+                error!("MongoDB error: {}", e);
                 error!("MongoDB error: {}", e);
                 return Ok(Response::new(ComposeUrlsResponse {
                     urls: vec![],
@@ -126,8 +128,10 @@ impl UrlShortenService for UrlShortenServiceImpl {
         match insert_url_mappings(&self.mongo_client, new_urls.clone()).await {
             Ok(_) => {
                 info!("Successfully inserted {} URL mappings", new_urls.len());
+                info!("Successfully inserted {} URL mappings", new_urls.len());
             }
             Err(e) => {
+                error!("MongoDB error: {}", e);
                 error!("MongoDB error: {}", e);
                 return Ok(Response::new(ComposeUrlsResponse {
                     urls: vec![],
@@ -150,6 +154,7 @@ impl UrlShortenService for UrlShortenServiceImpl {
         &self,
         request: Request<GetExtendedUrlsRequest>,
     ) -> Result<Response<GetExtendedUrlsResponse>, Status> {
+        info!("Got a get_extended_urls request: {:?}", request);
         info!("Got a get_extended_urls request: {:?}", request);
 
         let req = request.into_inner();

@@ -1,8 +1,8 @@
 {
   "global": {
-    "hotels": 1,
+    "hotels": 1000,
     "cacheConns": 32,
-    "probCacheMiss": 5
+    "probCacheMiss": 20
   },
   "frontend": {
     "ip": "127.0.0.1",
@@ -10,50 +10,50 @@
     "replicas": 1
   },
   "geo": {
-    "ip": "127.0.0.1",
+    "ip": "local-geo-service",
     "port": 8661,
     "replicas": 1
   },
   "profile": {
-    "ip": "127.0.0.1",
+    "ip": "local-profile-service",
     "port": 8662,
     "replicas": 1,
     "mongodbAddr": "mongodb://profile_mongo:27004",
     "memcachedAddr": "memcache://profile_memcached:11004"
   },
   "rate": {
-    "ip": "127.0.0.1",
+    "ip": "local-rate-service",
     "port": 8663,
     "replicas": 1,
     "mongodbAddr": "mongodb://rate_mongo:27003",
     "memcachedAddr": "memcache://rate_memcached:11003"
   },
   "recommendation": {
-    "ip": "127.0.0.1",
+    "ip": "local-recommendation-service",
     "port": 8664,
     "replicas": 1
   },
   "reservation": {
-    "ip": "127.0.0.1",
+    "ip": "local-reservation-service",
     "port": 8666,
     "replicas": 1,
     "mongodbAddr": "mongodb://reservation_mongo:27005",
     "memcachedAddr": "memcache://reservation_memcached:11005"
   },
   "review": {
-    "ip": "review-service",
-    "port": 8080,
+    "ip": "local-review-service",
+    "port": 8667,
     "replicas": 1,
-    "mongodbAddr": "mongodb://review_mongo:27007",
-    "memcachedAddr": "memcache://review_memcached:11006"
+    "mongodbAddr": "xx",
+    "memcachedAddr": "xx"
   },
   "search": {
-    "ip": "127.0.0.1",
+    "ip": "local-search-service",
     "port": 8668,
     "replicas": 1
   },
   "user": {
-    "ip": "127.0.0.1",
+    "ip": "local-user-service",
     "port": 8669,
     "replicas": 1,
     "users": 1000,

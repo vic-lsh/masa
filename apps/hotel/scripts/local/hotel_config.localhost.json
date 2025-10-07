@@ -1,34 +1,63 @@
 {
-  "Hotels": 1000,
-  "CacheConns": 32,
-  "ProbCacheMiss": 20,
-  "FrontendIp": "127.0.0.1",
-  "FrontendPort": 8660,
-  "GeoIp": "127.0.0.1",
-  "GeoPort": 8661,
-  "ProfileIp": "127.0.0.1",
-  "ProfilePort": 8662,
-  "RateIp": "127.0.0.1",
-  "RatePort": 8663,
-  "RecommendationIp": "127.0.0.1",
-  "RecommendationPort": 8664,
-  "ReservationIp": "127.0.0.1",
-  "ReservationPort": 8666,
-  "ReviewIp": "127.0.0.1",
-  "ReviewPort": 8667,
-  "SearchIp": "127.0.0.1",
-  "SearchPort": 8668,
-  "UserIp": "127.0.0.1",
-  "UserPort": 8669,
-  "RateMongodbAddr": "mongodb://127.0.0.1:27003",
-  "RateMemcachedAddr": "memcache://127.0.0.1:11003",
-  "ProfileMongodbAddr": "mongodb://127.0.0.1:27004",
-  "ProfileMemcachedAddr": "memcache://127.0.0.1:11004",
-  "ReviewMongodbAddr": "xx",
-  "ReviewMemcachedAddr": "xx",
-  "ReservationMongodbAddr": "mongodb://127.0.0.1:27005",
-  "ReservationMemcachedAddr": "memcache://127.0.0.1:11005",
-  "UserUsers": 1000,
-  "UserProbCheckUser": 80,
-  "UserMongodbAddr": "mongodb://127.0.0.1:27006"
+  "global": {
+    "hotels": 1000,
+    "cacheConns": 32,
+    "probCacheMiss": 20
+  },
+  "frontend": {
+    "ip": "127.0.0.1",
+    "port": 8660,
+    "replicas": 1
+  },
+  "geo": {
+    "ip": "127.0.0.1",
+    "port": 8661,
+    "replicas": 1
+  },
+  "profile": {
+    "ip": "127.0.0.1",
+    "port": 8662,
+    "replicas": 1,
+    "mongodbAddr": "mongodb://127.0.0.1:27004",
+    "memcachedAddr": "memcache://127.0.0.1:11004"
+  },
+  "rate": {
+    "ip": "127.0.0.1",
+    "port": 8663,
+    "replicas": 1,
+    "mongodbAddr": "mongodb://127.0.0.1:27003",
+    "memcachedAddr": "memcache://127.0.0.1:11003"
+  },
+  "recommendation": {
+    "ip": "127.0.0.1",
+    "port": 8664,
+    "replicas": 1
+  },
+  "reservation": {
+    "ip": "127.0.0.1",
+    "port": 8666,
+    "replicas": 1,
+    "mongodbAddr": "mongodb://127.0.0.1:27005",
+    "memcachedAddr": "memcache://127.0.0.1:11005"
+  },
+  "review": {
+    "ip": "127.0.0.1",
+    "port": 8667,
+    "replicas": 1,
+    "mongodbAddr": "xx",
+    "memcachedAddr": "xx"
+  },
+  "search": {
+    "ip": "127.0.0.1",
+    "port": 8668,
+    "replicas": 1
+  },
+  "user": {
+    "ip": "127.0.0.1",
+    "port": 8669,
+    "replicas": 1,
+    "users": 1000,
+    "probCheckUser": 80,
+    "mongodbAddr": "mongodb://127.0.0.1:27006"
+  }
 }

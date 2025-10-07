@@ -1,15 +1,13 @@
 use anyhow::{Context, Result};
 use masa::{Context as MasaContext};
-use rand::Rng;
 use service_stubs::service_client::ServiceClient;
-use sim_config::deployment::Deployment;
+use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
 use sim_config::svc::{ServiceName, ServiceTraceConfig};
 use std::collections::HashMap;
 use std::env;
 use std::sync::atomic::AtomicUsize;
-use std::time::{Duration, Instant};
-use tokio::time::sleep;
-use tonic::transport::Channel;
+use std::time::Instant;
+use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::level_filters::LevelFilter;
 use tracing::{error, warn};
@@ -22,14 +20,18 @@ pub mod service_stubs {
 
 use service_stubs::service_server::{Service, ServiceServer};
 use service_stubs::{
+    PingRequest, PingResponse, 
     local_span::SpanType, span::Kind, ReplayRequest, ReplayResponse, ResponseStatus, RootRequest,
     RootResponse, ServiceRequest, ServiceResponse,
+,
 };
+
+type RpcClient = ServiceClient<LoadBalancedChannel>;
 
 #[allow(dead_code)]
 struct AlibabaService {
     config: ServiceTraceConfig,
-    clients: HashMap<ServiceName, ServiceClient<Channel>>,
+    clients: HashMap<ServiceName, RpcClient>,
     deployment: Deployment,
     self_svc_name: ServiceName,
     overshot_counter: AtomicUsize,
@@ -59,54 +61,33 @@ impl AlibabaService {
     async fn connect_to_children(
         children: impl IntoIterator<Item = ServiceName>,
         deployment: &Deployment,
-    ) -> Result<HashMap<ServiceName, ServiceClient<Channel>>> {
-        let max_timeout = Duration::from_secs(120);
-
+    ) -> Result<HashMap<ServiceName, RpcClient>> {
         let mut clients = HashMap::new();
         let children_it = children.into_iter();
         for child_svc_name in children_it {
-            let svc = deployment.services.get(&child_svc_name).with_context(|| {
+            let svc_info = deployment.services.get(&child_svc_name).with_context(|| {
                 format!("Child service {} not found in deployment", child_svc_name)
             })?;
-            let addr = format!("http://{}:{}", svc.ip, svc.port);
-            let client = Self::connect_to_child_retried(addr, max_timeout).await?;
+            let client = Self::connect_to_child_retried(svc_info).await?;
             println!("Connected to child service {}", child_svc_name);
             clients.insert(child_svc_name.clone(), client);
         }
         Ok(clients)
     }
 
-    async fn connect_to_child_retried(
-        addr: String,
-        max_timeout: Duration,
-    ) -> Result<ServiceClient<Channel>> {
-        let retry_interval = Duration::from_secs(2);
-        let max_retry_interval = Duration::from_secs(15);
-        let max_jitter_interval = Duration::from_secs(2);
+    async fn connect_to_child_retried(svc_info: &ServiceDiscoveryInfo) -> Result<RpcClient> {
+        let ip = svc_info.ip.clone();
+        let channel = LoadBalancedChannel::new(
+            ip,
+            svc_info.port,
+            svc_info
+                .replicas
+                .try_into()
+                .expect("Replica count too high"),
+        )
+        .await;
 
-        let start = Instant::now();
-        while start.elapsed() < max_timeout {
-            match ServiceClient::connect(addr.clone()).await {
-                Ok(client) => return Ok(client),
-                Err(e) => {
-                    let jitter =
-                        rand::rng().random_range(Duration::from_secs(0)..max_jitter_interval);
-                    let retry_wait = std::cmp::min(retry_interval * 2, max_retry_interval) + jitter;
-
-                    warn!(
-                        "Failed to connect to child service at {}: {:?}. Retrying in {:?}...",
-                        addr, e, retry_wait,
-                    );
-                    sleep(retry_wait).await;
-                }
-            }
-        }
-
-        return Err(anyhow::anyhow!(
-            "Failed to connect to child service at {} within {:?}",
-            addr,
-            max_timeout
-        ));
+        Ok(ServiceClient::new(channel))
     }
 }
 
@@ -143,6 +124,10 @@ impl Service for AlibabaService {
         self.fanout(_req.req_id, _req.start_at).await?;
 
         Ok(Response::new(RootResponse {}))
+    }
+
+    async fn ping(&self, _request: Request<PingRequest>) -> Result<Response<PingResponse>, Status> {
+        Ok(Response::new(PingResponse {}))
     }
 
     async fn replay(
@@ -378,10 +363,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deployment_path = deployment_path_str.into();
     let deployment = Deployment::read_from_file(&deployment_path)?;
 
-    let svc = AlibabaService::new(svc_name, config, deployment).await?;
+    let svc = AlibabaService::new(svc_name.clone(), config, deployment).await?;
 
     let addr = format!("0.0.0.0:{}", port).parse()?;
-    println!("🚀 Generic Service listening on {}", addr);
+    println!("🚀 Generic Service {:?} listening on {}", svc_name, addr);
 
     Server::builder()
         .add_service(ServiceServer::new(svc))
