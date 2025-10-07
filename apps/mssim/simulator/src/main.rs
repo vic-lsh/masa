@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
     let opts = client::cli::parse_cli_args();
 
     if let Some(path) = opts.alibaba_trace {
-        run_from_alibaba_trace(&path, &opts.config_dir, opts.replay_path.clone()).await?;
+        run_from_alibaba_trace(&path, opts.replay_path.clone(), &opts.config_dir).await?;
     } else {
         run_as_server(&opts).await?;
     }

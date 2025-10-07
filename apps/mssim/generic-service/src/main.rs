@@ -13,6 +13,7 @@ use tracing::level_filters::LevelFilter;
 use tracing::{error, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+use tokio::time::{sleep, Duration};
 
 pub mod service_stubs {
     tonic::include_proto!("service");
@@ -23,7 +24,6 @@ use service_stubs::{
     PingRequest, PingResponse, 
     local_span::SpanType, span::Kind, ReplayRequest, ReplayResponse, ResponseStatus, RootRequest,
     RootResponse, ServiceRequest, ServiceResponse,
-,
 };
 
 type RpcClient = ServiceClient<LoadBalancedChannel>;
