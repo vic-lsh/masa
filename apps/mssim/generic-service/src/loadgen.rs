@@ -16,7 +16,7 @@ use tokio::fs;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::{Instant, MissedTickBehavior};
 use tonic::metadata::MetadataMap;
-use tonic::transport::{Channel, Endpoint};
+use tonic::transport::{Channel, Endpoint, masa_channel::LoadBalancedChannel};
 use tonic::Request;
 
 mod service {
@@ -28,6 +28,7 @@ use service::{
     span::Kind as ProtoSpanKind, ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
     ReplayRequest as ProtoReplayRequest, RootRequest, Span as ProtoSpan,
 };
+type RpcClient = ServiceClient<LoadBalancedChannel>;
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -435,7 +436,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run_root_load(
-    client: ServiceClient<Channel>,
+    client: RpcClient,
     per_req: Duration,
     sent: Arc<AtomicU64>,
     ok: Arc<AtomicU64>,
@@ -502,7 +503,7 @@ async fn run_root_load(
 }
 
 async fn run_replay_load(
-    client: ServiceClient<Channel>,
+    client: RpcClient,
     work_items: Arc<Vec<ReplayWorkItem>>,
     sent: Arc<AtomicU64>,
     ok: Arc<AtomicU64>,

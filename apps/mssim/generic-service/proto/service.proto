@@ -7,6 +7,7 @@ service Service {
   rpc GetData(ServiceRequest) returns (ServiceResponse);
   rpc Root(RootRequest) returns (RootResponse);
   rpc Replay(ReplayRequest) returns (ReplayResponse);
+  rpc Ping(PingRequest) returns (PingResponse);
 }
 message PingRequest {}
 
