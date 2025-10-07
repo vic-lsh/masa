@@ -45,8 +45,11 @@ async fn setup_test_server(
 async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50056).await;
     let usernames: Vec<String> = (1..=2000).map(|i| format!("user{}", i)).collect();
+    let usernames: Vec<String> = (1..=2000).map(|i| format!("user{}", i)).collect();
 
     let request = tonic::Request::new(ComposeUserMentionRequest {
+        req_id: 999,
+        usernames: usernames.clone(),
         req_id: 999,
         usernames: usernames.clone(),
     });
@@ -60,6 +63,10 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
         result.exception
     );
 
+    assert_eq!(
+        result.user_mentions.len(),
+        2000,
+        "Expected 2000 user mentions, got {}",
     assert_eq!(
         result.user_mentions.len(),
         2000,
@@ -80,7 +87,22 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
     }
 
     // second round of testing
+    // Split and verify where the data came from
+    for (i, mention) in result.user_mentions.iter().enumerate() {
+        let expected_suffix = if i < 1000 { "@memcached" } else { "@mongodb" };
+        assert!(
+            mention.username.ends_with(expected_suffix),
+            "Expected {} for {}, got {}",
+            expected_suffix,
+            usernames[i],
+            mention.username
+        );
+    }
+
+    // second round of testing
     let request = tonic::Request::new(ComposeUserMentionRequest {
+        req_id: 999,
+        usernames: usernames.clone(),
         req_id: 999,
         usernames: usernames.clone(),
     });
@@ -92,6 +114,10 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
         result.exception
     );
     assert_eq!(
+        result.user_mentions.len(),
+        2000,
+        "Expected 2000 user mentions, got {}",
+        result.user_mentions.len()
         result.user_mentions.len(),
         2000,
         "Expected 2000 user mentions, got {}",
@@ -118,13 +144,14 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
-#[ignore]
+#[ignore] 
 #[tokio::test]
 async fn test_empty_result() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50057).await;
 
     let request = tonic::Request::new(ComposeUserMentionRequest {
         req_id: 1,
+        usernames: vec!["nonexistent_user1".to_string(), "ghost42".to_string()],
         usernames: vec!["nonexistent_user1".to_string(), "ghost42".to_string()],
     });
 
@@ -137,6 +164,9 @@ async fn test_empty_result() -> Result<(), Box<dyn std::error::Error>> {
         result.exception
     );
 
+    assert_eq!(
+        result.user_mentions.len(),
+        0,
     assert_eq!(
         result.user_mentions.len(),
         0,

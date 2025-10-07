@@ -3,7 +3,7 @@ use geo::prelude::*;
 use std::collections::HashMap;
 use tonic::{Request, Response, Status};
 
-use crate::config::HotelConfig;
+use crate::config::RecommendationConfig;
 use crate::db;
 pub mod hotel_tonic {
     pub mod recommendation {
@@ -19,7 +19,7 @@ pub struct RecommendationImpl {
 }
 
 impl RecommendationImpl {
-    pub fn new(_config: HotelConfig) -> Self {
+    pub fn new(_config: RecommendationConfig) -> Self {
         let hotel_list = db::generate_test_data();
         let mut hotels = HashMap::new();
         for hotel in hotel_list {

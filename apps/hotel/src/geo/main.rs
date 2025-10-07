@@ -34,10 +34,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_reader(reader)?
     };
 
-    let geo_addr = format!("{}:{}", "[::]", cfg.geo_port)
+    let HotelConfig { geo, .. } = cfg;
+
+    let geo_addr = format!("{}:{}", "[::]", geo.port)
         .parse()
         .expect("Failed to parse address");
-    let geo = GeoImpl::new(cfg);
+    let geo = GeoImpl::new(geo);
     log::warn!("Server listening on {}...", geo_addr);
     Server::builder()
         .add_service(GeoServer::new(geo))

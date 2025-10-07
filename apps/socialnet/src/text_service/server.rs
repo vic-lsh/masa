@@ -52,6 +52,7 @@ impl TextService for TextSvcImpl {
         request: Request<TextRequest>,
     ) -> Result<Response<TextReply>, Status> {
         info!("Got a request: {:?}", request);
+        info!("Got a request: {:?}", request);
 
         let text: String = request.into_inner().text;
 
@@ -65,6 +66,7 @@ impl TextService for TextSvcImpl {
 
         // print the mentions
         info!("Mentioned usernames: {:?}", mention_usernames);
+        info!("Mentioned usernames: {:?}", mention_usernames);
 
         // regx match url links with http or https
         let mut url_links = Vec::new();
@@ -75,6 +77,7 @@ impl TextService for TextSvcImpl {
         }
 
         // print the urls
+        info!("URLs found: {:?}", url_links);
         info!("URLs found: {:?}", url_links);
 
         // async func to get shortened url

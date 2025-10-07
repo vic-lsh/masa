@@ -10,7 +10,16 @@ fi
 app=$(basename $pwd)
 experiment=$1
 plot="false"
+app_config_filename="config.docker.json"
+app_config_required="false"
 shift 1
+
+if [[ "$app" == "hotel" ]]; then
+    app_config_filename="hotel.json"
+    app_config_required="true"
+fi
+
+app_config_dest="./scripts/local/$app_config_filename"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -43,13 +52,19 @@ mkdir -p $backup
 if [[ -f ./scripts/gen_config.json ]]; then
     cp ./scripts/gen_config.json $backup
 fi
-if [[ -f ./scripts/local/config.docker.json ]]; then
-    cp ./scripts/local/config.docker.json $backup
+if [[ -f "$app_config_dest" ]]; then
+    cp "$app_config_dest" $backup
 fi
 # load gen config and app config (if present) from $experiment
 cp $in_dir/gen_config.json ./scripts/
-if [[ -f $in_dir/config.docker.json ]]; then
-    cp $in_dir/config.docker.json ./scripts/local/
+if [[ "$app_config_required" == "true" ]]; then
+    if [[ ! -f $in_dir/$app_config_filename ]]; then
+        echo "expected $app configuration at '$in_dir/$app_config_filename'"
+        exit 1
+    fi
+    cp $in_dir/$app_config_filename "$app_config_dest"
+elif [[ -f $in_dir/$app_config_filename ]]; then
+    cp $in_dir/$app_config_filename "$app_config_dest"
 fi
 # save old output just in case
 cp -r $out_dir $backup

@@ -8,6 +8,9 @@ service Service {
   rpc Root(RootRequest) returns (RootResponse);
   rpc Replay(ReplayRequest) returns (ReplayResponse);
 }
+message PingRequest {}
+
+message PingResponse {}
 
 message RootRequest {
   uint64 req_id = 1;

@@ -10,15 +10,14 @@ pub mod hotel_tonic {
     }
 }
 
-use app_utils::channel::LoadBalancedChannel;
-use tonic::{Request, Response, Status};
+use tonic::{transport::masa_channel::LoadBalancedChannel, Request, Response, Status};
 
 use hotel_tonic::{
     geo, geo::geo_client::GeoClient, rate, rate::rate_client::RateClient, search,
     search::search_server::Search,
 };
 
-use crate::config::HotelConfig;
+use crate::config::{GeoConfig, RateConfig};
 
 pub struct SearchImpl {
     geo_client: GeoClient<LoadBalancedChannel>,
@@ -26,13 +25,17 @@ pub struct SearchImpl {
 }
 
 impl SearchImpl {
-    pub async fn new(config: HotelConfig) -> Self {
-        let channel =
-            LoadBalancedChannel::new(config.geo_ip, config.geo_port, config.geo_replicas).await;
+    pub async fn new(geo: GeoConfig, rate: RateConfig) -> Self {
+        let channel = LoadBalancedChannel::new(geo.ip.clone(), geo.port, geo.replicas).await;
         let geo_client = GeoClient::new(channel);
 
-        let channel =
-            LoadBalancedChannel::new(config.rate_ip, config.rate_port, config.rate_replicas).await;
+        let rate_endpoint = rate.endpoint.clone();
+        let channel = LoadBalancedChannel::new(
+            rate_endpoint.ip.clone(),
+            rate_endpoint.port,
+            rate_endpoint.replicas,
+        )
+        .await;
         let rate_client = RateClient::new(channel);
 
         SearchImpl {

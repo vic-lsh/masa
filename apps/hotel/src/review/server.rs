@@ -1,4 +1,7 @@
-use crate::{config::HotelConfig, db};
+use crate::{
+    config::{GlobalConfig, ReviewConfig},
+    db,
+};
 use futures::{lock::Mutex, StreamExt};
 use hotel_tonic::review::{review_server::Review, ReviewRequest, ReviewResponse};
 use masa::LatencyDistribution;
@@ -18,10 +21,10 @@ pub struct ReviewImpl {
 }
 
 impl ReviewImpl {
-    pub async fn new(config: HotelConfig) -> Result<Self, Box<dyn Error>> {
+    pub async fn new(config: ReviewConfig, global: GlobalConfig) -> Result<Self, Box<dyn Error>> {
         let memc_client =
-            memcache::Client::with_pool_size(config.review_memcached_addr, config.cache_conns)?;
-        let mongo_client = db::initialize_database(&config.review_mongodb_addr).await?;
+            memcache::Client::with_pool_size(config.memcached_addr.clone(), global.cache_conns)?;
+        let mongo_client = db::initialize_database(&config.mongodb_addr).await?;
         let latency_tracker = Arc::new(Mutex::new(LatencyDistribution::new(
             "ReviewSvc".into(),
             1024,
