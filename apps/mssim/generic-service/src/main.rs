@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use masa::{time_now, Context as MasaContext};
+use masa::{Context as MasaContext};
 use rand::Rng;
 use service_stubs::service_client::ServiceClient;
 use sim_config::deployment::Deployment;
@@ -116,34 +116,32 @@ impl Service for AlibabaService {
         &self,
         request: Request<ServiceRequest>,
     ) -> Result<Response<ServiceResponse>, Status> {
-        // let method_name = request.into_inner().method_name;
+        let _req = request.into_inner();
+        let method_name = _req.method_name;
 
-        // self.handle_method(method_name.clone()).await?;
+        self.handle_method(method_name.clone(), _req.req_id, _req.start_at).await?;
 
-        // Ok(Response::new(ServiceResponse {
-        //     calls: vec![],
-        //     method_name: method_name,
-        // }))
-        unimplemented!()
+        Ok(Response::new(ServiceResponse {
+            calls: vec![],
+            method_name: method_name,
+        }))
     }
 
     async fn root(&self, _request: Request<RootRequest>) -> Result<Response<RootResponse>, Status> {
         // TODO: remove this coupling with alibaba's data
-        // const ROOT_SVC_NAME: &'static str = "user";
+        const ROOT_SVC_NAME: &'static str = "user";
 
-        // if self.self_svc_name.as_str() != ROOT_SVC_NAME {
-        //     return Err(Status::permission_denied(format!(
-        //         "Root endpoint can only be called on service {}, not {}",
-        //         ROOT_SVC_NAME,
-        //         self.self_svc_name.as_str()
-        //     )));
-        // }
+        if self.self_svc_name.as_str() != ROOT_SVC_NAME {
+            return Err(Status::permission_denied(format!(
+                "Root endpoint can only be called on service {}, not {}",
+                ROOT_SVC_NAME,
+                self.self_svc_name.as_str()
+            )));
+        }
+        let _req = _request.into_inner();
+        // All the root service does is calling into internal services
+        self.fanout(_req.req_id, _req.start_at).await?;
 
-        // // All the root service does is calling into internal services
-        // self.fanout().await?;
-
-        // Ok(Response::new(RootResponse {}))
-        print!("Root request received");
         Ok(Response::new(RootResponse {}))
     }
 
@@ -259,7 +257,7 @@ fn busy_spin(duration: Duration) {
 }
 
 impl AlibabaService {
-    async fn handle_method(&self, method_name: String) -> Result<(), Status> {
+    async fn handle_method(&self, method_name: String, req_id: u64, start_at: u64) -> Result<(), Status> {
         let name = method_name.into();
         let latency_dist = self
             .config
@@ -274,7 +272,7 @@ impl AlibabaService {
         let total_latency_ms = latency_dist.sample(&mut rand::rng());
 
         let start = Instant::now();
-        self.fanout().await?;
+        self.fanout(req_id, start_at).await?;
         let elapsed = start.elapsed();
 
         let remaining = total_latency_ms - (elapsed.as_millis() as f64);
@@ -290,7 +288,7 @@ impl AlibabaService {
         Ok(())
     }
 
-    async fn fanout(&self) -> Result<(), Status> {
+    async fn fanout(&self, req_id: u64, start_at: u64) -> Result<(), Status> {
         let mut tasks = Vec::new();
         for (child_svc_name, client) in &self.clients {
             let method_to_call = self
@@ -305,9 +303,19 @@ impl AlibabaService {
                 )))?;
 
             let mut client = client.clone();
-            let request = tonic::Request::new(ServiceRequest {
+            let mut request = tonic::Request::new(ServiceRequest {
+                req_id: req_id.clone(),
+                start_at: start_at.clone(),
                 method_name: method_to_call,
             });
+
+            let ctx = {
+                let slo = 50_000;
+                let deadline = start_at + slo;
+                MasaContext::new("fanout".to_string(), 0, req_id, slo, 0, start_at, deadline)
+            };
+
+            request.metadata_mut().insert_ctx("ctx", &ctx);
 
             let handle = tokio::spawn(async move {
                 client

@@ -477,7 +477,22 @@ async fn run_root_load(
 
                 tokio::spawn(async move {
                     let _permit = permit;
-                    let res = rpc_client.root(Request::new(RootRequest {})).await;
+                    let req_id = sent.load(Ordering::Relaxed);
+                    let start_at = time_now();
+                    let mut request = Request::new(RootRequest {
+                        req_id,
+                        start_at,
+                    });
+
+                    let ctx = {
+                        let slo = 50_000;
+                        let start_at = time_now();
+                        let deadline = start_at + slo;
+                        MasaContext::new("root".to_string(), 0, req_id, slo, 0, start_at, deadline)
+                    };
+                    request.metadata_mut().insert_ctx("ctx", &ctx);
+
+                    let res = rpc_client.root(request).await;
                     match res {
                         Ok(_) => ok.fetch_add(1, Ordering::Relaxed),
                         Err(_) => err.fetch_add(1, Ordering::Relaxed),
@@ -582,7 +597,10 @@ async fn health_check_connect_and_call(
         match endpoint.clone().connect().await {
             Ok(ch) => {
                 let mut client = ServiceClient::new(ch.clone());
-                let mut request = Request::new(RootRequest {});
+                let mut request = Request::new(RootRequest {
+                    req_id: 0,
+                    start_at: time_now(),
+                });
                 let ctx = {
                     let slo = 1_000_000;
                     let start_at = time_now();
