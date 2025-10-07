@@ -10,7 +10,10 @@ use std::sync::Arc;
 #[cfg(feature = "synthetic")]
 use {rand::rngs::StdRng, rand::SeedableRng, rand_distr::Uniform};
 
-use crate::{config::HotelConfig, db};
+use crate::{
+    config::{GlobalConfig, ProfileConfig},
+    db,
+};
 use app_utils::pool::McPool;
 use async_memcached::AsciiProtocol;
 use masa::LatencyDistribution;
@@ -49,8 +52,13 @@ pub struct ProfileImpl {
 }
 
 impl ProfileImpl {
-    pub async fn new(config: HotelConfig) -> Result<Self, Box<dyn std::error::Error>> {
-        let mongo_client = db::initialize_database(&config.profile_mongodb_addr).await?;
+    pub async fn new(
+        config: ProfileConfig,
+        global: GlobalConfig,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        #[cfg(not(feature = "synthetic"))]
+        let _ = &global;
+        let mongo_client = db::initialize_database(&config.mongodb_addr).await?;
 
         let latency_tracker = Arc::new(Mutex::new(LatencyDistribution::new(
             "ProfileSvc".into(),
@@ -78,8 +86,17 @@ impl ProfileImpl {
             (rng, uniform)
         };
 
+        #[cfg(feature = "synthetic")]
+        let hotels = global.hotels;
+
+        #[cfg(feature = "synthetic")]
+        let cache_conn = global.cache_conns;
+
+        #[cfg(feature = "synthetic")]
+        let cache_miss_rate = global.prob_cache_miss;
+
         let cache_addr = config
-            .profile_memcached_addr
+            .memcached_addr
             .strip_prefix("memcache://")
             .map(|addr| format!("tcp://{}", addr))
             .unwrap()

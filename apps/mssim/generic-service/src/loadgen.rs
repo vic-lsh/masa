@@ -263,7 +263,7 @@ async fn main() -> anyhow::Result<()> {
     let addr = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
     let port = env::var("PORT").unwrap_or_else(|_| "50051".to_string());
     let rps: f64 = env::var("RPS")
-        .unwrap_or_else(|_| "10".to_string())
+        .unwrap_or_else(|_| "100".to_string())
         .parse()?;
     let max_in_flight: usize = env::var("MAX_IN_FLIGHT")
         .unwrap_or_else(|_| "10000".to_string())
@@ -307,14 +307,8 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let addr = format!("http://{}:{}", addr, port);
-
-    let channel = health_check_connect_and_call(
-        &addr,
-        Duration::from_secs(hc_timeout_sec),
-        Duration::from_millis(hc_backoff_ms),
-    )
-    .await?;
+    let port = port.parse().unwrap();
+    let channel = LoadBalancedChannel::new(addr.clone(), port, 1).await;
 
     let client = ServiceClient::new(channel);
 

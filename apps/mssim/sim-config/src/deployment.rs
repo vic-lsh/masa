@@ -11,6 +11,7 @@ use crate::svc::ServiceName;
 pub struct ServiceDiscoveryInfo {
     pub ip: String,
     pub port: u16,
+    pub replicas: usize,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -19,6 +20,12 @@ pub struct Deployment {
 }
 
 impl Deployment {
+    pub fn new() -> Self {
+        Deployment {
+            services: HashMap::new(),
+        }
+    }
+
     pub fn read_from_file(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(path)?;
         let deployment: Deployment = serde_json::from_str(&content)?;
