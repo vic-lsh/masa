@@ -50,8 +50,6 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
     let request = tonic::Request::new(ComposeUserMentionRequest {
         req_id: 999,
         usernames: usernames.clone(),
-        req_id: 999,
-        usernames: usernames.clone(),
     });
 
     let response = client.compose_user_mentions(request).await?;
@@ -67,6 +65,7 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
         result.user_mentions.len(),
         2000,
         "Expected 2000 user mentions, got {}",
+        result.user_mentions.len()
     );
 
     // Split and verify where the data came from
@@ -96,8 +95,6 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
 
     // second round of testing
     let request = tonic::Request::new(ComposeUserMentionRequest {
-        req_id: 999,
-        usernames: usernames.clone(),
         req_id: 999,
         usernames: usernames.clone(),
     });
