@@ -148,6 +148,8 @@ mod tests {
 
         let sampled_method = config
             .method_freq_map
+            .as_ref()
+            .unwrap()
             .get_service(&svc_name)
             .expect("service must exist")
             .sample(&mut rand::rng());
