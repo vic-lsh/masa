@@ -98,7 +98,7 @@ init_all() {
     fi
     mkdir -p $output_path
     rm $output_path/*.log
-    docker-compose -f scripts/local/containers.yaml down --remove-orphans
+    docker compose -f scripts/local/containers.yaml down --remove-orphans
     tmux new-session -d -s $session_name -n "local"
     tmux set-option -s pane-border-status top
     tmux set-option -s pane-border-format "#{pane_title}"
