@@ -16,7 +16,7 @@ use tokio::fs;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::{Instant, MissedTickBehavior};
 use tonic::metadata::MetadataMap;
-use tonic::transport::{masa_channel::LoadBalancedChannel, Channel, Endpoint};
+use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::Request;
 
 mod service {
@@ -271,12 +271,6 @@ async fn main() -> anyhow::Result<()> {
         .parse()?;
     let stats_interval_sec: u64 = env::var("STATS_INTERVAL_SEC")
         .unwrap_or_else(|_| "2".to_string())
-        .parse()?;
-    let hc_timeout_sec: u64 = env::var("HEALTHCHECK_TIMEOUT_SEC")
-        .unwrap_or_else(|_| "180".to_string())
-        .parse()?;
-    let hc_backoff_ms: u64 = env::var("HEALTHCHECK_BACKOFF_MS")
-        .unwrap_or_else(|_| "1000".to_string())
         .parse()?;
 
     let replay_env = env::var("REPLAY_TRACE_PATH")
@@ -573,63 +567,6 @@ async fn run_replay_load(
     }
 
     Ok(())
-}
-
-async fn health_check_connect_and_call(
-    addr: &str,
-    timeout: Duration,
-    backoff: Duration,
-) -> anyhow::Result<Channel> {
-    println!(
-        "Health check: ensuring connectivity and root() response (timeout={}s)...",
-        timeout.as_secs()
-    );
-
-    let endpoint = Endpoint::from_shared(addr.to_string())?.tcp_nodelay(true);
-
-    let deadline = Instant::now() + timeout;
-    loop {
-        match endpoint.clone().connect().await {
-            Ok(ch) => {
-                let mut client = ServiceClient::new(ch.clone());
-                let mut request = Request::new(RootRequest {
-                    req_id: 0,
-                    start_at: time_now(),
-                });
-                let ctx = {
-                    let slo = 1_000_000;
-                    let start_at = time_now();
-                    let deadline = start_at + slo;
-                    MasaContext::new("ping".to_string(), 0, 0, slo, 0, start_at, deadline)
-                };
-
-                request.metadata_mut().insert_ctx("ctx", &ctx);
-
-                match client.root(request).await {
-                    Ok(_) => {
-                        println!("Health check passed: connected and root() responded.");
-                        return Ok(ch);
-                    }
-                    Err(e) => {
-                        eprintln!("Health check: root() RPC failed: {e}");
-                        if Instant::now() >= deadline {
-                            anyhow::bail!(
-                                "Health check failed: RPC did not succeed before timeout"
-                            );
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("Health check: connect to {} failed: {e}", addr);
-                if Instant::now() >= deadline {
-                    anyhow::bail!("Health check failed: could not connect before timeout");
-                }
-            }
-        }
-
-        tokio::time::sleep(backoff).await;
-    }
 }
 
 fn queue_latency_output_path(trace_path: &str) -> PathBuf {
