@@ -4,6 +4,7 @@ use crate::future::poll_fn;
 use crate::loom::sync::atomic::AtomicBool;
 use crate::loom::sync::Arc;
 use crate::runtime::driver::{self, Driver};
+use crate::runtime::scheduler::current_thread::queue::LocalRunQueue;
 use crate::runtime::scheduler::{self, Defer, Inject};
 use crate::runtime::task::{self, JoinHandle, OwnedTasks, Schedule, Task};
 use crate::runtime::{blocking, context, Config, MetricsBatch, SchedulerMetrics, WorkerMetrics};
@@ -21,9 +22,6 @@ use std::time::Duration;
 
 mod queue;
 use queue::Queue;
-
-mod timed_queue;
-use timed_queue::TimedQueue;
 
 pub use queue::get_sched_flavor;
 pub use queue::SchedFlavor;
@@ -57,7 +55,7 @@ pub(crate) struct Handle {
 /// a function that will perform the scheduling work and acts as a capability token.
 struct Core {
     /// Scheduler run queue
-    tasks: TimedQueue,
+    tasks: LocalRunQueue<Notified>,
 
     /// Current tick
     tick: u32,
@@ -154,7 +152,7 @@ impl CurrentThread {
         });
 
         let core = AtomicCell::new(Some(Box::new(Core {
-            tasks: TimedQueue::with_capacity(INITIAL_CAPACITY),
+            tasks: LocalRunQueue::with_capacity(INITIAL_CAPACITY),
             tick: 0,
             driver: Some(driver),
             metrics: MetricsBatch::new(&handle.shared.worker_metrics),
