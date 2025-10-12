@@ -2,7 +2,6 @@ pub mod frontend {
     tonic::include_proto!("frontend");
 }
 use std::path::Path;
-use std::sync::Arc;
 
 use rand::rngs::StdRng;
 use structopt::StructOpt;
