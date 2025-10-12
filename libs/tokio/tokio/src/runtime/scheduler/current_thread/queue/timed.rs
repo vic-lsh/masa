@@ -1,25 +1,27 @@
-use super::queue::{Queue, LocalRunQueue, PushError, PopError};
-use super::Handle;
-use crate::runtime::task;
+use crate::runtime::{
+    scheduler::current_thread::{
+        queue::{PopError, PushError, Queue},
+        Handle,
+    },
+    task,
+};
 use std::sync::Arc;
 
 type Notified = task::Notified<Arc<Handle>>;
 
 /// Timed Queue
-pub(crate) struct TimedQueue{
-    inner: LocalRunQueue<Notified>,
+pub(crate) struct TimedQueue<Q> {
+    inner: Q,
 }
 
-impl TimedQueue {
-    pub(crate) fn with_capacity(cap: usize) -> Self {
+impl<Q: Queue<Item = Notified>> Queue for TimedQueue<Q> {
+    type Item = Q::Item;
+
+    fn with_capacity(cap: usize) -> Self {
         Self {
-            inner: LocalRunQueue::with_capacity(cap),
+            inner: Q::with_capacity(cap),
         }
     }
-}
-
-impl Queue for TimedQueue {
-    type Item = Notified;
 
     fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
         item.timer().set_enqueue_time();
