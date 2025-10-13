@@ -25,7 +25,6 @@ keywords = ["io", "async", "non-blocking", "futures"]
 # Include nothing by default
 default = []
 
-scheduler_trace = []
 static = []
 prio_class = []
 prio_global = []
@@ -39,6 +38,10 @@ perfect_lsf = []
 fifo = []
 fifo_early = []
 fifo_infra = []
+fifo_span_tracing = []
+fifo_queue_tracing = []
+prio_global_queue_tracing = []
+
 
 # enable everything
 full = [
