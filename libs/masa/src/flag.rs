@@ -15,3 +15,9 @@ pub const FIFO: bool = cfg!(feature = "fifo");
 pub const FIFO_EARLY: bool = cfg!(feature = "fifo_early");
 
 pub const FIFO_INFRA: bool = cfg!(feature = "fifo_infra");
+
+pub const FIFO_SPAN_TRACING: bool = cfg!(feature = "fifo_span_tracing");
+
+pub const FIFO_QUEUE_TRACING: bool = cfg!(feature = "fifo_queue_tracing");
+
+pub const PRIO_GLOBAL_QUEUE_TRACING: bool = cfg!(feature = "prio_global_queue_tracing");
