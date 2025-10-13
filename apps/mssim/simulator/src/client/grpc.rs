@@ -5,6 +5,7 @@ use crate::proto::{
     ConfigurationRequest, simulator_orchestrator_client::SimulatorOrchestratorClient,
 };
 
+#[allow(dead_code)]
 pub async fn submit_config_to_orchestrator(
     orchestrator_addr: &str,
     yaml_config: String,

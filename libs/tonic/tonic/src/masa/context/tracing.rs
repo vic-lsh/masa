@@ -59,7 +59,7 @@ pub struct ParentContext {
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn begin<B>(
         _method: GrpcMethod,
-        req: &http::Request<B>,
+        _req: &http::Request<B>,
         _server_ctx: Arc<ServerContext>,
     ) -> Self {
         Self {
@@ -76,9 +76,9 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
     fn before_child_rpc<T>(
         &self,
-        method: GrpcMethod,
-        request: &mut Request<T>,
-        child_ctx: &mut ChildContext,
+        _method: GrpcMethod,
+        _request: &mut Request<T>,
+        _child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
         self.is_rpc.store(true, Ordering::Release);
         Ok(())
@@ -86,9 +86,9 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
     fn after_child_rpc<T>(
         &self,
-        method: GrpcMethod,
-        response: &mut Result<Response<T>, Status>,
-        child_ctx: ChildContext,
+        _method: GrpcMethod,
+        _response: &mut Result<Response<T>, Status>,
+        _child_ctx: ChildContext,
     ) -> Result<(), Status> {
         let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
         let block_latency = self
