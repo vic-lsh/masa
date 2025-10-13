@@ -26,12 +26,18 @@ fn ms_since_init(value: u64) -> u64 {
 
 pub(crate) struct BinaryHeapQueue<T> {
     q: BinaryHeap<T>,
-    push_count: u64,
-    reorder_count: u64,
+    // push_count: u64,
+    // reorder_count: u64,
 }
 
 impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapQueue<T> {
     type Item = T;
+
+    fn with_capacity(cap: usize) -> Self {
+        Self {
+            q: BinaryHeap::with_capacity(cap),
+        }
+    }
 
     fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
         // let id = item.id();
@@ -89,20 +95,8 @@ impl<T: Ord> Default for BinaryHeapQueue<T> {
     fn default() -> Self {
         Self {
             q: BinaryHeap::new(),
-            push_count: 0,
-            reorder_count: 0,
-        }
-    }
-}
-
-impl<T: Ord> BinaryHeapQueue<T> {
-    #[allow(dead_code)]
-    pub(crate) fn with_capacity(cap: usize) -> Self {
-        println!("Creating BinaryHeapQueue with capacity {}", cap);
-        Self {
-            q: BinaryHeap::with_capacity(cap),
-            push_count: 0,
-            reorder_count: 0,
+            // push_count: 0,
+            // reorder_count: 0,
         }
     }
 }
