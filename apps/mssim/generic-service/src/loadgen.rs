@@ -1,23 +1,51 @@
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::{env, path::Path, sync::Arc, time::Duration};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
-use masa::{Context as MasaContext, time_now};
+use masa::{time_now, Context as MasaContext};
+use tokio::fs;
 use tokio::sync::{Mutex, Semaphore};
+use tokio::time::Instant;
 use tokio::time::MissedTickBehavior;
-use tonic::Request;
 use tonic::transport::masa_channel::LoadBalancedChannel;
+use tonic::{Request, Response};
 
 mod replay;
+use replay::extract_queue_latency;
+
 mod service {
     tonic::include_proto!("service");
 }
 use replay::{
-    QueueLatencySample, ReplayWorkItem, load_frontend_replay_items, queue_latency_output_path,
-    run_replay_load, write_queue_latency_csv,
+    load_frontend_replay_items, queue_latency_output_path, run_replay_load,
+    write_queue_latency_csv, QueueLatencySample, ReplayWorkItem,
 };
-use service::RootRequest;
 use service::service_client::ServiceClient;
+use service::RootRequest;
 type RpcClient = ServiceClient<LoadBalancedChannel>;
+
+const ROOT_LATENCY_OUTPUT_ENV: &str = "ROOT_LATENCY_OUTPUT_DIR";
+const ROOT_LATENCY_FALLBACK_DIR: &str = "/home/jiexiao/research/masa-internal/apps/mssim/data/fifo";
+const PERIODIC_FLUSH_INTERVAL_SECS: u64 = 10;
+
+fn root_latency_file_name_for_rps(rps: f64) -> String {
+    let mut rps_str = if (rps.fract()).abs() < f64::EPSILON {
+        format!("{rps:.0}")
+    } else {
+        format!("{rps:.2}")
+    };
+    if rps_str.contains('.') {
+        rps_str = rps_str
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string();
+    }
+    format!("root_latencies_{}rps.csv", rps_str.replace('.', "_"))
+}
 
 #[derive(Clone)]
 enum LoadMode {
@@ -32,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
     let addr = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
     let port = env::var("PORT").unwrap_or_else(|_| "50051".to_string());
     let rps: f64 = env::var("RPS")
-        .unwrap_or_else(|_| "400".to_string())
+        .unwrap_or_else(|_| "350".to_string())
         .parse()?;
     let max_in_flight: usize = env::var("MAX_IN_FLIGHT")
         .unwrap_or_else(|_| "10000".to_string())
@@ -113,6 +141,60 @@ async fn main() -> anyhow::Result<()> {
     let queue_csv_path = replay_meta
         .as_ref()
         .map(|(path_str, _)| queue_latency_output_path(Path::new(path_str.as_str())));
+    let root_samples = Arc::new(Mutex::new(Vec::<RootLatencySample>::new()));
+    let root_latency_file_name = Arc::new(root_latency_file_name_for_rps(rps));
+    let root_samples_handle = if matches!(load_mode, LoadMode::Root) {
+        Some((root_samples.clone(), root_latency_file_name.clone()))
+    } else {
+        None
+    };
+
+    if let Some(ref output_path) = queue_csv_path {
+        let samples = queue_samples.clone();
+        let path = Arc::new(output_path.clone());
+        let mut ticker = tokio::time::interval(Duration::from_secs(PERIODIC_FLUSH_INTERVAL_SECS));
+        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        tokio::spawn(async move {
+            loop {
+                ticker.tick().await;
+                let should_flush = {
+                    let guard = samples.lock().await;
+                    !guard.is_empty()
+                };
+                if !should_flush {
+                    continue;
+                }
+                if let Err(err) = flush_queue_samples(samples.clone(), path.as_path(), false).await
+                {
+                    eprintln!("Failed to periodically flush queue latency samples: {err:?}");
+                }
+            }
+        });
+    }
+
+    if matches!(load_mode, LoadMode::Root) {
+        let samples = root_samples.clone();
+        let file_name = root_latency_file_name.clone();
+        let mut ticker = tokio::time::interval(Duration::from_secs(PERIODIC_FLUSH_INTERVAL_SECS));
+        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        tokio::spawn(async move {
+            loop {
+                ticker.tick().await;
+                let should_flush = {
+                    let guard = samples.lock().await;
+                    !guard.is_empty()
+                };
+                if !should_flush {
+                    continue;
+                }
+                if let Err(err) =
+                    flush_root_samples_internal(samples.clone(), file_name.as_ref(), false).await
+                {
+                    eprintln!("Failed to periodically flush root() latency samples: {err:?}");
+                }
+            }
+        });
+    }
 
     {
         let sent = sent.clone();
@@ -154,6 +236,7 @@ async fn main() -> anyhow::Result<()> {
                 err.clone(),
                 inflight_guard.clone(),
                 max_in_flight,
+                root_samples.clone(),
             )
             .await?;
         }
@@ -176,24 +259,12 @@ async fn main() -> anyhow::Result<()> {
     let e = err.load(Ordering::Relaxed);
     println!("Final stats: sent={}, ok={}, err={}", s, o, e);
 
-    if let Some(output_path) = queue_csv_path {
-        let samples = {
-            let guard = queue_samples.lock().await;
-            guard.clone()
-        };
-        if !samples.is_empty() {
-            write_queue_latency_csv(&output_path, &samples).await?;
-            println!(
-                "Wrote queue latency samples for {} requests to {}",
-                samples.len(),
-                output_path.display()
-            );
-        } else {
-            println!(
-                "No queue latency samples recorded; skipping CSV write to {}",
-                output_path.display()
-            );
-        }
+    if let Some(ref output_path) = queue_csv_path {
+        flush_queue_samples(queue_samples.clone(), output_path.as_path(), true).await?;
+    }
+
+    if let Some((root_samples, file_name)) = root_samples_handle {
+        flush_root_samples(root_samples, file_name.as_ref()).await?;
     }
 
     Ok(())
@@ -207,6 +278,7 @@ async fn run_root_load(
     err: Arc<AtomicU64>,
     inflight_guard: Arc<Semaphore>,
     max_in_flight: usize,
+    root_samples: Arc<Mutex<Vec<RootLatencySample>>>,
 ) -> anyhow::Result<()> {
     let mut ticker = tokio::time::interval(per_req);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -231,6 +303,7 @@ async fn run_root_load(
                 let ok = ok.clone();
                 let err = err.clone();
                 let mut rpc_client = client.clone();
+                let root_samples = root_samples.clone();
 
                 sent.fetch_add(1, Ordering::Relaxed);
 
@@ -251,10 +324,27 @@ async fn run_root_load(
                     };
                     request.metadata_mut().insert_ctx("ctx", &ctx);
 
+                    let start_time = Instant::now();
                     let res = rpc_client.root(request).await;
+                    let elapsed = start_time.elapsed().as_micros() as u64;
                     match res {
-                        Ok(_) => ok.fetch_add(1, Ordering::Relaxed),
-                        Err(_) => err.fetch_add(1, Ordering::Relaxed),
+                        Ok(resp) => {
+                            ok.fetch_add(1, Ordering::Relaxed);
+                            let queue_latency = extract_queue_latency(resp.metadata());
+                            let sample = RootLatencySample {
+                                req_id,
+                                start_at,
+                                queue_latency_us: queue_latency.unwrap_or(0),
+                                e2e_latency_us: elapsed,
+                            };
+                            {
+                                let mut guard = root_samples.lock().await;
+                                guard.push(sample);
+                            }
+                        }
+                        Err(_) => {
+                            err.fetch_add(1, Ordering::Relaxed);
+                        }
                     };
                 });
             }
@@ -264,4 +354,102 @@ async fn run_root_load(
     let _ = inflight_guard.acquire_many(max_in_flight as u32).await;
 
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct RootLatencySample {
+    req_id: u64,
+    start_at: u64,
+    queue_latency_us: u64,
+    e2e_latency_us: u64,
+}
+
+async fn flush_root_samples(
+    samples: Arc<Mutex<Vec<RootLatencySample>>>,
+    file_name: &str,
+) -> anyhow::Result<()> {
+    flush_root_samples_internal(samples, file_name, true)
+        .await
+        .map(|_| ())
+}
+
+fn root_latency_output_dir() -> PathBuf {
+    env::var(ROOT_LATENCY_OUTPUT_ENV)
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(ROOT_LATENCY_FALLBACK_DIR))
+}
+
+async fn flush_root_samples_internal(
+    samples: Arc<Mutex<Vec<RootLatencySample>>>,
+    file_name: &str,
+    log_when_empty: bool,
+) -> anyhow::Result<Option<usize>> {
+    let output_dir = root_latency_output_dir();
+    let snapshot = {
+        let mut guard = samples.lock().await;
+        if guard.is_empty() {
+            if log_when_empty {
+                println!(
+                    "No root() latency samples recorded; skipping CSV write to {}",
+                    output_dir.display()
+                );
+            }
+            return Ok(None);
+        }
+        guard.sort_by_key(|sample| sample.req_id);
+        guard.clone()
+    };
+
+    fs::create_dir_all(&output_dir).await?;
+    let file_path = output_dir.join(file_name);
+
+    let mut csv_data = String::from("req_id,start_at,queue_latency_us,e2e_latency_us\n");
+    for sample in &snapshot {
+        csv_data.push_str(&format!(
+            "{},{},{},{}\n",
+            sample.req_id, sample.start_at, sample.queue_latency_us, sample.e2e_latency_us
+        ));
+    }
+
+    fs::write(&file_path, csv_data).await?;
+    if log_when_empty {
+        println!(
+            "Wrote root() latency samples for {} requests to {}",
+            snapshot.len(),
+            file_path.display()
+        );
+    }
+
+    Ok(Some(snapshot.len()))
+}
+
+async fn flush_queue_samples(
+    samples: Arc<Mutex<Vec<QueueLatencySample>>>,
+    output_path: &Path,
+    log_when_empty: bool,
+) -> anyhow::Result<Option<usize>> {
+    let snapshot = {
+        let guard = samples.lock().await;
+        if guard.is_empty() {
+            if log_when_empty {
+                println!(
+                    "No queue latency samples recorded; skipping CSV write to {}",
+                    output_path.display()
+                );
+            }
+            return Ok(None);
+        }
+        guard.clone()
+    };
+
+    write_queue_latency_csv(output_path, &snapshot).await?;
+    if log_when_empty {
+        println!(
+            "Wrote queue latency samples for {} requests to {}",
+            snapshot.len(),
+            output_path.display()
+        );
+    }
+
+    Ok(Some(snapshot.len()))
 }
