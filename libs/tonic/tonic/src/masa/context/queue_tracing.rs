@@ -7,7 +7,6 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
-use std::task::Poll;
 
 use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
 

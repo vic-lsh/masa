@@ -2642,7 +2642,6 @@ dependencies = [
  "masa",
  "memcache",
  "mongodb",
- "pin-project",
  "prost 0.12.6",
  "prost-types 0.12.6",
  "rand 0.8.5",

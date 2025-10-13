@@ -437,37 +437,6 @@ where
         Ok(())
     }
 
-    // async fn oracle_run(&mut self, output_path: &Path) -> Result<(), Box<dyn Error>> {
-    //     let init_at = Instant::now();
-    //     let trace_at = init_at;
-    //     let pause_at =
-    //         init_at + Duration::from_secs(self.gen_cfg.warmup_secs + self.gen_cfg.duration_secs);
-
-    //     let counter_keys = &DEFAULT_COUNTER_KEYS;
-    //     let counters = Arc::new(Counters::new(counter_keys));
-
-    //     let h = tokio::task::spawn(stats_logger(Arc::clone(&counters), pause_at));
-
-    //     self.generate_oracle_load(counters, init_at, trace_at, tasks)
-    //         .await;
-
-    //     let _ = h.await;
-
-    //     log::info!("Load generated, writing trace");
-
-    //     let handlers = self
-    //         .api_handlers
-    //         .drain(..)
-    //         .map(|h| Arc::into_inner(h).unwrap());
-
-    //     // output traces
-    //     for mut handler in handlers {
-    //         handler.fetch_traces(output_path).await
-    //     }
-
-    //     Ok(())
-    // }
-
     async fn generate_load(
         &mut self,
         counters: Arc<Counters>,
@@ -554,82 +523,6 @@ where
         // wait for all outgoing requests to complete
         while let Some(_) = set.join_next().await {}
     }
-
-    //     async fn generate_oracle_load(
-    //         &mut self,
-    //         counters: Arc<Counters>,
-    //         init_at: Instant,
-    //         trace_at: Instant,
-    //         tasks: Vec<Task>,
-    //     ) {
-    //         let mut counter_request_id = 0;
-
-    //         let mut set = JoinSet::new();
-
-    //         for task in tasks {
-    //             // XXX: tokio's sleep has millisecond granularity, so for small `elapse` this may be
-    //             // inaccurate
-    //             let start_at = init_at + Duration::from_micros(task.start_at);
-    //             tokio::time::sleep_until(start_at).await;
-
-    //             let i = self.rng.gen_range(0..self.api_handlers.len());
-    //             let handler = Arc::clone(&self.api_handlers[i]);
-
-    //             let ctx = {
-    //                 let request_id = counter_request_id;
-    //                 counter_request_id += 1;
-
-    //                 let start_at = time_now();
-    //                 let deadline = start_at + handler.slo();
-
-    //                 Context::new(
-    //                     handler.api().to_string(),
-    //                     0,
-    //                     request_id,
-    //                     handler.slo(),
-    //                     0,
-    //                     start_at,
-    //                     deadline,
-    //                 )
-    //             };
-
-    //             let client = self.client.clone();
-    //             let ctrs = Arc::clone(&counters);
-    //             let rng = self.rng.clone();
-    //             let trace = Instant::now() > trace_at;
-
-    //             set.spawn(async move {
-    //                 ctrs.increment("all");
-
-    //                 let error = handler.send_request(rng, client, ctx, trace).await;
-
-    //                 if trace {
-    //                     // increment the right counters
-    //                     match error.as_str() {
-    //                         "/None" => {
-    //                             ctrs.increment("good");
-    //                         }
-    //                         "/ClientMiss" => {
-    //                             ctrs.increment("deadline_miss");
-    //                         }
-    //                         "/EarlyReturn" => {
-    //                             ctrs.increment("early_return");
-    //                         }
-    //                         "/ClientTimeout" => {
-    //                             ctrs.increment("timeout");
-    //                         }
-    //                         e => {
-    //                             ctrs.increment("unexpected");
-    //                             log::error!("unexpected request error '{}'", e);
-    //                         }
-    //                     };
-    //                 }
-    //             });
-    //         }
-
-    //         // wait for all outgoing requests to complete
-    //         while let Some(_) = set.join_next().await {}
-    //     }
 }
 
 pub async fn load_gen_main<H, C>(

@@ -2,7 +2,6 @@ pub mod frontend {
     tonic::include_proto!("frontend");
 }
 use std::path::Path;
-use std::sync::Arc;
 
 use rand::rngs::StdRng;
 use structopt::StructOpt;
@@ -182,37 +181,6 @@ impl RequestType<SyntheticClient> for PresampledRequest {
         Vec::new()
     }
 }
-
-// struct TracedRequest {
-//     req_id: u64,
-// }
-
-// impl RequestType<SyntheticClient> for TracedRequest {
-//     type ResponseType = frontend::TracedResponse;
-
-//     fn new(req_id: u64) -> Self {
-//         Self { req_id }
-//     }
-
-//     async fn create_request(
-//         &self,
-//         _rng: &mut StdRng,
-//         mut client: <SyntheticClient as Client>::FrontendClient,
-//         ctx: &Context,
-//     ) -> Result<Response<Self::ResponseType>, Status> {
-//         let mut r = tonic::Request::new(frontend::TracedRequest { req_id: self.req_id });
-//         r.metadata_mut().insert_ctx("ctx", &ctx);
-//         client.handle_traced(r).await
-//     }
-
-//     fn response_output_headers(&self) -> Vec<String> {
-//         Vec::new()
-//     }
-
-//     fn response_to_row(_metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
-//         Vec::new()
-//     }
-// }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

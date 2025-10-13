@@ -54,6 +54,9 @@ name = "loadgen"
 path = "src/loadgen/main.rs"
 
 [features]
+scheduler_trace = [
+    "tokio/scheduler_trace",
+]
 prio_class = [
   "tokio/prio_class",
   "masa/prio_class",
@@ -252,7 +255,6 @@ kiddo = "4.2.1"
 # used by reservation service
 chrono = "0.4.38"
 clap = { version = "4.4", features = ["derive"] }
-pin-project = "1.1.10"
 
 
 [build-dependencies]
