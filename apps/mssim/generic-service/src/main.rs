@@ -122,8 +122,9 @@ impl Service for AlibabaService {
         let _req = _request.into_inner();
         // All the root service does is calling into internal services
         self.fanout(_req.req_id, _req.start_at).await?;
-
-        Ok(Response::new(RootResponse {}))
+        Ok(Response::new(RootResponse {
+            req_id: _req.req_id,
+        }))
     }
 
     async fn ping(&self, _request: Request<PingRequest>) -> Result<Response<PingResponse>, Status> {
@@ -269,10 +270,10 @@ impl AlibabaService {
         if remaining > 0.0 {
             busy_spin(Duration::from_millis(remaining as u64));
         } else {
-            warn!(
-                "Warning: fanout took longer ({:?}) than total latency ({:.2} ms)",
-                elapsed, total_latency_ms
-            );
+            // warn!(
+            //     "Warning: fanout took longer ({:?}) than total latency ({:.2} ms)",
+            //     elapsed, total_latency_ms
+            // );
         }
 
         Ok(())
