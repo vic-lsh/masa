@@ -16,6 +16,9 @@ fifo = []
 fifo_early = []
 fifo_infra = []
 perfect_lsf = []
+fifo_span_tracing = []
+fifo_queue_tracing = []
+prio_global_queue_tracing = []
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

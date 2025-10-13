@@ -52,7 +52,7 @@ See `./data/in/template` for an example experiment.
 Execute the following command to run the experiment:
 
 ```bash
-./scripts/run_experiment.sh "<experiment>"
+./scripts/run-experiment.sh "<experiment>"
 ```
 
 The load gen configuration allows you to specify the number of times that the experiment should be repeated.
@@ -74,7 +74,7 @@ For the `i`-th repetition of the experiment, the script generates a folder with 
 To run multiple experiments sequentially, execute
 
 ```bash
-./scripts/queue_experiments.sh "<experiment1> ... <experimentN>"
+./scripts/queue-experiments.sh "<experiment1> ... <experimentN>"
 ```
 
 ##### Generating plots for an experiment
@@ -175,3 +175,6 @@ Each key in the following list corresponds to a feature flag in the codebase.
 - `prio_local_indirect`: similar to `prio_local`, but without using the callgraph.
 - `prio_global_early`: same as `prio_global`, but aborts requests if their deadline is past.
 - `prio_local_early`: same as `prio_local`, but aborts requests if their deadline is past.
+- `fifo_span_tracing`: Based on fifo flag while printing the trace spans when run experiement script
+- `fifo_queue_tracing`: Based on fifo flag while recording the queue latency
+- `prio_global_queue_tracing`: Based on prio_global flag while recording the queue latency

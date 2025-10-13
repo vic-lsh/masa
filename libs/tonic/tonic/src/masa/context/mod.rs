@@ -23,10 +23,15 @@ pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
 
 #[cfg(any(feature = "fifo", feature = "fifo_infra"))]
 #[allow(missing_docs)]
-// TODO: revert back to noop for Fifo. Add another feature flag for tracing.
-// pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
-// pub type DefaultPrioritySelector = tracing::Tracing;
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
+
+#[cfg(any(feature = "fifo_span_tracing"))]
+#[allow(missing_docs)]
+pub type DefaultPrioritySelector = tracing::Tracing;
+
+#[cfg(any(feature = "fifo_queue_tracing"))]
+#[allow(missing_docs)]
+pub type DefaultPrioritySelector = queue_tracing::QueueTracing;
 
 #[cfg(any(
     feature = "prio_local",
@@ -38,8 +43,12 @@ pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
 
 #[cfg(any(feature = "prio_global", feature = "prio_global_early",))]
 #[allow(missing_docs)]
+pub type DefaultPrioritySelector = global::Global;
+
+#[cfg(any(feature = "prio_global_queue_tracing"))]
+#[allow(missing_docs)]
 pub type DefaultPrioritySelector = queue_global::QueueGlobal;
-// pub type DefaultPrioritySelector = global::Global;
+
 
 #[cfg(any(feature = "prio_local_direct"))]
 #[allow(missing_docs)]
