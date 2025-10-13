@@ -9,22 +9,25 @@ use std::{
 };
 
 use anyhow::Context;
-use masa::{Context as MasaContext, time_now};
+use masa::{time_now, Context as MasaContext};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::fs;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::Instant;
-use tonic::Request;
 use tonic::metadata::MetadataMap;
 use tonic::transport::masa_channel::LoadBalancedChannel;
+use tonic::Request;
 
 use crate::service::local_span::SpanType as ProtoSpanType;
 use crate::service::service_client::ServiceClient;
 use crate::service::{
-    ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
-    ReplayRequest as ProtoReplayRequest, Span as ProtoSpan, span::Kind as ProtoSpanKind,
+    span::Kind as ProtoSpanKind, ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
+    ReplayRequest as ProtoReplayRequest, Span as ProtoSpan,
 };
+
+const QUEUE_LATENCY_OUTPUT_ENV: &str = "QUEUE_LATENCY_OUTPUT_DIR";
+const DEFAULT_LATENCY_OUTPUT_DIR: &str = "/home/jiexiao/research/masa-internal/apps/mssim/data";
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -321,26 +324,18 @@ pub async fn run_replay_load(
 }
 
 pub fn queue_latency_output_path(trace_path: &Path) -> PathBuf {
-    if let Ok(dir) = env::var("QUEUE_LATENCY_OUTPUT_DIR") {
-        let target_dir = Path::new(&dir);
-        let mut file_name = match trace_path.file_stem() {
-            Some(stem) => stem.to_os_string(),
-            None => std::ffi::OsString::from("queue_latency"),
-        };
-        file_name.push("_queue_latency.csv");
-        return target_dir.join(file_name);
-    }
-
-    let parent = trace_path.parent().unwrap_or_else(|| Path::new(""));
+    let target_dir = env::var(QUEUE_LATENCY_OUTPUT_ENV)
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(DEFAULT_LATENCY_OUTPUT_DIR));
     let mut file_name = match trace_path.file_stem() {
         Some(stem) => stem.to_os_string(),
         None => std::ffi::OsString::from("queue_latency"),
     };
     file_name.push("_queue_latency.csv");
-    parent.join(file_name)
+    target_dir.join(file_name)
 }
 
-fn extract_queue_latency(metadata: &MetadataMap) -> Option<u64> {
+pub fn extract_queue_latency(metadata: &MetadataMap) -> Option<u64> {
     metadata
         .get("x-queue-latency")
         .or_else(|| metadata.get("X-Queue-Latency"))
@@ -361,6 +356,10 @@ pub async fn write_queue_latency_csv(
             "{},{},{}\n",
             sample.req_id, sample.queue_latency_us, sample.e2e_latency_us
         ));
+    }
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).await?;
     }
 
     fs::write(path, csv_data).await?;

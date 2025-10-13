@@ -21,6 +21,7 @@ const LOADGEN_SERVICE_NAME: &str = "load_generator";
 // TODO: make this configurable
 const FRONTEND_SERVICE_NAME: &str = "USER";
 const LOADGEN_TRACE_MOUNT: &str = "/trace-data";
+const LOADGEN_OUTPUT_MOUNT: &str = "/loadgen-output";
 const CONTAINER_CPU_LIMIT: usize = 1;
 const CONTAINER_MEM_LIMIT: &str = "512MB";
 
@@ -344,9 +345,21 @@ fn make_load_generator_config_yaml(
             Yaml::String(replay_path),
         );
     }
+    let host_output_dir = workspace_root().join("apps/mssim/data");
+    fs::create_dir_all(&host_output_dir).with_context(|| {
+        format!(
+            "Failed to create load generator output directory at {}",
+            host_output_dir.display()
+        )
+    })?;
+
     environment.insert(
         Yaml::String("QUEUE_LATENCY_OUTPUT_DIR".into()),
-        Yaml::String(LOADGEN_TRACE_MOUNT.into()),
+        Yaml::String(LOADGEN_OUTPUT_MOUNT.into()),
+    );
+    environment.insert(
+        Yaml::String("ROOT_LATENCY_OUTPUT_DIR".into()),
+        Yaml::String(LOADGEN_OUTPUT_MOUNT.into()),
     );
 
     service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
@@ -354,6 +367,12 @@ fn make_load_generator_config_yaml(
     let mut volumes: Vec<Yaml> = Vec::new();
     let volume_mapping = format!("{}:{}", host_trace_dir, LOADGEN_TRACE_MOUNT);
     volumes.push(Yaml::String(volume_mapping.into()));
+    let output_volume_mapping = format!(
+        "{}:{}",
+        host_output_dir.to_string_lossy(),
+        LOADGEN_OUTPUT_MOUNT
+    );
+    volumes.push(Yaml::String(output_volume_mapping));
     service_def.insert(Yaml::String("volumes".into()), Yaml::Array(volumes));
 
     // Add networks (using 'microservice_net' as in the example)
