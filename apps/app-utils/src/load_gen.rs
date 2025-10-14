@@ -85,6 +85,25 @@ const DEFAULT_COUNTER_KEYS: [&'static str; 6] = [
     "unexpected",
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FutureSpanType {
+    Compute,
+    Block,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FutureSpan {
+    pub kind: FutureSpanType,
+    pub duration: Duration,
+}
+
+#[derive(Debug)]
+pub struct Task {
+    pub id: u64,
+    pub start_at: u64,
+    pub spans: Vec<FutureSpan>,
+}
+
 pub struct Counters {
     counters_map: HashMap<String, AtomicUsize>,
 }
@@ -549,6 +568,8 @@ where
             )));
         }
 
+        log::info!("Before Connection");
+
         let mut load_gen = {
             let client = {
                 let mut client = C::connect_with_retry(gen_cfg.addr.clone())
@@ -560,6 +581,8 @@ where
                 info!("Connected to {}", gen_cfg.addr);
                 client
             };
+
+            log::info!("Connected to {}", gen_cfg.addr);
 
             let load_gen = LoadGenerator::new(seed, gen_cfg.clone(), *rps, client, api_handlers);
             load_gen
@@ -629,3 +652,50 @@ fn map_response<T>(
     };
     (response, error)
 }
+
+// pub fn parse_tasks_from_file<P: AsRef<Path>>(path: P) -> io::Result<Vec<Task>> {
+//     let file = File::open(path)?;
+//     let reader = BufReader::new(file);
+
+//     reader
+//         .lines()
+//         .enumerate()
+//         .map(|(i, line_result)| {
+//             let line = line_result?;
+//             parse_line(&line).map_err(|e| {
+//                 io::Error::new(io::ErrorKind::InvalidData, format!("Error on line {}: {}", i + 1, e))
+//             })
+//         })
+//         .collect()
+// }
+
+// fn parse_line(line: &str) -> Result<Task, String> {
+//     let mut parts = line.split(',');
+//     let id_str = parts.next().ok_or("Line is empty")?;
+//     let id = id_str
+//         .parse::<u64>()
+//         .map_err(|e| format!("Invalid Task ID '{}': {}", id_str, e))?;
+
+//     let mut spans = Vec::new();
+//     for part in parts {-
+//         let (type_str, duration_part) = part
+//             .split('(')
+//             .ok_or(format!("Malformed stage: '{}'", part))?;
+//         let kind = match type_str {
+//             "Compute" => FutureSpanType::Compute,
+//             "Block" => FutureSpanType::Block,
+//             _ => return Err(format!("Unknown stage type: '{}'", type_str)),
+//         };
+//         let duration_str = duration_part
+//             .strip_suffix("us)")
+//             .ok_or(format!("Malformed duration: '{}'", duration_part))?;
+//         let micros = duration_str
+//             .parse::<u64>()
+//             .map_err(|e| format!("Invalid duration value '{}': {}", duration_str, e))?;
+//         spans.push(FutureSpan {
+//             kind,
+//             duration: Duration::from_micros(micros),
+//         });
+//     }
+//     Ok(Task { id, spans })
+// }
