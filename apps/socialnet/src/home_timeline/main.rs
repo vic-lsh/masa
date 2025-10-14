@@ -15,7 +15,9 @@ struct Args {
     addr: String,
 
     /// The connection URL for the Redis primary instance.
-    #[arg(long, env = "REDIS_PRIMARY_URL")]
+    // #[arg(long, env = "REDIS_PRIMARY_URL")]
+    // redis_primary_url: String,
+    #[arg(long, env = "REDIS_URL")]
     redis_primary_url: String,
 
     /// The connection URL for the Redis replica instance (optional).
