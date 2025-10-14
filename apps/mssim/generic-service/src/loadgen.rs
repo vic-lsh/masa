@@ -28,9 +28,8 @@ use service::service_client::ServiceClient;
 use service::RootRequest;
 type RpcClient = ServiceClient<LoadBalancedChannel>;
 
-const ROOT_LATENCY_OUTPUT_ENV: &str = "ROOT_LATENCY_OUTPUT_DIR";
-const ROOT_LATENCY_FALLBACK_DIR: &str = "/home/jiexiao/research/masa-internal/apps/mssim/data/fifo";
 const PERIODIC_FLUSH_INTERVAL_SECS: u64 = 10;
+const OUTPUT_DIR: &str = "loadgen_output";
 
 fn root_latency_file_name_for_rps(rps: f64) -> String {
     let mut rps_str = if (rps.fract()).abs() < f64::EPSILON {
@@ -373,18 +372,13 @@ async fn flush_root_samples(
         .map(|_| ())
 }
 
-fn root_latency_output_dir() -> PathBuf {
-    env::var(ROOT_LATENCY_OUTPUT_ENV)
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(ROOT_LATENCY_FALLBACK_DIR))
-}
-
 async fn flush_root_samples_internal(
     samples: Arc<Mutex<Vec<RootLatencySample>>>,
     file_name: &str,
     log_when_empty: bool,
 ) -> anyhow::Result<Option<usize>> {
-    let output_dir = root_latency_output_dir();
+    let output_dir = PathBuf::from(OUTPUT_DIR);
+
     let snapshot = {
         let mut guard = samples.lock().await;
         if guard.is_empty() {
@@ -410,6 +404,12 @@ async fn flush_root_samples_internal(
             sample.req_id, sample.start_at, sample.queue_latency_us, sample.e2e_latency_us
         ));
     }
+
+    println!(
+        "Writing root() latency samples for {} requests to {}",
+        snapshot.len(),
+        file_path.display()
+    );
 
     fs::write(&file_path, csv_data).await?;
     if log_when_empty {

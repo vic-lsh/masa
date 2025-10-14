@@ -1,8 +1,8 @@
 # Use a recent Rust version for building
 FROM rust:latest AS rust_builder
 
-ARG FEATURE=fifo
-ENV FEATURE=${FEATURE}
+ARG FEATURE_ARG=fifo
+ENV FEATURE=${FEATURE_ARG}
 
 WORKDIR /app
 
@@ -27,7 +27,7 @@ COPY apps apps
 COPY libs libs
 
 # Build the generic service
-RUN cargo build --release --bin generic-service --features ${FEATURE}
+RUN cargo build --release --bin generic-service --features ${FEATURE_ARG}
 
 # Declare the build argument for the container port (providing a default value of 8000)
 ARG SERVICE_CONTAINER_PORT=8000 
@@ -38,4 +38,4 @@ EXPOSE ${SERVICE_CONTAINER_PORT}
 # Command to run the service
 # The service code should read the port from the SERVICE_PORT environment variable
 ENV RUST_BACKTRACE=1
-CMD ["cargo", "run", "--release", "--bin", "generic-service", "--features", "${FEATURE}"]
+CMD ["/bin/sh", "-c", "cargo run --release --bin generic-service --features ${FEATURE}"]

@@ -6,7 +6,7 @@ use sim_config::trace::TraceConfig;
 use sim_config::{PROJECT_NAME, SimulatorConfig};
 use std::{
     collections::HashMap,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -20,8 +20,7 @@ const LOADGEN_SERVICE_NAME: &str = "load_generator";
 ///
 // TODO: make this configurable
 const FRONTEND_SERVICE_NAME: &str = "USER";
-const LOADGEN_TRACE_MOUNT: &str = "/trace-data";
-const LOADGEN_OUTPUT_MOUNT: &str = "/loadgen-output";
+const LOADGEN_OUTPUT_MOUNT: &str = "/app/loadgen_output";
 const CONTAINER_CPU_LIMIT: usize = 1;
 const CONTAINER_MEM_LIMIT: &str = "512MB";
 
@@ -200,6 +199,19 @@ fn make_build_def(svc_port: u16) -> Yaml {
         Yaml::String("SERVICE_CONTAINER_PORT".into()),
         Yaml::String(svc_port.to_string()),
     );
+
+    if let Ok(feature) = env::var("FEATURE") {
+        build_args.insert(
+            Yaml::String("FEATURE".into()),
+            Yaml::String(feature),
+        );
+    } else {
+        build_args.insert(
+            Yaml::String("FEATURE".into()),
+            Yaml::String("fifo".into()),
+        );
+    }
+
     build_def.insert(Yaml::String("args".into()), Yaml::Hash(build_args));
     Yaml::Hash(build_def)
 }
@@ -241,6 +253,14 @@ fn make_environment_def(service_name: &ServiceName, svc_port: u16) -> Yaml {
         Yaml::String("DEPLOYMEN_CONFIG_PATH".into()),
         Yaml::String(in_container_deployment_config_path.into()),
     );
+
+    if let Ok(feature) = env::var("FEATURE") {
+        environment.insert(
+            Yaml::String("FEATURE".into()),
+            Yaml::String(feature),
+        );
+    }
+    
     Yaml::Hash(environment)
 }
 
@@ -303,46 +323,10 @@ fn make_load_generator_config_yaml(
         Yaml::String(frontend_info.ip.clone()),
     );
 
-    let trace_dir_canon = trace_dir
-        .canonicalize()
-        .with_context(|| format!("Failed to resolve trace directory {:?}", trace_dir))?;
-    let host_trace_dir = trace_dir_canon.to_string_lossy().into_owned();
-
-    let replay_env = if let Some(override_path) = replay_path {
-        let resolved = if override_path.is_absolute() {
-            override_path.to_path_buf()
-        } else {
-            trace_dir_canon.join(override_path)
-        };
-
-        let replay_canon = resolved
-            .canonicalize()
-            .with_context(|| format!("Failed to resolve replay trace path {:?}", resolved))?;
-
-        let relative = replay_canon
-            .strip_prefix(&trace_dir_canon)
-            .with_context(|| {
-                anyhow!(
-                    "Replay trace path {:?} must be located under {:?}",
-                    replay_canon,
-                    trace_dir_canon
-                )
-            })?;
-
-        Some(
-            Path::new(LOADGEN_TRACE_MOUNT)
-                .join(relative)
-                .to_string_lossy()
-                .into_owned(),
-        )
-    } else {
-        None
-    };
-
-    if let Some(replay_path) = replay_env {
+    if let Some(replay_path) = replay_path {
         environment.insert(
             Yaml::String("REPLAY_TRACE_PATH".into()),
-            Yaml::String(replay_path),
+            Yaml::String(replay_path.to_string_lossy().into_owned()),
         );
     }
     let host_output_dir = workspace_root().join("apps/mssim/data");
@@ -353,26 +337,33 @@ fn make_load_generator_config_yaml(
         )
     })?;
 
-    environment.insert(
-        Yaml::String("QUEUE_LATENCY_OUTPUT_DIR".into()),
-        Yaml::String(LOADGEN_OUTPUT_MOUNT.into()),
-    );
-    environment.insert(
-        Yaml::String("ROOT_LATENCY_OUTPUT_DIR".into()),
-        Yaml::String(LOADGEN_OUTPUT_MOUNT.into()),
-    );
+    if let Ok(rps) = env::var("RPS") {
+        environment.insert(Yaml::String("RPS".into()), Yaml::String(rps.clone()));
+    }
+    
+    if let Ok(max_in_flight) = env::var("MAX_IN_FLIGHT") {
+        environment.insert(
+            Yaml::String("MAX_IN_FLIGHT".into()),
+            Yaml::String(max_in_flight),
+        );
+    }
+
+    if let Ok(stats) = env::var("STATS_INTERVAL_SEC") {
+        environment.insert(
+            Yaml::String("STATS_INTERVAL_SEC".into()),
+            Yaml::String(stats),
+        );
+    }
+
+    let host_data_dir = env::var("HOST_TRACE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| trace_dir.clone());
 
     service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
 
     let mut volumes: Vec<Yaml> = Vec::new();
-    let volume_mapping = format!("{}:{}", host_trace_dir, LOADGEN_TRACE_MOUNT);
+    let volume_mapping = format!("{}:{}", host_data_dir.to_string_lossy(), LOADGEN_OUTPUT_MOUNT);
     volumes.push(Yaml::String(volume_mapping.into()));
-    let output_volume_mapping = format!(
-        "{}:{}",
-        host_output_dir.to_string_lossy(),
-        LOADGEN_OUTPUT_MOUNT
-    );
-    volumes.push(Yaml::String(output_volume_mapping));
     service_def.insert(Yaml::String("volumes".into()), Yaml::Array(volumes));
 
     // Add networks (using 'microservice_net' as in the example)
