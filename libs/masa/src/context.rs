@@ -2,6 +2,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Api, Latency, RequestClass, RequestId, TestId, Timestamp};
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", content = "duration")]
+pub enum FutureSpan {
+    #[serde(rename = "compute")]
+    Compute(u64),
+    #[serde(rename = "local_block")]
+    LocalBlock(u64),
+    #[serde(rename = "child_block")]
+    ChildBlock(u64),
+    #[serde(rename = "queue")]
+    Queueing(u64),
+}
+
 /// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Context {
