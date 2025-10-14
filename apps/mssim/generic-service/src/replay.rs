@@ -25,9 +25,7 @@ use crate::service::{
     span::Kind as ProtoSpanKind, ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
     ReplayRequest as ProtoReplayRequest, Span as ProtoSpan,
 };
-
-const QUEUE_LATENCY_OUTPUT_ENV: &str = "QUEUE_LATENCY_OUTPUT_DIR";
-const DEFAULT_LATENCY_OUTPUT_DIR: &str = "/home/jiexiao/research/masa-internal/apps/mssim/data";
+use crate::OUTPUT_DIR;
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -324,9 +322,7 @@ pub async fn run_replay_load(
 }
 
 pub fn queue_latency_output_path(trace_path: &Path) -> PathBuf {
-    let target_dir = env::var(QUEUE_LATENCY_OUTPUT_ENV)
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(DEFAULT_LATENCY_OUTPUT_DIR));
+    let target_dir = PathBuf::from(OUTPUT_DIR);
     let mut file_name = match trace_path.file_stem() {
         Some(stem) => stem.to_os_string(),
         None => std::ffi::OsString::from("queue_latency"),

@@ -15,9 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
-
-REPO_ROOT = "masa-internal"
-MSSIM_ROOT = REPO_ROOT / "apps" / "mssim" / "simulator"
+REPO_ROOT = Path(__file__).parent.parent.resolve()
+MSSIM_ROOT = REPO_ROOT / "simulator"
 
 @dataclass
 class ExperimentConfig:
@@ -46,7 +45,6 @@ def load_config(path: Path) -> ExperimentConfig:
         config_dir = config_dir.expanduser().resolve()
         
         output_root = Path(data.get("output_root", f"apps/mssim/data/experiments")) / name
-        output_root = (output_root if output_root.is_absolute() else (REPO_ROOT / output_root)).resolve()
         
         duration_sec = int(data.get("duration_sec", 0))
         policies = list(data.get("policies", []))
@@ -83,7 +81,6 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
     env.update(cfg.extra_env)
     env.setdefault("ORCHESTRATOR", cfg.orchestrator)
     env["FEATURE"] = policy
-    env["POLICY"] = policy
     env["RPS"] = f"{rps}"
     env["MSSIM_RPS"] = f"{rps}"
     if cfg.max_in_flight:
@@ -92,6 +89,8 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         env["STATS_INTERVAL_SEC"] = str(cfg.stats_interval_sec)
     if cfg.replay_path:
         env["REPLAY_TRACE_PATH"] = str(cfg.replay_path)
+
+    env["HOST_TRACE_DIR"] = run_dir.resolve()
 
     # Fail if required input paths do not exist
     missing_paths = [
