@@ -49,7 +49,6 @@ pub type DefaultPrioritySelector = global::Global;
 #[allow(missing_docs)]
 pub type DefaultPrioritySelector = queue_global::QueueGlobal;
 
-
 #[cfg(any(feature = "prio_local_direct"))]
 #[allow(missing_docs)]
 pub type DefaultPrioritySelector = local::LocalDeadlineDirect;
