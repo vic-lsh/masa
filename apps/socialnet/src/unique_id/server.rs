@@ -13,6 +13,11 @@ use tonic::{transport::Server, Request, Response, Status};
 use unique_id_service::unique_id_service_server::{UniqueIdService, UniqueIdServiceServer};
 use unique_id_service::{UniqueIdReply, UniqueIdRequest};
 
+// The custom epoch for unique ID generation, in milliseconds.
+// This value corresponds to `2023-01-01T00:00:00Z`.
+const CUSTOM_EPOCH: i64 = 1672531200000;
+
+
 pub mod unique_id_service {
     tonic::include_proto!("uniqueidservice");
 }

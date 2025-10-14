@@ -15,11 +15,11 @@ struct Args {
     addr: String,
 
     /// The connection URI for the MongoDB instance.
-    #[arg(long, env = "MONGODB_URI")]
+    #[arg(long, env = "MONGO_URL")]
     mongodb_uri: String,
 
     /// The connection URL for the Redis primary instance.
-    #[arg(long, env = "REDIS_PRIMARY_URL")]
+    #[arg(long, env = "REDIS_URL")]
     redis_primary_url: String,
 
     /// The connection URL for the Redis replica instance (optional).
