@@ -34,4 +34,5 @@ EXPOSE ${SERVICE_CONTAINER_PORT}
 
 # Command to run the service
 # The service code should read the port from the SERVICE_PORT environment variable
+ENV RUST_BACKTRACE=1
 CMD ["cargo", "run", "--release", "--bin", "generic-service"]

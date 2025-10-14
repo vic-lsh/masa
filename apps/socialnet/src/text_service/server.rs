@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use log::error;
 use regex::Regex;
+use tracing::{error, info};
 
 use tonic::{Request, Response, Status};
 
@@ -51,7 +51,8 @@ impl TextService for TextSvcImpl {
         &self,
         request: Request<TextRequest>,
     ) -> Result<Response<TextReply>, Status> {
-        println!("Got a request: {:?}", request);
+        info!("Got a request: {:?}", request);
+        info!("Got a request: {:?}", request);
 
         let text: String = request.into_inner().text;
 
@@ -64,7 +65,8 @@ impl TextService for TextSvcImpl {
         }
 
         // print the mentions
-        println!("Mentioned usernames: {:?}", mention_usernames);
+        info!("Mentioned usernames: {:?}", mention_usernames);
+        info!("Mentioned usernames: {:?}", mention_usernames);
 
         // regx match url links with http or https
         let mut url_links = Vec::new();
@@ -75,7 +77,8 @@ impl TextService for TextSvcImpl {
         }
 
         // print the urls
-        println!("URLs found: {:?}", url_links);
+        info!("URLs found: {:?}", url_links);
+        info!("URLs found: {:?}", url_links);
 
         // async func to get shortened url
         let shortened_url_task = {
@@ -182,13 +185,19 @@ impl TextService for TextSvcImpl {
 }
 
 pub async fn create_service() -> TextServiceServer<TextSvcImpl> {
-    let service = TextSvcImpl::new(
-        UrlShortenServiceClient::connect("http://[::1]:50053")
-            .await
-            .unwrap(),
-        UserMentionServiceClient::connect("http://[::1]:50052")
-            .await
-            .unwrap(),
-    );
+    let (url_shorten_client, user_mention_client) = loop {
+        let shorten = UrlShortenServiceClient::connect("http://urlshorten:50052").await;
+        let mention = UserMentionServiceClient::connect("http://usermention:50051").await;
+
+        match (shorten, mention) {
+            (Ok(shorten_client), Ok(mention_client)) => break (shorten_client, mention_client),
+            _ => {
+                println!("Waiting for urlshorten and usermention...");
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+        }
+    };
+
+    let service = TextSvcImpl::new(url_shorten_client, user_mention_client);
     TextServiceServer::new(service)
 }
