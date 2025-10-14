@@ -16,14 +16,8 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-MSSIM_ROOT = REPO_ROOT / "apps" / "mssim"
-
-
-def _ensure_dir(path: Path) -> Path:
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
+REPO_ROOT = "masa-internal"
+MSSIM_ROOT = REPO_ROOT / "apps" / "mssim" / "simulator"
 
 @dataclass
 class ExperimentConfig:
@@ -41,21 +35,19 @@ class ExperimentConfig:
     stats_interval_sec: Optional[int] = None
     extra_env: Dict[str, str] = field(default_factory=dict)
 
-    @property
-    def workspace(self) -> Path:
-        ts = time.strftime("%Y%m%d-%H%M%S")
-        return _ensure_dir(self.output_root / self.name / ts)
-
 
 def load_config(path: Path) -> ExperimentConfig:
     data = json.loads(path.read_text())
     try:
         name = data["experiment_name"]
         trace_dir = Path(data["trace_dir"]).expanduser().resolve()
+        
         config_dir = (Path(data["config_dir"]) if data.get("config_dir") else Path("."))
         config_dir = config_dir.expanduser().resolve()
-        output_root = Path(data.get("output_root", "apps/mssim/data/experiments"))
+        
+        output_root = Path(data.get("output_root", f"apps/mssim/data/experiments")) / name
         output_root = (output_root if output_root.is_absolute() else (REPO_ROOT / output_root)).resolve()
+        
         duration_sec = int(data.get("duration_sec", 0))
         policies = list(data.get("policies", []))
         rps_values = [float(v) for v in data.get("rps_values", [])]
@@ -86,17 +78,6 @@ def load_config(path: Path) -> ExperimentConfig:
     return cfg
 
 
-def build_runs(cfg: ExperimentConfig) -> Iterable[Dict[str, object]]:
-    for policy in cfg.policies:
-        for rps in cfg.rps_values:
-            for repeat_idx in range(cfg.repeats):
-                yield {
-                    "policy": policy,
-                    "rps": rps,
-                    "repeat": repeat_idx,
-                }
-
-
 def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> int:
     env = os.environ.copy()
     env.update(cfg.extra_env)
@@ -111,6 +92,18 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         env["STATS_INTERVAL_SEC"] = str(cfg.stats_interval_sec)
     if cfg.replay_path:
         env["REPLAY_TRACE_PATH"] = str(cfg.replay_path)
+
+    # Fail if required input paths do not exist
+    missing_paths = [
+        str(path)
+        for path in (cfg.trace_dir, cfg.config_dir)
+        if not path.exists()
+    ]
+    if cfg.replay_path and not cfg.replay_path.exists():
+        missing_paths.append(str(cfg.replay_path))
+    if missing_paths:
+        joined = ", ".join(missing_paths)
+        raise FileNotFoundError(f"Required input paths do not exist: {joined}")
 
     cmd = [
         "cargo",
@@ -128,6 +121,7 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
 
     log_path = run_dir / "orchestrator.log"
     with log_path.open("wb") as log_file:
+        print(f"Running command: {' '.join(cmd)}")
         proc = subprocess.Popen(
             cmd,
             cwd=MSSIM_ROOT,
@@ -145,18 +139,31 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         return proc.returncode or 0
 
 
-def write_metadata(run_dir: Path, metadata: Dict[str, object]) -> None:
-    with (run_dir / "metadata.json").open("w", encoding="utf-8") as fh:
-        json.dump(metadata, fh, indent=2, sort_keys=True)
-
 
 def execute(cfg: ExperimentConfig, dry_run: bool) -> None:
-    base = cfg.workspace
+    def _ensure_dir(path: Path) -> Path:
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    
+    def build_runs(cfg: ExperimentConfig) -> Iterable[Dict[str, object]]:
+        for policy in cfg.policies:
+            for rps in cfg.rps_values:
+                for repeat_idx in range(cfg.repeats):
+                    yield {
+                        "policy": policy,
+                        "rps": rps,
+                        "repeat": repeat_idx,
+                    }
+    
+    def write_metadata(run_dir: Path, metadata: Dict[str, object]) -> None:
+        with (run_dir / "metadata.json").open("w", encoding="utf-8") as fh:
+            json.dump(metadata, fh, indent=2, sort_keys=True)
+        
     for run in build_runs(cfg):
         policy = str(run["policy"])
         rps = float(run["rps"])
         repeat = int(run["repeat"])
-        run_dir = _ensure_dir(base / policy / f"rps_{rps:g}" / f"run_{repeat:02d}")
+        run_dir = _ensure_dir(cfg.output_root / policy / f"rps_{rps:g}" / f"run_{repeat:01d}")
         metadata = {
             "policy": policy,
             "rps": rps,
@@ -164,6 +171,8 @@ def execute(cfg: ExperimentConfig, dry_run: bool) -> None:
             "duration_sec": cfg.duration_sec,
             "command": "cargo run -- --alibaba-trace ...",
         }
+        
+        # Write metadata before running
         write_metadata(run_dir, metadata)
         if dry_run:
             print(f"[dry-run] would execute policy={policy} rps={rps} repeat={repeat}")
