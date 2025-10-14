@@ -6,17 +6,25 @@ import "google/protobuf/timestamp.proto";
 service Service {
   rpc GetData(ServiceRequest) returns (ServiceResponse);
   rpc Root(RootRequest) returns (RootResponse);
+  rpc Replay(ReplayRequest) returns (ReplayResponse);
   rpc Ping(PingRequest) returns (PingResponse);
 }
 message PingRequest {}
 
 message PingResponse {}
 
-message RootRequest {}
+message RootRequest {
+  uint64 req_id = 1;
+  uint64 start_at = 2;
+}
 
 message RootResponse {}
 
-message ServiceRequest { string method_name = 1; }
+message ServiceRequest { 
+  uint64 req_id = 1;
+  uint64 start_at = 2;
+  string method_name = 3;
+}
 
 message ServiceResponse {
   repeated CallData calls = 1;
@@ -29,3 +37,46 @@ message CallData {
   google.protobuf.Timestamp response_received_at = 3;
   bool was_an_error = 4;
 }
+
+message LocalSpan {
+  enum SpanType {
+    UNKNOWN = 0;
+    COMPUTE = 1;
+    BLOCK = 2;
+  }
+
+  SpanType type = 1;
+  uint64 val = 2;
+}
+
+message ChildSpans {
+  string name = 1;
+  repeated Span spans = 2;
+}
+
+message Span {
+  oneof kind {
+    LocalSpan local_span = 1;
+    ChildSpans child_spans = 2;
+  }
+}
+
+message ReplayRequest {
+  uint64 req_id = 1;
+  uint64 exclude_queue_latency = 2;
+  uint64 slo = 3;
+  uint64 start_at = 4;
+  uint64 deadline = 5;
+  repeated Span spans = 6;
+}
+
+enum ResponseStatus {
+  OK = 0;
+  ERROR = 1;
+}
+
+message ReplayResponse {
+  uint64 req_id = 1;
+  ResponseStatus status = 2;
+}
+

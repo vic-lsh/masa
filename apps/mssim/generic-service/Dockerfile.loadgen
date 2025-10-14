@@ -22,6 +22,7 @@ COPY Cargo.lock Cargo.lock
 COPY 3rd_party 3rd_party
 COPY apps apps
 COPY libs libs
+COPY trace-analysis /trace-analysis
 
 # Build the generic service
 RUN cargo build --release --bin mssim-loadgen

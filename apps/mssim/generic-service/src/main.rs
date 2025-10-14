@@ -1,10 +1,13 @@
 use anyhow::{Context, Result};
+use masa::Context as MasaContext;
 use service_stubs::service_client::ServiceClient;
 use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
 use sim_config::svc::{ServiceName, ServiceTraceConfig};
 use std::collections::HashMap;
 use std::env;
+use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
+use tokio::time::{sleep, Duration};
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::level_filters::LevelFilter;
@@ -18,7 +21,8 @@ pub mod service_stubs {
 
 use service_stubs::service_server::{Service, ServiceServer};
 use service_stubs::{
-    PingRequest, PingResponse, RootRequest, RootResponse, ServiceRequest, ServiceResponse,
+    local_span::SpanType, span::Kind, PingRequest, PingResponse, ReplayRequest, ReplayResponse,
+    ResponseStatus, RootRequest, RootResponse, ServiceRequest, ServiceResponse,
 };
 
 type RpcClient = ServiceClient<LoadBalancedChannel>;
@@ -29,6 +33,7 @@ struct AlibabaService {
     clients: HashMap<ServiceName, RpcClient>,
     deployment: Deployment,
     self_svc_name: ServiceName,
+    overshot_counter: AtomicUsize,
 }
 
 impl AlibabaService {
@@ -48,6 +53,7 @@ impl AlibabaService {
             clients,
             deployment,
             self_svc_name,
+            overshot_counter: AtomicUsize::new(0),
         })
     }
 
@@ -90,9 +96,11 @@ impl Service for AlibabaService {
         &self,
         request: Request<ServiceRequest>,
     ) -> Result<Response<ServiceResponse>, Status> {
-        let method_name = request.into_inner().method_name;
+        let _req = request.into_inner();
+        let method_name = _req.method_name;
 
-        self.handle_method(method_name.clone()).await?;
+        self.handle_method(method_name.clone(), _req.req_id, _req.start_at)
+            .await?;
 
         Ok(Response::new(ServiceResponse {
             calls: vec![],
@@ -111,9 +119,9 @@ impl Service for AlibabaService {
                 self.self_svc_name.as_str()
             )));
         }
-
+        let _req = _request.into_inner();
         // All the root service does is calling into internal services
-        self.fanout().await?;
+        self.fanout(_req.req_id, _req.start_at).await?;
 
         Ok(Response::new(RootResponse {}))
     }
@@ -121,18 +129,125 @@ impl Service for AlibabaService {
     async fn ping(&self, _request: Request<PingRequest>) -> Result<Response<PingResponse>, Status> {
         Ok(Response::new(PingResponse {}))
     }
+
+    async fn replay(
+        &self,
+        _request: tonic::Request<ReplayRequest>,
+    ) -> Result<Response<ReplayResponse>, Status> {
+        let req = _request.into_inner();
+
+        // if req.exclude_queue_latency > req.slo {
+        //     return Err(Status::cancelled("Request latency too high (> 50 ms)"));
+        // }
+
+        let start = Instant::now();
+
+        let spans = req.spans;
+
+        use std::convert::TryFrom;
+        for span in spans {
+            if let Some(kind) = span.kind {
+                match kind {
+                    Kind::LocalSpan(single_span) => match SpanType::try_from(single_span.r#type) {
+                        Ok(SpanType::Compute) => {
+                            busy_spin(Duration::from_micros(single_span.val));
+                        }
+                        Ok(SpanType::Block) => {
+                            sleep(Duration::from_micros(single_span.val)).await;
+                        }
+                        Ok(SpanType::Unknown) => {
+                            warn!("Unknown span type, skipping");
+                        }
+                        Err(_) => {
+                            warn!("Invalid span type, skipping");
+                        }
+                    },
+                    Kind::ChildSpans(span_vector) => {
+                        let child_name = span_vector.name;
+                        let child_channel = self
+                            .clients
+                            .get(&ServiceName::from_string(child_name.clone()))
+                            .ok_or(Status::not_found(format!(
+                                "Child service {} not found",
+                                child_name
+                            )))?;
+
+                        let mut child_req = Request::new(ReplayRequest {
+                            req_id: req.req_id,
+                            exclude_queue_latency: req.exclude_queue_latency,
+                            slo: req.slo,
+                            start_at: req.start_at,
+                            deadline: req.deadline,
+                            spans: span_vector.spans.clone(),
+                        });
+
+                        let ctx = {
+                            MasaContext::new(
+                                "replay".to_string(),
+                                0,
+                                req.req_id,
+                                req.slo,
+                                0,
+                                req.start_at,
+                                req.deadline,
+                            )
+                        };
+
+                        child_req.metadata_mut().insert_ctx("ctx", &ctx);
+
+                        let mut child_channel = child_channel.clone();
+                        match child_channel.replay(child_req).await {
+                            Ok(_response) => {
+                                // Child call succeeded
+                            }
+                            Err(e) => {
+                                return Err(Status::internal(format!(
+                                    "RPC to child service {} dropped or failed: {:?}",
+                                    child_name, e
+                                )));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let elapsed = start.elapsed();
+        if elapsed.as_millis() > req.exclude_queue_latency as u128 {
+            let old = self
+                .overshot_counter
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if old % 10 == 0 {
+                warn!(
+                    "Warning {}: processing took longer ({:?}) than request latency ({} us)",
+                    old, elapsed, req.exclude_queue_latency
+                );
+            }
+        } else if elapsed.as_micros() > req.slo as u128 {
+            return Err(Status::cancelled("Processing took more than SLO"));
+        }
+
+        Ok(Response::new(ReplayResponse {
+            req_id: req.req_id,
+            status: ResponseStatus::Ok as i32,
+        }))
+    }
 }
 
-fn busy_spin(duration_ms: f64) {
+fn busy_spin(duration: Duration) {
     let start = std::time::Instant::now();
-    let duration = std::time::Duration::from_millis(duration_ms as u64);
     while std::time::Instant::now() - start < duration {
         // Busy spin
     }
 }
 
 impl AlibabaService {
-    async fn handle_method(&self, method_name: String) -> Result<(), Status> {
+    async fn handle_method(
+        &self,
+        method_name: String,
+        req_id: u64,
+        start_at: u64,
+    ) -> Result<(), Status> {
         let name = method_name.into();
         let latency_dist = self
             .config
@@ -147,12 +262,12 @@ impl AlibabaService {
         let total_latency_ms = latency_dist.sample(&mut rand::rng());
 
         let start = Instant::now();
-        self.fanout().await?;
+        self.fanout(req_id, start_at).await?;
         let elapsed = start.elapsed();
 
         let remaining = total_latency_ms - (elapsed.as_millis() as f64);
         if remaining > 0.0 {
-            busy_spin(remaining);
+            busy_spin(Duration::from_millis(remaining as u64));
         } else {
             warn!(
                 "Warning: fanout took longer ({:?}) than total latency ({:.2} ms)",
@@ -163,12 +278,14 @@ impl AlibabaService {
         Ok(())
     }
 
-    async fn fanout(&self) -> Result<(), Status> {
+    async fn fanout(&self, req_id: u64, start_at: u64) -> Result<(), Status> {
         let mut tasks = Vec::new();
         for (child_svc_name, client) in &self.clients {
             let method_to_call = self
                 .config
                 .method_freq_map
+                .as_ref()
+                .unwrap()
                 .get_service(child_svc_name)
                 .and_then(|sampler| Some(sampler.sample(&mut rand::rng()).to_string()))
                 .ok_or(Status::not_found(format!(
@@ -176,9 +293,19 @@ impl AlibabaService {
                 )))?;
 
             let mut client = client.clone();
-            let request = tonic::Request::new(ServiceRequest {
+            let mut request = tonic::Request::new(ServiceRequest {
+                req_id: req_id.clone(),
+                start_at: start_at.clone(),
                 method_name: method_to_call,
             });
+
+            let ctx = {
+                let slo = 50_000;
+                let deadline = start_at + slo;
+                MasaContext::new("fanout".to_string(), 0, req_id, slo, 0, start_at, deadline)
+            };
+
+            request.metadata_mut().insert_ctx("ctx", &ctx);
 
             let handle = tokio::spawn(async move {
                 client

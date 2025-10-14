@@ -31,6 +31,12 @@ pub(crate) struct BinaryHeapQueue<T> {
 impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapQueue<T> {
     type Item = T;
 
+    fn with_capacity(cap: usize) -> Self {
+        Self {
+            q: BinaryHeap::with_capacity(cap),
+        }
+    }
+
     fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
         self.q.push(item);
         Ok(())
@@ -68,15 +74,6 @@ impl<T: Ord> Default for BinaryHeapQueue<T> {
     fn default() -> Self {
         Self {
             q: BinaryHeap::new(),
-        }
-    }
-}
-
-impl<T: Ord> BinaryHeapQueue<T> {
-    #[allow(dead_code)]
-    pub(crate) fn with_capacity(cap: usize) -> Self {
-        Self {
-            q: BinaryHeap::with_capacity(cap),
         }
     }
 }

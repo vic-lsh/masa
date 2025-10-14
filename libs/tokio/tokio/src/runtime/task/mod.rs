@@ -173,6 +173,7 @@ use self::core::Cell;
 // [TODO(vic)] make this private again.
 // For now, this is made public b/c we expose the whole header in Context.
 pub(crate) use self::core::Header;
+pub(crate) use self::core::TraceTimer;
 
 mod error;
 pub use self::error::JoinError;
@@ -218,10 +219,16 @@ use crate::util::sharded_list;
 
 use std::marker::PhantomData;
 use std::ptr::NonNull;
+use std::time::Duration;
 use std::{fmt, mem};
 
 pub(crate) fn current_task_header() -> Option<&'static Header> {
     crate::runtime::context::current_task_header()
+}
+
+pub(crate) fn current_task_queue_latency() -> Duration {
+    let header = current_task_header().unwrap();
+    header.get_timer().q_lat()
 }
 
 /// An owned handle to the task, tracked by ref count.
@@ -470,8 +477,12 @@ impl<S: 'static> Task<S> {
 }
 
 impl<S: 'static> Notified<S> {
-    fn header(&self) -> &Header {
+    pub(crate) fn header(&self) -> &Header {
         self.0.header()
+    }
+
+    pub(crate) fn timer(&self) -> &mut TraceTimer {
+        self.0.header().get_timer_mut()
     }
 }
 
