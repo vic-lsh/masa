@@ -25,6 +25,7 @@ keywords = ["io", "async", "non-blocking", "futures"]
 # Include nothing by default
 default = []
 
+scheduler_trace = []
 static = []
 prio_class = []
 prio_global = []

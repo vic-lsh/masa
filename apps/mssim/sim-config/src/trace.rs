@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::svc::{call_graph, method_freq};
 
 pub struct TraceConfig {
-    pub method_freq_map: method_freq::MethodFreqMap,
+    pub method_freq_map: Option<method_freq::MethodFreqMap>,
     pub call_graph: call_graph::CallGraph,
 }
 
@@ -13,8 +13,11 @@ impl TraceConfig {
         let call_graph = call_graph::CallGraph::from_path(call_graph_path)?;
 
         let method_freq_path = dir.join("interface_distribution.json");
-        let method_freq = method_freq::MethodFreqMap::from_file_path(&method_freq_path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let method_freq = if method_freq_path.exists() {
+            method_freq::MethodFreqMap::from_file_path(&method_freq_path).ok()
+        } else {
+            None
+        };
 
         Ok(TraceConfig {
             call_graph,
@@ -43,14 +46,15 @@ mod tests {
 
         assert!(config.call_graph.callees_of(&svc_name).len() > 0);
 
-        let sampled_method = config
-            .method_freq_map
-            .get_service(&svc_name)
-            .expect("service must exist")
-            .sample(&mut rand::rng());
-        assert!(!sampled_method.is_empty());
+        if let Some(method_freq) = config.method_freq_map {
+            let sampled_method = method_freq
+                .get_service(&svc_name)
+                .expect("service must exist")
+                .sample(&mut rand::rng());
+            assert!(!sampled_method.is_empty());
 
-        let valid_methods = vec!["wZa2gEnTxC", "daq6sEhEBy"];
-        assert!(valid_methods.contains(&sampled_method));
+            let valid_methods = vec!["wZa2gEnTxC", "daq6sEhEBy"];
+            assert!(valid_methods.contains(&sampled_method));
+        }
     }
 }

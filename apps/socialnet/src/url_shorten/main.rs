@@ -6,9 +6,9 @@ pub mod url_shorten {
     tonic::include_proto!("url_shorten");
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "[::1]:50053".parse::<SocketAddr>().unwrap();
+    let addr = "0.0.0.0:50052".parse::<SocketAddr>().unwrap();
 
     let service = create_service().await?;
 

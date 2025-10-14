@@ -2,6 +2,7 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
+from typing import Optional
 # pyrefly: ignore  # import-error
 from util import parse_args, prepare_output_dir, read_data
 
@@ -14,6 +15,75 @@ def compute_goodput(df):
     s_to_us = 10**6
 
     return df["met_slo"].sum() / duration_us * s_to_us
+
+
+def compute_goodput_time_series(df, bucket_seconds: float = 1.0):
+    """Return per-second goodput counts for the provided request dataframe."""
+    if bucket_seconds <= 0:
+        raise ValueError("bucket_seconds must be positive")
+
+    if df.empty:
+        return np.array([]), np.array([])
+
+    bucket_us = int(bucket_seconds * 10**6)
+    start = df["start_at"].min()
+    end = (df["start_at"] + df["latency"]).max()
+
+    if end <= start:
+        end = start + bucket_us
+
+    bins = np.arange(start, end + bucket_us, bucket_us)
+    if len(bins) < 2:
+        bins = np.array([start, start + bucket_us])
+
+    met_mask = df["error"] == "/None"
+    if met_mask.any():
+        completion_times = df.loc[met_mask, "start_at"] + df.loc[met_mask, "latency"]
+        counts, bin_edges = np.histogram(completion_times, bins=bins)
+    else:
+        counts = np.zeros(len(bins) - 1, dtype=int)
+        bin_edges = bins
+
+    times_seconds = (bin_edges[:-1] - start) / 10**6
+    goodput = counts / bucket_seconds
+
+    return times_seconds, goodput
+
+
+def plot_goodput_time_series(
+    df,
+    output_path: str,
+    *,
+    bucket_seconds: float = 1.0,
+    title: Optional[str] = None,
+) -> None:
+    times, goodput = compute_goodput_time_series(df, bucket_seconds=bucket_seconds)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    if times.size == 0:
+        ax.text(0.5, 0.5, "No data", transform=ax.transAxes, ha="center", va="center")
+        ax.set_xlabel("Time (seconds)")
+        ax.set_ylabel("Goodput (requests / second)")
+    else:
+        ax.bar(
+            times,
+            goodput,
+            width=bucket_seconds,
+            align="edge",
+            edgecolor="black",
+            alpha=0.7,
+        )
+        ax.set_xlabel("Time since first request (seconds)")
+        ax.set_ylabel("Goodput (requests / second)")
+
+    if title:
+        ax.set_title(title)
+
+    ax.grid(axis="y", linestyle="--", alpha=0.7)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300)
+    plt.close(fig)
 
 
 def generate_plots(args) -> None:
@@ -78,6 +148,20 @@ def generate_plots(args) -> None:
                 dpi=300,
             )
             plt.close()
+
+            for policy in policies:
+                policy_dir = os.path.join(output_dir, policy)
+                os.makedirs(policy_dir, exist_ok=True)
+                for rps in rps_values:
+                    df = data[policy][rps]
+                    plot_goodput_time_series(
+                        df,
+                        os.path.join(
+                            policy_dir, f"goodput_time_series_{rps}rps_{api}.png"
+                        ),
+                        bucket_seconds=1.0,
+                        title=f"Goodput Time Series for {api} - {policy} - {rps} RPS",
+                    )
 
     output_dir = args.output_dir
     # averaged goodput
