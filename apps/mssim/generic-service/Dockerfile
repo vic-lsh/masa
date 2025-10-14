@@ -2,6 +2,7 @@
 FROM rust:latest AS rust_builder
 
 ARG FEATURE=fifo
+ENV FEATURE=${FEATURE}
 
 WORKDIR /app
 
