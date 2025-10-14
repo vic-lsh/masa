@@ -1,0 +1,468 @@
+#version: '3.8'
+# -------------------------------------------
+# Application Services
+# -------------------------------------------
+
+services:
+  compose_post:
+    image: socialnet/compose_post_server:latest
+    build: 
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        - SERVICE_NAME=compose_post_server
+    container_name: "compose_post_server"
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - MONGO_URL=mongodb://mongo:27017/compose-post
+    depends_on:
+      - mongo
+    networks:
+      - socialnet-network
+
+  home_timeline:
+    image: socialnet/home_timeline_server:latest
+    build: 
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        - SERVICE_NAME=home_timeline_server
+    container_name: "home_timeline_server"
+    restart: always
+    ports:
+      - "8081:8080"
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    networks:
+      - socialnet-network
+
+  media:
+    image: socialnet/media_server:latest
+    build: 
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        - SERVICE_NAME=media_service
+    container_name: "media_service"
+    restart: always
+    ports:
+      - "8082:8080"
+    environment:
+      - MONGO_URL=mongodb://mongo:27017/media
+    depends_on:
+      - mongo
+    networks:
+      - socialnet-network
+
+  post_storage:
+    image: socialnet/post_storage_server:latest
+    build: 
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        - SERVICE_NAME=post_storage_server
+    container_name: "post_storage_server"
+    restart: always
+    ports:
+      - "8083:8080"
+    environment:
+      - MONGO_URL=mongodb://mongo:27017/post-storage
+    depends_on:
+      - mongo
+    networks:
+      - socialnet-network
+
+  social_graph:
+    image: socialnet/social_graph_server:latest
+    build: 
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        - SERVICE_NAME=social_graph_server
+    container_name: "social_graph_server"
+    restart: always
+    ports:
+      - "8084:8080"
+    environment:
+      - MONGO_URL=mongodb://mongo:27017/social-graph
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - mongo
+      - redis
+    networks:
+      - socialnet-network
+
+  text_service:
+    image: socialnet/textservice_server:latest
+    build: 
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        - SERVICE_NAME=textservice_server
+    container_name: "textservice_server"
+    restart: always
+    ports:
+      - "8085:8080"
+    networks:
+      - socialnet-network
+
+  unique_id:
+    image: socialnet/unique_id_service:latest
+    build: 
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        - SERVICE_NAME=unique_id_service
+    container_name: "unique_id_service"
+    restart: always
+    ports:
+      - "8086:8080"
+    networks:
+      - socialnet-network
+
+  url_shorten:
+    image: socialnet/url_shorten_server:latest
+    build: 
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        - SERVICE_NAME=url_shorten_server
+    container_name: "url_shorten_server"
+    restart: always
+    ports:
+      - "8087:8080"
+    environment:
+      - MONGO_URL=mongodb://mongo:27017/url-shorten
+    depends_on:
+      - mongo
+    networks:
+      - socialnet-network
+
+  user:
+    image: socialnet/user_service:latest
+    build: 
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        - SERVICE_NAME=user_service
+    container_name: user_service
+    restart: always
+    ports:
+      - "8088:8080"
+    environment:
+      - MONGO_URL=mongodb://mongo:27017/user
+    depends_on:
+      - mongo
+    networks:
+      - socialnet-network
+
+  user_mention:
+    image: socialnet/usermention_server:latest
+    build: 
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        - SERVICE_NAME=usermention_server
+    container_name: usermention_server
+    restart: always
+    ports:
+      - "8089:8080"
+    environment:
+      - MONGO_URL=mongodb://mongo:27017/user-mention
+    depends_on:
+      - mongo
+    networks:
+      - socialnet-network
+
+  user_timeline:
+    image: socialnet/user_timeline_server:latest
+    build: 
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        - SERVICE_NAME=user_timeline_server
+    container_name: user_timeline_server
+    restart: always
+    ports:
+      - "8090:8080"
+    environment:
+      - MONGO_URL=mongodb://mongo:27017/user-timeline
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - mongo
+      - redis
+    networks:
+      - socialnet-network
+
+  write_home_timeline:
+    image: socialnet/write_home_timeline_server:latest
+    build: 
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        - SERVICE_NAME=write_home_timeline_server
+    container_name: write_home_timeline_server
+    restart: always
+    ports:
+      - "8091:8080"
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      - rabbitmq
+    networks:
+      - socialnet-network
+
+# -------------------------------------------
+# Dependency Services
+# -------------------------------------------
+
+  mongo:
+    image: mongo:7.0
+    container_name: mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - socialnet-network
+
+  redis:
+    image: redis:7.2
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - socialnet-network
+
+  memcached:
+    image: memcached:1.6
+    container_name: memcached
+    restart: always
+    ports:
+      - "11211:11211"
+    networks:
+      - socialnet-network
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - socialnet-network
+
+# -------------------------------------------
+# Volumes & Networks
+# -------------------------------------------
+
+volumes:
+  mongo-data:
+  redis-data:
+  rabbitmq-data:
+
+networks:
+  socialnet-network:
+    driver: bridge
+
+
+# services:
+# # APPLICATION SERVICES
+#   compose_post:
+#     image: socialnet/compose_post_server:latest
+#     container_name: "compose_post_server"
+#     restart: always
+#     ports:
+#       - "8080:8080"
+#     depends_on:
+#       - mongo
+#       - redis
+#     networks:
+#       - socialnet-network
+
+#   home_timeline:
+#     image: socialnet/home_timeline_server:latest
+#     container_name: "home_timeline_server"
+#     restart: always
+#     ports:
+#       - "8081:8080"
+#     depends_on:
+#       - mongo
+#       - redis
+#     networks:
+#       - socialnet-network
+
+#   media:
+#     image: socialnet/media_server:latest
+#     container_name: "media_server"
+#     restart: always
+#     ports:
+#       - "8082:8080"
+#     depends_on:
+#       - mongo
+#     networks:
+#       - socialnet-network
+  
+#   post_storage:
+#     image: socialnet/post_storage_server:latest
+#     container_name: "post_storage_server"
+#     restart: always
+#     ports:
+#       - "8083:8080"
+#     depends_on:
+#       - mongo
+#     networks:
+#       - socialnet-network
+  
+#   social_graph:
+#     image: socialnet/social_graph_server:latest
+#     container_name: "social_graph_server"
+#     restart: always
+#     ports: 
+#       - "8084:8080"
+#     environment:
+#       - MONGO_URL=mongodb://mongo:27017
+#       - REDIS_URL=redis://redis:6379
+#     depends_on:
+#       - mongo
+#       - redis
+#     networks:
+#       - socialnet-network
+
+#   text_service:
+#     image: socialnet/textservice_server:latest
+#     container_name: "texttextservice_server"
+#     restart: always
+#     ports:
+#       - "8085:8080"
+#     networks:
+#       - socialnet-network
+
+#   unique_id:
+#     image: socialnet/unique_id_service:latest
+#     container_name: "unique_id_service"
+#     ports:
+#       - "8086:8080"
+#     networks:
+#       - socialnet-network
+
+#   url_shorten:
+#     image: socialnet/url_shorten_server:latest
+#     container_name: "url_shorten_server"
+#     restart: always
+#     ports:
+#       - "8087:8080"
+#     environment:
+#       - MONGO_URL=mongodb://mongo:27017
+#     depends_on:
+#       - mongo
+#     networks:
+#       - socialnet-network
+  
+#   user:
+#     image: socialnet/user_service:latest
+#     container_name: user_service
+#     restart: always
+#     ports:
+#       - "8088:8080"
+#     environment:
+#       - MONGO_URL=mongodb://mongo:27017
+#     depends_on:
+#       - mongo
+#     networks:
+#       - socialnet-network
+
+#   user_mention:
+#     image: socialnet/usermention_server:latest
+#     container_name: usermention_server
+#     restart: always
+#     ports:
+#       - "8089:8080"
+#     environment:
+#       - MONGO_URL=mongodb://mongo:27017
+#     depends_on:
+#       - mongo
+#     networks:
+#       - socialnet-network
+
+#   user_timeline:
+#     image: socialnet/user_timeline_server:latest
+#     container_name: user_timeline_server
+#     restart: always
+#     ports:
+#       - "8090:8080"
+#     environment:
+#       - MONGO_URL=mongodb://mongo:27017
+#       - REDIS_URL=redis://redis:6379
+#     depends_on:
+#       - mongo
+#       - redis
+#     networks:
+#       - socialnet-network
+
+#   write_home_timeline:
+#     image: socialnet/write_home_timeline_server:latest
+#     container_name: write_home_timeline_server
+#     restart: always
+#     ports:
+#       - "8091:8080"
+#     environment:
+#       - REDIS_URL=redis://redis:6379
+#     depends_on:
+#       - redis
+#     networks:
+#       - socialnet-network
+
+# # DEPENDENCY SERVICES
+#   mongo:
+#     image: mongo:7.0
+#     container_name: mongo
+#     restart: always
+#     ports:
+#       - "27017:27017"
+#     volumes:
+#       - mongo-data:/data/db
+#     networks:
+#       - socialnet-network
+
+#   redis:
+#     image: redis:7.2
+#     container_name: redis
+#     restart: always
+#     ports:
+#       - "6379:6379"
+#     volumes:
+#       - redis-data:/data
+#     networks:
+#       - socialnet-network
+# # urlshorten-mongo:
+# #     image: mongo:7.0
+# #     container_name: "urlshorten_mongo"
+# #     command: --port 27003
+# #     ports:
+# #       - "27003:27003"
+# #     restart: always
+# #     volumes:
+# #       - urlshorten:/data
+# #     deploy:
+# #       resources:
+# #         limits:
+# #           cpus: "4"
+  
+# # will have a volume for each set of services?
+# volumes:
+#   urlshorten: 
+  
+  
+#   # structure similar to recommendation??

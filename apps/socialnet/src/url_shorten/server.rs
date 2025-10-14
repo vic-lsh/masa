@@ -211,7 +211,11 @@ impl UrlShortenService for UrlShortenServiceImpl {
 
 pub async fn create_service(
 ) -> Result<UrlShortenServiceServer<UrlShortenServiceImpl>, Box<dyn std::error::Error>> {
-    let mongo_client = initialize_database("mongodb://localhost:27017").await?;
+    // adding the mongo url dependency
+    let mongo_url = env::var("MONGO_URL")
+        .expect("MONGO_URL environment variable must be set");
+
+    let mongo_client = initialize_database(&mongo_url).await?;
 
     let service = UrlShortenServiceImpl::new(mongo_client);
 

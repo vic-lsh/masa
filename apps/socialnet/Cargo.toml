@@ -59,6 +59,22 @@ path = "src/social_graph/main.rs"
 name = "write_home_timeline_server"
 path = "src/write_home_timeline/main.rs"
 
+[[bin]]
+name = "media_service"
+path = "src/media/main.rs"
+
+[[bin]]
+name = "unique_id_service"
+path = "src/unique_id/server.rs"
+
+# If you ever needed for command-line test clients, could add these:
+# [[bin]]
+# name = "media_client"
+# path = "src/media/client.rs"
+# 
+# [[bin]]
+# name = "unique_id_client"
+# path = "src/unique_id/client.rs"
 
 [features]
 prio_class = [
@@ -156,3 +172,13 @@ config = { version = "0.14.0", features = ["json"] }
 
 [build-dependencies]
 tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
+
+# trying to fix depdnedncies
+[patch.crates-io]
+tokio = { path = "../../libs/tokio/tokio" }
+tokio-macros = { path = "../../libs/tokio/tokio-macros" }
+tokio-util = { path = "../../libs/tokio/tokio-util" }
+hyper = { path = "../../libs/hyper" }
+tower-service = { path = "../../libs/tower/tower-service" }
+
+
