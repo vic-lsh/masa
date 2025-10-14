@@ -1,10 +1,15 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::Deserialize;
 use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
 use sim_config::svc::ServiceName;
 use sim_config::trace::TraceConfig;
-use sim_config::{SimulatorConfig, PROJECT_NAME};
-use std::{collections::HashMap, fs, path::PathBuf, process::Command};
+use sim_config::{PROJECT_NAME, SimulatorConfig};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 use tracing::{debug, error, info};
 use yaml_rust::yaml::Hash;
 use yaml_rust::{Yaml, YamlEmitter};
@@ -15,7 +20,7 @@ const LOADGEN_SERVICE_NAME: &str = "load_generator";
 ///
 // TODO: make this configurable
 const FRONTEND_SERVICE_NAME: &str = "USER";
-
+const LOADGEN_TRACE_MOUNT: &str = "/trace-data";
 const CONTAINER_CPU_LIMIT: usize = 1;
 const CONTAINER_MEM_LIMIT: &str = "512MB";
 
@@ -93,6 +98,7 @@ pub fn generate_docker_compose(
     trace_dir: &PathBuf,
     sim_cfg: &SimulatorConfig,
     deployment: &Deployment,
+    replay_path: Option<&Path>,
 ) -> Result<()> {
     info!("Generating docker-compose.yml file.");
 
@@ -108,7 +114,7 @@ pub fn generate_docker_compose(
         services_hash.insert(Yaml::String(service_name.to_string()), service_def);
     }
 
-    let loadgen_config = make_load_generator_config_yaml(deployment)?;
+    let loadgen_config = make_load_generator_config_yaml(trace_dir, deployment, replay_path)?;
     services_hash.insert(Yaml::String(LOADGEN_SERVICE_NAME.into()), loadgen_config);
 
     let doc = make_docker_compose_doc(services_hash);
@@ -255,7 +261,11 @@ fn make_volumes_def(trace_dir: &PathBuf) -> Yaml {
     ])
 }
 
-fn make_load_generator_config_yaml(deployment: &Deployment) -> Result<Yaml> {
+fn make_load_generator_config_yaml(
+    trace_dir: &PathBuf,
+    deployment: &Deployment,
+    replay_path: Option<&Path>,
+) -> Result<Yaml> {
     let mut service_def = Hash::new();
 
     let mut build_def = Hash::new();
@@ -292,8 +302,61 @@ fn make_load_generator_config_yaml(deployment: &Deployment) -> Result<Yaml> {
         Yaml::String(frontend_info.ip.clone()),
     );
 
+    let trace_dir_canon = trace_dir
+        .canonicalize()
+        .with_context(|| format!("Failed to resolve trace directory {:?}", trace_dir))?;
+    let host_trace_dir = trace_dir_canon.to_string_lossy().into_owned();
+
+    let replay_env = if let Some(override_path) = replay_path {
+        let resolved = if override_path.is_absolute() {
+            override_path.to_path_buf()
+        } else {
+            trace_dir_canon.join(override_path)
+        };
+
+        let replay_canon = resolved
+            .canonicalize()
+            .with_context(|| format!("Failed to resolve replay trace path {:?}", resolved))?;
+
+        let relative = replay_canon
+            .strip_prefix(&trace_dir_canon)
+            .with_context(|| {
+                anyhow!(
+                    "Replay trace path {:?} must be located under {:?}",
+                    replay_canon,
+                    trace_dir_canon
+                )
+            })?;
+
+        Some(
+            Path::new(LOADGEN_TRACE_MOUNT)
+                .join(relative)
+                .to_string_lossy()
+                .into_owned(),
+        )
+    } else {
+        None
+    };
+
+    if let Some(replay_path) = replay_env {
+        environment.insert(
+            Yaml::String("REPLAY_TRACE_PATH".into()),
+            Yaml::String(replay_path),
+        );
+    }
+    environment.insert(
+        Yaml::String("QUEUE_LATENCY_OUTPUT_DIR".into()),
+        Yaml::String(LOADGEN_TRACE_MOUNT.into()),
+    );
+
     service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
 
+    let mut volumes: Vec<Yaml> = Vec::new();
+    let volume_mapping = format!("{}:{}", host_trace_dir, LOADGEN_TRACE_MOUNT);
+    volumes.push(Yaml::String(volume_mapping.into()));
+    service_def.insert(Yaml::String("volumes".into()), Yaml::Array(volumes));
+
+    // Add networks (using 'microservice_net' as in the example)
     service_def.insert(
         Yaml::String("networks".into()),
         Yaml::Array(vec![Yaml::String("microservice_net".into())]),
@@ -389,6 +452,7 @@ pub async fn launch_simulation_from_yaml(
     config: TraceConfig,
     trace_dir: &PathBuf,
     sim_config: SimulatorConfig,
+    replay_path: Option<&Path>,
 ) -> Result<()> {
     // Generate service-specific config files
     let deployment =
@@ -400,7 +464,7 @@ pub async fn launch_simulation_from_yaml(
     }
 
     // generate docker-compose.yml
-    generate_docker_compose(&config, trace_dir, &sim_config, &deployment)?;
+    generate_docker_compose(&config, trace_dir, &sim_config, &deployment, replay_path)?;
 
     // running Docker Compose
     run_docker_compose()?;
