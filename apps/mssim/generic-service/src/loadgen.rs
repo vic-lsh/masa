@@ -314,12 +314,6 @@ async fn run_root_load(
                         req_id,
                         start_at,
                     });
-                    let req_id = sent.load(Ordering::Relaxed);
-                    let start_at = time_now();
-                    let mut request = Request::new(RootRequest {
-                        req_id,
-                        start_at,
-                    });
 
                     let ctx = {
                         let slo = 50_000;

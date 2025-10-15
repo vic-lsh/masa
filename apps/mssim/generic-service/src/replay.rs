@@ -1,6 +1,5 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
-    env,
     fs::File,
     io::BufReader,
     path::{Path, PathBuf},
