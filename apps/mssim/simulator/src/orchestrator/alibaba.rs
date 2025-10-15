@@ -201,15 +201,9 @@ fn make_build_def(svc_port: u16) -> Yaml {
     );
 
     if let Ok(feature) = env::var("FEATURE") {
-        build_args.insert(
-            Yaml::String("FEATURE".into()),
-            Yaml::String(feature),
-        );
+        build_args.insert(Yaml::String("FEATURE".into()), Yaml::String(feature));
     } else {
-        build_args.insert(
-            Yaml::String("FEATURE".into()),
-            Yaml::String("fifo".into()),
-        );
+        build_args.insert(Yaml::String("FEATURE".into()), Yaml::String("fifo".into()));
     }
 
     build_def.insert(Yaml::String("args".into()), Yaml::Hash(build_args));
@@ -255,12 +249,9 @@ fn make_environment_def(service_name: &ServiceName, svc_port: u16) -> Yaml {
     );
 
     if let Ok(feature) = env::var("FEATURE") {
-        environment.insert(
-            Yaml::String("FEATURE".into()),
-            Yaml::String(feature),
-        );
+        environment.insert(Yaml::String("FEATURE".into()), Yaml::String(feature));
     }
-    
+
     Yaml::Hash(environment)
 }
 
@@ -325,8 +316,11 @@ fn make_load_generator_config_yaml(
 
     service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
 
+    let host_data_dir = env::var("HOST_TRACE_DIR")
+        .unwrap_or_else(|_| trace_dir.clone().to_string_lossy().to_string());
+
     let mut volumes: Vec<Yaml> = Vec::new();
-    let volume_mapping = format!("{}:{}", host_data_dir.to_string_lossy(), LOADGEN_OUTPUT_MOUNT);
+    let volume_mapping = format!("{}:{}", host_data_dir, LOADGEN_OUTPUT_MOUNT);
     volumes.push(Yaml::String(volume_mapping.into()));
     service_def.insert(Yaml::String("volumes".into()), Yaml::Array(volumes));
 
