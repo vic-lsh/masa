@@ -18,6 +18,7 @@ pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
     feature = "perfect_lsf",
     feature = "fifo_infra",
     feature = "fifo",
+    feature = "fifo_early",
     feature = "fifo_span_tracing",
     feature = "fifo_queue_tracing",
     feature = "prio_global_queue_tracing",
