@@ -323,42 +323,6 @@ fn make_load_generator_config_yaml(
         Yaml::String(frontend_info.ip.clone()),
     );
 
-    if let Some(replay_path) = replay_path {
-        environment.insert(
-            Yaml::String("REPLAY_TRACE_PATH".into()),
-            Yaml::String(replay_path.to_string_lossy().into_owned()),
-        );
-    }
-    let host_output_dir = workspace_root().join("apps/mssim/data");
-    fs::create_dir_all(&host_output_dir).with_context(|| {
-        format!(
-            "Failed to create load generator output directory at {}",
-            host_output_dir.display()
-        )
-    })?;
-
-    if let Ok(rps) = env::var("RPS") {
-        environment.insert(Yaml::String("RPS".into()), Yaml::String(rps.clone()));
-    }
-    
-    if let Ok(max_in_flight) = env::var("MAX_IN_FLIGHT") {
-        environment.insert(
-            Yaml::String("MAX_IN_FLIGHT".into()),
-            Yaml::String(max_in_flight),
-        );
-    }
-
-    if let Ok(stats) = env::var("STATS_INTERVAL_SEC") {
-        environment.insert(
-            Yaml::String("STATS_INTERVAL_SEC".into()),
-            Yaml::String(stats),
-        );
-    }
-
-    let host_data_dir = env::var("HOST_TRACE_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| trace_dir.clone());
-
     service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
 
     let mut volumes: Vec<Yaml> = Vec::new();

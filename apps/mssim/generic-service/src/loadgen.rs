@@ -314,6 +314,12 @@ async fn run_root_load(
                         req_id,
                         start_at,
                     });
+                    let req_id = sent.load(Ordering::Relaxed);
+                    let start_at = time_now();
+                    let mut request = Request::new(RootRequest {
+                        req_id,
+                        start_at,
+                    });
 
                     let ctx = {
                         let slo = 50_000;
@@ -350,7 +356,13 @@ async fn run_root_load(
         }
     }
 
+    // Drain in-flight requests before exit
     let _ = inflight_guard.acquire_many(max_in_flight as u32).await;
+
+    let s = sent.load(Ordering::Relaxed);
+    let o = ok.load(Ordering::Relaxed);
+    let e = err.load(Ordering::Relaxed);
+    println!("Final stats: sent={}, ok={}, err={}", s, o, e);
 
     Ok(())
 }

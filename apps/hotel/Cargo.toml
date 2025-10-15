@@ -54,6 +54,9 @@ name = "loadgen"
 path = "src/loadgen/main.rs"
 
 [features]
+scheduler_trace = [
+    "tokio/scheduler_trace",
+]
 prio_class = [
   "tokio/prio_class",
   "masa/prio_class",

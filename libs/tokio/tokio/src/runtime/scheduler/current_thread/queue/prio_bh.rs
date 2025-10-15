@@ -95,8 +95,6 @@ impl<T: Ord> Default for BinaryHeapQueue<T> {
     fn default() -> Self {
         Self {
             q: BinaryHeap::new(),
-            // push_count: 0,
-            // reorder_count: 0,
         }
     }
 }
