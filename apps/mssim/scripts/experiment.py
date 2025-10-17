@@ -89,6 +89,8 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         env["STATS_INTERVAL_SEC"] = str(cfg.stats_interval_sec)
     if cfg.replay_path:
         env["REPLAY_TRACE_PATH"] = str(cfg.replay_path)
+    if cfg.duration_sec > 0:
+        env["DURATION"] = str(cfg.duration_sec)
 
     env["HOST_TRACE_DIR"] = run_dir.resolve()
 
@@ -131,7 +133,7 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         if cfg.duration_sec <= 0:
             return proc.wait()
         try:
-            proc.wait(timeout=cfg.duration_sec)
+            proc.wait(timeout=cfg.duration_sec * 10)
         except subprocess.TimeoutExpired:
             proc.send_signal(signal.SIGINT)
             proc.wait()
