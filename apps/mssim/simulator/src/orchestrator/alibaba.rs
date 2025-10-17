@@ -314,6 +314,13 @@ fn make_load_generator_config_yaml(
         Yaml::String(frontend_info.ip.clone()),
     );
 
+    if let Ok(duration) = env::var("DURATION") {
+        environment.insert(
+            Yaml::String("DURATION".into()),
+            Yaml::String(duration),
+        );
+    }
+
     service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
 
     let host_data_dir = env::var("HOST_TRACE_DIR")
