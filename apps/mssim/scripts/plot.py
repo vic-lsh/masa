@@ -2,8 +2,8 @@
 """Compare goodput and latency distributions for FIFO vs priority policies."""
 from __future__ import annotations
 
-import argparse
 import csv
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,58 +14,13 @@ from matplotlib.patches import Patch
 
 THRESHOLD_DEFAULT_MS = 100
 FILENAME_PATTERN = re.compile(r"root_latencies_(?P<rps>[0-9_]+)rps\.csv$")
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "data/experiment_template.json"
 
 
 @dataclass
 class PolicySamples:
     e2e_ms: Dict[float, List[float]]
     queue_ms: Dict[float, List[float]]
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--experiment-root",
-        type=Path,
-        default=Path("apps/mssim/data/experiments/experiment-1"),
-        help=(
-            "Directory containing experiment outputs (e.g. apps/mssim/data/experiments/experiment-1)."
-        ),
-    )
-    parser.add_argument(
-        "--policy-a",
-        default="fifo_queue_tracing",
-        help="Name of the first policy directory under the experiment root (default: fifo_queue_tracing)",
-    )
-    parser.add_argument(
-        "--policy-b",
-        default="prio_global_queue_tracing",
-        help="Name of the second policy directory under the experiment root (default: prio_global_queue_tracing)",
-    )
-    parser.add_argument(
-        "--threshold-ms",
-        type=float,
-        default=THRESHOLD_DEFAULT_MS,
-        help="Latency threshold (milliseconds) used to calculate goodput.",
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path(f"apps/mssim/data/goodput_comparison_{THRESHOLD_DEFAULT_MS}ms.png"),
-        help="Path to save the goodput comparison plot.",
-    )
-    parser.add_argument(
-        "--boxplot-output",
-        type=Path,
-        default=Path("apps/mssim/data/latency_boxplot.png"),
-        help="Path to save the latency percentile boxplot.",
-    )
-    parser.add_argument(
-        "--show",
-        action="store_true",
-        help="Display the plots interactively after saving them.",
-    )
-    return parser.parse_args()
 
 
 def parse_rps_from_name(path: Path) -> float:
@@ -151,11 +106,13 @@ def plot_goodput(
     labels: Tuple[str, str],
 ) -> None:
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(rps_values, policy_a_goodput, marker="o", label=labels[0])
-    ax.plot(rps_values, policy_b_goodput, marker="s", label=labels[1])
+    goodput_fraction_a = [gp / rps for gp, rps in zip(policy_a_goodput, rps_values)]
+    goodput_fraction_b = [gp / rps for gp, rps in zip(policy_b_goodput, rps_values)]
+    ax.plot(rps_values, goodput_fraction_a, marker="o", label=labels[0])
+    ax.plot(rps_values, goodput_fraction_b, marker="s", label=labels[1])
     ax.set_xlabel("Offered load (RPS)")
-    ax.set_ylabel("Goodput (RPS)")
-    ax.set_title(f"Goodput vs RPS with SLO={threshold_ms:g} ms")
+    ax.set_ylabel("Goodput Fraction (RPS)")
+    ax.set_title(f"Goodput fraction vs RPS with SLO={threshold_ms:g} ms")
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
     ax.legend()
     fig.tight_layout()
@@ -227,24 +184,41 @@ def build_latency_plots(
     print(f"Saved latency plots to {output}")
 
 
+def load_plot_config(config_path: Path) -> Tuple[Path, Tuple[str, str], float]:
+    with config_path.open("r") as fh:
+        config = json.load(fh)
+
+    try:
+        experiment_root = Path(config["output_root"]) / config["experiment_name"]
+        policies = config["policies"]
+    except KeyError as exc:
+        raise KeyError(f"Missing key in plot config: {exc}") from exc
+
+    if len(policies) < 2:
+        raise ValueError("Plot config must specify at least two policies.")
+
+    threshold_ms = float(config.get("slo_ms", THRESHOLD_DEFAULT_MS))
+    return experiment_root, (policies[0], policies[1]), threshold_ms
+
+
 def main() -> None:
-    args = parse_args()
-    policy_a_dir = args.experiment_root / args.policy_a
-    policy_b_dir = args.experiment_root / args.policy_b
+    experiment_root, (policy_a_name, policy_b_name), threshold_ms = load_plot_config(CONFIG_PATH)
+    policy_a_dir = experiment_root / policy_a_name
+    policy_b_dir = experiment_root / policy_b_name
 
     policy_a_samples = load_policy_samples(policy_a_dir)
     policy_b_samples = load_policy_samples(policy_b_dir)
 
     rps_values = align_rps(policy_a_samples, policy_b_samples)
     policy_a_goodput = [
-        compute_goodput(policy_a_samples.e2e_ms[rps], args.threshold_ms, rps) for rps in rps_values
+        compute_goodput(policy_a_samples.e2e_ms[rps], threshold_ms, rps) for rps in rps_values
     ]
     policy_b_goodput = [
-        compute_goodput(policy_b_samples.e2e_ms[rps], args.threshold_ms, rps) for rps in rps_values
+        compute_goodput(policy_b_samples.e2e_ms[rps], threshold_ms, rps) for rps in rps_values
     ]
 
-    print("Goodput summary (threshold = {:.1f} ms):".format(args.threshold_ms))
-    print(f"RPS\t{args.policy_a}\t{args.policy_b}")
+    print("Goodput summary (threshold = {:.1f} ms):".format(threshold_ms))
+    print(f"RPS\t{policy_a_name}\t{policy_b_name}")
     for rps, policy_a_val, policy_b_val in zip(rps_values, policy_a_goodput, policy_b_goodput):
         print(f"{rps:g}\t{policy_a_val:.2f}\t{policy_b_val:.2f}")
 
@@ -252,20 +226,17 @@ def main() -> None:
         rps_values,
         policy_a_goodput,
         policy_b_goodput,
-        args.output,
-        args.threshold_ms,
-        (args.policy_a, args.policy_b),
+        Path(f"apps/mssim/data/goodput_comparison_{threshold_ms:g}ms.png"),
+        threshold_ms,
+        (policy_a_name, policy_b_name),
     )
     build_latency_plots(
         rps_values,
         policy_a_samples,
         policy_b_samples,
-        args.boxplot_output,
-        (args.policy_a, args.policy_b),
+        Path("apps/mssim/data/latency_boxplot.png"),
+        (policy_a_name, policy_b_name),
     )
-
-    if args.show:
-        plt.show()
 
 
 if __name__ == "__main__":

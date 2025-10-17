@@ -7,7 +7,7 @@ use std::{
 };
 
 use masa::{time_now, Context as MasaContext};
-use tokio::fs;
+use tokio::{fs, time};
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::Instant;
 use tokio::time::MissedTickBehavior;
@@ -67,6 +67,12 @@ async fn main() -> anyhow::Result<()> {
     let stats_interval_sec: u64 = env::var("STATS_INTERVAL_SEC")
         .unwrap_or_else(|_| "2".to_string())
         .parse()?;
+
+    let duration: u32 = env::var("DURATION")
+        .unwrap_or_else(|_| "60".to_string())
+        .parse()?;
+
+    let duration = Duration::from_secs(duration as u64);
 
     let replay_env = env::var("REPLAY_TRACE_PATH")
         .ok()
@@ -236,6 +242,7 @@ async fn main() -> anyhow::Result<()> {
                 inflight_guard.clone(),
                 max_in_flight,
                 root_samples.clone(),
+                Some(duration),
             )
             .await?;
         }
@@ -278,6 +285,7 @@ async fn run_root_load(
     inflight_guard: Arc<Semaphore>,
     max_in_flight: usize,
     root_samples: Arc<Mutex<Vec<RootLatencySample>>>,
+    finish_time: Option<Instant>,
 ) -> anyhow::Result<()> {
     let mut ticker = tokio::time::interval(per_req);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -286,12 +294,29 @@ async fn run_root_load(
     let shutdown = tokio::signal::ctrl_c();
     tokio::pin!(shutdown);
 
+    let finish_fut = async {
+        if let Some(t) = finish_time {
+            time::sleep_until(t).boxed()
+        } else {
+            std::future::pending().boxed()
+        }
+    };
+
+    let shutdown_signal = tokio::signal::ctrl_c();
+    tokio::pin!(shutdown_signal);
+    tokio::pin!(finish_fut);
+
     loop {
         tokio::select! {
-            _ = &mut shutdown => {
+            _ = &mut shutdown_signal => {
                 println!("Received Ctrl-C. Shutting down...");
                 break;
             }
+            _ = &mut finish_fut => {
+                println!("Experiment finished as duration elapsed. Shutting down...");
+                break;
+            }
+
             _ = ticker.tick() => {
                 let permit = match inflight_guard.clone().try_acquire_owned() {
                     Ok(p) => p,
