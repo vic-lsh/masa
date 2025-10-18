@@ -2,14 +2,14 @@
 """Compare goodput and latency distributions for FIFO vs priority policies."""
 from __future__ import annotations
 
-import csv
 import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Iterable, List, Tuple
 
 import matplotlib.pyplot as plt
+import pandas as pd
 from matplotlib.patches import Patch
 
 THRESHOLD_DEFAULT_MS = 100
@@ -19,8 +19,13 @@ CONFIG_PATH = Path(__file__).resolve().parents[1] / "data/experiment_template.js
 
 @dataclass
 class PolicySamples:
-    e2e_ms: Dict[float, List[float]]
-    queue_ms: Dict[float, List[float]]
+    latencies_ms: pd.DataFrame
+
+    def rps_set(self) -> set[float]:
+        return set(self.latencies_ms["rps"].unique())
+
+    def metric_for_rps(self, rps: float, metric: str) -> pd.Series:
+        return self.latencies_ms.loc[self.latencies_ms["rps"] == rps, metric]
 
 
 def parse_rps_from_name(path: Path) -> float:
@@ -42,8 +47,8 @@ def load_policy_samples(policy_dir: Path) -> PolicySamples:
     if not policy_dir.is_dir():
         raise FileNotFoundError(f"Policy directory not found: {policy_dir}")
 
-    e2e: Dict[float, List[float]] = {}
-    queue: Dict[float, List[float]] = {}
+    frames: List[pd.DataFrame] = []
+    empty_rps: List[Path] = []
 
     for rps_dir in sorted(policy_dir.glob("rps_*")):
         try:
@@ -52,49 +57,56 @@ def load_policy_samples(policy_dir: Path) -> PolicySamples:
             print(f"Warning: skipping unexpected directory {rps_dir}")
             continue
 
-        e2e_samples: List[float] = []
-        queue_samples: List[float] = []
-
         run_dirs: Iterable[Path] = sorted(rps_dir.glob("run_*")) or [rps_dir]
+        csv_paths: List[Path] = []
         for run_dir in run_dirs:
-            for csv_path in sorted(run_dir.glob("root_latencies_*rps.csv")):
-                with csv_path.open("r", newline="") as fh:
-                    reader = csv.DictReader(fh)
-                    for row in reader:
-                        try:
-                            e2e_samples.append(float(row["e2e_latency_us"]) / 1_000.0)
-                            queue_raw = row.get("queue_latency_us", "0")
-                            queue_val = float(queue_raw) / 1_000.0 if queue_raw else 0.0
-                            queue_samples.append(queue_val)
-                        except (ValueError, KeyError) as exc:
-                            raise ValueError(
-                                f"Malformed row in {csv_path}: {row}"
-                            ) from exc
+            csv_paths.extend(sorted(run_dir.glob("root_latencies_*rps.csv")))
 
-        if e2e_samples:
-            e2e[rps] = e2e_samples
-            queue[rps] = queue_samples
-        else:
-            print(f"Warning: no samples found for {rps_dir}")
+        if not csv_paths:
+            empty_rps.append(rps_dir)
+            continue
 
-    if not e2e:
+        for csv_path in csv_paths:
+            df = pd.read_csv(csv_path)
+            if "e2e_latency_us" not in df.columns:
+                raise ValueError(f"Missing 'e2e_latency_us' column in {csv_path}")
+
+            if "queue_latency_us" in df.columns:
+                queue_us = df["queue_latency_us"].astype(float)
+            else:
+                queue_us = pd.Series(0.0, index=df.index)
+            frame = pd.DataFrame(
+                {
+                    "rps": rps,
+                    "e2e_latency_ms": df["e2e_latency_us"].astype(float) / 1_000.0,
+                    "queue_latency_ms": queue_us / 1_000.0,
+                }
+            )
+            frames.append(frame)
+
+    for missing in empty_rps:
+        print(f"Warning: no samples found for {missing}")
+
+    if not frames:
         raise RuntimeError(f"No latency samples found under {policy_dir}")
 
-    return PolicySamples(e2e_ms=e2e, queue_ms=queue)
+    latencies = pd.concat(frames, ignore_index=True)
+    return PolicySamples(latencies_ms=latencies)
 
 
 def align_rps(*datasets: PolicySamples) -> List[float]:
-    shared_rps = sorted(set.intersection(*(set(data.e2e_ms.keys()) for data in datasets)))
+    shared_rps = sorted(set.intersection(*(data.rps_set() for data in datasets)))
     if not shared_rps:
         raise RuntimeError("No overlapping RPS values between fifo and prio datasets.")
     return shared_rps
 
 
-def compute_goodput(latencies_ms: List[float], threshold_ms: float, rps: float) -> float:
-    if not latencies_ms:
+def compute_goodput(samples: PolicySamples, threshold_ms: float, rps: float) -> float:
+    latencies = samples.metric_for_rps(rps, "e2e_latency_ms")
+    if latencies.empty:
         return 0.0
-    under = sum(1 for latency in latencies_ms if latency <= threshold_ms)
-    return (under / len(latencies_ms)) * rps
+    under_fraction = (latencies <= threshold_ms).mean()
+    return under_fraction * rps
 
 
 def plot_goodput(
@@ -132,16 +144,16 @@ def build_latency_plots(
     colors = ("#1f77b4", "#ff7f0e")
 
     metrics = [
-        ("End-to-end latency", policy_a.e2e_ms, policy_b.e2e_ms),
-        ("Queue latency", policy_a.queue_ms, policy_b.queue_ms),
+        ("End-to-end latency", "e2e_latency_ms"),
+        ("Queue latency", "queue_latency_ms"),
     ]
 
-    for ax, (title, policy_a_data, policy_b_data) in zip(axes, metrics):
+    for ax, (title, column) in zip(axes, metrics):
         positions_a = [idx - 0.2 for idx in range(len(rps_values))]
         positions_b = [idx + 0.2 for idx in range(len(rps_values))]
 
         bp_a = ax.boxplot(
-            [policy_a_data[rps] for rps in rps_values],
+            [policy_a.metric_for_rps(rps, column).dropna().to_numpy() for rps in rps_values],
             positions=positions_a,
             widths=0.35,
             whis=(5, 99.9),
@@ -150,7 +162,7 @@ def build_latency_plots(
             showfliers=False,
         )
         bp_b = ax.boxplot(
-            [policy_b_data[rps] for rps in rps_values],
+            [policy_b.metric_for_rps(rps, column).dropna().to_numpy() for rps in rps_values],
             positions=positions_b,
             widths=0.35,
             whis=(5, 99.9),
@@ -158,7 +170,7 @@ def build_latency_plots(
             manage_ticks=False,
             showfliers=False,
         )
-
+        
         for patch in bp_a["boxes"]:
             patch.set(facecolor=colors[0], alpha=0.6)
         for patch in bp_b["boxes"]:
@@ -210,11 +222,12 @@ def main() -> None:
     policy_b_samples = load_policy_samples(policy_b_dir)
 
     rps_values = align_rps(policy_a_samples, policy_b_samples)
+
     policy_a_goodput = [
-        compute_goodput(policy_a_samples.e2e_ms[rps], threshold_ms, rps) for rps in rps_values
+        compute_goodput(policy_a_samples, threshold_ms, rps) for rps in rps_values
     ]
     policy_b_goodput = [
-        compute_goodput(policy_b_samples.e2e_ms[rps], threshold_ms, rps) for rps in rps_values
+        compute_goodput(policy_b_samples, threshold_ms, rps) for rps in rps_values
     ]
 
     print("Goodput summary (threshold = {:.1f} ms):".format(threshold_ms))

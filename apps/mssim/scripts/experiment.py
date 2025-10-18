@@ -106,7 +106,7 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         joined = ", ".join(missing_paths)
         raise FileNotFoundError(f"Required input paths do not exist: {joined}")
 
-    cmd = [
+    trace_cmd = [
         "cargo",
         "run",
         "--",
@@ -118,26 +118,73 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         cfg.orchestrator,
     ]
     if cfg.replay_path:
-        cmd.extend(["--replay-path", str(cfg.replay_path)])
+        trace_cmd.extend(["--replay-path", str(cfg.replay_path)])
 
+    down_cmd = ["docker", "compose", "down", "--volumes"]
+
+    up_cmd = [
+        "docker", 
+        "compose", 
+        "-f",
+        "./docker-compose.yml",
+        "-p",
+        "mssim",
+        "up",
+        "--build",
+        "--abort-on-container-exit",
+    ]
+    
     log_path = run_dir / "orchestrator.log"
+    
     with log_path.open("wb") as log_file:
-        print(f"Running command: {' '.join(cmd)}")
-        proc = subprocess.Popen(
-            cmd,
-            cwd=MSSIM_ROOT,
-            env=env,
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-        )
-        if cfg.duration_sec <= 0:
-            return proc.wait()
-        try:
-            proc.wait(timeout=cfg.duration_sec * 10)
-        except subprocess.TimeoutExpired:
+            print(f"Generating YAML with command: {' '.join(trace_cmd)}")
+            proc = subprocess.run(
+                trace_cmd,
+                cwd=MSSIM_ROOT,
+                env=env,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+            )
+
+    if proc.returncode != 0:
+        print(f"Trace command failed with return code {proc.returncode}. See log at {log_path}")
+        return proc.returncode
+    
+    proc = None
+    try:
+        with log_path.open("ab") as log_file:
+            print(f"Starting docker experiment with command: {' '.join(up_cmd)}")
+            proc = subprocess.Popen(
+                up_cmd,
+                cwd=MSSIM_ROOT,
+                env=env,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+            )
+
+            grace_period = 300
+            timeout = cfg.duration_sec + grace_period if cfg.duration_sec > 0 else None
+            return_code = proc.wait(timeout=timeout)
+            return return_code or 0
+            
+    except subprocess.TimeoutExpired:
+        print(f"Timeout expired after {timeout} seconds. Forcing shutdown...")
+        return 1
+    except KeyboardInterrupt:
+        print("\nKeyboard interrupt received. Shutting down...")
+        return 1
+    finally:
+        print("Cleaning up docker-compose services...")
+        if proc and proc.poll() is None:
             proc.send_signal(signal.SIGINT)
-            proc.wait()
-        return proc.returncode or 0
+            try:
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+        
+        # Run docker-compose down to clean up all resources.
+        subprocess.run(down_cmd, cwd=MSSIM_ROOT, check=False)
+        print("Cleanup complete.")
 
 
 

@@ -8,23 +8,23 @@ use std::{
 };
 
 use anyhow::Context;
-use masa::{time_now, Context as MasaContext};
+use masa::{Context as MasaContext, time_now};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::fs;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::Instant;
+use tonic::Request;
 use tonic::metadata::MetadataMap;
 use tonic::transport::masa_channel::LoadBalancedChannel;
-use tonic::Request;
 
+use crate::OUTPUT_DIR;
 use crate::service::local_span::SpanType as ProtoSpanType;
 use crate::service::service_client::ServiceClient;
 use crate::service::{
-    span::Kind as ProtoSpanKind, ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
-    ReplayRequest as ProtoReplayRequest, Span as ProtoSpan,
+    ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
+    ReplayRequest as ProtoReplayRequest, Span as ProtoSpan, span::Kind as ProtoSpanKind,
 };
-use crate::OUTPUT_DIR;
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
