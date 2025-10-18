@@ -315,10 +315,11 @@ fn make_load_generator_config_yaml(
     );
 
     if let Ok(duration) = env::var("DURATION") {
-        environment.insert(
-            Yaml::String("DURATION".into()),
-            Yaml::String(duration),
-        );
+        environment.insert(Yaml::String("DURATION".into()), Yaml::String(duration));
+    }
+
+    if let Ok(rps) = env::var("RPS") {
+        environment.insert(Yaml::String("RPS".into()), Yaml::String(rps));
     }
 
     service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
@@ -441,16 +442,16 @@ pub async fn launch_simulation_from_yaml(
     // generate docker-compose.yml
     generate_docker_compose(&config, trace_dir, &sim_config, &deployment, replay_path)?;
 
-    // running Docker Compose
-    run_docker_compose()?;
+    // // running Docker Compose
+    // run_docker_compose()?;
 
-    // wait for termination signal (ctrl-c in this case) and then stopping docker compose
-    tokio::signal::ctrl_c().await?;
-    info!("Received termination signal.");
-    stop_docker_compose()?;
+    // // wait for termination signal (ctrl-c in this case) and then stopping docker compose
+    // tokio::signal::ctrl_c().await?;
+    // info!("Received termination signal.");
+    // stop_docker_compose()?;
 
-    // collect and report output (TODO)
-    info!("Collecting and reporting output...");
+    // // collect and report output (TODO)
+    // info!("Collecting and reporting output...");
 
     Ok(())
 }
