@@ -6,11 +6,11 @@ use std::{
     time::Duration,
 };
 
-use masa::{time_now, Context as MasaContext};
-use tokio::{fs, time};
+use masa::{Context as MasaContext, time_now};
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::Instant;
 use tokio::time::MissedTickBehavior;
+use tokio::{fs, time};
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{Request, Response};
 
@@ -21,11 +21,11 @@ mod service {
     tonic::include_proto!("service");
 }
 use replay::{
-    load_frontend_replay_items, queue_latency_output_path, run_replay_load,
-    write_queue_latency_csv, QueueLatencySample, ReplayWorkItem,
+    QueueLatencySample, ReplayWorkItem, load_frontend_replay_items, queue_latency_output_path,
+    run_replay_load, write_queue_latency_csv,
 };
-use service::service_client::ServiceClient;
 use service::RootRequest;
+use service::service_client::ServiceClient;
 type RpcClient = ServiceClient<LoadBalancedChannel>;
 
 const PERIODIC_FLUSH_INTERVAL_SECS: u64 = 10;
@@ -61,6 +61,9 @@ async fn main() -> anyhow::Result<()> {
     let rps: f64 = env::var("RPS")
         .unwrap_or_else(|_| "350".to_string())
         .parse()?;
+
+    // print rps
+    println!("RPS set to: {}", rps);
     let max_in_flight: usize = env::var("MAX_IN_FLIGHT")
         .unwrap_or_else(|_| "10000".to_string())
         .parse()?;
@@ -285,26 +288,25 @@ async fn run_root_load(
     inflight_guard: Arc<Semaphore>,
     max_in_flight: usize,
     root_samples: Arc<Mutex<Vec<RootLatencySample>>>,
-    finish_time: Option<Instant>,
+    finish_after: Option<Duration>,
 ) -> anyhow::Result<()> {
     let mut ticker = tokio::time::interval(per_req);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
     ticker.reset();
 
-    let shutdown = tokio::signal::ctrl_c();
-    tokio::pin!(shutdown);
+    let finish_deadline = finish_after.map(|duration| Instant::now() + duration);
 
-    let finish_fut = async {
-        if let Some(t) = finish_time {
-            time::sleep_until(t).boxed()
+    let finish_sleep = async {
+        if let Some(deadline) = finish_deadline {
+            time::sleep_until(deadline).await;
         } else {
-            std::future::pending().boxed()
+            std::future::pending::<()>().await;
         }
     };
+    tokio::pin!(finish_sleep);
 
     let shutdown_signal = tokio::signal::ctrl_c();
     tokio::pin!(shutdown_signal);
-    tokio::pin!(finish_fut);
 
     loop {
         tokio::select! {
@@ -312,7 +314,7 @@ async fn run_root_load(
                 println!("Received Ctrl-C. Shutting down...");
                 break;
             }
-            _ = &mut finish_fut => {
+            _ = &mut finish_sleep => {
                 println!("Experiment finished as duration elapsed. Shutting down...");
                 break;
             }
