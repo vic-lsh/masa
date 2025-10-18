@@ -87,7 +87,7 @@ fn make_deployment_config(
             ServiceDiscoveryInfo {
                 ip: service_name.to_string(),
                 port: *port,
-                replicas: sim_cfg.replicas.get(service_name).unwrap_or(&1) as usize,
+                replicas: sim_cfg.replicas.get(service_name).map(|v| v as usize).unwrap_or(1),
             },
         );
     }
@@ -99,7 +99,7 @@ pub async fn launch_simulation_from_yaml(
     config: TraceConfig,
     trace_dir: &PathBuf,
     sim_config: SimulatorConfig,
-    replay_path: Option<&Path>,
+    _replay_path: Option<&Path>,
     backend: Backend,
 ) -> Result<()> {
     let port_assignments = assign_ports(config.call_graph.services().into_iter())?;
@@ -119,8 +119,6 @@ pub async fn launch_simulation_from_yaml(
                 service_config_dir,
                 workspace_root.as_path(),
                 CONTAINER_CPU_LIMIT,
-                &sim_config,
-                replay_path,
             )?;
 
             docker::run()?;
