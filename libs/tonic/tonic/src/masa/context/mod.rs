@@ -46,8 +46,8 @@ pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
 
 #[cfg(any(feature = "prio_global", feature = "prio_global_early",))]
 #[allow(missing_docs)]
-// pub type DefaultPrioritySelector = queue_global::QueueGlobal;
-pub type DefaultPrioritySelector = global::Global;
+pub type DefaultPrioritySelector = queue_global::QueueGlobal;
+// pub type DefaultPrioritySelector = global::Global;
 
 #[cfg(any(feature = "prio_global_queue_tracing"))]
 #[allow(missing_docs)]
