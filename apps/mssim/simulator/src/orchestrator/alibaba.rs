@@ -1,9 +1,9 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
 use sim_config::svc::ServiceName;
 use sim_config::trace::TraceConfig;
-use sim_config::{PROJECT_NAME, SimulatorConfig};
+use sim_config::{SimulatorConfig, PROJECT_NAME};
 use std::{
     collections::HashMap,
     env, fs,
@@ -183,33 +183,6 @@ fn make_service_def(
     Yaml::Hash(service_def)
 }
 
-fn make_build_def(svc_port: u16) -> Yaml {
-    let mut build_def = Hash::new();
-    build_def.insert(
-        Yaml::String("context".into()),
-        Yaml::String(workspace_root().to_string_lossy().to_string()),
-    );
-    let dockerfile_path = workspace_root().join("apps/mssim/generic-service/Dockerfile");
-    build_def.insert(
-        Yaml::String("dockerfile".into()),
-        Yaml::String(dockerfile_path.to_string_lossy().to_string()),
-    );
-    let mut build_args = Hash::new();
-    build_args.insert(
-        Yaml::String("SERVICE_CONTAINER_PORT".into()),
-        Yaml::String(svc_port.to_string()),
-    );
-
-    if let Ok(feature) = env::var("FEATURE") {
-        build_args.insert(Yaml::String("FEATURE".into()), Yaml::String(feature));
-    } else {
-        build_args.insert(Yaml::String("FEATURE".into()), Yaml::String("fifo".into()));
-    }
-
-    build_def.insert(Yaml::String("args".into()), Yaml::Hash(build_args));
-    Yaml::Hash(build_def)
-}
-
 fn make_deploy_def() -> Yaml {
     let mut deploy_def = Hash::new();
     let mut resources_def = Hash::new();
@@ -280,18 +253,10 @@ fn make_load_generator_config_yaml(
 ) -> Result<Yaml> {
     let mut service_def = Hash::new();
 
-    let mut build_def = Hash::new();
-    build_def.insert(
-        Yaml::String("context".into()),
-        Yaml::String(workspace_root().to_string_lossy().to_string()),
+    service_def.insert(
+        Yaml::String("image".into()),
+        Yaml::String("mssim_load_generator".into()),
     );
-    let dockerfile_path = workspace_root().join("apps/mssim/generic-service/Dockerfile.loadgen");
-    build_def.insert(
-        Yaml::String("dockerfile".into()),
-        Yaml::String(dockerfile_path.to_string_lossy().to_string()),
-    );
-
-    service_def.insert(Yaml::String("build".into()), Yaml::Hash(build_def));
     service_def.insert(
         Yaml::String("container_name".into()),
         Yaml::String(LOADGEN_SERVICE_NAME.into()),
