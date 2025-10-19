@@ -102,6 +102,11 @@ prio_global_queue_tracing = [
   "tonic/prio_global_queue_tracing",
 ]
 
+early = [
+    "masa/early",
+    "tonic/early",
+]
+
 synthetic = []
 workload_stats = []
 
