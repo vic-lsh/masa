@@ -27,7 +27,6 @@ default = []
 
 scheduler_trace = []
 static = []
-prio_class = []
 prio_global = []
 prio_local = []
 prio_local_direct = []

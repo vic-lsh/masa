@@ -61,11 +61,6 @@ path = "src/write_home_timeline/main.rs"
 
 
 [features]
-prio_class = [
-  "tokio/prio_class",
-  "masa/prio_class",
-  "tonic/prio_class",
-]
 prio_global = [
   "tokio/prio_global",
   "masa/prio_global",

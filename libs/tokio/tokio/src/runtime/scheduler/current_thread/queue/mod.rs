@@ -8,7 +8,6 @@ pub(crate) type LocalRunQueue<T> = timed::TimedQueue<LocalRunQueueInner<T>>;
 pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
 
 #[cfg(not(any(
-    feature = "prio_class",
     feature = "prio_global",
     feature = "prio_local",
     feature = "perfect_lsf",
