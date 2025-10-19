@@ -117,6 +117,10 @@ fifo_infra = [
   "masa/fifo_infra",
   "tonic/fifo_infra",
 ]
+early = [
+    "masa/early",
+    "tonic/early",
+]
 
 [dependencies]
 tonic = { path = "../../libs/tonic/tonic" }

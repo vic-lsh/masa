@@ -1,6 +1,6 @@
 use std::{sync::{atomic::{AtomicBool, Ordering}, Arc}, task::Poll};
 
-use masa::{time_now, Context};
+use masa::{time_now, Context, EARLY_RETURN};
 use tracing::error;
 
 use super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
@@ -37,6 +37,14 @@ pub struct ServerContext {}
 impl ParentContext {
     #[inline]
     fn check_early_return(&self) -> bool {
+        if EARLY_RETURN {
+            self.check_early_return_impl()
+        } else {
+            false
+        }
+    }
+
+    fn check_early_return_impl(&self) -> bool {
         if self.will_early_return.load(Ordering::Relaxed) {
             return true;
         }
@@ -66,13 +74,9 @@ impl ParentContext {
         return should_early_return;
     }
 
-
     #[inline]
     fn issue_early_return(&self) -> Status {
-        Status::new(
-            Code::DeadlineExceeded,
-            format!("/EarlyReturn"),
-        )
+        Status::new(Code::DeadlineExceeded, format!("/EarlyReturn"))
     }
 }
 
