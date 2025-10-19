@@ -1,5 +1,3 @@
-pub const PRIO_CLASS: bool = cfg!(feature = "prio_class");
-
 pub const PRIO_GLOBAL: bool = cfg!(feature = "prio_global");
 
 pub const PRIO_LOCAL: bool = cfg!(feature = "prio_local");

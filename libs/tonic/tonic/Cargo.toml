@@ -56,7 +56,6 @@ channel = []
 
 # masa-specific features
 masa = []
-prio_class = ["masa"]
 prio_global = ["masa"]
 prio_local = ["masa"]
 prio_local_direct = ["masa"]
