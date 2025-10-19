@@ -13,6 +13,7 @@ perfect_lsf = []
 fifo_span_tracing = []
 fifo_queue_tracing = []
 prio_global_queue_tracing = []
+early = []
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
