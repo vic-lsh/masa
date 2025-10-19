@@ -369,7 +369,17 @@ async fn run_root_load(
                             }
                         }
                         Err(_) => {
+                            let sample = RootLatencySample {
+                                req_id,
+                                start_at,
+                                queue_latency_us: 0,
+                                e2e_latency_us: 10000000,
+                            };
                             err.fetch_add(1, Ordering::Relaxed);
+                            {
+                                let mut guard = root_samples.lock().await;
+                                guard.push(sample);
+                            }
                         }
                     };
                 });
