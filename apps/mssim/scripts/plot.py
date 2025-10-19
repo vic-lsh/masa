@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Compare goodput and latency distributions for FIFO vs priority policies."""
+"""Compare goodput and latency distributions for one or more scheduling policies."""
 from __future__ import annotations
 
 import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -14,7 +14,7 @@ from matplotlib.patches import Patch
 
 THRESHOLD_DEFAULT_MS = 100
 FILENAME_PATTERN = re.compile(r"root_latencies_(?P<rps>[0-9_]+)rps\.csv$")
-CONFIG_PATH = Path(__file__).resolve().parents[1] / "data/experiment_template.json"
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "data/cfg.json"
 
 
 @dataclass
@@ -97,7 +97,7 @@ def load_policy_samples(policy_dir: Path) -> PolicySamples:
 def align_rps(*datasets: PolicySamples) -> List[float]:
     shared_rps = sorted(set.intersection(*(data.rps_set() for data in datasets)))
     if not shared_rps:
-        raise RuntimeError("No overlapping RPS values between fifo and prio datasets.")
+        raise RuntimeError("No overlapping RPS values between the provided datasets.")
     return shared_rps
 
 
@@ -111,17 +111,21 @@ def compute_goodput(samples: PolicySamples, threshold_ms: float, rps: float) -> 
 
 def plot_goodput_fraction(
     rps_values: List[float],
-    policy_a_goodput: List[float],
-    policy_b_goodput: List[float],
+    goodput_by_policy: Sequence[Sequence[float]],
     output: Path,
     threshold_ms: float,
-    labels: Tuple[str, str],
+    labels: Sequence[str],
 ) -> None:
     fig, ax = plt.subplots(figsize=(8, 5))
-    goodput_fraction_a = [gp / rps for gp, rps in zip(policy_a_goodput, rps_values)]
-    goodput_fraction_b = [gp / rps for gp, rps in zip(policy_b_goodput, rps_values)]
-    ax.plot(rps_values, goodput_fraction_a, marker="o", label=labels[0])
-    ax.plot(rps_values, goodput_fraction_b, marker="s", label=labels[1])
+    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
+    cmap = plt.get_cmap("tab10")
+
+    for idx, (label, goodput_values) in enumerate(zip(labels, goodput_by_policy)):
+        marker = marker_cycle[idx % len(marker_cycle)]
+        color = cmap(idx % cmap.N)
+        fraction = [gp / rps if rps else 0.0 for gp, rps in zip(goodput_values, rps_values)]
+        ax.plot(rps_values, fraction, marker=marker, label=label, color=color)
+
     ax.set_xlabel("Offered load (RPS)")
     ax.set_ylabel("Goodput Fraction (RPS)")
     ax.set_title(f"Goodput fraction vs RPS with SLO={threshold_ms:g} ms")
@@ -135,15 +139,20 @@ def plot_goodput_fraction(
 
 def plot_goodput_absolute(
     rps_values: List[float],
-    policy_a_goodput: List[float],
-    policy_b_goodput: List[float],
+    goodput_by_policy: Sequence[Sequence[float]],
     output: Path,
     threshold_ms: float,
-    labels: Tuple[str, str],
+    labels: Sequence[str],
 ) -> None:
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(rps_values, policy_a_goodput, marker="o", label=labels[0])
-    ax.plot(rps_values, policy_b_goodput, marker="s", label=labels[1])
+    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
+    cmap = plt.get_cmap("tab10")
+
+    for idx, (label, goodput_values) in enumerate(zip(labels, goodput_by_policy)):
+        marker = marker_cycle[idx % len(marker_cycle)]
+        color = cmap(idx % cmap.N)
+        ax.plot(rps_values, goodput_values, marker=marker, label=label, color=color)
+
     ax.set_xlabel("Offered load (RPS)")
     ax.set_ylabel("Goodput (RPS)")
     ax.set_title(f"Goodput vs RPS with SLO={threshold_ms:g} ms")
@@ -157,13 +166,22 @@ def plot_goodput_absolute(
 
 def build_latency_plots(
     rps_values: List[float],
-    policy_a: PolicySamples,
-    policy_b: PolicySamples,
+    policies: Sequence[PolicySamples],
     output: Path,
-    labels: Tuple[str, str],
+    labels: Sequence[str],
 ) -> None:
     fig, axes = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
-    colors = ("#1f77b4", "#ff7f0e")
+    cmap = plt.get_cmap("tab10")
+    num_policies = len(policies)
+    if num_policies == 0:
+        raise ValueError("No policies provided for latency plotting.")
+
+    colors = [cmap(idx % cmap.N) for idx in range(num_policies)]
+    group_width = 0.8
+    box_width = group_width / max(num_policies, 1)
+    offsets = [
+        (idx - (num_policies - 1) / 2.0) * box_width for idx in range(num_policies)
+    ]
 
     metrics = [
         ("End-to-end latency", "e2e_latency_ms"),
@@ -171,32 +189,27 @@ def build_latency_plots(
     ]
 
     for ax, (title, column) in zip(axes, metrics):
-        positions_a = [idx - 0.2 for idx in range(len(rps_values))]
-        positions_b = [idx + 0.2 for idx in range(len(rps_values))]
+        base_positions = list(range(len(rps_values)))
 
-        bp_a = ax.boxplot(
-            [policy_a.metric_for_rps(rps, column).dropna().to_numpy() for rps in rps_values],
-            positions=positions_a,
-            widths=0.35,
-            whis=(5, 99.9),
-            patch_artist=True,
-            manage_ticks=False,
-            showfliers=False,
-        )
-        bp_b = ax.boxplot(
-            [policy_b.metric_for_rps(rps, column).dropna().to_numpy() for rps in rps_values],
-            positions=positions_b,
-            widths=0.35,
-            whis=(5, 99.9),
-            patch_artist=True,
-            manage_ticks=False,
-            showfliers=False,
-        )
-        
-        for patch in bp_a["boxes"]:
-            patch.set(facecolor=colors[0], alpha=0.6)
-        for patch in bp_b["boxes"]:
-            patch.set(facecolor=colors[1], alpha=0.6)
+        for policy_idx, (label, samples) in enumerate(zip(labels, policies)):
+            positions = [pos + offsets[policy_idx] for pos in base_positions]
+            bp = ax.boxplot(
+                [
+                    samples.metric_for_rps(rps, column).dropna().to_numpy()
+                    for rps in rps_values
+                ],
+                positions=positions,
+                widths=box_width * 0.9,
+                whis=(5, 99.9),
+                patch_artist=True,
+                manage_ticks=False,
+                showfliers=False,
+            )
+
+            for patch in bp["boxes"]:
+                patch.set(facecolor=colors[policy_idx], alpha=0.6)
+            for median in bp["medians"]:
+                median.set(color=colors[policy_idx])
 
         ax.set_ylabel(f"{title} (ms)")
         ax.set_title(title)
@@ -207,8 +220,8 @@ def build_latency_plots(
     axes[-1].set_xlabel("Offered load (RPS)")
 
     handles = [
-        Patch(facecolor=colors[0], alpha=0.6, label=labels[0]),
-        Patch(facecolor=colors[1], alpha=0.6, label=labels[1]),
+        Patch(facecolor=colors[idx], alpha=0.6, label=label)
+        for idx, label in enumerate(labels)
     ]
     axes[0].legend(handles=handles, loc="upper left")
 
@@ -218,7 +231,7 @@ def build_latency_plots(
     print(f"Saved latency plots to {output}")
 
 
-def load_plot_config(config_path: Path) -> Tuple[Path, Tuple[str, str], float]:
+def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float]:
     with config_path.open("r") as fh:
         config = json.load(fh)
 
@@ -228,57 +241,51 @@ def load_plot_config(config_path: Path) -> Tuple[Path, Tuple[str, str], float]:
     except KeyError as exc:
         raise KeyError(f"Missing key in plot config: {exc}") from exc
 
-    if len(policies) < 2:
-        raise ValueError("Plot config must specify at least two policies.")
+    if not policies:
+        raise ValueError("Plot config must specify at least one policy.")
 
     threshold_ms = float(config.get("slo_ms", THRESHOLD_DEFAULT_MS))
-    return experiment_root, (policies[0], policies[1]), threshold_ms
+    return experiment_root, list(policies), threshold_ms
 
 
 def main() -> None:
-    experiment_root, (policy_a_name, policy_b_name), threshold_ms = load_plot_config(CONFIG_PATH)
-    policy_a_dir = experiment_root / policy_a_name
-    policy_b_dir = experiment_root / policy_b_name
+    experiment_root, policy_names, threshold_ms = load_plot_config(CONFIG_PATH)
+    policy_dirs = [experiment_root / name for name in policy_names]
+    policy_samples = [load_policy_samples(policy_dir) for policy_dir in policy_dirs]
 
-    policy_a_samples = load_policy_samples(policy_a_dir)
-    policy_b_samples = load_policy_samples(policy_b_dir)
+    rps_values = align_rps(*policy_samples)
 
-    rps_values = align_rps(policy_a_samples, policy_b_samples)
-
-    policy_a_goodput = [
-        compute_goodput(policy_a_samples, threshold_ms, rps) for rps in rps_values
-    ]
-    policy_b_goodput = [
-        compute_goodput(policy_b_samples, threshold_ms, rps) for rps in rps_values
+    goodput_by_policy = [
+        [compute_goodput(samples, threshold_ms, rps) for rps in rps_values]
+        for samples in policy_samples
     ]
 
     print("Goodput summary (threshold = {:.1f} ms):".format(threshold_ms))
-    print(f"RPS\t{policy_a_name}\t{policy_b_name}")
-    for rps, policy_a_val, policy_b_val in zip(rps_values, policy_a_goodput, policy_b_goodput):
-        print(f"{rps:g}\t{policy_a_val:.2f}\t{policy_b_val:.2f}")
+    header = "\t".join(["RPS", *policy_names])
+    print(header)
+    for idx, rps in enumerate(rps_values):
+        row = "\t".join(f"{goodput[idx]:.2f}" for goodput in goodput_by_policy)
+        print(f"{rps:g}\t{row}")
 
     plot_goodput_fraction(
         rps_values,
-        policy_a_goodput,
-        policy_b_goodput,
+        goodput_by_policy,
         Path(f"apps/mssim/data/goodput_fraction_{threshold_ms:g}ms.png"),
         threshold_ms,
-        (policy_a_name, policy_b_name),
+        policy_names,
     )
     plot_goodput_absolute(
         rps_values,
-        policy_a_goodput,
-        policy_b_goodput,
+        goodput_by_policy,
         Path(f"apps/mssim/data/goodput_absolute_{threshold_ms:g}ms.png"),
         threshold_ms,
-        (policy_a_name, policy_b_name),
+        policy_names,
     )
     build_latency_plots(
         rps_values,
-        policy_a_samples,
-        policy_b_samples,
+        policy_samples,
         Path("apps/mssim/data/latency_boxplot.png"),
-        (policy_a_name, policy_b_name),
+        policy_names,
     )
 
 
