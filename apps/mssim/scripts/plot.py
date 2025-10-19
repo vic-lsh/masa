@@ -14,7 +14,7 @@ from matplotlib.patches import Patch
 
 THRESHOLD_DEFAULT_MS = 100
 FILENAME_PATTERN = re.compile(r"root_latencies_(?P<rps>[0-9_]+)rps\.csv$")
-CONFIG_PATH = Path(__file__).resolve().parents[1] / "data/experiment_template.json"
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "data/cfg.json"
 
 
 @dataclass
@@ -101,12 +101,12 @@ def align_rps(*datasets: PolicySamples) -> List[float]:
     return shared_rps
 
 
-def compute_goodput(samples: PolicySamples, threshold_ms: float, rps: float) -> float:
+def compute_goodput(samples: PolicySamples, threshold_ms: float, rps: float, duration: float) -> float:
     latencies = samples.metric_for_rps(rps, "e2e_latency_ms")
     if latencies.empty:
         return 0.0
-    under_fraction = (latencies <= threshold_ms).mean()
-    return under_fraction * rps
+    goodput = (latencies <= threshold_ms).sum() / duration
+    return goodput
 
 
 def plot_goodput_fraction(
@@ -225,6 +225,7 @@ def load_plot_config(config_path: Path) -> Tuple[Path, Tuple[str, str], float]:
     try:
         experiment_root = Path(config["output_root"]) / config["experiment_name"]
         policies = config["policies"]
+        duration = config["duration_sec"]
     except KeyError as exc:
         raise KeyError(f"Missing key in plot config: {exc}") from exc
 
@@ -232,11 +233,11 @@ def load_plot_config(config_path: Path) -> Tuple[Path, Tuple[str, str], float]:
         raise ValueError("Plot config must specify at least two policies.")
 
     threshold_ms = float(config.get("slo_ms", THRESHOLD_DEFAULT_MS))
-    return experiment_root, (policies[0], policies[1]), threshold_ms
+    return experiment_root, (policies[0], policies[1]), threshold_ms, duration
 
 
 def main() -> None:
-    experiment_root, (policy_a_name, policy_b_name), threshold_ms = load_plot_config(CONFIG_PATH)
+    experiment_root, (policy_a_name, policy_b_name), threshold_ms, duration = load_plot_config(CONFIG_PATH)
     policy_a_dir = experiment_root / policy_a_name
     policy_b_dir = experiment_root / policy_b_name
 
@@ -246,10 +247,10 @@ def main() -> None:
     rps_values = align_rps(policy_a_samples, policy_b_samples)
 
     policy_a_goodput = [
-        compute_goodput(policy_a_samples, threshold_ms, rps) for rps in rps_values
+        compute_goodput(policy_a_samples, threshold_ms, rps, duration) for rps in rps_values
     ]
     policy_b_goodput = [
-        compute_goodput(policy_b_samples, threshold_ms, rps) for rps in rps_values
+        compute_goodput(policy_b_samples, threshold_ms, rps, duration) for rps in rps_values
     ]
 
     print("Goodput summary (threshold = {:.1f} ms):".format(threshold_ms))

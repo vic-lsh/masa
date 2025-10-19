@@ -331,11 +331,10 @@ async fn run_root_load(
                 let mut rpc_client = client.clone();
                 let root_samples = root_samples.clone();
 
-                sent.fetch_add(1, Ordering::Relaxed);
+                let req_id = sent.fetch_add(1, Ordering::Relaxed);
 
                 tokio::spawn(async move {
                     let _permit = permit;
-                    let req_id = sent.load(Ordering::Relaxed);
                     let start_at = time_now();
                     let mut request = Request::new(RootRequest {
                         req_id,
