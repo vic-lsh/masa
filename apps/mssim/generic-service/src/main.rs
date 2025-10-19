@@ -367,7 +367,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Config parsed");
 
     let deployment_path = deployment_path_str.into();
-    let deployment = Deployment::read_from_file(&deployment_path)?;
+    let deployment =
+        Deployment::read_from_file(&deployment_path).expect("Failed to parse deployment");
 
     let svc = AlibabaService::new(svc_name.clone(), config, deployment).await?;
 
