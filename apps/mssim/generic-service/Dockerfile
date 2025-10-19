@@ -1,5 +1,5 @@
 # Use a recent Rust version for building
-FROM rust:latest AS rust_builder
+FROM rust:latest AS builder
 
 ARG FEATURE_ARG=fifo
 ENV FEATURE=${FEATURE_ARG}
@@ -29,13 +29,10 @@ COPY libs libs
 # Build the generic service
 RUN cargo build --release --bin generic-service --features ${FEATURE_ARG}
 
-# Declare the build argument for the container port (providing a default value of 8000)
-ARG SERVICE_CONTAINER_PORT=8000 
+FROM debian:trixie-slim
+COPY --from=builder /app/target/release/generic-service /usr/local/bin/generic-service
 
-# Expose the gRPC port using the build argument
-EXPOSE ${SERVICE_CONTAINER_PORT}
+WORKDIR /app
 
-# Command to run the service
-# The service code should read the port from the SERVICE_PORT environment variable
 ENV RUST_BACKTRACE=1
-CMD ["/bin/sh", "-c", "cargo run --release --bin generic-service --features ${FEATURE}"]
+CMD ["/usr/local/bin/generic-service"]

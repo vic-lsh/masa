@@ -18,6 +18,22 @@ from typing import Dict, Iterable, List, Optional
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 MSSIM_ROOT = REPO_ROOT / "simulator"
 
+def find_masa_root(start_path=None):
+    # start from current file's directory if not given
+    if start_path is None:
+        start_path = Path(__file__).resolve().parent
+
+    current = Path(start_path).resolve()
+
+    while current != current.parent:  # stop at filesystem root
+        if current.name == "masa":
+            return current
+        current = current.parent
+
+    raise FileNotFoundError("Could not find 'masa' directory in any parent path")
+
+MASA_ROOT = find_masa_root()
+
 @dataclass
 class ExperimentConfig:
     name: str
@@ -130,7 +146,6 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         "-p",
         "mssim",
         "up",
-        "--build",
         "--abort-on-container-exit",
     ]
     
@@ -187,6 +202,38 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         print("Cleanup complete.")
 
 
+def build_load_generator_image():
+    print("Building mssim load generato image")
+    build_cmd = [
+        "docker",
+        "build",
+        "-t",
+        "mssim_load_generator",
+        "-f",
+        "apps/mssim/generic-service/Dockerfile.loadgen",
+        MASA_ROOT, # this should be the masa project root
+    ]
+    print("repo root", MASA_ROOT)
+    subprocess.run(build_cmd, cwd=MASA_ROOT, check=True)
+
+
+def build_generic_service_image(feature):
+    print(f"Building mssim generic service image for feature {feature}")
+    build_cmd = [
+        "docker",
+        "build",
+        "-t",
+        "generic_service",
+        "--build-arg",
+        f"FEATURE_ARG={feature}",
+        "-f",
+        "apps/mssim/generic-service/Dockerfile",
+        MASA_ROOT, # this should be the masa project root
+    ]
+    print("repo root", MASA_ROOT)
+    subprocess.run(build_cmd, cwd=MASA_ROOT, check=True)
+
+
 
 def execute(cfg: ExperimentConfig, dry_run: bool) -> None:
     def _ensure_dir(path: Path) -> Path:
@@ -206,7 +253,9 @@ def execute(cfg: ExperimentConfig, dry_run: bool) -> None:
     def write_metadata(run_dir: Path, metadata: Dict[str, object]) -> None:
         with (run_dir / "metadata.json").open("w", encoding="utf-8") as fh:
             json.dump(metadata, fh, indent=2, sort_keys=True)
-        
+
+    build_load_generator_image()
+    policy_prev = None
     for run in build_runs(cfg):
         policy = str(run["policy"])
         rps = float(run["rps"])
@@ -219,6 +268,10 @@ def execute(cfg: ExperimentConfig, dry_run: bool) -> None:
             "duration_sec": cfg.duration_sec,
             "command": "cargo run -- --alibaba-trace ...",
         }
+
+        if policy != policy_prev:
+            build_generic_service_image(policy)
+        policy_prev = policy
         
         # Write metadata before running
         write_metadata(run_dir, metadata)
