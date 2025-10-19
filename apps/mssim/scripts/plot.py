@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from math import ceil
 from pathlib import Path
 from typing import Iterable, List, Tuple
 
@@ -218,6 +219,132 @@ def build_latency_plots(
     print(f"Saved latency plots to {output}")
 
 
+def plot_latency_percentiles(
+    rps_values: List[float],
+    policies: Sequence[PolicySamples],
+    output: Path,
+    labels: Sequence[str],
+    percentiles: Sequence[float] | None = None,
+) -> None:
+    if percentiles is None:
+        percentiles = (90.0, 95.0, 99.0, 99.9)
+
+    if not policies:
+        raise ValueError("No policies provided for percentile plotting.")
+
+    ncols = 2 if len(percentiles) > 1 else 1
+    nrows = ceil(len(percentiles) / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(10, 4 * nrows), sharex=True)
+    if isinstance(axes, plt.Axes):
+        axes_iter = [axes]
+    else:
+        axes_iter = axes.flatten()
+
+    cmap = plt.get_cmap("tab10")
+    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
+
+    for idx, percentile in enumerate(percentiles):
+        if idx >= len(axes_iter):
+            break
+        ax = axes_iter[idx]
+        for policy_idx, (label, samples) in enumerate(zip(labels, policies)):
+            marker = marker_cycle[policy_idx % len(marker_cycle)]
+            color = cmap(policy_idx % cmap.N)
+            tail_latencies = [
+                float(samples.metric_for_rps(rps, "e2e_latency_ms").dropna().quantile(percentile / 100.0))
+                if not samples.metric_for_rps(rps, "e2e_latency_ms").dropna().empty
+                else float("nan")
+                for rps in rps_values
+            ]
+            ax.plot(
+                rps_values,
+                tail_latencies,
+                marker=marker,
+                label=label,
+                color=color,
+            )
+
+        ax.set_title(f"P{percentile:g} tail latency")
+        ax.set_ylabel("Latency (ms)")
+        ax.grid(True, which="both", linestyle="--", alpha=0.4)
+        if idx == 0:
+            ax.legend()
+
+    for extra_ax in axes_iter[len(percentiles) :]:
+        extra_ax.axis("off")
+
+    for ax in axes_iter[-ncols:]:
+        ax.set_xlabel("Offered load (RPS)")
+
+    fig.tight_layout()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output)
+    print(f"Saved latency percentile plots to {output}")
+
+
+def plot_latency_percentiles(
+    rps_values: List[float],
+    policies: Sequence[PolicySamples],
+    output: Path,
+    labels: Sequence[str],
+    percentiles: Sequence[float] | None = None,
+) -> None:
+    if percentiles is None:
+        percentiles = (90.0, 95.0, 99.0, 99.9)
+
+    if not policies:
+        raise ValueError("No policies provided for percentile plotting.")
+
+    ncols = 2 if len(percentiles) > 1 else 1
+    nrows = ceil(len(percentiles) / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(10, 4 * nrows), sharex=True)
+    if isinstance(axes, plt.Axes):
+        axes_iter = [axes]
+    else:
+        axes_iter = axes.flatten()
+
+    cmap = plt.get_cmap("tab10")
+    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
+
+    for idx, percentile in enumerate(percentiles):
+        if idx >= len(axes_iter):
+            break
+        ax = axes_iter[idx]
+        for policy_idx, (label, samples) in enumerate(zip(labels, policies)):
+            marker = marker_cycle[policy_idx % len(marker_cycle)]
+            color = cmap(policy_idx % cmap.N)
+            tail_latencies = [
+                float(samples.metric_for_rps(rps, "e2e_latency_ms").dropna().quantile(percentile / 100.0))
+                if not samples.metric_for_rps(rps, "e2e_latency_ms").dropna().empty
+                else float("nan")
+                for rps in rps_values
+            ]
+            ax.plot(
+                rps_values,
+                tail_latencies,
+                marker=marker,
+                label=label,
+                color=color,
+            )
+
+        ax.set_title(f"P{percentile:g} tail latency")
+        ax.set_ylabel("Latency (ms)")
+        ax.grid(True, which="both", linestyle="--", alpha=0.4)
+        if idx == 0:
+            ax.legend()
+
+    for extra_ax in axes_iter[len(percentiles) :]:
+        extra_ax.axis("off")
+
+    for ax in axes_iter[-ncols:]:
+        ax.set_xlabel("Offered load (RPS)")
+
+    fig.tight_layout()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output)
+    print(f"Saved latency percentile plots to {output}")
+
+
 def load_plot_config(config_path: Path) -> Tuple[Path, Tuple[str, str], float]:
     with config_path.open("r") as fh:
         config = json.load(fh)
@@ -237,49 +364,50 @@ def load_plot_config(config_path: Path) -> Tuple[Path, Tuple[str, str], float]:
 
 
 def main() -> None:
-    experiment_root, (policy_a_name, policy_b_name), threshold_ms, duration = load_plot_config(CONFIG_PATH)
-    policy_a_dir = experiment_root / policy_a_name
-    policy_b_dir = experiment_root / policy_b_name
+    experiment_root, policy_names, threshold_ms, duration = load_plot_config(CONFIG_PATH)
+    policy_dirs = [experiment_root / name for name in policy_names]
+    policy_samples = [load_policy_samples(policy_dir) for policy_dir in policy_dirs]
 
-    policy_a_samples = load_policy_samples(policy_a_dir)
-    policy_b_samples = load_policy_samples(policy_b_dir)
+    rps_values = align_rps(*policy_samples)
 
-    rps_values = align_rps(policy_a_samples, policy_b_samples)
-
-    policy_a_goodput = [
-        compute_goodput(policy_a_samples, threshold_ms, rps, duration) for rps in rps_values
-    ]
-    policy_b_goodput = [
-        compute_goodput(policy_b_samples, threshold_ms, rps, duration) for rps in rps_values
+    
+    goodput_by_policy = [
+        [compute_goodput(samples, threshold_ms, rps, duration) for rps in rps_values]
+        for samples in policy_samples
     ]
 
     print("Goodput summary (threshold = {:.1f} ms):".format(threshold_ms))
-    print(f"RPS\t{policy_a_name}\t{policy_b_name}")
-    for rps, policy_a_val, policy_b_val in zip(rps_values, policy_a_goodput, policy_b_goodput):
-        print(f"{rps:g}\t{policy_a_val:.2f}\t{policy_b_val:.2f}")
+    header = "\t".join(["RPS", *policy_names])
+    print(header)
+    for idx, rps in enumerate(rps_values):
+        row = "\t".join(f"{goodput[idx]:.2f}" for goodput in goodput_by_policy)
+        print(f"{rps:g}\t{row}")
 
     plot_goodput_fraction(
         rps_values,
-        policy_a_goodput,
-        policy_b_goodput,
+        goodput_by_policy,
         Path(f"apps/mssim/data/goodput_fraction_{threshold_ms:g}ms.png"),
         threshold_ms,
-        (policy_a_name, policy_b_name),
+        policy_names,
     )
     plot_goodput_absolute(
         rps_values,
-        policy_a_goodput,
-        policy_b_goodput,
+        goodput_by_policy,
         Path(f"apps/mssim/data/goodput_absolute_{threshold_ms:g}ms.png"),
         threshold_ms,
-        (policy_a_name, policy_b_name),
+        policy_names,
     )
     build_latency_plots(
         rps_values,
-        policy_a_samples,
-        policy_b_samples,
+        policy_samples,
         Path("apps/mssim/data/latency_boxplot.png"),
-        (policy_a_name, policy_b_name),
+        policy_names,
+    )
+    plot_latency_percentiles(
+        rps_values,
+        policy_samples,
+        Path("apps/mssim/data/latency_percentiles.png"),
+        policy_names,
     )
 
 
