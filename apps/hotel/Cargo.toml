@@ -57,11 +57,6 @@ path = "src/loadgen/main.rs"
 scheduler_trace = [
     "tokio/scheduler_trace",
 ]
-prio_class = [
-  "tokio/prio_class",
-  "masa/prio_class",
-  "tonic/prio_class",
-]
 prio_global = [
   "tokio/prio_global",
   "masa/prio_global",
