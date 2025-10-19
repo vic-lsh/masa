@@ -71,11 +71,6 @@ prio_global = [
   "masa/prio_global",
   "tonic/prio_global",
 ]
-prio_class_global = [
-  "tokio/prio_class_global",
-  "masa/prio_class_global",
-  "tonic/prio_class_global",
-]
 prio_local = [
   "tokio/prio_local",
   "masa/prio_local",

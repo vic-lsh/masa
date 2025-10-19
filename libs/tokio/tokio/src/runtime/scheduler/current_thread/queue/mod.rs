@@ -10,7 +10,6 @@ pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
 #[cfg(not(any(
     feature = "prio_class",
     feature = "prio_global",
-    feature = "prio_class_global",
     feature = "prio_local",
     feature = "perfect_lsf",
     feature = "fifo_infra",
