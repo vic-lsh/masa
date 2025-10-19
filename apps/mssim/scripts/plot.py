@@ -109,7 +109,7 @@ def compute_goodput(samples: PolicySamples, threshold_ms: float, rps: float) -> 
     return under_fraction * rps
 
 
-def plot_goodput(
+def plot_goodput_fraction(
     rps_values: List[float],
     policy_a_goodput: List[float],
     policy_b_goodput: List[float],
@@ -125,6 +125,28 @@ def plot_goodput(
     ax.set_xlabel("Offered load (RPS)")
     ax.set_ylabel("Goodput Fraction (RPS)")
     ax.set_title(f"Goodput fraction vs RPS with SLO={threshold_ms:g} ms")
+    ax.grid(True, which="both", linestyle="--", alpha=0.4)
+    ax.legend()
+    fig.tight_layout()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output)
+    print(f"Saved comparison plot to {output}")
+
+
+def plot_goodput_absolute(
+    rps_values: List[float],
+    policy_a_goodput: List[float],
+    policy_b_goodput: List[float],
+    output: Path,
+    threshold_ms: float,
+    labels: Tuple[str, str],
+) -> None:
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(rps_values, policy_a_goodput, marker="o", label=labels[0])
+    ax.plot(rps_values, policy_b_goodput, marker="s", label=labels[1])
+    ax.set_xlabel("Offered load (RPS)")
+    ax.set_ylabel("Goodput (RPS)")
+    ax.set_title(f"Goodput vs RPS with SLO={threshold_ms:g} ms")
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
     ax.legend()
     fig.tight_layout()
@@ -235,11 +257,19 @@ def main() -> None:
     for rps, policy_a_val, policy_b_val in zip(rps_values, policy_a_goodput, policy_b_goodput):
         print(f"{rps:g}\t{policy_a_val:.2f}\t{policy_b_val:.2f}")
 
-    plot_goodput(
+    plot_goodput_fraction(
         rps_values,
         policy_a_goodput,
         policy_b_goodput,
-        Path(f"apps/mssim/data/goodput_comparison_{threshold_ms:g}ms.png"),
+        Path(f"apps/mssim/data/goodput_fraction_{threshold_ms:g}ms.png"),
+        threshold_ms,
+        (policy_a_name, policy_b_name),
+    )
+    plot_goodput_absolute(
+        rps_values,
+        policy_a_goodput,
+        policy_b_goodput,
+        Path(f"apps/mssim/data/goodput_absolute_{threshold_ms:g}ms.png"),
         threshold_ms,
         (policy_a_name, policy_b_name),
     )
