@@ -1,10 +1,35 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use crate::svc::ServiceName;
+use serde::Deserialize;
 
-#[derive(Default)]
+const DEFAULT_REPLICA_COUNT: u32 = 1;
+
+#[derive(Debug)]
 pub struct ReplicaConfig {
-    replica_counts: HashMap<ServiceName, u32>,
+    default: u32,
+    overrides: HashMap<ServiceName, u32>,
+}
+
+impl Default for ReplicaConfig {
+    fn default() -> Self {
+        Self {
+            default: DEFAULT_REPLICA_COUNT,
+            overrides: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct RawReplicaConfig {
+    #[serde(default = "default_replica_count")]
+    default: u32,
+    #[serde(default)]
+    overrides: HashMap<ServiceName, u32>,
+}
+
+fn default_replica_count() -> u32 {
+    DEFAULT_REPLICA_COUNT
 }
 
 impl ReplicaConfig {
@@ -14,16 +39,27 @@ impl ReplicaConfig {
         }
 
         let content = std::fs::read_to_string(&path)?;
-        let replica_counts: HashMap<ServiceName, u32> = serde_json::from_str(&content)
+        let raw_cfg: RawReplicaConfig = serde_json::from_str(&content)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        Ok(Self { replica_counts })
+        Ok(Self {
+            default: raw_cfg.default,
+            overrides: raw_cfg.overrides,
+        })
     }
 
     pub fn get(&self, service: &ServiceName) -> Option<u32> {
-        self.replica_counts.get(service).copied()
+        self.overrides.get(service).copied()
+    }
+
+    pub fn count_for(&self, service: &ServiceName) -> u32 {
+        self.get(service).unwrap_or(self.default)
+    }
+
+    pub fn default_replica_count(&self) -> u32 {
+        self.default
     }
 
     pub fn is_empty(&self) -> bool {
-        self.replica_counts.is_empty()
+        self.overrides.is_empty()
     }
 }
