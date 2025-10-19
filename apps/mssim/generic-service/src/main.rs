@@ -300,13 +300,13 @@ impl AlibabaService {
                 method_name: method_to_call,
             });
 
-            let ctx = {
-                let slo = 50_000;
-                let deadline = start_at + slo;
-                MasaContext::new("fanout".to_string(), 0, req_id, slo, 0, start_at, deadline)
-            };
+            // let ctx = {
+            //     let slo = 50_000;
+            //     let deadline = start_at + slo;
+            //     MasaContext::new("fanout".to_string(), 0, req_id, slo, 0, start_at, deadline)
+            // };
 
-            request.metadata_mut().insert_ctx("ctx", &ctx);
+            // request.metadata_mut().insert_ctx("ctx", &ctx);
 
             let handle = tokio::spawn(async move {
                 client
