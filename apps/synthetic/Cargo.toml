@@ -28,11 +28,6 @@ prio_global = [
   "masa/prio_global",
   "tonic/prio_global",
 ]
-prio_global_early = [
-  "tokio/prio_global_early",
-  "masa/prio_global_early",
-  "tonic/prio_global_early",
-]
 prio_class_global = [
   "tokio/prio_class_global",
   "masa/prio_class_global",
@@ -42,11 +37,6 @@ prio_local = [
   "tokio/prio_local",
   "masa/prio_local",
   "tonic/prio_local",
-]
-prio_local_early = [
-  "tokio/prio_local_early",
-  "masa/prio_local_early",
-  "tonic/prio_local_early",
 ]
 prio_local_direct = [
   "tokio/prio_local_direct",
@@ -67,11 +57,6 @@ fifo = [
 	"tokio/fifo", 
 	"masa/fifo", 
 	"tonic/fifo"
-]
-fifo_early = [
-  "tokio/fifo_early",
-  "masa/fifo_early",
-  "tonic/fifo_early",
 ]
 fifo_infra = [
   "tokio/fifo_infra",
