@@ -12,12 +12,11 @@ pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
     feature = "prio_global",
     feature = "prio_local",
     feature = "perfect_lsf",
-    feature = "fifo_infra",
     feature = "fifo"
 )))]
 pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
 
-#[cfg(any(feature = "fifo", feature = "fifo_infra"))]
+#[cfg(any(feature = "fifo"))]
 pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
 
 #[cfg(any(

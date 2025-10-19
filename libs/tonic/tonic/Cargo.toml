@@ -63,7 +63,6 @@ prio_local_direct = ["masa"]
 prio_local_indirect = ["masa"]
 perfect_lsf = ["masa"]
 fifo = ["masa"]
-fifo_infra = ["masa"]
 
 
 # [[bench]]
