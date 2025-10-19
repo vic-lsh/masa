@@ -26,11 +26,11 @@ def find_masa_root(start_path=None):
     current = Path(start_path).resolve()
 
     while current != current.parent:  # stop at filesystem root
-        if current.name == "masa":
+        if current.name == "masa-internal":
             return current
         current = current.parent
 
-    raise FileNotFoundError("Could not find 'masa' directory in any parent path")
+    raise FileNotFoundError("Could not find 'masa-internal' directory in any parent path")
 
 MASA_ROOT = find_masa_root()
 
