@@ -14,7 +14,7 @@ pub use distribution::Distribution;
 pub use flag::{
     FIFO, FIFO_EARLY, FIFO_INFRA, FIFO_QUEUE_TRACING, FIFO_SPAN_TRACING, PRIO_CLASS,
     PRIO_CLASS_GLOBAL, PRIO_GLOBAL, PRIO_GLOBAL_EARLY, PRIO_GLOBAL_QUEUE_TRACING, PRIO_LOCAL,
-    PRIO_LOCAL_EARLY,
+    PRIO_LOCAL_EARLY, EARLY_RETURN,
 };
 pub use graph::{
     FutureGraphTracker, GlobalGraph, GlobalGraphTracker, LocalGraph, LocalGraphTracker,

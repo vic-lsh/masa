@@ -6,7 +6,7 @@ use std::task::Poll;
 use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
 use crate::body::BoxBody;
 use crate::{Code, Response};
-use masa::{time_now, Context};
+use masa::{time_now, Context, EARLY_RETURN};
 use tracing::error;
 
 #[derive(Debug)]
@@ -44,6 +44,14 @@ pub struct ParentContext {
 impl ParentContext {
     #[inline]
     fn check_early_return(&self) -> bool {
+        if EARLY_RETURN {
+            self.check_early_return_impl()
+        } else {
+            false
+        }
+    }
+
+    fn check_early_return_impl(&self) -> bool {
         if self.will_early_return.load(Ordering::Relaxed) {
             return true;
         }
@@ -63,7 +71,7 @@ impl ParentContext {
                 .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
             {
-                error!("Request going  to early return");
+                error!("Request going to early return");
                 // self.server_ctx
                 //     .num_early_returns
                 //     .fetch_add(1, Ordering::Relaxed);
@@ -73,13 +81,9 @@ impl ParentContext {
         return should_early_return;
     }
 
-
     #[inline]
     fn issue_early_return(&self) -> Status {
-        Status::new(
-            Code::DeadlineExceeded,
-            format!("/EarlyReturn"),
-        )
+        Status::new(Code::DeadlineExceeded, format!("/EarlyReturn"))
     }
 }
 
