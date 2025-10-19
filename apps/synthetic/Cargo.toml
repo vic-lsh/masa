@@ -53,11 +53,6 @@ fifo = [
 	"masa/fifo", 
 	"tonic/fifo"
 ]
-fifo_infra = [
-  "tokio/fifo_infra",
-  "masa/fifo_infra",
-  "tonic/fifo_infra",
-]
 
 gcp = ["dep:prost-types", "tonic/tls"]
 routeguide = [

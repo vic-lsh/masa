@@ -10,7 +10,7 @@ use std::{
 
 use masa::{
     time_now, Context, FutureGraphTracker, LatencyTracker, LocalGraph, LocalGraphTracker, MethodId,
-    FIFO, FIFO_INFRA, PRIO_GLOBAL, PRIO_LOCAL,
+    FIFO, PRIO_GLOBAL, PRIO_LOCAL,
 };
 
 use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
@@ -123,7 +123,7 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
             .read()
             .unwrap();
         let deadline;
-        if FIFO || FIFO_INFRA || PRIO_GLOBAL {
+        if FIFO || PRIO_GLOBAL {
             deadline = self.ctx.deadline();
         } else if PRIO_LOCAL {
             deadline = self.ctx.deadline()
