@@ -46,14 +46,14 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapQueue<
         self.push_count += 1;
 
         // Get slice of binary heap and find the index of the newly added element
-        if self.push_count % 1000 == 0 {
-            println!(
-                "PrioBHQ: push_count {}, Current len {}, ratio {}",
-                self.push_count,
-                self.len(),
-                self.push_count as f64 / self.len() as f64
-            );
-        }
+        // if self.push_count % 1000 == 0 {
+        //     println!(
+        //         "PrioBHQ: push_count {}, Current len {}, ratio {}",
+        //         self.push_count,
+        //         self.len(),
+        //         self.push_count as f64 / self.len() as f64
+        //     );
+        // }
 
         Ok(())
     }

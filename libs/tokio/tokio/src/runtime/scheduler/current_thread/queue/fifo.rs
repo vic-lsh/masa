@@ -22,14 +22,14 @@ impl<T> Queue for FifoQueue<T> {
         self.push_count += 1;
 
 
-        if self.push_count % 1000 == 0 {
-            println!(
-                "FifoQ: push_count {}, Current len {}, ratio {}",
-                self.push_count,
-                self.len(),
-                self.push_count as f64 / self.len() as f64
-            );
-        }
+        // if self.push_count % 1000 == 0 {
+        //     println!(
+        //         "FifoQ: push_count {}, Current len {}, ratio {}",
+        //         self.push_count,
+        //         self.len(),
+        //         self.push_count as f64 / self.len() as f64
+        //     );
+        // }
         Ok(())
     }
 
