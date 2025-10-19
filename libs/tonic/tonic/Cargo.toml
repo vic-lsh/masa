@@ -71,6 +71,7 @@ fifo_infra = ["masa"]
 fifo_span_tracing = ["masa"]
 fifo_queue_tracing = ["masa"]
 prio_global_queue_tracing = ["masa"]
+early = ["masa"]
 
 
 # [[bench]]
