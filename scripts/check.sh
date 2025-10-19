@@ -2,7 +2,6 @@
 
 flag_combos=(
     "fifo"
-    "fifo_infra"
     "prio_local"
     "prio_local_direct"
     "prio_local_indirect"

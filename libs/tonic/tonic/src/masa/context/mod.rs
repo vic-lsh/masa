@@ -21,7 +21,7 @@ pub use tls::{client, server};
 pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
 // pub type DefaultPrioritySelector = queue_tracing::QueueTracing;
 
-#[cfg(any(feature = "fifo", feature = "fifo_infra"))]
+#[cfg(any(feature = "fifo"))]
 #[allow(missing_docs)]
 // TODO: revert back to noop for Fifo. Add another feature flag for tracing.
 // pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
