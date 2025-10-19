@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from math import ceil
 from pathlib import Path
 from typing import Iterable, List, Sequence, Tuple
 
@@ -231,6 +232,69 @@ def build_latency_plots(
     print(f"Saved latency plots to {output}")
 
 
+def plot_latency_percentiles(
+    rps_values: List[float],
+    policies: Sequence[PolicySamples],
+    output: Path,
+    labels: Sequence[str],
+    percentiles: Sequence[float] | None = None,
+) -> None:
+    if percentiles is None:
+        percentiles = (90.0, 95.0, 99.0, 99.9)
+
+    if not policies:
+        raise ValueError("No policies provided for percentile plotting.")
+
+    ncols = 2 if len(percentiles) > 1 else 1
+    nrows = ceil(len(percentiles) / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(10, 4 * nrows), sharex=True)
+    if isinstance(axes, plt.Axes):
+        axes_iter = [axes]
+    else:
+        axes_iter = axes.flatten()
+
+    cmap = plt.get_cmap("tab10")
+    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
+
+    for idx, percentile in enumerate(percentiles):
+        if idx >= len(axes_iter):
+            break
+        ax = axes_iter[idx]
+        for policy_idx, (label, samples) in enumerate(zip(labels, policies)):
+            marker = marker_cycle[policy_idx % len(marker_cycle)]
+            color = cmap(policy_idx % cmap.N)
+            tail_latencies = [
+                float(samples.metric_for_rps(rps, "e2e_latency_ms").dropna().quantile(percentile / 100.0))
+                if not samples.metric_for_rps(rps, "e2e_latency_ms").dropna().empty
+                else float("nan")
+                for rps in rps_values
+            ]
+            ax.plot(
+                rps_values,
+                tail_latencies,
+                marker=marker,
+                label=label,
+                color=color,
+            )
+
+        ax.set_title(f"P{percentile:g} tail latency")
+        ax.set_ylabel("Latency (ms)")
+        ax.grid(True, which="both", linestyle="--", alpha=0.4)
+        if idx == 0:
+            ax.legend()
+
+    for extra_ax in axes_iter[len(percentiles) :]:
+        extra_ax.axis("off")
+
+    for ax in axes_iter[-ncols:]:
+        ax.set_xlabel("Offered load (RPS)")
+
+    fig.tight_layout()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output)
+    print(f"Saved latency percentile plots to {output}")
+
+
 def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float]:
     with config_path.open("r") as fh:
         config = json.load(fh)
@@ -285,6 +349,12 @@ def main() -> None:
         rps_values,
         policy_samples,
         Path("apps/mssim/data/latency_boxplot.png"),
+        policy_names,
+    )
+    plot_latency_percentiles(
+        rps_values,
+        policy_samples,
+        Path("apps/mssim/data/latency_percentiles.png"),
         policy_names,
     )
 
