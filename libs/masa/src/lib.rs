@@ -11,7 +11,7 @@ mod typing;
 pub use context::Context;
 pub use context::FutureSpan;
 pub use distribution::Distribution;
-pub use flag::{FIFO, FIFO_INFRA, PRIO_CLASS, PRIO_CLASS_GLOBAL, PRIO_GLOBAL, PRIO_LOCAL};
+pub use flag::{FIFO, FIFO_INFRA, PRIO_CLASS, PRIO_GLOBAL, PRIO_LOCAL};
 pub use graph::{
     FutureGraphTracker, GlobalGraph, GlobalGraphTracker, LocalGraph, LocalGraphTracker,
 };
