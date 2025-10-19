@@ -68,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "10000".to_string())
         .parse()?;
     let stats_interval_sec: u64 = env::var("STATS_INTERVAL_SEC")
-        .unwrap_or_else(|_| "2".to_string())
+        .unwrap_or_else(|_| "1".to_string())
         .parse()?;
 
     let duration: u32 = env::var("DURATION")
