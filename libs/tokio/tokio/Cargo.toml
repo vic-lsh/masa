@@ -27,22 +27,15 @@ default = []
 
 scheduler_trace = []
 static = []
-prio_class = []
 prio_global = []
-prio_global_early = []
-prio_class_global = []
 prio_local = []
-prio_local_early = []
 prio_local_direct = []
 prio_local_indirect = []
 perfect_lsf = []
 fifo = []
-fifo_early = []
-fifo_infra = []
 fifo_span_tracing = []
 fifo_queue_tracing = []
 prio_global_queue_tracing = []
-
 
 # enable everything
 full = [

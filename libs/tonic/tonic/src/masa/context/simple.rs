@@ -5,13 +5,13 @@ use std::{
         Arc, Mutex, RwLock,
     },
     task::Poll,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use masa::{
     time_now, Context, FutureGraphTracker, LatencyTracker, LocalGraph, LocalGraphTracker, MethodId,
-    FIFO, FIFO_EARLY, FIFO_INFRA, FIFO_QUEUE_TRACING, FIFO_SPAN_TRACING, PRIO_GLOBAL,
-    PRIO_GLOBAL_EARLY, PRIO_GLOBAL_QUEUE_TRACING, PRIO_LOCAL, PRIO_LOCAL_EARLY,
+    FIFO, FIFO_QUEUE_TRACING, FIFO_SPAN_TRACING, PRIO_GLOBAL, PRIO_GLOBAL_QUEUE_TRACING,
+    PRIO_LOCAL,
 };
 
 use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
@@ -72,36 +72,8 @@ pub struct SimpleServerContext {
 impl SimpleParentContext {
     #[inline]
     fn check_early_return(&self) -> bool {
-        if FIFO_EARLY || PRIO_GLOBAL_EARLY || PRIO_LOCAL_EARLY {
-            if self.will_early_return.load(Ordering::Relaxed) {
-                return true;
-            }
-
-            let now = time_now();
-            let should_early_return = now >= self.ctx.deadline();
-
-            if should_early_return {
-                // `check_early_return` may be invoked at multiple lifecycle hooks.
-                //
-                // this will only be read/written on one thread, so we can use the
-                // weakest ordering guarantees.
-                // it is an atomic because the ParentContext type needs to be Sync:
-                // see the docs for ParentHooks for why.
-                if self
-                    .will_early_return
-                    .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)
-                    .is_ok()
-                {
-                    self.server_ctx
-                        .num_early_returns
-                        .fetch_add(1, Ordering::Relaxed);
-                }
-            }
-
-            return should_early_return;
-        } else {
-            return false;
-        }
+        // TODO: add back early return impl
+        return false;
     }
 
     #[inline]
@@ -153,16 +125,13 @@ impl ParentHooks<SimpleChildContext, SimpleServerContext> for SimpleParentContex
             .unwrap();
         let deadline;
         if FIFO
-            || FIFO_EARLY
-            || FIFO_INFRA
-            || PRIO_GLOBAL
-            || PRIO_GLOBAL_EARLY
-            || PRIO_GLOBAL_QUEUE_TRACING
             || FIFO_SPAN_TRACING
             || FIFO_QUEUE_TRACING
+            || PRIO_GLOBAL
+            || PRIO_GLOBAL_QUEUE_TRACING
         {
             deadline = self.ctx.deadline();
-        } else if PRIO_LOCAL || PRIO_LOCAL_EARLY {
+        } else if PRIO_LOCAL {
             deadline = self.ctx.deadline()
                 - graph.estimate_future(method.id())
                 - graph.estimate_present(method.id());
@@ -372,25 +341,6 @@ impl ServerHooks for SimpleServerContext {
             .collect();
 
         let num_early_returns = Arc::new(AtomicUsize::new(0));
-
-        if FIFO_EARLY || PRIO_GLOBAL_EARLY || PRIO_LOCAL_EARLY {
-            let num_early_returns_clone = num_early_returns.clone();
-            tokio::spawn(async move {
-                let secs = 1;
-                let mut prev = 0;
-                loop {
-                    tokio::time::sleep(Duration::from_secs(secs)).await;
-                    let curr = num_early_returns_clone.load(Ordering::Relaxed);
-                    log::error!(
-                        "num early returns: {}, last {} secs: {}",
-                        curr,
-                        secs,
-                        curr - prev
-                    );
-                    prev = curr;
-                }
-            });
-        }
 
         // log::warn!(
         //     "SimpleServerContext, service: {:?}, local_graphs: {:?}",
