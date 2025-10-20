@@ -12,7 +12,7 @@ use masa::{Context as MasaContext, time_now};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::fs;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::time::Instant;
 use tonic::Request;
 use tonic::metadata::MetadataMap;
@@ -255,7 +255,7 @@ pub async fn run_replay_load(
     err: Arc<AtomicU64>,
     inflight_guard: Arc<Semaphore>,
     queue_samples: Arc<Mutex<Vec<QueueLatencySample>>>,
-    completed_latencies_us: Arc<Mutex<Vec<u64>>>,
+    latency_sample_tx: mpsc::UnboundedSender<u64>,
 ) -> anyhow::Result<()> {
     let start_instant = Instant::now();
     let mut handles = Vec::with_capacity(work_items.len());
@@ -270,7 +270,7 @@ pub async fn run_replay_load(
         let ok = ok.clone();
         let err = err.clone();
         let queue_samples = queue_samples.clone();
-        let completed_latencies_us = completed_latencies_us.clone();
+        let latency_sample_tx = latency_sample_tx.clone();
         let mut rpc_client = client.clone();
 
         let handle = tokio::spawn(async move {
@@ -307,8 +307,7 @@ pub async fn run_replay_load(
                         });
                     }
                     {
-                        let mut guard = completed_latencies_us.lock().await;
-                        guard.push(e2e_latency_us);
+                        let _ = latency_sample_tx.send(e2e_latency_us);
                     }
                     ok.fetch_add(1, Ordering::Relaxed)
                 }

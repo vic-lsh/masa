@@ -6,13 +6,13 @@ use std::{
     time::Duration,
 };
 
-use masa::{Context as MasaContext, time_now};
-use tokio::sync::{Mutex, Semaphore};
+use masa::{time_now, Context as MasaContext};
+use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::time::Instant;
 use tokio::time::MissedTickBehavior;
 use tokio::{fs, time};
-use tonic::Request;
 use tonic::transport::masa_channel::LoadBalancedChannel;
+use tonic::Request;
 
 mod replay;
 use replay::extract_queue_latency;
@@ -21,11 +21,11 @@ mod service {
     tonic::include_proto!("service");
 }
 use replay::{
-    QueueLatencySample, ReplayWorkItem, load_frontend_replay_items, queue_latency_output_path,
-    run_replay_load, write_queue_latency_csv,
+    load_frontend_replay_items, queue_latency_output_path, run_replay_load,
+    write_queue_latency_csv, QueueLatencySample, ReplayWorkItem,
 };
-use service::RootRequest;
 use service::service_client::ServiceClient;
+use service::RootRequest;
 type RpcClient = ServiceClient<LoadBalancedChannel>;
 
 const PERIODIC_FLUSH_INTERVAL_SECS: u64 = 10;
@@ -145,7 +145,7 @@ async fn main() -> anyhow::Result<()> {
     let err = Arc::new(AtomicU64::new(0));
     let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
     let queue_samples = Arc::new(Mutex::new(Vec::<QueueLatencySample>::new()));
-    let completed_latencies_us = Arc::new(Mutex::new(Vec::<u64>::new()));
+    let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
 
     let queue_csv_path = replay_meta
         .as_ref()
@@ -209,49 +209,56 @@ async fn main() -> anyhow::Result<()> {
         let sent = sent.clone();
         let ok = ok.clone();
         let err = err.clone();
-        let latency_samples = completed_latencies_us.clone();
+        let mut latency_rx = latency_sample_rx;
         tokio::spawn(async move {
             let mut last_sent = 0u64;
             let mut last_ok = 0u64;
             let mut last_err = 0u64;
             let mut ticker = tokio::time::interval(Duration::from_secs(stats_interval_sec));
+            let mut latency_buffer = Vec::new();
             loop {
-                ticker.tick().await;
-                let s = sent.load(Ordering::Relaxed);
-                let o = ok.load(Ordering::Relaxed);
-                let e = err.load(Ordering::Relaxed);
-                let percentiles = {
-                    let snapshot = {
-                        let guard = latency_samples.lock().await;
-                        if guard.is_empty() {
-                            None
-                        } else {
-                            Some(guard.clone())
-                        }
-                    };
-                    snapshot.and_then(compute_latency_percentiles_us)
-                };
-                let (p50_str, p90_str, p99_str) = match percentiles {
-                    Some((p50, p90, p99)) => {
-                        (format!("{p50}us"), format!("{p90}us"), format!("{p99}us"))
+                tokio::select! {
+                    _ = ticker.tick() => {
+                        let s = sent.load(Ordering::Relaxed);
+                        let o = ok.load(Ordering::Relaxed);
+                        let e = err.load(Ordering::Relaxed);
+                        let percentiles = {
+                            if latency_buffer.is_empty() {
+                                None
+                            } else {
+                                Some(latency_buffer.clone())
+                            }
+                            .and_then(compute_latency_percentiles_us)
+                        };
+                        let (p50_str, p90_str, p99_str) = match percentiles {
+                            Some((p50, p90, p99)) => {
+                                (format!("{p50}us"), format!("{p90}us"), format!("{p99}us"))
+                            }
+                            None => ("n/a".to_string(), "n/a".to_string(), "n/a".to_string()),
+                        };
+                        println!(
+                            "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), p50={}, p90={}, p99={}",
+                            s,
+                            s - last_sent,
+                            o,
+                            o - last_ok,
+                            e,
+                            e - last_err,
+                            p50_str,
+                            p90_str,
+                            p99_str
+                        );
+                        last_sent = s;
+                        last_ok = o;
+                        last_err = e;
                     }
-                    None => ("n/a".to_string(), "n/a".to_string(), "n/a".to_string()),
-                };
-                println!(
-                    "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), p50={}, p90={}, p99={}",
-                    s,
-                    s - last_sent,
-                    o,
-                    o - last_ok,
-                    e,
-                    e - last_err,
-                    p50_str,
-                    p90_str,
-                    p99_str
-                );
-                last_sent = s;
-                last_ok = o;
-                last_err = e;
+                    maybe_sample = latency_rx.recv() => {
+                        match maybe_sample {
+                            Some(sample) => latency_buffer.push(sample),
+                            None => break,
+                        }
+                    }
+                }
             }
         });
     }
@@ -268,7 +275,7 @@ async fn main() -> anyhow::Result<()> {
                 max_in_flight,
                 root_samples.clone(),
                 Some(duration),
-                completed_latencies_us.clone(),
+                latency_sample_tx.clone(),
             )
             .await?;
         }
@@ -281,7 +288,7 @@ async fn main() -> anyhow::Result<()> {
                 err.clone(),
                 inflight_guard.clone(),
                 queue_samples.clone(),
-                completed_latencies_us.clone(),
+                latency_sample_tx.clone(),
             )
             .await?;
         }
@@ -313,7 +320,7 @@ async fn run_root_load(
     max_in_flight: usize,
     root_samples: Arc<Mutex<Vec<RootLatencySample>>>,
     finish_after: Option<Duration>,
-    completed_latencies_us: Arc<Mutex<Vec<u64>>>,
+    latency_sample_tx: mpsc::UnboundedSender<u64>,
 ) -> anyhow::Result<()> {
     let mut ticker = tokio::time::interval(per_req);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -355,7 +362,7 @@ async fn run_root_load(
                 let err = err.clone();
                 let mut rpc_client = client.clone();
                 let root_samples = root_samples.clone();
-                let completed_latencies_us = completed_latencies_us.clone();
+                let latency_sample_tx = latency_sample_tx.clone();
 
                 sent.fetch_add(1, Ordering::Relaxed);
 
@@ -393,10 +400,7 @@ async fn run_root_load(
                                 let mut guard = root_samples.lock().await;
                                 guard.push(sample);
                             }
-                            {
-                                let mut guard = completed_latencies_us.lock().await;
-                                guard.push(elapsed);
-                            }
+                            let _ = latency_sample_tx.send(elapsed);
                         }
                         Err(_) => {
                             let sample = RootLatencySample {
