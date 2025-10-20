@@ -15,15 +15,24 @@ NOTE: the following docs are up-to-date as of commit 6aad65c3fb6b6472d593eaff8af
 Minimal example to run Alibaba trace replay:
 
 ```bash
-$ cd <this-directory>/simulator
-$ cargo run -- --alibaba-trace <masa-project-root>/trace-analysis/golden/S_86516878 --config-dir ./example_config
->>>>>>> ae4dd6d9 (docs(mssim): update readme)
+$ cd <this-directory>/mssim
+$ cargo run --bin mssim -- --alibaba-trace <masa-project-root>/trace-analysis/golden/S_86516878 --config-dir ./example_config
 ```
 
 Once the Docker compose cluster has started, you can view each service container's
 resource usage via `docker stats`.
 
 To monitor logs from the load generator, run `docker logs -f load_generator`.
+
+## Running with replicas
+
+Provide the optional `--config-dir` option to specify replica count for some services.
+
+See `example_config/replicas.json` for an example on how to set replica count.
+
+```bash
+$ cargo run --bin mssim -- --alibaba-trace <masa-project-root>/trace-analysis/golden/S_86516878 --config-dir ./example_config
+```
 
 ## Running on new Alibaba call graphs
 
