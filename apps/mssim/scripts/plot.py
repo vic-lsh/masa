@@ -12,6 +12,7 @@ from typing import Iterable, List, Tuple
 import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.patches import Patch
+from typing import Sequence
 
 THRESHOLD_DEFAULT_MS = 50
 FILENAME_PATTERN = re.compile(r"root_latencies_(?P<rps>[0-9_]+)rps\.csv$")
@@ -98,7 +99,7 @@ def load_policy_samples(policy_dir: Path) -> PolicySamples:
 def align_rps(*datasets: PolicySamples) -> List[float]:
     shared_rps = sorted(set.intersection(*(data.rps_set() for data in datasets)))
     if not shared_rps:
-        raise RuntimeError("No overlapping RPS values between fifo and prio datasets.")
+        raise RuntimeError("No overlapping RPS values across the provided policy datasets.")
     return shared_rps
 
 
@@ -111,18 +112,28 @@ def compute_goodput(samples: PolicySamples, threshold_ms: float, rps: float, dur
 
 
 def plot_goodput_fraction(
-    rps_values: List[float],
-    policy_a_goodput: List[float],
-    policy_b_goodput: List[float],
+    rps_values: Sequence[float],
+    policies_goodput: Sequence[Sequence[float]],
     output: Path,
     threshold_ms: float,
-    labels: Tuple[str, str],
+    labels: Sequence[str],
 ) -> None:
+    if len(labels) != len(policies_goodput):
+        raise ValueError("Number of labels must match number of policy goodput vectors.")
+
     fig, ax = plt.subplots(figsize=(8, 5))
-    goodput_fraction_a = [gp / rps for gp, rps in zip(policy_a_goodput, rps_values)]
-    goodput_fraction_b = [gp / rps for gp, rps in zip(policy_b_goodput, rps_values)]
-    ax.plot(rps_values, goodput_fraction_a, marker="o", label=labels[0])
-    ax.plot(rps_values, goodput_fraction_b, marker="s", label=labels[1])
+    cmap = plt.get_cmap("tab10")
+    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
+
+    for idx, (label, goodput_values) in enumerate(zip(labels, policies_goodput)):
+        marker = marker_cycle[idx % len(marker_cycle)]
+        color = cmap(idx % cmap.N)
+        fractions = [
+            (goodput / rps) if rps else float("nan")
+            for goodput, rps in zip(goodput_values, rps_values)
+        ]
+        ax.plot(rps_values, fractions, marker=marker, label=label, color=color)
+
     ax.set_xlabel("Offered load (RPS)")
     ax.set_ylabel("Goodput Fraction (RPS)")
     ax.set_title(f"Goodput fraction vs RPS with SLO={threshold_ms:g} ms")
@@ -135,16 +146,24 @@ def plot_goodput_fraction(
 
 
 def plot_goodput_absolute(
-    rps_values: List[float],
-    policy_a_goodput: List[float],
-    policy_b_goodput: List[float],
+    rps_values: Sequence[float],
+    policies_goodput: Sequence[Sequence[float]],
     output: Path,
     threshold_ms: float,
-    labels: Tuple[str, str],
+    labels: Sequence[str],
 ) -> None:
+    if len(labels) != len(policies_goodput):
+        raise ValueError("Number of labels must match number of policy goodput vectors.")
+
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(rps_values, policy_a_goodput, marker="o", label=labels[0])
-    ax.plot(rps_values, policy_b_goodput, marker="s", label=labels[1])
+    cmap = plt.get_cmap("tab10")
+    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
+
+    for idx, (label, goodput_values) in enumerate(zip(labels, policies_goodput)):
+        marker = marker_cycle[idx % len(marker_cycle)]
+        color = cmap(idx % cmap.N)
+        ax.plot(rps_values, goodput_values, marker=marker, label=label, color=color)
+
     ax.set_xlabel("Offered load (RPS)")
     ax.set_ylabel("Goodput (RPS)")
     ax.set_title(f"Goodput vs RPS with SLO={threshold_ms:g} ms")
@@ -157,47 +176,57 @@ def plot_goodput_absolute(
 
 
 def build_latency_plots(
-    rps_values: List[float],
-    policy_a: PolicySamples,
-    policy_b: PolicySamples,
+    rps_values: Sequence[float],
+    policies: Sequence[PolicySamples],
     output: Path,
-    labels: Tuple[str, str],
+    labels: Sequence[str],
 ) -> None:
+    if not policies:
+        raise ValueError("At least one policy is required for latency plots.")
+    if len(labels) != len(policies):
+        raise ValueError("Number of labels must match number of policy datasets.")
+
     fig, axes = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
-    colors = ("#1f77b4", "#ff7f0e")
+    cmap = plt.get_cmap("tab10")
 
     metrics = [
         ("End-to-end latency", "e2e_latency_ms"),
         ("Queue latency", "queue_latency_ms"),
     ]
 
-    for ax, (title, column) in zip(axes, metrics):
-        positions_a = [idx - 0.2 for idx in range(len(rps_values))]
-        positions_b = [idx + 0.2 for idx in range(len(rps_values))]
+    n_policies = len(policies)
+    box_width = min(0.35, 0.6 / max(n_policies, 1))
+    offset_step = box_width
+    offsets = [
+        (idx - (n_policies - 1) / 2) * offset_step for idx in range(n_policies)
+    ]
 
-        bp_a = ax.boxplot(
-            [policy_a.metric_for_rps(rps, column).dropna().to_numpy() for rps in rps_values],
-            positions=positions_a,
-            widths=0.35,
-            whis=(5, 99.9),
-            patch_artist=True,
-            manage_ticks=False,
-            showfliers=False,
-        )
-        bp_b = ax.boxplot(
-            [policy_b.metric_for_rps(rps, column).dropna().to_numpy() for rps in rps_values],
-            positions=positions_b,
-            widths=0.35,
-            whis=(5, 99.9),
-            patch_artist=True,
-            manage_ticks=False,
-            showfliers=False,
-        )
-        
-        for patch in bp_a["boxes"]:
-            patch.set(facecolor=colors[0], alpha=0.6)
-        for patch in bp_b["boxes"]:
-            patch.set(facecolor=colors[1], alpha=0.6)
+    for ax, (title, column) in zip(axes, metrics):
+        for policy_idx, (label, samples, offset) in enumerate(zip(labels, policies, offsets)):
+            color = cmap(policy_idx % cmap.N)
+            positions = [idx + offset for idx in range(len(rps_values))]
+            data = [
+                samples.metric_for_rps(rps, column).dropna().to_numpy()
+                for rps in rps_values
+            ]
+            bp = ax.boxplot(
+                data,
+                positions=positions,
+                widths=box_width,
+                whis=(5, 99.9),
+                patch_artist=True,
+                manage_ticks=False,
+                showfliers=False,
+            )
+
+            for patch in bp["boxes"]:
+                patch.set(facecolor=color, alpha=0.6)
+            for median in bp["medians"]:
+                median.set(color=color)
+            for whisker in bp["whiskers"]:
+                whisker.set(color=color)
+            for cap in bp["caps"]:
+                cap.set(color=color)
 
         ax.set_ylabel(f"{title} (ms)")
         ax.set_title(title)
@@ -208,8 +237,8 @@ def build_latency_plots(
     axes[-1].set_xlabel("Offered load (RPS)")
 
     handles = [
-        Patch(facecolor=colors[0], alpha=0.6, label=labels[0]),
-        Patch(facecolor=colors[1], alpha=0.6, label=labels[1]),
+        Patch(facecolor=cmap(idx % cmap.N), alpha=0.6, label=label)
+        for idx, label in enumerate(labels)
     ]
     axes[0].legend(handles=handles, loc="upper left")
 
@@ -220,7 +249,7 @@ def build_latency_plots(
 
 
 def plot_latency_percentiles(
-    rps_values: List[float],
+    rps_values: Sequence[float],
     policies: Sequence[PolicySamples],
     output: Path,
     labels: Sequence[str],
@@ -231,6 +260,8 @@ def plot_latency_percentiles(
 
     if not policies:
         raise ValueError("No policies provided for percentile plotting.")
+    if len(labels) != len(policies):
+        raise ValueError("Number of labels must match number of policy datasets.")
 
     ncols = 2 if len(percentiles) > 1 else 1
     nrows = ceil(len(percentiles) / ncols)
@@ -250,12 +281,13 @@ def plot_latency_percentiles(
         for policy_idx, (label, samples) in enumerate(zip(labels, policies)):
             marker = marker_cycle[policy_idx % len(marker_cycle)]
             color = cmap(policy_idx % cmap.N)
-            tail_latencies = [
-                float(samples.metric_for_rps(rps, "e2e_latency_ms").dropna().quantile(percentile / 100.0))
-                if not samples.metric_for_rps(rps, "e2e_latency_ms").dropna().empty
-                else float("nan")
-                for rps in rps_values
-            ]
+            tail_latencies = []
+            for rps in rps_values:
+                series = samples.metric_for_rps(rps, "e2e_latency_ms").dropna()
+                if series.empty:
+                    tail_latencies.append(float("nan"))
+                else:
+                    tail_latencies.append(float(series.quantile(percentile / 100.0)))
             ax.plot(
                 rps_values,
                 tail_latencies,
@@ -282,70 +314,7 @@ def plot_latency_percentiles(
     print(f"Saved latency percentile plots to {output}")
 
 
-def plot_latency_percentiles(
-    rps_values: List[float],
-    policies: Sequence[PolicySamples],
-    output: Path,
-    labels: Sequence[str],
-    percentiles: Sequence[float] | None = None,
-) -> None:
-    if percentiles is None:
-        percentiles = (90.0, 95.0, 99.0, 99.9)
-
-    if not policies:
-        raise ValueError("No policies provided for percentile plotting.")
-
-    ncols = 2 if len(percentiles) > 1 else 1
-    nrows = ceil(len(percentiles) / ncols)
-    fig, axes = plt.subplots(nrows, ncols, figsize=(10, 4 * nrows), sharex=True)
-    if isinstance(axes, plt.Axes):
-        axes_iter = [axes]
-    else:
-        axes_iter = axes.flatten()
-
-    cmap = plt.get_cmap("tab10")
-    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
-
-    for idx, percentile in enumerate(percentiles):
-        if idx >= len(axes_iter):
-            break
-        ax = axes_iter[idx]
-        for policy_idx, (label, samples) in enumerate(zip(labels, policies)):
-            marker = marker_cycle[policy_idx % len(marker_cycle)]
-            color = cmap(policy_idx % cmap.N)
-            tail_latencies = [
-                float(samples.metric_for_rps(rps, "e2e_latency_ms").dropna().quantile(percentile / 100.0))
-                if not samples.metric_for_rps(rps, "e2e_latency_ms").dropna().empty
-                else float("nan")
-                for rps in rps_values
-            ]
-            ax.plot(
-                rps_values,
-                tail_latencies,
-                marker=marker,
-                label=label,
-                color=color,
-            )
-
-        ax.set_title(f"P{percentile:g} tail latency")
-        ax.set_ylabel("Latency (ms)")
-        ax.grid(True, which="both", linestyle="--", alpha=0.4)
-        if idx == 0:
-            ax.legend()
-
-    for extra_ax in axes_iter[len(percentiles) :]:
-        extra_ax.axis("off")
-
-    for ax in axes_iter[-ncols:]:
-        ax.set_xlabel("Offered load (RPS)")
-
-    fig.tight_layout()
-    output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output)
-    print(f"Saved latency percentile plots to {output}")
-
-
-def load_plot_config(config_path: Path) -> Tuple[Path, Tuple[str, str], float]:
+def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float, float]:
     with config_path.open("r") as fh:
         config = json.load(fh)
 
@@ -356,11 +325,11 @@ def load_plot_config(config_path: Path) -> Tuple[Path, Tuple[str, str], float]:
     except KeyError as exc:
         raise KeyError(f"Missing key in plot config: {exc}") from exc
 
-    if len(policies) < 2:
-        raise ValueError("Plot config must specify at least two policies.")
+    if not policies:
+        raise ValueError("Plot config must specify at least one policy.")
 
     threshold_ms = float(config.get("slo_ms", THRESHOLD_DEFAULT_MS))
-    return experiment_root, (policies[0], policies[1]), threshold_ms, duration
+    return experiment_root, policies, threshold_ms, duration
 
 
 def main() -> None:
@@ -370,7 +339,6 @@ def main() -> None:
 
     rps_values = align_rps(*policy_samples)
 
-    
     goodput_by_policy = [
         [compute_goodput(samples, threshold_ms, rps, duration) for rps in rps_values]
         for samples in policy_samples
