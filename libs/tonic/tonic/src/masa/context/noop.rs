@@ -1,4 +1,10 @@
-use std::{sync::{atomic::{AtomicBool, Ordering}, Arc}, task::Poll};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    task::Poll,
+};
 
 use masa::{time_now, Context, EARLY_RETURN};
 use tracing::error;
@@ -141,7 +147,6 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
         Ok(())
     }
-
 }
 
 impl ClientHooks for ChildContext {
