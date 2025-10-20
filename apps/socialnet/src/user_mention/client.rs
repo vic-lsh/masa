@@ -3,6 +3,7 @@ use tonic::{Request, Status};
 use user_mention_service::{
     user_mention_service_client::UserMentionServiceClient, ComposeUserMentionRequest, UserMention,
 };
+use std::env;
 
 pub mod user_mention_service {
     tonic::include_proto!("usermention");
@@ -38,61 +39,12 @@ impl UserMentionClient {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = UserMentionClient::connect("http://[::1]:50052".to_string()).await?;
+    // let mut client = UserMentionClient::connect("http://[::1]:50052".to_string()).await?;
+    let server_addr = env::var("USER_MENTION_SERVICE_ADDR")
+        .unwrap_or_else(|_| "http://[::1]:50052".to_string());
 
-    let req_id = 12345;
-    let user_names = vec![
-        "adam".to_string(),
-        "alice".to_string(),
-        "john".to_string(),
-        "alice".to_string(),
-        "bob".to_string(),
-        "charlie".to_string(),
-    ];
-
-    match client.compose_user_mentions(req_id, user_names).await {
-        Ok(user_mentions) => {
-            println!("Successfully fetch {} user mentions :", user_mentions.len());
-            for (i, user_mention) in user_mentions.iter().enumerate() {
-                println!(
-                    "  {}: User_ID={}, User_Name={}",
-                    i + 1,
-                    user_mention.user_id,
-                    user_mention.username
-                );
-            }
-        }
-        Err(status) => {
-            eprintln!("Error calling user_mention service: {}", status);
-        }
-    }
-
-    let req_id = 12345;
-    let user_names = vec![
-        "adam".to_string(),
-        "alice".to_string(),
-        "john".to_string(),
-        "alice".to_string(),
-        "bob".to_string(),
-        "charlie".to_string(),
-    ];
-
-    match client.compose_user_mentions(req_id, user_names).await {
-        Ok(user_mentions) => {
-            println!("Successfully fetch {} user mentions :", user_mentions.len());
-            for (i, user_mention) in user_mentions.iter().enumerate() {
-                println!(
-                    "  {}: User_ID={}, User_Name={}",
-                    i + 1,
-                    user_mention.user_id,
-                    user_mention.username
-                );
-            }
-        }
-        Err(status) => {
-            eprintln!("Error calling user_mention service: {}", status);
-        }
-    }
+    println!("Connecting to User Mention Service at {}...", server_addr);
+    let mut client = UserMentionClient::connect(server_addr).await?;
 
     let req_id = 12345;
     let user_names = vec![
