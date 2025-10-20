@@ -68,23 +68,50 @@ pub struct Args {
     pub post_storage_addr: String,
 }
 
+// impl Args {
+//     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
+//         Ok(Self {
+//             listen_addr: env::var("USER_TIMELINE_LISTEN_ADDR")
+//                 .unwrap_or_else(|_| "0.0.0.0:50061".to_string()),
+//             mongodb_uri: env::var("USER_TIMELINE_MONGODB_URI")
+//                 .unwrap_or_else(|_| "mongodb://localhost:27017".to_string()),
+//             mongodb_database: env::var("USER_TIMELINE_MONGODB_DATABASE")
+//                 .unwrap_or_else(|_| "user-timeline".to_string()),
+//             mongodb_collection: env::var("USER_TIMELINE_MONGODB_COLLECTION")
+//                 .unwrap_or_else(|_| "user-timeline".to_string()),
+//             redis_url: env::var("USER_TIMELINE_REDIS_URL").ok(),
+//             redis_primary_url: env::var("USER_TIMELINE_REDIS_PRIMARY_URL").ok(),
+//             redis_replica_url: env::var("USER_TIMELINE_REDIS_REPLICA_URL").ok(),
+//             redis_cluster_urls: env::var("USER_TIMELINE_REDIS_CLUSTER_URLS").ok(),
+//             post_storage_addr: env::var("POST_STORAGE_ADDR")
+//                 .unwrap_or_else(|_| "http://127.0.0.1:50065".to_string()),
+//         })
+//     }
+// }
 impl Args {
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
+            // Change the default listen address to match your Docker port
             listen_addr: env::var("USER_TIMELINE_LISTEN_ADDR")
-                .unwrap_or_else(|_| "0.0.0.0:50061".to_string()),
+                .unwrap_or_else(|_| "0.0.0.0:8080".to_string()),
+
+            // Force these to be set explicitly in the environment
             mongodb_uri: env::var("USER_TIMELINE_MONGODB_URI")
-                .unwrap_or_else(|_| "mongodb://localhost:27017".to_string()),
-            mongodb_database: env::var("USER_TIMELINE_MONGODB_DATABASE")
-                .unwrap_or_else(|_| "user-timeline".to_string()),
-            mongodb_collection: env::var("USER_TIMELINE_MONGODB_COLLECTION")
-                .unwrap_or_else(|_| "user-timeline".to_string()),
+                .expect("USER_TIMELINE_MONGODB_URI must be set"),
+            post_storage_addr: env::var("POST_STORAGE_ADDR")
+                .expect("POST_STORAGE_ADDR must be set"),
+            
+            // These are also good to make explicit, but the Redis logic handles it
             redis_url: env::var("USER_TIMELINE_REDIS_URL").ok(),
             redis_primary_url: env::var("USER_TIMELINE_REDIS_PRIMARY_URL").ok(),
             redis_replica_url: env::var("USER_TIMELINE_REDIS_REPLICA_URL").ok(),
             redis_cluster_urls: env::var("USER_TIMELINE_REDIS_CLUSTER_URLS").ok(),
-            post_storage_addr: env::var("POST_STORAGE_ADDR")
-                .unwrap_or_else(|_| "http://127.0.0.1:50065".to_string()),
+
+            // These are optional and can keep their defaults if you wish
+            mongodb_database: env::var("USER_TIMELINE_MONGODB_DATABASE")
+                .unwrap_or_else(|_| "user-timeline".to_string()),
+            mongodb_collection: env::var("USER_TIMELINE_MONGODB_COLLECTION")
+                .unwrap_or_else(|_| "user-timeline".to_string()),
         })
     }
 }
