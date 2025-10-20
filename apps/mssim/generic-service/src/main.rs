@@ -38,6 +38,7 @@ const PARENT_CHAIN_DELIMITER: char = '>';
 struct AlibabaService {
     config: ServiceTraceConfig,
     clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
+    child_call_probabilities: HashMap<ServiceName, f64>,
     deployment: Deployment,
     self_svc_name: ServiceName,
     overshot_counter: AtomicUsize,
@@ -49,15 +50,31 @@ impl AlibabaService {
         config: ServiceTraceConfig,
         deployment: Deployment,
     ) -> Result<Self> {
-        let children = config.call_graph.callees_of(&self_svc_name);
+        let child_weights = config.call_graph.callees_of(&self_svc_name);
+
+        let total_weight: f64 = child_weights.values().map(|&w| w as f64).sum();
+        let mut child_call_probabilities = HashMap::with_capacity(child_weights.len());
+        for (svc, weight) in &child_weights {
+            let probability = if total_weight > 0.0 {
+                (*weight as f64) / total_weight
+            } else {
+                0.0
+            };
+            child_call_probabilities.insert(svc.clone(), probability);
+        }
+
+        let children: Vec<_> = child_weights.keys().cloned().collect();
+        let children_for_log: Vec<_> = child_weights.into_iter().collect();
 
         let clients = Arc::new(RwLock::new(HashMap::default()));
 
         let cl = clients.clone();
         let deploy = deployment.clone();
         tokio::spawn(async move {
-            println!("Connecting to children: {:?}", children);
-            let clients = Self::connect_to_children(children, &deploy).await.expect("Failed to connect to children");
+            println!("Connecting to children: {:?}", children_for_log);
+            let clients = Self::connect_to_children(children, &deploy)
+                .await
+                .expect("Failed to connect to children");
             println!("Children connected");
 
             let mut guard = cl.write().await;
@@ -67,6 +84,7 @@ impl AlibabaService {
         Ok(AlibabaService {
             config,
             clients,
+            child_call_probabilities,
             deployment,
             self_svc_name,
             overshot_counter: AtomicUsize::new(0),
@@ -366,6 +384,21 @@ impl AlibabaService {
 
             // Disallow cycle
             if parent_chain.iter().any(|svc| svc == child_svc_name) {
+                continue;
+            }
+
+            let probability = self
+                .child_call_probabilities
+                .get(child_svc_name)
+                .copied()
+                .unwrap_or(0.0)
+                .clamp(0.0, 1.0);
+
+            if probability <= 0.0 {
+                continue;
+            }
+
+            if probability < 1.0 && rand::random::<f64>() >= probability {
                 continue;
             }
 
