@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.patches import Patch
 
-THRESHOLD_DEFAULT_MS = 100
+THRESHOLD_DEFAULT_MS = 50
 FILENAME_PATTERN = re.compile(r"root_latencies_(?P<rps>[0-9_]+)rps\.csv$")
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "data/cfg.json"
 
