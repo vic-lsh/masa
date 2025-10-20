@@ -77,6 +77,10 @@ async fn main() -> anyhow::Result<()> {
 
     let duration = Duration::from_secs(duration as u64);
 
+    let request_slo = env::var("SLO_MS")
+        .unwrap_or_else(|_| "100".to_string())
+        .parse::<u64>()?;
+
     let replay_env = env::var("REPLAY_TRACE_PATH")
         .ok()
         .map(|s| s.trim().to_owned())
@@ -142,7 +146,7 @@ async fn main() -> anyhow::Result<()> {
 
     let sent = Arc::new(AtomicU64::new(0));
     let ok = Arc::new(AtomicU64::new(0));
-    let err = Arc::new(AtomicU64::new(0));
+    let err: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
     let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
     let queue_samples = Arc::new(Mutex::new(Vec::<QueueLatencySample>::new()));
 
@@ -239,6 +243,7 @@ async fn main() -> anyhow::Result<()> {
             run_root_load(
                 client,
                 per_req.expect("per_req available in root mode"),
+                request_slo,
                 sent.clone(),
                 ok.clone(),
                 err.clone(),
@@ -282,6 +287,7 @@ async fn main() -> anyhow::Result<()> {
 async fn run_root_load(
     client: RpcClient,
     per_req: Duration,
+    request_slo: u64,
     sent: Arc<AtomicU64>,
     ok: Arc<AtomicU64>,
     err: Arc<AtomicU64>,
@@ -320,10 +326,10 @@ async fn run_root_load(
             }
 
             _ = ticker.tick() => {
-                let permit = match inflight_guard.clone().try_acquire_owned() {
-                    Ok(p) => p,
-                    Err(_) => continue,
-                };
+                // let permit = match inflight_guard.clone().try_acquire_owned() {
+                //     Ok(p) => p,
+                //     Err(_) => continue,
+                // };
 
                 let sent = sent.clone();
                 let ok = ok.clone();
@@ -334,7 +340,7 @@ async fn run_root_load(
                 let req_id = sent.fetch_add(1, Ordering::Relaxed);
 
                 tokio::spawn(async move {
-                    let _permit = permit;
+                    // let _permit = permit;
                     let start_at = time_now();
                     let mut request = Request::new(RootRequest {
                         req_id,
@@ -342,10 +348,10 @@ async fn run_root_load(
                     });
 
                     let ctx = {
-                        let slo = 50_000;
+                        let slo_us = request_slo * 1000; 
                         let start_at = time_now();
-                        let deadline = start_at + slo;
-                        MasaContext::new("root".to_string(), 0, req_id, slo, 0, start_at, deadline)
+                        let deadline = start_at + slo_us;
+                        MasaContext::new("root".to_string(), 0, req_id, slo_us, 0, start_at, deadline)
                     };
                     request.metadata_mut().insert_ctx("ctx", &ctx);
 
@@ -387,7 +393,7 @@ async fn run_root_load(
     }
 
     // Drain in-flight requests before exit
-    let _ = inflight_guard.acquire_many(max_in_flight as u32).await;
+    // let _ = inflight_guard.acquire_many(max_in_flight as u32).await;
 
     let s = sent.load(Ordering::Relaxed);
     let o = ok.load(Ordering::Relaxed);

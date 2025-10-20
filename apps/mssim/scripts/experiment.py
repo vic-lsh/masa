@@ -41,6 +41,7 @@ class ExperimentConfig:
     config_dir: Path
     output_root: Path
     duration_sec: int
+    slo_ms: int
     policies: List[str]
     rps_values: List[float]
     repeats: int = 1
@@ -65,6 +66,7 @@ def load_config(path: Path) -> ExperimentConfig:
         duration_sec = int(data.get("duration_sec", 0))
         policies = list(data.get("policies", []))
         rps_values = [float(v) for v in data.get("rps_values", [])]
+        slo_ms = int(data["slo_ms"])
     except (KeyError, TypeError, ValueError) as err:
         raise ValueError(f"invalid experiment config: {err}") from err
 
@@ -80,6 +82,7 @@ def load_config(path: Path) -> ExperimentConfig:
         config_dir=config_dir,
         output_root=output_root,
         duration_sec=duration_sec,
+        slo_ms=slo_ms,
         policies=policies,
         rps_values=rps_values,
         repeats=repeats,
@@ -98,7 +101,7 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
     env.setdefault("ORCHESTRATOR", cfg.orchestrator)
     env["FEATURE"] = policy
     env["RPS"] = f"{rps}"
-    env["MSSIM_RPS"] = f"{rps}"
+    env["SLO_MS"] = str(cfg.slo_ms)
     if cfg.max_in_flight:
         env["MAX_IN_FLIGHT"] = str(cfg.max_in_flight)
     if cfg.stats_interval_sec:
