@@ -45,6 +45,10 @@ path = "src/user/main.rs"
 name = "hotel_recommendation"
 path = "src/recommendation/main.rs"
 
+[[bin]]
+name = "mc_test"
+path = "src/mc_test.rs"
+
 # [[bin]]
 # name = "recommendation-client"
 # path = "src/recommendation/client.rs"
@@ -178,6 +182,7 @@ crossbeam-channel = "0.5"
 mongodb = { version = "=2.8.2" }
 memcache = "0.16"
 async-memcached = { path = "../../3rd_party/async-memcached" }
+memcache-async = { path = "../../3rd_party/memcache-async", default-features = false, features = ["with-tokio"] }
 log = "0.4"
 # Common dependencies
 tokio = { path = "../../libs/tokio/tokio", features = [
@@ -232,4 +237,3 @@ tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
 
 [patch.crates-io]
 tokio = { path = "./libs/tokio/tokio", version = "1" }
-
