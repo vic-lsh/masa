@@ -163,9 +163,10 @@ impl StatsTracker {
             consumers.insert(k.to_string(), consumer);
         }
 
+        let keys = keys.into_iter().map(|k| k.to_owned()).collect::<Vec<_>>();
         tokio::spawn(async move {
             const PERCENTILES: [f64; 4] = [50.0, 90.0, 99.0, 99.9];
-            const DELTA_MS: u64 = 1000;
+            const DELTA_MS: u64 = 5000;
 
             let name_width = consumers
                 .iter()
@@ -185,16 +186,19 @@ impl StatsTracker {
                 };
                 millis += DELTA_MS;
                 println!("#{}", millis);
-                for (k, c) in consumers.iter_mut() {
+
+                for k in &keys {
+                    let c = consumers.get_mut(k).expect("key must exist");
                     let mut dist = c.consume();
                     print!("{: <width$}", k, width = name_width);
                     print!("# recs {: <width$}", dist.len(), width = 6);
-                    print!("avg: {} ", dist.average());
+                    print!("avg: {:.2} ", dist.average());
                     for p in PERCENTILES {
-                        print!("p{}: {} ", p, dist.percentile(p));
+                        print!("p{:.2}: {} ", p, dist.percentile(p));
                     }
                     print!("\n");
                 }
+
                 print!("\n");
             }
         });

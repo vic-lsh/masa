@@ -157,7 +157,14 @@ impl<'a, T> PoolItemRef<'a, T> {
         Fut: Future<Output = T>,
     {
         self.discard_impl();
-        self.pool.get_or_create_async(factory).await
+        let new_item = factory().await;
+
+        {
+            let new_item = MaybeUninit::new(new_item);
+            let _ = std::mem::replace(&mut self.item, new_item);
+        };
+
+        self
     }
 
     fn discard_impl(&mut self) {
@@ -190,7 +197,10 @@ impl<'a> McPoolItemRef<'a> {
     pub async fn replace(self) -> McPoolItemRef<'a> {
         let item = self
             .item
-            .replace(|| async { McClient::new(&self.addr).await.unwrap() })
+            .replace(|| async {
+                println!("Making a new McClient");
+                McClient::new(&self.addr).await.unwrap()
+            })
             .await;
         Self::new(self.addr, item)
     }
