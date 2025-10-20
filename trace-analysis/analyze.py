@@ -116,9 +116,9 @@ def print_rpc_stats(rpc_df: pd.DataFrame, df: pd.DataFrame) -> None:
     avg_replica_count = num_instances / num_services
     print("Average replica count per microservice:", avg_replica_count)
 
-def top_10_services(rpc_df: pd.DataFrame) -> pd.Series:
-    top_services = rpc_df["service"].value_counts().head(10)
-    print("Top 10 most popular services:")
+def get_top_services(rpc_df: pd.DataFrame, n: int = 10) -> pd.Series:
+    top_services = rpc_df["service"].value_counts().head(n)
+    print(f"Top {n} most popular services:")
     print(top_services)
     return top_services
 
@@ -467,7 +467,7 @@ def main() -> None:
 
     # Print stats & top services
     print_rpc_stats(rpc_df, df)
-    top_services = top_10_services(rpc_df)
+    top_services = get_top_services(rpc_df, n=10)
 
     start = time.perf_counter()
     results = run_for_services_process_pool(
