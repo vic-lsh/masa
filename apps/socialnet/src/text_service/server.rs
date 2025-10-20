@@ -15,6 +15,9 @@ use text_svc::url_shorten_service::{
     url_shorten_service_client::UrlShortenServiceClient, ComposeUrlsRequest,
 };
 
+use std::env;
+use tonic::transport::Channel;
+
 pub mod text_svc {
     pub mod text_service {
         tonic::include_proto!("textservice");
@@ -182,13 +185,39 @@ impl TextService for TextSvcImpl {
 }
 
 pub async fn create_service() -> TextServiceServer<TextSvcImpl> {
-    let service = TextSvcImpl::new(
-        UrlShortenServiceClient::connect("http://[::1]:50053")
+    // let service = TextSvcImpl::new(
+    //     UrlShortenServiceClient::connect("http://[::1]:50053")
+    //         .await
+    //         .unwrap(),
+    //     UserMentionServiceClient::connect("http://[::1]:50052")
+    //         .await
+    //         .unwrap(),
+    // );
+    // TextServiceServer::new(service)
+    let url_shorten_addr = env::var("URL_SHORTEN_SERVICE_ADDR")
+        .expect("URL_SHORTEN_SERVICE_ADDR must be set");
+    let user_mention_addr = env::var("USER_MENTION_SERVICE_ADDR")
+        .expect("USER_MENTION_SERVICE_ADDR must be set");
+
+    // let service = TextSvcImpl::new(
+    //     UrlShortenServiceClient::connect(url_shorten_addr)
+    //         .await
+    //         .unwrap(),
+    //     UserMentionServiceClient::connect(user_mention_addr)
+    //         .await
+    //         .unwrap(),
+    // );
+    // TextServiceServer::new(service)
+    let url_shorten_client: UrlShortenServiceClient<Channel> = 
+        UrlShortenServiceClient::connect(url_shorten_addr)
             .await
-            .unwrap(),
-        UserMentionServiceClient::connect("http://[::1]:50052")
+            .unwrap();
+
+    let user_mention_client: UserMentionServiceClient<Channel> = 
+        UserMentionServiceClient::connect(user_mention_addr)
             .await
-            .unwrap(),
-    );
+            .unwrap();
+
+    let service = TextSvcImpl::new(url_shorten_client, user_mention_client);
     TextServiceServer::new(service)
 }
