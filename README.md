@@ -173,8 +173,6 @@ Each key in the following list corresponds to a feature flag in the codebase.
 - `prio_local`: requests are served based on their local deadline (talk to the project leads if you're interested in how this is calculated); currently this only works for the `hotel` application, as it requires a description of the call graph.
 - `prio_local_direct`: similar to `prio_local`, but without using the callgraph.
 - `prio_local_indirect`: similar to `prio_local`, but without using the callgraph.
-- `prio_global_early`: same as `prio_global`, but aborts requests if their deadline is past.
-- `prio_local_early`: same as `prio_local`, but aborts requests if their deadline is past.
 - `fifo_span_tracing`: Based on fifo flag while printing the trace spans when run experiement script
 - `fifo_queue_tracing`: Based on fifo flag while recording the queue latency
 - `prio_global_queue_tracing`: Based on prio_global flag while recording the queue latency

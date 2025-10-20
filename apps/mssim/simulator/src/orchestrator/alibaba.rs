@@ -85,7 +85,7 @@ fn make_deployment_config(
             ServiceDiscoveryInfo {
                 ip: format!("{}-{}", PROJECT_NAME, &service_name),
                 port: DEFAULT_SVC_PORT,
-                replicas: sim_cfg.replicas.get(&service_name).unwrap_or(1) as usize,
+                replicas: sim_cfg.replicas.count_for(&service_name) as usize,
             },
         );
     }
@@ -164,7 +164,7 @@ fn make_service_def(
     let mut service_def = Hash::new();
 
     service_def.insert(Yaml::String("build".into()), make_build_def(svc_port));
-    let replica_count = sim_cfg.replicas.get(service_name).unwrap_or(1);
+    let replica_count = sim_cfg.replicas.count_for(service_name);
     service_def.insert(
         Yaml::String("scale".into()),
         Yaml::Integer(replica_count.into()),

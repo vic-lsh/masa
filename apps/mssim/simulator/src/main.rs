@@ -17,12 +17,14 @@ pub mod proto {
 async fn run_from_alibaba_trace(
     trace_dir: &PathBuf,
     replay_path: Option<PathBuf>,
-    config_dir: &PathBuf,
+    config_dir: Option<&PathBuf>,
 ) -> Result<()> {
     let trace_config = sim_config::trace::TraceConfig::from_config_dir(trace_dir)
         .map_err(|e| anyhow::anyhow!("Failed to parse Alibaba input directory: {}", e))?;
 
-    let sim_config = sim_config::SimulatorConfig::from_config_dir(config_dir)?;
+    let sim_config = config_dir
+        .map(|c| sim_config::SimulatorConfig::from_config_dir(c))
+        .unwrap_or(Ok(sim_config::SimulatorConfig::default()))?;
 
     validator::validate_config(&trace_config)?;
 
@@ -76,7 +78,7 @@ async fn main() -> Result<()> {
     let opts = client::cli::parse_cli_args();
 
     if let Some(path) = opts.alibaba_trace {
-        run_from_alibaba_trace(&path, opts.replay_path.clone(), &opts.config_dir).await?;
+        run_from_alibaba_trace(&path, opts.replay_path.clone(), opts.config_dir.as_ref()).await?;
     } else {
         run_as_server(&opts).await?;
     }
