@@ -1,13 +1,13 @@
 {
-  "experiment_name": "experiment-3",
+  "experiment_name": "experiment-4",
   "trace_dir": "trace-analysis/golden/S_86516878",
-  "config_dir": "apps/mssim/simulator/service_configs",
+  "config_dir": "apps/mssim/simulator/example_config/",
   "output_root": "apps/mssim/data/experiments/",
-  "duration_sec": 150,
+  "duration_sec": 60,
   "repeats": 1,
   "slo_ms": 100,
-  "policies": ["fifo_queue_tracing", "prio_global_queue_tracing"],
-  "rps_values": [500, 600],
+  "policies": ["fifo", "prio_global"],
+  "rps_values": [ 1800, 2200],
   "max_in_flight": 10000,
   "stats_interval_sec": 2,
   "extra_env": {}
