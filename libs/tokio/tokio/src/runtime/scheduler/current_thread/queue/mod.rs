@@ -8,26 +8,19 @@ pub(crate) type LocalRunQueue<T> = timed::TimedQueue<LocalRunQueueInner<T>>;
 pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
 
 #[cfg(not(any(
-    feature = "prio_class",
     feature = "prio_global",
-    feature = "prio_global_early",
-    feature = "prio_class_global",
     feature = "prio_local",
-    feature = "prio_local_early",
     feature = "perfect_lsf",
-    feature = "fifo_infra",
     feature = "fifo"
 )))]
 pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
 
-#[cfg(any(feature = "fifo", feature = "fifo_infra"))]
+#[cfg(any(feature = "fifo"))]
 pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
 
 #[cfg(any(
     feature = "prio_global",
     feature = "prio_local",
-    feature = "prio_global_early",
-    feature = "prio_local_early",
     feature = "perfect_lsf"
 ))]
 pub(crate) type LocalRunQueueInner<T> = prio_bh::BinaryHeapQueue<T>;

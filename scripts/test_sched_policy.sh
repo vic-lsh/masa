@@ -13,8 +13,6 @@ policy_flags=(
     "fifo"
     "prio_global"
     "prio_local"
-    "prio_global_early"
-    "prio_local_early"
 )
 
 # Todo: add other applications
