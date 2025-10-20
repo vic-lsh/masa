@@ -5,9 +5,11 @@ use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
 use sim_config::svc::{ServiceName, ServiceTraceConfig};
 use std::collections::HashMap;
 use std::env;
+use std::str::FromStr;
 use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 use tokio::time::{sleep, Duration};
+use tonic::metadata::{MetadataMap, MetadataValue};
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::level_filters::LevelFilter;
@@ -26,6 +28,9 @@ use service_stubs::{
 };
 
 type RpcClient = ServiceClient<LoadBalancedChannel>;
+
+const PARENT_CHAIN_METADATA_KEY: &str = "parent-chain";
+const PARENT_CHAIN_DELIMITER: char = '>';
 
 #[allow(dead_code)]
 struct AlibabaService {
@@ -88,6 +93,47 @@ impl AlibabaService {
 
         Ok(ServiceClient::new(channel))
     }
+
+    fn encode_parent_chain(
+        chain: &[ServiceName],
+    ) -> Result<Option<MetadataValue<tonic::metadata::Ascii>>, Status> {
+        if chain.is_empty() {
+            return Ok(None);
+        }
+
+        let delimiter = PARENT_CHAIN_DELIMITER.to_string();
+        let encoded = chain
+            .iter()
+            .map(|svc| svc.as_str())
+            .collect::<Vec<_>>()
+            .join(&delimiter);
+
+        MetadataValue::from_str(encoded.as_str())
+            .map(Some)
+            .map_err(|_| Status::internal("Failed to encode parent chain metadata"))
+    }
+
+    fn decode_parent_chain(metadata: &MetadataMap) -> Result<Vec<ServiceName>, Status> {
+        let Some(value) = metadata.get(PARENT_CHAIN_METADATA_KEY) else {
+            return Ok(Vec::new());
+        };
+
+        let parents_str = value
+            .to_str()
+            .map_err(|_| Status::invalid_argument("Parent chain metadata is not valid ASCII"))?;
+
+        if parents_str.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let parents = parents_str
+            .split(PARENT_CHAIN_DELIMITER)
+            .filter(|name| !name.is_empty())
+            .map(|name| ServiceName::from_string(name.to_string()))
+            .collect();
+
+        Ok(parents)
+    }
 }
 
 #[tonic::async_trait]
@@ -96,11 +142,17 @@ impl Service for AlibabaService {
         &self,
         request: Request<ServiceRequest>,
     ) -> Result<Response<ServiceResponse>, Status> {
+        let parent_chain = Self::decode_parent_chain(request.metadata())?;
         let _req = request.into_inner();
         let method_name = _req.method_name;
 
-        self.handle_method(method_name.clone(), _req.req_id, _req.start_at)
-            .await?;
+        self.handle_method(
+            method_name.clone(),
+            _req.req_id,
+            _req.start_at,
+            parent_chain,
+        )
+        .await?;
 
         Ok(Response::new(ServiceResponse {
             calls: vec![],
@@ -121,7 +173,7 @@ impl Service for AlibabaService {
         }
         let _req = _request.into_inner();
         // All the root service does is calling into internal services
-        self.fanout(_req.req_id, _req.start_at).await?;
+        self.fanout(_req.req_id, _req.start_at, Vec::new()).await?;
 
         Ok(Response::new(RootResponse {}))
     }
@@ -247,6 +299,7 @@ impl AlibabaService {
         method_name: String,
         req_id: u64,
         start_at: u64,
+        parent_chain: Vec<ServiceName>,
     ) -> Result<(), Status> {
         let name = method_name.into();
         let latency_dist = self
@@ -262,7 +315,7 @@ impl AlibabaService {
         let total_latency_ms = latency_dist.sample(&mut rand::rng());
 
         let start = Instant::now();
-        self.fanout(req_id, start_at).await?;
+        self.fanout(req_id, start_at, parent_chain).await?;
         let elapsed = start.elapsed();
 
         let remaining = total_latency_ms - (elapsed.as_millis() as f64);
@@ -278,9 +331,29 @@ impl AlibabaService {
         Ok(())
     }
 
-    async fn fanout(&self, req_id: u64, start_at: u64) -> Result<(), Status> {
+    async fn fanout(
+        &self,
+        req_id: u64,
+        start_at: u64,
+        parent_chain: Vec<ServiceName>,
+    ) -> Result<(), Status> {
         let mut tasks = Vec::new();
+        let mut parent_chain_for_children = parent_chain.clone();
+        parent_chain_for_children.push(self.self_svc_name.clone());
+
+        let parent_chain_metadata = Self::encode_parent_chain(&parent_chain_for_children)?;
+
         for (child_svc_name, client) in &self.clients {
+            // Disallow self-edge
+            if child_svc_name == &self.self_svc_name {
+                continue;
+            }
+
+            // Disallow cycle
+            if parent_chain.iter().any(|svc| svc == child_svc_name) {
+                continue;
+            }
+
             let method_to_call = self
                 .config
                 .method_freq_map
@@ -306,6 +379,12 @@ impl AlibabaService {
             };
 
             request.metadata_mut().insert_ctx("ctx", &ctx);
+
+            if let Some(ref metadata_value) = parent_chain_metadata {
+                request
+                    .metadata_mut()
+                    .insert(PARENT_CHAIN_METADATA_KEY, metadata_value.clone());
+            }
 
             let handle = tokio::spawn(async move {
                 client
