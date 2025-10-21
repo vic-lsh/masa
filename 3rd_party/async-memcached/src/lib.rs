@@ -1,6 +1,10 @@
 //! A Tokio-based memcached client.
 #![deny(warnings, missing_docs)]
 
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::Instant;
+
 use bytes::BytesMut;
 use fxhash::FxHashMap;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
@@ -28,6 +32,22 @@ pub use self::value_serializer::AsMemcachedValue;
 
 const MAX_KEY_LENGTH: usize = 250; // reference in memcached documentation: https://github.com/memcached/memcached/blob/5609673ed29db98a377749fab469fe80777de8fd/doc/protocol.txt#L46
 
+static CLIENT_ID: AtomicUsize = AtomicUsize::new(0);
+
+// struct CallGuard {
+//     id: usize,
+//     flag: Arc<AtomicBool>,
+// }
+// 
+// impl Drop for CallGuard {
+//     fn drop(&mut self) {
+//         // Must have been true; if not, logic bug (double-drop or similar).
+//         let was = self.flag.swap(false, Ordering::Release);
+//         debug_assert!(was, "in_call flag was false in Drop (logic error)");
+//         println!("Client {} returns", self.id);
+//     }
+// }
+
 /// High-level memcached client.
 ///
 /// [`Client`] is mapped one-to-one with a given connection to a memcached server, and provides a
@@ -36,6 +56,12 @@ pub struct Client {
     buf: BytesMut,
     last_read_n: Option<usize>,
     conn: Connection,
+    #[allow(dead_code)]
+    id: usize,
+    #[allow(dead_code)]
+    created: Instant,
+    #[allow(dead_code)]
+    in_use: Arc<AtomicBool>,
 }
 
 impl Client {
@@ -47,17 +73,44 @@ impl Client {
     pub async fn new<S: AsRef<str>>(dsn: S) -> Result<Client, Error> {
         let connection = Connection::new(dsn).await?;
 
+        let id = CLIENT_ID.fetch_add(1, Ordering::SeqCst);
+        println!("Client {} created", id);
+
         Ok(Client {
+            id,
             buf: BytesMut::new(),
             last_read_n: None,
             conn: connection,
+            created: Instant::now(),
+            in_use: Arc::new(AtomicBool::new(false)),
         })
     }
+
+    // #[inline]
+    // fn enter(&self) -> CallGuard {
+    //     println!("Client {} enters", self.id);
+    //     // Acquire/Release so other threads see the flag consistently.
+    //     match self
+    //         .in_use
+    //         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+    //     {
+    //         Ok(_) => CallGuard {
+    //             flag: self.in_use.clone(),
+    //             id: self.id,
+    //         },
+    //         Err(_) => panic!(
+    //             "Client {} invariant violated: concurrent/re-entrant call detected",
+    //             self.id
+    //         ),
+    //     }
+    // }
 
     pub(crate) async fn drive_receive<R, F>(&mut self, op: F) -> Result<R, Error>
     where
         F: Fn(&[u8]) -> Result<Option<(usize, R)>, ErrorKind>,
     {
+        // let _guard = self.enter();
+
         // If we serviced a previous request, advance our buffer forward.
         if let Some(n) = self.last_read_n.take() {
             // Not sure how this situation occurs, but it seems to be related to transient network
@@ -65,12 +118,31 @@ impl Client {
             // behavior is. For now, we just return an error, which allows the caller to retry or
             // fall back to the uncached data source as they see fit.
             if n > self.buf.len() {
+                // println!(
+                //     "Client {} Buffer length {} is less than last_read_n < {}, ran for {}ms",
+                //     self.id,
+                //     n,
+                //     self.buf.len(),
+                //     self.created.elapsed().as_millis()
+                // );
+
+                // self.buf.clear();
+                // let _ = self.buf.split_to(self.buf.len());
+                // println!("Buffer cleared, len {}", self.buf.len());
+
                 return Err(Status::Error(ErrorKind::Client(
                     "Buffer length is less than last read length".to_string(),
                 ))
                 .into());
+            } else {
+                let _ = self.buf.split_to(n);
+                // println!(
+                //     "Client {} Buffer split to: {}, new length: {}",
+                //     self.id,
+                //     n,
+                //     self.buf.len()
+                // );
             }
-            let _ = self.buf.split_to(n);
         }
 
         let mut needs_more_data = false;
@@ -79,15 +151,29 @@ impl Client {
                 match self.conn {
                     Connection::Tcp(ref mut s) => {
                         self.buf.reserve(1024);
-                        let n = s.read_buf(&mut self.buf).await?;
+                        let n = s.read_buf(&mut self.buf).await.map_err(|e| {
+                            // println!("Client {} read_buf err {:?}", self.id, e);
+                            e
+                        })?;
                         if n == 0 {
+                            // println!(
+                            //     "Client {} unexpected EOF, last_read_n {:?}",
+                            //     self.id, self.last_read_n
+                            // );
                             return Err(Error::Io(std::io::ErrorKind::UnexpectedEof.into()));
                         }
                     }
                     Connection::Unix(ref mut s) => {
                         self.buf.reserve(1024);
-                        let n = s.read_buf(&mut self.buf).await?;
+                        let n = s.read_buf(&mut self.buf).await.map_err(|e| {
+                            // println!("Client {} read_buf unix err {:?}", self.id, e);
+                            e
+                        })?;
                         if n == 0 {
+                            // println!(
+                            //     "Client {} unexpected EOF, last_read_n {:?}",
+                            //     self.id, self.last_read_n
+                            // );
                             return Err(Error::Io(std::io::ErrorKind::UnexpectedEof.into()));
                         }
                     }
@@ -99,15 +185,28 @@ impl Client {
                 // We got a response.
                 Ok(Some((n, response))) => {
                     self.last_read_n = Some(n);
+                    // println!(
+                    //     "Client {} read n bytes: {}, buffer length: {}",
+                    //     self.id,
+                    //     n,
+                    //     self.buf.len()
+                    // );
                     return Ok(response);
                 }
                 // We didn't have enough data, so loop around and try again.
                 Ok(None) => {
                     needs_more_data = true;
+                    // println!("Client {} need more data", self.id);
                     continue;
                 }
                 // Invalid data not matching the protocol.
-                Err(kind) => return Err(Status::Error(kind).into()),
+                Err(kind) => {
+                    // println!(
+                    //     "Client {} invalid data, last_read_n {:?}",
+                    //     self.id, self.last_read_n
+                    // );
+                    return Err(Status::Error(kind).into());
+                }
             }
         }
     }
