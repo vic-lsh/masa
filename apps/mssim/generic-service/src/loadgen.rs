@@ -326,10 +326,10 @@ async fn run_root_load(
             }
 
             _ = ticker.tick() => {
-                // let permit = match inflight_guard.clone().try_acquire_owned() {
-                //     Ok(p) => p,
-                //     Err(_) => continue,
-                // };
+                let permit = match inflight_guard.clone().try_acquire_owned() {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
 
                 let sent = sent.clone();
                 let ok = ok.clone();
@@ -340,7 +340,7 @@ async fn run_root_load(
                 let req_id = sent.fetch_add(1, Ordering::Relaxed);
 
                 tokio::spawn(async move {
-                    // let _permit = permit;
+                    let _permit = permit;
                     let start_at = time_now();
                     let mut request = Request::new(RootRequest {
                         req_id,
@@ -393,7 +393,7 @@ async fn run_root_load(
     }
 
     // Drain in-flight requests before exit
-    // let _ = inflight_guard.acquire_many(max_in_flight as u32).await;
+    let _ = inflight_guard.acquire_many(max_in_flight as u32).await;
 
     let s = sent.load(Ordering::Relaxed);
     let o = ok.load(Ordering::Relaxed);
