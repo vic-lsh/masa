@@ -75,7 +75,7 @@ impl ReservationImpl {
             .to_owned();
 
         Ok(Self {
-            mc_pool: Arc::new(McPool::new(cache_addr.clone(), 32)),
+            mc_pool: Arc::new(McPool::new(cache_addr.clone(), 128)),
             cache_addr,
             mongo_client,
             mongo_reserve_client,
@@ -135,10 +135,6 @@ impl Reservation for ReservationImpl {
         let mut cache_cap = HashMap::new();
 
         let mut mc_client = self.mc_pool.get().await;
-        // let mut mc_client = McClient::new(&self.cache_addr).await.expect(&format!(
-        //     "MC connection to '{}' should succeed",
-        //     self.cache_addr
-        // ));
 
         let mc_resp = track_latency!(self.check_avail_stats.get("mc_get_capacity"), {
             tokio::time::timeout(MC_TIMEOUT, mc_client.get_multi(hotel_mem_keys)).await
@@ -161,14 +157,17 @@ impl Reservation for ReservationImpl {
                     error!("mc_get_capacity error: {:?}", e);
                     if matches!(
                         e,
-                        async_memcached::Error::Protocol(async_memcached::Status::Error(_))
+                        async_memcached::Error::Protocol(async_memcached::Status::Error(
+                            async_memcached::ErrorKind::Client(_)
+                        ))
                     ) {
                         mc_client = mc_client.replace().await;
                     }
                 }
             },
             Err(e) => {
-                error!("mc_get_capacity timeout: {:?}", e);
+                panic!("mc_get_capacity timeout: {:?}", e);
+                // mc_client = mc_client.replace().await;
             }
         }
 
@@ -230,34 +229,13 @@ impl Reservation for ReservationImpl {
                 .await
             });
             if let Ok(resp) = mc_timeout_resp {
-                if is_mc_protocol_err(&resp) {
-                    // log::error!("CheckAvail hotel cap writeback should succeed");
-                    mc_client = mc_client.replace().await;
+                if let Err(resp) = resp {
+                    log::error!("mc_set_avail error: {:?}", resp);
+                    // mc_client = mc_client.replace().await;
                 }
+            } else {
+                panic!("mc_set_avail timeout");
             }
-
-            // for r in results {
-            //     if let Ok(num) = r {
-            //         cache_cap.insert(format!("{}_cap", num.hotel_id), num.number);
-
-            //         let key = format!("{}_cap", num.hotel_id);
-            //         let value = num.number.to_string();
-            //         let mc_timeout_resp =
-            //             track_latency!(self.check_avail_stats.get("mc_set_capacity"), {
-            //                 tokio::time::timeout(
-            //                     MC_TIMEOUT,
-            //                     mc_client.set(&key, value.as_bytes(), None, None),
-            //                 )
-            //                 .await
-            //             });
-            //         if let Ok(resp) = mc_timeout_resp {
-            //             if is_mc_protocol_err(&resp) {
-            //                 // log::error!("CheckAvail hotel cap writeback should succeed");
-            //                 mc_client = mc_client.replace().await;
-            //             }
-            //         }
-            //     }
-            // }
         }
 
         // Process date ranges and create queries
@@ -287,22 +265,41 @@ impl Reservation for ReservationImpl {
         let mc_resp = track_latency!(self.check_avail_stats.get("mc_get_reservations"), {
             tokio::time::timeout(MC_TIMEOUT, mc_client.get_multi(req_commands)).await
         });
-        if let Ok(Ok(mc_resp)) = mc_resp {
-            for entry in mc_resp {
-                let key = String::from_utf8(entry.key).unwrap();
-                query_map.remove(&key).map(|(hotel_id, _, _)| {
-                    if let Ok(count) = String::from_utf8(entry.data.unwrap())
-                        .unwrap_or_default()
-                        .parse::<i32>()
-                    {
-                        let cap = cache_cap.get(&format!("{}_cap", hotel_id)).unwrap_or(&0);
-                        if count + req.room_number > *cap {
-                            res_map
-                                .entry(hotel_id.to_owned())
-                                .and_modify(|e| *e = false);
-                        }
+
+        match mc_resp {
+            Ok(mc_resp) => match mc_resp {
+                Ok(mc_resp) => {
+                    for entry in mc_resp {
+                        let key = String::from_utf8(entry.key).unwrap();
+                        query_map.remove(&key).map(|(hotel_id, _, _)| {
+                            if let Ok(count) = String::from_utf8(entry.data.unwrap())
+                                .unwrap_or_default()
+                                .parse::<i32>()
+                            {
+                                let cap = cache_cap.get(&format!("{}_cap", hotel_id)).unwrap_or(&0);
+                                if count + req.room_number > *cap {
+                                    res_map
+                                        .entry(hotel_id.to_owned())
+                                        .and_modify(|e| *e = false);
+                                }
+                            }
+                        });
                     }
-                });
+                }
+                Err(e) => {
+                    error!("mc_get_reservation error: {:?}", e);
+                    // mc_client.discard();
+                    // if matches!(
+                    //     e,
+                    //     async_memcached::Error::Protocol(async_memcached::Status::Error(
+                    //         async_memcached::ErrorKind::Client(_)
+                    //     ))
+                    // ) {
+                    // }
+                }
+            },
+            Err(_e) => {
+                panic!("mc_get_reservation timeout");
             }
         }
 
