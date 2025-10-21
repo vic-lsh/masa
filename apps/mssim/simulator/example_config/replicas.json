@@ -1,7 +1,7 @@
 {
-  "default": 1,
+  "default": 4,
   "overrides": {
-    "ms-21883": 10,
+    "ms-21883": 4,
     "ms-65374": 4
   }
 }
