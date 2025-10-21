@@ -163,7 +163,10 @@ fn make_service_def(
 ) -> Yaml {
     let mut service_def = Hash::new();
 
-    service_def.insert(Yaml::String("build".into()), make_build_def(svc_port));
+    service_def.insert(
+        Yaml::String("image".into()),
+        Yaml::String("generic_service".into()),
+    );
     let replica_count = sim_cfg.replicas.count_for(service_name);
     service_def.insert(
         Yaml::String("scale".into()),
