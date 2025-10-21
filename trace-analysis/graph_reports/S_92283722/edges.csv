@@ -1,2 +1,2 @@
-service,caller,callee
-S_92283722,USER,MS_41385
+service,caller,callee,weight
+S_92283722,USER,MS_41385,46941.0
