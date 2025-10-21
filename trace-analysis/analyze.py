@@ -298,12 +298,14 @@ def report_latency_by_edge_for_graph(
     tails = [99.5, 99.9, 99.95, 99.99]
     percentiles = sorted(set(base + tails))
 
-    edges_rows: list[tuple[str, str, str]] = []
+    edges_rows: list[tuple[str, str, str, float]] = []
     iface_counts_by_callee: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
     seen_callee_ifaces: set[tuple[str, str]] = set()
 
     for caller, callee, data in reachable_subgraph(graph.G_pair, source="USER").edges(data=True):
-        edges_rows.append((graph.service_name, caller, callee))
+        raw_weight = data.get("weight")
+        weight = float(raw_weight) if raw_weight is not None else 0.0
+        edges_rows.append((graph.service_name, caller, callee, weight))
         iface_counts = data.get("interface_counts", {}) or {}
         if iface_counts:
             iface_counts_by_callee[(graph.service_name, callee)].update(iface_counts)
@@ -315,7 +317,10 @@ def report_latency_by_edge_for_graph(
 
     # (1) edges.csv
     if edges_rows:
-        df_edges = pd.DataFrame(edges_rows, columns=["service", "caller", "callee"]).drop_duplicates()
+        df_edges = pd.DataFrame(
+            edges_rows,
+            columns=pd.Index(["service", "caller", "callee", "weight"]),
+        ).drop_duplicates()
         df_edges.to_csv(svc_dir / "edges.csv", index=False)
 
     # (2) interface_distribution.json — EXACT SHAPE: { [callee]: { [interface]: [call_count] } }
@@ -359,6 +364,7 @@ def _process_one_service_proc(
     Build graphs for one service, draw plots, and write reports.
     Runs in a separate process. Returns (service, num_nodes, num_edges).
     """
+    print(f"[INFO] Processing service {service_name!r} in process.")
     # Build graphs from the minimal per-service slice
     G_pair, G_iface = get_service_graphs(svc_df_min, service_name)
     cg = CallGraph(service_name, G_pair, G_iface)
@@ -467,13 +473,13 @@ def main() -> None:
 
     # Print stats & top services
     print_rpc_stats(rpc_df, df)
-    top_services = get_top_services(rpc_df, n=10)
+    top_services = get_top_services(rpc_df, n=50)
 
     start = time.perf_counter()
     results = run_for_services_process_pool(
         rpc_df,
         top_services,
-        n_workers=None,               # set an int to cap processes
+        n_workers=32,               # set an int to cap processes
         plots_outdir=Path("plots"),
         reports_root=Path("graph_reports"),
     )
