@@ -9,22 +9,24 @@ use hotel_tonic::reservation::{self, reservation_server::Reservation};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::io::{self, ErrorKind};
-use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{error, warn};
 
 use crate::config::ReservationConfig;
 use crate::db;
 use app_util_macros::track_latency;
+use app_utils::pool::{Pool, PoolItemRef};
 use app_utils::stats::latency::StatsTracker;
 use memcache_async::ascii::Protocol as McProtocol;
-use mongodb::{Client as MongoClient, Collection, bson::doc};
+use mongodb::{bson::doc, Client as MongoClient, Collection};
 use tokio::net::TcpStream;
 use tonic::{Request, Response, Status};
 
 type McClient = McProtocol<TcpStream>;
+const MC_POOL_MAX_SIZE: usize = 256;
 
 async fn connect_memcache(addr: &str) -> io::Result<McClient> {
     let stream = TcpStream::connect(addr).await?;
@@ -34,6 +36,7 @@ async fn connect_memcache(addr: &str) -> io::Result<McClient> {
 
 pub struct ReservationImpl {
     cache_addr: String,
+    mc_pool: Arc<Pool<McClient>>,
     mongo_client: MongoClient,
     mongo_reserve_client: MongoClient,
     check_avail_mc_hotel_cap: Arc<AvgTracker>,
@@ -68,9 +71,11 @@ impl ReservationImpl {
             .or_else(|| config.memcached_addr.strip_prefix("tcp://"))
             .unwrap_or(&config.memcached_addr)
             .to_owned();
+        let mc_pool = Arc::new(Pool::new(MC_POOL_MAX_SIZE));
 
         Ok(Self {
             cache_addr,
+            mc_pool,
             mongo_client,
             mongo_reserve_client,
             check_avail_mc_reserve,
@@ -93,6 +98,30 @@ impl ReservationImpl {
                 true,
             )),
         })
+    }
+
+    async fn get_mc_client(&self) -> Result<PoolItemRef<'_, McClient>, Status> {
+        let cache_addr = self.cache_addr.clone();
+        match self
+            .mc_pool
+            .try_get_or_create_async({
+                let cache_addr = cache_addr.clone();
+                move || {
+                    let cache_addr = cache_addr.clone();
+                    async move { connect_memcache(&cache_addr).await }
+                }
+            })
+            .await
+        {
+            Ok(client) => Ok(client),
+            Err(err) => {
+                error!("mc_connect error for {}: {:?}", cache_addr, err);
+                Err(Status::internal(format!(
+                    "memcache connection failed: {}",
+                    err
+                )))
+            }
+        }
     }
 }
 
@@ -128,30 +157,31 @@ impl Reservation for ReservationImpl {
         // Get capacity from memcached
         let mut cache_cap = HashMap::new();
 
-        let mut mc_client = connect_memcache(&self.cache_addr).await.map_err(|err| {
-            error!("mc_connect error for {}: {:?}", self.cache_addr, err);
-            Status::internal(format!("memcache connection failed: {}", err))
-        })?;
-
-        let mc_resp = track_latency!(self.check_avail_stats.get("mc_get_capacity"), {
-            tokio::time::timeout(MC_TIMEOUT, mc_client.get_multi(hotel_mem_keys.as_slice())).await
-        });
-        match mc_resp {
-            Ok(Ok(mc_values)) => {
-                for (key, value) in mc_values {
-                    if let Ok(cap_str) = String::from_utf8(value) {
-                        if let Ok(cap) = cap_str.parse::<i32>() {
-                            missing_keys.remove(&key);
-                            cache_cap.insert(key, cap);
+        {
+            let mut mc_client = self.get_mc_client().await?;
+            let mc_resp = track_latency!(self.check_avail_stats.get("mc_get_capacity"), {
+                tokio::time::timeout(MC_TIMEOUT, mc_client.get_multi(hotel_mem_keys.as_slice()))
+                    .await
+            });
+            match mc_resp {
+                Ok(Ok(mc_values)) => {
+                    for (key, value) in mc_values {
+                        if let Ok(cap_str) = String::from_utf8(value) {
+                            if let Ok(cap) = cap_str.parse::<i32>() {
+                                missing_keys.remove(&key);
+                                cache_cap.insert(key, cap);
+                            }
                         }
                     }
                 }
-            }
-            Ok(Err(err)) => {
-                error!("mc_get_capacity error: {:?}", err);
-            }
-            Err(err) => {
-                error!("mc_get_capacity timeout: {:?}", err);
+                Ok(Err(err)) => {
+                    error!("mc_get_capacity error: {:?}", err);
+                    mc_client.discard();
+                }
+                Err(err) => {
+                    error!("mc_get_capacity timeout: {:?}", err);
+                    mc_client.discard();
+                }
             }
         }
 
@@ -211,6 +241,7 @@ impl Reservation for ReservationImpl {
             }
 
             for (key, value) in &kvs {
+                let mut mc_client = self.get_mc_client().await?;
                 let mc_timeout_resp =
                     track_latency!(self.check_avail_stats.get("mc_set_capacity"), {
                         tokio::time::timeout(MC_TIMEOUT, mc_client.set(key, value.as_bytes(), 0))
@@ -221,9 +252,11 @@ impl Reservation for ReservationImpl {
                     Ok(Err(err)) => {
                         error!("mc_set_capacity error: {:?}", err);
                         self.mc_err_count.fetch_add(1, Ordering::Relaxed);
+                        mc_client.discard();
                     }
                     Err(err) => {
                         error!("mc_set_capacity timeout: {:?}", err);
+                        mc_client.discard();
                     }
                 }
             }
@@ -253,30 +286,35 @@ impl Reservation for ReservationImpl {
         }
 
         self.check_avail_mc_reserve.track(req_commands.len());
-        let mc_resp = track_latency!(self.check_avail_stats.get("mc_get_reservations"), {
-            tokio::time::timeout(MC_TIMEOUT, mc_client.get_multi(req_commands.as_slice())).await
-        });
-        match mc_resp {
-            Ok(Ok(mc_values)) => {
-                for (key, value) in mc_values {
-                    if let Some((hotel_id, _, _)) = query_map.remove(&key) {
-                        if let Some(count) = std::str::from_utf8(&value)
-                            .ok()
-                            .and_then(|s| s.parse::<i32>().ok())
-                        {
-                            let cap = cache_cap.get(&format!("{}_cap", hotel_id)).unwrap_or(&0);
-                            if count + req.room_number > *cap {
-                                res_map.entry(hotel_id.clone()).and_modify(|e| *e = false);
+        {
+            let mut mc_client = self.get_mc_client().await?;
+            let mc_resp = track_latency!(self.check_avail_stats.get("mc_get_reservations"), {
+                tokio::time::timeout(MC_TIMEOUT, mc_client.get_multi(req_commands.as_slice())).await
+            });
+            match mc_resp {
+                Ok(Ok(mc_values)) => {
+                    for (key, value) in mc_values {
+                        if let Some((hotel_id, _, _)) = query_map.remove(&key) {
+                            if let Some(count) = std::str::from_utf8(&value)
+                                .ok()
+                                .and_then(|s| s.parse::<i32>().ok())
+                            {
+                                let cap = cache_cap.get(&format!("{}_cap", hotel_id)).unwrap_or(&0);
+                                if count + req.room_number > *cap {
+                                    res_map.entry(hotel_id.clone()).and_modify(|e| *e = false);
+                                }
                             }
                         }
                     }
                 }
-            }
-            Ok(Err(err)) => {
-                error!("mc_get_reservations error: {:?}", err);
-            }
-            Err(err) => {
-                error!("mc_get_reservations timeout: {:?}", err);
+                Ok(Err(err)) => {
+                    error!("mc_get_reservations error: {:?}", err);
+                    mc_client.discard();
+                }
+                Err(err) => {
+                    error!("mc_get_reservations timeout: {:?}", err);
+                    mc_client.discard();
+                }
             }
         }
 
@@ -299,6 +337,7 @@ impl Reservation for ReservationImpl {
             let room_number = req.room_number;
             let mc_err = self.mc_err_count.clone();
             let check_avail_stats = self.check_avail_stats.clone();
+            let mc_pool = self.mc_pool.clone();
             tasks.push(tokio::spawn(async move {
                 let collection = mongo_client
                     .database("reservation-db")
@@ -310,10 +349,22 @@ impl Reservation for ReservationImpl {
                     "outDate": end_date
                 };
 
-                let mut mc = match connect_memcache(&cache_addr).await {
+                let mut mc = match mc_pool
+                    .try_get_or_create_async({
+                        let cache_addr = cache_addr.clone();
+                        move || {
+                            let cache_addr = cache_addr.clone();
+                            async move { connect_memcache(&cache_addr).await }
+                        }
+                    })
+                    .await
+                {
                     Ok(client) => client,
                     Err(err) => {
-                        error!("mc_connect error in check_availability task: {:?}", err);
+                        error!(
+                            "mc_connect error in check_availability task for {}: {:?}",
+                            cache_addr, err
+                        );
                         mc_err.fetch_add(1, Ordering::Relaxed);
                         return (hotel_id, true);
                     }
@@ -347,10 +398,12 @@ impl Reservation for ReservationImpl {
                         Ok(Err(err)) => {
                             error!("mc_set_reservations error: {:?}", err);
                             mc_err.fetch_add(1, Ordering::Relaxed);
+                            mc.discard();
                         }
                         Err(err) => {
                             error!("mc_set_reservations timeout: {:?}", err);
                             mc_err.fetch_add(1, Ordering::Relaxed);
+                            mc.discard();
                         }
                     }
 
@@ -403,10 +456,6 @@ impl Reservation for ReservationImpl {
         let database = self.mongo_reserve_client.database("reservation-db");
         let res_collection: Collection<db::Reservation> = database.collection("reservation");
         let num_collection: Collection<db::Number> = database.collection("number");
-        let mut mc_client = connect_memcache(&self.cache_addr).await.map_err(|err| {
-            error!("mc_connect error for {}: {:?}", self.cache_addr, err);
-            Status::internal(format!("memcache connection failed: {}", err))
-        })?;
 
         let in_date = DateTime::parse_from_rfc3339(&format!("{}T12:00:00+00:00", req.in_date))
             .unwrap()
@@ -429,61 +478,90 @@ impl Reservation for ReservationImpl {
             let memc_key = format!("{}_{}_{}", hotel_id, in_date_str, out_date_str);
 
             // Check memcached
-            let count = match mc_client.get(&memc_key).await {
-                Ok(value) => {
-                    // Memcached hit
-                    let count = String::from_utf8(value).unwrap().parse::<i32>().unwrap();
-                    memc_date_num_map.insert(memc_key.clone(), count + req.room_number);
-                    count
-                }
-                Err(err) => {
-                    if err.kind() != ErrorKind::NotFound {
-                        error!("mc_get reservation count error: {:?}", err);
-                        self.mc_err_count.fetch_add(1, Ordering::Relaxed);
+            let count = {
+                let mut mc_client = self.get_mc_client().await?;
+                match mc_client.get(&memc_key).await {
+                    Ok(value) => {
+                        // Memcached hit
+                        let count = String::from_utf8(value).unwrap().parse::<i32>().unwrap();
+                        memc_date_num_map.insert(memc_key.clone(), count + req.room_number);
+                        count
                     }
-                    // Memcached miss
-                    let filter = doc! {
-                        "hotelId": hotel_id,
-                        "inDate": &in_date_str,
-                        "outDate": &out_date_str
-                    };
+                    Err(err) => {
+                        if err.kind() != ErrorKind::NotFound {
+                            error!("mc_get reservation count error: {:?}", err);
+                            self.mc_err_count.fetch_add(1, Ordering::Relaxed);
+                            mc_client.discard();
+                        }
+                        // Memcached miss
+                        let filter = doc! {
+                            "hotelId": hotel_id,
+                            "inDate": &in_date_str,
+                            "outDate": &out_date_str
+                        };
 
-                    let mut reservations = res_collection.find(filter, None).await.unwrap();
+                        let mut reservations = res_collection.find(filter, None).await.unwrap();
 
-                    let mut reserve_count = 0;
-                    use futures::StreamExt;
-                    while let Some(reservation) = reservations.next().await {
-                        reserve_count += reservation.unwrap().number;
+                        let mut reserve_count = 0;
+                        use futures::StreamExt;
+                        while let Some(reservation) = reservations.next().await {
+                            reserve_count += reservation.unwrap().number;
+                        }
+                        memc_date_num_map.insert(memc_key.clone(), reserve_count + req.room_number);
+                        reserve_count
                     }
-                    memc_date_num_map.insert(memc_key.clone(), reserve_count + req.room_number);
-                    reserve_count
                 }
             };
 
             // Check capacity
             let memc_cap_key = format!("{}_cap", hotel_id);
-            let hotel_cap = match mc_client.get(&memc_cap_key).await {
-                Ok(value) => String::from_utf8(value).unwrap().parse::<i32>().unwrap(),
-                Err(err) => {
-                    if err.kind() != ErrorKind::NotFound {
+            let hotel_cap = {
+                let mut mc_client = self.get_mc_client().await?;
+                match mc_client.get(&memc_cap_key).await {
+                    Ok(value) => String::from_utf8(value).unwrap().parse::<i32>().unwrap(),
+                    Err(err) if err.kind() == ErrorKind::NotFound => {
+                        let filter = doc! { "hotelId": hotel_id };
+                        let num = num_collection
+                            .find_one(filter, None)
+                            .await
+                            .unwrap()
+                            .expect(&format!("should find hotel {}", hotel_id));
+
+                        let cap = num.number;
+                        let cap_str = cap.to_string();
+                        if let Err(set_err) =
+                            mc_client.set(&memc_cap_key, cap_str.as_bytes(), 0).await
+                        {
+                            error!("mc_set capacity error: {:?}", set_err);
+                            self.mc_err_count.fetch_add(1, Ordering::Relaxed);
+                            mc_client.discard();
+                        }
+                        cap
+                    }
+                    Err(err) => {
                         error!("mc_get capacity error: {:?}", err);
                         self.mc_err_count.fetch_add(1, Ordering::Relaxed);
-                    }
-                    let filter = doc! { "hotelId": hotel_id };
-                    let num = num_collection
-                        .find_one(filter, None)
-                        .await
-                        .unwrap()
-                        .expect(&format!("should find hotel {}", hotel_id));
+                        mc_client.discard();
 
-                    let cap = num.number;
-                    let cap_str = cap.to_string();
-                    if let Err(set_err) = mc_client.set(&memc_cap_key, cap_str.as_bytes(), 0).await
-                    {
-                        error!("mc_set capacity error: {:?}", set_err);
-                        self.mc_err_count.fetch_add(1, Ordering::Relaxed);
+                        let filter = doc! { "hotelId": hotel_id };
+                        let num = num_collection
+                            .find_one(filter, None)
+                            .await
+                            .unwrap()
+                            .expect(&format!("should find hotel {}", hotel_id));
+                        let cap = num.number;
+                        if let Ok(mut fresh_client) = self.get_mc_client().await {
+                            let cap_str = cap.to_string();
+                            if let Err(set_err) =
+                                fresh_client.set(&memc_cap_key, cap_str.as_bytes(), 0).await
+                            {
+                                error!("mc_set capacity error after retry: {:?}", set_err);
+                                self.mc_err_count.fetch_add(1, Ordering::Relaxed);
+                                fresh_client.discard();
+                            }
+                        }
+                        cap
                     }
-                    cap
                 }
             };
 
@@ -499,9 +577,11 @@ impl Reservation for ReservationImpl {
             .map(|(k, v)| (k, v.to_string()))
             .collect();
         for (key, value) in &kvs {
+            let mut mc_client = self.get_mc_client().await?;
             if let Err(err) = mc_client.set(key, value.as_bytes(), 0).await {
                 error!("mc_set reservation cache error: {:?}", err);
                 self.mc_err_count.fetch_add(1, Ordering::Relaxed);
+                mc_client.discard();
             }
         }
 

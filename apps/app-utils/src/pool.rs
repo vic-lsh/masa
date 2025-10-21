@@ -86,6 +86,68 @@ impl<T> Pool<T> {
         }
     }
 
+    pub async fn try_get_or_create_async<'a, Fut, E>(
+        &'a self,
+        factory: impl Fn() -> Fut,
+    ) -> Result<PoolItemRef<'a, T>, E>
+    where
+        Fut: Future<Output = Result<T, E>>,
+    {
+        {
+            // fast path
+            let mut pool = self.inner.lock().unwrap();
+            if let Some(item) = pool.pop_front() {
+                return Ok(PoolItemRef::new(item, self));
+            }
+        }
+
+        // slow path
+        let should_create = {
+            if self.size.load(Ordering::Relaxed) < self.max_size {
+                // still have capacity -- try to reserve capacity
+                let prev = self.size.fetch_add(1, Ordering::Relaxed);
+                if prev > self.max_size {
+                    // unlucky -- another thread took our spot and we're at capacity.
+                    // cancel out our increment.
+                    self.size.fetch_sub(1, Ordering::Relaxed);
+                    false
+                } else {
+                    true
+                }
+            } else {
+                false
+            }
+        };
+
+        if should_create {
+            match factory().await {
+                Ok(item) => return Ok(PoolItemRef::new(item, self)),
+                Err(err) => {
+                    self.size.fetch_sub(1, Ordering::Relaxed);
+                    return Err(err);
+                }
+            }
+        }
+
+        // the truly slow path -- wait for capacity to show up
+        let mut iters = 0;
+        let start = std::time::Instant::now();
+        loop {
+            {
+                let mut pool = self.inner.lock().unwrap();
+                if let Some(item) = pool.pop_front() {
+                    if iters >= 1 {
+                        log::debug!("mc waited for {}", start.elapsed().as_micros());
+                    }
+                    return Ok(PoolItemRef::new(item, self));
+                }
+            }
+            // wait for capacity
+            self.has_new_item.notified().await;
+            iters += 1;
+        }
+    }
+
     fn put(&self, item: T) {
         let idle_conns;
         {
@@ -156,12 +218,15 @@ impl<'a, T> PoolItemRef<'a, T> {
     where
         Fut: Future<Output = T>,
     {
-        self.discard_impl();
+        // self.discard_impl();
         let new_item = factory().await;
 
         {
             let new_item = MaybeUninit::new(new_item);
-            let _ = std::mem::replace(&mut self.item, new_item);
+            let old = std::mem::replace(&mut self.item, new_item);
+            // SAFETY: self.item is initialized at construction and was never
+            // de-initialized.
+            unsafe { old.assume_init() }
         };
 
         self
