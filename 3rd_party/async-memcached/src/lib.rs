@@ -59,7 +59,7 @@ impl Client {
         F: Fn(&[u8]) -> Result<Option<(usize, R)>, ErrorKind>,
     {
         // If we serviced a previous request, advance our buffer forward.
-        if let Some(n) = self.last_read_n {
+        if let Some(n) = self.last_read_n.take() {
             // Not sure how this situation occurs, but it seems to be related to transient network
             // issues. This guard is here to prevent panics, but it's not clear what the correct
             // behavior is. For now, we just return an error, which allows the caller to retry or
