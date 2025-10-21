@@ -1,4 +1,5 @@
 use async_memcached::Client as McClient;
+use log::info;
 use std::{
     collections::VecDeque,
     future::Future,
@@ -55,6 +56,7 @@ impl<T> Pool<T> {
                     self.size.fetch_sub(1, Ordering::Relaxed);
                     false
                 } else {
+                    info!("Increased pool size to {}", self.size.load(Ordering::Relaxed));
                     true
                 }
             } else {
@@ -156,12 +158,13 @@ impl<'a, T> PoolItemRef<'a, T> {
     where
         Fut: Future<Output = T>,
     {
-        self.discard_impl();
+        // self.discard_impl();
         let new_item = factory().await;
 
         {
             let new_item = MaybeUninit::new(new_item);
-            let _ = std::mem::replace(&mut self.item, new_item);
+            let old = std::mem::replace(&mut self.item, new_item);
+            unsafe { old.assume_init() }
         };
 
         self
@@ -203,6 +206,10 @@ impl<'a> McPoolItemRef<'a> {
             })
             .await;
         Self::new(self.addr, item)
+    }
+
+    pub fn discard(self) {
+        self.item.discard();
     }
 }
 
