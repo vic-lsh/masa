@@ -8,6 +8,7 @@ services:
     restart: always
     ports:
       - "8080:8080"
+    command: []
     environment:
       - BINARY_NAME=compose_post_server # Selects the binary to run
       - POST_STORAGE_ADDR=http://post_storage:8080
@@ -20,7 +21,7 @@ services:
       - USER_MENTION_SERVICE_ADDR=http://user_mention:8080
       - URL_SHORTEN_SERVICE_ADDR=http://url_shorten:8080
     depends_on:
-      - mongo
+      - post_storage
       - user_timeline
       - home_timeline
       - user
@@ -38,6 +39,7 @@ services:
     restart: always
     ports:
       - "8081:8080"
+    command: []
     environment:
       - BINARY_NAME=home_timeline_server
       - REDIS_URL=redis://redis:6379
@@ -56,6 +58,7 @@ services:
     restart: always
     ports:
       - "8082:8080"
+    command: []
     environment:
       - BINARY_NAME=media_service # <-- Selects the binary
       # - MONGO_URL=mongodb://mongo:27017/media
@@ -70,6 +73,7 @@ services:
     restart: always
     ports:
       - "8083:8080"
+    command: []
     environment:
       - BINARY_NAME=post_storage_server
       - POST_STORAGE_MONGODB_URI=mongodb://mongo:27017
@@ -87,6 +91,7 @@ services:
     restart: always
     ports:
       - "8084:8080"
+    command: []
     environment:
       - BINARY_NAME=social_graph_server
       - MONGO_URL=mongodb://mongo:27017/social-graph
@@ -105,6 +110,7 @@ services:
     restart: always
     ports:
       - "8085:8080"
+    command: []
     environment:
       - BINARY_NAME=textservice_server # <-- Selects the binary
     networks:
@@ -116,6 +122,7 @@ services:
     restart: always
     ports:
       - "8086:8080"
+    command: []
     environment:
       - BINARY_NAME=unique_id_service
       - MACHINE_ID=01
@@ -128,6 +135,7 @@ services:
     restart: always
     ports:
       - "8087:8080"
+    command: []
     environment:
       - BINARY_NAME=url_shorten_server
       - MONGO_URL=mongodb://mongo:27017/url-shorten
@@ -142,6 +150,7 @@ services:
     restart: always
     ports:
       - "8088:8080"
+    command: []
     environment:
       - BINARY_NAME=user_service
       - MONGO_URL=mongodb://mongo:27017/user
@@ -160,6 +169,7 @@ services:
     restart: always
     ports:
       - "8089:8080"
+    command: []
     environment:
       - BINARY_NAME=usermention_server
       - MONGO_URL=mongodb://mongo:27017/user-mention
@@ -176,6 +186,7 @@ services:
     restart: always
     ports:
       - "8090:8080"
+    command: []
     environment:
       - BINARY_NAME=user_timeline_server
       - USER_TIMELINE_MONGODB_URI=mongodb://mongo:27017
@@ -194,6 +205,7 @@ services:
     restart: always
     ports:
       - "8091:8080"
+    command: []
     environment:
       - BINARY_NAME=write_home_timeline_server
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
