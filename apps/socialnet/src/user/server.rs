@@ -130,6 +130,24 @@ pub struct UserServer {
     // social_graph_client_pool: Arc<SomeClientPool>,
 }
 
+impl UserServer {
+    /// Creates a new instance of the UserServer.
+    pub fn new(
+        mongo_user_collection: Collection<Document>,
+        redis_conn: Arc<Mutex<redis_async::client::PairedConnection>>,
+        jwt_secret: String,
+        machine_id: String,
+    ) -> Self {
+        Self {
+            mongo_user_collection,
+            redis_conn,
+            jwt_secret,
+            machine_id,
+        }
+    }
+}
+
+
 #[tonic::async_trait]
 impl UserService for UserServer {
     async fn register_user(
