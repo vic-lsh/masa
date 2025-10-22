@@ -244,6 +244,7 @@ def plot_latency_percentiles(
     output: Path,
     labels: Sequence[str],
     percentiles: Sequence[float] | None = None,
+    ylim_max_ms: float | None = None,
 ) -> None:
     if percentiles is None:
         percentiles = (90.0, 95.0, 99.0, 99.9)
@@ -286,6 +287,10 @@ def plot_latency_percentiles(
         ax.set_title(f"P{percentile:g} tail latency")
         ax.set_ylabel("Latency (ms)")
         ax.grid(True, which="both", linestyle="--", alpha=0.4)
+        if ylim_max_ms is not None:
+            ax.set_ylim(bottom=0, top=ylim_max_ms)
+        else:
+            ax.set_ylim(bottom=0)
         if idx == 0:
             ax.legend()
 
@@ -353,28 +358,35 @@ def main() -> None:
     plot_goodput_fraction(
         rps_values,
         goodput_by_policy,
-        Path(f"apps/mssim/data/goodput_fraction_{threshold_ms:g}ms.png"),
+        experiment_root / f"goodput_fraction_{threshold_ms:g}ms.png",
         threshold_ms,
         policy_names,
     )
     plot_goodput_absolute(
         rps_values,
         goodput_by_policy,
-        Path(f"apps/mssim/data/goodput_absolute_{threshold_ms:g}ms.png"),
+        experiment_root / f"goodput_absolute_{threshold_ms:g}ms.png",
         threshold_ms,
         policy_names,
     )
     build_latency_plots(
         rps_values,
         policy_samples,
-        Path("apps/mssim/data/latency_boxplot.png"),
+        experiment_root / "latency_boxplot.png",
         policy_names,
     )
     plot_latency_percentiles(
         rps_values,
         policy_samples,
-        Path("apps/mssim/data/latency_percentiles.png"),
+        experiment_root / "latency_percentiles.png",
         policy_names,
+    )
+    plot_latency_percentiles(
+        rps_values,
+        policy_samples,
+        experiment_root / "latency_percentiles_1s.png",
+        policy_names,
+        ylim_max_ms=1_000.0,
     )
 
 
