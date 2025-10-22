@@ -102,12 +102,18 @@ def align_rps(*datasets: PolicySamples) -> List[float]:
     return shared_rps
 
 
-def compute_goodput(samples: PolicySamples, threshold_ms: float, rps: float) -> float:
-    latencies = samples.metric_for_rps(rps, "e2e_latency_ms")
+def compute_goodput(
+    samples: PolicySamples, threshold_ms: float, rps: float, duration_sec: float
+) -> float:
+    latencies = samples.metric_for_rps(rps, "e2e_latency_ms").dropna()
     if latencies.empty:
         return 0.0
-    under_fraction = (latencies <= threshold_ms).mean()
-    return under_fraction * rps
+
+    if duration_sec <= 0:
+        raise ValueError("duration_sec must be positive to compute goodput")
+
+    under_count = (latencies <= threshold_ms).sum()
+    return under_count / duration_sec
 
 
 def plot_goodput_fraction(
@@ -295,7 +301,7 @@ def plot_latency_percentiles(
     print(f"Saved latency percentile plots to {output}")
 
 
-def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float]:
+def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float, float]:
     with config_path.open("r") as fh:
         config = json.load(fh)
 
@@ -309,18 +315,31 @@ def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float]:
         raise ValueError("Plot config must specify at least one policy.")
 
     threshold_ms = float(config.get("slo_ms", THRESHOLD_DEFAULT_MS))
-    return experiment_root, list(policies), threshold_ms
+    if "duration_sec" not in config:
+        raise ValueError("Plot config must specify 'duration_sec'.")
+
+    try:
+        duration_sec = float(config["duration_sec"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Plot config 'duration_sec' must be numeric.") from exc
+
+    if duration_sec <= 0:
+        raise ValueError("Plot config 'duration_sec' must be positive.")
+
+    return experiment_root, list(policies), threshold_ms, duration_sec
 
 
 def main() -> None:
-    experiment_root, policy_names, threshold_ms = load_plot_config(CONFIG_PATH)
+    experiment_root, policy_names, threshold_ms, duration_sec = load_plot_config(
+        CONFIG_PATH
+    )
     policy_dirs = [experiment_root / name for name in policy_names]
     policy_samples = [load_policy_samples(policy_dir) for policy_dir in policy_dirs]
 
     rps_values = align_rps(*policy_samples)
 
     goodput_by_policy = [
-        [compute_goodput(samples, threshold_ms, rps) for rps in rps_values]
+        [compute_goodput(samples, threshold_ms, rps, duration_sec) for rps in rps_values]
         for samples in policy_samples
     ]
 
