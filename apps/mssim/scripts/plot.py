@@ -72,6 +72,13 @@ def load_policy_samples(policy_dir: Path) -> PolicySamples:
             if "e2e_latency_us" not in df.columns:
                 raise ValueError(f"Missing 'e2e_latency_us' column in {csv_path}")
 
+            if "is_err" in df.columns:
+                err_mask = df["is_err"].fillna(False).astype(bool)
+                df = df.loc[~err_mask]
+
+            if df.empty:
+                continue
+
             if "queue_latency_us" in df.columns:
                 queue_us = df["queue_latency_us"].astype(float)
             else:
@@ -247,7 +254,7 @@ def plot_latency_percentiles(
     ylim_max_ms: float | None = None,
 ) -> None:
     if percentiles is None:
-        percentiles = (90.0, 95.0, 99.0, 99.9)
+        percentiles = (50, 90.0, 95.0, 99.0)
 
     if not policies:
         raise ValueError("No policies provided for percentile plotting.")
