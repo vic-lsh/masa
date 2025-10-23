@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::Deserialize;
 use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
 use sim_config::svc::ServiceName;
 use sim_config::trace::TraceConfig;
-use sim_config::{SimulatorConfig, PROJECT_NAME};
+use sim_config::{PROJECT_NAME, SimulatorConfig};
 use std::{
     collections::HashMap,
     env, fs,
