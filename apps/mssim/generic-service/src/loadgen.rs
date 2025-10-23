@@ -230,14 +230,14 @@ async fn main() -> anyhow::Result<()> {
                             }
                             .and_then(compute_latency_percentiles_us)
                         };
-                        let (p50_str, p90_str, p99_str) = match percentiles {
-                            Some((p50, p90, p99)) => {
-                                (format!("{p50}us"), format!("{p90}us"), format!("{p99}us"))
+                        let (p50_str, p90_str, p95_str, p99_str) = match percentiles {
+                            Some((p50, p90, p95, p99)) => {
+                                (format!("{p50}us"), format!("{p90}us"), format!("{p95}us"), format!("{p99}us"))
                             }
-                            None => ("n/a".to_string(), "n/a".to_string(), "n/a".to_string()),
+                            None => ("n/a".to_string(), "n/a".to_string(), "n/a".to_string(), "n/a".to_string()),
                         };
                         println!(
-                            "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), p50={}, p90={}, p99={}",
+                            "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), p50={}, p90={}, p95={}, p99={}",
                             s,
                             s - last_sent,
                             o,
@@ -246,6 +246,7 @@ async fn main() -> anyhow::Result<()> {
                             e - last_err,
                             p50_str,
                             p90_str,
+                            p95_str,
                             p99_str
                         );
                         last_sent = s;
