@@ -479,7 +479,6 @@ where
                     handler.api().to_string(),
                     request_id,
                     handler.slo(),
-                    0,
                     start_at,
                     deadline,
                 )

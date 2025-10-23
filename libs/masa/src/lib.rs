@@ -14,4 +14,4 @@ pub use flag::{
 pub use latency_distribution::LatencyDistribution;
 pub use priority::{Prioritize, PriorityHint};
 pub use timing::{time_now, LatencyTracker};
-pub use typing::{Address, Api, Latency, MethodId, RequestClass, RequestId, ServiceId, Timestamp};
+pub use typing::{Address, Api, Latency, MethodId, RequestId, ServiceId, Timestamp};

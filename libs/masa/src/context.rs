@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Api, Latency, RequestClass, RequestId, Timestamp};
+use crate::{Api, Latency, RequestId, Timestamp};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", content = "duration")]
@@ -21,7 +21,6 @@ pub struct Context {
     api: Api,
     request_id: RequestId,
     slo: Latency,
-    request_class: RequestClass,
     start_at: Timestamp,
     deadline: Timestamp,
     frontend_elapse: Option<u64>,
@@ -33,7 +32,6 @@ impl Context {
         api: Api,
         request_id: RequestId,
         slo: Latency,
-        request_class: RequestClass,
         start_at: Timestamp,
         deadline: Timestamp,
     ) -> Self {
@@ -41,7 +39,6 @@ impl Context {
             api,
             request_id,
             slo,
-            request_class,
             start_at,
             deadline,
             frontend_elapse: None,
@@ -61,11 +58,6 @@ impl Context {
     /// Get the SLO.
     pub fn slo(&self) -> Latency {
         self.slo
-    }
-
-    /// Get the request class.
-    pub fn request_class(&self) -> RequestClass {
-        self.request_class
     }
 
     /// Get the start timestamp.
