@@ -18,7 +18,9 @@ message RootRequest {
   uint64 start_at = 2;
 }
 
-message RootResponse {}
+message RootResponse {
+  uint64 req_id = 1;
+}
 
 message ServiceRequest { 
   uint64 req_id = 1;
