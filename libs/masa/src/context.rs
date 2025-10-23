@@ -19,7 +19,6 @@ pub enum FutureSpan {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Context {
     api: Api,
-    test_id: TestId,
     request_id: RequestId,
     slo: Latency,
     request_class: RequestClass,
@@ -32,7 +31,6 @@ impl Context {
     /// Create a new Masa context.
     pub fn new(
         api: Api,
-        test_id: TestId,
         request_id: RequestId,
         slo: Latency,
         request_class: RequestClass,
@@ -41,7 +39,6 @@ impl Context {
     ) -> Self {
         Self {
             api,
-            test_id,
             request_id,
             slo,
             request_class,
@@ -54,11 +51,6 @@ impl Context {
     /// Get the API.
     pub fn api(&self) -> &Api {
         &self.api
-    }
-
-    /// Get the test ID.
-    pub fn test_id(&self) -> TestId {
-        self.test_id
     }
 
     /// Get the request ID.
