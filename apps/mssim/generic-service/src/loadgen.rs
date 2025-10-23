@@ -312,6 +312,27 @@ fn percentile_from_sorted(sorted: &[u64], percentile: f64) -> u64 {
     sorted[rank - 1]
 }
 
+async fn flush_queue_latency_samples_task(
+    samples: Arc<Mutex<Vec<QueueLatencySample>>>,
+    path: PathBuf,
+) {
+    let mut ticker = tokio::time::interval(Duration::from_secs(PERIODIC_FLUSH_INTERVAL_SECS));
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        ticker.tick().await;
+        let should_flush = {
+            let guard = samples.lock().await;
+            !guard.is_empty()
+        };
+        if !should_flush {
+            continue;
+        }
+        if let Err(err) = flush_queue_samples(samples.clone(), path.as_path(), false).await {
+            eprintln!("Failed to periodically flush queue latency samples: {err:?}");
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let addr = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
@@ -422,25 +443,8 @@ async fn main() -> anyhow::Result<()> {
 
     if let Some(ref output_path) = queue_csv_path {
         let samples = queue_samples.clone();
-        let path = Arc::new(output_path.clone());
-        let mut ticker = tokio::time::interval(Duration::from_secs(PERIODIC_FLUSH_INTERVAL_SECS));
-        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
-        tokio::spawn(async move {
-            loop {
-                ticker.tick().await;
-                let should_flush = {
-                    let guard = samples.lock().await;
-                    !guard.is_empty()
-                };
-                if !should_flush {
-                    continue;
-                }
-                if let Err(err) = flush_queue_samples(samples.clone(), path.as_path(), false).await
-                {
-                    eprintln!("Failed to periodically flush queue latency samples: {err:?}");
-                }
-            }
-        });
+        let path = output_path.clone();
+        tokio::spawn(async move { flush_queue_latency_samples_task(samples, path).await });
     }
 
     if matches!(load_mode, LoadMode::Root) {
