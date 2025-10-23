@@ -333,6 +333,26 @@ async fn flush_queue_latency_samples_task(
     }
 }
 
+async fn flush_rpc_samples_task(samples: Arc<Mutex<Vec<RootLatencySample>>>, file_name: String) {
+    let mut ticker = tokio::time::interval(Duration::from_secs(PERIODIC_FLUSH_INTERVAL_SECS));
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        ticker.tick().await;
+        let should_flush = {
+            let guard = samples.lock().await;
+            !guard.is_empty()
+        };
+        if !should_flush {
+            continue;
+        }
+        if let Err(err) =
+            flush_root_samples_internal(samples.clone(), file_name.as_ref(), false).await
+        {
+            eprintln!("Failed to periodically flush root() latency samples: {err:?}");
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let addr = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
@@ -434,7 +454,7 @@ async fn main() -> anyhow::Result<()> {
         .as_ref()
         .map(|(path_str, _)| queue_latency_output_path(Path::new(path_str.as_str())));
     let root_samples = Arc::new(Mutex::new(Vec::<RootLatencySample>::new()));
-    let root_latency_file_name = Arc::new(root_latency_file_name_for_rps(rps));
+    let root_latency_file_name = root_latency_file_name_for_rps(rps);
     let root_samples_handle = if matches!(load_mode, LoadMode::Root) {
         Some((root_samples.clone(), root_latency_file_name.clone()))
     } else {
@@ -450,25 +470,7 @@ async fn main() -> anyhow::Result<()> {
     if matches!(load_mode, LoadMode::Root) {
         let samples = root_samples.clone();
         let file_name = root_latency_file_name.clone();
-        let mut ticker = tokio::time::interval(Duration::from_secs(PERIODIC_FLUSH_INTERVAL_SECS));
-        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
-        tokio::spawn(async move {
-            loop {
-                ticker.tick().await;
-                let should_flush = {
-                    let guard = samples.lock().await;
-                    !guard.is_empty()
-                };
-                if !should_flush {
-                    continue;
-                }
-                if let Err(err) =
-                    flush_root_samples_internal(samples.clone(), file_name.as_ref(), false).await
-                {
-                    eprintln!("Failed to periodically flush root() latency samples: {err:?}");
-                }
-            }
-        });
+        tokio::spawn(async move { flush_rpc_samples_task(samples, file_name).await });
     }
 
     {
