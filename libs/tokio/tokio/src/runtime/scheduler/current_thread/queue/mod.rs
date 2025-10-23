@@ -2,10 +2,18 @@ mod fifo;
 mod prio_bh;
 mod timed;
 
-#[cfg(any(feature = "fifo_span_tracing", feature = "fifo_queue_tracing", feature = "prio_global_queue_tracing"))]
+#[cfg(any(
+    feature = "fifo_span_tracing",
+    feature = "fifo_queue_tracing",
+    feature = "prio_global_queue_tracing"
+))]
 pub(crate) type LocalRunQueue<T> = timed::TimedQueue<LocalRunQueueInner<T>>;
 
-#[cfg(not(any(feature = "fifo_span_tracing", feature = "fifo_queue_tracing", feature = "prio_global_queue_tracing")))]
+#[cfg(not(any(
+    feature = "fifo_span_tracing",
+    feature = "fifo_queue_tracing",
+    feature = "prio_global_queue_tracing"
+)))]
 pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
 
 #[cfg(not(any(
@@ -13,6 +21,7 @@ pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
     feature = "prio_global_queue_tracing",
     feature = "prio_local",
     feature = "perfect_lsf",
+    feature = "prio_global_queue_tracing",
 )))]
 pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
 
