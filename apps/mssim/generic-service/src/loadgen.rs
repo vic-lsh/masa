@@ -7,6 +7,7 @@ use std::{
 };
 
 use masa::{time_now, Context as MasaContext};
+use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::time::Instant;
 use tokio::time::MissedTickBehavior;
@@ -353,6 +354,65 @@ async fn flush_rpc_samples_task(samples: Arc<Mutex<Vec<RootLatencySample>>>, fil
     }
 }
 
+async fn print_stats_task(
+    mut latency_rx: UnboundedReceiver<u64>,
+    stats_interval_sec: u64,
+    sent: Arc<AtomicU64>,
+    ok: Arc<AtomicU64>,
+    err: Arc<AtomicU64>,
+) {
+    let mut last_sent = 0u64;
+    let mut last_ok = 0u64;
+    let mut last_err = 0u64;
+    let mut ticker = tokio::time::interval(Duration::from_secs(stats_interval_sec));
+    let mut latency_buffer = Vec::new();
+    loop {
+        tokio::select! {
+            _ = ticker.tick() => {
+                let s = sent.load(Ordering::Relaxed);
+                let o = ok.load(Ordering::Relaxed);
+                let e = err.load(Ordering::Relaxed);
+                let percentiles = {
+                    if latency_buffer.is_empty() {
+                        None
+                    } else {
+                        Some(latency_buffer.clone())
+                    }
+                    .and_then(compute_latency_percentiles_us)
+                };
+                let (p50_str, p90_str, p95_str, p99_str) = match percentiles {
+                    Some((p50, p90, p95, p99)) => {
+                        (format!("{p50}us"), format!("{p90}us"), format!("{p95}us"), format!("{p99}us"))
+                    }
+                    None => ("n/a".to_string(), "n/a".to_string(), "n/a".to_string(), "n/a".to_string()),
+                };
+                println!(
+                    "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), p50={}, p90={}, p95={}, p99={}",
+                    s,
+                    s - last_sent,
+                    o,
+                    o - last_ok,
+                    e,
+                    e - last_err,
+                    p50_str,
+                    p90_str,
+                    p95_str,
+                    p99_str
+                );
+                last_sent = s;
+                last_ok = o;
+                last_err = e;
+            }
+            maybe_sample = latency_rx.recv() => {
+                match maybe_sample {
+                    Some(sample) => latency_buffer.push(sample),
+                    None => break,
+                }
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let addr = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
@@ -477,58 +537,9 @@ async fn main() -> anyhow::Result<()> {
         let sent = sent.clone();
         let ok = ok.clone();
         let err = err.clone();
-        let mut latency_rx = latency_sample_rx;
+        let latency_rx = latency_sample_rx;
         tokio::spawn(async move {
-            let mut last_sent = 0u64;
-            let mut last_ok = 0u64;
-            let mut last_err = 0u64;
-            let mut ticker = tokio::time::interval(Duration::from_secs(stats_interval_sec));
-            let mut latency_buffer = Vec::new();
-            loop {
-                tokio::select! {
-                    _ = ticker.tick() => {
-                        let s = sent.load(Ordering::Relaxed);
-                        let o = ok.load(Ordering::Relaxed);
-                        let e = err.load(Ordering::Relaxed);
-                        let percentiles = {
-                            if latency_buffer.is_empty() {
-                                None
-                            } else {
-                                Some(latency_buffer.clone())
-                            }
-                            .and_then(compute_latency_percentiles_us)
-                        };
-                        let (p50_str, p90_str, p95_str, p99_str) = match percentiles {
-                            Some((p50, p90, p95, p99)) => {
-                                (format!("{p50}us"), format!("{p90}us"), format!("{p95}us"), format!("{p99}us"))
-                            }
-                            None => ("n/a".to_string(), "n/a".to_string(), "n/a".to_string(), "n/a".to_string()),
-                        };
-                        println!(
-                            "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), p50={}, p90={}, p95={}, p99={}",
-                            s,
-                            s - last_sent,
-                            o,
-                            o - last_ok,
-                            e,
-                            e - last_err,
-                            p50_str,
-                            p90_str,
-                            p95_str,
-                            p99_str
-                        );
-                        last_sent = s;
-                        last_ok = o;
-                        last_err = e;
-                    }
-                    maybe_sample = latency_rx.recv() => {
-                        match maybe_sample {
-                            Some(sample) => latency_buffer.push(sample),
-                            None => break,
-                        }
-                    }
-                }
-            }
+            print_stats_task(latency_rx, stats_interval_sec, sent, ok, err).await;
         });
     }
 
