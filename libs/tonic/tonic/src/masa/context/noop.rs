@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
+use super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use crate::{GrpcMethod, Request};
 
 #[derive(Debug)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct NoopPrioritySelector;
+pub struct NoopMasaHooks;
 
-impl PrioritySelector for NoopPrioritySelector {
+impl MasaHooks for NoopMasaHooks {
     type ServerContext = ServerContext;
     type ChildContext = ChildContext;
     type ParentContext = ParentContext;
