@@ -15,5 +15,5 @@ pub use latency_distribution::LatencyDistribution;
 pub use priority::{Prioritize, PriorityHint};
 pub use timing::{time_now, LatencyTracker};
 pub use typing::{
-    Address, Api, Latency, MethodId, RequestClass, RequestId, ServiceId, SpanId, TestId, Timestamp,
+    Address, Api, Latency, MethodId, RequestClass, RequestId, ServiceId, TestId, Timestamp,
 };
