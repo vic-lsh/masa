@@ -78,10 +78,7 @@ impl CallGraph {
                 None => 1,
             };
 
-            outgoing
-                .entry(caller)
-                .or_default()
-                .insert(callee, weight);
+            outgoing.entry(caller).or_default().insert(callee, weight);
         }
 
         Ok(Self { outgoing })
@@ -97,18 +94,11 @@ impl CallGraph {
     /// Return the distinct list of callees that `service` calls (i.e., out-neighbors)
     /// with their associated weights.
     pub fn callees_of(&self, service: &ServiceName) -> HashMap<ServiceName, u64> {
-        self.outgoing
-            .get(service)
-            .cloned()
-            .unwrap_or_default()
+        self.outgoing.get(service).cloned().unwrap_or_default()
     }
 
     /// Return the weight of the edge caller -> callee, if present.
-    pub fn edge_weight(
-        &self,
-        caller: &ServiceName,
-        callee: &ServiceName,
-    ) -> Option<u64> {
+    pub fn edge_weight(&self, caller: &ServiceName, callee: &ServiceName) -> Option<u64> {
         self.outgoing
             .get(caller)
             .and_then(|targets| targets.get(callee))
@@ -154,19 +144,10 @@ S3,C,D,1
 
         assert_eq!(
             g.callees_of(&svc_a),
-            HashMap::from([
-                (svc_b.clone(), 3),
-                (svc_c.clone(), 5),
-            ])
+            HashMap::from([(svc_b.clone(), 3), (svc_c.clone(), 5),])
         );
-        assert_eq!(
-            g.callees_of(&svc_b),
-            HashMap::from([(svc_c.clone(), 2)])
-        );
-        assert_eq!(
-            g.callees_of(&svc_c),
-            HashMap::from([(svc_d.clone(), 1)])
-        );
+        assert_eq!(g.callees_of(&svc_b), HashMap::from([(svc_c.clone(), 2)]));
+        assert_eq!(g.callees_of(&svc_c), HashMap::from([(svc_d.clone(), 1)]));
         assert!(g.callees_of(&svc_d).is_empty()); // no outgoing
         assert!(g.callees_of(&svc_z).is_empty()); // unknown service
 
@@ -195,10 +176,7 @@ S, A , C
 
         assert_eq!(
             g.callees_of(&svc_a),
-            HashMap::from([
-                (svc_b.clone(), 1),
-                (svc_c.clone(), 1),
-            ])
+            HashMap::from([(svc_b.clone(), 1), (svc_c.clone(), 1),])
         );
     }
 
@@ -216,10 +194,7 @@ S1,A,B
         let svc_a = ServiceName::new("A");
         let svc_b = ServiceName::new("B");
 
-        assert_eq!(
-            g.callees_of(&svc_a),
-            HashMap::from([(svc_b.clone(), 1)])
-        );
+        assert_eq!(g.callees_of(&svc_a), HashMap::from([(svc_b.clone(), 1)]));
     }
 
     #[test]
@@ -261,15 +236,9 @@ S,A,B,1.25
 
         assert_eq!(
             g.callees_of(&svc_a),
-            HashMap::from([
-                (svc_b.clone(), 1),
-                (svc_c.clone(), 1),
-            ])
+            HashMap::from([(svc_b.clone(), 1), (svc_c.clone(), 1),])
         );
-        assert_eq!(
-            g.callees_of(&svc_b),
-            HashMap::from([(svc_c.clone(), 1)])
-        );
+        assert_eq!(g.callees_of(&svc_b), HashMap::from([(svc_c.clone(), 1)]));
     }
 
     #[test]
@@ -288,10 +257,7 @@ S,B,C,zzz,qqq
 
         assert_eq!(
             g.callees_of(&svc_a),
-            HashMap::from([
-                (svc_b.clone(), 1),
-                (svc_c.clone(), 1),
-            ])
+            HashMap::from([(svc_b.clone(), 1), (svc_c.clone(), 1),])
         );
     }
 
