@@ -12,7 +12,8 @@ pub fn validate_has_services(config: &TraceConfig) -> Result<()> {
 
 pub fn validate_service_dependencies(config: &TraceConfig) -> Result<()> {
     // TODO: relax the DAG constraint somewhat.
-    detect_circular_dependencies(config)
+    // detect_circular_dependencies(config)
+    Ok(())
 }
 
 /// Detect circular dependencies in the service call graph
