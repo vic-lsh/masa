@@ -112,9 +112,15 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         joined = ", ".join(missing_paths)
         raise FileNotFoundError(f"Required input paths do not exist: {joined}")
 
+    docker_compose_path = (run_dir / "docker-compose.yml").resolve()
+
+    deployment_json_path = (run_dir / "deployment.json").resolve()
+
     trace_cmd = [
         "cargo",
         "run",
+        "--bin",
+        "mssim",
         "--",
         "--alibaba-trace",
         str(cfg.trace_dir),
@@ -122,6 +128,10 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         str(cfg.config_dir),
         "--orchestrator",
         cfg.orchestrator,
+        "--docker-compose-output-path",
+        str(docker_compose_path),
+        "--deployment-output-path",
+        str(deployment_json_path),
     ]
     if cfg.replay_path:
         trace_cmd.extend(["--replay-path", str(cfg.replay_path)])
@@ -132,7 +142,7 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         "docker", 
         "compose", 
         "-f",
-        "./docker-compose.yml",
+        str(docker_compose_path),
         "-p",
         "mssim",
         "up",
