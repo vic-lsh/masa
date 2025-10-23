@@ -477,10 +477,8 @@ where
 
                 Context::new(
                     handler.api().to_string(),
-                    0,
                     request_id,
                     handler.slo(),
-                    0,
                     start_at,
                     deadline,
                 )
