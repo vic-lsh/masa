@@ -539,7 +539,7 @@ async fn flush_queue_samples(
     Ok(Some(snapshot.len()))
 }
 
-fn compute_latency_percentiles_us(mut samples: Vec<u64>) -> Option<(u64, u64, u64)> {
+fn compute_latency_percentiles_us(mut samples: Vec<u64>) -> Option<(u64, u64, u64, u64)> {
     if samples.is_empty() {
         return None;
     }
@@ -547,8 +547,9 @@ fn compute_latency_percentiles_us(mut samples: Vec<u64>) -> Option<(u64, u64, u6
     samples.sort_unstable();
     let p50 = percentile_from_sorted(&samples, 50.0);
     let p90 = percentile_from_sorted(&samples, 90.0);
+    let p95 = percentile_from_sorted(&samples, 95.0);
     let p99 = percentile_from_sorted(&samples, 99.0);
-    Some((p50, p90, p99))
+    Some((p50, p90, p95, p99))
 }
 
 fn percentile_from_sorted(sorted: &[u64], percentile: f64) -> u64 {
