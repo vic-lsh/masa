@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::Deserialize;
 use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
 use sim_config::svc::ServiceName;
 use sim_config::trace::TraceConfig;
-use sim_config::{SimulatorConfig, PROJECT_NAME};
+use sim_config::{PROJECT_NAME, SimulatorConfig};
 use std::fs::File;
 use std::io::Write;
 use std::{
@@ -41,7 +41,7 @@ pub struct ErrorRate {
 pub fn generate_service_configs(
     services: impl Iterator<Item = ServiceName>,
     sim_cfg: &SimulatorConfig,
-    deployment_output_path: &PathBuf
+    deployment_output_path: &PathBuf,
 ) -> Result<Deployment> {
     info!("Generating deployment file to {:?}", deployment_output_path);
 
@@ -414,8 +414,11 @@ pub async fn launch_simulation_from_yaml(
     replay_path: Option<&Path>,
 ) -> Result<()> {
     // Generate service-specific config files
-    let deployment =
-        generate_service_configs(config.call_graph.services().into_iter(), &sim_config, deployment_output_path)?;
+    let deployment = generate_service_configs(
+        config.call_graph.services().into_iter(),
+        &sim_config,
+        deployment_output_path,
+    )?;
 
     info!("Generated deployment:");
     for d in deployment.services.iter() {
