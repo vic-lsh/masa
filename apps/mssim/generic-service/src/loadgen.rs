@@ -392,6 +392,7 @@ async fn run_root_load(
                             ok.fetch_add(1, Ordering::Relaxed);
                             let queue_latency = extract_queue_latency(resp.metadata());
                             let sample = RootLatencySample {
+                                is_err: false,
                                 req_id,
                                 start_at,
                                 queue_latency_us: queue_latency.unwrap_or(0),
@@ -405,10 +406,11 @@ async fn run_root_load(
                         }
                         Err(_) => {
                             let sample = RootLatencySample {
+                                is_err: true,
                                 req_id,
                                 start_at,
                                 queue_latency_us: 0,
-                                e2e_latency_us: 10000000,
+                                e2e_latency_us: 0,
                             };
                             err.fetch_add(1, Ordering::Relaxed);
                             {
@@ -439,6 +441,7 @@ struct RootLatencySample {
     start_at: u64,
     queue_latency_us: u64,
     e2e_latency_us: u64,
+    is_err: bool,
 }
 
 async fn flush_root_samples(
@@ -475,11 +478,15 @@ async fn flush_root_samples_internal(
     fs::create_dir_all(&output_dir).await?;
     let file_path = output_dir.join(file_name);
 
-    let mut csv_data = String::from("req_id,start_at,queue_latency_us,e2e_latency_us\n");
+    let mut csv_data = String::from("req_id,is_err,start_at,queue_latency_us,e2e_latency_us\n");
     for sample in &snapshot {
         csv_data.push_str(&format!(
-            "{},{},{},{}\n",
-            sample.req_id, sample.start_at, sample.queue_latency_us, sample.e2e_latency_us
+            "{},{},{},{},{}\n",
+            sample.req_id,
+            sample.is_err,
+            sample.start_at,
+            sample.queue_latency_us,
+            sample.e2e_latency_us
         ));
     }
 
