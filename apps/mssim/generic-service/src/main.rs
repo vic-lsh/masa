@@ -3,13 +3,13 @@ use masa::Context as MasaContext;
 use service_stubs::service_client::ServiceClient;
 use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
 use sim_config::svc::{ServiceName, ServiceTraceConfig};
-use tokio::sync::RwLock;
 use std::collections::HashMap;
 use std::env;
 use std::str::FromStr;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
 use tonic::metadata::{MetadataMap, MetadataValue};
 use tonic::transport::masa_channel::LoadBalancedChannel;
@@ -52,17 +52,25 @@ impl AlibabaService {
     ) -> Result<Self> {
         let child_weights = config.call_graph.callees_of(&self_svc_name);
 
-        let total_weight: f64 = child_weights.values().map(|&w| w as f64).sum();
         let mut child_call_probabilities = HashMap::with_capacity(child_weights.len());
-        for (svc, weight) in &child_weights {
-            let probability = if total_weight > 0.0 {
-                (*weight as f64) / total_weight
-            } else {
-                0.0
-            };
-            child_call_probabilities.insert(svc.clone(), probability);
-        }
 
+        if child_weights.len() > 0 {
+            // let total_weight: f64 = child_weights.values().map(|&w| w as f64).sum();
+            let total_weight: f64 = child_weights
+                .values()
+                .map(|&w| w as u64)
+                .max()
+                .expect("Max weight should be available")
+                as f64;
+            for (svc, weight) in &child_weights {
+                let probability = if total_weight > 0.0 {
+                    (*weight as f64) / total_weight
+                } else {
+                    0.0
+                };
+                child_call_probabilities.insert(svc.clone(), probability);
+            }
+        }
         let children: Vec<_> = child_weights.keys().cloned().collect();
         let children_for_log: Vec<_> = child_weights.into_iter().collect();
 
