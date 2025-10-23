@@ -17,6 +17,7 @@ from typing import Dict, Iterable, List, Optional
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 MSSIM_ROOT = REPO_ROOT / "simulator"
+REPO_NAME="masa-internal"
 
 def find_masa_root(start_path=None):
     # start from current file's directory if not given
@@ -26,7 +27,7 @@ def find_masa_root(start_path=None):
     current = Path(start_path).resolve()
 
     while current != current.parent:  # stop at filesystem root
-        if current.name == "masa-internal":
+        if current.name == REPO_NAME:
             return current
         current = current.parent
 
