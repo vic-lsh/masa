@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{
     env,
     path::{Path, PathBuf},
@@ -32,6 +32,13 @@ type RpcClient = ServiceClient<LoadBalancedChannel>;
 const PERIODIC_FLUSH_INTERVAL_SECS: u64 = 10;
 const OUTPUT_DIR: &str = "loadgen_output";
 
+#[derive(Default)]
+struct Stats {
+    sent: AtomicUsize,
+    ok: AtomicUsize,
+    err: AtomicUsize,
+}
+
 fn root_latency_file_name_for_rps(rps: f64) -> String {
     let mut rps_str = if (rps.fract()).abs() < f64::EPSILON {
         format!("{rps:.0}")
@@ -59,9 +66,7 @@ async fn run_root_load(
     client: RpcClient,
     per_req: Duration,
     request_slo: u64,
-    sent: Arc<AtomicU64>,
-    ok: Arc<AtomicU64>,
-    err: Arc<AtomicU64>,
+    stats: Arc<Stats>,
     inflight_guard: Arc<Semaphore>,
     max_in_flight: usize,
     root_samples: Arc<Mutex<Vec<RootLatencySample>>>,
@@ -103,15 +108,13 @@ async fn run_root_load(
                     Err(_) => continue,
                 };
 
-                let sent = sent.clone();
-                let ok = ok.clone();
-                let err = err.clone();
                 let mut rpc_client = client.clone();
                 let root_samples = root_samples.clone();
                 let latency_sample_tx = latency_sample_tx.clone();
 
-                let req_id = sent.fetch_add(1, Ordering::Relaxed);
+                let req_id = stats.sent.fetch_add(1, Ordering::Relaxed) as u64;
 
+                let stats = Arc::clone(&stats);
                 tokio::spawn(async move {
                     let _permit = permit;
                     let start_at = time_now();
@@ -133,7 +136,7 @@ async fn run_root_load(
                     let elapsed = start_time.elapsed().as_micros() as u64;
                     match res {
                         Ok(resp) => {
-                            ok.fetch_add(1, Ordering::Relaxed);
+                            stats.ok.fetch_add(1, Ordering::Relaxed);
                             let queue_latency = extract_queue_latency(resp.metadata());
                             let sample = RootLatencySample {
                                 is_err: false,
@@ -149,6 +152,7 @@ async fn run_root_load(
                             let _ = latency_sample_tx.send(elapsed);
                         }
                         Err(_) => {
+                            stats.err.fetch_add(1, Ordering::Relaxed);
                             let sample = RootLatencySample {
                                 is_err: true,
                                 req_id,
@@ -156,7 +160,6 @@ async fn run_root_load(
                                 queue_latency_us: 0,
                                 e2e_latency_us: 0,
                             };
-                            err.fetch_add(1, Ordering::Relaxed);
                             {
                                 let mut guard = root_samples.lock().await;
                                 guard.push(sample);
@@ -171,9 +174,9 @@ async fn run_root_load(
     // Drain in-flight requests before exit
     let _ = inflight_guard.acquire_many(max_in_flight as u32).await;
 
-    let s = sent.load(Ordering::Relaxed);
-    let o = ok.load(Ordering::Relaxed);
-    let e = err.load(Ordering::Relaxed);
+    let s = stats.sent.load(Ordering::Relaxed);
+    let o = stats.ok.load(Ordering::Relaxed);
+    let e = stats.err.load(Ordering::Relaxed);
     println!("Final stats: sent={}, ok={}, err={}", s, o, e);
 
     Ok(())
@@ -357,21 +360,19 @@ async fn flush_rpc_samples_task(samples: Arc<Mutex<Vec<RootLatencySample>>>, fil
 async fn print_stats_task(
     mut latency_rx: UnboundedReceiver<u64>,
     stats_interval: Duration,
-    sent: Arc<AtomicU64>,
-    ok: Arc<AtomicU64>,
-    err: Arc<AtomicU64>,
+    stats: Arc<Stats>,
 ) {
-    let mut last_sent = 0u64;
-    let mut last_ok = 0u64;
-    let mut last_err = 0u64;
+    let mut last_sent = 0;
+    let mut last_ok = 0;
+    let mut last_err = 0;
     let mut ticker = tokio::time::interval(stats_interval);
     let mut latency_buffer = Vec::new();
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                let s = sent.load(Ordering::Relaxed);
-                let o = ok.load(Ordering::Relaxed);
-                let e = err.load(Ordering::Relaxed);
+                let s = stats.sent.load(Ordering::Relaxed);
+                let o = stats.ok.load(Ordering::Relaxed);
+                let e = stats.err.load(Ordering::Relaxed);
                 let percentiles = {
                     if latency_buffer.is_empty() {
                         None
@@ -503,9 +504,8 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
-    let sent = Arc::new(AtomicU64::new(0));
-    let ok = Arc::new(AtomicU64::new(0));
-    let err: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+    let stats = Arc::new(Stats::default());
+
     let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
     let queue_samples = Arc::new(Mutex::new(Vec::<QueueLatencySample>::new()));
     let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
@@ -534,12 +534,10 @@ async fn main() -> anyhow::Result<()> {
     }
 
     {
-        let sent = sent.clone();
-        let ok = ok.clone();
-        let err = err.clone();
         let stats_interval = Duration::from_secs(stats_interval_sec);
+        let stats = Arc::clone(&stats);
         tokio::spawn(async move {
-            print_stats_task(latency_sample_rx, stats_interval, sent, ok, err).await;
+            print_stats_task(latency_sample_rx, stats_interval, stats).await;
         });
     }
 
@@ -549,9 +547,7 @@ async fn main() -> anyhow::Result<()> {
                 client,
                 per_req.expect("per_req available in root mode"),
                 request_slo,
-                sent.clone(),
-                ok.clone(),
-                err.clone(),
+                stats.clone(),
                 inflight_guard.clone(),
                 max_in_flight,
                 root_samples.clone(),
@@ -564,9 +560,7 @@ async fn main() -> anyhow::Result<()> {
             run_replay_load(
                 client,
                 work_items,
-                sent.clone(),
-                ok.clone(),
-                err.clone(),
+                stats.clone(),
                 inflight_guard.clone(),
                 queue_samples.clone(),
                 latency_sample_tx.clone(),
@@ -575,9 +569,9 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    let s = sent.load(Ordering::Relaxed);
-    let o = ok.load(Ordering::Relaxed);
-    let e = err.load(Ordering::Relaxed);
+    let s = stats.sent.load(Ordering::Relaxed);
+    let o = stats.ok.load(Ordering::Relaxed);
+    let e = stats.err.load(Ordering::Relaxed);
     println!("Final stats: sent={}, ok={}, err={}", s, o, e);
 
     if let Some(ref output_path) = queue_csv_path {
