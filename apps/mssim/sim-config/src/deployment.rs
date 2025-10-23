@@ -7,14 +7,14 @@ use serde::{Deserialize, Serialize};
 use crate::svc::ServiceName;
 
 // TODO: support replicas
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ServiceDiscoveryInfo {
     pub ip: String,
     pub port: u16,
     pub replicas: usize,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Deployment {
     pub services: HashMap<ServiceName, ServiceDiscoveryInfo>,
 }

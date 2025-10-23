@@ -70,7 +70,7 @@ impl ParentContext {
                 .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
             {
-                error!("Request going to early return");
+                // error!("Request going to early return");
                 // self.server_ctx
                 //     .num_early_returns
                 //     .fetch_add(1, Ordering::Relaxed);

@@ -7,12 +7,12 @@ use std::{
 };
 
 use masa::{time_now, Context as MasaContext};
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::time::Instant;
 use tokio::time::MissedTickBehavior;
 use tokio::{fs, time};
 use tonic::transport::masa_channel::LoadBalancedChannel;
-use tonic::{Request, Response};
+use tonic::Request;
 
 mod replay;
 use replay::extract_queue_latency;
@@ -149,6 +149,7 @@ async fn main() -> anyhow::Result<()> {
     let err: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
     let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
     let queue_samples = Arc::new(Mutex::new(Vec::<QueueLatencySample>::new()));
+    let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
 
     let queue_csv_path = replay_meta
         .as_ref()
@@ -212,28 +213,57 @@ async fn main() -> anyhow::Result<()> {
         let sent = sent.clone();
         let ok = ok.clone();
         let err = err.clone();
+        let mut latency_rx = latency_sample_rx;
         tokio::spawn(async move {
             let mut last_sent = 0u64;
             let mut last_ok = 0u64;
             let mut last_err = 0u64;
             let mut ticker = tokio::time::interval(Duration::from_secs(stats_interval_sec));
+            let mut latency_buffer = Vec::new();
             loop {
-                ticker.tick().await;
-                let s = sent.load(Ordering::Relaxed);
-                let o = ok.load(Ordering::Relaxed);
-                let e = err.load(Ordering::Relaxed);
-                println!(
-                    "[stats] sent={} (+{}), ok={} (+{}), err={} (+{})",
-                    s,
-                    s - last_sent,
-                    o,
-                    o - last_ok,
-                    e,
-                    e - last_err
-                );
-                last_sent = s;
-                last_ok = o;
-                last_err = e;
+                tokio::select! {
+                    _ = ticker.tick() => {
+                        let s = sent.load(Ordering::Relaxed);
+                        let o = ok.load(Ordering::Relaxed);
+                        let e = err.load(Ordering::Relaxed);
+                        let percentiles = {
+                            if latency_buffer.is_empty() {
+                                None
+                            } else {
+                                Some(latency_buffer.clone())
+                            }
+                            .and_then(compute_latency_percentiles_us)
+                        };
+                        let (p50_str, p90_str, p95_str, p99_str) = match percentiles {
+                            Some((p50, p90, p95, p99)) => {
+                                (format!("{p50}us"), format!("{p90}us"), format!("{p95}us"), format!("{p99}us"))
+                            }
+                            None => ("n/a".to_string(), "n/a".to_string(), "n/a".to_string(), "n/a".to_string()),
+                        };
+                        println!(
+                            "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), p50={}, p90={}, p95={}, p99={}",
+                            s,
+                            s - last_sent,
+                            o,
+                            o - last_ok,
+                            e,
+                            e - last_err,
+                            p50_str,
+                            p90_str,
+                            p95_str,
+                            p99_str
+                        );
+                        last_sent = s;
+                        last_ok = o;
+                        last_err = e;
+                    }
+                    maybe_sample = latency_rx.recv() => {
+                        match maybe_sample {
+                            Some(sample) => latency_buffer.push(sample),
+                            None => break,
+                        }
+                    }
+                }
             }
         });
     }
@@ -251,6 +281,7 @@ async fn main() -> anyhow::Result<()> {
                 max_in_flight,
                 root_samples.clone(),
                 Some(duration),
+                latency_sample_tx.clone(),
             )
             .await?;
         }
@@ -263,6 +294,7 @@ async fn main() -> anyhow::Result<()> {
                 err.clone(),
                 inflight_guard.clone(),
                 queue_samples.clone(),
+                latency_sample_tx.clone(),
             )
             .await?;
         }
@@ -295,6 +327,7 @@ async fn run_root_load(
     max_in_flight: usize,
     root_samples: Arc<Mutex<Vec<RootLatencySample>>>,
     finish_after: Option<Duration>,
+    latency_sample_tx: mpsc::UnboundedSender<u64>,
 ) -> anyhow::Result<()> {
     let mut ticker = tokio::time::interval(per_req);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -336,6 +369,7 @@ async fn run_root_load(
                 let err = err.clone();
                 let mut rpc_client = client.clone();
                 let root_samples = root_samples.clone();
+                let latency_sample_tx = latency_sample_tx.clone();
 
                 let req_id = sent.fetch_add(1, Ordering::Relaxed);
 
@@ -363,6 +397,7 @@ async fn run_root_load(
                             ok.fetch_add(1, Ordering::Relaxed);
                             let queue_latency = extract_queue_latency(resp.metadata());
                             let sample = RootLatencySample {
+                                is_err: false,
                                 req_id,
                                 start_at,
                                 queue_latency_us: queue_latency.unwrap_or(0),
@@ -372,13 +407,15 @@ async fn run_root_load(
                                 let mut guard = root_samples.lock().await;
                                 guard.push(sample);
                             }
+                            let _ = latency_sample_tx.send(elapsed);
                         }
                         Err(_) => {
                             let sample = RootLatencySample {
+                                is_err: true,
                                 req_id,
                                 start_at,
                                 queue_latency_us: 0,
-                                e2e_latency_us: 10000000,
+                                e2e_latency_us: 0,
                             };
                             err.fetch_add(1, Ordering::Relaxed);
                             {
@@ -409,6 +446,7 @@ struct RootLatencySample {
     start_at: u64,
     queue_latency_us: u64,
     e2e_latency_us: u64,
+    is_err: bool,
 }
 
 async fn flush_root_samples(
@@ -445,11 +483,15 @@ async fn flush_root_samples_internal(
     fs::create_dir_all(&output_dir).await?;
     let file_path = output_dir.join(file_name);
 
-    let mut csv_data = String::from("req_id,start_at,queue_latency_us,e2e_latency_us\n");
+    let mut csv_data = String::from("req_id,is_err,start_at,queue_latency_us,e2e_latency_us\n");
     for sample in &snapshot {
         csv_data.push_str(&format!(
-            "{},{},{},{}\n",
-            sample.req_id, sample.start_at, sample.queue_latency_us, sample.e2e_latency_us
+            "{},{},{},{},{}\n",
+            sample.req_id,
+            sample.is_err,
+            sample.start_at,
+            sample.queue_latency_us,
+            sample.e2e_latency_us
         ));
     }
 
@@ -500,4 +542,34 @@ async fn flush_queue_samples(
     }
 
     Ok(Some(snapshot.len()))
+}
+
+fn compute_latency_percentiles_us(mut samples: Vec<u64>) -> Option<(u64, u64, u64, u64)> {
+    if samples.is_empty() {
+        return None;
+    }
+
+    samples.sort_unstable();
+    let p50 = percentile_from_sorted(&samples, 50.0);
+    let p90 = percentile_from_sorted(&samples, 90.0);
+    let p95 = percentile_from_sorted(&samples, 95.0);
+    let p99 = percentile_from_sorted(&samples, 99.0);
+    Some((p50, p90, p95, p99))
+}
+
+fn percentile_from_sorted(sorted: &[u64], percentile: f64) -> u64 {
+    let n = sorted.len();
+    if n == 0 {
+        return 0;
+    }
+
+    let mut rank = (percentile / 100.0 * n as f64).ceil() as usize;
+    if rank == 0 {
+        rank = 1;
+    }
+    if rank > n {
+        rank = n;
+    }
+
+    sorted[rank - 1]
 }
