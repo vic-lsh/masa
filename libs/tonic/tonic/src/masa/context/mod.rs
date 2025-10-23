@@ -8,7 +8,6 @@ mod noop;
 mod perfect_lsf;
 mod queue_global;
 mod queue_tracing;
-mod simple;
 mod tracing;
 
 pub mod runtime;
@@ -35,10 +34,6 @@ pub type DefaultMasaHooks = tracing::Tracing;
 #[cfg(any(feature = "fifo_queue_tracing"))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = queue_tracing::QueueTracing;
-
-#[cfg(any(feature = "prio_local"))]
-#[allow(missing_docs)]
-pub type DefaultMasaHooks = simple::SimpleMasaHooks;
 
 #[cfg(any(feature = "prio_global"))]
 #[allow(missing_docs)]
