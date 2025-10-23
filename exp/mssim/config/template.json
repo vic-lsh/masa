@@ -2,7 +2,7 @@
   "experiment_name": "close_loop_replica",
   "trace_dir": "trace-analysis/golden/S_86516878",
   "config_dir": "apps/mssim/simulator/example_config/",
-  "output_root": "apps/mssim/data/experiments/",
+  "output_root": "exp/mssim/data/experiments/",
   "duration_sec": 60,
   "repeats": 1,
   "slo_ms": 100,

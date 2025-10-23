@@ -4,6 +4,8 @@ use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
 use sim_config::svc::ServiceName;
 use sim_config::trace::TraceConfig;
 use sim_config::{PROJECT_NAME, SimulatorConfig};
+use std::fs::File;
+use std::io::Write;
 use std::{
     collections::HashMap,
     env, fs,
@@ -39,33 +41,24 @@ pub struct ErrorRate {
 pub fn generate_service_configs(
     services: impl Iterator<Item = ServiceName>,
     sim_cfg: &SimulatorConfig,
+    deployment_output_path: &PathBuf,
 ) -> Result<Deployment> {
-    info!("Generating service-specific configuration files.");
-    let config_dir = PathBuf::from("./service_configs"); // Directory to store individual configs
-
-    // Create the config directory if it doesn't exist
-    fs::create_dir_all(&config_dir)
-        .with_context(|| format!("Failed to create directory: {:?}", config_dir))?;
-
-    // Define the path for the single config file
-    let mut service_config_path = config_dir.clone();
-    let output_filename = "deployment.json";
-    service_config_path.push(output_filename);
+    info!("Generating deployment file to {:?}", deployment_output_path);
 
     let deployment = make_deployment_config(services, sim_cfg);
 
     deployment
-        .export_to_file(&service_config_path)
+        .export_to_file(&deployment_output_path)
         .map_err(|_| {
             anyhow!(
                 "Failed to write deployment config to {:?}",
-                service_config_path
+                deployment_output_path
             )
         })?;
 
     info!(
         "Created config file containing all service configurations at {:?}",
-        service_config_path
+        deployment_output_path
     );
 
     Ok(deployment)
@@ -94,10 +87,12 @@ fn make_deployment_config(
 }
 
 pub fn generate_docker_compose(
+    output_path: &PathBuf,
     config: &TraceConfig,
     trace_dir: &PathBuf,
     sim_cfg: &SimulatorConfig,
     deployment: &Deployment,
+    deployment_output_path: &PathBuf,
     replay_path: Option<&Path>,
 ) -> Result<()> {
     info!("Generating docker-compose.yml file.");
@@ -110,7 +105,13 @@ pub fn generate_docker_compose(
             .ok_or_else(|| anyhow::anyhow!("Service not found in deployment: {}", service_name))?;
         let svc_port = svc_info.port;
 
-        let service_def = make_service_def(&service_name, svc_port, sim_cfg, trace_dir);
+        let service_def = make_service_def(
+            &service_name,
+            svc_port,
+            sim_cfg,
+            trace_dir,
+            deployment_output_path,
+        );
         services_hash.insert(Yaml::String(service_name.to_string()), service_def);
     }
 
@@ -123,16 +124,20 @@ pub fn generate_docker_compose(
     let mut emitter = YamlEmitter::new(&mut output_string);
     emitter.dump(&doc).unwrap();
 
-    let compose_path = PathBuf::from("./docker-compose.yml");
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent).expect("Failed to create parent dirs");
+    }
 
-    fs::write(&compose_path, output_string).with_context(|| {
-        format!(
-            "Failed to write docker-compose.yml file to {:?}",
-            compose_path
-        )
-    })?;
+    let mut file = File::create(output_path).expect("Failed to open docker-compose output path");
+    file.write_all(output_string.as_bytes())
+        .expect("Failed to write to docker compose output");
+    file.flush().unwrap();
+    drop(file);
 
-    info!("docker-compose.yml file generated successfully.");
+    info!(
+        "docker-compose.yml file generated successfully to path {:?}.",
+        output_path
+    );
 
     Ok(())
 }
@@ -160,6 +165,7 @@ fn make_service_def(
     svc_port: u16,
     sim_cfg: &SimulatorConfig,
     trace_dir: &PathBuf,
+    deployment_output_path: &PathBuf,
 ) -> Yaml {
     let mut service_def = Hash::new();
 
@@ -177,7 +183,10 @@ fn make_service_def(
         Yaml::String("environment".into()),
         make_environment_def(service_name, svc_port),
     );
-    service_def.insert(Yaml::String("volumes".into()), make_volumes_def(trace_dir));
+    service_def.insert(
+        Yaml::String("volumes".into()),
+        make_volumes_def(trace_dir, deployment_output_path),
+    );
     service_def.insert(
         Yaml::String("networks".into()),
         Yaml::Array(vec![Yaml::String("microservice_net".into())]),
@@ -231,13 +240,13 @@ fn make_environment_def(service_name: &ServiceName, svc_port: u16) -> Yaml {
     Yaml::Hash(environment)
 }
 
-fn make_volumes_def(trace_dir: &PathBuf) -> Yaml {
+fn make_volumes_def(trace_dir: &PathBuf, deployment_output_path: &PathBuf) -> Yaml {
     let in_container_config_path = "/app/config";
     let host_config_dir = trace_dir.to_string_lossy();
     let volume_mapping_config = format!("{}:{}", host_config_dir, in_container_config_path);
 
     let in_container_deployment_config_path = "/app/config/deployment.json";
-    let host_config_path = "./service_configs/deployment.json";
+    let host_config_path = deployment_output_path.to_string_lossy();
     let volume_mapping_deployment = format!(
         "{}:{}",
         host_config_path, in_container_deployment_config_path
@@ -400,11 +409,16 @@ pub async fn launch_simulation_from_yaml(
     config: TraceConfig,
     trace_dir: &PathBuf,
     sim_config: SimulatorConfig,
+    docker_compose_output_path: &PathBuf,
+    deployment_output_path: &PathBuf,
     replay_path: Option<&Path>,
 ) -> Result<()> {
     // Generate service-specific config files
-    let deployment =
-        generate_service_configs(config.call_graph.services().into_iter(), &sim_config)?;
+    let deployment = generate_service_configs(
+        config.call_graph.services().into_iter(),
+        &sim_config,
+        deployment_output_path,
+    )?;
 
     info!("Generated deployment:");
     for d in deployment.services.iter() {
@@ -412,7 +426,15 @@ pub async fn launch_simulation_from_yaml(
     }
 
     // generate docker-compose.yml
-    generate_docker_compose(&config, trace_dir, &sim_config, &deployment, replay_path)?;
+    generate_docker_compose(
+        docker_compose_output_path,
+        &config,
+        trace_dir,
+        &sim_config,
+        &deployment,
+        deployment_output_path,
+        replay_path,
+    )?;
 
     // // running Docker Compose
     // run_docker_compose()?;
