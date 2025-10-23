@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
+use super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use crate::{GrpcMethod, Request};
 
 #[derive(Debug)]
