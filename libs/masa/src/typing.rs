@@ -7,9 +7,6 @@ pub type ServiceId = String;
 /// Type alias for a method ID.
 pub type MethodId = &'static str;
 
-/// Type alias for a span ID.
-pub type SpanId = String;
-
 /// Type alias for a timestamp.
 pub type Timestamp = u64;
 
