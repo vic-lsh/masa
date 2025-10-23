@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{
     env,
     path::{Path, PathBuf},
@@ -7,6 +7,7 @@ use std::{
 };
 
 use masa::{time_now, Context as MasaContext};
+use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::time::Instant;
 use tokio::time::MissedTickBehavior;
@@ -31,6 +32,13 @@ type RpcClient = ServiceClient<LoadBalancedChannel>;
 const PERIODIC_FLUSH_INTERVAL_SECS: u64 = 10;
 const OUTPUT_DIR: &str = "loadgen_output";
 
+#[derive(Default)]
+struct Stats {
+    sent: AtomicUsize,
+    ok: AtomicUsize,
+    err: AtomicUsize,
+}
+
 fn root_latency_file_name_for_rps(rps: f64) -> String {
     let mut rps_str = if (rps.fract()).abs() < f64::EPSILON {
         format!("{rps:.0}")
@@ -54,269 +62,11 @@ enum LoadMode {
     },
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let addr = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
-    let port = env::var("PORT").unwrap_or_else(|_| "50051".to_string());
-    let rps: f64 = env::var("RPS")
-        .unwrap_or_else(|_| "350".to_string())
-        .parse()?;
-
-    // print rps
-    println!("RPS set to: {}", rps);
-    let max_in_flight: usize = env::var("MAX_IN_FLIGHT")
-        .unwrap_or_else(|_| "10000".to_string())
-        .parse()?;
-    let stats_interval_sec: u64 = env::var("STATS_INTERVAL_SEC")
-        .unwrap_or_else(|_| "1".to_string())
-        .parse()?;
-
-    let duration: u32 = env::var("DURATION")
-        .unwrap_or_else(|_| "60".to_string())
-        .parse()?;
-
-    let duration = Duration::from_secs(duration as u64);
-
-    let replay_env = env::var("REPLAY_TRACE_PATH")
-        .ok()
-        .map(|s| s.trim().to_owned())
-        .filter(|s| !s.is_empty());
-
-    // If replay_env is set, we are in replay mode
-    // Otherwise, we are in root() load mode
-    let (load_mode, replay_meta) = match replay_env {
-        Some(path_str) => {
-            let path = Path::new(&path_str);
-            let work_items = load_frontend_replay_items(path)?;
-            let count = work_items.len();
-            (
-                LoadMode::Replay {
-                    work_items: Arc::new(work_items),
-                },
-                Some((path_str, count)),
-            )
-        }
-        None => (LoadMode::Root, None),
-    };
-
-    let per_req = if matches!(load_mode, LoadMode::Root) {
-        if rps <= 0.0 {
-            anyhow::bail!("RPS must be > 0");
-        }
-        Some(Duration::from_secs_f64(1.0 / rps))
-    } else {
-        None
-    };
-
-    let port = port.parse().unwrap();
-    let channel = LoadBalancedChannel::new(addr.clone(), port, 1).await;
-
-    let client = ServiceClient::new(channel);
-
-    match (&load_mode, &replay_meta) {
-        (LoadMode::Root, _) => println!("Operating in root() load mode."),
-        (LoadMode::Replay { .. }, Some((source, count))) => println!(
-            "Operating in replay() load mode with {} requests from {}.",
-            count, source
-        ),
-        (LoadMode::Replay { work_items }, None) => println!(
-            "Operating in replay() load mode with {} requests.",
-            work_items.len()
-        ),
-    }
-
-    if per_req.is_some() {
-        println!(
-            "Starting loadgen: addr={}, rps={}, max_in_flight={}",
-            addr, rps, max_in_flight
-        );
-        println!("Press Ctrl-C to stop.");
-    } else if let LoadMode::Replay { work_items } = &load_mode {
-        println!(
-            "Starting replay: addr={}, requests={}, max_in_flight={}",
-            addr,
-            work_items.len(),
-            max_in_flight
-        );
-    }
-
-    let sent = Arc::new(AtomicU64::new(0));
-    let ok = Arc::new(AtomicU64::new(0));
-    let err = Arc::new(AtomicU64::new(0));
-    let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
-    let queue_samples = Arc::new(Mutex::new(Vec::<QueueLatencySample>::new()));
-    let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
-
-    let queue_csv_path = replay_meta
-        .as_ref()
-        .map(|(path_str, _)| queue_latency_output_path(Path::new(path_str.as_str())));
-    let root_samples = Arc::new(Mutex::new(Vec::<RootLatencySample>::new()));
-    let root_latency_file_name = Arc::new(root_latency_file_name_for_rps(rps));
-    let root_samples_handle = if matches!(load_mode, LoadMode::Root) {
-        Some((root_samples.clone(), root_latency_file_name.clone()))
-    } else {
-        None
-    };
-
-    if let Some(ref output_path) = queue_csv_path {
-        let samples = queue_samples.clone();
-        let path = Arc::new(output_path.clone());
-        let mut ticker = tokio::time::interval(Duration::from_secs(PERIODIC_FLUSH_INTERVAL_SECS));
-        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
-        tokio::spawn(async move {
-            loop {
-                ticker.tick().await;
-                let should_flush = {
-                    let guard = samples.lock().await;
-                    !guard.is_empty()
-                };
-                if !should_flush {
-                    continue;
-                }
-                if let Err(err) = flush_queue_samples(samples.clone(), path.as_path(), false).await
-                {
-                    eprintln!("Failed to periodically flush queue latency samples: {err:?}");
-                }
-            }
-        });
-    }
-
-    if matches!(load_mode, LoadMode::Root) {
-        let samples = root_samples.clone();
-        let file_name = root_latency_file_name.clone();
-        let mut ticker = tokio::time::interval(Duration::from_secs(PERIODIC_FLUSH_INTERVAL_SECS));
-        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
-        tokio::spawn(async move {
-            loop {
-                ticker.tick().await;
-                let should_flush = {
-                    let guard = samples.lock().await;
-                    !guard.is_empty()
-                };
-                if !should_flush {
-                    continue;
-                }
-                if let Err(err) =
-                    flush_root_samples_internal(samples.clone(), file_name.as_ref(), false).await
-                {
-                    eprintln!("Failed to periodically flush root() latency samples: {err:?}");
-                }
-            }
-        });
-    }
-
-    {
-        let sent = sent.clone();
-        let ok = ok.clone();
-        let err = err.clone();
-        let mut latency_rx = latency_sample_rx;
-        tokio::spawn(async move {
-            let mut last_sent = 0u64;
-            let mut last_ok = 0u64;
-            let mut last_err = 0u64;
-            let mut ticker = tokio::time::interval(Duration::from_secs(stats_interval_sec));
-            let mut latency_buffer = Vec::new();
-            loop {
-                tokio::select! {
-                    _ = ticker.tick() => {
-                        let s = sent.load(Ordering::Relaxed);
-                        let o = ok.load(Ordering::Relaxed);
-                        let e = err.load(Ordering::Relaxed);
-                        let percentiles = {
-                            if latency_buffer.is_empty() {
-                                None
-                            } else {
-                                Some(latency_buffer.clone())
-                            }
-                            .and_then(compute_latency_percentiles_us)
-                        };
-                        let (p50_str, p90_str, p95_str, p99_str) = match percentiles {
-                            Some((p50, p90, p95, p99)) => {
-                                (format!("{p50}us"), format!("{p90}us"), format!("{p95}us"), format!("{p99}us"))
-                            }
-                            None => ("n/a".to_string(), "n/a".to_string(), "n/a".to_string(), "n/a".to_string()),
-                        };
-                        println!(
-                            "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), p50={}, p90={}, p95={}, p99={}",
-                            s,
-                            s - last_sent,
-                            o,
-                            o - last_ok,
-                            e,
-                            e - last_err,
-                            p50_str,
-                            p90_str,
-                            p95_str,
-                            p99_str
-                        );
-                        last_sent = s;
-                        last_ok = o;
-                        last_err = e;
-                    }
-                    maybe_sample = latency_rx.recv() => {
-                        match maybe_sample {
-                            Some(sample) => latency_buffer.push(sample),
-                            None => break,
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    match load_mode {
-        LoadMode::Root => {
-            run_root_load(
-                client,
-                per_req.expect("per_req available in root mode"),
-                sent.clone(),
-                ok.clone(),
-                err.clone(),
-                inflight_guard.clone(),
-                max_in_flight,
-                root_samples.clone(),
-                Some(duration),
-                latency_sample_tx.clone(),
-            )
-            .await?;
-        }
-        LoadMode::Replay { work_items } => {
-            run_replay_load(
-                client,
-                work_items,
-                sent.clone(),
-                ok.clone(),
-                err.clone(),
-                inflight_guard.clone(),
-                queue_samples.clone(),
-                latency_sample_tx.clone(),
-            )
-            .await?;
-        }
-    }
-
-    let s = sent.load(Ordering::Relaxed);
-    let o = ok.load(Ordering::Relaxed);
-    let e = err.load(Ordering::Relaxed);
-    println!("Final stats: sent={}, ok={}, err={}", s, o, e);
-
-    if let Some(ref output_path) = queue_csv_path {
-        flush_queue_samples(queue_samples.clone(), output_path.as_path(), true).await?;
-    }
-
-    if let Some((root_samples, file_name)) = root_samples_handle {
-        flush_root_samples(root_samples, file_name.as_ref()).await?;
-    }
-
-    Ok(())
-}
-
 async fn run_root_load(
     client: RpcClient,
     per_req: Duration,
-    sent: Arc<AtomicU64>,
-    ok: Arc<AtomicU64>,
-    err: Arc<AtomicU64>,
+    request_slo: u64,
+    stats: Arc<Stats>,
     inflight_guard: Arc<Semaphore>,
     max_in_flight: usize,
     root_samples: Arc<Mutex<Vec<RootLatencySample>>>,
@@ -358,18 +108,15 @@ async fn run_root_load(
                     Err(_) => continue,
                 };
 
-                let sent = sent.clone();
-                let ok = ok.clone();
-                let err = err.clone();
                 let mut rpc_client = client.clone();
                 let root_samples = root_samples.clone();
                 let latency_sample_tx = latency_sample_tx.clone();
 
-                sent.fetch_add(1, Ordering::Relaxed);
+                let req_id = stats.sent.fetch_add(1, Ordering::Relaxed) as u64;
 
+                let stats = Arc::clone(&stats);
                 tokio::spawn(async move {
                     let _permit = permit;
-                    let req_id = sent.load(Ordering::Relaxed);
                     let start_at = time_now();
                     let mut request = Request::new(RootRequest {
                         req_id,
@@ -377,10 +124,10 @@ async fn run_root_load(
                     });
 
                     let ctx = {
-                        let slo = 50_000;
+                        let slo_us = request_slo * 1000;
                         let start_at = time_now();
-                        let deadline = start_at + slo;
-                        MasaContext::new("root".to_string(), 0, req_id, slo, 0, start_at, deadline)
+                        let deadline = start_at + slo_us;
+                        MasaContext::new("root".to_string(), 0, req_id, slo_us, 0, start_at, deadline)
                     };
                     request.metadata_mut().insert_ctx("ctx", &ctx);
 
@@ -389,7 +136,7 @@ async fn run_root_load(
                     let elapsed = start_time.elapsed().as_micros() as u64;
                     match res {
                         Ok(resp) => {
-                            ok.fetch_add(1, Ordering::Relaxed);
+                            stats.ok.fetch_add(1, Ordering::Relaxed);
                             let queue_latency = extract_queue_latency(resp.metadata());
                             let sample = RootLatencySample {
                                 is_err: false,
@@ -405,6 +152,7 @@ async fn run_root_load(
                             let _ = latency_sample_tx.send(elapsed);
                         }
                         Err(_) => {
+                            stats.err.fetch_add(1, Ordering::Relaxed);
                             let sample = RootLatencySample {
                                 is_err: true,
                                 req_id,
@@ -412,7 +160,6 @@ async fn run_root_load(
                                 queue_latency_us: 0,
                                 e2e_latency_us: 0,
                             };
-                            err.fetch_add(1, Ordering::Relaxed);
                             {
                                 let mut guard = root_samples.lock().await;
                                 guard.push(sample);
@@ -427,9 +174,9 @@ async fn run_root_load(
     // Drain in-flight requests before exit
     let _ = inflight_guard.acquire_many(max_in_flight as u32).await;
 
-    let s = sent.load(Ordering::Relaxed);
-    let o = ok.load(Ordering::Relaxed);
-    let e = err.load(Ordering::Relaxed);
+    let s = stats.sent.load(Ordering::Relaxed);
+    let o = stats.ok.load(Ordering::Relaxed);
+    let e = stats.err.load(Ordering::Relaxed);
     println!("Final stats: sent={}, ok={}, err={}", s, o, e);
 
     Ok(())
@@ -567,4 +314,273 @@ fn percentile_from_sorted(sorted: &[u64], percentile: f64) -> u64 {
     }
 
     sorted[rank - 1]
+}
+
+async fn flush_queue_latency_samples_task(
+    samples: Arc<Mutex<Vec<QueueLatencySample>>>,
+    path: PathBuf,
+) {
+    let mut ticker = tokio::time::interval(Duration::from_secs(PERIODIC_FLUSH_INTERVAL_SECS));
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        ticker.tick().await;
+        let should_flush = {
+            let guard = samples.lock().await;
+            !guard.is_empty()
+        };
+        if !should_flush {
+            continue;
+        }
+        if let Err(err) = flush_queue_samples(samples.clone(), path.as_path(), false).await {
+            eprintln!("Failed to periodically flush queue latency samples: {err:?}");
+        }
+    }
+}
+
+async fn flush_rpc_samples_task(samples: Arc<Mutex<Vec<RootLatencySample>>>, file_name: String) {
+    let mut ticker = tokio::time::interval(Duration::from_secs(PERIODIC_FLUSH_INTERVAL_SECS));
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        ticker.tick().await;
+        let should_flush = {
+            let guard = samples.lock().await;
+            !guard.is_empty()
+        };
+        if !should_flush {
+            continue;
+        }
+        if let Err(err) =
+            flush_root_samples_internal(samples.clone(), file_name.as_ref(), false).await
+        {
+            eprintln!("Failed to periodically flush root() latency samples: {err:?}");
+        }
+    }
+}
+
+async fn print_stats_task(
+    mut latency_rx: UnboundedReceiver<u64>,
+    stats_interval: Duration,
+    stats: Arc<Stats>,
+) {
+    let mut last_sent = 0;
+    let mut last_ok = 0;
+    let mut last_err = 0;
+    let mut ticker = tokio::time::interval(stats_interval);
+    let mut latency_buffer = Vec::new();
+    loop {
+        tokio::select! {
+            _ = ticker.tick() => {
+                let s = stats.sent.load(Ordering::Relaxed);
+                let o = stats.ok.load(Ordering::Relaxed);
+                let e = stats.err.load(Ordering::Relaxed);
+                let percentiles = {
+                    if latency_buffer.is_empty() {
+                        None
+                    } else {
+                        Some(latency_buffer.clone())
+                    }
+                    .and_then(compute_latency_percentiles_us)
+                };
+                let (p50_str, p90_str, p95_str, p99_str) = match percentiles {
+                    Some((p50, p90, p95, p99)) => {
+                        (format!("{p50}us"), format!("{p90}us"), format!("{p95}us"), format!("{p99}us"))
+                    }
+                    None => ("n/a".to_string(), "n/a".to_string(), "n/a".to_string(), "n/a".to_string()),
+                };
+                println!(
+                    "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), p50={}, p90={}, p95={}, p99={}",
+                    s,
+                    s - last_sent,
+                    o,
+                    o - last_ok,
+                    e,
+                    e - last_err,
+                    p50_str,
+                    p90_str,
+                    p95_str,
+                    p99_str
+                );
+                last_sent = s;
+                last_ok = o;
+                last_err = e;
+            }
+            maybe_sample = latency_rx.recv() => {
+                match maybe_sample {
+                    Some(sample) => latency_buffer.push(sample),
+                    None => break,
+                }
+            }
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let addr = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
+    let port = env::var("PORT").unwrap_or_else(|_| "50051".to_string());
+    let rps: f64 = env::var("RPS")
+        .unwrap_or_else(|_| "350".to_string())
+        .parse()?;
+
+    // print rps
+    println!("RPS set to: {}", rps);
+    let max_in_flight: usize = env::var("MAX_IN_FLIGHT")
+        .unwrap_or_else(|_| "10000".to_string())
+        .parse()?;
+    let stats_interval_sec: u64 = env::var("STATS_INTERVAL_SEC")
+        .unwrap_or_else(|_| "1".to_string())
+        .parse()?;
+
+    let duration: u32 = env::var("DURATION")
+        .unwrap_or_else(|_| "60".to_string())
+        .parse()?;
+
+    let duration = Duration::from_secs(duration as u64);
+
+    let request_slo = env::var("SLO_MS")
+        .unwrap_or_else(|_| "100".to_string())
+        .parse::<u64>()?;
+
+    let replay_env = env::var("REPLAY_TRACE_PATH")
+        .ok()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty());
+
+    // If replay_env is set, we are in replay mode
+    // Otherwise, we are in root() load mode
+    let (load_mode, replay_meta) = match replay_env {
+        Some(path_str) => {
+            let path = Path::new(&path_str);
+            let work_items = load_frontend_replay_items(path)?;
+            let count = work_items.len();
+            (
+                LoadMode::Replay {
+                    work_items: Arc::new(work_items),
+                },
+                Some((path_str, count)),
+            )
+        }
+        None => (LoadMode::Root, None),
+    };
+
+    let per_req = if matches!(load_mode, LoadMode::Root) {
+        if rps <= 0.0 {
+            anyhow::bail!("RPS must be > 0");
+        }
+        Some(Duration::from_secs_f64(1.0 / rps))
+    } else {
+        None
+    };
+
+    let port = port.parse().unwrap();
+    let channel = LoadBalancedChannel::new(addr.clone(), port, 1).await;
+
+    let client = ServiceClient::new(channel);
+
+    match (&load_mode, &replay_meta) {
+        (LoadMode::Root, _) => println!("Operating in root() load mode."),
+        (LoadMode::Replay { .. }, Some((source, count))) => println!(
+            "Operating in replay() load mode with {} requests from {}.",
+            count, source
+        ),
+        (LoadMode::Replay { work_items }, None) => println!(
+            "Operating in replay() load mode with {} requests.",
+            work_items.len()
+        ),
+    }
+
+    if per_req.is_some() {
+        println!(
+            "Starting loadgen: addr={}, rps={}, max_in_flight={}",
+            addr, rps, max_in_flight
+        );
+        println!("Press Ctrl-C to stop.");
+    } else if let LoadMode::Replay { work_items } = &load_mode {
+        println!(
+            "Starting replay: addr={}, requests={}, max_in_flight={}",
+            addr,
+            work_items.len(),
+            max_in_flight
+        );
+    }
+
+    let stats = Arc::new(Stats::default());
+
+    let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
+    let queue_samples = Arc::new(Mutex::new(Vec::<QueueLatencySample>::new()));
+    let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
+
+    let queue_csv_path = replay_meta
+        .as_ref()
+        .map(|(path_str, _)| queue_latency_output_path(Path::new(path_str.as_str())));
+    let root_samples = Arc::new(Mutex::new(Vec::<RootLatencySample>::new()));
+    let root_latency_file_name = root_latency_file_name_for_rps(rps);
+    let root_samples_handle = if matches!(load_mode, LoadMode::Root) {
+        Some((root_samples.clone(), root_latency_file_name.clone()))
+    } else {
+        None
+    };
+
+    if let Some(ref output_path) = queue_csv_path {
+        let samples = queue_samples.clone();
+        let path = output_path.clone();
+        tokio::spawn(async move { flush_queue_latency_samples_task(samples, path).await });
+    }
+
+    if matches!(load_mode, LoadMode::Root) {
+        let samples = root_samples.clone();
+        let file_name = root_latency_file_name.clone();
+        tokio::spawn(async move { flush_rpc_samples_task(samples, file_name).await });
+    }
+
+    {
+        let stats_interval = Duration::from_secs(stats_interval_sec);
+        let stats = Arc::clone(&stats);
+        tokio::spawn(async move {
+            print_stats_task(latency_sample_rx, stats_interval, stats).await;
+        });
+    }
+
+    match load_mode {
+        LoadMode::Root => {
+            run_root_load(
+                client,
+                per_req.expect("per_req available in root mode"),
+                request_slo,
+                stats.clone(),
+                inflight_guard.clone(),
+                max_in_flight,
+                root_samples.clone(),
+                Some(duration),
+                latency_sample_tx.clone(),
+            )
+            .await?;
+        }
+        LoadMode::Replay { work_items } => {
+            run_replay_load(
+                client,
+                work_items,
+                stats.clone(),
+                inflight_guard.clone(),
+                queue_samples.clone(),
+                latency_sample_tx.clone(),
+            )
+            .await?;
+        }
+    }
+
+    let s = stats.sent.load(Ordering::Relaxed);
+    let o = stats.ok.load(Ordering::Relaxed);
+    let e = stats.err.load(Ordering::Relaxed);
+    println!("Final stats: sent={}, ok={}, err={}", s, o, e);
+
+    if let Some(ref output_path) = queue_csv_path {
+        flush_queue_samples(queue_samples.clone(), output_path.as_path(), true).await?;
+    }
+
+    if let Some((root_samples, file_name)) = root_samples_handle {
+        flush_root_samples(root_samples, file_name.as_ref()).await?;
+    }
+
+    Ok(())
 }

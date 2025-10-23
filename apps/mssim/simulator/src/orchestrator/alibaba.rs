@@ -22,7 +22,7 @@ const LOADGEN_SERVICE_NAME: &str = "load_generator";
 const FRONTEND_SERVICE_NAME: &str = "USER";
 const LOADGEN_OUTPUT_MOUNT: &str = "/app/loadgen_output";
 const CONTAINER_CPU_LIMIT: usize = 1;
-const CONTAINER_MEM_LIMIT: &str = "512MB";
+const CONTAINER_MEM_LIMIT: &str = "10GB";
 
 const DEFAULT_SVC_PORT: u16 = 50051;
 
@@ -163,12 +163,11 @@ fn make_service_def(
 ) -> Yaml {
     let mut service_def = Hash::new();
 
-    // service_def.insert(Yaml::String("build".into()), make_build_def(svc_port));
     service_def.insert(
         Yaml::String("image".into()),
         Yaml::String("generic_service".into()),
     );
-    let replica_count = sim_cfg.replicas.get(service_name).unwrap_or(1);
+    let replica_count = sim_cfg.replicas.count_for(service_name);
     service_def.insert(
         Yaml::String("scale".into()),
         Yaml::Integer(replica_count.into()),
@@ -289,6 +288,10 @@ fn make_load_generator_config_yaml(
 
     if let Ok(rps) = env::var("RPS") {
         environment.insert(Yaml::String("RPS".into()), Yaml::String(rps));
+    }
+
+    if let Ok(slo) = env::var("SLO_MS") {
+        environment.insert(Yaml::String("SLO_MS".into()), Yaml::String(slo));
     }
 
     service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));

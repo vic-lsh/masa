@@ -18,53 +18,52 @@ pub use tls::{client, server};
 
 #[cfg(not(feature = "masa"))]
 #[allow(missing_docs)]
-pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
-// pub type DefaultPrioritySelector = queue_tracing::QueueTracing;
+pub type DefaultMasaHooks = noop::NoopMasaHooks;
+// pub type DefaultMasaHooks = queue_tracing::QueueTracing;
 
 #[cfg(any(feature = "fifo"))]
 #[allow(missing_docs)]
 // TODO: revert back to noop for Fifo. Add another feature flag for tracing.
-// pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
-// pub type DefaultPrioritySelector = tracing::Tracing;
-pub type DefaultPrioritySelector = noop::NoopPrioritySelector;
+// pub type DefaultMasaHooks = noop::NoopMasaHooks;
+// pub type DefaultMasaHooks = tracing::Tracing;
+pub type DefaultMasaHooks = noop::NoopMasaHooks;
 
 #[cfg(any(feature = "fifo_span_tracing"))]
 #[allow(missing_docs)]
-pub type DefaultPrioritySelector = tracing::Tracing;
+pub type DefaultMasaHooks = tracing::Tracing;
 
 #[cfg(any(feature = "fifo_queue_tracing"))]
 #[allow(missing_docs)]
-pub type DefaultPrioritySelector = queue_tracing::QueueTracing;
+pub type DefaultMasaHooks = queue_tracing::QueueTracing;
 
 #[cfg(any(feature = "prio_local"))]
 #[allow(missing_docs)]
-pub type DefaultPrioritySelector = simple::SimplePrioritySelector;
+pub type DefaultMasaHooks = simple::SimpleMasaHooks;
 
 #[cfg(any(feature = "prio_global"))]
 #[allow(missing_docs)]
-pub type DefaultPrioritySelector = queue_global::QueueGlobal;
-// pub type DefaultPrioritySelector = global::Global;
+pub type DefaultMasaHooks = queue_global::QueueGlobal;
+// pub type DefaultMasaHooks = global::Global;
 
 #[cfg(any(feature = "prio_global_queue_tracing"))]
 #[allow(missing_docs)]
-pub type DefaultPrioritySelector = queue_global::QueueGlobal;
+pub type DefaultMasaHooks = queue_global::QueueGlobal;
 
 #[cfg(any(feature = "prio_local_direct"))]
 #[allow(missing_docs)]
-pub type DefaultPrioritySelector = local::LocalDeadlineDirect;
+pub type DefaultMasaHooks = local::LocalDeadlineDirect;
 
 #[cfg(any(feature = "prio_local_indirect"))]
 #[allow(missing_docs)]
-pub type DefaultPrioritySelector = local::LocalDeadlineIndirect;
+pub type DefaultMasaHooks = local::LocalDeadlineIndirect;
 
 #[cfg(feature = "perfect_lsf")]
 #[allow(missing_docs)]
-pub type DefaultPrioritySelector = perfect_lsf::PerfectLSF;
+pub type DefaultMasaHooks = perfect_lsf::PerfectLSF;
 
-// TODO: rename this to be more general
 // TODO: add notes on trait bounds
 /// Trait for specifying the set of hooks to apply in a Masa build.
-pub trait PrioritySelector: Send + Sync + 'static {
+pub trait MasaHooks: Send + Sync + 'static {
     /// The server-level state and hook implementations.
     type ServerContext: ServerHooks;
     /// The state and hook implementations maintained per child RPC.
