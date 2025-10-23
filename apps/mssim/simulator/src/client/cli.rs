@@ -23,7 +23,11 @@ pub struct CliOptions {
     /// Path to the generated docker compose file
     pub docker_compose_output_path: PathBuf,
 
-    #[structopt(long, parse(from_os_str), default_value = "./service_configs/deployment.json")]
+    #[structopt(
+        long,
+        parse(from_os_str),
+        default_value = "./service_configs/deployment.json"
+    )]
     /// Path to the generated deployment file
     pub deployment_output_path: PathBuf,
 
