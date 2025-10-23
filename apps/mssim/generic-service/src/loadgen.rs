@@ -537,10 +537,9 @@ async fn main() -> anyhow::Result<()> {
         let sent = sent.clone();
         let ok = ok.clone();
         let err = err.clone();
-        let latency_rx = latency_sample_rx;
         let stats_interval = Duration::from_secs(stats_interval_sec);
         tokio::spawn(async move {
-            print_stats_task(latency_rx, stats_interval, sent, ok, err).await;
+            print_stats_task(latency_sample_rx, stats_interval, sent, ok, err).await;
         });
     }
 
