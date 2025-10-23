@@ -84,6 +84,29 @@ perfect_lsf = [
 ]
 fifo = ["tokio/fifo", "masa/fifo", "tonic/fifo"]
 
+fifo_span_tracing = [
+  "tokio/fifo_span_tracing",
+  "masa/fifo_span_tracing",
+  "tonic/fifo_span_tracing",
+]
+
+fifo_queue_tracing = [
+  "tokio/fifo_queue_tracing",
+  "masa/fifo_queue_tracing",
+  "tonic/fifo_queue_tracing",
+]
+
+prio_global_queue_tracing = [
+  "tokio/prio_global_queue_tracing",
+  "masa/prio_global_queue_tracing",
+  "tonic/prio_global_queue_tracing",
+]
+
+early = [
+    "masa/early",
+    "tonic/early",
+]
+
 synthetic = []
 workload_stats = []
 

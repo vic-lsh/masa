@@ -62,6 +62,10 @@ prio_local_direct = ["masa"]
 prio_local_indirect = ["masa"]
 perfect_lsf = ["masa"]
 fifo = ["masa"]
+fifo_span_tracing = ["masa"]
+fifo_queue_tracing = ["masa"]
+prio_global_queue_tracing = ["masa"]
+early = ["masa"]
 
 
 # [[bench]]

@@ -1,74 +1,49 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
     env,
-    fs::File,
-    io::BufReader,
     path::{Path, PathBuf},
     sync::Arc,
-    time::{Duration, Instant as StdInstant},
+    time::Duration,
 };
 
-use anyhow::Context;
 use masa::{time_now, Context as MasaContext};
-use serde::Deserialize;
-use serde_json::Value;
-use tokio::fs;
-use tokio::sync::{Mutex, Semaphore};
-use tokio::time::{Instant, MissedTickBehavior};
-use tonic::metadata::MetadataMap;
+use tokio::sync::{mpsc, Mutex, Semaphore};
+use tokio::time::Instant;
+use tokio::time::MissedTickBehavior;
+use tokio::{fs, time};
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::Request;
+
+mod replay;
+use replay::extract_queue_latency;
 
 mod service {
     tonic::include_proto!("service");
 }
-use service::local_span::SpanType as ProtoSpanType;
-use service::service_client::ServiceClient;
-use service::{
-    span::Kind as ProtoSpanKind, ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
-    ReplayRequest as ProtoReplayRequest, RootRequest, Span as ProtoSpan,
+use replay::{
+    load_frontend_replay_items, queue_latency_output_path, run_replay_load,
+    write_queue_latency_csv, QueueLatencySample, ReplayWorkItem,
 };
+use service::service_client::ServiceClient;
+use service::RootRequest;
 type RpcClient = ServiceClient<LoadBalancedChannel>;
 
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct FrontendSpan {
-    #[serde(rename = "type")]
-    kind: String,
-    #[serde(default, deserialize_with = "deserialize_opt_u64")]
-    latency_us: Option<u64>,
-    #[serde(default)]
-    service_name: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_opt_u64")]
-    start_timestamp: Option<u64>,
-    #[serde(default)]
-    spans: Vec<FrontendSpan>,
-}
+const PERIODIC_FLUSH_INTERVAL_SECS: u64 = 10;
+const OUTPUT_DIR: &str = "loadgen_output";
 
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct FrontendRequest {
-    service_name: String,
-    #[serde(default, deserialize_with = "deserialize_opt_u64")]
-    request_id: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_opt_u64")]
-    start_at: Option<u64>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_opt_u64",
-        alias = "latency_us"
-    )]
-    traced_latency_us: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_opt_u64")]
-    span_latency_us: Option<u64>,
-    #[serde(default)]
-    spans: Vec<FrontendSpan>,
-}
-
-#[derive(Clone)]
-struct ReplayWorkItem {
-    offset_us: u64,
-    payload: ProtoReplayRequest,
+fn root_latency_file_name_for_rps(rps: f64) -> String {
+    let mut rps_str = if (rps.fract()).abs() < f64::EPSILON {
+        format!("{rps:.0}")
+    } else {
+        format!("{rps:.2}")
+    };
+    if rps_str.contains('.') {
+        rps_str = rps_str
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string();
+    }
+    format!("root_latencies_{}rps.csv", rps_str.replace('.', "_"))
 }
 
 #[derive(Clone)]
@@ -79,205 +54,36 @@ enum LoadMode {
     },
 }
 
-#[derive(Debug, Clone)]
-struct QueueLatencySample {
-    req_id: u64,
-    queue_latency_us: u64,
-    e2e_latency_us: u64,
-}
-
-fn deserialize_opt_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let opt = Option::<Value>::deserialize(deserializer)?;
-    match opt {
-        Some(Value::Number(num)) => num
-            .as_u64()
-            .ok_or_else(|| serde::de::Error::custom("expected unsigned integer"))
-            .map(Some),
-        Some(Value::String(s)) => {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                Ok(None)
-            } else {
-                trimmed
-                    .parse::<u64>()
-                    .map(Some)
-                    .map_err(|e| serde::de::Error::custom(e.to_string()))
-            }
-        }
-        Some(Value::Null) => Ok(None),
-        Some(other) => Err(serde::de::Error::custom(format!(
-            "unsupported value for u64: {}",
-            other
-        ))),
-        None => Ok(None),
-    }
-}
-
-fn load_frontend_replay_items(path: &Path) -> anyhow::Result<Vec<ReplayWorkItem>> {
-    let file = File::open(path)
-        .with_context(|| format!("failed to open frontend replay file {}", path.display()))?;
-    let reader = BufReader::new(file);
-    let mut requests: Vec<FrontendRequest> = serde_json::from_reader(reader)
-        .with_context(|| format!("failed to parse frontend replay file {}", path.display()))?;
-
-    if requests.is_empty() {
-        anyhow::bail!(
-            "frontend replay file {} contained no entries",
-            path.display()
-        );
-    }
-
-    requests.sort_by_key(|req| req.start_at.unwrap_or(u64::MAX));
-
-    let base_start = requests
-        .iter()
-        .filter_map(|req| req.start_at)
-        .min()
-        .context("frontend replay file did not contain start_at values")?;
-
-    let mut work_items = Vec::with_capacity(requests.len());
-    for request in requests {
-        let FrontendRequest {
-            service_name,
-            request_id,
-            start_at,
-            span_latency_us,
-            spans,
-            ..
-        } = request;
-
-        let start_at = match start_at {
-            Some(ts) => ts,
-            None => continue,
-        };
-
-        if spans.is_empty() {
-            continue;
-        }
-
-        let request_label = request_id
-            .clone()
-            .map(|id| id.to_string())
-            .unwrap_or(service_name);
-
-        let (proto_spans, total_span_latency) = convert_spans_to_proto(&spans)
-            .with_context(|| format!("failed to convert spans for request {request_label}"))?;
-
-        if proto_spans.is_empty() {
-            continue;
-        }
-
-        let exclude_queue_latency = span_latency_us.unwrap_or(total_span_latency);
-        let deadline = start_at.saturating_add(exclude_queue_latency);
-        work_items.push(ReplayWorkItem {
-            offset_us: start_at.saturating_sub(base_start),
-            payload: ProtoReplayRequest {
-                req_id: request_id.unwrap_or(0),
-                exclude_queue_latency,
-                slo: 50_000,
-                start_at,
-                deadline,
-                spans: proto_spans,
-            },
-        });
-    }
-
-    if work_items.is_empty() {
-        anyhow::bail!(
-            "frontend replay file {} did not have usable spans",
-            path.display()
-        );
-    }
-
-    work_items.sort_by_key(|item| item.offset_us);
-
-    Ok(work_items)
-}
-
-fn convert_spans_to_proto(spans: &[FrontendSpan]) -> anyhow::Result<(Vec<ProtoSpan>, u64)> {
-    let mut proto_spans = Vec::with_capacity(spans.len());
-    let mut total_latency = 0u64;
-
-    for span in spans {
-        let (proto_span, span_latency) = convert_span_to_proto(span)?;
-        total_latency = total_latency.saturating_add(span_latency);
-        proto_spans.push(proto_span);
-    }
-
-    Ok((proto_spans, total_latency))
-}
-
-fn convert_span_to_proto(span: &FrontendSpan) -> anyhow::Result<(ProtoSpan, u64)> {
-    match span.kind.as_str() {
-        "Compute" => {
-            let latency = span.latency_us.unwrap_or(0);
-            Ok((
-                ProtoSpan {
-                    kind: Some(ProtoSpanKind::LocalSpan(ProtoLocalSpan {
-                        r#type: ProtoSpanType::Compute as i32,
-                        val: latency,
-                    })),
-                },
-                latency,
-            ))
-        }
-        "Block" => {
-            let latency = span.latency_us.unwrap_or(0);
-            Ok((
-                ProtoSpan {
-                    kind: Some(ProtoSpanKind::LocalSpan(ProtoLocalSpan {
-                        r#type: ProtoSpanType::Block as i32,
-                        val: latency,
-                    })),
-                },
-                latency,
-            ))
-        }
-        "ChildCall" => {
-            let service_name = span
-                .service_name
-                .clone()
-                .with_context(|| format!("child span missing service_name: {span:?}"))?;
-
-            let (child_spans, child_latency) = convert_spans_to_proto(&span.spans)?;
-            let latency = span.latency_us.unwrap_or(child_latency);
-
-            Ok((
-                ProtoSpan {
-                    kind: Some(ProtoSpanKind::ChildSpans(ProtoChildSpans {
-                        name: service_name,
-                        spans: child_spans,
-                    })),
-                },
-                latency,
-            ))
-        }
-        other => anyhow::bail!("unsupported span type {other}"),
-    }
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let addr = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
     let port = env::var("PORT").unwrap_or_else(|_| "50051".to_string());
     let rps: f64 = env::var("RPS")
-        .unwrap_or_else(|_| "400".to_string())
+        .unwrap_or_else(|_| "350".to_string())
         .parse()?;
+
+    // print rps
+    println!("RPS set to: {}", rps);
     let max_in_flight: usize = env::var("MAX_IN_FLIGHT")
         .unwrap_or_else(|_| "10000".to_string())
         .parse()?;
     let stats_interval_sec: u64 = env::var("STATS_INTERVAL_SEC")
-        .unwrap_or_else(|_| "2".to_string())
+        .unwrap_or_else(|_| "1".to_string())
         .parse()?;
+
+    let duration: u32 = env::var("DURATION")
+        .unwrap_or_else(|_| "60".to_string())
+        .parse()?;
+
+    let duration = Duration::from_secs(duration as u64);
 
     let replay_env = env::var("REPLAY_TRACE_PATH")
         .ok()
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty());
 
+    // If replay_env is set, we are in replay mode
+    // Otherwise, we are in root() load mode
     let (load_mode, replay_meta) = match replay_env {
         Some(path_str) => {
             let path = Path::new(&path_str);
@@ -339,37 +145,121 @@ async fn main() -> anyhow::Result<()> {
     let err = Arc::new(AtomicU64::new(0));
     let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
     let queue_samples = Arc::new(Mutex::new(Vec::<QueueLatencySample>::new()));
+    let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
 
     let queue_csv_path = replay_meta
         .as_ref()
-        .map(|(path_str, _)| queue_latency_output_path(path_str));
+        .map(|(path_str, _)| queue_latency_output_path(Path::new(path_str.as_str())));
+    let root_samples = Arc::new(Mutex::new(Vec::<RootLatencySample>::new()));
+    let root_latency_file_name = Arc::new(root_latency_file_name_for_rps(rps));
+    let root_samples_handle = if matches!(load_mode, LoadMode::Root) {
+        Some((root_samples.clone(), root_latency_file_name.clone()))
+    } else {
+        None
+    };
+
+    if let Some(ref output_path) = queue_csv_path {
+        let samples = queue_samples.clone();
+        let path = Arc::new(output_path.clone());
+        let mut ticker = tokio::time::interval(Duration::from_secs(PERIODIC_FLUSH_INTERVAL_SECS));
+        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        tokio::spawn(async move {
+            loop {
+                ticker.tick().await;
+                let should_flush = {
+                    let guard = samples.lock().await;
+                    !guard.is_empty()
+                };
+                if !should_flush {
+                    continue;
+                }
+                if let Err(err) = flush_queue_samples(samples.clone(), path.as_path(), false).await
+                {
+                    eprintln!("Failed to periodically flush queue latency samples: {err:?}");
+                }
+            }
+        });
+    }
+
+    if matches!(load_mode, LoadMode::Root) {
+        let samples = root_samples.clone();
+        let file_name = root_latency_file_name.clone();
+        let mut ticker = tokio::time::interval(Duration::from_secs(PERIODIC_FLUSH_INTERVAL_SECS));
+        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        tokio::spawn(async move {
+            loop {
+                ticker.tick().await;
+                let should_flush = {
+                    let guard = samples.lock().await;
+                    !guard.is_empty()
+                };
+                if !should_flush {
+                    continue;
+                }
+                if let Err(err) =
+                    flush_root_samples_internal(samples.clone(), file_name.as_ref(), false).await
+                {
+                    eprintln!("Failed to periodically flush root() latency samples: {err:?}");
+                }
+            }
+        });
+    }
 
     {
         let sent = sent.clone();
         let ok = ok.clone();
         let err = err.clone();
+        let mut latency_rx = latency_sample_rx;
         tokio::spawn(async move {
             let mut last_sent = 0u64;
             let mut last_ok = 0u64;
             let mut last_err = 0u64;
             let mut ticker = tokio::time::interval(Duration::from_secs(stats_interval_sec));
+            let mut latency_buffer = Vec::new();
             loop {
-                ticker.tick().await;
-                let s = sent.load(Ordering::Relaxed);
-                let o = ok.load(Ordering::Relaxed);
-                let e = err.load(Ordering::Relaxed);
-                println!(
-                    "[stats] sent={} (+{}), ok={} (+{}), err={} (+{})",
-                    s,
-                    s - last_sent,
-                    o,
-                    o - last_ok,
-                    e,
-                    e - last_err
-                );
-                last_sent = s;
-                last_ok = o;
-                last_err = e;
+                tokio::select! {
+                    _ = ticker.tick() => {
+                        let s = sent.load(Ordering::Relaxed);
+                        let o = ok.load(Ordering::Relaxed);
+                        let e = err.load(Ordering::Relaxed);
+                        let percentiles = {
+                            if latency_buffer.is_empty() {
+                                None
+                            } else {
+                                Some(latency_buffer.clone())
+                            }
+                            .and_then(compute_latency_percentiles_us)
+                        };
+                        let (p50_str, p90_str, p95_str, p99_str) = match percentiles {
+                            Some((p50, p90, p95, p99)) => {
+                                (format!("{p50}us"), format!("{p90}us"), format!("{p95}us"), format!("{p99}us"))
+                            }
+                            None => ("n/a".to_string(), "n/a".to_string(), "n/a".to_string(), "n/a".to_string()),
+                        };
+                        println!(
+                            "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), p50={}, p90={}, p95={}, p99={}",
+                            s,
+                            s - last_sent,
+                            o,
+                            o - last_ok,
+                            e,
+                            e - last_err,
+                            p50_str,
+                            p90_str,
+                            p95_str,
+                            p99_str
+                        );
+                        last_sent = s;
+                        last_ok = o;
+                        last_err = e;
+                    }
+                    maybe_sample = latency_rx.recv() => {
+                        match maybe_sample {
+                            Some(sample) => latency_buffer.push(sample),
+                            None => break,
+                        }
+                    }
+                }
             }
         });
     }
@@ -384,6 +274,9 @@ async fn main() -> anyhow::Result<()> {
                 err.clone(),
                 inflight_guard.clone(),
                 max_in_flight,
+                root_samples.clone(),
+                Some(duration),
+                latency_sample_tx.clone(),
             )
             .await?;
         }
@@ -396,6 +289,7 @@ async fn main() -> anyhow::Result<()> {
                 err.clone(),
                 inflight_guard.clone(),
                 queue_samples.clone(),
+                latency_sample_tx.clone(),
             )
             .await?;
         }
@@ -406,24 +300,12 @@ async fn main() -> anyhow::Result<()> {
     let e = err.load(Ordering::Relaxed);
     println!("Final stats: sent={}, ok={}, err={}", s, o, e);
 
-    if let Some(output_path) = queue_csv_path {
-        let samples = {
-            let guard = queue_samples.lock().await;
-            guard.clone()
-        };
-        if !samples.is_empty() {
-            write_queue_latency_csv(&output_path, &samples).await?;
-            println!(
-                "Wrote queue latency samples for {} requests to {}",
-                samples.len(),
-                output_path.display()
-            );
-        } else {
-            println!(
-                "No queue latency samples recorded; skipping CSV write to {}",
-                output_path.display()
-            );
-        }
+    if let Some(ref output_path) = queue_csv_path {
+        flush_queue_samples(queue_samples.clone(), output_path.as_path(), true).await?;
+    }
+
+    if let Some((root_samples, file_name)) = root_samples_handle {
+        flush_root_samples(root_samples, file_name.as_ref()).await?;
     }
 
     Ok(())
@@ -437,20 +319,39 @@ async fn run_root_load(
     err: Arc<AtomicU64>,
     inflight_guard: Arc<Semaphore>,
     max_in_flight: usize,
+    root_samples: Arc<Mutex<Vec<RootLatencySample>>>,
+    finish_after: Option<Duration>,
+    latency_sample_tx: mpsc::UnboundedSender<u64>,
 ) -> anyhow::Result<()> {
     let mut ticker = tokio::time::interval(per_req);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
     ticker.reset();
 
-    let shutdown = tokio::signal::ctrl_c();
-    tokio::pin!(shutdown);
+    let finish_deadline = finish_after.map(|duration| Instant::now() + duration);
+
+    let finish_sleep = async {
+        if let Some(deadline) = finish_deadline {
+            time::sleep_until(deadline).await;
+        } else {
+            std::future::pending::<()>().await;
+        }
+    };
+    tokio::pin!(finish_sleep);
+
+    let shutdown_signal = tokio::signal::ctrl_c();
+    tokio::pin!(shutdown_signal);
 
     loop {
         tokio::select! {
-            _ = &mut shutdown => {
+            _ = &mut shutdown_signal => {
                 println!("Received Ctrl-C. Shutting down...");
                 break;
             }
+            _ = &mut finish_sleep => {
+                println!("Experiment finished as duration elapsed. Shutting down...");
+                break;
+            }
+
             _ = ticker.tick() => {
                 let permit = match inflight_guard.clone().try_acquire_owned() {
                     Ok(p) => p,
@@ -461,6 +362,8 @@ async fn run_root_load(
                 let ok = ok.clone();
                 let err = err.clone();
                 let mut rpc_client = client.clone();
+                let root_samples = root_samples.clone();
+                let latency_sample_tx = latency_sample_tx.clone();
 
                 sent.fetch_add(1, Ordering::Relaxed);
 
@@ -481,138 +384,187 @@ async fn run_root_load(
                     };
                     request.metadata_mut().insert_ctx("ctx", &ctx);
 
+                    let start_time = Instant::now();
                     let res = rpc_client.root(request).await;
+                    let elapsed = start_time.elapsed().as_micros() as u64;
                     match res {
-                        Ok(_) => ok.fetch_add(1, Ordering::Relaxed),
-                        Err(_) => err.fetch_add(1, Ordering::Relaxed),
+                        Ok(resp) => {
+                            ok.fetch_add(1, Ordering::Relaxed);
+                            let queue_latency = extract_queue_latency(resp.metadata());
+                            let sample = RootLatencySample {
+                                is_err: false,
+                                req_id,
+                                start_at,
+                                queue_latency_us: queue_latency.unwrap_or(0),
+                                e2e_latency_us: elapsed,
+                            };
+                            {
+                                let mut guard = root_samples.lock().await;
+                                guard.push(sample);
+                            }
+                            let _ = latency_sample_tx.send(elapsed);
+                        }
+                        Err(_) => {
+                            let sample = RootLatencySample {
+                                is_err: true,
+                                req_id,
+                                start_at,
+                                queue_latency_us: 0,
+                                e2e_latency_us: 0,
+                            };
+                            err.fetch_add(1, Ordering::Relaxed);
+                            {
+                                let mut guard = root_samples.lock().await;
+                                guard.push(sample);
+                            }
+                        }
                     };
                 });
             }
         }
     }
 
+    // Drain in-flight requests before exit
     let _ = inflight_guard.acquire_many(max_in_flight as u32).await;
 
+    let s = sent.load(Ordering::Relaxed);
+    let o = ok.load(Ordering::Relaxed);
+    let e = err.load(Ordering::Relaxed);
+    println!("Final stats: sent={}, ok={}, err={}", s, o, e);
+
     Ok(())
 }
 
-async fn run_replay_load(
-    client: RpcClient,
-    work_items: Arc<Vec<ReplayWorkItem>>,
-    sent: Arc<AtomicU64>,
-    ok: Arc<AtomicU64>,
-    err: Arc<AtomicU64>,
-    inflight_guard: Arc<Semaphore>,
-    queue_samples: Arc<Mutex<Vec<QueueLatencySample>>>,
+#[derive(Debug, Clone)]
+struct RootLatencySample {
+    req_id: u64,
+    start_at: u64,
+    queue_latency_us: u64,
+    e2e_latency_us: u64,
+    is_err: bool,
+}
+
+async fn flush_root_samples(
+    samples: Arc<Mutex<Vec<RootLatencySample>>>,
+    file_name: &str,
 ) -> anyhow::Result<()> {
-    let start_instant = Instant::now();
-    let mut handles = Vec::with_capacity(work_items.len());
-
-    for item in work_items.iter().cloned() {
-        let ReplayWorkItem { offset_us, payload } = item;
-
-        let req_id = payload.req_id;
-        let schedule_time = start_instant + Duration::from_micros(offset_us);
-        let permit_pool = inflight_guard.clone();
-        let sent = sent.clone();
-        let ok = ok.clone();
-        let err = err.clone();
-        let queue_samples = queue_samples.clone();
-        let mut rpc_client = client.clone();
-
-        let handle = tokio::spawn(async move {
-            tokio::time::sleep_until(schedule_time).await;
-            let permit = match permit_pool.acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => return,
-            };
-            let _permit = permit;
-
-            sent.fetch_add(1, Ordering::Relaxed);
-            let mut request = Request::new(payload);
-
-            let ctx = {
-                let slo = 50_000;
-                let start_at = time_now();
-                let deadline = start_at + slo;
-                MasaContext::new("replay".to_string(), 0, req_id, slo, 0, start_at, deadline)
-            };
-
-            request.metadata_mut().insert_ctx("ctx", &ctx);
-            let send_started = StdInstant::now();
-            let res = rpc_client.replay(request).await;
-            let e2e_latency_us = send_started.elapsed().as_micros().min(u64::MAX as u128) as u64;
-
-            match res {
-                Ok(resp) => {
-                    if let Some(latency) = extract_queue_latency(resp.metadata()) {
-                        let mut samples = queue_samples.lock().await;
-                        samples.push(QueueLatencySample {
-                            req_id,
-                            queue_latency_us: latency,
-                            e2e_latency_us,
-                        });
-                    }
-                    ok.fetch_add(1, Ordering::Relaxed)
-                }
-                Err(_) => err.fetch_add(1, Ordering::Relaxed),
-            };
-        });
-
-        handles.push(handle);
-    }
-
-    for handle in handles {
-        let _ = handle.await;
-    }
-
-    Ok(())
+    flush_root_samples_internal(samples, file_name, true)
+        .await
+        .map(|_| ())
 }
 
-fn queue_latency_output_path(trace_path: &str) -> PathBuf {
-    if let Ok(dir) = env::var("QUEUE_LATENCY_OUTPUT_DIR") {
-        let target_dir = Path::new(&dir);
-        let mut file_name = match Path::new(trace_path).file_stem() {
-            Some(stem) => stem.to_os_string(),
-            None => std::ffi::OsString::from("queue_latency"),
-        };
-        file_name.push("_queue_latency.csv");
-        return target_dir.join(file_name);
-    }
+async fn flush_root_samples_internal(
+    samples: Arc<Mutex<Vec<RootLatencySample>>>,
+    file_name: &str,
+    log_when_empty: bool,
+) -> anyhow::Result<Option<usize>> {
+    let output_dir = PathBuf::from(OUTPUT_DIR);
 
-    let path = Path::new(trace_path);
-    let parent = path.parent().unwrap_or_else(|| Path::new(""));
-    let mut file_name = match path.file_stem() {
-        Some(stem) => stem.to_os_string(),
-        None => std::ffi::OsString::from("queue_latency"),
+    let snapshot = {
+        let mut guard = samples.lock().await;
+        if guard.is_empty() {
+            if log_when_empty {
+                println!(
+                    "No root() latency samples recorded; skipping CSV write to {}",
+                    output_dir.display()
+                );
+            }
+            return Ok(None);
+        }
+        guard.sort_by_key(|sample| sample.req_id);
+        guard.clone()
     };
-    file_name.push("_queue_latency.csv");
-    parent.join(file_name)
-}
 
-fn extract_queue_latency(metadata: &MetadataMap) -> Option<u64> {
-    metadata
-        .get("x-queue-latency")
-        .or_else(|| metadata.get("X-Queue-Latency"))
-        .and_then(|value| value.to_str().ok())
-        .and_then(|s| s.parse::<u64>().ok())
-}
+    fs::create_dir_all(&output_dir).await?;
+    let file_path = output_dir.join(file_name);
 
-async fn write_queue_latency_csv(
-    path: &Path,
-    samples: &[QueueLatencySample],
-) -> anyhow::Result<()> {
-    let mut sorted = samples.to_vec();
-    sorted.sort_by_key(|sample| sample.req_id);
-
-    let mut csv_data = String::from("request_id,queue_latency_us,e2e_latency_us\n");
-    for sample in sorted {
+    let mut csv_data = String::from("req_id,is_err,start_at,queue_latency_us,e2e_latency_us\n");
+    for sample in &snapshot {
         csv_data.push_str(&format!(
-            "{},{},{}\n",
-            sample.req_id, sample.queue_latency_us, sample.e2e_latency_us
+            "{},{},{},{},{}\n",
+            sample.req_id,
+            sample.is_err,
+            sample.start_at,
+            sample.queue_latency_us,
+            sample.e2e_latency_us
         ));
     }
 
-    fs::write(path, csv_data).await?;
-    Ok(())
+    println!(
+        "Writing root() latency samples for {} requests to {}",
+        snapshot.len(),
+        file_path.display()
+    );
+
+    fs::write(&file_path, csv_data).await?;
+    if log_when_empty {
+        println!(
+            "Wrote root() latency samples for {} requests to {}",
+            snapshot.len(),
+            file_path.display()
+        );
+    }
+
+    Ok(Some(snapshot.len()))
+}
+
+async fn flush_queue_samples(
+    samples: Arc<Mutex<Vec<QueueLatencySample>>>,
+    output_path: &Path,
+    log_when_empty: bool,
+) -> anyhow::Result<Option<usize>> {
+    let snapshot = {
+        let guard = samples.lock().await;
+        if guard.is_empty() {
+            if log_when_empty {
+                println!(
+                    "No queue latency samples recorded; skipping CSV write to {}",
+                    output_path.display()
+                );
+            }
+            return Ok(None);
+        }
+        guard.clone()
+    };
+
+    write_queue_latency_csv(output_path, &snapshot).await?;
+    if log_when_empty {
+        println!(
+            "Wrote queue latency samples for {} requests to {}",
+            snapshot.len(),
+            output_path.display()
+        );
+    }
+
+    Ok(Some(snapshot.len()))
+}
+
+fn compute_latency_percentiles_us(mut samples: Vec<u64>) -> Option<(u64, u64, u64, u64)> {
+    if samples.is_empty() {
+        return None;
+    }
+
+    samples.sort_unstable();
+    let p50 = percentile_from_sorted(&samples, 50.0);
+    let p90 = percentile_from_sorted(&samples, 90.0);
+    let p95 = percentile_from_sorted(&samples, 95.0);
+    let p99 = percentile_from_sorted(&samples, 99.0);
+    Some((p50, p90, p95, p99))
+}
+
+fn percentile_from_sorted(sorted: &[u64], percentile: f64) -> u64 {
+    let n = sorted.len();
+    if n == 0 {
+        return 0;
+    }
+
+    let mut rank = (percentile / 100.0 * n as f64).ceil() as usize;
+    if rank == 0 {
+        rank = 1;
+    }
+    if rank > n {
+        rank = n;
+    }
+
+    sorted[rank - 1]
 }

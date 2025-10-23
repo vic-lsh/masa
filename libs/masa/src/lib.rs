@@ -11,7 +11,10 @@ mod typing;
 pub use context::Context;
 pub use context::FutureSpan;
 pub use distribution::Distribution;
-pub use flag::{FIFO, PRIO_GLOBAL, PRIO_LOCAL};
+pub use flag::{
+    EARLY_RETURN, FIFO, FIFO_QUEUE_TRACING, FIFO_SPAN_TRACING, PRIO_GLOBAL,
+    PRIO_GLOBAL_QUEUE_TRACING, PRIO_LOCAL,
+};
 pub use graph::{
     FutureGraphTracker, GlobalGraph, GlobalGraphTracker, LocalGraph, LocalGraphTracker,
 };
