@@ -114,7 +114,6 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             self.ctx.api().clone(),
             self.ctx.request_id(),
             self.ctx.slo(),
-            self.ctx.request_class(),
             self.ctx.start_at(),
             deadline,
         );

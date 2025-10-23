@@ -278,7 +278,6 @@ impl Service for AlibabaService {
                                 "replay".to_string(),
                                 req.req_id,
                                 req.slo,
-                                0,
                                 req.start_at,
                                 req.deadline,
                             )
@@ -430,7 +429,7 @@ impl AlibabaService {
             // let ctx = {
             //     let slo = 50_000;
             //     let deadline = start_at + slo;
-            //     MasaContext::new("fanout".to_string(), req_id, slo, 0, start_at, deadline)
+            //     MasaContext::new("fanout".to_string(), req_id, slo, start_at, deadline)
             // };
 
             // request.metadata_mut().insert_ctx("ctx", &ctx);

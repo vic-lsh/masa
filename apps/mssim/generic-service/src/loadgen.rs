@@ -127,7 +127,7 @@ async fn run_root_load(
                         let slo_us = request_slo * 1000;
                         let start_at = time_now();
                         let deadline = start_at + slo_us;
-                        MasaContext::new("root".to_string(), req_id, slo_us, 0, start_at, deadline)
+                        MasaContext::new("root".to_string(), req_id, slo_us, start_at, deadline)
                     };
                     request.metadata_mut().insert_ctx("ctx", &ctx);
 
