@@ -15,25 +15,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
-REPO_ROOT = Path(__file__).parent.parent.resolve()
-MSSIM_ROOT = REPO_ROOT / "simulator"
-REPO_NAME="masa-internal"
+REPO_ROOT = Path(__file__).parent.parent.parent.parent.resolve()
+MSSIM_ROOT = REPO_ROOT / "apps" / "mssim" / "simulator"
 
-def find_masa_root(start_path=None):
-    # start from current file's directory if not given
-    if start_path is None:
-        start_path = Path(__file__).resolve().parent
-
-    current = Path(start_path).resolve()
-
-    while current != current.parent:  # stop at filesystem root
-        if current.name == REPO_NAME:
-            return current
-        current = current.parent
-
-    raise FileNotFoundError("Could not find 'masa-internal' directory in any parent path")
-
-MASA_ROOT = find_masa_root()
+print("repo root is ", REPO_ROOT)
+print("mssim root is ", MSSIM_ROOT)
 
 @dataclass
 class ExperimentConfig:
@@ -126,9 +112,15 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         joined = ", ".join(missing_paths)
         raise FileNotFoundError(f"Required input paths do not exist: {joined}")
 
+    docker_compose_path = (run_dir / "docker-compose.yml").resolve()
+
+    deployment_json_path = (run_dir / "deployment.json").resolve()
+
     trace_cmd = [
         "cargo",
         "run",
+        "--bin",
+        "mssim",
         "--",
         "--alibaba-trace",
         str(cfg.trace_dir),
@@ -136,6 +128,10 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         str(cfg.config_dir),
         "--orchestrator",
         cfg.orchestrator,
+        "--docker-compose-output-path",
+        str(docker_compose_path),
+        "--deployment-output-path",
+        str(deployment_json_path),
     ]
     if cfg.replay_path:
         trace_cmd.extend(["--replay-path", str(cfg.replay_path)])
@@ -146,7 +142,7 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         "docker", 
         "compose", 
         "-f",
-        "./docker-compose.yml",
+        str(docker_compose_path),
         "-p",
         "mssim",
         "up",
@@ -215,10 +211,9 @@ def build_load_generator_image():
         "mssim_load_generator",
         "-f",
         "apps/mssim/generic-service/Dockerfile.loadgen",
-        MASA_ROOT, # this should be the masa project root
+        REPO_ROOT, # this should be the masa project root
     ]
-    print("repo root", MASA_ROOT)
-    subprocess.run(build_cmd, cwd=MASA_ROOT, check=True)
+    subprocess.run(build_cmd, cwd=REPO_ROOT, check=True)
 
 
 def build_generic_service_image(feature):
@@ -232,10 +227,9 @@ def build_generic_service_image(feature):
         f"FEATURE_ARG={feature}",
         "-f",
         "apps/mssim/generic-service/Dockerfile",
-        MASA_ROOT, # this should be the masa project root
+        REPO_ROOT, # this should be the masa project root
     ]
-    print("repo root", MASA_ROOT)
-    subprocess.run(build_cmd, cwd=MASA_ROOT, check=True)
+    subprocess.run(build_cmd, cwd=REPO_ROOT, check=True)
 
 
 
