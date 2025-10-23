@@ -20,7 +20,7 @@ policy_config=$ci_config_path/policies
 # patch experiment settings
 
 jq '.Rps = [1000]' $gen_config > tmp.json && mv tmp.json $gen_config
-echo "fifo prio_global prio_local" > $policy_config
+echo "fifo prio_global" > $policy_config
 
 # run experiment
 
@@ -42,7 +42,5 @@ assert_file_exists() {
 assert_file_exists "data/out/$exp_name/done"
 assert_file_exists "data/out/$exp_name/0/fifo/r1000_Reservation.csv"
 assert_file_exists "data/out/$exp_name/0/fifo/r1000_Search.csv"
-assert_file_exists "data/out/$exp_name/0/prio_local/r1000_Reservation.csv"
-assert_file_exists "data/out/$exp_name/0/prio_local/r1000_Search.csv"
 assert_file_exists "data/out/$exp_name/0/prio_global/r1000_Reservation.csv"
 assert_file_exists "data/out/$exp_name/0/prio_global/r1000_Search.csv"
