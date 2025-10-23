@@ -16,9 +16,6 @@ pub type Latency = u64;
 /// Type alias for an addreess.
 pub type Address = String;
 
-/// Type alias for a test ID.
-pub type TestId = u64;
-
 /// Type alias for a request ID.
 pub type RequestId = u64;
 

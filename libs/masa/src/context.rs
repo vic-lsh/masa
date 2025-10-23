@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Api, Latency, RequestClass, RequestId, TestId, Timestamp};
+use crate::{Api, Latency, RequestClass, RequestId, Timestamp};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", content = "duration")]
