@@ -56,7 +56,6 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
         let child_recv_ctx = Context::new(
             self.ctx.api().clone(),
-            self.ctx.test_id(),
             self.ctx.request_id(),
             self.ctx.slo(),
             self.ctx.request_class(),
