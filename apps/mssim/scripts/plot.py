@@ -12,8 +12,9 @@ from typing import Iterable, List, Sequence, Tuple
 import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.patches import Patch
+from typing import Sequence
 
-THRESHOLD_DEFAULT_MS = 100
+THRESHOLD_DEFAULT_MS = 50
 FILENAME_PATTERN = re.compile(r"root_latencies_(?P<rps>[0-9_]+)rps\.csv$")
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "data/cfg.json"
 
@@ -105,32 +106,42 @@ def load_policy_samples(policy_dir: Path) -> PolicySamples:
 def align_rps(*datasets: PolicySamples) -> List[float]:
     shared_rps = sorted(set.intersection(*(data.rps_set() for data in datasets)))
     if not shared_rps:
-        raise RuntimeError("No overlapping RPS values between the provided datasets.")
+        raise RuntimeError("No overlapping RPS values across the provided policy datasets.")
     return shared_rps
 
 
-def compute_goodput(
-    samples: PolicySamples, threshold_ms: float, rps: float, duration_sec: float
-) -> float:
-    latencies = samples.metric_for_rps(rps, "e2e_latency_ms").dropna()
+def compute_goodput(samples: PolicySamples, threshold_ms: float, rps: float, duration: float) -> float:
+    latencies = samples.metric_for_rps(rps, "e2e_latency_ms")
     if latencies.empty:
         return 0.0
-
-    if duration_sec <= 0:
-        raise ValueError("duration_sec must be positive to compute goodput")
-
-    under_count = (latencies <= threshold_ms).sum()
-    return under_count / duration_sec
+    goodput = (latencies <= threshold_ms).sum() / duration
+    return goodput
 
 
 def plot_goodput_fraction(
-    rps_values: List[float],
-    goodput_by_policy: Sequence[Sequence[float]],
+    rps_values: Sequence[float],
+    policies_goodput: Sequence[Sequence[float]],
     output: Path,
     threshold_ms: float,
     labels: Sequence[str],
 ) -> None:
+    if len(labels) != len(policies_goodput):
+        raise ValueError("Number of labels must match number of policy goodput vectors.")
+
     fig, ax = plt.subplots(figsize=(8, 5))
+<<<<<<< HEAD
+    cmap = plt.get_cmap("tab10")
+    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
+
+    for idx, (label, goodput_values) in enumerate(zip(labels, policies_goodput)):
+        marker = marker_cycle[idx % len(marker_cycle)]
+        color = cmap(idx % cmap.N)
+        fractions = [
+            (goodput / rps) if rps else float("nan")
+            for goodput, rps in zip(goodput_values, rps_values)
+        ]
+        ax.plot(rps_values, fractions, marker=marker, label=label, color=color)
+=======
     marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
     cmap = plt.get_cmap("tab10")
 
@@ -139,6 +150,7 @@ def plot_goodput_fraction(
         color = cmap(idx % cmap.N)
         fraction = [gp / rps if rps else 0.0 for gp, rps in zip(goodput_values, rps_values)]
         ax.plot(rps_values, fraction, marker=marker, label=label, color=color)
+>>>>>>> vic/graph-explore
 
     ax.set_xlabel("Offered load (RPS)")
     ax.set_ylabel("Goodput Fraction (RPS)")
@@ -152,6 +164,12 @@ def plot_goodput_fraction(
 
 
 def plot_goodput_absolute(
+<<<<<<< HEAD
+    rps_values: Sequence[float],
+    policies_goodput: Sequence[Sequence[float]],
+    output: Path,
+    threshold_ms: float,
+=======
     rps_values: List[float],
     goodput_by_policy: Sequence[Sequence[float]],
     output: Path,
@@ -182,8 +200,43 @@ def build_latency_plots(
     rps_values: List[float],
     policies: Sequence[PolicySamples],
     output: Path,
+>>>>>>> vic/graph-explore
     labels: Sequence[str],
 ) -> None:
+    if len(labels) != len(policies_goodput):
+        raise ValueError("Number of labels must match number of policy goodput vectors.")
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    cmap = plt.get_cmap("tab10")
+    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
+
+    for idx, (label, goodput_values) in enumerate(zip(labels, policies_goodput)):
+        marker = marker_cycle[idx % len(marker_cycle)]
+        color = cmap(idx % cmap.N)
+        ax.plot(rps_values, goodput_values, marker=marker, label=label, color=color)
+
+    ax.set_xlabel("Offered load (RPS)")
+    ax.set_ylabel("Goodput (RPS)")
+    ax.set_title(f"Goodput vs RPS with SLO={threshold_ms:g} ms")
+    ax.grid(True, which="both", linestyle="--", alpha=0.4)
+    ax.legend()
+    fig.tight_layout()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output)
+    print(f"Saved comparison plot to {output}")
+
+
+def build_latency_plots(
+    rps_values: Sequence[float],
+    policies: Sequence[PolicySamples],
+    output: Path,
+    labels: Sequence[str],
+) -> None:
+    if not policies:
+        raise ValueError("At least one policy is required for latency plots.")
+    if len(labels) != len(policies):
+        raise ValueError("Number of labels must match number of policy datasets.")
+
     fig, axes = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
     cmap = plt.get_cmap("tab10")
     num_policies = len(policies)
@@ -320,6 +373,7 @@ def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float, float]:
     try:
         experiment_root = Path(config["output_root"]) / config["experiment_name"]
         policies = config["policies"]
+        duration = config["duration_sec"]
     except KeyError as exc:
         raise KeyError(f"Missing key in plot config: {exc}") from exc
 

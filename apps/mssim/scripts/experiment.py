@@ -17,6 +17,7 @@ from typing import Dict, Iterable, List, Optional
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 MSSIM_ROOT = REPO_ROOT / "simulator"
+REPO_NAME="masa-internal"
 
 def find_masa_root(start_path=None):
     # start from current file's directory if not given
@@ -26,11 +27,11 @@ def find_masa_root(start_path=None):
     current = Path(start_path).resolve()
 
     while current != current.parent:  # stop at filesystem root
-        if current.name == "masa":
+        if current.name == REPO_NAME:
             return current
         current = current.parent
 
-    raise FileNotFoundError("Could not find 'masa' directory in any parent path")
+    raise FileNotFoundError("Could not find 'masa-internal' directory in any parent path")
 
 MASA_ROOT = find_masa_root()
 
@@ -41,6 +42,7 @@ class ExperimentConfig:
     config_dir: Path
     output_root: Path
     duration_sec: int
+    slo_ms: int
     policies: List[str]
     rps_values: List[float]
     repeats: int = 1
@@ -65,6 +67,7 @@ def load_config(path: Path) -> ExperimentConfig:
         duration_sec = int(data.get("duration_sec", 0))
         policies = list(data.get("policies", []))
         rps_values = [float(v) for v in data.get("rps_values", [])]
+        slo_ms = int(data["slo_ms"])
     except (KeyError, TypeError, ValueError) as err:
         raise ValueError(f"invalid experiment config: {err}") from err
 
@@ -80,6 +83,7 @@ def load_config(path: Path) -> ExperimentConfig:
         config_dir=config_dir,
         output_root=output_root,
         duration_sec=duration_sec,
+        slo_ms=slo_ms,
         policies=policies,
         rps_values=rps_values,
         repeats=repeats,
@@ -98,7 +102,7 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
     env.setdefault("ORCHESTRATOR", cfg.orchestrator)
     env["FEATURE"] = policy
     env["RPS"] = f"{rps}"
-    env["MSSIM_RPS"] = f"{rps}"
+    env["SLO_MS"] = str(cfg.slo_ms)
     if cfg.max_in_flight:
         env["MAX_IN_FLIGHT"] = str(cfg.max_in_flight)
     if cfg.stats_interval_sec:

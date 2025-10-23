@@ -8,14 +8,14 @@ use std::sync::{
     Arc,
 };
 
-use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
+use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 
 #[derive(Debug)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
 pub struct QueueTracing;
 
-impl PrioritySelector for QueueTracing {
+impl MasaHooks for QueueTracing {
     type ServerContext = ServerContext;
     type ChildContext = ChildContext;
     type ParentContext = ParentContext;

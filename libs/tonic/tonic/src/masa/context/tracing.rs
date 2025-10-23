@@ -12,7 +12,7 @@ use std::{
     time::Instant,
 };
 
-use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
+use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use masa::{time_now, FutureSpan};
 
 #[derive(Debug)]
@@ -20,7 +20,7 @@ use masa::{time_now, FutureSpan};
 #[allow(unreachable_pub)]
 pub struct Tracing;
 
-impl PrioritySelector for Tracing {
+impl MasaHooks for Tracing {
     type ServerContext = ServerContext;
     type ChildContext = ChildContext;
     type ParentContext = ParentContext;

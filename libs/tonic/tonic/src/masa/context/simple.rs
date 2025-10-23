@@ -16,14 +16,14 @@ use masa::{
 
 use crate::{body::BoxBody, masa::mock_graph, Code, GrpcMethod, Request, Response, Status};
 
-use super::{read_context, ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
+use super::{read_context, ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 
 #[derive(Debug)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct SimplePrioritySelector;
+pub struct SimpleMasaHooks;
 
-impl PrioritySelector for SimplePrioritySelector {
+impl MasaHooks for SimpleMasaHooks {
     type ServerContext = SimpleServerContext;
     type ChildContext = SimpleChildContext;
     type ParentContext = SimpleParentContext;
