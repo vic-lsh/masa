@@ -8,23 +8,23 @@ use std::{
 };
 
 use anyhow::Context;
-use masa::{Context as MasaContext, time_now};
+use masa::{time_now, Context as MasaContext};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::fs;
 use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::time::Instant;
-use tonic::Request;
 use tonic::metadata::MetadataMap;
 use tonic::transport::masa_channel::LoadBalancedChannel;
+use tonic::Request;
 
-use crate::OUTPUT_DIR;
 use crate::service::local_span::SpanType as ProtoSpanType;
 use crate::service::service_client::ServiceClient;
 use crate::service::{
-    ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
-    ReplayRequest as ProtoReplayRequest, Span as ProtoSpan, span::Kind as ProtoSpanKind,
+    span::Kind as ProtoSpanKind, ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
+    ReplayRequest as ProtoReplayRequest, Span as ProtoSpan,
 };
+use crate::{Stats, OUTPUT_DIR};
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -250,9 +250,7 @@ fn convert_span_to_proto(span: &FrontendSpan) -> anyhow::Result<(ProtoSpan, u64)
 pub async fn run_replay_load(
     client: ServiceClient<LoadBalancedChannel>,
     work_items: Arc<Vec<ReplayWorkItem>>,
-    sent: Arc<AtomicU64>,
-    ok: Arc<AtomicU64>,
-    err: Arc<AtomicU64>,
+    stats: Arc<Stats>,
     inflight_guard: Arc<Semaphore>,
     queue_samples: Arc<Mutex<Vec<QueueLatencySample>>>,
     latency_sample_tx: mpsc::UnboundedSender<u64>,
@@ -266,12 +264,10 @@ pub async fn run_replay_load(
         let req_id = payload.req_id;
         let schedule_time = start_instant + Duration::from_micros(offset_us);
         let permit_pool = inflight_guard.clone();
-        let sent = sent.clone();
-        let ok = ok.clone();
-        let err = err.clone();
         let queue_samples = queue_samples.clone();
         let latency_sample_tx = latency_sample_tx.clone();
         let mut rpc_client = client.clone();
+        let stats = Arc::clone(&stats);
 
         let handle = tokio::spawn(async move {
             tokio::time::sleep_until(schedule_time).await;
@@ -281,7 +277,7 @@ pub async fn run_replay_load(
             };
             let _permit = permit;
 
-            sent.fetch_add(1, Ordering::Relaxed);
+            stats.sent.fetch_add(1, Ordering::Relaxed);
             let mut request = Request::new(payload);
 
             let ctx = {
@@ -309,9 +305,9 @@ pub async fn run_replay_load(
                     {
                         let _ = latency_sample_tx.send(e2e_latency_us);
                     }
-                    ok.fetch_add(1, Ordering::Relaxed)
+                    stats.ok.fetch_add(1, Ordering::Relaxed)
                 }
-                Err(_) => err.fetch_add(1, Ordering::Relaxed),
+                Err(_) => stats.err.fetch_add(1, Ordering::Relaxed),
             };
         });
 
