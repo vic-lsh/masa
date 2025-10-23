@@ -9,15 +9,15 @@ use std::{
 use masa::{time_now, Context, EARLY_RETURN};
 use tracing::error;
 
-use super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
+use super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use crate::{masa::context::read_context, Code, GrpcMethod, Request, Response, Status};
 
 #[derive(Debug)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct NoopPrioritySelector;
+pub struct NoopMasaHooks;
 
-impl PrioritySelector for NoopPrioritySelector {
+impl MasaHooks for NoopMasaHooks {
     type ServerContext = ServerContext;
     type ChildContext = ChildContext;
     type ParentContext = ParentContext;

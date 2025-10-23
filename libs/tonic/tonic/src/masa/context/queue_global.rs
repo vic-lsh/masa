@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
 
-use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
+use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use crate::body::BoxBody;
 use crate::{Code, Response};
 use masa::{time_now, Context, EARLY_RETURN};
@@ -17,7 +17,7 @@ use tracing::error;
 #[allow(unreachable_pub)]
 pub struct QueueGlobal;
 
-impl PrioritySelector for QueueGlobal {
+impl MasaHooks for QueueGlobal {
     type ServerContext = ServerContext;
     type ChildContext = ChildContext;
     type ParentContext = ParentContext;

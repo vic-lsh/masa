@@ -5,7 +5,7 @@ use std::{
     time::Instant,
 };
 
-use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
+use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{estimate_method_latency, track_method_latency};
 use masa::{Context, LatencyDistribution, LatencyTracker};
 
@@ -22,7 +22,7 @@ use masa::{Context, LatencyDistribution, LatencyTracker};
 #[allow(unreachable_pub)]
 pub struct LocalDeadlineIndirect;
 
-impl PrioritySelector for LocalDeadlineIndirect {
+impl MasaHooks for LocalDeadlineIndirect {
     type ServerContext = ServerContext;
     type ChildContext = ChildContext;
     type ParentContext = ParentContext;

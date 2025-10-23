@@ -1,7 +1,7 @@
 use crate::{masa::context::read_context, GrpcMethod, Request, Status};
 use std::sync::Arc;
 
-use super::super::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks};
+use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use masa::Context;
 
 #[derive(Debug)]
@@ -12,7 +12,7 @@ use masa::Context;
 #[allow(unreachable_pub)]
 pub struct Global;
 
-impl PrioritySelector for Global {
+impl MasaHooks for Global {
     type ServerContext = ServerContext;
     type ChildContext = ChildContext;
     type ParentContext = ParentContext;
