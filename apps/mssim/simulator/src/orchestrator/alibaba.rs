@@ -6,7 +6,7 @@ use sim_config::trace::TraceConfig;
 use sim_config::{PROJECT_NAME, SimulatorConfig};
 use std::{
     collections::HashMap,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -20,7 +20,7 @@ const LOADGEN_SERVICE_NAME: &str = "load_generator";
 ///
 // TODO: make this configurable
 const FRONTEND_SERVICE_NAME: &str = "USER";
-const LOADGEN_TRACE_MOUNT: &str = "/trace-data";
+const LOADGEN_OUTPUT_MOUNT: &str = "/app/loadgen_output";
 const CONTAINER_CPU_LIMIT: usize = 1;
 const CONTAINER_MEM_LIMIT: &str = "512MB";
 
@@ -163,8 +163,12 @@ fn make_service_def(
 ) -> Yaml {
     let mut service_def = Hash::new();
 
-    service_def.insert(Yaml::String("build".into()), make_build_def(svc_port));
-    let replica_count = sim_cfg.replicas.count_for(service_name);
+    // service_def.insert(Yaml::String("build".into()), make_build_def(svc_port));
+    service_def.insert(
+        Yaml::String("image".into()),
+        Yaml::String("generic_service".into()),
+    );
+    let replica_count = sim_cfg.replicas.get(service_name).unwrap_or(1);
     service_def.insert(
         Yaml::String("scale".into()),
         Yaml::Integer(replica_count.into()),
@@ -181,26 +185,6 @@ fn make_service_def(
     );
 
     Yaml::Hash(service_def)
-}
-
-fn make_build_def(svc_port: u16) -> Yaml {
-    let mut build_def = Hash::new();
-    build_def.insert(
-        Yaml::String("context".into()),
-        Yaml::String(workspace_root().to_string_lossy().to_string()),
-    );
-    let dockerfile_path = workspace_root().join("apps/mssim/generic-service/Dockerfile");
-    build_def.insert(
-        Yaml::String("dockerfile".into()),
-        Yaml::String(dockerfile_path.to_string_lossy().to_string()),
-    );
-    let mut build_args = Hash::new();
-    build_args.insert(
-        Yaml::String("SERVICE_CONTAINER_PORT".into()),
-        Yaml::String(svc_port.to_string()),
-    );
-    build_def.insert(Yaml::String("args".into()), Yaml::Hash(build_args));
-    Yaml::Hash(build_def)
 }
 
 fn make_deploy_def() -> Yaml {
@@ -240,6 +224,11 @@ fn make_environment_def(service_name: &ServiceName, svc_port: u16) -> Yaml {
         Yaml::String("DEPLOYMEN_CONFIG_PATH".into()),
         Yaml::String(in_container_deployment_config_path.into()),
     );
+
+    if let Ok(feature) = env::var("FEATURE") {
+        environment.insert(Yaml::String("FEATURE".into()), Yaml::String(feature));
+    }
+
     Yaml::Hash(environment)
 }
 
@@ -268,18 +257,10 @@ fn make_load_generator_config_yaml(
 ) -> Result<Yaml> {
     let mut service_def = Hash::new();
 
-    let mut build_def = Hash::new();
-    build_def.insert(
-        Yaml::String("context".into()),
-        Yaml::String(workspace_root().to_string_lossy().to_string()),
+    service_def.insert(
+        Yaml::String("image".into()),
+        Yaml::String("mssim_load_generator".into()),
     );
-    let dockerfile_path = workspace_root().join("apps/mssim/generic-service/Dockerfile.loadgen");
-    build_def.insert(
-        Yaml::String("dockerfile".into()),
-        Yaml::String(dockerfile_path.to_string_lossy().to_string()),
-    );
-
-    service_def.insert(Yaml::String("build".into()), Yaml::Hash(build_def));
     service_def.insert(
         Yaml::String("container_name".into()),
         Yaml::String(LOADGEN_SERVICE_NAME.into()),
@@ -302,57 +283,21 @@ fn make_load_generator_config_yaml(
         Yaml::String(frontend_info.ip.clone()),
     );
 
-    let trace_dir_canon = trace_dir
-        .canonicalize()
-        .with_context(|| format!("Failed to resolve trace directory {:?}", trace_dir))?;
-    let host_trace_dir = trace_dir_canon.to_string_lossy().into_owned();
-
-    let replay_env = if let Some(override_path) = replay_path {
-        let resolved = if override_path.is_absolute() {
-            override_path.to_path_buf()
-        } else {
-            trace_dir_canon.join(override_path)
-        };
-
-        let replay_canon = resolved
-            .canonicalize()
-            .with_context(|| format!("Failed to resolve replay trace path {:?}", resolved))?;
-
-        let relative = replay_canon
-            .strip_prefix(&trace_dir_canon)
-            .with_context(|| {
-                anyhow!(
-                    "Replay trace path {:?} must be located under {:?}",
-                    replay_canon,
-                    trace_dir_canon
-                )
-            })?;
-
-        Some(
-            Path::new(LOADGEN_TRACE_MOUNT)
-                .join(relative)
-                .to_string_lossy()
-                .into_owned(),
-        )
-    } else {
-        None
-    };
-
-    if let Some(replay_path) = replay_env {
-        environment.insert(
-            Yaml::String("REPLAY_TRACE_PATH".into()),
-            Yaml::String(replay_path),
-        );
+    if let Ok(duration) = env::var("DURATION") {
+        environment.insert(Yaml::String("DURATION".into()), Yaml::String(duration));
     }
-    environment.insert(
-        Yaml::String("QUEUE_LATENCY_OUTPUT_DIR".into()),
-        Yaml::String(LOADGEN_TRACE_MOUNT.into()),
-    );
+
+    if let Ok(rps) = env::var("RPS") {
+        environment.insert(Yaml::String("RPS".into()), Yaml::String(rps));
+    }
 
     service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
 
+    let host_data_dir = env::var("HOST_TRACE_DIR")
+        .unwrap_or_else(|_| trace_dir.clone().to_string_lossy().to_string());
+
     let mut volumes: Vec<Yaml> = Vec::new();
-    let volume_mapping = format!("{}:{}", host_trace_dir, LOADGEN_TRACE_MOUNT);
+    let volume_mapping = format!("{}:{}", host_data_dir, LOADGEN_OUTPUT_MOUNT);
     volumes.push(Yaml::String(volume_mapping.into()));
     service_def.insert(Yaml::String("volumes".into()), Yaml::Array(volumes));
 
@@ -466,16 +411,16 @@ pub async fn launch_simulation_from_yaml(
     // generate docker-compose.yml
     generate_docker_compose(&config, trace_dir, &sim_config, &deployment, replay_path)?;
 
-    // running Docker Compose
-    run_docker_compose()?;
+    // // running Docker Compose
+    // run_docker_compose()?;
 
-    // wait for termination signal (ctrl-c in this case) and then stopping docker compose
-    tokio::signal::ctrl_c().await?;
-    info!("Received termination signal.");
-    stop_docker_compose()?;
+    // // wait for termination signal (ctrl-c in this case) and then stopping docker compose
+    // tokio::signal::ctrl_c().await?;
+    // info!("Received termination signal.");
+    // stop_docker_compose()?;
 
-    // collect and report output (TODO)
-    info!("Collecting and reporting output...");
+    // // collect and report output (TODO)
+    // info!("Collecting and reporting output...");
 
     Ok(())
 }

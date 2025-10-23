@@ -6,6 +6,10 @@ flag_combos=(
     "prio_local_direct"
     "prio_local_indirect"
     "prio_global"
+
+    "fifo_span_tracing"
+    "fifo_queue_tracing"
+    "prio_global_queue_tracing"
 )
 
 cargo check

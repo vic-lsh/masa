@@ -37,6 +37,7 @@ impl ServerHooks for ServerContext {
 #[allow(unreachable_pub)]
 pub struct ParentContext {
     q_lat: AtomicU64,
+    max_child: AtomicU64,
 }
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
@@ -47,6 +48,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Self {
         Self {
             q_lat: AtomicU64::new(0),
+            max_child: AtomicU64::new(0),
         }
     }
 
@@ -72,7 +74,10 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             {
                 if let Ok(v) = value.to_str() {
                     if let Ok(parsed) = v.parse::<u64>() {
-                        self.q_lat.fetch_add(parsed, Ordering::AcqRel);
+                        let prev = self.max_child.load(Ordering::Acquire);
+                        if parsed > prev {
+                            self.max_child.store(parsed, Ordering::Release);
+                        }
                     }
                 }
             }
@@ -83,7 +88,9 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     // expect frontend method, all other method are going send back their latency trace
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
         let res_header = _response.headers_mut();
-        let total = self.q_lat.load(Ordering::Acquire).to_string();
+        let final_q_lat =
+            self.q_lat.load(Ordering::Acquire) + self.max_child.load(Ordering::Acquire);
+        let total = final_q_lat.to_string();
         if let Ok(header_val) = http::HeaderValue::from_str(&total) {
             // HTTP/2 metadata is lower-case; rely on hyper to canonicalize.
             res_header.insert("x-queue-latency", header_val);

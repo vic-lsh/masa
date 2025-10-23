@@ -2,25 +2,32 @@ mod fifo;
 mod prio_bh;
 mod timed;
 
-#[cfg(feature = "scheduler_trace")]
+#[cfg(any(
+    feature = "fifo_span_tracing",
+    feature = "fifo_queue_tracing",
+    feature = "prio_global_queue_tracing"
+))]
 pub(crate) type LocalRunQueue<T> = timed::TimedQueue<LocalRunQueueInner<T>>;
-#[cfg(not(feature = "scheduler_trace"))]
+
+#[cfg(not(any(
+    feature = "fifo_span_tracing",
+    feature = "fifo_queue_tracing",
+    feature = "prio_global_queue_tracing"
+)))]
 pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
 
 #[cfg(not(any(
     feature = "prio_global",
     feature = "prio_local",
     feature = "perfect_lsf",
-    feature = "fifo"
+    feature = "prio_global_queue_tracing",
 )))]
-pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
-
-#[cfg(any(feature = "fifo"))]
 pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
 
 #[cfg(any(
     feature = "prio_global",
     feature = "prio_local",
+    feature = "prio_global_queue_tracing",
     feature = "perfect_lsf"
 ))]
 pub(crate) type LocalRunQueueInner<T> = prio_bh::BinaryHeapQueue<T>;
