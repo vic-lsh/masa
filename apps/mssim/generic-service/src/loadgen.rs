@@ -54,6 +54,264 @@ enum LoadMode {
     },
 }
 
+async fn run_root_load(
+    client: RpcClient,
+    per_req: Duration,
+    request_slo: u64,
+    sent: Arc<AtomicU64>,
+    ok: Arc<AtomicU64>,
+    err: Arc<AtomicU64>,
+    inflight_guard: Arc<Semaphore>,
+    max_in_flight: usize,
+    root_samples: Arc<Mutex<Vec<RootLatencySample>>>,
+    finish_after: Option<Duration>,
+    latency_sample_tx: mpsc::UnboundedSender<u64>,
+) -> anyhow::Result<()> {
+    let mut ticker = tokio::time::interval(per_req);
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    ticker.reset();
+
+    let finish_deadline = finish_after.map(|duration| Instant::now() + duration);
+
+    let finish_sleep = async {
+        if let Some(deadline) = finish_deadline {
+            time::sleep_until(deadline).await;
+        } else {
+            std::future::pending::<()>().await;
+        }
+    };
+    tokio::pin!(finish_sleep);
+
+    let shutdown_signal = tokio::signal::ctrl_c();
+    tokio::pin!(shutdown_signal);
+
+    loop {
+        tokio::select! {
+            _ = &mut shutdown_signal => {
+                println!("Received Ctrl-C. Shutting down...");
+                break;
+            }
+            _ = &mut finish_sleep => {
+                println!("Experiment finished as duration elapsed. Shutting down...");
+                break;
+            }
+
+            _ = ticker.tick() => {
+                let permit = match inflight_guard.clone().try_acquire_owned() {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+
+                let sent = sent.clone();
+                let ok = ok.clone();
+                let err = err.clone();
+                let mut rpc_client = client.clone();
+                let root_samples = root_samples.clone();
+                let latency_sample_tx = latency_sample_tx.clone();
+
+                let req_id = sent.fetch_add(1, Ordering::Relaxed);
+
+                tokio::spawn(async move {
+                    let _permit = permit;
+                    let start_at = time_now();
+                    let mut request = Request::new(RootRequest {
+                        req_id,
+                        start_at,
+                    });
+
+                    let ctx = {
+                        let slo_us = request_slo * 1000;
+                        let start_at = time_now();
+                        let deadline = start_at + slo_us;
+                        MasaContext::new("root".to_string(), 0, req_id, slo_us, 0, start_at, deadline)
+                    };
+                    request.metadata_mut().insert_ctx("ctx", &ctx);
+
+                    let start_time = Instant::now();
+                    let res = rpc_client.root(request).await;
+                    let elapsed = start_time.elapsed().as_micros() as u64;
+                    match res {
+                        Ok(resp) => {
+                            ok.fetch_add(1, Ordering::Relaxed);
+                            let queue_latency = extract_queue_latency(resp.metadata());
+                            let sample = RootLatencySample {
+                                is_err: false,
+                                req_id,
+                                start_at,
+                                queue_latency_us: queue_latency.unwrap_or(0),
+                                e2e_latency_us: elapsed,
+                            };
+                            {
+                                let mut guard = root_samples.lock().await;
+                                guard.push(sample);
+                            }
+                            let _ = latency_sample_tx.send(elapsed);
+                        }
+                        Err(_) => {
+                            let sample = RootLatencySample {
+                                is_err: true,
+                                req_id,
+                                start_at,
+                                queue_latency_us: 0,
+                                e2e_latency_us: 0,
+                            };
+                            err.fetch_add(1, Ordering::Relaxed);
+                            {
+                                let mut guard = root_samples.lock().await;
+                                guard.push(sample);
+                            }
+                        }
+                    };
+                });
+            }
+        }
+    }
+
+    // Drain in-flight requests before exit
+    let _ = inflight_guard.acquire_many(max_in_flight as u32).await;
+
+    let s = sent.load(Ordering::Relaxed);
+    let o = ok.load(Ordering::Relaxed);
+    let e = err.load(Ordering::Relaxed);
+    println!("Final stats: sent={}, ok={}, err={}", s, o, e);
+
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct RootLatencySample {
+    req_id: u64,
+    start_at: u64,
+    queue_latency_us: u64,
+    e2e_latency_us: u64,
+    is_err: bool,
+}
+
+async fn flush_root_samples(
+    samples: Arc<Mutex<Vec<RootLatencySample>>>,
+    file_name: &str,
+) -> anyhow::Result<()> {
+    flush_root_samples_internal(samples, file_name, true)
+        .await
+        .map(|_| ())
+}
+
+async fn flush_root_samples_internal(
+    samples: Arc<Mutex<Vec<RootLatencySample>>>,
+    file_name: &str,
+    log_when_empty: bool,
+) -> anyhow::Result<Option<usize>> {
+    let output_dir = PathBuf::from(OUTPUT_DIR);
+
+    let snapshot = {
+        let mut guard = samples.lock().await;
+        if guard.is_empty() {
+            if log_when_empty {
+                println!(
+                    "No root() latency samples recorded; skipping CSV write to {}",
+                    output_dir.display()
+                );
+            }
+            return Ok(None);
+        }
+        guard.sort_by_key(|sample| sample.req_id);
+        guard.clone()
+    };
+
+    fs::create_dir_all(&output_dir).await?;
+    let file_path = output_dir.join(file_name);
+
+    let mut csv_data = String::from("req_id,is_err,start_at,queue_latency_us,e2e_latency_us\n");
+    for sample in &snapshot {
+        csv_data.push_str(&format!(
+            "{},{},{},{},{}\n",
+            sample.req_id,
+            sample.is_err,
+            sample.start_at,
+            sample.queue_latency_us,
+            sample.e2e_latency_us
+        ));
+    }
+
+    println!(
+        "Writing root() latency samples for {} requests to {}",
+        snapshot.len(),
+        file_path.display()
+    );
+
+    fs::write(&file_path, csv_data).await?;
+    if log_when_empty {
+        println!(
+            "Wrote root() latency samples for {} requests to {}",
+            snapshot.len(),
+            file_path.display()
+        );
+    }
+
+    Ok(Some(snapshot.len()))
+}
+
+async fn flush_queue_samples(
+    samples: Arc<Mutex<Vec<QueueLatencySample>>>,
+    output_path: &Path,
+    log_when_empty: bool,
+) -> anyhow::Result<Option<usize>> {
+    let snapshot = {
+        let guard = samples.lock().await;
+        if guard.is_empty() {
+            if log_when_empty {
+                println!(
+                    "No queue latency samples recorded; skipping CSV write to {}",
+                    output_path.display()
+                );
+            }
+            return Ok(None);
+        }
+        guard.clone()
+    };
+
+    write_queue_latency_csv(output_path, &snapshot).await?;
+    if log_when_empty {
+        println!(
+            "Wrote queue latency samples for {} requests to {}",
+            snapshot.len(),
+            output_path.display()
+        );
+    }
+
+    Ok(Some(snapshot.len()))
+}
+
+fn compute_latency_percentiles_us(mut samples: Vec<u64>) -> Option<(u64, u64, u64, u64)> {
+    if samples.is_empty() {
+        return None;
+    }
+
+    samples.sort_unstable();
+    let p50 = percentile_from_sorted(&samples, 50.0);
+    let p90 = percentile_from_sorted(&samples, 90.0);
+    let p95 = percentile_from_sorted(&samples, 95.0);
+    let p99 = percentile_from_sorted(&samples, 99.0);
+    Some((p50, p90, p95, p99))
+}
+
+fn percentile_from_sorted(sorted: &[u64], percentile: f64) -> u64 {
+    let n = sorted.len();
+    if n == 0 {
+        return 0;
+    }
+
+    let mut rank = (percentile / 100.0 * n as f64).ceil() as usize;
+    if rank == 0 {
+        rank = 1;
+    }
+    if rank > n {
+        rank = n;
+    }
+
+    sorted[rank - 1]
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let addr = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
@@ -314,262 +572,4 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-async fn run_root_load(
-    client: RpcClient,
-    per_req: Duration,
-    request_slo: u64,
-    sent: Arc<AtomicU64>,
-    ok: Arc<AtomicU64>,
-    err: Arc<AtomicU64>,
-    inflight_guard: Arc<Semaphore>,
-    max_in_flight: usize,
-    root_samples: Arc<Mutex<Vec<RootLatencySample>>>,
-    finish_after: Option<Duration>,
-    latency_sample_tx: mpsc::UnboundedSender<u64>,
-) -> anyhow::Result<()> {
-    let mut ticker = tokio::time::interval(per_req);
-    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    ticker.reset();
-
-    let finish_deadline = finish_after.map(|duration| Instant::now() + duration);
-
-    let finish_sleep = async {
-        if let Some(deadline) = finish_deadline {
-            time::sleep_until(deadline).await;
-        } else {
-            std::future::pending::<()>().await;
-        }
-    };
-    tokio::pin!(finish_sleep);
-
-    let shutdown_signal = tokio::signal::ctrl_c();
-    tokio::pin!(shutdown_signal);
-
-    loop {
-        tokio::select! {
-            _ = &mut shutdown_signal => {
-                println!("Received Ctrl-C. Shutting down...");
-                break;
-            }
-            _ = &mut finish_sleep => {
-                println!("Experiment finished as duration elapsed. Shutting down...");
-                break;
-            }
-
-            _ = ticker.tick() => {
-                let permit = match inflight_guard.clone().try_acquire_owned() {
-                    Ok(p) => p,
-                    Err(_) => continue,
-                };
-
-                let sent = sent.clone();
-                let ok = ok.clone();
-                let err = err.clone();
-                let mut rpc_client = client.clone();
-                let root_samples = root_samples.clone();
-                let latency_sample_tx = latency_sample_tx.clone();
-
-                let req_id = sent.fetch_add(1, Ordering::Relaxed);
-
-                tokio::spawn(async move {
-                    let _permit = permit;
-                    let start_at = time_now();
-                    let mut request = Request::new(RootRequest {
-                        req_id,
-                        start_at,
-                    });
-
-                    let ctx = {
-                        let slo_us = request_slo * 1000;
-                        let start_at = time_now();
-                        let deadline = start_at + slo_us;
-                        MasaContext::new("root".to_string(), 0, req_id, slo_us, 0, start_at, deadline)
-                    };
-                    request.metadata_mut().insert_ctx("ctx", &ctx);
-
-                    let start_time = Instant::now();
-                    let res = rpc_client.root(request).await;
-                    let elapsed = start_time.elapsed().as_micros() as u64;
-                    match res {
-                        Ok(resp) => {
-                            ok.fetch_add(1, Ordering::Relaxed);
-                            let queue_latency = extract_queue_latency(resp.metadata());
-                            let sample = RootLatencySample {
-                                is_err: false,
-                                req_id,
-                                start_at,
-                                queue_latency_us: queue_latency.unwrap_or(0),
-                                e2e_latency_us: elapsed,
-                            };
-                            {
-                                let mut guard = root_samples.lock().await;
-                                guard.push(sample);
-                            }
-                            let _ = latency_sample_tx.send(elapsed);
-                        }
-                        Err(_) => {
-                            let sample = RootLatencySample {
-                                is_err: true,
-                                req_id,
-                                start_at,
-                                queue_latency_us: 0,
-                                e2e_latency_us: 0,
-                            };
-                            err.fetch_add(1, Ordering::Relaxed);
-                            {
-                                let mut guard = root_samples.lock().await;
-                                guard.push(sample);
-                            }
-                        }
-                    };
-                });
-            }
-        }
-    }
-
-    // Drain in-flight requests before exit
-    let _ = inflight_guard.acquire_many(max_in_flight as u32).await;
-
-    let s = sent.load(Ordering::Relaxed);
-    let o = ok.load(Ordering::Relaxed);
-    let e = err.load(Ordering::Relaxed);
-    println!("Final stats: sent={}, ok={}, err={}", s, o, e);
-
-    Ok(())
-}
-
-#[derive(Debug, Clone)]
-struct RootLatencySample {
-    req_id: u64,
-    start_at: u64,
-    queue_latency_us: u64,
-    e2e_latency_us: u64,
-    is_err: bool,
-}
-
-async fn flush_root_samples(
-    samples: Arc<Mutex<Vec<RootLatencySample>>>,
-    file_name: &str,
-) -> anyhow::Result<()> {
-    flush_root_samples_internal(samples, file_name, true)
-        .await
-        .map(|_| ())
-}
-
-async fn flush_root_samples_internal(
-    samples: Arc<Mutex<Vec<RootLatencySample>>>,
-    file_name: &str,
-    log_when_empty: bool,
-) -> anyhow::Result<Option<usize>> {
-    let output_dir = PathBuf::from(OUTPUT_DIR);
-
-    let snapshot = {
-        let mut guard = samples.lock().await;
-        if guard.is_empty() {
-            if log_when_empty {
-                println!(
-                    "No root() latency samples recorded; skipping CSV write to {}",
-                    output_dir.display()
-                );
-            }
-            return Ok(None);
-        }
-        guard.sort_by_key(|sample| sample.req_id);
-        guard.clone()
-    };
-
-    fs::create_dir_all(&output_dir).await?;
-    let file_path = output_dir.join(file_name);
-
-    let mut csv_data = String::from("req_id,is_err,start_at,queue_latency_us,e2e_latency_us\n");
-    for sample in &snapshot {
-        csv_data.push_str(&format!(
-            "{},{},{},{},{}\n",
-            sample.req_id,
-            sample.is_err,
-            sample.start_at,
-            sample.queue_latency_us,
-            sample.e2e_latency_us
-        ));
-    }
-
-    println!(
-        "Writing root() latency samples for {} requests to {}",
-        snapshot.len(),
-        file_path.display()
-    );
-
-    fs::write(&file_path, csv_data).await?;
-    if log_when_empty {
-        println!(
-            "Wrote root() latency samples for {} requests to {}",
-            snapshot.len(),
-            file_path.display()
-        );
-    }
-
-    Ok(Some(snapshot.len()))
-}
-
-async fn flush_queue_samples(
-    samples: Arc<Mutex<Vec<QueueLatencySample>>>,
-    output_path: &Path,
-    log_when_empty: bool,
-) -> anyhow::Result<Option<usize>> {
-    let snapshot = {
-        let guard = samples.lock().await;
-        if guard.is_empty() {
-            if log_when_empty {
-                println!(
-                    "No queue latency samples recorded; skipping CSV write to {}",
-                    output_path.display()
-                );
-            }
-            return Ok(None);
-        }
-        guard.clone()
-    };
-
-    write_queue_latency_csv(output_path, &snapshot).await?;
-    if log_when_empty {
-        println!(
-            "Wrote queue latency samples for {} requests to {}",
-            snapshot.len(),
-            output_path.display()
-        );
-    }
-
-    Ok(Some(snapshot.len()))
-}
-
-fn compute_latency_percentiles_us(mut samples: Vec<u64>) -> Option<(u64, u64, u64, u64)> {
-    if samples.is_empty() {
-        return None;
-    }
-
-    samples.sort_unstable();
-    let p50 = percentile_from_sorted(&samples, 50.0);
-    let p90 = percentile_from_sorted(&samples, 90.0);
-    let p95 = percentile_from_sorted(&samples, 95.0);
-    let p99 = percentile_from_sorted(&samples, 99.0);
-    Some((p50, p90, p95, p99))
-}
-
-fn percentile_from_sorted(sorted: &[u64], percentile: f64) -> u64 {
-    let n = sorted.len();
-    if n == 0 {
-        return 0;
-    }
-
-    let mut rank = (percentile / 100.0 * n as f64).ceil() as usize;
-    if rank == 0 {
-        rank = 1;
-    }
-    if rank > n {
-        rank = n;
-    }
-
-    sorted[rank - 1]
 }
