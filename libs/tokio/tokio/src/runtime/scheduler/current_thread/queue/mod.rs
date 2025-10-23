@@ -20,6 +20,7 @@ pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
     feature = "prio_global",
     feature = "prio_local",
     feature = "perfect_lsf",
+    feature = "prio_global_queue_tracing",
 )))]
 pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
 
