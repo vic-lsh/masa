@@ -356,7 +356,7 @@ async fn flush_rpc_samples_task(samples: Arc<Mutex<Vec<RootLatencySample>>>, fil
 
 async fn print_stats_task(
     mut latency_rx: UnboundedReceiver<u64>,
-    stats_interval_sec: u64,
+    stats_interval: Duration,
     sent: Arc<AtomicU64>,
     ok: Arc<AtomicU64>,
     err: Arc<AtomicU64>,
@@ -364,7 +364,7 @@ async fn print_stats_task(
     let mut last_sent = 0u64;
     let mut last_ok = 0u64;
     let mut last_err = 0u64;
-    let mut ticker = tokio::time::interval(Duration::from_secs(stats_interval_sec));
+    let mut ticker = tokio::time::interval(stats_interval);
     let mut latency_buffer = Vec::new();
     loop {
         tokio::select! {
@@ -538,8 +538,9 @@ async fn main() -> anyhow::Result<()> {
         let ok = ok.clone();
         let err = err.clone();
         let latency_rx = latency_sample_rx;
+        let stats_interval = Duration::from_secs(stats_interval_sec);
         tokio::spawn(async move {
-            print_stats_task(latency_rx, stats_interval_sec, sent, ok, err).await;
+            print_stats_task(latency_rx, stats_interval, sent, ok, err).await;
         });
     }
 
