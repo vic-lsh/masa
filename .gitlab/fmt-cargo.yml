@@ -1,6 +1,6 @@
 
 cargo_fmt:
-  stage: verify
+  stage: fmt
   script:
     - rustup component add rustfmt
     - ./scripts/check_format.sh

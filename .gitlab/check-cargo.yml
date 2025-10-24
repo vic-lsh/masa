@@ -1,6 +1,6 @@
 
 cargo_check:
-  stage: verify
+  stage: check
   script:
     - rustc --version && cargo --version # Print version info for debugging
     - ./scripts/check.sh

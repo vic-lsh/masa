@@ -8,7 +8,9 @@ workflow:
 
 # Define stages
 stages:
-  - verify
+  - fmt
+  - check
+  - test
 
 before_script:
   - apt-get update -yqq
