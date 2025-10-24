@@ -1,5 +1,5 @@
 test_e2e_hotel:
-  stage: verify
+  stage: test
   before_script: []
   tags:
     - on-host
