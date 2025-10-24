@@ -203,14 +203,18 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
 
 
 def build_load_generator_image():
-    print("Building mssim load generato image")
+    print("Building mssim load generator image")
     build_cmd = [
         "docker",
+        "buildx",
         "build",
+        "--load",
         "-t",
         "mssim_load_generator",
+        "--target",
+        "loadgen",
         "-f",
-        "apps/mssim/generic-service/Dockerfile.loadgen",
+        "apps/mssim/generic-service/Dockerfile",
         REPO_ROOT, # this should be the masa project root
     ]
     subprocess.run(build_cmd, cwd=REPO_ROOT, check=True)
@@ -220,11 +224,15 @@ def build_generic_service_image(feature):
     print(f"Building mssim generic service image for feature {feature}")
     build_cmd = [
         "docker",
+        "buildx",
         "build",
+        "--load",
         "-t",
         "generic_service",
         "--build-arg",
         f"FEATURE_ARG={feature}",
+        "--target",
+        "generic-service",
         "-f",
         "apps/mssim/generic-service/Dockerfile",
         REPO_ROOT, # this should be the masa project root
