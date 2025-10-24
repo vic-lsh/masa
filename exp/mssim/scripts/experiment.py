@@ -11,12 +11,14 @@ import signal
 import subprocess
 import sys
 import time
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 
 REPO_ROOT = Path(__file__).parent.parent.parent.parent.resolve()
 MSSIM_ROOT = REPO_ROOT / "apps" / "mssim" / "simulator"
+FEATURE_TAG_PATTERN = re.compile(r"[^a-z0-9_.-]")
 
 print("repo root is ", REPO_ROOT)
 print("mssim root is ", MSSIM_ROOT)
@@ -37,6 +39,76 @@ class ExperimentConfig:
     max_in_flight: Optional[int] = None
     stats_interval_sec: Optional[int] = None
     extra_env: Dict[str, str] = field(default_factory=dict)
+
+
+def normalize_feature_components(raw_features: str) -> List[str]:
+    components = [part.strip() for part in raw_features.split(",")]
+    normalized = sorted({component for component in components if component})
+    if not normalized:
+        raise ValueError(f"feature flag list cannot be empty: {raw_features!r}")
+    return normalized
+
+
+def build_feature_variant(raw_features: str) -> Tuple[str, str]:
+    normalized_components = normalize_feature_components(raw_features)
+    normalized = ",".join(normalized_components)
+    slug_source = "-".join(normalized_components)
+    slug = FEATURE_TAG_PATTERN.sub("-", slug_source.lower()).strip("-")
+    if not slug:
+        slug = "default"
+    return normalized, slug
+
+
+def docker_image_exists(image_tag: str) -> bool:
+    result = subprocess.run(
+        ["docker", "image", "inspect", image_tag],
+        cwd=REPO_ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def build_generic_service_image(normalized_features: str, slug: str) -> str:
+    image_tag = f"generic_service:{slug}"
+
+    if docker_image_exists(image_tag):
+        print(
+            f"Using cached generic service image '{image_tag}' "
+            f"for features '{normalized_features}'"
+        )
+        return image_tag
+
+    print(
+        f"Building mssim generic service image '{image_tag}' "
+        f"for features '{normalized_features}'"
+    )
+    build_cmd = [
+        "docker",
+        "build",
+        "-t",
+        image_tag,
+        "--build-arg",
+        f"FEATURE_ARG={normalized_features}",
+        "-f",
+        "apps/mssim/generic-service/Dockerfile",
+        str(REPO_ROOT),
+    ]
+    subprocess.run(build_cmd, cwd=REPO_ROOT, check=True)
+    return image_tag
+
+
+def ensure_generic_service_image(
+    raw_features: str, cache: Dict[str, str]
+) -> Tuple[str, str]:
+    normalized_features, slug = build_feature_variant(raw_features)
+    cached = cache.get(normalized_features)
+    if cached:
+        return normalized_features, cached
+    image_tag = build_generic_service_image(normalized_features, slug)
+    cache[normalized_features] = image_tag
+    return normalized_features, image_tag
 
 
 def load_config(path: Path) -> ExperimentConfig:
@@ -82,11 +154,18 @@ def load_config(path: Path) -> ExperimentConfig:
     return cfg
 
 
-def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> int:
+def run_once(
+    cfg: ExperimentConfig,
+    run_dir: Path,
+    feature_flags: str,
+    image_tag: str,
+    rps: float,
+) -> int:
     env = os.environ.copy()
     env.update(cfg.extra_env)
     env.setdefault("ORCHESTRATOR", cfg.orchestrator)
-    env["FEATURE"] = policy
+    env["FEATURE"] = feature_flags
+    env["GENERIC_SERVICE_IMAGE"] = image_tag
     env["RPS"] = f"{rps}"
     env["SLO_MS"] = str(cfg.slo_ms)
     if cfg.max_in_flight:
@@ -203,7 +282,7 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
 
 
 def build_load_generator_image():
-    print("Building mssim load generato image")
+    print("Building mssim load generator image")
     build_cmd = [
         "docker",
         "build",
@@ -214,23 +293,6 @@ def build_load_generator_image():
         REPO_ROOT, # this should be the masa project root
     ]
     subprocess.run(build_cmd, cwd=REPO_ROOT, check=True)
-
-
-def build_generic_service_image(feature):
-    print(f"Building mssim generic service image for feature {feature}")
-    build_cmd = [
-        "docker",
-        "build",
-        "-t",
-        "generic_service",
-        "--build-arg",
-        f"FEATURE_ARG={feature}",
-        "-f",
-        "apps/mssim/generic-service/Dockerfile",
-        REPO_ROOT, # this should be the masa project root
-    ]
-    subprocess.run(build_cmd, cwd=REPO_ROOT, check=True)
-
 
 
 def execute(cfg: ExperimentConfig, dry_run: bool) -> None:
@@ -253,32 +315,38 @@ def execute(cfg: ExperimentConfig, dry_run: bool) -> None:
             json.dump(metadata, fh, indent=2, sort_keys=True)
 
     build_load_generator_image()
-    policy_prev = None
+    image_cache: Dict[str, str] = {}
     for run in build_runs(cfg):
         policy = str(run["policy"])
         rps = float(run["rps"])
         repeat = int(run["repeat"])
         run_dir = _ensure_dir(cfg.output_root / policy / f"rps_{rps:g}" / f"run_{repeat:01d}")
+        normalized_features, image_tag = ensure_generic_service_image(policy, image_cache)
         metadata = {
             "policy": policy,
+            "feature_flags_normalized": normalized_features,
+            "generic_service_image": image_tag,
             "rps": rps,
             "repeat": repeat,
             "duration_sec": cfg.duration_sec,
             "command": "cargo run -- --alibaba-trace ...",
         }
-
-        if policy != policy_prev:
-            build_generic_service_image(policy)
-        policy_prev = policy
         
         # Write metadata before running
         write_metadata(run_dir, metadata)
         if dry_run:
-            print(f"[dry-run] would execute policy={policy} rps={rps} repeat={repeat}")
+            print(
+                "[dry-run] would execute "
+                f"policy={policy} normalized={normalized_features} "
+                f"image={image_tag} rps={rps} repeat={repeat}"
+            )
             continue
-        rc = run_once(cfg, run_dir, policy, rps)
+        rc = run_once(cfg, run_dir, normalized_features, image_tag, rps)
         status = "ok" if rc == 0 else f"failed({rc})"
-        print(f"run policy={policy} rps={rps} repeat={repeat}: {status}")
+        print(
+            f"run policy={policy} normalized={normalized_features} "
+            f"image={image_tag} rps={rps} repeat={repeat}: {status}"
+        )
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:

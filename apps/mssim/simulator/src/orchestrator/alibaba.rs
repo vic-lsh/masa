@@ -1,9 +1,9 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
 use sim_config::svc::ServiceName;
 use sim_config::trace::TraceConfig;
-use sim_config::{PROJECT_NAME, SimulatorConfig};
+use sim_config::{SimulatorConfig, PROJECT_NAME};
 use std::fs::File;
 use std::io::Write;
 use std::{
@@ -169,10 +169,9 @@ fn make_service_def(
 ) -> Yaml {
     let mut service_def = Hash::new();
 
-    service_def.insert(
-        Yaml::String("image".into()),
-        Yaml::String("generic_service".into()),
-    );
+    let image_name =
+        env::var("GENERIC_SERVICE_IMAGE").unwrap_or_else(|_| "generic_service".to_string());
+    service_def.insert(Yaml::String("image".into()), Yaml::String(image_name));
     let replica_count = sim_cfg.replicas.count_for(service_name);
     service_def.insert(
         Yaml::String("scale".into()),
