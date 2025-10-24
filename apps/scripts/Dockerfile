@@ -54,7 +54,7 @@ RUN apt-get install -y\
 COPY --from=builder /usr/src/masa/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
 COPY --from=builder /usr/src/masa/apps/${APP}/scripts/docker/entrypoint.sh /usr/entrypoint.sh
 COPY apps/${APP}/scripts/local/${APP_CONFIG_FILE} /usr/config.json
-COPY apps/${APP}/scripts/gen_config.json /usr/gen_config.json
+COPY exp/${APP}/scripts/gen_config.json /usr/gen_config.json
 
 ENV BINARY_NAME=${BINARY_NAME}
 ENV LOG_LEVEL=${LOG_LEVEL}

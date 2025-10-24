@@ -1,18 +1,18 @@
 #!/bin/bash
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-COMMON_BUILD_SCRIPT="$SCRIPT_DIR/../../exp/common/scripts/docker-build-svc.sh"
 
 services=(
-    "synthetic_frontend"
-    "synthetic_child"
+    "hotel_client_bench"
+    "hotel_frontend"
+    "hotel_geo"
+    "hotel_rate"
+    "hotel_search"
+    "hotel_profile"
+    "hotel_reservation"
+    "hotel_user"
+    "hotel_review"
 )
-
-pwd=$(pwd)
-if [[ "$pwd" != */apps/synthetic ]]; then
-    echo "Error: please run in the apps/synthetic directory" >&2
-    exit 1
-fi
 
 features=""
 rust_log="warn"
@@ -35,21 +35,24 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-app="synthetic"
-
 # Validate required arguments
 if [[ -z "$features" ]]; then
     echo "Warn: --features not set."
+fi
+
+app="hotel"
+
+echo "Building all hotel services. Feature flags: $features."
+
+echo "Building docker images sequentially."
+
+if [[ -z "$features" ]]; then
     features_arg=""
 else
     features_arg="--features $features"
 fi
 
-echo "Building all services. Feature flags: $features."
-
-echo "Building docker images sequentially."
-
 set -e
 for svc in "${services[@]}"; do
-    "$COMMON_BUILD_SCRIPT" --binary "$svc" --app "$app" --rust-log "$rust_log" $features_arg
+    $SCRIPT_DIR/../common/scripts/docker-build-svc.sh --binary "$svc" --app "$app" --rust-log "$rust_log" --app-config hotel.json $features_arg
 done
