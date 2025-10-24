@@ -4,4 +4,11 @@ test_mssim_experiment:
   tags:
     - on-host
   script:
+    - if ! command -v cargo &>/dev/null; then
+        echo "Installing Rust...";
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y;
+        source $HOME/.cargo/env;
+      fi
+    - rustc --version
+    - cargo --version
     - ./scripts/test_mssim_experiment.sh
