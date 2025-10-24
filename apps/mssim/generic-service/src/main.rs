@@ -1,23 +1,22 @@
-use anyhow::{Context, Result};
-use masa::Context as MasaContext;
+use anyhow::Result;
 use service_stubs::service_client::ServiceClient;
-use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
+use sim_config::deployment::Deployment;
 use sim_config::svc::{ServiceName, ServiceTraceConfig};
-use std::collections::HashMap;
 use std::env;
-use std::str::FromStr;
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::RwLock;
-use tokio::time::{sleep, Duration};
-use tonic::metadata::{MetadataMap, MetadataValue};
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{transport::Server, Request, Response, Status};
-use tracing::level_filters::LevelFilter;
-use tracing::{error, warn};
+use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+
+mod bootstrap;
+mod parent_chain;
+mod service_replay;
+mod service_state;
+
+use service_state::ServiceState;
 
 pub mod service_stubs {
     tonic::include_proto!("service");
@@ -25,23 +24,14 @@ pub mod service_stubs {
 
 use service_stubs::service_server::{Service, ServiceServer};
 use service_stubs::{
-    local_span::SpanType, span::Kind, PingRequest, PingResponse, ReplayRequest, ReplayResponse,
-    ResponseStatus, RootRequest, RootResponse, ServiceRequest, ServiceResponse,
+    PingRequest, PingResponse, ReplayRequest, ReplayResponse, ResponseStatus, RootRequest,
+    RootResponse, ServiceRequest, ServiceResponse,
 };
 
-type RpcClient = ServiceClient<LoadBalancedChannel>;
+pub(crate) type RpcClient = ServiceClient<LoadBalancedChannel>;
 
-const PARENT_CHAIN_METADATA_KEY: &str = "parent-chain";
-const PARENT_CHAIN_DELIMITER: char = '>';
-
-#[allow(dead_code)]
 struct AlibabaService {
-    config: ServiceTraceConfig,
-    clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
-    child_call_probabilities: HashMap<ServiceName, f64>,
-    deployment: Deployment,
-    self_svc_name: ServiceName,
-    overshot_counter: AtomicUsize,
+    state: Arc<ServiceState>,
 }
 
 impl AlibabaService {
@@ -50,126 +40,16 @@ impl AlibabaService {
         config: ServiceTraceConfig,
         deployment: Deployment,
     ) -> Result<Self> {
-        let child_weights = config.call_graph.callees_of(&self_svc_name);
-
-        let mut child_call_probabilities = HashMap::with_capacity(child_weights.len());
-
-        if child_weights.len() > 0 {
-            // let total_weight: f64 = child_weights.values().map(|&w| w as f64).sum();
-            let total_weight: f64 = child_weights
-                .values()
-                .map(|&w| w as u64)
-                .max()
-                .expect("Max weight should be available")
-                as f64;
-            for (svc, weight) in &child_weights {
-                let probability = if total_weight > 0.0 {
-                    (*weight as f64) / total_weight
-                } else {
-                    0.0
-                };
-                child_call_probabilities.insert(svc.clone(), probability);
-            }
-        }
-        let children: Vec<_> = child_weights.keys().cloned().collect();
-        let children_for_log: Vec<_> = child_weights.into_iter().collect();
-
-        let clients = Arc::new(RwLock::new(HashMap::default()));
-
-        let cl = clients.clone();
-        let deploy = deployment.clone();
-        tokio::spawn(async move {
-            println!("Connecting to children: {:?}", children_for_log);
-            let clients = Self::connect_to_children(children, &deploy)
-                .await
-                .expect("Failed to connect to children");
-            println!("Children connected");
-
-            let mut guard = cl.write().await;
-            let _ = std::mem::replace(&mut *guard, clients);
-        });
-
-        Ok(AlibabaService {
-            config,
-            clients,
-            child_call_probabilities,
-            deployment,
-            self_svc_name,
-            overshot_counter: AtomicUsize::new(0),
-        })
-    }
-
-    async fn connect_to_children(
-        children: impl IntoIterator<Item = ServiceName>,
-        deployment: &Deployment,
-    ) -> Result<HashMap<ServiceName, RpcClient>> {
-        let mut clients = HashMap::new();
-        let children_it = children.into_iter();
-        for child_svc_name in children_it {
-            let svc_info = deployment.services.get(&child_svc_name).with_context(|| {
-                format!("Child service {} not found in deployment", child_svc_name)
-            })?;
-            let client = Self::connect_to_child_retried(svc_info).await?;
-            println!("Connected to child service {}", child_svc_name);
-            clients.insert(child_svc_name.clone(), client);
-        }
-        Ok(clients)
-    }
-
-    async fn connect_to_child_retried(svc_info: &ServiceDiscoveryInfo) -> Result<RpcClient> {
-        let ip = svc_info.ip.clone();
-        let channel = LoadBalancedChannel::new(
-            ip,
-            svc_info.port,
-            svc_info
-                .replicas
-                .try_into()
-                .expect("Replica count too high"),
-        )
-        .await;
-
-        Ok(ServiceClient::new(channel))
-    }
-
-    fn encode_parent_chain(
-        chain: &[ServiceName],
-    ) -> Result<Option<MetadataValue<tonic::metadata::Ascii>>, Status> {
-        if chain.is_empty() {
-            return Ok(None);
+        let (state, bootstrap) = ServiceState::initialize(self_svc_name, config, deployment)?;
+        if let Some(connection_task) = bootstrap {
+            connection_task.spawn();
         }
 
-        let delimiter = PARENT_CHAIN_DELIMITER.to_string();
-        let encoded = chain
-            .iter()
-            .map(|svc| svc.as_str())
-            .collect::<Vec<_>>()
-            .join(&delimiter);
-
-        MetadataValue::from_str(encoded.as_str())
-            .map(Some)
-            .map_err(|_| Status::internal("Failed to encode parent chain metadata"))
+        Ok(Self { state })
     }
 
-    fn decode_parent_chain(metadata: &MetadataMap) -> Result<Vec<ServiceName>, Status> {
-        let Some(value) = metadata.get(PARENT_CHAIN_METADATA_KEY) else {
-            return Ok(Vec::new());
-        };
-
-        let parents_str = value
-            .to_str()
-            .map_err(|_| Status::invalid_argument("Parent chain metadata is not valid ASCII"))?;
-
-        if parents_str.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let parents = parents_str
-            .split(PARENT_CHAIN_DELIMITER)
-            .filter(|name| !name.is_empty())
-            .map(|name| ServiceName::from_string(name.to_string()))
-            .collect();
-
-        Ok(parents)
+    fn state(&self) -> &ServiceState {
+        &self.state
     }
 }
 
@@ -179,42 +59,43 @@ impl Service for AlibabaService {
         &self,
         request: Request<ServiceRequest>,
     ) -> Result<Response<ServiceResponse>, Status> {
-        let parent_chain = Self::decode_parent_chain(request.metadata())?;
-        let _req = request.into_inner();
-        let method_name = _req.method_name;
+        let parent_chain = parent_chain::decode_parent_chain(request.metadata())?;
+        let request = request.into_inner();
+        let method_name = request.method_name.clone();
 
-        self.handle_method(
-            method_name.clone(),
-            _req.req_id,
-            _req.start_at,
-            parent_chain,
-        )
-        .await?;
+        self.state()
+            .handle_method(
+                method_name.clone(),
+                request.req_id,
+                request.start_at,
+                parent_chain,
+            )
+            .await?;
 
         Ok(Response::new(ServiceResponse {
             calls: vec![],
-            method_name: method_name,
+            method_name,
         }))
     }
 
-    async fn root(&self, _request: Request<RootRequest>) -> Result<Response<RootResponse>, Status> {
-        // TODO: remove this coupling with alibaba's data
-        const ROOT_SVC_NAME: &'static str = "user";
+    async fn root(&self, request: Request<RootRequest>) -> Result<Response<RootResponse>, Status> {
+        const ROOT_SVC_NAME: &str = "user";
 
-        if self.self_svc_name.as_str() != ROOT_SVC_NAME {
+        if self.state().self_service_name().as_str() != ROOT_SVC_NAME {
             return Err(Status::permission_denied(format!(
                 "Root endpoint can only be called on service {}, not {}",
                 ROOT_SVC_NAME,
-                self.self_svc_name.as_str()
+                self.state().self_service_name().as_str()
             )));
         }
-        let _req = _request.into_inner();
-        // All the root service does is calling into internal services
 
-        self.fanout(_req.req_id, _req.start_at, Vec::new()).await?;
+        let request = request.into_inner();
+        self.state()
+            .fanout(request.req_id, request.start_at, Vec::new())
+            .await?;
 
         Ok(Response::new(RootResponse {
-            req_id: _req.req_id,
+            req_id: request.req_id,
         }))
     }
 
@@ -224,98 +105,15 @@ impl Service for AlibabaService {
 
     async fn replay(
         &self,
-        _request: tonic::Request<ReplayRequest>,
+        request: Request<ReplayRequest>,
     ) -> Result<Response<ReplayResponse>, Status> {
-        let req = _request.into_inner();
-
-        // if req.exclude_queue_latency > req.slo {
-        //     return Err(Status::cancelled("Request latency too high (> 50 ms)"));
-        // }
-
+        let req = request.into_inner();
         let start = Instant::now();
 
-        let spans = req.spans;
-
-        use std::convert::TryFrom;
-        for span in spans {
-            if let Some(kind) = span.kind {
-                match kind {
-                    Kind::LocalSpan(single_span) => match SpanType::try_from(single_span.r#type) {
-                        Ok(SpanType::Compute) => {
-                            busy_spin(Duration::from_micros(single_span.val));
-                        }
-                        Ok(SpanType::Block) => {
-                            sleep(Duration::from_micros(single_span.val)).await;
-                        }
-                        Ok(SpanType::Unknown) => {
-                            warn!("Unknown span type, skipping");
-                        }
-                        Err(_) => {
-                            warn!("Invalid span type, skipping");
-                        }
-                    },
-                    Kind::ChildSpans(span_vector) => {
-                        let child_name = span_vector.name;
-                        let clients = self.clients.read().await;
-                        let child_channel = clients
-                            .get(&ServiceName::from_string(child_name.clone()))
-                            .ok_or(Status::not_found(format!(
-                                "Child service {} not found",
-                                child_name
-                            )))?;
-
-                        let mut child_req = Request::new(ReplayRequest {
-                            req_id: req.req_id,
-                            exclude_queue_latency: req.exclude_queue_latency,
-                            slo: req.slo,
-                            start_at: req.start_at,
-                            deadline: req.deadline,
-                            spans: span_vector.spans.clone(),
-                        });
-
-                        let ctx = {
-                            MasaContext::new(
-                                "replay".to_string(),
-                                req.req_id,
-                                req.slo,
-                                req.start_at,
-                                req.deadline,
-                            )
-                        };
-
-                        child_req.metadata_mut().insert_ctx("ctx", &ctx);
-
-                        let mut child_channel = child_channel.clone();
-                        match child_channel.replay(child_req).await {
-                            Ok(_response) => {
-                                // Child call succeeded
-                            }
-                            Err(e) => {
-                                return Err(Status::internal(format!(
-                                    "RPC to child service {} dropped or failed: {:?}",
-                                    child_name, e
-                                )));
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        self.state().execute_replay(&req).await?;
 
         let elapsed = start.elapsed();
-        if elapsed.as_millis() > req.exclude_queue_latency as u128 {
-            let old = self
-                .overshot_counter
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if old % 10 == 0 {
-                warn!(
-                    "Warning {}: processing took longer ({:?}) than request latency ({} us)",
-                    old, elapsed, req.exclude_queue_latency
-                );
-            }
-        } else if elapsed.as_micros() > req.slo as u128 {
-            return Err(Status::cancelled("Processing took more than SLO"));
-        }
+        self.state().evaluate_replay_timing(elapsed, &req)?;
 
         Ok(Response::new(ReplayResponse {
             req_id: req.req_id,
@@ -324,180 +122,53 @@ impl Service for AlibabaService {
     }
 }
 
-fn busy_spin(duration: Duration) {
-    let start = std::time::Instant::now();
-    while std::time::Instant::now() - start < duration {
-        // Busy spin
-    }
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(tracing::level_filters::LevelFilter::INFO)
+        .init();
 }
 
-impl AlibabaService {
-    async fn handle_method(
-        &self,
-        method_name: String,
-        req_id: u64,
-        start_at: u64,
-        parent_chain: Vec<ServiceName>,
-    ) -> Result<(), Status> {
-        let name = method_name.into();
-        let latency_dist = self
-            .config
-            .method_latency
-            .as_ref()
-            .ok_or(Status::internal(
-                "Configuration error: method latency not configured",
-            ))?
-            .get_method_dist(&name)
-            .ok_or(Status::not_found("Method not found"))?;
+fn load_service_config(
+    config_dir: std::path::PathBuf,
+    svc_name: &ServiceName,
+) -> ServiceTraceConfig {
+    const ROOT_SVC_NAME: &str = "user";
+    let root_svc_name = ServiceName::from_string(ROOT_SVC_NAME.to_string());
 
-        let total_latency_ms = latency_dist.sample(&mut rand::rng());
+    let svc_name_for_config = if svc_name == &root_svc_name {
+        None
+    } else {
+        Some(svc_name.clone())
+    };
 
-        let start = Instant::now();
-        self.fanout(req_id, start_at, parent_chain).await?;
-        let elapsed = start.elapsed();
-
-        let remaining = total_latency_ms - (elapsed.as_millis() as f64);
-        if remaining > 0.0 {
-            busy_spin(Duration::from_millis(remaining as u64));
-        } else {
-            // warn!(
-            //     "Warning: fanout took longer ({:?}) than total latency ({:.2} ms)",
-            //     elapsed, total_latency_ms
-            // );
-        }
-
-        Ok(())
-    }
-
-    async fn fanout(
-        &self,
-        req_id: u64,
-        start_at: u64,
-        parent_chain: Vec<ServiceName>,
-    ) -> Result<(), Status> {
-        let mut tasks = Vec::new();
-        let mut parent_chain_for_children = parent_chain.clone();
-        parent_chain_for_children.push(self.self_svc_name.clone());
-
-        let parent_chain_metadata = Self::encode_parent_chain(&parent_chain_for_children)?;
-
-        let clients = self.clients.read().await;
-        for (child_svc_name, client) in &*clients {
-            // Disallow self-edge
-            if child_svc_name == &self.self_svc_name {
-                continue;
-            }
-
-            // Disallow cycle
-            if parent_chain.iter().any(|svc| svc == child_svc_name) {
-                continue;
-            }
-
-            let probability = self
-                .child_call_probabilities
-                .get(child_svc_name)
-                .copied()
-                .unwrap_or(0.0)
-                .clamp(0.0, 1.0);
-
-            if probability <= 0.0 {
-                continue;
-            }
-
-            if probability < 1.0 && rand::random::<f64>() >= probability {
-                continue;
-            }
-
-            let method_to_call = self
-                .config
-                .method_freq_map
-                .as_ref()
-                .unwrap()
-                .get_service(child_svc_name)
-                .and_then(|sampler| Some(sampler.sample(&mut rand::rng()).to_string()))
-                .ok_or(Status::not_found(format!(
-                    "Configuration error: Service {child_svc_name} has no method to call"
-                )))?;
-
-            let mut client = client.clone();
-            let mut request = tonic::Request::new(ServiceRequest {
-                req_id: req_id.clone(),
-                start_at: start_at.clone(),
-                method_name: method_to_call,
-            });
-
-            if let Some(ref metadata_value) = parent_chain_metadata {
-                request
-                    .metadata_mut()
-                    .insert(PARENT_CHAIN_METADATA_KEY, metadata_value.clone());
-            }
-
-            let handle = tokio::spawn(async move {
-                client
-                    .get_data(request)
-                    .await
-                    .map_err(|e| Status::internal(format!("RPC to child service failed: {:?}", e)))
-            });
-            tasks.push((child_svc_name, handle));
-        }
-        for (child_svc, handle) in tasks {
-            let rpc_result = handle
-                .await
-                .map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
-            rpc_result.map_err(|e| {
-                error!("RPC to child service {} failed", child_svc);
-                e
-            })?;
-        }
-        Ok(())
-    }
+    ServiceTraceConfig::from_config_dir(&config_dir, svc_name_for_config)
+        .expect("Loading config should succeed")
 }
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // TODO: make log level configurable
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(LevelFilter::INFO)
-        .init();
+    init_tracing();
 
-    let deployment_path_str =
+    let deployment_path =
         env::var("DEPLOYMENT_CONFIG_PATH").unwrap_or_else(|_| "config/deployment.json".to_string());
-    let config_dir_str = env::var("CONFIG_PATH").unwrap_or_else(|_| "config/".to_string());
+    let config_dir = env::var("CONFIG_PATH").unwrap_or_else(|_| "config/".to_string());
     let service_name = env::var("SERVICE_NAME").expect("Failed to get SERVICE_NAME");
     let port = env::var("SERVICE_PORT").unwrap_or_else(|_| "50051".to_string());
 
-    let path = config_dir_str.into();
-
+    let config_path = config_dir.into();
     let svc_name = ServiceName::from_string(service_name);
+    let config = load_service_config(config_path, &svc_name);
+    info!("Config parsed");
 
-    // NOTE: HACK. Either make the root service name configurable, or
-    // configure the config files such that the root service has the same schema.
-    //
-    // Right now, the root service is "user" in Alibaba traces.
-    let config = {
-        const ROOT_SVC_NAME: &'static str = "user";
-        let root_svc_name = ServiceName::from_string(ROOT_SVC_NAME.to_string());
-        let svc_name_for_config = if svc_name == root_svc_name {
-            None
-        } else {
-            Some(svc_name.clone())
-        };
-
-        ServiceTraceConfig::from_config_dir(&path, svc_name_for_config)
-            .expect("Loading config should succeed")
-    };
-
-    println!("Config parsed");
-
-    let deployment_path = deployment_path_str.into();
+    let deployment_path = deployment_path.into();
     let deployment =
         Deployment::read_from_file(&deployment_path).expect("Failed to parse deployment");
 
     let svc = AlibabaService::new(svc_name.clone(), config, deployment).await?;
 
     let addr = format!("0.0.0.0:{}", port).parse()?;
-    println!("🚀 Generic Service {:?} listening on {}", svc_name, addr);
+    info!("🚀 Generic Service {:?} listening on {}", svc_name, addr);
 
     Server::builder()
         .add_service(ServiceServer::new(svc))
@@ -505,4 +176,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     Ok(())
+}
+
+pub(crate) fn busy_spin(duration: std::time::Duration) {
+    let start = std::time::Instant::now();
+    while std::time::Instant::now() - start < duration {
+        std::hint::spin_loop();
+    }
 }
