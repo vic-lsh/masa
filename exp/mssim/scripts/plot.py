@@ -12,7 +12,6 @@ from typing import Iterable, List, Sequence, Tuple
 import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.patches import Patch
-from typing import Sequence
 
 THRESHOLD_DEFAULT_MS = 50
 FILENAME_PATTERN = re.compile(r"root_latencies_(?P<rps>[0-9_]+)rps\.csv$")
@@ -120,20 +119,19 @@ def compute_goodput(samples: PolicySamples, threshold_ms: float, rps: float, dur
 
 def plot_goodput_fraction(
     rps_values: Sequence[float],
-    policies_goodput: Sequence[Sequence[float]],
+    goodput_by_policy: Sequence[Sequence[float]],
     output: Path,
     threshold_ms: float,
     labels: Sequence[str],
 ) -> None:
-    if len(labels) != len(policies_goodput):
+    if len(labels) != len(goodput_by_policy):
         raise ValueError("Number of labels must match number of policy goodput vectors.")
 
     fig, ax = plt.subplots(figsize=(8, 5))
-<<<<<<< HEAD
     cmap = plt.get_cmap("tab10")
     marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
 
-    for idx, (label, goodput_values) in enumerate(zip(labels, policies_goodput)):
+    for idx, (label, goodput_values) in enumerate(zip(labels, goodput_by_policy)):
         marker = marker_cycle[idx % len(marker_cycle)]
         color = cmap(idx % cmap.N)
         fractions = [
@@ -141,16 +139,6 @@ def plot_goodput_fraction(
             for goodput, rps in zip(goodput_values, rps_values)
         ]
         ax.plot(rps_values, fractions, marker=marker, label=label, color=color)
-=======
-    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
-    cmap = plt.get_cmap("tab10")
-
-    for idx, (label, goodput_values) in enumerate(zip(labels, goodput_by_policy)):
-        marker = marker_cycle[idx % len(marker_cycle)]
-        color = cmap(idx % cmap.N)
-        fraction = [gp / rps if rps else 0.0 for gp, rps in zip(goodput_values, rps_values)]
-        ax.plot(rps_values, fraction, marker=marker, label=label, color=color)
->>>>>>> vic/graph-explore
 
     ax.set_xlabel("Offered load (RPS)")
     ax.set_ylabel("Goodput Fraction (RPS)")
@@ -164,53 +152,20 @@ def plot_goodput_fraction(
 
 
 def plot_goodput_absolute(
-<<<<<<< HEAD
     rps_values: Sequence[float],
-    policies_goodput: Sequence[Sequence[float]],
-    output: Path,
-    threshold_ms: float,
-=======
-    rps_values: List[float],
     goodput_by_policy: Sequence[Sequence[float]],
     output: Path,
     threshold_ms: float,
     labels: Sequence[str],
 ) -> None:
+    if len(labels) != len(goodput_by_policy):
+        raise ValueError("Number of labels must match number of policy goodput vectors.")
+
     fig, ax = plt.subplots(figsize=(8, 5))
     marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
     cmap = plt.get_cmap("tab10")
 
     for idx, (label, goodput_values) in enumerate(zip(labels, goodput_by_policy)):
-        marker = marker_cycle[idx % len(marker_cycle)]
-        color = cmap(idx % cmap.N)
-        ax.plot(rps_values, goodput_values, marker=marker, label=label, color=color)
-
-    ax.set_xlabel("Offered load (RPS)")
-    ax.set_ylabel("Goodput (RPS)")
-    ax.set_title(f"Goodput vs RPS with SLO={threshold_ms:g} ms")
-    ax.grid(True, which="both", linestyle="--", alpha=0.4)
-    ax.legend()
-    fig.tight_layout()
-    output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output)
-    print(f"Saved comparison plot to {output}")
-
-
-def build_latency_plots(
-    rps_values: List[float],
-    policies: Sequence[PolicySamples],
-    output: Path,
->>>>>>> vic/graph-explore
-    labels: Sequence[str],
-) -> None:
-    if len(labels) != len(policies_goodput):
-        raise ValueError("Number of labels must match number of policy goodput vectors.")
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-    cmap = plt.get_cmap("tab10")
-    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
-
-    for idx, (label, goodput_values) in enumerate(zip(labels, policies_goodput)):
         marker = marker_cycle[idx % len(marker_cycle)]
         color = cmap(idx % cmap.N)
         ax.plot(rps_values, goodput_values, marker=marker, label=label, color=color)
