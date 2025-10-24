@@ -1,0 +1,7 @@
+test_mssim_experiment:
+  stage: test
+  before_script: []
+  tags:
+    - on-host
+  script:
+    - ./scripts/test_mssim_experiment.sh
