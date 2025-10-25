@@ -208,10 +208,10 @@ pub async fn create_service() -> TextServiceServer<TextSvcImpl> {
     //         .unwrap(),
     // );
     // TextServiceServer::new(service)
-    let url_shorten_client: UrlShortenServiceClient<Channel> = 
-        UrlShortenServiceClient::connect(url_shorten_addr)
-            .await
-            .unwrap();
+        let url_shorten_client: UrlShortenServiceClient<Channel> = 
+            UrlShortenServiceClient::connect(url_shorten_addr)
+                .await
+                .unwrap();
 
     let user_mention_client: UserMentionServiceClient<Channel> = 
         UserMentionServiceClient::connect(user_mention_addr)
