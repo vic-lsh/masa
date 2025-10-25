@@ -29,10 +29,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy all compiled binaries
-COPY --from=rust_builder /app/target/release/ .
+COPY --from=rust_builder /app/target/release/ /usr/local/bin/
 
 # Set up the entrypoint script (ensure entrypoint.sh is also in the socialnet folder)
 COPY apps/socialnet/socialnet_entrypoint.sh /usr/local/bin/socialnet_entrypoint.sh
 RUN chmod +x /usr/local/bin/socialnet_entrypoint.sh
-ENTRYPOINT ["/usr/local/bin/socialnet_entrypoint.sh"]
-CMD ["echo", "Please specify a binary to run via BINARY_NAME env var."]
+# ENTRYPOINT ["/usr/local/bin/socialnet_entrypoint.sh"]
+ENTRYPOINT [ "sh", "-c" ]
+CMD ["/usr/local/bin/socialnet_entrypoint.sh"]
+# CMD ["echo", "Please specify a binary to run via BINARY_NAME env var."]

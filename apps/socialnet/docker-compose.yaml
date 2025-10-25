@@ -39,7 +39,6 @@ services:
     restart: always
     ports:
       - "8081:8080"
-    command: []
     environment:
       - BINARY_NAME=home_timeline_server
       - REDIS_URL=redis://redis:6379
@@ -111,8 +110,13 @@ services:
     ports:
       - "8085:8080"
     command: []
+    depends_on:
+      - user_mention
+      - url_shorten
     environment:
       - BINARY_NAME=textservice_server # <-- Selects the binary
+      - USER_MENTION_SERVICE_ADDR=http://user_mention:8080
+      - URL_SHORTEN_SERVICE_ADDR=http://url_shorten:8080
     networks:
       - socialnet-network
 
