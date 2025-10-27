@@ -303,6 +303,17 @@ fn make_load_generator_config_yaml(
         environment.insert(Yaml::String("SLO_MS".into()), Yaml::String(slo));
     }
 
+    if let Ok(max_in_flight) = env::var("MAX_IN_FLIGHT") {
+        environment.insert(
+            Yaml::String("MAX_IN_FLIGHT".into()),
+            Yaml::String(max_in_flight),
+        );
+    }
+
+    if let Ok(warmup) = env::var("WARMUP_SEC") {
+        environment.insert(Yaml::String("WARMUP_SEC".into()), Yaml::String(warmup));
+    }
+
     service_def.insert(Yaml::String("environment".into()), Yaml::Hash(environment));
 
     let host_data_dir = env::var("HOST_TRACE_DIR")
