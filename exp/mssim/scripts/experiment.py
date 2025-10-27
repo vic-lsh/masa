@@ -28,6 +28,7 @@ class ExperimentConfig:
     config_dir: Path
     output_root: Path
     duration_sec: int
+    warmup_sec: int
     slo_ms: int
     policies: List[str]
     rps_values: List[float]
@@ -51,6 +52,8 @@ def load_config(path: Path) -> ExperimentConfig:
         output_root = Path(data.get("output_root", f"apps/mssim/data/experiments")) / name
         
         duration_sec = int(data.get("duration_sec", 0))
+        warmup_sec = int(data.get("warmup_sec", 0))
+        
         policies = list(data.get("policies", []))
         rps_values = [float(v) for v in data.get("rps_values", [])]
         slo_ms = int(data["slo_ms"])
@@ -69,6 +72,7 @@ def load_config(path: Path) -> ExperimentConfig:
         config_dir=config_dir,
         output_root=output_root,
         duration_sec=duration_sec,
+        warmup_sec=warmup_sec,
         slo_ms=slo_ms,
         policies=policies,
         rps_values=rps_values,
@@ -97,6 +101,8 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         env["REPLAY_TRACE_PATH"] = str(cfg.replay_path)
     if cfg.duration_sec > 0:
         env["DURATION"] = str(cfg.duration_sec)
+    if cfg.warmup_sec > 0:
+        env["WARMUP_SEC"] = str(cfg.warmup_sec)
 
     env["HOST_TRACE_DIR"] = run_dir.resolve()
 
