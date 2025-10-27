@@ -1,13 +1,27 @@
-use crate::{body::BoxBody, masa::context::read_context, GrpcMethod, Request, Response, Status};
+use crate::{
+    body::BoxBody,
+    masa::context::read_context,
+    Code,
+    GrpcMethod,
+    Request,
+    Response,
+    Status,
+};
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, RwLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+        Mutex,
+        RwLock,
+    },
+    task::Poll,
     time::Instant,
 };
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{estimate_method_latency, track_method_latency};
-use masa::{Context, LatencyDistribution, MethodId};
+use masa::{time_now, Context, LatencyDistribution, MethodId, EARLY_RETURN};
 
 #[derive(Debug)]
 /// This policy computes the deadline d of a child request as  
@@ -49,7 +63,44 @@ pub struct ParentContext {
     ctx: Context,
     server: Arc<ServerContext>,
 
+    will_early_return: AtomicBool,
     child_end_times: Mutex<Vec<(MethodId, Instant)>>,
+}
+
+impl ParentContext {
+    #[inline]
+    fn check_early_return(&self) -> bool {
+        if EARLY_RETURN {
+            self.check_early_return_impl()
+        } else {
+            false
+        }
+    }
+
+    fn check_early_return_impl(&self) -> bool {
+        if self.will_early_return.load(Ordering::Relaxed) {
+            return true;
+        }
+
+        let now = time_now();
+        let should_early_return = now >= self.ctx.deadline();
+
+        if should_early_return {
+            if self
+                .will_early_return
+                .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+            }
+        }
+
+        should_early_return
+    }
+
+    #[inline]
+    fn issue_early_return(&self) -> Status {
+        Status::new(Code::DeadlineExceeded, format!("/EarlyReturn"))
+    }
 }
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
@@ -62,8 +113,30 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             method,
             ctx: read_context(req),
             server: server_ctx,
+            will_early_return: AtomicBool::new(false),
             child_end_times: Mutex::new(Vec::new()),
         }
+    }
+
+    fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
+        if self.check_early_return() {
+            return Err(Err(self.issue_early_return()));
+        }
+
+        Ok(())
+    }
+
+    fn after_poll<Ret>(
+        &self,
+        poll: &Poll<Result<Response<Ret>, Status>>,
+    ) -> Result<(), Result<Response<Ret>, Status>> {
+        if let Poll::Pending = poll {
+            if self.check_early_return() {
+                return Err(Err(self.issue_early_return()));
+            }
+        }
+
+        Ok(())
     }
 
     fn before_child_rpc<T>(
@@ -72,7 +145,10 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         request: &mut Request<T>,
         _child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
-        // TODO: early return logic
+        if self.check_early_return() {
+            return Err(self.issue_early_return());
+        }
+
         // NOTE: if we don't have enough data to estimate the duration of the parent or child
         // request, we set child deadline = parent deadline
         // NOTE: we need to include the parent method in the key, because the duration until the
