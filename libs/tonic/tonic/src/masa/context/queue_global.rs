@@ -7,7 +7,6 @@ use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use crate::body::BoxBody;
 use crate::{Code, Response};
 use masa::{time_now, Context, EARLY_RETURN};
-use tracing::error;
 
 #[derive(Debug)]
 /// This policy always sets the deadline of each request as

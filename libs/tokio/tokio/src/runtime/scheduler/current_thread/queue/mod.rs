@@ -21,6 +21,7 @@ pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
     feature = "prio_global_queue_tracing",
     feature = "prio_local",
     feature = "prio_local_direct",
+    feature = "prio_local_indirect",
     feature = "perfect_lsf",
     feature = "prio_global_queue_tracing",
 )))]
@@ -31,6 +32,7 @@ pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
     feature = "prio_global_queue_tracing",
     feature = "prio_local",
     feature = "prio_local_direct",
+    feature = "prio_local_indirect",
     feature = "perfect_lsf"
 ))]
 pub(crate) type LocalRunQueueInner<T> = prio_bh::BinaryHeapQueue<T>;
