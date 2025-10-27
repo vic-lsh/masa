@@ -426,14 +426,6 @@ impl AlibabaService {
                 method_name: method_to_call,
             });
 
-            // let ctx = {
-            //     let slo = 50_000;
-            //     let deadline = start_at + slo;
-            //     MasaContext::new("fanout".to_string(), req_id, slo, start_at, deadline)
-            // };
-
-            // request.metadata_mut().insert_ctx("ctx", &ctx);
-
             if let Some(ref metadata_value) = parent_chain_metadata {
                 request
                     .metadata_mut()
