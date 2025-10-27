@@ -327,7 +327,7 @@ def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float, float]:
 
     try:
         experiment_root = Path(config["output_root"]) / config["experiment_name"]
-        policies = config["policies"]
+        policies = config["policies_to_plot"]
         duration = config["duration_sec"]
     except KeyError as exc:
         raise KeyError(f"Missing key in plot config: {exc}") from exc
