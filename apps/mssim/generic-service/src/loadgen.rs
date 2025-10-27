@@ -6,14 +6,14 @@ use std::{
     time::Duration,
 };
 
-use masa::{Context as MasaContext, time_now};
+use masa::{time_now, Context as MasaContext};
 use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::sync::{Mutex, Semaphore, mpsc};
+use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::time::Instant;
 use tokio::time::MissedTickBehavior;
 use tokio::{fs, time};
-use tonic::Request;
 use tonic::transport::masa_channel::LoadBalancedChannel;
+use tonic::Request;
 
 mod replay;
 use replay::extract_queue_latency;
@@ -22,11 +22,11 @@ mod service {
     tonic::include_proto!("service");
 }
 use replay::{
-    QueueLatencySample, ReplayWorkItem, load_frontend_replay_items, queue_latency_output_path,
-    run_replay_load, write_queue_latency_csv,
+    load_frontend_replay_items, queue_latency_output_path, run_replay_load,
+    write_queue_latency_csv, QueueLatencySample, ReplayWorkItem,
 };
-use service::RootRequest;
 use service::service_client::ServiceClient;
+use service::RootRequest;
 type RpcClient = ServiceClient<LoadBalancedChannel>;
 
 const PERIODIC_FLUSH_INTERVAL_SECS: u64 = 10;
