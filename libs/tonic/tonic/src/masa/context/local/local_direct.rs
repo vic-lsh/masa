@@ -1,19 +1,11 @@
 use crate::{
-    body::BoxBody,
-    masa::context::read_context,
-    Code,
-    GrpcMethod,
-    Request,
-    Response,
-    Status,
+    body::BoxBody, masa::context::read_context, Code, GrpcMethod, Request, Response, Status,
 };
 use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
-        Mutex,
-        RwLock,
+        Arc, Mutex, RwLock,
     },
     task::Poll,
     time::Instant,
@@ -90,8 +82,7 @@ impl ParentContext {
                 .will_early_return
                 .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
-            {
-            }
+            {}
         }
 
         should_early_return
@@ -159,7 +150,6 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             format!("{}/{}", self.method.id(), child_method.id()),
         )
         .unwrap_or(0);
-
 
         // let estimate_remaining = 10 as u64;
         // NOTE(vic): could we have passed the deadline at this point?
