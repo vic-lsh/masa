@@ -25,6 +25,5 @@ class Deployment:
 
     def export_to_file(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = self.to_dict()
+        data = {"services": self.to_dict()}
         path.write_text(json.dumps(data, indent=2))
-

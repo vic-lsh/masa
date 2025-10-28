@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 REPO_ROOT = Path(__file__).parent.parent.parent.parent.resolve()
-MSSIM_ROOT = REPO_ROOT / "apps" / "mssim" / "simulator"
+MSSIM_ROOT = REPO_ROOT / "apps" / "mssim"
 
 print("repo root is ", REPO_ROOT)
 print("mssim root is ", MSSIM_ROOT)
@@ -119,21 +119,19 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
         raise FileNotFoundError(f"Required input paths do not exist: {joined}")
 
     docker_compose_path = (run_dir / "docker-compose.yml").resolve()
+    print("docker_compose_path is ", docker_compose_path)
 
     deployment_json_path = (run_dir / "deployment.json").resolve()
+    print("deployment_json_path is ", deployment_json_path)
 
     trace_cmd = [
-        "cargo",
-        "run",
-        "--bin",
-        "mssim",
-        "--",
-        "--alibaba-trace",
+        sys.executable,
+        "-m",
+        "simulator_py.main",
+        "-a",
         str(cfg.trace_dir),
-        "--config-dir",
+        "-c",
         str(cfg.config_dir),
-        "--orchestrator",
-        cfg.orchestrator,
         "--docker-compose-output-path",
         str(docker_compose_path),
         "--deployment-output-path",
