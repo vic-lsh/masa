@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Sequence
 
-from . import cli
+from .cli import parse_args
 from .orchestrator import launch_simulation_from_trace
 from .simulator_config import SimulatorConfig, SimulatorConfigError
 from .trace_config import TraceConfig, TraceConfigError
@@ -33,7 +33,7 @@ def run_from_alibaba_trace(
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = cli.parse_args(argv)
+    args = parse_args(argv)
 
     try:
         run_from_alibaba_trace(

@@ -197,7 +197,7 @@ def _make_load_generator_config_yaml(
         "PORT": str(frontend_info.port),
         "IP": frontend_info.ip,
     }
-    environment.update(_collect_optional_env("DURATION", "RPS", "SLO_MS"))
+    environment.update(_collect_optional_env("DURATION", "RPS", "SLO_MS", "WARMUP_SEC"))
 
     host_data_dir = os.environ.get("HOST_TRACE_DIR", str(trace_dir))
     volumes = [f"{host_data_dir}:{LOADGEN_OUTPUT_MOUNT}"]
