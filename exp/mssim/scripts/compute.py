@@ -9,12 +9,11 @@ import json
 from pathlib import Path
 from typing import Dict
 
-LATENCY_PATH = Path(
-    "/home/jiexiao/research/masa-internal/trace-analysis/golden/S_86516878/latency_percentiles.json"
-)
-FREQUENCY_PATH = Path(
-    "/home/jiexiao/research/masa-internal/trace-analysis/golden/S_86516878/interface_distribution.json"
-)
+
+GRAPH_PATH = Path("trace-analysis/graph_reports/S_14677443")
+
+LATENCY_PATH = GRAPH_PATH / "latency_percentiles.json"
+FREQUENCY_PATH = GRAPH_PATH / "interface_distribution.json"
 
 
 def load_json(path: Path) -> Dict:
