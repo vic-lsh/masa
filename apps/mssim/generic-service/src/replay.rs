@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{Ordering};
 use std::{
     fs::File,
     io::BufReader,
@@ -15,16 +15,14 @@ use tokio::fs;
 use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::time::Instant;
 use tonic::metadata::MetadataMap;
-use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::Request;
 
 use crate::service::local_span::SpanType as ProtoSpanType;
-use crate::service::service_client::ServiceClient;
 use crate::service::{
     span::Kind as ProtoSpanKind, ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
     ReplayRequest as ProtoReplayRequest, Span as ProtoSpan,
 };
-use crate::{Stats, OUTPUT_DIR};
+use crate::{ClientPool, Stats, OUTPUT_DIR};
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -248,7 +246,7 @@ fn convert_span_to_proto(span: &FrontendSpan) -> anyhow::Result<(ProtoSpan, u64)
 }
 
 pub async fn run_replay_load(
-    client: ServiceClient<LoadBalancedChannel>,
+    client_pool: ClientPool,
     work_items: Arc<Vec<ReplayWorkItem>>,
     stats: Arc<Stats>,
     inflight_guard: Arc<Semaphore>,
@@ -266,7 +264,7 @@ pub async fn run_replay_load(
         let permit_pool = inflight_guard.clone();
         let queue_samples = queue_samples.clone();
         let latency_sample_tx = latency_sample_tx.clone();
-        let mut rpc_client = client.clone();
+        let mut rpc_client = client_pool.acquire();
         let stats = Arc::clone(&stats);
 
         let handle = tokio::spawn(async move {
