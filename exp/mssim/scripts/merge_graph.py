@@ -40,12 +40,12 @@ def parse_args() -> argparse.Namespace:
 
 def load_edges(graph_dir: Path, user_alias: str) -> Iterable[Tuple[str, str, float]]:
     def _parse_weight(raw_value: str | None) -> float:
-    if raw_value is None or raw_value == "":
-        return 1.0
-    try:
-        return float(raw_value)
-    except ValueError as exc:
-        raise ValueError(f"Invalid weight value: {raw_value!r}") from exc
+        if raw_value is None or raw_value == "":
+            return 1.0
+        try:
+            return float(raw_value)
+        except ValueError as exc:
+            raise ValueError(f"Invalid weight value: {raw_value!r}") from exc
     
     edges_path = graph_dir / "edges.csv"
     if not edges_path.exists():
@@ -73,7 +73,8 @@ def merge_edges(graph_dirs: list[Path]) -> Tuple[Dict[Tuple[str, str], float], D
     merged: Dict[Tuple[str, str], float] = defaultdict(float)
     alias_map: Dict[Path, str] = {}
     for idx, graph_dir in enumerate(graph_dirs, start=1):
-        user_alias = f"USER{idx}"
+        dir_name = graph_dir.name
+        user_alias = f"User_{dir_name}"
         alias_map[graph_dir] = user_alias
         for caller, callee, weight in load_edges(graph_dir, user_alias):
             merged[(caller, callee)] += weight
