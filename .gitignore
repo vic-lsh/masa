@@ -7,3 +7,4 @@ tags
 .codex
 !.codex/prompts/
 .vscode
+**/__pycache__/**
