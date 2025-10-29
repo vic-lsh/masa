@@ -1,5 +1,3 @@
-# mainrepo/apps/socialnet/Dockerfile
-
 # Stage 1: Build the application
 FROM rustlang/rust:nightly AS rust_builder
 WORKDIR /app
@@ -17,9 +15,6 @@ COPY 3rd_party ./3rd_party
 COPY apps/socialnet/proto ./apps/socialnet/proto
 
 # Build the entire workspace
-# RUN cargo build --workspace --release
-# RUN cargo build --workspace --release --exclude examples
-# RUN cargo build --workspace --release --exclude examples --exclude generic-service
 RUN cargo build --release -p socialnet
 
 # Stage 2: Create the final, minimal image
@@ -34,7 +29,5 @@ COPY --from=rust_builder /app/target/release/ /usr/local/bin/
 # Set up the entrypoint script (ensure entrypoint.sh is also in the socialnet folder)
 COPY apps/socialnet/socialnet_entrypoint.sh /usr/local/bin/socialnet_entrypoint.sh
 RUN chmod +x /usr/local/bin/socialnet_entrypoint.sh
-# ENTRYPOINT ["/usr/local/bin/socialnet_entrypoint.sh"]
 ENTRYPOINT [ "sh", "-c" ]
 CMD ["/usr/local/bin/socialnet_entrypoint.sh"]
-# CMD ["echo", "Please specify a binary to run via BINARY_NAME env var."]

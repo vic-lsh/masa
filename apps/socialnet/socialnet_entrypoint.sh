@@ -1,9 +1,4 @@
 #!/bin/sh
-# entrypoint.sh
-
-# This line runs the command specified by the BINARY_NAME variable.
-# "$@" passes along any other arguments to the binary.
-# exec "/app/$BINARY_NAME" "$@"
 
 # Check if the BINARY_NAME variable is set and not empty
 if [ -n "$BINARY_NAME" ]; then
