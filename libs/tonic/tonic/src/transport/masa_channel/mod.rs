@@ -92,9 +92,14 @@ impl LoadBalancedChannel {
     pub async fn new_from(hostname_base: String, port: u16, replicas: u8, start: u8) -> Self {
         let mut endpoints = Vec::new();
         for i in 0..replicas {
-            let endpoint =
-                Endpoint::from_shared(format!("http://{}-{}:{}", hostname_base, i + start, port))
-                    .unwrap();
+            // For single replica (replicas=1), use the service name directly without suffix
+            // This matches both Kubernetes service naming and Docker Compose single container naming
+            let endpoint_url = if replicas == 1 {
+                format!("http://{}:{}", hostname_base, port)
+            } else {
+                format!("http://{}-{}:{}", hostname_base, i + start, port)
+            };
+            let endpoint = Endpoint::from_shared(endpoint_url).unwrap();
             endpoints.push(endpoint);
         }
 

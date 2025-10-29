@@ -1,0 +1,48 @@
+# Kubernetes-specific Dockerfile that bakes trace data into the image
+FROM rust:latest AS rust_builder
+
+WORKDIR /app
+
+# Install protobuf-compiler and other essential tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    protobuf-compiler \
+    libprotobuf-dev \
+    build-essential \
+    pkg-config \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rustup override set nightly
+
+# Copy workspace files
+COPY Cargo.toml Cargo.toml
+COPY Cargo.lock Cargo.lock
+COPY 3rd_party 3rd_party
+COPY apps apps
+COPY libs libs
+
+# Build the generic service
+RUN cargo build --release --bin generic-service
+
+# Build arguments for where to find trace/config data in the build context
+# These will be relative paths from workspace root
+ARG TRACE_DATA_PATH=trace-analysis/golden/S_86516878
+ARG CONFIG_DATA_PATH=apps/mssim/simulator/service_configs
+ARG SERVICE_CONTAINER_PORT=8000
+
+# Create config directory and copy trace data and configs into the image
+# Note: We copy entire directories then move files to avoid ARG expansion issues in COPY
+COPY ${TRACE_DATA_PATH} /tmp/trace/
+COPY ${CONFIG_DATA_PATH} /tmp/config/
+
+RUN mkdir -p /app/config && \
+    cp /tmp/trace/*.csv /tmp/trace/*.json /app/config/ 2>/dev/null || true && \
+    cp /tmp/config/deployment.json /app/config/deployment.json && \
+    rm -rf /tmp/trace /tmp/config
+
+# Expose the gRPC port
+EXPOSE ${SERVICE_CONTAINER_PORT}
+
+# Command to run the service
+ENV RUST_BACKTRACE=1
+CMD ["cargo", "run", "--release", "--bin", "generic-service"]

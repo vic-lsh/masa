@@ -132,7 +132,11 @@ pub async fn launch_simulation_from_yaml(
             Ok(())
         }
         Backend::Kubernetes => {
-            let images = kubernetes::build_images(workspace_root.as_path())?;
+            let images = kubernetes::build_images(
+                workspace_root.as_path(),
+                trace_dir.as_path(),
+                service_config_dir,
+            )?;
             let manifest_path = kubernetes::generate_manifest(
                 &config,
                 &port_assignments,
