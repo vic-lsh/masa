@@ -19,6 +19,7 @@ CONTAINER_MEM_LIMIT = "10GB"
 DEFAULT_SVC_PORT = 50051
 PROJECT_NAME = "mssim"
 NETWORK_NAME = "microservice_net"
+GENERIC_SERVICE_IMAGE_ENV = "GENERIC_SERVICE_IMAGE"
 
 
 @dataclass(slots=True)
@@ -148,8 +149,9 @@ def _make_service_def(
     trace_dir: Path,
     deployment_output_path: Path,
 ) -> ComposeService:
+    image_name = os.environ.get(GENERIC_SERVICE_IMAGE_ENV, "generic_service")
     return ComposeService(
-        image="generic_service",
+        image=image_name,
         scale=sim_cfg.replicas.count_for(service_name),
         deploy={
             "resources": {
