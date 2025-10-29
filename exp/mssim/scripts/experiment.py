@@ -5,8 +5,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -17,6 +19,7 @@ from typing import Dict, Iterable, List, Optional
 
 REPO_ROOT = Path(__file__).parent.parent.parent.parent.resolve()
 MSSIM_ROOT = REPO_ROOT / "apps" / "mssim"
+GENERIC_SERVICE_IMAGE = "generic_service"
 
 print("repo root is ", REPO_ROOT)
 print("mssim root is ", MSSIM_ROOT)
@@ -86,7 +89,13 @@ def load_config(path: Path) -> ExperimentConfig:
     return cfg
 
 
-def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> int:
+def run_once(
+    cfg: ExperimentConfig,
+    run_dir: Path,
+    policy: str,
+    rps: float,
+    service_image: str,
+) -> int:
     env = os.environ.copy()
     env.update(cfg.extra_env)
     env.setdefault("ORCHESTRATOR", cfg.orchestrator)
@@ -104,6 +113,7 @@ def run_once(cfg: ExperimentConfig, run_dir: Path, policy: str, rps: float) -> i
     if cfg.warmup_sec > 0:
         env["WARMUP_SEC"] = str(cfg.warmup_sec)
 
+    env["GENERIC_SERVICE_IMAGE"] = service_image
     env["HOST_TRACE_DIR"] = run_dir.resolve()
 
     # Fail if required input paths do not exist
@@ -224,24 +234,73 @@ def build_load_generator_image():
     subprocess.run(build_cmd, cwd=REPO_ROOT, check=True)
 
 
-def build_generic_service_image(feature):
-    print(f"Building mssim generic service image for feature {feature}")
-    build_cmd = [
-        "docker",
-        "buildx",
-        "build",
-        "--load",
-        "-t",
-        "generic_service",
-        "--build-arg",
-        f"FEATURE_ARG={feature}",
-        "--target",
-        "generic-service",
-        "-f",
-        "apps/mssim/generic-service/Dockerfile",
-        REPO_ROOT, # this should be the masa project root
-    ]
-    subprocess.run(build_cmd, cwd=REPO_ROOT, check=True)
+def _canonicalize_features(feature: str) -> str:
+    parts = [part.strip() for part in re.split(r"[\s,]+", feature) if part.strip()]
+    if not parts:
+        return ""
+    return ",".join(sorted(set(parts)))
+
+
+def _feature_tag(features: str) -> str:
+    canonical = features or "default"
+    slug = re.sub(r"[^a-z0-9_.-]+", "-", canonical.lower()).strip("-.")
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
+    if slug:
+        tag = f"{slug}-{digest}"
+    else:
+        tag = digest
+    if len(tag) > 120:
+        trimmed = slug[:100].rstrip("-.")
+        tag = f"{trimmed}-{digest}" if trimmed else digest
+    return tag
+
+
+def _docker_image_exists(image: str) -> bool:
+    result = subprocess.run(
+        ["docker", "image", "inspect", image],
+        cwd=REPO_ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
+def build_generic_service_image(feature: str) -> str:
+    canonical_features = _canonicalize_features(feature)
+    features_for_build = canonical_features or feature.strip() or "default"
+    tag_suffix = _feature_tag(canonical_features)
+    feature_image = f"{GENERIC_SERVICE_IMAGE}:{tag_suffix}"
+
+    if _docker_image_exists(feature_image):
+        print(f"Reusing cached image {feature_image}")
+    else:
+        print(
+            f"Building mssim generic service image for features '{features_for_build}'",
+        )
+        build_cmd = [
+            "docker",
+            "buildx",
+            "build",
+            "--load",
+            "-t",
+            feature_image,
+            "--build-arg",
+            f"FEATURE_ARG={features_for_build}",
+            "--target",
+            "generic-service",
+            "-f",
+            "apps/mssim/generic-service/Dockerfile",
+            REPO_ROOT,
+        ]
+        subprocess.run(build_cmd, cwd=REPO_ROOT, check=True)
+
+    subprocess.run(
+        ["docker", "tag", feature_image, GENERIC_SERVICE_IMAGE],
+        cwd=REPO_ROOT,
+        check=True,
+    )
+
+    return feature_image
 
 
 
@@ -265,7 +324,8 @@ def execute(cfg: ExperimentConfig, dry_run: bool) -> None:
             json.dump(metadata, fh, indent=2, sort_keys=True)
 
     build_load_generator_image()
-    policy_prev = None
+    feature_key_prev = None
+    current_generic_service_image = GENERIC_SERVICE_IMAGE
     for run in build_runs(cfg):
         policy = str(run["policy"])
         rps = float(run["rps"])
@@ -279,16 +339,17 @@ def execute(cfg: ExperimentConfig, dry_run: bool) -> None:
             "command": "cargo run -- --alibaba-trace ...",
         }
 
-        if policy != policy_prev:
-            build_generic_service_image(policy)
-        policy_prev = policy
-        
+        feature_key = _canonicalize_features(policy) or policy.strip() or "default"
+        if feature_key != feature_key_prev:
+            current_generic_service_image = build_generic_service_image(policy)
+            feature_key_prev = feature_key
+
         # Write metadata before running
         write_metadata(run_dir, metadata)
         if dry_run:
             print(f"[dry-run] would execute policy={policy} rps={rps} repeat={repeat}")
             continue
-        rc = run_once(cfg, run_dir, policy, rps)
+        rc = run_once(cfg, run_dir, policy, rps, current_generic_service_image)
         status = "ok" if rc == 0 else f"failed({rc})"
         print(f"run policy={policy} rps={rps} repeat={repeat}: {status}")
 
