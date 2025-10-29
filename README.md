@@ -25,7 +25,8 @@ We have also included the source code of a few 3rd-party crates in `3rd_party`. 
 
 ### Running an application
 
-Currently, Masa has three applications for performing experiments under `apps/<app>`:
+Application source lives under `apps/<app>`, and the experiment assets for each app live under `exp/<app>`.
+Masa currently has three applications for experimentation:
 
 - `hotel`: Based on the Hotel application in Deathstarbench. We've ported this application to Rust for Masa compatibility.
 - `socialnet`: TODO
@@ -37,14 +38,14 @@ Docker compose is the recommended way to run an application. See instructions in
 
 NOTE: This is currently only supported for `hotel` and `synthetic`.
 
-We have some basic scripts to automate running experiments on an application. Assuming you are in `apps/<app>`, an experiment takes the following files as input:
+We have some basic scripts to automate running experiments on an application. Assuming you are in `exp/<app>`, an experiment takes the following files as input:
 
 ```
 ./data/in/<experiment>
 ├── gen_config.json     # load gen config
 ├── policies            # list of policies to run the experiment with
 ├── config.docker.json  # optional: app config for non-hotel apps (falls back to ./scripts/local/config.docker.json)
-└── hotel.json          # required: hotel app config copied to ./scripts/local/hotel.json
+└── hotel.json          # required: hotel app config copied to apps/<app>/scripts/local/hotel.json during experiment setup
 ```
 
 See `./data/in/template` for an example experiment.
@@ -86,7 +87,7 @@ We use python to generate plots. To setup a new virtual environment and install 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate # activates the virtual environment
-python3 -m pip install -r apps/scripts/plotting/requirements.txt
+python3 -m pip install -r exp/common/scripts/plotting/requirements.txt
 ```
 
 ###### Generating the plots
@@ -95,7 +96,7 @@ To generate plots for visualizing goodput and latency of an experiment, run
 
 ```
 source .venv/bin/activate                               # if not activated already
-../scripts/plotting/plot-experiment.sh "<experiment>"
+../common/scripts/plotting/plot-experiment.sh "<experiment>"
 ```
 
 from an application folder. The plots will be saved at `data/plots/<experiment>`.
@@ -115,7 +116,7 @@ remote_masa_path="remote/path/to/masa"
 then you can run
 
 ```
-../scripts/sync-data.sh
+../common/scripts/sync-data.sh
 ```
 
 from an application folder to sync everything in the `data` folder from your remote machine to your local machine over ssh.
@@ -125,10 +126,11 @@ from an application folder to sync everything in the `data` folder from your rem
 NOTE: This is currently only supported for `hotel` and `synthetic`.
 
 ```bash
-cd apps/<app>
+cd exp/<app>
 
 # Set variables used by the docker compose file, based on the contents of the app config
-./scripts/get-env.sh > ./scripts/local/.env
+APP_DIR=$(git rev-parse --show-toplevel)/apps/<app>
+./scripts/get-env.sh > "$APP_DIR/scripts/local/.env"
 
 # Build and start the services (and their databases) as docker containers.
 # Specify the policy you want Masa to use

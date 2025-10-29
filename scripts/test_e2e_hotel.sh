@@ -2,7 +2,7 @@
 
 set -e
 
-cd apps/hotel
+cd exp/hotel
 
 # setup experiment config
 
