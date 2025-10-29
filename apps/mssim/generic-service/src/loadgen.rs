@@ -6,7 +6,9 @@ use std::{
     time::Duration,
 };
 
+use anyhow::{bail, ensure, Context};
 use masa::{time_now, Context as MasaContext};
+use serde::Deserialize;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::time::Instant;
@@ -62,8 +64,48 @@ enum LoadMode {
     },
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct FrontendTargetConfig {
+    service: Option<String>,
+    ip: String,
+    port: u16,
+    #[serde(default = "default_frontend_replicas")]
+    replicas: u16,
+}
+
+fn default_frontend_replicas() -> u16 {
+    1
+}
+
+pub struct ClientPool {
+    clients: Arc<Vec<RpcClient>>,
+    next_index: AtomicUsize,
+}
+
+impl ClientPool {
+    pub fn new(clients: Vec<RpcClient>) -> anyhow::Result<Self> {
+        if clients.is_empty() {
+            bail!("load generator requires at least one frontend target");
+        }
+        Ok(Self {
+            clients: Arc::new(clients),
+            next_index: AtomicUsize::new(0),
+        })
+    }
+
+    pub fn len(&self) -> usize {
+        self.clients.len()
+    }
+
+    pub fn acquire(&self) -> RpcClient {
+        let idx = self.next_index.fetch_add(1, Ordering::Relaxed);
+        let slot = idx % self.clients.len();
+        self.clients[slot].clone()
+    }
+}
+
 async fn run_root_load(
-    client: RpcClient,
+    client_pool: ClientPool,
     per_req: Duration,
     request_slo: u64,
     stats: Arc<Stats>,
@@ -120,7 +162,7 @@ async fn run_root_load(
                     Err(_) => continue,
                 };
 
-                let mut rpc_client = client.clone();
+                let mut rpc_client = client_pool.acquire();
                 let root_samples = root_samples.clone();
                 let latency_sample_tx = latency_sample_tx.clone();
 
@@ -443,8 +485,11 @@ async fn print_stats_task(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let addr = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
-    let port = env::var("PORT").unwrap_or_else(|_| "50051".to_string());
+    let default_ip = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
+    let port_raw = env::var("PORT").unwrap_or_else(|_| "50051".to_string());
+    let default_port: u16 = port_raw
+        .parse()
+        .with_context(|| format!("failed to parse PORT value {port_raw:?} as u16"))?;
     let rps: f64 = env::var("RPS")
         .unwrap_or_else(|_| "350".to_string())
         .parse()?;
@@ -504,10 +549,64 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let port = port.parse().unwrap();
-    let channel = LoadBalancedChannel::new(addr.clone(), port, 1).await;
+    let raw_targets = env::var("FRONTEND_TARGETS").ok();
+    let mut target_configs: Vec<FrontendTargetConfig> = match raw_targets {
+        Some(raw) if !raw.trim().is_empty() => serde_json::from_str(&raw)
+            .with_context(|| format!("failed to parse FRONTEND_TARGETS: {raw}"))?,
+        _ => Vec::new(),
+    };
 
-    let client = ServiceClient::new(channel);
+    if target_configs.is_empty() {
+        target_configs.push(FrontendTargetConfig {
+            service: None,
+            ip: default_ip.clone(),
+            port: default_port,
+            replicas: 1,
+        });
+    }
+
+    let target_summary = target_configs
+        .iter()
+        .map(|cfg| {
+            if let Some(service) = &cfg.service {
+                format!(
+                    "{}:{} (service={}, replicas={})",
+                    cfg.ip, cfg.port, service, cfg.replicas
+                )
+            } else {
+                format!("{}:{} (replicas={})", cfg.ip, cfg.port, cfg.replicas)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let mut clients = Vec::with_capacity(target_configs.len());
+    for cfg in &target_configs {
+        ensure!(
+            cfg.replicas > 0,
+            "frontend target {}:{} must have at least one replica",
+            cfg.ip,
+            cfg.port
+        );
+        if cfg.replicas > u8::MAX as u16 {
+            bail!(
+                "frontend target {}:{} has {} replicas; maximum supported is {}",
+                cfg.ip,
+                cfg.port,
+                cfg.replicas,
+                u8::MAX
+            );
+        }
+        let channel = LoadBalancedChannel::new(cfg.ip.clone(), cfg.port, cfg.replicas as u8).await;
+        clients.push(ServiceClient::new(channel));
+    }
+    let client_pool = ClientPool::new(clients)?;
+
+    println!(
+        "Configured {} frontend target(s): {}",
+        client_pool.len(),
+        target_summary
+    );
 
     match (&load_mode, &replay_meta) {
         (LoadMode::Root, _) => println!("Operating in root() load mode."),
@@ -523,14 +622,14 @@ async fn main() -> anyhow::Result<()> {
 
     if per_req.is_some() {
         println!(
-            "Starting loadgen: addr={}, rps={}, max_in_flight={}",
-            addr, rps, max_in_flight
+            "Starting loadgen: targets={}, rps={}, max_in_flight={}",
+            target_summary, rps, max_in_flight
         );
         println!("Press Ctrl-C to stop.");
     } else if let LoadMode::Replay { work_items } = &load_mode {
         println!(
-            "Starting replay: addr={}, requests={}, max_in_flight={}",
-            addr,
+            "Starting replay: targets={}, requests={}, max_in_flight={}",
+            target_summary,
             work_items.len(),
             max_in_flight
         );
@@ -576,7 +675,7 @@ async fn main() -> anyhow::Result<()> {
     match load_mode {
         LoadMode::Root => {
             run_root_load(
-                client,
+                client_pool,
                 per_req.expect("per_req available in root mode"),
                 request_slo,
                 stats.clone(),
@@ -591,7 +690,7 @@ async fn main() -> anyhow::Result<()> {
         }
         LoadMode::Replay { work_items } => {
             run_replay_load(
-                client,
+                client_pool,
                 work_items,
                 stats.clone(),
                 inflight_guard.clone(),

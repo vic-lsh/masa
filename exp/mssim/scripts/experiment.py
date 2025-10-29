@@ -323,7 +323,6 @@ def execute(cfg: ExperimentConfig, dry_run: bool) -> None:
             "rps": rps,
             "repeat": repeat,
             "duration_sec": cfg.duration_sec,
-            "command": "cargo run -- --alibaba-trace ...",
         }
 
         feature_key = _canonicalize_features(policy) or policy.strip() or "default"
