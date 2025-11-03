@@ -60,6 +60,12 @@ impl ServiceState {
                     .as_ref()
                     .and_then(|lat| lat.primary_graph().map(|s| s.to_string()))
             });
+        
+        println!(
+            "Service {} default graph: {:?}",
+            self_svc_name.as_str(),
+            default_graph
+        );
 
         let state = Arc::new(ServiceState {
             config,
@@ -104,6 +110,14 @@ impl ServiceState {
         self.fanout(req_id, start_at, parent_chain, graph_ref)
             .await?;
         let elapsed = start_time.elapsed();
+
+        // Add call call graph after the bottleneck service
+        if self.self_service_name().as_str() == "ms-53154" {
+            if req_id % 1000 == 0 {
+                println!("Request ID: {}", req_id);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
 
         let remaining = total_latency_ms - (elapsed.as_millis() as f64);
         if remaining > 0.0 {

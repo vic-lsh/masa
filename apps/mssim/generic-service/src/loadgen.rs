@@ -6,8 +6,8 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{bail, ensure, Context};
 use masa::{time_now, Context as MasaContext};
+use rand::Rng;
 use serde::Deserialize;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{mpsc, Mutex, Semaphore};
@@ -24,8 +24,7 @@ mod service {
     tonic::include_proto!("service");
 }
 use replay::{
-    load_frontend_replay_items, queue_latency_output_path, run_replay_load,
-    write_queue_latency_csv, QueueLatencySample, ReplayWorkItem,
+    load_frontend_replay_items, run_replay_load, ReplayWorkItem,
 };
 use service::service_client::ServiceClient;
 use service::RootRequest;
@@ -66,39 +65,32 @@ enum LoadMode {
 
 #[derive(Debug, Clone, Deserialize)]
 struct FrontendTargetConfig {
-    #[serde(default)]
-    service: Option<String>,
+    service: String,
     ip: String,
     port: u16,
-    #[serde(default = "default_frontend_replicas")]
     replicas: u16,
-    graph: Option<String>,
+    graph: String,
+    slo_ms: u64,
+    probability: f32,
 }
 
-fn default_frontend_replicas() -> u16 {
-    1
-}
 
 #[derive(Clone)]
 pub struct ClientEntry {
     pub client: RpcClient,
-    pub graph: Option<String>,
+    pub graph: String,
     pub slo_ms: u64,
+    pub probability: f32,
 }
 
 pub struct ClientPool {
     clients: Arc<Vec<ClientEntry>>,
-    next_index: AtomicUsize,
 }
 
 impl ClientPool {
     pub fn new(entries: Vec<ClientEntry>) -> anyhow::Result<Self> {
-        if entries.is_empty() {
-            bail!("load generator requires at least one frontend target");
-        }
         Ok(Self {
             clients: Arc::new(entries),
-            next_index: AtomicUsize::new(0),
         })
     }
 
@@ -107,16 +99,25 @@ impl ClientPool {
     }
 
     pub fn acquire(&self) -> ClientEntry {
-        let idx = self.next_index.fetch_add(1, Ordering::Relaxed);
-        let slot = idx % self.clients.len();
-        self.clients[slot].clone()
+        let mut rng = rand::rng();
+        let r: f32 = rng.random();
+        let mut cumulative = 0.0;
+
+        for client in self.clients.iter() {
+            cumulative += client.probability;
+            if r <= cumulative {
+                return client.clone();
+            }
+        }
+
+        // If rounding errors cause r > total sum, return last one.
+        self.clients.last().unwrap().clone()
     }
 }
 
 async fn run_root_load(
     client_pool: ClientPool,
     per_req: Duration,
-    request_slo: u64,
     stats: Arc<Stats>,
     inflight_guard: Arc<Semaphore>,
     max_in_flight: usize,
@@ -197,7 +198,7 @@ async fn run_root_load(
                     let mut request = Request::new(RootRequest {
                         req_id,
                         start_at,
-                        graph_name: graph_hint.unwrap_or_default(),
+                        graph_name: graph_hint,
                     });
 
                     let ctx = {
@@ -217,6 +218,8 @@ async fn run_root_load(
                                 stats.ok.fetch_add(1, Ordering::Relaxed);
                                 let queue_latency = extract_queue_latency(resp.metadata());
                                 let sample = RootLatencySample {
+                                    graph: entry.graph,
+                                    missed_slo: elapsed > entry.slo_ms * 1000,
                                     is_err: false,
                                     req_id,
                                     start_at,
@@ -235,6 +238,8 @@ async fn run_root_load(
                             if record_metrics {
                                 stats.err.fetch_add(1, Ordering::Relaxed);
                                 let sample = RootLatencySample {
+                                    graph: entry.graph,
+                                    missed_slo: false,
                                     is_err: true,
                                     req_id,
                                     start_at,
@@ -266,11 +271,13 @@ async fn run_root_load(
 
 #[derive(Debug, Clone)]
 struct RootLatencySample {
+    graph: String,
     req_id: u64,
     start_at: u64,
     queue_latency_us: u64,
     e2e_latency_us: u64,
     is_err: bool,
+    missed_slo: bool,
 }
 
 async fn flush_root_samples(
@@ -307,15 +314,17 @@ async fn flush_root_samples_internal(
     fs::create_dir_all(&output_dir).await?;
     let file_path = output_dir.join(file_name);
 
-    let mut csv_data = String::from("req_id,is_err,start_at,queue_latency_us,e2e_latency_us\n");
+    let mut csv_data = String::from("graph,req_id,is_err,start_at,queue_latency_us,e2e_latency_us, missed_slo\n");
     for sample in &snapshot {
         csv_data.push_str(&format!(
-            "{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{}\n",
+            sample.graph,
             sample.req_id,
             sample.is_err,
             sample.start_at,
             sample.queue_latency_us,
-            sample.e2e_latency_us
+            sample.e2e_latency_us,
+            sample.missed_slo
         ));
     }
 
@@ -337,36 +346,6 @@ async fn flush_root_samples_internal(
     Ok(Some(snapshot.len()))
 }
 
-async fn flush_queue_samples(
-    samples: Arc<Mutex<Vec<QueueLatencySample>>>,
-    output_path: &Path,
-    log_when_empty: bool,
-) -> anyhow::Result<Option<usize>> {
-    let snapshot = {
-        let guard = samples.lock().await;
-        if guard.is_empty() {
-            if log_when_empty {
-                println!(
-                    "No queue latency samples recorded; skipping CSV write to {}",
-                    output_path.display()
-                );
-            }
-            return Ok(None);
-        }
-        guard.clone()
-    };
-
-    write_queue_latency_csv(output_path, &snapshot).await?;
-    if log_when_empty {
-        println!(
-            "Wrote queue latency samples for {} requests to {}",
-            snapshot.len(),
-            output_path.display()
-        );
-    }
-
-    Ok(Some(snapshot.len()))
-}
 
 fn compute_latency_percentiles_us(mut samples: Vec<u64>) -> Option<(u64, u64, u64, u64)> {
     if samples.is_empty() {
@@ -396,27 +375,6 @@ fn percentile_from_sorted(sorted: &[u64], percentile: f64) -> u64 {
     }
 
     sorted[rank - 1]
-}
-
-async fn flush_queue_latency_samples_task(
-    samples: Arc<Mutex<Vec<QueueLatencySample>>>,
-    path: PathBuf,
-) {
-    let mut ticker = tokio::time::interval(Duration::from_secs(PERIODIC_FLUSH_INTERVAL_SECS));
-    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    loop {
-        ticker.tick().await;
-        let should_flush = {
-            let guard = samples.lock().await;
-            !guard.is_empty()
-        };
-        if !should_flush {
-            continue;
-        }
-        if let Err(err) = flush_queue_samples(samples.clone(), path.as_path(), false).await {
-            eprintln!("Failed to periodically flush queue latency samples: {err:?}");
-        }
-    }
 }
 
 async fn flush_rpc_samples_task(samples: Arc<Mutex<Vec<RootLatencySample>>>, file_name: String) {
@@ -522,10 +480,6 @@ async fn main() -> anyhow::Result<()> {
             .parse::<u64>()?,
     );
 
-    let request_slo = env::var("SLO_MS")
-        .unwrap_or_else(|_| "100".to_string())
-        .parse::<u64>()?;
-
     let replay_env = env::var("REPLAY_TRACE_PATH")
         .ok()
         .map(|s| s.trim().to_owned())
@@ -558,13 +512,9 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Find frontend targets from env
-    let raw_targets = env::var("FRONTEND_TARGETS").ok();
-    let target_configs: Vec<FrontendTargetConfig> = match raw_targets {
-        Some(raw) if !raw.trim().is_empty() => serde_json::from_str(&raw)
-            .with_context(|| format!("failed to parse FRONTEND_TARGETS: {raw}"))?,
-        _ => Vec::new(),
-    };
+    let front_string = fs::read_to_string("frontend.json").await?;
 
+    let target_configs: Vec<FrontendTargetConfig> = serde_json::from_str(&front_string)?;
     assert!(
         !target_configs.is_empty(),
         "FRONTEND_TARGETS must specify at least one target"
@@ -574,12 +524,8 @@ async fn main() -> anyhow::Result<()> {
         .iter()
         .map(|cfg| {
             let mut attributes = vec![format!("replicas={}", cfg.replicas)];
-            if let Some(service) = &cfg.service {
-                attributes.push(format!("service={}", service));
-            }
-            if let Some(graph) = &cfg.graph {
-                attributes.push(format!("graph={}", graph));
-            }
+            attributes.push(format!("service={}", &cfg.service));
+            attributes.push(format!("graph={}", &cfg.graph));
             format!("{}:{} ({})", cfg.ip, cfg.port, attributes.join(", "))
         })
         .collect::<Vec<_>>()
@@ -587,32 +533,14 @@ async fn main() -> anyhow::Result<()> {
 
     let mut clients = Vec::with_capacity(target_configs.len());
     // Get the indexed clients
-    for (i, cfg) in target_configs.iter().enumerate() {
-        ensure!(
-            cfg.replicas > 0,
-            "frontend target {}:{} must have at least one replica",
-            cfg.ip,
-            cfg.port
-        );
-        if cfg.replicas > u8::MAX as u16 {
-            bail!(
-                "frontend target {}:{} has {} replicas; maximum supported is {}",
-                cfg.ip,
-                cfg.port,
-                cfg.replicas,
-                u8::MAX
-            );
-        }
+    for cfg in target_configs {
         let channel = LoadBalancedChannel::new(cfg.ip.clone(), cfg.port, cfg.replicas as u8).await;
 
-        let mut slo = 200;
-        if i == 1 {
-            slo = 100;
-        }
         let entry = ClientEntry {
             client: ServiceClient::new(channel),
-            graph: cfg.graph.clone().or_else(|| cfg.service.clone()),
-            slo_ms: slo,
+            graph: cfg.graph,
+            slo_ms: cfg.slo_ms,
+            probability: cfg.probability,
         };
 
         clients.push(entry);
@@ -655,12 +583,8 @@ async fn main() -> anyhow::Result<()> {
     let stats = Arc::new(Stats::default());
 
     let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
-    let queue_samples = Arc::new(Mutex::new(Vec::<QueueLatencySample>::new()));
     let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
 
-    let queue_csv_path = replay_meta
-        .as_ref()
-        .map(|(path_str, _)| queue_latency_output_path(Path::new(path_str.as_str())));
     let root_samples = Arc::new(Mutex::new(Vec::<RootLatencySample>::new()));
     let root_latency_file_name = root_latency_file_name_for_rps(rps);
     let root_samples_handle = if matches!(load_mode, LoadMode::Root) {
@@ -668,12 +592,6 @@ async fn main() -> anyhow::Result<()> {
     } else {
         None
     };
-
-    if let Some(ref output_path) = queue_csv_path {
-        let samples = queue_samples.clone();
-        let path = output_path.clone();
-        tokio::spawn(async move { flush_queue_latency_samples_task(samples, path).await });
-    }
 
     if matches!(load_mode, LoadMode::Root) {
         let samples = root_samples.clone();
@@ -694,7 +612,6 @@ async fn main() -> anyhow::Result<()> {
             run_root_load(
                 client_pool,
                 per_req.expect("per_req available in root mode"),
-                request_slo,
                 stats.clone(),
                 inflight_guard.clone(),
                 max_in_flight,
@@ -711,7 +628,6 @@ async fn main() -> anyhow::Result<()> {
                 work_items,
                 stats.clone(),
                 inflight_guard.clone(),
-                queue_samples.clone(),
                 latency_sample_tx.clone(),
             )
             .await?;
@@ -722,10 +638,6 @@ async fn main() -> anyhow::Result<()> {
     let o = stats.ok.load(Ordering::Relaxed);
     let e = stats.err.load(Ordering::Relaxed);
     println!("Final stats: sent={}, ok={}, err={}", s, o, e);
-
-    if let Some(ref output_path) = queue_csv_path {
-        flush_queue_samples(queue_samples.clone(), output_path.as_path(), true).await?;
-    }
 
     if let Some((root_samples, file_name)) = root_samples_handle {
         flush_root_samples(root_samples, file_name.as_ref()).await?;
