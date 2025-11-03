@@ -83,8 +83,13 @@ def load_policy_samples(policy_dir: Path) -> PolicySamples:
                 queue_us = df["queue_latency_us"].astype(float)
             else:
                 queue_us = pd.Series(0.0, index=df.index)
+            if "graph" in df.columns:
+                graph_values = df["graph"].astype(str).where(df["graph"].notna(), "unknown")
+            else:
+                graph_values = pd.Series("unknown", index=df.index)
             frame = pd.DataFrame(
                 {
+                    "graph": graph_values,
                     "rps": rps,
                     "e2e_latency_ms": df["e2e_latency_us"].astype(float) / 1_000.0,
                     "queue_latency_ms": queue_us / 1_000.0,
@@ -115,6 +120,48 @@ def compute_goodput(samples: PolicySamples, threshold_ms: float, rps: float, dur
         return 0.0
     goodput = (latencies <= threshold_ms).sum() / duration
     return goodput
+
+
+def compute_goodput_by_graph(
+    samples: PolicySamples,
+    rps_values: Sequence[float],
+    threshold_ms: float,
+    duration: float,
+) -> dict[str, List[float]]:
+    graphs = sorted(
+        {str(graph) for graph in samples.latencies_ms["graph"].dropna().unique()}
+    )
+    if not graphs:
+        graphs = ["unknown"]
+
+    goodput_per_graph: dict[str, List[float]] = {graph: [] for graph in graphs}
+
+    for rps in rps_values:
+        subset = samples.latencies_ms.loc[samples.latencies_ms["rps"] == rps]
+        if subset.empty:
+            for graph in graphs:
+                goodput_per_graph[graph].append(float("nan"))
+            continue
+
+        grouped = {
+            str(graph): group for graph, group in subset.groupby("graph", dropna=False)
+        }
+        for graph in graphs:
+            group = grouped.get(graph)
+            if group is None or group.empty:
+                goodput_per_graph[graph].append(float("nan"))
+                continue
+
+            meets_slo = (group["e2e_latency_ms"] <= threshold_ms).sum()
+            print(f"RPS={rps:g}, graph={graph}, meets_slo={meets_slo}, total={len(group)}")
+            goodput_per_graph[graph].append(meets_slo / duration)
+
+    return goodput_per_graph
+
+
+def sanitize_label_for_filename(label: str) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "_", label).strip("_")
+    return sanitized or "policy"
 
 
 def plot_goodput_fraction(
@@ -179,6 +226,56 @@ def plot_goodput_absolute(
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output)
     print(f"Saved comparison plot to {output}")
+
+
+def plot_goodput_by_graph(
+    rps_values: Sequence[float],
+    per_policy_graph_goodput: Sequence[dict[str, Sequence[float]]],
+    output_dir: Path,
+    threshold_ms: float,
+    labels: Sequence[str],
+) -> None:
+    if len(labels) != len(per_policy_graph_goodput):
+        raise ValueError("Number of labels must match number of graph-goodput mappings.")
+
+    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
+
+    for policy_idx, (label, graph_map) in enumerate(
+        zip(labels, per_policy_graph_goodput)
+    ):
+        if not graph_map:
+            print(f"Warning: no per-graph data available for {label}")
+            continue
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        cmap = plt.get_cmap("tab20")
+        sorted_graphs = sorted(graph_map.keys())
+
+        for graph_idx, graph in enumerate(sorted_graphs):
+            color = cmap(graph_idx % cmap.N)
+            marker = marker_cycle[graph_idx % len(marker_cycle)]
+            ax.plot(
+                rps_values,
+                graph_map[graph],
+                marker=marker,
+                color=color,
+                label=graph,
+            )
+
+        ax.set_xlabel("Offered load (RPS)")
+        ax.set_ylabel("Goodput (RPS)")
+        ax.set_title(f"{label}: per-graph goodput with SLO={threshold_ms:g} ms")
+        ax.grid(True, which="both", linestyle="--", alpha=0.4)
+        ax.legend(loc="best")
+        fig.tight_layout()
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        filename = (
+            f"{sanitize_label_for_filename(label)}_goodput_by_graph_{threshold_ms:g}ms.png"
+        )
+        output_path = output_dir / filename
+        fig.savefig(output_path)
+        print(f"Saved per-graph goodput plot for {label} to {output_path}")
 
 
 def build_latency_plots(
@@ -363,6 +460,10 @@ def main() -> None:
         [compute_goodput(samples, threshold_ms, rps, duration_sec) for rps in rps_values]
         for samples in policy_samples
     ]
+    per_policy_graph_goodput = [
+        compute_goodput_by_graph(samples, rps_values, threshold_ms, duration_sec)
+        for samples in policy_samples
+    ]
 
     print("Goodput summary (threshold = {:.1f} ms):".format(threshold_ms))
     header = "\t".join(["RPS", *policy_names])
@@ -382,6 +483,13 @@ def main() -> None:
         rps_values,
         goodput_by_policy,
         experiment_root / f"goodput_absolute_{threshold_ms:g}ms.png",
+        threshold_ms,
+        policy_names,
+    )
+    plot_goodput_by_graph(
+        rps_values,
+        per_policy_graph_goodput,
+        experiment_root,
         threshold_ms,
         policy_names,
     )

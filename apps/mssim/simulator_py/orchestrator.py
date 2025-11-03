@@ -190,31 +190,30 @@ def _make_load_generator_config_yaml(
     trace_dir: Path,
     deployment: Deployment,
 ) -> ComposeService:
-    frontend_targets = [
-        {
-            "service": name,
-            "ip": info.ip,
-            "port": info.port,
-            "replicas": info.replicas,
-            "graph": name[len(FRONTEND_SERVICE_NAME) + 1:],
-        }
-        for name, info in deployment.services.items()
-        if name.startswith(FRONTEND_SERVICE_NAME)
-    ]
+    # frontend_targets = [
+    #     {
+    #         "service": name,
+    #         "ip": info.ip,
+    #         "port": info.port,
+    #         "replicas": info.replicas,
+    #         "graph": name[len(FRONTEND_SERVICE_NAME) + 1:],
+    #     }
+    #     for name, info in deployment.services.items()
+    #     if name.startswith(FRONTEND_SERVICE_NAME)
+    # ]
 
-    if not frontend_targets:
-        raise RuntimeError(
-            f"Frontend service not found in deployment: expected names starting with {FRONTEND_SERVICE_NAME}"
-        )
+    # if not frontend_targets:
+    #     raise RuntimeError(
+    #         f"Frontend service not found in deployment: expected names starting with {FRONTEND_SERVICE_NAME}"
+    #     )
 
-    environment: dict[str, str] = {
-        "FRONTEND_TARGETS": json.dumps(frontend_targets),
-    }
+    environment: dict[str, str] = {}
 
     environment.update(_collect_optional_env("DURATION", "RPS", "SLO_MS", "WARMUP_SEC", "MAX_IN_FLIGHT", "STATS_INTERVAL_SEC"))
 
-    host_data_dir = os.environ.get("HOST_TRACE_DIR", str(trace_dir))
-    volumes = [f"{host_data_dir}:{LOADGEN_OUTPUT_MOUNT}"]
+    host_data_dir = os.environ.get("HOST_TRACE_DIR", None)
+    host_frontend_target = f"{trace_dir}/frontend.json:/app/frontend.json"
+    volumes = [f"{host_data_dir}:{LOADGEN_OUTPUT_MOUNT}", host_frontend_target]
 
     return ComposeService(
         image="mssim_load_generator",
