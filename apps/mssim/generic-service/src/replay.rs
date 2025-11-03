@@ -1,4 +1,4 @@
-use std::sync::atomic::{Ordering};
+use std::sync::atomic::Ordering;
 use std::{
     fs::File,
     io::BufReader,
@@ -264,7 +264,8 @@ pub async fn run_replay_load(
         let permit_pool = inflight_guard.clone();
         let queue_samples = queue_samples.clone();
         let latency_sample_tx = latency_sample_tx.clone();
-        let mut rpc_client = client_pool.acquire();
+        let entry = client_pool.acquire();
+        let mut rpc_client = entry.client.clone();
         let stats = Arc::clone(&stats);
 
         let handle = tokio::spawn(async move {

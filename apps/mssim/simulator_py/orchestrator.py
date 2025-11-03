@@ -196,6 +196,7 @@ def _make_load_generator_config_yaml(
             "ip": info.ip,
             "port": info.port,
             "replicas": info.replicas,
+            "graph": name[len(FRONTEND_SERVICE_NAME) + 1:],
         }
         for name, info in deployment.services.items()
         if name.startswith(FRONTEND_SERVICE_NAME)
@@ -206,14 +207,11 @@ def _make_load_generator_config_yaml(
             f"Frontend service not found in deployment: expected names starting with {FRONTEND_SERVICE_NAME}"
         )
 
-    primary_target = frontend_targets[0]
     environment: dict[str, str] = {
         "FRONTEND_TARGETS": json.dumps(frontend_targets),
-        "IP": primary_target["ip"],
-        "PORT": str(primary_target["port"]),
     }
 
-    environment.update(_collect_optional_env("DURATION", "RPS", "SLO_MS", "WARMUP_SEC"))
+    environment.update(_collect_optional_env("DURATION", "RPS", "SLO_MS", "WARMUP_SEC", "MAX_IN_FLIGHT", "STATS_INTERVAL_SEC"))
 
     host_data_dir = os.environ.get("HOST_TRACE_DIR", str(trace_dir))
     volumes = [f"{host_data_dir}:{LOADGEN_OUTPUT_MOUNT}"]
