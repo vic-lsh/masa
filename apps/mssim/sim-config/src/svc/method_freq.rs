@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use rand::Rng;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -183,10 +183,7 @@ impl MethodFreqMap {
                 match MethodFreqSampler::from_invoke_freq_map(freq_map) {
                     Ok(sampler) => {
                         service_map.insert(svc.clone(), sampler);
-                        service_graphs
-                            .entry(svc)
-                            .or_default()
-                            .push(graph.clone());
+                        service_graphs.entry(svc).or_default().push(graph.clone());
                     }
                     Err(err) => {
                         return Err(anyhow!(format!(
@@ -283,16 +280,10 @@ impl MethodFreqMap {
     }
 
     pub fn primary_graph_for(&self, svc_name: &ServiceName) -> Option<&str> {
-        self.service_primary_graph
-            .get(svc_name)
-            .map(|s| s.as_str())
+        self.service_primary_graph.get(svc_name).map(|s| s.as_str())
     }
 
-    pub fn contains_service_in_graph(
-        &self,
-        graph: &str,
-        svc_name: &ServiceName,
-    ) -> bool {
+    pub fn contains_service_in_graph(&self, graph: &str, svc_name: &ServiceName) -> bool {
         self.by_graph
             .get(graph)
             .map_or(false, |services| services.contains_key(svc_name))
