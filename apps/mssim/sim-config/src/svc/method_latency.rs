@@ -1,5 +1,5 @@
 use crate::svc::{MethodId, ServiceName};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::{collections::HashMap, fs, path::PathBuf};
 
 use crate::dist::Distribution;
@@ -13,8 +13,7 @@ pub struct MethodLatencyDistMap {
 }
 
 /// Raw graph shape: { graph: { service: { method: { percentile: latency } } } }
-type RawGraphShape =
-    HashMap<String, HashMap<String, HashMap<String, HashMap<String, f64>>>>;
+type RawGraphShape = HashMap<String, HashMap<String, HashMap<String, HashMap<String, f64>>>>;
 
 impl MethodLatencyDistMap {
     pub fn from_file_path(path: &PathBuf, service_name: ServiceName) -> Result<Self> {
@@ -29,10 +28,7 @@ impl MethodLatencyDistMap {
         Self::from_graph_shape(raw, service_name)
     }
 
-    fn from_graph_shape(
-        mut raw: RawGraphShape,
-        service_name: ServiceName,
-    ) -> Result<Self> {
+    fn from_graph_shape(mut raw: RawGraphShape, service_name: ServiceName) -> Result<Self> {
         let mut by_graph: HashMap<String, HashMap<MethodId, Distribution>> = HashMap::new();
         let mut fallback: HashMap<MethodId, Distribution> = HashMap::new();
         let mut graphs_for_service: Vec<String> = Vec::new();
@@ -111,9 +107,11 @@ impl MethodLatencyDistMap {
             }
         }
 
-        self.fallback
-            .get(method)
-            .or_else(|| self.by_graph.values().find_map(|methods| methods.get(method)))
+        self.fallback.get(method).or_else(|| {
+            self.by_graph
+                .values()
+                .find_map(|methods| methods.get(method))
+        })
     }
 
     pub fn primary_graph(&self) -> Option<&str> {
@@ -183,9 +181,8 @@ mod tests {
         .expect("write json");
 
         let svc = ServiceName::from_string("svc_one".into());
-        let map =
-            MethodLatencyDistMap::from_file_path(&tmp.path().to_path_buf(), svc.clone())
-                .expect("parse graph latency");
+        let map = MethodLatencyDistMap::from_file_path(&tmp.path().to_path_buf(), svc.clone())
+            .expect("parse graph latency");
 
         assert_eq!(map.primary_graph(), Some("graph_alpha"));
 

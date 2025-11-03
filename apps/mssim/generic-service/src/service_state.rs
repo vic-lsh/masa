@@ -60,7 +60,7 @@ impl ServiceState {
                     .as_ref()
                     .and_then(|lat| lat.primary_graph().map(|s| s.to_string()))
             });
-        
+
         println!(
             "Service {} default graph: {:?}",
             self_svc_name.as_str(),
@@ -94,11 +94,9 @@ impl ServiceState {
         let graph_selection = self.graph_name_for_request(graph_name);
         let graph_ref = graph_selection.as_deref();
 
-        let method_latency = self
-            .config
-            .method_latency
-            .as_ref()
-            .ok_or_else(|| Status::internal("Configuration error: method latency not configured"))?;
+        let method_latency = self.config.method_latency.as_ref().ok_or_else(|| {
+            Status::internal("Configuration error: method latency not configured")
+        })?;
         let method_id: MethodId = method_name.clone().into();
         let latency_dist = method_latency
             .get_method_dist(&method_id, graph_ref)

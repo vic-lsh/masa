@@ -23,9 +23,7 @@ use replay::extract_queue_latency;
 mod service {
     tonic::include_proto!("service");
 }
-use replay::{
-    load_frontend_replay_items, run_replay_load, ReplayWorkItem,
-};
+use replay::{load_frontend_replay_items, run_replay_load, ReplayWorkItem};
 use service::service_client::ServiceClient;
 use service::RootRequest;
 type RpcClient = ServiceClient<LoadBalancedChannel>;
@@ -73,7 +71,6 @@ struct FrontendTargetConfig {
     slo_ms: u64,
     probability: f32,
 }
-
 
 #[derive(Clone)]
 pub struct ClientEntry {
@@ -292,7 +289,8 @@ async fn flush_root_samples_internal(
     fs::create_dir_all(&output_dir).await?;
     let file_path = output_dir.join(file_name);
 
-    let mut csv_data = String::from("graph,req_id,is_err,start_at,queue_latency_us,e2e_latency_us, missed_slo\n");
+    let mut csv_data =
+        String::from("graph,req_id,is_err,start_at,queue_latency_us,e2e_latency_us, missed_slo\n");
     for sample in &snapshot {
         csv_data.push_str(&format!(
             "{},{},{},{},{},{},{}\n",
@@ -323,7 +321,6 @@ async fn flush_root_samples_internal(
 
     Ok(Some(snapshot.len()))
 }
-
 
 fn compute_latency_percentiles_us(mut samples: Vec<u64>) -> Option<(u64, u64, u64, u64)> {
     if samples.is_empty() {
