@@ -122,7 +122,6 @@ async fn run_root_load(
     inflight_guard: Arc<Semaphore>,
     max_in_flight: usize,
     root_samples: Arc<Mutex<Vec<RootLatencySample>>>,
-    warmup_duration: Duration,
     finish_after: Option<Duration>,
     latency_sample_tx: mpsc::UnboundedSender<u64>,
 ) -> anyhow::Result<()> {
@@ -131,15 +130,7 @@ async fn run_root_load(
     ticker.reset();
 
     let run_start = Instant::now();
-    let measurement_start = run_start + warmup_duration;
-    if !warmup_duration.is_zero() {
-        println!(
-            "Warmup enabled: suppressing stats for {:.1}s before measurement begins.",
-            warmup_duration.as_secs_f64()
-        );
-    }
-    let mut measurement_announced = warmup_duration.is_zero();
-    let finish_deadline = finish_after.map(|duration| measurement_start + duration);
+    let finish_deadline = finish_after.map(|duration| run_start + duration);
     let mut next_req_id: u64 = 0;
 
     let finish_sleep = async {
@@ -178,18 +169,9 @@ async fn run_root_load(
                 let root_samples = root_samples.clone();
                 let latency_sample_tx = latency_sample_tx.clone();
 
-                let now = Instant::now();
-                let measurement_active = now >= measurement_start;
-                if measurement_active && !measurement_announced {
-                    measurement_announced = true;
-                    println!("Warmup complete; starting measurement period.");
-                }
-                if measurement_active {
-                    stats.sent.fetch_add(1, Ordering::Relaxed);
-                }
+                stats.sent.fetch_add(1, Ordering::Relaxed);
                 let req_id = next_req_id;
                 next_req_id += 1;
-                let record_metrics = measurement_active;
 
                 let stats = Arc::clone(&stats);
                 tokio::spawn(async move {
@@ -214,42 +196,38 @@ async fn run_root_load(
                     let elapsed = start_time.elapsed().as_micros() as u64;
                     match res {
                         Ok(resp) => {
-                            if record_metrics {
-                                stats.ok.fetch_add(1, Ordering::Relaxed);
-                                let queue_latency = extract_queue_latency(resp.metadata());
-                                let sample = RootLatencySample {
-                                    graph: entry.graph,
-                                    missed_slo: elapsed > entry.slo_ms * 1000,
-                                    is_err: false,
-                                    req_id,
-                                    start_at,
-                                    queue_latency_us: queue_latency.unwrap_or(0),
-                                    e2e_latency_us: elapsed,
-                                };
-                                {
-                                    let mut guard = root_samples.lock().await;
-                                    guard.push(sample);
-                                }
-                                let _ = latency_sample_tx.send(elapsed);
+                            stats.ok.fetch_add(1, Ordering::Relaxed);
+                            let queue_latency = extract_queue_latency(resp.metadata());
+                            let sample = RootLatencySample {
+                                graph: entry.graph,
+                                missed_slo: elapsed > entry.slo_ms * 1000,
+                                is_err: false,
+                                req_id,
+                                start_at,
+                                queue_latency_us: queue_latency.unwrap_or(0),
+                                e2e_latency_us: elapsed,
+                            };
+                            {
+                                let mut guard = root_samples.lock().await;
+                                guard.push(sample);
                             }
+                            let _ = latency_sample_tx.send(elapsed);
                         }
                         Err(err) => {
                             eprintln!("Request {} failed: {:?}", req_id, err);
-                            if record_metrics {
-                                stats.err.fetch_add(1, Ordering::Relaxed);
-                                let sample = RootLatencySample {
-                                    graph: entry.graph,
-                                    missed_slo: false,
-                                    is_err: true,
-                                    req_id,
-                                    start_at,
-                                    queue_latency_us: 0,
-                                    e2e_latency_us: 0,
-                                };
-                                {
-                                    let mut guard = root_samples.lock().await;
-                                    guard.push(sample);
-                                }
+                            stats.err.fetch_add(1, Ordering::Relaxed);
+                            let sample = RootLatencySample {
+                                graph: entry.graph,
+                                missed_slo: false,
+                                is_err: true,
+                                req_id,
+                                start_at,
+                                queue_latency_us: 0,
+                                e2e_latency_us: 0,
+                            };
+                            {
+                                let mut guard = root_samples.lock().await;
+                                guard.push(sample);
                             }
                         }
                     };
@@ -474,12 +452,6 @@ async fn main() -> anyhow::Result<()> {
         .parse()?;
     let duration = Duration::from_secs(duration as u64);
 
-    let warmup_duration = Duration::from_secs(
-        env::var("WARMUP_SEC")
-            .unwrap_or_else(|_| "0".to_string())
-            .parse::<u64>()?,
-    );
-
     let replay_env = env::var("REPLAY_TRACE_PATH")
         .ok()
         .map(|s| s.trim().to_owned())
@@ -616,7 +588,6 @@ async fn main() -> anyhow::Result<()> {
                 inflight_guard.clone(),
                 max_in_flight,
                 root_samples.clone(),
-                warmup_duration,
                 Some(duration),
                 latency_sample_tx.clone(),
             )

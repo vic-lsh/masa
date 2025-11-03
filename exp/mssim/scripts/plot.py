@@ -44,7 +44,48 @@ def parse_rps_from_dir(path: Path) -> float:
     return float(token)
 
 
-def load_policy_samples(policy_dir: Path) -> PolicySamples:
+WARMUP_COL = "start_at"
+
+
+def filter_after_warmup(
+    df: pd.DataFrame, warmup_sec: float, source: Path
+) -> pd.DataFrame:
+    if warmup_sec <= 0:
+        return df
+    if WARMUP_COL not in df.columns:
+        print(
+            f"Warning: warmup filtering requested but '{WARMUP_COL}' column is missing in {source}"
+        )
+        return df
+
+    start_at = pd.to_numeric(df[WARMUP_COL], errors="coerce")
+    valid_start = start_at.dropna()
+    if valid_start.empty:
+        print(
+            f"Warning: warmup filtering skipped because '{WARMUP_COL}' contains no valid values in {source}"
+        )
+        return df
+
+    warmup_us = warmup_sec * 1_000_000.0
+    measurement_anchor = valid_start.min()
+    relative_us = start_at - measurement_anchor
+    mask = relative_us >= warmup_us
+    mask = mask.fillna(True)
+    filtered = df.loc[mask]
+
+    if filtered.empty:
+        print(
+            f"Warning: warmup filtering removed all samples from {source}; keeping unfiltered data."
+        )
+        return df
+
+    removed = len(df) - len(filtered)
+    if removed > 0:
+        print(f"Warmup filtering removed {removed} samples from {source}.")
+    return filtered
+
+
+def load_policy_samples(policy_dir: Path, warmup_sec: float = 0.0) -> PolicySamples:
     if not policy_dir.is_dir():
         raise FileNotFoundError(f"Policy directory not found: {policy_dir}")
 
@@ -71,6 +112,7 @@ def load_policy_samples(policy_dir: Path) -> PolicySamples:
             df = pd.read_csv(csv_path)
             if "e2e_latency_us" not in df.columns:
                 raise ValueError(f"Missing 'e2e_latency_us' column in {csv_path}")
+            df = filter_after_warmup(df, warmup_sec, csv_path)
 
             if "is_err" in df.columns:
                 err_mask = df["is_err"].fillna(False).astype(bool)
@@ -418,14 +460,14 @@ def plot_latency_percentiles(
     print(f"Saved latency percentile plots to {output}")
 
 
-def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float, float]:
+def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float, float, float]:
     with config_path.open("r") as fh:
         config = json.load(fh)
 
     try:
         experiment_root = Path(config["output_root"]) / config["experiment_name"]
         policies = config["policies_to_plot"]
-        duration = config["duration_sec"]
+        _ = config["duration_sec"]
     except KeyError as exc:
         raise KeyError(f"Missing key in plot config: {exc}") from exc
 
@@ -444,15 +486,32 @@ def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float, float]:
     if duration_sec <= 0:
         raise ValueError("Plot config 'duration_sec' must be positive.")
 
-    return experiment_root, list(policies), threshold_ms, duration_sec
+    try:
+        warmup_sec = float(config.get("warmup_sec", 0.0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Plot config 'warmup_sec' must be numeric if provided.") from exc
+    if warmup_sec < 0:
+        raise ValueError("Plot config 'warmup_sec' cannot be negative.")
+
+    return experiment_root, list(policies), threshold_ms, duration_sec, warmup_sec
 
 
 def main() -> None:
-    experiment_root, policy_names, threshold_ms, duration_sec = load_plot_config(
+    (
+        experiment_root,
+        policy_names,
+        threshold_ms,
+        duration_sec,
+        warmup_sec,
+    ) = load_plot_config(
         CONFIG_PATH
     )
+    if warmup_sec > 0:
+        print(f"Ignoring the first {warmup_sec:g} seconds of samples for warmup.")
     policy_dirs = [experiment_root / name for name in policy_names]
-    policy_samples = [load_policy_samples(policy_dir) for policy_dir in policy_dirs]
+    policy_samples = [
+        load_policy_samples(policy_dir, warmup_sec) for policy_dir in policy_dirs
+    ]
 
     rps_values = align_rps(*policy_samples)
 
