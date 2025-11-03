@@ -209,7 +209,7 @@ def _make_load_generator_config_yaml(
 
     environment: dict[str, str] = {}
 
-    environment.update(_collect_optional_env("DURATION", "RPS", "SLO_MS", "WARMUP_SEC", "MAX_IN_FLIGHT", "STATS_INTERVAL_SEC"))
+    environment.update(_collect_optional_env("DURATION", "RPS", "MAX_IN_FLIGHT", "STATS_INTERVAL_SEC"))
 
     host_data_dir = os.environ.get("HOST_TRACE_DIR", None)
     host_frontend_target = f"{trace_dir}/frontend.json:/app/frontend.json"
