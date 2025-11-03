@@ -62,6 +62,8 @@ impl Service for AlibabaService {
         &self,
         request: Request<ServiceRequest>,
     ) -> Result<Response<ServiceResponse>, Status> {
+        let metadata = request.metadata().clone();
+
         let parent_chain = parent_chain::decode_parent_chain(request.metadata())?;
         let request = request.into_inner();
         let method_name = request.method_name.clone();
@@ -70,6 +72,25 @@ impl Service for AlibabaService {
         } else {
             Some(request.graph_name.as_str())
         };
+
+        if self.state().self_service_name().as_str() == "ms-37691" {
+            if request.req_id % 501 == 0 {
+                 // print the deadline and graph name
+                let ctx = metadata.get_ctx("ctx").ok_or_else(|| {
+                    Status::invalid_argument("Missing context metadata 'ctx'")
+                })?;
+                let time_remain = ctx.slo()
+                                        .saturating_add(ctx.start_at())
+                                        .saturating_sub(ctx.deadline());
+
+                println!("Request ID: {}, Deadline Remaining: {} us, Graph Name: {:?}",
+                    request.req_id,
+                    time_remain,
+                    graph_name,
+                );
+            }
+           
+        }
 
         self.state()
             .handle_method(
