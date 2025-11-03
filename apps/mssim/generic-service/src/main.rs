@@ -75,21 +75,20 @@ impl Service for AlibabaService {
 
         if self.state().self_service_name().as_str() == "ms-37691" {
             if request.req_id % 501 == 0 {
-                 // print the deadline and graph name
-                let ctx = metadata.get_ctx("ctx").ok_or_else(|| {
-                    Status::invalid_argument("Missing context metadata 'ctx'")
-                })?;
-                let time_remain = ctx.slo()
-                                        .saturating_add(ctx.start_at())
-                                        .saturating_sub(ctx.deadline());
+                // print the deadline and graph name
+                let ctx = metadata
+                    .get_ctx("ctx")
+                    .ok_or_else(|| Status::invalid_argument("Missing context metadata 'ctx'"))?;
+                let time_remain = ctx
+                    .slo()
+                    .saturating_add(ctx.start_at())
+                    .saturating_sub(ctx.deadline());
 
-                println!("Request ID: {}, Deadline Remaining: {} us, Graph Name: {:?}",
-                    request.req_id,
-                    time_remain,
-                    graph_name,
+                println!(
+                    "Request ID: {}, Deadline Remaining: {} us, Graph Name: {:?}",
+                    request.req_id, time_remain, graph_name,
                 );
             }
-           
         }
 
         self.state()
@@ -110,7 +109,11 @@ impl Service for AlibabaService {
 
     async fn root(&self, request: Request<RootRequest>) -> Result<Response<RootResponse>, Status> {
         const ROOT_SVC_NAME: &str = "user";
-        let root_check = self.state().self_service_name().as_str().starts_with(ROOT_SVC_NAME);
+        let root_check = self
+            .state()
+            .self_service_name()
+            .as_str()
+            .starts_with(ROOT_SVC_NAME);
 
         if !root_check {
             return Err(Status::permission_denied(format!(

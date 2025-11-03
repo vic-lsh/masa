@@ -169,11 +169,9 @@ mod tests {
 
         let svc_name = ServiceName::from_string("svc_alpha".into());
 
-        let config = ServiceTraceConfig::from_config_dir(
-            &dir.to_path_buf(),
-            Some(svc_name.clone()),
-        )
-            .expect("Reading should not fail");
+        let config =
+            ServiceTraceConfig::from_config_dir(&dir.to_path_buf(), Some(svc_name.clone()))
+                .expect("Reading should not fail");
 
         assert!(config.call_graph.callees_of(&svc_name).len() > 0);
 

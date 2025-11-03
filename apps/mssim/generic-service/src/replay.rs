@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 use std::{
     fs::File,
     io::BufReader,
-    path::{Path},
+    path::Path,
     sync::Arc,
     time::{Duration, Instant as StdInstant},
 };
@@ -301,7 +301,6 @@ pub async fn run_replay_load(
 
     Ok(())
 }
-
 
 pub fn extract_queue_latency(metadata: &MetadataMap) -> Option<u64> {
     metadata
