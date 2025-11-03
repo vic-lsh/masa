@@ -150,7 +150,14 @@ def run_once(
     if cfg.replay_path:
         trace_cmd.extend(["--replay-path", str(cfg.replay_path)])
 
-    down_cmd = ["docker", "compose", "down", "--volumes"]
+    down_cmd = ["docker",
+                "compose",
+                "-f",
+                str(docker_compose_path),
+                "-p",
+                "mssim",
+                "down", 
+                "--volumes"]
 
     up_cmd = [
         "docker", 
