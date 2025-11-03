@@ -66,29 +66,38 @@ enum LoadMode {
 
 #[derive(Debug, Clone, Deserialize)]
 struct FrontendTargetConfig {
+    #[serde(default)]
     service: Option<String>,
     ip: String,
     port: u16,
     #[serde(default = "default_frontend_replicas")]
     replicas: u16,
+    graph: Option<String>,
 }
 
 fn default_frontend_replicas() -> u16 {
     1
 }
 
+#[derive(Clone)]
+pub struct ClientEntry {
+    pub client: RpcClient,
+    pub graph: Option<String>,
+    pub slo_ms: u64,
+}
+
 pub struct ClientPool {
-    clients: Arc<Vec<RpcClient>>,
+    clients: Arc<Vec<ClientEntry>>,
     next_index: AtomicUsize,
 }
 
 impl ClientPool {
-    pub fn new(clients: Vec<RpcClient>) -> anyhow::Result<Self> {
-        if clients.is_empty() {
+    pub fn new(entries: Vec<ClientEntry>) -> anyhow::Result<Self> {
+        if entries.is_empty() {
             bail!("load generator requires at least one frontend target");
         }
         Ok(Self {
-            clients: Arc::new(clients),
+            clients: Arc::new(entries),
             next_index: AtomicUsize::new(0),
         })
     }
@@ -97,7 +106,7 @@ impl ClientPool {
         self.clients.len()
     }
 
-    pub fn acquire(&self) -> RpcClient {
+    pub fn acquire(&self) -> ClientEntry {
         let idx = self.next_index.fetch_add(1, Ordering::Relaxed);
         let slot = idx % self.clients.len();
         self.clients[slot].clone()
@@ -162,7 +171,9 @@ async fn run_root_load(
                     Err(_) => continue,
                 };
 
-                let mut rpc_client = client_pool.acquire();
+                let entry = client_pool.acquire();
+                let mut rpc_client = entry.client.clone();
+                let graph_hint = entry.graph.clone();
                 let root_samples = root_samples.clone();
                 let latency_sample_tx = latency_sample_tx.clone();
 
@@ -186,10 +197,11 @@ async fn run_root_load(
                     let mut request = Request::new(RootRequest {
                         req_id,
                         start_at,
+                        graph_name: graph_hint.unwrap_or_default(),
                     });
 
                     let ctx = {
-                        let slo_us = request_slo * 1000;
+                        let slo_us = entry.slo_ms * 1000;
                         let start_at = time_now();
                         let deadline = start_at + slo_us;
                         MasaContext::new("root".to_string(), req_id, slo_us, start_at, deadline)
@@ -218,7 +230,8 @@ async fn run_root_load(
                                 let _ = latency_sample_tx.send(elapsed);
                             }
                         }
-                        Err(_) => {
+                        Err(err) => {
+                            eprintln!("Request {} failed: {:?}", req_id, err);
                             if record_metrics {
                                 stats.err.fetch_add(1, Ordering::Relaxed);
                                 let sample = RootLatencySample {
@@ -485,11 +498,6 @@ async fn print_stats_task(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let default_ip = env::var("IP").unwrap_or_else(|_| "[::1]".to_string());
-    let port_raw = env::var("PORT").unwrap_or_else(|_| "50051".to_string());
-    let default_port: u16 = port_raw
-        .parse()
-        .with_context(|| format!("failed to parse PORT value {port_raw:?} as u16"))?;
     let rps: f64 = env::var("RPS")
         .unwrap_or_else(|_| "350".to_string())
         .parse()?;
@@ -549,39 +557,37 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
+    // Find frontend targets from env
     let raw_targets = env::var("FRONTEND_TARGETS").ok();
-    let mut target_configs: Vec<FrontendTargetConfig> = match raw_targets {
+    let target_configs: Vec<FrontendTargetConfig> = match raw_targets {
         Some(raw) if !raw.trim().is_empty() => serde_json::from_str(&raw)
             .with_context(|| format!("failed to parse FRONTEND_TARGETS: {raw}"))?,
         _ => Vec::new(),
     };
 
-    if target_configs.is_empty() {
-        target_configs.push(FrontendTargetConfig {
-            service: None,
-            ip: default_ip.clone(),
-            port: default_port,
-            replicas: 1,
-        });
-    }
+    assert!(
+        !target_configs.is_empty(),
+        "FRONTEND_TARGETS must specify at least one target"
+    );
 
     let target_summary = target_configs
         .iter()
         .map(|cfg| {
+            let mut attributes = vec![format!("replicas={}", cfg.replicas)];
             if let Some(service) = &cfg.service {
-                format!(
-                    "{}:{} (service={}, replicas={})",
-                    cfg.ip, cfg.port, service, cfg.replicas
-                )
-            } else {
-                format!("{}:{} (replicas={})", cfg.ip, cfg.port, cfg.replicas)
+                attributes.push(format!("service={}", service));
             }
+            if let Some(graph) = &cfg.graph {
+                attributes.push(format!("graph={}", graph));
+            }
+            format!("{}:{} ({})", cfg.ip, cfg.port, attributes.join(", "))
         })
         .collect::<Vec<_>>()
         .join(", ");
 
     let mut clients = Vec::with_capacity(target_configs.len());
-    for cfg in &target_configs {
+    // Get the indexed clients
+    for (i, cfg) in target_configs.iter().enumerate() {
         ensure!(
             cfg.replicas > 0,
             "frontend target {}:{} must have at least one replica",
@@ -598,7 +604,18 @@ async fn main() -> anyhow::Result<()> {
             );
         }
         let channel = LoadBalancedChannel::new(cfg.ip.clone(), cfg.port, cfg.replicas as u8).await;
-        clients.push(ServiceClient::new(channel));
+
+        let mut slo = 200;
+        if i == 1 {
+            slo = 100;
+        }
+        let entry = ClientEntry {
+            client: ServiceClient::new(channel),
+            graph: cfg.graph.clone().or_else(|| cfg.service.clone()),
+            slo_ms: slo,
+        };
+
+        clients.push(entry);
     }
     let client_pool = ClientPool::new(clients)?;
 
