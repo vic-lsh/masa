@@ -255,44 +255,31 @@ def _feature_tag(features: str) -> str:
     return tag
 
 
-def _docker_image_exists(image: str) -> bool:
-    result = subprocess.run(
-        ["docker", "image", "inspect", image],
-        cwd=REPO_ROOT,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return result.returncode == 0
-
-
 def build_generic_service_image(feature: str) -> str:
     canonical_features = _canonicalize_features(feature)
     features_for_build = canonical_features or feature.strip() or "default"
     tag_suffix = _feature_tag(canonical_features)
     feature_image = f"{GENERIC_SERVICE_IMAGE}:{tag_suffix}"
 
-    if _docker_image_exists(feature_image):
-        print(f"Reusing cached image {feature_image}")
-    else:
-        print(
-            f"Building mssim generic service image for features '{features_for_build}'",
-        )
-        build_cmd = [
-            "docker",
-            "buildx",
-            "build",
-            "--load",
-            "-t",
-            feature_image,
-            "--build-arg",
-            f"FEATURE_ARG={features_for_build}",
-            "--target",
-            "generic-service",
-            "-f",
-            "apps/mssim/generic-service/Dockerfile",
-            REPO_ROOT,
-        ]
-        subprocess.run(build_cmd, cwd=REPO_ROOT, check=True)
+    print(
+        f"Building mssim generic service image for features '{features_for_build}'",
+    )
+    build_cmd = [
+        "docker",
+        "buildx",
+        "build",
+        "--load",
+        "-t",
+        feature_image,
+        "--build-arg",
+        f"FEATURE_ARG={features_for_build}",
+        "--target",
+        "generic-service",
+        "-f",
+        "apps/mssim/generic-service/Dockerfile",
+        REPO_ROOT,
+    ]
+    subprocess.run(build_cmd, cwd=REPO_ROOT, check=True)
 
     subprocess.run(
         ["docker", "tag", feature_image, GENERIC_SERVICE_IMAGE],
