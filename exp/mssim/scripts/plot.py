@@ -78,10 +78,6 @@ def filter_after_warmup(
             f"Warning: warmup filtering removed all samples from {source}; keeping unfiltered data."
         )
         return df
-
-    removed = len(df) - len(filtered)
-    if removed > 0:
-        print(f"Warmup filtering removed {removed} samples from {source}.")
     return filtered
 
 
@@ -113,14 +109,13 @@ def load_policy_samples(policy_dir: Path, warmup_sec: float = 0.0) -> PolicySamp
             if "e2e_latency_us" not in df.columns:
                 raise ValueError(f"Missing 'e2e_latency_us' column in {csv_path}")
             df = filter_after_warmup(df, warmup_sec, csv_path)
-
             if "is_err" in df.columns:
                 err_mask = df["is_err"].fillna(False).astype(bool)
                 df = df.loc[~err_mask]
 
             if df.empty:
                 continue
-
+            
             if "queue_latency_us" in df.columns:
                 queue_us = df["queue_latency_us"].astype(float)
             else:
@@ -129,6 +124,8 @@ def load_policy_samples(policy_dir: Path, warmup_sec: float = 0.0) -> PolicySamp
                 graph_values = df["graph"].astype(str).where(df["graph"].notna(), "unknown")
             else:
                 graph_values = pd.Series("unknown", index=df.index)
+
+
             frame = pd.DataFrame(
                 {
                     "graph": graph_values,
@@ -156,11 +153,11 @@ def align_rps(*datasets: PolicySamples) -> List[float]:
     return shared_rps
 
 
-def compute_goodput(samples: PolicySamples, threshold_ms: float, rps: float, duration: float) -> float:
+def compute_goodput(samples: PolicySamples, threshold_ms: float, rps: float, duration: float, warmup: float) -> float:
     latencies = samples.metric_for_rps(rps, "e2e_latency_ms")
     if latencies.empty:
         return 0.0
-    goodput = (latencies <= threshold_ms).sum() / duration
+    goodput = (latencies <= threshold_ms).sum() / (duration - warmup)
     return goodput
 
 
@@ -169,6 +166,7 @@ def compute_goodput_by_graph(
     rps_values: Sequence[float],
     threshold_ms: float,
     duration: float,
+    warmup: float
 ) -> dict[str, List[float]]:
     graphs = sorted(
         {str(graph) for graph in samples.latencies_ms["graph"].dropna().unique()}
@@ -195,8 +193,7 @@ def compute_goodput_by_graph(
                 continue
 
             meets_slo = (group["e2e_latency_ms"] <= threshold_ms).sum()
-            print(f"RPS={rps:g}, graph={graph}, meets_slo={meets_slo}, total={len(group)}")
-            goodput_per_graph[graph].append(meets_slo / duration)
+            goodput_per_graph[graph].append(meets_slo / (duration - warmup))
 
     return goodput_per_graph
 
@@ -516,11 +513,11 @@ def main() -> None:
     rps_values = align_rps(*policy_samples)
 
     goodput_by_policy = [
-        [compute_goodput(samples, threshold_ms, rps, duration_sec) for rps in rps_values]
+        [compute_goodput(samples, threshold_ms, rps, duration_sec, warmup_sec) for rps in rps_values]
         for samples in policy_samples
     ]
     per_policy_graph_goodput = [
-        compute_goodput_by_graph(samples, rps_values, threshold_ms, duration_sec)
+        compute_goodput_by_graph(samples, rps_values, threshold_ms, duration_sec, warmup_sec)
         for samples in policy_samples
     ]
 
