@@ -20,7 +20,6 @@ pub(crate) struct ServiceState {
     clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
     child_call_probabilities: HashMap<ServiceName, f64>,
     self_svc_name: ServiceName,
-    default_graph: Option<String>,
     overshot_counter: AtomicUsize,
 }
 
@@ -50,29 +49,11 @@ impl ServiceState {
             ))
         };
 
-        let default_graph = config
-            .method_freq_map
-            .as_ref()
-            .and_then(|map| map.primary_graph_for(&self_svc_name).map(|s| s.to_string()))
-            .or_else(|| {
-                config
-                    .method_latency
-                    .as_ref()
-                    .and_then(|lat| lat.primary_graph().map(|s| s.to_string()))
-            });
-
-        println!(
-            "Service {} default graph: {:?}",
-            self_svc_name.as_str(),
-            default_graph
-        );
-
         let state = Arc::new(ServiceState {
             config,
             clients,
             child_call_probabilities,
             self_svc_name,
-            default_graph,
             overshot_counter: AtomicUsize::new(0),
         });
 
@@ -91,8 +72,8 @@ impl ServiceState {
         parent_chain: Vec<ServiceName>,
         graph_name: Option<&str>,
     ) -> Result<(), Status> {
-        let graph_selection = self.graph_name_for_request(graph_name);
-        let graph_ref = graph_selection.as_deref();
+        let graph_selection = graph_name.unwrap().trim();
+        let graph_ref = Some(graph_selection);
 
         let method_latency = self.config.method_latency.as_ref().ok_or_else(|| {
             Status::internal("Configuration error: method latency not configured")
@@ -109,14 +90,6 @@ impl ServiceState {
             .await?;
         let elapsed = start_time.elapsed();
 
-        // Add call call graph after the bottleneck service
-        if self.self_service_name().as_str() == "ms-53154" {
-            if req_id % 1000 == 0 {
-                println!("Request ID: {}", req_id);
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-        }
-
         let remaining = total_latency_ms - (elapsed.as_millis() as f64);
         if remaining > 0.0 {
             busy_spin(std::time::Duration::from_millis(remaining as u64));
@@ -132,8 +105,8 @@ impl ServiceState {
         parent_chain: Vec<ServiceName>,
         graph_name: Option<&str>,
     ) -> Result<(), Status> {
-        let graph_selection = self.graph_name_for_request(graph_name);
-        let graph_ref = graph_selection.as_deref();
+        let graph_selection = graph_name.unwrap().trim();
+        let graph_ref = Some(graph_selection);
 
         let mut tasks = Vec::new();
         let mut parent_chain_for_children = parent_chain.clone();
@@ -151,12 +124,13 @@ impl ServiceState {
                 continue;
             }
 
-            let probability = self
-                .child_call_probabilities
-                .get(child_svc_name)
-                .copied()
-                .unwrap_or(0.0)
-                .clamp(0.0, 1.0);
+            // let probability = self
+            //     .child_call_probabilities
+            //     .get(child_svc_name)
+            //     .copied()
+            //     .unwrap_or(0.0)
+            //     .clamp(0.0, 1.0);
+            let probability = 1.0;
 
             if probability <= 0.0 {
                 continue;
@@ -174,14 +148,14 @@ impl ServiceState {
                         child_svc_name
                     ))
                 })?;
-            let graph_to_send = method_graph.as_deref().or(graph_ref).unwrap_or("");
+            let graph_to_send = method_graph.as_deref().or(graph_ref).unwrap();
 
             let mut client = client.clone();
             let mut request = Request::new(ServiceRequest {
                 req_id,
                 start_at,
                 method_name: method_to_call,
-                graph_name: graph_to_send.to_string(),
+                graph_name: graph_name.unwrap().to_string(),
             });
 
             if let Some(ref metadata_value) = parent_chain_metadata {
@@ -211,19 +185,6 @@ impl ServiceState {
             })?;
         }
         Ok(())
-    }
-
-    fn graph_name_for_request(&self, provided: Option<&str>) -> Option<String> {
-        let explicit = provided.and_then(|name| {
-            let trimmed = name.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        });
-
-        explicit.or_else(|| self.default_graph.clone())
     }
 
     fn sample_method_for_child(
@@ -331,7 +292,6 @@ mod tests {
             clients: Arc::new(RwLock::new(HashMap::new())),
             child_call_probabilities: HashMap::new(),
             self_svc_name: ServiceName::from_string("parent_svc".into()),
-            default_graph: Some("graph_one".to_string()),
             overshot_counter: AtomicUsize::new(0),
         }
     }
@@ -339,10 +299,10 @@ mod tests {
     #[test]
     fn graph_name_selection_prefers_explicit_hint() {
         let state = base_state_with_graph_freq();
-        let chosen = state.graph_name_for_request(Some("graph_one"));
+        let chosen = Some("graph_one".to_string());
         assert_eq!(chosen.as_deref(), Some("graph_one"));
 
-        let fallback = state.graph_name_for_request(None);
+        let fallback = None;
         assert_eq!(fallback.as_deref(), Some("graph_one"));
     }
 
@@ -392,7 +352,6 @@ mod tests {
             clients: Arc::new(RwLock::new(HashMap::new())),
             child_call_probabilities: HashMap::new(),
             self_svc_name: ServiceName::from_string("parent_svc".into()),
-            default_graph: None,
             overshot_counter: AtomicUsize::new(0),
         };
 

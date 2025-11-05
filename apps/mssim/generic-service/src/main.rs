@@ -67,29 +67,26 @@ impl Service for AlibabaService {
         let parent_chain = parent_chain::decode_parent_chain(request.metadata())?;
         let request = request.into_inner();
         let method_name = request.method_name.clone();
-        let graph_name = if request.graph_name.is_empty() {
-            None
-        } else {
-            Some(request.graph_name.as_str())
-        };
+        let graph_name = request.graph_name.as_str();
 
-        if self.state().self_service_name().as_str() == "ms-37691" {
-            if request.req_id % 501 == 0 {
-                // print the deadline and graph name
-                let ctx = metadata
-                    .get_ctx("ctx")
-                    .ok_or_else(|| Status::invalid_argument("Missing context metadata 'ctx'"))?;
-                let time_remain = ctx
-                    .slo()
-                    .saturating_add(ctx.start_at())
-                    .saturating_sub(ctx.deadline());
+        // print the deadline and graph name
+        if request.req_id % 501 == 0 {
+            let ctx = metadata
+                .get_ctx("ctx")
+                .ok_or_else(|| Status::invalid_argument("Missing context metadata 'ctx'"))?;
+            let time_remain = ctx
+                .slo()
+                .saturating_add(ctx.start_at())
+                .saturating_sub(ctx.deadline());
 
-                println!(
-                    "Request ID: {}, Deadline Remaining: {} us, Graph Name: {:?}",
-                    request.req_id, time_remain, graph_name,
-                );
-            }
+            println!(
+                "Request ID: {}, Deadline Remaining: {} us, Graph Name: {:?}",
+                request.req_id, time_remain, graph_name,
+            );
         }
+
+        busy_spin(std::time::Duration::from_millis(10));
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
         self.state()
             .handle_method(
@@ -97,7 +94,7 @@ impl Service for AlibabaService {
                 request.req_id,
                 request.start_at,
                 parent_chain,
-                graph_name,
+                Some(graph_name),
             )
             .await?;
 
@@ -124,14 +121,20 @@ impl Service for AlibabaService {
         }
 
         let request = request.into_inner();
-        let graph_name = if request.graph_name.is_empty() {
-            None
-        } else {
-            Some(request.graph_name.as_str())
-        };
-        self.state()
-            .fanout(request.req_id, request.start_at, Vec::new(), graph_name)
+        let graph_name = request.graph_name.as_str();
+        
+        if graph_name == "s-14677443" {
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+            self.state()
+            .fanout(request.req_id, request.start_at, Vec::new(), Some(graph_name))
             .await?;
+            tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+        } else {
+            tokio::time::sleep(std::time::Duration::from_millis(3)).await;
+            self.state()
+            .fanout(request.req_id, request.start_at, Vec::new(), Some(graph_name))
+            .await?;
+        }
 
         Ok(Response::new(RootResponse {
             req_id: request.req_id,
