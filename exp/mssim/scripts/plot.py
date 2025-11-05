@@ -106,6 +106,7 @@ def load_policy_samples(policy_dir: Path, warmup_sec: float = 0.0) -> PolicySamp
 
         for csv_path in csv_paths:
             df = pd.read_csv(csv_path)
+            df.columns = [col.strip() for col in df.columns]
             if "e2e_latency_us" not in df.columns:
                 raise ValueError(f"Missing 'e2e_latency_us' column in {csv_path}")
             df = filter_after_warmup(df, warmup_sec, csv_path)
@@ -115,7 +116,7 @@ def load_policy_samples(policy_dir: Path, warmup_sec: float = 0.0) -> PolicySamp
 
             if df.empty:
                 continue
-            
+
             if "queue_latency_us" in df.columns:
                 queue_us = df["queue_latency_us"].astype(float)
             else:
@@ -125,6 +126,26 @@ def load_policy_samples(policy_dir: Path, warmup_sec: float = 0.0) -> PolicySamp
             else:
                 graph_values = pd.Series("unknown", index=df.index)
 
+            if "missed_slo" in df.columns:
+                raw_missed = df["missed_slo"]
+                if pd.api.types.is_bool_dtype(raw_missed):
+                    missed_slo = raw_missed.astype("boolean")
+                else:
+                    normalized = (
+                        raw_missed.astype(str)
+                        .str.strip()
+                        .str.lower()
+                        .replace({"": pd.NA})
+                    )
+                    bool_mapped = normalized.replace(
+                        {"true": True, "1": True, "yes": True, "false": False, "0": False, "no": False}
+                    )
+                    bool_mapped = bool_mapped.where(
+                        bool_mapped.isin([True, False]), pd.NA
+                    )
+                    missed_slo = bool_mapped.astype("boolean")
+            else:
+                missed_slo = pd.Series(pd.NA, index=df.index, dtype="boolean")
 
             frame = pd.DataFrame(
                 {
@@ -132,6 +153,7 @@ def load_policy_samples(policy_dir: Path, warmup_sec: float = 0.0) -> PolicySamp
                     "rps": rps,
                     "e2e_latency_ms": df["e2e_latency_us"].astype(float) / 1_000.0,
                     "queue_latency_ms": queue_us / 1_000.0,
+                    "missed_slo": missed_slo,
                 }
             )
             frames.append(frame)
@@ -154,11 +176,25 @@ def align_rps(*datasets: PolicySamples) -> List[float]:
 
 
 def compute_goodput(samples: PolicySamples, threshold_ms: float, rps: float, duration: float, warmup: float) -> float:
-    latencies = samples.metric_for_rps(rps, "e2e_latency_ms")
-    if latencies.empty:
+    subset = samples.latencies_ms.loc[samples.latencies_ms["rps"] == rps]
+    if subset.empty:
         return 0.0
-    goodput = (latencies <= threshold_ms).sum() / (duration - warmup)
-    return goodput
+    effective_duration = duration - warmup
+    if effective_duration <= 0:
+        raise ValueError("Duration minus warmup must be positive to compute goodput.")
+
+    if "missed_slo" in subset.columns and subset["missed_slo"].notna().any():
+        missed = subset["missed_slo"].astype("boolean")
+        known_good = missed.eq(False).sum()
+        fallback_mask = missed.isna()
+        fallback_good = 0
+        if fallback_mask.any():
+            fallback_good = (subset.loc[fallback_mask, "e2e_latency_ms"] <= threshold_ms).sum()
+        good_requests = known_good + fallback_good
+    else:
+        good_requests = (subset["e2e_latency_ms"] <= threshold_ms).sum()
+
+    return good_requests / effective_duration
 
 
 def compute_goodput_by_graph(
@@ -168,6 +204,10 @@ def compute_goodput_by_graph(
     duration: float,
     warmup: float
 ) -> dict[str, List[float]]:
+    effective_duration = duration - warmup
+    if effective_duration <= 0:
+        raise ValueError("Duration minus warmup must be positive to compute goodput.")
+
     graphs = sorted(
         {str(graph) for graph in samples.latencies_ms["graph"].dropna().unique()}
     )
@@ -192,8 +232,21 @@ def compute_goodput_by_graph(
                 goodput_per_graph[graph].append(float("nan"))
                 continue
 
-            meets_slo = (group["e2e_latency_ms"] <= threshold_ms).sum()
-            goodput_per_graph[graph].append(meets_slo / (duration - warmup))
+            meets_slo: int
+            if "missed_slo" in group.columns and group["missed_slo"].notna().any():
+                missed = group["missed_slo"].astype("boolean")
+                known_good = missed.eq(False).sum()
+                fallback_mask = missed.isna()
+                fallback_good = 0
+                if fallback_mask.any():
+                    fallback_good = (
+                        group.loc[fallback_mask, "e2e_latency_ms"] <= threshold_ms
+                    ).sum()
+                meets_slo = known_good + fallback_good
+            else:
+                meets_slo = (group["e2e_latency_ms"] <= threshold_ms).sum()
+
+            goodput_per_graph[graph].append(meets_slo / effective_duration)
 
     return goodput_per_graph
 
@@ -358,7 +411,7 @@ def build_latency_plots(
                 ],
                 positions=positions,
                 widths=box_width * 0.9,
-                whis=(5, 99.9),
+                whis=(5, 99.9999),
                 patch_artist=True,
                 manage_ticks=False,
                 showfliers=False,
