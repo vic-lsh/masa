@@ -183,16 +183,7 @@ def compute_goodput(samples: PolicySamples, threshold_ms: float, rps: float, dur
     if effective_duration <= 0:
         raise ValueError("Duration minus warmup must be positive to compute goodput.")
 
-    if "missed_slo" in subset.columns and subset["missed_slo"].notna().any():
-        missed = subset["missed_slo"].astype("boolean")
-        known_good = missed.eq(False).sum()
-        fallback_mask = missed.isna()
-        fallback_good = 0
-        if fallback_mask.any():
-            fallback_good = (subset.loc[fallback_mask, "e2e_latency_ms"] <= threshold_ms).sum()
-        good_requests = known_good + fallback_good
-    else:
-        good_requests = (subset["e2e_latency_ms"] <= threshold_ms).sum()
+    good_requests = (subset["e2e_latency_ms"] <= threshold_ms).sum()
 
     return good_requests / effective_duration
 
