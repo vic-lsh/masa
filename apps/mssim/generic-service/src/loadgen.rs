@@ -82,12 +82,14 @@ pub struct ClientEntry {
 
 pub struct ClientPool {
     clients: Arc<Vec<ClientEntry>>,
+    counter: AtomicUsize,
 }
 
 impl ClientPool {
     pub fn new(entries: Vec<ClientEntry>) -> anyhow::Result<Self> {
         Ok(Self {
             clients: Arc::new(entries),
+            counter: AtomicUsize::new(0),
         })
     }
 
@@ -96,19 +98,26 @@ impl ClientPool {
     }
 
     pub fn acquire(&self) -> ClientEntry {
-        let mut rng = rand::rng();
-        let r: f32 = rng.random();
-        let mut cumulative = 0.0;
+        // let mut rng = rand::rng();
+        // let r: f32 = rng.random();
+        // let mut cumulative = 0.0;
 
-        for client in self.clients.iter() {
-            cumulative += client.probability;
-            if r <= cumulative {
-                return client.clone();
-            }
+        // for client in self.clients.iter() {
+        //     cumulative += client.probability;
+        //     if r <= cumulative {
+        //         return client.clone();
+        //     }
+        // }
+
+        // // If rounding errors cause r > total sum, return last one.
+        // self.clients.last().unwrap().clone()
+
+        let counter = self.counter.fetch_add(1, Ordering::Relaxed);
+        if counter < 1{
+            return self.clients[0].clone();
         }
-
-        // If rounding errors cause r > total sum, return last one.
-        self.clients.last().unwrap().clone()
+        self.counter.swap(0, Ordering::Relaxed);
+        self.clients[1].clone()
     }
 }
 
@@ -210,8 +219,7 @@ async fn run_root_load(
                             }
                             let _ = latency_sample_tx.send(elapsed);
                         }
-                        Err(err) => {
-                            eprintln!("Request {} failed: {:?}", req_id, err);
+                        Err(_) => {
                             stats.err.fetch_add(1, Ordering::Relaxed);
                             let sample = RootLatencySample {
                                 graph: entry.graph,
@@ -220,7 +228,7 @@ async fn run_root_load(
                                 req_id,
                                 start_at,
                                 queue_latency_us: 0,
-                                e2e_latency_us: 0,
+                                e2e_latency_us: elapsed,
                             };
                             {
                                 let mut guard = root_samples.lock().await;
