@@ -7,12 +7,11 @@ use std::{
 };
 
 use masa::{time_now, Context as MasaContext};
-use rand::Rng;
+use rand_distr::{Distribution, Exp};
 use serde::Deserialize;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{mpsc, Mutex, Semaphore};
-use tokio::time::Instant;
-use tokio::time::MissedTickBehavior;
+use tokio::time::{Instant, MissedTickBehavior};
 use tokio::{fs, time};
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::Request;
@@ -36,6 +35,7 @@ struct Stats {
     sent: AtomicUsize,
     ok: AtomicUsize,
     err: AtomicUsize,
+    throttled: AtomicUsize,
 }
 
 fn root_latency_file_name_for_rps(rps: f64) -> String {
@@ -113,17 +113,18 @@ impl ClientPool {
         // self.clients.last().unwrap().clone()
 
         let counter = self.counter.fetch_add(1, Ordering::Relaxed);
-        if counter < 1{
-            return self.clients[0].clone();
-        }
-        self.counter.swap(0, Ordering::Relaxed);
-        self.clients[1].clone()
+        return self.clients[counter % self.clients.len()].clone();
+     //    if counter < 1{
+     //        return self.clients[0].clone();
+     //    }
+     //    self.counter.swap(0, Ordering::Relaxed);
+     //    self.clients[1].clone()
     }
 }
 
 async fn run_root_load(
     client_pool: ClientPool,
-    per_req: Duration,
+    rps: f64,
     stats: Arc<Stats>,
     inflight_guard: Arc<Semaphore>,
     max_in_flight: usize,
@@ -131,13 +132,15 @@ async fn run_root_load(
     finish_after: Option<Duration>,
     latency_sample_tx: mpsc::UnboundedSender<u64>,
 ) -> anyhow::Result<()> {
-    let mut ticker = tokio::time::interval(per_req);
-    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    ticker.reset();
+    // Create exponential distribution for Poisson process
+    // For Poisson process with rate lambda (rps), inter-arrival times are exponential with rate lambda
+    let exp_dist = Exp::new(rps).map_err(|e| anyhow::anyhow!("Invalid RPS for exponential distribution: {}", e))?;
+    let mut rng = rand::rng();
 
     let run_start = Instant::now();
     let finish_deadline = finish_after.map(|duration| run_start + duration);
     let mut next_req_id: u64 = 0;
+    let mut next_request_time = run_start;
 
     let finish_sleep = async {
         if let Some(deadline) = finish_deadline {
@@ -162,11 +165,20 @@ async fn run_root_load(
                 break;
             }
 
-            _ = ticker.tick() => {
+            _ = time::sleep_until(next_request_time) => {
+                // Schedule the next arrival relative to the previous target time to avoid losing RPS to processing overheads.
+                let inter_arrival_secs = exp_dist.sample(&mut rng);
+                let inter_arrival = Duration::from_secs_f64(inter_arrival_secs);
+                next_request_time = next_request_time + inter_arrival;
+
                 // request max-in-flight control
                 let permit = match inflight_guard.clone().try_acquire_owned() {
                     Ok(p) => p,
-                    Err(_) => continue,
+                    Err(_) => {
+                        // If we can't acquire permit, count as throttled and still schedule next request
+                        stats.throttled.fetch_add(1, Ordering::Relaxed);
+                        continue;
+                    },
                 };
 
                 let entry = client_pool.acquire();
@@ -247,7 +259,8 @@ async fn run_root_load(
     let s = stats.sent.load(Ordering::Relaxed);
     let o = stats.ok.load(Ordering::Relaxed);
     let e = stats.err.load(Ordering::Relaxed);
-    println!("Final stats: sent={}, ok={}, err={}", s, o, e);
+    let t = stats.throttled.load(Ordering::Relaxed);
+    println!("Final stats: sent={}, ok={}, err={}, throttled={}", s, o, e, t);
 
     Ok(())
 }
@@ -388,6 +401,7 @@ async fn print_stats_task(
     let mut last_sent = 0;
     let mut last_ok = 0;
     let mut last_err = 0;
+    let mut last_throttled = 0;
     let mut ticker = tokio::time::interval(stats_interval);
     let mut latency_buffer = Vec::new();
     loop {
@@ -396,6 +410,7 @@ async fn print_stats_task(
                 let s = stats.sent.load(Ordering::Relaxed);
                 let o = stats.ok.load(Ordering::Relaxed);
                 let e = stats.err.load(Ordering::Relaxed);
+                let t = stats.throttled.load(Ordering::Relaxed);
                 let percentiles = {
                     if latency_buffer.is_empty() {
                         None
@@ -411,13 +426,15 @@ async fn print_stats_task(
                     None => ("n/a".to_string(), "n/a".to_string(), "n/a".to_string(), "n/a".to_string()),
                 };
                 println!(
-                    "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), p50={}, p90={}, p95={}, p99={}",
+                    "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), throttled={} (+{}), p50={}, p90={}, p95={}, p99={}",
                     s,
                     s - last_sent,
                     o,
                     o - last_ok,
                     e,
                     e - last_err,
+                    t,
+                    t - last_throttled,
                     p50_str,
                     p90_str,
                     p95_str,
@@ -426,6 +443,7 @@ async fn print_stats_task(
                 last_sent = s;
                 last_ok = o;
                 last_err = e;
+                last_throttled = t;
             }
             maybe_sample = latency_rx.recv() => {
                 match maybe_sample {
@@ -443,11 +461,10 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "350".to_string())
         .parse()?;
 
-    // print rps
-    println!("RPS set to: {}", rps);
     let max_in_flight: usize = env::var("MAX_IN_FLIGHT")
         .unwrap_or_else(|_| "10000".to_string())
         .parse()?;
+
     let stats_interval_sec: u64 = env::var("STATS_INTERVAL_SEC")
         .unwrap_or_else(|_| "1".to_string())
         .parse()?;
@@ -461,6 +478,9 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty());
+
+
+    println!("RPS: {}, MAX_IN_FLIGHT: {}, STATS_INTERVAL_SEC: {}, DURATION: {:?}", rps, max_in_flight, stats_interval_sec, duration);
 
     // If replay_env is set, we are in replay mode
     // Otherwise, we are in root() load mode
@@ -479,14 +499,11 @@ async fn main() -> anyhow::Result<()> {
         None => (LoadMode::Root, None),
     };
 
-    let per_req = if matches!(load_mode, LoadMode::Root) {
+    if matches!(load_mode, LoadMode::Root) {
         if rps <= 0.0 {
             anyhow::bail!("RPS must be > 0");
         }
-        Some(Duration::from_secs_f64(1.0 / rps))
-    } else {
-        None
-    };
+    }
 
     // Find frontend targets from env
     let front_string = fs::read_to_string("frontend.json").await?;
@@ -496,6 +513,15 @@ async fn main() -> anyhow::Result<()> {
         !target_configs.is_empty(),
         "FRONTEND_TARGETS must specify at least one target"
     );
+
+    let target_configs: Vec<_> = target_configs.iter().flat_map(|cfg| {
+        let graph_replication = 1;
+        if cfg.graph != "s-14677443" {
+            (0..graph_replication).map(|_| cfg.clone()).collect()
+        } else {
+            vec![cfg.clone()]
+        }
+    }).collect();
 
     let target_summary = target_configs
         .iter()
@@ -542,9 +568,9 @@ async fn main() -> anyhow::Result<()> {
         ),
     }
 
-    if per_req.is_some() {
+    if matches!(load_mode, LoadMode::Root) {
         println!(
-            "Starting loadgen: targets={}, rps={}, max_in_flight={}",
+            "Starting loadgen with Poisson arrivals: targets={}, rps={}, max_in_flight={}",
             target_summary, rps, max_in_flight
         );
         println!("Press Ctrl-C to stop.");
@@ -588,7 +614,7 @@ async fn main() -> anyhow::Result<()> {
         LoadMode::Root => {
             run_root_load(
                 client_pool,
-                per_req.expect("per_req available in root mode"),
+                rps,
                 stats.clone(),
                 inflight_guard.clone(),
                 max_in_flight,
@@ -613,7 +639,8 @@ async fn main() -> anyhow::Result<()> {
     let s = stats.sent.load(Ordering::Relaxed);
     let o = stats.ok.load(Ordering::Relaxed);
     let e = stats.err.load(Ordering::Relaxed);
-    println!("Final stats: sent={}, ok={}, err={}", s, o, e);
+    let t = stats.throttled.load(Ordering::Relaxed);
+    println!("Final stats: sent={}, ok={}, err={}, throttled={}", s, o, e, t);
 
     if let Some((root_samples, file_name)) = root_samples_handle {
         flush_root_samples(root_samples, file_name.as_ref()).await?;

@@ -1,4 +1,6 @@
 use anyhow::Result;
+use rand::Rng;
+use rand_distr::Exp;
 use service_stubs::service_client::ServiceClient;
 use sim_config::deployment::Deployment;
 use sim_config::svc::{ServiceName, ServiceTraceConfig};
@@ -85,8 +87,8 @@ impl Service for AlibabaService {
             );
         }
 
-        busy_spin(std::time::Duration::from_millis(10));
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        busy_spin(std::time::Duration::from_millis(2));
+        tokio::time::sleep(std::time::Duration::from_millis(18)).await;
 
         self.state()
             .handle_method(
@@ -128,9 +130,13 @@ impl Service for AlibabaService {
             self.state()
             .fanout(request.req_id, request.start_at, Vec::new(), Some(graph_name))
             .await?;
-            tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+
+            let mean_ms = 40.0;
+            let rate = 1.0 / mean_ms;
+            let latency = sample_exponential(rate);
+            tokio::time::sleep(std::time::Duration::from_millis(latency as u64)).await;
         } else {
-            tokio::time::sleep(std::time::Duration::from_millis(3)).await;
+            //tokio::time::sleep(std::time::Duration::from_millis(3)).await;
             self.state()
             .fanout(request.req_id, request.start_at, Vec::new(), Some(graph_name))
             .await?;
@@ -225,4 +231,21 @@ pub(crate) fn busy_spin(duration: std::time::Duration) {
     while std::time::Instant::now() - start < duration {
         std::hint::spin_loop();
     }
+}
+
+/// Samples from an exponential distribution with the given rate parameter (lambda).
+/// 
+/// # Arguments
+/// * `rate` - The rate parameter (lambda) of the exponential distribution. 
+///            Must be positive. The mean of the distribution is 1/rate.
+/// 
+/// # Returns
+/// A sample from the exponential distribution.
+/// 
+/// # Panics
+/// Panics if rate is not positive or if the distribution cannot be created.
+pub(crate) fn sample_exponential(rate: f64) -> f64 {
+    let dist = Exp::new(rate).expect("Failed to create exponential distribution");
+    let mut rng = rand::thread_rng();
+    rng.sample(dist)
 }
