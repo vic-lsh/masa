@@ -1,0 +1,20 @@
+[
+  {
+    "service": "user-s-14677443",
+    "ip": "mssim-user-s-14677443",
+    "port": 50051,
+    "replicas": 1,
+    "graph": "s-14677443",
+    "slo_ms": 100,
+    "probability": 0.9
+  },
+  {
+    "service": "user-s-86516878",
+    "ip": "mssim-user-s-86516878",
+    "port": 50051,
+    "replicas": 1,
+    "graph": "s-86516878",
+    "slo_ms": 100,
+    "probability": 0.1
+  }
+]
