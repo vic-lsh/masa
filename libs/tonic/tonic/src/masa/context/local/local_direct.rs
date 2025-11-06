@@ -6,14 +6,17 @@ use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex, RwLock,
+        OnceLock,
     },
     task::Poll,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{estimate_method_latency, track_method_latency};
 use masa::{time_now, Context, LatencyDistribution, MethodId, EARLY_RETURN};
+
+static LAST_PRINT_TIME: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
 #[derive(Debug)]
 /// This policy computes the deadline d of a child request as  
@@ -150,6 +153,21 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             format!("{}/{}", self.method.id(), child_method.id()),
         )
         .unwrap_or(0);
+
+        // Print estimate_remaining every 5 seconds
+        {
+            let last_print = LAST_PRINT_TIME.get_or_init(|| Mutex::new(None));
+            let mut last_print_guard = last_print.lock().unwrap();
+            let now = Instant::now();
+            let should_print = last_print_guard
+                .map(|last| now.duration_since(last) >= Duration::from_secs(5))
+                .unwrap_or(true);
+            
+            if should_print {
+                println!("estimate_remaining: {}", estimate_remaining);
+                *last_print_guard = Some(now);
+            }
+        }
 
         // NOTE(vic): could we have passed the deadline at this point?
         let deadline = self.ctx.deadline() - estimate_remaining;
