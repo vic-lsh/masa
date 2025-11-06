@@ -15,7 +15,7 @@ from matplotlib.patches import Patch
 
 THRESHOLD_DEFAULT_MS = 50
 FILENAME_PATTERN = re.compile(r"root_latencies_(?P<rps>[0-9_]+)rps\.csv$")
-CONFIG_PATH = Path(__file__).resolve().parents[1] / "data/cfg.json"
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/shared.json"
 
 
 @dataclass
@@ -224,18 +224,7 @@ def compute_goodput_by_graph(
                 continue
 
             meets_slo: int
-            if "missed_slo" in group.columns and group["missed_slo"].notna().any():
-                missed = group["missed_slo"].astype("boolean")
-                known_good = missed.eq(False).sum()
-                fallback_mask = missed.isna()
-                fallback_good = 0
-                if fallback_mask.any():
-                    fallback_good = (
-                        group.loc[fallback_mask, "e2e_latency_ms"] <= threshold_ms
-                    ).sum()
-                meets_slo = known_good + fallback_good
-            else:
-                meets_slo = (group["e2e_latency_ms"] <= threshold_ms).sum()
+            meets_slo = (group["e2e_latency_ms"] <= threshold_ms).sum()
 
             goodput_per_graph[graph].append(meets_slo / effective_duration)
 
@@ -501,6 +490,115 @@ def plot_latency_percentiles(
     print(f"Saved latency percentile plots to {output}")
 
 
+def plot_latency_percentiles_by_graph(
+    rps_values: List[float],
+    policies: Sequence[PolicySamples],
+    output_dir: Path,
+    labels: Sequence[str],
+    percentiles: Sequence[float] | None = None,
+    ylim_max_ms: float | None = None,
+) -> None:
+    """Plot latency percentiles by graph, comparing how the same graph's percentiles vary across policies."""
+    if percentiles is None:
+        percentiles = (50, 90.0, 95.0, 99.0)
+
+    if not policies:
+        raise ValueError("No policies provided for percentile plotting.")
+    if len(labels) != len(policies):
+        raise ValueError("Number of labels must match number of policy datasets.")
+
+    # Collect all unique graphs across all policies
+    all_graphs = set()
+    for samples in policies:
+        graphs = samples.latencies_ms["graph"].dropna().unique()
+        all_graphs.update(str(g) for g in graphs)
+    
+    if not all_graphs:
+        all_graphs = {"unknown"}
+    
+    sorted_graphs = sorted(all_graphs)
+
+    cmap = plt.get_cmap("tab10")
+    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for graph_name in sorted_graphs:
+        # Create subplots for each percentile
+        ncols = 2 if len(percentiles) > 1 else 1
+        nrows = ceil(len(percentiles) / ncols)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(12, 4 * nrows), sharex=True)
+        if isinstance(axes, plt.Axes):
+            axes_iter = [axes]
+        else:
+            axes_iter = axes.flatten()
+
+        for idx, percentile in enumerate(percentiles):
+            if idx >= len(axes_iter):
+                break
+            ax = axes_iter[idx]
+
+            # Plot each policy for this graph and percentile
+            for policy_idx, (label, samples) in enumerate(zip(labels, policies)):
+                # Filter data for this graph and RPS
+                graph_data = samples.latencies_ms[
+                    samples.latencies_ms["graph"].astype(str) == graph_name
+                ]
+                
+                if graph_data.empty:
+                    continue
+
+                tail_latencies = []
+                for rps in rps_values:
+                    rps_graph_data = graph_data[
+                        graph_data["rps"] == rps
+                    ]["e2e_latency_ms"].dropna()
+                    
+                    if rps_graph_data.empty:
+                        tail_latencies.append(float("nan"))
+                    else:
+                        tail_latencies.append(
+                            float(rps_graph_data.quantile(percentile / 100.0))
+                        )
+
+                marker = marker_cycle[policy_idx % len(marker_cycle)]
+                color = cmap(policy_idx % cmap.N)
+                
+                ax.plot(
+                    rps_values,
+                    tail_latencies,
+                    marker=marker,
+                    label=f"{label}",
+                    color=color,
+                    linewidth=2,
+                )
+
+            ax.set_title(f"P{percentile:g} tail latency")
+            ax.set_ylabel("Latency (ms)")
+            ax.grid(True, which="both", linestyle="--", alpha=0.4)
+            if ylim_max_ms is not None:
+                ax.set_ylim(bottom=0, top=ylim_max_ms)
+            else:
+                ax.set_ylim(bottom=0)
+            if idx == 0:
+                ax.legend(loc="best")
+
+        for extra_ax in axes_iter[len(percentiles) :]:
+            extra_ax.axis("off")
+
+        for ax in axes_iter[-ncols:]:
+            ax.set_xlabel("Offered load (RPS)")
+
+        fig.suptitle(f"Latency percentiles by policy - Graph: {graph_name}", fontsize=14, y=1.0)
+        fig.tight_layout()
+
+        sanitized_graph = sanitize_label_for_filename(graph_name)
+        filename = f"latency_percentiles_by_graph_{sanitized_graph}.png"
+        output_path = output_dir / filename
+        fig.savefig(output_path, bbox_inches="tight")
+        print(f"Saved latency percentile plots for graph '{graph_name}' to {output_path}")
+
+
 def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float, float, float]:
     with config_path.open("r") as fh:
         config = json.load(fh)
@@ -611,6 +709,12 @@ def main() -> None:
         experiment_root / "latency_percentiles_1s.png",
         policy_names,
         ylim_max_ms=1_000.0,
+    )
+    plot_latency_percentiles_by_graph(
+        rps_values,
+        policy_samples,
+        experiment_root,
+        policy_names,
     )
 
 

@@ -17,7 +17,7 @@ use tracing::{error, warn};
 
 pub(crate) struct ServiceState {
     config: ServiceTraceConfig,
-    clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
+    pub(crate) clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
     child_call_probabilities: HashMap<ServiceName, f64>,
     self_svc_name: ServiceName,
     overshot_counter: AtomicUsize,
@@ -33,6 +33,12 @@ impl ServiceState {
         let child_weights = config.call_graph.callees_of(&self_svc_name);
         let child_call_probabilities = compute_child_probabilities(&child_weights);
         let clients = Arc::new(RwLock::new(HashMap::new()));
+
+        println!("Child services:");
+        for child in child_weights.keys() {
+            println!("{}", child.as_str());
+        }
+
         let bootstrap = if child_weights.is_empty() {
             None
         } else {
