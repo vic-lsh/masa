@@ -515,7 +515,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let target_configs: Vec<_> = target_configs.iter().flat_map(|cfg| {
-        let graph_replication = 1;
+        let graph_replication = 9;
         if cfg.graph != "s-14677443" {
             (0..graph_replication).map(|_| cfg.clone()).collect()
         } else {
