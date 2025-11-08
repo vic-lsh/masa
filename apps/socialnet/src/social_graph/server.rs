@@ -4,7 +4,9 @@ use mongodb::{
     bson::{doc, document::Document},
     Client as MongoClient, Collection,
 };
-use redis::AsyncCommands;
+
+use deadpool_redis::redis::{self, AsyncCommands, Client as RedisClient, FromRedisValue};
+use deadpool_redis::{Pool, Connection};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tonic::{Request, Response, Status};
@@ -27,48 +29,7 @@ use social_graph::{
 use user::user_service_client::UserServiceClient;
 use user::GetUserIdRequest;
 
-/// An enum to manage different Redis client configurations.
-enum RedisManager {
-    /// A single client for both reads and writes.
-    Single(redis::Client),
-    /// Separate clients for primary (writes) and replica (reads).
-    Replica {
-        primary: redis::Client,
-        replica: redis::Client,
-    },
-}
-
-impl RedisManager {
-    /// Gets a connection for write operations.
-    async fn get_write_conn(&self) -> Result<redis::aio::MultiplexedConnection, Status> {
-        let client = match self {
-            RedisManager::Single(c) => c,
-            RedisManager::Replica { primary, .. } => primary,
-        };
-        client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|e| {
-                error!("Failed to connect to Redis for write: {}", e);
-                Status::internal("Failed to connect to Redis")
-            })
-    }
-
-    /// Gets a connection for read operations. Prefers replica if available.
-    async fn get_read_conn(&self) -> Result<redis::aio::MultiplexedConnection, Status> {
-        let client = match self {
-            RedisManager::Single(c) => c,
-            RedisManager::Replica { replica, .. } => replica,
-        };
-        client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|e| {
-                error!("Failed to connect to Redis for read: {}", e);
-                Status::internal("Failed to connect to Redis")
-            })
-    }
-}
+// --- REMOVED RedisManager ENUM ---
 
 /// Represents an edge (follower/followee relationship) in the MongoDB document.
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -79,7 +40,7 @@ struct Edge {
 
 /// The implementation of the SocialGraph gRPC service.
 pub struct SocialGraphService {
-    redis_manager: RedisManager,
+    redis_pool: Pool,
     mongo_collection: Collection<Document>,
     user_service_addr: String,
 }
@@ -88,26 +49,27 @@ impl SocialGraphService {
     /// Creates a new instance of the SocialGraphService.
     pub async fn new(
         mongodb_uri: &str,
-        primary_redis_url: &str,
-        replica_redis_url: Option<&str>,
+        redis_pool: Pool,
         user_service_addr: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let mongo_client = MongoClient::with_uri_str(mongodb_uri).await?;
+        println!("initializing mongo");
+        let mongo_client = MongoClient::with_uri_str(mongodb_uri).await.expect("mongo failed");
         let db = mongo_client.database("social-graph");
         let mongo_collection = db.collection("social-graph");
 
-        let redis_manager = match replica_redis_url {
-            Some(replica_url) => RedisManager::Replica {
-                primary: redis::Client::open(primary_redis_url)?,
-                replica: redis::Client::open(replica_url)?,
-            },
-            None => RedisManager::Single(redis::Client::open(primary_redis_url)?),
-        };
-
         Ok(Self {
-            redis_manager,
+            redis_pool,
             mongo_collection,
             user_service_addr: user_service_addr.to_string(),
+        })
+    }
+
+    /// --- NEW HELPER: Get a connection from the pool ---
+    async fn get_conn(&self) -> Result<Connection, Status> {
+        println!("connecting to redis");
+        self.redis_pool.get().await.map_err(|e| {
+            error!("Failed to get Redis connection from pool: {}", e);
+            Status::internal("Cache service unavailable")
         })
     }
 
@@ -119,7 +81,7 @@ impl SocialGraphService {
         carrier: HashMap<String, String>,
     ) -> Result<i64, Status> {
         let mut user_client =
-            UserServiceClient::connect(format!("http://{}", self.user_service_addr))
+            UserServiceClient::connect(self.user_service_addr.clone())
                 .await
                 .map_err(|e| {
                     error!("Failed to connect to UserService: {}", e);
@@ -141,28 +103,22 @@ impl SocialGraphService {
         let timestamp = Utc::now().timestamp_millis();
 
         let redis_update = async {
-            let mut conn = self.redis_manager.get_write_conn().await?;
+            let mut conn = self.get_conn().await?;
             let user_followees_key = format!("{}:followees", user_id);
             let followee_followers_key = format!("{}:followers", followee_id);
 
-            // sets the NX option for ZADD;
-            // only add a member if it doesn't already exist
-            let options = redis::SortedSetAddOptions::add_only();
-
             let _: () = redis::pipe()
-                .zadd_options(
-                    user_followees_key.clone(),
-                    &[(timestamp, followee_id)],
-                    user_followees_key,
-                    &options,
-                )
-                .zadd_options(
-                    followee_followers_key.clone(),
-                    &[(timestamp, user_id)],
-                    followee_followers_key,
-                    &options,
-                )
-                .query_async(&mut conn)
+                .cmd("ZADD")
+                .arg(&user_followees_key)
+                .arg("NX")
+                .arg(timestamp)
+                .arg(followee_id)
+                .cmd("ZADD")
+                .arg(&followee_followers_key)
+                .arg("NX")
+                .arg(timestamp)
+                .arg(user_id)
+                .query_async::<_, ()>(&mut conn)
                 .await
                 .map_err(|e| {
                     error!("Redis ZADD failed for follow: {}", e);
@@ -205,7 +161,6 @@ impl SocialGraphService {
                 })
         };
 
-        // Run all updates concurrently.
         tokio::try_join!(redis_update, mongo_update_user, mongo_update_followee)?;
         Ok(())
     }
@@ -213,14 +168,14 @@ impl SocialGraphService {
     /// Internal logic to remove a follow relationship.
     async fn _unfollow(&self, user_id: i64, followee_id: i64) -> Result<(), Status> {
         let redis_update = async {
-            let mut conn = self.redis_manager.get_write_conn().await?;
+            let mut conn = self.get_conn().await?;
             let user_followees_key = format!("{}:followees", user_id);
             let followee_followers_key = format!("{}:followers", followee_id);
 
             let _: () = redis::pipe()
                 .zrem(user_followees_key, followee_id)
                 .zrem(followee_followers_key, user_id)
-                .query_async(&mut conn)
+                .query_async::<_, ()>(&mut conn)
                 .await
                 .map_err(|e| {
                     error!("Redis ZREM failed for unfollow: {}", e);
@@ -271,9 +226,9 @@ impl GrpcService for SocialGraphService {
         let user_id = req.user_id;
         let key = format!("{}:followers", user_id);
 
-        let mut redis_conn = self.redis_manager.get_read_conn().await?;
+        let mut conn = self.get_conn().await?;
 
-        let redis_followers: Vec<i64> = redis_conn.zrange(&key, 0, -1).await.map_err(|e| {
+        let redis_followers: Vec<i64> = conn.zrange(&key, 0, -1).await.map_err(|e| {
             error!("Redis ZRANGE failed for followers of {}: {}", user_id, e);
             Status::internal("Failed to read from cache")
         })?;
@@ -315,11 +270,10 @@ impl GrpcService for SocialGraphService {
             (Vec::new(), Vec::new())
         };
 
-        // Asynchronously update cache without blocking the response.
         if !redis_zset.is_empty() {
-            let write_conn_res = self.redis_manager.get_write_conn().await;
+            let pool = self.redis_pool.clone();
             tokio::spawn(async move {
-                if let Ok(mut conn) = write_conn_res {
+                if let Ok(mut conn) = pool.get().await {
                     match conn
                         .zadd_multiple::<&str, i64, i64, ()>(&key, &redis_zset)
                         .await
@@ -327,6 +281,8 @@ impl GrpcService for SocialGraphService {
                         Ok(_) => info!("Updated Redis cache for followers of {}", user_id),
                         Err(e) => warn!("Failed to update Redis cache for {}: {}", user_id, e),
                     }
+                } else {
+                    warn!("Failed to get Redis conn for cache update for {}", user_id);
                 }
             });
         }
@@ -344,9 +300,9 @@ impl GrpcService for SocialGraphService {
         let user_id = req.user_id;
         let key = format!("{}:followees", user_id);
 
-        let mut redis_conn = self.redis_manager.get_read_conn().await?;
+        let mut conn = self.get_conn().await?;
 
-        let redis_followees: Vec<i64> = redis_conn.zrange(&key, 0, -1).await.map_err(|e| {
+        let redis_followees: Vec<i64> = conn.zrange(&key, 0, -1).await.map_err(|e| {
             error!("Redis ZRANGE failed for followees of {}: {}", user_id, e);
             Status::internal("Failed to read from cache")
         })?;
@@ -377,22 +333,23 @@ impl GrpcService for SocialGraphService {
             let edges: Vec<Edge> =
                 mongodb::bson::from_bson(mongodb::bson::Bson::Array(followees_bson))
                     .unwrap_or_default();
-
-            let user_ids: Vec<i64> = edges.iter().map(|e| e.user_id).collect();
+            
+            // --- THIS IS THE FIX ---
+            // The variable `user_ids` was renamed to `followees` to match its usage below.
+            let followees: Vec<i64> = edges.iter().map(|e| e.user_id).collect();
             let zset_items: Vec<(i64, i64)> =
                 edges.iter().map(|e| (e.timestamp, e.user_id)).collect();
 
-            (user_ids, zset_items)
+            (followees, zset_items) // Now `followees` is correctly returned
         } else {
             warn!("User {} not found in MongoDB", user_id);
             (Vec::new(), Vec::new())
         };
 
-        // Asynchronously update cache.
         if !redis_zset.is_empty() {
-            let write_conn_res = self.redis_manager.get_write_conn().await;
+            let pool = self.redis_pool.clone();
             tokio::spawn(async move {
-                if let Ok(mut conn) = write_conn_res {
+                if let Ok(mut conn) = pool.get().await {
                     match conn
                         .zadd_multiple::<&str, i64, i64, ()>(&key, &redis_zset)
                         .await
@@ -400,12 +357,14 @@ impl GrpcService for SocialGraphService {
                         Ok(_) => info!("Updated Redis cache for followees of {}", user_id),
                         Err(e) => warn!("Failed to update Redis cache for {}: {}", user_id, e),
                     }
+                } else {
+                     warn!("Failed to get Redis conn for cache update for {}", user_id);
                 }
             });
         }
 
         Ok(Response::new(GetFolloweesResponse {
-            user_ids: followees,
+            user_ids: followees, // This now matches the variable from the `if let`
         }))
     }
 

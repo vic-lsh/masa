@@ -6,8 +6,9 @@ use std::sync::Arc;
 use mongodb::bson::{doc, Bson, Document};
 use mongodb::options::{FindOneAndUpdateOptions, FindOneOptions, ReturnDocument};
 use mongodb::{Client, Collection};
-use redis::cluster::ClusterClient;
-use redis::{self, Client as RedisClient, RedisError};
+use deadpool_redis::redis::cluster::ClusterClient;
+use deadpool_redis::redis::{self, Client as RedisClient, RedisError};
+
 use tonic::async_trait;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
@@ -68,26 +69,6 @@ pub struct Args {
     pub post_storage_addr: String,
 }
 
-// impl Args {
-//     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
-//         Ok(Self {
-//             listen_addr: env::var("USER_TIMELINE_LISTEN_ADDR")
-//                 .unwrap_or_else(|_| "0.0.0.0:50061".to_string()),
-//             mongodb_uri: env::var("USER_TIMELINE_MONGODB_URI")
-//                 .unwrap_or_else(|_| "mongodb://localhost:27017".to_string()),
-//             mongodb_database: env::var("USER_TIMELINE_MONGODB_DATABASE")
-//                 .unwrap_or_else(|_| "user-timeline".to_string()),
-//             mongodb_collection: env::var("USER_TIMELINE_MONGODB_COLLECTION")
-//                 .unwrap_or_else(|_| "user-timeline".to_string()),
-//             redis_url: env::var("USER_TIMELINE_REDIS_URL").ok(),
-//             redis_primary_url: env::var("USER_TIMELINE_REDIS_PRIMARY_URL").ok(),
-//             redis_replica_url: env::var("USER_TIMELINE_REDIS_REPLICA_URL").ok(),
-//             redis_cluster_urls: env::var("USER_TIMELINE_REDIS_CLUSTER_URLS").ok(),
-//             post_storage_addr: env::var("POST_STORAGE_ADDR")
-//                 .unwrap_or_else(|_| "http://127.0.0.1:50065".to_string()),
-//         })
-//     }
-// }
 impl Args {
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
@@ -206,7 +187,8 @@ async fn zadd_nx(client: &RedisClient, key: &str, member: &str, score: f64) -> R
         .get_multiplexed_tokio_connection()
         .await
         .map_err(redis_to_status)?;
-    let mut command = redis::cmd("ZADD");
+
+        let mut command = deadpool_redis::redis::cmd("ZADD");
     command.arg(key).arg("NX").arg(score).arg(member);
     command
         .query_async(&mut conn)
@@ -223,7 +205,7 @@ async fn zadd_all(
         .get_multiplexed_tokio_connection()
         .await
         .map_err(redis_to_status)?;
-    let mut command = redis::cmd("ZADD");
+    let mut command = deadpool_redis::redis::cmd("ZADD");
     command.arg(key);
     for (member, score) in entries {
         command.arg(*score).arg(member);
@@ -244,7 +226,7 @@ async fn zrevrange(
         .get_multiplexed_tokio_connection()
         .await
         .map_err(redis_to_status)?;
-    redis::cmd("ZREVRANGE")
+    deadpool_redis::redis::cmd("ZREVRANGE")
         .arg(key)
         .arg(start)
         .arg(stop)
@@ -263,7 +245,7 @@ async fn zadd_nx_cluster(
         .get_async_connection()
         .await
         .map_err(redis_to_status)?;
-    let mut command = redis::cmd("ZADD");
+    let mut command = deadpool_redis::redis::cmd("ZADD");
     command.arg(key).arg("NX").arg(score).arg(member);
     command
         .query_async(&mut conn)
@@ -280,7 +262,7 @@ async fn zadd_all_cluster(
         .get_async_connection()
         .await
         .map_err(redis_to_status)?;
-    let mut command = redis::cmd("ZADD");
+    let mut command = deadpool_redis::redis::cmd("ZADD");
     command.arg(key);
     for (member, score) in entries {
         command.arg(*score).arg(member);
@@ -301,7 +283,8 @@ async fn zrevrange_cluster(
         .get_async_connection()
         .await
         .map_err(redis_to_status)?;
-    redis::cmd("ZREVRANGE")
+    // --- FIX: Use the re-exported redis crate ---
+    deadpool_redis::redis::cmd("ZREVRANGE")
         .arg(key)
         .arg(start)
         .arg(stop)
