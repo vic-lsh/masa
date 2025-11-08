@@ -1,11 +1,13 @@
 //! Async Rust port of the C++ Write-Home-Timeline Service.
 
 use anyhow::{Context, Result};
-use std::env; // <-- Make sure this is imported
-use std::sync::Arc;
+use std::env; 
 use tokio::task::JoinHandle;
 use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
+
+use deadpool_redis::{Config, Pool as DeadpoolRedisPool, Runtime};
+use deadpool_redis::redis;
 
 use crate::worker::run_worker;
 
@@ -17,13 +19,12 @@ use crate::social_graph::social_graph_service_client::SocialGraphServiceClient;
 use crate::social_graph::GetFollowersRequest;
 use tonic::transport::Channel;
 
-pub type RedisPool = bb8::Pool<bb8_redis::RedisConnectionManager>;
+pub type RedisPool = DeadpoolRedisPool; 
 pub type SocialGraphPool = bb8::Pool<social_graph_client::SocialGraphConnectionManager>;
 
-// The entire 'app_config' module can be removed as we are now using environment variables.
+// The 'app_config' module can be removed as we are now using environment variables.
 
 mod social_graph_client {
-    // ... (this module does not need to change)
     use super::{Channel, SocialGraphServiceClient};
     use anyhow::{anyhow, Result};
     use tonic::transport::Endpoint;
@@ -52,6 +53,8 @@ mod social_graph_client {
         type Connection = SocialGraphServiceClient<Channel>;
         type Error = MyError;
 
+        // --- THIS IS THE FIX ---
+        // Changed `SelfError` to the correct associated type `Self::Error`
         async fn connect(&self) -> Result<Self::Connection, Self::Error> {
             let channel = Endpoint::from_shared(self.addr.clone())
                 .map_err(|e| MyError(anyhow!(e)))?
@@ -72,8 +75,8 @@ mod social_graph_client {
 }
 
 mod worker {
-    // ... (structs PostMessage, QUEUE_NAME, and process_message function are unchanged) ...
     use super::{GetFollowersRequest, RedisPool, SocialGraphPool};
+    use super::redis; 
     use anyhow::{anyhow, Context, Result};
     use futures_lite::stream::StreamExt;
     use lapin::{
@@ -82,7 +85,7 @@ mod worker {
         Connection, ConnectionProperties,
     };
     use serde::Deserialize;
-    use std::{collections::HashSet, env, sync::Arc}; // <-- Add env here
+    use std::{collections::HashSet, env};
     use tracing::{debug, error, info, warn};
 
     const QUEUE_NAME: &str = "write-home-timeline";
@@ -95,13 +98,11 @@ mod worker {
         user_mentions_id: Vec<i64>,
     }
     
-    // CHANGED: The 'config' argument has been removed from the function signature.
     pub async fn run_worker(
         worker_id: usize,
         redis_pool: RedisPool,
         social_graph_pool: SocialGraphPool,
     ) -> Result<()> {
-        // CHANGED: The RabbitMQ address is now read directly from an environment variable.
         let rabbit_addr = env::var("RABBITMQ_URL").expect("RABBITMQ_URL must be set");
 
         info!(worker_id, "Connecting to RabbitMQ at {}", rabbit_addr);
@@ -109,7 +110,6 @@ mod worker {
             .await
             .context("Failed to connect to RabbitMQ")?;
         
-        // ... (rest of the run_worker function is the same) ...
         let channel = conn
             .create_channel()
             .await
@@ -234,13 +234,18 @@ mod worker {
             .get()
             .await
             .context("Failed to get Redis connection from pool")?;
+        
+        // --- THIS IS THE FIX ---
+        // Use the re-exported `redis` crate
         let mut pipe = redis::pipe();
 
         for user_id in &user_ids_to_update {
             pipe.zadd(user_id.to_string(), msg.post_id.to_string(), msg.timestamp);
         }
 
-        pipe.query_async::<()>(&mut *redis_conn)
+        // --- THIS IS THE OTHER FIX ---
+        // Specify inferred Connection `_` and return type `()`
+        pipe.query_async::<_, ()>(&mut *redis_conn) 
             .await
             .context("Redis pipeline command failed")?;
 
@@ -261,18 +266,23 @@ async fn main() -> Result<()> {
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    // CHANGED: Removed all file-based config loading.
-
-    // --- Create Connection Pools using environment variables ---
     let redis_url = env::var("REDIS_URL").expect("REDIS_URL must be set");
-    let redis_manager = bb8_redis::RedisConnectionManager::new(redis_url.as_str())?;
-    let redis_pool = bb8::Pool::builder()
-        .max_size(10) // Using a sensible default
-        .build(redis_manager)
-        .await
+    let cfg = deadpool_redis::Config::from_url(redis_url);
+    let redis_pool = cfg.create_pool(Some(deadpool_redis::Runtime::Tokio1))
         .context("Failed to create Redis pool")?;
     info!("Redis connection pool created.");
 
+    // Test the pool
+    {
+        let mut conn = redis_pool.get().await.expect("Failed to get Redis connection");
+        let _: String = deadpool_redis::redis::cmd("PING")
+            .query_async(&mut conn)
+            .await
+            .expect("Redis PING failed");
+        info!("Successfully tested Redis connection pool.");
+    }
+
+    // This pool is fine, as it doesn't conflict
     let sg_addr = env::var("SOCIAL_GRAPH_SERVICE_ADDR").expect("SOCIAL_GRAPH_SERVICE_ADDR must be set");
     let sg_manager = social_graph_client::SocialGraphConnectionManager { addr: sg_addr };
     let social_graph_pool = bb8::Pool::builder()
@@ -283,7 +293,6 @@ async fn main() -> Result<()> {
     info!("Social Graph Service connection pool created.");
 
     // --- Spawn Worker Tasks ---
-    // CHANGED: Number of workers is now read from an environment variable.
     let num_workers: usize = env::var("WORKERS")
         .unwrap_or_else(|_| "4".to_string())
         .parse()?;
@@ -293,7 +302,6 @@ async fn main() -> Result<()> {
         let worker_redis_pool = redis_pool.clone();
         let worker_sg_pool = social_graph_pool.clone();
 
-        // CHANGED: The 'worker_config' argument is no longer passed.
         let handle = tokio::spawn(async move {
             run_worker(i, worker_redis_pool, worker_sg_pool).await
         });
