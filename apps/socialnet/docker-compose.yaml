@@ -59,10 +59,7 @@ services:
       - "8082:8080"
     command: []
     environment:
-      - BINARY_NAME=media_service # <-- Selects the binary
-      # - MONGO_URL=mongodb://mongo:27017/media
-    # depends_on:
-    #   - mongo
+      - BINARY_NAME=media_service
     networks:
       - socialnet-network
 
@@ -76,7 +73,7 @@ services:
     environment:
       - BINARY_NAME=post_storage_server
       - POST_STORAGE_MONGODB_URI=mongodb://mongo:27017
-      - POST_STORAGE_MONGODB_DATABASE=post-storage # Or "post-db" if you prefer
+      - POST_STORAGE_MONGODB_DATABASE=post-storage 
       - POST_STORAGE_MEMCACHED_ADDR=tcp://memcached:11211
     depends_on:
       - mongo
@@ -151,7 +148,8 @@ services:
   user:
     image: socialnet-generic-svc:latest
     container_name: user_service
-    restart: always
+    # restart: always
+    restart: on-failure
     ports:
       - "8088:8080"
     command: []

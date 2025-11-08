@@ -68,7 +68,7 @@ impl Args {
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
             listen_addr: env::var("COMPOSE_POST_LISTEN_ADDR")
-                .unwrap_or_else(|_| "0.0.0.0:50064".to_string()),
+                .unwrap_or_else(|_| "0.0.0.0:8080".to_string()),
             post_storage_addr: env::var("POST_STORAGE_ADDR")
                 .unwrap_or_else(|_| "http://127.0.0.1:50065".to_string()),
             user_timeline_addr: env::var("USER_TIMELINE_ADDR")

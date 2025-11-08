@@ -5,9 +5,9 @@ use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Mutex as StdMutex; 
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::Mutex;
+// No longer need tokio::sync::Mutex for Redis
 use tonic::{Request, Response, Status};
 use tracing::{error, info, warn};
 
@@ -15,7 +15,10 @@ use mongodb::{
     bson::{doc, Document},
     Collection,
 };
-use redis_async::{resp::FromResp, resp_array};
+
+use deadpool_redis::{Pool, Connection};
+// Use the redis-rs client traits and types
+use deadpool_redis::redis::{AsyncCommands, RedisError}; 
 
 // Custom Epoch (January 1, 2018 Midnight GMT = 2018-01-01T00:00:00Z)
 const CUSTOM_EPOCH: u64 = 1_514_764_800_000;
@@ -32,8 +35,7 @@ use social_network::{
     RegisterUserWithIdResponse,
 };
 
-// --- Data Structures ---
-
+// --- Data Structures (Unchanged) ---
 #[derive(Debug, Serialize, Deserialize)]
 struct LoginInfo {
     password: String,
@@ -50,8 +52,7 @@ struct Claims {
     ttl: String,
 }
 
-// --- Unique ID Generation Logic ---
-
+// --- Unique ID Generation Logic (Unchanged) ---
 struct UserIdCounter {
     current_timestamp: i64,
     counter: i32,
@@ -67,7 +68,6 @@ static USER_ID_COUNTER: Lazy<StdMutex<UserIdCounter>> = Lazy::new(|| {
 fn get_counter(timestamp: i64) -> i32 {
     let mut state = USER_ID_COUNTER.lock().unwrap();
     if state.current_timestamp > timestamp {
-        // This should not happen in a real-world scenario with synchronized clocks
         panic!("Timestamps are not incremental.");
     }
     if state.current_timestamp == timestamp {
@@ -86,9 +86,7 @@ fn generate_user_id(machine_id: &str) -> Result<i64, Status> {
         .map_err(|e| Status::internal(format!("System time error: {}", e)))?;
 
     let timestamp = duration_since_epoch.as_millis() as i64 - CUSTOM_EPOCH as i64;
-
     let counter = get_counter(timestamp);
-
     let mut timestamp_hex = format!("{:010x}", timestamp);
     if timestamp_hex.len() > 10 {
         timestamp_hex = timestamp_hex
@@ -96,20 +94,14 @@ fn generate_user_id(machine_id: &str) -> Result<i64, Status> {
             .1
             .to_string();
     }
-
     let counter_hex = format!("{:03x}", counter);
-
     let id_str = format!("{}{}{}", machine_id, timestamp_hex, counter_hex);
-
     let user_id = i64::from_str_radix(&id_str, 16)
         .map_err(|e| Status::internal(format!("Failed to parse user_id hex: {}", e)))?;
-
-    // Ensure the ID is a positive signed 64-bit integer
     Ok(user_id & 0x7FFFFFFFFFFFFFFF)
 }
 
-// --- Utility Functions ---
-
+// --- Utility Functions (Unchanged) ---
 fn gen_random_string(len: usize) -> String {
     thread_rng()
         .sample_iter(&Alphanumeric)
@@ -118,32 +110,51 @@ fn gen_random_string(len: usize) -> String {
         .collect()
 }
 
-// --- Service Implementation ---
+// --- Service Implementation (Updated) ---
 
 #[derive(Clone)]
 pub struct UserServer {
     mongo_user_collection: Collection<Document>,
-    redis_conn: Arc<Mutex<redis_async::client::PairedConnection>>,
+    // --- UPDATED ---
+    // Store the pool, not a single connection
+    redis_pool: Pool,
     jwt_secret: String,
     machine_id: String,
-    // In a real application, a client pool for SocialGraphService would be here.
-    // social_graph_client_pool: Arc<SomeClientPool>,
 }
 
 impl UserServer {
     /// Creates a new instance of the UserServer.
     pub fn new(
         mongo_user_collection: Collection<Document>,
-        redis_conn: Arc<Mutex<redis_async::client::PairedConnection>>,
+        // --- UPDATED ---
+        redis_pool: Pool,
         jwt_secret: String,
         machine_id: String,
     ) -> Self {
         Self {
             mongo_user_collection,
-            redis_conn,
+            redis_pool,
             jwt_secret,
             machine_id,
         }
+    }
+
+    /// --- NEW HELPER ---
+    /// Gets a connection from the pool and maps errors to a gRPC Status.
+    async fn get_redis_conn(&self) -> Result<Connection, Status> {
+        self.redis_pool.get().await.map_err(|e| {
+            error!("Failed to get Redis connection from pool: {}", e);
+            // This error indicates the pool is unhealthy or can't connect.
+            Status::internal("Cache service unavailable")
+        })
+    }
+
+    /// --- NEW HELPER ---
+    /// Centralizes Redis error logging for gRPC handlers.
+    fn handle_redis_error(e: RedisError, cache_key: &str) -> Status {
+        error!("Redis command failed for key '{}': {}", cache_key, e);
+        // Don't expose specific DB errors to the client.
+        Status::internal("An internal cache error occurred")
     }
 }
 
@@ -198,53 +209,35 @@ impl UserService for UserServer {
         let req = request.into_inner();
         info!("Login attempt for username: {}", req.username);
 
-        let redis_conn = &mut *self.redis_conn.lock().await;
-
+        // --- UPDATED: Get connection from pool ---
+        let mut conn = self.get_redis_conn().await?;
         let cache_key = format!("{}:login", &req.username);
 
         // 1. Try to get login info from cache
-        let get_cmd = resp_array!["GET", &cache_key];
-        let cached_val = redis_conn.send(get_cmd).await.map_err(|e| {
-            error!("Redis GET failed for '{}': {}", &cache_key, e);
-            Status::internal("Cache service unavailable")
-        })?;
-        let cached_login: Option<String> = Option::from_resp(cached_val)
-            .map_err(|e| Status::internal(format!("Cache data corruption: {}", e)))?;
+        // We use redis-rs's `get` command, which is type-safe.
+        let cached_result: Result<Option<String>, RedisError> = conn.get(&cache_key).await;
 
-        let (user_id_stored, salt_stored, password_stored) = if let Some(cached) = cached_login {
-            info!("Cache hit for user: {}", req.username);
-            let login_info: LoginInfo = serde_json::from_str(&cached)
-                .map_err(|e| Status::internal(format!("Cache data corruption: {}", e)))?;
-            (login_info.user_id, login_info.salt, login_info.password)
-        } else {
-            // 2. If not in cache, query MongoDB
-            info!("Cache miss for user: {}", req.username);
-            let filter = doc! { "username": &req.username };
-            let user_doc = self
-                .mongo_user_collection
-                .find_one(filter, None)
-                .await
-                .map_err(|e| Status::internal(format!("Database error: {}", e)))?
-                .ok_or_else(|| Status::not_found(format!("User '{}' not found", req.username)))?;
-
-            let user_id_stored = user_doc.get_i64("user_id").unwrap_or(-1);
-            let salt_stored = user_doc.get_str("salt").unwrap_or("").to_string();
-            let password_stored = user_doc.get_str("password").unwrap_or("").to_string();
-
-            // 3. Cache the result
-            let login_info = LoginInfo {
-                user_id: user_id_stored,
-                salt: salt_stored.clone(),
-                password: password_stored.clone(),
-            };
-            let login_info_str = serde_json::to_string(&login_info).unwrap();
-            let set_cmd = resp_array!["SET", &cache_key, login_info_str];
-            let _: redis_async::resp::RespValue = redis_conn.send(set_cmd).await.map_err(|e| {
-                error!("Redis SET failed for '{}': {}", &cache_key, e);
-                Status::internal("Cache service unavailable")
-            })?;
-
-            (user_id_stored, salt_stored, password_stored)
+        let (user_id_stored, salt_stored, password_stored) = match cached_result {
+            // --- Case 1: Cache Hit ---
+            Ok(Some(cached)) => {
+                info!("Cache hit for user: {}", req.username);
+                let login_info: LoginInfo = serde_json::from_str(&cached)
+                    .map_err(|e| Status::internal(format!("Cache data corruption: {}", e)))?;
+                (login_info.user_id, login_info.salt, login_info.password)
+            }
+            
+            // --- Case 2: Cache Miss (or Error) ---
+            Ok(None) => {
+                info!("Cache miss for user: {}", req.username);
+                // Go to DB
+                self.login_cache_miss(&mut conn, &req.username, &cache_key).await?
+            }
+            Err(e) => {
+                // If cache read fails, log it and proceed to DB.
+                // This makes your service resilient to cache failures.
+                warn!("Redis GET failed for '{}': {}. Falling back to DB.", &cache_key, e);
+                self.login_cache_miss(&mut conn, &req.username, &cache_key).await?
+            }
         };
 
         // 4. Validate password
@@ -262,7 +255,7 @@ impl UserService for UserServer {
         let claims = Claims {
             exp: now + 3600, // Expires in 1 hour
             user_id: user_id_stored.to_string(),
-            username: req.username,
+            username: req.username.clone(),
             timestamp: now.to_string(),
             ttl: "3600".to_string(),
         };
@@ -275,6 +268,8 @@ impl UserService for UserServer {
 
         Ok(Response::new(LoginResponse { token }))
     }
+
+    // --- Other gRPC methods (Unchanged) ---
 
     async fn compose_creator_with_user_id(
         &self,
@@ -317,6 +312,46 @@ impl UserService for UserServer {
 
 // --- Helper methods for the service implementation ---
 impl UserServer {
+    
+    /// --- NEW HELPER ---
+    /// Handles the logic for a cache miss during login.
+    async fn login_cache_miss(
+        &self,
+        conn: &mut Connection,
+        username: &str,
+        cache_key: &str,
+    ) -> Result<(i64, String, String), Status> {
+        // 2. Query MongoDB
+        let filter = doc! { "username": username };
+        let user_doc = self
+            .mongo_user_collection
+            .find_one(filter, None)
+            .await
+            .map_err(|e| Status::internal(format!("Database error: {}", e)))?
+            .ok_or_else(|| Status::not_found(format!("User '{}' not found", username)))?;
+
+        let user_id_stored = user_doc.get_i64("user_id").unwrap_or(-1);
+        let salt_stored = user_doc.get_str("salt").unwrap_or("").to_string();
+        let password_stored = user_doc.get_str("password").unwrap_or("").to_string();
+
+        // 3. Cache the result
+        let login_info = LoginInfo {
+            user_id: user_id_stored,
+            salt: salt_stored.clone(),
+            password: password_stored.clone(),
+        };
+        let login_info_str = serde_json::to_string(&login_info).unwrap();
+
+        let _: () = conn.set(cache_key, login_info_str).await.unwrap_or_else(|e| {
+            warn!("Redis SET failed for '{}': {}. Proceeding without caching.", cache_key, e);
+            // Return a dummy () so the unwrap_or_else works
+            () 
+        });
+
+        Ok((user_id_stored, salt_stored, password_stored))
+    }
+    
+    // --- register_user_internal (Unchanged) ---
     async fn register_user_internal(
         &self,
         first_name: String,
@@ -371,40 +406,46 @@ impl UserServer {
         );
 
         // 4. Call SocialGraphService to insert user
-        // In a real application, you would make a gRPC call here.
-        // For this example, we'll just log it.
         info!(
             "(Mock) Calling SocialGraphService to insert user_id: {}",
             user_id
         );
-        // let mut social_graph_client = self.social_graph_client_pool.get().await?;
-        // social_graph_client.insert_user(InsertUserRequest { ... }).await?;
 
         Ok(())
     }
 
+    // --- get_user_id_internal (UPDATED) ---
     async fn get_user_id_internal(&self, username: &str) -> Result<i64, Status> {
-        let redis_conn = &mut *self.redis_conn.lock().await;
-
+        // --- UPDATED: Get connection from pool ---
+        let mut conn = self.get_redis_conn().await?;
         let cache_key = format!("{}:user_id", username);
 
         // 1. Try to get from cache
-        let get_cmd = resp_array!["GET", &cache_key];
-        let cached_val = redis_conn.send(get_cmd).await.map_err(|e| {
-            error!("Redis GET failed for {}: {}", &cache_key, e);
-            Status::internal("Cache service unavailable")
-        })?;
+        let cached_result: Result<Option<String>, RedisError> = conn.get(&cache_key).await;
 
-        if let Ok(Some(user_id_str)) = <Option<String>>::from_resp(cached_val) {
-            if let Ok(user_id) = user_id_str.parse::<i64>() {
-                info!("Cache hit for user_id lookup: {}", username);
-                return Ok(user_id);
-            } else {
-                warn!("Failed to parse cached user_id for {}", username);
+        match cached_result {
+            // --- Case 1: Cache Hit ---
+            Ok(Some(user_id_str)) => {
+                if let Ok(user_id) = user_id_str.parse::<i64>() {
+                    info!("Cache hit for user_id lookup: {}", username);
+                    return Ok(user_id);
+                } else {
+                    warn!("Failed to parse cached user_id for {}", username);
+                    // Data is corrupt, fall through to DB
+                }
+            }
+            // --- Case 2: Cache Miss ---
+            Ok(None) => {
+                // Fall through to DB
+            }
+            // --- Case 3: Cache Error ---
+            Err(e) => {
+                warn!("Redis GET failed for {}: {}. Falling back to DB.", &cache_key, e);
+                // Fall through to DB
             }
         }
 
-        // 2. If not in cache, get from MongoDB
+        // 2. If not in cache (or cache failed), get from MongoDB
         info!("Cache miss for user_id lookup: {}", username);
         let filter = doc! { "username": username };
         let user_doc = self
@@ -419,11 +460,12 @@ impl UserServer {
             .map_err(|_| Status::internal("User data is corrupt: missing user_id"))?;
 
         // 3. Cache the result for future lookups
-        let set_cmd = resp_array!["SET", &cache_key, user_id.to_string()];
-        let _: redis_async::resp::RespValue = redis_conn.send(set_cmd).await.map_err(|e| {
-            error!("Redis SET failed for {}: {}", &cache_key, e);
-            Status::internal("Cache service unavailable")
-        })?;
+        // Log errors but don't fail the request
+        // We also need to specify the type for the turbofish operator
+        let _: () = conn.set(&cache_key, user_id.to_string()).await.unwrap_or_else(|e| {
+            warn!("Redis SET failed for {}: {}. Proceeding without caching.", &cache_key, e);
+            ()
+        });
 
         Ok(user_id)
     }
