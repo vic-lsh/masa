@@ -3,14 +3,13 @@ services:
   # Application Services
   # -------------------------------------------
   compose_post:
-    image: socialnet-generic-svc:latest # Use the pre-built image
+    image: socialnet-generic-svc:latest 
     container_name: "compose_post_server"
     restart: always
     ports:
       - "8080:8080"
-    command: []
     environment:
-      - BINARY_NAME=compose_post_server # Selects the binary to run
+      - BINARY_NAME=compose_post_server 
       - POST_STORAGE_ADDR=http://post_storage:8080
       - USER_TIMELINE_ADDR=http://user_timeline:8080
       - HOME_TIMELINE_ADDR=http://home_timeline:8080
@@ -41,11 +40,11 @@ services:
       - "8081:8080"
     environment:
       - BINARY_NAME=home_timeline_server
-      - REDIS_URL=redis://redis:6379
+      - HOME_TIMELINE_REDIS_URL=redis://home_timeline_redis:6379 
       - POST_STORAGE_SERVICE_ADDR=http://post_storage:8080
       - SOCIAL_GRAPH_SERVICE_ADDR=http://social_graph:8080
     depends_on:
-      - redis
+      - home_timeline_redis 
       - post_storage
       - social_graph
     networks:
@@ -57,7 +56,6 @@ services:
     restart: always
     ports:
       - "8082:8080"
-    command: []
     environment:
       - BINARY_NAME=media_service
     networks:
@@ -69,15 +67,14 @@ services:
     restart: always
     ports:
       - "8083:8080"
-    command: []
     environment:
       - BINARY_NAME=post_storage_server
-      - POST_STORAGE_MONGODB_URI=mongodb://mongo:27017
+      - POST_STORAGE_MONGODB_URI=mongodb://post_storage_mongo:27017 
       - POST_STORAGE_MONGODB_DATABASE=post-storage 
-      - POST_STORAGE_MEMCACHED_ADDR=tcp://memcached:11211
+      - POST_STORAGE_MEMCACHED_ADDR=tcp://post_storage_memcached:11211
     depends_on:
-      - mongo
-      - memcached
+      - post_storage_mongo
+      - post_storage_memcached
     networks:
       - socialnet-network
 
@@ -87,15 +84,14 @@ services:
     restart: always
     ports:
       - "8084:8080"
-    command: []
     environment:
       - BINARY_NAME=social_graph_server
-      - MONGO_URL=mongodb://mongo:27017/social-graph
-      - REDIS_URL=redis://redis:6379
+      - MONGO_URL=mongodb://social_graph_mongo:27017/social-graph
+      - REDIS_URL=redis://social_graph_redis:6379
       - USER_SERVICE_ADDR=http://user:8080
     depends_on:
-      - mongo
-      - redis
+      - social_graph_mongo  
+      - social_graph_redis  
       - user
     networks:
       - socialnet-network
@@ -106,12 +102,11 @@ services:
     restart: always
     ports:
       - "8085:8080"
-    command: []
     depends_on:
       - user_mention
       - url_shorten
     environment:
-      - BINARY_NAME=textservice_server # <-- Selects the binary
+      - BINARY_NAME=textservice_server 
       - USER_MENTION_SERVICE_ADDR=http://user_mention:8080
       - URL_SHORTEN_SERVICE_ADDR=http://url_shorten:8080
     networks:
@@ -123,7 +118,6 @@ services:
     restart: always
     ports:
       - "8086:8080"
-    command: []
     environment:
       - BINARY_NAME=unique_id_service
       - MACHINE_ID=01
@@ -136,49 +130,45 @@ services:
     restart: always
     ports:
       - "8087:8080"
-    command: []
     environment:
       - BINARY_NAME=url_shorten_server
-      - MONGO_URL=mongodb://mongo:27017/url-shorten
+      - MONGO_URL=mongodb://url_shorten_mongo:27017/url-shorten
     depends_on:
-      - mongo
+      - url_shorten_mongo 
     networks:
       - socialnet-network
 
   user:
     image: socialnet-generic-svc:latest
     container_name: user_service
-    # restart: always
     restart: on-failure
     ports:
       - "8088:8080"
-    command: []
     environment:
       - BINARY_NAME=user_service
-      - MONGO_URL=mongodb://mongo:27017/user
-      - REDIS_URL=redis://redis:6379
+      - MONGO_URL=mongodb://user_mongo:27017/user
+      - REDIS_URL=redis://user_redis:6379
       - JWT_SECRET=${JWT_SECRET} 
-      - MACHINE_ID=02 # A unique ID for this instance
+      - MACHINE_ID=02 
     depends_on:
-      - mongo
-      - redis
+      - user_mongo 
+      - user_redis 
     networks:
       - socialnet-network
 
   user_mention:
     image: socialnet-generic-svc:latest
-    container_name: usermention_server
+    container_name: user_mention_server
     restart: always
     ports:
       - "8089:8080"
-    command: []
     environment:
       - BINARY_NAME=usermention_server
-      - MONGO_URL=mongodb://mongo:27017/user-mention
-      - MEMCACHED_URL=memcached:11211
+      - MONGO_URL=mongodb://user_mention_mongo:27017/user-mention
+      - MEMCACHED_URL=tcp://user_mention_memcached:11211
     depends_on:
-      - mongo
-      - memcached
+      - user_mention_mongo      
+      - user_mention_memcached  
     networks:
       - socialnet-network
 
@@ -188,15 +178,14 @@ services:
     restart: always
     ports:
       - "8090:8080"
-    command: []
     environment:
       - BINARY_NAME=user_timeline_server
-      - USER_TIMELINE_MONGODB_URI=mongodb://mongo:27017
-      - USER_TIMELINE_REDIS_URL=redis://redis:6379
+      - USER_TIMELINE_MONGODB_URI=mongodb://user_timeline_mongo:27017
+      - USER_TIMELINE_REDIS_URL=redis://user_timeline_redis:6379
       - POST_STORAGE_ADDR=http://post_storage:8080
     depends_on:
-      - mongo
-      - redis
+      - user_timeline_mongo 
+      - user_timeline_redis 
       - post_storage
     networks:
       - socialnet-network
@@ -207,53 +196,141 @@ services:
     restart: always
     ports:
       - "8091:8080"
-    command: []
     environment:
       - BINARY_NAME=write_home_timeline_server
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://write_home_timeline_redis:6379
       - SOCIAL_GRAPH_SERVICE_ADDR=http://social_graph:8080
     depends_on:
       - rabbitmq
-      - redis
+      - write_home_timeline_redis 
       - social_graph
     networks:
       - socialnet-network
 
   # -------------------------------------------
-  # Dependency Services
+  # Disaggregated Databases (NEW SECTION)
   # -------------------------------------------
-
-  mongo:
-    image: mongo:7.0
-    container_name: mongo
-    restart: always
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo-data:/data/db
-    networks:
-      - socialnet-network
-
-  redis:
+  
+  # --- Redis Instances ---
+  home_timeline_redis:
     image: redis:7.2
-    container_name: redis
+    container_name: "home_timeline_redis"
     restart: always
-    ports:
-      - "6379:6379"
     volumes:
-      - redis-data:/data
+      - home_timeline_redis-data:/data
     networks:
       - socialnet-network
 
-  memcached:
-    image: memcached:1.6
-    container_name: memcached
+  social_graph_redis:
+    image: redis:7.2
+    container_name: "social_graph_redis"
     restart: always
-    ports:
-      - "11211:11211"
+    volumes:
+      - social_graph_redis-data:/data
     networks:
       - socialnet-network
+
+  user_redis:
+    image: redis:7.2
+    container_name: "user_redis"
+    restart: always
+    volumes:
+      - user_redis-data:/data
+    networks:
+      - socialnet-network
+
+  user_timeline_redis:
+    image: redis:7.2
+    container_name: "user_timeline_redis"
+    restart: always
+    volumes:
+      - user_timeline_redis-data:/data
+    networks:
+      - socialnet-network
+  
+  write_home_timeline_redis:
+    image: redis:7.2
+    container_name: "write_home_timeline_redis"
+    restart: always
+    volumes:
+      - write_home_timeline_redis-data:/data
+    networks:
+      - socialnet-network
+
+  # --- MongoDB Instances ---
+  post_storage_mongo:
+    image: mongo:7.0
+    container_name: "post_storage_mongo"
+    restart: always
+    volumes:
+      - post_storage_mongo-data:/data/db
+    networks:
+      - socialnet-network
+
+  social_graph_mongo:
+    image: mongo:7.0
+    container_name: "social_graph_mongo"
+    restart: always
+    volumes:
+      - social_graph_mongo-data:/data/db
+    networks:
+      - socialnet-network
+
+  url_shorten_mongo:
+    image: mongo:7.0
+    container_name: "url_shorten_mongo"
+    restart: always
+    volumes:
+      - url_shorten_mongo-data:/data/db
+    networks:
+      - socialnet-network
+
+  user_mongo:
+    image: mongo:7.0
+    container_name: "user_mongo"
+    restart: always
+    volumes:
+      - user_mongo-data:/data/db
+    networks:
+      - socialnet-network
+
+  user_mention_mongo:
+    image: mongo:7.0
+    container_name: "user_mention_mongo"
+    restart: always
+    volumes:
+      - user_mention_mongo-data:/data/db
+    networks:
+      - socialnet-network
+
+  user_timeline_mongo:
+    image: mongo:7.0
+    container_name: "user_timeline_mongo"
+    restart: always
+    volumes:
+      - user_timeline_mongo-data:/data/db
+    networks:
+      - socialnet-network
+
+  # --- Memcached Instances ---
+  post_storage_memcached:
+    image: memcached:1.6
+    container_name: "post_storage_memcached"
+    restart: always
+    networks:
+      - socialnet-network
+
+  user_mention_memcached:
+    image: memcached:1.6
+    container_name: "user_mention_memcached"
+    restart: always
+    networks:
+      - socialnet-network
+
+  # -------------------------------------------
+  # Shared Infrastructure
+  # -------------------------------------------
 
   rabbitmq:
     image: rabbitmq:3.13-management
@@ -268,15 +345,26 @@ services:
       - socialnet-network
 
 # -------------------------------------------
-# Volumes & Networks (No changes needed here)
+# Volumes & Networks
 # -------------------------------------------
 
 volumes:
-  mongo-data:
-  redis-data:
+  home_timeline_redis-data:
+  social_graph_redis-data:
+  user_redis-data:
+  user_timeline_redis-data:
+  write_home_timeline_redis-data:
+  post_storage_mongo-data:
+  social_graph_mongo-data:
+  url_shorten_mongo-data:
+  user_mongo-data:
+  user_mention_mongo-data:
+  user_timeline_mongo-data:
+  
+  # (Shared broker volume)
   rabbitmq-data:
-
+  
 networks:
   socialnet-network:
     driver: bridge
-    
+

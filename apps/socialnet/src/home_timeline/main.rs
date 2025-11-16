@@ -2,7 +2,7 @@ use crate::server::home_timeline::home_timeline_service_server::HomeTimelineServ
 use log::info;
 use tonic::transport::Server;
 use std::env;
-use tracing::Level; // Use tracing for logging
+use tracing::Level; 
 
 mod server;
 use server::HomeTimelineService;
@@ -25,12 +25,12 @@ impl Args {
     /// Load configuration from environment variables.
     fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
-            addr: env::var("HOME_TIMELINE_LISTEN_ADDR")
+            addr: env::var("HOME_TIMElINE_LISTEN_ADDR")
                 .unwrap_or_else(|_| "0.0.0.0:8080".to_string()),
             
             // Use the REDIS_URL from your docker-compose
-            redis_url: env::var("REDIS_URL") 
-                .expect("REDIS_URL must be set"),
+            redis_url: env::var("HOME_TIMELINE_REDIS_URL")
+                .expect("HOME_TIMELINE_REDIS_URL must be set"),
             
             post_storage_service_addr: env::var("POST_STORAGE_SERVICE_ADDR")
                 .expect("POST_STORAGE_SERVICE_ADDR must be set"),
@@ -44,7 +44,6 @@ impl Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Use tracing for consistent logging
-    // tracing_subscriber::fmt::init();
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .finish();
@@ -54,15 +53,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Creating redis pool...");
 
     // --- Create Deadpool Redis Pool ---
-    let cfg = Config::from_url(args.redis_url.clone()); // removed mut
+    let cfg = Config::from_url(args.redis_url.clone()); 
     let redis_pool = cfg.create_pool(Some(Runtime::Tokio1))?;
     println!("Successfully created Redis connection pool.");
 
     // Test the pool
     {
         let mut conn = redis_pool.get().await.expect("Failed to get Redis connection");
-        // --- THIS IS THE FIX ---
-        // Use the re-exported cmd and expect a String reply
+
         let _: String = deadpool_redis::redis::cmd("PING")
             .query_async(&mut conn)
             .await
