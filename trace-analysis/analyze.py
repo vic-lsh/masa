@@ -77,6 +77,18 @@ def _slugify(name: str) -> str:
     s = re.sub(r"_+", "_", s).strip("_")
     return s or "service"
 
+def _parent_rpc_id(rpc_id: str | float | int | None) -> str | None:
+    """
+    Return the parent RPC id for a dotted rpc_id string.
+    Example: '0.1.2' -> '0.1'. Roots (no dot) return None.
+    """
+    if rpc_id is None or (isinstance(rpc_id, float) and np.isnan(rpc_id)):
+        return None
+    rpc_str = str(rpc_id).strip()
+    if not rpc_str or "." not in rpc_str:
+        return None
+    return rpc_str.rsplit(".", 1)[0]
+
 # ----------------------------
 # Data loading & filtering
 # ----------------------------
@@ -121,6 +133,162 @@ def get_top_services(rpc_df: pd.DataFrame, n: int = 10) -> pd.Series:
     print(f"Top {n} most popular services:")
     print(top_services)
     return top_services
+
+def print_parent_child_timestamp_stats(df: pd.DataFrame) -> None:
+    """
+    Compare timestamps between each RPC edge and its parent RPC (within the same trace).
+    Prints what fraction of downstream calls share the same timestamp as their upstream call.
+    """
+    required_cols = {"traceid", "rpc_id", "timestamp"}
+    missing = required_cols - set(df.columns)
+    if missing:
+        print(f"[WARN] Cannot compute timestamp stats, missing columns: {sorted(missing)}")
+        return
+
+    base = (
+        df.loc[:, ["traceid", "rpc_id", "timestamp"]]
+        .dropna(subset=["traceid", "rpc_id", "timestamp"])
+        .copy()
+    )
+    if base.empty:
+        print("[WARN] No rows with complete (traceid, rpc_id, timestamp) data.")
+        return
+
+    base["rpc_id"] = base["rpc_id"].astype(str).str.strip()
+    base = base[base["rpc_id"] != ""]
+    if base.empty:
+        print("[WARN] No valid rpc_id values remain after cleaning.")
+        return
+
+    ts_lookup = (
+        base.drop_duplicates(subset=["traceid", "rpc_id"])
+        .set_index(["traceid", "rpc_id"])["timestamp"]
+    )
+
+    parent_info = base.copy()
+    parent_info["parent_rpc_id"] = parent_info["rpc_id"].map(_parent_rpc_id)
+    parent_info = parent_info[parent_info["parent_rpc_id"].notna()]
+    if parent_info.empty:
+        print("[INFO] No downstream RPC entries with identifiable parents.")
+        return
+
+    parent_index = pd.MultiIndex.from_arrays(
+        [parent_info["traceid"], parent_info["parent_rpc_id"]]
+    )
+    parent_info["parent_timestamp"] = ts_lookup.reindex(parent_index).to_numpy()
+
+    valid = parent_info.dropna(subset=["parent_timestamp"])
+    missing_parent_ts = len(parent_info) - len(valid)
+    if valid.empty:
+        print("[WARN] Parent timestamps are missing for all downstream calls.")
+        return
+
+    child_ts = valid["timestamp"].astype(float).to_numpy()
+    parent_ts = valid["parent_timestamp"].astype(float).to_numpy()
+    same_mask = np.isclose(child_ts, parent_ts)
+
+    total = len(valid)
+    same = int(same_mask.sum())
+    diff = total - same
+    pct_same = (same / total) * 100.0 if total else 0.0
+    pct_diff = 100.0 - pct_same
+
+    print("Timestamp alignment (downstream vs parent RPC):")
+    print(f"  Downstream calls with parent timestamp: {total:,}")
+    print(f"  Same timestamp as parent: {same:,} ({pct_same:.2f}%)")
+    print(f"  Different timestamp: {diff:,} ({pct_diff:.2f}%)")
+    if missing_parent_ts > 0:
+        print(f"  Missing parent timestamp entries: {missing_parent_ts:,}")
+
+def print_sibling_window_overlap_stats(df: pd.DataFrame) -> None:
+    """
+    Determine whether sibling RPCs (children of the same parent within a trace)
+    execute sequentially by checking if their [start, end) windows overlap.
+    """
+    required_cols = {"traceid", "rpc_id", "timestamp", "rt"}
+    missing = required_cols - set(df.columns)
+    if missing:
+        print(f"[WARN] Cannot compute sibling window stats, missing columns: {sorted(missing)}")
+        return
+
+    base = (
+        df.loc[:, ["traceid", "rpc_id", "timestamp", "rt"]]
+        .dropna(subset=["traceid", "rpc_id", "timestamp", "rt"])
+        .copy()
+    )
+    if base.empty:
+        print("[WARN] No rows with complete (traceid, rpc_id, timestamp, rt) data for sibling analysis.")
+        return
+
+    base["rpc_id"] = base["rpc_id"].astype(str).str.strip()
+    base = base[base["rpc_id"] != ""]
+    if base.empty:
+        print("[WARN] No valid rpc_id values remain after cleaning for sibling analysis.")
+        return
+
+    base["timestamp"] = base["timestamp"].astype(float)
+    base["rt"] = base["rt"].astype(float)
+    base["end_timestamp"] = base["timestamp"] + base["rt"]
+    base["parent_rpc_id"] = base["rpc_id"].map(_parent_rpc_id)
+
+    siblings = base[base["parent_rpc_id"].notna()]
+    if siblings.empty:
+        print("[INFO] No sibling relationships detected (no parent rpc ids).")
+        return
+
+    grouped = siblings.groupby(["traceid", "parent_rpc_id"])
+
+    total_groups = 0
+    non_overlap_groups = 0
+    overlap_groups = 0
+    total_children = 0
+    non_overlap_children = 0
+    overlap_children = 0
+    tol = 1e-9
+
+    for (_, _), group in grouped:
+        if len(group) < 2:
+            continue
+        total_groups += 1
+        total_children += len(group)
+
+        ordered = group.sort_values("timestamp")
+        prev_end = None
+        sequential = True
+        for _, row in ordered.iterrows():
+            start = float(row["timestamp"])
+            end = float(row["end_timestamp"])
+            if prev_end is None:
+                prev_end = end
+                continue
+            if start < prev_end - tol:
+                sequential = False
+                break
+            prev_end = max(prev_end, end)
+
+        if sequential:
+            non_overlap_groups += 1
+            non_overlap_children += len(group)
+        else:
+            overlap_groups += 1
+            overlap_children += len(group)
+
+    if total_groups == 0:
+        print("[INFO] No parent nodes have two or more children to compare.")
+        return
+
+    pct_groups_seq = (non_overlap_groups / total_groups) * 100.0
+    pct_groups_overlap = 100.0 - pct_groups_seq
+    pct_children_seq = (non_overlap_children / total_children) * 100.0 if total_children else 0.0
+    pct_children_overlap = 100.0 - pct_children_seq
+
+    print("Sibling window overlap:")
+    print(f"  Parent nodes with >=2 children: {total_groups:,}")
+    print(f"  Sequential (non-overlapping) parents: {non_overlap_groups:,} ({pct_groups_seq:.2f}%)")
+    print(f"  Overlapping parents: {overlap_groups:,} ({pct_groups_overlap:.2f}%)")
+    print(f"  Child calls under analyzed parents: {total_children:,}")
+    print(f"  Children in sequential groups: {non_overlap_children:,} ({pct_children_seq:.2f}%)")
+    print(f"  Children in overlapping groups: {overlap_children:,} ({pct_children_overlap:.2f}%)")
 
 # ----------------------------
 # Graph building & plotting
@@ -462,7 +630,7 @@ def run_for_services_process_pool(
 # ----------------------------
 
 def main() -> None:
-    max_dataset = 9
+    max_dataset = 0
 
     # Load & concat
     df = load_concat_datasets(max_dataset)
@@ -473,7 +641,9 @@ def main() -> None:
 
     # Print stats & top services
     print_rpc_stats(rpc_df, df)
-    top_services = get_top_services(rpc_df, n=50)
+    print_parent_child_timestamp_stats(rpc_df)
+    print_sibling_window_overlap_stats(rpc_df)
+    top_services = get_top_services(rpc_df, n=10)
 
     start = time.perf_counter()
     results = run_for_services_process_pool(
