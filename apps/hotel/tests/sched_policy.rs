@@ -39,3 +39,9 @@ fn test_prio_local_direct_policy() {
 fn test_prio_local_indirect_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }
+
+#[cfg(feature = "random")]
+#[test]
+fn test_random_policy() {
+    assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Random);
+}

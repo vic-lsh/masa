@@ -31,11 +31,13 @@ prio_global = []
 prio_local = []
 prio_local_direct = []
 prio_local_indirect = []
+prio_local_learned = []
 perfect_lsf = []
 fifo = []
 fifo_span_tracing = []
 fifo_queue_tracing = []
 prio_global_queue_tracing = []
+random = []
 
 # enable everything
 full = [

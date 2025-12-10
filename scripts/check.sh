@@ -9,6 +9,8 @@ flag_combos=(
     "fifo_span_tracing"
     "fifo_queue_tracing"
     "prio_global_queue_tracing"
+    "random"
+    "prio_local_learned"
 )
 
 cargo check

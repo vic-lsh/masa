@@ -79,3 +79,30 @@ impl LatencyDistribution {
         }
     }
 }
+
+pub trait Estimator {
+    type EstimateInput;
+
+    fn estimate(&self, input: Self::EstimateInput) -> Option<u64>;
+    fn update(&mut self, observed: u64);
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct PercentileEstimator {
+    distribution: LatencyDistribution,
+}
+
+impl Estimator for PercentileEstimator {
+    type EstimateInput = usize; // percentile
+
+    fn estimate(&self, percentile: Self::EstimateInput) -> Option<u64> {
+        if !self.distribution.can_estimate() {
+            return None;
+        }
+        Some(self.distribution.percentile(percentile))
+    }
+
+    fn update(&mut self, observed: u64) {
+        self.distribution.track(observed);
+    }
+}

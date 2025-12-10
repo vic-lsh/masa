@@ -27,6 +27,10 @@ pub type DefaultMasaHooks = noop::NoopMasaHooks;
 // pub type DefaultMasaHooks = tracing::Tracing;
 pub type DefaultMasaHooks = noop::NoopMasaHooks;
 
+#[cfg(any(feature = "random"))]
+#[allow(missing_docs)]
+pub type DefaultMasaHooks = noop::NoopMasaHooks;
+
 #[cfg(any(feature = "fifo_span_tracing"))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = tracing::Tracing;
@@ -51,6 +55,10 @@ pub type DefaultMasaHooks = local::LocalDeadlineDirect;
 #[cfg(any(feature = "prio_local_indirect"))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = local::LocalDeadlineIndirect;
+
+#[cfg(any(feature = "prio_local_learned"))]
+#[allow(missing_docs)]
+pub type DefaultMasaHooks = local::LocalDeadlineLearned;
 
 #[cfg(feature = "perfect_lsf")]
 #[allow(missing_docs)]

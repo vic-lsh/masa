@@ -1,6 +1,7 @@
 mod fifo;
 mod prio_bh;
 mod timed;
+mod random;
 
 #[cfg(any(
     feature = "fifo_span_tracing",
@@ -22,8 +23,10 @@ pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
     feature = "prio_local",
     feature = "prio_local_direct",
     feature = "prio_local_indirect",
+    feature = "prio_local_learned",
     feature = "perfect_lsf",
     feature = "prio_global_queue_tracing",
+    feature = "random",
 )))]
 pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
 
@@ -33,9 +36,13 @@ pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
     feature = "prio_local",
     feature = "prio_local_direct",
     feature = "prio_local_indirect",
-    feature = "perfect_lsf"
+    feature = "prio_local_learned",
+    feature = "perfect_lsf",
 ))]
 pub(crate) type LocalRunQueueInner<T> = prio_bh::BinaryHeapQueue<T>;
+
+#[cfg(feature = "random")]
+pub(crate) type LocalRunQueueInner<T> = random::RandomQueue<T>;
 
 /// Describes the different strategies implemented by Masa.
 #[derive(PartialEq, Eq, Debug)]
@@ -44,6 +51,8 @@ pub enum SchedFlavor {
     Fifo,
     /// The scheduler executes tasks based on priority.
     Prio,
+    /// Random,
+    Random
 }
 
 trait IntoSchedFlavor {

@@ -1,5 +1,6 @@
 pub(crate) mod local_direct;
 pub(crate) mod local_indirect;
+pub(crate) mod local_learned;
 
 use std::{collections::HashMap, sync::RwLock};
 
@@ -7,6 +8,8 @@ use std::{collections::HashMap, sync::RwLock};
 pub(crate) use local_direct::LocalDeadlineDirect;
 #[allow(unused_imports)]
 pub(crate) use local_indirect::LocalDeadlineIndirect;
+#[allow(unused_imports)]
+pub(crate) use local_learned::LocalDeadlineLearned;
 
 use masa::LatencyDistribution;
 
@@ -14,23 +17,16 @@ use masa::LatencyDistribution;
 const DISTRIBUTION_CAPACITY: usize = 512;
 const PERCENTILE: usize = 50;
 
+#[allow(dead_code)]
 fn estimate_method_latency(
     map: &RwLock<HashMap<String, LatencyDistribution>>,
     key: String,
 ) -> Option<u64> {
-    let has_method = {
-        let m = map.read().unwrap();
-        let found = m.contains_key(&key);
-        if found {
-            let distribution = m.get(&key).unwrap();
-
-            if distribution.can_estimate() {
-                return Some(distribution.estimate(PERCENTILE));
-            }
+    if let Some(distribution) = map.read().unwrap().get(&key) {
+        if distribution.can_estimate() {
+            return Some(distribution.percentile(PERCENTILE));
         }
-        found
-    };
-    if !has_method {
+    } else {
         map.write().unwrap().insert(
             key.clone(),
             LatencyDistribution::new(key, DISTRIBUTION_CAPACITY),
@@ -40,6 +36,8 @@ fn estimate_method_latency(
 }
 
 // TODO: could reduce lock contention by giving each key it's own lock
+// TODO: Cleanup this code
+#[allow(dead_code)]
 fn track_method_latency(
     map: &RwLock<HashMap<String, LatencyDistribution>>,
     key: String,
