@@ -2,27 +2,28 @@ use crate::server::social_graph::social_graph_service_server::SocialGraphService
 use log::info;
 use tonic::transport::Server;
 use std::env;
-use tracing::Level; // Use tracing for logging
+use tracing::Level; 
 use tracing_subscriber::FmtSubscriber;
 
 mod server;
-use server::SocialGraphService;
+// Import the Service and the Args struct defined in server.rs
+use server::{SocialGraphService, Args as ServiceArgs};
 
 use deadpool_redis::{Config, Pool, Runtime};
 use deadpool_redis::redis;
 
 
-/// The command-line arguments for the social graph service.
+/// The command-line arguments for the social graph service (Local Config).
 #[derive(Debug, Clone)]
-struct Args {
+struct LocalArgs {
     addr: String,
     mongodb_uri: String,
-    redis_url: String, // Simplified to a single URL for deadpool
-    user_service_addr: String,
+    redis_url: String, 
+    // Removed user_service_addr: It is now handled by ServiceArgs in server.rs
 }
 
-impl Args {
-    /// Load configuration from environment variables.
+impl LocalArgs {
+    /// Load local configuration from environment variables.
     fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
             addr: env::var("SOCIAL_GRAPH_LISTEN_ADDR")
@@ -33,9 +34,6 @@ impl Args {
             
             redis_url: env::var("REDIS_URL")
                 .expect("REDIS_URL must be set"),
-            
-            user_service_addr: env::var("USER_SERVICE_ADDR")
-                .expect("USER_SERVICE_ADDR must be set"),
         })
     }
 }
@@ -44,23 +42,25 @@ impl Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Use tracing for consistent logging
-    // tracing_subscriber::fmt::init();
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
-    let args = Args::from_env().expect("env not passed correctly");
+    
+    // 1. Load Local Config (DBs, Listen Addr)
+    let local_args = LocalArgs::from_env()?;
+
+    // 2. Load Service Config (Replica IPs/Ports for User Service)
+    let service_args = ServiceArgs::from_env()?;
 
     // --- Create Deadpool Redis Pool ---
-    let cfg = Config::from_url(args.redis_url.clone()); // removed mut
+    let cfg = Config::from_url(local_args.redis_url.clone()); 
     let redis_pool = cfg.create_pool(Some(Runtime::Tokio1)).expect("pool failed");
     println!("Successfully created Redis connection pool.");
 
     // Test the pool
     {
         let mut conn = redis_pool.get().await.expect("Failed to get Redis connection");
-        // --- THIS IS THE FIX ---
-        // Use the re-exported cmd and expect a String reply
         let _: String = deadpool_redis::redis::cmd("PING")
             .query_async(&mut conn)
             .await
@@ -68,22 +68,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Successfully tested Redis connection pool.");
     }
     
-    // Pass the pool to the service
+    // 3. Initialize Service
+    // Pass mongodb_uri, redis_pool, and the service_args (for user_service connection)
     let service = SocialGraphService::new(
-        &args.mongodb_uri,
-        redis_pool, // Pass the whole pool
-        &args.user_service_addr,
+        &local_args.mongodb_uri,
+        redis_pool, 
+        &service_args, 
     )
-    .await.expect("social graph failed");
+    .await?;
 
-    let addr = args.addr.parse().expect("incorrect parsing");
+    let addr = local_args.addr.parse().expect("incorrect parsing");
     println!("SocialGraphService listening on {}", addr);
 
     Server::builder()
         .add_service(SocialGraphServiceServer::new(service))
         .serve(addr)
-        .await
-        .expect("build failed");
+        .await?;
 
     Ok(())
 }

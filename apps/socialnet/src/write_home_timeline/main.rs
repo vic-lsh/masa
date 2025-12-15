@@ -9,6 +9,9 @@ use tracing_subscriber::FmtSubscriber;
 use deadpool_redis::{Config, Pool as DeadpoolRedisPool, Runtime};
 use deadpool_redis::redis;
 
+// NEW IMPORT
+use tonic::transport::masa_channel::LoadBalancedChannel;
+
 use crate::worker::run_worker;
 
 pub mod social_graph {
@@ -17,65 +20,36 @@ pub mod social_graph {
 
 use crate::social_graph::social_graph_service_client::SocialGraphServiceClient;
 use crate::social_graph::GetFollowersRequest;
-use tonic::transport::Channel;
 
 pub type RedisPool = DeadpoolRedisPool; 
-pub type SocialGraphPool = bb8::Pool<social_graph_client::SocialGraphConnectionManager>;
+// CHANGED: We don't need bb8 anymore. The Client itself is cheap to clone.
+pub type SocialGraphClient = SocialGraphServiceClient<LoadBalancedChannel>;
 
-// The 'app_config' module can be removed as we are now using environment variables.
+// --- NEW ARGS STRUCT ---
+#[derive(Clone, Debug)]
+pub struct Args {
+    pub social_graph_ip: String,
+    pub social_graph_port: u16,
+    pub social_graph_replicas: u8,
+}
 
-mod social_graph_client {
-    use super::{Channel, SocialGraphServiceClient};
-    use anyhow::{anyhow, Result};
-    use tonic::transport::Endpoint;
-
-    #[derive(Debug)]
-    pub struct MyError(pub anyhow::Error);
-
-    impl std::fmt::Display for MyError {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            self.0.fmt(f)
-        }
-    }
-
-    impl std::error::Error for MyError {
-        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-            self.0.source()
-        }
-    }
-    
-    #[derive(Clone, Debug)]
-    pub struct SocialGraphConnectionManager {
-        pub addr: String,
-    }
-
-    impl bb8::ManageConnection for SocialGraphConnectionManager {
-        type Connection = SocialGraphServiceClient<Channel>;
-        type Error = MyError;
-
-        // --- THIS IS THE FIX ---
-        // Changed `SelfError` to the correct associated type `Self::Error`
-        async fn connect(&self) -> Result<Self::Connection, Self::Error> {
-            let channel = Endpoint::from_shared(self.addr.clone())
-                .map_err(|e| MyError(anyhow!(e)))?
-                .connect()
-                .await
-                .map_err(|e| MyError(anyhow!("Failed to connect to Social Graph Service: {}", e)))?;
-            Ok(SocialGraphServiceClient::new(channel))
-        }
-
-        async fn is_valid(&self, _conn: &mut Self::Connection) -> Result<(), Self::Error> {
-            Ok(())
-        }
-
-        fn has_broken(&self, _conn: &mut Self::Connection) -> bool {
-            false
-        }
+impl Args {
+    pub fn from_env() -> Result<Self, anyhow::Error> {
+        Ok(Self {
+            social_graph_ip: env::var("SOCIAL_GRAPH_SERVICE_IP")
+                .unwrap_or_else(|_| "socialnet-social-graph-service".to_string()),
+            social_graph_port: env::var("SOCIAL_GRAPH_SERVICE_PORT")
+                .unwrap_or_else(|_| "8080".to_string())
+                .parse()?,
+            social_graph_replicas: env::var("SOCIAL_GRAPH_SERVICE_REPLICAS")
+                .unwrap_or_else(|_| "1".to_string())
+                .parse()?,
+        })
     }
 }
 
 mod worker {
-    use super::{GetFollowersRequest, RedisPool, SocialGraphPool};
+    use super::{GetFollowersRequest, RedisPool, SocialGraphClient};
     use super::redis; 
     use anyhow::{anyhow, Context, Result};
     use futures_lite::stream::StreamExt;
@@ -101,7 +75,8 @@ mod worker {
     pub async fn run_worker(
         worker_id: usize,
         redis_pool: RedisPool,
-        social_graph_pool: SocialGraphPool,
+        // CHANGED: Pass the client directly
+        social_graph_client: SocialGraphClient,
     ) -> Result<()> {
         let rabbit_addr = env::var("RABBITMQ_URL").expect("RABBITMQ_URL must be set");
 
@@ -151,7 +126,7 @@ mod worker {
             };
 
             let redis_clone = redis_pool.clone();
-            let social_graph_clone = social_graph_pool.clone();
+            let social_graph_clone = social_graph_client.clone();
             let channel_clone = channel.clone();
 
             tokio::spawn(async move {
@@ -189,7 +164,7 @@ mod worker {
     async fn process_message(
         data: &[u8],
         redis_pool: RedisPool,
-        social_graph_pool: SocialGraphPool,
+        mut social_graph_client: SocialGraphClient,
     ) -> Result<()> {
         let msg: PostMessage =
             serde_json::from_slice(data).context("Failed to parse message JSON")?;
@@ -197,18 +172,14 @@ mod worker {
         debug!("Processing message for user_id: {}", msg.user_id);
 
         // 1. Get followers from the social graph service.
-        let mut social_graph_conn = social_graph_pool
-            .get()
-            .await
-            .context("Failed to get social graph client from pool")?;
-
+        // CHANGED: Call client directly, no pool.get() needed
         let request = tonic::Request::new(GetFollowersRequest {
             req_id: 0,
             user_id: msg.user_id,
             carrier: Default::default(),
         });
 
-        let followers = match social_graph_conn.get_followers(request).await {
+        let followers = match social_graph_client.get_followers(request).await {
             Ok(response) => response.into_inner().user_ids,
             Err(status) => {
                 return Err(anyhow!("gRPC call to GetFollowers failed: {}", status));
@@ -235,16 +206,12 @@ mod worker {
             .await
             .context("Failed to get Redis connection from pool")?;
         
-        // --- THIS IS THE FIX ---
-        // Use the re-exported `redis` crate
         let mut pipe = redis::pipe();
 
         for user_id in &user_ids_to_update {
             pipe.zadd(user_id.to_string(), msg.post_id.to_string(), msg.timestamp);
         }
 
-        // --- THIS IS THE OTHER FIX ---
-        // Specify inferred Connection `_` and return type `()`
         pipe.query_async::<_, ()>(&mut *redis_conn) 
             .await
             .context("Redis pipeline command failed")?;
@@ -266,6 +233,9 @@ async fn main() -> Result<()> {
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
+    // 1. Load Args
+    let args = Args::from_env()?;
+
     let redis_url = env::var("REDIS_URL").expect("REDIS_URL must be set");
     let cfg = deadpool_redis::Config::from_url(redis_url);
     let redis_pool = cfg.create_pool(Some(deadpool_redis::Runtime::Tokio1))
@@ -282,15 +252,15 @@ async fn main() -> Result<()> {
         info!("Successfully tested Redis connection pool.");
     }
 
-    // This pool is fine, as it doesn't conflict
-    let sg_addr = env::var("SOCIAL_GRAPH_SERVICE_ADDR").expect("SOCIAL_GRAPH_SERVICE_ADDR must be set");
-    let sg_manager = social_graph_client::SocialGraphConnectionManager { addr: sg_addr };
-    let social_graph_pool = bb8::Pool::builder()
-        .max_size(10) // Using a sensible default
-        .build(sg_manager)
-        .await
-        .context("Failed to create Social Graph Service pool")?;
-    info!("Social Graph Service connection pool created.");
+    // 2. Initialize Social Graph Client (Load Balanced)
+    let sg_channel = LoadBalancedChannel::new(
+        args.social_graph_ip,
+        args.social_graph_port,
+        args.social_graph_replicas
+    ).await;
+    
+    let social_graph_client = SocialGraphServiceClient::new(sg_channel);
+    info!("Social Graph Service client created (Load Balanced).");
 
     // --- Spawn Worker Tasks ---
     let num_workers: usize = env::var("WORKERS")
@@ -300,10 +270,11 @@ async fn main() -> Result<()> {
     
     for i in 0..num_workers {
         let worker_redis_pool = redis_pool.clone();
-        let worker_sg_pool = social_graph_pool.clone();
+        // Just clone the client, it's cheap and thread-safe
+        let worker_sg_client = social_graph_client.clone();
 
         let handle = tokio::spawn(async move {
-            run_worker(i, worker_redis_pool, worker_sg_pool).await
+            run_worker(i, worker_redis_pool, worker_sg_client).await
         });
         worker_handles.push(handle);
     }
