@@ -2,6 +2,7 @@
 
 use log::error;
 use regex::Regex;
+use log::info;
 
 use tonic::{Request, Response, Status};
 
@@ -17,6 +18,10 @@ use text_svc::url_shorten_service::{
 
 use std::env;
 use tonic::transport::Channel;
+use tonic::transport::masa_channel::LoadBalancedChannel;
+
+
+
 
 pub mod text_svc {
     pub mod text_service {
@@ -30,21 +35,68 @@ pub mod text_svc {
     }
 }
 
-#[derive(Debug)]
+
+#[derive(Clone, Debug)]
+pub struct Args {
+    pub url_shorten_service_ip: String,
+    pub url_shorten_service_port: u16,
+    pub url_shorten_service_replicas: u8,
+
+    pub user_mention_service_ip: String,
+    pub user_mention_service_port: u16,
+    pub user_mention_service_replicas: u8,
+}
+
+#[derive(Clone)]
 pub struct TextSvcImpl {
-    url_shorten_client: UrlShortenServiceClient<tonic::transport::Channel>,
-    user_mention_client: UserMentionServiceClient<tonic::transport::Channel>,
+    url_shorten_client: UrlShortenServiceClient<LoadBalancedChannel>,
+    user_mention_client: UserMentionServiceClient<LoadBalancedChannel>,
+}
+
+impl Args {
+    pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(Self {
+            url_shorten_service_ip: env::var("URL_SHORTEN_SERVICE_IP")
+                .unwrap_or_else(|_| "socialnet-url-shorten-service".to_string()),
+            url_shorten_service_port: env::var("URL_SHORTEN_SERVICE_PORT")
+                .unwrap_or_else(|_| "8080".to_string())
+                .parse()?,
+            url_shorten_service_replicas: env::var("URL_SHORTEN_SERVICE_REPLICAS")
+                .unwrap_or_else(|_| "1".to_string())
+                .parse()?,
+
+            user_mention_service_ip: env::var("USER_MENTION_SERVICE_IP")
+                .unwrap_or_else(|_| "socialnet-user-mention-service".to_string()),
+            user_mention_service_port: env::var("USER_MENTION_SERVICE_PORT")
+                .unwrap_or_else(|_| "8080".to_string())
+                .parse()?,
+            user_mention_service_replicas: env::var("USER_MENTION_SERVICE_REPLICAS")
+                .unwrap_or_else(|_| "1".to_string())
+                .parse()?,
+        })
+    }
 }
 
 impl TextSvcImpl {
-    pub fn new(
-        url_shorten_client: UrlShortenServiceClient<tonic::transport::Channel>,
-        user_mention_client: UserMentionServiceClient<tonic::transport::Channel>,
-    ) -> Self {
-        TextSvcImpl {
+    pub async fn new(args: &Args) -> Result<Self, Box<dyn std::error::Error>> {
+        let url_shorten_channel = LoadBalancedChannel::new(
+            args.url_shorten_service_ip.clone(),
+            args.url_shorten_service_port,
+            args.url_shorten_service_replicas,
+        ).await;
+        let url_shorten_client = UrlShortenServiceClient::new(url_shorten_channel);
+
+        let user_mention_channel = LoadBalancedChannel::new(
+            args.user_mention_service_ip.clone(),
+            args.user_mention_service_port,
+            args.user_mention_service_replicas,
+        ).await;
+        let user_mention_client = UserMentionServiceClient::new(user_mention_channel);
+
+        Ok(TextSvcImpl {
             url_shorten_client,
             user_mention_client,
-        }
+        })
     }
 }
 
@@ -85,6 +137,11 @@ impl TextService for TextSvcImpl {
             let mut url_client_pool = self.url_shorten_client.clone();
             let url_links = url_links.clone();
             tokio::spawn(async move {
+                // FIX: Check if empty before making the network call
+                if url_links.is_empty() {
+                    return Ok(vec![]); 
+                }
+
                 let url_shorten_request = ComposeUrlsRequest {
                     req_id: 12345,
                     urls: url_links,
@@ -101,12 +158,14 @@ impl TextService for TextSvcImpl {
                         return Ok(inner.urls);
                     }
                     Err(status) => {
-                        error!("Error calling url_shorten service: {}", status);
+                        // Use println! because your logger might not be initialized to stdout
+                        println!("Error calling url_shorten service: {:?}", status); 
                         return Err(status);
                     }
                 }
             })
         };
+
 
         // async func to get user mention、
         let user_mention_task = {
@@ -141,14 +200,14 @@ impl TextService for TextSvcImpl {
             .await
             .expect("shortened url task shouldn't fail")
         else {
-            return Err(Status::internal("Failed to get shortened urls"));
+            return Err(Status::internal("Text Service: Failed to get shortened urls"));
         };
 
         let Ok(user_mentions) = user_mention_task
             .await
             .expect("user mention task shoudln't fail")
         else {
-            return Err(Status::internal("Failed to get user mentions"));
+            return Err(Status::internal("Text Service: Failed to get user mentions"));
         };
 
         println!("Shortened URLs: {:?}", result_urls);
@@ -185,21 +244,14 @@ impl TextService for TextSvcImpl {
 }
 
 pub async fn create_service() -> TextServiceServer<TextSvcImpl> {
-    let url_shorten_addr = env::var("URL_SHORTEN_SERVICE_ADDR")
-        .expect("URL_SHORTEN_SERVICE_ADDR must be set");
-    let user_mention_addr = env::var("USER_MENTION_SERVICE_ADDR")
-        .expect("USER_MENTION_SERVICE_ADDR must be set");
 
-    let url_shorten_client: UrlShortenServiceClient<Channel> = 
-        UrlShortenServiceClient::connect(url_shorten_addr)
-            .await
-            .unwrap();
+    println!("trying to connect text service");
+    let args = Args::from_env().expect("Failed to parse environment variables");
+    let service = TextSvcImpl::new(&args)
+        .await
+        .expect("Failed to initialize TextService");
 
-    let user_mention_client: UserMentionServiceClient<Channel> = 
-        UserMentionServiceClient::connect(user_mention_addr)
-            .await
-            .unwrap();
+    println!("connected to text service");
 
-    let service = TextSvcImpl::new(url_shorten_client, user_mention_client);
     TextServiceServer::new(service)
 }

@@ -431,9 +431,11 @@ impl PostStorageServiceImpl {
 }
 
 pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+    println!("creating post storage service...");
     let service_impl = PostStorageServiceImpl::new(&args).await?;
     let listen_addr: SocketAddr = args.listen_addr.parse()?;
     log::info!("PostStorageService listening on {}", listen_addr);
+    println!("PostStorageService listening on {}", listen_addr);
 
     Server::builder()
         .add_service(PostStorageServiceServer::new(service_impl))

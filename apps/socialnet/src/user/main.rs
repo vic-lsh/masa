@@ -1,5 +1,5 @@
 // Use the 'tracing' macros (info!, error!, etc.)
-use tracing::{error, info, Level};
+use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 
@@ -10,10 +10,10 @@ use std::env;
 use tonic::transport::Server;
 use mongodb::Client as MongoClient;
 
-use deadpool_redis::{Config, Pool, Runtime};
+use deadpool_redis::{Config, Runtime};
 
 // Import the AsyncCommands trait from deadpool's re-exported redis crate
-use deadpool_redis::redis::AsyncCommands;
+// use deadpool_redis::redis::AsyncCommands;
 
 
 #[tokio::main]
@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- THIS IS THE ROBUST REDIS CONNECTION POOL ---
     // 4. Initialize Redis connection pool
-    let mut cfg = Config::from_url(redis_url);
+    let cfg = Config::from_url(redis_url);
     let pool = cfg.create_pool(Some(Runtime::Tokio1))?;
     info!("Successfully created Redis connection pool.");
     

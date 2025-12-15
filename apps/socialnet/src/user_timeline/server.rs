@@ -7,11 +7,12 @@ use mongodb::bson::{doc, Bson, Document};
 use mongodb::options::{FindOneAndUpdateOptions, FindOneOptions, ReturnDocument};
 use mongodb::{Client, Collection};
 use deadpool_redis::redis::cluster::ClusterClient;
-use deadpool_redis::redis::{self, Client as RedisClient, RedisError};
+use deadpool_redis::redis::{Client as RedisClient, RedisError};
 
 use tonic::async_trait;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
+use tonic::transport::masa_channel::LoadBalancedChannel; 
 use tracing::{error, info, warn};
 
 use post_storage::post_storage_service_client::PostStorageServiceClient;
@@ -21,6 +22,8 @@ use user_timeline::{
     ReadUserTimelineRequest, ReadUserTimelineResponse, WriteUserTimelineRequest,
     WriteUserTimelineResponse,
 };
+
+use mongodb::IndexModel;
 
 pub mod user_timeline {
     tonic::include_proto!("user_timeline");
@@ -49,46 +52,50 @@ pub mod url_shorten {
 /// Configuration required to bootstrap the user timeline gRPC server.
 #[derive(Clone, Debug)]
 pub struct Args {
-    /// gRPC listen address for the service, e.g. `0.0.0.0:50061`.
     pub listen_addr: String,
-    /// MongoDB URI for the user timeline database.
     pub mongodb_uri: String,
-    /// MongoDB database name containing the timeline collection.
     pub mongodb_database: String,
-    /// MongoDB collection that stores user timelines.
     pub mongodb_collection: String,
-    /// Standalone Redis URL used when replication is not configured.
     pub redis_url: Option<String>,
-    /// Redis primary URL used for write operations.
     pub redis_primary_url: Option<String>,
-    /// Redis replica URL used for read operations.
     pub redis_replica_url: Option<String>,
-    /// Comma-separated list of Redis cluster node URLs.
     pub redis_cluster_urls: Option<String>,
-    /// Endpoint of the PostStorage gRPC service.
-    pub post_storage_addr: String,
+    
+    // --- CHANGE 2: Replace single address with IP, Port, and Replicas ---
+    // Old: pub post_storage_addr: String,
+    pub post_storage_ip: String,
+    pub post_storage_port: u16,
+    pub post_storage_replicas: u8, 
 }
 
 impl Args {
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
-            // Change the default listen address to match your Docker port
             listen_addr: env::var("USER_TIMELINE_LISTEN_ADDR")
                 .unwrap_or_else(|_| "0.0.0.0:8080".to_string()),
 
-            // Force these to be set explicitly in the environment
             mongodb_uri: env::var("USER_TIMELINE_MONGODB_URI")
                 .expect("USER_TIMELINE_MONGODB_URI must be set"),
-            post_storage_addr: env::var("POST_STORAGE_ADDR")
-                .expect("POST_STORAGE_ADDR must be set"),
             
-            // These are also good to make explicit, but the Redis logic handles it
+            // --- CHANGE 3: Parse the new connection details ---
+            post_storage_ip: env::var("POST_STORAGE_IP")
+                .unwrap_or_else(|_| "post_storage".to_string()), // Default docker service name
+            
+            post_storage_port: env::var("POST_STORAGE_PORT")
+                .unwrap_or_else(|_| "8080".to_string())
+                .parse()
+                .expect("POST_STORAGE_PORT must be a valid number"),
+
+            post_storage_replicas: env::var("POST_STORAGE_REPLICAS")
+                .unwrap_or_else(|_| "1".to_string())
+                .parse()
+                .expect("POST_STORAGE_REPLICAS must be a valid number"),
+
             redis_url: env::var("USER_TIMELINE_REDIS_URL").ok(),
             redis_primary_url: env::var("USER_TIMELINE_REDIS_PRIMARY_URL").ok(),
             redis_replica_url: env::var("USER_TIMELINE_REDIS_REPLICA_URL").ok(),
             redis_cluster_urls: env::var("USER_TIMELINE_REDIS_CLUSTER_URLS").ok(),
 
-            // These are optional and can keep their defaults if you wish
             mongodb_database: env::var("USER_TIMELINE_MONGODB_DATABASE")
                 .unwrap_or_else(|_| "user-timeline".to_string()),
             mongodb_collection: env::var("USER_TIMELINE_MONGODB_COLLECTION")
@@ -97,9 +104,6 @@ impl Args {
     }
 }
 
-// NOTE(vic): this implementation uses the sync version of Redis rather than
-// the async version because the async version lacks cluster support.
-// We can revisit if we want to switch back to the async version.
 #[derive(Clone)]
 enum RedisBackend {
     Standalone(Arc<RedisClient>),
@@ -181,127 +185,50 @@ impl RedisBackend {
         }
     }
 }
-
+// ... [End of Redis helper functions] ...
 async fn zadd_nx(client: &RedisClient, key: &str, member: &str, score: f64) -> Result<(), Status> {
-    let mut conn = client
-        .get_multiplexed_tokio_connection()
-        .await
-        .map_err(redis_to_status)?;
-
-        let mut command = deadpool_redis::redis::cmd("ZADD");
-    command.arg(key).arg("NX").arg(score).arg(member);
-    command
-        .query_async(&mut conn)
-        .await
-        .map_err(redis_to_status)
-}
-
-async fn zadd_all(
-    client: &RedisClient,
-    key: &str,
-    entries: &[(String, f64)],
-) -> Result<(), Status> {
-    let mut conn = client
-        .get_multiplexed_tokio_connection()
-        .await
-        .map_err(redis_to_status)?;
-    let mut command = deadpool_redis::redis::cmd("ZADD");
-    command.arg(key);
-    for (member, score) in entries {
-        command.arg(*score).arg(member);
-    }
-    command
-        .query_async(&mut conn)
-        .await
-        .map_err(redis_to_status)
-}
-
-async fn zrevrange(
-    client: &RedisClient,
-    key: &str,
-    start: i64,
-    stop: i64,
-) -> Result<Vec<String>, Status> {
-    let mut conn = client
-        .get_multiplexed_tokio_connection()
-        .await
-        .map_err(redis_to_status)?;
-    deadpool_redis::redis::cmd("ZREVRANGE")
-        .arg(key)
-        .arg(start)
-        .arg(stop)
-        .query_async(&mut conn)
-        .await
-        .map_err(redis_to_status)
-}
-
-async fn zadd_nx_cluster(
-    client: &ClusterClient,
-    key: &str,
-    member: &str,
-    score: f64,
-) -> Result<(), Status> {
-    let mut conn = client
-        .get_async_connection()
-        .await
-        .map_err(redis_to_status)?;
+    let mut conn = client.get_multiplexed_tokio_connection().await.map_err(redis_to_status)?;
     let mut command = deadpool_redis::redis::cmd("ZADD");
     command.arg(key).arg("NX").arg(score).arg(member);
-    command
-        .query_async(&mut conn)
-        .await
-        .map_err(redis_to_status)
+    command.query_async(&mut conn).await.map_err(redis_to_status)
 }
-
-async fn zadd_all_cluster(
-    client: &ClusterClient,
-    key: &str,
-    entries: &[(String, f64)],
-) -> Result<(), Status> {
-    let mut conn = client
-        .get_async_connection()
-        .await
-        .map_err(redis_to_status)?;
+async fn zadd_all(client: &RedisClient, key: &str, entries: &[(String, f64)]) -> Result<(), Status> {
+    let mut conn = client.get_multiplexed_tokio_connection().await.map_err(redis_to_status)?;
     let mut command = deadpool_redis::redis::cmd("ZADD");
     command.arg(key);
-    for (member, score) in entries {
-        command.arg(*score).arg(member);
-    }
-    command
-        .query_async(&mut conn)
-        .await
-        .map_err(redis_to_status)
+    for (member, score) in entries { command.arg(*score).arg(member); }
+    command.query_async(&mut conn).await.map_err(redis_to_status)
 }
+async fn zrevrange(client: &RedisClient, key: &str, start: i64, stop: i64) -> Result<Vec<String>, Status> {
+    let mut conn = client.get_multiplexed_tokio_connection().await.map_err(redis_to_status)?;
+    deadpool_redis::redis::cmd("ZREVRANGE").arg(key).arg(start).arg(stop).query_async(&mut conn).await.map_err(redis_to_status)
+}
+async fn zadd_nx_cluster(client: &ClusterClient, key: &str, member: &str, score: f64) -> Result<(), Status> {
+    let mut conn = client.get_async_connection().await.map_err(redis_to_status)?;
+    let mut command = deadpool_redis::redis::cmd("ZADD");
+    command.arg(key).arg("NX").arg(score).arg(member);
+    command.query_async(&mut conn).await.map_err(redis_to_status)
+}
+async fn zadd_all_cluster(client: &ClusterClient, key: &str, entries: &[(String, f64)]) -> Result<(), Status> {
+    let mut conn = client.get_async_connection().await.map_err(redis_to_status)?;
+    let mut command = deadpool_redis::redis::cmd("ZADD");
+    command.arg(key);
+    for (member, score) in entries { command.arg(*score).arg(member); }
+    command.query_async(&mut conn).await.map_err(redis_to_status)
+}
+async fn zrevrange_cluster(client: &ClusterClient, key: &str, start: i64, stop: i64) -> Result<Vec<String>, Status> {
+    let mut conn = client.get_async_connection().await.map_err(redis_to_status)?;
+    deadpool_redis::redis::cmd("ZREVRANGE").arg(key).arg(start).arg(stop).query_async(&mut conn).await.map_err(redis_to_status)
+}
+fn redis_to_status(err: RedisError) -> Status { Status::internal(format!("Redis error: {}", err)) }
 
-async fn zrevrange_cluster(
-    client: &ClusterClient,
-    key: &str,
-    start: i64,
-    stop: i64,
-) -> Result<Vec<String>, Status> {
-    let mut conn = client
-        .get_async_connection()
-        .await
-        .map_err(redis_to_status)?;
-    // --- FIX: Use the re-exported redis crate ---
-    deadpool_redis::redis::cmd("ZREVRANGE")
-        .arg(key)
-        .arg(start)
-        .arg(stop)
-        .query_async(&mut conn)
-        .await
-        .map_err(redis_to_status)
-}
-
-fn redis_to_status(err: RedisError) -> Status {
-    Status::internal(format!("Redis error: {}", err))
-}
 
 #[derive(Clone)]
 pub struct UserTimelineServiceImpl {
     collection: Collection<Document>,
     redis: RedisBackend,
-    post_storage_client: PostStorageServiceClient<tonic::transport::Channel>,
+    // --- CHANGE 4: Use LoadBalancedChannel instead of generic Channel ---
+    post_storage_client: PostStorageServiceClient<LoadBalancedChannel>,
 }
 
 impl UserTimelineServiceImpl {
@@ -311,9 +238,25 @@ impl UserTimelineServiceImpl {
             .database(&args.mongodb_database)
             .collection::<Document>(&args.mongodb_collection);
 
+        let index_model = IndexModel::builder()
+            .keys(doc! { "user_id": 1 }) 
+            .build();
+
+        // This will only create the index if it doesn't exist.
+        collection.create_index(index_model, None).await?;
+        info!("Successfully ensured index on 'user_id' exists.");
+
         let redis = RedisBackend::from_args(&args)?;
-        let post_storage_client =
-            PostStorageServiceClient::connect(args.post_storage_addr.clone()).await?;
+
+        // --- CHANGE 5: Initialize using LoadBalancedChannel ---
+        let channel = LoadBalancedChannel::new(
+            args.post_storage_ip.clone(),
+            args.post_storage_port,
+            args.post_storage_replicas as u8, 
+        )
+        .await;
+        
+        let post_storage_client = PostStorageServiceClient::new(channel);
 
         Ok(Self {
             collection,
@@ -322,6 +265,7 @@ impl UserTimelineServiceImpl {
         })
     }
 }
+
 
 #[async_trait]
 impl UserTimelineService for UserTimelineServiceImpl {
