@@ -97,7 +97,7 @@ impl LoadBalancedChannel {
                     .unwrap();
             endpoints.push(endpoint);
         }
-
+        
         let channel = Channel::new(endpoints.into_iter()).await;
 
         Self { channel }

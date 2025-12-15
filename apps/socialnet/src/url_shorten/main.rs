@@ -9,15 +9,12 @@ pub mod url_shorten {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // let addr = "[::1]:50053".parse::<SocketAddr>().unwrap();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
 
-    // let service = create_service().await?;
+    println!("inside url_shorten");
 
-    // println!("URL Shortening Service listening on {}", addr);
-
-    // Server::builder().add_service(service).serve(addr).await?;
-
-    // Ok(())
     let listen_addr = env::var("URL_SHORTEN_LISTEN_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:8080".to_string());
     

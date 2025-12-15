@@ -4,12 +4,16 @@ use mongodb::{
     bson::{doc, document::Document},
     Client as MongoClient, Collection,
 };
+use std::env;
 
-use deadpool_redis::redis::{self, AsyncCommands, Client as RedisClient, FromRedisValue};
+use deadpool_redis::redis::{self, AsyncCommands};
 use deadpool_redis::{Pool, Connection};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tonic::{Request, Response, Status};
+
+// NEW IMPORT
+use tonic::transport::masa_channel::LoadBalancedChannel;
 
 // gRPC generated modules
 pub mod social_graph {
@@ -29,7 +33,29 @@ use social_graph::{
 use user::user_service_client::UserServiceClient;
 use user::GetUserIdRequest;
 
-// --- REMOVED RedisManager ENUM ---
+// --- NEW ARGS STRUCT ---
+#[derive(Clone, Debug)]
+pub struct Args {
+    // User Service Config
+    pub user_service_ip: String,
+    pub user_service_port: u16,
+    pub user_service_replicas: u8,
+}
+
+impl Args {
+    pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(Self {
+            user_service_ip: env::var("USER_SERVICE_IP")
+                .unwrap_or_else(|_| "socialnet-user-service".to_string()),
+            user_service_port: env::var("USER_SERVICE_PORT")
+                .unwrap_or_else(|_| "8080".to_string())
+                .parse()?,
+            user_service_replicas: env::var("USER_SERVICE_REPLICAS")
+                .unwrap_or_else(|_| "1".to_string())
+                .parse()?,
+        })
+    }
+}
 
 /// Represents an edge (follower/followee relationship) in the MongoDB document.
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -42,7 +68,8 @@ struct Edge {
 pub struct SocialGraphService {
     redis_pool: Pool,
     mongo_collection: Collection<Document>,
-    user_service_addr: String,
+    // CHANGED: Use typed Client with LoadBalancedChannel
+    user_service_client: UserServiceClient<LoadBalancedChannel>,
 }
 
 impl SocialGraphService {
@@ -50,23 +77,31 @@ impl SocialGraphService {
     pub async fn new(
         mongodb_uri: &str,
         redis_pool: Pool,
-        user_service_addr: &str,
+        args: &Args, // CHANGED: Accept Args struct
     ) -> Result<Self, Box<dyn std::error::Error>> {
         println!("initializing mongo");
         let mongo_client = MongoClient::with_uri_str(mongodb_uri).await.expect("mongo failed");
         let db = mongo_client.database("social-graph");
         let mongo_collection = db.collection("social-graph");
 
+        // Initialize User Service Client
+        let user_service_channel = LoadBalancedChannel::new(
+            args.user_service_ip.clone(),
+            args.user_service_port,
+            args.user_service_replicas,
+        ).await;
+        let user_service_client = UserServiceClient::new(user_service_channel);
+
         Ok(Self {
             redis_pool,
             mongo_collection,
-            user_service_addr: user_service_addr.to_string(),
+            user_service_client,
         })
     }
 
     /// --- NEW HELPER: Get a connection from the pool ---
     async fn get_conn(&self) -> Result<Connection, Status> {
-        println!("connecting to redis");
+        // Removed println to reduce log spam on high load
         self.redis_pool.get().await.map_err(|e| {
             error!("Failed to get Redis connection from pool: {}", e);
             Status::internal("Cache service unavailable")
@@ -80,13 +115,8 @@ impl SocialGraphService {
         req_id: i64,
         carrier: HashMap<String, String>,
     ) -> Result<i64, Status> {
-        let mut user_client =
-            UserServiceClient::connect(self.user_service_addr.clone())
-                .await
-                .map_err(|e| {
-                    error!("Failed to connect to UserService: {}", e);
-                    Status::internal("Failed to connect to UserService")
-                })?;
+        // CHANGED: Use the pre-initialized client
+        let mut user_client = self.user_service_client.clone();
 
         let request = GetUserIdRequest {
             req_id,
@@ -334,13 +364,11 @@ impl GrpcService for SocialGraphService {
                 mongodb::bson::from_bson(mongodb::bson::Bson::Array(followees_bson))
                     .unwrap_or_default();
             
-            // --- THIS IS THE FIX ---
-            // The variable `user_ids` was renamed to `followees` to match its usage below.
             let followees: Vec<i64> = edges.iter().map(|e| e.user_id).collect();
             let zset_items: Vec<(i64, i64)> =
                 edges.iter().map(|e| (e.timestamp, e.user_id)).collect();
 
-            (followees, zset_items) // Now `followees` is correctly returned
+            (followees, zset_items)
         } else {
             warn!("User {} not found in MongoDB", user_id);
             (Vec::new(), Vec::new())
@@ -364,7 +392,7 @@ impl GrpcService for SocialGraphService {
         }
 
         Ok(Response::new(GetFolloweesResponse {
-            user_ids: followees, // This now matches the variable from the `if let`
+            user_ids: followees,
         }))
     }
 
@@ -457,3 +485,4 @@ impl GrpcService for SocialGraphService {
         Ok(Response::new(InsertUserResponse {}))
     }
 }
+
