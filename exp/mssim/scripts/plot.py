@@ -11,11 +11,14 @@ from typing import Iterable, List, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
 from matplotlib.patches import Patch
 
 THRESHOLD_DEFAULT_MS = 50
 FILENAME_PATTERN = re.compile(r"root_latencies_(?P<rps>[0-9_]+)rps\.csv$")
-CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/shared.json"
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "data/shared.json"
+QUEUE_CDF_RPS_DEFAULT = 100.0
+PERCENTILE = 0.9
 
 
 @dataclass
@@ -231,6 +234,41 @@ def compute_goodput_by_graph(
     return goodput_per_graph
 
 
+def compute_queue_latency_by_graph(
+    samples: PolicySamples, rps_values: Sequence[float]
+) -> dict[str, List[float]]:
+    """Average queue latency per graph, per RPS, after warmup filtering."""
+    graphs = sorted(
+        {str(graph) for graph in samples.latencies_ms["graph"].dropna().unique()}
+    )
+    if not graphs:
+        graphs = ["unknown"]
+
+    mean_queue_latency_per_graph: dict[str, List[float]] = {graph: [] for graph in graphs}
+    p90_queue_latency_per_graph: dict[str, List[float]] = {graph: [] for graph in graphs}
+
+    for rps in rps_values:
+        subset = samples.latencies_ms.loc[samples.latencies_ms["rps"] == rps]
+        if subset.empty:
+            for graph in graphs:
+                mean_queue_latency_per_graph[graph].append(float("nan"))
+                p90_queue_latency_per_graph[graph].append(float("nan"))
+            continue
+
+        for graph in graphs:
+            graph_mask = subset["graph"] == graph
+            graph_latencies = subset.loc[graph_mask, "queue_latency_ms"].dropna()
+            if graph_latencies.empty:
+                mean_queue_latency_per_graph[graph].append(float("nan"))
+                p90_queue_latency_per_graph[graph].append(float("nan"))
+            else:
+                mean_queue_latency_per_graph[graph].append(float(graph_latencies.mean()))
+                p90_queue_latency_per_graph[graph].append(float(graph_latencies.quantile(PERCENTILE)))
+
+
+    return mean_queue_latency_per_graph, p90_queue_latency_per_graph
+
+
 def sanitize_label_for_filename(label: str) -> str:
     sanitized = re.sub(r"[^A-Za-z0-9._-]+", "_", label).strip("_")
     return sanitized or "policy"
@@ -348,6 +386,91 @@ def plot_goodput_by_graph(
         output_path = output_dir / filename
         fig.savefig(output_path)
         print(f"Saved per-graph goodput plot for {label} to {output_path}")
+
+
+def plot_queue_latency_cdf(
+    policies: Sequence[PolicySamples],
+    labels: Sequence[str],
+    target_rps: float,
+    rps_values: Sequence[float],
+    output: Path,
+) -> None:
+    if not policies:
+        raise ValueError("At least one policy is required for queue latency CDF plots.")
+    if len(labels) != len(policies):
+        raise ValueError("Number of labels must match number of policy datasets.")
+    if not rps_values:
+        raise ValueError("No RPS values available for queue latency CDF.")
+
+    selected_rps = min(rps_values, key=lambda rps: abs(rps - target_rps))
+    if abs(selected_rps - target_rps) > 1e-3:
+        print(
+            f"Requested queue-latency CDF at {target_rps:g} RPS, using closest available RPS value {selected_rps:g}."
+        )
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    cmap = plt.get_cmap("tab10")
+
+    any_data = False
+    for idx, (label, samples) in enumerate(zip(labels, policies)):
+        series = samples.metric_for_rps(selected_rps, "queue_latency_ms").dropna()
+        if series.empty:
+            print(
+                f"Warning: no queue latency samples for {label} at {selected_rps:g} RPS; skipping."
+            )
+            continue
+        values = np.sort(series.to_numpy())
+        cdf = (np.arange(1, len(values) + 1) / len(values)).astype(float)
+        color = cmap(idx % cmap.N)
+        ax.step(values, cdf, where="post", label=label, color=color)
+        any_data = True
+
+    if not any_data:
+        print(
+            f"Warning: skipped queue latency CDF plot because no samples were available at {selected_rps:g} RPS."
+        )
+        plt.close(fig)
+        return
+
+    ax.set_yscale("log")
+    ax.set_xlabel("Queue latency (ms)")
+    ax.set_ylabel("CDF")
+    ax.set_title(f"Queue latency CDF at {selected_rps:g} RPS")
+    ax.grid(True, which="both", linestyle="--", alpha=0.4)
+    ax.legend(loc="lower right")
+
+    fig.tight_layout()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output)
+    print(f"Saved queue latency CDF plot to {output}")
+
+
+def print_queue_latency_summary(
+    policy_names: Sequence[str],
+    rps_values: Sequence[float],
+    mean_queue_latency_data: Sequence[dict[str, Sequence[float]]],
+    p90_queue_latency_data: Sequence[dict[str, Sequence[float]]],
+) -> None:
+    """Print a readable table of queue latency per graph, per policy."""
+    print("\nQueue latency (ms) per graph after warmup:")
+    for policy_name, mean_graph_map, p90_graph_map in zip(policy_names, mean_queue_latency_data, p90_queue_latency_data):
+        print(f"Policy: {policy_name}")
+        if not mean_graph_map or not p90_graph_map:
+            print("  No queue latency data available.")
+            continue
+
+        for graph in sorted(mean_graph_map.keys()):
+            mean_latency_values = mean_graph_map[graph]
+            p90_latency_values = p90_graph_map[graph]
+            segments = []
+            for rps, mean_latency, p90_latency in zip(rps_values, mean_latency_values, p90_latency_values):
+                if pd.isna(mean_latency) or pd.isna(p90_latency):
+                    value_repr = "N/A"
+                else:
+                    value_repr = f"{mean_latency:.2f} ms (P{PERCENTILE*100:.0f}: {p90_latency:.2f} ms)"
+                segments.append(f"{rps:g} RPS={value_repr}")
+            joined = ", ".join(segments)
+            print(f"  {graph}: {joined}")
 
 
 def build_latency_plots(
@@ -599,7 +722,7 @@ def plot_latency_percentiles_by_graph(
         print(f"Saved latency percentile plots for graph '{graph_name}' to {output_path}")
 
 
-def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float, float, float]:
+def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float, float, float, float]:
     with config_path.open("r") as fh:
         config = json.load(fh)
 
@@ -632,7 +755,21 @@ def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float, float, 
     if warmup_sec < 0:
         raise ValueError("Plot config 'warmup_sec' cannot be negative.")
 
-    return experiment_root, list(policies), threshold_ms, duration_sec, warmup_sec
+    try:
+        queue_cdf_rps = float(config.get("queue_cdf_rps", QUEUE_CDF_RPS_DEFAULT))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Plot config 'queue_cdf_rps' must be numeric if provided.") from exc
+    if queue_cdf_rps <= 0:
+        raise ValueError("'queue_cdf_rps' must be positive.")
+
+    return (
+        experiment_root,
+        list(policies),
+        threshold_ms,
+        duration_sec,
+        warmup_sec,
+        queue_cdf_rps,
+    )
 
 
 def main() -> None:
@@ -642,6 +779,7 @@ def main() -> None:
         threshold_ms,
         duration_sec,
         warmup_sec,
+        queue_cdf_rps,
     ) = load_plot_config(
         CONFIG_PATH
     )
@@ -662,6 +800,9 @@ def main() -> None:
         compute_goodput_by_graph(samples, rps_values, threshold_ms, duration_sec, warmup_sec)
         for samples in policy_samples
     ]
+    mean_queue_latency_per_policy, p90_queue_latency_per_policy = zip(
+        *[compute_queue_latency_by_graph(samples, rps_values) for samples in policy_samples]
+    )
 
     print("Goodput summary (threshold = {:.1f} ms):".format(threshold_ms))
     header = "\t".join(["RPS", *policy_names])
@@ -669,6 +810,7 @@ def main() -> None:
     for idx, rps in enumerate(rps_values):
         row = "\t".join(f"{goodput[idx]:.2f}" for goodput in goodput_by_policy)
         print(f"{rps:g}\t{row}")
+    print_queue_latency_summary(policy_names, rps_values, mean_queue_latency_per_policy, p90_queue_latency_per_policy)
 
     plot_goodput_fraction(
         rps_values,
@@ -715,6 +857,13 @@ def main() -> None:
         policy_samples,
         experiment_root,
         policy_names,
+    )
+    plot_queue_latency_cdf(
+        policy_samples,
+        policy_names,
+        queue_cdf_rps,
+        rps_values,
+        experiment_root / f"queue_latency_cdf_{queue_cdf_rps:g}rps.png",
     )
 
 

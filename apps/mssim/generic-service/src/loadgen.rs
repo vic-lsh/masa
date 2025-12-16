@@ -303,7 +303,7 @@ async fn flush_root_samples_internal(
             }
             return Ok(None);
         }
-        guard.sort_by_key(|sample| sample.req_id);
+        // guard.sort_by_key(|sample| sample.req_id);
         guard.clone()
     };
 
