@@ -42,7 +42,8 @@ user-timeline-service:
 
 Then also increase here:
 
-```compose-post-service:
+```
+compose-post-service:
    ....
     environment:
       ...
