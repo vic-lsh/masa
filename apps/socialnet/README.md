@@ -10,7 +10,8 @@ Can vertically scale these services by simply increasing the number of cpus need
 Can horizontally scale these by increasing number of replicas. Make sure to do this in the service itself, but also for services calling that service. E.g. since compose post service depends on user timeline service, if we increase replicas of user timeline service, we must also increase the number of replicas in compose post service. E.g.:
 
 First increase here:
-```user-timeline-service:
+```
+user-timeline-service:
     image: socialnet-generic-svc:latest
     scale: 4
     restart: always
