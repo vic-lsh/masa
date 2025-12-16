@@ -101,22 +101,6 @@ impl Service for AlibabaService {
         let method_name = request.method_name.clone();
         let graph_name = request.graph_name.as_str();
 
-        // print the deadline and graph name
-        if request.req_id % 501 == 0 {
-            let ctx = metadata
-                .get_ctx("ctx")
-                .ok_or_else(|| Status::invalid_argument("Missing context metadata 'ctx'"))?;
-            let time_remain = ctx
-                .slo()
-                .saturating_add(ctx.start_at())
-                .saturating_sub(ctx.deadline());
-
-            println!(
-                "Request ID: {}, Deadline Remaining: {} us, Graph Name: {:?}",
-                request.req_id, time_remain, graph_name,
-            );
-        }
-
         match self.state().self_service_name().as_str() {
             "ms-666" => self.handle_ms_666(request).await,
             "ms-56394" => self.handle_ms_56394(request).await,
