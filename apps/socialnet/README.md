@@ -50,7 +50,8 @@ compose-post-service:
       - USER_TIMELINE_IP=socialnet-user-timeline-service
       - USER_TIMELINE_PORT=8080
       - USER_TIMELINE_REPLICAS=4
-    ...```
+    ...
+```
 
 
 
