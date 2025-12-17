@@ -7,7 +7,7 @@ use mongodb::{
 use std::env;
 
 use deadpool_redis::redis::{self, AsyncCommands};
-use deadpool_redis::{Pool, Connection};
+use deadpool_redis::{Connection, Pool};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tonic::{Request, Response, Status};
@@ -80,7 +80,9 @@ impl SocialGraphService {
         args: &Args, // CHANGED: Accept Args struct
     ) -> Result<Self, Box<dyn std::error::Error>> {
         println!("initializing mongo");
-        let mongo_client = MongoClient::with_uri_str(mongodb_uri).await.expect("mongo failed");
+        let mongo_client = MongoClient::with_uri_str(mongodb_uri)
+            .await
+            .expect("mongo failed");
         let db = mongo_client.database("social-graph");
         let mongo_collection = db.collection("social-graph");
 
@@ -89,7 +91,8 @@ impl SocialGraphService {
             args.user_service_ip.clone(),
             args.user_service_port,
             args.user_service_replicas,
-        ).await;
+        )
+        .await;
         let user_service_client = UserServiceClient::new(user_service_channel);
 
         Ok(Self {
@@ -363,7 +366,7 @@ impl GrpcService for SocialGraphService {
             let edges: Vec<Edge> =
                 mongodb::bson::from_bson(mongodb::bson::Bson::Array(followees_bson))
                     .unwrap_or_default();
-            
+
             let followees: Vec<i64> = edges.iter().map(|e| e.user_id).collect();
             let zset_items: Vec<(i64, i64)> =
                 edges.iter().map(|e| (e.timestamp, e.user_id)).collect();
@@ -386,7 +389,7 @@ impl GrpcService for SocialGraphService {
                         Err(e) => warn!("Failed to update Redis cache for {}: {}", user_id, e),
                     }
                 } else {
-                     warn!("Failed to get Redis conn for cache update for {}", user_id);
+                    warn!("Failed to get Redis conn for cache update for {}", user_id);
                 }
             });
         }
@@ -485,4 +488,3 @@ impl GrpcService for SocialGraphService {
         Ok(Response::new(InsertUserResponse {}))
     }
 }
-

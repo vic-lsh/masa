@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use regex::Regex;
 use log::info;
+use regex::Regex;
 
 use tonic::{Request, Response, Status};
 
@@ -16,11 +16,8 @@ use text_svc::url_shorten_service::{
 };
 
 use std::env;
-use tonic::transport::Channel;
 use tonic::transport::masa_channel::LoadBalancedChannel;
-
-
-
+use tonic::transport::Channel;
 
 pub mod text_svc {
     pub mod text_service {
@@ -33,7 +30,6 @@ pub mod text_svc {
         tonic::include_proto!("url_shorten");
     }
 }
-
 
 #[derive(Clone, Debug)]
 pub struct Args {
@@ -82,14 +78,16 @@ impl TextSvcImpl {
             args.url_shorten_service_ip.clone(),
             args.url_shorten_service_port,
             args.url_shorten_service_replicas,
-        ).await;
+        )
+        .await;
         let url_shorten_client = UrlShortenServiceClient::new(url_shorten_channel);
 
         let user_mention_channel = LoadBalancedChannel::new(
             args.user_mention_service_ip.clone(),
             args.user_mention_service_port,
             args.user_mention_service_replicas,
-        ).await;
+        )
+        .await;
         let user_mention_client = UserMentionServiceClient::new(user_mention_channel);
 
         Ok(TextSvcImpl {
@@ -141,7 +139,7 @@ impl TextService for TextSvcImpl {
             tokio::spawn(async move {
                 // FIX: Check if empty before making the network call
                 if url_links.is_empty() {
-                    return Ok(vec![]); 
+                    return Ok(vec![]);
                 }
 
                 let url_shorten_request = ComposeUrlsRequest {
@@ -161,13 +159,12 @@ impl TextService for TextSvcImpl {
                     }
                     Err(status) => {
                         // Use println! because your logger might not be initialized to stdout
-                        println!("Error calling url_shorten service: {:?}", status); 
+                        println!("Error calling url_shorten service: {:?}", status);
                         return Err(status);
                     }
                 }
             })
         };
-
 
         // async func to get user mention、
         let user_mention_task = {
@@ -202,14 +199,18 @@ impl TextService for TextSvcImpl {
             .await
             .expect("shortened url task shouldn't fail")
         else {
-            return Err(Status::internal("Text Service: Failed to get shortened urls"));
+            return Err(Status::internal(
+                "Text Service: Failed to get shortened urls",
+            ));
         };
 
         let Ok(user_mentions) = user_mention_task
             .await
             .expect("user mention task shoudln't fail")
         else {
-            return Err(Status::internal("Text Service: Failed to get user mentions"));
+            return Err(Status::internal(
+                "Text Service: Failed to get user mentions",
+            ));
         };
 
         println!("Shortened URLs: {:?}", result_urls);

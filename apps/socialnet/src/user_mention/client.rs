@@ -1,9 +1,9 @@
 use tonic::{Request, Status};
 
+use std::env;
 use user_mention_service::{
     user_mention_service_client::UserMentionServiceClient, ComposeUserMentionRequest, UserMention,
 };
-use std::env;
 
 pub mod user_mention_service {
     tonic::include_proto!("usermention");
@@ -40,8 +40,8 @@ impl UserMentionClient {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let mut client = UserMentionClient::connect("http://[::1]:50052".to_string()).await?;
-    let server_addr = env::var("USER_MENTION_SERVICE_ADDR")
-        .unwrap_or_else(|_| "http://[::1]:50052".to_string());
+    let server_addr =
+        env::var("USER_MENTION_SERVICE_ADDR").unwrap_or_else(|_| "http://[::1]:50052".to_string());
 
     println!("Connecting to User Mention Service at {}...", server_addr);
     let mut client = UserMentionClient::connect(server_addr).await?;

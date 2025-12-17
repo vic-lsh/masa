@@ -1,13 +1,13 @@
 //! Async Rust port of the C++ Write-Home-Timeline Service.
 
 use anyhow::{Context, Result};
-use std::env; 
+use std::env;
 use tokio::task::JoinHandle;
 use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
-use deadpool_redis::{Config, Pool as DeadpoolRedisPool, Runtime};
 use deadpool_redis::redis;
+use deadpool_redis::{Config, Pool as DeadpoolRedisPool, Runtime};
 
 // NEW IMPORT
 use tonic::transport::masa_channel::LoadBalancedChannel;
@@ -21,7 +21,7 @@ pub mod social_graph {
 use crate::social_graph::social_graph_service_client::SocialGraphServiceClient;
 use crate::social_graph::GetFollowersRequest;
 
-pub type RedisPool = DeadpoolRedisPool; 
+pub type RedisPool = DeadpoolRedisPool;
 // CHANGED: We don't need bb8 anymore. The Client itself is cheap to clone.
 pub type SocialGraphClient = SocialGraphServiceClient<LoadBalancedChannel>;
 
@@ -49,8 +49,8 @@ impl Args {
 }
 
 mod worker {
+    use super::redis;
     use super::{GetFollowersRequest, RedisPool, SocialGraphClient};
-    use super::redis; 
     use anyhow::{anyhow, Context, Result};
     use futures_lite::stream::StreamExt;
     use lapin::{
@@ -71,7 +71,7 @@ mod worker {
         timestamp: i64,
         user_mentions_id: Vec<i64>,
     }
-    
+
     pub async fn run_worker(
         worker_id: usize,
         redis_pool: RedisPool,
@@ -84,7 +84,7 @@ mod worker {
         let conn = Connection::connect(&rabbit_addr, ConnectionProperties::default())
             .await
             .context("Failed to connect to RabbitMQ")?;
-        
+
         let channel = conn
             .create_channel()
             .await
@@ -115,7 +115,7 @@ mod worker {
                 FieldTable::default(),
             )
             .await?;
-        
+
         while let Some(delivery_result) = consumer.next().await {
             let delivery = match delivery_result {
                 Ok(d) => d,
@@ -160,7 +160,7 @@ mod worker {
         }
         Ok(())
     }
-    
+
     async fn process_message(
         data: &[u8],
         redis_pool: RedisPool,
@@ -205,14 +205,14 @@ mod worker {
             .get()
             .await
             .context("Failed to get Redis connection from pool")?;
-        
+
         let mut pipe = redis::pipe();
 
         for user_id in &user_ids_to_update {
             pipe.zadd(user_id.to_string(), msg.post_id.to_string(), msg.timestamp);
         }
 
-        pipe.query_async::<_, ()>(&mut *redis_conn) 
+        pipe.query_async::<_, ()>(&mut *redis_conn)
             .await
             .context("Redis pipeline command failed")?;
 
@@ -238,13 +238,17 @@ async fn main() -> Result<()> {
 
     let redis_url = env::var("REDIS_URL").expect("REDIS_URL must be set");
     let cfg = deadpool_redis::Config::from_url(redis_url);
-    let redis_pool = cfg.create_pool(Some(deadpool_redis::Runtime::Tokio1))
+    let redis_pool = cfg
+        .create_pool(Some(deadpool_redis::Runtime::Tokio1))
         .context("Failed to create Redis pool")?;
     info!("Redis connection pool created.");
 
     // Test the pool
     {
-        let mut conn = redis_pool.get().await.expect("Failed to get Redis connection");
+        let mut conn = redis_pool
+            .get()
+            .await
+            .expect("Failed to get Redis connection");
         let _: String = deadpool_redis::redis::cmd("PING")
             .query_async(&mut conn)
             .await
@@ -256,9 +260,10 @@ async fn main() -> Result<()> {
     let sg_channel = LoadBalancedChannel::new(
         args.social_graph_ip,
         args.social_graph_port,
-        args.social_graph_replicas
-    ).await;
-    
+        args.social_graph_replicas,
+    )
+    .await;
+
     let social_graph_client = SocialGraphServiceClient::new(sg_channel);
     info!("Social Graph Service client created (Load Balanced).");
 
@@ -267,15 +272,14 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|_| "4".to_string())
         .parse()?;
     let mut worker_handles: Vec<JoinHandle<Result<()>>> = Vec::new();
-    
+
     for i in 0..num_workers {
         let worker_redis_pool = redis_pool.clone();
         // Just clone the client, it's cheap and thread-safe
         let worker_sg_client = social_graph_client.clone();
 
-        let handle = tokio::spawn(async move {
-            run_worker(i, worker_redis_pool, worker_sg_client).await
-        });
+        let handle =
+            tokio::spawn(async move { run_worker(i, worker_redis_pool, worker_sg_client).await });
         worker_handles.push(handle);
     }
     info!("Spawned {} worker tasks.", num_workers);

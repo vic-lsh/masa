@@ -5,7 +5,7 @@ use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::sync::Mutex as StdMutex; 
+use std::sync::Mutex as StdMutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 // No longer need tokio::sync::Mutex for Redis
 use tonic::{Request, Response, Status};
@@ -16,9 +16,9 @@ use mongodb::{
     Collection,
 };
 
-use deadpool_redis::{Pool, Connection};
+use deadpool_redis::{Connection, Pool};
 // Use the redis-rs client traits and types
-use deadpool_redis::redis::{AsyncCommands, RedisError}; 
+use deadpool_redis::redis::{AsyncCommands, RedisError};
 
 // Custom Epoch (January 1, 2018 Midnight GMT = 2018-01-01T00:00:00Z)
 const CUSTOM_EPOCH: u64 = 1_514_764_800_000;
@@ -158,7 +158,6 @@ impl UserServer {
     }
 }
 
-
 #[tonic::async_trait]
 impl UserService for UserServer {
     async fn register_user(
@@ -225,18 +224,23 @@ impl UserService for UserServer {
                     .map_err(|e| Status::internal(format!("Cache data corruption: {}", e)))?;
                 (login_info.user_id, login_info.salt, login_info.password)
             }
-            
+
             // --- Case 2: Cache Miss (or Error) ---
             Ok(None) => {
                 info!("Cache miss for user: {}", req.username);
                 // Go to DB
-                self.login_cache_miss(&mut conn, &req.username, &cache_key).await?
+                self.login_cache_miss(&mut conn, &req.username, &cache_key)
+                    .await?
             }
             Err(e) => {
                 // If cache read fails, log it and proceed to DB.
                 // This makes your service resilient to cache failures.
-                warn!("Redis GET failed for '{}': {}. Falling back to DB.", &cache_key, e);
-                self.login_cache_miss(&mut conn, &req.username, &cache_key).await?
+                warn!(
+                    "Redis GET failed for '{}': {}. Falling back to DB.",
+                    &cache_key, e
+                );
+                self.login_cache_miss(&mut conn, &req.username, &cache_key)
+                    .await?
             }
         };
 
@@ -312,7 +316,6 @@ impl UserService for UserServer {
 
 // --- Helper methods for the service implementation ---
 impl UserServer {
-    
     /// --- NEW HELPER ---
     /// Handles the logic for a cache miss during login.
     async fn login_cache_miss(
@@ -342,15 +345,21 @@ impl UserServer {
         };
         let login_info_str = serde_json::to_string(&login_info).unwrap();
 
-        let _: () = conn.set(cache_key, login_info_str).await.unwrap_or_else(|e| {
-            warn!("Redis SET failed for '{}': {}. Proceeding without caching.", cache_key, e);
-            // Return a dummy () so the unwrap_or_else works
-            () 
-        });
+        let _: () = conn
+            .set(cache_key, login_info_str)
+            .await
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Redis SET failed for '{}': {}. Proceeding without caching.",
+                    cache_key, e
+                );
+                // Return a dummy () so the unwrap_or_else works
+                ()
+            });
 
         Ok((user_id_stored, salt_stored, password_stored))
     }
-    
+
     // --- register_user_internal (Unchanged) ---
     async fn register_user_internal(
         &self,
@@ -440,7 +449,10 @@ impl UserServer {
             }
             // --- Case 3: Cache Error ---
             Err(e) => {
-                warn!("Redis GET failed for {}: {}. Falling back to DB.", &cache_key, e);
+                warn!(
+                    "Redis GET failed for {}: {}. Falling back to DB.",
+                    &cache_key, e
+                );
                 // Fall through to DB
             }
         }
@@ -462,10 +474,16 @@ impl UserServer {
         // 3. Cache the result for future lookups
         // Log errors but don't fail the request
         // We also need to specify the type for the turbofish operator
-        let _: () = conn.set(&cache_key, user_id.to_string()).await.unwrap_or_else(|e| {
-            warn!("Redis SET failed for {}: {}. Proceeding without caching.", &cache_key, e);
-            ()
-        });
+        let _: () = conn
+            .set(&cache_key, user_id.to_string())
+            .await
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Redis SET failed for {}: {}. Proceeding without caching.",
+                    &cache_key, e
+                );
+                ()
+            });
 
         Ok(user_id)
     }
