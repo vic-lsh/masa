@@ -1,9 +1,11 @@
 # How to run socialnet
 
-First, from the masa-internal folder, run `./build_socialnet.sh` to build the image "socialnet-generic-svc". Then, go to apps/socialnet, then run `docker compose up -d`. This will create containers for each of the twelve services 
+1. Run `apps/socialnet/build_socialnet.sh`
+2. In `apps/socialnet`, run `docker compose up -d`
 
 # Scaling the services
 ## Database services (e.g. those to do with mongo, redis, memached)
+
 Can vertically scale these services by simply increasing the number of cpus needed in the docker-compose.yaml file.
 
 ## Main services
