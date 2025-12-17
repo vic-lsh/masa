@@ -3,9 +3,9 @@ use async_memcached::AsciiProtocol;
 use mongodb::{bson::doc, options::ClientOptions, Client as MongoClient, Collection};
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::env;
 use std::error::Error;
 use tracing::{error, info};
-use std::env;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserMentionStruct {
@@ -39,8 +39,7 @@ pub async fn initialize_database() -> Result<MongoClient, Box<dyn Error>> {
 
     let new_user_mentions = generate_static_data();
 
-    let url = env::var("MONGO_URL")
-        .expect("MONGO_URL environment variable must be set");
+    let url = env::var("MONGO_URL").expect("MONGO_URL environment variable must be set");
 
     info!("Attempting connection to {}", url);
 
@@ -73,25 +72,17 @@ pub async fn initialize_database() -> Result<MongoClient, Box<dyn Error>> {
     Ok(client)
 }
 
-<<<<<<< HEAD
 pub async fn initialize_memcached() -> Result<McClient, Box<dyn Error>> {
     // let url = "tcp://127.0.0.1:11211";
     // let mut client = McClient::new(url).await?;
     // info!("Successfully connected to Memcached");
 
     // Read the URL from the environment variable
-    let url = env::var("MEMCACHED_URL")
-        .expect("MEMCACHED_URL environment variable must be set");
+    let url = env::var("MEMCACHED_URL").expect("MEMCACHED_URL environment variable must be set");
 
     // let mut client = McClient::new(&url).await?; // Pass the URL as a reference
     // let mut client: McClient<AsciiProtocol<tokio::net::TcpStream>> = McClient::new(&url).await?;
     let mut client = McClient::new(&url).await?;
-=======
-pub async fn initialize_memcached_pool() -> Result<McPool, Box<dyn Error>> {
-    let memcached_url = env::var("MEMCACHED_URL")
-        .unwrap_or_else(|_| "tcp://usermention_memcached:11211".to_string());
-    let pool = McPool::new(memcached_url, 10000000);
->>>>>>> main
     info!("Successfully connected to Memcached");
 
     let mut client = pool.get().await;

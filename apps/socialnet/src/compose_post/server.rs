@@ -99,7 +99,6 @@ pub struct Args {
     pub url_shorten_service_ip: String,
     pub url_shorten_service_port: u16,
     pub url_shorten_service_replicas: u8,
-
 }
 
 impl Args {
@@ -110,7 +109,7 @@ impl Args {
 
             post_storage_ip: env::var("POST_STORAGE_IP")
                 .unwrap_or_else(|_| "post-storage-service".to_string()), // Default docker service name
-            
+
             post_storage_port: env::var("POST_STORAGE_PORT")
                 .unwrap_or_else(|_| "8080".to_string())
                 .parse()
@@ -123,7 +122,7 @@ impl Args {
 
             user_timeline_ip: env::var("USER_TIMELINE_IP")
                 .unwrap_or_else(|_| "user-timeline-service".to_string()), // Default docker service name
-            
+
             user_timeline_port: env::var("USER_TIMELINE_PORT")
                 .unwrap_or_else(|_| "8080".to_string())
                 .parse()
@@ -136,7 +135,7 @@ impl Args {
 
             home_timeline_ip: env::var("HOME_TIMELINE_IP")
                 .unwrap_or_else(|_| "home-timeline-service".to_string()), // Default docker service name
-            
+
             home_timeline_port: env::var("HOME_TIMELINE_PORT")
                 .unwrap_or_else(|_| "8080".to_string())
                 .parse()
@@ -149,7 +148,7 @@ impl Args {
 
             user_service_ip: env::var("USER_SERVICE_IP")
                 .unwrap_or_else(|_| "user-service".to_string()), // Default docker service name
-            
+
             user_service_port: env::var("USER_SERVICE_PORT")
                 .unwrap_or_else(|_| "8080".to_string())
                 .parse()
@@ -162,7 +161,7 @@ impl Args {
 
             media_service_ip: env::var("MEDIA_SERVICE_IP")
                 .unwrap_or_else(|_| "media-service".to_string()), // Default docker service name
-            
+
             media_service_port: env::var("MEDIA_SERVICE_PORT")
                 .unwrap_or_else(|_| "8080".to_string())
                 .parse()
@@ -175,7 +174,7 @@ impl Args {
 
             text_service_ip: env::var("TEXT_SERVICE_IP")
                 .unwrap_or_else(|_| "text-service".to_string()), // Default docker service name
-            
+
             text_service_port: env::var("TEXT_SERVICE_PORT")
                 .unwrap_or_else(|_| "8080".to_string())
                 .parse()
@@ -188,7 +187,7 @@ impl Args {
 
             user_mention_service_ip: env::var("USER_MENTION_SERVICE_IP")
                 .unwrap_or_else(|_| "user-mention-service".to_string()), // Default docker service name
-            
+
             user_mention_service_port: env::var("USER_MENTION_SERVICE_PORT")
                 .unwrap_or_else(|_| "8080".to_string())
                 .parse()
@@ -201,7 +200,7 @@ impl Args {
 
             url_shorten_service_ip: env::var("URL_SHORTEN_SERVICE_IP")
                 .unwrap_or_else(|_| "url-shorten-service".to_string()), // Default docker service name
-            
+
             url_shorten_service_port: env::var("URL_SHORTEN_SERVICE_PORT")
                 .unwrap_or_else(|_| "8080".to_string())
                 .parse()
@@ -214,7 +213,7 @@ impl Args {
 
             unique_id_ip: env::var("UNIQUE_ID_SERVICE_IP")
                 .unwrap_or_else(|_| "socialnet-unique-id-service".to_string()), // Default docker service name
-            
+
             unique_id_port: env::var("UNIQUE_ID_SERVICE_PORT")
                 .unwrap_or_else(|_| "8080".to_string())
                 .parse()
@@ -224,7 +223,6 @@ impl Args {
                 .unwrap_or_else(|_| "1".to_string())
                 .parse()
                 .expect("UNIQUE_ID_REPLICAS must be a valid number"),
-
         })
     }
 }
@@ -248,56 +246,64 @@ impl ComposePostServiceImpl {
             args.post_storage_ip.clone(),
             args.post_storage_port,
             args.post_storage_replicas,
-        ).await?;
+        )
+        .await?;
 
         let user_timeline = create_channel_for_service(
             args.user_timeline_ip.clone(),
             args.user_timeline_port,
             args.user_timeline_replicas,
-        ).await?;
+        )
+        .await?;
 
         let home_timeline = create_channel_for_service(
             args.home_timeline_ip.clone(),
             args.home_timeline_port,
             args.home_timeline_replicas,
-        ).await?;
+        )
+        .await?;
 
         let user_service = create_channel_for_service(
             args.user_service_ip.clone(),
             args.user_service_port,
             args.user_service_replicas,
-        ).await?;
+        )
+        .await?;
 
         let text_service = create_channel_for_service(
             args.text_service_ip.clone(),
             args.text_service_port,
             args.text_service_replicas,
-        ).await?;
+        )
+        .await?;
 
         let user_mention = create_channel_for_service(
             args.user_mention_service_ip.clone(),
             args.user_mention_service_port,
             args.user_mention_service_replicas,
-        ).await?;
+        )
+        .await?;
 
         let url_shorten = create_channel_for_service(
             args.url_shorten_service_ip.clone(),
             args.url_shorten_service_port,
             args.url_shorten_service_replicas,
-        ).await?;
-
+        )
+        .await?;
 
         let unique_id = create_channel_for_service(
             args.unique_id_ip.clone(),
             args.unique_id_port,
             args.unique_id_replicas,
-        ).await?;
+        )
+        .await?;
 
         let media_service = create_channel_for_service(
             args.media_service_ip.clone(),
             args.media_service_port,
             args.media_service_replicas,
-        ).await?;
+        )
+        .await?;
 
         Ok(Self {
             post_storage,
@@ -312,7 +318,6 @@ impl ComposePostServiceImpl {
         })
     }
 
-    
     async fn compose_creator(
         &self,
         req_id: i64,
@@ -500,7 +505,7 @@ impl ComposePostService for ComposePostServiceImpl {
             .map_err(|_| Status::invalid_argument("req_id must be non-negative"))?;
 
         let mention_usernames = extract_usernames(&text);
-        let url_candidates = extract_urls(&text); 
+        let url_candidates = extract_urls(&text);
 
         let text_future = self.compose_text(text.clone());
         let creator_future = self.compose_creator(req_id, user_id, &username, &carrier);
@@ -590,7 +595,6 @@ async fn create_channel_for_service(
 ) -> Result<LoadBalancedChannel, Box<dyn std::error::Error>> {
     Ok(LoadBalancedChannel::new(ip, port, replicas).await)
 }
-
 
 fn extract_usernames(text: &str) -> Vec<String> {
     static MENTION_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"@[A-Za-z0-9-_]+").unwrap());

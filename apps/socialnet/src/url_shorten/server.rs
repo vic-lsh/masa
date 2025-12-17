@@ -2,9 +2,9 @@ use mongodb::Client as MongoClient;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::env;
+use std::env;
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
-use std::env;
 
 use crate::url_shorten::db::{
     get_expanded_urls, get_shortened_urls, initialize_database, insert_url_mappings,
@@ -213,8 +213,7 @@ impl UrlShortenService for UrlShortenServiceImpl {
 
 pub async fn create_service(
 ) -> Result<UrlShortenServiceServer<UrlShortenServiceImpl>, Box<dyn std::error::Error>> {
-    let mongo_url = env::var("MONGO_URL")
-        .expect("MONGO_URL environment variable must be set");
+    let mongo_url = env::var("MONGO_URL").expect("MONGO_URL environment variable must be set");
 
     let mongo_client = initialize_database(&mongo_url).await?;
 
