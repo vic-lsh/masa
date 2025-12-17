@@ -1,5 +1,6 @@
+use deadpool_redis::redis::AsyncCommands;
+use deadpool_redis::{Connection, Pool};
 use log::{error, warn};
-use redis::AsyncCommands;
 use std::collections::HashSet;
 use tonic::{Request, Response, Status};
 
@@ -22,78 +23,93 @@ use post_storage::ReadPostsRequest;
 use social_graph::social_graph_service_client::SocialGraphServiceClient;
 use social_graph::GetFollowersRequest;
 
+use tonic::transport::masa_channel::LoadBalancedChannel;
+
+use std::env;
+
 use socialnet::user_timeline;
 
-/// An enum to manage different Redis client configurations.
-enum RedisManager {
-    /// A single client for both reads and writes.
-    Single(redis::Client),
-    /// Separate clients for primary (writes) and replica (reads).
-    Replica {
-        primary: redis::Client,
-        replica: redis::Client,
-    },
+#[derive(Clone, Debug)]
+pub struct Args {
+    // Post Storage Config
+    pub post_storage_ip: String,
+    pub post_storage_port: u16,
+    pub post_storage_replicas: u8,
+
+    // Social Graph Config
+    pub social_graph_ip: String,
+    pub social_graph_port: u16,
+    pub social_graph_replicas: u8,
 }
 
-impl RedisManager {
-    /// Gets a connection for write operations.
-    async fn get_write_conn(&self) -> Result<redis::aio::MultiplexedConnection, Status> {
-        let client = match self {
-            RedisManager::Single(c) => c,
-            RedisManager::Replica { primary, .. } => primary,
-        };
-        client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|e| {
-                error!("Failed to connect to Redis for write: {}", e);
-                Status::internal("Failed to connect to Redis")
-            })
-    }
+impl Args {
+    pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(Self {
+            post_storage_ip: env::var("POST_STORAGE_SERVICE_IP")
+                .unwrap_or_else(|_| "socialnet-post-storage-service".to_string()),
+            post_storage_port: env::var("POST_STORAGE_SERVICE_PORT")
+                .unwrap_or_else(|_| "8080".to_string())
+                .parse()?,
+            post_storage_replicas: env::var("POST_STORAGE_SERVICE_REPLICAS")
+                .unwrap_or_else(|_| "1".to_string())
+                .parse()?,
 
-    /// Gets a connection for read operations. Prefers replica if available.
-    async fn get_read_conn(&self) -> Result<redis::aio::MultiplexedConnection, Status> {
-        let client = match self {
-            RedisManager::Single(c) => c,
-            RedisManager::Replica { replica, .. } => replica,
-        };
-        client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|e| {
-                error!("Failed to connect to Redis for read: {}", e);
-                Status::internal("Failed to connect to Redis")
-            })
+            social_graph_ip: env::var("SOCIAL_GRAPH_SERVICE_IP")
+                .unwrap_or_else(|_| "socialnet-social-graph-service".to_string()),
+            social_graph_port: env::var("SOCIAL_GRAPH_SERVICE_PORT")
+                .unwrap_or_else(|_| "8080".to_string())
+                .parse()?,
+            social_graph_replicas: env::var("SOCIAL_GRAPH_SERVICE_REPLICAS")
+                .unwrap_or_else(|_| "1".to_string())
+                .parse()?,
+        })
     }
 }
 
-/// The implementation of the HomeTimeline gRPC service.
+#[derive(Clone)]
 pub struct HomeTimelineService {
-    redis_manager: RedisManager,
-    post_storage_addr: String,
-    social_graph_addr: String,
+    redis_pool: Pool,
+    // CHANGED: Use typed Clients with LoadBalancedChannel
+    post_storage_client: PostStorageServiceClient<LoadBalancedChannel>,
+    social_graph_client: SocialGraphServiceClient<LoadBalancedChannel>,
 }
 
 impl HomeTimelineService {
     /// Creates a new instance of the HomeTimelineService.
     pub async fn new(
-        primary_redis_url: &str,
-        replica_redis_url: Option<&str>,
-        post_storage_addr: &str,
-        social_graph_addr: &str,
+        redis_pool: Pool,
+        args: &Args, // CHANGED: Accept Args struct
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let redis_manager = match replica_redis_url {
-            Some(replica_url) => RedisManager::Replica {
-                primary: redis::Client::open(primary_redis_url)?,
-                replica: redis::Client::open(replica_url)?,
-            },
-            None => RedisManager::Single(redis::Client::open(primary_redis_url)?),
-        };
+        // Initialize Post Storage Client
+        let post_storage_channel = LoadBalancedChannel::new(
+            args.post_storage_ip.clone(),
+            args.post_storage_port,
+            args.post_storage_replicas,
+        )
+        .await;
+        let post_storage_client = PostStorageServiceClient::new(post_storage_channel);
+
+        // Initialize Social Graph Client
+        let social_graph_channel = LoadBalancedChannel::new(
+            args.social_graph_ip.clone(),
+            args.social_graph_port,
+            args.social_graph_replicas,
+        )
+        .await;
+        let social_graph_client = SocialGraphServiceClient::new(social_graph_channel);
 
         Ok(Self {
-            redis_manager,
-            post_storage_addr: post_storage_addr.to_string(),
-            social_graph_addr: social_graph_addr.to_string(),
+            redis_pool,
+            post_storage_client,
+            social_graph_client,
+        })
+    }
+
+    /// --- Get a connection from the pool ---
+    async fn get_conn(&self) -> Result<Connection, Status> {
+        self.redis_pool.get().await.map_err(|e| {
+            error!("Failed to get Redis connection from pool: {}", e);
+            Status::internal("Cache service unavailable")
         })
     }
 }
@@ -115,7 +131,7 @@ impl GrpcService for HomeTimelineService {
             return Ok(Response::new(ReadHomeTimelineResponse::default()));
         }
 
-        let mut redis_conn = self.redis_manager.get_read_conn().await?;
+        let mut redis_conn = self.get_conn().await?;
         let user_key = req.user_id.to_string();
 
         let post_ids_str: Vec<String> = redis_conn
@@ -135,20 +151,15 @@ impl GrpcService for HomeTimelineService {
             return Ok(Response::new(ReadHomeTimelineResponse::default()));
         }
 
-        let mut post_storage_client =
-            PostStorageServiceClient::connect(format!("http://{}", self.post_storage_addr))
-                .await
-                .map_err(|e| {
-                    error!("Failed to connect to PostStorageService: {}", e);
-                    Status::internal("Failed to connect to PostStorageService")
-                })?;
+        // NEW CHANGE
+        let mut client = self.post_storage_client.clone();
 
         let posts_request = ReadPostsRequest {
             req_id: req.req_id,
             post_ids,
             carrier: req.carrier,
         };
-        let posts_response = post_storage_client.read_posts(posts_request).await?;
+        let posts_response = client.read_posts(posts_request).await?;
 
         Ok(Response::new(ReadHomeTimelineResponse {
             posts: posts_response.into_inner().posts,
@@ -162,20 +173,15 @@ impl GrpcService for HomeTimelineService {
     ) -> Result<Response<WriteHomeTimelineResponse>, Status> {
         let req = request.into_inner();
 
-        let mut social_graph_client =
-            SocialGraphServiceClient::connect(format!("http://{}", self.social_graph_addr))
-                .await
-                .map_err(|e| {
-                    error!("Failed to connect to SocialGraphService: {}", e);
-                    Status::internal("Failed to connect to SocialGraphService")
-                })?;
+        // CHANGED: Use existing client from struct, do not connect on every request
+        let mut client = self.social_graph_client.clone();
 
         let followers_request = GetFollowersRequest {
             req_id: req.req_id,
             user_id: req.user_id,
             carrier: req.carrier,
         };
-        let followers_response = social_graph_client.get_followers(followers_request).await?;
+        let followers_response = client.get_followers(followers_request).await?;
         let follower_ids = followers_response.into_inner().user_ids;
 
         let mut user_ids_to_update: HashSet<i64> = follower_ids.into_iter().collect();
@@ -187,18 +193,21 @@ impl GrpcService for HomeTimelineService {
             return Ok(Response::new(WriteHomeTimelineResponse {}));
         }
 
-        let mut redis_conn = self.redis_manager.get_write_conn().await?;
-        let mut pipe = redis::pipe();
+        let mut redis_conn = self.get_conn().await?;
+        let mut pipe = deadpool_redis::redis::pipe();
         pipe.atomic(); // Make it a transaction.
 
         for user_id in user_ids_to_update {
             pipe.zadd(user_id.to_string(), req.post_id.to_string(), req.timestamp);
         }
 
-        pipe.query_async::<()>(&mut redis_conn).await.map_err(|e| {
-            error!("Redis pipeline ZADD failed: {}", e);
-            Status::internal("Failed to write timeline to cache")
-        })?;
+        // Explicitly tell the compiler the Connection type is inferred `_` and Return type is `()`
+        pipe.query_async::<_, ()>(&mut redis_conn)
+            .await
+            .map_err(|e| {
+                error!("Redis pipeline ZADD failed: {}", e);
+                Status::internal("Failed to write timeline to cache")
+            })?;
 
         Ok(Response::new(WriteHomeTimelineResponse {}))
     }

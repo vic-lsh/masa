@@ -1,52 +1,63 @@
 use crate::server::home_timeline::home_timeline_service_server::HomeTimelineServiceServer;
-use clap::Parser;
-use log::info;
+use std::env;
 use tonic::transport::Server;
+use tracing::Level;
 
 mod server;
-use server::HomeTimelineService;
+// Import the Service struct and the Args struct we defined in server.rs
+use server::{Args as ServiceArgs, HomeTimelineService};
+use tracing_subscriber::FmtSubscriber;
 
-/// The command-line arguments for the home timeline service.
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Args {
-    /// The IP address and port to bind the server to.
-    #[arg(short, long, default_value = "0.0.0.0:8080")]
-    addr: String,
-
-    /// The connection URL for the Redis primary instance.
-    #[arg(long, env = "REDIS_PRIMARY_URL")]
-    redis_primary_url: String,
-
-    /// The connection URL for the Redis replica instance (optional).
-    /// Used for read operations if provided.
-    #[arg(long, env = "REDIS_REPLICA_URL")]
-    redis_replica_url: Option<String>,
-
-    /// The gRPC endpoint for the Post Storage service.
-    #[arg(long, env = "POST_STORAGE_SERVICE_ADDR")]
-    post_storage_service_addr: String,
-
-    /// The gRPC endpoint for the Social Graph service.
-    #[arg(long, env = "SOCIAL_GRAPH_SERVICE_ADDR")]
-    social_graph_service_addr: String,
-}
+use deadpool_redis::{Config, Runtime};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    let args = Args::parse();
+    // Use tracing for consistent logging
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(Level::INFO)
+        .finish();
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    let service = HomeTimelineService::new(
-        &args.redis_primary_url,
-        args.redis_replica_url.as_deref(),
-        &args.post_storage_service_addr,
-        &args.social_graph_service_addr,
-    )
-    .await?;
+    // 1. Load Local Configuration (Listen Address & Redis) directly from Env
+    let listen_addr =
+        env::var("HOME_TIMELINE_LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
 
-    let addr = args.addr.parse()?;
-    info!("HomeTimelineService listening on {}", addr);
+    let redis_url =
+        env::var("HOME_TIMELINE_REDIS_URL").expect("HOME_TIMELINE_REDIS_URL must be set");
+
+    // 2. Load Downstream Service Configuration (IPs, Ports, Replicas)
+    // This uses the logic we added to server.rs
+    let service_args = ServiceArgs::from_env()?;
+
+    println!("Creating redis pool...");
+
+    // --- Create Deadpool Redis Pool ---
+    let cfg = Config::from_url(redis_url);
+    let redis_pool = cfg.create_pool(Some(Runtime::Tokio1))?;
+    println!("Successfully created Redis connection pool.");
+
+    // Test the pool
+    {
+        let mut conn = redis_pool
+            .get()
+            .await
+            .expect("Failed to get Redis connection");
+
+        let _: String = deadpool_redis::redis::cmd("PING")
+            .query_async(&mut conn)
+            .await
+            .expect("Redis PING failed");
+        println!("Successfully tested Redis connection pool.");
+    }
+
+    println!("creating service...");
+
+    // 3. Initialize the Service
+    // We pass the pool and the service_args (which contains the replica info)
+    let service = HomeTimelineService::new(redis_pool, &service_args).await?;
+
+    let addr = listen_addr.parse()?;
+    println!("HomeTimelineService listening on {}", addr);
 
     Server::builder()
         .add_service(HomeTimelineServiceServer::new(service))

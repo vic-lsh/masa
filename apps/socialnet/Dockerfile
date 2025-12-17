@@ -1,63 +1,33 @@
-FROM rustlang/rust:nightly AS builder
-ARG FEATURES
+# Stage 1: Build the application
+FROM rustlang/rust:nightly AS rust_builder
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    protobuf-compiler pkg-config libssl-dev build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update
-RUN apt-get install -y\
-        curl\
-        unzip\
-        protobuf-compiler\
-        pkg-config\
-        libssl-dev
+# Copy workspace manifests
+COPY Cargo.toml Cargo.lock ./
 
-WORKDIR /usr/src/app
-RUN cargo init
-
-# Copy over dependencies and libs.
-# Order these from least to most likely to be modified.
-COPY Cargo.toml Cargo.lock* ./
-COPY 3rd_party ./3rd_party
-COPY libs ./libs
-
-COPY apps/socialnet/Cargo.toml ./apps/socialnet/Cargo.toml
-COPY apps/hotel/Cargo.toml ./apps/hotel/Cargo.toml
-
-WORKDIR /usr/src/app/apps/socialnet
-RUN mkdir src
-RUN touch src/lib.rs
-
-RUN if [ -z "$FEATURES" ]; then\
-  cargo build --release --lib;\
-else \
-  cargo build --release --lib --features ${FEATURES};\
-fi
-WORKDIR /usr/src/app/
-
+# Copy all necessary source folders from the project root
 COPY apps ./apps
-WORKDIR /usr/src/app/apps/socialnet
+COPY libs ./libs
+COPY 3rd_party ./3rd_party
+COPY apps/socialnet/proto ./apps/socialnet/proto
 
-# build every service in socialnet
-RUN if [ -z "$FEATURES" ]; then\
-  cargo build --release;\
-else \
-  cargo build --release --features ${FEATURES};\
-fi
+# Build the entire workspace
+RUN cargo build --release -p socialnet
 
-FROM debian:bookworm-slim
+# Stage 2: Create the final, minimal image
+FROM debian:sid-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl3 ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
 
-ARG LOG_LEVEL=warn
-ARG BINARY_NAME
-RUN if [ -z "$BINARY_NAME" ]; then \
-    echo "Error: BINARY_NAME argument is required" && exit 1; \
-    fi
+# Copy all compiled binaries
+COPY --from=rust_builder /app/target/release/ /usr/local/bin/
 
-RUN apt-get update
-
-RUN apt-get install -y\ 
-        libssl-dev
-
-COPY --from=builder /usr/src/app/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
-
-ENV BINARY_NAME=${BINARY_NAME}
-ENV LOG_LEVEL=${LOG_LEVEL}
-
-CMD sh -c "RUST_LOG=$LOG_LEVEL exec /usr/local/bin/$BINARY_NAME"
+# Set up the entrypoint script (ensure entrypoint.sh is also in the socialnet folder)
+COPY apps/socialnet/socialnet_entrypoint.sh /usr/local/bin/socialnet_entrypoint.sh
+RUN chmod +x /usr/local/bin/socialnet_entrypoint.sh
+ENTRYPOINT [ "sh", "-c" ]
+CMD ["/usr/local/bin/socialnet_entrypoint.sh"]

@@ -45,7 +45,7 @@ pub struct Args {
 impl Args {
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
         let listen_addr = std::env::var("POST_STORAGE_LISTEN_ADDR")
-            .unwrap_or_else(|_| "0.0.0.0:50065".to_string());
+            .unwrap_or_else(|_| "0.0.0.0:8080".to_string());
         let mongodb_uri = std::env::var("POST_STORAGE_MONGODB_URI")
             .unwrap_or_else(|_| "mongodb://127.0.0.1:27017".to_string());
         let mongodb_database = std::env::var("POST_STORAGE_MONGODB_DATABASE")
@@ -431,9 +431,11 @@ impl PostStorageServiceImpl {
 }
 
 pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+    println!("creating post storage service...");
     let service_impl = PostStorageServiceImpl::new(&args).await?;
     let listen_addr: SocketAddr = args.listen_addr.parse()?;
     log::info!("PostStorageService listening on {}", listen_addr);
+    println!("PostStorageService listening on {}", listen_addr);
 
     Server::builder()
         .add_service(PostStorageServiceServer::new(service_impl))
