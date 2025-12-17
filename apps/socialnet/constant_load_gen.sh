@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # RPS_LEVELS=(200 250 300 350 400)
-RPS_LEVELS=(350)
+RPS_LEVELS=(350 1200 2400)
 # Find the actual port of your API Gateway/Frontend service
 HOST="localhost:8080" 
 
