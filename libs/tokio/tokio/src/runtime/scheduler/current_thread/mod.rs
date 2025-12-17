@@ -4,6 +4,7 @@ use crate::future::poll_fn;
 use crate::loom::sync::atomic::AtomicBool;
 use crate::loom::sync::Arc;
 use crate::runtime::driver::{self, Driver};
+use crate::runtime::scheduler::current_thread::queue::LocalRunQueue;
 use crate::runtime::scheduler::{self, Defer, Inject};
 use crate::runtime::task::{self, JoinHandle, OwnedTasks, Schedule, Task};
 use crate::runtime::{blocking, context, Config, MetricsBatch, SchedulerMetrics, WorkerMetrics};
@@ -20,7 +21,6 @@ use std::task::Waker;
 use std::time::Duration;
 
 mod queue;
-use queue::LocalRunQueue;
 use queue::Queue;
 
 pub use queue::get_sched_flavor;

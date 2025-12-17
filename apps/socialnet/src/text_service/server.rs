@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use log::error;
 use regex::Regex;
 use log::info;
 
@@ -106,7 +105,8 @@ impl TextService for TextSvcImpl {
         &self,
         request: Request<TextRequest>,
     ) -> Result<Response<TextReply>, Status> {
-        println!("Got a request: {:?}", request);
+        info!("Got a request: {:?}", request);
+        info!("Got a request: {:?}", request);
 
         let text: String = request.into_inner().text;
 
@@ -119,7 +119,8 @@ impl TextService for TextSvcImpl {
         }
 
         // print the mentions
-        println!("Mentioned usernames: {:?}", mention_usernames);
+        info!("Mentioned usernames: {:?}", mention_usernames);
+        info!("Mentioned usernames: {:?}", mention_usernames);
 
         // regx match url links with http or https
         let mut url_links = Vec::new();
@@ -130,7 +131,8 @@ impl TextService for TextSvcImpl {
         }
 
         // print the urls
-        println!("URLs found: {:?}", url_links);
+        info!("URLs found: {:?}", url_links);
+        info!("URLs found: {:?}", url_links);
 
         // async func to get shortened url
         let shortened_url_task = {
@@ -244,7 +246,6 @@ impl TextService for TextSvcImpl {
 }
 
 pub async fn create_service() -> TextServiceServer<TextSvcImpl> {
-
     println!("trying to connect text service");
     let args = Args::from_env().expect("Failed to parse environment variables");
     let service = TextSvcImpl::new(&args)

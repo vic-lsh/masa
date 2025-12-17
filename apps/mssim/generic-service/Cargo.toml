@@ -18,6 +18,7 @@ tonic = { path = "../../../libs/tonic/tonic" }
 sim-config = { path = "../sim-config" }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.20"
+masa = { path = "../../../libs/masa/" }
 
 [build-dependencies]
 tonic-build = { path = "../../../libs/tonic/tonic-build" }
@@ -25,3 +26,16 @@ tonic-build = { path = "../../../libs/tonic/tonic-build" }
 [[bin]]
 name = "mssim-loadgen"
 path = "src/loadgen.rs"
+
+early = [
+    "masa/early",
+    "tonic/early",
+]
+
+fifo = ["tokio/fifo", "masa/fifo", "tonic/fifo"]
+
+prio_global = [
+  "tokio/prio_global",
+  "masa/prio_global",
+  "tonic/prio_global",
+]

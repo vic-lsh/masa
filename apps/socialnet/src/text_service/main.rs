@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use tonic::transport::Server;
 use std::env;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listen_addr = env::var("TEXT_SERVICE_LISTEN_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:8080".to_string());

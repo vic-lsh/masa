@@ -1,4 +1,8 @@
-use mongodb::{bson::doc, options::ClientOptions, Client as MongoClient, Collection};
+use mongodb::{
+    bson::doc,
+    options::{ClientOptions, IndexOptions},
+    Client as MongoClient, Collection, IndexModel,
+};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use tracing::{error, info};
@@ -93,6 +97,35 @@ pub async fn initialize_database(url: &str) -> Result<MongoClient, Box<dyn Error
     let database = client.database("reservation-db");
     let res_collection: Collection<Reservation> = database.collection("reservation");
     let num_collection: Collection<Number> = database.collection("number");
+
+    // 1. Create a unique index on the 'number' collection for 'hotelId'
+    let num_index_model = IndexModel::builder()
+        .keys(doc! { "hotelId": 1 }) // 1 = ascending order
+        .options(IndexOptions::builder().unique(true).build())
+        .build();
+    num_collection
+        .create_index(num_index_model, None)
+        .await
+        .map_err(|e| {
+            error!("Failed to create index for 'number' collection: {}", e);
+            e
+        })?;
+
+    // 2. Create a compound index on the 'reservation' collection
+    let res_index_model = IndexModel::builder()
+        .keys(doc! {
+            "hotelId": 1, // 1 = ascending
+            "inDate": 1,
+            "outDate": 1
+        })
+        .build();
+    res_collection
+        .create_index(res_index_model, None)
+        .await
+        .map_err(|e| {
+            error!("Failed to create index for 'reservation' collection: {}", e);
+            e
+        })?;
 
     // Insert reservations
     res_collection

@@ -19,39 +19,39 @@ thread_local! {
 ///
 pub mod client {
 
-    use crate::masa::PrioritySelector;
+    use crate::masa::MasaHooks;
 
     /// SAFETY:
     /// - Caller must ensure that the same type parameter P is used when setting and retrieving the parent context.
-    pub unsafe fn get_parent_ctx<'a, P: PrioritySelector>() -> Option<&'a P::ParentContext> {
+    pub unsafe fn get_parent_ctx<'a, M: MasaHooks>() -> Option<&'a M::ParentContext> {
         let p = super::PARENT_CTX.get();
-        let parent_ctx = p as *const P::ParentContext;
+        let parent_ctx = p as *const M::ParentContext;
         parent_ctx.as_ref()
     }
 }
 
 ///
 pub mod server {
-    use crate::masa::PrioritySelector;
+    use crate::masa::MasaHooks;
 
     /// Set parent context.
     ///
     /// This is an internal API exposed only for the code-generated tonic code.
     /// Do not call unless you know what it's used for.
-    pub fn set_parent_ctx<'a, P>(parent_ctx: &'a P::ParentContext)
+    pub fn set_parent_ctx<'a, M>(parent_ctx: &'a M::ParentContext)
     where
-        P: PrioritySelector,
+        M: MasaHooks,
     {
-        super::PARENT_CTX.replace(parent_ctx as *const P::ParentContext as *const ());
+        super::PARENT_CTX.replace(parent_ctx as *const M::ParentContext as *const ());
     }
 
     /// Unset parent context.
     ///
     /// This is an internal API exposed only for the code-generated tonic code.
     /// Do not call unless you know what it's used for.
-    pub fn reset_parent_ctx<'a, P>()
+    pub fn reset_parent_ctx<'a, M>()
     where
-        P: PrioritySelector,
+        M: MasaHooks,
     {
         super::PARENT_CTX.replace(core::ptr::null());
     }

@@ -16,7 +16,7 @@ use masa_integration_tests::pb::{
     Input1, Input2, Output1, Output2,
 };
 use tonic::{
-    masa::{ClientHooks, ParentHooks, PrioritySelector, ServerHooks},
+    masa::{ClientHooks, MasaHooks, ParentHooks, ServerHooks},
     transport::Server,
     GrpcMethod, Request, Response, Status,
 };
@@ -38,14 +38,14 @@ impl<P> ParentSvc<P> {
 }
 
 #[tonic::async_trait]
-impl<P> ParentService for ParentSvc<P>
+impl<M> ParentService for ParentSvc<M>
 where
-    P: PrioritySelector,
-    P::ChildContext: Send + Sync + 'static,
-    P::ParentContext: 'static,
+    M: MasaHooks,
+    M::ChildContext: Send + Sync + 'static,
+    M::ParentContext: 'static,
 {
     async fn rpc(&self, _req: Request<Input1>) -> Result<Response<Output1>, Status> {
-        let mut client = ChildServiceClient::<_, P>::connect_with_custom_context(format!(
+        let mut client = ChildServiceClient::<_, M>::connect_with_custom_context(format!(
             "http://{}",
             self.child_addr
         ))
@@ -61,7 +61,7 @@ where
     }
 
     async fn fanout_rpc(&self, _req: Request<Input1>) -> Result<Response<Output1>, Status> {
-        let client = ChildServiceClient::<_, P>::connect_with_custom_context(format!(
+        let client = ChildServiceClient::<_, M>::connect_with_custom_context(format!(
             "http://{}",
             self.child_addr
         ))
@@ -120,19 +120,19 @@ impl ClientHooks for MockChildCtx {
     }
 }
 
-async fn make_parent_child_svcs<P>(
+async fn make_parent_child_svcs<M>(
     parent_svc_addr: &'static str,
     child_svc_addr: &'static str,
     fanout_factor: usize,
 ) -> (tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>)
 where
-    P: PrioritySelector,
-    P::ChildContext: Send + Sync + 'static,
-    P::ParentContext: 'static,
+    M: MasaHooks,
+    M::ChildContext: Send + Sync + 'static,
+    M::ParentContext: 'static,
 {
     let child_svc = tokio::spawn(async {
         Server::builder()
-            .add_service(ChildServiceServer::<_, P>::with_custom_context(ChildSvc))
+            .add_service(ChildServiceServer::<_, M>::with_custom_context(ChildSvc))
             .serve_with_masa(child_svc_addr.parse().unwrap())
             .await
             .unwrap();
@@ -140,8 +140,8 @@ where
 
     let parent_svc = tokio::spawn(async move {
         Server::builder()
-            .add_service(ParentServiceServer::<_, P>::with_custom_context(
-                ParentSvc::<P>::new(child_svc_addr, fanout_factor),
+            .add_service(ParentServiceServer::<_, M>::with_custom_context(
+                ParentSvc::<M>::new(child_svc_addr, fanout_factor),
             ))
             .serve_with_masa(parent_svc_addr.parse().unwrap())
             .await
@@ -164,9 +164,9 @@ async fn test_service_ctx_construction() {
         }
     }
 
-    struct MockPrioritySelector;
+    struct MockMasaHooks;
 
-    impl PrioritySelector for MockPrioritySelector {
+    impl MasaHooks for MockMasaHooks {
         type ParentContext = MockParentCtx;
         type ChildContext = MockChildCtx;
         type ServerContext = TestCtorCountServerCtx;
@@ -178,11 +178,9 @@ async fn test_service_ctx_construction() {
             let addr = format!("127.0.0.1:{}", 7878 + i);
             tokio::spawn(async move {
                 Server::builder()
-                    .add_service(
-                        ChildServiceServer::<_, MockPrioritySelector>::with_custom_context(
-                            ChildSvc,
-                        ),
-                    )
+                    .add_service(ChildServiceServer::<_, MockMasaHooks>::with_custom_context(
+                        ChildSvc,
+                    ))
                     .serve_with_masa(addr.parse().unwrap())
                     .await
                     .unwrap();
@@ -227,9 +225,9 @@ async fn test_parent_ctx_before_after_rpc_hooks() {
         }
     }
 
-    struct MockPrioritySelector;
+    struct MockMasaHooks;
 
-    impl PrioritySelector for MockPrioritySelector {
+    impl MasaHooks for MockMasaHooks {
         type ParentContext = TestChildRpcParentCtx;
         type ChildContext = MockChildCtx;
         type ServerContext = MockServerCtx;
@@ -238,12 +236,9 @@ async fn test_parent_ctx_before_after_rpc_hooks() {
     let parent_svc_addr = "127.0.0.1:4455";
     let child_svc_addr = "127.0.0.1:4466";
     let fanout_factor = 10;
-    let (_parent, _child) = make_parent_child_svcs::<MockPrioritySelector>(
-        parent_svc_addr,
-        child_svc_addr,
-        fanout_factor,
-    )
-    .await;
+    let (_parent, _child) =
+        make_parent_child_svcs::<MockMasaHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
+            .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
@@ -286,9 +281,9 @@ async fn test_child_ctx_before_after_rpc_hooks() {
         }
     }
 
-    struct MockPrioritySelector;
+    struct MockMasaHooks;
 
-    impl PrioritySelector for MockPrioritySelector {
+    impl MasaHooks for MockMasaHooks {
         type ParentContext = MockParentCtx;
         type ChildContext = TestInvocationChildCtx;
         type ServerContext = MockServerCtx;
@@ -298,12 +293,9 @@ async fn test_child_ctx_before_after_rpc_hooks() {
     let child_svc_addr = "127.0.0.1:4366";
     let fanout_factor = 10;
 
-    let (_parent, _child) = make_parent_child_svcs::<MockPrioritySelector>(
-        parent_svc_addr,
-        child_svc_addr,
-        fanout_factor,
-    )
-    .await;
+    let (_parent, _child) =
+        make_parent_child_svcs::<MockMasaHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
+            .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
@@ -351,9 +343,9 @@ async fn test_parent_ctx_before_after_poll_hooks() {
         }
     }
 
-    struct MockPrioritySelector;
+    struct MockMasaHooks;
 
-    impl PrioritySelector for MockPrioritySelector {
+    impl MasaHooks for MockMasaHooks {
         type ParentContext = TestChildRpcParentCtx;
         type ChildContext = MockChildCtx;
         type ServerContext = MockServerCtx;
@@ -362,12 +354,9 @@ async fn test_parent_ctx_before_after_poll_hooks() {
     let parent_svc_addr = "127.0.0.1:4477";
     let child_svc_addr = "127.0.0.1:4488";
     let fanout_factor = 1;
-    let (_parent, _child) = make_parent_child_svcs::<MockPrioritySelector>(
-        parent_svc_addr,
-        child_svc_addr,
-        fanout_factor,
-    )
-    .await;
+    let (_parent, _child) =
+        make_parent_child_svcs::<MockMasaHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
+            .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
@@ -398,9 +387,9 @@ async fn test_parent_ctx_finalize_hook() {
         }
     }
 
-    struct MockPrioritySelector;
+    struct MockMasaHooks;
 
-    impl PrioritySelector for MockPrioritySelector {
+    impl MasaHooks for MockMasaHooks {
         type ParentContext = TestChildRpcParentCtx;
         type ChildContext = MockChildCtx;
         type ServerContext = MockServerCtx;
@@ -409,12 +398,9 @@ async fn test_parent_ctx_finalize_hook() {
     let parent_svc_addr = "127.0.0.1:4499";
     let child_svc_addr = "127.0.0.1:4400";
     let fanout_factor = 1;
-    let (_parent, _child) = make_parent_child_svcs::<MockPrioritySelector>(
-        parent_svc_addr,
-        child_svc_addr,
-        fanout_factor,
-    )
-    .await;
+    let (_parent, _child) =
+        make_parent_child_svcs::<MockMasaHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
+            .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))

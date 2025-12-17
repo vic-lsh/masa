@@ -1,15 +1,26 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Api, Latency, RequestClass, RequestId, TestId, Timestamp};
+use crate::{Api, Latency, RequestId, Timestamp};
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", content = "duration")]
+pub enum FutureSpan {
+    #[serde(rename = "compute")]
+    Compute(u64),
+    #[serde(rename = "local_block")]
+    LocalBlock(u64),
+    #[serde(rename = "child_block")]
+    ChildBlock(u64),
+    #[serde(rename = "queue")]
+    Queueing(u64),
+}
 
 /// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Context {
     api: Api,
-    test_id: TestId,
     request_id: RequestId,
     slo: Latency,
-    request_class: RequestClass,
     start_at: Timestamp,
     deadline: Timestamp,
     frontend_elapse: Option<u64>,
@@ -19,19 +30,15 @@ impl Context {
     /// Create a new Masa context.
     pub fn new(
         api: Api,
-        test_id: TestId,
         request_id: RequestId,
         slo: Latency,
-        request_class: RequestClass,
         start_at: Timestamp,
         deadline: Timestamp,
     ) -> Self {
         Self {
             api,
-            test_id,
             request_id,
             slo,
-            request_class,
             start_at,
             deadline,
             frontend_elapse: None,
@@ -43,11 +50,6 @@ impl Context {
         &self.api
     }
 
-    /// Get the test ID.
-    pub fn test_id(&self) -> TestId {
-        self.test_id
-    }
-
     /// Get the request ID.
     pub fn request_id(&self) -> RequestId {
         self.request_id
@@ -56,11 +58,6 @@ impl Context {
     /// Get the SLO.
     pub fn slo(&self) -> Latency {
         self.slo
-    }
-
-    /// Get the request class.
-    pub fn request_class(&self) -> RequestClass {
-        self.request_class
     }
 
     /// Get the start timestamp.

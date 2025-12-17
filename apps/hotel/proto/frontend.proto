@@ -21,7 +21,10 @@ message SearchRequest {
   optional string locale = 5;
 }
 
-message SearchResponse { repeated Hotel hotels = 1; }
+message SearchResponse { 
+  repeated Hotel hotels = 1;
+  repeated string childTraces = 2;
+}
 
 message Hotel {
   string name = 1;

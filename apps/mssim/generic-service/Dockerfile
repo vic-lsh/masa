@@ -1,5 +1,6 @@
-# Use a recent Rust version for building
-FROM rust:latest AS rust_builder
+# syntax=docker/dockerfile:1.5
+
+FROM rust:1.90.0-bookworm AS builder
 
 WORKDIR /app
 
@@ -14,24 +15,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN rustup override set nightly
 
-# We need to copy the entire project (from workspace root)
-# This is because we want to link the generic-service with our runtime,
-# as well as other crates (e.g., sim-config)
+# Copy workspace sources needed for a full build
 COPY Cargo.toml Cargo.toml
 COPY Cargo.lock Cargo.lock
 COPY 3rd_party 3rd_party
 COPY apps apps
 COPY libs libs
 
-# Build the generic service
-RUN cargo build --release --bin generic-service
+ARG FEATURE_ARG=fifo
 
-# Declare the build argument for the container port (providing a default value of 8000)
-ARG SERVICE_CONTAINER_PORT=8000 
+# Build all binaries once so both targets can reuse the output
+RUN cargo build --release --bin generic-service --features "${FEATURE_ARG}"
+RUN cargo build --release --bin mssim-loadgen --features "${FEATURE_ARG}"
 
-# Expose the gRPC port using the build argument
-EXPOSE ${SERVICE_CONTAINER_PORT}
+COPY trace-analysis trace-analysis
+RUN ln -s /app/trace-analysis /trace-analysis
 
-# Command to run the service
-# The service code should read the port from the SERVICE_PORT environment variable
-CMD ["cargo", "run", "--release", "--bin", "generic-service"]
+FROM debian:trixie-slim AS generic-service
+COPY --from=builder /app/target/release/generic-service /usr/local/bin/generic-service
+
+WORKDIR /app
+ENV RUST_BACKTRACE=1
+CMD ["/usr/local/bin/generic-service"]
+
+FROM debian:trixie-slim AS loadgen
+COPY --from=builder /app/target/release/mssim-loadgen /usr/local/bin/mssim-loadgen
+COPY --from=builder /app/trace-analysis /app/trace-analysis
+COPY --from=builder /trace-analysis /trace-analysis
+
+WORKDIR /app
+ENV RUST_BACKTRACE=1
+CMD ["/usr/local/bin/mssim-loadgen"]
