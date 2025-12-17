@@ -1,5 +1,5 @@
-use app_utils::pool::McPool;
 use async_memcached::AsciiProtocol;
+use async_memcached::Client as McClient;
 use mongodb::{bson::doc, options::ClientOptions, Client as MongoClient, Collection};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -27,13 +27,22 @@ fn generate_static_data() -> Vec<UserMentionStruct> {
 }
 
 pub async fn initialize_database() -> Result<MongoClient, Box<dyn Error>> {
+    // let new_user_mentions = generate_static_data();
+
+    // let url = "mongodb://127.0.0.1:27017";
+    // info!("Attempting connection to {}", url);
+
+    // let client_options = ClientOptions::parse(&url).await?;
+    // let client = MongoClient::with_options(client_options)?;
+    // info!("Successfully connected to MongoDB");
+
     let new_user_mentions = generate_static_data();
 
-    let mongo_url =
-        env::var("MONGO_URL").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
-    info!("Attempting connection to {}", mongo_url);
+    let url = env::var("MONGO_URL").expect("MONGO_URL environment variable must be set");
 
-    let client_options = ClientOptions::parse(&mongo_url).await?;
+    info!("Attempting connection to {}", url);
+
+    let client_options = ClientOptions::parse(&url).await?;
     let client = MongoClient::with_options(client_options)?;
     info!("Successfully connected to MongoDB");
 
@@ -62,22 +71,29 @@ pub async fn initialize_database() -> Result<MongoClient, Box<dyn Error>> {
     Ok(client)
 }
 
-pub async fn initialize_memcached_pool() -> Result<McPool, Box<dyn Error>> {
-    let memcached_url = env::var("MEMCACHED_URL")
-        .unwrap_or_else(|_| "tcp://usermention_memcached:11211".to_string());
-    let pool = McPool::new(memcached_url, 10000000);
+pub async fn initialize_memcached() -> Result<McClient, Box<dyn Error>> {
+    // let url = "tcp://127.0.0.1:11211";
+    // let mut client = McClient::new(url).await?;
+    // info!("Successfully connected to Memcached");
+
+    // Read the URL from the environment variable
+    let url = env::var("MEMCACHED_URL").expect("MEMCACHED_URL environment variable must be set");
+
+    // let mut client = McClient::new(&url).await?; // Pass the URL as a reference
+    // let mut client: McClient<AsciiProtocol<tokio::net::TcpStream>> = McClient::new(&url).await?;
+    let mut client = McClient::new(&url).await?;
     info!("Successfully connected to Memcached");
 
-    let mut client = pool.get().await;
+    // Clean the memcached
     client.flush_all().await?;
 
-    // Insert first 1000 entries into Memcached
-    for id in 1..=1000 {
-        let key = format!("user{}", id);
-        let value = id.to_string();
-        client.set(&key, &value, Some(0), None).await?;
+    let keys = vec!["adam", "james", "john"];
+
+    let values = vec!["1", "2", "3"];
+
+    for (key, value) in keys.iter().zip(values.iter()) {
+        client.set(*key, *value, Some(0), None).await?;
     }
 
-    drop(client);
-    Ok(pool)
+    Ok(client)
 }
