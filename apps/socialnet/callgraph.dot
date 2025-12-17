@@ -1,0 +1,195 @@
+digraph G {
+  rankdir=LR;
+  compound=true;
+
+  graph [
+    bgcolor="white",
+    fontname="Helvetica",
+    splines="spline",
+    overlap=false,
+    outputorder="edgesfirst"
+  ];
+
+  node [
+    shape=oval,
+    style="filled",
+    fillcolor="#F5F7FA",
+    color="#4A5568",
+    fontname="Helvetica",
+    fontsize=12
+  ];
+
+  edge [
+    color="#718096",
+    penwidth=1.2,
+    arrowsize=0.8
+  ];
+
+  // Frontend cluster
+  subgraph cluster_frontend {
+    label="Frontend";
+    style="rounded";
+    bgcolor="white";
+    color="#2D3748";
+    peripheries=2;
+    fontname="Helvetica";
+    fontsize=14;
+    RegisterUser;
+    Login;
+    Follow;
+    Unfollow;
+    FrontendComposePost [label="ComposePost"];
+    ReadUserTimeline;
+    ReadHomeTimeline;
+    GetFollowers;
+    GetFollowees;
+  }
+
+  // Edges
+  RegisterUser -> User;
+  Login -> User;
+  Follow -> SocialGraph;
+  Unfollow -> SocialGraph;
+  GetFollowers -> SocialGraph;
+  GetFollowees -> SocialGraph;
+  FrontendComposePost -> ComposePost;
+  ReadUserTimeline -> UserTimeline;
+  ReadHomeTimeline -> HomeTimeline;
+  ComposePost -> UserTimeline;
+  ComposePost -> PostStorage;
+  ComposePost -> HomeTimeline;
+  ComposePost -> User;
+  ComposePost -> Text;
+  ComposePost -> UserMention;
+  ComposePost -> UniqueId;
+  ComposePost -> Media;
+
+  UserTimeline -> PostStorage;
+  UserTimeline -> UserTimelineRedis [color="#CBD5E0"];
+  UserTimeline -> UserTimelineMongo [color="#CBD5E0"];
+
+  HomeTimeline -> SocialGraph;
+  HomeTimeline -> HomeTimelineRedis [color="#CBD5E0"];
+  HomeTimeline -> HomeTimelineMongo [color="#CBD5E0"];
+
+  SocialGraph -> User;
+  SocialGraph -> SocialGraphRedis [color="#CBD5E0"];
+  SocialGraph -> SocialGraphMongo [color="#CBD5E0"];
+
+  User -> UserRedis [color="#CBD5E0"];
+  User -> UserMongo [color="#CBD5E0"];
+
+  Text -> UrlShorten;
+  Text -> UserMention;
+
+  UserMention -> UserMentionMemcached [color="#CBD5E0"];
+  UserMention -> UserMentionMongo [color="#CBD5E0"];
+
+  PostStorage -> PostStorageMemcached [color="#CBD5E0"];
+  PostStorage -> PostStorageMongo [color="#CBD5E0"];
+
+  UrlShorten -> UrlShortenMongo [color="#CBD5E0"];
+
+  // Storage group (positioned to the right)
+  subgraph cluster_storage {
+    label="storage";
+    style="rounded";
+    bgcolor="white";
+    color="#2D3748";
+    peripheries=2;
+    fontname="Helvetica";
+    fontsize=14;
+
+    subgraph cluster_UserTimeline_storage {
+      label="UserTimeline";
+      labeljust="r";
+      labelloc="t";
+      style="rounded";
+      color="#CBD5E0";
+      UserTimelineRedis [label="Redis", shape=box, width=0.5, height=0.3, fontsize=10];
+      UserTimelineMongo [label="Mongo", shape=box, width=0.5, height=0.3, fontsize=10];
+    }
+
+    subgraph cluster_HomeTimeline_storage {
+      label="HomeTimeline";
+      labeljust="r";
+      labelloc="t";
+      style="rounded";
+      color="#CBD5E0";
+      HomeTimelineRedis [label="Redis", shape=box, width=0.5, height=0.3, fontsize=10];
+      HomeTimelineMongo [label="Mongo", shape=box, width=0.5, height=0.3, fontsize=10];
+    }
+
+    subgraph cluster_SocialGraph_storage {
+      label="SocialGraph";
+      labeljust="r";
+      labelloc="t";
+      style="rounded";
+      color="#CBD5E0";
+      SocialGraphRedis [label="Redis", shape=box, width=0.5, height=0.3, fontsize=10];
+      SocialGraphMongo [label="Mongo", shape=box, width=0.5, height=0.3, fontsize=10];
+    }
+
+    subgraph cluster_User_storage {
+      label="User";
+      labeljust="r";
+      labelloc="t";
+      style="rounded";
+      color="#CBD5E0";
+      UserRedis [label="Redis", shape=box, width=0.5, height=0.3, fontsize=10];
+      UserMongo [label="Mongo", shape=box, width=0.5, height=0.3, fontsize=10];
+    }
+
+    subgraph cluster_UserMention_storage {
+      label="UserMention";
+      labeljust="r";
+      labelloc="t";
+      style="rounded";
+      color="#CBD5E0";
+      UserMentionMemcached [label="Memcached", shape=box, width=0.5, height=0.3, fontsize=10];
+      UserMentionMongo [label="Mongo", shape=box, width=0.5, height=0.3, fontsize=10];
+    }
+
+    subgraph cluster_PostStorage_storage {
+      label="PostStorage";
+      labeljust="r";
+      labelloc="t";
+      style="rounded";
+      color="#CBD5E0";
+      PostStorageMemcached [label="Memcached", shape=box, width=0.5, height=0.3, fontsize=10];
+      PostStorageMongo [label="Mongo", shape=box, width=0.5, height=0.3, fontsize=10];
+    }
+
+    subgraph cluster_UrlShorten_storage {
+      label="UrlShorten";
+      labeljust="r";
+      labelloc="t";
+      style="rounded";
+      color="#CBD5E0";
+      UrlShortenMongo [label="Mongo", shape=box, width=0.5, height=0.3, fontsize=10];
+    }
+
+    subgraph cluster_WriteHomeTimeline_storage {
+      label="WriteHomeTimeline";
+      labeljust="r";
+      labelloc="t";
+      style="rounded";
+      color="#CBD5E0";
+      WriteHomeTimelineRedis [label="Redis", shape=box, width=0.5, height=0.3, fontsize=10];
+      WriteHomeTimelineMongo [label="Mongo", shape=box, width=0.5, height=0.3, fontsize=10];
+    }
+  }
+
+  // Force Stateless Services to be to the left of storage
+  // Ensure stateless services are positioned to the left of storage
+  UserTimeline -> UserTimelineRedis [style=invis, constraint=true];
+  PostStorage -> UserTimelineRedis [style=invis, constraint=true];
+  HomeTimeline -> UserTimelineRedis [style=invis, constraint=true];
+  User -> UserTimelineRedis [style=invis, constraint=true];
+  Text -> UserTimelineRedis [style=invis, constraint=true];
+  UserMention -> UserTimelineRedis [style=invis, constraint=true];
+  UniqueId -> UserTimelineRedis [style=invis, constraint=true];
+  Media -> UserTimelineRedis [style=invis, constraint=true];
+  SocialGraph -> UserTimelineRedis [style=invis, constraint=true];
+  UrlShorten -> UserTimelineRedis [style=invis, constraint=true];
+}
