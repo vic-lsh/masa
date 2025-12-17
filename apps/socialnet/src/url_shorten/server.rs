@@ -2,9 +2,9 @@ use mongodb::Client as MongoClient;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::env;
-use std::env;
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
+use tracing::{error, info};
 
 use crate::url_shorten::db::{
     get_expanded_urls, get_shortened_urls, initialize_database, insert_url_mappings,
