@@ -1,8 +1,8 @@
 use app_utils::pool::McPool;
 use async_memcached::AsciiProtocol;
+use async_memcached::Client as McClient;
 use mongodb::{bson::doc, options::ClientOptions, Client as MongoClient, Collection};
 use serde::{Deserialize, Serialize};
-use std::env;
 use std::env;
 use std::error::Error;
 use tracing::{error, info};
@@ -43,7 +43,7 @@ pub async fn initialize_database() -> Result<MongoClient, Box<dyn Error>> {
 
     info!("Attempting connection to {}", url);
 
-    let client_options = ClientOptions::parse(&mongo_url).await?;
+    let client_options = ClientOptions::parse(&url).await?;
     let client = MongoClient::with_options(client_options)?;
     info!("Successfully connected to MongoDB");
 
@@ -85,16 +85,16 @@ pub async fn initialize_memcached() -> Result<McClient, Box<dyn Error>> {
     let mut client = McClient::new(&url).await?;
     info!("Successfully connected to Memcached");
 
-    let mut client = pool.get().await;
+    // Clean the memcached
     client.flush_all().await?;
 
-    // Insert first 1000 entries into Memcached
-    for id in 1..=1000 {
-        let key = format!("user{}", id);
-        let value = id.to_string();
-        client.set(&key, &value, Some(0), None).await?;
+    let keys = vec!["adam", "james", "john"];
+
+    let values = vec!["1", "2", "3"];
+
+    for (key, value) in keys.iter().zip(values.iter()) {
+        client.set(*key, *value, Some(0), None).await?;
     }
 
-    drop(client);
-    Ok(pool)
+    Ok(client)
 }
