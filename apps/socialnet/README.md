@@ -61,7 +61,7 @@ compose-post-service:
 
 Note that each service has disaggregated database services.
 
-![service dependencies for socialnet app](apps/socialnet/socialnet-service-graph.png)
+![service dependencies for socialnet app](apps/socialnet/callgraph.png)
 
 # Getting latency graph
 
