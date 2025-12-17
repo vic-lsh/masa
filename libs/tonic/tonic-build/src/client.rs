@@ -63,7 +63,7 @@ pub(crate) fn generate_internal<T: Service>(
             use tonic::codegen::*;
             use tonic::codegen::http::Uri;
 
-            // requried to call functions in the trait, referenced through PrioritySelector
+            // requried to call functions in the trait, referenced through MasaHooks
             #[allow(unused_imports)]
             use tonic::masa::{ClientHooks, ParentHooks};
 
@@ -72,16 +72,16 @@ pub(crate) fn generate_internal<T: Service>(
             #[derive(Debug)]
             pub struct #service_ident<
                 T,
-                P: tonic::masa::PrioritySelector = tonic::masa::DefaultPrioritySelector,
+                M: tonic::masa::MasaHooks = tonic::masa::DefaultMasaHooks,
             > {
                 inner: tonic::client::Grpc<T>,
-                _ctx_ty: std::marker::PhantomData<P>,
+                _ctx_ty: std::marker::PhantomData<M>,
             }
 
-            impl<T, P> Clone for #service_ident<T, P>
+            impl<T, M> Clone for #service_ident<T, M>
             where
                 T: Clone,
-                P: tonic::masa::PrioritySelector
+                M: tonic::masa::MasaHooks
             {
                 fn clone(&self) -> Self {
                     Self {
@@ -93,7 +93,7 @@ pub(crate) fn generate_internal<T: Service>(
 
             #connect
 
-            impl<T> #service_ident<T, tonic::masa::DefaultPrioritySelector>
+            impl<T> #service_ident<T, tonic::masa::DefaultMasaHooks>
             where
                 T: tonic::client::GrpcService<tonic::body::BoxBody>,
                 T::Error: Into<StdError>,
@@ -127,13 +127,13 @@ pub(crate) fn generate_internal<T: Service>(
 
             }
 
-            impl<T, P> #service_ident<T, P>
+            impl<T, M> #service_ident<T, M>
             where
                 T: tonic::client::GrpcService<tonic::body::BoxBody>,
                 T::Error: Into<StdError>,
                 T::ResponseBody: Body<Data = Bytes> + Send  + 'static,
                 <T::ResponseBody as Body>::Error: Into<StdError> + Send,
-                P: tonic::masa::PrioritySelector
+                M: tonic::masa::MasaHooks
             {
                 fn new_impl(inner: T) -> Self {
                     let inner = tonic::client::Grpc::new(inner);
@@ -189,7 +189,7 @@ pub(crate) fn generate_internal<T: Service>(
 fn generate_get_parent_rpc_ctx(_service: &impl Service) -> TokenStream {
     quote! {
         /// Internal. Obtain the parent RPC in which this RPC client stub operates.
-        fn get_parent_ctx(&self) -> Option<&'_ P::ParentContext> {
+        fn get_parent_ctx(&self) -> Option<&'_ M::ParentContext> {
             // SAFETY:
             // - same parent ctx type used in client and server
             //   - if the caller didn't configure P (the normal case where applications
@@ -197,7 +197,7 @@ fn generate_get_parent_rpc_ctx(_service: &impl Service) -> TokenStream {
             //     client and server.
             //   - if custom P types are configured (e.g., in tests), the user have to
             //     ensure that. code-gen doesn't enforce this rule yet.
-            unsafe { tonic::masa::context::client::get_parent_ctx::<P>() }
+            unsafe { tonic::masa::context::client::get_parent_ctx::<M>() }
         }
     }
 }
@@ -207,7 +207,7 @@ fn generate_connect(service_ident: &syn::Ident, enabled: bool) -> TokenStream {
     let connect_impl = quote! {
         impl #service_ident<
             tonic::transport::Channel,
-            tonic::masa::DefaultPrioritySelector,
+            tonic::masa::DefaultMasaHooks,
         > {
             /// Attempt to create a new client by connecting to a given endpoint.
             pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
@@ -220,9 +220,9 @@ fn generate_connect(service_ident: &syn::Ident, enabled: bool) -> TokenStream {
             }
         }
 
-        impl<P> #service_ident<tonic::transport::Channel, P>
+        impl<M> #service_ident<tonic::transport::Channel, M>
         where
-            P: tonic::masa::PrioritySelector
+            M: tonic::masa::MasaHooks
         {
             /// Attempt to create a new client by connecting to a given endpoint.
             pub async fn connect_with_custom_context<D>(dst: D) -> Result<Self, tonic::transport::Error>
@@ -357,7 +357,7 @@ fn generate_unary<T: Service>(
            let grpc_method = GrpcMethod::new(#service_name, #method_name);
            req.extensions_mut().insert(grpc_method);
 
-           let mut child_ctx = P::ChildContext::new(grpc_method, &req);
+           let mut child_ctx = M::ChildContext::new(grpc_method, &req);
 
            #before_child_rpc
 

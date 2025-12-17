@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::sync::Arc;
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{Request, Response, Status, transport::Server};
 
 use crate::proto::input_parser_server::{InputParser, InputParserServer};
 use crate::proto::{ParseRequest, ParseResponse};

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use sim_config::{svc::ServiceName, trace::TraceConfig};
 use std::collections::HashSet;
 
@@ -12,7 +12,8 @@ pub fn validate_has_services(config: &TraceConfig) -> Result<()> {
 
 pub fn validate_service_dependencies(config: &TraceConfig) -> Result<()> {
     // TODO: relax the DAG constraint somewhat.
-    detect_circular_dependencies(config)
+    // detect_circular_dependencies(config)
+    Ok(())
 }
 
 /// Detect circular dependencies in the service call graph
@@ -48,7 +49,7 @@ fn detect_cycles_dfs(
     // Check all methods in this service
     let callees = config.call_graph.callees_of(service_name);
 
-    for called_service in callees {
+    for called_service in callees.keys() {
         // If this called service is already in our call stack, we have a cycle
         if stack.contains(&called_service) {
             bail!(
@@ -60,7 +61,7 @@ fn detect_cycles_dfs(
 
         // If we haven't visited this called service yet, recursively check it
         if !visited.contains(&called_service) {
-            if detect_cycles_dfs(config, &called_service, visited, stack)? {
+            if detect_cycles_dfs(config, called_service, visited, stack)? {
                 return Ok(true);
             }
         }

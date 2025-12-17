@@ -12,9 +12,8 @@ set -e
 policy_flags=(
     "fifo"
     "prio_global"
-    "prio_local"
-    "prio_global_early"
-    "prio_local_early"
+    "prio_local_direct"
+    "prio_local_indirect"
 )
 
 # Todo: add other applications
