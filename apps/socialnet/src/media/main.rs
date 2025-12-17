@@ -1,9 +1,8 @@
 use crate::server::create_service;
+use std::env;
 use std::net::SocketAddr;
 use tonic::transport::Server;
-use std::env;
 mod server;
-
 
 pub mod media {
     tonic::include_proto!("media");
@@ -22,8 +21,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Server::builder().add_service(service).serve(addr).await?;
 
     // Ok(())
-    let listen_addr = env::var("MEDIA_SERVICE_LISTEN_ADDR")
-        .unwrap_or_else(|_| "0.0.0.0:8080".to_string());
+    let listen_addr =
+        env::var("MEDIA_SERVICE_LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
 
     let addr = listen_addr.parse::<SocketAddr>()?;
 

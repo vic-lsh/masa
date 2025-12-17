@@ -1,6 +1,6 @@
-use log::{error, warn};
 use deadpool_redis::redis::{self, AsyncCommands, Client as RedisClient};
-use deadpool_redis::{Pool, Connection};
+use deadpool_redis::{Connection, Pool};
+use log::{error, warn};
 use std::collections::HashSet;
 use tonic::{Request, Response, Status};
 
@@ -26,7 +26,6 @@ use social_graph::GetFollowersRequest;
 use tonic::transport::masa_channel::LoadBalancedChannel;
 
 use std::env;
-
 
 use socialnet::user_timeline;
 
@@ -81,13 +80,13 @@ impl HomeTimelineService {
         redis_pool: Pool,
         args: &Args, // CHANGED: Accept Args struct
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        
         // Initialize Post Storage Client
         let post_storage_channel = LoadBalancedChannel::new(
             args.post_storage_ip.clone(),
             args.post_storage_port,
             args.post_storage_replicas,
-        ).await;
+        )
+        .await;
         let post_storage_client = PostStorageServiceClient::new(post_storage_channel);
 
         // Initialize Social Graph Client
@@ -95,7 +94,8 @@ impl HomeTimelineService {
             args.social_graph_ip.clone(),
             args.social_graph_port,
             args.social_graph_replicas,
-        ).await;
+        )
+        .await;
         let social_graph_client = SocialGraphServiceClient::new(social_graph_channel);
 
         Ok(Self {
@@ -164,7 +164,6 @@ impl GrpcService for HomeTimelineService {
         Ok(Response::new(ReadHomeTimelineResponse {
             posts: posts_response.into_inner().posts,
         }))
-
     }
 
     /// Handles the WriteHomeTimeline RPC call.
@@ -203,12 +202,13 @@ impl GrpcService for HomeTimelineService {
         }
 
         // Explicitly tell the compiler the Connection type is inferred `_` and Return type is `()`
-        pipe.query_async::<_, ()>(&mut redis_conn).await.map_err(|e| {
-            error!("Redis pipeline ZADD failed: {}", e);
-            Status::internal("Failed to write timeline to cache")
-        })?;
+        pipe.query_async::<_, ()>(&mut redis_conn)
+            .await
+            .map_err(|e| {
+                error!("Redis pipeline ZADD failed: {}", e);
+                Status::internal("Failed to write timeline to cache")
+            })?;
 
         Ok(Response::new(WriteHomeTimelineResponse {}))
-
     }
 }

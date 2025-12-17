@@ -2,19 +2,17 @@
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
-
 mod server;
 use server::{social_network::user_service_server::UserServiceServer, UserServer};
 
+use mongodb::Client as MongoClient;
 use std::env;
 use tonic::transport::Server;
-use mongodb::Client as MongoClient;
 
 use deadpool_redis::{Config, Runtime};
 
 // Import the AsyncCommands trait from deadpool's re-exported redis crate
 // use deadpool_redis::redis::AsyncCommands;
-
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -26,18 +24,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-
     // 2. Read ALL necessary environment variables
-    let listen_addr = env::var("USER_SERVICE_LISTEN_ADDR")
-        .unwrap_or_else(|_| "0.0.0.0:8080".to_string());
-    let mongo_url = env::var("MONGO_URL")
-        .expect("MONGO_URL environment variable must be set");
-    let redis_url = env::var("REDIS_URL")
-        .expect("REDIS_URL environment variable must be set");
-    let jwt_secret = env::var("JWT_SECRET")
-        .expect("JWT_SECRET environment variable must be set");
-    let machine_id = env::var("MACHINE_ID")
-        .unwrap_or_else(|_| "01".to_string());
+    let listen_addr =
+        env::var("USER_SERVICE_LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
+    let mongo_url = env::var("MONGO_URL").expect("MONGO_URL environment variable must be set");
+    let redis_url = env::var("REDIS_URL").expect("REDIS_URL environment variable must be set");
+    let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET environment variable must be set");
+    let machine_id = env::var("MACHINE_ID").unwrap_or_else(|_| "01".to_string());
 
     // 3. Initialize MongoDB client
     let mongo_client = MongoClient::with_uri_str(&mongo_url).await?;
@@ -48,10 +41,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = Config::from_url(redis_url);
     let pool = cfg.create_pool(Some(Runtime::Tokio1))?;
     info!("Successfully created Redis connection pool.");
-    
+
     // Test the pool by getting a connection
     {
-        let mut conn = pool.get().await.expect("Failed to get Redis connection from pool");
+        let mut conn = pool
+            .get()
+            .await
+            .expect("Failed to get Redis connection from pool");
         // --- THIS IS THE FIX ---
         // Use the .ping() method from the AsyncCommands trait
         let _: () = deadpool_redis::redis::cmd("PING")
@@ -60,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .expect("Redis PING failed");
         info!("Successfully tested Redis connection pool.");
     }
-    
+
     // 5. Create your service instance
     let user_service = UserServer::new(
         mongo_client.database("user").collection("user"),
