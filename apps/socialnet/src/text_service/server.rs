@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use log::info;
+use log::{error, info};
 use regex::Regex;
 
 use tonic::{Request, Response, Status};
