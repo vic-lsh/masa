@@ -1,5 +1,4 @@
 use crate::server::home_timeline::home_timeline_service_server::HomeTimelineServiceServer;
-use log::info;
 use std::env;
 use tonic::transport::Server;
 use tracing::Level;
@@ -9,8 +8,7 @@ mod server;
 use server::{Args as ServiceArgs, HomeTimelineService};
 use tracing_subscriber::FmtSubscriber;
 
-use deadpool_redis::redis;
-use deadpool_redis::{Config, Pool, Runtime};
+use deadpool_redis::{Config, Runtime};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

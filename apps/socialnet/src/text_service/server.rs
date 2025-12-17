@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use log::{error, info};
 use regex::Regex;
 
@@ -17,7 +15,6 @@ use text_svc::url_shorten_service::{
 
 use std::env;
 use tonic::transport::masa_channel::LoadBalancedChannel;
-use tonic::transport::Channel;
 
 pub mod text_svc {
     pub mod text_service {

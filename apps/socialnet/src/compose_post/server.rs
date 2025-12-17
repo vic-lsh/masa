@@ -9,7 +9,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use tonic::async_trait;
 use tonic::transport::masa_channel::LoadBalancedChannel;
-use tonic::transport::{Channel, Endpoint, Server};
+use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
 use crate::compose_post::compose_post_service_server::{
@@ -580,12 +580,6 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         .serve(addr)
         .await?;
     Ok(())
-}
-
-// when the replica count is only 1
-async fn connect_channel(addr: &str) -> Result<Channel, Box<dyn std::error::Error>> {
-    let endpoint = Endpoint::from_shared(addr.to_string())?;
-    Ok(endpoint.connect().await?)
 }
 
 async fn create_channel_for_service(
