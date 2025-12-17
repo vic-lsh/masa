@@ -1,5 +1,4 @@
 use crate::server::social_graph::social_graph_service_server::SocialGraphServiceServer;
-use log::info;
 use std::env;
 use tonic::transport::Server;
 use tracing::Level;
@@ -9,8 +8,7 @@ mod server;
 // Import the Service and the Args struct defined in server.rs
 use server::{Args as ServiceArgs, SocialGraphService};
 
-use deadpool_redis::redis;
-use deadpool_redis::{Config, Pool, Runtime};
+use deadpool_redis::{Config, Runtime};
 
 /// The command-line arguments for the social graph service (Local Config).
 #[derive(Debug, Clone)]

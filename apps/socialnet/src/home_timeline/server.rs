@@ -1,4 +1,4 @@
-use deadpool_redis::redis::{self, AsyncCommands, Client as RedisClient};
+use deadpool_redis::redis::AsyncCommands;
 use deadpool_redis::{Connection, Pool};
 use log::{error, warn};
 use std::collections::HashSet;

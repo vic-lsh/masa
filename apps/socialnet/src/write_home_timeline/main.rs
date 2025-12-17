@@ -7,7 +7,7 @@ use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 use deadpool_redis::redis;
-use deadpool_redis::{Config, Pool as DeadpoolRedisPool, Runtime};
+use deadpool_redis::Pool as DeadpoolRedisPool;
 
 // NEW IMPORT
 use tonic::transport::masa_channel::LoadBalancedChannel;
