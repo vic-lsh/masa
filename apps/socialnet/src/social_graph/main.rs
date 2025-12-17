@@ -1,52 +1,77 @@
 use crate::server::social_graph::social_graph_service_server::SocialGraphServiceServer;
-use clap::Parser;
-use log::info;
+use std::env;
 use tonic::transport::Server;
+use tracing::Level;
+use tracing_subscriber::FmtSubscriber;
 
 mod server;
-use server::SocialGraphService;
+// Import the Service and the Args struct defined in server.rs
+use server::{Args as ServiceArgs, SocialGraphService};
 
-/// The command-line arguments for the social graph service.
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Args {
-    /// The IP address and port to bind the server to.
-    #[arg(short, long, default_value = "0.0.0.0:8080")]
+use deadpool_redis::{Config, Runtime};
+
+/// The command-line arguments for the social graph service (Local Config).
+#[derive(Debug, Clone)]
+struct LocalArgs {
     addr: String,
-
-    /// The connection URI for the MongoDB instance.
-    #[arg(long, env = "MONGODB_URI")]
     mongodb_uri: String,
+    redis_url: String,
+    // Removed user_service_addr: It is now handled by ServiceArgs in server.rs
+}
 
-    /// The connection URL for the Redis primary instance.
-    #[arg(long, env = "REDIS_PRIMARY_URL")]
-    redis_primary_url: String,
+impl LocalArgs {
+    /// Load local configuration from environment variables.
+    fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(Self {
+            addr: env::var("SOCIAL_GRAPH_LISTEN_ADDR")
+                .unwrap_or_else(|_| "0.0.0.0:8080".to_string()),
 
-    /// The connection URL for the Redis replica instance (optional).
-    /// Used for read operations if provided.
-    #[arg(long, env = "REDIS_REPLICA_URL")]
-    redis_replica_url: Option<String>,
+            mongodb_uri: env::var("MONGO_URL").expect("MONGO_URL must be set"),
 
-    /// The gRPC endpoint for the User service.
-    #[arg(long, env = "USER_SERVICE_ADDR")]
-    user_service_addr: String,
+            redis_url: env::var("REDIS_URL").expect("REDIS_URL must be set"),
+        })
+    }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    let args = Args::parse();
+    // Use tracing for consistent logging
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(Level::INFO)
+        .finish();
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    let service = SocialGraphService::new(
-        &args.mongodb_uri,
-        &args.redis_primary_url,
-        args.redis_replica_url.as_deref(),
-        &args.user_service_addr,
-    )
-    .await?;
+    // 1. Load Local Config (DBs, Listen Addr)
+    let local_args = LocalArgs::from_env()?;
 
-    let addr = args.addr.parse()?;
-    info!("SocialGraphService listening on {}", addr);
+    // 2. Load Service Config (Replica IPs/Ports for User Service)
+    let service_args = ServiceArgs::from_env()?;
+
+    // --- Create Deadpool Redis Pool ---
+    let cfg = Config::from_url(local_args.redis_url.clone());
+    let redis_pool = cfg.create_pool(Some(Runtime::Tokio1)).expect("pool failed");
+    println!("Successfully created Redis connection pool.");
+
+    // Test the pool
+    {
+        let mut conn = redis_pool
+            .get()
+            .await
+            .expect("Failed to get Redis connection");
+        let _: String = deadpool_redis::redis::cmd("PING")
+            .query_async(&mut conn)
+            .await
+            .expect("Redis PING failed");
+        println!("Successfully tested Redis connection pool.");
+    }
+
+    // 3. Initialize Service
+    // Pass mongodb_uri, redis_pool, and the service_args (for user_service connection)
+    let service =
+        SocialGraphService::new(&local_args.mongodb_uri, redis_pool, &service_args).await?;
+
+    let addr = local_args.addr.parse().expect("incorrect parsing");
+    println!("SocialGraphService listening on {}", addr);
 
     Server::builder()
         .add_service(SocialGraphServiceServer::new(service))
