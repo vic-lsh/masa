@@ -1,16 +1,22 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use service_stubs::service_client::ServiceClient;
-use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
+use sim_config::deployment::Deployment;
 use sim_config::svc::{ServiceName, ServiceTraceConfig};
-use std::collections::HashMap;
 use std::env;
+use std::sync::Arc;
 use std::time::Instant;
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{transport::Server, Request, Response, Status};
-use tracing::level_filters::LevelFilter;
-use tracing::{error, warn};
+use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+
+mod bootstrap;
+mod parent_chain;
+mod service_replay;
+mod service_state;
+
+use service_state::ServiceState;
 
 pub mod service_stubs {
     tonic::include_proto!("service");
@@ -18,17 +24,14 @@ pub mod service_stubs {
 
 use service_stubs::service_server::{Service, ServiceServer};
 use service_stubs::{
-    PingRequest, PingResponse, RootRequest, RootResponse, ServiceRequest, ServiceResponse,
+    PingRequest, PingResponse, ReplayRequest, ReplayResponse, ResponseStatus, RootRequest,
+    RootResponse, ServiceRequest, ServiceResponse,
 };
 
-type RpcClient = ServiceClient<LoadBalancedChannel>;
+pub(crate) type RpcClient = ServiceClient<LoadBalancedChannel>;
 
-#[allow(dead_code)]
 struct AlibabaService {
-    config: ServiceTraceConfig,
-    clients: HashMap<ServiceName, RpcClient>,
-    deployment: Deployment,
-    self_svc_name: ServiceName,
+    state: Arc<ServiceState>,
 }
 
 impl AlibabaService {
@@ -37,50 +40,16 @@ impl AlibabaService {
         config: ServiceTraceConfig,
         deployment: Deployment,
     ) -> Result<Self> {
-        let children = config.call_graph.callees_of(&self_svc_name);
-
-        println!("Connecting to children: {:?}", children);
-        let clients = Self::connect_to_children(children, &deployment).await?;
-        println!("Children connected");
-
-        Ok(AlibabaService {
-            config,
-            clients,
-            deployment,
-            self_svc_name,
-        })
-    }
-
-    async fn connect_to_children(
-        children: impl IntoIterator<Item = ServiceName>,
-        deployment: &Deployment,
-    ) -> Result<HashMap<ServiceName, RpcClient>> {
-        let mut clients = HashMap::new();
-        let children_it = children.into_iter();
-        for child_svc_name in children_it {
-            let svc_info = deployment.services.get(&child_svc_name).with_context(|| {
-                format!("Child service {} not found in deployment", child_svc_name)
-            })?;
-            let client = Self::connect_to_child_retried(svc_info).await?;
-            println!("Connected to child service {}", child_svc_name);
-            clients.insert(child_svc_name.clone(), client);
+        let (state, bootstrap) = ServiceState::initialize(self_svc_name, config, deployment)?;
+        if let Some(connection_task) = bootstrap {
+            connection_task.spawn();
         }
-        Ok(clients)
+
+        Ok(Self { state })
     }
 
-    async fn connect_to_child_retried(svc_info: &ServiceDiscoveryInfo) -> Result<RpcClient> {
-        let ip = svc_info.ip.clone();
-        let channel = LoadBalancedChannel::new(
-            ip,
-            svc_info.port,
-            svc_info
-                .replicas
-                .try_into()
-                .expect("Replica count too high"),
-        )
-        .await;
-
-        Ok(ServiceClient::new(channel))
+    fn state(&self) -> &ServiceState {
+        &self.state
     }
 }
 
@@ -90,161 +59,116 @@ impl Service for AlibabaService {
         &self,
         request: Request<ServiceRequest>,
     ) -> Result<Response<ServiceResponse>, Status> {
-        let method_name = request.into_inner().method_name;
+        let parent_chain = parent_chain::decode_parent_chain(request.metadata())?;
+        let request = request.into_inner();
+        let method_name = request.method_name.clone();
 
-        self.handle_method(method_name.clone()).await?;
+        self.state()
+            .handle_method(
+                method_name.clone(),
+                request.req_id,
+                request.start_at,
+                parent_chain,
+            )
+            .await?;
 
         Ok(Response::new(ServiceResponse {
             calls: vec![],
-            method_name: method_name,
+            method_name,
         }))
     }
 
-    async fn root(&self, _request: Request<RootRequest>) -> Result<Response<RootResponse>, Status> {
-        // TODO: remove this coupling with alibaba's data
-        const ROOT_SVC_NAME: &'static str = "user";
+    async fn root(&self, request: Request<RootRequest>) -> Result<Response<RootResponse>, Status> {
+        const ROOT_SVC_NAME: &str = "user";
 
-        if self.self_svc_name.as_str() != ROOT_SVC_NAME {
+        if self.state().self_service_name().as_str() != ROOT_SVC_NAME {
             return Err(Status::permission_denied(format!(
                 "Root endpoint can only be called on service {}, not {}",
                 ROOT_SVC_NAME,
-                self.self_svc_name.as_str()
+                self.state().self_service_name().as_str()
             )));
         }
 
-        // All the root service does is calling into internal services
-        self.fanout().await?;
+        let request = request.into_inner();
+        self.state()
+            .fanout(request.req_id, request.start_at, Vec::new())
+            .await?;
 
-        Ok(Response::new(RootResponse {}))
+        Ok(Response::new(RootResponse {
+            req_id: request.req_id,
+        }))
     }
 
     async fn ping(&self, _request: Request<PingRequest>) -> Result<Response<PingResponse>, Status> {
         Ok(Response::new(PingResponse {}))
     }
-}
 
-fn busy_spin(duration_ms: f64) {
-    let start = std::time::Instant::now();
-    let duration = std::time::Duration::from_millis(duration_ms as u64);
-    while std::time::Instant::now() - start < duration {
-        // Busy spin
-    }
-}
-
-impl AlibabaService {
-    async fn handle_method(&self, method_name: String) -> Result<(), Status> {
-        let name = method_name.into();
-        let latency_dist = self
-            .config
-            .method_latency
-            .as_ref()
-            .ok_or(Status::internal(
-                "Configuration error: method latency not configured",
-            ))?
-            .get_method_dist(&name)
-            .ok_or(Status::not_found("Method not found"))?;
-
-        let total_latency_ms = latency_dist.sample(&mut rand::rng());
-
+    async fn replay(
+        &self,
+        request: Request<ReplayRequest>,
+    ) -> Result<Response<ReplayResponse>, Status> {
+        let req = request.into_inner();
         let start = Instant::now();
-        self.fanout().await?;
+
+        self.state().execute_replay(&req).await?;
+
         let elapsed = start.elapsed();
+        self.state().evaluate_replay_timing(elapsed, &req)?;
 
-        let remaining = total_latency_ms - (elapsed.as_millis() as f64);
-        if remaining > 0.0 {
-            busy_spin(remaining);
-        } else {
-            warn!(
-                "Warning: fanout took longer ({:?}) than total latency ({:.2} ms)",
-                elapsed, total_latency_ms
-            );
-        }
-
-        Ok(())
+        Ok(Response::new(ReplayResponse {
+            req_id: req.req_id,
+            status: ResponseStatus::Ok as i32,
+        }))
     }
+}
 
-    async fn fanout(&self) -> Result<(), Status> {
-        let mut tasks = Vec::new();
-        for (child_svc_name, client) in &self.clients {
-            let method_to_call = self
-                .config
-                .method_freq_map
-                .get_service(child_svc_name)
-                .and_then(|sampler| Some(sampler.sample(&mut rand::rng()).to_string()))
-                .ok_or(Status::not_found(format!(
-                    "Configuration error: Service {child_svc_name} has no method to call"
-                )))?;
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(tracing::level_filters::LevelFilter::INFO)
+        .init();
+}
 
-            let mut client = client.clone();
-            let request = tonic::Request::new(ServiceRequest {
-                method_name: method_to_call,
-            });
+fn load_service_config(
+    config_dir: std::path::PathBuf,
+    svc_name: &ServiceName,
+) -> ServiceTraceConfig {
+    const ROOT_SVC_NAME: &str = "user";
+    let root_svc_name = ServiceName::from_string(ROOT_SVC_NAME.to_string());
 
-            let handle = tokio::spawn(async move {
-                client
-                    .get_data(request)
-                    .await
-                    .map_err(|e| Status::internal(format!("RPC to child service failed: {:?}", e)))
-            });
-            tasks.push((child_svc_name, handle));
-        }
-        for (child_svc, handle) in tasks {
-            let rpc_result = handle
-                .await
-                .map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
-            rpc_result.map_err(|e| {
-                error!("RPC to child service {} failed", child_svc);
-                e
-            })?;
-        }
-        Ok(())
-    }
+    let svc_name_for_config = if svc_name == &root_svc_name {
+        None
+    } else {
+        Some(svc_name.clone())
+    };
+
+    ServiceTraceConfig::from_config_dir(&config_dir, svc_name_for_config)
+        .expect("Loading config should succeed")
 }
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // TODO: make log level configurable
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(LevelFilter::INFO)
-        .init();
+    init_tracing();
 
-    let deployment_path_str =
+    let deployment_path =
         env::var("DEPLOYMENT_CONFIG_PATH").unwrap_or_else(|_| "config/deployment.json".to_string());
-    let config_dir_str = env::var("CONFIG_PATH").unwrap_or_else(|_| "config/".to_string());
+    let config_dir = env::var("CONFIG_PATH").unwrap_or_else(|_| "config/".to_string());
     let service_name = env::var("SERVICE_NAME").expect("Failed to get SERVICE_NAME");
     let port = env::var("SERVICE_PORT").unwrap_or_else(|_| "50051".to_string());
 
-    let path = config_dir_str.into();
-
+    let config_path = config_dir.into();
     let svc_name = ServiceName::from_string(service_name);
+    let config = load_service_config(config_path, &svc_name);
+    info!("Config parsed");
 
-    // NOTE: HACK. Either make the root service name configurable, or
-    // configure the config files such that the root service has the same schema.
-    //
-    // Right now, the root service is "user" in Alibaba traces.
-    let config = {
-        const ROOT_SVC_NAME: &'static str = "user";
-        let root_svc_name = ServiceName::from_string(ROOT_SVC_NAME.to_string());
-        let svc_name_for_config = if svc_name == root_svc_name {
-            None
-        } else {
-            Some(svc_name.clone())
-        };
-
-        ServiceTraceConfig::from_config_dir(&path, svc_name_for_config)
-            .expect("Loading config should succeed")
-    };
-
-    println!("Config parsed");
-
-    let deployment_path = deployment_path_str.into();
-    let deployment = Deployment::read_from_file(&deployment_path)?;
+    let deployment_path = deployment_path.into();
+    let deployment =
+        Deployment::read_from_file(&deployment_path).expect("Failed to parse deployment");
 
     let svc = AlibabaService::new(svc_name.clone(), config, deployment).await?;
 
     let addr = format!("0.0.0.0:{}", port).parse()?;
-    println!("🚀 Generic Service {:?} listening on {}", svc_name, addr);
+    info!("🚀 Generic Service {:?} listening on {}", svc_name, addr);
 
     Server::builder()
         .add_service(ServiceServer::new(svc))
@@ -252,4 +176,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     Ok(())
+}
+
+pub(crate) fn busy_spin(duration: std::time::Duration) {
+    let start = std::time::Instant::now();
+    while std::time::Instant::now() - start < duration {
+        std::hint::spin_loop();
+    }
 }

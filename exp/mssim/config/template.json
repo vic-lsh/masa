@@ -1,0 +1,14 @@
+{
+  "experiment_name": "close_loop_replica",
+  "trace_dir": "trace-analysis/golden/S_86516878",
+  "config_dir": "apps/mssim/simulator/example_config/",
+  "output_root": "exp/mssim/data/experiments/",
+  "duration_sec": 60,
+  "repeats": 1,
+  "slo_ms": 100,
+  "policies": ["fifo_queue_tracing", "prio_global_queue_tracing"],
+  "rps_values": [200, 275, 300, 325, 350, 375, 400, 425, 500, 600],
+  "max_in_flight": 10000,
+  "stats_interval_sec": 2,
+  "extra_env": {}
+}

@@ -4,22 +4,32 @@ use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
 
 pub(crate) struct FifoQueue<T> {
     inner: VecDeque<T>,
-}
-
-impl<T> FifoQueue<T> {
-    #[allow(dead_code)]
-    pub(crate) fn with_capacity(cap: usize) -> Self {
-        Self {
-            inner: VecDeque::with_capacity(cap),
-        }
-    }
+    push_count: u64,
 }
 
 impl<T> Queue for FifoQueue<T> {
     type Item = T;
 
+    fn with_capacity(cap: usize) -> Self {
+        Self {
+            inner: VecDeque::with_capacity(cap),
+            push_count: 0,
+        }
+    }
+
     fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
         self.inner.push_back(item);
+        self.push_count += 1;
+
+
+        // if self.push_count % 1000 == 0 {
+        //     println!(
+        //         "FifoQ: push_count {}, Current len {}, ratio {}",
+        //         self.push_count,
+        //         self.len(),
+        //         self.push_count as f64 / self.len() as f64
+        //     );
+        // }
         Ok(())
     }
 

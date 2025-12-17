@@ -1,5 +1,8 @@
 #!/bin/bash
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+COMMON_BUILD_SCRIPT="$SCRIPT_DIR/../../exp/common/scripts/docker-build-svc.sh"
+
 services=(
     "synthetic_frontend"
     "synthetic_child"
@@ -48,5 +51,5 @@ echo "Building docker images sequentially."
 
 set -e
 for svc in "${services[@]}"; do
-    ../scripts/docker-build-svc.sh --binary $svc --app $app --rust-log $rust_log $features_arg
+    "$COMMON_BUILD_SCRIPT" --binary "$svc" --app "$app" --rust-log "$rust_log" $features_arg
 done

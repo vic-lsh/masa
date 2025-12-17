@@ -2,8 +2,8 @@
     feature = "fifo",
     feature = "prio_global",
     feature = "prio_local",
-    feature = "prio_global_early",
-    feature = "prio_local_early"
+    feature = "prio_local_direct",
+    feature = "prio_local_indirect"
 )))]
 #[test]
 fn test_default_policy_is_fifo() {
@@ -28,14 +28,14 @@ fn test_prio_local_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }
 
-#[cfg(feature = "prio_global_early")]
+#[cfg(feature = "prio_local_direct")]
 #[test]
-fn test_prio_global_early_policy() {
+fn test_prio_local_direct_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }
 
-#[cfg(feature = "prio_local_early")]
+#[cfg(feature = "prio_local_indirect")]
 #[test]
-fn test_prio_local_early_policy() {
+fn test_prio_local_indirect_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }

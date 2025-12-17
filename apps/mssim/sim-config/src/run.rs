@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use crate::replica::ReplicaConfig;
 
+#[derive(Default)]
 pub struct SimulatorConfig {
     pub replicas: ReplicaConfig,
 }

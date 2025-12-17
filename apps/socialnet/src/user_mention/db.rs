@@ -1,7 +1,8 @@
+use app_utils::pool::McPool;
 use async_memcached::AsciiProtocol;
-use async_memcached::Client as McClient;
 use mongodb::{bson::doc, options::ClientOptions, Client as MongoClient, Collection};
 use serde::{Deserialize, Serialize};
+use std::env;
 use std::error::Error;
 use tracing::{error, info};
 use std::env;
@@ -17,34 +18,13 @@ pub struct UserMentionStruct {
 fn generate_static_data() -> Vec<UserMentionStruct> {
     info!("Generating test data...");
 
-    let new_user_mentions = vec![
-        UserMentionStruct {
-            user_id: 1,
-            user_name: "adam".to_string(),
-        },
-        UserMentionStruct {
-            user_id: 2,
-            user_name: "james".to_string(),
-        },
-        UserMentionStruct {
-            user_id: 3,
-            user_name: "john".to_string(),
-        },
-        UserMentionStruct {
-            user_id: 4,
-            user_name: "alice".to_string(),
-        },
-        UserMentionStruct {
-            user_id: 5,
-            user_name: "bob".to_string(),
-        },
-        UserMentionStruct {
-            user_id: 6,
-            user_name: "charlie".to_string(),
-        },
-    ];
-
-    new_user_mentions
+    let num_users = 1_000_000; // Generate 1,000,000 entries
+    (1..=num_users)
+        .map(|id| UserMentionStruct {
+            user_id: id as u64,
+            user_name: format!("user{}", id),
+        })
+        .collect()
 }
 
 pub async fn initialize_database() -> Result<MongoClient, Box<dyn Error>> {
@@ -59,13 +39,12 @@ pub async fn initialize_database() -> Result<MongoClient, Box<dyn Error>> {
 
     let new_user_mentions = generate_static_data();
 
-    // Read the URL from the environment variable
     let url = env::var("MONGO_URL")
         .expect("MONGO_URL environment variable must be set");
 
     info!("Attempting connection to {}", url);
 
-    let client_options = ClientOptions::parse(&url).await?;
+    let client_options = ClientOptions::parse(&mongo_url).await?;
     let client = MongoClient::with_options(client_options)?;
     info!("Successfully connected to MongoDB");
 
@@ -94,6 +73,7 @@ pub async fn initialize_database() -> Result<MongoClient, Box<dyn Error>> {
     Ok(client)
 }
 
+<<<<<<< HEAD
 pub async fn initialize_memcached() -> Result<McClient, Box<dyn Error>> {
     // let url = "tcp://127.0.0.1:11211";
     // let mut client = McClient::new(url).await?;
@@ -106,18 +86,24 @@ pub async fn initialize_memcached() -> Result<McClient, Box<dyn Error>> {
     // let mut client = McClient::new(&url).await?; // Pass the URL as a reference
     // let mut client: McClient<AsciiProtocol<tokio::net::TcpStream>> = McClient::new(&url).await?;
     let mut client = McClient::new(&url).await?;
+=======
+pub async fn initialize_memcached_pool() -> Result<McPool, Box<dyn Error>> {
+    let memcached_url = env::var("MEMCACHED_URL")
+        .unwrap_or_else(|_| "tcp://usermention_memcached:11211".to_string());
+    let pool = McPool::new(memcached_url, 10000000);
+>>>>>>> main
     info!("Successfully connected to Memcached");
 
-    // Clean the memcached
+    let mut client = pool.get().await;
     client.flush_all().await?;
 
-    let keys = vec!["adam", "james", "john"];
-
-    let values = vec!["1", "2", "3"];
-
-    for (key, value) in keys.iter().zip(values.iter()) {
-        client.set(*key, *value, Some(0), None).await?;
+    // Insert first 1000 entries into Memcached
+    for id in 1..=1000 {
+        let key = format!("user{}", id);
+        let value = id.to_string();
+        client.set(&key, &value, Some(0), None).await?;
     }
 
-    Ok(client)
+    drop(client);
+    Ok(pool)
 }

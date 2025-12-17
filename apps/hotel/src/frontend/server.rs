@@ -31,6 +31,8 @@ use hotel_tonic::{
     search::search_client::SearchClient, user, user::user_client::UserClient,
 };
 
+use hotel::profile_layer::extract_latency_traces;
+
 pub struct FrontendImpl {
     search_client: SearchClient<LoadBalancedChannel>,
     reservation_client: ReservationClient<LoadBalancedChannel>,
@@ -109,9 +111,13 @@ impl Frontend for FrontendImpl {
         &self,
         request: Request<frontend::SearchRequest>,
     ) -> Result<Response<frontend::SearchResponse>, Status> {
+        use masa::time_now;
+
         let start = Instant::now();
         let mut ctx = request.metadata().get_ctx("ctx").unwrap();
         let request = request.into_inner();
+
+        let mut child_traces = Vec::new();
 
         let mut search_client = self.search_client.clone();
         let search_req = search::NearbyRequest {
@@ -120,28 +126,65 @@ impl Frontend for FrontendImpl {
             in_date: request.in_date.clone(),
             out_date: request.out_date.clone(),
         };
+        let search_start_time = time_now();
         let search_resp = search_client.handle_nearby(search_req).await?;
-        let response = search_resp.into_inner();
+        let search_header = search_resp.metadata();
+        match search_header.get("X-Latency-Traces") {
+            Some(_) => {
+                child_traces.push("search".to_string());
+                child_traces.push(search_start_time.to_string());
+                child_traces.extend(
+                    extract_latency_traces(search_header).expect("missing X-Latency-Traces header"),
+                );
+            }
+            None => {}
+        }
+        let nearby_response = search_resp.into_inner();
 
         let mut reservation_client = self.reservation_client.clone();
         let span_request = reservation::ReservationRequest {
             customer_name: "".into(),
-            hotel_ids: response.hotel_ids.clone(),
+            hotel_ids: nearby_response.hotel_ids.clone(),
             in_date: request.in_date,
             out_date: request.out_date,
             room_number: 1,
         };
-        let response = {
-            let span_response = reservation_client.check_availability(span_request).await?;
-            span_response.into_inner()
-        };
+
+        let reservation_start_time = time_now();
+        let span_response = reservation_client.check_availability(span_request).await?;
+        let reservation_header = span_response.metadata();
+        match reservation_header.get("X-Latency-Traces") {
+            Some(_) => {
+                child_traces.push("reservation".to_string());
+                child_traces.push(reservation_start_time.to_string());
+                child_traces.extend(
+                    extract_latency_traces(reservation_header)
+                        .expect("missing X-Latency-Traces header"),
+                );
+            }
+            None => {}
+        }
+        let availability_response = span_response.into_inner();
 
         let mut profile_client = self.profile_client.clone();
         let profile_request = profile::ProfileRequest {
-            hotel_ids: response.hotel_ids,
-            locale: request.locale.unwrap_or("en".to_string()),
+            hotel_ids: availability_response.hotel_ids,
+            locale: request.locale.unwrap_or_else(|| "en".to_string()),
         };
+        let profile_start_time = time_now();
         let profile_response = profile_client.get_profiles(profile_request).await?;
+        let profile_header = profile_response.metadata();
+        match profile_header.get("X-Latency-Traces") {
+            Some(_) => {
+                child_traces.push("profile".to_string());
+                child_traces.push(profile_start_time.to_string());
+                child_traces.extend(
+                    extract_latency_traces(profile_header)
+                        .expect("missing X-Latency-Traces header"),
+                );
+            }
+            None => {}
+        }
         let response = profile_response.into_inner();
 
         let mut hotels = Vec::new();
@@ -156,7 +199,10 @@ impl Frontend for FrontendImpl {
             });
         }
 
-        let response = frontend::SearchResponse { hotels };
+        let response = frontend::SearchResponse {
+            hotels,
+            child_traces,
+        };
 
         let mut response = Response::new(response);
         ctx.set_frontend_elapse(start.elapsed().as_micros() as u64);

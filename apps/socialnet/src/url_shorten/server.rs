@@ -1,6 +1,7 @@
 use mongodb::Client as MongoClient;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use std::env;
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 use std::env;
@@ -60,7 +61,7 @@ impl UrlShortenService for UrlShortenServiceImpl {
         &self,
         request: Request<ComposeUrlsRequest>,
     ) -> Result<Response<ComposeUrlsResponse>, Status> {
-        println!("Got a compose_urls request: {:?}", request);
+        info!("Got a compose_urls request: {:?}", request);
 
         let req = request.into_inner();
         let mut urls = req.urls;
@@ -91,7 +92,7 @@ impl UrlShortenService for UrlShortenServiceImpl {
                 });
             }
             Err(e) => {
-                println!("MongoDB error: {}", e);
+                error!("MongoDB error: {}", e);
                 return Ok(Response::new(ComposeUrlsResponse {
                     urls: vec![],
                     exception: Some(ServiceException {
@@ -124,10 +125,10 @@ impl UrlShortenService for UrlShortenServiceImpl {
         // Store mappings in MongoDB
         match insert_url_mappings(&self.mongo_client, new_urls.clone()).await {
             Ok(_) => {
-                println!("Successfully inserted {} URL mappings", new_urls.len());
+                info!("Successfully inserted {} URL mappings", new_urls.len());
             }
             Err(e) => {
-                println!("MongoDB error: {}", e);
+                error!("MongoDB error: {}", e);
                 return Ok(Response::new(ComposeUrlsResponse {
                     urls: vec![],
                     exception: Some(ServiceException {
@@ -149,7 +150,7 @@ impl UrlShortenService for UrlShortenServiceImpl {
         &self,
         request: Request<GetExtendedUrlsRequest>,
     ) -> Result<Response<GetExtendedUrlsResponse>, Status> {
-        println!("Got a get_extended_urls request: {:?}", request);
+        info!("Got a get_extended_urls request: {:?}", request);
 
         let req = request.into_inner();
         let shortened_urls = req.shortened_urls;
@@ -212,7 +213,6 @@ impl UrlShortenService for UrlShortenServiceImpl {
 
 pub async fn create_service(
 ) -> Result<UrlShortenServiceServer<UrlShortenServiceImpl>, Box<dyn std::error::Error>> {
-    // adding the mongo url dependency
     let mongo_url = env::var("MONGO_URL")
         .expect("MONGO_URL environment variable must be set");
 

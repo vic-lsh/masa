@@ -4,18 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-prio_class = []
 prio_global = []
-prio_global_early = []
-prio_class_global = []
 prio_local = []
-prio_local_early = []
 prio_local_direct = []
 prio_local_indirect = []
 fifo = []
-fifo_early = []
-fifo_infra = []
 perfect_lsf = []
+fifo_span_tracing = []
+fifo_queue_tracing = []
+prio_global_queue_tracing = []
+early = []
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

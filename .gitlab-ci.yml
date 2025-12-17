@@ -8,7 +8,9 @@ workflow:
 
 # Define stages
 stages:
-  - verify
+  - fmt
+  - check
+  - test
 
 before_script:
   - apt-get update -yqq
@@ -19,3 +21,4 @@ include:
   - local: /.gitlab/check-cargo.yml
   - local: /.gitlab/test-cargo.yml
   - local: /.gitlab/test-e2e-hotel.yml
+  - local: /.gitlab/test-mssim-experiment.yml

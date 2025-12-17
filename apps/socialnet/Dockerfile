@@ -15,7 +15,6 @@ COPY 3rd_party ./3rd_party
 COPY apps/socialnet/proto ./apps/socialnet/proto
 
 # Build the entire workspace
-# RUN cargo build --release -p socialnet
 RUN cargo build --release -p socialnet
 
 # Stage 2: Create the final, minimal image
