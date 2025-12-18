@@ -137,7 +137,7 @@ def run_once(
     trace_cmd = [
         sys.executable,
         "-m",
-        "simulator_py.main",
+        "simulator.main",
         "-a",
         str(cfg.trace_dir),
         "-c",
@@ -150,8 +150,6 @@ def run_once(
     if cfg.replay_path:
         trace_cmd.extend(["--replay-path", str(cfg.replay_path)])
 
-    down_cmd = ["docker", "compose", "down", "--volumes"]
-
     up_cmd = [
         "docker", 
         "compose", 
@@ -161,6 +159,17 @@ def run_once(
         "mssim",
         "up",
         "--abort-on-container-exit",
+    ]
+
+    down_cmd = [
+        "docker",
+        "compose",
+        "-f",
+        str(docker_compose_path),
+        "-p",
+        "mssim",
+        "down",
+        "--volumes",
     ]
     
     log_path = run_dir / "orchestrator.log"
@@ -212,6 +221,7 @@ def run_once(
                 proc.kill()
         
         # Run docker-compose down to clean up all resources.
+        print(f"Tearing down docker experiment with command: {' '.join(down_cmd)}")
         subprocess.run(down_cmd, cwd=MSSIM_ROOT, check=False)
         print("Cleanup complete.")
 

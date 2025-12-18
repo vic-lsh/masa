@@ -6,8 +6,13 @@
   "duration_sec": 20,
   "repeats": 1,
   "slo_ms": 100,
-  "policies": ["fifo", "prio_global"],
-  "rps_values": [200],
+  "policies": [
+    "fifo",
+    "prio_global"
+  ],
+  "rps_values": [
+    200
+  ],
   "max_in_flight": 10000,
   "stats_interval_sec": 2,
   "extra_env": {}

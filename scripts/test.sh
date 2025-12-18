@@ -28,7 +28,6 @@ packages=(
     "socialnet"
     
     # simulator
-    "mssim"
     "generic-service"
     "sim-config"
 )
