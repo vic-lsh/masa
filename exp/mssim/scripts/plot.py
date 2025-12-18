@@ -2,6 +2,7 @@
 """Compare goodput and latency distributions for one or more scheduling policies."""
 from __future__ import annotations
 
+import argparse
 import json
 import re
 from dataclasses import dataclass
@@ -15,7 +16,7 @@ from matplotlib.patches import Patch
 
 THRESHOLD_DEFAULT_MS = 50
 FILENAME_PATTERN = re.compile(r"root_latencies_(?P<rps>[0-9_]+)rps\.csv$")
-CONFIG_PATH = Path(__file__).resolve().parents[1] / "data/cfg.json"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "data/cfg.json"
 
 
 @dataclass
@@ -351,8 +352,23 @@ def load_plot_config(config_path: Path) -> Tuple[Path, List[str], float, float]:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Compare goodput and latency distributions for one or more scheduling policies."
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help=f"Path to the plot configuration JSON file (default: {DEFAULT_CONFIG_PATH})",
+    )
+    args = parser.parse_args()
+
+    config_path = args.config.resolve()
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
     experiment_root, policy_names, threshold_ms, duration_sec = load_plot_config(
-        CONFIG_PATH
+        config_path
     )
     policy_dirs = [experiment_root / name for name in policy_names]
     policy_samples = [load_policy_samples(policy_dir) for policy_dir in policy_dirs]
