@@ -10,6 +10,10 @@
     "fifo",
     "prio_global"
   ],
+  "policies_to_plot": [
+    "fifo",
+    "prio_global"
+  ],
   "rps_values": [
     200
   ],
