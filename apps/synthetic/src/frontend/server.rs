@@ -6,13 +6,13 @@ use std::{
 };
 
 use app_utils::timing::time_now;
-use synthetic_app::config::SyntheticConfig;
-use synthetic_app::util;
+use synthetic::config::SyntheticConfig;
+use synthetic::util;
 
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{Request, Response, Status};
 
-use synthetic_app::tonic::{
+use synthetic::tonic::{
     child, child::child_client::ChildClient, child::Fixed, child::Periodic, frontend,
     frontend::frontend_server::Frontend,
 };

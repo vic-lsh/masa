@@ -5690,7 +5690,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "synthetic_app"
+name = "synthetic"
 version = "0.1.0"
 dependencies = [
  "anyhow",
