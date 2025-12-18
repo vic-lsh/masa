@@ -8,30 +8,79 @@ It supports:
 2. Config file-defined service time distribution per service
 3. Custom load generation logic for this call graph
 
-NOTE: the following docs are up-to-date as of commit 6aad65c3fb6b6472d593eaff8af6e81882d0c099 .
+## Running Experiments
 
-## Getting started
+The recommended way to run MSSIM experiments is using the experiment runner script. This script automates the process of building Docker images, running experiments across multiple policies and RPS values, and organizing output data.
 
-Minimal example to run Alibaba trace replay:
+### Prerequisites
 
-```bash
-$ cd <this-directory>/mssim
-$ cargo run --bin mssim -- --alibaba-trace <masa-project-root>/trace-analysis/golden/S_86516878 --config-dir ./example_config
+- Docker installed and running
+- Cargo (Rust toolchain) installed
+- Python 3 installed
+
+### Quick Start
+
+1. Create an experiment configuration file (JSON format). See `exp/mssim/config/template.json` for a template:
+
+```json
+{
+  "experiment_name": "my_experiment",
+  "trace_dir": "trace-analysis/golden/S_86516878",
+  "config_dir": "apps/mssim/simulator/example_config/",
+  "output_root": "exp/mssim/data/experiments/",
+  "duration_sec": 60,
+  "repeats": 1,
+  "slo_ms": 100,
+  "policies": ["fifo", "prio_global"],
+  "rps_values": [200, 300, 400],
+  "max_in_flight": 10000,
+  "stats_interval_sec": 2,
+  "extra_env": {}
+}
 ```
 
-Once the Docker compose cluster has started, you can view each service container's
-resource usage via `docker stats`.
-
-To monitor logs from the load generator, run `docker logs -f load_generator`.
-
-## Running with replicas
-
-Provide the optional `--config-dir` option to specify replica count for some services.
-
-See `example_config/replicas.json` for an example on how to set replica count.
+2. Run the experiment:
 
 ```bash
-$ cargo run --bin mssim -- --alibaba-trace <masa-project-root>/trace-analysis/golden/S_86516878 --config-dir ./example_config
+$ cd <masa-project-root>
+$ python3 exp/mssim/scripts/experiment.py --config exp/mssim/config/test_config.json
+```
+
+The script will:
+- Build the load generator Docker image
+- Build generic service images for each unique policy
+- Run experiments for each combination of policy and RPS value
+- Save results to `{output_root}/{experiment_name}/{policy}/rps_{rps_value}/run_{repeat_id}/`
+
+### Configuration Options
+
+- `experiment_name`: Name of the experiment (used for output directory)
+- `trace_dir`: Path to the Alibaba trace directory (relative to repo root)
+- `config_dir`: Path to the simulator config directory (relative to repo root)
+- `output_root`: Root directory for experiment outputs (relative to repo root)
+- `duration_sec`: Duration of each experiment run in seconds
+- `repeats`: Number of times to repeat each experiment
+- `slo_ms`: Service level objective latency in milliseconds
+- `policies`: List of scheduling policies to test (e.g., `["fifo", "prio_global"]`)
+- `rps_values`: List of requests per second values to test
+- `max_in_flight`: Maximum number of in-flight requests
+- `stats_interval_sec`: Interval for collecting statistics
+- `extra_env`: Additional environment variables to pass to the experiment
+
+### Example Test Script
+
+See `scripts/test_mssim_experiment.sh` for a complete example of running an experiment and validating the output.
+
+### Output Structure
+
+Results are organized as:
+```
+{output_root}/{experiment_name}/{policy}/rps_{rps_value}/run_{repeat_id}/
+├── metadata.json          # Experiment metadata
+├── docker-compose.yml     # Generated docker-compose configuration
+├── deployment.json        # Generated deployment configuration
+├── orchestrator.log      # Orchestrator logs
+└── root_latencies_{rps}rps.csv  # Latency measurements
 ```
 
 ## Running on new Alibaba call graphs
