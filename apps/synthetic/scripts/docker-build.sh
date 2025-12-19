@@ -1,7 +1,7 @@
 #!/bin/bash
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-COMMON_BUILD_SCRIPT="$SCRIPT_DIR/../../exp/common/scripts/docker-build-svc.sh"
+COMMON_BUILD_SCRIPT="$SCRIPT_DIR/../../../exp/common/scripts/docker-build-svc.sh"
 
 services=(
     "synthetic_frontend"

@@ -1,46 +1,96 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 
-cd exp/hotel
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exp_dir="$repo_root/exp/hotel"
+exp_name="ci"
+out_dir="$exp_dir/data/out/$exp_name"
+no_cache=""
 
-# setup experiment config
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --no-cache)
+        no_cache="--no-cache"
+        shift 1
+        ;;
+    *)
+        echo "Unknown argument: $1"
+        echo "Usage: $0 [--no-cache]"
+        exit 1
+        ;;
+    esac
+done
 
-exp_name=ci
-ci_config_path=./data/in/$exp_name
-exp_out_path=./data/out/$exp_name
+if [ ! -d "$exp_dir" ]; then
+    echo "Hotel experiment directory not found at $exp_dir" >&2
+    exit 1
+fi
 
-rm -rf $exp_out_path
-rm -rf $ci_config_path
-cp -r ./data/in/template $ci_config_path
+if [ ! -d "$exp_dir/data/in/$exp_name" ]; then
+    echo "CI experiment config not found at $exp_dir/data/in/$exp_name" >&2
+    exit 1
+fi
 
-gen_config=$ci_config_path/gen_config.json
-policy_config=$ci_config_path/policies
+if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker is required to run the hotel experiment test." >&2
+    exit 1
+fi
 
-# patch experiment settings
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "Cargo is required to run the hotel experiment test." >&2
+    exit 1
+fi
 
-jq '.Rps = [1000]' $gen_config > tmp.json && mv tmp.json $gen_config
-echo "fifo prio_global" > $policy_config
+echo "Cleaning previous experiment output at $out_dir"
+rm -rf "$out_dir"
 
-# run experiment
+mapfile -t api_array < <(jq -r '.Apis[]' "$exp_dir/data/in/$exp_name/gen_config.json")
 
-temp_file=$(mktemp)
-/usr/bin/time -o "$temp_file" ./scripts/run-experiment.sh $exp_name
-echo "Experiment runtime:"
-cat "$temp_file"
-rm "$temp_file"
+echo "APIs: ${api_array[@]}"
 
-assert_file_exists() {
-    if [ -f "$1" ]; then
-        echo "Assertion passed: File '$1' exists"
-    else
-        echo "Error: File '$1' not found." >&2; exit 1;
+
+echo "Running hotel experiment: $exp_name"
+cd "$exp_dir"
+"$exp_dir/scripts/run-experiment.sh" "$exp_name" $no_cache
+
+assert_path_exists() {
+    if [ ! -e "$1" ]; then
+        echo "Expected path missing: $1" >&2
+        exit 1
     fi
 }
 
-# assert result files exist
-assert_file_exists "data/out/$exp_name/done"
-assert_file_exists "data/out/$exp_name/0/fifo/r1000_Reservation.csv"
-assert_file_exists "data/out/$exp_name/0/fifo/r1000_Search.csv"
-assert_file_exists "data/out/$exp_name/0/prio_global/r1000_Reservation.csv"
-assert_file_exists "data/out/$exp_name/0/prio_global/r1000_Search.csv"
+echo "Validating experiment output..."
+
+# Check that the done marker exists
+assert_path_exists "$out_dir/done"
+
+# Read policies from the config
+policies=$(cat "$exp_dir/data/in/$exp_name/policies" | tr -d '\n')
+read -ra policy_array <<< "$policies"
+
+# Read RPS values from gen_config.json
+mapfile -t rps_array < <(jq -r '.Rps[]' "$exp_dir/data/in/$exp_name/gen_config.json")
+
+# Read APIs from gen_config.json
+mapfile -t api_array < <(jq -r '.Apis[]' "$exp_dir/data/in/$exp_name/gen_config.json")
+
+# Read Repeats from gen_config.json
+repeats=$(jq -r '.Repeats' "$exp_dir/data/in/$exp_name/gen_config.json")
+
+# Validate output files for each repeat, policy, RPS, and API
+for i in $(seq 0 $((repeats - 1))); do
+    for policy in "${policy_array[@]}"; do
+        for rps in "${rps_array[@]}"; do
+            for api in "${api_array[@]}"; do
+                expected_file="$out_dir/$i/$policy/r${rps}_${api}.csv"
+                echo "Checking: $expected_file"
+                assert_path_exists "$expected_file"
+            done
+        done
+    done
+done
+
+echo "Hotel CI experiment test passed."
