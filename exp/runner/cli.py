@@ -159,16 +159,16 @@ def main() -> None:
         epilog="""
 Examples:
   # Run a single experiment
-  python -m exp.runner run-experiment hotel exp1 --plot
+  python -m exp.runner run hotel exp1 --plot
   
   # Queue multiple experiments
-  python -m exp.runner queue-experiments synthetic "exp1 exp2 exp3" --plot
+  python -m exp.runner run-multiple synthetic "exp1 exp2 exp3" --plot
   
   # Generate plots only
   python -m exp.runner plot hotel exp1
   
   # Run with verbose logging
-  python -m exp.runner run-experiment hotel exp1 --verbose
+  python -m exp.runner run hotel exp1 --verbose
         """
     )
     
@@ -181,9 +181,9 @@ Examples:
     subparsers = parser.add_subparsers(dest='command', help='Command to execute')
     subparsers.required = True
     
-    # run-experiment command
+    # run command
     run_parser = subparsers.add_parser(
-        'run-experiment',
+        'run',
         help='Run a single experiment',
         description='Run a performance experiment with the specified application and configuration'
     )
@@ -208,9 +208,9 @@ Examples:
     )
     run_parser.set_defaults(func=cmd_run_experiment)
     
-    # queue-experiments command
+    # run-multiple command
     queue_parser = subparsers.add_parser(
-        'queue-experiments',
+        'run-multiple',
         help='Run multiple experiments sequentially',
         description='Queue and run multiple experiments one after another'
     )
