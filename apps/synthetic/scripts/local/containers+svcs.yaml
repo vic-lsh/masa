@@ -4,6 +4,9 @@ services:
     scale: ${CHILD_REPLICAS}
     networks:
       - synthetic_network
+    environment:
+      - BINARY_NAME=synthetic_child
+      - LOG_LEVEL=${LOG_LEVEL:-warn}
     deploy:
       resources:
         limits:
@@ -19,6 +22,9 @@ services:
       - "${FRONTEND_PORT}:8000"
     depends_on:
       - child-service
+    environment:
+      - BINARY_NAME=synthetic_frontend
+      - LOG_LEVEL=${LOG_LEVEL:-warn}
     deploy:
       resources:
         limits:

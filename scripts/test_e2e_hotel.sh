@@ -56,7 +56,9 @@ cd "$exp_dir"
 "$exp_dir/scripts/run-experiment.sh" "$exp_name" $no_cache
 
 assert_path_exists() {
-    if [ ! -e "$1" ]; then
+    if [ -e "$1" ]; then
+        echo "File exists: $1"
+    else
         echo "Expected path missing: $1" >&2
         exit 1
     fi
