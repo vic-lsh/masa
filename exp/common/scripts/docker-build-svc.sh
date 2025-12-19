@@ -6,6 +6,7 @@ features=""
 rust_log="warn"
 app=""
 app_config_file="config.docker.json"
+no_cache=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -29,6 +30,10 @@ while [[ $# -gt 0 ]]; do
     --app-config)
         app_config_file="$2"
         shift 2
+        ;;
+    --no-cache)
+        no_cache="--no-cache"
+        shift 1
         ;;
     *)
         echo "Unknown argument: $1"
@@ -60,5 +65,6 @@ docker build -f ./apps/scripts/Dockerfile \
     --build-arg APP=$app \
     --build-arg APP_CONFIG_FILE=$app_config_file \
     --ulimit nofile=4096:4096 \
+    $no_cache \
     -t $binary \
     .

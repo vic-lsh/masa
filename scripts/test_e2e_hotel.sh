@@ -6,6 +6,22 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 exp_dir="$repo_root/exp/hotel"
 exp_name="ci"
 out_dir="$exp_dir/data/out/$exp_name"
+no_cache=""
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --no-cache)
+        no_cache="--no-cache"
+        shift 1
+        ;;
+    *)
+        echo "Unknown argument: $1"
+        echo "Usage: $0 [--no-cache]"
+        exit 1
+        ;;
+    esac
+done
 
 if [ ! -d "$exp_dir" ]; then
     echo "Hotel experiment directory not found at $exp_dir" >&2
@@ -37,7 +53,7 @@ echo "APIs: ${api_array[@]}"
 
 echo "Running hotel experiment: $exp_name"
 cd "$exp_dir"
-"$exp_dir/scripts/run-experiment.sh" "$exp_name"
+"$exp_dir/scripts/run-experiment.sh" "$exp_name" $no_cache
 
 assert_path_exists() {
     if [ ! -e "$1" ]; then

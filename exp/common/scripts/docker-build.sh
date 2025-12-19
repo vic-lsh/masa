@@ -16,6 +16,7 @@ services=(
 
 features=""
 rust_log="warn"
+no_cache=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -27,6 +28,10 @@ while [[ $# -gt 0 ]]; do
     --rust-log)
         rust_log="$2"
         shift 2
+        ;;
+    --no-cache)
+        no_cache="--no-cache"
+        shift 1
         ;;
     *)
         echo "Unknown argument: $1"
@@ -42,7 +47,7 @@ fi
 
 app="hotel"
 
-echo "Building all hotel services. Feature flags: $features."
+echo "Building all hotel services. Feature flags: $features. No cache: '$no_cache'."
 
 echo "Building docker images sequentially."
 
@@ -54,5 +59,5 @@ fi
 
 set -e
 for svc in "${services[@]}"; do
-    $SCRIPT_DIR/../common/scripts/docker-build-svc.sh --binary "$svc" --app "$app" --rust-log "$rust_log" --app-config hotel.json $features_arg
+    "$SCRIPT_DIR/docker-build-svc.sh" --binary "$svc" --app "$app" --rust-log "$rust_log" --app-config hotel.json $features_arg $no_cache
 done
