@@ -23,4 +23,13 @@ include:
   - local: /.gitlab/test-e2e-hotel.yml
   - local: /.gitlab/test-mssim-experiment.yml
   - local: /.gitlab/test-synthetic-experiment.yml
-  - local: /.gitlab/test-pytest.yml
+
+# Trigger pytest as a separate (child) pipeline so it runs independently.
+pytest_pipeline:
+  stage: test
+  needs: []
+  when: always
+  before_script: []
+  trigger:
+    include:
+      - local: /.gitlab/test-pytest.yml
