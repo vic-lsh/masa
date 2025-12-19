@@ -4,10 +4,11 @@ Hotel application plugin.
 
 import json
 import re
+import subprocess
 from pathlib import Path
 from typing import Optional
 
-from .base import AppPlugin, DockerConfig, LoadGenerator
+from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 
 
 class HotelLoadGenerator(LoadGenerator):
@@ -24,6 +25,61 @@ class HotelLoadGenerator(LoadGenerator):
     
     def get_binary_name(self) -> str:
         return "hotel_client_bench"
+
+
+class HotelBuilder(AppBuilder):
+    """
+    Build logic for the hotel app docker image.
+
+    Mirrors the behavior of exp/common/scripts/docker-build.sh, but lives in Python
+    so the runner can select an app-specific build implementation.
+    """
+
+    def build(
+        self,
+        *,
+        repo_root: Path,
+        app_dir: Path,
+        features: Optional[str] = None,
+        rust_log: str = "info",
+        no_cache: bool = False,
+    ) -> None:
+        app = "hotel"
+        binaries = (
+            "hotel_client_bench hotel_frontend hotel_geo hotel_rate hotel_review "
+            "hotel_search hotel_profile hotel_reservation hotel_user "
+            "hotel_recommendation loadgen"
+        )
+
+        build_args: list[str] = []
+        if features:
+            build_args.extend(["--build-arg", f"FEATURES={features}"])
+        build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
+        build_args.extend(["--build-arg", f"APP={app}"])
+        build_args.extend(["--build-arg", "APP_CONFIG_FILE=hotel.json"])
+        build_args.extend(["--build-arg", f"BINARIES={binaries}"])
+
+        cmd: list[str] = [
+            "docker",
+            "build",
+            "-f",
+            "./exp/common/docker-build/Dockerfile",
+            *build_args,
+            "--ulimit",
+            "nofile=4096:4096",
+        ]
+
+        if no_cache:
+            cmd.append("--no-cache")
+
+        cmd.extend(["-t", "hotel:latest", "."])
+
+        subprocess.run(
+            cmd,
+            cwd=repo_root,
+            check=True,
+            capture_output=False,
+        )
 
 
 class HotelApp(AppPlugin):
@@ -128,3 +184,7 @@ class HotelApp(AppPlugin):
     def create_load_generator(self) -> LoadGenerator:
         """Create a load generator instance for hotel application."""
         return HotelLoadGenerator()
+
+    def create_builder(self) -> AppBuilder:
+        """Create a builder instance for hotel application."""
+        return HotelBuilder()

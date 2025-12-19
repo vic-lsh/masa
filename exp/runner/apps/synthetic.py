@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from .base import AppPlugin, DockerConfig, LoadGenerator
+from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 
 
 class SyntheticLoadGenerator(LoadGenerator):
@@ -132,3 +132,29 @@ class SyntheticApp(AppPlugin):
     def create_load_generator(self) -> LoadGenerator:
         """Create a load generator instance for synthetic application."""
         return SyntheticLoadGenerator()
+
+    def create_builder(self) -> AppBuilder:
+        """
+        Create a builder instance for synthetic application.
+
+        Placeholder for now: the synthetic app image build flow hasn't been
+        migrated into the Python runner yet.
+        """
+        return SyntheticBuilder()
+
+
+class SyntheticBuilder(AppBuilder):
+    def build(
+        self,
+        *,
+        repo_root: Path,
+        app_dir: Path,
+        features: Optional[str] = None,
+        rust_log: str = "info",
+        no_cache: bool = False,
+    ) -> None:
+        raise NotImplementedError(
+            "Synthetic app build is not implemented in the Python runner yet. "
+            "Build images manually for now (or migrate the synthetic build flow "
+            "into exp/runner/apps/synthetic.py)."
+        )

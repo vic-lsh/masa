@@ -191,6 +191,37 @@ class LoadGenerator(ABC):
             logger.warning("Traces may not have been generated")
 
 
+class AppBuilder(ABC):
+    """
+    Abstract base class for application-specific build logic.
+
+    We keep this separate from Docker compose start/stop so each app can decide
+    how images are built (single image, multiple images, extra build args, etc.).
+    """
+
+    @abstractmethod
+    def build(
+        self,
+        *,
+        repo_root: Path,
+        app_dir: Path,
+        features: Optional[str] = None,
+        rust_log: str = "info",
+        no_cache: bool = False,
+    ) -> None:
+        """
+        Build the app's docker images.
+
+        Args:
+            repo_root: Path to repository root
+            app_dir: Path to application directory (e.g. <repo>/apps/<app>)
+            features: Cargo features to enable (e.g. scheduling policy)
+            rust_log: Rust log level to pass into image
+            no_cache: Whether to disable Docker cache
+        """
+        raise NotImplementedError
+
+
 class AppPlugin(ABC):
     """
     Abstract base class for application-specific experiment behavior.
@@ -271,5 +302,15 @@ class AppPlugin(ABC):
         
         Returns:
             LoadGenerator instance configured for this application
+        """
+        pass
+
+    @abstractmethod
+    def create_builder(self) -> AppBuilder:
+        """
+        Create an app builder for this application.
+
+        Returns:
+            AppBuilder instance configured for this application
         """
         pass
