@@ -82,7 +82,8 @@ class DockerManager:
     def stop(
         self,
         app_dir: Path,
-        compose_file: str
+        compose_file: str,
+        env_vars: dict | None = None,
     ) -> None:
         """
         Stop Docker Compose services.
@@ -94,10 +95,15 @@ class DockerManager:
         compose_path = app_dir / compose_file
         logger.info(f"Stopping Docker services from {compose_path}")
         
+        env = os.environ.copy()
+        if env_vars:
+            env.update({k: str(v) for k, v in env_vars.items()})
+
         subprocess.run(
             ["docker", "compose", "-f", str(compose_path), "down"],
             cwd=app_dir,
             check=False,  # Don't fail if already stopped
+            env=env,
             capture_output=True,
         )
         
