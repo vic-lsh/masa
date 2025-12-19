@@ -1,0 +1,10 @@
+pytest:
+  image: python:3.11
+  stage: test
+  before_script:
+    - python --version
+    - pip --version
+    - pip install --upgrade pip
+    - pip install pytest pytest-mock
+  script:
+    - pytest
