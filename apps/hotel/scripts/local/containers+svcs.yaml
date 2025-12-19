@@ -26,7 +26,7 @@ services:
           cpus: "4"
 
   rate-service:
-    image: hotel_rate:latest
+    image: hotel:latest
     scale: ${RATE_REPLICAS}
     restart: always
     networks:
@@ -34,6 +34,9 @@ services:
     depends_on:
       - rate-mongo
       - rate-memcached
+    environment:
+      - BINARY_NAME=hotel_rate
+      - LOG_LEVEL=${LOG_LEVEL:-warn}
     deploy:
       resources:
         limits:
@@ -66,7 +69,7 @@ services:
           cpus: "4"
 
   profile-service:
-    image: hotel_profile:latest
+    image: hotel:latest
     scale: ${PROFILE_REPLICAS}
     restart: always
     networks:
@@ -74,6 +77,9 @@ services:
     depends_on:
       - profile-mongo
       - profile-memcached
+    environment:
+      - BINARY_NAME=hotel_profile
+      - LOG_LEVEL=${LOG_LEVEL:-warn}
     deploy:
       resources:
         limits:
@@ -106,7 +112,7 @@ services:
           cpus: "4"
 
   reservation-service:
-    image: hotel_reservation:latest
+    image: hotel:latest
     scale: ${RESERVATION_REPLICAS}
     restart: always
     networks:
@@ -114,6 +120,9 @@ services:
     depends_on:
       - reservation-mongo
       - reservation-memcached
+    environment:
+      - BINARY_NAME=hotel_reservation
+      - LOG_LEVEL=${LOG_LEVEL:-warn}
     deploy:
       resources:
         limits:
@@ -134,31 +143,37 @@ services:
           cpus: "4"
 
   user-service:
-    image: hotel_user:latest
+    image: hotel:latest
     scale: ${USER_REPLICAS}
     restart: always
     networks:
       - hotel_network
     depends_on:
       - user-mongo
+    environment:
+      - BINARY_NAME=hotel_user
+      - LOG_LEVEL=${LOG_LEVEL:-warn}
     deploy:
       resources:
         limits:
           cpus: "4"
 
   geo-service:
-    image: hotel_geo:latest
+    image: hotel:latest
     scale: ${GEO_REPLICAS}
     restart: always
     networks:
       - hotel_network
+    environment:
+      - BINARY_NAME=hotel_geo
+      - LOG_LEVEL=${LOG_LEVEL:-warn}
     deploy:
       resources:
         limits:
           cpus: "4"
 
   search-service:
-    image: hotel_search:latest
+    image: hotel:latest
     scale: ${SEARCH_REPLICAS}
     restart: always
     networks:
@@ -166,13 +181,16 @@ services:
     depends_on:
       - geo-service
       - rate-service
+    environment:
+      - BINARY_NAME=hotel_search
+      - LOG_LEVEL=${LOG_LEVEL:-warn}
     deploy:
       resources:
         limits:
           cpus: "4"
 
   hotel-frontend-service:
-    image: hotel_frontend:latest
+    image: hotel:latest
     container_name: "hotel_frontend"
     restart: always
     networks:
@@ -184,6 +202,9 @@ services:
       - rate-service
       - geo-service
       - search-service
+    environment:
+      - BINARY_NAME=hotel_frontend
+      - LOG_LEVEL=${LOG_LEVEL:-warn}
     deploy:
       resources:
         limits:

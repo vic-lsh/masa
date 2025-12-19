@@ -2,18 +2,6 @@
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-services=(
-    "hotel_client_bench"
-    "hotel_frontend"
-    "hotel_geo"
-    "hotel_rate"
-    "hotel_search"
-    "hotel_profile"
-    "hotel_reservation"
-    "hotel_user"
-    "hotel_review"
-)
-
 features=""
 rust_log="warn"
 no_cache=""
@@ -47,17 +35,40 @@ fi
 
 app="hotel"
 
-echo "Building all hotel services. Feature flags: $features. No cache: '$no_cache'."
+# List of binaries to copy into the image
+binaries="hotel_client_bench hotel_frontend hotel_geo hotel_rate hotel_review hotel_search hotel_profile hotel_reservation hotel_user hotel_recommendation loadgen"
 
-echo "Building docker images sequentially."
+echo "Building generic hotel image with all binaries. Feature flags: $features. No cache: '$no_cache'."
+
+# Get the repo root (assuming this script is in exp/common/scripts)
+repo_root=$(git rev-parse --show-toplevel)
+app_dir="$repo_root/apps/$app"
+
+if [[ ! -d "$app_dir" ]]; then
+    echo "Error: application directory '$app_dir' not found" >&2
+    exit 1
+fi
+
+# Change to app directory (required by Dockerfile context)
+cd "$app_dir"
+
+# Go to project root for Docker build context
+cd "$repo_root"
 
 if [[ -z "$features" ]]; then
     features_arg=""
 else
-    features_arg="--features $features"
+    features_arg="--build-arg FEATURES=$features"
 fi
 
-set -e
-for svc in "${services[@]}"; do
-    "$SCRIPT_DIR/docker-build-svc.sh" --binary "$svc" --app "$app" --rust-log "$rust_log" --app-config hotel.json $features_arg $no_cache
-done
+echo "Building docker image: hotel:latest"
+docker build -f ./exp/common/docker-build/Dockerfile \
+    $features_arg \
+    --build-arg LOG_LEVEL=$rust_log \
+    --build-arg APP=$app \
+    --build-arg APP_CONFIG_FILE=hotel.json \
+    --build-arg BINARIES="$binaries" \
+    --ulimit nofile=4096:4096 \
+    $no_cache \
+    -t hotel:latest \
+    .
