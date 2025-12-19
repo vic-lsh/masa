@@ -8,6 +8,7 @@ workflow:
 
 # Define stages
 stages:
+  - trigger
   - fmt
   - check
   - test
@@ -26,10 +27,9 @@ include:
 
 # Trigger pytest as a separate (child) pipeline so it runs independently.
 pytest_pipeline:
-  stage: test
-  needs: []
+  stage: trigger
   when: always
   before_script: []
   trigger:
     include:
-      - local: /.gitlab/test-pytest.yml
+      - local: .gitlab/test-pytest.yml
