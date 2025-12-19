@@ -129,8 +129,13 @@ class SyntheticApp(AppPlugin):
         
         return container_names
     
-    def create_load_generator(self) -> LoadGenerator:
-        """Create a load generator instance for synthetic application."""
+    def create_load_generator(self, features: Optional[str] = None) -> LoadGenerator:
+        """
+        Create a load generator instance for synthetic application.
+        
+        Args:
+            features: Optional cargo features (not used by synthetic app)
+        """
         return SyntheticLoadGenerator()
 
     def create_builder(self) -> AppBuilder:

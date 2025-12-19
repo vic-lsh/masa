@@ -296,9 +296,12 @@ class AppPlugin(ABC):
         pass
     
     @abstractmethod
-    def create_load_generator(self) -> LoadGenerator:
+    def create_load_generator(self, features: Optional[str] = None) -> LoadGenerator:
         """
         Create a load generator instance for this application.
+        
+        Args:
+            features: Optional cargo features used to build the image
         
         Returns:
             LoadGenerator instance configured for this application

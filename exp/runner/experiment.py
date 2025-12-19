@@ -190,6 +190,12 @@ class Experiment:
                         self.config.app_dir
                     )
                     
+                    # Add image tag if app supports it
+                    if hasattr(self.app, 'get_image_tag'):
+                        image_tag = self.app.get_image_tag(policy)
+                        env_vars[f"{self.config.app_name.upper()}_IMAGE_TAG"] = image_tag
+                        logger.debug(f"Set {self.config.app_name.upper()}_IMAGE_TAG={image_tag}")
+                    
                     # Write .env file
                     env_file = self.app_local_dir / ".env"
                     with open(env_file, "w") as f:
@@ -224,7 +230,7 @@ class Experiment:
                     )
                     
                     # Run load generator (blocking)
-                    loadgen = self.app.create_load_generator()
+                    loadgen = self.app.create_load_generator(features=policy)
                     loadgen.run(output_dir=output_dir, env_vars=env_vars)
                     
                     logger.info(f"Load generator completed for policy {policy}")

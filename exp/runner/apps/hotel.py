@@ -3,6 +3,7 @@ Hotel application plugin.
 """
 
 import json
+import logging
 import re
 import subprocess
 from pathlib import Path
@@ -10,9 +11,60 @@ from typing import Optional
 
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 
+logger = logging.getLogger(__name__)
+
+
+def normalize_features_to_tag(features: Optional[str]) -> str:
+    """
+    Normalize cargo feature flags into a deterministic, valid docker tag.
+    
+    Cargo features are comma-separated (e.g., "feat-b,feat-a").
+    Docker tags must be lowercase alphanumeric with periods, dashes, or underscores.
+    
+    Args:
+        features: Comma-separated cargo features or None
+        
+    Returns:
+        A normalized docker tag string (e.g., "feat-a-feat-b" or "latest")
+    """
+    if not features or features.strip() == "":
+        return "latest"
+    
+    # Split by comma, strip whitespace, and sort for determinism
+    feature_list = [f.strip() for f in features.split(",")]
+    feature_list = [f for f in feature_list if f]  # Remove empty strings
+    
+    if not feature_list:
+        return "latest"
+    
+    # Sort for determinism (case-insensitive for consistency)
+    feature_list.sort(key=str.lower)
+    
+    # Join with dashes, ensuring valid docker tag characters
+    # Replace any invalid characters with dashes
+    tag = "-".join(feature_list)
+    
+    # Docker tags: lowercase alphanumeric, periods, dashes, underscores only
+    # Also ensure it doesn't start with a period or dash
+    tag = re.sub(r'[^a-zA-Z0-9._-]', '-', tag)
+    tag = tag.lower()
+    tag = re.sub(r'^[.-]+', '', tag)  # Remove leading periods or dashes
+    tag = re.sub(r'-+', '-', tag)  # Collapse multiple dashes
+    
+    return tag if tag else "latest"
+
 
 class HotelLoadGenerator(LoadGenerator):
     """Load generator for the hotel reservation application."""
+    
+    def __init__(self, features: Optional[str] = None):
+        """
+        Initialize load generator with optional features for image tagging.
+        
+        Args:
+            features: Cargo features used to build the image
+        """
+        self.features = features
     
     def get_container_name(self) -> str:
         return "hotel_client_bench"
@@ -21,7 +73,8 @@ class HotelLoadGenerator(LoadGenerator):
         return "local_hotel_network"
     
     def get_image_name(self) -> str:
-        return "hotel:latest"
+        tag = normalize_features_to_tag(self.features)
+        return f"hotel:{tag}"
     
     def get_binary_name(self) -> str:
         return "hotel_client_bench"
@@ -59,6 +112,12 @@ class HotelBuilder(AppBuilder):
         build_args.extend(["--build-arg", "APP_CONFIG_FILE=hotel.json"])
         build_args.extend(["--build-arg", f"BINARIES={binaries}"])
 
+        # Generate tag based on features for deterministic, feature-specific images
+        tag = normalize_features_to_tag(features)
+        image_name = f"hotel:{tag}"
+        
+        logger.info(f"Building docker image: {image_name}")
+
         cmd: list[str] = [
             "docker",
             "build",
@@ -72,7 +131,7 @@ class HotelBuilder(AppBuilder):
         if no_cache:
             cmd.append("--no-cache")
 
-        cmd.extend(["-t", "hotel:latest", "."])
+        cmd.extend(["-t", image_name, "."])
 
         subprocess.run(
             cmd,
@@ -80,6 +139,8 @@ class HotelBuilder(AppBuilder):
             check=True,
             capture_output=False,
         )
+        
+        logger.info(f"Successfully built docker image: {image_name}")
 
 
 class HotelApp(AppPlugin):
@@ -149,7 +210,7 @@ class HotelApp(AppPlugin):
             compose_file="scripts/local/containers+svcs.yaml",
             network_name="local_hotel_network",
             loadgen_container_name="hotel_client_bench",
-            loadgen_image_name="hotel:latest",
+            loadgen_image_name="hotel:<features>",  # Actual tag is dynamic based on features
             loadgen_binary_name="hotel_client_bench",
             app_config_filename="hotel.json",
             app_config_required=True,
@@ -181,10 +242,27 @@ class HotelApp(AppPlugin):
         
         return container_names
     
-    def create_load_generator(self) -> LoadGenerator:
-        """Create a load generator instance for hotel application."""
-        return HotelLoadGenerator()
+    def create_load_generator(self, features: Optional[str] = None) -> LoadGenerator:
+        """
+        Create a load generator instance for hotel application.
+        
+        Args:
+            features: Optional cargo features used to build the image
+        """
+        return HotelLoadGenerator(features=features)
 
     def create_builder(self) -> AppBuilder:
         """Create a builder instance for hotel application."""
         return HotelBuilder()
+    
+    def get_image_tag(self, features: Optional[str] = None) -> str:
+        """
+        Get the docker image tag for the given features.
+        
+        Args:
+            features: Optional cargo features
+            
+        Returns:
+            Docker image tag string
+        """
+        return normalize_features_to_tag(features)
