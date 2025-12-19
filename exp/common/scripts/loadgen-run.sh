@@ -42,12 +42,14 @@ case "$app" in
     hotel)
         container_name="hotel_client_bench"
         network="local_hotel_network"
-        image_name="hotel_client_bench"
+        image_name="hotel:latest"
+        binary_name="hotel_client_bench"
         ;;
     synthetic)
         container_name="synthetic_client_bench"
         network="local_synthetic_network"
         image_name="synthetic_client_bench"
+        binary_name="synthetic_client_bench"
         ;;
     *)
         echo "Error: unsupported app '$app' for load generator" >&2
@@ -63,6 +65,8 @@ mkdir -p "$output_path"
 docker run \
     --name "$container_name" \
     --network "$network" \
+    -e BINARY_NAME="$binary_name" \
+    -e LOG_LEVEL="${LOG_LEVEL:-warn}" \
     "$image_name" \
     &> "$output_path/loadgen.log"
 
