@@ -33,7 +33,7 @@ RUN if [ -z "$FEATURES" ]; then\
   fi
 
 # Copy the binary exporting script
-COPY apps/scripts/export-binaries.sh /tmp/export-binaries.sh
+COPY exp/common/docker-build/export-binaries.sh /tmp/export-binaries.sh
 RUN chmod +x /tmp/export-binaries.sh
 
 # Copy specified binaries to a temporary directory for the final stage
@@ -57,7 +57,7 @@ RUN apt-get install -y\
 # Copy the binaries directory from the builder stage
 COPY --from=builder /tmp/binaries/ /usr/local/bin/
 
-COPY --from=builder /usr/src/masa/apps/scripts/entrypoint.sh /usr/entrypoint.sh
+COPY exp/common/docker-build/entrypoint.sh /usr/entrypoint.sh
 COPY --from=builder /usr/src/masa/apps/${APP}/scripts/local/${APP_CONFIG_FILE} /usr/config.json
 COPY exp/${APP}/scripts/gen_config.json /usr/gen_config.json
 
