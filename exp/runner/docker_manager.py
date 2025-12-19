@@ -7,7 +7,6 @@ import os
 import subprocess
 import threading
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -30,55 +29,6 @@ class DockerManager:
         """
         self.repo_root = repo_root
         self.common_scripts_dir = repo_root / "exp" / "common" / "scripts"
-    
-    def build(
-        self,
-        app_name: str,
-        app_dir: Path,
-        features: Optional[str] = None,
-        rust_log: str = "info",
-        no_cache: bool = False
-    ) -> None:
-        """
-        Build Docker image for the application with specified features.
-        
-        Args:
-            app_name: Name of the application
-            app_dir: Path to application directory
-            features: Cargo features to enable (e.g., scheduling policy)
-            rust_log: Rust log level
-            no_cache: Whether to disable Docker cache
-            
-        Raises:
-            subprocess.CalledProcessError: If build fails
-        """
-        logger.info(f"Building Docker image for {app_name} with features: {features}")
-        
-        cmd = [
-            str(self.common_scripts_dir / "docker-build.sh"),
-            "--rust-log", rust_log,
-        ]
-        
-        if features:
-            cmd.extend(["--features", features])
-        
-        if no_cache:
-            cmd.append("--no-cache")
-        
-        env = os.environ.copy()
-        
-        try:
-            subprocess.run(
-                cmd,
-                cwd=app_dir,
-                check=True,
-                env=env,
-                capture_output=False,
-            )
-            logger.info(f"Successfully built Docker image for {app_name}")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Docker build failed with exit code {e.returncode}")
-            raise
     
     def start(
         self,

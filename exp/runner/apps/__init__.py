@@ -2,11 +2,12 @@
 Application plugins for the experiment runner.
 """
 
-from .base import AppPlugin, DockerConfig, LoadGenerator
+from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .hotel import HotelApp, HotelLoadGenerator
 from .synthetic import SyntheticApp, SyntheticLoadGenerator
 
 __all__ = [
+    "AppBuilder",
     "AppPlugin",
     "DockerConfig", 
     "LoadGenerator",
