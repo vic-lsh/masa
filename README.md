@@ -103,55 +103,39 @@ from an application folder. The plots will be saved at `data/plots/<experiment>`
 
 You can also pass a `--plot` option to the `run-experiment` and `queue-experiment` scripts above.
 
-##### Syncing experiment output and plots from a remote machine
-
-If you setup the file `.env` with the following variables
-
-```
-remote_user="<remote-user>"
-server="<remote-machine>"
-remote_masa_path="remote/path/to/masa"
-```
-
-then you can run
-
-```
-../common/scripts/sync-data.sh
-```
-
-from an application folder to sync everything in the `data` folder from your remote machine to your local machine over ssh.
-
 #### Docker compose manual (single-server)
 
 NOTE: This is currently only supported for `hotel` and `synthetic`.
 
+For running experiments, use the Python experiment runner:
+
+```bash
+# Run a full experiment (builds, starts services, runs load generator, collects logs)
+python3 -m exp.runner run <app> <experiment-name> --plot
+
+# For example:
+python3 -m exp.runner run hotel exp1 --plot
+python3 -m exp.runner run synthetic quick_test --plot
+
+# Run multiple experiments sequentially
+python3 -m exp.runner run-multiple hotel "exp1 exp2 exp3" --plot
+```
+
+See `exp/runner/README.md` for full documentation on the experiment runner.
+
+For manual Docker operations (without the full experiment workflow):
+
 ```bash
 cd exp/<app>
 
-# Set variables used by the docker compose file, based on the contents of the app config
-APP_DIR=$(git rev-parse --show-toplevel)/apps/<app>
-./scripts/get-env.sh > "$APP_DIR/scripts/local/.env"
-
-# Build and start the services (and their databases) as docker containers.
-# Specify the policy you want Masa to use
-./scripts/docker-run.sh --features <policy>
-
-# Start generating load to the application
-# Note: load generation config is expected to be at ./scripts/gen_config.json
-# To start, make a copy of ./scripts/gen_config.template.json.
-./scripts/loadgen-run.sh
-
-# To view logs from the containers (w/ tmux), run this script in another terminal.
+# To view logs from containers (w/ tmux), run this script:
 ./scripts/docker-view-logs.sh
 
-# To view resource usage across containers, run this:
+# To view resource usage across containers:
 docker stats
-
-# Teardown the docker services and their databases.
-./scripts/docker-stop.sh
 ```
 
-where `<policy>` is one of the policy feature flags. If you just want to get the application to run, use `fifo`.
+Note: The old bash scripts (`get-env.sh`, `docker-run.sh`, `loadgen-run.sh`, `docker-stop.sh`) have been replaced by the Python experiment runner.
 
 #### K8s (work-in-progress)
 
