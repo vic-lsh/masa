@@ -35,7 +35,9 @@ echo "Running MSSIM experiment using $config_path"
 python3 "$repo_root/exp/mssim/scripts/experiment.py" --config "$config_path"
 
 assert_path_exists() {
-    if [ ! -e "$1" ]; then
+    if [ -e "$1" ]; then
+        echo "File exists: $1"
+    else
         echo "Expected path missing: $1" >&2
         exit 1
     fi
