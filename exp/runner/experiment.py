@@ -181,7 +181,7 @@ class Experiment:
                 # Setup output directory for this iteration/policy
                 output_dir = self.config.out_dir / str(iteration) / policy
                 output_dir.mkdir(parents=True, exist_ok=True)
-                
+                env_vars: dict = {}
                 try:
                     # Generate environment variables
                     env_vars = self.app.generate_env_vars(
@@ -231,7 +231,8 @@ class Experiment:
                     
                     # Run load generator (blocking)
                     loadgen = self.app.create_load_generator(features=policy)
-                    loadgen.run(output_dir=output_dir, env_vars=env_vars)
+                    gen_config_path = self.exp_scripts_dir / "gen_config.json"
+                    loadgen.run(output_dir=output_dir, env_vars=env_vars, gen_config_path=gen_config_path)
                     
                     logger.info(f"Load generator completed for policy {policy}")
                     
@@ -245,7 +246,8 @@ class Experiment:
                     # Stop Docker services
                     self.docker.stop(
                         app_dir=self.config.app_dir,
-                        compose_file=docker_config.compose_file
+                        compose_file=docker_config.compose_file,
+                        env_vars=env_vars,
                     )
                     
                     # Clean up .env file

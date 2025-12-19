@@ -3,11 +3,15 @@ Synthetic application plugin.
 """
 
 import json
+import logging
 import re
+import subprocess
 from pathlib import Path
 from typing import Optional
 
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
+
+logger = logging.getLogger(__name__)
 
 
 class SyntheticLoadGenerator(LoadGenerator):
@@ -141,14 +145,20 @@ class SyntheticApp(AppPlugin):
     def create_builder(self) -> AppBuilder:
         """
         Create a builder instance for synthetic application.
-
-        Placeholder for now: the synthetic app image build flow hasn't been
-        migrated into the Python runner yet.
         """
         return SyntheticBuilder()
 
 
 class SyntheticBuilder(AppBuilder):
+    """
+    Build logic for the synthetic app docker images.
+    
+    The synthetic app requires three separate docker images:
+    - synthetic_frontend:latest - frontend service
+    - synthetic_child:latest - child service (can be scaled)
+    - synthetic_client_bench:latest - load generator
+    """
+    
     def build(
         self,
         *,
@@ -158,8 +168,52 @@ class SyntheticBuilder(AppBuilder):
         rust_log: str = "info",
         no_cache: bool = False,
     ) -> None:
-        raise NotImplementedError(
-            "Synthetic app build is not implemented in the Python runner yet. "
-            "Build images manually for now (or migrate the synthetic build flow "
-            "into exp/runner/apps/synthetic.py)."
-        )
+        app = "synthetic"
+        
+        # Services to build (each gets its own image)
+        services = [
+            ("synthetic_frontend", "synthetic_frontend:latest"),
+            ("synthetic_child", "synthetic_child:latest"),
+            ("synthetic_client_bench", "synthetic_client_bench:latest"),
+        ]
+        
+        logger.info(f"Building {len(services)} docker images for synthetic app")
+        if features:
+            logger.info(f"Using features: {features}")
+        
+        for binary_name, image_name in services:
+            logger.info(f"Building docker image: {image_name}")
+            
+            build_args: list[str] = []
+            if features:
+                build_args.extend(["--build-arg", f"FEATURES={features}"])
+            build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
+            build_args.extend(["--build-arg", f"APP={app}"])
+            build_args.extend(["--build-arg", "APP_CONFIG_FILE=config.docker.json"])
+            build_args.extend(["--build-arg", f"BINARIES={binary_name}"])
+            
+            cmd: list[str] = [
+                "docker",
+                "build",
+                "-f",
+                "./exp/common/docker-build/Dockerfile",
+                *build_args,
+                "--ulimit",
+                "nofile=4096:4096",
+            ]
+            
+            if no_cache:
+                cmd.append("--no-cache")
+            
+            cmd.extend(["-t", image_name, "."])
+            
+            subprocess.run(
+                cmd,
+                cwd=repo_root,
+                check=True,
+                capture_output=False,
+            )
+            
+            logger.info(f"Successfully built docker image: {image_name}")
+        
+        logger.info("All synthetic app docker images built successfully")
