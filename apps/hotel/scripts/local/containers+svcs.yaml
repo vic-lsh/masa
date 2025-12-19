@@ -26,7 +26,7 @@ services:
           cpus: "4"
 
   rate-service:
-    image: hotel:latest
+    image: hotel:${HOTEL_IMAGE_TAG:-latest}
     scale: ${RATE_REPLICAS}
     restart: always
     networks:
@@ -69,7 +69,7 @@ services:
           cpus: "4"
 
   profile-service:
-    image: hotel:latest
+    image: hotel:${HOTEL_IMAGE_TAG:-latest}
     scale: ${PROFILE_REPLICAS}
     restart: always
     networks:
@@ -112,7 +112,7 @@ services:
           cpus: "4"
 
   reservation-service:
-    image: hotel:latest
+    image: hotel:${HOTEL_IMAGE_TAG:-latest}
     scale: ${RESERVATION_REPLICAS}
     restart: always
     networks:
@@ -143,7 +143,7 @@ services:
           cpus: "4"
 
   user-service:
-    image: hotel:latest
+    image: hotel:${HOTEL_IMAGE_TAG:-latest}
     scale: ${USER_REPLICAS}
     restart: always
     networks:
@@ -159,7 +159,7 @@ services:
           cpus: "4"
 
   geo-service:
-    image: hotel:latest
+    image: hotel:${HOTEL_IMAGE_TAG:-latest}
     scale: ${GEO_REPLICAS}
     restart: always
     networks:
@@ -173,7 +173,7 @@ services:
           cpus: "4"
 
   search-service:
-    image: hotel:latest
+    image: hotel:${HOTEL_IMAGE_TAG:-latest}
     scale: ${SEARCH_REPLICAS}
     restart: always
     networks:
@@ -190,7 +190,7 @@ services:
           cpus: "4"
 
   hotel-frontend-service:
-    image: hotel:latest
+    image: hotel:${HOTEL_IMAGE_TAG:-latest}
     container_name: "hotel_frontend"
     restart: always
     networks:
