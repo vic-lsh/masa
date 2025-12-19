@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# Python-based experiment runner wrapper for hotel application.
+# Python-based experiment runner wrapper for synthetic application.
 # This is a convenience wrapper that calls the Python experiment runner.
 #
-# Usage: ./run-experiment-py.sh <experiment> [--plot] [--no-cache]
+# Usage: ./run-experiment.sh <experiment> [--plot] [--no-cache]
 #
 
 set -e
@@ -23,4 +23,4 @@ experiment=$1
 shift 1
 
 cd "$REPO_ROOT"
-exec python3 -m exp.runner run hotel "$experiment" "$@"
+exec python3 -m exp.runner run synthetic "$experiment" "$@"
