@@ -38,11 +38,13 @@ fi
 
 exp_scripts_dir="$exp_dir/scripts"
 app_scripts_dir="$app_dir/scripts"
+common_scripts_dir="$repo_root/exp/common/scripts"
 experiment=$1
 shift 1
 plot="false"
 app_config_filename="config.docker.json"
 app_config_required="false"
+no_cache=""
 
 if [[ "$app" == "hotel" ]]; then
     app_config_filename="hotel.json"
@@ -60,6 +62,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
     --plot)
         plot="true"
+        shift 1
+        ;;
+    --no-cache)
+        no_cache="--no-cache"
         shift 1
         ;;
     *)
@@ -122,17 +128,22 @@ for i in $(seq 0 $((repeat - 1))); do
         if [[ -f "$exp_scripts_dir/get-env.sh" ]]; then
             "$exp_scripts_dir/get-env.sh" > "$app_env_path"
         fi
-        "$exp_scripts_dir/docker-run.sh" --features "$policy"
+        "$common_scripts_dir/docker-run.sh" --app "$app" --features "$policy" $no_cache
 
-        "$exp_scripts_dir/loadgen-run.sh" --output "$out_dir/$i/$policy" --save-logs &
+        "$common_scripts_dir/loadgen-run.sh" --app "$app" --output "$out_dir/$i/$policy" --save-logs &
         loadgen_pid=$!
 
         # set up log file pipes so that container logs stream in as they run
+        # Note: docker-save-logs.sh is app-specific and remains in exp_scripts_dir
         "$exp_scripts_dir/docker-save-logs.sh" --output "$out_dir/$i/$policy" --follow
 
         wait $loadgen_pid
+        if [[ $? -ne 0 ]]; then
+            echo "Error: loadgen process (PID $loadgen_pid) failed." >&2
+            exit 1
+        fi
 
-        "$exp_scripts_dir/docker-stop.sh"
+        "$common_scripts_dir/docker-stop.sh" --app "$app"
         rm -f "$app_env_path"
     done
 done
