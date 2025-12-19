@@ -30,23 +30,23 @@ The experiment runner is part of the MASA repository. Ensure you have Python 3.1
 
 ```bash
 # Run experiment 'exp1' for the hotel application
-python -m exp.runner run-experiment hotel exp1
+python -m exp.runner run hotel exp1
 
 # Run with plot generation
-python -m exp.runner run-experiment hotel exp1 --plot
+python -m exp.runner run hotel exp1 --plot
 
 # Run with verbose logging
-python -m exp.runner run-experiment hotel exp1 --plot --verbose
+python -m exp.runner run hotel exp1 --plot --verbose
 ```
 
 ### Queue Multiple Experiments
 
 ```bash
 # Run multiple experiments sequentially
-python -m exp.runner queue-experiments hotel "exp1 exp2 exp3" --plot
+python -m exp.runner run-multiple hotel "exp1 exp2 exp3" --plot
 
 # For synthetic application
-python -m exp.runner queue-experiments synthetic "quick_test template-presampled" --plot
+python -m exp.runner run-multiple synthetic "quick_test template-presampled" --plot
 ```
 
 ### Generate Plots Only
@@ -127,12 +127,12 @@ Plots are generated in `exp/<app>/data/plots/<experiment_name>/`.
 
 ## Command Reference
 
-### run-experiment
+### run
 
 Run a single performance experiment.
 
 ```bash
-python -m exp.runner run-experiment <app> <experiment> [options]
+python -m exp.runner run <app> <experiment> [options]
 ```
 
 **Arguments:**
@@ -146,15 +146,15 @@ python -m exp.runner run-experiment <app> <experiment> [options]
 
 **Example:**
 ```bash
-python -m exp.runner run-experiment hotel exp1 --plot --verbose
+python -m exp.runner run hotel exp1 --plot --verbose
 ```
 
-### queue-experiments
+### run-multiple
 
 Run multiple experiments sequentially.
 
 ```bash
-python -m exp.runner queue-experiments <app> "<exp1> <exp2> ..." [options]
+python -m exp.runner run-multiple <app> "<exp1> <exp2> ..." [options]
 ```
 
 **Arguments:**
@@ -168,7 +168,7 @@ python -m exp.runner queue-experiments <app> "<exp1> <exp2> ..." [options]
 
 **Example:**
 ```bash
-python -m exp.runner queue-experiments hotel "exp1 exp2 exp3" --plot
+python -m exp.runner run-multiple hotel "exp1 exp2 exp3" --plot
 ```
 
 ### plot
@@ -205,7 +205,7 @@ cd /path/to/masa
 ### After (Python)
 ```bash
 cd /path/to/masa
-python -m exp.runner run-experiment hotel exp1 --plot
+python -m exp.runner run hotel exp1 --plot
 ```
 
 ### Key Differences
@@ -303,10 +303,10 @@ Ensure you're using Python 3.10+ and all dependencies from `pyproject.toml` are 
 ```bash
 # Test CLI with dry-run commands
 python -m exp.runner --help
-python -m exp.runner run-experiment --help
+python -m exp.runner run --help
 
 # Run a quick test experiment
-python -m exp.runner run-experiment synthetic quick_test --verbose
+python -m exp.runner run synthetic quick_test --verbose
 ```
 
 ### Logging
