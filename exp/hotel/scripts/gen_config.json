@@ -1,24 +1,23 @@
 {
   "Repeats": 1,
   "Apis": [
-    "Search"
+    "Search",
+    "Reservation"
   ],
   "Slos": [
+    50000,
     50000
   ],
   "Rps": [
-      400,
-      800,
-      1000,
-      1050,
-      1100
+    1000
   ],
   "Gap": "const",
-  "WarmupSecs": 5,
-  "DurationSecs": 120,
+  "WarmupSecs": 10,
+  "DurationSecs": 20,
   "Concurrency": 0,
   "Addr": "http://hotel_frontend:8660",
   "Timeouts_ms": [
+    1000,
     1000
   ]
 }
