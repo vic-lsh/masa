@@ -62,7 +62,7 @@ else
 fi
 
 echo "Building docker image: hotel:latest"
-docker build -f ./apps/scripts/Dockerfile \
+docker build -f ./exp/common/docker-build/Dockerfile \
     $features_arg \
     --build-arg LOG_LEVEL=$rust_log \
     --build-arg APP=$app \
