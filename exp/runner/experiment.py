@@ -198,12 +198,13 @@ class Experiment:
                     logger.debug(f"Wrote environment variables to {env_file}")
                     
                     # Build and start Docker services
-                    self.docker.build(
-                        app_name=self.config.app_name,
+                    builder = self.app.create_builder()
+                    builder.build(
+                        repo_root=self.repo_root,
                         app_dir=self.config.app_dir,
                         features=policy,
                         rust_log="info",
-                        no_cache=self.no_cache
+                        no_cache=self.no_cache,
                     )
                     
                     self.docker.start(

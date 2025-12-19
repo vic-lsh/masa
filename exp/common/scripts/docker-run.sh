@@ -72,11 +72,10 @@ pushd "$app_dir" >/dev/null
 trap 'popd >/dev/null' EXIT
 
 if [[ "$skip_build" == false ]]; then
-    if [[ -z "$features" ]]; then
-        "$common_scripts_dir/docker-build.sh" --rust-log "$rust_log" $no_cache
-    else
-        "$common_scripts_dir/docker-build.sh" --rust-log "$rust_log" --features "$features" $no_cache
-    fi
+    echo "Error: automatic build via docker-run.sh has been removed."
+    echo "Build images using the Python experiment runner app builders instead,"
+    echo "or pass --skip-build and ensure images are already built."
+    exit 1
 fi
 
 echo "Service build complete. Starting services..."
