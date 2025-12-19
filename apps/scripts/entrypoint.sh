@@ -22,7 +22,7 @@ CMD="/usr/local/bin/${BINARY_NAME}"
 
 # Conditionally add the --gen-config flag for client bench binaries.
 # Client bench binaries use gen_config.json, service binaries use config.json
-if echo "${BINARY_NAME}" | grep -q "_client_bench$$"; then
+if echo "${BINARY_NAME}" | grep -q "_client_bench$"; then
     output_path="/tmp/masa-load-gen"
     CMD="${CMD} --gen-config /usr/gen_config.json --output-path $output_path"
 else
