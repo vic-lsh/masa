@@ -7,12 +7,12 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 use tonic::transport::Server;
 
-use synthetic_app::config;
+use synthetic::config;
 
 use app_utils::logging::init_logging;
 use config::SyntheticConfig;
 use server::FrontendImpl;
-use synthetic_app::tonic::frontend::frontend_server::FrontendServer;
+use synthetic::tonic::frontend::frontend_server::FrontendServer;
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Synthetic Args")]
@@ -27,9 +27,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::from_args();
     let cfg: SyntheticConfig = {
-        let file = File::open(args.config).expect("Failed to open file");
+        let file = File::open(&args.config)
+            .unwrap_or_else(|e| panic!("Failed to open file '{}': {}", args.config.display(), e));
         let reader = BufReader::new(file);
-        serde_json::from_reader(reader)?
+        serde_json::from_reader(reader)
+            .map_err(|e| format!("Failed to parse config '{}': {}", args.config.display(), e))?
     };
 
     const PORT: u16 = 8000;

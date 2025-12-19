@@ -10,7 +10,7 @@ use tonic::transport::Server;
 use app_utils::logging::init_logging;
 use server::synthetic_tonic::child::child_server::ChildServer;
 use server::ChildImpl;
-use synthetic_app::config::SyntheticConfig;
+use synthetic::config::SyntheticConfig;
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Synthetic Args")]
@@ -25,9 +25,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::from_args();
     let cfg: SyntheticConfig = {
-        let file = File::open(args.config).expect("Failed to open file");
+        let file = File::open(&args.config)
+            .unwrap_or_else(|e| panic!("Failed to open file '{}': {}", args.config.display(), e));
         let reader = BufReader::new(file);
-        serde_json::from_reader(reader)?
+        serde_json::from_reader(reader).map_err(|e| {
+            let path = args.config.display();
+            format!("Failed to parse config file '{}': {}", path, e)
+        })?
     };
 
     const PORT: usize = 8000;
