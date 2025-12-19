@@ -7,6 +7,7 @@ features=""
 rust_log="info"
 app=""
 app_dir=""
+no_cache=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -30,6 +31,10 @@ while [[ $# -gt 0 ]]; do
     --app-dir)
         app_dir="$2"
         shift 2
+        ;;
+    --no-cache)
+        no_cache="--no-cache"
+        shift 1
         ;;
     *)
         echo "Unknown argument: $1"
@@ -59,14 +64,18 @@ if [[ ! -d "$app_dir" ]]; then
     exit 1
 fi
 
+# Determine common scripts directory (this script is in exp/common/scripts)
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+common_scripts_dir="$SCRIPT_DIR"
+
 pushd "$app_dir" >/dev/null
 trap 'popd >/dev/null' EXIT
 
 if [[ "$skip_build" == false ]]; then
     if [[ -z "$features" ]]; then
-        ./scripts/docker-build.sh --rust-log "$rust_log"
+        "$common_scripts_dir/docker-build.sh" --rust-log "$rust_log" $no_cache
     else
-        ./scripts/docker-build.sh --rust-log "$rust_log" --features "$features"
+        "$common_scripts_dir/docker-build.sh" --rust-log "$rust_log" --features "$features" $no_cache
     fi
 fi
 
