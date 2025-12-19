@@ -1,0 +1,8 @@
+test_synthetic_experiment:
+  stage: test
+  before_script: []
+  tags:
+    - on-host
+  script:
+    - groups $(whoami) # make sure that gitlab runner is in the 'docker' group
+    - ./scripts/test_synthetic_experiment.sh
