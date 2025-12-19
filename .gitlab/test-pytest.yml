@@ -1,0 +1,11 @@
+
+pytest:
+  stage: test
+  before_script:
+    - apt-get update -yqq
+    - apt-get install -y python3 python3-pip
+    - pip3 install pytest
+  script:
+    - python3 --version # Print version info for debugging
+    - pip3 --version
+    - pytest
