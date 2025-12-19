@@ -11,8 +11,8 @@ use tonic::{Request, Response, Status};
 
 use crate::server::synthetic_tonic::child::Periodic;
 use app_utils::timing::time_now;
-use synthetic_app::config::SyntheticConfig;
-use synthetic_app::util;
+use synthetic::config::SyntheticConfig;
+use synthetic::util;
 use synthetic_tonic::{child, child::child_server::Child};
 
 pub struct ChildImpl {

@@ -6,11 +6,11 @@ ARG FEATURES
 
 RUN apt-get update
 RUN apt-get install -y\
-        curl\
-        unzip\
-        protobuf-compiler\
-        pkg-config\
-        libssl-dev
+  curl\
+  unzip\
+  protobuf-compiler\
+  pkg-config\
+  libssl-dev
 
 # Create a new empty shell project
 WORKDIR /usr/src/masa
@@ -27,9 +27,9 @@ COPY libs libs
 WORKDIR /usr/src/masa/apps/${APP}
 RUN if [ -z "$FEATURES" ]; then\
   cargo build -p ${APP} --bins --release;\
-else \
+  else \
   cargo build -p ${APP} --bins --release --features ${FEATURES};\
-fi
+  fi
 
 # Final stage - create a slimmer image
 FROM debian:trixie-slim
@@ -39,8 +39,8 @@ ARG LOG_LEVEL=warn
 ARG BINARY_NAME
 ARG APP_CONFIG_FILE=config.docker.json
 RUN if [ -z "$BINARY_NAME" ]; then \
-    echo "Error: BINARY_NAME argument is required" && exit 1; \
-    fi
+  echo "Error: BINARY_NAME argument is required" && exit 1; \
+  fi
 
 RUN apt-get update
 
@@ -48,12 +48,13 @@ RUN apt-get update
 # we choose to re-install rather than copy the installed .so file from the
 # prior stage, because we could miss copying some other deps that ssl needs.
 RUN apt-get install -y\
-        libssl-dev
+  libssl-dev
 
 # Copy the built executable from the builder stage
 COPY --from=builder /usr/src/masa/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
-COPY --from=builder /usr/src/masa/apps/${APP}/scripts/docker/entrypoint.sh /usr/entrypoint.sh
-COPY apps/${APP}/scripts/local/${APP_CONFIG_FILE} /usr/config.json
+
+COPY --from=builder /usr/src/masa/apps/scripts/entrypoint.sh /usr/entrypoint.sh
+COPY --from=builder /usr/src/masa/apps/${APP}/scripts/local/${APP_CONFIG_FILE} /usr/config.json
 COPY exp/${APP}/scripts/gen_config.json /usr/gen_config.json
 
 ENV BINARY_NAME=${BINARY_NAME}

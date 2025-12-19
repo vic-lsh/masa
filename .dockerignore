@@ -3,7 +3,6 @@
 
 apps/*/data
 apps/*/snippets
-apps/scripts
 
 apps/hotel/scripts
 !apps/hotel/scripts/gen_config.json
