@@ -2,11 +2,19 @@
 Application plugins for the experiment runner.
 """
 
-from .base import AppPlugin, DockerConfig
-from .hotel import HotelApp
-from .synthetic import SyntheticApp
+from .base import AppPlugin, DockerConfig, LoadGenerator
+from .hotel import HotelApp, HotelLoadGenerator
+from .synthetic import SyntheticApp, SyntheticLoadGenerator
 
-__all__ = ["AppPlugin", "DockerConfig", "HotelApp", "SyntheticApp"]
+__all__ = [
+    "AppPlugin",
+    "DockerConfig", 
+    "LoadGenerator",
+    "HotelApp",
+    "HotelLoadGenerator",
+    "SyntheticApp",
+    "SyntheticLoadGenerator",
+]
 
 
 def get_app_plugin(app_name: str) -> AppPlugin:

@@ -223,15 +223,8 @@ class Experiment:
                     )
                     
                     # Run load generator (blocking)
-                    self.docker.run_loadgen(
-                        app_name=self.config.app_name,
-                        container_name=docker_config.loadgen_container_name,
-                        network_name=docker_config.network_name,
-                        image_name=docker_config.loadgen_image_name,
-                        binary_name=docker_config.loadgen_binary_name,
-                        output_dir=output_dir,
-                        env_vars=env_vars
-                    )
+                    loadgen = self.app.create_load_generator()
+                    loadgen.run(output_dir=output_dir, env_vars=env_vars)
                     
                     logger.info(f"Load generator completed for policy {policy}")
                     
