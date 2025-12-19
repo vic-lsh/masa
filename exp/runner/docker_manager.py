@@ -16,8 +16,9 @@ class DockerManager:
     """
     Manages all Docker operations for experiments.
     
-    Handles building images, starting/stopping services, running load generators,
-    and collecting container logs.
+    Handles building images, starting/stopping services, and collecting container logs.
+    
+    Note: Load generator execution is now handled by app-specific LoadGenerator classes.
     """
     
     def __init__(self, repo_root: Path):
@@ -151,92 +152,6 @@ class DockerManager:
         )
         
         logger.info("Docker services stopped")
-    
-    def run_loadgen(
-        self,
-        app_name: str,
-        container_name: str,
-        network_name: str,
-        image_name: str,
-        binary_name: str,
-        output_dir: Path,
-        env_vars: Optional[dict] = None
-    ) -> None:
-        """
-        Run load generator in a Docker container.
-        
-        Args:
-            app_name: Name of the application
-            container_name: Name for the load generator container
-            network_name: Docker network to connect to
-            image_name: Docker image to use
-            binary_name: Binary name to run
-            output_dir: Directory to save output
-            env_vars: Additional environment variables
-            
-        Raises:
-            subprocess.CalledProcessError: If load generator fails
-        """
-        logger.info(f"Running load generator for {app_name}")
-        
-        # Remove existing container if present
-        subprocess.run(
-            ["docker", "rm", "-f", container_name],
-            capture_output=True,
-            check=False,
-        )
-        
-        # Ensure output directory exists
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Build docker run command
-        cmd = [
-            "docker", "run",
-            "--name", container_name,
-            "--network", network_name,
-            "-e", f"BINARY_NAME={binary_name}",
-            "-e", f"LOG_LEVEL={os.environ.get('LOG_LEVEL', 'warn')}",
-        ]
-        
-        # Add additional environment variables
-        if env_vars:
-            for key, value in env_vars.items():
-                cmd.extend(["-e", f"{key}={value}"])
-        
-        cmd.append(image_name)
-        
-        # Run load generator and capture output
-        loadgen_log = output_dir / "loadgen.log"
-        logger.info(f"Load generator output will be saved to {loadgen_log}")
-        
-        with open(loadgen_log, "w") as f:
-            subprocess.run(
-                cmd,
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                check=True,
-            )
-        
-        # Copy traces from container
-        container_trace_path = "/tmp/masa-load-gen"
-        temp_output = output_dir / "masa-load-gen"
-        
-        try:
-            subprocess.run(
-                ["docker", "cp", f"{container_name}:{container_trace_path}", str(output_dir)],
-                check=True,
-                capture_output=True,
-            )
-            
-            # Move files from subdirectory if needed
-            if temp_output.exists():
-                for trace_file in temp_output.iterdir():
-                    trace_file.rename(output_dir / trace_file.name)
-                temp_output.rmdir()
-        except subprocess.CalledProcessError:
-            logger.warning("Failed to copy traces from container (may not exist)")
-        
-        logger.info("Load generator completed successfully")
     
     def stream_logs(
         self,

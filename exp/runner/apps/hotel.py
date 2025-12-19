@@ -7,7 +7,23 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from .base import AppPlugin, DockerConfig
+from .base import AppPlugin, DockerConfig, LoadGenerator
+
+
+class HotelLoadGenerator(LoadGenerator):
+    """Load generator for the hotel reservation application."""
+    
+    def get_container_name(self) -> str:
+        return "hotel_client_bench"
+    
+    def get_network_name(self) -> str:
+        return "local_hotel_network"
+    
+    def get_image_name(self) -> str:
+        return "hotel:latest"
+    
+    def get_binary_name(self) -> str:
+        return "hotel_client_bench"
 
 
 class HotelApp(AppPlugin):
@@ -108,3 +124,7 @@ class HotelApp(AppPlugin):
                 container_names.append(f"local-{service}-service-{i}")
         
         return container_names
+    
+    def create_load_generator(self) -> LoadGenerator:
+        """Create a load generator instance for hotel application."""
+        return HotelLoadGenerator()
