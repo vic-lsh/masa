@@ -1,0 +1,22 @@
+image: "rustlang/rust:nightly"
+
+# Child pipeline that contains the Rust fmt -> check -> test jobs.
+# Triggered from the parent pipeline so it can run in parallel with pytest.
+
+stages:
+  - fmt
+  - check
+  - test
+
+before_script:
+  - apt-get update -yqq
+  - apt-get install -y protobuf-compiler
+
+include:
+  - local: /.gitlab/fmt-cargo.yml
+  - local: /.gitlab/check-cargo.yml
+  - local: /.gitlab/test-cargo.yml
+  - local: /.gitlab/test-e2e-hotel.yml
+  - local: /.gitlab/test-mssim-experiment.yml
+  - local: /.gitlab/test-synthetic-experiment.yml
+
