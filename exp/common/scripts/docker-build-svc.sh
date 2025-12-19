@@ -58,7 +58,7 @@ fi
 cd ../..
 
 echo "Building docker image for service $binary. features: '$features'."
-docker build -f ./apps/scripts/Dockerfile \
+docker build -f ./exp/common/docker-build/Dockerfile \
     --build-arg FEATURES=$features \
     --build-arg BINARY_NAME=$binary \
     --build-arg LOG_LEVEL=$rust_log \

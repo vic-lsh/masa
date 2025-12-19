@@ -34,4 +34,3 @@ echo "Executing: ${CMD}"
 # Execute the final command.
 # 'exec' replaces the shell process with the command, which is good practice.
 exec ${CMD}
-
