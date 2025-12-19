@@ -86,7 +86,7 @@ class LoadGenerator(ABC):
         
         return base_env
     
-    def run(self, output_dir: Path, env_vars: Optional[dict] = None) -> None:
+    def run(self, output_dir: Path, env_vars: Optional[dict] = None, gen_config_path: Optional[Path] = None) -> None:
         """
         Run the load generator and collect results.
         
@@ -99,6 +99,7 @@ class LoadGenerator(ABC):
         Args:
             output_dir: Directory to save output and traces
             env_vars: Additional environment variables for the container
+            gen_config_path: Path to gen_config.json file to mount in container
             
         Raises:
             subprocess.CalledProcessError: If load generator execution fails
@@ -125,6 +126,11 @@ class LoadGenerator(ABC):
             "--name", container_name,
             "--network", network_name,
         ]
+        
+        # Mount gen_config.json if provided (required for client bench binaries)
+        if gen_config_path and gen_config_path.exists():
+            cmd.extend(["-v", f"{gen_config_path}:/usr/gen_config.json:ro"])
+            logger.debug(f"Mounting gen_config.json from {gen_config_path}")
         
         # Add environment variables
         load_env_vars = self.get_env_vars(env_vars)
