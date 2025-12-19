@@ -7,5 +7,6 @@
   "WarmupSecs": 20,
   "DurationSecs": 40,
   "Concurrency": 0,
-  "Addr": "http://[::1]:8658"
+  "Addr": "http://synthetic_frontend:8000",
+  "Timeouts_ms": [1000]
 }
