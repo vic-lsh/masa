@@ -7,7 +7,23 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from .base import AppPlugin, DockerConfig
+from .base import AppPlugin, DockerConfig, LoadGenerator
+
+
+class SyntheticLoadGenerator(LoadGenerator):
+    """Load generator for the synthetic benchmark application."""
+    
+    def get_container_name(self) -> str:
+        return "synthetic_client_bench"
+    
+    def get_network_name(self) -> str:
+        return "local_synthetic_network"
+    
+    def get_image_name(self) -> str:
+        return "synthetic_client_bench"
+    
+    def get_binary_name(self) -> str:
+        return "synthetic_client_bench"
 
 
 class SyntheticApp(AppPlugin):
@@ -112,3 +128,7 @@ class SyntheticApp(AppPlugin):
             container_names.append(f"local-child-service-{i}")
         
         return container_names
+    
+    def create_load_generator(self) -> LoadGenerator:
+        """Create a load generator instance for synthetic application."""
+        return SyntheticLoadGenerator()
