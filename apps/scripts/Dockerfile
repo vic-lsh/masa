@@ -3,6 +3,7 @@ FROM rustlang/rust:nightly-slim AS builder
 
 ARG APP
 ARG FEATURES
+ARG BINARIES=""
 
 RUN apt-get update
 RUN apt-get install -y\
@@ -31,16 +32,19 @@ RUN if [ -z "$FEATURES" ]; then\
   cargo build -p ${APP} --bins --release --features ${FEATURES};\
   fi
 
+# Copy the binary exporting script
+COPY apps/scripts/export-binaries.sh /tmp/export-binaries.sh
+RUN chmod +x /tmp/export-binaries.sh
+
+# Copy specified binaries to a temporary directory for the final stage
+RUN BINARIES="$BINARIES" RELEASE_DIR=/usr/src/masa/target/release OUTPUT_DIR=/tmp/binaries /tmp/export-binaries.sh
+
 # Final stage - create a slimmer image
 FROM debian:trixie-slim
 
 ARG APP
 ARG LOG_LEVEL=warn
-ARG BINARY_NAME
 ARG APP_CONFIG_FILE=config.docker.json
-RUN if [ -z "$BINARY_NAME" ]; then \
-  echo "Error: BINARY_NAME argument is required" && exit 1; \
-  fi
 
 RUN apt-get update
 
@@ -50,14 +54,13 @@ RUN apt-get update
 RUN apt-get install -y\
   libssl-dev
 
-# Copy the built executable from the builder stage
-COPY --from=builder /usr/src/masa/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
+# Copy the binaries directory from the builder stage
+COPY --from=builder /tmp/binaries/ /usr/local/bin/
 
 COPY --from=builder /usr/src/masa/apps/scripts/entrypoint.sh /usr/entrypoint.sh
 COPY --from=builder /usr/src/masa/apps/${APP}/scripts/local/${APP_CONFIG_FILE} /usr/config.json
 COPY exp/${APP}/scripts/gen_config.json /usr/gen_config.json
 
-ENV BINARY_NAME=${BINARY_NAME}
 ENV LOG_LEVEL=${LOG_LEVEL}
 
 ENTRYPOINT [ "sh", "-c" ]
