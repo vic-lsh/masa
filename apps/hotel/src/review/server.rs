@@ -136,3 +136,102 @@ impl Review for ReviewImpl {
         Ok(Response::new(ReviewResponse { reviews }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use redis::AsyncCommands;
+    use serde_json::json;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    async fn test_redis_conn() -> Option<RedisConnectionManager> {
+        let url = std::env::var("TEST_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into());
+        let client = redis::Client::open(url).ok()?;
+        match RedisConnectionManager::new(client).await {
+            Ok(conn) => Some(conn),
+            Err(err) => {
+                eprintln!("Skipping redis tests; connection failed: {}", err);
+                None
+            }
+        }
+    }
+
+    fn sample_reviews(hotel_id: &str) -> Vec<db::Review> {
+        serde_json::from_value(json!([
+            {
+                "reviewId": "redis-1",
+                "hotelId": hotel_id,
+                "name": "Cache Tester",
+                "rating": 4.25,
+                "description": "payload should round trip through redis",
+                "images": [
+                    { "url": "https://example.com/cache.jpg", "default": true }
+                ]
+            },
+            {
+                "reviewId": "redis-2",
+                "hotelId": hotel_id,
+                "name": "Cache Tester 2",
+                "rating": 3.8,
+                "description": "secondary review for cache test",
+                "images": []
+            }
+        ]))
+        .expect("construct sample reviews")
+    }
+
+    fn unique_hotel_id(prefix: &str) -> String {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock went backwards")
+            .as_nanos();
+        format!("{}-{}", prefix, nanos)
+    }
+
+    async fn clear_key(conn: &mut RedisConnectionManager, key: &str) {
+        let _: redis::RedisResult<()> = redis::cmd("DEL").arg(key).query_async(conn).await;
+    }
+
+    #[tokio::test]
+    async fn redis_round_trip_stores_and_reads_reviews() {
+        let mut conn = match test_redis_conn().await {
+            Some(c) => c,
+            None => return,
+        };
+
+        let hotel_id = unique_hotel_id("redis-round-trip");
+        clear_key(&mut conn, &hotel_id).await;
+
+        let reviews = sample_reviews(&hotel_id);
+        let payload = serde_json::to_vec(&reviews).expect("serialize reviews");
+        conn.set_ex::<&String, Vec<u8>, ()>(&hotel_id, payload, CACHE_TTL_SECS as u64)
+            .await
+            .expect("redis set_ex failed");
+
+        let cached = conn
+            .get::<_, Option<Vec<u8>>>(&hotel_id)
+            .await
+            .expect("redis get failed")
+            .expect("expected redis payload after set_ex");
+        let decoded: Vec<db::Review> =
+            serde_json::from_slice(&cached).expect("deserialize cached reviews");
+        assert_eq!(decoded, reviews);
+
+        let ttl: i64 = conn.ttl(&hotel_id).await.expect("fetch ttl");
+        assert!(ttl > 0 && ttl <= CACHE_TTL_SECS as i64);
+    }
+
+    #[tokio::test]
+    async fn redis_cache_miss_returns_none() {
+        let mut conn = match test_redis_conn().await {
+            Some(c) => c,
+            None => return,
+        };
+
+        let hotel_id = unique_hotel_id("redis-miss");
+        clear_key(&mut conn, &hotel_id).await;
+
+        let cached: Option<Vec<u8>> = conn.get(&hotel_id).await.expect("redis get failed");
+        assert!(cached.is_none());
+    }
+}
