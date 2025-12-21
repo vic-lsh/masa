@@ -16,7 +16,7 @@ services:
   rate-redis:
     image: redis:7.2
     container_name: "rate_redis"
-    command: ["redis-server", "--port", "11003"]
+    command: ["redis-server", "--port", "11003", "--io-threads", "4"]
     restart: always
     networks:
       - hotel_network
@@ -56,7 +56,7 @@ services:
   profile-redis:
     image: redis:7.2
     container_name: "profile_redis"
-    command: ["redis-server", "--port", "11004"]
+    command: ["redis-server", "--port", "11004", "--io-threads", "4"]
     restart: always
     networks:
       - hotel_network
@@ -96,7 +96,7 @@ services:
   reservation-redis:
     image: redis:7.2
     container_name: "reservation_redis"
-    command: ["redis-server", "--port", "11005"]
+    command: ["redis-server", "--port", "11005", "--io-threads", "4"]
     restart: always
     networks:
       - hotel_network
