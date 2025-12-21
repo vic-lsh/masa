@@ -13,10 +13,10 @@ services:
         limits:
           cpus: "4"
 
-  rate-memcached:
-    image: memcached:1.6
-    container_name: "rate_memcached"
-    command: --port 11003 --threads 4
+  rate-redis:
+    image: redis:7.2
+    container_name: "rate_redis"
+    command: ["redis-server", "--port", "11003"]
     restart: always
     networks:
       - hotel_network
@@ -33,7 +33,7 @@ services:
       - hotel_network
     depends_on:
       - rate-mongo
-      - rate-memcached
+      - rate-redis
     deploy:
       resources:
         limits:
@@ -53,10 +53,10 @@ services:
         limits:
           cpus: "4"
 
-  profile-memcached:
-    image: memcached:1.6
-    container_name: "profile_memcached"
-    command: --port 11004 --threads 4
+  profile-redis:
+    image: redis:7.2
+    container_name: "profile_redis"
+    command: ["redis-server", "--port", "11004"]
     restart: always
     networks:
       - hotel_network
@@ -73,7 +73,7 @@ services:
       - hotel_network
     depends_on:
       - profile-mongo
-      - profile-memcached
+      - profile-redis
     deploy:
       resources:
         limits:
@@ -93,10 +93,10 @@ services:
         limits:
           cpus: "4"
 
-  reservation-memcached:
-    image: memcached:1.6
-    container_name: "reservation_memcached"
-    command: --port 11005 --threads 4
+  reservation-redis:
+    image: redis:7.2
+    container_name: "reservation_redis"
+    command: ["redis-server", "--port", "11005"]
     restart: always
     networks:
       - hotel_network
@@ -113,7 +113,7 @@ services:
       - hotel_network
     depends_on:
       - reservation-mongo
-      - reservation-memcached
+      - reservation-redis
     deploy:
       resources:
         limits:

@@ -25,7 +25,7 @@ pub struct ReviewImpl {
 
 impl ReviewImpl {
     pub async fn new(config: ReviewConfig, global: GlobalConfig) -> Result<Self, Box<dyn Error>> {
-        let redis_client = redis::Client::open("redis://127.0.0.1:6379")?;
+        let redis_client = redis::Client::open(config.redis_addr.as_str())?;
         let redis_conn = RedisConnectionManager::new(redis_client).await?;
         let mongo_client = db::initialize_database(&config.mongodb_addr).await?;
         let _ = global; // cache_conns is unused while we prototype Redis
