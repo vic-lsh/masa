@@ -25,7 +25,7 @@ pub struct CachedServiceConfig {
     #[serde(flatten)]
     pub endpoint: BasicServiceConfig,
     pub mongodb_addr: String,
-    pub memcached_addr: String,
+    pub redis_addr: String,
 }
 
 impl Deref for CachedServiceConfig {

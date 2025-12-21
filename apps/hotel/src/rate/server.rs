@@ -3,10 +3,8 @@ pub mod hotel_tonic {
         tonic::include_proto!("rate");
     }
 }
-use app_utils::pool::McPool;
 #[cfg(feature = "workload_stats")]
 use app_utils::AvgTracker;
-use async_memcached::AsciiProtocol;
 use futures::StreamExt;
 #[cfg(not(feature = "synthetic"))]
 use std::collections::HashSet;
@@ -22,6 +20,7 @@ use std::{error::Error, sync::Arc};
 
 use masa::LatencyDistribution;
 use mongodb::{bson::doc, Client as MongoClient};
+use redis::{aio::ConnectionManager as RedisConnectionManager, AsyncCommands};
 use tonic::{Request, Response, Status};
 
 use crate::{
@@ -29,6 +28,8 @@ use crate::{
     db,
 };
 use hotel_tonic::{rate, rate::rate_server::Rate};
+
+const CACHE_TTL_SECS: usize = 300;
 
 #[cfg(feature = "synthetic")]
 #[allow(unused)]
@@ -46,8 +47,7 @@ struct SyntheticRate {
 }
 
 pub struct RateImpl {
-    mc_pool: Arc<McPool>,
-    // memc_client: Arc<memcache::Client>,
+    redis_conn: RedisConnectionManager,
     mongo_client: Arc<MongoClient>,
     latency_tracker: Arc<Mutex<LatencyDistribution>>,
     #[cfg(feature = "workload_stats")]
@@ -60,7 +60,6 @@ impl RateImpl {
     pub async fn new(config: RateConfig, global: GlobalConfig) -> Result<Self, Box<dyn Error>> {
         #[cfg(not(feature = "synthetic"))]
         let _ = &global;
-        // let memc_client = memcache::Client::with_pool_size(cache_addr, cache_conn)?;
         let mongo_client = db::initialize_database(&config.mongodb_addr).await?;
 
         let latency_tracker =
@@ -96,15 +95,10 @@ impl RateImpl {
         #[cfg(feature = "synthetic")]
         let cache_miss_rate = global.prob_cache_miss;
 
-        let cache_addr = config
-            .memcached_addr
-            .strip_prefix("memcache://")
-            .map(|addr| format!("tcp://{}", addr))
-            .unwrap()
-            .to_owned();
+        let redis_client = redis::Client::open(config.redis_addr.as_str())?;
+        let redis_conn = RedisConnectionManager::new(redis_client).await?;
         Ok(Self {
-            mc_pool: Arc::new(McPool::new(cache_addr, 256)),
-            // memc_client: Arc::new(memc_client),
+            redis_conn,
             mongo_client: Arc::new(mongo_client),
             latency_tracker,
             #[cfg(feature = "workload_stats")]
@@ -141,12 +135,21 @@ impl Rate for RateImpl {
 
         let mut rate_plans = Vec::new();
 
-        let mut mc = self.mc_pool.get().await;
-        // Check memcached first
-        if let Ok(mc_resp) = mc.get_multi(&request.hotel_ids).await {
-            for entry in mc_resp {
-                let hotel_id = String::from_utf8(entry.key).expect("hotel id should be valid");
-                if let Ok(value) = String::from_utf8(entry.data.unwrap()) {
+        // Check redis first
+        let hotel_ids_ref: Vec<&str> = request.hotel_ids.iter().map(|id| id.as_str()).collect();
+        let mut redis_conn = self.redis_conn.clone();
+        let cached_resp: Vec<Option<Vec<u8>>> = redis::cmd("MGET")
+            .arg(&hotel_ids_ref)
+            .query_async(&mut redis_conn)
+            .await
+            .unwrap_or_else(|e| {
+                log::error!("redis mget failed: {}", e);
+                vec![None; hotel_ids_ref.len()]
+            });
+
+        for (hotel_id, maybe_bytes) in request.hotel_ids.iter().zip(cached_resp) {
+            if let Some(raw) = maybe_bytes {
+                if let Ok(value) = String::from_utf8(raw) {
                     for rate_str in value.split('\n') {
                         if !rate_str.is_empty() {
                             if let Ok(rate_plan) = serde_json::from_str::<db::RatePlan>(rate_str) {
@@ -154,7 +157,7 @@ impl Rate for RateImpl {
                             }
                         }
                     }
-                    rate_set.remove(&hotel_id);
+                    rate_set.remove(hotel_id);
                 }
             }
         }
@@ -168,7 +171,7 @@ impl Rate for RateImpl {
             .map(|hotel_id| {
                 let rate_plans_clone = Arc::clone(&rate_plans);
                 let mongo_client = Arc::clone(&self.mongo_client);
-                let mc_pool = Arc::clone(&self.mc_pool);
+                let redis_conn = self.redis_conn.clone();
 
                 tokio::spawn(async move {
                     let collection = mongo_client
@@ -196,12 +199,15 @@ impl Rate for RateImpl {
                         rate_plans.extend(tmp_rate_plans);
                     }
 
-                    // Update memcached asynchronously
+                    // Update redis asynchronously
                     if !memc_str.is_empty() {
-                        tokio::spawn(async move {
-                            let mut mc = mc_pool.get().await;
-                            let _ = mc.set(&hotel_id, memc_str.as_bytes(), None, None).await;
-                        });
+                        let mut redis_conn = redis_conn.clone();
+                        if let Err(e) = redis_conn
+                            .set_ex::<&std::string::String, std::string::String, ()>(&hotel_id, memc_str, CACHE_TTL_SECS as u64)
+                            .await
+                        {
+                            log::error!("Failed to set redis cache: {}", e);
+                        }
                     }
                 })
             })
@@ -255,19 +261,26 @@ impl Rate for RateImpl {
 
         let mut rate_plans = Vec::new();
 
-        // Check memcached first
+        // Check redis first
         let hotel_ids_ref: Vec<_> = request.hotel_ids.iter().map(|id| id.as_str()).collect();
-        let memc_resp = self
-            .memc_client
-            .gets(&hotel_ids_ref)
-            .map_err(|e| tonic::Status::internal(format!("Memcached error: {}", e)))?;
+        let mut redis_conn = self.redis_conn.clone();
+        let cached_resp: Vec<Option<Vec<u8>>> = redis::cmd("MGET")
+            .arg(&hotel_ids_ref)
+            .query_async(&mut redis_conn)
+            .await
+            .unwrap_or_else(|e| {
+                log::error!("redis mget failed: {}", e);
+                vec![None; hotel_ids_ref.len()]
+            });
 
-        for (_hotel_id, item) in memc_resp {
-            if let Ok(value) = String::from_utf8(item) {
-                for rate_str in value.split('\n') {
-                    if !rate_str.is_empty() {
-                        if let Ok(rate_plan) = serde_json::from_str::<db::RatePlan>(rate_str) {
-                            rate_plans.push(rate_plan);
+        for maybe_bytes in cached_resp {
+            if let Some(raw) = maybe_bytes {
+                if let Ok(value) = String::from_utf8(raw) {
+                    for rate_str in value.split('\n') {
+                        if !rate_str.is_empty() {
+                            if let Ok(rate_plan) = serde_json::from_str::<db::RatePlan>(rate_str) {
+                                rate_plans.push(rate_plan);
+                            }
                         }
                     }
                 }
@@ -282,7 +295,7 @@ impl Rate for RateImpl {
             .map(|hotel_id| {
                 let rate_plans_clone = Arc::clone(&rate_plans);
                 let mongo_client = Arc::clone(&self.mongo_client);
-                let memc_client = Arc::clone(&self.memc_client);
+                let redis_conn = self.redis_conn.clone();
 
                 tokio::spawn(async move {
                     let collection = mongo_client
@@ -310,11 +323,15 @@ impl Rate for RateImpl {
                         rate_plans.extend(tmp_rate_plans);
                     }
 
-                    // Update memcached asynchronously
+                    // Update redis asynchronously
                     if !memc_str.is_empty() {
-                        tokio::spawn(async move {
-                            let _ = memc_client.set(&hotel_id, memc_str.as_bytes(), 0);
-                        });
+                        let mut redis_conn = redis_conn.clone();
+                        if let Err(e) = redis_conn
+                            .set_ex(&hotel_id, memc_str, CACHE_TTL_SECS as u64)
+                            .await
+                        {
+                            log::error!("Failed to set redis cache: {}", e);
+                        }
                     }
                 })
             })
