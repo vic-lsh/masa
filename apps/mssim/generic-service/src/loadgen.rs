@@ -114,11 +114,11 @@ impl ClientPool {
 
         let counter = self.counter.fetch_add(1, Ordering::Relaxed);
         return self.clients[counter % self.clients.len()].clone();
-     //    if counter < 1{
-     //        return self.clients[0].clone();
-     //    }
-     //    self.counter.swap(0, Ordering::Relaxed);
-     //    self.clients[1].clone()
+        //    if counter < 1{
+        //        return self.clients[0].clone();
+        //    }
+        //    self.counter.swap(0, Ordering::Relaxed);
+        //    self.clients[1].clone()
     }
 }
 
@@ -134,7 +134,8 @@ async fn run_root_load(
 ) -> anyhow::Result<()> {
     // Create exponential distribution for Poisson process
     // For Poisson process with rate lambda (rps), inter-arrival times are exponential with rate lambda
-    let exp_dist = Exp::new(rps).map_err(|e| anyhow::anyhow!("Invalid RPS for exponential distribution: {}", e))?;
+    let exp_dist = Exp::new(rps)
+        .map_err(|e| anyhow::anyhow!("Invalid RPS for exponential distribution: {}", e))?;
     let mut rng = rand::rng();
 
     let run_start = Instant::now();
@@ -260,7 +261,10 @@ async fn run_root_load(
     let o = stats.ok.load(Ordering::Relaxed);
     let e = stats.err.load(Ordering::Relaxed);
     let t = stats.throttled.load(Ordering::Relaxed);
-    println!("Final stats: sent={}, ok={}, err={}, throttled={}", s, o, e, t);
+    println!(
+        "Final stats: sent={}, ok={}, err={}, throttled={}",
+        s, o, e, t
+    );
 
     Ok(())
 }
@@ -479,8 +483,10 @@ async fn main() -> anyhow::Result<()> {
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty());
 
-
-    println!("RPS: {}, MAX_IN_FLIGHT: {}, STATS_INTERVAL_SEC: {}, DURATION: {:?}", rps, max_in_flight, stats_interval_sec, duration);
+    println!(
+        "RPS: {}, MAX_IN_FLIGHT: {}, STATS_INTERVAL_SEC: {}, DURATION: {:?}",
+        rps, max_in_flight, stats_interval_sec, duration
+    );
 
     // If replay_env is set, we are in replay mode
     // Otherwise, we are in root() load mode
@@ -514,14 +520,17 @@ async fn main() -> anyhow::Result<()> {
         "FRONTEND_TARGETS must specify at least one target"
     );
 
-    let target_configs: Vec<_> = target_configs.iter().flat_map(|cfg| {
-        let graph_replication = 9;
-        if cfg.graph != "s-14677443" {
-            (0..graph_replication).map(|_| cfg.clone()).collect()
-        } else {
-            vec![cfg.clone()]
-        }
-    }).collect();
+    let target_configs: Vec<_> = target_configs
+        .iter()
+        .flat_map(|cfg| {
+            let graph_replication = 9;
+            if cfg.graph != "s-14677443" {
+                (0..graph_replication).map(|_| cfg.clone()).collect()
+            } else {
+                vec![cfg.clone()]
+            }
+        })
+        .collect();
 
     let target_summary = target_configs
         .iter()
@@ -640,7 +649,10 @@ async fn main() -> anyhow::Result<()> {
     let o = stats.ok.load(Ordering::Relaxed);
     let e = stats.err.load(Ordering::Relaxed);
     let t = stats.throttled.load(Ordering::Relaxed);
-    println!("Final stats: sent={}, ok={}, err={}, throttled={}", s, o, e, t);
+    println!(
+        "Final stats: sent={}, ok={}, err={}, throttled={}",
+        s, o, e, t
+    );
 
     if let Some((root_samples, file_name)) = root_samples_handle {
         flush_root_samples(root_samples, file_name.as_ref()).await?;

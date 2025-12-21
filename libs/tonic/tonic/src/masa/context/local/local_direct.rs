@@ -4,9 +4,8 @@ use crate::{
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, Ordering, AtomicU64},
-        Arc, Mutex, RwLock,
-        OnceLock,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex, OnceLock, RwLock,
     },
     task::Poll,
     time::{Duration, Instant},
@@ -168,9 +167,13 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             let should_print = last_print_guard
                 .map(|last| now.duration_since(last) >= Duration::from_secs(5))
                 .unwrap_or(true);
-            
+
             if should_print {
-                println!("estimate_remaining: {}, before child {}", estimate_remaining, child_method.id());
+                println!(
+                    "estimate_remaining: {}, before child {}",
+                    estimate_remaining,
+                    child_method.id()
+                );
                 *last_print_guard = Some(now);
             }
         }
