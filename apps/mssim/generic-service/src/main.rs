@@ -72,7 +72,6 @@ impl AlibabaService {
         let busy_spin_duration = exp_sample_ms / 5u64;
         let sleep_duration = exp_sample_ms - busy_spin_duration;
 
-
         busy_spin(std::time::Duration::from_millis(busy_spin_duration));
         tokio::time::sleep(std::time::Duration::from_millis(sleep_duration)).await;
 
@@ -141,12 +140,19 @@ impl Service for AlibabaService {
 
         let request = request.into_inner();
         let graph_name = request.graph_name.as_str();
-        
+
         if graph_name == "s-14677443" {
             tokio::time::sleep(std::time::Duration::from_millis(2)).await;
 
             let svc_name = ServiceName::from_string("ms-56394".to_string());
-            let mut client = self.state.clients.read().await.get(&svc_name).unwrap().clone();
+            let mut client = self
+                .state
+                .clients
+                .read()
+                .await
+                .get(&svc_name)
+                .unwrap()
+                .clone();
             let req = Request::new(ServiceRequest {
                 req_id: request.req_id,
                 start_at: request.start_at,
@@ -156,7 +162,14 @@ impl Service for AlibabaService {
             client.get_data(req).await?;
 
             let svc_name = ServiceName::from_string("ms-666".to_string());
-            let mut client = self.state.clients.read().await.get(&svc_name).unwrap().clone();
+            let mut client = self
+                .state
+                .clients
+                .read()
+                .await
+                .get(&svc_name)
+                .unwrap()
+                .clone();
             let req = Request::new(ServiceRequest {
                 req_id: request.req_id,
                 start_at: request.start_at,
@@ -169,7 +182,6 @@ impl Service for AlibabaService {
             // .fanout(request.req_id, request.start_at, Vec::new(), Some(graph_name))
             // .await?;
 
-
             // let mean_ms = 40.0;
             // let rate = 1.0 / mean_ms;
             // let latency = sample_exponential(rate);
@@ -177,8 +189,13 @@ impl Service for AlibabaService {
         } else {
             //tokio::time::sleep(std::time::Duration::from_millis(3)).await;
             self.state()
-            .fanout(request.req_id, request.start_at, Vec::new(), Some(graph_name))
-            .await?;
+                .fanout(
+                    request.req_id,
+                    request.start_at,
+                    Vec::new(),
+                    Some(graph_name),
+                )
+                .await?;
         }
 
         Ok(Response::new(RootResponse {
@@ -273,14 +290,14 @@ pub(crate) fn busy_spin(duration: std::time::Duration) {
 }
 
 /// Samples from an exponential distribution with the given rate parameter (lambda).
-/// 
+///
 /// # Arguments
-/// * `rate` - The rate parameter (lambda) of the exponential distribution. 
+/// * `rate` - The rate parameter (lambda) of the exponential distribution.
 ///            Must be positive. The mean of the distribution is 1/rate.
-/// 
+///
 /// # Returns
 /// A sample from the exponential distribution.
-/// 
+///
 /// # Panics
 /// Panics if rate is not positive or if the distribution cannot be created.
 pub(crate) fn sample_exponential(rate: f64) -> f64 {
