@@ -93,6 +93,7 @@ impl FrontendImpl {
     }
 }
 
+
 #[tonic::async_trait]
 impl Frontend for FrontendImpl {
     async fn handle_ping(
