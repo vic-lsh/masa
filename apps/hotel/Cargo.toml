@@ -201,6 +201,7 @@ crossbeam-channel = "0.5"
 mongodb = { version = "=2.8.2" }
 memcache = "0.16"
 async-memcached = { path = "../../3rd_party/async-memcached" }
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 log = "0.4"
 # Common dependencies
 tokio = { path = "../../libs/tokio/tokio", features = [
@@ -255,4 +256,3 @@ tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
 
 [patch.crates-io]
 tokio = { path = "./libs/tokio/tokio", version = "1" }
-

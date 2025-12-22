@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 use std::{
     fs::File,
     io::BufReader,
-    path::{Path, PathBuf},
+    path::Path,
     sync::Arc,
     time::{Duration, Instant as StdInstant},
 };
@@ -11,20 +11,17 @@ use anyhow::Context;
 use masa::{time_now, Context as MasaContext};
 use serde::Deserialize;
 use serde_json::Value;
-use tokio::fs;
-use tokio::sync::{mpsc, Mutex, Semaphore};
+use tokio::sync::{mpsc, Semaphore};
 use tokio::time::Instant;
 use tonic::metadata::MetadataMap;
-use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::Request;
 
 use crate::service::local_span::SpanType as ProtoSpanType;
-use crate::service::service_client::ServiceClient;
 use crate::service::{
     span::Kind as ProtoSpanKind, ChildSpans as ProtoChildSpans, LocalSpan as ProtoLocalSpan,
     ReplayRequest as ProtoReplayRequest, Span as ProtoSpan,
 };
-use crate::{Stats, OUTPUT_DIR};
+use crate::{ClientPool, Stats};
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -65,13 +62,6 @@ struct FrontendRequest {
 pub struct ReplayWorkItem {
     pub offset_us: u64,
     pub payload: ProtoReplayRequest,
-}
-
-#[derive(Debug, Clone)]
-pub struct QueueLatencySample {
-    pub req_id: u64,
-    pub queue_latency_us: u64,
-    pub e2e_latency_us: u64,
 }
 
 fn deserialize_opt_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
@@ -248,11 +238,10 @@ fn convert_span_to_proto(span: &FrontendSpan) -> anyhow::Result<(ProtoSpan, u64)
 }
 
 pub async fn run_replay_load(
-    client: ServiceClient<LoadBalancedChannel>,
+    client_pool: ClientPool,
     work_items: Arc<Vec<ReplayWorkItem>>,
     stats: Arc<Stats>,
     inflight_guard: Arc<Semaphore>,
-    queue_samples: Arc<Mutex<Vec<QueueLatencySample>>>,
     latency_sample_tx: mpsc::UnboundedSender<u64>,
 ) -> anyhow::Result<()> {
     let start_instant = Instant::now();
@@ -264,9 +253,9 @@ pub async fn run_replay_load(
         let req_id = payload.req_id;
         let schedule_time = start_instant + Duration::from_micros(offset_us);
         let permit_pool = inflight_guard.clone();
-        let queue_samples = queue_samples.clone();
         let latency_sample_tx = latency_sample_tx.clone();
-        let mut rpc_client = client.clone();
+        let entry = client_pool.acquire();
+        let mut rpc_client = entry.client.clone();
         let stats = Arc::clone(&stats);
 
         let handle = tokio::spawn(async move {
@@ -293,15 +282,7 @@ pub async fn run_replay_load(
             let e2e_latency_us = send_started.elapsed().as_micros().min(u64::MAX as u128) as u64;
 
             match res {
-                Ok(resp) => {
-                    if let Some(latency) = extract_queue_latency(resp.metadata()) {
-                        let mut samples = queue_samples.lock().await;
-                        samples.push(QueueLatencySample {
-                            req_id,
-                            queue_latency_us: latency,
-                            e2e_latency_us,
-                        });
-                    }
+                Ok(_) => {
                     {
                         let _ = latency_sample_tx.send(e2e_latency_us);
                     }
@@ -321,43 +302,10 @@ pub async fn run_replay_load(
     Ok(())
 }
 
-pub fn queue_latency_output_path(trace_path: &Path) -> PathBuf {
-    let target_dir = PathBuf::from(OUTPUT_DIR);
-    let mut file_name = match trace_path.file_stem() {
-        Some(stem) => stem.to_os_string(),
-        None => std::ffi::OsString::from("queue_latency"),
-    };
-    file_name.push("_queue_latency.csv");
-    target_dir.join(file_name)
-}
-
 pub fn extract_queue_latency(metadata: &MetadataMap) -> Option<u64> {
     metadata
         .get("x-queue-latency")
         .or_else(|| metadata.get("X-Queue-Latency"))
         .and_then(|value| value.to_str().ok())
         .and_then(|s| s.parse::<u64>().ok())
-}
-
-pub async fn write_queue_latency_csv(
-    path: &Path,
-    samples: &[QueueLatencySample],
-) -> anyhow::Result<()> {
-    let mut sorted = samples.to_vec();
-    sorted.sort_by_key(|sample| sample.req_id);
-
-    let mut csv_data = String::from("request_id,queue_latency_us,e2e_latency_us\n");
-    for sample in sorted {
-        csv_data.push_str(&format!(
-            "{},{},{}\n",
-            sample.req_id, sample.queue_latency_us, sample.e2e_latency_us
-        ));
-    }
-
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).await?;
-    }
-
-    fs::write(path, csv_data).await?;
-    Ok(())
 }
