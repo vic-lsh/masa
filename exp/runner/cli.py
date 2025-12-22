@@ -72,6 +72,7 @@ def cmd_run_experiment(args: argparse.Namespace) -> None:
         repo_root=repo_root,
         plot=args.plot,
         no_cache=args.no_cache,
+        rm_data=args.rm_data,
     )
     
     try:
@@ -104,6 +105,7 @@ def cmd_queue_experiments(args: argparse.Namespace) -> None:
             experiment=exp_name,
             plot=args.plot,
             no_cache=args.no_cache,
+            rm_data=args.rm_data,
         )
         
         try:
@@ -207,6 +209,11 @@ Examples:
         action='store_true',
         help='Disable Docker cache during build'
     )
+    run_parser.add_argument(
+        '--rm-data',
+        action='store_true',
+        help='Remove existing data from experiment output directory before running'
+    )
     run_parser.set_defaults(func=cmd_run_experiment)
     
     # run-multiple command
@@ -233,6 +240,11 @@ Examples:
         '--no-cache',
         action='store_true',
         help='Disable Docker cache during builds'
+    )
+    queue_parser.add_argument(
+        '--rm-data',
+        action='store_true',
+        help='Remove existing data from experiment output directory before running'
     )
     queue_parser.set_defaults(func=cmd_queue_experiments)
     

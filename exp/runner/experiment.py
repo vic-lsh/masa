@@ -31,7 +31,8 @@ class Experiment:
         config: ExperimentConfig,
         repo_root: Path,
         plot: bool = False,
-        no_cache: bool = False
+        no_cache: bool = False,
+        rm_data: bool = False
     ):
         """
         Initialize experiment runner.
@@ -42,12 +43,14 @@ class Experiment:
             repo_root: Path to repository root
             plot: Whether to generate plots after experiment
             no_cache: Whether to disable Docker cache during builds
+            rm_data: Whether to remove existing data from output directory before running
         """
         self.app = app
         self.config = config
         self.repo_root = repo_root
         self.plot = plot
         self.no_cache = no_cache
+        self.rm_data = rm_data
         self.docker = DockerManager(repo_root)
         
         # Setup working directories
@@ -113,14 +116,19 @@ class Experiment:
             except Exception as e:
                 logger.warning(f"Failed to backup old output: {e}")
         
-        # Clear output and plot directories
-        if self.config.out_dir.exists():
-            for item in self.config.out_dir.iterdir():
-                if item.is_dir():
-                    shutil.rmtree(item)
-                else:
-                    item.unlink()
+        # Clear output directory only if rm_data flag is set
+        if self.rm_data:
+            if self.config.out_dir.exists():
+                for item in self.config.out_dir.iterdir():
+                    if item.is_dir():
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink()
+                logger.info(f"Removed existing data from output directory: {self.config.out_dir}")
+        else:
+            logger.debug(f"Keeping existing data in output directory: {self.config.out_dir}")
         
+        # Always clear plot directory (plots are regenerated)
         if self.config.plot_dir.exists():
             shutil.rmtree(self.config.plot_dir)
         self.config.plot_dir.mkdir(parents=True, exist_ok=True)
