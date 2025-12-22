@@ -4,6 +4,7 @@ Command-line interface for the experiment runner.
 
 import argparse
 import logging
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -184,6 +185,7 @@ def cmd_build(args: argparse.Namespace) -> None:
                 no_cache=args.no_cache,
                 app_config_path=app_config_path,
                 gen_config_path=gen_config_path,
+                dry_run=False,
             )
             logger.info(f"Successfully built images for policy: {policy}")
         except Exception as e:
@@ -191,6 +193,100 @@ def cmd_build(args: argparse.Namespace) -> None:
             sys.exit(1)
     
     logger.info("All Docker images built successfully!")
+
+
+def cmd_build_dryrun(args: argparse.Namespace) -> None:
+    """
+    Output the build commands that would be run without executing them.
+    
+    Args:
+        args: Parsed command-line arguments
+    """
+    repo_root = find_repo_root()
+    
+    # Get application plugin
+    try:
+        app_plugin = get_app_plugin(args.app)
+    except ValueError as e:
+        logger.error(str(e))
+        sys.exit(1)
+    
+    # Load experiment configuration
+    try:
+        config = ExperimentConfig.load(
+            experiment_name=args.experiment,
+            app_name=args.app,
+            repo_root=repo_root,
+            app_plugin=app_plugin,
+        )
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Failed to load experiment configuration: {e}")
+        sys.exit(1)
+    
+    # Determine which policies to build
+    policies_to_build = [args.policy] if args.policy else config.policies
+    
+    logger.info(f"Dry-run: Would build Docker images for experiment: {config.experiment_name}")
+    logger.info(f"Application: {config.app_name}")
+    logger.info(f"Policies to build: {', '.join(policies_to_build)}")
+    
+    # Get app config path if it exists
+    app_config_path = None
+    docker_config = app_plugin.get_docker_config()
+    if docker_config.app_config_filename:
+        app_config_path = config.in_dir / docker_config.app_config_filename
+        if not app_config_path.exists():
+            logger.error(f"App config not found at: {app_config_path}")
+            sys.exit(1)
+    
+    # Get gen_config.json path
+    gen_config_path = config.in_dir / "gen_config.json"
+    if not gen_config_path.exists():
+        logger.error(f"gen_config.json not found at: {gen_config_path}")
+        sys.exit(1)
+    
+    # Collect all commands
+    all_commands: list[tuple[str, list[str]]] = []  # (policy, command)
+    
+    # Build images for each policy
+    builder = app_plugin.create_builder()
+    for policy in policies_to_build:
+        logger.info(f"{'='*60}")
+        logger.info(f"Dry-run: Would build images for policy: {policy}")
+        logger.info(f"{'='*60}")
+        
+        try:
+            commands = builder.build(
+                repo_root=repo_root,
+                app_dir=config.app_dir,
+                features=policy,
+                rust_log="info",
+                no_cache=args.no_cache,
+                app_config_path=app_config_path,
+                gen_config_path=gen_config_path,
+                dry_run=True,
+            )
+            if commands:
+                for cmd in commands:
+                    all_commands.append((policy, cmd))
+        except Exception as e:
+            logger.error(f"Failed to generate commands for policy {policy}: {e}", exc_info=True)
+            sys.exit(1)
+    
+    # Print all commands
+    print("\n" + "="*80)
+    print("BUILD COMMANDS (DRY-RUN)")
+    print("="*80 + "\n")
+    print(f"# Working directory: {repo_root}")
+    print(f"# All commands should be run from the repository root\n")
+    
+    for policy, cmd in all_commands:
+        print(f"# Policy: {policy}")
+        print(" ".join(shlex.quote(arg) for arg in cmd))
+        print()
+    
+    print(f"# Total commands: {len(all_commands)}")
+    logger.info("Dry-run completed successfully!")
 
 
 def cmd_plot(args: argparse.Namespace) -> None:
@@ -244,6 +340,12 @@ Examples:
   
   # Build images for a specific policy
   python -m exp.runner build synthetic exp1 --policy prio_global
+  
+  # Show build commands without executing them
+  python -m exp.runner build-dryrun hotel exp1
+  
+  # Show build commands for a specific policy
+  python -m exp.runner build-dryrun synthetic exp1 --policy prio_global
   
   # Queue multiple experiments
   python -m exp.runner run-multiple synthetic "exp1 exp2 exp3" --plot
@@ -354,6 +456,32 @@ Examples:
         help='Disable Docker cache during build'
     )
     build_parser.set_defaults(func=cmd_build)
+    
+    # build-dryrun command
+    build_dryrun_parser = subparsers.add_parser(
+        'build-dryrun',
+        help='Output build commands without executing them',
+        description='Show the Docker build commands that would be executed without actually running them'
+    )
+    build_dryrun_parser.add_argument(
+        'app',
+        choices=['hotel', 'synthetic'],
+        help='Application to build (hotel or synthetic)'
+    )
+    build_dryrun_parser.add_argument(
+        'experiment',
+        help='Name of the experiment (directory name in exp/<app>/data/in/)'
+    )
+    build_dryrun_parser.add_argument(
+        '--policy',
+        help='Build images for a specific policy only (default: build all policies)'
+    )
+    build_dryrun_parser.add_argument(
+        '--no-cache',
+        action='store_true',
+        help='Disable Docker cache during build (affects command output)'
+    )
+    build_dryrun_parser.set_defaults(func=cmd_build_dryrun)
     
     # plot command
     plot_parser = subparsers.add_parser(
