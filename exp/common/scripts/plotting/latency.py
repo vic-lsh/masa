@@ -141,11 +141,11 @@ def generate_plots(args) -> None:
             plt.grid(True, alpha=0.3)
             plt.legend()
             plt.ylim(top=max_y)
-            plt.savefig(f"{output_dir}/p99_latency_by_rps_{api}.png", dpi=300)
+            plt.savefig(f"{output_dir}/p99_latency_rps_{api}.png", dpi=300)
             plt.close()
 
     # averaged pX latencies
-    percentiles = [0.80, 0.90, 0.99]
+    percentiles = [0.50, 0.95, 0.99]
     for percentile in percentiles:
         for api in apis:
             plt.figure(figsize=(12, 6))
@@ -169,10 +169,15 @@ def generate_plots(args) -> None:
             )
             plt.grid(True, alpha=0.3)
             plt.legend()
-            for max_y in [int(slo * 4), 1000]:
+            plt.ylim(bottom=0)
+            plt.savefig(
+                f"{args.output_dir}/p{p}_latency_rps_{api}.png",
+                dpi=300,
+            )
+            for max_y in [int(slo * 4)]:
                 plt.ylim(bottom=0, top=max_y)
                 plt.savefig(
-                    f"{args.output_dir}/p{p}_latency_by_rps_{api}_averaged_maxy-{max_y}.png",
+                    f"{args.output_dir}/p{p}_latency_rps_{api}_maxy-{max_y}.png",
                     dpi=300,
                 )
             plt.close()
