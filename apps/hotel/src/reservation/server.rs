@@ -295,6 +295,7 @@ impl Reservation for ReservationImpl {
             .await
         });
         let reserve_redis_elapsed = reserve_redis_start.elapsed();
+        
         if let Ok(Ok(redis_resp)) = redis_resp {
             for (key, value) in req_commands.iter().zip(redis_resp) {
                 if let Some(raw) = value {
@@ -451,10 +452,10 @@ impl Reservation for ReservationImpl {
         let mut iters = 0;
         while current_date < out_date {
             iters += 1;
-            current_date = current_date + chrono::Duration::days(1);
+            let next_date = current_date + chrono::Duration::days(1);
 
             let in_date_str = current_date.format("%Y-%m-%d").to_string();
-            let out_date_str = current_date.format("%Y-%m-%d").to_string();
+            let out_date_str = next_date.format("%Y-%m-%d").to_string();
             let redis_key = format!("{}_{}_{}", hotel_id, in_date_str, out_date_str);
 
             // Check redis
@@ -512,6 +513,8 @@ impl Reservation for ReservationImpl {
             if count + req.room_number > hotel_cap {
                 return Ok(Response::new(res));
             }
+
+            current_date = next_date;
         }
         self.mk_reserve_mongo.track(iters);
 
@@ -534,9 +537,9 @@ impl Reservation for ReservationImpl {
         let mut reservations = Vec::new();
         let mut current_date = in_date;
         while current_date < out_date {
-            current_date = current_date + chrono::Duration::days(1);
+            let next_date = current_date + chrono::Duration::days(1);
             let in_date_str = current_date.format("%Y-%m-%d").to_string();
-            let out_date_str = current_date.format("%Y-%m-%d").to_string();
+            let out_date_str = next_date.format("%Y-%m-%d").to_string();
 
             let reservation = db::Reservation {
                 hotel_id: hotel_id.clone(),
@@ -546,6 +549,7 @@ impl Reservation for ReservationImpl {
                 number: req.room_number,
             };
             reservations.push(reservation);
+            current_date = next_date;
         }
         res_collection
             .insert_many(reservations, None)
