@@ -99,11 +99,8 @@ class Experiment:
         backup_dir = Path(f"/tmp/masa-save-{curr_ts}")
         backup_dir.mkdir(parents=True, exist_ok=True)
         
-        # Backup gen_config.json if exists
-        gen_config_path = self.exp_scripts_dir / "gen_config.json"
-        if gen_config_path.exists():
-            shutil.copy(gen_config_path, backup_dir)
-            logger.debug(f"Backed up gen_config.json to {backup_dir}")
+        # Note: gen_config.json is no longer stored in exp_scripts_dir,
+        # so we don't need to backup it from there.
         
         # Note: App config files are no longer stored in apps/ directory,
         # so we don't need to backup them from there.
@@ -134,14 +131,8 @@ class Experiment:
         """Copy configuration files from input to working directories."""
         logger.info("Copying configuration files")
         
-        # Copy gen_config.json
-        src = self.config.in_dir / "gen_config.json"
-        dst = self.exp_scripts_dir / "gen_config.json"
-        shutil.copy(src, dst)
-        logger.debug(f"Copied {src} to {dst}")
-        
-        # Note: App config files are no longer copied to apps/ directory.
-        # They are passed directly to Docker build via APP_CONFIG_PATH.
+        # Note: gen_config.json and app config files are no longer copied to working directories.
+        # They are passed directly to Docker build via GEN_CONFIG_PATH and APP_CONFIG_PATH.
     
     def _run_iterations(self) -> None:
         """Run all experiment iterations."""
@@ -199,6 +190,13 @@ class Experiment:
                                 f"App config not found at: {app_config_path}"
                             )
                     
+                    # Get gen_config.json path
+                    gen_config_path = self.config.in_dir / "gen_config.json"
+                    if not gen_config_path.exists():
+                        raise FileNotFoundError(
+                            f"gen_config.json not found at: {gen_config_path}"
+                        )
+                    
                     builder.build(
                         repo_root=self.repo_root,
                         app_dir=self.config.app_dir,
@@ -206,6 +204,7 @@ class Experiment:
                         rust_log="info",
                         no_cache=self.no_cache,
                         app_config_path=app_config_path,
+                        gen_config_path=gen_config_path,
                     )
                     
                     self.docker.start(
@@ -226,8 +225,8 @@ class Experiment:
                     
                     # Run load generator (blocking)
                     loadgen = self.app.create_load_generator(features=policy)
-                    gen_config_path = self.exp_scripts_dir / "gen_config.json"
-                    loadgen.run(output_dir=output_dir, env_vars=env_vars, gen_config_path=gen_config_path)
+                    gen_config_path_for_loadgen = self.config.in_dir / "gen_config.json"
+                    loadgen.run(output_dir=output_dir, env_vars=env_vars, gen_config_path=gen_config_path_for_loadgen)
                     
                     logger.info(f"Load generator completed for policy {policy}")
                     
