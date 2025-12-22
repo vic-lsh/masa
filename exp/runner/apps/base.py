@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 import logging
 import os
+import shlex
 import subprocess
 
 
@@ -143,12 +144,16 @@ class LoadGenerator(ABC):
         logger.info(f"Load generator output will be saved to {loadgen_log}")
         
         with open(loadgen_log, "w") as f:
-            subprocess.run(
-                cmd,
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                check=True,
-            )
+            try:
+                subprocess.run(
+                    cmd,
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                    check=True,
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Load generator failed. Command: {shlex.join(cmd)}")
+                raise
         
         logger.info("Load generator container finished")
         
@@ -172,11 +177,16 @@ class LoadGenerator(ABC):
         
         try:
             # Copy traces from container
-            subprocess.run(
-                ["docker", "cp", f"{container_name}:{container_trace_path}", str(output_dir)],
-                check=True,
-                capture_output=True,
-            )
+            copy_cmd = ["docker", "cp", f"{container_name}:{container_trace_path}", str(output_dir)]
+            try:
+                subprocess.run(
+                    copy_cmd,
+                    check=True,
+                    capture_output=True,
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to copy traces from container. Command: {shlex.join(copy_cmd)}")
+                raise
             
             # Flatten the directory structure if needed
             if temp_subdir.exists() and temp_subdir.is_dir():
