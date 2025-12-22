@@ -12,22 +12,36 @@ from pathlib import Path
 from typing import Optional
 
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
+from .utils import normalize_features_to_tag
 
 logger = logging.getLogger(__name__)
 
 
 class SyntheticLoadGenerator(LoadGenerator):
     """Load generator for the synthetic benchmark application."""
-    
+
+    def __init__(self, features: Optional[str] = None):
+        """
+        Initialize load generator with optional features for image tagging.
+
+        Args:
+            features: Cargo features used to build the image
+        """
+        self.features = features
+
     def get_container_name(self) -> str:
         return "synthetic_client_bench"
-    
+
     def get_network_name(self) -> str:
         return "local_synthetic_network"
-    
+
     def get_image_name(self) -> str:
-        return "synthetic_client_bench"
-    
+        tag = normalize_features_to_tag(self.features)
+        if tag and tag != "latest":
+            return f"synthetic_client_bench:{tag}"
+        else:
+            return "synthetic_client_bench:latest"
+
     def get_binary_name(self) -> str:
         return "synthetic_client_bench"
 
@@ -112,7 +126,7 @@ class SyntheticApp(AppPlugin):
             compose_file="scripts/local/containers+svcs.yaml",
             network_name="local_synthetic_network",
             loadgen_container_name="synthetic_client_bench",
-            loadgen_image_name="synthetic_client_bench",
+            loadgen_image_name="synthetic_client_bench:<features>",
             loadgen_binary_name="synthetic_client_bench",
             app_config_filename="config.docker.json",
         )
@@ -139,15 +153,27 @@ class SyntheticApp(AppPlugin):
         Create a load generator instance for synthetic application.
         
         Args:
-            features: Optional cargo features (not used by synthetic app)
+            features: Optional cargo features used to build the image
         """
-        return SyntheticLoadGenerator()
+        return SyntheticLoadGenerator(features=features) if features is not None else SyntheticLoadGenerator()
 
     def create_builder(self) -> AppBuilder:
         """
         Create a builder instance for synthetic application.
         """
         return SyntheticBuilder()
+
+    def get_image_tag(self, features: Optional[str] = None) -> str:
+        """
+        Get the docker image tag for the given features.
+        
+        Args:
+            features: Optional cargo features
+            
+        Returns:
+            Docker image tag string
+        """
+        return normalize_features_to_tag(features)
 
 
 class SyntheticBuilder(AppBuilder):
@@ -179,13 +205,16 @@ class SyntheticBuilder(AppBuilder):
         app = "synthetic"
         
         # Services to build (each gets its own image)
-        services = [
-            ("synthetic_frontend", "synthetic_frontend:latest"),
-            ("synthetic_child", "synthetic_child:latest"),
-            ("synthetic_client_bench", "synthetic_client_bench:latest"),
+        binaries = [
+            "synthetic_frontend",
+            "synthetic_child",
+            "synthetic_client_bench",
         ]
-        
-        logger.info(f"Building {len(services)} docker images for synthetic app using multi-stage build")
+
+        # Generate tag based on features for deterministic, feature-specific images
+        tag = normalize_features_to_tag(features)
+
+        logger.info(f"Building {len(binaries)} docker images for synthetic app using multi-stage build")
         if features:
             logger.info(f"Using features: {features}")
         
@@ -288,7 +317,7 @@ class SyntheticBuilder(AppBuilder):
             logger.info("Stage 2 complete: Runtime-base image built")
             
             # Stage 3: Build per-binary runtime images
-            for binary_name, image_name in services:
+            for binary_name in binaries:
                 logger.info(f"Stage 3: Building runtime image for {binary_name}")
                 
                 runtime_build_args: list[str] = []
@@ -298,7 +327,13 @@ class SyntheticBuilder(AppBuilder):
                     runtime_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
                 runtime_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
                 runtime_build_args.extend(["--build-arg", f"BINARY_NAME={binary_name}"])
-                
+
+                # Image name: synthetic_<binary>:<tag> or synthetic_<binary>:latest if no features
+                if tag:
+                    image_name = f"{binary_name}:{tag}"
+                else:
+                    image_name = f"{binary_name}:latest"
+
                 runtime_cmd: list[str] = [
                     "docker",
                     "buildx",
