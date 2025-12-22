@@ -45,6 +45,7 @@ FROM debian:trixie-slim
 ARG APP
 ARG LOG_LEVEL=warn
 ARG APP_CONFIG_PATH
+ARG GEN_CONFIG_PATH
 
 RUN apt-get update
 
@@ -61,7 +62,8 @@ COPY exp/common/docker-build/entrypoint.sh /usr/entrypoint.sh
 # Copy app config - APP_CONFIG_PATH must be provided as build arg
 # If config is optional for an app, a default/empty config should be provided
 COPY ${APP_CONFIG_PATH} /usr/config.json
-COPY exp/${APP}/scripts/gen_config.json /usr/gen_config.json
+# Copy gen config - GEN_CONFIG_PATH must be provided as build arg
+COPY ${GEN_CONFIG_PATH} /usr/gen_config.json
 
 ENV LOG_LEVEL=${LOG_LEVEL}
 
