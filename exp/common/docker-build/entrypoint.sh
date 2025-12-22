@@ -7,13 +7,26 @@ if [ -z "${LOG_LEVEL}" ]; then
   exit 1
 fi
 
-if [ -z "${BINARY_NAME}" ]; then
-  echo "Error: BINARY_NAME environment variable is not set." >&2
-  exit 1
-fi
-
 # Export the RUST_LOG variable for Rust's logging frameworks.
 export RUST_LOG="${LOG_LEVEL}"
+
+# Auto-detect binary name: each image contains exactly one binary in /usr/local/bin
+# If BINARY_NAME is explicitly set (for backward compatibility), use it
+# Otherwise, find the single binary in /usr/local/bin
+if [ -z "${BINARY_NAME}" ]; then
+  binaries=$(find /usr/local/bin -maxdepth 1 -type f -executable 2>/dev/null || true)
+  if [ -z "$binaries" ]; then
+    echo "Error: No binary found in /usr/local/bin" >&2
+    exit 1
+  fi
+  binary_count=$(echo "$binaries" | wc -l)
+  if [ "$binary_count" -ne 1 ]; then
+    echo "Error: Expected exactly one binary in /usr/local/bin, found $binary_count" >&2
+    echo "Found binaries: $binaries" >&2
+    exit 1
+  fi
+  BINARY_NAME=$(basename "$binaries")
+fi
 
 echo "Starting binary '${BINARY_NAME}' with log level '${LOG_LEVEL}'..."
 
