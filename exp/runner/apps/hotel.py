@@ -97,6 +97,7 @@ class HotelBuilder(AppBuilder):
         rust_log: str = "info",
         no_cache: bool = False,
         app_config_path: Optional[Path] = None,
+        gen_config_path: Optional[Path] = None,
     ) -> None:
         app = "hotel"
         binaries = (
@@ -108,8 +109,12 @@ class HotelBuilder(AppBuilder):
         if app_config_path is None:
             raise ValueError("app_config_path is required for hotel app")
 
+        if gen_config_path is None:
+            raise ValueError("gen_config_path is required for hotel app")
+
         # Convert to path relative to repo_root
         config_path_rel = app_config_path.relative_to(repo_root)
+        gen_config_path_rel = gen_config_path.relative_to(repo_root)
 
         build_args: list[str] = []
         if features:
@@ -117,6 +122,7 @@ class HotelBuilder(AppBuilder):
         build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
         build_args.extend(["--build-arg", f"APP={app}"])
         build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
+        build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
         build_args.extend(["--build-arg", f"BINARIES={binaries}"])
 
         # Generate tag based on features for deterministic, feature-specific images
