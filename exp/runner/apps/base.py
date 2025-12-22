@@ -25,8 +25,7 @@ class DockerConfig:
     loadgen_binary_name: str  # Binary name to run in load generator
     
     # Optional app-specific config
-    app_config_filename: Optional[str] = None
-    app_config_required: bool = False
+    app_config_filename: Optional[str] = None  # Filename for loading from exp/ directory
 
 
 class LoadGenerator(ABC):
@@ -214,6 +213,7 @@ class AppBuilder(ABC):
         features: Optional[str] = None,
         rust_log: str = "info",
         no_cache: bool = False,
+        app_config_path: Optional[Path] = None,
     ) -> None:
         """
         Build the app's docker images.
@@ -224,6 +224,7 @@ class AppBuilder(ABC):
             features: Cargo features to enable (e.g. scheduling policy)
             rust_log: Rust log level to pass into image
             no_cache: Whether to disable Docker cache
+            app_config_path: Path to app config file (relative to repo_root) to include in image
         """
         raise NotImplementedError
 
