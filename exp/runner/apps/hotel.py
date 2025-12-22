@@ -5,6 +5,7 @@ Hotel application plugin.
 import json
 import logging
 import re
+import shlex
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -74,7 +75,10 @@ class HotelLoadGenerator(LoadGenerator):
     
     def get_image_name(self) -> str:
         tag = normalize_features_to_tag(self.features)
-        return f"hotel:{tag}"
+        if tag and tag != "latest":
+            return f"hotel_hotel_client_bench:{tag}"
+        else:
+            return "hotel_hotel_client_bench:latest"
     
     def get_binary_name(self) -> str:
         return "hotel_client_bench"
@@ -82,7 +86,25 @@ class HotelLoadGenerator(LoadGenerator):
 
 class HotelBuilder(AppBuilder):
     """
-    Build logic for the hotel app docker image.
+    Build logic for the hotel app docker images.
+
+    Uses multi-stage multi-target build:
+    - Stage 1 (builder): Build all binaries once
+    - Stage 2 (runtime-base): Base runtime image with dependencies
+    - Stage 3 (runtime): Per-binary runtime images
+
+    The hotel app requires separate docker images for each binary:
+    - hotel_hotel_client_bench:latest - load generator
+    - hotel_hotel_frontend:latest - frontend service
+    - hotel_hotel_geo:latest - geo service
+    - hotel_hotel_rate:latest - rate service
+    - hotel_hotel_review:latest - review service
+    - hotel_hotel_search:latest - search service
+    - hotel_hotel_profile:latest - profile service
+    - hotel_hotel_reservation:latest - reservation service
+    - hotel_hotel_user:latest - user service
+    - hotel_hotel_recommendation:latest - recommendation service
+    - hotel_loadgen:latest - loadgen service
 
     Mirrors the behavior of exp/common/scripts/docker-build.sh, but lives in Python
     so the runner can select an app-specific build implementation.
@@ -100,11 +122,20 @@ class HotelBuilder(AppBuilder):
         gen_config_path: Optional[Path] = None,
     ) -> None:
         app = "hotel"
-        binaries = (
-            "hotel_client_bench hotel_frontend hotel_geo hotel_rate hotel_review "
-            "hotel_search hotel_profile hotel_reservation hotel_user "
-            "hotel_recommendation loadgen"
-        )
+        # List of binaries to build (each gets its own image)
+        binaries_list = [
+            "hotel_client_bench",
+            "hotel_frontend",
+            "hotel_geo",
+            "hotel_rate",
+            "hotel_review",
+            "hotel_search",
+            "hotel_profile",
+            "hotel_reservation",
+            "hotel_user",
+            "hotel_recommendation",
+            "loadgen",
+        ]
 
         if app_config_path is None:
             raise ValueError("app_config_path is required for hotel app")
@@ -116,44 +147,140 @@ class HotelBuilder(AppBuilder):
         config_path_rel = app_config_path.relative_to(repo_root)
         gen_config_path_rel = gen_config_path.relative_to(repo_root)
 
-        build_args: list[str] = []
-        if features:
-            build_args.extend(["--build-arg", f"FEATURES={features}"])
-        build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
-        build_args.extend(["--build-arg", f"APP={app}"])
-        build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
-        build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
-        build_args.extend(["--build-arg", f"BINARIES={binaries}"])
-
         # Generate tag based on features for deterministic, feature-specific images
         tag = normalize_features_to_tag(features)
-        image_name = f"hotel:{tag}"
         
-        logger.info(f"Building docker image: {image_name}")
+        logger.info(f"Building {len(binaries_list)} docker images for hotel app using multi-stage build")
+        if features:
+            logger.info(f"Using features: {features}")
 
-        cmd: list[str] = [
+        # Stage 1: Build all binaries once (shared across all images)
+        logger.info("Stage 1: Building all binaries for hotel app")
+        builder_build_args: list[str] = []
+        if features:
+            builder_build_args.extend(["--build-arg", f"FEATURES={features}"])
+        builder_build_args.extend(["--build-arg", f"APP={app}"])
+        
+        builder_cmd: list[str] = [
             "docker",
+            "buildx",
             "build",
             "-f",
             "./exp/common/docker-build/Dockerfile",
-            *build_args,
+            "--target",
+            "builder",
+            *builder_build_args,
             "--ulimit",
             "nofile=4096:4096",
+            "--progress=plain",
         ]
-
-        if no_cache:
-            cmd.append("--no-cache")
-
-        cmd.extend(["-t", image_name, "."])
-
-        subprocess.run(
-            cmd,
-            cwd=repo_root,
-            check=True,
-            capture_output=False,
-        )
         
-        logger.info(f"Successfully built docker image: {image_name}")
+        if no_cache:
+            builder_cmd.append("--no-cache")
+        
+        builder_cmd.extend(["-t", f"{app}_builder:latest", "."])
+        
+        try:
+            subprocess.run(
+                builder_cmd,
+                cwd=repo_root,
+                check=True,
+                capture_output=False,
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}")
+            raise
+        logger.info("Stage 1 complete: All binaries built")
+
+        # Stage 2: Build runtime-base (shared across all images)
+        logger.info("Stage 2: Building runtime-base image")
+        runtime_base_build_args: list[str] = []
+        runtime_base_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
+        runtime_base_build_args.extend(["--build-arg", f"APP={app}"])
+        runtime_base_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
+        runtime_base_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
+        
+        runtime_base_cmd: list[str] = [
+            "docker",
+            "buildx",
+            "build",
+            "-f",
+            "./exp/common/docker-build/Dockerfile",
+            "--target",
+            "runtime-base",
+            *runtime_base_build_args,
+            "--ulimit",
+            "nofile=4096:4096",
+            "--progress=plain",
+        ]
+        
+        if no_cache:
+            runtime_base_cmd.append("--no-cache")
+        
+        runtime_base_cmd.extend(["-t", f"{app}_runtime-base:latest", "."])
+        
+        try:
+            subprocess.run(
+                runtime_base_cmd,
+                cwd=repo_root,
+                check=True,
+                capture_output=False,
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}")
+            raise
+        logger.info("Stage 2 complete: Runtime-base image built")
+
+        # Stage 3: Build per-binary runtime images
+        for binary_name in binaries_list:
+            logger.info(f"Stage 3: Building runtime image for {binary_name}")
+            
+            runtime_build_args: list[str] = []
+            runtime_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
+            runtime_build_args.extend(["--build-arg", f"APP={app}"])
+            runtime_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
+            runtime_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
+            runtime_build_args.extend(["--build-arg", f"BINARY_NAME={binary_name}"])
+
+            # Generate image name: hotel_<binary>:<tag> or hotel_<binary>:latest if no features
+            if tag:
+                image_name = f"hotel_{binary_name}:{tag}"
+            else:
+                image_name = f"hotel_{binary_name}:latest"
+
+            runtime_cmd: list[str] = [
+                "docker",
+                "buildx",
+                "build",
+                "-f",
+                "./exp/common/docker-build/Dockerfile",
+                "--target",
+                "runtime",
+                *runtime_build_args,
+                "--ulimit",
+                "nofile=4096:4096",
+                "--progress=plain",
+            ]
+
+            if no_cache:
+                runtime_cmd.append("--no-cache")
+
+            runtime_cmd.extend(["-t", image_name, "."])
+
+            try:
+                subprocess.run(
+                    runtime_cmd,
+                    cwd=repo_root,
+                    check=True,
+                    capture_output=False,
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to build runtime image for {binary_name}. Command: {shlex.join(runtime_cmd)}")
+                raise
+
+            logger.info(f"Successfully built docker image: {image_name}")
+        
+        logger.info("All hotel app docker images built successfully")
 
 
 class HotelApp(AppPlugin):
@@ -223,7 +350,7 @@ class HotelApp(AppPlugin):
             compose_file="scripts/local/containers+svcs.yaml",
             network_name="local_hotel_network",
             loadgen_container_name="hotel_client_bench",
-            loadgen_image_name="hotel:<features>",  # Actual tag is dynamic based on features
+            loadgen_image_name="hotel_hotel_client_bench:<features>",  # Actual tag is dynamic based on features
             loadgen_binary_name="hotel_client_bench",
             app_config_filename="hotel.json",
         )
