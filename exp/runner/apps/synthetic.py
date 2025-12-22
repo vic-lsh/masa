@@ -5,7 +5,9 @@ Synthetic application plugin.
 import json
 import logging
 import re
+import shlex
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -152,6 +154,11 @@ class SyntheticBuilder(AppBuilder):
     """
     Build logic for the synthetic app docker images.
     
+    Uses multi-stage multi-target build:
+    - Stage 1 (builder): Build all binaries once
+    - Stage 2 (runtime-base): Base runtime image with dependencies
+    - Stage 3 (runtime): Per-binary runtime images
+    
     The synthetic app requires three separate docker images:
     - synthetic_frontend:latest - frontend service
     - synthetic_child:latest - child service (can be scaled)
@@ -178,54 +185,156 @@ class SyntheticBuilder(AppBuilder):
             ("synthetic_client_bench", "synthetic_client_bench:latest"),
         ]
         
-        logger.info(f"Building {len(services)} docker images for synthetic app")
+        logger.info(f"Building {len(services)} docker images for synthetic app using multi-stage build")
         if features:
             logger.info(f"Using features: {features}")
         
         # Convert to path relative to repo_root if provided
-        config_path_rel = None
+        # If not provided, create a temporary empty config file
+        temp_config_file = None
         if app_config_path is not None:
             config_path_rel = app_config_path.relative_to(repo_root)
+        else:
+            # Create a temporary empty config file for Docker build
+            temp_config = tempfile.NamedTemporaryFile(
+                mode='w', suffix='.json', delete=False, dir=repo_root
+            )
+            temp_config.write('{}')
+            temp_config.close()
+            temp_config_file = Path(temp_config.name)
+            config_path_rel = temp_config_file.relative_to(repo_root)
         
         if gen_config_path is None:
             raise ValueError("gen_config_path is required for synthetic app")
         gen_config_path_rel = gen_config_path.relative_to(repo_root)
         
-        for binary_name, image_name in services:
-            logger.info(f"Building docker image: {image_name}")
-            
-            build_args: list[str] = []
+        try:
+            # Stage 1: Build all binaries once (shared across all images)
+            logger.info("Stage 1: Building all binaries for synthetic app")
+            builder_build_args: list[str] = []
             if features:
-                build_args.extend(["--build-arg", f"FEATURES={features}"])
-            build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
-            build_args.extend(["--build-arg", f"APP={app}"])
-            if config_path_rel is not None:
-                build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
-            build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
-            build_args.extend(["--build-arg", f"BINARIES={binary_name}"])
+                builder_build_args.extend(["--build-arg", f"FEATURES={features}"])
+            builder_build_args.extend(["--build-arg", f"APP={app}"])
             
-            cmd: list[str] = [
+            builder_cmd: list[str] = [
                 "docker",
+                "buildx",
                 "build",
                 "-f",
                 "./exp/common/docker-build/Dockerfile",
-                *build_args,
+                "--target",
+                "builder",
+                *builder_build_args,
                 "--ulimit",
                 "nofile=4096:4096",
+                "--progress=plain",  # Better output for CI/logs
             ]
             
             if no_cache:
-                cmd.append("--no-cache")
+                builder_cmd.append("--no-cache")
             
-            cmd.extend(["-t", image_name, "."])
+            builder_cmd.extend(["-t", f"{app}_builder:latest", "."])
             
-            subprocess.run(
-                cmd,
-                cwd=repo_root,
-                check=True,
-                capture_output=False,
-            )
+            try:
+                subprocess.run(
+                    builder_cmd,
+                    cwd=repo_root,
+                    check=True,
+                    capture_output=False,
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}")
+                raise
+            logger.info("Stage 1 complete: All binaries built")
             
-            logger.info(f"Successfully built docker image: {image_name}")
+            # Stage 2: Build runtime-base (shared across all images)
+            logger.info("Stage 2: Building runtime-base image")
+            runtime_base_build_args: list[str] = []
+            runtime_base_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
+            runtime_base_build_args.extend(["--build-arg", f"APP={app}"])
+            if config_path_rel is not None:
+                runtime_base_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
+            runtime_base_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
+            
+            runtime_base_cmd: list[str] = [
+                "docker",
+                "buildx",
+                "build",
+                "-f",
+                "./exp/common/docker-build/Dockerfile",
+                "--target",
+                "runtime-base",
+                *runtime_base_build_args,
+                "--ulimit",
+                "nofile=4096:4096",
+                "--progress=plain",
+            ]
+            
+            if no_cache:
+                runtime_base_cmd.append("--no-cache")
+            
+            runtime_base_cmd.extend(["-t", f"{app}_runtime-base:latest", "."])
+            
+            try:
+                subprocess.run(
+                    runtime_base_cmd,
+                    cwd=repo_root,
+                    check=True,
+                    capture_output=False,
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}")
+                raise
+            logger.info("Stage 2 complete: Runtime-base image built")
+            
+            # Stage 3: Build per-binary runtime images
+            for binary_name, image_name in services:
+                logger.info(f"Stage 3: Building runtime image for {binary_name}")
+                
+                runtime_build_args: list[str] = []
+                runtime_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
+                runtime_build_args.extend(["--build-arg", f"APP={app}"])
+                if config_path_rel is not None:
+                    runtime_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
+                runtime_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
+                runtime_build_args.extend(["--build-arg", f"BINARY_NAME={binary_name}"])
+                
+                runtime_cmd: list[str] = [
+                    "docker",
+                    "buildx",
+                    "build",
+                    "-f",
+                    "./exp/common/docker-build/Dockerfile",
+                    "--target",
+                    "runtime",
+                    *runtime_build_args,
+                    "--ulimit",
+                    "nofile=4096:4096",
+                    "--progress=plain",
+                ]
+                
+                if no_cache:
+                    runtime_cmd.append("--no-cache")
+                
+                runtime_cmd.extend(["-t", image_name, "."])
+                
+                try:
+                    subprocess.run(
+                        runtime_cmd,
+                        cwd=repo_root,
+                        check=True,
+                        capture_output=False,
+                    )
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"Failed to build runtime image for {binary_name}. Command: {shlex.join(runtime_cmd)}")
+                    raise
+                
+                logger.info(f"Successfully built docker image: {image_name}")
+        
+        finally:
+            # Clean up temporary config file if we created one
+            if temp_config_file is not None and temp_config_file.exists():
+                temp_config_file.unlink()
+                logger.debug(f"Cleaned up temporary config file: {temp_config_file}")
         
         logger.info("All synthetic app docker images built successfully")
