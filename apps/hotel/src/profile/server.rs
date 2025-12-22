@@ -180,7 +180,11 @@ impl Profile for ProfileImpl {
                         if let Ok(prof_json) = serde_json::to_string(&hotel) {
                             let mut redis_conn = redis_conn.clone();
                             if let Err(e) = redis_conn
-                                .set_ex::<&std::string::String, std::string::String, ()>(&hotel_id, prof_json, CACHE_TTL_SECS as u64)
+                                .set_ex::<&std::string::String, std::string::String, ()>(
+                                    &hotel_id,
+                                    prof_json,
+                                    CACHE_TTL_SECS as u64,
+                                )
                                 .await
                             {
                                 log::error!("Failed to set redis cache: {}", e);

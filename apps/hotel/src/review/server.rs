@@ -111,8 +111,9 @@ impl Review for ReviewImpl {
                         let hotel_id_clone = hotel_id.clone();
                         let mut redis_conn = self.redis_conn.clone();
                         tokio::spawn(async move {
-                            let res: redis::RedisResult<()> =
-                                redis_conn.set_ex(&hotel_id_clone, json_bytes, CACHE_TTL_SECS as u64).await;
+                            let res: redis::RedisResult<()> = redis_conn
+                                .set_ex(&hotel_id_clone, json_bytes, CACHE_TTL_SECS as u64)
+                                .await;
 
                             if let Err(e) = res {
                                 log::error!("Failed to set redis cache: {}", e);
@@ -145,7 +146,8 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     async fn test_redis_conn() -> Option<RedisConnectionManager> {
-        let url = std::env::var("TEST_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into());
+        let url =
+            std::env::var("TEST_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into());
         let client = redis::Client::open(url).ok()?;
         match RedisConnectionManager::new(client).await {
             Ok(conn) => Some(conn),

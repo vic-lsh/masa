@@ -299,8 +299,7 @@ impl Reservation for ReservationImpl {
             for (key, value) in req_commands.iter().zip(redis_resp) {
                 if let Some(raw) = value {
                     if let Some((hotel_id, _, _)) = query_map.remove(key) {
-                        if let Ok(count) =
-                            String::from_utf8(raw).unwrap_or_default().parse::<i32>()
+                        if let Ok(count) = String::from_utf8(raw).unwrap_or_default().parse::<i32>()
                         {
                             let cap = cache_cap.get(&format!("{}_cap", hotel_id)).unwrap_or(&0);
                             if count + req.room_number > *cap {
