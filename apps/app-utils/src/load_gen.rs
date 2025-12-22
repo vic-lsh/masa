@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::Semaphore;
 use tokio::time::{timeout, Duration, Instant};
 
 use rand::Rng;
@@ -449,6 +450,7 @@ where
         let mut elapse = 0f64;
 
         let mut set = JoinSet::new();
+        let semaphore = Arc::new(Semaphore::new(3000));
 
         while Instant::now() < pause_at {
             // XXX: tokio's sleep has millisecond granularity, so for small `elapse` this may be
@@ -488,11 +490,14 @@ where
             let ctrs = Arc::clone(&counters);
             let rng = self.rng.clone();
             let trace = Instant::now() > trace_at;
+            let semaphore = Arc::clone(&semaphore);
 
             set.spawn(async move {
+                let permit = semaphore.acquire_owned().await.unwrap();
                 ctrs.increment("all");
 
                 let error = handler.send_request(rng, client, ctx, trace).await;
+                drop(permit);
 
                 if trace {
                     // increment the right counters

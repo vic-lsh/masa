@@ -5,19 +5,21 @@
     "Reservation"
   ],
   "Slos": [
-    50000,
-    50000
+    150000
   ],
   "Rps": [
-    1000
+    2200,
+    2600,
+    3200,
+    4000
+
   ],
   "Gap": "const",
   "WarmupSecs": 10,
-  "DurationSecs": 20,
+  "DurationSecs": 60,
   "Concurrency": 0,
   "Addr": "http://hotel_frontend:8660",
   "Timeouts_ms": [
-    1000,
-    1000
+    8000
   ]
 }
