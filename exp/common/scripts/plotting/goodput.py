@@ -196,7 +196,7 @@ def generate_plots(args) -> None:
         plt.grid(axis="y", linestyle="--", alpha=0.7)
         plt.tight_layout()
         plt.savefig(
-            os.path.join(output_dir, f"policy_goodput_comparison_{api}_averaged.png"),
+            os.path.join(output_dir, f"policy_goodput_comparison_{api}.png"),
             dpi=300,
         )
         plt.close()
