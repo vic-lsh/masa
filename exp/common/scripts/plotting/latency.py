@@ -40,17 +40,19 @@ def generate_plots(args) -> None:
                     df = data[policy][rps]
 
                     latencies = sorted(df["latency"].values)
-                    percentiles = np.linspace(0, 100, len(latencies))
+                    # Calculate cumulative probability (0 to 1)
+                    cumulative_prob = np.linspace(0, 1, len(latencies))
 
-                    plt.plot(percentiles, latencies, label=f"{policy}")
+                    plt.plot(latencies, cumulative_prob, label=f"{policy}")
 
                 # Add labels and title
-                plt.xlabel("Percentile (%)")
-                plt.ylabel("Latency (milliseconds)")
-                plt.title(f"Latency Distribution for {api} API - {rps} RPS")
+                plt.xlabel("Latency (milliseconds)")
+                plt.ylabel("Cumulative Probability")
+                plt.title(f"Latency CDF for {api} API - {rps} RPS")
                 plt.grid(True, alpha=0.3)
                 plt.legend()
-                plt.ylim(top=max_y)
+                plt.xlim(left=0, right=max_y)
+                plt.ylim(bottom=0, top=1)
                 # Save the plot
                 plt.savefig(
                     f"{output_dir}/latency_distribution_{rps}rps_{api}.png", dpi=300
@@ -74,16 +76,18 @@ def generate_plots(args) -> None:
                     df = df[df["error"] == "/None"]
 
                     latencies = sorted(df["latency"].values)
-                    percentiles = np.linspace(0, 100, len(latencies))
+                    # Calculate cumulative probability (0 to 1)
+                    cumulative_prob = np.linspace(0, 1, len(latencies))
 
-                    plt.plot(percentiles, latencies, label=f"{policy}")
+                    plt.plot(latencies, cumulative_prob, label=f"{policy}")
 
                 # Add labels and title
-                plt.xlabel("Percentile (%)")
-                plt.ylabel("Latency (milliseconds)")
-                plt.title(f"Goodput Latency Distribution for {api} API - {rps} RPS")
+                plt.xlabel("Latency (milliseconds)")
+                plt.ylabel("Cumulative Probability")
+                plt.title(f"Goodput Latency CDF for {api} API - {rps} RPS")
                 plt.grid(True, alpha=0.3)
-                plt.ylim(top=max_y)
+                plt.xlim(left=0, right=max_y)
+                plt.ylim(bottom=0, top=1)
                 plt.legend()
 
                 # Save the plot
