@@ -138,6 +138,7 @@ def cmd_plot(args: argparse.Namespace) -> None:
         sys.exit(1)
     
     logger.info(f"Generating plots for experiment: {args.experiment}")
+    print(f"Plot output directory: {repo_root / 'exp' / args.app / 'data' / 'plots' / args.experiment}")
     
     try:
         subprocess.run(
