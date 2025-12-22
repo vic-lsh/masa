@@ -113,7 +113,6 @@ class SyntheticApp(AppPlugin):
             loadgen_image_name="synthetic_client_bench",
             loadgen_binary_name="synthetic_client_bench",
             app_config_filename="config.docker.json",
-            app_config_required=False,
         )
     
     def get_container_names(self, env_vars: dict) -> list[str]:
@@ -167,6 +166,7 @@ class SyntheticBuilder(AppBuilder):
         features: Optional[str] = None,
         rust_log: str = "info",
         no_cache: bool = False,
+        app_config_path: Optional[Path] = None,
     ) -> None:
         app = "synthetic"
         
@@ -181,6 +181,11 @@ class SyntheticBuilder(AppBuilder):
         if features:
             logger.info(f"Using features: {features}")
         
+        # Convert to path relative to repo_root if provided
+        config_path_rel = None
+        if app_config_path is not None:
+            config_path_rel = app_config_path.relative_to(repo_root)
+        
         for binary_name, image_name in services:
             logger.info(f"Building docker image: {image_name}")
             
@@ -189,7 +194,8 @@ class SyntheticBuilder(AppBuilder):
                 build_args.extend(["--build-arg", f"FEATURES={features}"])
             build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
             build_args.extend(["--build-arg", f"APP={app}"])
-            build_args.extend(["--build-arg", "APP_CONFIG_FILE=config.docker.json"])
+            if config_path_rel is not None:
+                build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
             build_args.extend(["--build-arg", f"BINARIES={binary_name}"])
             
             cmd: list[str] = [
