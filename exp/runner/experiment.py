@@ -213,6 +213,7 @@ class Experiment:
                         no_cache=self.no_cache,
                         app_config_path=app_config_path,
                         gen_config_path=gen_config_path,
+                        dry_run=False,
                     )
                     
                     self.docker.start(
