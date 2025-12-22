@@ -4,7 +4,6 @@ Hotel application plugin.
 
 import json
 import logging
-import re
 import shlex
 import subprocess
 from pathlib import Path
