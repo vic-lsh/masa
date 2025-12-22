@@ -44,7 +44,7 @@ FROM debian:trixie-slim
 
 ARG APP
 ARG LOG_LEVEL=warn
-ARG APP_CONFIG_FILE=config.docker.json
+ARG APP_CONFIG_PATH
 
 RUN apt-get update
 
@@ -58,7 +58,9 @@ RUN apt-get install -y\
 COPY --from=builder /tmp/binaries/ /usr/local/bin/
 
 COPY exp/common/docker-build/entrypoint.sh /usr/entrypoint.sh
-COPY --from=builder /usr/src/masa/apps/${APP}/scripts/local/${APP_CONFIG_FILE} /usr/config.json
+# Copy app config - APP_CONFIG_PATH must be provided as build arg
+# If config is optional for an app, a default/empty config should be provided
+COPY ${APP_CONFIG_PATH} /usr/config.json
 COPY exp/${APP}/scripts/gen_config.json /usr/gen_config.json
 
 ENV LOG_LEVEL=${LOG_LEVEL}
