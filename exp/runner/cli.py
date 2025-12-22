@@ -118,6 +118,81 @@ def cmd_queue_experiments(args: argparse.Namespace) -> None:
     logger.info("All queued experiments completed successfully!")
 
 
+def cmd_build(args: argparse.Namespace) -> None:
+    """
+    Build Docker images for an experiment without running it.
+    
+    Args:
+        args: Parsed command-line arguments
+    """
+    repo_root = find_repo_root()
+    
+    # Get application plugin
+    try:
+        app_plugin = get_app_plugin(args.app)
+    except ValueError as e:
+        logger.error(str(e))
+        sys.exit(1)
+    
+    # Load experiment configuration
+    try:
+        config = ExperimentConfig.load(
+            experiment_name=args.experiment,
+            app_name=args.app,
+            repo_root=repo_root,
+            app_plugin=app_plugin,
+        )
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Failed to load experiment configuration: {e}")
+        sys.exit(1)
+    
+    # Determine which policies to build
+    policies_to_build = [args.policy] if args.policy else config.policies
+    
+    logger.info(f"Building Docker images for experiment: {config.experiment_name}")
+    logger.info(f"Application: {config.app_name}")
+    logger.info(f"Policies to build: {', '.join(policies_to_build)}")
+    
+    # Get app config path if it exists
+    app_config_path = None
+    docker_config = app_plugin.get_docker_config()
+    if docker_config.app_config_filename:
+        app_config_path = config.in_dir / docker_config.app_config_filename
+        if not app_config_path.exists():
+            logger.error(f"App config not found at: {app_config_path}")
+            sys.exit(1)
+    
+    # Get gen_config.json path
+    gen_config_path = config.in_dir / "gen_config.json"
+    if not gen_config_path.exists():
+        logger.error(f"gen_config.json not found at: {gen_config_path}")
+        sys.exit(1)
+    
+    # Build images for each policy
+    builder = app_plugin.create_builder()
+    for policy in policies_to_build:
+        logger.info(f"{'='*60}")
+        logger.info(f"Building images for policy: {policy}")
+        logger.info(f"{'='*60}")
+        
+        try:
+            builder.build(
+                repo_root=repo_root,
+                app_dir=config.app_dir,
+                features=policy,
+                rust_log="info",
+                no_cache=args.no_cache,
+                app_config_path=app_config_path,
+                gen_config_path=gen_config_path,
+            )
+            logger.info(f"Successfully built images for policy: {policy}")
+        except Exception as e:
+            logger.error(f"Failed to build images for policy {policy}: {e}", exc_info=True)
+            sys.exit(1)
+    
+    logger.info("All Docker images built successfully!")
+
+
 def cmd_plot(args: argparse.Namespace) -> None:
     """
     Generate plots for an existing experiment.
@@ -163,6 +238,12 @@ def main() -> None:
 Examples:
   # Run a single experiment
   python -m exp.runner run hotel exp1 --plot
+  
+  # Build Docker images for an experiment
+  python -m exp.runner build hotel exp1
+  
+  # Build images for a specific policy
+  python -m exp.runner build synthetic exp1 --policy prio_global
   
   # Queue multiple experiments
   python -m exp.runner run-multiple synthetic "exp1 exp2 exp3" --plot
@@ -247,6 +328,32 @@ Examples:
         help='Remove existing data from experiment output directory before running'
     )
     queue_parser.set_defaults(func=cmd_queue_experiments)
+    
+    # build command
+    build_parser = subparsers.add_parser(
+        'build',
+        help='Build Docker images for an experiment without running it',
+        description='Build Docker images for all policies (or a specific policy) in an experiment'
+    )
+    build_parser.add_argument(
+        'app',
+        choices=['hotel', 'synthetic'],
+        help='Application to build (hotel or synthetic)'
+    )
+    build_parser.add_argument(
+        'experiment',
+        help='Name of the experiment (directory name in exp/<app>/data/in/)'
+    )
+    build_parser.add_argument(
+        '--policy',
+        help='Build images for a specific policy only (default: build all policies)'
+    )
+    build_parser.add_argument(
+        '--no-cache',
+        action='store_true',
+        help='Disable Docker cache during build'
+    )
+    build_parser.set_defaults(func=cmd_build)
     
     # plot command
     plot_parser = subparsers.add_parser(
