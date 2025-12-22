@@ -225,7 +225,8 @@ class AppBuilder(ABC):
         no_cache: bool = False,
         app_config_path: Optional[Path] = None,
         gen_config_path: Optional[Path] = None,
-    ) -> None:
+        dry_run: bool = False,
+    ) -> Optional[list[list[str]]]:
         """
         Build the app's docker images.
 
@@ -237,6 +238,11 @@ class AppBuilder(ABC):
             no_cache: Whether to disable Docker cache
             app_config_path: Path to app config file (relative to repo_root) to include in image
             gen_config_path: Path to gen_config.json file (relative to repo_root) to include in image
+            dry_run: If True, return list of commands instead of executing them
+
+        Returns:
+            If dry_run is True, returns a list of commands (each command is a list of strings).
+            If dry_run is False, returns None after executing the commands.
         """
         raise NotImplementedError
 

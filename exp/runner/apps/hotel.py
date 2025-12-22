@@ -80,7 +80,8 @@ class HotelBuilder(AppBuilder):
         no_cache: bool = False,
         app_config_path: Optional[Path] = None,
         gen_config_path: Optional[Path] = None,
-    ) -> None:
+        dry_run: bool = False,
+    ) -> Optional[list[list[str]]]:
         app = "hotel"
         # List of binaries to build (each gets its own image)
         binaries_list = [
@@ -114,6 +115,9 @@ class HotelBuilder(AppBuilder):
         if features:
             logger.info(f"Using features: {features}")
 
+        # Collect commands if dry_run
+        commands: list[list[str]] = []
+
         # Stage 1: Build all binaries once (shared across all images)
         logger.info("Stage 1: Building all binaries for hotel app")
         builder_build_args: list[str] = []
@@ -138,23 +142,28 @@ class HotelBuilder(AppBuilder):
         if no_cache:
             builder_cmd.append("--no-cache")
         
-        builder_cmd.extend(["-t", f"{app}_builder:latest", "."])
+        builder_cmd.extend(["-t", f"{app}_builder:{tag}", "."])
         
-        try:
-            subprocess.run(
-                builder_cmd,
-                cwd=repo_root,
-                check=True,
-                capture_output=False,
-            )
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}")
-            raise
+        if dry_run:
+            commands.append(builder_cmd.copy())
+        else:
+            try:
+                subprocess.run(
+                    builder_cmd,
+                    cwd=repo_root,
+                    check=True,
+                    capture_output=False,
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}")
+                raise
         logger.info("Stage 1 complete: All binaries built")
 
         # Stage 2: Build runtime-base (shared across all images)
         logger.info("Stage 2: Building runtime-base image")
         runtime_base_build_args: list[str] = []
+        if features:
+            runtime_base_build_args.extend(["--build-arg", f"FEATURES={features}"])
         runtime_base_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
         runtime_base_build_args.extend(["--build-arg", f"APP={app}"])
         runtime_base_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
@@ -177,18 +186,21 @@ class HotelBuilder(AppBuilder):
         if no_cache:
             runtime_base_cmd.append("--no-cache")
         
-        runtime_base_cmd.extend(["-t", f"{app}_runtime-base:latest", "."])
+        runtime_base_cmd.extend(["-t", f"{app}_runtime-base:{tag}", "."])
         
-        try:
-            subprocess.run(
-                runtime_base_cmd,
-                cwd=repo_root,
-                check=True,
-                capture_output=False,
-            )
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}")
-            raise
+        if dry_run:
+            commands.append(runtime_base_cmd.copy())
+        else:
+            try:
+                subprocess.run(
+                    runtime_base_cmd,
+                    cwd=repo_root,
+                    check=True,
+                    capture_output=False,
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}")
+                raise
         logger.info("Stage 2 complete: Runtime-base image built")
 
         # Stage 3: Build per-binary runtime images
@@ -196,6 +208,8 @@ class HotelBuilder(AppBuilder):
             logger.info(f"Stage 3: Building runtime image for {binary_name}")
             
             runtime_build_args: list[str] = []
+            if features:
+                runtime_build_args.extend(["--build-arg", f"FEATURES={features}"])
             runtime_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
             runtime_build_args.extend(["--build-arg", f"APP={app}"])
             runtime_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
@@ -226,21 +240,28 @@ class HotelBuilder(AppBuilder):
                 runtime_cmd.append("--no-cache")
 
             runtime_cmd.extend(["-t", image_name, "."])
-
-            try:
-                subprocess.run(
-                    runtime_cmd,
-                    cwd=repo_root,
-                    check=True,
-                    capture_output=False,
-                )
-            except subprocess.CalledProcessError as e:
-                logger.error(f"Failed to build runtime image for {binary_name}. Command: {shlex.join(runtime_cmd)}")
-                raise
-
+            
+            if dry_run:
+                commands.append(runtime_cmd.copy())
+            else:
+                try:
+                    subprocess.run(
+                        runtime_cmd,
+                        cwd=repo_root,
+                        check=True,
+                        capture_output=False,
+                    )
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"Failed to build runtime image for {binary_name}. Command: {shlex.join(runtime_cmd)}")
+                    raise
+            
             logger.info(f"Successfully built docker image: {image_name}")
         
+        if dry_run:
+            return commands
+        
         logger.info("All hotel app docker images built successfully")
+        return None
 
 
 class HotelApp(AppPlugin):
