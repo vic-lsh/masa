@@ -105,13 +105,8 @@ class Experiment:
             shutil.copy(gen_config_path, backup_dir)
             logger.debug(f"Backed up gen_config.json to {backup_dir}")
         
-        # Backup app config if exists
-        docker_config = self.app.get_docker_config()
-        if docker_config.app_config_filename:
-            app_config_dest = self.app_local_dir / docker_config.app_config_filename
-            if app_config_dest.exists():
-                shutil.copy(app_config_dest, backup_dir)
-                logger.debug(f"Backed up app config to {backup_dir}")
+        # Note: App config files are no longer stored in apps/ directory,
+        # so we don't need to backup them from there.
         
         # Backup old output
         if self.config.out_dir.exists() and any(self.config.out_dir.iterdir()):
@@ -145,19 +140,8 @@ class Experiment:
         shutil.copy(src, dst)
         logger.debug(f"Copied {src} to {dst}")
         
-        # Copy app config if present
-        docker_config = self.app.get_docker_config()
-        if docker_config.app_config_filename:
-            src = self.config.in_dir / docker_config.app_config_filename
-            dst = self.app_local_dir / docker_config.app_config_filename
-            
-            if src.exists():
-                shutil.copy(src, dst)
-                logger.debug(f"Copied {src} to {dst}")
-            elif docker_config.app_config_required:
-                raise FileNotFoundError(
-                    f"Required app config not found: {src}"
-                )
+        # Note: App config files are no longer copied to apps/ directory.
+        # They are passed directly to Docker build via APP_CONFIG_PATH.
     
     def _run_iterations(self) -> None:
         """Run all experiment iterations."""
@@ -205,12 +189,23 @@ class Experiment:
                     
                     # Build and start Docker services
                     builder = self.app.create_builder()
+                    # Get app config path if it exists
+                    app_config_path = None
+                    docker_config = self.app.get_docker_config()
+                    if docker_config.app_config_filename:
+                        app_config_path = self.config.in_dir / docker_config.app_config_filename
+                        if not app_config_path.exists():
+                            raise FileNotFoundError(
+                                f"App config not found at: {app_config_path}"
+                            )
+                    
                     builder.build(
                         repo_root=self.repo_root,
                         app_dir=self.config.app_dir,
                         features=policy,
                         rust_log="info",
                         no_cache=self.no_cache,
+                        app_config_path=app_config_path,
                     )
                     
                     self.docker.start(

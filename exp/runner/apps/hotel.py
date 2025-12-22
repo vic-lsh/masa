@@ -96,6 +96,7 @@ class HotelBuilder(AppBuilder):
         features: Optional[str] = None,
         rust_log: str = "info",
         no_cache: bool = False,
+        app_config_path: Optional[Path] = None,
     ) -> None:
         app = "hotel"
         binaries = (
@@ -104,12 +105,18 @@ class HotelBuilder(AppBuilder):
             "hotel_recommendation loadgen"
         )
 
+        if app_config_path is None:
+            raise ValueError("app_config_path is required for hotel app")
+
+        # Convert to path relative to repo_root
+        config_path_rel = app_config_path.relative_to(repo_root)
+
         build_args: list[str] = []
         if features:
             build_args.extend(["--build-arg", f"FEATURES={features}"])
         build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
         build_args.extend(["--build-arg", f"APP={app}"])
-        build_args.extend(["--build-arg", "APP_CONFIG_FILE=hotel.json"])
+        build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
         build_args.extend(["--build-arg", f"BINARIES={binaries}"])
 
         # Generate tag based on features for deterministic, feature-specific images
@@ -213,7 +220,6 @@ class HotelApp(AppPlugin):
             loadgen_image_name="hotel:<features>",  # Actual tag is dynamic based on features
             loadgen_binary_name="hotel_client_bench",
             app_config_filename="hotel.json",
-            app_config_required=True,
         )
     
     def get_container_names(self, env_vars: dict) -> list[str]:
