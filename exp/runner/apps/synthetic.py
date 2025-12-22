@@ -167,6 +167,7 @@ class SyntheticBuilder(AppBuilder):
         rust_log: str = "info",
         no_cache: bool = False,
         app_config_path: Optional[Path] = None,
+        gen_config_path: Optional[Path] = None,
     ) -> None:
         app = "synthetic"
         
@@ -186,6 +187,10 @@ class SyntheticBuilder(AppBuilder):
         if app_config_path is not None:
             config_path_rel = app_config_path.relative_to(repo_root)
         
+        if gen_config_path is None:
+            raise ValueError("gen_config_path is required for synthetic app")
+        gen_config_path_rel = gen_config_path.relative_to(repo_root)
+        
         for binary_name, image_name in services:
             logger.info(f"Building docker image: {image_name}")
             
@@ -196,6 +201,7 @@ class SyntheticBuilder(AppBuilder):
             build_args.extend(["--build-arg", f"APP={app}"])
             if config_path_rel is not None:
                 build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
+            build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
             build_args.extend(["--build-arg", f"BINARIES={binary_name}"])
             
             cmd: list[str] = [

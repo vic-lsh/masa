@@ -214,6 +214,7 @@ class AppBuilder(ABC):
         rust_log: str = "info",
         no_cache: bool = False,
         app_config_path: Optional[Path] = None,
+        gen_config_path: Optional[Path] = None,
     ) -> None:
         """
         Build the app's docker images.
@@ -225,6 +226,7 @@ class AppBuilder(ABC):
             rust_log: Rust log level to pass into image
             no_cache: Whether to disable Docker cache
             app_config_path: Path to app config file (relative to repo_root) to include in image
+            gen_config_path: Path to gen_config.json file (relative to repo_root) to include in image
         """
         raise NotImplementedError
 
