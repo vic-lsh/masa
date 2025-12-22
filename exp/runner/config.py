@@ -121,8 +121,11 @@ class ExperimentConfig:
                     f"App config not found at: {app_config_path}"
                 )
             
-            app_config = app_plugin.load_app_config(app_config_path)
-            logger.info(f"Loaded app config from {app_config_path}")
+            if app_config_path.exists():
+                app_config = app_plugin.load_app_config(app_config_path)
+                logger.info(f"Loaded app config from {app_config_path}")
+            else:
+                logger.warning(f"Using default app config (no config file found at {app_config_path})")
         
         return cls(
             experiment_name=experiment_name,
