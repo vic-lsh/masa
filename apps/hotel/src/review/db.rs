@@ -193,7 +193,10 @@ mod tests {
 
     #[test]
     fn proto_conversion_maps_all_fields() {
-        let review = generate_test_data().into_iter().next().expect("test review");
+        let review = generate_test_data()
+            .into_iter()
+            .next()
+            .expect("test review");
         let proto: hotel_tonic::review::ReviewComm = review.clone().into();
 
         assert_eq!(proto.review_id, review.review_id);
