@@ -136,7 +136,7 @@ class HotelBuilder(AppBuilder):
             *builder_build_args,
             "--ulimit",
             "nofile=4096:4096",
-            "--progress=plain",
+            "--progress=tty",
         ]
         
         if no_cache:
@@ -180,7 +180,7 @@ class HotelBuilder(AppBuilder):
             *runtime_base_build_args,
             "--ulimit",
             "nofile=4096:4096",
-            "--progress=plain",
+            "--progress=tty",
         ]
         
         if no_cache:
@@ -233,7 +233,7 @@ class HotelBuilder(AppBuilder):
                 *runtime_build_args,
                 "--ulimit",
                 "nofile=4096:4096",
-                "--progress=plain",
+                "--progress=tty",
             ]
 
             if no_cache:

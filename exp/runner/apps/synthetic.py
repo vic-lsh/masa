@@ -263,7 +263,7 @@ class SyntheticBuilder(AppBuilder):
                 *builder_build_args,
                 "--ulimit",
                 "nofile=4096:4096",
-                "--progress=plain",  # Better output for CI/logs
+                "--progress=tty",
             ]
             
             if no_cache:
@@ -308,7 +308,7 @@ class SyntheticBuilder(AppBuilder):
                 *runtime_base_build_args,
                 "--ulimit",
                 "nofile=4096:4096",
-                "--progress=plain",
+                "--progress=tty",
             ]
             
             if no_cache:
@@ -362,7 +362,7 @@ class SyntheticBuilder(AppBuilder):
                     *runtime_build_args,
                     "--ulimit",
                     "nofile=4096:4096",
-                    "--progress=plain",
+                    "--progress=tty",
                 ]
                 
                 if no_cache:
