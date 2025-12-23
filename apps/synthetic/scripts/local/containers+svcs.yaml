@@ -1,19 +1,19 @@
 services:
   child-service:
-    image: synthetic_child:latest
+    image: synthetic_child:${SYNTHETIC_IMAGE_TAG:-latest}
     scale: ${CHILD_REPLICAS}
     networks:
       - synthetic_network
     environment:
       - BINARY_NAME=synthetic_child
-      - LOG_LEVEL=${LOG_LEVEL:-warn}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     deploy:
       resources:
         limits:
           cpus: "${CPUS_PER_REPLICA}"
 
   synthetic-frontend-service:
-    image: synthetic_frontend:latest
+    image: synthetic_frontend:${SYNTHETIC_IMAGE_TAG:-latest}
     container_name: "synthetic_frontend"
     restart: always
     networks:
@@ -24,7 +24,7 @@ services:
       - child-service
     environment:
       - BINARY_NAME=synthetic_frontend
-      - LOG_LEVEL=${LOG_LEVEL:-warn}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     deploy:
       resources:
         limits:
