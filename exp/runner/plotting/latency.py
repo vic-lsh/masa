@@ -8,9 +8,16 @@ from .util import parse_args, prepare_output_dir, read_data
 
 
 def get_policy_color(policy: str) -> str:
-    """Get color for a policy. FIFO uses grey, others use default colors."""
-    if policy.lower() == "fifo":
+    """Get color for a policy. FIFO uses grey hues, prio_global uses blue hues."""
+    policy_lower = policy.lower()
+    if policy_lower.startswith("fifo"):
+        if ",early" in policy_lower:
+            return "darkgrey"
         return "grey"
+    elif policy_lower.startswith("prio_global"):
+        if ",early" in policy_lower:
+            return "cornflowerblue"
+        return "steelblue"
     return None  # Use matplotlib default color cycle
 
 
