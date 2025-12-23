@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
-from .utils import normalize_features_to_tag
+from .utils import normalize_features_to_tag, get_docker_progress_flag
 
 logger = logging.getLogger(__name__)
 
@@ -263,7 +263,7 @@ class SyntheticBuilder(AppBuilder):
                 *builder_build_args,
                 "--ulimit",
                 "nofile=4096:4096",
-                "--progress=tty",
+                get_docker_progress_flag(),
             ]
             
             if no_cache:
@@ -308,7 +308,7 @@ class SyntheticBuilder(AppBuilder):
                 *runtime_base_build_args,
                 "--ulimit",
                 "nofile=4096:4096",
-                "--progress=tty",
+                get_docker_progress_flag(),
             ]
             
             if no_cache:
@@ -362,7 +362,7 @@ class SyntheticBuilder(AppBuilder):
                     *runtime_build_args,
                     "--ulimit",
                     "nofile=4096:4096",
-                    "--progress=tty",
+                    get_docker_progress_flag(),
                 ]
                 
                 if no_cache:
