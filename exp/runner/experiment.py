@@ -130,10 +130,8 @@ class Experiment:
         else:
             logger.debug(f"Keeping existing data in output directory: {self.config.out_dir}")
         
-        # Always clear plot directory (plots are regenerated)
-        if self.config.plot_dir.exists():
-            shutil.rmtree(self.config.plot_dir)
-        self.config.plot_dir.mkdir(parents=True, exist_ok=True)
+        # Note: plot directory is only cleared when actually generating plots
+        # (see _generate_plots method)
         
         logger.info(f"Backed up old configs to {backup_dir}")
     
@@ -269,6 +267,12 @@ class Experiment:
     def _generate_plots(self) -> None:
         """Generate plots from experiment results."""
         logger.info("Generating plots")
+        
+        # Clear plot directory before generating new plots
+        if self.config.plot_dir.exists():
+            shutil.rmtree(self.config.plot_dir)
+        self.config.plot_dir.mkdir(parents=True, exist_ok=True)
+        logger.debug(f"Cleared plot directory: {self.config.plot_dir}")
         
         # Create args-like object for plotting functions
         args = Namespace(
