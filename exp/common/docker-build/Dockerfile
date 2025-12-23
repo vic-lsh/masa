@@ -37,7 +37,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM debian:trixie-slim AS runtime-base
 
 ARG APP
-ARG LOG_LEVEL=warn
+ARG LOG_LEVEL=info
 ARG APP_CONFIG_PATH
 ARG GEN_CONFIG_PATH
 
