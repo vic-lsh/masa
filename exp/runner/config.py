@@ -116,14 +116,13 @@ class ExperimentConfig:
         if docker_config.app_config_filename:
             app_config_path = in_dir / docker_config.app_config_filename
             
-            if docker_config.app_config_required and not app_config_path.exists():
+            if not app_config_path.exists():
                 raise FileNotFoundError(
-                    f"Required app config not found at: {app_config_path}"
+                    f"App config not found at: {app_config_path}"
                 )
             
-            if app_config_path.exists():
-                app_config = app_plugin.load_app_config(app_config_path)
-                logger.info(f"Loaded app config from {app_config_path}")
+            app_config = app_plugin.load_app_config(app_config_path)
+            logger.info(f"Loaded app config from {app_config_path}")
         
         return cls(
             experiment_name=experiment_name,

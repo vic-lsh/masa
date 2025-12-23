@@ -141,7 +141,7 @@ def generate_plots(args) -> None:
             plt.grid(True, alpha=0.3)
             plt.legend()
             plt.ylim(top=max_y)
-            plt.savefig(f"{output_dir}/p99_latency_by_rps_{api}.png", dpi=300)
+            plt.savefig(f"{output_dir}/p99_latency_rps_{api}.png", dpi=300)
             plt.close()
 
     # averaged pX latencies
@@ -172,7 +172,7 @@ def generate_plots(args) -> None:
             for max_y in [int(slo * 4), 1000]:
                 plt.ylim(bottom=0, top=max_y)
                 plt.savefig(
-                    f"{args.output_dir}/p{p}_latency_by_rps_{api}_averaged_maxy-{max_y}.png",
+                    f"{args.output_dir}/p{p}_latency_rps_{api}_averaged_maxy-{max_y}.png",
                     dpi=300,
                 )
             plt.close()
