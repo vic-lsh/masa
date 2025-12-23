@@ -2,6 +2,7 @@ use std::{sync::Arc, task::Poll};
 
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
+mod fifo;
 mod global;
 mod local;
 mod noop;
@@ -20,7 +21,11 @@ pub use tls::{client, server};
 pub type DefaultMasaHooks = noop::NoopMasaHooks;
 // pub type DefaultMasaHooks = queue_tracing::QueueTracing;
 
-#[cfg(any(feature = "fifo"))]
+#[cfg(all(feature = "fifo", feature = "early"))]
+#[allow(missing_docs)]
+pub type DefaultMasaHooks = fifo::Fifo;
+
+#[cfg(all(feature = "fifo", not(feature = "early")))]
 #[allow(missing_docs)]
 // TODO: revert back to noop for Fifo. Add another feature flag for tracing.
 // pub type DefaultMasaHooks = noop::NoopMasaHooks;
