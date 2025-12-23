@@ -6,7 +6,7 @@ services:
       - synthetic_network
     environment:
       - BINARY_NAME=synthetic_child
-      - LOG_LEVEL=${LOG_LEVEL:-warn}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     deploy:
       resources:
         limits:
@@ -24,7 +24,7 @@ services:
       - child-service
     environment:
       - BINARY_NAME=synthetic_frontend
-      - LOG_LEVEL=${LOG_LEVEL:-warn}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     deploy:
       resources:
         limits:

@@ -78,7 +78,7 @@ class LoadGenerator(ABC):
         """
         base_env = {
             "BINARY_NAME": self.get_binary_name(),
-            "LOG_LEVEL": os.environ.get("LOG_LEVEL", "warn"),
+            "LOG_LEVEL": os.environ.get("LOG_LEVEL", "info"),
         }
         
         if env_vars:
