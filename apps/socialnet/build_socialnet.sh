@@ -8,6 +8,7 @@ cd "$SCRIPT_DIR/../.."
 echo "Building the generic socialnet service image..."
 
 docker build \
+  --ulimit nofile=65536:65536 \
   -t socialnet-generic-svc:latest \
   -f ./apps/socialnet/Dockerfile \
   .
