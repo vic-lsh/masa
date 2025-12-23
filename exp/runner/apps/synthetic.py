@@ -299,6 +299,8 @@ class SyntheticBuilder(AppBuilder):
             if config_path_rel is not None:
                 runtime_base_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
             runtime_base_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
+            # Use consistent cache ID based on features across all stages
+            runtime_base_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
             
             runtime_base_cmd: list[str] = [
                 "docker",
@@ -347,6 +349,8 @@ class SyntheticBuilder(AppBuilder):
                     runtime_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
                 runtime_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
                 runtime_build_args.extend(["--build-arg", f"BINARY_NAME={binary_name}"])
+                # Use consistent cache ID based on features across all stages
+                runtime_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
 
                 # Image name: synthetic_<binary>:<tag> or synthetic_<binary>:latest if no features
                 if tag:
