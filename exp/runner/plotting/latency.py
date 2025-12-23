@@ -49,11 +49,11 @@ def generate_plots(args) -> None:
                     percentiles = np.linspace(0, 100, len(latencies))
 
                     color = get_policy_color(policy)
-                    plt.plot(percentiles, latencies, label=f"{policy}", color=color)
+                    plt.plot(latencies, percentiles, label=f"{policy}", color=color)
 
                 # Add labels and title
-                plt.xlabel("Percentile (%)")
-                plt.ylabel("Latency (milliseconds)")
+                plt.xlabel("Latency (milliseconds)")
+                plt.ylabel("Percentile (%)")
                 plt.title(f"Latency Distribution for {api} API - {rps} RPS")
                 plt.grid(True, alpha=0.3)
                 plt.legend()
