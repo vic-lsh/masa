@@ -3,8 +3,8 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import Optional
-# pyrefly: ignore  # import-error
-from util import parse_args, prepare_output_dir, read_data
+
+from .util import parse_args, prepare_output_dir, read_data
 
 
 def compute_goodput(df):
