@@ -2,10 +2,9 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
-# pyrefly: ignore  # import-error
 import seaborn as sns
-# pyrefly: ignore  # import-error
-from util import parse_args, prepare_output_dir, read_data
+
+from .util import parse_args, prepare_output_dir, read_data
 
 
 def generate_plots(args) -> None:
