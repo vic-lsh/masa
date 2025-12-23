@@ -95,4 +95,8 @@ for i in $(seq 0 $((repeats - 1))); do
     done
 done
 
+echo "Generating plots..."
+cd "$repo_root"
+python3 -m exp.runner plot hotel "$exp_name"
+
 echo "Hotel CI experiment test passed."
