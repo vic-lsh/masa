@@ -1,9 +1,8 @@
-
+# Stage 1: Build all binaries for the app
 FROM rustlang/rust:nightly-slim AS builder
 
 ARG APP
 ARG FEATURES
-ARG BINARIES=""
 
 RUN apt-get update
 RUN apt-get install -y\
@@ -16,52 +15,58 @@ RUN apt-get install -y\
 # Create a new empty shell project
 WORKDIR /usr/src/masa
 
-# build every service in the app
-# Note: we build every service once here. They're cached then reused when we
-# generate per-service image in the second stage below.
+# Copy source code
 COPY Cargo.toml Cargo.toml
 COPY Cargo.lock Cargo.lock
 COPY 3rd_party 3rd_party
 COPY apps apps
 COPY libs libs
 
+# Build all binaries for the app once
+# Use BuildKit cache mounts for faster rebuilds (requires BuildKit/buildx). Keep
+# the target directory in the image so runtime stage can copy the binaries.
+# Use a unique cache ID per build to avoid race conditions in parallel builds.
+ARG CACHE_ID=${APP}
 WORKDIR /usr/src/masa/apps/${APP}
-RUN if [ -z "$FEATURES" ]; then\
-  cargo build -p ${APP} --bins --release;\
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${CACHE_ID},sharing=locked \
+  bash -c "if [ -z \"$FEATURES\" ]; then \
+  cargo build -p ${APP} --bins --release; \
   else \
-  cargo build -p ${APP} --bins --release --features ${FEATURES};\
-  fi
+  cargo build -p ${APP} --bins --release --features ${FEATURES}; \
+  fi"
 
-# Copy the binary exporting script
-COPY exp/common/docker-build/export-binaries.sh /tmp/export-binaries.sh
-RUN chmod +x /tmp/export-binaries.sh
-
-# Copy specified binaries to a temporary directory for the final stage
-RUN BINARIES="$BINARIES" RELEASE_DIR=/usr/src/masa/target/release OUTPUT_DIR=/tmp/binaries /tmp/export-binaries.sh
-
-# Final stage - create a slimmer image
-FROM debian:trixie-slim
+# Stage 2: Base runtime image with dependencies
+FROM debian:trixie-slim AS runtime-base
 
 ARG APP
-ARG LOG_LEVEL=warn
-ARG APP_CONFIG_FILE=config.docker.json
+ARG LOG_LEVEL=info
+ARG APP_CONFIG_PATH
+ARG GEN_CONFIG_PATH
 
 RUN apt-get update
 
-# re-install libssl-dev, because it is a runtime dependency
-# we choose to re-install rather than copy the installed .so file from the
-# prior stage, because we could miss copying some other deps that ssl needs.
+# Install runtime dependencies
 RUN apt-get install -y\
   libssl-dev
 
-# Copy the binaries directory from the builder stage
-COPY --from=builder /tmp/binaries/ /usr/local/bin/
-
+# Copy entrypoint script
 COPY exp/common/docker-build/entrypoint.sh /usr/entrypoint.sh
-COPY --from=builder /usr/src/masa/apps/${APP}/scripts/local/${APP_CONFIG_FILE} /usr/config.json
-COPY exp/${APP}/scripts/gen_config.json /usr/gen_config.json
+
+# Copy app config - APP_CONFIG_PATH must be provided as build arg
+# If config is optional for an app, a default/empty config should be provided
+COPY ${APP_CONFIG_PATH} /usr/config.json
+# Copy gen config - GEN_CONFIG_PATH must be provided as build arg
+COPY ${GEN_CONFIG_PATH} /usr/gen_config.json
 
 ENV LOG_LEVEL=${LOG_LEVEL}
+
+# Stage 3: Runtime image with a specific binary
+FROM runtime-base AS runtime
+
+ARG BINARY_NAME
+
+COPY --from=builder /usr/src/masa/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
+RUN chmod +x /usr/local/bin/${BINARY_NAME}
 
 ENTRYPOINT [ "sh", "-c" ]
 CMD ["/usr/entrypoint.sh"]

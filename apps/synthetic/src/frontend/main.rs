@@ -25,6 +25,8 @@ pub struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
+    log::info!("Scheduler mode: {:?}", tokio::runtime::get_sched_flavor());
+
     let args = Args::from_args();
     let cfg: SyntheticConfig = {
         let file = File::open(&args.config)

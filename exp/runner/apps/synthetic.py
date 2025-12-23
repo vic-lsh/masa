@@ -5,27 +5,43 @@ Synthetic application plugin.
 import json
 import logging
 import re
+import shlex
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Optional
 
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
+from .utils import normalize_features_to_tag, get_docker_progress_flag
 
 logger = logging.getLogger(__name__)
 
 
 class SyntheticLoadGenerator(LoadGenerator):
     """Load generator for the synthetic benchmark application."""
-    
+
+    def __init__(self, features: Optional[str] = None):
+        """
+        Initialize load generator with optional features for image tagging.
+
+        Args:
+            features: Cargo features used to build the image
+        """
+        self.features = features
+
     def get_container_name(self) -> str:
         return "synthetic_client_bench"
-    
+
     def get_network_name(self) -> str:
         return "local_synthetic_network"
-    
+
     def get_image_name(self) -> str:
-        return "synthetic_client_bench"
-    
+        tag = normalize_features_to_tag(self.features)
+        if tag and tag != "latest":
+            return f"synthetic_client_bench:{tag}"
+        else:
+            return "synthetic_client_bench:latest"
+
     def get_binary_name(self) -> str:
         return "synthetic_client_bench"
 
@@ -100,7 +116,7 @@ class SyntheticApp(AppPlugin):
         
         # Set default log level if not specified
         if "LOG_LEVEL" not in env_vars:
-            env_vars["LOG_LEVEL"] = "warn"
+            env_vars["LOG_LEVEL"] = "info"
         
         return env_vars
     
@@ -110,10 +126,9 @@ class SyntheticApp(AppPlugin):
             compose_file="scripts/local/containers+svcs.yaml",
             network_name="local_synthetic_network",
             loadgen_container_name="synthetic_client_bench",
-            loadgen_image_name="synthetic_client_bench",
+            loadgen_image_name="synthetic_client_bench:<features>",
             loadgen_binary_name="synthetic_client_bench",
             app_config_filename="config.docker.json",
-            app_config_required=False,
         )
     
     def get_container_names(self, env_vars: dict) -> list[str]:
@@ -138,9 +153,9 @@ class SyntheticApp(AppPlugin):
         Create a load generator instance for synthetic application.
         
         Args:
-            features: Optional cargo features (not used by synthetic app)
+            features: Optional cargo features used to build the image
         """
-        return SyntheticLoadGenerator()
+        return SyntheticLoadGenerator(features=features) if features is not None else SyntheticLoadGenerator()
 
     def create_builder(self) -> AppBuilder:
         """
@@ -148,10 +163,27 @@ class SyntheticApp(AppPlugin):
         """
         return SyntheticBuilder()
 
+    def get_image_tag(self, features: Optional[str] = None) -> str:
+        """
+        Get the docker image tag for the given features.
+        
+        Args:
+            features: Optional cargo features
+            
+        Returns:
+            Docker image tag string
+        """
+        return normalize_features_to_tag(features)
+
 
 class SyntheticBuilder(AppBuilder):
     """
     Build logic for the synthetic app docker images.
+    
+    Uses multi-stage multi-target build:
+    - Stage 1 (builder): Build all binaries once
+    - Stage 2 (runtime-base): Base runtime image with dependencies
+    - Stage 3 (runtime): Per-binary runtime images
     
     The synthetic app requires three separate docker images:
     - synthetic_frontend:latest - frontend service
@@ -167,53 +199,204 @@ class SyntheticBuilder(AppBuilder):
         features: Optional[str] = None,
         rust_log: str = "info",
         no_cache: bool = False,
-    ) -> None:
+        app_config_path: Optional[Path] = None,
+        gen_config_path: Optional[Path] = None,
+        dry_run: bool = False,
+    ) -> Optional[list[list[str]]]:
         app = "synthetic"
         
         # Services to build (each gets its own image)
-        services = [
-            ("synthetic_frontend", "synthetic_frontend:latest"),
-            ("synthetic_child", "synthetic_child:latest"),
-            ("synthetic_client_bench", "synthetic_client_bench:latest"),
+        binaries = [
+            "synthetic_frontend",
+            "synthetic_child",
+            "synthetic_client_bench",
         ]
-        
-        logger.info(f"Building {len(services)} docker images for synthetic app")
+
+        # Generate tag based on features for deterministic, feature-specific images
+        tag = normalize_features_to_tag(features)
+
+        logger.info(f"Building {len(binaries)} docker images for synthetic app using multi-stage build")
         if features:
             logger.info(f"Using features: {features}")
         
-        for binary_name, image_name in services:
-            logger.info(f"Building docker image: {image_name}")
-            
-            build_args: list[str] = []
+        # Collect commands if dry_run
+        commands: list[list[str]] = []
+        
+        # Convert to path relative to repo_root if provided
+        # If not provided, create a temporary empty config file
+        temp_config_file = None
+        config_path_rel = None
+        if app_config_path is not None:
+            config_path_rel = app_config_path.relative_to(repo_root)
+        else:
+            if not dry_run:
+                # Create a temporary empty config file for Docker build
+                temp_config = tempfile.NamedTemporaryFile(
+                    mode='w', suffix='.json', delete=False, dir=repo_root
+                )
+                temp_config.write('{}')
+                temp_config.close()
+                temp_config_file = Path(temp_config.name)
+                config_path_rel = temp_config_file.relative_to(repo_root)
+            # For dry-run, config_path_rel remains None (will be omitted from build args)
+        
+        if gen_config_path is None:
+            raise ValueError("gen_config_path is required for synthetic app")
+        gen_config_path_rel = gen_config_path.relative_to(repo_root)
+        
+        try:
+            # Stage 1: Build all binaries once (shared across all images)
+            logger.info("Stage 1: Building all binaries for synthetic app")
+            builder_build_args: list[str] = []
             if features:
-                build_args.extend(["--build-arg", f"FEATURES={features}"])
-            build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
-            build_args.extend(["--build-arg", f"APP={app}"])
-            build_args.extend(["--build-arg", "APP_CONFIG_FILE=config.docker.json"])
-            build_args.extend(["--build-arg", f"BINARIES={binary_name}"])
+                builder_build_args.extend(["--build-arg", f"FEATURES={features}"])
+            builder_build_args.extend(["--build-arg", f"APP={app}"])
+            # Use a unique cache ID to avoid race conditions in parallel builds
+            cache_id = f"{app}-{tag}"
+            builder_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
             
-            cmd: list[str] = [
+            builder_cmd: list[str] = [
                 "docker",
+                "buildx",
                 "build",
                 "-f",
                 "./exp/common/docker-build/Dockerfile",
-                *build_args,
+                "--target",
+                "builder",
+                *builder_build_args,
                 "--ulimit",
                 "nofile=4096:4096",
+                get_docker_progress_flag(),
             ]
             
             if no_cache:
-                cmd.append("--no-cache")
+                builder_cmd.append("--no-cache")
             
-            cmd.extend(["-t", image_name, "."])
+            builder_cmd.extend(["-t", f"{app}_builder:{tag}", "."])
             
-            subprocess.run(
-                cmd,
-                cwd=repo_root,
-                check=True,
-                capture_output=False,
-            )
+            if dry_run:
+                commands.append(builder_cmd.copy())
+            else:
+                try:
+                    subprocess.run(
+                        builder_cmd,
+                        cwd=repo_root,
+                        check=True,
+                        capture_output=False,
+                    )
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}")
+                    raise
+            logger.info("Stage 1 complete: All binaries built")
             
-            logger.info(f"Successfully built docker image: {image_name}")
+            # Stage 2: Build runtime-base (shared across all images)
+            logger.info("Stage 2: Building runtime-base image")
+            runtime_base_build_args: list[str] = []
+            if features:
+                runtime_base_build_args.extend(["--build-arg", f"FEATURES={features}"])
+            runtime_base_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
+            runtime_base_build_args.extend(["--build-arg", f"APP={app}"])
+            if config_path_rel is not None:
+                runtime_base_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
+            runtime_base_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
+            
+            runtime_base_cmd: list[str] = [
+                "docker",
+                "buildx",
+                "build",
+                "-f",
+                "./exp/common/docker-build/Dockerfile",
+                "--target",
+                "runtime-base",
+                *runtime_base_build_args,
+                "--ulimit",
+                "nofile=4096:4096",
+                get_docker_progress_flag(),
+            ]
+            
+            if no_cache:
+                runtime_base_cmd.append("--no-cache")
+            
+            runtime_base_cmd.extend(["-t", f"{app}_runtime-base:{tag}", "."])
+            
+            if dry_run:
+                commands.append(runtime_base_cmd.copy())
+            else:
+                try:
+                    subprocess.run(
+                        runtime_base_cmd,
+                        cwd=repo_root,
+                        check=True,
+                        capture_output=False,
+                    )
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}")
+                    raise
+            logger.info("Stage 2 complete: Runtime-base image built")
+            
+            # Stage 3: Build per-binary runtime images
+            for binary_name in binaries:
+                logger.info(f"Stage 3: Building runtime image for {binary_name}")
+                
+                runtime_build_args: list[str] = []
+                if features:
+                    runtime_build_args.extend(["--build-arg", f"FEATURES={features}"])
+                runtime_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
+                runtime_build_args.extend(["--build-arg", f"APP={app}"])
+                if config_path_rel is not None:
+                    runtime_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
+                runtime_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
+                runtime_build_args.extend(["--build-arg", f"BINARY_NAME={binary_name}"])
+
+                # Image name: synthetic_<binary>:<tag> or synthetic_<binary>:latest if no features
+                if tag:
+                    image_name = f"{binary_name}:{tag}"
+                else:
+                    image_name = f"{binary_name}:latest"
+
+                runtime_cmd: list[str] = [
+                    "docker",
+                    "buildx",
+                    "build",
+                    "-f",
+                    "./exp/common/docker-build/Dockerfile",
+                    "--target",
+                    "runtime",
+                    *runtime_build_args,
+                    "--ulimit",
+                    "nofile=4096:4096",
+                    get_docker_progress_flag(),
+                ]
+                
+                if no_cache:
+                    runtime_cmd.append("--no-cache")
+                
+                runtime_cmd.extend(["-t", image_name, "."])
+                
+                if dry_run:
+                    commands.append(runtime_cmd.copy())
+                else:
+                    try:
+                        subprocess.run(
+                            runtime_cmd,
+                            cwd=repo_root,
+                            check=True,
+                            capture_output=False,
+                        )
+                    except subprocess.CalledProcessError as e:
+                        logger.error(f"Failed to build runtime image for {binary_name}. Command: {shlex.join(runtime_cmd)}")
+                        raise
+                
+                logger.info(f"Successfully built docker image: {image_name}")
+        
+        finally:
+            # Clean up temporary config file if we created one
+            if not dry_run and temp_config_file is not None and temp_config_file.exists():
+                temp_config_file.unlink()
+                logger.debug(f"Cleaned up temporary config file: {temp_config_file}")
+        
+        if dry_run:
+            return commands
         
         logger.info("All synthetic app docker images built successfully")
+        return None

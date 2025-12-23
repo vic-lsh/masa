@@ -7,6 +7,13 @@ from typing import Optional
 from util import parse_args, prepare_output_dir, read_data
 
 
+def get_policy_color(policy: str) -> str:
+    """Get color for a policy. Returns grey for 'fifo', default cycle for others."""
+    if policy.lower() == "fifo":
+        return "grey"
+    return None  # Use matplotlib default color cycle
+
+
 def compute_goodput(df):
     df["met_slo"] = df["error"] == "/None"
     start = df["start_at"].min()
@@ -114,11 +121,14 @@ def generate_plots(args) -> None:
             # Create bars
             for j, policy in enumerate(policies):
                 offset = (j - len(policies) / 2 + 0.5) * bar_width
+                color = get_policy_color(policy)
+                bar_kwargs = {"label": policy, "width": bar_width}
+                if color is not None:
+                    bar_kwargs["color"] = color
                 bars = ax.bar(
                     index + offset,
                     policy_goodputs[i][api][policy],
-                    bar_width,
-                    label=policy,
+                    **bar_kwargs,
                 )
 
                 # Add labels on top of bars
@@ -177,11 +187,14 @@ def generate_plots(args) -> None:
                 / repeats
             )
             offset = (j - len(policies) / 2 + 0.5) * bar_width
+            color = get_policy_color(policy)
+            bar_kwargs = {"label": policy, "width": bar_width}
+            if color is not None:
+                bar_kwargs["color"] = color
             bars = ax.bar(
                 index + offset,
                 average_goodput,
-                bar_width,
-                label=policy,
+                **bar_kwargs,
             )
 
         ax.set_xlabel("Requests Per Second (RPS)")
@@ -196,7 +209,7 @@ def generate_plots(args) -> None:
         plt.grid(axis="y", linestyle="--", alpha=0.7)
         plt.tight_layout()
         plt.savefig(
-            os.path.join(output_dir, f"policy_goodput_comparison_{api}_averaged.png"),
+            os.path.join(output_dir, f"policy_goodput_comparison_{api}.png"),
             dpi=300,
         )
         plt.close()
