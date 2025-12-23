@@ -321,7 +321,7 @@ class HotelApp(AppPlugin):
         
         # Set default log level if not specified
         if "LOG_LEVEL" not in env_vars:
-            env_vars["LOG_LEVEL"] = "warn"
+            env_vars["LOG_LEVEL"] = "info"
         
         return env_vars
     
