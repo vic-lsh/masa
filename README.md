@@ -80,28 +80,24 @@ To run multiple experiments sequentially, execute
 
 ##### Generating plots for an experiment
 
-###### Installing python dependencies
-
-We use python to generate plots. To setup a new virtual environment and install the necessary dependencies, at the root of the repository run
+To generate plots for visualizing goodput and latency of an experiment, use the experiment runner:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate # activates the virtual environment
-python3 -m pip install -r exp/common/scripts/plotting/requirements.txt
+# Generate plots for an existing experiment
+python3 -m exp.runner plot <app> <experiment-name>
+
+# For example:
+python3 -m exp.runner plot hotel exp1
+python3 -m exp.runner plot synthetic quick_test
 ```
 
-###### Generating the plots
+The plots will be saved at `exp/<app>/data/plots/<experiment>`.
 
-To generate plots for visualizing goodput and latency of an experiment, run
+You can also pass a `--plot` option when running experiments to automatically generate plots after completion:
 
+```bash
+python3 -m exp.runner run <app> <experiment-name> --plot
 ```
-source .venv/bin/activate                               # if not activated already
-../common/scripts/plotting/plot-experiment.sh "<experiment>"
-```
-
-from an application folder. The plots will be saved at `data/plots/<experiment>`.
-
-You can also pass a `--plot` option to the `run-experiment` and `queue-experiment` scripts above.
 
 #### Docker compose manual (single-server)
 
