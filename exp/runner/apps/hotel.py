@@ -37,9 +37,9 @@ class HotelLoadGenerator(LoadGenerator):
     def get_image_name(self) -> str:
         tag = normalize_features_to_tag(self.features)
         if tag and tag != "latest":
-            return f"hotel_hotel_client_bench:{tag}"
+            return f"hotel_client_bench:{tag}"
         else:
-            return "hotel_hotel_client_bench:latest"
+            return "hotel_client_bench:latest"
     
     def get_binary_name(self) -> str:
         return "hotel_client_bench"
@@ -55,17 +55,16 @@ class HotelBuilder(AppBuilder):
     - Stage 3 (runtime): Per-binary runtime images
 
     The hotel app requires separate docker images for each binary:
-    - hotel_hotel_client_bench:latest - load generator
-    - hotel_hotel_frontend:latest - frontend service
-    - hotel_hotel_geo:latest - geo service
-    - hotel_hotel_rate:latest - rate service
-    - hotel_hotel_review:latest - review service
-    - hotel_hotel_search:latest - search service
-    - hotel_hotel_profile:latest - profile service
-    - hotel_hotel_reservation:latest - reservation service
-    - hotel_hotel_user:latest - user service
-    - hotel_hotel_recommendation:latest - recommendation service
-    - hotel_loadgen:latest - loadgen service
+    - hotel_client_bench:latest - load generator
+    - hotel_frontend:latest - frontend service
+    - hotel_geo:latest - geo service
+    - hotel_rate:latest - rate service
+    - hotel_review:latest - review service
+    - hotel_search:latest - search service
+    - hotel_profile:latest - profile service
+    - hotel_reservation:latest - reservation service
+    - hotel_user:latest - user service
+    - hotel_recommendation:latest - recommendation service
 
     Mirrors the behavior of exp/common/scripts/docker-build.sh, but lives in Python
     so the runner can select an app-specific build implementation.
@@ -85,6 +84,7 @@ class HotelBuilder(AppBuilder):
     ) -> Optional[list[list[str]]]:
         app = "hotel"
         # List of binaries to build (each gets its own image)
+        # Note: All binary names already include the hotel_ prefix
         binaries_list = [
             "hotel_client_bench",
             "hotel_frontend",
@@ -96,7 +96,6 @@ class HotelBuilder(AppBuilder):
             "hotel_reservation",
             "hotel_user",
             "hotel_recommendation",
-            "loadgen",
         ]
 
         if app_config_path is None:
@@ -217,11 +216,12 @@ class HotelBuilder(AppBuilder):
             runtime_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
             runtime_build_args.extend(["--build-arg", f"BINARY_NAME={binary_name}"])
 
-            # Generate image name: hotel_<binary>:<tag> or hotel_<binary>:latest if no features
+            # Generate image name: <binary>:<tag> or <binary>:latest if no features
+            # Note: binary_name already includes the hotel_ prefix
             if tag:
-                image_name = f"hotel_{binary_name}:{tag}"
+                image_name = f"{binary_name}:{tag}"
             else:
-                image_name = f"hotel_{binary_name}:latest"
+                image_name = f"{binary_name}:latest"
 
             runtime_cmd: list[str] = [
                 "docker",
@@ -332,7 +332,7 @@ class HotelApp(AppPlugin):
             compose_file="scripts/local/containers+svcs.yaml",
             network_name="local_hotel_network",
             loadgen_container_name="hotel_client_bench",
-            loadgen_image_name="hotel_hotel_client_bench:<features>",  # Actual tag is dynamic based on features
+            loadgen_image_name="hotel_client_bench:<features>",  # Actual tag is dynamic based on features
             loadgen_binary_name="hotel_client_bench",
             app_config_filename="hotel.json",
         )
