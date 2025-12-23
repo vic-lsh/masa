@@ -124,6 +124,9 @@ class HotelBuilder(AppBuilder):
         if features:
             builder_build_args.extend(["--build-arg", f"FEATURES={features}"])
         builder_build_args.extend(["--build-arg", f"APP={app}"])
+        # Use a unique cache ID to avoid race conditions in parallel builds
+        cache_id = f"{app}-{tag}"
+        builder_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
         
         builder_cmd: list[str] = [
             "docker",
