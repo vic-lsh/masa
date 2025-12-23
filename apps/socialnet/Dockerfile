@@ -15,7 +15,8 @@ COPY 3rd_party ./3rd_party
 COPY apps/socialnet/proto ./apps/socialnet/proto
 
 # Build the entire workspace
-RUN cargo build --release -p socialnet
+# Increase file descriptor limit to allow more parallel compilation
+RUN ulimit -n 65536 && cargo build --release -p socialnet
 
 # Stage 2: Create the final, minimal image
 FROM debian:sid-slim
