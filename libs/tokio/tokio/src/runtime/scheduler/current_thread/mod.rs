@@ -25,6 +25,7 @@ use queue::Queue;
 
 pub use queue::get_sched_flavor;
 pub use queue::SchedFlavor;
+pub use queue::current_thread_queue_len;
 
 /// Executes tasks on the current thread
 pub(crate) struct CurrentThread {
