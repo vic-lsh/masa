@@ -73,9 +73,13 @@ Experiments are configured using files in `exp/<app>/data/in/<experiment_name>/`
      "WarmupSecs": 20,
      "DurationSecs": 40,
      "Concurrency": 0,
+     "MaxInFlight": 0,
      "Addr": "http://[::1]:8659"
    }
    ```
+   
+   **Configuration Fields:**
+   - `MaxInFlight`: Maximum number of concurrent in-flight requests (0 = unlimited, default: 0)
 
 2. **`policies`** - Whitespace-separated list of scheduling policies to test
    ```
