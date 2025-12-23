@@ -23,6 +23,49 @@ We have also included the source code of a few 3rd-party crates in `3rd_party`. 
 
 ## Getting started
 
+### Python Environment Setup
+
+This project uses [uv](https://github.com/astral-sh/uv) for Python dependency management. You'll need Python 3.10+ and `uv` installed to run experiments and generate plots.
+
+#### Installing uv
+
+Install `uv` using the official installer:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Or using other methods as described in the [uv documentation](https://github.com/astral-sh/uv#installation).
+
+#### Setting up the Python environment
+
+After installing `uv`, sync the project dependencies:
+
+```bash
+uv sync
+```
+
+This will:
+- Create a virtual environment (`.venv`) in the project root
+- Install all Python dependencies from `pyproject.toml` and `uv.lock`
+
+#### Using the Python environment
+
+After running `uv sync`, you can use Python commands in two ways:
+
+1. **Activate the virtual environment** (recommended for interactive use):
+   ```bash
+   source .venv/bin/activate
+   python3 -m exp.runner plot hotel exp1
+   ```
+
+2. **Use `uv run`** (no activation needed):
+   ```bash
+   uv run python3 -m exp.runner plot hotel exp1
+   ```
+
+The virtual environment includes all required dependencies (matplotlib, pandas, numpy, etc.) needed for running experiments and generating plots.
+
 ### Running an application
 
 Application source lives under `apps/<app>`, and the experiment assets for each app live under `exp/<app>`.
