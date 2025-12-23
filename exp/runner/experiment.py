@@ -6,12 +6,14 @@ import logging
 import os
 import shutil
 import time
+from argparse import Namespace
 from pathlib import Path
 from typing import Optional
 
 from .apps.base import AppPlugin
 from .config import ExperimentConfig
 from .docker_manager import DockerManager
+from .plotting import generate_all_plots
 
 logger = logging.getLogger(__name__)
 
@@ -268,21 +270,15 @@ class Experiment:
         """Generate plots from experiment results."""
         logger.info("Generating plots")
         
-        plotting_script = self.repo_root / "exp" / "common" / "scripts" / "plotting" / "plot-experiment.sh"
-        
-        if not plotting_script.exists():
-            logger.warning(f"Plotting script not found: {plotting_script}")
-            return
+        # Create args-like object for plotting functions
+        args = Namespace(
+            config_dir=self.config.in_dir,
+            data_dir=self.config.out_dir,
+            output_dir=self.config.plot_dir,
+        )
         
         try:
-            import subprocess
-            
-            # Change to experiment directory for plotting
-            subprocess.run(
-                [str(plotting_script), self.config.experiment_name],
-                cwd=self.config.exp_dir,
-                check=True,
-            )
+            generate_all_plots(args)
             logger.info("Plots generated successfully")
         except Exception as e:
             logger.error(f"Failed to generate plots: {e}")

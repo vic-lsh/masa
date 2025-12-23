@@ -23,6 +23,49 @@ We have also included the source code of a few 3rd-party crates in `3rd_party`. 
 
 ## Getting started
 
+### Python Environment Setup
+
+This project uses [uv](https://github.com/astral-sh/uv) for Python dependency management. You'll need Python 3.10+ and `uv` installed to run experiments and generate plots.
+
+#### Installing uv
+
+Install `uv` using the official installer:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Or using other methods as described in the [uv documentation](https://github.com/astral-sh/uv#installation).
+
+#### Setting up the Python environment
+
+After installing `uv`, sync the project dependencies:
+
+```bash
+uv sync
+```
+
+This will:
+- Create a virtual environment (`.venv`) in the project root
+- Install all Python dependencies from `pyproject.toml` and `uv.lock`
+
+#### Using the Python environment
+
+After running `uv sync`, you can use Python commands in two ways:
+
+1. **Activate the virtual environment** (recommended for interactive use):
+   ```bash
+   source .venv/bin/activate
+   python3 -m exp.runner plot hotel exp1
+   ```
+
+2. **Use `uv run`** (no activation needed):
+   ```bash
+   uv run python3 -m exp.runner plot hotel exp1
+   ```
+
+The virtual environment includes all required dependencies (matplotlib, pandas, numpy, etc.) needed for running experiments and generating plots.
+
 ### Running an application
 
 Application source lives under `apps/<app>`, and the experiment assets for each app live under `exp/<app>`.
@@ -80,28 +123,24 @@ To run multiple experiments sequentially, execute
 
 ##### Generating plots for an experiment
 
-###### Installing python dependencies
-
-We use python to generate plots. To setup a new virtual environment and install the necessary dependencies, at the root of the repository run
+To generate plots for visualizing goodput and latency of an experiment, use the experiment runner:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate # activates the virtual environment
-python3 -m pip install -r exp/common/scripts/plotting/requirements.txt
+# Generate plots for an existing experiment
+python3 -m exp.runner plot <app> <experiment-name>
+
+# For example:
+python3 -m exp.runner plot hotel exp1
+python3 -m exp.runner plot synthetic quick_test
 ```
 
-###### Generating the plots
+The plots will be saved at `exp/<app>/data/plots/<experiment>`.
 
-To generate plots for visualizing goodput and latency of an experiment, run
+You can also pass a `--plot` option when running experiments to automatically generate plots after completion:
 
+```bash
+python3 -m exp.runner run <app> <experiment-name> --plot
 ```
-source .venv/bin/activate                               # if not activated already
-../common/scripts/plotting/plot-experiment.sh "<experiment>"
-```
-
-from an application folder. The plots will be saved at `data/plots/<experiment>`.
-
-You can also pass a `--plot` option to the `run-experiment` and `queue-experiment` scripts above.
 
 #### Docker compose manual (single-server)
 
