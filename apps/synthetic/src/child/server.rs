@@ -7,6 +7,7 @@ pub mod synthetic_tonic {
 use std::time::{Duration, Instant};
 
 use tokio;
+use tokio::runtime::current_thread_queue_len;
 use tonic::{Request, Response, Status};
 
 use crate::server::synthetic_tonic::child::Periodic;
@@ -25,6 +26,21 @@ impl ChildImpl {
         assert!(config.child_constant_latency_slowdown_duration <= 1000);
 
         let random_latency = util::LatencyDistribution::from(config.child_random_latency);
+
+        // Spawn a task that prints the queue length every 500ms
+        tokio::spawn(async {
+            let mut interval = tokio::time::interval(Duration::from_millis(500));
+            let start_time = Instant::now();
+            loop {
+                interval.tick().await;
+                let queue_len = current_thread_queue_len();
+                let elapsed = start_time.elapsed();
+                println!(
+                    "current_thread_queue_len: {} (elapsed: {:?})",
+                    queue_len, elapsed
+                );
+            }
+        });
 
         ChildImpl {
             constant_latency: util::LatencyDistribution::Periodic {
@@ -53,8 +69,17 @@ impl Child for ChildImpl {
         let start = Instant::now();
 
         let duration = Duration::from_micros(self.constant_latency.sample());
+        let yield_interval = Duration::from_micros(200);
 
-        busy_spin(duration);
+        let mut remaining = duration;
+        while remaining > yield_interval {
+            busy_spin(yield_interval);
+            tokio::task::yield_now().await;
+            remaining -= yield_interval;
+        }
+        if remaining > Duration::ZERO {
+            busy_spin(remaining);
+        }
 
         Ok(Response::new(child::ConstantLatencyResponse {
             queueing_latency,
