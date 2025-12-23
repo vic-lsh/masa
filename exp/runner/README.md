@@ -72,7 +72,6 @@ Experiments are configured using files in `exp/<app>/data/in/<experiment_name>/`
      "Gap": "const",
      "WarmupSecs": 20,
      "DurationSecs": 40,
-     "Concurrency": 0,
      "MaxInFlight": 0,
      "Addr": "http://[::1]:8659"
    }
