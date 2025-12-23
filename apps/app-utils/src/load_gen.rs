@@ -55,8 +55,15 @@ pub struct GenConfig {
     pub duration_secs: u64,
     #[serde(rename = "Concurrency")]
     pub concurrency: usize,
+    #[serde(rename = "MaxInFlight")]
+    #[serde(default = "default_max_in_flight")]
+    pub max_in_flight: usize,
     #[serde(rename = "Addr")]
     pub addr: String,
+}
+
+fn default_max_in_flight() -> usize {
+    0 // 0 means unlimited
 }
 
 #[derive(StructOpt, Debug, Clone)]
@@ -449,12 +456,21 @@ where
         let mut elapse = 0f64;
 
         let mut set = JoinSet::new();
+        let max_in_flight = self.gen_cfg.max_in_flight;
 
         while Instant::now() < pause_at {
             // XXX: tokio's sleep has millisecond granularity, so for small `elapse` this may be
             // inaccurate
             let start_at = init_at + Duration::from_secs_f64(elapse);
             tokio::time::sleep_until(start_at).await;
+
+            // Wait for in-flight requests to complete if we've reached the limit
+            if max_in_flight > 0 {
+                while set.len() >= max_in_flight {
+                    // Wait for at least one task to complete before spawning a new one
+                    if let Some(_) = set.join_next().await {}
+                }
+            }
 
             let value = {
                 if Instant::now() < warm_at {
