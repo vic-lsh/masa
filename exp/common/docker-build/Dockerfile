@@ -25,8 +25,10 @@ COPY libs libs
 # Build all binaries for the app once
 # Use BuildKit cache mounts for faster rebuilds (requires BuildKit/buildx). Keep
 # the target directory in the image so runtime stage can copy the binaries.
+# Use a unique cache ID per build to avoid race conditions in parallel builds.
+ARG CACHE_ID=${APP}
 WORKDIR /usr/src/masa/apps/${APP}
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${CACHE_ID},sharing=locked \
   bash -c "if [ -z \"$FEATURES\" ]; then \
   cargo build -p ${APP} --bins --release; \
   else \
