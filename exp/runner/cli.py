@@ -4,14 +4,17 @@ Command-line interface for the experiment runner.
 
 import argparse
 import logging
+import os
 import shlex
 import subprocess
 import sys
+from argparse import Namespace
 from pathlib import Path
 
 from .apps import get_app_plugin
 from .config import ExperimentConfig
 from .experiment import Experiment
+from .plotting import generate_all_plots
 
 # Setup logging
 logging.basicConfig(
@@ -298,29 +301,39 @@ def cmd_plot(args: argparse.Namespace) -> None:
     """
     repo_root = find_repo_root()
     
-    exp_dir = repo_root / "exp" / args.app
-    
-    if not exp_dir.exists():
-        logger.error(f"Experiment directory not found: {exp_dir}")
+    # Get application plugin
+    try:
+        app_plugin = get_app_plugin(args.app)
+    except ValueError as e:
+        logger.error(str(e))
         sys.exit(1)
     
-    plotting_script = repo_root / "exp" / "common" / "scripts" / "plotting" / "plot-experiment.sh"
-    
-    if not plotting_script.exists():
-        logger.error(f"Plotting script not found: {plotting_script}")
+    # Load experiment configuration
+    try:
+        config = ExperimentConfig.load(
+            experiment_name=args.experiment,
+            app_name=args.app,
+            repo_root=repo_root,
+            app_plugin=app_plugin,
+        )
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Failed to load experiment configuration: {e}")
         sys.exit(1)
     
     logger.info(f"Generating plots for experiment: {args.experiment}")
-    print(f"Plot output directory: {repo_root / 'exp' / args.app / 'data' / 'plots' / args.experiment}")
+    print(f"Plot output directory: {config.plot_dir}")
+    
+    # Create args-like object for plotting functions
+    plot_args = Namespace(
+        config_dir=config.in_dir,
+        data_dir=config.out_dir,
+        output_dir=config.plot_dir,
+    )
     
     try:
-        subprocess.run(
-            [str(plotting_script), args.experiment],
-            cwd=exp_dir,
-            check=True,
-        )
+        generate_all_plots(plot_args)
         logger.info("Plots generated successfully!")
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         logger.error(f"Failed to generate plots: {e}")
         sys.exit(1)
 
