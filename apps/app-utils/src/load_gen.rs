@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::Semaphore;
 use tokio::time::{timeout, Duration, Instant};
 
 use rand::Rng;
@@ -456,20 +457,22 @@ where
         let mut set = JoinSet::new();
         let max_in_flight = self.gen_cfg.max_in_flight;
 
+        // Create semaphore for max in-flight control
+        // If max_in_flight is 0 (unlimited), use a very large number
+        let semaphore_size = if max_in_flight > 0 {
+            max_in_flight
+        } else {
+            usize::MAX
+        };
+        let inflight_guard = Arc::new(Semaphore::new(semaphore_size));
+
         while Instant::now() < pause_at {
             // XXX: tokio's sleep has millisecond granularity, so for small `elapse` this may be
             // inaccurate
             let start_at = init_at + Duration::from_secs_f64(elapse);
             tokio::time::sleep_until(start_at).await;
 
-            // Wait for in-flight requests to complete if we've reached the limit
-            if max_in_flight > 0 {
-                while set.len() >= max_in_flight {
-                    // Wait for at least one task to complete before spawning a new one
-                    if let Some(_) = set.join_next().await {}
-                }
-            }
-
+            // Update timing first, so we advance even if we skip this request
             let value = {
                 if Instant::now() < warm_at {
                     0.01
@@ -478,6 +481,13 @@ where
                 }
             };
             elapse += value;
+
+            // Try to acquire permit for max-in-flight control
+            // If acquisition fails, skip this request and continue to next iteration
+            let permit = match inflight_guard.clone().try_acquire_owned() {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
 
             let i = self.rng.gen_range(0..self.api_handlers.len());
             let handler = Arc::clone(&self.api_handlers[i]);
@@ -504,6 +514,7 @@ where
             let trace = Instant::now() > trace_at;
 
             set.spawn(async move {
+                let _permit = permit; // Hold permit until task completes
                 ctrs.increment("all");
 
                 let error = handler.send_request(rng, client, ctx, trace).await;
