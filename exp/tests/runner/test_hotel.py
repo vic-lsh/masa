@@ -9,6 +9,7 @@ This module tests the hotel app functionality including:
 """
 
 import pytest
+import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -115,15 +116,15 @@ class TestHotelLoadGenerator:
     def test_image_name_with_features(self):
         """Test that load generator creates correct image name with features."""
         loadgen = HotelLoadGenerator(features="policy-a,policy-b")
-        assert loadgen.get_image_name() == "hotel:policy-a-policy-b"
+        assert loadgen.get_image_name() == "hotel_client_bench:policy-a-policy-b"
 
     def test_image_name_without_features(self):
         """Test that load generator uses 'latest' without features."""
         loadgen = HotelLoadGenerator(features=None)
-        assert loadgen.get_image_name() == "hotel:latest"
+        assert loadgen.get_image_name() == "hotel_client_bench:latest"
         
         loadgen2 = HotelLoadGenerator(features="")
-        assert loadgen2.get_image_name() == "hotel:latest"
+        assert loadgen2.get_image_name() == "hotel_client_bench:latest"
 
     def test_container_name(self):
         """Test that container name is constant."""
@@ -157,39 +158,67 @@ class TestHotelBuilder:
         builder = HotelBuilder()
         mock_subprocess.return_value = Mock(returncode=0)
         
-        repo_root = Path("/fake/repo")
-        app_dir = Path("/fake/app")
-        features = "policy-a,policy-b"
-        
-        builder.build(
-            repo_root=repo_root,
-            app_dir=app_dir,
-            features=features,
-            rust_log="info",
-            no_cache=False,
-        )
-        
-        # Check that subprocess.run was called
-        assert mock_subprocess.called
-        call_args = mock_subprocess.call_args
-        
-        # Check the command
-        cmd = call_args[0][0]
-        assert "docker" in cmd
-        assert "build" in cmd
-        assert "-t" in cmd
-        
-        # Check that the tag is correct
-        tag_index = cmd.index("-t") + 1
-        assert cmd[tag_index] == "hotel:policy-a-policy-b"
-        
-        # Check build args
-        assert f"FEATURES={features}" in str(cmd)
-        
-        # Check logging - should be called twice (before and after build)
-        assert mock_logger.info.call_count >= 1
-        log_messages = [call[0][0] for call in mock_logger.info.call_args_list]
-        assert any("Building docker image: hotel:policy-a-policy-b" in msg for msg in log_messages)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir) / "repo"
+            app_dir = Path(tmpdir) / "app"
+            repo_root.mkdir()
+            app_dir.mkdir()
+            
+            app_config_path = repo_root / "hotel.json"
+            gen_config_path = repo_root / "gen_config.json"
+            features = "policy-a,policy-b"
+            
+            # Create config files
+            app_config_path.write_text("{}")
+            gen_config_path.write_text("{}")
+            
+            builder.build(
+                repo_root=repo_root,
+                app_dir=app_dir,
+                features=features,
+                rust_log="info",
+                no_cache=False,
+                app_config_path=app_config_path,
+                gen_config_path=gen_config_path,
+            )
+            
+            # Check that subprocess.run was called multiple times (builder, runtime-base, and multiple binaries)
+            assert mock_subprocess.call_count >= 3
+            
+            # Check that all calls include docker build
+            all_calls = [call[0][0] for call in mock_subprocess.call_args_list]
+            for cmd in all_calls:
+                assert "docker" in cmd
+                assert "build" in cmd
+            
+            # Check that builder stage has correct tag
+            builder_call = all_calls[0]
+            assert "-t" in builder_call
+            tag_index = builder_call.index("-t") + 1
+            assert builder_call[tag_index] == "hotel_builder:policy-a-policy-b"
+            
+            # Check that runtime-base stage has correct tag
+            runtime_base_call = all_calls[1]
+            assert "-t" in runtime_base_call
+            tag_index = runtime_base_call.index("-t") + 1
+            assert runtime_base_call[tag_index] == "hotel_runtime-base:policy-a-policy-b"
+            
+            # Check that at least one binary image has the correct tag
+            binary_calls = all_calls[2:]
+            found_loadgen_image = False
+            for cmd in binary_calls:
+                if "-t" in cmd:
+                    tag_index = cmd.index("-t") + 1
+                    image_name = cmd[tag_index]
+                    if image_name == "hotel_client_bench:policy-a-policy-b":
+                        found_loadgen_image = True
+                    # Check build args
+                    assert f"FEATURES={features}" in str(cmd)
+            
+            assert found_loadgen_image, "hotel_client_bench image should be built"
+            
+            # Check logging
+            assert mock_logger.info.call_count >= 1
 
     @patch('exp.runner.apps.hotel.subprocess.run')
     @patch('exp.runner.apps.hotel.logger')
@@ -198,26 +227,52 @@ class TestHotelBuilder:
         builder = HotelBuilder()
         mock_subprocess.return_value = Mock(returncode=0)
         
-        repo_root = Path("/fake/repo")
-        app_dir = Path("/fake/app")
-        
-        builder.build(
-            repo_root=repo_root,
-            app_dir=app_dir,
-            features=None,
-            rust_log="info",
-            no_cache=False,
-        )
-        
-        # Check the command
-        cmd = mock_subprocess.call_args[0][0]
-        tag_index = cmd.index("-t") + 1
-        assert cmd[tag_index] == "hotel:latest"
-        
-        # Check logging - should be called at least once
-        assert mock_logger.info.call_count >= 1
-        log_messages = [call[0][0] for call in mock_logger.info.call_args_list]
-        assert any("Building docker image: hotel:latest" in msg for msg in log_messages)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir) / "repo"
+            app_dir = Path(tmpdir) / "app"
+            repo_root.mkdir()
+            app_dir.mkdir()
+            
+            app_config_path = repo_root / "hotel.json"
+            gen_config_path = repo_root / "gen_config.json"
+            
+            # Create config files
+            app_config_path.write_text("{}")
+            gen_config_path.write_text("{}")
+            
+            builder.build(
+                repo_root=repo_root,
+                app_dir=app_dir,
+                features=None,
+                rust_log="info",
+                no_cache=False,
+                app_config_path=app_config_path,
+                gen_config_path=gen_config_path,
+            )
+            
+            # Check that subprocess.run was called multiple times
+            assert mock_subprocess.call_count >= 3
+            
+            # Check that builder stage uses 'latest' tag
+            all_calls = [call[0][0] for call in mock_subprocess.call_args_list]
+            builder_call = all_calls[0]
+            tag_index = builder_call.index("-t") + 1
+            assert builder_call[tag_index] == "hotel_builder:latest"
+            
+            # Check that at least one binary image uses 'latest' tag
+            binary_calls = all_calls[2:]
+            found_loadgen_image = False
+            for cmd in binary_calls:
+                if "-t" in cmd:
+                    tag_index = cmd.index("-t") + 1
+                    image_name = cmd[tag_index]
+                    if image_name == "hotel_client_bench:latest":
+                        found_loadgen_image = True
+            
+            assert found_loadgen_image, "hotel_client_bench:latest image should be built"
+            
+            # Check logging
+            assert mock_logger.info.call_count >= 1
 
     @patch('exp.runner.apps.hotel.subprocess.run')
     def test_build_with_no_cache(self, mock_subprocess):
@@ -225,16 +280,33 @@ class TestHotelBuilder:
         builder = HotelBuilder()
         mock_subprocess.return_value = Mock(returncode=0)
         
-        builder.build(
-            repo_root=Path("/fake/repo"),
-            app_dir=Path("/fake/app"),
-            features="test",
-            rust_log="info",
-            no_cache=True,
-        )
-        
-        cmd = mock_subprocess.call_args[0][0]
-        assert "--no-cache" in cmd
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir) / "repo"
+            app_dir = Path(tmpdir) / "app"
+            repo_root.mkdir()
+            app_dir.mkdir()
+            
+            app_config_path = repo_root / "hotel.json"
+            gen_config_path = repo_root / "gen_config.json"
+            
+            # Create config files
+            app_config_path.write_text("{}")
+            gen_config_path.write_text("{}")
+            
+            builder.build(
+                repo_root=repo_root,
+                app_dir=app_dir,
+                features="test",
+                rust_log="info",
+                no_cache=True,
+                app_config_path=app_config_path,
+                gen_config_path=gen_config_path,
+            )
+            
+            # Check that --no-cache is in all build commands
+            all_calls = [call[0][0] for call in mock_subprocess.call_args_list]
+            for cmd in all_calls:
+                assert "--no-cache" in cmd
 
 
 class TestHotelApp:
@@ -258,7 +330,7 @@ class TestHotelApp:
         
         assert isinstance(loadgen, HotelLoadGenerator)
         assert loadgen.features == features
-        assert loadgen.get_image_name() == "hotel:policy-x-policy-y"
+        assert loadgen.get_image_name() == "hotel_client_bench:policy-x-policy-y"
 
     def test_create_load_generator_without_features(self):
         """Test that app creates load generator without features."""
@@ -268,7 +340,7 @@ class TestHotelApp:
         
         assert isinstance(loadgen, HotelLoadGenerator)
         assert loadgen.features is None
-        assert loadgen.get_image_name() == "hotel:latest"
+        assert loadgen.get_image_name() == "hotel_client_bench:latest"
 
     def test_create_builder(self):
         """Test that app creates correct builder."""
@@ -289,8 +361,8 @@ class TestHotelApp:
         loadgen = app.create_load_generator(features=features)
         loadgen_image = loadgen.get_image_name()
         
-        # They should match
-        assert loadgen_image == f"hotel:{app_tag}"
+        # They should match - loadgen uses hotel_client_bench as the image name
+        assert loadgen_image == f"hotel_client_bench:{app_tag}"
         assert app_tag == "policy-a-policy-b-policy-c"
 
 
