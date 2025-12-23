@@ -53,8 +53,6 @@ pub struct GenConfig {
     pub warmup_secs: u64,
     #[serde(rename = "DurationSecs")]
     pub duration_secs: u64,
-    #[serde(rename = "Concurrency")]
-    pub concurrency: usize,
     #[serde(rename = "MaxInFlight")]
     #[serde(default = "default_max_in_flight")]
     pub max_in_flight: usize,
