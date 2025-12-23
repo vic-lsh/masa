@@ -8,10 +8,40 @@ from .util import parse_args, prepare_output_dir, read_data
 
 
 def get_policy_color(policy: str):
-    """Get color for a policy. FIFO uses grey, others use default colors."""
-    if policy.lower() == "fifo":
+    """Get color for a policy. FIFO uses grey hues, prio_global uses blue hues."""
+    policy_lower = policy.lower()
+    if policy_lower.startswith("fifo"):
+        if ",early" in policy_lower:
+            return "darkgrey"
         return "grey"
+    elif policy_lower.startswith("prio_global"):
+        if ",early" in policy_lower:
+            return "cornflowerblue"
+        return "steelblue"
     return None  # Use matplotlib default color cycle
+
+
+def sort_policies_by_type(policies):
+    """Sort policies to group fifo first, then prio_global."""
+    fifo_policies = []
+    prio_policies = []
+    other_policies = []
+    
+    for policy in policies:
+        policy_lower = policy.lower()
+        if policy_lower.startswith("fifo"):
+            fifo_policies.append(policy)
+        elif policy_lower.startswith("prio_global"):
+            prio_policies.append(policy)
+        else:
+            other_policies.append(policy)
+    
+    # Sort within each group (base policy before early variant)
+    fifo_policies.sort(key=lambda p: (",early" in p.lower(), p))
+    prio_policies.sort(key=lambda p: (",early" in p.lower(), p))
+    other_policies.sort()
+    
+    return fifo_policies + prio_policies + other_policies
 
 
 def compute_goodput(df):
@@ -114,13 +144,16 @@ def generate_plots(args) -> None:
 
             fig, ax = plt.subplots(figsize=(12, 6))
 
+            # Sort policies to group by type
+            sorted_policies = sort_policies_by_type(policies)
+            
             # set width of bars
             bar_width = 0.12
             index = np.arange(len(rps_values))
 
             # Create bars
-            for j, policy in enumerate(policies):
-                offset = (j - len(policies) / 2 + 0.5) * bar_width
+            for j, policy in enumerate(sorted_policies):
+                offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
                 color = get_policy_color(policy)
                 bars = ax.bar(
                     index + offset,
@@ -177,15 +210,18 @@ def generate_plots(args) -> None:
     for api in apis:
         fig, ax = plt.subplots(figsize=(12, 6))
 
+        # Sort policies to group by type
+        sorted_policies = sort_policies_by_type(policies)
+        
         bar_width = 0.12
         index = np.arange(len(rps_values))
 
-        for j, policy in enumerate(policies):
+        for j, policy in enumerate(sorted_policies):
             average_goodput = (
                 sum(np.array(policy_goodputs[i][api][policy]) for i in range(repeats))
                 / repeats
             )
-            offset = (j - len(policies) / 2 + 0.5) * bar_width
+            offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
             color = get_policy_color(policy)
             bars = ax.bar(
                 index + offset,
