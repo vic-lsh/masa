@@ -1,8 +1,15 @@
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for thread safety
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+
+# Suppress warning about too many open figures when running in parallel
+# We properly close all figures, but many may be open simultaneously during parallel execution
+plt.rcParams['figure.max_open_warning'] = 0
 
 from .util import parse_args, prepare_output_dir, read_data
 
@@ -21,6 +28,139 @@ def get_policy_color(policy: str) -> str:
     return None  # Use matplotlib default color cycle
 
 
+def _convert_to_milliseconds(data, policies, rps_values):
+    """Convert latency data from microseconds to milliseconds."""
+    MS_TO_US = 10**3
+    for rps in rps_values:
+        for policy in policies:
+            df = data[policy][rps]
+            df["latency"] /= MS_TO_US
+            df["slo"] /= MS_TO_US
+            df["start_at"] /= MS_TO_US
+            df["deadline"] /= MS_TO_US
+
+
+def _plot_latency_cdf(output_dir: str, api: str, rps: int, policies: list, data: dict) -> None:
+    """Generate CDF plot for latency distribution."""
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    for policy in policies:
+        df = data[policy][rps]
+
+        latencies = sorted(df["latency"].values)
+        percentiles = np.linspace(0, 100, len(latencies))
+
+        color = get_policy_color(policy)
+        ax.plot(latencies, percentiles, label=f"{policy}", color=color)
+
+    # Add labels and title
+    ax.set_xlabel("Latency (milliseconds)")
+    ax.set_ylabel("Percentile (%)")
+    ax.set_title(f"Latency Distribution for {api} API - {rps} RPS")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    # Save the plot
+    fig.savefig(
+        f"{output_dir}/latency_cdf_{rps}rps_{api}.png", dpi=300
+    )
+    plt.close(fig)
+
+
+def _plot_latency_histogram(
+    output_dir: str, api: str, rps: int, policy: str, df
+) -> None:
+    """Generate histogram plot for latency distribution."""
+    fig, ax = plt.subplots(figsize=(12, 8))
+    df["met_slo"] = df["error"] == "/None"
+
+    sns.histplot(
+        data=df,
+        x="latency",
+        hue="met_slo",
+        hue_order=[True, False],
+        ax=ax,
+    )
+
+    # Add labels and title
+    ax.set_xlabel("Latency (milliseconds)")
+    ax.set_title(f"Latency Histogram for {api} API - {policy} - {rps} RPS")
+    dir = os.path.join(output_dir, policy)
+    os.makedirs(dir, exist_ok=True)
+    fig.savefig(
+        os.path.join(dir, f"latency_histogram_{rps}rps_{api}.png"),
+        dpi=300,
+    )
+    plt.close(fig)
+
+
+def _plot_p99_latency(
+    output_dir: str, api: str, policies: list, rps_values: list, data: dict, max_y: float
+) -> None:
+    """Generate p99 latency plot for a specific repeat and API."""
+    fig, ax = plt.subplots(figsize=(12, 6))
+    for policy in policies:
+        p99_values = []
+        for rps in rps_values:
+            df = data[policy][rps]
+            p99_latency = df["latency"].quantile(0.99)
+            p99_values.append(p99_latency)
+        color = get_policy_color(policy)
+        ax.plot(rps_values, p99_values, "o-", label=f"{policy}", color=color)
+
+    ax.set_xlabel("Requests Per Second (RPS)")
+    ax.set_ylabel("p99 latency (milliseconds)")
+    ax.set_title(f"p99 latency by policy and RPS for {api} API")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    ax.set_ylim(top=max_y)
+    fig.savefig(f"{output_dir}/p99_latency_rps_{api}.png", dpi=300)
+    plt.close(fig)
+
+
+def _plot_averaged_percentile_latency(
+    output_dir: str,
+    api: str,
+    percentile: float,
+    policies: list,
+    rps_values: list,
+    results: list,
+    repeats: int,
+) -> None:
+    """Generate averaged percentile latency plot."""
+    # Get SLO from first repeat, first policy, first rps for max_y calculation
+    slo = results[0][api][policies[0]][rps_values[0]]["slo"].max()
+    max_y = slo * 4
+    
+    fig, ax = plt.subplots(figsize=(12, 6))
+    for policy in policies:
+        averaged_percentile = np.zeros(len(rps_values))
+        for i in range(repeats):
+            data = results[i][api]
+            percentile_values = []
+            for rps in rps_values:
+                df = data[policy][rps]
+                percentile_latency = df["latency"].quantile(percentile)
+                percentile_values.append(percentile_latency)
+            averaged_percentile += np.array(percentile_values)
+        color = get_policy_color(policy)
+        ax.plot(rps_values, averaged_percentile / repeats, "o-", label=f"{policy}", color=color)
+
+    p = int(percentile * 100)
+    ax.set_xlabel("Requests Per Second (RPS)")
+    ax.set_ylabel(f"average p{p} latency (milliseconds)")
+    ax.set_title(
+        f"p{p} latency by policy and RPS for {api} API"
+    )
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    ax.set_ylim(bottom=0, top=max_y)
+    fig.savefig(
+        f"{output_dir}/p{p}_latency_rps_{api}.png",
+        dpi=300,
+    )
+    plt.close(fig)
+
+
 def generate_plots(args) -> None:
     prepare_output_dir(args)
 
@@ -29,135 +169,92 @@ def generate_plots(args) -> None:
     )
 
     MS_TO_US = 10**3
+    # Convert all data to milliseconds first (needed for all plots)
     for i in range(repeats):
-        output_dir = os.path.join(args.output_dir, str(i))
         for api in apis:
             data = results[i][api]
-            # microseconds to milliseconds
-            for rps in rps_values:
-                for policy in policies:
-                    df = data[policy][rps]
-                    df["latency"] /= MS_TO_US
-                    df["slo"] /= MS_TO_US
-                    df["start_at"] /= MS_TO_US
-                    df["deadline"] /= MS_TO_US
+            _convert_to_milliseconds(data, policies, rps_values)
 
-            slo = data[policies[0]][rps_values[0]]["slo"].max()
-            max_y = slo * 4
-
-            # plot CDF of latency distribution
-            for rps in rps_values:
-                plt.figure(figsize=(12, 8))
-
-                for policy in policies:
-                    df = data[policy][rps]
-
-                    latencies = sorted(df["latency"].values)
-                    percentiles = np.linspace(0, 100, len(latencies))
-
-                    color = get_policy_color(policy)
-                    plt.plot(latencies, percentiles, label=f"{policy}", color=color)
-
-                # Add labels and title
-                plt.xlabel("Latency (milliseconds)")
-                plt.ylabel("Percentile (%)")
-                plt.title(f"Latency Distribution for {api} API - {rps} RPS")
-                plt.grid(True, alpha=0.3)
-                plt.legend()
-                # Save the plot
-                plt.savefig(
-                    f"{output_dir}/latency_cdf_{rps}rps_{api}.png", dpi=300
-                )
-
-                # # Optional: Add log scale version for better visibility of tail latencies
-                # plt.yscale("log")
-                # plt.title(f"Latency Distribution (Log Scale) for {api} API - {rps} RPS")
-                # plt.savefig(
-                #     f"{output_dir}/latency_distribution_{rps}rps_{api}_log.png", dpi=300
-                # )
-                plt.close()
-
-            # plot histogram
-            for rps in rps_values:
-                for policy in policies:
-                    plt.figure(figsize=(12, 8))
-                    df = data[policy][rps]
-                    df["met_slo"] = df["error"] == "/None"
-
-                    sns.histplot(
-                        data=df,
-                        x="latency",
-                        hue="met_slo",
-                        hue_order=[True, False],
-                    )
-
-                    # Add labels and title
-                    plt.xlabel("Latency (milliseconds)")
-                    plt.title(f"Latency Histogram for {api} API - {policy} - {rps} RPS")
-                    dir = os.path.join(output_dir, policy)
-                    os.makedirs(dir, exist_ok=True)
-                    plt.savefig(
-                        os.path.join(dir, f"latency_histogram_{rps}rps_{api}.png"),
-                        dpi=300,
-                    )
-                    plt.close()
-
-            # Create a summary plot for 99th percentile latencies
-            plt.figure(figsize=(12, 6))
-            for policy in policies:
-                p99_values = []
+    # Generate plots in parallel
+    with ThreadPoolExecutor() as executor:
+        futures = []
+        
+        # Submit CDF plots for each (repeat, api, rps)
+        for i in range(repeats):
+            output_dir = os.path.join(args.output_dir, str(i))
+            for api in apis:
+                data = results[i][api]
+                slo = data[policies[0]][rps_values[0]]["slo"].max()
+                max_y = slo * 4
+                
                 for rps in rps_values:
-                    df = data[policy][rps]
-                    p99_latency = df["latency"].quantile(0.99)
-                    p99_values.append(p99_latency)
-                color = get_policy_color(policy)
-                plt.plot(rps_values, p99_values, "o-", label=f"{policy}", color=color)
-
-            plt.xlabel("Requests Per Second (RPS)")
-            plt.ylabel("p99 latency (milliseconds)")
-            plt.title(f"p99 latency by policy and RPS for {api} API")
-            plt.grid(True, alpha=0.3)
-            plt.legend()
-            plt.ylim(top=max_y)
-            plt.savefig(f"{output_dir}/p99_latency_rps_{api}.png", dpi=300)
-            plt.close()
-
-    # averaged pX latencies
-    percentiles = [0.80, 0.90, 0.99]
-    for percentile in percentiles:
-        for api in apis:
-            # Get SLO from first repeat, first policy, first rps for max_y calculation
-            slo = results[0][api][policies[0]][rps_values[0]]["slo"].max()
-            max_y = slo * 4
-            
-            plt.figure(figsize=(12, 6))
-            for policy in policies:
-                averaged_percentile = np.zeros(len(rps_values))
-                for i in range(repeats):
-                    data = results[i][api]
-                    percentile_values = []
-                    for rps in rps_values:
-                        df = data[policy][rps]
-                        percentile_latency = df["latency"].quantile(percentile)
-                        percentile_values.append(percentile_latency)
-                    averaged_percentile += np.array(percentile_values)
-                color = get_policy_color(policy)
-                plt.plot(rps_values, averaged_percentile / repeats, "o-", label=f"{policy}", color=color)
-
-            p = int(percentile * 100)
-            plt.xlabel("Requests Per Second (RPS)")
-            plt.ylabel(f"average p{p} latency (milliseconds)")
-            plt.title(
-                f"p{p} latency by policy and RPS for {api} API"
-            )
-            plt.grid(True, alpha=0.3)
-            plt.legend()
-            plt.ylim(bottom=0, top=max_y)
-            plt.savefig(
-                f"{args.output_dir}/p{p}_latency_rps_{api}.png",
-                dpi=300,
-            )
-            plt.close()
+                    futures.append(
+                        executor.submit(
+                            _plot_latency_cdf,
+                            output_dir,
+                            api,
+                            rps,
+                            policies,
+                            data,
+                        )
+                    )
+                
+                # Submit p99 latency plots for each (repeat, api)
+                futures.append(
+                    executor.submit(
+                        _plot_p99_latency,
+                        output_dir,
+                        api,
+                        policies,
+                        rps_values,
+                        data,
+                        max_y,
+                    )
+                )
+        
+        # Submit histogram plots for each (repeat, api, rps, policy)
+        for i in range(repeats):
+            output_dir = os.path.join(args.output_dir, str(i))
+            for api in apis:
+                data = results[i][api]
+                for rps in rps_values:
+                    for policy in policies:
+                        df = data[policy][rps].copy()  # Copy to avoid race conditions
+                        futures.append(
+                            executor.submit(
+                                _plot_latency_histogram,
+                                output_dir,
+                                api,
+                                rps,
+                                policy,
+                                df,
+                            )
+                        )
+        
+        # Submit averaged percentile plots for each (percentile, api)
+        percentiles = [0.80, 0.90, 0.99]
+        output_dir = args.output_dir
+        for percentile in percentiles:
+            for api in apis:
+                futures.append(
+                    executor.submit(
+                        _plot_averaged_percentile_latency,
+                        output_dir,
+                        api,
+                        percentile,
+                        policies,
+                        rps_values,
+                        results,
+                        repeats,
+                    )
+                )
+        
+        # Wait for all plots to complete
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                raise RuntimeError(f"Failed to generate latency plot: {e}") from e
 
 
 if __name__ == "__main__":

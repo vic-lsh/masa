@@ -1,8 +1,15 @@
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for thread safety
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import Optional
+
+# Suppress warning about too many open figures when running in parallel
+# We properly close all figures, but many may be open simultaneously during parallel execution
+plt.rcParams['figure.max_open_warning'] = 0
 
 from .util import parse_args, prepare_output_dir, read_data
 
@@ -118,8 +125,120 @@ def plot_goodput_time_series(
         ax.set_title(title)
 
     ax.grid(axis="y", linestyle="--", alpha=0.7)
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+
+def _plot_policy_goodput_comparison(
+    output_dir: str,
+    api: str,
+    policies: list,
+    rps_values: list,
+    policy_goodputs: dict,
+) -> None:
+    """Generate policy goodput comparison plot for a specific repeat and API."""
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    # Sort policies to group by type
+    sorted_policies = sort_policies_by_type(policies)
+    
+    # set width of bars
+    bar_width = 0.12
+    index = np.arange(len(rps_values))
+
+    # Create bars
+    for j, policy in enumerate(sorted_policies):
+        offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
+        color = get_policy_color(policy)
+        bars = ax.bar(
+            index + offset,
+            policy_goodputs[policy],
+            bar_width,
+            label=policy,
+            color=color,
+        )
+
+    # Add labels and title
+    ax.set_xlabel("Requests Per Second (RPS)")
+    ax.set_ylabel("Goodput (requests meeting SLO per second)")
+    ax.set_title(f"Goodput Comparison by Policy and RPS for {api} API")
+    ax.set_xticks(index)
+    ax.set_xticklabels([str(rps) for rps in rps_values])
+    ax.legend()
+
+    ax.grid(axis="y", linestyle="--", alpha=0.7)
+    fig.tight_layout()
+    fig.savefig(
+        os.path.join(output_dir, f"policy_goodput_comparison_{api}.png"),
+        dpi=300,
+    )
+    plt.close(fig)
+
+
+def _plot_goodput_time_series_task(
+    df,
+    output_path: str,
+    title: str,
+) -> None:
+    """Generate a single goodput time series plot."""
+    policy_dir = os.path.dirname(output_path)
+    os.makedirs(policy_dir, exist_ok=True)
+    plot_goodput_time_series(
+        df,
+        output_path,
+        bucket_seconds=1.0,
+        title=title,
+    )
+
+
+def _plot_averaged_goodput(
+    output_dir: str,
+    api: str,
+    policies: list,
+    rps_values: list,
+    policy_goodputs: list,
+    repeats: int,
+) -> None:
+    """Generate averaged goodput comparison plot for a specific API."""
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    # Sort policies to group by type
+    sorted_policies = sort_policies_by_type(policies)
+    
+    bar_width = 0.12
+    index = np.arange(len(rps_values))
+
+    for j, policy in enumerate(sorted_policies):
+        average_goodput = (
+            sum(np.array(policy_goodputs[i][api][policy]) for i in range(repeats))
+            / repeats
+        )
+        offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
+        color = get_policy_color(policy)
+        bars = ax.bar(
+            index + offset,
+            average_goodput,
+            bar_width,
+            label=policy,
+            color=color,
+        )
+
+    ax.set_xlabel("Requests Per Second (RPS)")
+    ax.set_ylabel("average goodput (requests meeting SLO per second)")
+    ax.set_title(
+        f"average goodput comparison by policy and RPS for {api} API over {repeats} runs"
+    )
+    ax.set_xticks(index)
+    ax.set_xticklabels([str(rps) for rps in rps_values])
+    ax.legend()
+
+    ax.grid(axis="y", linestyle="--", alpha=0.7)
+    fig.tight_layout()
+    fig.savefig(
+        os.path.join(output_dir, f"policy_goodput_comparison_{api}_averaged.png"),
+        dpi=300,
+    )
     plt.close(fig)
 
 
@@ -130,123 +249,79 @@ def generate_plots(args) -> None:
         args.config_dir, args.data_dir
     )
 
+    # First, compute all policy goodputs (needed for plots)
     policy_goodputs = []
     for i in range(repeats):
         policy_goodputs.append({})
-        output_dir = os.path.join(args.output_dir, str(i))
         for api in apis:
             data = results[i][api]
-
             policy_goodputs[i][api] = {
                 policy: [compute_goodput(data[policy][rps]) for rps in rps_values]
                 for policy in policies
             }
 
-            fig, ax = plt.subplots(figsize=(12, 6))
-
-            # Sort policies to group by type
-            sorted_policies = sort_policies_by_type(policies)
-            
-            # set width of bars
-            bar_width = 0.12
-            index = np.arange(len(rps_values))
-
-            # Create bars
-            for j, policy in enumerate(sorted_policies):
-                offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
-                color = get_policy_color(policy)
-                bars = ax.bar(
-                    index + offset,
-                    policy_goodputs[i][api][policy],
-                    bar_width,
-                    label=policy,
-                    color=color,
-                )
-
-                # Add labels on top of bars
-                # for bar in bars:
-                #     height = bar.get_height()
-                #     ax.annotate(
-                #         f"{height:.2f}",
-                #         xy=(bar.get_x() + bar.get_width() / 2, height),
-                #         xytext=(0, 3),  # 3 points vertical offset
-                #         textcoords="offset points",
-                #         ha="center",
-                #         va="bottom",
-                #     )
-
-            # Add labels and title
-            ax.set_xlabel("Requests Per Second (RPS)")
-            ax.set_ylabel("Goodput (requests meeting SLO per second)")
-            ax.set_title(f"Goodput Comparison by Policy and RPS for {api} API")
-            ax.set_xticks(index)
-            ax.set_xticklabels([str(rps) for rps in rps_values])
-            ax.legend()
-
-            plt.grid(axis="y", linestyle="--", alpha=0.7)
-            plt.tight_layout()
-            plt.savefig(
-                os.path.join(output_dir, f"policy_goodput_comparison_{api}.png"),
-                dpi=300,
-            )
-            plt.close()
-
-            for policy in policies:
-                policy_dir = os.path.join(output_dir, policy)
-                os.makedirs(policy_dir, exist_ok=True)
-                for rps in rps_values:
-                    df = data[policy][rps]
-                    plot_goodput_time_series(
-                        df,
-                        os.path.join(
-                            policy_dir, f"goodput_time_series_{rps}rps_{api}.png"
-                        ),
-                        bucket_seconds=1.0,
-                        title=f"Goodput Time Series for {api} - {policy} - {rps} RPS",
-                    )
-
-    output_dir = args.output_dir
-    # averaged goodput
-    for api in apis:
-        fig, ax = plt.subplots(figsize=(12, 6))
-
-        # Sort policies to group by type
-        sorted_policies = sort_policies_by_type(policies)
+    # Generate plots in parallel
+    with ThreadPoolExecutor() as executor:
+        futures = []
         
-        bar_width = 0.12
-        index = np.arange(len(rps_values))
-
-        for j, policy in enumerate(sorted_policies):
-            average_goodput = (
-                sum(np.array(policy_goodputs[i][api][policy]) for i in range(repeats))
-                / repeats
+        # Submit policy goodput comparison plots for each (repeat, api)
+        for i in range(repeats):
+            output_dir = os.path.join(args.output_dir, str(i))
+            for api in apis:
+                futures.append(
+                    executor.submit(
+                        _plot_policy_goodput_comparison,
+                        output_dir,
+                        api,
+                        policies,
+                        rps_values,
+                        policy_goodputs[i][api],
+                    )
+                )
+        
+        # Submit goodput time series plots for each (repeat, api, policy, rps)
+        for i in range(repeats):
+            output_dir = os.path.join(args.output_dir, str(i))
+            for api in apis:
+                data = results[i][api]
+                for policy in policies:
+                    policy_dir = os.path.join(output_dir, policy)
+                    for rps in rps_values:
+                        df = data[policy][rps].copy()  # Copy to avoid race conditions
+                        output_path = os.path.join(
+                            policy_dir, f"goodput_time_series_{rps}rps_{api}.png"
+                        )
+                        title = f"Goodput Time Series for {api} - {policy} - {rps} RPS"
+                        futures.append(
+                            executor.submit(
+                                _plot_goodput_time_series_task,
+                                df,
+                                output_path,
+                                title,
+                            )
+                        )
+        
+        # Submit averaged goodput plots for each api
+        output_dir = args.output_dir
+        for api in apis:
+            futures.append(
+                executor.submit(
+                    _plot_averaged_goodput,
+                    output_dir,
+                    api,
+                    policies,
+                    rps_values,
+                    policy_goodputs,
+                    repeats,
+                )
             )
-            offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
-            color = get_policy_color(policy)
-            bars = ax.bar(
-                index + offset,
-                average_goodput,
-                bar_width,
-                label=policy,
-                color=color,
-            )
-
-        ax.set_xlabel("Requests Per Second (RPS)")
-        ax.set_ylabel("average goodput (requests meeting SLO per second)")
-        ax.set_title(
-            f"average goodput comparison by policy and RPS for {api} API over {repeats} runs"
-        )
-        ax.set_xticks(index)
-        ax.set_xticklabels([str(rps) for rps in rps_values])
-        ax.legend()
-
-        plt.grid(axis="y", linestyle="--", alpha=0.7)
-        plt.tight_layout()
-        plt.savefig(
-            os.path.join(output_dir, f"policy_goodput_comparison_{api}_averaged.png"),
-            dpi=300,
-        )
-        plt.close()
+        
+        # Wait for all plots to complete
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                raise RuntimeError(f"Failed to generate goodput plot: {e}") from e
 
 
 if __name__ == "__main__":
