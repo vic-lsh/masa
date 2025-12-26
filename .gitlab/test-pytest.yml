@@ -1,6 +1,6 @@
 pytest:
   image: python:3.11
-  stage: test
+  stage: quick-checks
   before_script:
     - python --version
     - pip --version
