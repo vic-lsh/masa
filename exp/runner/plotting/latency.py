@@ -11,7 +11,7 @@ import seaborn as sns
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams['figure.max_open_warning'] = 0
 
-from .util import parse_args, prepare_output_dir, read_data
+from .util import parse_args, prepare_output_dir, read_data, filter_excluded_errors
 
 
 def get_policy_color(policy: str) -> str:
@@ -46,8 +46,13 @@ def _plot_latency_cdf(output_dir: str, api: str, rps: int, policies: list, data:
 
     for policy in policies:
         df = data[policy][rps]
+        # Filter out excluded errors for meaningful latency analysis
+        df_filtered = filter_excluded_errors(df)
 
-        latencies = sorted(df["latency"].values)
+        if df_filtered.empty:
+            continue
+
+        latencies = sorted(df_filtered["latency"].values)
         percentiles = np.linspace(0, 100, len(latencies))
 
         color = get_policy_color(policy)
@@ -71,10 +76,12 @@ def _plot_latency_histogram(
 ) -> None:
     """Generate histogram plot for latency distribution."""
     fig, ax = plt.subplots(figsize=(12, 8))
-    df["met_slo"] = df["error"] == "/None"
+    # Filter out excluded errors for meaningful latency analysis
+    df_filtered = filter_excluded_errors(df)
+    df_filtered["met_slo"] = df_filtered["latency"] <= df_filtered["slo"]
 
     sns.histplot(
-        data=df,
+        data=df_filtered,
         x="latency",
         hue="met_slo",
         hue_order=[True, False],
@@ -102,7 +109,12 @@ def _plot_p99_latency(
         p99_values = []
         for rps in rps_values:
             df = data[policy][rps]
-            p99_latency = df["latency"].quantile(0.99)
+            # Filter out excluded errors for meaningful latency analysis
+            df_filtered = filter_excluded_errors(df)
+            if df_filtered.empty:
+                p99_latency = np.nan
+            else:
+                p99_latency = df_filtered["latency"].quantile(0.99)
             p99_values.append(p99_latency)
         color = get_policy_color(policy)
         ax.plot(rps_values, p99_values, "o-", label=f"{policy}", color=color)
@@ -139,7 +151,12 @@ def _plot_averaged_percentile_latency(
             percentile_values = []
             for rps in rps_values:
                 df = data[policy][rps]
-                percentile_latency = df["latency"].quantile(percentile)
+                # Filter out excluded errors for meaningful latency analysis
+                df_filtered = filter_excluded_errors(df)
+                if df_filtered.empty:
+                    percentile_latency = np.nan
+                else:
+                    percentile_latency = df_filtered["latency"].quantile(percentile)
                 percentile_values.append(percentile_latency)
             averaged_percentile += np.array(percentile_values)
         color = get_policy_color(policy)
