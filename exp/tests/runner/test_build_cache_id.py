@@ -54,71 +54,71 @@ class TestBuildCacheIDConsistency:
             
             builder = builder_class()
             mock_subprocess.return_value = Mock(returncode=0)
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repo_root = Path(tmpdir) / "repo"
-            app_dir = Path(tmpdir) / "app"
-            repo_root.mkdir()
-            app_dir.mkdir()
             
-            # Set up config files based on requirements
-            app_config_path = None
-            gen_config_path = repo_root / "gen_config.json"
-            
-            if config["requires_app_config"]:
-                app_config_path = repo_root / f"{config['app_name']}.json"
-                app_config_path.write_text("{}")
-            
-            gen_config_path.write_text("{}")
-            
-            features = "policy-a,policy-b"
-            
-            # Build arguments
-            build_kwargs = {
-                "repo_root": repo_root,
-                "app_dir": app_dir,
-                "features": features,
-                "rust_log": "info",
-                "no_cache": False,
-                "gen_config_path": gen_config_path,
-            }
-            
-            if app_config_path is not None:
-                build_kwargs["app_config_path"] = app_config_path
-            else:
-                build_kwargs["app_config_path"] = None
-            
-            builder.build(**build_kwargs)
-            
-            # Get expected cache ID
-            tag = normalize_features_to_tag(features)
-            expected_cache_id = f"{config['app_name']}-{tag}"
-            
-            # Extract all build commands
-            all_calls = [call[0][0] for call in mock_subprocess.call_args_list]
-            
-            # Stage 1: Builder stage
-            builder_call = all_calls[0]
-            builder_call_str = " ".join(builder_call)
-            assert f"CACHE_ID={expected_cache_id}" in builder_call_str, \
-                f"Builder stage should have CACHE_ID={expected_cache_id}"
-            
-            # Stage 2: Runtime-base stage
-            runtime_base_call = all_calls[1]
-            runtime_base_call_str = " ".join(runtime_base_call)
-            assert f"CACHE_ID={expected_cache_id}" in runtime_base_call_str, \
-                f"Runtime-base stage should have CACHE_ID={expected_cache_id}"
-            
-            # Stage 3: Runtime stages (all binary images)
-            runtime_calls = all_calls[2:]
-            for runtime_call in runtime_calls:
-                runtime_call_str = " ".join(runtime_call)
-                assert f"CACHE_ID={expected_cache_id}" in runtime_call_str, \
-                    f"Runtime stage should have CACHE_ID={expected_cache_id}"
-            
-            # Verify cache ID includes features (via tag)
-            assert tag in expected_cache_id, \
-                f"Cache ID {expected_cache_id} should include tag {tag} which represents features"
+            with tempfile.TemporaryDirectory() as tmpdir:
+                repo_root = Path(tmpdir) / "repo"
+                app_dir = Path(tmpdir) / "app"
+                repo_root.mkdir()
+                app_dir.mkdir()
+                
+                # Set up config files based on requirements
+                app_config_path = None
+                gen_config_path = repo_root / "gen_config.json"
+                
+                if config["requires_app_config"]:
+                    app_config_path = repo_root / f"{config['app_name']}.json"
+                    app_config_path.write_text("{}")
+                
+                gen_config_path.write_text("{}")
+                
+                features = "policy-a,policy-b"
+                
+                # Build arguments
+                build_kwargs = {
+                    "repo_root": repo_root,
+                    "app_dir": app_dir,
+                    "features": features,
+                    "rust_log": "info",
+                    "no_cache": False,
+                    "gen_config_path": gen_config_path,
+                }
+                
+                if app_config_path is not None:
+                    build_kwargs["app_config_path"] = app_config_path
+                else:
+                    build_kwargs["app_config_path"] = None
+                
+                builder.build(**build_kwargs)
+                
+                # Get expected cache ID
+                tag = normalize_features_to_tag(features)
+                expected_cache_id = f"{config['app_name']}-{tag}"
+                
+                # Extract all build commands
+                all_calls = [call[0][0] for call in mock_subprocess.call_args_list]
+                
+                # Stage 1: Builder stage
+                builder_call = all_calls[0]
+                builder_call_str = " ".join(builder_call)
+                assert f"CACHE_ID={expected_cache_id}" in builder_call_str, \
+                    f"Builder stage should have CACHE_ID={expected_cache_id}"
+                
+                # Stage 2: Runtime-base stage
+                runtime_base_call = all_calls[1]
+                runtime_base_call_str = " ".join(runtime_base_call)
+                assert f"CACHE_ID={expected_cache_id}" in runtime_base_call_str, \
+                    f"Runtime-base stage should have CACHE_ID={expected_cache_id}"
+                
+                # Stage 3: Runtime stages (all binary images)
+                runtime_calls = all_calls[2:]
+                for runtime_call in runtime_calls:
+                    runtime_call_str = " ".join(runtime_call)
+                    assert f"CACHE_ID={expected_cache_id}" in runtime_call_str, \
+                        f"Runtime stage should have CACHE_ID={expected_cache_id}"
+                
+                # Verify cache ID includes features (via tag)
+                assert tag in expected_cache_id, \
+                    f"Cache ID {expected_cache_id} should include tag {tag} which represents features"
 
     @pytest.mark.parametrize("builder_class,config", BUILDERS)
     def test_cache_id_without_features(self, builder_class, config):
