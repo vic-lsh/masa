@@ -11,7 +11,7 @@ from typing import Optional
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams['figure.max_open_warning'] = 0
 
-from .util import parse_args, prepare_output_dir, read_data
+from .util import parse_args, prepare_output_dir, read_data, filter_excluded_errors
 
 
 def get_policy_color(policy: str):
@@ -52,13 +52,20 @@ def sort_policies_by_type(policies):
 
 
 def compute_goodput(df):
-    df["met_slo"] = df["error"] == "/None"
+    # Filter out /ClientTimeout and /EarlyReturn errors - they are not goodput
+    df_filtered = filter_excluded_errors(df)
+    
+    if df_filtered.empty:
+        return 0.0
+    
+    # Count goodput based on execution time vs SLO
+    df_filtered["met_slo"] = df_filtered["latency"] <= df_filtered["slo"]
     start = df["start_at"].min()
     end = (df["start_at"] + df["latency"]).max()
     duration_us = end - start
     s_to_us = 10**6
 
-    return df["met_slo"].sum() / duration_us * s_to_us
+    return df_filtered["met_slo"].sum() / duration_us * s_to_us
 
 
 def compute_goodput_time_series(df, bucket_seconds: float = 1.0):
@@ -69,6 +76,28 @@ def compute_goodput_time_series(df, bucket_seconds: float = 1.0):
     if df.empty:
         return np.array([]), np.array([])
 
+    # Filter out /ClientTimeout and /EarlyReturn errors - they are not goodput
+    df_filtered = filter_excluded_errors(df)
+    
+    if df_filtered.empty:
+        # If all requests have /ClientTimeout or /EarlyReturn errors, return empty arrays
+        start = df["start_at"].min()
+        end = (df["start_at"] + df["latency"]).max()
+        if end <= start:
+            end = start + int(bucket_seconds * 10**6)
+        bucket_us = int(bucket_seconds * 10**6)
+        bins = np.arange(start, end + bucket_us, bucket_us)
+        if len(bins) < 2:
+            bins = np.array([start, start + bucket_us])
+        counts = np.zeros(len(bins) - 1, dtype=int)
+        bin_edges = bins
+        times_seconds = (bin_edges[:-1] - start) / 10**6
+        goodput = counts / bucket_seconds
+        return times_seconds, goodput
+
+    # Count goodput based on execution time vs SLO
+    met_slo_mask = df_filtered["latency"] <= df_filtered["slo"]
+    
     bucket_us = int(bucket_seconds * 10**6)
     start = df["start_at"].min()
     end = (df["start_at"] + df["latency"]).max()
@@ -80,9 +109,8 @@ def compute_goodput_time_series(df, bucket_seconds: float = 1.0):
     if len(bins) < 2:
         bins = np.array([start, start + bucket_us])
 
-    met_mask = df["error"] == "/None"
-    if met_mask.any():
-        completion_times = df.loc[met_mask, "start_at"] + df.loc[met_mask, "latency"]
+    if met_slo_mask.any():
+        completion_times = df_filtered.loc[met_slo_mask, "start_at"] + df_filtered.loc[met_slo_mask, "latency"]
         counts, bin_edges = np.histogram(completion_times, bins=bins)
     else:
         counts = np.zeros(len(bins) - 1, dtype=int)
