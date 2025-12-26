@@ -452,10 +452,8 @@ where
         let mut counter_request_id = 0;
         let mut next_request_time = init_at;
         let warmup_rps = 100.0;
-        let exp_warm =
-            Exp::new(warmup_rps).expect("warmup rps should produce valid distribution");
-        let exp_steady =
-            Exp::new(self.rps as f64).expect("rps should produce valid distribution");
+        let exp_warm = Exp::new(warmup_rps).expect("warmup rps should produce valid distribution");
+        let exp_steady = Exp::new(self.rps as f64).expect("rps should produce valid distribution");
 
         let mut set = JoinSet::new();
         let inflight_guard = Arc::new(Semaphore::new(self.gen_cfg.concurrency));

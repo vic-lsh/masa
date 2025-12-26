@@ -295,7 +295,7 @@ impl Reservation for ReservationImpl {
             .await
         });
         let reserve_redis_elapsed = reserve_redis_start.elapsed();
-        
+
         if let Ok(Ok(redis_resp)) = redis_resp {
             for (key, value) in req_commands.iter().zip(redis_resp) {
                 if let Some(raw) = value {
