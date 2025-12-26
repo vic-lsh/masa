@@ -2,6 +2,7 @@ use log::info;
 use log::warn;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand_distr::{Distribution, Exp};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
@@ -16,6 +17,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::Semaphore;
 use tokio::time::{timeout, Duration, Instant};
 
 use rand::Rng;
@@ -70,7 +72,7 @@ pub struct LoadGenArgs {
     pub save_logs: bool,
 }
 
-const DEFAULT_COUNTER_KEYS: [&'static str; 6] = [
+const DEFAULT_COUNTER_KEYS: [&'static str; 7] = [
     // total number of (sent) requests
     "all",
     // number of (completed) requests satisfying SLO
@@ -83,6 +85,8 @@ const DEFAULT_COUNTER_KEYS: [&'static str; 6] = [
     "timeout",
     // total number of unexpected errors
     "unexpected",
+    // number of requests dropped due to max in-flight limit
+    "throttled",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -446,24 +450,22 @@ where
         pause_at: Instant,
     ) {
         let mut counter_request_id = 0;
-        let mut elapse = 0f64;
+        let mut next_request_time = init_at;
+        let warmup_rps = 100.0;
+        let exp_warm =
+            Exp::new(warmup_rps).expect("warmup rps should produce valid distribution");
+        let exp_steady =
+            Exp::new(self.rps as f64).expect("rps should produce valid distribution");
 
         let mut set = JoinSet::new();
+        let inflight_guard = Arc::new(Semaphore::new(self.gen_cfg.concurrency));
 
         while Instant::now() < pause_at {
-            // XXX: tokio's sleep has millisecond granularity, so for small `elapse` this may be
-            // inaccurate
-            let start_at = init_at + Duration::from_secs_f64(elapse);
-            tokio::time::sleep_until(start_at).await;
-
-            let value = {
-                if Instant::now() < warm_at {
-                    0.01
-                } else {
-                    1f64 / self.rps as f64
-                }
-            };
-            elapse += value;
+            tokio::time::sleep_until(next_request_time).await;
+            let now = Instant::now();
+            if now >= pause_at {
+                break;
+            }
 
             let i = self.rng.gen_range(0..self.api_handlers.len());
             let handler = Arc::clone(&self.api_handlers[i]);
@@ -489,7 +491,16 @@ where
             let rng = self.rng.clone();
             let trace = Instant::now() > trace_at;
 
+            let permit = match inflight_guard.clone().try_acquire_owned() {
+                Ok(p) => p,
+                Err(_) => {
+                    ctrs.increment("throttled");
+                    continue;
+                }
+            };
+
             set.spawn(async move {
+                let _permit = permit;
                 ctrs.increment("all");
 
                 let error = handler.send_request(rng, client, ctx, trace).await;
@@ -516,6 +527,19 @@ where
                     };
                 }
             });
+
+            let inter_arrival_secs = if self.gen_cfg.gap == "exp" {
+                if now < warm_at {
+                    exp_warm.sample(&mut self.rng)
+                } else {
+                    exp_steady.sample(&mut self.rng)
+                }
+            } else if now < warm_at {
+                0.01
+            } else {
+                1f64 / self.rps as f64
+            };
+            next_request_time += Duration::from_secs_f64(inter_arrival_secs);
         }
 
         // wait for all outgoing requests to complete
@@ -603,20 +627,22 @@ async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
         let delta = |k| counters.get(k) - prev.get(k);
 
         log::warn!(
-            "secs: {}, rps: {}, goodput: {}, early returns: {}, deadline misses: {}, timeouts: {}",
+            "secs: {}, rps: {}, goodput: {}, early returns: {}, deadline misses: {}, timeouts: {}, throttled: {}",
             secs,
             delta("all"),
             delta("good"),
             delta("early_return"),
             delta("deadline_miss"),
             delta("timeout"),
+            delta("throttled"),
         );
         log::warn!(
-            "total early returns: {}, total deadline misses: {}, total timeouts: {}, total unexpected errors: {}",
+            "total early returns: {}, total deadline misses: {}, total timeouts: {}, total unexpected errors: {}, total throttled: {}",
             counters.get("early_return"),
             counters.get("deadline_miss"),
             counters.get("timeout"),
             counters.get("unexpected"),
+            counters.get("throttled"),
         );
         // clone the Counters struct itself as opposed to creating another reference
         prev = (*counters).clone();
