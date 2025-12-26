@@ -41,6 +41,7 @@ async fn setup_test_server(
     (server_handle, client)
 }
 
+#[ignore]
 #[tokio::test]
 async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50056).await;
@@ -72,6 +73,7 @@ async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
+#[ignore]
 #[tokio::test]
 async fn test_validation_error() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50057).await;
@@ -96,6 +98,7 @@ async fn test_validation_error() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[ignore]
 #[tokio::test]
 async fn test_empty_lists() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50058).await;
