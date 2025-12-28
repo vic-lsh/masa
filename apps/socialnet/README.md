@@ -6,7 +6,6 @@
 
 # Scaling the services
 ## Database services (e.g. those to do with mongo, redis, memached)
-
 Can vertically scale these services by simply increasing the number of cpus needed in the docker-compose.yaml file.
 
 ## Main services
