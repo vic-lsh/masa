@@ -8,6 +8,8 @@ pytest:
     paths:
       - .venv
   before_script:
+    - apt-get update -yqq
+    - apt-get install -y libgraphviz-dev pkg-config
     - |
       if ! command -v uv &> /dev/null; then
         curl -LsSf https://astral.sh/uv/install.sh | sh
