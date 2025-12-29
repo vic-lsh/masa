@@ -12,6 +12,7 @@ use tonic::{Request, Response, Status};
 
 use crate::server::synthetic_tonic::child::Periodic;
 use app_utils::timing::time_now;
+use rand_distr::WeightedIndex;
 use synthetic::config::SyntheticConfig;
 use synthetic::util;
 use synthetic_tonic::{child, child::child_server::Child};
@@ -43,11 +44,18 @@ impl ChildImpl {
         });
 
         ChildImpl {
-            constant_latency: util::LatencyDistribution::Periodic {
-                fast_latency: config.child_constant_latency,
-                slow_latency: 2 * config.child_constant_latency,
-                slow_duration_ms: config.child_constant_latency_slowdown_duration,
-            },
+            // constant_latency: util::LatencyDistribution::Periodic {
+            //     fast_latency: config.child_constant_latency,
+            //     slow_latency: 2 * config.child_constant_latency,
+            //     slow_duration_ms: config.child_constant_latency_slowdown_duration,
+            // },
+            constant_latency: util::LatencyDistribution::Discrete(
+                WeightedIndex::new(vec![0.80, 0.20]).unwrap(),
+                vec![
+                    config.child_constant_latency,
+                    5 * config.child_constant_latency,
+                ],
+            ),
             random_latency,
         }
     }
@@ -65,20 +73,31 @@ impl Child for ChildImpl {
         &self,
         request: Request<child::ConstantLatencyRequest>,
     ) -> Result<Response<child::ConstantLatencyResponse>, Status> {
-        let queueing_latency = time_now() - request.into_inner().sent_at;
+        let request = request.into_inner();
+        let queueing_latency = time_now() - request.sent_at;
         let start = Instant::now();
 
-        let duration = Duration::from_micros(self.constant_latency.sample());
-        let yield_interval = Duration::from_micros(200);
+        let duration = match request.duration_us {
+            Some(duration) => Duration::from_micros(duration),
+            None => Duration::from_micros(self.constant_latency.sample()),
+        };
 
-        let mut remaining = duration;
-        while remaining > yield_interval {
-            busy_spin(yield_interval);
-            tokio::task::yield_now().await;
-            remaining -= yield_interval;
-        }
-        if remaining > Duration::ZERO {
-            busy_spin(remaining);
+        if request.busy_spin {
+            // busy_spin(duration);
+
+            let yield_interval = Duration::from_micros(200);
+
+            let mut remaining = duration;
+            while remaining > yield_interval {
+                busy_spin(yield_interval);
+                tokio::task::yield_now().await;
+                remaining -= yield_interval;
+            }
+            if remaining > Duration::ZERO {
+                busy_spin(remaining);
+            }
+        } else {
+            tokio::time::sleep(duration).await;
         }
 
         Ok(Response::new(child::ConstantLatencyResponse {
@@ -92,13 +111,19 @@ impl Child for ChildImpl {
         &self,
         request: Request<child::RandomLatencyRequest>,
     ) -> Result<Response<child::RandomLatencyResponse>, Status> {
-        let queueing_latency = time_now() - request.into_inner().sent_at;
+        let request = request.into_inner();
+        let queueing_latency = time_now() - request.sent_at;
         let start = Instant::now();
 
         let duration_us = self.random_latency.sample();
         // sleep has millisecond granularity so we round the duration time
-        let duration = Duration::from_millis(duration_us / 1_000);
-        tokio::time::sleep(duration).await;
+
+        let duration = Duration::from_micros(duration_us);
+        if request.busy_spin {
+            busy_spin(duration);
+        } else {
+            tokio::time::sleep(duration).await;
+        }
 
         Ok(Response::new(child::RandomLatencyResponse {
             queueing_latency,

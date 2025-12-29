@@ -9,14 +9,21 @@ service Child {
   rpc Presampled(PresampledRequest) returns (PresampledResponse) {}
 }
 
-message RandomLatencyRequest { uint64 sent_at = 1; }
+message RandomLatencyRequest {
+  uint64 sent_at = 1;
+  bool busy_spin = 2;
+}
 message RandomLatencyResponse {
   uint64 queueing_latency = 1;
   uint64 sleep_latency = 2;
   uint64 handler_latency = 3;
 }
 
-message ConstantLatencyRequest { uint64 sent_at = 1; }
+message ConstantLatencyRequest {
+  uint64 sent_at = 1;
+  optional uint64 duration_us = 2;
+  bool busy_spin = 3;
+}
 message ConstantLatencyResponse {
   uint64 queueing_latency = 1;
   uint64 handler_latency = 2;
