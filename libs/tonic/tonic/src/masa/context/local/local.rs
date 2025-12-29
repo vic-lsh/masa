@@ -13,11 +13,11 @@ use std::{
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{estimate_method_latency, track_method_latency, PERCENTILE};
-use masa::{time_now, Context, LatencyDistribution, LatencyEstimator, MethodId, EARLY_RETURN};
+use masa::{time_now, Context, LatencyEstimator, LatencyRms, MethodId, EARLY_RETURN};
 
 /// Type alias for the latency estimator used in the local deadline policy.
 /// Change this to use a different estimator (e.g., `LatencyRms`).
-pub(crate) type LocalLatencyEstimator = LatencyDistribution;
+pub(crate) type LocalLatencyEstimator = LatencyRms;
 
 #[derive(Debug)]
 /// This policy computes the deadline d of a child request as  
