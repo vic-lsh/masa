@@ -15,7 +15,7 @@ from .util import parse_args, prepare_output_dir, read_data, filter_excluded_err
 
 
 def get_policy_color(policy: str) -> str:
-    """Get color for a policy. FIFO uses grey hues, prio_global uses blue hues."""
+    """Get color for a policy. FIFO uses grey hues, prio_global uses blue hues, prio_local uses pink hues."""
     policy_lower = policy.lower()
     if policy_lower.startswith("fifo"):
         if ",early" in policy_lower:
@@ -25,6 +25,10 @@ def get_policy_color(policy: str) -> str:
         if ",early" in policy_lower:
             return "cornflowerblue"
         return "steelblue"
+    elif policy_lower.startswith("prio_local"):
+        if ",early" in policy_lower:
+            return "lightpink"
+        return "hotpink"
     return None  # Use matplotlib default color cycle
 
 
