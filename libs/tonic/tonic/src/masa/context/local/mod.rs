@@ -1,3 +1,4 @@
+pub(crate) mod local;
 pub(crate) mod local_direct;
 pub(crate) mod local_indirect;
 
@@ -12,7 +13,7 @@ use masa::LatencyDistribution;
 
 // TODO: tweak these values. should they be specific to each local priority selector?
 const DISTRIBUTION_CAPACITY: usize = 512;
-const PERCENTILE: usize = 50;
+pub(crate) const PERCENTILE: usize = 50;
 
 fn estimate_method_latency(
     map: &RwLock<HashMap<String, LatencyDistribution>>,
