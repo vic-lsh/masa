@@ -15,7 +15,7 @@ from .util import parse_args, prepare_output_dir, read_data, filter_excluded_err
 
 
 def get_policy_color(policy: str):
-    """Get color for a policy. FIFO uses grey hues, prio_global uses blue hues."""
+    """Get color for a policy. FIFO uses grey hues, prio_global uses blue hues, prio_local uses pink hues."""
     policy_lower = policy.lower()
     if policy_lower.startswith("fifo"):
         if ",early" in policy_lower:
@@ -25,13 +25,39 @@ def get_policy_color(policy: str):
         if ",early" in policy_lower:
             return "cornflowerblue"
         return "steelblue"
+    elif policy_lower.startswith("prio_local"):
+        if ",early" in policy_lower:
+            return "lightpink"
+        return "hotpink"
     return None  # Use matplotlib default color cycle
 
 
+def get_request_type_hatch(request_type: str):
+    """Get a distinct hatch pattern for each request type.
+    Uses consistent hatch patterns to distinguish request types in stacked bars."""
+    # Use a consistent set of hatch patterns
+    hatches = [
+        '',      # no hatch (solid)
+        '///',   # diagonal lines
+        '\\\\\\', # back diagonal lines
+        '|||',   # vertical lines
+        '---',   # horizontal lines
+        '+++',   # plus signs
+        'xxx',   # cross pattern
+        '...',   # dots
+        'ooo',   # circles
+        '***',   # stars
+    ]
+    # Use hash of request type to get consistent hatch assignment
+    hash_val = hash(request_type) % len(hatches)
+    return hatches[hash_val % len(hatches)]
+
+
 def sort_policies_by_type(policies):
-    """Sort policies to group fifo first, then prio_global."""
+    """Sort policies to group fifo first, then prio_global, then prio_local."""
     fifo_policies = []
-    prio_policies = []
+    prio_global_policies = []
+    prio_local_policies = []
     other_policies = []
     
     for policy in policies:
@@ -39,16 +65,19 @@ def sort_policies_by_type(policies):
         if policy_lower.startswith("fifo"):
             fifo_policies.append(policy)
         elif policy_lower.startswith("prio_global"):
-            prio_policies.append(policy)
+            prio_global_policies.append(policy)
+        elif policy_lower.startswith("prio_local"):
+            prio_local_policies.append(policy)
         else:
             other_policies.append(policy)
     
     # Sort within each group (base policy before early variant)
     fifo_policies.sort(key=lambda p: (",early" in p.lower(), p))
-    prio_policies.sort(key=lambda p: (",early" in p.lower(), p))
+    prio_global_policies.sort(key=lambda p: (",early" in p.lower(), p))
+    prio_local_policies.sort(key=lambda p: (",early" in p.lower(), p))
     other_policies.sort()
     
-    return fifo_policies + prio_policies + other_policies
+    return fifo_policies + prio_global_policies + prio_local_policies + other_policies
 
 
 def compute_goodput(df):
@@ -66,6 +95,37 @@ def compute_goodput(df):
     s_to_us = 10**6
 
     return df_filtered["met_slo"].sum() / duration_us * s_to_us
+
+
+def compute_goodput_by_request_type(df):
+    """Compute goodput broken down by request type (api column).
+    
+    Returns:
+        dict: Mapping from request type (api) to goodput value
+    """
+    # Filter out /ClientTimeout and /EarlyReturn errors - they are not goodput
+    df_filtered = filter_excluded_errors(df)
+    
+    if df_filtered.empty or "api" not in df_filtered.columns:
+        return {}
+    
+    # Count goodput based on execution time vs SLO
+    df_filtered["met_slo"] = df_filtered["latency"] <= df_filtered["slo"]
+    start = df["start_at"].min()
+    end = (df["start_at"] + df["latency"]).max()
+    duration_us = end - start
+    s_to_us = 10**6
+    
+    if duration_us == 0:
+        return {}
+    
+    # Group by api and compute goodput for each
+    goodput_by_type = {}
+    for api_type in df_filtered["api"].unique():
+        api_df = df_filtered[df_filtered["api"] == api_type]
+        goodput_by_type[api_type] = api_df["met_slo"].sum() / duration_us * s_to_us
+    
+    return goodput_by_type
 
 
 def compute_goodput_time_series(df, bucket_seconds: float = 1.0):
@@ -164,8 +224,14 @@ def _plot_policy_goodput_comparison(
     policies: list,
     rps_values: list,
     policy_goodputs: dict,
+    policy_goodputs_by_type: Optional[dict] = None,
 ) -> None:
-    """Generate policy goodput comparison plot for a specific repeat and API."""
+    """Generate policy goodput comparison plot for a specific repeat and API.
+    
+    Args:
+        policy_goodputs_by_type: Optional dict mapping policy -> list of dicts (one per RPS)
+            where each dict maps request_type -> goodput. Used for stacked bars when api == "ALL".
+    """
     fig, ax = plt.subplots(figsize=(12, 6))
 
     # Sort policies to group by type
@@ -175,31 +241,99 @@ def _plot_policy_goodput_comparison(
     bar_width = 0.12
     index = np.arange(len(rps_values))
 
-    # Create bars
-    for j, policy in enumerate(sorted_policies):
-        offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
-        color = get_policy_color(policy)
-        bars = ax.bar(
-            index + offset,
-            policy_goodputs[policy],
-            bar_width,
-            label=policy,
-            color=color,
-        )
+    if api == "ALL" and policy_goodputs_by_type is not None:
+        # Use stacked bars for "ALL" API
+        # First, collect all request types across all policies and RPS values
+        all_request_types = set()
+        for policy in policies:
+            if policy in policy_goodputs_by_type:
+                for rps_idx in range(len(rps_values)):
+                    if rps_idx < len(policy_goodputs_by_type[policy]):
+                        all_request_types.update(policy_goodputs_by_type[policy][rps_idx].keys())
+        all_request_types = sorted(list(all_request_types))
+        
+        # Track which request types we've added to legend
+        legend_added = set()
+        
+        # Create stacked bars for each policy
+        for j, policy in enumerate(sorted_policies):
+            offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
+            bottom = np.zeros(len(rps_values))
+            
+            if policy in policy_goodputs_by_type:
+                color = get_policy_color(policy)
+                for request_type in all_request_types:
+                    values = []
+                    for rps_idx in range(len(rps_values)):
+                        if (rps_idx < len(policy_goodputs_by_type[policy]) and
+                            request_type in policy_goodputs_by_type[policy][rps_idx]):
+                            values.append(policy_goodputs_by_type[policy][rps_idx][request_type])
+                        else:
+                            values.append(0.0)
+                    
+                    hatch = get_request_type_hatch(request_type)
+                    # Only add to legend once per request type
+                    label = request_type if request_type not in legend_added else None
+                    if request_type not in legend_added:
+                        legend_added.add(request_type)
+                    bars = ax.bar(
+                        index + offset,
+                        values,
+                        bar_width,
+                        bottom=bottom,
+                        label=label,
+                        color=color,
+                        alpha=0.8,
+                        hatch=hatch,
+                        edgecolor='black',
+                        linewidth=0.5,
+                    )
+                    bottom += np.array(values)
+            else:
+                # Fallback to regular bar if no breakdown available
+                color = get_policy_color(policy)
+                ax.bar(
+                    index + offset,
+                    policy_goodputs[policy],
+                    bar_width,
+                    label=policy,
+                    color=color,
+                )
+    else:
+        # Regular bars for individual APIs
+        for j, policy in enumerate(sorted_policies):
+            offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
+            color = get_policy_color(policy)
+            bars = ax.bar(
+                index + offset,
+                policy_goodputs[policy],
+                bar_width,
+                label=policy,
+                color=color,
+            )
 
     # Add labels and title
     ax.set_xlabel("Requests Per Second (RPS)")
     ax.set_ylabel("Goodput (requests meeting SLO per second)")
-    ax.set_title(f"Goodput Comparison by Policy and RPS for {api} API")
+    if api == "ALL":
+        ax.set_title(f"Goodput Comparison by Policy and RPS for {api} API (Stacked by Request Type)")
+    else:
+        ax.set_title(f"Goodput Comparison by Policy and RPS for {api} API")
     ax.set_xticks(index)
     ax.set_xticklabels([str(rps) for rps in rps_values])
-    ax.legend()
+    
+    # For stacked bars, show request types in legend; for regular bars, show policies
+    if api == "ALL" and policy_goodputs_by_type is not None:
+        ax.legend(title="Request Type", bbox_to_anchor=(1.05, 1), loc='upper left')
+    else:
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 
     ax.grid(axis="y", linestyle="--", alpha=0.7)
     fig.tight_layout()
     fig.savefig(
         os.path.join(output_dir, f"policy_goodput_comparison_{api}.png"),
         dpi=300,
+        bbox_inches='tight',
     )
     plt.close(fig)
 
@@ -227,8 +361,15 @@ def _plot_averaged_goodput(
     rps_values: list,
     policy_goodputs: list,
     repeats: int,
+    policy_goodputs_by_type: Optional[list] = None,
 ) -> None:
-    """Generate averaged goodput comparison plot for a specific API."""
+    """Generate averaged goodput comparison plot for a specific API.
+    
+    Args:
+        policy_goodputs_by_type: Optional list (one per repeat) of dicts mapping
+            policy -> list of dicts (one per RPS) where each dict maps request_type -> goodput.
+            Used for stacked bars when api == "ALL".
+    """
     fig, ax = plt.subplots(figsize=(12, 6))
 
     # Sort policies to group by type
@@ -237,35 +378,109 @@ def _plot_averaged_goodput(
     bar_width = 0.12
     index = np.arange(len(rps_values))
 
-    for j, policy in enumerate(sorted_policies):
-        average_goodput = (
-            sum(np.array(policy_goodputs[i][api][policy]) for i in range(repeats))
-            / repeats
-        )
-        offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
-        color = get_policy_color(policy)
-        bars = ax.bar(
-            index + offset,
-            average_goodput,
-            bar_width,
-            label=policy,
-            color=color,
-        )
+    if api == "ALL" and policy_goodputs_by_type is not None:
+        # Use stacked bars for "ALL" API
+        # First, collect all request types across all policies and RPS values
+        all_request_types = set()
+        if policy_goodputs_by_type is not None:
+            for i in range(repeats):
+                if i < len(policy_goodputs_by_type):
+                    for policy in policies:
+                        if policy in policy_goodputs_by_type[i]:
+                            for rps_idx in range(len(rps_values)):
+                                if rps_idx < len(policy_goodputs_by_type[i][policy]):
+                                    all_request_types.update(
+                                        policy_goodputs_by_type[i][policy][rps_idx].keys()
+                                    )
+        all_request_types = sorted(list(all_request_types))
+        
+        # Track which request types we've added to legend
+        legend_added = set()
+        
+        # Create stacked bars for each policy
+        for j, policy in enumerate(sorted_policies):
+            offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
+            bottom = np.zeros(len(rps_values))
+            
+            # Average the goodput by request type across repeats
+            color = get_policy_color(policy)
+            for request_type in all_request_types:
+                values = []
+                for rps_idx in range(len(rps_values)):
+                    type_goodputs = []
+                    for i in range(repeats):
+                        if (i < len(policy_goodputs_by_type) and
+                            policy in policy_goodputs_by_type[i] and
+                            rps_idx < len(policy_goodputs_by_type[i][policy]) and
+                            request_type in policy_goodputs_by_type[i][policy][rps_idx]):
+                            type_goodputs.append(
+                                policy_goodputs_by_type[i][policy][rps_idx][request_type]
+                            )
+                    if type_goodputs:
+                        values.append(sum(type_goodputs) / len(type_goodputs))
+                    else:
+                        values.append(0.0)
+                
+                hatch = get_request_type_hatch(request_type)
+                # Only add to legend once per request type
+                label = request_type if request_type not in legend_added else None
+                if request_type not in legend_added:
+                    legend_added.add(request_type)
+                bars = ax.bar(
+                    index + offset,
+                    values,
+                    bar_width,
+                    bottom=bottom,
+                    label=label,
+                    color=color,
+                    alpha=0.8,
+                    hatch=hatch,
+                    edgecolor='black',
+                    linewidth=0.5,
+                )
+                bottom += np.array(values)
+    else:
+        # Regular bars for individual APIs
+        for j, policy in enumerate(sorted_policies):
+            average_goodput = (
+                sum(np.array(policy_goodputs[i][api][policy]) for i in range(repeats))
+                / repeats
+            )
+            offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
+            color = get_policy_color(policy)
+            bars = ax.bar(
+                index + offset,
+                average_goodput,
+                bar_width,
+                label=policy,
+                color=color,
+            )
 
     ax.set_xlabel("Requests Per Second (RPS)")
     ax.set_ylabel("average goodput (requests meeting SLO per second)")
-    ax.set_title(
-        f"average goodput comparison by policy and RPS for {api} API over {repeats} runs"
-    )
+    if api == "ALL":
+        ax.set_title(
+            f"average goodput comparison by policy and RPS for {api} API over {repeats} runs (Stacked by Request Type)"
+        )
+    else:
+        ax.set_title(
+            f"average goodput comparison by policy and RPS for {api} API over {repeats} runs"
+        )
     ax.set_xticks(index)
     ax.set_xticklabels([str(rps) for rps in rps_values])
-    ax.legend()
+    
+    # For stacked bars, show request types in legend; for regular bars, show policies
+    if api == "ALL" and policy_goodputs_by_type is not None:
+        ax.legend(title="Request Type", bbox_to_anchor=(1.05, 1), loc='upper left')
+    else:
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 
     ax.grid(axis="y", linestyle="--", alpha=0.7)
     fig.tight_layout()
     fig.savefig(
         os.path.join(output_dir, f"policy_goodput_comparison_{api}_averaged.png"),
         dpi=300,
+        bbox_inches='tight',
     )
     plt.close(fig)
 
@@ -279,14 +494,23 @@ def generate_plots(args) -> None:
 
     # First, compute all policy goodputs (needed for plots)
     policy_goodputs = []
+    # For "ALL" API, also compute goodput broken down by request type
+    policy_goodputs_by_type = []
     for i in range(repeats):
         policy_goodputs.append({})
+        policy_goodputs_by_type.append({})
         for api in apis:
             data = results[i][api]
             policy_goodputs[i][api] = {
                 policy: [compute_goodput(data[policy][rps]) for rps in rps_values]
                 for policy in policies
             }
+            # For "ALL" API, compute breakdown by request type
+            if api == "ALL":
+                policy_goodputs_by_type[i][api] = {
+                    policy: [compute_goodput_by_request_type(data[policy][rps]) for rps in rps_values]
+                    for policy in policies
+                }
 
     # Generate plots in parallel
     with ThreadPoolExecutor() as executor:
@@ -296,6 +520,9 @@ def generate_plots(args) -> None:
         for i in range(repeats):
             output_dir = os.path.join(args.output_dir, str(i))
             for api in apis:
+                goodputs_by_type = None
+                if api == "ALL" and i < len(policy_goodputs_by_type):
+                    goodputs_by_type = policy_goodputs_by_type[i].get(api)
                 futures.append(
                     executor.submit(
                         _plot_policy_goodput_comparison,
@@ -304,6 +531,7 @@ def generate_plots(args) -> None:
                         policies,
                         rps_values,
                         policy_goodputs[i][api],
+                        goodputs_by_type,
                     )
                 )
         
@@ -332,6 +560,12 @@ def generate_plots(args) -> None:
         # Submit averaged goodput plots for each api
         output_dir = args.output_dir
         for api in apis:
+            goodputs_by_type = None
+            if api == "ALL":
+                # Extract the "ALL" data from each repeat
+                goodputs_by_type = [
+                    policy_goodputs_by_type[i].get("ALL", {}) for i in range(repeats)
+                ]
             futures.append(
                 executor.submit(
                     _plot_averaged_goodput,
@@ -341,6 +575,7 @@ def generate_plots(args) -> None:
                     rps_values,
                     policy_goodputs,
                     repeats,
+                    goodputs_by_type,
                 )
             )
         
