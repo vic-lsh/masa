@@ -231,26 +231,7 @@ def generate_plots(args) -> None:
                         data,
                         max_y,
                     )
-                )
-        
-        # Submit histogram plots for each (repeat, api, rps, policy)
-        for i in range(repeats):
-            output_dir = os.path.join(args.output_dir, str(i))
-            for api in apis:
-                data = results[i][api]
-                for rps in rps_values:
-                    for policy in policies:
-                        df = data[policy][rps].copy()  # Copy to avoid race conditions
-                        futures.append(
-                            executor.submit(
-                                _plot_latency_histogram,
-                                output_dir,
-                                api,
-                                rps,
-                                policy,
-                                df,
-                            )
-                        )
+                    )
         
         # Submit averaged percentile plots for each (percentile, api)
         percentiles = [0.80, 0.90, 0.99]
