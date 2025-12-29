@@ -27,6 +27,7 @@ tonic-build = { path = "../../../libs/tonic/tonic-build" }
 name = "mssim-loadgen"
 path = "src/loadgen.rs"
 
+[features]
 early = [
     "masa/early",
     "tonic/early",

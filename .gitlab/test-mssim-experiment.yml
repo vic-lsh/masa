@@ -1,9 +1,19 @@
 test_mssim_experiment:
   stage: test
-  before_script: []
-  tags:
-    - on-host
-  script:
+  cache:
+    key:
+      files:
+        - uv.lock
+    paths:
+      - .venv
+  before_script:
+    - |
+      if ! command -v uv &> /dev/null; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+      fi
+    - uv sync
+    - source .venv/bin/activate
     - if ! command -v cargo &>/dev/null; then
         echo "Installing Rust...";
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y;
@@ -11,4 +21,7 @@ test_mssim_experiment:
       fi
     - rustc --version
     - cargo --version
+  tags:
+    - on-host
+  script:
     - ./scripts/test_mssim_experiment.sh
