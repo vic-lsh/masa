@@ -59,7 +59,9 @@ pub struct ParentContext<E: LatencyEstimator + Default + 'static = LatencyDistri
     estimated_duration: Option<u64>,
 }
 
-impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerContext<E>> for ParentContext<E> {
+impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerContext<E>>
+    for ParentContext<E>
+{
     fn begin<B>(
         method: GrpcMethod,
         req: &http::Request<B>,
