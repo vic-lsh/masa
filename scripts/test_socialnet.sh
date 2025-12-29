@@ -164,14 +164,24 @@ SERVICES=(
 )
 
 # Function to check all services
-# Returns the number of failed services
+# Returns the number of failed services via return code
+# Outputs the list of failed services to stdout (space-separated)
 check_all_services() {
     local quiet=${1:-false}
     local failed_count=0
+    local failed_services=()
 
     for service in "${SERVICES[@]}"; do
-        check_service_running "$service" "$quiet" || ((failed_count++))
+        if ! check_service_running "$service" "$quiet"; then
+            ((failed_count++))
+            failed_services+=("$service")
+        fi
     done
+
+    # Output failed services list (if any)
+    if [ ${#failed_services[@]} -gt 0 ]; then
+        echo "${failed_services[*]}"
+    fi
 
     return $failed_count
 }
@@ -188,15 +198,16 @@ while [ $attempt -le $max_attempts ]; do
 
     # Run check_all_services in a conditional context so set -e doesn't cause
     # the script to exit early when services are still starting up.
-    if check_all_services "true"; then
-        failed_count=0
-    else
-        failed_count=$?
-    fi
+    # Capture both the output (failed services list) and return code (failed count)
+    failed_services_list=$(check_all_services "true")
+    failed_count=$?
     running_count=$((total_services - failed_count))
     
     echo "Services running: $running_count/$total_services ($failed_count failed)"
     if [ $failed_count -ne 0 ]; then
+        if [ -n "$failed_services_list" ]; then
+            echo "Failed services: $failed_services_list"
+        fi
         echo "Current docker compose service status:"
         docker compose ps || echo "docker compose ps failed with exit code $?"
     fi
@@ -204,7 +215,7 @@ while [ $attempt -le $max_attempts ]; do
     if [ $failed_count -eq 0 ]; then
         echo ""
         echo "All services are running! Showing final status:"
-        check_all_services "false"
+        check_all_services "false" >/dev/null
         failed=false
         break
     else
