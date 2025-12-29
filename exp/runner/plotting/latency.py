@@ -133,6 +133,35 @@ def _plot_p99_latency(
     plt.close(fig)
 
 
+def _plot_p95_latency(
+    output_dir: str, api: str, policies: list, rps_values: list, data: dict, max_y: float
+) -> None:
+    """Generate p95 latency plot for a specific repeat and API."""
+    fig, ax = plt.subplots(figsize=(12, 6))
+    for policy in policies:
+        p95_values = []
+        for rps in rps_values:
+            df = data[policy][rps]
+            # Filter out excluded errors for meaningful latency analysis
+            df_filtered = filter_excluded_errors(df)
+            if df_filtered.empty:
+                p95_latency = np.nan
+            else:
+                p95_latency = df_filtered["latency"].quantile(0.95)
+            p95_values.append(p95_latency)
+        color = get_policy_color(policy)
+        ax.plot(rps_values, p95_values, "o-", label=f"{policy}", color=color)
+
+    ax.set_xlabel("Requests Per Second (RPS)")
+    ax.set_ylabel("p95 latency (milliseconds)")
+    ax.set_title(f"p95 latency by policy and RPS for {api} API")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    ax.set_ylim(top=max_y)
+    fig.savefig(f"{output_dir}/p95_latency_rps_{api}.png", dpi=300)
+    plt.close(fig)
+
+
 def _plot_averaged_percentile_latency(
     output_dir: str,
     api: str,
@@ -232,9 +261,22 @@ def generate_plots(args) -> None:
                         max_y,
                     )
                     )
+                
+                # Submit p95 latency plots for each (repeat, api)
+                futures.append(
+                    executor.submit(
+                        _plot_p95_latency,
+                        output_dir,
+                        api,
+                        policies,
+                        rps_values,
+                        data,
+                        max_y,
+                    )
+                    )
         
         # Submit averaged percentile plots for each (percentile, api)
-        percentiles = [0.80, 0.90, 0.99]
+        percentiles = [0.80, 0.90, 0.95, 0.99]
         output_dir = args.output_dir
         for percentile in percentiles:
             for api in apis:
