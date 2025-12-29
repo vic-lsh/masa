@@ -31,10 +31,7 @@ fn estimate_method_latency<E: LatencyEstimator + Default + 'static>(
         found
     };
     if !has_method {
-        map.write().unwrap().insert(
-            key.clone(),
-            E::default(),
-        );
+        map.write().unwrap().insert(key.clone(), E::default());
     }
     None
 }
