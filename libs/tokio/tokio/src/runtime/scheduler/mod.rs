@@ -10,6 +10,7 @@ cfg_rt! {
 
     pub use current_thread::get_sched_flavor;
     pub use current_thread::SchedFlavor;
+    pub use current_thread::current_thread_queue_len;
 }
 
 cfg_rt_multi_thread! {

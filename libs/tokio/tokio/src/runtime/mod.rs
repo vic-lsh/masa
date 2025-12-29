@@ -351,7 +351,7 @@ cfg_rt! {
     mod config;
     use config::Config;
 
-    pub use scheduler::{get_sched_flavor, SchedFlavor};
+    pub use scheduler::{get_sched_flavor, SchedFlavor, current_thread_queue_len};
 
     mod blocking;
     #[cfg_attr(target_os = "wasi", allow(unused_imports))]

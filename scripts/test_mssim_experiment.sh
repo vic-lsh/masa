@@ -28,11 +28,23 @@ if ! command -v cargo >/dev/null 2>&1; then
     exit 1
 fi
 
+# Setup uv and virtual environment
+if ! command -v uv >/dev/null 2>&1; then
+    echo "Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+fi
+
+echo "Syncing Python dependencies with uv..."
+cd "$repo_root"
+uv sync
+source .venv/bin/activate
+
 echo "Cleaning previous experiment output at $run_root"
 rm -rf "$run_root"
 
 echo "Running MSSIM experiment using $config_path"
-python3 "$repo_root/exp/mssim/scripts/experiment.py" --config "$config_path"
+python "$repo_root/exp/mssim/scripts/experiment.py" --config "$config_path"
 
 assert_path_exists() {
     if [ -e "$1" ]; then

@@ -8,12 +8,16 @@ use std::{
         Arc, Mutex, RwLock,
     },
     task::Poll,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
-use super::{estimate_method_latency, track_method_latency};
-use masa::{time_now, Context, LatencyDistribution, LatencyEstimator, MethodId, EARLY_RETURN};
+use super::{estimate_method_latency, track_method_latency, PERCENTILE};
+use masa::{time_now, Context, LatencyEstimator, LatencyRms, MethodId, EARLY_RETURN};
+
+/// Type alias for the latency estimator used in the local deadline policy.
+/// Change this to use a different estimator (e.g., `LatencyRms`).
+pub(crate) type LocalLatencyEstimator = LatencyRms;
 
 #[derive(Debug)]
 /// This policy computes the deadline d of a child request as  
@@ -23,26 +27,59 @@ use masa::{time_now, Context, LatencyDistribution, LatencyEstimator, MethodId, E
 /// distribution of observed values for e_rem.
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct LocalDeadlineDirect;
+pub struct LocalDeadlinePolicy;
 
-impl MasaHooks for LocalDeadlineDirect {
-    type ServerContext = ServerContext<LatencyDistribution>;
+impl MasaHooks for LocalDeadlinePolicy {
+    type ServerContext = ServerContext<LocalLatencyEstimator>;
     type ChildContext = ChildContext;
-    type ParentContext = ParentContext<LatencyDistribution>;
+    type ParentContext = ParentContext<LocalLatencyEstimator>;
 }
 
 #[derive(Debug)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct ServerContext<E: LatencyEstimator + Default + 'static = LatencyDistribution> {
+pub struct ServerContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     // for every method on this server, tracks the remaining duration of the method after an outgoing request has finished
-    child_distributions: RwLock<HashMap<String, E>>,
+    child_distributions: Arc<RwLock<HashMap<String, E>>>,
 }
 
 impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
     fn new(_service_name: &'static str) -> Self {
+        let distributions = Arc::new(RwLock::new(HashMap::<String, E>::new()));
+
+        // Spawn a background task to print estimated remaining values every second
+        let distributions_clone = distributions.clone();
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(1));
+                loop {
+                    interval.tick().await;
+
+                    let distributions_read = distributions_clone.read().unwrap();
+                    if distributions_read.is_empty() {
+                        continue;
+                    }
+
+                    let mut parts = Vec::new();
+                    for (endpoint, distribution) in distributions_read.iter() {
+                        if distribution.can_estimate() {
+                            let estimate = distribution.estimate(PERCENTILE);
+                            parts.push(format!("{}: {} us", endpoint, estimate));
+                        } else {
+                            parts.push(format!("{}: (no estimate)", endpoint));
+                        }
+                    }
+                    println!(
+                        "Estimated Remaining Values (p{}): {}",
+                        PERCENTILE,
+                        parts.join(", ")
+                    );
+                }
+            });
+        }
+
         Self {
-            child_distributions: RwLock::new(HashMap::new()),
+            child_distributions: distributions,
         }
     }
 }
@@ -50,7 +87,7 @@ impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
 #[derive(Debug)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct ParentContext<E: LatencyEstimator + Default + 'static = LatencyDistribution> {
+pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     method: GrpcMethod,
     ctx: Context,
     server: Arc<ServerContext<E>>,
@@ -148,7 +185,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         // end of the parent request after this child request completes will vary for different
         // parent methods (i.e. endpoints on this server)
         let estimate_remaining = estimate_method_latency(
-            &self.server.child_distributions,
+            &*self.server.child_distributions,
             format!("{}/{}", self.method.id(), child_method.id()),
         )
         .unwrap_or(0);
@@ -194,7 +231,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
             // TODO: The LatencyDistribution instances will regularly sort their data. Should this
             // work be done asynchronously?
             track_method_latency(
-                &self.server.child_distributions,
+                &*self.server.child_distributions,
                 format!("{}/{}", self.method.id(), child_method),
                 parent_end.duration_since(*child_end).as_micros() as u64,
             );
