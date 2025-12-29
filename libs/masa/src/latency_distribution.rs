@@ -1,6 +1,21 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+/// Trait for latency estimators that can track latency values and provide estimates.
+/// This allows different estimation strategies (e.g., histogram-based, RMS-based) to be used interchangeably.
+pub trait LatencyEstimator: Send + Sync {
+    /// Track a new latency value.
+    fn track(&mut self, value: u64);
+
+    /// Check if the estimator has enough data to provide an estimate.
+    fn can_estimate(&self) -> bool;
+
+    /// Get an estimate for the given percentile.
+    /// The percentile parameter is used by some estimators (e.g., histogram-based) to select
+    /// a specific percentile value. Other estimators may ignore this parameter.
+    fn estimate(&self, percentile: usize) -> u64;
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LatencyDistribution {
     name: String,
     capacity: usize,
@@ -67,5 +82,38 @@ impl LatencyDistribution {
         } else {
             self.percentile(percentile)
         }
+    }
+}
+
+impl LatencyEstimator for LatencyDistribution {
+    fn track(&mut self, value: u64) {
+        // Forward to the struct's track method
+        self.cur_queue.push(value);
+        if self.cur_queue.len() >= self.capacity {
+            self.update();
+            std::mem::swap(&mut self.cur_queue, &mut self.prev_queue);
+            self.cur_queue.clear();
+        }
+    }
+
+    fn can_estimate(&self) -> bool {
+        // Forward to the struct's can_estimate method
+        self.percentiles.len() > 0
+    }
+
+    fn estimate(&self, percentile: usize) -> u64 {
+        // Forward to the struct's estimate method
+        if self.percentiles.len() == 0 {
+            self.mean
+        } else {
+            self.percentile(percentile)
+        }
+    }
+}
+
+impl Default for LatencyDistribution {
+    fn default() -> Self {
+        // Use a reasonable default capacity
+        LatencyDistribution::new(String::new(), 512)
     }
 }

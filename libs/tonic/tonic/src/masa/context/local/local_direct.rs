@@ -13,7 +13,7 @@ use std::{
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{estimate_method_latency, track_method_latency};
-use masa::{time_now, Context, LatencyDistribution, MethodId, EARLY_RETURN};
+use masa::{time_now, Context, LatencyDistribution, LatencyEstimator, MethodId, EARLY_RETURN};
 
 #[derive(Debug)]
 /// This policy computes the deadline d of a child request as  
@@ -26,20 +26,20 @@ use masa::{time_now, Context, LatencyDistribution, MethodId, EARLY_RETURN};
 pub struct LocalDeadlineDirect;
 
 impl MasaHooks for LocalDeadlineDirect {
-    type ServerContext = ServerContext;
+    type ServerContext = ServerContext<LatencyDistribution>;
     type ChildContext = ChildContext;
-    type ParentContext = ParentContext;
+    type ParentContext = ParentContext<LatencyDistribution>;
 }
 
 #[derive(Debug)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct ServerContext {
+pub struct ServerContext<E: LatencyEstimator + Default + 'static = LatencyDistribution> {
     // for every method on this server, tracks the remaining duration of the method after an outgoing request has finished
-    child_distributions: RwLock<HashMap<String, LatencyDistribution>>,
+    child_distributions: RwLock<HashMap<String, E>>,
 }
 
-impl ServerHooks for ServerContext {
+impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
     fn new(_service_name: &'static str) -> Self {
         Self {
             child_distributions: RwLock::new(HashMap::new()),
@@ -50,16 +50,16 @@ impl ServerHooks for ServerContext {
 #[derive(Debug)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct ParentContext {
+pub struct ParentContext<E: LatencyEstimator + Default + 'static = LatencyDistribution> {
     method: GrpcMethod,
     ctx: Context,
-    server: Arc<ServerContext>,
+    server: Arc<ServerContext<E>>,
 
     will_early_return: AtomicBool,
     child_end_times: Mutex<Vec<(MethodId, Instant)>>,
 }
 
-impl ParentContext {
+impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
     #[inline]
     fn check_early_return(&self) -> bool {
         if EARLY_RETURN {
@@ -94,11 +94,11 @@ impl ParentContext {
     }
 }
 
-impl ParentHooks<ChildContext, ServerContext> for ParentContext {
+impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerContext<E>> for ParentContext<E> {
     fn begin<B>(
         method: GrpcMethod,
         req: &http::Request<B>,
-        server_ctx: Arc<ServerContext>,
+        server_ctx: Arc<ServerContext<E>>,
     ) -> Self {
         Self {
             method,
