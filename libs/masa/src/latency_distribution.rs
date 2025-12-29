@@ -46,16 +46,6 @@ impl LatencyDistribution {
             let idx = (values.len() * i) / 100;
             self.percentiles.push(values[idx]);
         }
-
-        log::warn!(
-            "update distribution {}: mean: {} us, p50: {} us, p90: {} us, p95: {} us, p99: {} us",
-            self.name,
-            self.mean,
-            self.percentile(50),
-            self.percentile(90),
-            self.percentile(95),
-            self.percentile(99)
-        );
     }
 
     pub fn percentiles(&self) -> &Vec<u64> {
