@@ -111,11 +111,47 @@ echo "========================================"
 echo "Verifying services are running..."
 echo "========================================"
 
+# Verify we're in the right directory and docker compose is working
+if [ ! -f "docker-compose.yaml" ]; then
+    echo "ERROR: docker-compose.yaml not found in current directory: $(pwd)" >&2
+    exit 1
+fi
+
+# Test docker compose command
+if ! docker compose version >/dev/null 2>&1; then
+    echo "ERROR: docker compose command is not working!" >&2
+    docker compose version 2>&1 || true
+    exit 1
+fi
+
+echo "Docker compose is working. Current directory: $(pwd)"
+echo ""
+echo "Expected services to check (${#SERVICES[@]} total):"
+for service in "${SERVICES[@]}"; do
+    echo "  - $service"
+done
+echo ""
+
 # Function to check if a service is running
 check_service_running() {
     local service_name=$1
     local quiet=${2:-false}
-    if docker compose ps --services --filter "status=running" | grep -q "^${service_name}$"; then
+    
+    # Get all running services
+    local running_services
+    running_services=$(docker compose ps --services --filter "status=running" 2>&1)
+    local ps_exit_code=$?
+    
+    if [ $ps_exit_code -ne 0 ]; then
+        if [ "$quiet" != "true" ]; then
+            echo "✗ Failed to check service status for $service_name (docker compose ps failed with code $ps_exit_code)" >&2
+            echo "  Error output: $running_services" >&2
+        fi
+        return 1
+    fi
+    
+    # Check if service is in the running list
+    if echo "$running_services" | grep -q "^${service_name}$"; then
         if [ "$quiet" != "true" ]; then
             echo "✓ Service running: $service_name"
         fi
@@ -123,6 +159,10 @@ check_service_running() {
     else
         if [ "$quiet" != "true" ]; then
             echo "✗ Service NOT running: $service_name" >&2
+            # Show actual status for this service
+            local service_status
+            service_status=$(docker compose ps "$service_name" 2>&1 | tail -n +3 || echo "Could not get status")
+            echo "  Status details: $service_status" >&2
         fi
         return 1
     fi
@@ -172,8 +212,9 @@ check_all_services() {
     local failed_services=()
 
     for service in "${SERVICES[@]}"; do
-        if ! check_service_running "$service" "$quiet"; then
-            ((failed_count++))
+        # Use a subshell or disable set -e for this check to prevent early exit
+        if ! (set +e; check_service_running "$service" "$quiet"); then
+            failed_count=$((failed_count + 1))
             failed_services+=("$service")
         fi
     done
@@ -195,6 +236,30 @@ total_services=${#SERVICES[@]}
 while [ $attempt -le $max_attempts ]; do
     echo "Attempt $attempt/$max_attempts..."
     date
+    echo ""
+
+    # First, let's see what docker compose reports
+    echo "Checking docker compose status..."
+    if ! docker compose ps >/dev/null 2>&1; then
+        echo "ERROR: docker compose ps command failed!" >&2
+        docker compose ps 2>&1 || true
+        exit 1
+    fi
+    
+    # Show summary of all services
+    echo "All services status summary:"
+    docker compose ps --format "table {{.Service}}\t{{.Status}}" 2>&1 | head -20 || true
+    echo ""
+    
+    # Get list of all services that docker compose knows about
+    echo "Services known to docker compose:"
+    docker compose ps --services 2>&1 | sed 's/^/  - /' || echo "  (could not list services)"
+    echo ""
+    
+    # Get list of running services
+    echo "Services with 'running' status:"
+    docker compose ps --services --filter "status=running" 2>&1 | sed 's/^/  - /' || echo "  (could not list running services)"
+    echo ""
 
     # Run check_all_services in a conditional context so set -e doesn't cause
     # the script to exit early when services are still starting up.
@@ -207,8 +272,17 @@ while [ $attempt -le $max_attempts ]; do
     if [ $failed_count -ne 0 ]; then
         if [ -n "$failed_services_list" ]; then
             echo "Failed services: $failed_services_list"
+            echo ""
+            echo "Detailed status for failed services:"
+            for failed_service in $failed_services_list; do
+                echo "  Service: $failed_service"
+                docker compose ps "$failed_service" 2>&1 | tail -n +3 | sed 's/^/    /' || echo "    (could not get status)"
+                echo "  Recent logs (last 20 lines):"
+                docker compose logs --tail=20 "$failed_service" 2>&1 | sed 's/^/    /' || echo "    (could not get logs)"
+                echo ""
+            done
         fi
-        echo "Current docker compose service status:"
+        echo "Full docker compose service status:"
         docker compose ps || echo "docker compose ps failed with exit code $?"
     fi
     
@@ -220,9 +294,12 @@ while [ $attempt -le $max_attempts ]; do
         break
     else
         if [ $attempt -lt $max_attempts ]; then
+            echo ""
             echo "Waiting 10 seconds before retry..."
             sleep 10
+            echo ""
         else
+            echo ""
             echo "Services still not ready after $max_attempts attempts."
         fi
         attempt=$((attempt + 1))
@@ -232,15 +309,38 @@ done
 echo ""
 
 if [ "$failed" = true ]; then
-    echo "Some services failed to start properly!" >&2
-    echo "Showing service status:"
+    echo "========================================"
+    echo "ERROR: Some services failed to start properly!" >&2
+    echo "========================================"
+    echo ""
+    
+    echo "Full service status:"
     docker compose ps
     echo ""
-    echo "Showing logs for failed services:"
-    docker compose logs --tail=50
+    
+    echo "Services that were expected but not running:"
+    if [ -n "$failed_services_list" ]; then
+        for failed_service in $failed_services_list; do
+            echo "  - $failed_service"
+        done
+    else
+        echo "  (could not determine failed services)"
+    fi
+    echo ""
+    
+    echo "Showing recent logs for all services (last 30 lines each):"
+    docker compose logs --tail=30
+    echo ""
+    
+    echo "Checking for containers that exited:"
+    docker compose ps --filter "status=exited" || echo "  (no exited containers or command failed)"
+    echo ""
+    
+    echo "Checking for containers that are restarting:"
+    docker compose ps --filter "status=restarting" || echo "  (no restarting containers or command failed)"
+    echo ""
     
     if [ "$cleanup" = true ]; then
-        echo ""
         echo "Cleaning up..."
         docker compose down -v
     fi
