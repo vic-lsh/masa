@@ -6,6 +6,8 @@ use std::{
 };
 
 use app_utils::timing::time_now;
+use rand::thread_rng;
+use rand_distr::{Distribution, Exp};
 use synthetic::config::SyntheticConfig;
 use synthetic::util;
 
@@ -98,11 +100,16 @@ impl Frontend for FrontendImpl {
         // let mut child_constant_client = self.children[next as usize].clone();
 
         let mut child_constant_client = self.children.first().unwrap().clone();
+        // Sample from exponential distribution with mean = 10000
+        let mean = 10000.0;
+        let lambda = 1.0 / mean;
+        let exp_dist = Exp::<f64>::new(lambda).unwrap();
+        let duration_us = exp_dist.sample(&mut thread_rng()).round() as u64;
         let response = child_constant_client
             .constant_latency(child::ConstantLatencyRequest {
                 sent_at: time_now(),
                 busy_spin: false,
-                duration_us: Some(10000),
+                duration_us: Some(duration_us),
             })
             .await?;
         let child_constant_response = response.into_inner();
@@ -145,11 +152,16 @@ impl Frontend for FrontendImpl {
         // let mut child_constant_client = self.children[next as usize].clone();
 
         let mut child_constant_client = self.children.first().unwrap().clone();
+        // Sample from exponential distribution with mean = 100000
+        let mean = 100000.0;
+        let lambda = 1.0 / mean;
+        let exp_dist = Exp::<f64>::new(lambda).unwrap();
+        let duration_us = exp_dist.sample(&mut thread_rng()).round() as u64;
         let response = child_constant_client
             .constant_latency(child::ConstantLatencyRequest {
                 sent_at: time_now(),
                 busy_spin: false,
-                duration_us: Some(100000),
+                duration_us: Some(duration_us),
             })
             .await?;
         let _child_constant_response = response.into_inner();
