@@ -30,8 +30,6 @@ services:
     image: socialnet-generic-svc:latest
     scale: 1
     restart: always
-    ports:
-      - "8083:8080"
     networks:
       - socialnet-network
     volumes:
@@ -82,8 +80,6 @@ services:
     image: socialnet-generic-svc:latest
     scale: 4
     restart: always
-    ports:
-      - "8090-8094:8080"
     networks:
       - socialnet-network
     volumes:
@@ -124,8 +120,6 @@ services:
     image: socialnet-generic-svc:latest
     scale: 1
     restart: always
-    ports:
-      - "8081:8080"
     networks:
       - socialnet-network
     volumes:
@@ -170,8 +164,6 @@ services:
     image: socialnet-generic-svc:latest
     scale: 1
     restart: always
-    ports:
-      - "8091:8080"
     networks:
       - socialnet-network
     volumes:
@@ -227,8 +219,6 @@ services:
     image: socialnet-generic-svc:latest
     scale: 1
     restart: on-failure
-    ports:
-      - "8088:8080"
     networks:
       - socialnet-network
     volumes:
@@ -280,8 +270,6 @@ services:
     image: socialnet-generic-svc:latest
     scale: 1
     restart: always
-    ports:
-      - "8084:8080"
     networks:
       - socialnet-network
     volumes:
@@ -311,8 +299,6 @@ services:
     image: socialnet-generic-svc:latest
     scale: 1
     restart: always
-    ports:
-      - "8086:8080"
     networks:
       - socialnet-network
     volumes:
@@ -332,8 +318,6 @@ services:
     image: socialnet-generic-svc:latest
     scale: 1
     restart: always
-    ports:
-      - "8082:8080"
     networks:
       - socialnet-network
     volumes:
@@ -352,8 +336,6 @@ services:
     image: socialnet-generic-svc:latest
     scale: 1
     restart: always
-    ports:
-      - "8085:8080"
     networks:
       - socialnet-network
     volumes:
@@ -408,8 +390,6 @@ services:
     image: socialnet-generic-svc:latest
     scale: 1
     restart: always
-    ports:
-      - "8089:8080"
     networks:
       - socialnet-network
     volumes:
@@ -451,8 +431,6 @@ services:
     image: socialnet-generic-svc:latest
     scale: 1
     restart: always
-    ports:
-      - "8087:8080"
     networks:
       - socialnet-network
     volumes:
@@ -475,9 +453,6 @@ services:
     image: rabbitmq:3.13-management
     container_name: socialnet-rabbitmq
     restart: always
-    ports:
-      - "5672:5672"
-      - "15672:15672"
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     networks:
@@ -495,7 +470,7 @@ services:
     scale: 1
     restart: always
     ports:
-      - "8080:8080"
+      - "16987:8080"
     networks:
       - socialnet-network
     volumes:

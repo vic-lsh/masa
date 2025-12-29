@@ -16,9 +16,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::Semaphore;
 use tokio::time::{timeout, Duration, Instant};
 
 use rand::Rng;
+use rand_distr::{Distribution, Exp};
 use structopt::StructOpt;
 use tokio::task::JoinSet;
 use tokio::time::error::Elapsed;
@@ -34,6 +36,79 @@ use tonic::Status;
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ArrivalProcess {
+    /// Constant inter-arrival times (fixed interval)
+    Const,
+    /// Exponential inter-arrival times (Poisson arrival process)
+    Exp,
+}
+
+/// Manages the arrival process timing, hiding details about the specific
+/// arrival process type (constant vs exponential) and RPS.
+pub struct ArrivalTimer {
+    arrival_process: ArrivalProcess,
+    rps: u64,
+    warm_at: Instant,
+    exp_dist: Option<Exp<f64>>,
+    rng: StdRng,
+    elapse: f64,
+}
+
+impl ArrivalTimer {
+    /// Create a new arrival timer with the specified arrival process, RPS, warmup time, and RNG seed.
+    pub fn new(arrival_process: ArrivalProcess, rps: u64, warm_at: Instant, rng: StdRng) -> Self {
+        let exp_dist = match arrival_process {
+            ArrivalProcess::Exp => {
+                Some(Exp::new(rps as f64).expect("Failed to create exponential distribution"))
+            }
+            ArrivalProcess::Const => None,
+        };
+
+        Self {
+            arrival_process,
+            rps,
+            warm_at,
+            exp_dist,
+            rng,
+            elapse: 0.0,
+        }
+    }
+
+    /// Advance the timer and return the next inter-arrival time in seconds.
+    /// During warmup, returns a fixed small interval for faster ramp-up.
+    pub fn tick(&mut self) -> f64 {
+        let now = Instant::now();
+        let interval = if now < self.warm_at {
+            // During warmup, use fixed small interval for faster ramp-up
+            0.01
+        } else {
+            match self.arrival_process {
+                ArrivalProcess::Const => {
+                    // Constant inter-arrival time (fixed interval)
+                    1f64 / self.rps as f64
+                }
+                ArrivalProcess::Exp => {
+                    // Sample exponential inter-arrival time for Poisson process
+                    // The exponential distribution with rate λ has mean 1/λ
+                    self.exp_dist
+                        .as_ref()
+                        .expect("Exponential distribution should be initialized")
+                        .sample(&mut self.rng)
+                }
+            }
+        };
+        self.elapse += interval;
+        interval
+    }
+
+    /// Get the time offset for the next arrival in seconds (relative to start time).
+    pub fn next_arrival_time(&self) -> f64 {
+        self.elapse
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GenConfig {
@@ -48,15 +123,20 @@ pub struct GenConfig {
     #[serde(rename = "Rps")]
     pub rps_values: Vec<u64>,
     #[serde(rename = "Gap")]
-    pub gap: String,
+    pub gap: ArrivalProcess,
     #[serde(rename = "WarmupSecs")]
     pub warmup_secs: u64,
     #[serde(rename = "DurationSecs")]
     pub duration_secs: u64,
-    #[serde(rename = "Concurrency")]
-    pub concurrency: usize,
+    #[serde(rename = "MaxInFlight")]
+    #[serde(default = "default_max_in_flight")]
+    pub max_in_flight: usize,
     #[serde(rename = "Addr")]
     pub addr: String,
+}
+
+fn default_max_in_flight() -> usize {
+    0 // 0 means unlimited
 }
 
 #[derive(StructOpt, Debug, Clone)]
@@ -446,24 +526,42 @@ where
         pause_at: Instant,
     ) {
         let mut counter_request_id = 0;
-        let mut elapse = 0f64;
 
         let mut set = JoinSet::new();
+        let max_in_flight = self.gen_cfg.max_in_flight;
+
+        // Create semaphore for max in-flight control only if max_in_flight > 0
+        // If max_in_flight is 0 (unlimited), don't use a semaphore at all
+        let inflight_guard: Option<Arc<Semaphore>> = if max_in_flight > 0 {
+            Some(Arc::new(Semaphore::new(max_in_flight)))
+        } else {
+            None
+        };
+
+        // Create arrival timer to manage inter-arrival times
+        let mut arrival_timer =
+            ArrivalTimer::new(self.gen_cfg.gap, self.rps, warm_at, self.rng.clone());
 
         while Instant::now() < pause_at {
-            // XXX: tokio's sleep has millisecond granularity, so for small `elapse` this may be
+            // XXX: tokio's sleep has millisecond granularity, so for small intervals this may be
             // inaccurate
-            let start_at = init_at + Duration::from_secs_f64(elapse);
+            let start_at = init_at + Duration::from_secs_f64(arrival_timer.next_arrival_time());
             tokio::time::sleep_until(start_at).await;
 
-            let value = {
-                if Instant::now() < warm_at {
-                    0.01
-                } else {
-                    1f64 / self.rps as f64
+            // Advance timer and get next inter-arrival time
+            // This updates elapse internally, so we advance even if we skip this request
+            let _interval = arrival_timer.tick();
+
+            // Try to acquire permit for max-in-flight control if semaphore exists
+            // If acquisition fails, skip this request and continue to next iteration
+            let permit = if let Some(ref guard) = inflight_guard {
+                match guard.clone().try_acquire_owned() {
+                    Ok(p) => Some(p),
+                    Err(_) => continue,
                 }
+            } else {
+                None
             };
-            elapse += value;
 
             let i = self.rng.gen_range(0..self.api_handlers.len());
             let handler = Arc::clone(&self.api_handlers[i]);
@@ -490,6 +588,7 @@ where
             let trace = Instant::now() > trace_at;
 
             set.spawn(async move {
+                let _permit = permit; // Hold permit until task completes
                 ctrs.increment("all");
 
                 let error = handler.send_request(rng, client, ctx, trace).await;
@@ -548,7 +647,6 @@ where
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
-    assert!(gen_cfg.gap == "const" || gen_cfg.gap == "exp");
 
     for rps in &gen_cfg.rps_values {
         log::info!("Running rps: {}... ({})", rps, get_timestamp());

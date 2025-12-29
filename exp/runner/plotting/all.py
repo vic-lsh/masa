@@ -3,6 +3,7 @@ Generate all plots for an experiment.
 """
 
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from . import goodput
@@ -26,8 +27,19 @@ def generate_all_plots(args):
             except OSError as e:
                 print(f"Warning: Could not remove {png_file}: {e}")
     
-    goodput.generate_plots(args)
-    latency.generate_plots(args)
+    # Generate goodput and latency plots in parallel
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {
+            executor.submit(goodput.generate_plots, args): "goodput",
+            executor.submit(latency.generate_plots, args): "latency",
+        }
+        
+        for future in as_completed(futures):
+            plot_type = futures[future]
+            try:
+                future.result()
+            except Exception as e:
+                raise RuntimeError(f"Failed to generate {plot_type} plots: {e}") from e
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ Command-line interface for the experiment runner.
 import argparse
 import logging
 import os
+import shutil
 import shlex
 import subprocess
 import sys
@@ -84,6 +85,9 @@ def cmd_run_experiment(args: argparse.Namespace) -> None:
         logger.info("Experiment completed successfully!")
     except Exception as e:
         logger.error(f"Experiment failed: {e}", exc_info=True)
+        # Print log tails if we have a current output directory
+        if experiment.current_output_dir:
+            experiment._print_log_tails(experiment.current_output_dir)
         sys.exit(1)
 
 
@@ -322,6 +326,12 @@ def cmd_plot(args: argparse.Namespace) -> None:
     
     logger.info(f"Generating plots for experiment: {args.experiment}")
     print(f"Plot output directory: {config.plot_dir}")
+    
+    # Clear plot directory before generating new plots
+    if config.plot_dir.exists():
+        shutil.rmtree(config.plot_dir)
+    config.plot_dir.mkdir(parents=True, exist_ok=True)
+    logger.debug(f"Cleared plot directory: {config.plot_dir}")
     
     # Create args-like object for plotting functions
     plot_args = Namespace(
