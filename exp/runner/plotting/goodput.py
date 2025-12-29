@@ -229,39 +229,71 @@ def _plot_all_api_goodput_clean(
             other_label="Other",
         )
 
-    # Generate output paths for two separate plots
+    # Generate output paths for three separate plots
     base_path = output_path.replace(".png", "")
     aggregated_path = f"{base_path}_aggregated.png"
     breakdown_path = f"{base_path}_breakdown.png"
+    fraction_path = f"{base_path}_fraction.png"
 
-    # ===== Plot 1: Aggregated goodput only =====
+    # ===== Plot 1: Aggregated goodput only (line graph) =====
     fig1 = plt.figure(figsize=(12, 6))
     ax1 = fig1.add_subplot(1, 1, 1)
     _style_axes(ax1)
 
-    bar_width = 0.12
-    index = np.arange(len(rps_values))
-    for j, policy in enumerate(sorted_policies):
+    for policy in sorted_policies:
         y = policy_total_goodputs.get(policy, [])
         color = get_policy_color(policy)
-        offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
-        ax1.bar(
-            index + offset,
+        ax1.plot(
+            rps_values,
             y,
-            bar_width,
+            marker='o',
             label=policy,
             color=color,
+            linewidth=2,
+            markersize=6,
         )
     ax1.set_ylabel("Goodput (req/s meeting SLO)")
     ax1.set_xlabel("Load (requests per second)")
-    ax1.set_xticks(index)
-    ax1.set_xticklabels([str(rps) for rps in rps_values])
     ax1.set_title(title if "aggregated" in title.lower() or "total" in title.lower() else f"{title} - Aggregated")
     ax1.legend(ncols=3, frameon=False, loc="upper left")
 
     fig1.tight_layout()
     fig1.savefig(aggregated_path, dpi=300, bbox_inches="tight")
     plt.close(fig1)
+
+    # ===== Plot 3: Goodput as fraction of offered load (line graph) =====
+    fig3 = plt.figure(figsize=(12, 6))
+    ax3 = fig3.add_subplot(1, 1, 1)
+    _style_axes(ax3)
+
+    for policy in sorted_policies:
+        goodput_values = policy_total_goodputs.get(policy, [])
+        # Calculate goodput fraction: goodput / offered load (RPS)
+        fraction_values = []
+        for i, rps in enumerate(rps_values):
+            if i < len(goodput_values) and rps > 0:
+                fraction_values.append(goodput_values[i] / rps)
+            else:
+                fraction_values.append(0.0)
+        color = get_policy_color(policy)
+        ax3.plot(
+            rps_values,
+            fraction_values,
+            marker='o',
+            label=policy,
+            color=color,
+            linewidth=2,
+            markersize=6,
+        )
+    ax3.set_ylabel("Goodput / Offered Load")
+    ax3.set_xlabel("Load (requests per second)")
+    ax3.set_title(title if "aggregated" in title.lower() or "total" in title.lower() else f"{title} - Goodput Fraction")
+    ax3.legend(ncols=3, frameon=False, loc="upper left")
+    ax3.set_ylim(0, 1.1)  # Goodput fraction should be between 0 and 1
+
+    fig3.tight_layout()
+    fig3.savefig(fraction_path, dpi=300, bbox_inches="tight")
+    plt.close(fig3)
 
     # ===== Plot 2: Breakdown by request type with shared axes =====
     n = len(sorted_policies)
@@ -638,67 +670,48 @@ def generate_plots(args) -> None:
         futures = []
         
         # Submit policy goodput comparison plots for each (repeat, api)
+        # Only generate plots for "ALL" API, skip individual APIs
         for i in range(repeats):
             output_dir = os.path.join(args.output_dir, str(i))
             for api in apis:
-                goodputs_by_type = None
-                if api == "ALL" and i < len(policy_goodputs_by_type):
-                    goodputs_by_type = policy_goodputs_by_type[i].get(api)
-                futures.append(
-                    executor.submit(
-                        _plot_policy_goodput_comparison,
-                        output_dir,
-                        api,
-                        policies,
-                        rps_values,
-                        policy_goodputs[i][api],
-                        goodputs_by_type,
+                if api == "ALL":
+                    goodputs_by_type = None
+                    if i < len(policy_goodputs_by_type):
+                        goodputs_by_type = policy_goodputs_by_type[i].get(api)
+                    futures.append(
+                        executor.submit(
+                            _plot_policy_goodput_comparison,
+                            output_dir,
+                            api,
+                            policies,
+                            rps_values,
+                            policy_goodputs[i][api],
+                            goodputs_by_type,
+                        )
                     )
-                )
-        
-        # Submit goodput time series plots for each (repeat, api, policy, rps)
-        for i in range(repeats):
-            output_dir = os.path.join(args.output_dir, str(i))
-            for api in apis:
-                data = results[i][api]
-                for policy in policies:
-                    policy_dir = os.path.join(output_dir, policy)
-                    for rps in rps_values:
-                        df = data[policy][rps].copy()  # Copy to avoid race conditions
-                        output_path = os.path.join(
-                            policy_dir, f"goodput_time_series_{rps}rps_{api}.png"
-                        )
-                        title = f"Goodput Time Series for {api} - {policy} - {rps} RPS"
-                        futures.append(
-                            executor.submit(
-                                _plot_goodput_time_series_task,
-                                df,
-                                output_path,
-                                title,
-                            )
-                        )
         
         # Submit averaged goodput plots for each api
+        # Only generate plots for "ALL" API, skip individual APIs
         output_dir = args.output_dir
         for api in apis:
-            goodputs_by_type = None
             if api == "ALL":
+                goodputs_by_type = None
                 # Extract the "ALL" data from each repeat
                 goodputs_by_type = [
                     policy_goodputs_by_type[i].get("ALL", {}) for i in range(repeats)
                 ]
-            futures.append(
-                executor.submit(
-                    _plot_averaged_goodput,
-                    output_dir,
-                    api,
-                    policies,
-                    rps_values,
-                    policy_goodputs,
-                    repeats,
-                    goodputs_by_type,
+                futures.append(
+                    executor.submit(
+                        _plot_averaged_goodput,
+                        output_dir,
+                        api,
+                        policies,
+                        rps_values,
+                        policy_goodputs,
+                        repeats,
+                        goodputs_by_type,
+                    )
                 )
-            )
         
         # Wait for all plots to complete
         for future in as_completed(futures):
