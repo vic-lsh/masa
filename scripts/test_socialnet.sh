@@ -111,6 +111,41 @@ echo "========================================"
 echo "Verifying services are running..."
 echo "========================================"
 
+# List of all services to check (defined early so it can be used in logging)
+SERVICES=(
+    # Database services
+    "post-storage-mongo"
+    "user-timeline-mongo"
+    "user-mongo"
+    "social-graph-mongo"
+    "user-mention-mongo"
+    "url-shorten-mongo"
+    # Redis services
+    "user-timeline-redis"
+    "home-timeline-redis"
+    "user-redis"
+    "social-graph-redis"
+    "write-home-timeline-redis"
+    # Memcached services
+    "post-storage-memcached"
+    "user-mention-memcached"
+    # RabbitMQ
+    "rabbitmq"
+    # Application services
+    "post-storage-service"
+    "user-timeline-service"
+    "home-timeline-service"
+    "write-home-timeline-service"
+    "user-service"
+    "social-graph-service"
+    "unique-id-service"
+    "media-service"
+    "text-service"
+    "user-mention-service"
+    "url-shorten-service"
+    "compose-post-service"
+)
+
 # Verify we're in the right directory and docker compose is working
 if [ ! -f "docker-compose.yaml" ]; then
     echo "ERROR: docker-compose.yaml not found in current directory: $(pwd)" >&2
@@ -167,41 +202,6 @@ check_service_running() {
         return 1
     fi
 }
-
-# List of all services to check
-SERVICES=(
-    # Database services
-    "post-storage-mongo"
-    "user-timeline-mongo"
-    "user-mongo"
-    "social-graph-mongo"
-    "user-mention-mongo"
-    "url-shorten-mongo"
-    # Redis services
-    "user-timeline-redis"
-    "home-timeline-redis"
-    "user-redis"
-    "social-graph-redis"
-    "write-home-timeline-redis"
-    # Memcached services
-    "post-storage-memcached"
-    "user-mention-memcached"
-    # RabbitMQ
-    "rabbitmq"
-    # Application services
-    "post-storage-service"
-    "user-timeline-service"
-    "home-timeline-service"
-    "write-home-timeline-service"
-    "user-service"
-    "social-graph-service"
-    "unique-id-service"
-    "media-service"
-    "text-service"
-    "user-mention-service"
-    "url-shorten-service"
-    "compose-post-service"
-)
 
 # Function to check all services
 # Returns the number of failed services via return code
