@@ -530,14 +530,13 @@ where
         let mut set = JoinSet::new();
         let max_in_flight = self.gen_cfg.max_in_flight;
 
-        // Create semaphore for max in-flight control
-        // If max_in_flight is 0 (unlimited), use a very large number
-        let semaphore_size = if max_in_flight > 0 {
-            max_in_flight
+        // Create semaphore for max in-flight control only if max_in_flight > 0
+        // If max_in_flight is 0 (unlimited), don't use a semaphore at all
+        let inflight_guard: Option<Arc<Semaphore>> = if max_in_flight > 0 {
+            Some(Arc::new(Semaphore::new(max_in_flight)))
         } else {
-            usize::MAX
+            None
         };
-        let inflight_guard = Arc::new(Semaphore::new(semaphore_size));
 
         // Create arrival timer to manage inter-arrival times
         let mut arrival_timer =
@@ -553,11 +552,15 @@ where
             // This updates elapse internally, so we advance even if we skip this request
             let _interval = arrival_timer.tick();
 
-            // Try to acquire permit for max-in-flight control
+            // Try to acquire permit for max-in-flight control if semaphore exists
             // If acquisition fails, skip this request and continue to next iteration
-            let permit = match inflight_guard.clone().try_acquire_owned() {
-                Ok(p) => p,
-                Err(_) => continue,
+            let permit = if let Some(ref guard) = inflight_guard {
+                match guard.clone().try_acquire_owned() {
+                    Ok(p) => Some(p),
+                    Err(_) => continue,
+                }
+            } else {
+                None
             };
 
             let i = self.rng.gen_range(0..self.api_handlers.len());
