@@ -43,7 +43,10 @@ pub type DefaultMasaHooks = queue_tracing::QueueTracing;
 #[cfg(any(feature = "prio_global"))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = queue_global::QueueGlobal;
-// pub type DefaultMasaHooks = global::Global;
+
+#[cfg(any(feature = "prio_local"))]
+#[allow(missing_docs)]
+pub type DefaultMasaHooks = local::local::LocalDeadlinePolicy;
 
 #[cfg(any(feature = "prio_global_queue_tracing"))]
 #[allow(missing_docs)]
