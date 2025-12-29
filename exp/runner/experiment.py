@@ -59,6 +59,9 @@ class Experiment:
         self.exp_scripts_dir = config.exp_dir / "scripts"
         self.app_scripts_dir = config.app_dir / "scripts"
         self.app_local_dir = self.app_scripts_dir / "local"
+        
+        # Track current output directory for error reporting
+        self.current_output_dir: Optional[Path] = None
     
     def run(self) -> None:
         """
@@ -164,6 +167,7 @@ class Experiment:
                 # Setup output directory for this iteration/policy
                 output_dir = self.config.out_dir / str(iteration) / policy
                 output_dir.mkdir(parents=True, exist_ok=True)
+                self.current_output_dir = output_dir
                 env_vars: dict = {}
                 try:
                     # Generate environment variables
@@ -244,6 +248,7 @@ class Experiment:
                     
                 except Exception as e:
                     logger.error(f"Error during iteration {iteration}, policy {policy}: {e}")
+                    self._print_log_tails(output_dir)
                     raise
                 finally:
                     # Stop Docker services
@@ -257,6 +262,43 @@ class Experiment:
                     env_file = self.app_local_dir / ".env"
                     if env_file.exists():
                         env_file.unlink()
+    
+    def _print_log_tails(self, output_dir: Path, num_lines: int = 50) -> None:
+        """
+        Print the tail of all log files in the output directory.
+        
+        Args:
+            output_dir: Directory containing log files
+            num_lines: Number of lines to print from each log file
+        """
+        if not output_dir.exists():
+            logger.warning(f"Output directory does not exist: {output_dir}")
+            return
+        
+        log_files = sorted(output_dir.glob("*.log"))
+        if not log_files:
+            logger.warning(f"No log files found in {output_dir}")
+            return
+        
+        logger.error("=" * 80)
+        logger.error(f"Tail of relevant logs from {output_dir}:")
+        logger.error("=" * 80)
+        
+        for log_file in log_files:
+            try:
+                with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+                    lines = f.readlines()
+                    tail_lines = lines[-num_lines:] if len(lines) > num_lines else lines
+                    
+                    logger.error("")
+                    logger.error(f"--- {log_file.name} (last {len(tail_lines)} lines) ---")
+                    for line in tail_lines:
+                        # Remove trailing newline to avoid double newlines in logging
+                        logger.error(line.rstrip())
+            except Exception as e:
+                logger.warning(f"Failed to read log file {log_file}: {e}")
+        
+        logger.error("=" * 80)
     
     def _mark_complete(self) -> None:
         """Mark experiment as complete."""
