@@ -8,3 +8,5 @@ tags
 !.codex/prompts/
 .vscode
 **/__pycache__/**
+trace-analysis/plots/**
+trace-analysis/graph_reports/**
