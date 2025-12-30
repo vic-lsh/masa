@@ -189,7 +189,7 @@ mod tests {
         let freq_map = config.method_freq_map.as_ref().unwrap();
         let mut rng = rand::rng();
         let sampled = freq_map
-            .sample_method(&svc_name, None, &mut rng)
+            .sample_method(&svc_name, "graph_main", &mut rng)
             .expect("service must have methods");
         assert!(["method_x", "method_y", "method_z"].contains(&sampled.method.as_str()));
     }
