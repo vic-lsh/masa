@@ -14,11 +14,11 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from exp.runner.apps.hotel import (
-    normalize_features_to_tag,
     HotelApp,
     HotelBuilder,
     HotelLoadGenerator,
 )
+from exp.runner.apps.utils import normalize_features_to_tag
 
 
 class TestNormalizeFeaturesToTag:
@@ -307,7 +307,6 @@ class TestHotelBuilder:
             all_calls = [call[0][0] for call in mock_subprocess.call_args_list]
             for cmd in all_calls:
                 assert "--no-cache" in cmd
-
 
 class TestHotelApp:
     """Tests for HotelApp integration with feature-based tags."""

@@ -58,6 +58,40 @@ pub fn get_sched_flavor() -> SchedFlavor {
     LocalRunQueueInner::<u64>::into_sched_flavor()
 }
 
+/// Get the current queue length for the current_thread runtime.
+///
+/// # Panics
+///
+/// This function will panic if:
+/// - Called from outside a Tokio runtime context
+/// - Called from a multi-threaded runtime (only works with current_thread runtime)
+/// - Called when the scheduler core is not available (e.g., outside of `block_on`)
+pub fn current_thread_queue_len() -> usize {
+    use crate::runtime::context;
+    use crate::runtime::scheduler::Context;
+
+    context::with_scheduler(|maybe_context| {
+        let context = match maybe_context {
+            Some(Context::CurrentThread(ctx)) => ctx,
+            #[cfg(feature = "rt-multi-thread")]
+            Some(_) => panic!(
+                "current_thread_queue_len() can only be called from a current_thread runtime"
+            ),
+            None => panic!(
+                "current_thread_queue_len() must be called from within a Tokio runtime context"
+            ),
+        };
+
+        let core = context.core.borrow();
+        match core.as_ref() {
+            Some(core) => core.tasks.len(),
+            None => {
+                panic!("current_thread_queue_len() called when scheduler core is not available")
+            }
+        }
+    })
+}
+
 #[allow(dead_code)]
 pub(crate) trait Queue {
     type Item;

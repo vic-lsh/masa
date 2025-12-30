@@ -7,7 +7,7 @@ use std::{
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{estimate_method_latency, track_method_latency};
-use masa::{Context, LatencyDistribution, LatencyTracker};
+use masa::{Context, LatencyDistribution, LatencyEstimator, LatencyTracker};
 
 #[derive(Debug)]
 /// Same as LocalDeadlineDirect, but e_rem
@@ -23,22 +23,22 @@ use masa::{Context, LatencyDistribution, LatencyTracker};
 pub struct LocalDeadlineIndirect;
 
 impl MasaHooks for LocalDeadlineIndirect {
-    type ServerContext = ServerContext;
+    type ServerContext = ServerContext<LatencyDistribution>;
     type ChildContext = ChildContext;
-    type ParentContext = ParentContext;
+    type ParentContext = ParentContext<LatencyDistribution>;
 }
 
 #[derive(Debug)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct ServerContext {
+pub struct ServerContext<E: LatencyEstimator + Default + 'static = LatencyDistribution> {
     // tracks latency distribution for each method provided by this server
-    parent_distributions: RwLock<HashMap<String, LatencyDistribution>>,
+    parent_distributions: RwLock<HashMap<String, E>>,
     // tracks latency distribution for each method called by this server
-    child_distributions: RwLock<HashMap<String, LatencyDistribution>>,
+    child_distributions: RwLock<HashMap<String, E>>,
 }
 
-impl ServerHooks for ServerContext {
+impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
     fn new(_service_name: &'static str) -> Self {
         Self {
             parent_distributions: RwLock::new(HashMap::new()),
@@ -50,20 +50,22 @@ impl ServerHooks for ServerContext {
 #[derive(Debug)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct ParentContext {
+pub struct ParentContext<E: LatencyEstimator + Default + 'static = LatencyDistribution> {
     method: GrpcMethod,
     ctx: Context,
-    server: Arc<ServerContext>,
+    server: Arc<ServerContext<E>>,
 
     start: Instant,
     estimated_duration: Option<u64>,
 }
 
-impl ParentHooks<ChildContext, ServerContext> for ParentContext {
+impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerContext<E>>
+    for ParentContext<E>
+{
     fn begin<B>(
         method: GrpcMethod,
         req: &http::Request<B>,
-        server_ctx: Arc<ServerContext>,
+        server_ctx: Arc<ServerContext<E>>,
     ) -> Self {
         let start = Instant::now();
         let estimated_duration =

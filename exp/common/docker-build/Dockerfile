@@ -39,9 +39,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${CACH
 FROM debian:trixie-slim AS runtime-base
 
 ARG APP
+ARG FEATURES
 ARG LOG_LEVEL=info
 ARG APP_CONFIG_PATH
 ARG GEN_CONFIG_PATH
+ARG CACHE_ID=${APP}
 
 RUN apt-get update
 
@@ -63,7 +65,9 @@ ENV LOG_LEVEL=${LOG_LEVEL}
 # Stage 3: Runtime image with a specific binary
 FROM runtime-base AS runtime
 
+ARG FEATURES
 ARG BINARY_NAME
+ARG CACHE_ID=${APP}
 
 COPY --from=builder /usr/src/masa/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
 RUN chmod +x /usr/local/bin/${BINARY_NAME}

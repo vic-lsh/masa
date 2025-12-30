@@ -167,9 +167,6 @@ For manual Docker operations (without the full experiment workflow):
 ```bash
 cd exp/<app>
 
-# To view logs from containers (w/ tmux), run this script:
-./scripts/docker-view-logs.sh
-
 # To view resource usage across containers:
 docker stats
 ```

@@ -51,10 +51,17 @@ if ! command -v docker >/dev/null 2>&1; then
     exit 1
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "python3 is required to run the synthetic experiment test." >&2
-    exit 1
+# Setup uv and virtual environment
+if ! command -v uv >/dev/null 2>&1; then
+    echo "Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 fi
+
+echo "Syncing Python dependencies with uv..."
+cd "$repo_root"
+uv sync
+source .venv/bin/activate
 
 echo "Cleaning previous experiment output at $out_dir"
 rm -rf "$out_dir"
@@ -81,9 +88,9 @@ assert_path_exists "$out_dir/done"
 read -ra policy_array <<< "$(tr '\n' ' ' < "$policies_file")"
 
 # Read RPS values, APIs, and repeats from gen_config.json
-mapfile -t rps_array < <(python3 -c 'import json,sys; print("\n".join(str(x) for x in json.load(open(sys.argv[1]))["Rps"]))' "$gen_config")
-mapfile -t api_array < <(python3 -c 'import json,sys; print("\n".join(str(x) for x in json.load(open(sys.argv[1]))["Apis"]))' "$gen_config")
-repeats="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["Repeats"]))' "$gen_config")"
+mapfile -t rps_array < <(python -c 'import json,sys; print("\n".join(str(x) for x in json.load(open(sys.argv[1]))["Rps"]))' "$gen_config")
+mapfile -t api_array < <(python -c 'import json,sys; print("\n".join(str(x) for x in json.load(open(sys.argv[1]))["Apis"]))' "$gen_config")
+repeats="$(python -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["Repeats"]))' "$gen_config")"
 
 # Validate output files for each repeat, policy, RPS, and API
 for i in $(seq 0 $((repeats - 1))); do
@@ -104,6 +111,6 @@ done
 
 echo "Generating plots..."
 cd "$repo_root"
-python3 -m exp.runner plot synthetic "$exp_name"
+python -m exp.runner plot synthetic "$exp_name"
 
 echo "Synthetic CI experiment test passed."

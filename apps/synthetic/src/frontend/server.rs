@@ -6,6 +6,8 @@ use std::{
 };
 
 use app_utils::timing::time_now;
+use rand::thread_rng;
+use rand_distr::{Distribution, Exp};
 use synthetic::config::SyntheticConfig;
 use synthetic::util;
 
@@ -77,33 +79,94 @@ impl Frontend for FrontendImpl {
         _request: Request<frontend::ARequest>,
     ) -> Result<Response<frontend::AResponse>, Status> {
         let start = Instant::now();
-        let mut child_random_client = self.children.last().unwrap().clone();
-        let response = child_random_client
+        let mut hop1 = self.children.last().unwrap().clone();
+        // let response = child_random_client
+        //     .random_latency(child::RandomLatencyRequest {
+        //         sent_at: time_now(),
+        //     })
+        //     .await?;
+        // let child_random_response = response.into_inner();
+
+        let response = hop1
             .random_latency(child::RandomLatencyRequest {
                 sent_at: time_now(),
+                busy_spin: true,
             })
             .await?;
-        let child_random_response = response.into_inner();
+        let hop1_response = response.into_inner();
 
-        let next =
-            self.next_constant_replica.fetch_add(1, Ordering::SeqCst) % self.constant_replicas;
-        let mut child_constant_client = self.children[next as usize].clone();
+        // let next =
+        //     self.next_constant_replica.fetch_add(1, Ordering::SeqCst) % self.constant_replicas;
+        // let mut child_constant_client = self.children[next as usize].clone();
+
+        let mut child_constant_client = self.children.first().unwrap().clone();
+        // Sample from exponential distribution with mean = 10000
+        let mean = 10000.0;
+        let lambda = 1.0 / mean;
+        let exp_dist = Exp::<f64>::new(lambda).unwrap();
+        let duration_us = exp_dist.sample(&mut thread_rng()).round() as u64;
         let response = child_constant_client
             .constant_latency(child::ConstantLatencyRequest {
                 sent_at: time_now(),
+                busy_spin: false,
+                duration_us: Some(duration_us),
             })
             .await?;
         let child_constant_response = response.into_inner();
 
         Ok(Response::new(frontend::AResponse {
-            child1_queueing_latency: child_random_response.queueing_latency,
-            child1_sleep_latency: child_random_response.sleep_latency,
-            child1_handler_latency: child_random_response.handler_latency,
+            child1_queueing_latency: 0,
+            child1_sleep_latency: 0,
+            child1_handler_latency: 0,
             child2_queueing_latency: child_constant_response.queueing_latency,
             child2_handler_latency: child_constant_response.handler_latency,
             child2_reply_latency: time_now() - child_constant_response.finished_at,
             handler_latency: Instant::now().duration_since(start).as_micros() as u64,
         }))
+    }
+
+    async fn handle_b(
+        &self,
+        _request: Request<frontend::BRequest>,
+    ) -> Result<Response<frontend::BResponse>, Status> {
+        let _start = Instant::now();
+        // let mut child_random_client = self.children.last().unwrap().clone();
+        // let response = child_random_client
+        //     .random_latency(child::RandomLatencyRequest {
+        //         sent_at: time_now(),
+        //     })
+        //     .await?;
+        // let _child_random_response = response.into_inner();
+
+        let mut hop1 = self.children.last().unwrap().clone();
+        let response = hop1
+            .random_latency(child::RandomLatencyRequest {
+                sent_at: time_now(),
+                busy_spin: true,
+            })
+            .await?;
+        let hop1_response = response.into_inner();
+
+        // let next =
+        //     self.next_constant_replica.fetch_add(1, Ordering::SeqCst) % self.constant_replicas;
+        // let mut child_constant_client = self.children[next as usize].clone();
+
+        let mut child_constant_client = self.children.first().unwrap().clone();
+        // Sample from exponential distribution with mean = 100000
+        let mean = 100000.0;
+        let lambda = 1.0 / mean;
+        let exp_dist = Exp::<f64>::new(lambda).unwrap();
+        let duration_us = exp_dist.sample(&mut thread_rng()).round() as u64;
+        let response = child_constant_client
+            .constant_latency(child::ConstantLatencyRequest {
+                sent_at: time_now(),
+                busy_spin: false,
+                duration_us: Some(duration_us),
+            })
+            .await?;
+        let _child_constant_response = response.into_inner();
+
+        Ok(Response::new(frontend::BResponse {}))
     }
 
     async fn handle_presampled(

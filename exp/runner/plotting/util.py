@@ -15,6 +15,16 @@ def read_data(config_dir, data_dir):
     repeats = config["Repeats"]
     rps_values = config["Rps"]
     apis = config["Apis"]
+    slos = config.get("Slos", [])
+    
+    # Create mapping from API name to SLO value (in microseconds)
+    api_to_slo = {}
+    if len(slos) == len(apis):
+        for api, slo in zip(apis, slos):
+            api_to_slo[api] = slo
+    else:
+        raise ValueError(f"Slos array length ({len(slos)}) must match Apis array length ({len(apis)})")
+    
     policies = os.listdir(os.path.join(data_dir, "0"))
     policies = list(
         filter(lambda p: os.path.isdir(os.path.join(data_dir, "0", p)), policies)
@@ -32,6 +42,9 @@ def read_data(config_dir, data_dir):
                 for api in apis:
                     file_path = os.path.join(policy_folder, f"r{rps}_{api}.csv")
                     df = pd.read_csv(file_path)
+                    # Replace SLO column with value from gen_config.json
+                    if api in api_to_slo:
+                        df["slo"] = api_to_slo[api]
                     results[i][api][policy][rps] = df
                     if combined is None:
                         combined = df.copy()
@@ -40,6 +53,9 @@ def read_data(config_dir, data_dir):
                         combined = pd.concat(
                             [combined[common_cols], df[common_cols]], ignore_index=True
                         )
+                # For "ALL" API, keep the individual SLO values from each API type
+                # (already set correctly above, so each row has the correct SLO for its API)
+                # Don't overwrite with a single value - we want per-API SLO filtering
                 results[i]["ALL"][policy][rps] = combined
 
     apis.append("ALL")
@@ -66,3 +82,21 @@ def parse_args() -> Namespace:
     args = parser.parse_args()
 
     return args
+
+
+def filter_excluded_errors(df):
+    """
+    Filter out requests with excluded error types.
+    
+    Excludes /ClientTimeout and /EarlyReturn errors as they are not meaningful
+    for latency/goodput analysis (timeouts don't represent actual execution,
+    and early returns are intentional early exits).
+    
+    Args:
+        df: DataFrame with an 'error' column
+        
+    Returns:
+        DataFrame with excluded errors filtered out
+    """
+    excluded_errors = df["error"].isin(["/ClientTimeout", "/EarlyReturn"])
+    return df[~excluded_errors].copy()
