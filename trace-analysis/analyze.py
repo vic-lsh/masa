@@ -244,12 +244,12 @@ def plot_dag_plot(
     else:
         raise ValueError("mode must be 'thickness' or 'labels'")
 
-    plt.tight_layout()
     if outfile:
         outfile.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(outfile)
+        plt.savefig(outfile, bbox_inches='tight')
         plt.close()
     else:
+        plt.tight_layout()
         plt.show()
 
 def reachable_subgraph(G: nx.DiGraph, source: str = "USER") -> nx.DiGraph:
@@ -523,13 +523,18 @@ def main() -> None:
     print_rpc_stats(rpc_df, df)
     top_services = get_top_services(rpc_df, n=50)
 
+    # Set output directories relative to trace-analysis directory
+    trace_analysis_dir = Path(__file__).parent.resolve()
+    plots_outdir = trace_analysis_dir / "plots"
+    reports_root = trace_analysis_dir / "graph_reports"
+    
     start = time.perf_counter()
     results = run_for_services_process_pool(
         rpc_df,
         top_services,
         n_workers=32,               # set an int to cap processes
-        plots_outdir=Path("plots"),
-        reports_root=Path("graph_reports"),
+        plots_outdir=plots_outdir,
+        reports_root=reports_root,
     )
     elapsed = time.perf_counter() - start
     logger.info(f"Elapsed: {elapsed:.6f} s")
