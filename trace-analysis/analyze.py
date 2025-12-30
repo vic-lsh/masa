@@ -23,7 +23,7 @@ import time
 import argparse
 import logging
 import sys
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, namedtuple
 from tqdm import tqdm
 
 # Set up logger
@@ -418,6 +418,8 @@ def report_latency_by_edge_for_graph(
 # Per-service worker (PROCESS)
 # ----------------------------
 
+ServiceResult = namedtuple("ServiceResult", ["service_name", "num_nodes", "num_edges", "dag_nodes"])
+
 def _compute_dynamic_figsize(
     G: nx.DiGraph,
     base_width: float = 8.0,
@@ -467,10 +469,10 @@ def _process_one_service_proc(
     svc_df_min: pd.DataFrame,
     latency_dists_filtered: dict,
     reports_root: Path,
-) -> tuple[str, int, int]:
+) -> ServiceResult:
     """
     Build graphs for one service, draw plots, and write reports.
-    Runs in a separate process. Returns (service, num_nodes, num_edges).
+    Runs in a separate process. Returns ServiceResult with service info and graph stats.
     """
     logger.info(f"Processing service {service_name!r} in process.")
     # Build graphs from the minimal per-service slice
@@ -521,7 +523,12 @@ def _process_one_service_proc(
     # Reports
     report_latency_by_edge_for_graph(cg, latency_dists_filtered, output_root=reports_root)
 
-    return (service_name, len(cg.G_pair.nodes), len(cg.G_pair.edges))
+    return ServiceResult(
+        service_name=service_name,
+        num_nodes=len(cg.G_pair.nodes),
+        num_edges=len(cg.G_pair.edges),
+        dag_nodes=len(dag_subgraph.nodes),
+    )
 
 # ----------------------------
 # Orchestration (process pool)
@@ -532,7 +539,7 @@ def run_for_services_process_pool(
     top_services: pd.Series,
     n_workers: int | None = None,
     reports_root: Path = Path("graph_reports"),
-) -> list[tuple[str, int, int]]:
+) -> list[ServiceResult]:
     """
     Parallelizes the per-service work (graphs, plots, reports) over top_services
     using a **ProcessPoolExecutor**. To reduce IPC overhead:
@@ -567,7 +574,7 @@ def run_for_services_process_pool(
             return {}
         return {k: v for k, v in lat_all.items() if k in keys}
 
-    results: list[tuple[str, int, int]] = []
+    results: list[ServiceResult] = []
 
     with ProcessPoolExecutor(max_workers=n_workers) as ex:
         futures = {}
@@ -589,7 +596,7 @@ def run_for_services_process_pool(
             except Exception as e:
                 logger.warning(f"Service {svc} failed: {e!r}")
 
-    results.sort(key=lambda x: x[0])
+    results.sort(key=lambda x: x.service_name)
     return results
 
 # ----------------------------
@@ -648,8 +655,19 @@ def main() -> None:
     elapsed = time.perf_counter() - start
     logger.info(f"Elapsed: {elapsed:.6f} s")
 
-    for svc, n_nodes, n_edges in results:
-        logger.info(f"{svc}: nodes={n_nodes}, edges={n_edges}")
+    for result in results:
+        logger.info(f"{result.service_name}: nodes={result.num_nodes}, edges={result.num_edges}, dag_nodes={result.dag_nodes}")
+
+    # Print graphs with DAG nodes > 10, sorted in descending order
+    large_dags = [result for result in results if result.dag_nodes > 10]
+    large_dags.sort(key=lambda r: r.dag_nodes, reverse=True)
+    
+    if large_dags:
+        logger.info("\nGraphs with DAG nodes > 10 (descending by size):")
+        for result in large_dags:
+            logger.info(f"  {result.service_name}: {result.dag_nodes} nodes")
+    else:
+        logger.info("\nNo graphs found with DAG nodes > 10")
 
 if __name__ == "__main__":
     main()
