@@ -64,7 +64,29 @@ def read_csvs_parallel(
 # Paths & utilities
 # ----------------------------
 
-PROJECT_HOME = Path("..").resolve()
+def _get_project_home() -> Path:
+    """
+    Determine project root directory. Works whether script is run from
+    trace-analysis/ or project root.
+    """
+    # First, check if current working directory is the project root
+    cwd = Path.cwd()
+    if (cwd / "traces").exists():
+        return cwd
+    
+    # Otherwise, derive from script location
+    # Script is at trace-analysis/analyze.py, so project root is parent
+    script_dir = Path(__file__).parent.resolve()
+    project_root = script_dir.parent
+    
+    # Verify traces/ exists
+    if (project_root / "traces").exists():
+        return project_root
+    
+    # Fallback: return parent anyway (will fail later with clear error)
+    return project_root
+
+PROJECT_HOME = _get_project_home()
 
 def get_csv_path(dataset_number: int) -> Path:
     return (
