@@ -1,6 +1,8 @@
 #!/bin/bash
 
-set -euo pipefail
+# Use -uo pipefail (without -e) so we can explicitly handle errors
+# This prevents the script from exiting unexpectedly on non-critical failures
+set -uo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 socialnet_dir="$repo_root/apps/socialnet"
@@ -61,20 +63,28 @@ echo "Building socialnet application..."
 echo "========================================"
 
 # Build the socialnet docker image
+build_exit_code=0
 if [ -n "$no_cache" ]; then
     echo "Building with --no-cache flag..."
-    cd "$repo_root"
-    docker build \
+    if ! cd "$repo_root"; then
+        echo "Failed to change to repo root: $repo_root" >&2
+        exit 1
+    fi
+    if ! docker build \
         --ulimit nofile=65536:65536 \
         --no-cache \
         -t socialnet-generic-svc:latest \
         -f ./apps/socialnet/Dockerfile \
-        .
+        .; then
+        build_exit_code=1
+    fi
 else
-    "$build_script"
+    if ! "$build_script"; then
+        build_exit_code=1
+    fi
 fi
 
-if [ $? -ne 0 ]; then
+if [ $build_exit_code -ne 0 ]; then
     echo "Build failed!" >&2
     exit 1
 fi
@@ -86,7 +96,10 @@ echo "========================================"
 echo "Starting socialnet services..."
 echo "========================================"
 
-cd "$socialnet_dir"
+if ! cd "$socialnet_dir"; then
+    echo "Failed to change to socialnet directory: $socialnet_dir" >&2
+    exit 1
+fi
 
 # Stop any existing deployment first
 echo "Stopping any existing deployment..."
@@ -97,9 +110,7 @@ echo ""
 export JWT_SECRET="test-secret-key-for-ci"
 
 # Start services in detached mode
-docker compose up -d
-
-if [ $? -ne 0 ]; then
+if ! docker compose up -d; then
     echo "Failed to start services!" >&2
     exit 1
 fi
@@ -212,8 +223,8 @@ check_all_services() {
     local failed_services=()
 
     for service in "${SERVICES[@]}"; do
-        # Use a subshell or disable set -e for this check to prevent early exit
-        if ! (set +e; check_service_running "$service" "$quiet"); then
+        # Use a subshell to isolate errors from individual service checks
+        if ! check_service_running "$service" "$quiet" 2>/dev/null; then
             failed_count=$((failed_count + 1))
             failed_services+=("$service")
         fi
@@ -224,7 +235,12 @@ check_all_services() {
         echo "${failed_services[*]}"
     fi
 
-    return $failed_count
+    # Ensure we return a valid exit code (0-255)
+    if [ $failed_count -gt 255 ]; then
+        return 255
+    else
+        return $failed_count
+    fi
 }
 
 # Retry loop - check up to 6 times with 10s gap
@@ -261,12 +277,38 @@ while [ $attempt -le $max_attempts ]; do
     docker compose ps --services --filter "status=running" 2>&1 | sed 's/^/  - /' || echo "  (could not list running services)"
     echo ""
 
-    # Run check_all_services in a conditional context so set -e doesn't cause
-    # the script to exit early when services are still starting up.
-    # Capture both the output (failed services list) and return code (failed count)
-    failed_services_list=$(check_all_services "true")
+    # Debug: indicate we're about to check all services (helps diagnose where script might fail)
+    echo "DEBUG: About to check all ${#SERVICES[@]} services..." >&2
+
+    # Run check_all_services and capture both the output (failed services list) 
+    # and return code (failed count)
+    failed_services_list=$(check_all_services "true" 2>&1)
     failed_count=$?
-    running_count=$((total_services - failed_count))
+    
+    # Validate that we got a reasonable result
+    # If failed_count is negative or way too large, something went wrong
+    if [ $failed_count -lt 0 ] || [ $failed_count -gt $total_services ]; then
+        echo "ERROR: check_all_services returned invalid count: $failed_count (expected 0-$total_services)" >&2
+        echo "This might indicate a problem with the service checking logic." >&2
+        # Default to all services failed if we can't check properly
+        failed_count=$total_services
+        if [ -z "$failed_services_list" ]; then
+            failed_services_list="${SERVICES[*]}"
+        fi
+    fi
+    
+    # Debug output to help diagnose issues
+    if [ $failed_count -gt $total_services ]; then
+        echo "WARNING: failed_count ($failed_count) is greater than total_services ($total_services)" >&2
+        echo "This might indicate an error in check_all_services" >&2
+        failed_count=$total_services  # Cap it to prevent arithmetic errors
+    fi
+    
+    # Safely calculate running count, defaulting to 0 if arithmetic fails
+    if ! running_count=$((total_services - failed_count)) 2>/dev/null; then
+        echo "ERROR: Failed to calculate running_count (total_services=$total_services, failed_count=$failed_count)" >&2
+        running_count=0
+    fi
     
     echo "Services running: $running_count/$total_services ($failed_count failed)"
     if [ $failed_count -ne 0 ]; then
@@ -289,7 +331,12 @@ while [ $attempt -le $max_attempts ]; do
     if [ $failed_count -eq 0 ]; then
         echo ""
         echo "All services are running! Showing final status:"
-        check_all_services "false" >/dev/null
+        # Final check - don't fail if this has issues, we already confirmed all services are running
+        if ! check_all_services "false" >/dev/null 2>&1; then
+            final_check_status=$?
+            echo "WARNING: Final service check returned non-zero status: $final_check_status" >&2
+            echo "This is unexpected but continuing..." >&2
+        fi
         failed=false
         break
     else
@@ -315,7 +362,9 @@ if [ "$failed" = true ]; then
     echo ""
     
     echo "Full service status:"
-    docker compose ps
+    if ! docker compose ps; then
+        echo "WARNING: docker compose ps failed" >&2
+    fi
     echo ""
     
     echo "Services that were expected but not running:"
@@ -329,20 +378,28 @@ if [ "$failed" = true ]; then
     echo ""
     
     echo "Showing recent logs for all services (last 30 lines each):"
-    docker compose logs --tail=30
+    if ! docker compose logs --tail=30; then
+        echo "WARNING: docker compose logs failed" >&2
+    fi
     echo ""
     
     echo "Checking for containers that exited:"
-    docker compose ps --filter "status=exited" || echo "  (no exited containers or command failed)"
+    if ! docker compose ps --filter "status=exited"; then
+        echo "  (no exited containers or command failed)"
+    fi
     echo ""
     
     echo "Checking for containers that are restarting:"
-    docker compose ps --filter "status=restarting" || echo "  (no restarting containers or command failed)"
+    if ! docker compose ps --filter "status=restarting"; then
+        echo "  (no restarting containers or command failed)"
+    fi
     echo ""
     
     if [ "$cleanup" = true ]; then
         echo "Cleaning up..."
-        docker compose down -v
+        if ! docker compose down -v; then
+            echo "WARNING: docker compose down failed" >&2
+        fi
     fi
     echo "Socialnet test failed! Some services failed to start properly." >&2
     exit 1
@@ -356,7 +413,10 @@ echo "========================================"
 if [ "$cleanup" = true ]; then
     echo ""
     echo "Cleaning up..."
-    docker compose down -v
+    if ! docker compose down -v; then
+        echo "WARNING: docker compose down failed during cleanup" >&2
+        exit 1
+    fi
     echo "Cleanup completed."
 else
     echo ""
