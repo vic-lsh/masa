@@ -21,8 +21,12 @@ import re
 import json
 import time
 import argparse
+import logging
 from collections import Counter, defaultdict
 from tqdm import tqdm
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 # ----------------------------
 # Parallel CSV loading (processes)
@@ -49,7 +53,7 @@ def read_csvs_parallel(
                 df = fut.result()
                 dfs.append(df)
             except Exception as e:
-                print(f"[ERROR] Failed to read {path}: {e!r}")
+                logger.error(f"Failed to read {path}: {e!r}")
                 raise
 
     if not dfs:
@@ -101,26 +105,26 @@ def select_rpc_rows(df: pd.DataFrame) -> pd.DataFrame:
 # ----------------------------
 
 def print_rpc_stats(rpc_df: pd.DataFrame, df: pd.DataFrame) -> None:
-    print("Number of RPC calls:", len(rpc_df))
-    print("Number of total calls:", len(df))
-    print("Fraction of RPC calls:", len(rpc_df) / len(df))
+    logger.info(f"Number of RPC calls: {len(rpc_df)}")
+    logger.info(f"Number of total calls: {len(df)}")
+    logger.info(f"Fraction of RPC calls: {len(rpc_df) / len(df)}")
 
     num_user_facing_svcs = len(rpc_df["service"].unique())
-    print("Number of unique user-facing services:", num_user_facing_svcs)
+    logger.info(f"Number of unique user-facing services: {num_user_facing_svcs}")
 
     num_services = pd.concat([rpc_df["um"], rpc_df["dm"]]).nunique()
-    print("Number of unique microservices (not instances):", num_services)
+    logger.info(f"Number of unique microservices (not instances): {num_services}")
 
     num_instances = pd.concat([rpc_df["uminstanceid"], rpc_df["dminstanceid"]]).nunique()
-    print("Number of unique microservice instances:", num_instances)
+    logger.info(f"Number of unique microservice instances: {num_instances}")
 
     avg_replica_count = num_instances / num_services
-    print("Average replica count per microservice:", avg_replica_count)
+    logger.info(f"Average replica count per microservice: {avg_replica_count}")
 
 def get_top_services(rpc_df: pd.DataFrame, n: int = 10) -> pd.Series:
     top_services = rpc_df["service"].value_counts().head(n)
-    print(f"Top {n} most popular services:")
-    print(top_services)
+    logger.info(f"Top {n} most popular services:")
+    logger.info(f"\n{top_services}")
     return top_services
 
 # ----------------------------
@@ -365,7 +369,7 @@ def _process_one_service_proc(
     Build graphs for one service, draw plots, and write reports.
     Runs in a separate process. Returns (service, num_nodes, num_edges).
     """
-    print(f"[INFO] Processing service {service_name!r} in process.")
+    logger.info(f"Processing service {service_name!r} in process.")
     # Build graphs from the minimal per-service slice
     G_pair, G_iface = get_service_graphs(svc_df_min, service_name)
     cg = CallGraph(service_name, G_pair, G_iface)
@@ -453,7 +457,7 @@ def run_for_services_process_pool(
             try:
                 results.append(fut.result())
             except Exception as e:
-                print(f"[WARN] Service {svc} failed: {e!r}")
+                logger.warning(f"Service {svc} failed: {e!r}")
 
     results.sort(key=lambda x: x[0])
     return results
@@ -463,6 +467,11 @@ def run_for_services_process_pool(
 # ----------------------------
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    
     parser = argparse.ArgumentParser(
         description="Analyze microservice call graph traces from Alibaba cluster data"
     )
@@ -495,10 +504,10 @@ def main() -> None:
         reports_root=Path("graph_reports"),
     )
     elapsed = time.perf_counter() - start
-    print(f"Elapsed: {elapsed:.6f} s")
+    logger.info(f"Elapsed: {elapsed:.6f} s")
 
     for svc, n_nodes, n_edges in results:
-        print(f"[OK] {svc}: nodes={n_nodes}, edges={n_edges}")
+        logger.info(f"{svc}: nodes={n_nodes}, edges={n_edges}")
 
 if __name__ == "__main__":
     main()
