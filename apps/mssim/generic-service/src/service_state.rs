@@ -186,7 +186,11 @@ impl ServiceState {
                 .await
                 .map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
             rpc_result.map_err(|err| {
-                error!("RPC to child service {} failed", child_svc.as_str());
+                error!(
+                    "RPC to child service {} failed: {:?}",
+                    child_svc.as_str(),
+                    err
+                );
                 err
             })?;
         }
