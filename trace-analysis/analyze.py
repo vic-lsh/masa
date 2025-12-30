@@ -466,7 +466,6 @@ def _process_one_service_proc(
     service_name: str,
     svc_df_min: pd.DataFrame,
     latency_dists_filtered: dict,
-    plots_outdir: Path,
     reports_root: Path,
 ) -> tuple[str, int, int]:
     """
@@ -478,8 +477,9 @@ def _process_one_service_proc(
     G_pair, G_iface = get_service_graphs(svc_df_min, service_name)
     cg = CallGraph(service_name, G_pair, G_iface)
 
-    # Plots
-    plots_outdir.mkdir(parents=True, exist_ok=True)
+    # Create service-specific directory in graph_reports
+    svc_dir = reports_root / _slugify(service_name)
+    svc_dir.mkdir(parents=True, exist_ok=True)
     
     # Compute dynamic figure sizes based on graph complexity
     svc_figsize = _compute_dynamic_figsize(
@@ -510,12 +510,12 @@ def _process_one_service_proc(
     cg.draw_svc_plot(
         mode="labels", figsize=svc_figsize,
         ranksep=1.0, nodesep=0.5,
-        outfile=plots_outdir / f"{_slugify(service_name)}_svc.png",
+        outfile=svc_dir / f"{_slugify(service_name)}_svc.png",
     )
     cg.draw_dag(
         mode="thickness", figsize=dag_figsize,
         ranksep=1.2, nodesep=0.5,
-        outfile=plots_outdir / f"{_slugify(service_name)}_dag.png",
+        outfile=svc_dir / f"{_slugify(service_name)}_dag.png",
     )
 
     # Reports
@@ -531,7 +531,6 @@ def run_for_services_process_pool(
     rpc_df: pd.DataFrame,
     top_services: pd.Series,
     n_workers: int | None = None,
-    plots_outdir: Path = Path("plots"),
     reports_root: Path = Path("graph_reports"),
 ) -> list[tuple[str, int, int]]:
     """
@@ -541,7 +540,6 @@ def run_for_services_process_pool(
       * The parent computes global latency distributions once, then filters that dict
         per service to just the (dm, interface) keys used by that service.
     """
-    plots_outdir.mkdir(parents=True, exist_ok=True)
     reports_root.mkdir(parents=True, exist_ok=True)
 
     # Precompute global latency distributions once
@@ -581,7 +579,6 @@ def run_for_services_process_pool(
                 svc,
                 svc_frames[svc],
                 lat_sub,
-                plots_outdir,
                 reports_root,
             )] = svc
 
@@ -639,7 +636,6 @@ def main() -> None:
 
     # Set output directories relative to trace-analysis directory
     trace_analysis_dir = Path(__file__).parent.resolve()
-    plots_outdir = trace_analysis_dir / "plots"
     reports_root = trace_analysis_dir / "graph_reports"
     
     start = time.perf_counter()
@@ -647,7 +643,6 @@ def main() -> None:
         rpc_df,
         top_services,
         n_workers=32,               # set an int to cap processes
-        plots_outdir=plots_outdir,
         reports_root=reports_root,
     )
     elapsed = time.perf_counter() - start
