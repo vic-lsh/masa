@@ -131,15 +131,8 @@ impl MethodFreqSampler {
     }
 }
 
-#[derive(Clone)]
-pub struct SampledMethod {
-    pub method: String,
-    pub graph: Option<String>,
-}
-
 pub struct MethodFreqMap {
     by_graph: HashMap<String, HashMap<ServiceName, MethodFreqSampler>>,
-    aggregated: HashMap<ServiceName, MethodFreqSampler>,
 }
 
 impl MethodFreqMap {
@@ -153,7 +146,6 @@ impl MethodFreqMap {
 
     fn from_graph_map(raw_graph: RawGraphInvokeFreq) -> Result<Self> {
         let mut by_graph: HashMap<String, HashMap<ServiceName, MethodFreqSampler>> = HashMap::new();
-        let mut aggregated_raw: HashMap<ServiceName, HashMap<MethodId, u64>> = HashMap::new();
 
         for (graph, services) in raw_graph {
             let mut service_map: HashMap<ServiceName, MethodFreqSampler> = HashMap::new();
@@ -166,12 +158,6 @@ impl MethodFreqMap {
                     }
                     let method_id: MethodId = method.into();
                     freq_map.insert(method_id.clone(), weight);
-                    aggregated_raw
-                        .entry(svc.clone())
-                        .or_default()
-                        .entry(method_id)
-                        .and_modify(|existing| *existing = existing.saturating_add(weight))
-                        .or_insert(weight);
                 }
 
                 if freq_map.is_empty() {
@@ -195,29 +181,7 @@ impl MethodFreqMap {
             }
         }
 
-        let mut aggregated: HashMap<ServiceName, MethodFreqSampler> = HashMap::new();
-        for (svc, freq_map) in aggregated_raw {
-            match MethodFreqSampler::from_invoke_freq_map(freq_map) {
-                Ok(sampler) => {
-                    aggregated.insert(svc, sampler);
-                }
-                Err(err) => {
-                    return Err(anyhow!(format!(
-                        "While building aggregated sampler for service {}: {:?}",
-                        svc, err
-                    )));
-                }
-            }
-        }
-
-        Ok(Self {
-            by_graph,
-            aggregated,
-        })
-    }
-
-    pub fn get_service(&self, svc_name: &ServiceName) -> Option<&MethodFreqSampler> {
-        self.aggregated.get(svc_name)
+        Ok(Self { by_graph })
     }
 
     pub fn sample_method<R: Rng + ?Sized>(
@@ -225,25 +189,11 @@ impl MethodFreqMap {
         svc_name: &ServiceName,
         graph_hint: &str,
         rng: &mut R,
-    ) -> Option<SampledMethod> {
-        if let Some(method) = self.sample_from_graph(graph_hint, svc_name, rng) {
-            return Some(SampledMethod {
-                method,
-                graph: Some(graph_hint.to_string()),
-            });
-        }
-
-        self.aggregated
-            .get(svc_name)
-            .map(|sampler| SampledMethod {
-                method: sampler.sample(rng).to_string(),
-                graph: None,
-            })
-            .or_else(|| {
-                self.by_graph
-                    .values()
-                    .find_map(|services| self.sample_from_services_map(services, svc_name, rng))
-            })
+    ) -> Option<String> {
+        self.by_graph
+            .get(graph_hint)
+            .and_then(|services| services.get(svc_name))
+            .map(|sampler| sampler.sample(rng).to_string())
     }
 
     pub fn contains_service_in_graph(&self, graph: &str, svc_name: &ServiceName) -> bool {
@@ -252,29 +202,6 @@ impl MethodFreqMap {
             .map_or(false, |services| services.contains_key(svc_name))
     }
 
-    fn sample_from_graph<R: Rng + ?Sized>(
-        &self,
-        graph: &str,
-        svc_name: &ServiceName,
-        rng: &mut R,
-    ) -> Option<String> {
-        self.by_graph
-            .get(graph)
-            .and_then(|services| services.get(svc_name))
-            .map(|sampler| sampler.sample(rng).to_string())
-    }
-
-    fn sample_from_services_map<R: Rng + ?Sized>(
-        &self,
-        services: &HashMap<ServiceName, MethodFreqSampler>,
-        svc_name: &ServiceName,
-        rng: &mut R,
-    ) -> Option<SampledMethod> {
-        services.get(svc_name).map(|sampler| SampledMethod {
-            method: sampler.sample(rng).to_string(),
-            graph: None,
-        })
-    }
 }
 
 #[cfg(test)]
@@ -282,40 +209,6 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
-
-    #[test]
-    fn parse_graph_method_invoke_freq() {
-        let mut tmp = NamedTempFile::new().expect("create temp file");
-        writeln!(
-            tmp,
-            r#"{{
-  "graph_alpha": {{
-    "svc_one": {{
-      "method_a": 10,
-      "method_b": 5
-    }}
-  }},
-  "graph_beta": {{
-    "svc_one": {{
-      "method_c": 7
-    }}
-  }}
-}}"#
-        )
-        .expect("write json");
-
-        let map =
-            MethodFreqMap::from_file_path(&tmp.path().to_path_buf()).expect("parse graph map");
-
-        let svc = ServiceName::from_string("svc_one".into());
-        let freq_map = map.get_service(&svc).expect("service aggregated sampler");
-
-        let expected = vec!["method_a", "method_b", "method_c"];
-        for method in expected {
-            let method_id: MethodId = method.into();
-            assert!(freq_map.contains(&method_id));
-        }
-    }
 
     #[test]
     fn test_weighted_sampler() {
@@ -389,14 +282,12 @@ mod tests {
         let sampled = map
             .sample_method(&svc_one, "graph_b", &mut rng)
             .expect("graph b sampling");
-        assert_eq!(sampled.graph.as_deref(), Some("graph_b"));
-        assert_eq!(sampled.method, "method_c");
+        assert_eq!(sampled, "method_c");
 
         let svc_two = ServiceName::from_string("svc_two".into());
         let sampled_two = map
             .sample_method(&svc_two, "graph_b", &mut rng)
             .expect("default to only graph");
-        assert_eq!(sampled_two.graph.as_deref(), Some("graph_b"));
-        assert_eq!(sampled_two.method, "method_d");
+        assert_eq!(sampled_two, "method_d");
     }
 }
