@@ -49,8 +49,8 @@ def read_csvs_parallel(
                 df = fut.result()
                 dfs.append(df)
             except Exception as e:
-                if show_errors:
-                    print(f"[WARN] Failed to read {path}: {e!r}")
+                print(f"[ERROR] Failed to read {path}: {e!r}")
+                raise
 
     if not dfs:
         return pd.DataFrame()
