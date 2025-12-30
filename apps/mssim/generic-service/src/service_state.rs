@@ -130,13 +130,12 @@ impl ServiceState {
                 continue;
             }
 
-            // let probability = self
-            //     .child_call_probabilities
-            //     .get(child_svc_name)
-            //     .copied()
-            //     .unwrap_or(0.0)
-            //     .clamp(0.0, 1.0);
-            let probability = 1.0;
+            let probability = self
+                .child_call_probabilities
+                .get(child_svc_name)
+                .copied()
+                .unwrap_or(0.0)
+                .clamp(0.0, 1.0);
 
             if probability <= 0.0 {
                 continue;
@@ -154,7 +153,7 @@ impl ServiceState {
                         child_svc_name
                     ))
                 })?;
-            let graph_to_send = method_graph.as_deref().or(graph_ref).unwrap();
+            // let graph_to_send = method_graph.as_deref().or(graph_ref).unwrap();
 
             let mut client = client.clone();
             let mut request = Request::new(ServiceRequest {
