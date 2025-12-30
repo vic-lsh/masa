@@ -68,7 +68,7 @@ mod tests {
         if let Some(method_freq) = config.method_freq_map {
             let mut rng = rand::rng();
             let sampled_method = method_freq
-                .sample_method(&svc_name, None, &mut rng)
+                .sample_method(&svc_name, "graph_main", &mut rng)
                 .expect("service must exist");
             assert!(["method_a", "method_b"].contains(&sampled_method.method.as_str()));
         }
