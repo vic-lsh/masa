@@ -20,6 +20,7 @@ from functools import partial
 import re
 import json
 import time
+import argparse
 from collections import Counter, defaultdict
 from tqdm import tqdm
 
@@ -462,7 +463,17 @@ def run_for_services_process_pool(
 # ----------------------------
 
 def main() -> None:
-    max_dataset = 9
+    parser = argparse.ArgumentParser(
+        description="Analyze microservice call graph traces from Alibaba cluster data"
+    )
+    parser.add_argument(
+        "-n", "--num-datasets",
+        type=int,
+        default=9,
+        help="Maximum dataset number to load (default: 9). Datasets 0 through this number will be loaded."
+    )
+    args = parser.parse_args()
+    max_dataset = args.num_datasets
 
     # Load & concat
     df = load_concat_datasets(max_dataset)
