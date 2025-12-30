@@ -50,10 +50,16 @@ if ! command -v uv >/dev/null 2>&1; then
     export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 fi
 
-echo "Syncing Python dependencies with uv..."
-cd "$repo_root"
-uv sync
-source .venv/bin/activate
+# Only sync if not in a virtual environment (CI already does this)
+if [ -z "${VIRTUAL_ENV:-}" ]; then
+    echo "Syncing Python dependencies with uv..."
+    cd "$repo_root"
+    uv sync
+    source .venv/bin/activate
+else
+    echo "Using existing virtual environment: $VIRTUAL_ENV"
+    cd "$repo_root"
+fi
 
 echo "Cleaning previous experiment output at $out_dir"
 rm -rf "$out_dir"
