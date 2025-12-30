@@ -3,6 +3,7 @@
 flag_combos=(
     "fifo"
     "prio_global"
+    "prio_global,early"
 )
 
 cargo check

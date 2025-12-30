@@ -1,5 +1,11 @@
 test_e2e_hotel:
   stage: test
+  cache:
+    key:
+      files:
+        - uv.lock
+    paths:
+      - .venv
   before_script:
     - |
       if ! command -v uv &> /dev/null; then

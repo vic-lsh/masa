@@ -30,6 +30,7 @@ tempfile = "3.13.0"
 name = "mssim-loadgen"
 path = "src/loadgen.rs"
 
+[features]
 early = [
     "masa/early",
     "tonic/early",

@@ -49,6 +49,11 @@ fifo = [
 	"tonic/fifo"
 ]
 
+early = [
+    "masa/early",
+    "tonic/early",
+]
+
 gcp = ["dep:prost-types", "tonic/tls"]
 routeguide = [
 	"dep:async-stream",

@@ -4,18 +4,20 @@ use crate::{
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex, OnceLock, RwLock,
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, RwLock,
     },
     task::Poll,
     time::{Duration, Instant},
 };
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
-use super::{estimate_method_latency, track_method_latency};
-use masa::{time_now, Context, LatencyDistribution, LatencyEstimator, MethodId, EARLY_RETURN};
+use super::{estimate_method_latency, track_method_latency, PERCENTILE};
+use masa::{time_now, Context, LatencyEstimator, LatencyRms, MethodId, EARLY_RETURN};
 
-static LAST_PRINT_TIME: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
+/// Type alias for the latency estimator used in the local deadline policy.
+/// Change this to use a different estimator (e.g., `LatencyRms`).
+pub(crate) type LocalLatencyEstimator = LatencyRms;
 
 #[derive(Debug)]
 /// This policy computes the deadline d of a child request as  
@@ -25,26 +27,59 @@ static LAST_PRINT_TIME: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 /// distribution of observed values for e_rem.
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct LocalDeadlineDirect;
+pub struct LocalDeadlinePolicy;
 
-impl MasaHooks for LocalDeadlineDirect {
-    type ServerContext = ServerContext<LatencyDistribution>;
+impl MasaHooks for LocalDeadlinePolicy {
+    type ServerContext = ServerContext<LocalLatencyEstimator>;
     type ChildContext = ChildContext;
-    type ParentContext = ParentContext<LatencyDistribution>;
+    type ParentContext = ParentContext<LocalLatencyEstimator>;
 }
 
 #[derive(Debug)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct ServerContext<E: LatencyEstimator + Default + 'static = LatencyDistribution> {
+pub struct ServerContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     // for every method on this server, tracks the remaining duration of the method after an outgoing request has finished
-    child_distributions: RwLock<HashMap<String, E>>,
+    child_distributions: Arc<RwLock<HashMap<String, E>>>,
 }
 
 impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
     fn new(_service_name: &'static str) -> Self {
+        let distributions = Arc::new(RwLock::new(HashMap::<String, E>::new()));
+
+        // Spawn a background task to print estimated remaining values every second
+        let distributions_clone = distributions.clone();
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(1));
+                loop {
+                    interval.tick().await;
+
+                    let distributions_read = distributions_clone.read().unwrap();
+                    if distributions_read.is_empty() {
+                        continue;
+                    }
+
+                    let mut parts = Vec::new();
+                    for (endpoint, distribution) in distributions_read.iter() {
+                        if distribution.can_estimate() {
+                            let estimate = distribution.estimate(PERCENTILE);
+                            parts.push(format!("{}: {} us", endpoint, estimate));
+                        } else {
+                            parts.push(format!("{}: (no estimate)", endpoint));
+                        }
+                    }
+                    println!(
+                        "Estimated Remaining Values (p{}): {}",
+                        PERCENTILE,
+                        parts.join(", ")
+                    );
+                }
+            });
+        }
+
         Self {
-            child_distributions: RwLock::new(HashMap::new()),
+            child_distributions: distributions,
         }
     }
 }
@@ -52,11 +87,11 @@ impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
 #[derive(Debug)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct ParentContext<E: LatencyEstimator + Default + 'static = LatencyDistribution> {
+pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     method: GrpcMethod,
     ctx: Context,
-    q_lat: AtomicU64,
     server: Arc<ServerContext<E>>,
+
     will_early_return: AtomicBool,
     child_end_times: Mutex<Vec<(MethodId, Instant)>>,
 }
@@ -110,17 +145,12 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
             server: server_ctx,
             will_early_return: AtomicBool::new(false),
             child_end_times: Mutex::new(Vec::new()),
-            q_lat: AtomicU64::new(0),
         }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         if self.check_early_return() {
             return Err(Err(self.issue_early_return()));
-        }
-        let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
-        if queue_latency > 0 {
-            self.q_lat.fetch_add(queue_latency, Ordering::AcqRel);
         }
 
         Ok(())
@@ -155,29 +185,10 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         // end of the parent request after this child request completes will vary for different
         // parent methods (i.e. endpoints on this server)
         let estimate_remaining = estimate_method_latency(
-            &self.server.child_distributions,
+            &*self.server.child_distributions,
             format!("{}/{}", self.method.id(), child_method.id()),
         )
         .unwrap_or(0);
-
-        // Print estimate_remaining every 5 seconds
-        {
-            let last_print = LAST_PRINT_TIME.get_or_init(|| Mutex::new(None));
-            let mut last_print_guard = last_print.lock().unwrap();
-            let now = Instant::now();
-            let should_print = last_print_guard
-                .map(|last| now.duration_since(last) >= Duration::from_secs(5))
-                .unwrap_or(true);
-
-            if should_print {
-                println!(
-                    "estimate_remaining: {}, before child {}",
-                    estimate_remaining,
-                    child_method.id()
-                );
-                *last_print_guard = Some(now);
-            }
-        }
 
         // NOTE(vic): could we have passed the deadline at this point?
         let deadline = self.ctx.deadline() - estimate_remaining;
@@ -210,37 +221,17 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
             .unwrap()
             .push((child_method.id(), Instant::now()));
 
-        if let Ok(resp) = response {
-            if let Some(value) = resp
-                .metadata()
-                .get("x-queue-latency")
-                .or_else(|| resp.metadata().get("X-Queue-Latency"))
-            {
-                if let Ok(v) = value.to_str() {
-                    if let Ok(parsed) = v.parse::<u64>() {
-                        self.q_lat.fetch_add(parsed, Ordering::AcqRel);
-                    }
-                }
-            }
-        }
-
         Ok(())
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
         let parent_end = Instant::now();
-        let res_header = _response.headers_mut();
-        let total = self.q_lat.load(Ordering::Acquire).to_string();
-        if let Ok(header_val) = http::HeaderValue::from_str(&total) {
-            // HTTP/2 metadata is lower-case; rely on hyper to canonicalize.
-            res_header.insert("x-queue-latency", header_val);
-        }
         // track remaining time after each child
         for (child_method, child_end) in self.child_end_times.lock().unwrap().iter() {
             // TODO: The LatencyDistribution instances will regularly sort their data. Should this
             // work be done asynchronously?
             track_method_latency(
-                &self.server.child_distributions,
+                &*self.server.child_distributions,
                 format!("{}/{}", self.method.id(), child_method),
                 parent_end.duration_since(*child_end).as_micros() as u64,
             );

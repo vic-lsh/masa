@@ -1,10 +1,21 @@
 pytest:
   image: python:3.11
-  stage: test
+  stage: quick-checks
+  cache:
+    key:
+      files:
+        - uv.lock
+    paths:
+      - .venv
   before_script:
-    - python --version
-    - pip --version
-    - pip install --upgrade pip
-    - pip install pytest pytest-mock
+    - apt-get update -yqq
+    - apt-get install -y libgraphviz-dev pkg-config
+    - |
+      if ! command -v uv &> /dev/null; then
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+      fi
+    - uv sync --dev
+    - source .venv/bin/activate
   script:
     - pytest
