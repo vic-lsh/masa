@@ -5,6 +5,7 @@ package frontend;
 service Frontend {
   rpc HandlePing(PingRequest) returns (PingResponse) {}
   rpc HandleA(ARequest) returns (AResponse) {}
+  rpc HandleB(BRequest) returns (BResponse) {}
   rpc HandlePresampled(PresampledRequest) returns (PresampledResponse) {}
 }
 
@@ -22,6 +23,11 @@ message AResponse {
   uint64 child2_reply_latency = 6;
 
   uint64 handler_latency = 7;
+}
+
+
+message BRequest {}
+message BResponse {
 }
 
 message PresampledRequest { string request_type = 1; }

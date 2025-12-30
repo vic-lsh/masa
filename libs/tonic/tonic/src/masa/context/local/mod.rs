@@ -1,3 +1,4 @@
+pub(crate) mod local;
 pub(crate) mod local_direct;
 pub(crate) mod local_indirect;
 
@@ -8,14 +9,13 @@ pub(crate) use local_direct::LocalDeadlineDirect;
 #[allow(unused_imports)]
 pub(crate) use local_indirect::LocalDeadlineIndirect;
 
-use masa::LatencyDistribution;
+use masa::LatencyEstimator;
 
 // TODO: tweak these values. should they be specific to each local priority selector?
-const DISTRIBUTION_CAPACITY: usize = 512;
-const PERCENTILE: usize = 50;
+pub(crate) const PERCENTILE: usize = 50;
 
-fn estimate_method_latency(
-    map: &RwLock<HashMap<String, LatencyDistribution>>,
+fn estimate_method_latency<E: LatencyEstimator + Default + 'static>(
+    map: &RwLock<HashMap<String, E>>,
     key: String,
 ) -> Option<u64> {
     let has_method = {
@@ -31,17 +31,14 @@ fn estimate_method_latency(
         found
     };
     if !has_method {
-        map.write().unwrap().insert(
-            key.clone(),
-            LatencyDistribution::new(key, DISTRIBUTION_CAPACITY),
-        );
+        map.write().unwrap().insert(key.clone(), E::default());
     }
     None
 }
 
 // TODO: could reduce lock contention by giving each key it's own lock
-fn track_method_latency(
-    map: &RwLock<HashMap<String, LatencyDistribution>>,
+fn track_method_latency<E: LatencyEstimator>(
+    map: &RwLock<HashMap<String, E>>,
     key: String,
     duration: u64,
 ) {
