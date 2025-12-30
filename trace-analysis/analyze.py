@@ -203,12 +203,40 @@ def plot_dag_plot(
     uniform_width: float = 2.0,
     ranksep: float = 2.0,
     nodesep: float = 0.8,
-    node_size: int = 3000,
-    font_size: int = 10,
+    node_size: int | None = None,
+    font_size: int | None = None,
     arrowsize: int = 20,
     node_color: str = "lightblue",
     figsize=(8, 6),
 ) -> None:
+    # Auto-compute node_size and font_size based on graph complexity if not provided
+    num_nodes = G.number_of_nodes()
+    if node_size is None:
+        # Keep nodes larger, scale down more gradually
+        if num_nodes < 20:
+            node_size = 3000
+        elif num_nodes < 50:
+            node_size = 2800
+        elif num_nodes < 100:
+            node_size = 2500
+        elif num_nodes < 200:
+            node_size = 2200
+        else:
+            node_size = 2000
+    
+    if font_size is None:
+        # Keep fonts readable
+        if num_nodes < 20:
+            font_size = 10
+        elif num_nodes < 50:
+            font_size = 9
+        elif num_nodes < 100:
+            font_size = 8
+        elif num_nodes < 200:
+            font_size = 7
+        else:
+            font_size = 6
+    
     pos = nx.nx_agraph.graphviz_layout(
         G, prog="dot", args=f"-Granksep={ranksep} -Gnodesep={nodesep}"
     )
@@ -390,6 +418,50 @@ def report_latency_by_edge_for_graph(
 # Per-service worker (PROCESS)
 # ----------------------------
 
+def _compute_dynamic_figsize(
+    G: nx.DiGraph,
+    base_width: float = 8.0,
+    base_height: float = 6.0,
+    width_per_node: float = 0.5,
+    height_per_node: float = 0.3,
+    min_width: float = 12.0,
+    min_height: float = 8.0,
+    max_width: float = 100.0,
+    max_height: float = 60.0,
+) -> tuple[float, float]:
+    """
+    Compute dynamic figure size based on graph complexity.
+    
+    Args:
+        G: NetworkX graph
+        base_width, base_height: Base dimensions
+        width_per_node, height_per_node: Scaling factors per node
+        min_width, min_height: Minimum dimensions
+        max_width, max_height: Maximum dimensions
+    
+    Returns:
+        (width, height) tuple for matplotlib figsize
+    """
+    num_nodes = G.number_of_nodes()
+    num_edges = G.number_of_edges()
+    
+    # Base calculation on number of nodes (more conservative scaling)
+    width = base_width + (num_nodes * width_per_node)
+    height = base_height + (num_nodes * height_per_node)
+    
+    # Add extra space for highly connected graphs (reduced multiplier)
+    if num_nodes > 0:
+        edge_density = num_edges / num_nodes
+        if edge_density > 5:
+            width *= 1.1
+            height *= 1.05
+    
+    # Clamp to min/max bounds
+    width = max(min_width, min(width, max_width))
+    height = max(min_height, min(height, max_height))
+    
+    return (width, height)
+
 def _process_one_service_proc(
     service_name: str,
     svc_df_min: pd.DataFrame,
@@ -408,12 +480,41 @@ def _process_one_service_proc(
 
     # Plots
     plots_outdir.mkdir(parents=True, exist_ok=True)
+    
+    # Compute dynamic figure sizes based on graph complexity
+    svc_figsize = _compute_dynamic_figsize(
+        cg.G_pair,
+        base_width=16.0,
+        base_height=8.0,
+        width_per_node=0.4,
+        height_per_node=0.2,
+        min_width=20.0,
+        min_height=10.0,
+        max_width=80.0,
+        max_height=50.0,
+    )
+    
+    dag_subgraph = reachable_subgraph(cg.G_pair, source="USER")
+    dag_figsize = _compute_dynamic_figsize(
+        dag_subgraph,
+        base_width=12.0,
+        base_height=8.0,
+        width_per_node=0.3,
+        height_per_node=0.25,
+        min_width=16.0,
+        min_height=10.0,
+        max_width=60.0,
+        max_height=45.0,
+    )
+    
     cg.draw_svc_plot(
-        mode="labels", figsize=(32, 12),
+        mode="labels", figsize=svc_figsize,
+        ranksep=1.0, nodesep=0.5,
         outfile=plots_outdir / f"{_slugify(service_name)}_svc.png",
     )
     cg.draw_dag(
-        mode="thickness", figsize=(20, 8),
+        mode="thickness", figsize=dag_figsize,
+        ranksep=1.2, nodesep=0.5,
         outfile=plots_outdir / f"{_slugify(service_name)}_dag.png",
     )
 
