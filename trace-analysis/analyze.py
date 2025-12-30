@@ -500,11 +500,17 @@ def main() -> None:
     parser.add_argument(
         "-n", "--num-datasets",
         type=int,
-        default=9,
-        help="Maximum dataset number to load (default: 9). Datasets 0 through this number will be loaded."
+        default=10,
+        help="Number of datasets to load (default: 10). Loads datasets 0 through (n-1)."
     )
     args = parser.parse_args()
-    max_dataset = args.num_datasets
+    num_datasets = args.num_datasets
+    
+    if num_datasets < 1:
+        parser.error("Number of datasets must be at least 1")
+    
+    # Convert number of datasets to max dataset ID (0-indexed)
+    max_dataset = num_datasets - 1
 
     # Load & concat
     df = load_concat_datasets(max_dataset)
