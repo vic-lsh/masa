@@ -146,7 +146,7 @@ impl ServiceState {
             }
 
             let (method_to_call, method_graph) = self
-                .sample_method_for_child(child_svc_name, graph_ref)
+                .sample_method_for_child(child_svc_name, graph_selection)
                 .ok_or_else(|| {
                     Status::not_found(format!(
                         "Configuration error: Service {} has no method to call",
@@ -199,7 +199,7 @@ impl ServiceState {
     fn sample_method_for_child(
         &self,
         child_svc_name: &ServiceName,
-        graph_name: Option<&str>,
+        graph_name: &str,
     ) -> Option<(String, Option<String>)> {
         if let Some(freq_map) = self.config.method_freq_map.as_ref() {
             let mut rng = rand::rng();

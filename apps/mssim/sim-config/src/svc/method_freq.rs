@@ -140,7 +140,6 @@ pub struct SampledMethod {
 pub struct MethodFreqMap {
     by_graph: HashMap<String, HashMap<ServiceName, MethodFreqSampler>>,
     aggregated: HashMap<ServiceName, MethodFreqSampler>,
-    service_primary_graph: HashMap<ServiceName, String>,
 }
 
 impl MethodFreqMap {
@@ -155,7 +154,6 @@ impl MethodFreqMap {
     fn from_graph_map(raw_graph: RawGraphInvokeFreq) -> Result<Self> {
         let mut by_graph: HashMap<String, HashMap<ServiceName, MethodFreqSampler>> = HashMap::new();
         let mut aggregated_raw: HashMap<ServiceName, HashMap<MethodId, u64>> = HashMap::new();
-        let mut service_graphs: HashMap<ServiceName, Vec<String>> = HashMap::new();
 
         for (graph, services) in raw_graph {
             let mut service_map: HashMap<ServiceName, MethodFreqSampler> = HashMap::new();
@@ -183,7 +181,6 @@ impl MethodFreqMap {
                 match MethodFreqSampler::from_invoke_freq_map(freq_map) {
                     Ok(sampler) => {
                         service_map.insert(svc.clone(), sampler);
-                        service_graphs.entry(svc).or_default().push(graph.clone());
                     }
                     Err(err) => {
                         return Err(anyhow!(format!(
@@ -213,19 +210,9 @@ impl MethodFreqMap {
             }
         }
 
-        let mut service_primary_graph = HashMap::new();
-        for (svc, mut graphs) in service_graphs {
-            graphs.sort();
-            graphs.dedup();
-            if let Some(first) = graphs.first() {
-                service_primary_graph.insert(svc, first.clone());
-            }
-        }
-
         Ok(Self {
             by_graph,
             aggregated,
-            service_primary_graph,
         })
     }
 
@@ -236,34 +223,14 @@ impl MethodFreqMap {
     pub fn sample_method<R: Rng + ?Sized>(
         &self,
         svc_name: &ServiceName,
-        graph_hint: Option<&str>,
+        graph_hint: &str,
         rng: &mut R,
     ) -> Option<SampledMethod> {
-        if let Some(graph) = graph_hint {
-            if let Some(method) = self.sample_from_graph(graph, svc_name, rng) {
-                return Some(SampledMethod {
-                    method,
-                    graph: Some(graph.to_string()),
-                });
-            }
-        }
-
-        if let Some(primary) = self.primary_graph_for(svc_name) {
-            if graph_hint != Some(primary) {
-                if let Some(method) = self.sample_from_graph(primary, svc_name, rng) {
-                    return Some(SampledMethod {
-                        method,
-                        graph: Some(primary.to_string()),
-                    });
-                }
-            } else if graph_hint.is_none() {
-                if let Some(method) = self.sample_from_graph(primary, svc_name, rng) {
-                    return Some(SampledMethod {
-                        method,
-                        graph: Some(primary.to_string()),
-                    });
-                }
-            }
+        if let Some(method) = self.sample_from_graph(graph_hint, svc_name, rng) {
+            return Some(SampledMethod {
+                method,
+                graph: Some(graph_hint.to_string()),
+            });
         }
 
         self.aggregated
@@ -277,10 +244,6 @@ impl MethodFreqMap {
                     .values()
                     .find_map(|services| self.sample_from_services_map(services, svc_name, rng))
             })
-    }
-
-    pub fn primary_graph_for(&self, svc_name: &ServiceName) -> Option<&str> {
-        self.service_primary_graph.get(svc_name).map(|s| s.as_str())
     }
 
     pub fn contains_service_in_graph(&self, graph: &str, svc_name: &ServiceName) -> bool {
@@ -422,22 +385,16 @@ mod tests {
             MethodFreqMap::from_file_path(&tmp.path().to_path_buf()).expect("parse graph shape");
 
         let svc_one = ServiceName::from_string("svc_one".into());
-        assert_eq!(
-            map.primary_graph_for(&svc_one),
-            Some("graph_a"),
-            "primary graph derived from lexical order"
-        );
-
         let mut rng = rand::rng();
         let sampled = map
-            .sample_method(&svc_one, Some("graph_b"), &mut rng)
+            .sample_method(&svc_one, "graph_b", &mut rng)
             .expect("graph b sampling");
         assert_eq!(sampled.graph.as_deref(), Some("graph_b"));
         assert_eq!(sampled.method, "method_c");
 
         let svc_two = ServiceName::from_string("svc_two".into());
         let sampled_two = map
-            .sample_method(&svc_two, None, &mut rng)
+            .sample_method(&svc_two, "graph_b", &mut rng)
             .expect("default to only graph");
         assert_eq!(sampled_two.graph.as_deref(), Some("graph_b"));
         assert_eq!(sampled_two.method, "method_d");
