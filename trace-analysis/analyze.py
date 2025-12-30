@@ -22,11 +22,21 @@ import json
 import time
 import argparse
 import logging
+import sys
 from collections import Counter, defaultdict
 from tqdm import tqdm
 
 # Set up logger
 logger = logging.getLogger(__name__)
+
+class TqdmLoggingHandler(logging.Handler):
+    """Logging handler that uses tqdm.write() to avoid interfering with progress bars."""
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            tqdm.write(msg, file=sys.stderr)
+        except Exception:
+            self.handleError(record)
 
 # ----------------------------
 # Parallel CSV loading (processes)
@@ -47,7 +57,7 @@ def read_csvs_parallel(
 
     with ProcessPoolExecutor(max_workers=n_workers) as ex:
         futures = {ex.submit(read_fn, p): p for p in paths}
-        for fut in tqdm(as_completed(futures), total=len(futures), desc="Reading CSVs"):
+        for fut in tqdm(as_completed(futures), total=len(futures), desc="Reading CSVs", file=sys.stderr, dynamic_ncols=True):
             path = futures[fut]
             try:
                 df = fut.result()
@@ -474,7 +484,7 @@ def run_for_services_process_pool(
                 reports_root,
             )] = svc
 
-        for fut in tqdm(as_completed(futures), total=len(futures), desc="Per-service (proc)"):
+        for fut in tqdm(as_completed(futures), total=len(futures), desc="Per-service (proc)", file=sys.stderr, dynamic_ncols=True):
             svc = futures[fut]
             try:
                 results.append(fut.result())
@@ -489,9 +499,12 @@ def run_for_services_process_pool(
 # ----------------------------
 
 def main() -> None:
+    # Configure logging to use tqdm.write() to avoid interfering with progress bars
+    handler = TqdmLoggingHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        handlers=[handler]
     )
     
     parser = argparse.ArgumentParser(
