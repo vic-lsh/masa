@@ -58,6 +58,6 @@
     "replicas": 1,
     "users": 1000,
     "probCheckUser": 80,
-    "mongodbAddr": "mongodb://127.0.0.1:27006"
+    "mongodbAddr": "mongodb://user_mongo:27006"
   }
 }
