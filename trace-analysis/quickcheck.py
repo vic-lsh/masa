@@ -212,81 +212,34 @@ def _parent_rpc_id(rpc_id: str | float | int | None) -> str | None:
         return None
     return rpc_str.rsplit(".", 1)[0]
 
-def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid") -> None:
+def _extract_edges_from_trace(trace_df: pd.DataFrame) -> list[tuple[str, str]]:
     """
-    Analyze call graphs from the dataframe.
-    First step: print the first trace.
+    Extract edges (um -> dm) from a single trace based on rpc_id hierarchy.
     
     Args:
-        df: Input dataframe with trace data
-        trace_col: Column name containing trace IDs (default: "traceid")
+        trace_df: DataFrame containing rows for a single trace
+    
+    Returns:
+        List of (source, target) edge tuples
     """
-    if trace_col not in df.columns:
-        logger.warning(f"Column '{trace_col}' not found in dataframe. Available columns: {list(df.columns)}")
-        return
+    if "rpc_id" not in trace_df.columns or "dm" not in trace_df.columns:
+        return []
     
-    # Get unique trace IDs
-    unique_traces = df[trace_col].dropna().unique()
+    trace_df = trace_df.copy()
+    trace_df["rpc_id_str"] = trace_df["rpc_id"].astype(str).str.strip()
     
-    if len(unique_traces) == 0:
-        logger.warning("No valid trace IDs found")
-        return
-    
-    # Get the first trace
-    trace_id = unique_traces[0]
-    first_trace_df = df[df[trace_col] == trace_id].copy()
-    
-    logger.info(f"\n{'='*80}")
-    logger.info(f"First trace (traceid: {trace_id})")
-    logger.info(f"{'='*80}")
-    logger.info(f"Number of rows in trace: {len(first_trace_df)}")
-    logger.info(f"\nTrace data:")
-    
-    # Print the trace data in a readable format
-    # Sort by timestamp if available, otherwise by index
-    if "timestamp" in first_trace_df.columns:
-        first_trace_df = first_trace_df.sort_values("timestamp")
-    
-    # Select key columns to display
-    display_cols = []
-    for col in ["traceid", "rpc_id", "service", "um", "dm", "interface", "timestamp", "rt", "rpctype"]:
-        if col in first_trace_df.columns:
-            display_cols.append(col)
-    
-    # Print all columns if we don't have the standard ones
-    if not display_cols:
-        display_cols = list(first_trace_df.columns)
-    
-    # Use pandas to_string for better formatting
-    trace_display = first_trace_df[display_cols].to_string(index=False)
-    logger.info(f"\n{trace_display}\n")
-    
-    # Compute edge list from rpc_id hierarchy
-    if "rpc_id" not in first_trace_df.columns or "um" not in first_trace_df.columns or "dm" not in first_trace_df.columns:
-        logger.warning("Missing required columns (rpc_id, um, dm) for graph computation")
-        return
-    
-    # Create a mapping from rpc_id to dm (downstream microservice)
-    # Since each call is recorded twice (in UM and DM), we need to get a consistent dm value
-    # Convert rpc_id to string and group
-    first_trace_df = first_trace_df.copy()
-    first_trace_df["rpc_id_str"] = first_trace_df["rpc_id"].astype(str).str.strip()
-    
+    # Create mapping from rpc_id to dm
     rpc_to_dm = {}
-    rpc_groups = first_trace_df.groupby("rpc_id_str")
+    rpc_groups = trace_df.groupby("rpc_id_str")
     
     for rpc_id, group in rpc_groups:
         if rpc_id and rpc_id != "" and rpc_id != "nan":
-            # Get the most common dm value for this rpc_id (should be the same, but handle duplicates)
             dm_values = group["dm"].dropna().unique()
             if len(dm_values) > 0:
-                # Use the first non-null dm value (they should all be the same)
                 rpc_to_dm[rpc_id] = dm_values[0]
     
     # Build edge list
     edges = []
-    nodes = set()
-    
     for rpc_id, dm in rpc_to_dm.items():
         parent_rpc_id = _parent_rpc_id(rpc_id)
         
@@ -301,45 +254,128 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid") -> None:
                 target = dm
             else:
                 # Parent not found, skip this edge
-                logger.warning(f"Parent rpc_id {parent_rpc_id} not found for rpc_id {rpc_id}")
                 continue
         
         edges.append((source, target))
-        nodes.add(source)
-        nodes.add(target)
     
-    # Print edge list
+    return edges
+
+def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid") -> None:
+    """
+    Analyze call graphs by grouping by service and aggregating edges across all traces.
+    For one service, compute the union of all edges and their frequencies, then plot.
+    
+    Args:
+        df: Input dataframe with trace data
+        trace_col: Column name containing trace IDs (default: "traceid")
+    """
+    # Check required columns
+    required_cols = ["service", trace_col, "rpc_id", "um", "dm"]
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        logger.warning(f"Missing required columns: {missing_cols}. Available columns: {list(df.columns)}")
+        return
+    
+    # Group by service
     logger.info(f"\n{'='*80}")
-    logger.info("Edge List (caller -> callee):")
+    logger.info("Grouping dataset by service")
     logger.info(f"{'='*80}")
-    for source, target in sorted(edges):
-        logger.info(f"  {source} -> {target}")
-    logger.info(f"\nTotal edges: {len(edges)}")
-    logger.info(f"Total nodes: {len(nodes)}")
     
-    # Create and visualize graph
+    service_groups = df.groupby("service")
+    service_names = list(service_groups.groups.keys())
+    
+    if len(service_names) == 0:
+        logger.warning("No services found in dataset")
+        return
+    
+    logger.info(f"Found {len(service_names)} service(s): {service_names}")
+    
+    # Select the first service (or could select by most traces)
+    # selected_service = service_names[2]
+    selected_service = "S_100071952"
+    service_df = service_groups.get_group(selected_service).copy()
+    
+    logger.info(f"\nAnalyzing service: {selected_service}")
+    logger.info(f"Rows for this service: {len(service_df):,}")
+    
+    # Get unique traces for this service
+    unique_traces = service_df[trace_col].dropna().unique()
+    logger.info(f"Number of traces for this service: {len(unique_traces):,}")
+    
+    if len(unique_traces) == 0:
+        logger.warning(f"No valid traces found for service {selected_service}")
+        return
+    
+    # Aggregate edges across all traces
+    logger.info(f"\nExtracting edges from all traces...")
+    edge_counter: dict[tuple[str, str], int] = {}
+    
+    for trace_id in tqdm(unique_traces, desc="Processing traces", file=sys.stderr):
+        trace_df = service_df[service_df[trace_col] == trace_id]
+        edges = _extract_edges_from_trace(trace_df)
+        
+        # Count edge frequencies
+        for edge in edges:
+            edge_counter[edge] = edge_counter.get(edge, 0) + 1
+    
+    # Sort edges by frequency (descending)
+    sorted_edges = sorted(edge_counter.items(), key=lambda x: x[1], reverse=True)
+    
+    # Print aggregated edge list with frequencies
+    logger.info(f"\n{'='*80}")
+    logger.info(f"Aggregated Edge List for Service '{selected_service}' (caller -> callee, frequency):")
+    logger.info(f"{'='*80}")
+    for (source, target), frequency in sorted_edges:
+        logger.info(f"  {source} -> {target} : {frequency}")
+    
+    logger.info(f"\nTotal unique edges: {len(edge_counter)}")
+    logger.info(f"Total edge occurrences: {sum(edge_counter.values())}")
+    
+    # Create graph with edge weights
     G = nx.DiGraph()
-    G.add_edges_from(edges)
+    for (source, target), frequency in edge_counter.items():
+        G.add_edge(source, target, weight=frequency)
     
     # Create visualization
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(14, 10))
     pos = nx.spring_layout(G, k=2, iterations=50)
+    
+    # Get edge weights for visualization
+    edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
+    max_weight = max(edge_weights) if edge_weights else 1
+    min_weight = min(edge_weights) if edge_weights else 1
+    
+    # Normalize edge widths (min 1, max 5)
+    edge_widths = [1 + 4 * (w - min_weight) / (max_weight - min_weight) if max_weight > min_weight else 3 
+                   for w in edge_weights]
     
     # Draw nodes
     nx.draw_networkx_nodes(G, pos, node_color='lightblue', node_size=2000, alpha=0.9)
     
-    # Draw edges
-    nx.draw_networkx_edges(G, pos, edge_color='gray', arrows=True, arrowsize=20, alpha=0.6)
+    # Draw edges with varying widths based on frequency
+    nx.draw_networkx_edges(
+        G, pos, 
+        edge_color='gray', 
+        arrows=True, 
+        arrowsize=20, 
+        alpha=0.6,
+        width=edge_widths
+    )
     
     # Draw labels
     nx.draw_networkx_labels(G, pos, font_size=10, font_weight='bold')
     
-    plt.title(f"Call Graph for Trace {trace_id}", fontsize=16, fontweight='bold')
+    # Add edge labels with frequencies
+    edge_labels = {(u, v): str(G[u][v]['weight']) for u, v in G.edges()}
+    nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=8)
+    
+    plt.title(f"Aggregated Call Graph for Service '{selected_service}'\n(Edge thickness and labels indicate frequency)", 
+              fontsize=16, fontweight='bold')
     plt.axis('off')
     plt.tight_layout()
     
     # Save graph
-    output_path = Path(__file__).parent / f"call_graph_trace_{trace_id}.png"
+    output_path = Path(__file__).parent / f"call_graph_service_{selected_service}.png"
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
     
