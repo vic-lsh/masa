@@ -396,7 +396,7 @@ def _process_service(
     service_df: pd.DataFrame,
     trace_col: str,
     graphs_dir: Path,
-) -> tuple[str, nx.DiGraph, dict]:
+) -> tuple[str, nx.DiGraph, dict, bool]:
     """
     Process a single service: extract edges, create graph, and save visualization.
     
@@ -407,7 +407,8 @@ def _process_service(
         graphs_dir: Directory to save graph visualizations
     
     Returns:
-        Tuple of (service_name, graph, statistics_dict)
+        Tuple of (service_name, graph, statistics_dict, has_user_root)
+        where has_user_root is True if the graph has 'USER' as a root node
     """
     # Get unique traces for this service
     unique_traces = service_df[trace_col].dropna().unique()
@@ -416,7 +417,7 @@ def _process_service(
         logger.warning(f"No valid traces found for service {service_name}")
         G = nx.DiGraph()
         stats = _compute_graph_statistics(G)
-        return (service_name, G, stats)
+        return (service_name, G, stats, False)
     
     # Aggregate edges across all traces
     edge_counter: dict[tuple[str, str], int] = {}
@@ -434,11 +435,14 @@ def _process_service(
     for (source, target), frequency in edge_counter.items():
         G.add_edge(source, target, weight=frequency)
     
+    # Check if graph has 'USER' as a root node (in_degree == 0)
+    has_user_root = "USER" in G.nodes() and G.in_degree("USER") == 0
+    
     # Compute statistics
     stats = _compute_graph_statistics(G)
     
-    # Create visualization
-    if G.number_of_nodes() > 0:
+    # Create visualization only if graph has USER root
+    if G.number_of_nodes() > 0 and has_user_root:
         plt.figure(figsize=(14, 10))
         pos = _hierarchical_layout(G, ranksep=2.0, nodesep=0.8)
         
@@ -481,9 +485,9 @@ def _process_service(
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
         plt.close()
     
-    return (service_name, G, stats)
+    return (service_name, G, stats, has_user_root)
 
-def _process_service_wrapper(args: tuple) -> tuple[str, nx.DiGraph, dict]:
+def _process_service_wrapper(args: tuple) -> tuple[str, nx.DiGraph, dict, bool]:
     """
     Wrapper function for parallel processing of services.
     Extracts arguments from tuple for ProcessPoolExecutor compatibility.
@@ -493,7 +497,7 @@ def _process_service_wrapper(args: tuple) -> tuple[str, nx.DiGraph, dict]:
               where graphs_dir_str is a string path that will be converted to Path
     
     Returns:
-        Tuple of (service_name, graph, statistics_dict)
+        Tuple of (service_name, graph, statistics_dict, has_user_root)
     """
     service_name, service_df, trace_col, graphs_dir_str = args
     graphs_dir = Path(graphs_dir_str)
@@ -557,6 +561,7 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
     
     # Process each selected service in parallel
     all_stats = []
+    filtered_count = 0
     logger.info(f"\nProcessing {len(top_services)} service(s) in parallel...")
     
     # Prepare arguments for parallel processing (convert Path to string for pickling)
@@ -571,9 +576,12 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
         for fut in tqdm(as_completed(futures), total=len(futures), desc="Processing services", file=sys.stderr, dynamic_ncols=True):
             service_name = futures[fut]
             try:
-                _, G, stats = fut.result()
-                stats["service_name"] = service_name
-                all_stats.append(stats)
+                _, G, stats, has_user_root = fut.result()
+                if has_user_root:
+                    stats["service_name"] = service_name
+                    all_stats.append(stats)
+                else:
+                    filtered_count += 1
             except Exception as e:
                 logger.error(f"Failed to process service {service_name}: {e!r}")
                 raise
@@ -608,6 +616,10 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
     
     logger.info(f"\n{'='*80}")
     logger.info(f"Generated {len(all_stats)} graph(s) in {graphs_dir}")
+    if filtered_count > 0:
+        logger.info(f"Filtered out {filtered_count} service(s) that do not have 'USER' as a root node")
+    else:
+        logger.info("All processed services have 'USER' as a root node")
 
 # ----------------------------
 # main()
