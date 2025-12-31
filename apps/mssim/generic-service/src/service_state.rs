@@ -6,8 +6,9 @@ use crate::service_stubs::{ReplayRequest, ServiceRequest};
 use crate::RpcClient;
 use anyhow::Result;
 use sim_config::deployment::Deployment;
-use sim_config::svc::{ServiceName, ServiceTraceConfig};
+use sim_config::svc::{MethodId, ServiceName, ServiceTraceConfig};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -16,7 +17,7 @@ use tracing::{error, warn};
 
 pub(crate) struct ServiceState {
     config: ServiceTraceConfig,
-    clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
+    pub(crate) clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
     child_call_probabilities: HashMap<ServiceName, f64>,
     self_svc_name: ServiceName,
     overshot_counter: AtomicUsize,
@@ -27,10 +28,17 @@ impl ServiceState {
         self_svc_name: ServiceName,
         config: ServiceTraceConfig,
         deployment: Deployment,
+        _config_dir: PathBuf,
     ) -> Result<(Arc<Self>, Option<ConnectionBootstrap>)> {
         let child_weights = config.call_graph.callees_of(&self_svc_name);
         let child_call_probabilities = compute_child_probabilities(&child_weights);
         let clients = Arc::new(RwLock::new(HashMap::new()));
+
+        println!("Child services:");
+        for child in child_weights.keys() {
+            println!("{}", child.as_str());
+        }
+
         let bootstrap = if child_weights.is_empty() {
             None
         } else {
@@ -68,20 +76,24 @@ impl ServiceState {
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
+        graph_name: Option<&str>,
     ) -> Result<(), Status> {
-        let method_name = method_name.into();
-        let latency_dist = self
-            .config
-            .method_latency
-            .as_ref()
-            .ok_or_else(|| Status::internal("Configuration error: method latency not configured"))?
-            .get_method_dist(&method_name)
+        let graph_selection = graph_name.unwrap().trim();
+        let graph_ref = Some(graph_selection);
+
+        let method_latency = self.config.method_latency.as_ref().ok_or_else(|| {
+            Status::internal("Configuration error: method latency not configured")
+        })?;
+        let method_id: MethodId = method_name.clone().into();
+        let latency_dist = method_latency
+            .get_method_dist(&method_id, graph_ref)
             .ok_or_else(|| Status::not_found("Method not found"))?;
 
         let total_latency_ms = latency_dist.sample(&mut rand::rng());
 
         let start_time = std::time::Instant::now();
-        self.fanout(req_id, start_at, parent_chain).await?;
+        self.fanout(req_id, start_at, parent_chain, graph_ref)
+            .await?;
         let elapsed = start_time.elapsed();
 
         let remaining = total_latency_ms - (elapsed.as_millis() as f64);
@@ -97,7 +109,11 @@ impl ServiceState {
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
+        graph_name: Option<&str>,
     ) -> Result<(), Status> {
+        let graph_selection = graph_name.unwrap().trim();
+        let graph_ref = Some(graph_selection);
+
         let mut tasks = Vec::new();
         let mut parent_chain_for_children = parent_chain.clone();
         parent_chain_for_children.push(self.self_svc_name.clone());
@@ -129,24 +145,22 @@ impl ServiceState {
                 continue;
             }
 
-            let method_to_call = self
-                .config
-                .method_freq_map
-                .as_ref()
-                .and_then(|map| map.get_service(child_svc_name))
-                .and_then(|sampler| Some(sampler.sample(&mut rand::rng()).to_string()))
+            let (method_to_call, method_graph) = self
+                .sample_method_for_child(child_svc_name, graph_selection)
                 .ok_or_else(|| {
                     Status::not_found(format!(
                         "Configuration error: Service {} has no method to call",
                         child_svc_name
                     ))
                 })?;
+            // let graph_to_send = method_graph.as_deref().or(graph_ref).unwrap();
 
             let mut client = client.clone();
             let mut request = Request::new(ServiceRequest {
                 req_id,
                 start_at,
                 method_name: method_to_call,
+                graph_name: graph_name.unwrap().to_string(),
             });
 
             if let Some(ref metadata_value) = parent_chain_metadata {
@@ -171,11 +185,30 @@ impl ServiceState {
                 .await
                 .map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
             rpc_result.map_err(|err| {
-                error!("RPC to child service {} failed", child_svc.as_str());
+                error!(
+                    "RPC to child service {} failed: {:?}",
+                    child_svc.as_str(),
+                    err
+                );
                 err
             })?;
         }
         Ok(())
+    }
+
+    fn sample_method_for_child(
+        &self,
+        child_svc_name: &ServiceName,
+        graph_name: &str,
+    ) -> Option<(String, Option<String>)> {
+        if let Some(freq_map) = self.config.method_freq_map.as_ref() {
+            let mut rng = rand::rng();
+            if let Some(sampled) = freq_map.sample_method(child_svc_name, graph_name, &mut rng) {
+                return Some((sampled.method, sampled.graph));
+            }
+        }
+
+        None
     }
 
     pub(crate) async fn execute_replay(&self, request: &ReplayRequest) -> Result<(), Status> {

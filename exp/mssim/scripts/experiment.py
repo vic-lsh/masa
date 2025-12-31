@@ -31,8 +31,6 @@ class ExperimentConfig:
     config_dir: Path
     output_root: Path
     duration_sec: int
-    warmup_sec: int
-    slo_ms: int
     policies: List[str]
     rps_values: List[float]
     repeats: int = 1
@@ -55,11 +53,9 @@ def load_config(path: Path) -> ExperimentConfig:
         output_root = Path(data.get("output_root", f"apps/mssim/data/experiments")) / name
         
         duration_sec = int(data.get("duration_sec", 0))
-        warmup_sec = int(data.get("warmup_sec", 0))
         
         policies = list(data.get("policies", []))
         rps_values = [float(v) for v in data.get("rps_values", [])]
-        slo_ms = int(data["slo_ms"])
     except (KeyError, TypeError, ValueError) as err:
         raise ValueError(f"invalid experiment config: {err}") from err
 
@@ -75,8 +71,6 @@ def load_config(path: Path) -> ExperimentConfig:
         config_dir=config_dir,
         output_root=output_root,
         duration_sec=duration_sec,
-        warmup_sec=warmup_sec,
-        slo_ms=slo_ms,
         policies=policies,
         rps_values=rps_values,
         repeats=repeats,
@@ -101,7 +95,6 @@ def run_once(
     env.setdefault("ORCHESTRATOR", cfg.orchestrator)
     env["FEATURE"] = policy
     env["RPS"] = f"{rps}"
-    env["SLO_MS"] = str(cfg.slo_ms)
     if cfg.max_in_flight:
         env["MAX_IN_FLIGHT"] = str(cfg.max_in_flight)
     if cfg.stats_interval_sec:
@@ -110,8 +103,6 @@ def run_once(
         env["REPLAY_TRACE_PATH"] = str(cfg.replay_path)
     if cfg.duration_sec > 0:
         env["DURATION"] = str(cfg.duration_sec)
-    if cfg.warmup_sec > 0:
-        env["WARMUP_SEC"] = str(cfg.warmup_sec)
 
     env["GENERIC_SERVICE_IMAGE"] = service_image
     env["HOST_TRACE_DIR"] = run_dir.resolve()
@@ -149,6 +140,15 @@ def run_once(
     ]
     if cfg.replay_path:
         trace_cmd.extend(["--replay-path", str(cfg.replay_path)])
+
+    down_cmd = ["docker",
+                "compose",
+                "-f",
+                str(docker_compose_path),
+                "-p",
+                "mssim",
+                "down", 
+                "--volumes"]
 
     up_cmd = [
         "docker", 
@@ -333,7 +333,6 @@ def execute(cfg: ExperimentConfig, dry_run: bool) -> None:
             "rps": rps,
             "repeat": repeat,
             "duration_sec": cfg.duration_sec,
-            "command": "cargo run -- --alibaba-trace ...",
         }
 
         feature_key = _canonicalize_features(policy) or policy.strip() or "default"
