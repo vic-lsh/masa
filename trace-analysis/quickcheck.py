@@ -801,6 +801,7 @@ def _process_service(
         logger.warning(f"No valid traces found for service {service_name}")
         G = nx.DiGraph()
         stats = _compute_graph_statistics(G)
+        stats["num_traces"] = 0
         return (service_name, G, stats, False, False)
     
     # Aggregate edges across all traces
@@ -830,6 +831,8 @@ def _process_service(
     
     # Compute statistics
     stats = _compute_graph_statistics(G)
+    # Add trace count to statistics
+    stats["num_traces"] = len(unique_traces)
     
     # Only create visualizations if graph has USER as a root node and USER subgraph has >= 5 nodes
     if G.number_of_nodes() > 0 and has_user_root and user_subgraph_sufficient:
@@ -963,16 +966,17 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
     all_stats.sort(key=lambda x: x["num_nodes"], reverse=True)
     
     # Print statistics
-    logger.info(f"\n{'='*80}")
+    logger.info(f"{'='*80}")
     logger.info("Graph Statistics (sorted by number of nodes, descending)")
     logger.info(f"{'='*80}")
-    logger.info(f"{'Service':<20} {'Nodes':<8} {'Out-Degree':<30} {'In-Degree':<30}")
-    logger.info(f"{'':-<20} {'':-<8} {'':-<30} {'':-<30}")
-    logger.info(f"{'':<20} {'':<8} {'Avg':<10} {'Min':<10} {'Max':<10} {'Avg':<10} {'Min':<10} {'Max':<10}")
-    logger.info(f"{'':-<20} {'':-<8} {'':-<30} {'':-<30}")
+    logger.info(f"{'Service':<20} {'Traces':<10} {'Nodes':<8} {'Out-Degree':<30} {'In-Degree':<30}")
+    logger.info(f"{'':-<20} {'':-<10} {'':-<8} {'':-<30} {'':-<30}")
+    logger.info(f"{'':<20} {'':<10} {'':<8} {'Avg':<10} {'Min':<10} {'Max':<10} {'Avg':<10} {'Min':<10} {'Max':<10}")
+    logger.info(f"{'':-<20} {'':-<10} {'':-<8} {'':-<30} {'':-<30}")
     
     for stats in all_stats:
         service_name = stats["service_name"]
+        num_traces = stats["num_traces"]
         num_nodes = stats["num_nodes"]
         out_avg = stats["out_degree_avg"]
         out_min = stats["out_degree_min"]
@@ -982,18 +986,18 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
         in_max = stats["in_degree_max"]
         
         logger.info(
-            f"{service_name:<20} {num_nodes:<8} "
+            f"{service_name:<20} {num_traces:<10,} {num_nodes:<8} "
             f"{out_avg:<10.2f} {out_min:<10} {out_max:<10} "
             f"{in_avg:<10.2f} {in_min:<10} {in_max:<10}"
         )
     
-    logger.info(f"\n{'='*80}")
+    logger.info(f"{'='*80}")
     logger.info(f"Generated graphs for {len(all_stats)} service(s) in {graphs_dir}")
     logger.info(f"Each service has its own directory with graph_all_nodes.png and graph_user.png")
     
     total_filtered = filtered_no_user_root + filtered_small_user_subgraph
     if total_filtered > 0:
-        logger.info(f"\nFiltered out {total_filtered} service(s):")
+        logger.info(f"\nFiltered out {total_filtered} service(s) (no graphs generated):")
         logger.info(f"  - {filtered_no_user_root} service(s) do not have 'USER' as a root node")
         logger.info(f"  - {filtered_small_user_subgraph} service(s) have a USER-reachable subgraph with fewer than 5 nodes")
     else:
