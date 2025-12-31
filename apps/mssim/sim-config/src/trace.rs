@@ -29,32 +29,48 @@ impl TraceConfig {
 #[cfg(test)]
 mod tests {
     use crate::svc::ServiceName;
+    use std::fs;
+    use std::io::Write;
+    use tempfile::TempDir;
 
     use super::*;
 
-    fn workspace_root() -> PathBuf {
-        env!("CARGO_WORKSPACE_DIR").into()
-    }
-
     #[test]
     fn test_read_config() {
-        let path = workspace_root().join("./trace-analysis/golden/S_32048416/");
+        let temp = TempDir::new().expect("create temp dir");
+        let dir = temp.path();
 
-        let config = TraceConfig::from_config_dir(&path).expect("Reading should not fail");
+        let edges_path = dir.join("edges.csv");
+        let mut edges_file = fs::File::create(&edges_path).expect("create edges");
+        writeln!(edges_file, "caller,callee,weight").unwrap();
+        writeln!(edges_file, "svc_alpha,svc_beta,1").unwrap();
 
-        let svc_name = ServiceName::from_string("MS_49817".into());
+        fs::write(
+            dir.join("interface_distribution.json"),
+            r#"{
+  "graph_main": {
+    "svc_alpha": {
+      "method_a": 3,
+      "method_b": 2
+    }
+  }
+}"#,
+        )
+        .expect("write interface distribution");
+
+        let config =
+            TraceConfig::from_config_dir(&dir.to_path_buf()).expect("Reading should not fail");
+
+        let svc_name = ServiceName::from_string("svc_alpha".into());
 
         assert!(config.call_graph.callees_of(&svc_name).len() > 0);
 
         if let Some(method_freq) = config.method_freq_map {
+            let mut rng = rand::rng();
             let sampled_method = method_freq
-                .get_service(&svc_name)
-                .expect("service must exist")
-                .sample(&mut rand::rng());
-            assert!(!sampled_method.is_empty());
-
-            let valid_methods = vec!["wZa2gEnTxC", "daq6sEhEBy"];
-            assert!(valid_methods.contains(&sampled_method));
+                .sample_method(&svc_name, "graph_main", &mut rng)
+                .expect("service must exist");
+            assert!(["method_a", "method_b"].contains(&sampled_method.method.as_str()));
         }
     }
 }

@@ -4,16 +4,18 @@ use crate::{
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex, RwLock,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex, OnceLock, RwLock,
     },
     task::Poll,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{estimate_method_latency, track_method_latency};
 use masa::{time_now, Context, LatencyDistribution, LatencyEstimator, MethodId, EARLY_RETURN};
+
+static LAST_PRINT_TIME: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
 #[derive(Debug)]
 /// This policy computes the deadline d of a child request as  
@@ -53,8 +55,8 @@ impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
 pub struct ParentContext<E: LatencyEstimator + Default + 'static = LatencyDistribution> {
     method: GrpcMethod,
     ctx: Context,
+    q_lat: AtomicU64,
     server: Arc<ServerContext<E>>,
-
     will_early_return: AtomicBool,
     child_end_times: Mutex<Vec<(MethodId, Instant)>>,
 }
@@ -108,12 +110,17 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
             server: server_ctx,
             will_early_return: AtomicBool::new(false),
             child_end_times: Mutex::new(Vec::new()),
+            q_lat: AtomicU64::new(0),
         }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         if self.check_early_return() {
             return Err(Err(self.issue_early_return()));
+        }
+        let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
+        if queue_latency > 0 {
+            self.q_lat.fetch_add(queue_latency, Ordering::AcqRel);
         }
 
         Ok(())
@@ -153,6 +160,25 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         )
         .unwrap_or(0);
 
+        // Print estimate_remaining every 5 seconds
+        {
+            let last_print = LAST_PRINT_TIME.get_or_init(|| Mutex::new(None));
+            let mut last_print_guard = last_print.lock().unwrap();
+            let now = Instant::now();
+            let should_print = last_print_guard
+                .map(|last| now.duration_since(last) >= Duration::from_secs(5))
+                .unwrap_or(true);
+
+            if should_print {
+                println!(
+                    "estimate_remaining: {}, before child {}",
+                    estimate_remaining,
+                    child_method.id()
+                );
+                *last_print_guard = Some(now);
+            }
+        }
+
         // NOTE(vic): could we have passed the deadline at this point?
         let deadline = self.ctx.deadline() - estimate_remaining;
 
@@ -184,11 +210,31 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
             .unwrap()
             .push((child_method.id(), Instant::now()));
 
+        if let Ok(resp) = response {
+            if let Some(value) = resp
+                .metadata()
+                .get("x-queue-latency")
+                .or_else(|| resp.metadata().get("X-Queue-Latency"))
+            {
+                if let Ok(v) = value.to_str() {
+                    if let Ok(parsed) = v.parse::<u64>() {
+                        self.q_lat.fetch_add(parsed, Ordering::AcqRel);
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
     fn finalize(&self, _response: &mut http::Response<BoxBody>) {
         let parent_end = Instant::now();
+        let res_header = _response.headers_mut();
+        let total = self.q_lat.load(Ordering::Acquire).to_string();
+        if let Ok(header_val) = http::HeaderValue::from_str(&total) {
+            // HTTP/2 metadata is lower-case; rely on hyper to canonicalize.
+            res_header.insert("x-queue-latency", header_val);
+        }
         // track remaining time after each child
         for (child_method, child_end) in self.child_end_times.lock().unwrap().iter() {
             // TODO: The LatencyDistribution instances will regularly sort their data. Should this

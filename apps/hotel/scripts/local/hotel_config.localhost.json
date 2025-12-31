@@ -19,14 +19,14 @@
     "port": 8662,
     "replicas": 1,
     "mongodbAddr": "mongodb://127.0.0.1:27004",
-    "memcachedAddr": "memcache://127.0.0.1:11004"
+    "redisAddr": "redis://127.0.0.1:11004"
   },
   "rate": {
     "ip": "127.0.0.1",
     "port": 8663,
     "replicas": 1,
     "mongodbAddr": "mongodb://127.0.0.1:27003",
-    "memcachedAddr": "memcache://127.0.0.1:11003"
+    "redisAddr": "redis://127.0.0.1:11003"
   },
   "recommendation": {
     "ip": "127.0.0.1",
@@ -38,14 +38,14 @@
     "port": 8666,
     "replicas": 1,
     "mongodbAddr": "mongodb://127.0.0.1:27005",
-    "memcachedAddr": "memcache://127.0.0.1:11005"
+    "redisAddr": "redis://127.0.0.1:11005"
   },
   "review": {
     "ip": "127.0.0.1",
     "port": 8667,
     "replicas": 1,
     "mongodbAddr": "xx",
-    "memcachedAddr": "xx"
+    "redisAddr": "xx"
   },
   "search": {
     "ip": "127.0.0.1",
