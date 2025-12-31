@@ -14,8 +14,12 @@ import networkx as nx
 import matplotlib
 matplotlib.use("Agg")  # Headless/parallel-safe plotting
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from matplotlib.collections import LineCollection
 import copy
 import re
+import numpy as np
+from collections import defaultdict
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -580,6 +584,523 @@ def _slugify(name: str) -> str:
     s = re.sub(r"_+", "_", s).strip("_")
     return s or "service"
 
+def _extract_timing_from_trace(
+    trace_df: pd.DataFrame,
+    G: nx.DiGraph,
+) -> dict[tuple[str, str], list[dict]]:
+    """
+    Extract timing information for parent-child relationships from a trace.
+    
+    Args:
+        trace_df: DataFrame containing rows for a single trace
+        G: NetworkX graph with the service's call structure
+    
+    Returns:
+        Dictionary mapping (parent_dm, child_dm) -> list of timing dicts
+        Each timing dict has: start_time, end_time, parent_start, parent_end, rpc_id
+    """
+    if "rpc_id" not in trace_df.columns or "dm" not in trace_df.columns:
+        return {}
+    
+    if "timestamp" not in trace_df.columns or "rt" not in trace_df.columns:
+        return {}
+    
+    trace_df = trace_df.copy()
+    trace_df["rpc_id_str"] = trace_df["rpc_id"].astype(str).str.strip()
+    
+    # Convert timestamps and runtime
+    trace_df["timestamp"] = pd.to_numeric(trace_df["timestamp"], errors="coerce")
+    trace_df["rt"] = pd.to_numeric(trace_df["rt"], errors="coerce")
+    trace_df["end_time"] = trace_df["timestamp"] + trace_df["rt"]
+    
+    # Create mapping from rpc_id to (dm, start_time, end_time)
+    rpc_info = {}
+    rpc_groups = trace_df.groupby("rpc_id_str")
+    
+    for rpc_id, group in rpc_groups:
+        if rpc_id and rpc_id != "" and rpc_id != "nan":
+            dm_values = group["dm"].dropna().unique()
+            if len(dm_values) > 0:
+                dm = dm_values[0]
+                # Use min start and max end to handle multiple rows with same rpc_id
+                # Try to get valid timestamps - use median if min/max are invalid
+                valid_timestamps = group["timestamp"].dropna()
+                valid_end_times = group["end_time"].dropna()
+                
+                if len(valid_timestamps) > 0 and len(valid_end_times) > 0:
+                    start_time = valid_timestamps.min()
+                    end_time = valid_end_times.max()
+                    # Only include if we have reasonable timing data
+                    if pd.notna(start_time) and pd.notna(end_time) and end_time >= start_time:
+                        rpc_info[rpc_id] = {
+                            "dm": dm,
+                            "start_time": start_time,
+                            "end_time": end_time,
+                        }
+    
+    # Build parent-child timing relationships
+    timing_data = defaultdict(list)
+    
+    # Also create a mapping from rpc_id to dm for edges without timing
+    rpc_to_dm_no_timing = {}
+    for rpc_id, group in trace_df.groupby("rpc_id_str"):
+        if rpc_id and rpc_id != "" and rpc_id != "nan":
+            dm_values = group["dm"].dropna().unique()
+            if len(dm_values) > 0 and rpc_id not in rpc_info:
+                # This rpc_id exists but has no valid timing data
+                rpc_to_dm_no_timing[rpc_id] = dm_values[0]
+    
+    for rpc_id, info in rpc_info.items():
+        parent_rpc_id = _parent_rpc_id(rpc_id)
+        
+        if parent_rpc_id is None:
+            # Root call - parent is USER
+            if "USER" in G.nodes():
+                parent_dm = "USER"
+                child_dm = info["dm"]
+                if (parent_dm, child_dm) in G.edges():
+                    timing_data[(parent_dm, child_dm)].append({
+                        "start_time": info["start_time"],
+                        "end_time": info["end_time"],
+                        "parent_start": info["start_time"],  # USER call starts when child starts
+                        "parent_end": info["end_time"],
+                        "rpc_id": rpc_id,
+                    })
+        else:
+            # Child call - find parent's timing
+            if parent_rpc_id in rpc_info:
+                # Both parent and child have valid timing
+                parent_info = rpc_info[parent_rpc_id]
+                parent_dm = parent_info["dm"]
+                child_dm = info["dm"]
+                
+                # Only include if this edge exists in the graph
+                if (parent_dm, child_dm) in G.edges():
+                    timing_data[(parent_dm, child_dm)].append({
+                        "start_time": info["start_time"],
+                        "end_time": info["end_time"],
+                        "parent_start": parent_info["start_time"],
+                        "parent_end": parent_info["end_time"],
+                        "rpc_id": rpc_id,
+                    })
+            elif parent_rpc_id in rpc_to_dm_no_timing:
+                # Child has timing but parent doesn't - still try to include child timing
+                # Use child's timing as a fallback for parent timing
+                parent_dm = rpc_to_dm_no_timing[parent_rpc_id]
+                child_dm = info["dm"]
+                
+                if (parent_dm, child_dm) in G.edges():
+                    # Use child's start as parent start estimate
+                    timing_data[(parent_dm, child_dm)].append({
+                        "start_time": info["start_time"],
+                        "end_time": info["end_time"],
+                        "parent_start": info["start_time"],  # Estimate: parent starts when child starts
+                        "parent_end": info["end_time"],  # Estimate: parent ends when child ends
+                        "rpc_id": rpc_id,
+                    })
+    
+    return dict(timing_data)
+
+def _classify_call_pattern(
+    child_timings_dict: dict[str, list[dict]],
+    overlap_threshold: float = 0.1,
+) -> tuple[str, float]:
+    """
+    Classify whether a parent calls its children sequentially, in parallel, or mixed.
+    Compares all children of the same parent together.
+    
+    Args:
+        child_timings_dict: Dictionary mapping child_dm -> list of timing dicts
+        overlap_threshold: Fraction of overlap needed to consider calls parallel (default: 0.1)
+    
+    Returns:
+        Tuple of (pattern_type, parallel_ratio)
+        pattern_type: "sequential", "parallel", or "mixed"
+        parallel_ratio: Fraction of sibling pairs that overlap (0.0 to 1.0)
+    """
+    if len(child_timings_dict) < 2:
+        return ("sequential", 0.0)
+    
+    # Group timings by parent call instance (same parent_start/end)
+    parent_groups = defaultdict(lambda: defaultdict(list))
+    for child_dm, timings in child_timings_dict.items():
+        for timing in timings:
+            parent_key = (timing["parent_start"], timing["parent_end"])
+            parent_groups[parent_key][child_dm].append(timing)
+    
+    if not parent_groups:
+        return ("sequential", 0.0)
+    
+    parallel_count = 0
+    total_pairs = 0
+    
+    # For each parent call instance, check if children overlap
+    for parent_key, children_timings in parent_groups.items():
+        if len(children_timings) < 2:
+            continue
+        
+        # Get the earliest start and latest end for each child in this parent call
+        child_ranges = {}
+        for child_dm, timings in children_timings.items():
+            if timings:
+                # Prefer original keys (start_time/end_time) for classification, fall back to normalized (start/end)
+                if "start_time" in timings[0]:
+                    starts = [t["start_time"] for t in timings]
+                    ends = [t["end_time"] for t in timings]
+                elif "start" in timings[0]:
+                    starts = [t["start"] for t in timings]
+                    ends = [t["end"] for t in timings]
+                else:
+                    continue  # Skip if no timing data
+                child_ranges[child_dm] = (min(starts), max(ends))
+        
+        # Compare all pairs of children
+        child_list = list(child_ranges.items())
+        for i in range(len(child_list)):
+            for j in range(i + 1, len(child_list)):
+                child1_dm, (start1, end1) = child_list[i]
+                child2_dm, (start2, end2) = child_list[j]
+                
+                total_pairs += 1
+                
+                # Check if the two children overlap in time
+                overlap_start = max(start1, start2)
+                overlap_end = min(end1, end2)
+                
+                if overlap_start < overlap_end:
+                    # They overlap - calculate overlap ratio
+                    overlap_duration = overlap_end - overlap_start
+                    min_duration = min(end1 - start1, end2 - start2)
+                    if min_duration > 0:
+                        overlap_ratio = overlap_duration / min_duration
+                        if overlap_ratio >= overlap_threshold:
+                            parallel_count += 1
+    
+    if total_pairs == 0:
+        return ("sequential", 0.0)
+    
+    parallel_ratio = parallel_count / total_pairs
+    
+    if parallel_ratio >= 0.7:
+        return ("parallel", parallel_ratio)
+    elif parallel_ratio <= 0.3:
+        return ("sequential", parallel_ratio)
+    else:
+        return ("mixed", parallel_ratio)
+
+def _draw_timeline_graph(
+    G: nx.DiGraph,
+    timing_data: dict[tuple[str, str], list[dict]],
+    title: str,
+    output_path: Path,
+    num_nodes: int,
+) -> None:
+    """
+    Draw a timeline graph showing parent-child call patterns over time.
+    The layout mirrors the DAG structure with time on x-axis and hierarchy on y-axis.
+    
+    Args:
+        G: NetworkX directed graph (USER subgraph)
+        timing_data: Dictionary mapping (parent, child) -> list of timing dicts
+        title: Title for the graph
+        output_path: Path to save the image
+        num_nodes: Number of nodes in the graph (for sizing)
+    """
+    if G.number_of_nodes() == 0:
+        return
+    
+    # Get hierarchical layout positions
+    pos = _hierarchical_layout(G)
+    if not pos:
+        return
+    
+    # Compute dynamic figure size
+    if num_nodes < 50:
+        figsize = (20.0, max(12.0, num_nodes * 0.3))
+    elif num_nodes < 200:
+        figsize = (24.0, max(14.0, num_nodes * 0.2))
+    else:
+        figsize = (28.0, max(16.0, num_nodes * 0.15))
+    
+    fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=figsize, 
+                                           gridspec_kw={'width_ratios': [1, 2]})
+    
+    # Left panel: DAG structure (mirror of user graph)
+    # Draw nodes and edges
+    for node, (x, y) in pos.items():
+        ax_left.scatter(x, y, s=500, c='lightblue', edgecolors='black', zorder=3)
+        ax_left.text(x, y, node, fontsize=7, ha='center', va='center', fontweight='bold')
+    
+    # Draw edges
+    for u, v in G.edges():
+        if u in pos and v in pos:
+            x1, y1 = pos[u]
+            x2, y2 = pos[v]
+            ax_left.plot([x1, x2], [y1, y2], 'k-', linewidth=1, alpha=0.3, zorder=1)
+    
+    ax_left.set_title('Call Graph Structure', fontsize=10, fontweight='bold')
+    ax_left.axis('off')
+    
+    # Right panel: Timeline visualization
+    # First, classify patterns using original timings
+    # Then normalize for visualization
+    edge_timelines = {}
+    
+    for (parent, child), timings in timing_data.items():
+        if not timings or (parent, child) not in G.edges():
+            continue
+        
+        # Normalize timestamps relative to parent start for each trace
+        normalized_timings = []
+        for timing in timings:
+            parent_start = timing["parent_start"]
+            relative_start = timing["start_time"] - parent_start
+            relative_end = timing["end_time"] - parent_start
+            normalized_timings.append({
+                "start": relative_start,
+                "end": relative_end,
+                "start_time": timing["start_time"],  # Keep original for classification
+                "end_time": timing["end_time"],  # Keep original for classification
+                "parent_start": timing["parent_start"],  # Keep original for grouping
+                "parent_end": timing["parent_end"],  # Keep original for grouping
+            })
+        
+        edge_timelines[(parent, child)] = normalized_timings
+    
+    if not edge_timelines:
+        plt.close()
+        return
+    
+    # Determine time range for x-axis (use 95th percentile to avoid outliers)
+    all_times = []
+    for timings in edge_timelines.values():
+        for timing in timings:
+            all_times.append(timing["end"])
+            all_times.append(timing["parent_end"])
+    
+    if not all_times:
+        plt.close()
+        return
+    
+    max_time = np.percentile(all_times, 95) if len(all_times) > 0 else max(all_times)
+    if max_time == 0:
+        max_time = 1.0
+    
+    # Map nodes to y-positions based on hierarchy (for vertical layout)
+    node_y_positions = {}
+    y_positions = sorted(set(y for x, y in pos.values()), reverse=True)
+    y_to_level = {y: i for i, y in enumerate(y_positions)}
+    
+    for node, (x, y) in pos.items():
+        level = y_to_level[y]
+        node_y_positions[node] = level
+    
+    max_level = len(y_to_level) - 1
+    
+    # Calculate hierarchy depth for each node (for horizontal positioning)
+    # Depth = distance from USER (or root)
+    node_depths = {}
+    if "USER" in G.nodes():
+        # BFS from USER to calculate depths
+        queue = [("USER", 0)]
+        visited = set()
+        while queue:
+            node, depth = queue.pop(0)
+            if node in visited:
+                continue
+            visited.add(node)
+            node_depths[node] = depth
+            for child in G.successors(node):
+                if child not in visited:
+                    queue.append((child, depth + 1))
+        # Handle any unvisited nodes (shouldn't happen in USER subgraph, but be safe)
+        for node in G.nodes():
+            if node not in node_depths:
+                node_depths[node] = 0
+    else:
+        # No USER node, use in-degree to estimate depth
+        for node in G.nodes():
+            node_depths[node] = 0
+    
+    max_depth = max(node_depths.values()) if node_depths else 0
+    
+    # Colors for different patterns
+    colors = {'sequential': '#2E86AB', 'parallel': '#A23B72', 'mixed': '#F18F01'}
+    
+    # Calculate column width for hierarchy levels
+    # Each depth level gets a column, with time flowing horizontally within
+    column_width = max_time * 1.2  # Extra space for labels
+    
+    # Calculate max visualization depth (may be deeper than BFS depth due to parent+1 placement)
+    max_vis_depth = max_depth
+    for parent in G.nodes():
+        if parent in node_depths:
+            parent_depth = node_depths[parent]
+            children = list(G.successors(parent))
+            if children:
+                # Children will be at parent_depth + 1
+                max_vis_depth = max(max_vis_depth, parent_depth + 1)
+    
+    total_width = (max_vis_depth + 1) * column_width
+    
+    # Track which (node, x_pos) combinations have been labeled to avoid duplicates
+    labeled_positions = set()
+    
+    # First, draw all node labels at their base hierarchy depth
+    for node in G.nodes():
+        if node not in node_y_positions:
+            continue
+        level = node_y_positions[node]
+        depth = node_depths.get(node, 0)
+        x_pos = depth * column_width
+        pos_key = (node, x_pos, level)
+        
+        if pos_key not in labeled_positions:
+            # Draw node label at its depth column
+            ax_right.text(x_pos - 0.05 * max_time, level, node, 
+                         fontsize=8, ha='right', va='center', fontweight='bold',
+                         bbox=dict(boxstyle='round,pad=0.3', facecolor='lightgray', alpha=0.5))
+            labeled_positions.add(pos_key)
+    
+    # For each parent node, show when it calls its children
+    for parent in sorted(G.nodes(), key=lambda n: node_y_positions.get(n, 0)):
+        if parent not in node_y_positions:
+            continue
+        
+        parent_level = node_y_positions[parent]
+        parent_depth = node_depths.get(parent, 0)
+        parent_x = parent_depth * column_width
+        
+        children = sorted([child for child in G.successors(parent) if child in node_y_positions])
+        
+        if not children:
+            # Leaf node - already labeled above, skip timeline bars
+            continue
+        
+        # Get timing data for all children of this parent
+        child_timings = {}
+        for child in children:
+            edge = (parent, child)
+            if edge in edge_timelines:
+                child_timings[child] = edge_timelines[edge]
+        
+        # Classify pattern for this parent's children (if we have timing data)
+        if child_timings:
+            pattern_type, parallel_ratio = _classify_call_pattern(child_timings)
+            color = colors.get(pattern_type, 'gray')
+        else:
+            # No timing data - use gray
+            color = 'gray'
+        
+        # Draw parent node label (overwrite the gray one)
+        parent_pos_key = (parent, parent_x, parent_level)
+        ax_right.text(parent_x - 0.05 * max_time, parent_level, parent, 
+                     fontsize=8, ha='right', va='center', fontweight='bold',
+                     bbox=dict(boxstyle='round,pad=0.3', facecolor='lightblue', alpha=0.7))
+        labeled_positions.add(parent_pos_key)
+        
+        # Draw timeline bars for each child
+        # Children appear in the next column to the right of their parent
+        for i, child in enumerate(children):
+            edge = (parent, child)
+            child_level = node_y_positions[child]
+            # For visualization, place child one column to the right of parent
+            # This ensures the DAG structure is clear: children are always to the right
+            child_vis_depth = parent_depth + 1
+            child_x = child_vis_depth * column_width
+            
+            # Calculate y position with slight offset for multiple children at same level
+            y_offset = (i - len(children) / 2 + 0.5) * 0.12
+            y_pos = child_level + y_offset
+            
+            if edge in child_timings and child_timings[edge]:
+                timings = child_timings[edge]
+                
+                # Use median start and end times for visualization
+                starts = [t["start"] for t in timings]
+                ends = [t["end"] for t in timings]
+                median_start = np.median(starts)
+                median_end = np.median(ends)
+                
+                # Draw bar at child's column position
+                width = max(0.005 * max_time, median_end - median_start)
+                ax_right.barh(y_pos, width, left=child_x + median_start, height=0.15, 
+                             color=color, alpha=0.7, edgecolor='black', linewidth=0.5)
+                
+                # Draw connecting line from parent to child (horizontal then vertical)
+                # Make edges thicker and more prominent to show dependency structure
+                # Horizontal line from parent to start of child column
+                ax_right.plot([parent_x, child_x], [parent_level, parent_level], 
+                             color='black', linestyle='--', linewidth=2.0, alpha=0.6, zorder=1)
+                # Vertical line down to child
+                ax_right.plot([child_x, child_x], [parent_level, y_pos], 
+                             color='black', linestyle='--', linewidth=2.0, alpha=0.6, zorder=1)
+                # Horizontal line to child's timeline bar
+                ax_right.plot([child_x, child_x + median_start], [y_pos, y_pos], 
+                             color='black', linestyle='--', linewidth=2.0, alpha=0.6, zorder=1)
+                
+                # Label child at its column (only if not already labeled at this position)
+                child_pos_key = (child, child_x, y_pos)
+                if child_pos_key not in labeled_positions:
+                    ax_right.text(child_x - 0.02 * max_time, y_pos, child,
+                                fontsize=7, ha='right', va='center', fontstyle='italic')
+                    labeled_positions.add(child_pos_key)
+            else:
+                # No timing data - draw a placeholder at child's column
+                placeholder_start = child_x + 0.1 * max_time
+                placeholder_width = 0.05 * max_time
+                placeholder_center = placeholder_start + placeholder_width / 2
+                ax_right.barh(y_pos, placeholder_width, left=placeholder_start, height=0.15, 
+                             color='lightgray', alpha=0.3, edgecolor='gray', linewidth=0.5)
+                
+                # Draw connecting line from parent to child (thinner for no-data case)
+                ax_right.plot([parent_x, child_x], [parent_level, parent_level], 
+                             color='gray', linestyle=':', linewidth=1.5, alpha=0.4, zorder=1)
+                ax_right.plot([child_x, child_x], [parent_level, y_pos], 
+                             color='gray', linestyle=':', linewidth=1.5, alpha=0.4, zorder=1)
+                ax_right.plot([child_x, placeholder_start], [y_pos, y_pos], 
+                             color='gray', linestyle=':', linewidth=1.5, alpha=0.4, zorder=1)
+                
+                # Label child inside the placeholder bar (only if not already labeled at this position)
+                child_pos_key = (child, child_x, y_pos)
+                if child_pos_key not in labeled_positions:
+                    ax_right.text(placeholder_center, y_pos, child + " (no data)",
+                                fontsize=6, ha='center', va='center', fontstyle='italic', 
+                                color='black', alpha=0.8, weight='bold',
+                                bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7, edgecolor='none'))
+                    labeled_positions.add(child_pos_key)
+    
+    # Set axis properties
+    # X-axis: hierarchy depth (columns) with time flowing within each column
+    # Y-axis: hierarchy level (vertical position)
+    ax_right.set_xlim(-0.1 * max_time, total_width + 0.1 * max_time)
+    ax_right.set_ylim(-0.5, max_level + 0.5)
+    ax_right.set_xlabel('Hierarchy Depth (columns) → Time (within each column, normalized to parent start)', 
+                       fontsize=9)
+    ax_right.set_ylabel('Hierarchy Level (from USER)', fontsize=10)
+    ax_right.set_title('Call Pattern Timeline (Children appear to the right of their parent)', 
+                     fontsize=10, fontweight='bold')
+    ax_right.grid(True, alpha=0.3, axis='both')
+    
+    # Add vertical lines to separate hierarchy depth columns
+    for depth in range(max_vis_depth + 2):
+        x_pos = depth * column_width
+        ax_right.axvline(x=x_pos, color='lightgray', linestyle='--', linewidth=0.5, alpha=0.3)
+    
+    # Add legend
+    legend_elements = [
+        mpatches.Patch(facecolor=colors['sequential'], label='Sequential', alpha=0.7),
+        mpatches.Patch(facecolor=colors['parallel'], label='Parallel', alpha=0.7),
+        mpatches.Patch(facecolor=colors['mixed'], label='Mixed', alpha=0.7),
+    ]
+    ax_right.legend(handles=legend_elements, loc='upper right', fontsize=8)
+    
+    plt.suptitle(title, fontsize=12, fontweight='bold', y=0.98)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
 def reachable_subgraph(G: nx.DiGraph, source: str = "USER") -> nx.DiGraph:
     """
     Extract the subgraph reachable from a source node.
@@ -854,6 +1375,30 @@ def _process_service(
             output_path = service_dir / "graph_user.png"
             title = f"Aggregated Call Graph for Service '{service_name}' (USER-Reachable Subgraph)\n(Edge thickness and labels indicate frequency)"
             _draw_graph(G_user, title, output_path, num_nodes_user)
+            
+            # Extract and aggregate timing data for timeline visualization
+            if "timestamp" in service_df.columns and "rt" in service_df.columns:
+                # Aggregate timing data across all traces
+                aggregated_timing: dict[tuple[str, str], list[dict]] = defaultdict(list)
+                
+                for trace_id in unique_traces:
+                    trace_df = service_df[service_df[trace_col] == trace_id]
+                    trace_timing = _extract_timing_from_trace(trace_df, G_user)
+                    
+                    # Merge into aggregated timing
+                    for edge, timings in trace_timing.items():
+                        if edge in G_user.edges():  # Only include edges in USER subgraph
+                            aggregated_timing[edge].extend(timings)
+                
+                # Log edges in graph but without timing data for debugging
+                edges_without_timing = set(G_user.edges()) - set(aggregated_timing.keys())
+                if edges_without_timing:
+                    logger.debug(f"Service {service_name}: {len(edges_without_timing)} edges in graph but no timing data: {list(edges_without_timing)[:5]}...")
+                
+                # Draw timeline graph (even if no timing data, to show structure)
+                output_path = service_dir / "pattern_timeline.png"
+                title = f"Call Pattern Timeline for Service '{service_name}'\n(Shows sequential vs parallel call patterns)"
+                _draw_timeline_graph(G_user, aggregated_timing, title, output_path, num_nodes_user)
     
     # Return both flags separately so we can track rejection reasons
     return (service_name, G, stats, has_user_root, user_subgraph_sufficient)
