@@ -161,7 +161,7 @@ def sample_traces(df: pd.DataFrame, fraction: float, trace_col: str = "traceid",
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Clean the dataframe by removing rows where 'um' or 'dm' equals 'UNKNOWN'.
+    Clean the dataframe by removing rows where 'um' or 'dm' equals 'UNKNOWN' or 'UNAVAILABLE'.
     
     Args:
         df: Input dataframe with trace data
@@ -171,22 +171,25 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     original_len = len(df)
     
-    # Remove rows where um or dm equals UNKNOWN
+    # Remove rows where um or dm equals UNKNOWN or UNAVAILABLE
     if "um" in df.columns and "dm" in df.columns:
-        cleaned_df = df[(df["um"] != "UNKNOWN") & (df["dm"] != "UNKNOWN")].copy()
+        cleaned_df = df[
+            (df["um"] != "UNKNOWN") & (df["um"] != "UNAVAILABLE") &
+            (df["dm"] != "UNKNOWN") & (df["dm"] != "UNAVAILABLE")
+        ].copy()
     elif "um" in df.columns:
-        cleaned_df = df[df["um"] != "UNKNOWN"].copy()
+        cleaned_df = df[(df["um"] != "UNKNOWN") & (df["um"] != "UNAVAILABLE")].copy()
     elif "dm" in df.columns:
-        cleaned_df = df[df["dm"] != "UNKNOWN"].copy()
+        cleaned_df = df[(df["dm"] != "UNKNOWN") & (df["dm"] != "UNAVAILABLE")].copy()
     else:
-        logger.warning("Columns 'um' or 'dm' not found, skipping UNKNOWN cleaning")
+        logger.warning("Columns 'um' or 'dm' not found, skipping cleaning")
         return df
     
     removed = original_len - len(cleaned_df)
     if removed > 0:
-        logger.info(f"Cleaned data: removed {removed:,} rows where 'um' or 'dm' equals UNKNOWN (from {original_len:,} to {len(cleaned_df):,} rows)")
+        logger.info(f"Cleaned data: removed {removed:,} rows where 'um' or 'dm' equals UNKNOWN or UNAVAILABLE (from {original_len:,} to {len(cleaned_df):,} rows)")
     else:
-        logger.info("No rows found with 'um' or 'dm' equal to UNKNOWN")
+        logger.info("No rows found with 'um' or 'dm' equal to UNKNOWN or UNAVAILABLE")
     
     return cleaned_df
 
@@ -260,12 +263,16 @@ def _extract_edges_from_trace(trace_df: pd.DataFrame) -> list[tuple[str, str]]:
     
     return edges
 
-def _hierarchical_layout(G: nx.DiGraph) -> dict:
+def _hierarchical_layout(G: nx.DiGraph, ranksep: float = 2.0, nodesep: float = 0.8) -> dict:
     """
     Create a hierarchical layout for a directed graph with roots at the top.
+    Uses Graphviz's 'dot' layout if available (same as analyze.py), otherwise falls back
+    to a custom hierarchical layout.
     
     Args:
         G: NetworkX directed graph
+        ranksep: Minimum distance between ranks/layers (for Graphviz)
+        nodesep: Minimum distance between nodes in the same rank (for Graphviz)
     
     Returns:
         Dictionary mapping nodes to (x, y) positions
@@ -273,6 +280,17 @@ def _hierarchical_layout(G: nx.DiGraph) -> dict:
     if G.number_of_nodes() == 0:
         return {}
     
+    # Try to use Graphviz layout (same as analyze.py)
+    try:
+        pos = nx.nx_agraph.graphviz_layout(
+            G, prog="dot", args=f"-Granksep={ranksep} -Gnodesep={nodesep}"
+        )
+        return pos
+    except (ImportError, AttributeError, Exception):
+        # Fall back to custom hierarchical layout if Graphviz is not available
+        pass
+    
+    # Custom hierarchical layout (fallback)
     # Find root nodes (nodes with in_degree == 0)
     roots = [n for n in G.nodes() if G.in_degree(n) == 0]
     
@@ -422,7 +440,7 @@ def _process_service(
     # Create visualization
     if G.number_of_nodes() > 0:
         plt.figure(figsize=(14, 10))
-        pos = _hierarchical_layout(G)
+        pos = _hierarchical_layout(G, ranksep=2.0, nodesep=0.8)
         
         # Get edge weights for visualization
         edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
@@ -465,7 +483,23 @@ def _process_service(
     
     return (service_name, G, stats)
 
-def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int = 100) -> None:
+def _process_service_wrapper(args: tuple) -> tuple[str, nx.DiGraph, dict]:
+    """
+    Wrapper function for parallel processing of services.
+    Extracts arguments from tuple for ProcessPoolExecutor compatibility.
+    
+    Args:
+        args: Tuple of (service_name, service_df, trace_col, graphs_dir_str)
+              where graphs_dir_str is a string path that will be converted to Path
+    
+    Returns:
+        Tuple of (service_name, graph, statistics_dict)
+    """
+    service_name, service_df, trace_col, graphs_dir_str = args
+    graphs_dir = Path(graphs_dir_str)
+    return _process_service(service_name, service_df, trace_col, graphs_dir)
+
+def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int = 100, n_workers: int | None = None) -> None:
     """
     Analyze call graphs by grouping by service and aggregating edges across all traces.
     For each service, compute the union of all edges and their frequencies, then plot.
@@ -521,15 +555,28 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
     if len(top_services) > 1:
         logger.info(f"Bottom selected service: {top_services[-1]} with {service_trace_counts[min(top_n, len(service_names))-1][1]:,} traces")
     
-    # Process each selected service
+    # Process each selected service in parallel
     all_stats = []
-    logger.info(f"\nProcessing {len(top_services)} service(s)...")
+    logger.info(f"\nProcessing {len(top_services)} service(s) in parallel...")
     
-    for service_name in tqdm(top_services, desc="Processing services", file=sys.stderr):
-        service_df = service_groups.get_group(service_name).copy()
-        _, G, stats = _process_service(service_name, service_df, trace_col, graphs_dir)
-        stats["service_name"] = service_name
-        all_stats.append(stats)
+    # Prepare arguments for parallel processing (convert Path to string for pickling)
+    process_args = [
+        (service_name, service_groups.get_group(service_name).copy(), trace_col, str(graphs_dir))
+        for service_name in top_services
+    ]
+    
+    # Process services in parallel
+    with ProcessPoolExecutor(max_workers=n_workers) as ex:
+        futures = {ex.submit(_process_service_wrapper, args): args[0] for args in process_args}
+        for fut in tqdm(as_completed(futures), total=len(futures), desc="Processing services", file=sys.stderr, dynamic_ncols=True):
+            service_name = futures[fut]
+            try:
+                _, G, stats = fut.result()
+                stats["service_name"] = service_name
+                all_stats.append(stats)
+            except Exception as e:
+                logger.error(f"Failed to process service {service_name}: {e!r}")
+                raise
     
     # Sort statistics by number of nodes (descending)
     all_stats.sort(key=lambda x: x["num_nodes"], reverse=True)
@@ -608,6 +655,12 @@ def main() -> None:
         default=100,
         help="Number of top services by trace count to process (default: 100)"
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Number of parallel workers for processing services (default: None, uses CPU count)"
+    )
     args = parser.parse_args()
     num_datasets = args.num_datasets
     sample_fraction = args.sample_fraction
@@ -648,7 +701,7 @@ def main() -> None:
     df = clean_data(df)
 
     # Analyze call graphs
-    analyze_call_graphs(df, top_n=top_services)
+    analyze_call_graphs(df, top_n=top_services, n_workers=args.workers)
 
 if __name__ == "__main__":
     main()
