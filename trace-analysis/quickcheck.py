@@ -626,8 +626,9 @@ def _process_service(
         graphs_dir: Directory to save graph visualizations
     
     Returns:
-        Tuple of (service_name, graph, statistics_dict, has_user_root)
-        where has_user_root is True if the graph has 'USER' as a root node
+        Tuple of (service_name, graph, statistics_dict, has_user_root, user_subgraph_sufficient)
+        where has_user_root is True if the graph has 'USER' as a root node,
+        and user_subgraph_sufficient is True if the USER-reachable subgraph has at least 5 nodes
     """
     # Get unique traces for this service
     unique_traces = service_df[trace_col].dropna().unique()
@@ -636,7 +637,7 @@ def _process_service(
         logger.warning(f"No valid traces found for service {service_name}")
         G = nx.DiGraph()
         stats = _compute_graph_statistics(G)
-        return (service_name, G, stats, False)
+        return (service_name, G, stats, False, False)
     
     # Aggregate edges across all traces
     edge_counter: dict[tuple[str, str], int] = {}
@@ -657,11 +658,17 @@ def _process_service(
     # Check if graph has 'USER' as a root node (in_degree == 0)
     has_user_root = "USER" in G.nodes() and G.in_degree("USER") == 0
     
+    # Check if USER subgraph has at least 5 nodes
+    user_subgraph_sufficient = False
+    if has_user_root:
+        G_user = reachable_subgraph(G, source="USER")
+        user_subgraph_sufficient = G_user.number_of_nodes() >= 5
+    
     # Compute statistics
     stats = _compute_graph_statistics(G)
     
-    # Only create visualizations if graph has USER as a root node
-    if G.number_of_nodes() > 0 and has_user_root:
+    # Only create visualizations if graph has USER as a root node and USER subgraph has >= 5 nodes
+    if G.number_of_nodes() > 0 and has_user_root and user_subgraph_sufficient:
         # Create service-specific directory
         service_slug = _slugify(service_name)
         service_dir = graphs_dir / service_slug
@@ -681,9 +688,10 @@ def _process_service(
             title = f"Aggregated Call Graph for Service '{service_name}' (USER-Reachable Subgraph)\n(Edge thickness and labels indicate frequency)"
             _draw_graph(G_user, title, output_path, num_nodes_user)
     
-    return (service_name, G, stats, has_user_root)
+    # Return both flags separately so we can track rejection reasons
+    return (service_name, G, stats, has_user_root, user_subgraph_sufficient)
 
-def _process_service_wrapper(args: tuple) -> tuple[str, nx.DiGraph, dict, bool]:
+def _process_service_wrapper(args: tuple) -> tuple[str, nx.DiGraph, dict, bool, bool]:
     """
     Wrapper function for parallel processing of services.
     Extracts arguments from tuple for ProcessPoolExecutor compatibility.
@@ -693,7 +701,7 @@ def _process_service_wrapper(args: tuple) -> tuple[str, nx.DiGraph, dict, bool]:
               where graphs_dir_str is a string path that will be converted to Path
     
     Returns:
-        Tuple of (service_name, graph, statistics_dict, has_user_root)
+        Tuple of (service_name, graph, statistics_dict, has_user_root, user_subgraph_sufficient)
     """
     service_name, service_df, trace_col, graphs_dir_str = args
     graphs_dir = Path(graphs_dir_str)
@@ -757,7 +765,8 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
     
     # Process each selected service in parallel
     all_stats = []
-    filtered_count = 0
+    filtered_no_user_root = 0
+    filtered_small_user_subgraph = 0
     logger.info(f"\nProcessing {len(top_services)} service(s) in parallel...")
     
     # Prepare arguments for parallel processing (convert Path to string for pickling)
@@ -772,12 +781,16 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
         for fut in tqdm(as_completed(futures), total=len(futures), desc="Processing services", file=sys.stderr, dynamic_ncols=True):
             service_name = futures[fut]
             try:
-                _, G, stats, has_user_root = fut.result()
-                if has_user_root:
+                _, G, stats, has_user_root, user_subgraph_sufficient = fut.result()
+                if has_user_root and user_subgraph_sufficient:
                     stats["service_name"] = service_name
                     all_stats.append(stats)
                 else:
-                    filtered_count += 1
+                    # Track rejection reasons separately
+                    if not has_user_root:
+                        filtered_no_user_root += 1
+                    elif not user_subgraph_sufficient:
+                        filtered_small_user_subgraph += 1
             except Exception as e:
                 logger.error(f"Failed to process service {service_name}: {e!r}")
                 raise
@@ -812,11 +825,15 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
     
     logger.info(f"\n{'='*80}")
     logger.info(f"Generated graphs for {len(all_stats)} service(s) in {graphs_dir}")
-    logger.info(f"Each service has its own directory with graph_all_nodes.png and graph_user.png (if USER exists)")
-    if filtered_count > 0:
-        logger.info(f"Filtered out {filtered_count} service(s) that do not have 'USER' as a root node")
+    logger.info(f"Each service has its own directory with graph_all_nodes.png and graph_user.png")
+    
+    total_filtered = filtered_no_user_root + filtered_small_user_subgraph
+    if total_filtered > 0:
+        logger.info(f"\nFiltered out {total_filtered} service(s):")
+        logger.info(f"  - {filtered_no_user_root} service(s) do not have 'USER' as a root node")
+        logger.info(f"  - {filtered_small_user_subgraph} service(s) have a USER-reachable subgraph with fewer than 5 nodes")
     else:
-        logger.info("All processed services have 'USER' as a root node")
+        logger.info("\nAll processed services have 'USER' as a root node and USER subgraph with >= 5 nodes")
 
 # ----------------------------
 # main()
