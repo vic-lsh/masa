@@ -96,7 +96,6 @@ mod tests {
         (server_addr, tx)
     }
 
-    #[ignore = "disabled for now"]
     #[tokio::test]
     async fn test_compose_media_success() {
         let (server_addr, shutdown_tx) = start_test_server().await;
@@ -138,7 +137,6 @@ mod tests {
             .expect("Failed to send shutdown signal");
     }
 
-    #[ignore = "disabled for now"]
     #[tokio::test]
     async fn test_compose_media_validation_error() {
         let (server_addr, shutdown_tx) = start_test_server().await;
@@ -181,7 +179,6 @@ mod tests {
             .expect("Failed to send shutdown signal");
     }
 
-    #[ignore = "disabled for now"]
     #[tokio::test]
     async fn test_empty_lists_case() {
         let (server_addr, shutdown_tx) = start_test_server().await;
