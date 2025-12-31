@@ -33,21 +33,106 @@ class TqdmLoggingHandler(logging.Handler):
 # Parallel CSV loading (processes)
 # ----------------------------
 
-def _read_one(path: str | Path, **read_csv_kwargs) -> pd.DataFrame:
-    return pd.read_csv(path, **read_csv_kwargs)
+def _sample_traces_from_df(
+    df: pd.DataFrame,
+    fraction: float,
+    trace_col: str = "traceid",
+    random_state: int | None = None,
+) -> pd.DataFrame:
+    """
+    Sample a fraction of traces from a single dataframe.
+    Helper function for use during parallel CSV loading.
+    
+    Args:
+        df: Input dataframe with trace data
+        fraction: Fraction of traces to sample (0.0 to 1.0)
+        trace_col: Column name containing trace IDs (default: "traceid")
+        random_state: Random seed for reproducibility (default: None)
+    
+    Returns:
+        DataFrame containing all rows for the sampled traces
+    """
+    if fraction >= 1.0:
+        return df
+    
+    if trace_col not in df.columns:
+        return df
+    
+    # Get unique trace IDs
+    unique_traces = df[trace_col].dropna().unique()
+    
+    if len(unique_traces) == 0:
+        return pd.DataFrame()
+    
+    # Sample trace IDs
+    n_samples = max(1, int(len(unique_traces) * fraction))
+    sampled_trace_ids = pd.Series(unique_traces).sample(
+        n=n_samples, 
+        random_state=random_state
+    ).values
+    
+    # Filter dataframe to keep all rows for sampled traces
+    sampled_df = df[df[trace_col].isin(sampled_trace_ids)].copy()
+    
+    return sampled_df
+
+def _read_and_sample_one(args: tuple) -> pd.DataFrame:
+    """
+    Read a CSV file and optionally sample traces from it.
+    
+    Args:
+        args: Tuple of (path, sample_fraction, trace_col, random_state, read_csv_kwargs)
+    
+    Returns:
+        Loaded and optionally sampled DataFrame
+    """
+    path, sample_fraction, trace_col, random_state, read_csv_kwargs = args
+    
+    # Read CSV
+    df = pd.read_csv(path, **read_csv_kwargs)
+    
+    # Sample traces if requested
+    if sample_fraction < 1.0:
+        df = _sample_traces_from_df(df, sample_fraction, trace_col, random_state)
+    
+    return df
 
 def read_csvs_parallel(
     paths: list[str | Path],
     n_workers: int | None = None,
     show_errors: bool = True,
+    sample_fraction: float = 1.0,
+    trace_col: str = "traceid",
+    random_state: int | None = None,
     **read_csv_kwargs,
 ) -> pd.DataFrame:
+    """
+    Read multiple CSV files in parallel and optionally sample traces from each.
+    
+    Args:
+        paths: List of CSV file paths to read
+        n_workers: Number of parallel workers (default: None, uses CPU count)
+        show_errors: Whether to show errors (default: True)
+        sample_fraction: Fraction of traces to sample from each CSV (0.0 to 1.0, default: 1.0)
+        trace_col: Column name containing trace IDs (default: "traceid")
+        random_state: Random seed for reproducibility (default: None)
+        **read_csv_kwargs: Additional arguments to pass to pd.read_csv
+    
+    Returns:
+        Concatenated DataFrame from all CSVs (after sampling if requested)
+    """
     paths = list(paths)
-    read_fn = partial(_read_one, **read_csv_kwargs)
+    
+    # Prepare arguments for parallel processing
+    process_args = [
+        (path, sample_fraction, trace_col, random_state, read_csv_kwargs)
+        for path in paths
+    ]
+    
     dfs = []
 
     with ProcessPoolExecutor(max_workers=n_workers) as ex:
-        futures = {ex.submit(read_fn, p): p for p in paths}
+        futures = {ex.submit(_read_and_sample_one, args): path for args, path in zip(process_args, paths)}
         for fut in tqdm(as_completed(futures), total=len(futures), desc="Reading CSVs", file=sys.stderr, dynamic_ncols=True):
             path = futures[fut]
             try:
@@ -104,16 +189,62 @@ def get_csv_path(dataset_number: int) -> Path:
 # Data loading & filtering
 # ----------------------------
 
-def load_concat_datasets(max_dataset: int, max_rows: int | None = None) -> pd.DataFrame:
+def load_concat_datasets(
+    max_dataset: int,
+    max_rows: int | None = None,
+    sample_fraction: float = 1.0,
+    trace_col: str = "traceid",
+    random_state: int | None = None,
+    n_workers: int | None = None,
+) -> pd.DataFrame:
+    """
+    Load and concatenate multiple CSV datasets in parallel, optionally sampling traces from each.
+    
+    Args:
+        max_dataset: Maximum dataset number (0-indexed, loads datasets 0 through max_dataset)
+        max_rows: Maximum number of rows to load from each CSV file (default: None, loads all)
+        sample_fraction: Fraction of traces to sample from each CSV (0.0 to 1.0, default: 1.0)
+        trace_col: Column name containing trace IDs (default: "traceid")
+        random_state: Random seed for reproducibility (default: None)
+        n_workers: Number of parallel workers (default: None, uses CPU count)
+    
+    Returns:
+        Concatenated DataFrame from all datasets (after sampling if requested)
+    """
     read_kwargs = {"on_bad_lines": "skip"}
     if max_rows is not None:
         read_kwargs["nrows"] = max_rows
     return read_csvs_parallel(
         [get_csv_path(i) for i in range(max_dataset + 1)],
+        n_workers=n_workers,
+        sample_fraction=sample_fraction,
+        trace_col=trace_col,
+        random_state=random_state,
         **read_kwargs,
     )
 
-def sample_traces(df: pd.DataFrame, fraction: float, trace_col: str = "traceid", random_state: int | None = None) -> pd.DataFrame:
+def _filter_chunk(args: tuple) -> pd.DataFrame:
+    """
+    Helper function to filter a chunk of dataframe in parallel.
+    
+    Args:
+        args: Tuple of (chunk_df, sampled_trace_ids_set, trace_col)
+    
+    Returns:
+        Filtered chunk dataframe
+    """
+    chunk_df, sampled_trace_ids_set, trace_col = args
+    return chunk_df[chunk_df[trace_col].isin(sampled_trace_ids_set)].copy()
+
+def sample_traces(
+    df: pd.DataFrame, 
+    fraction: float, 
+    trace_col: str = "traceid", 
+    random_state: int | None = None,
+    n_workers: int | None = None,
+    use_parallel: bool = True,
+    chunk_size: int = 10000000
+) -> pd.DataFrame:
     """
     Sample a fraction of traces from the dataframe.
     
@@ -125,6 +256,9 @@ def sample_traces(df: pd.DataFrame, fraction: float, trace_col: str = "traceid",
         fraction: Fraction of traces to sample (0.0 to 1.0)
         trace_col: Column name containing trace IDs (default: "traceid")
         random_state: Random seed for reproducibility (default: None)
+        n_workers: Number of parallel workers for filtering (default: None, uses CPU count)
+        use_parallel: Whether to use parallel filtering (default: True)
+        chunk_size: Number of rows per chunk for parallel processing (default: 100000)
     
     Returns:
         DataFrame containing all rows for the sampled traces
@@ -149,8 +283,38 @@ def sample_traces(df: pd.DataFrame, fraction: float, trace_col: str = "traceid",
         random_state=random_state
     ).values
     
+    # Convert to set for faster lookup
+    sampled_trace_ids_set = set(sampled_trace_ids)
+    
     # Filter dataframe to keep all rows for sampled traces
-    sampled_df = df[df[trace_col].isin(sampled_trace_ids)].copy()
+    # Use parallel filtering for large dataframes
+    if use_parallel and len(df) > chunk_size:
+        # Split dataframe into chunks
+        n_chunks = (len(df) + chunk_size - 1) // chunk_size
+        chunks = [df.iloc[i*chunk_size:(i+1)*chunk_size].copy() for i in range(n_chunks)]
+        
+        logger.info(f"Filtering {len(df):,} rows in {n_chunks} chunk(s) using {n_workers or 'auto'} worker(s)")
+        
+        # Filter chunks in parallel
+        process_args = [(chunk, sampled_trace_ids_set, trace_col) for chunk in chunks]
+        
+        with ProcessPoolExecutor(max_workers=n_workers) as ex:
+            futures = {ex.submit(_filter_chunk, args): i for i, args in enumerate(process_args)}
+            filtered_chunks = [None] * len(chunks)
+            
+            for fut in tqdm(as_completed(futures), total=len(futures), desc="Filtering chunks", file=sys.stderr, dynamic_ncols=True):
+                chunk_idx = futures[fut]
+                try:
+                    filtered_chunks[chunk_idx] = fut.result()
+                except Exception as e:
+                    logger.error(f"Failed to filter chunk {chunk_idx}: {e!r}")
+                    raise
+        
+        # Concatenate filtered chunks
+        sampled_df = pd.concat(filtered_chunks, ignore_index=True, sort=False)
+    else:
+        # Use sequential filtering for small dataframes or when parallel is disabled
+        sampled_df = df[df[trace_col].isin(sampled_trace_ids_set)].copy()
     
     logger.info(f"Sampled {len(sampled_trace_ids):,} traces ({fraction*100:.1f}%) from {len(unique_traces):,} unique traces")
     logger.info(f"Result: {len(sampled_df):,} rows from {len(df):,} original rows")
@@ -861,7 +1025,7 @@ def main() -> None:
         "-s", "--sample-fraction",
         type=float,
         default=1.0,
-        help="Fraction of traces to sample (0.0 to 1.0, default: 1.0). Set to 1.0 to use all traces."
+        help="Fraction of traces to sample from each CSV during loading (0.0 to 1.0, default: 1.0). Set to 1.0 to use all traces."
     )
     parser.add_argument(
         "--random-state",
@@ -909,19 +1073,23 @@ def main() -> None:
     # Convert number of datasets to max dataset ID (0-indexed)
     max_dataset = num_datasets - 1
 
-    # Load & concat
+    # Load & concat (with sampling applied during loading)
     logger.info(f"Loading {num_datasets} dataset(s) (datasets 0 through {max_dataset})")
     if max_rows is not None:
         logger.info(f"Limiting to {max_rows:,} rows per CSV file")
-    df = load_concat_datasets(max_dataset, max_rows=max_rows)
-    logger.info(f"Loaded {len(df)} rows from {num_datasets} dataset(s)")
-
-    # Sample traces if requested
     if sample_fraction < 1.0:
-        logger.info(f"Sampling {sample_fraction*100:.1f}% of traces (random_state={random_state})")
-        df = sample_traces(df, fraction=sample_fraction, random_state=random_state)
+        logger.info(f"Sampling {sample_fraction*100:.1f}% of traces from each CSV (random_state={random_state})")
     else:
         logger.info("Using all traces (no sampling)")
+    
+    df = load_concat_datasets(
+        max_dataset,
+        max_rows=max_rows,
+        sample_fraction=sample_fraction,
+        random_state=random_state,
+        n_workers=args.workers,
+    )
+    logger.info(f"Loaded {len(df):,} rows from {num_datasets} dataset(s) (after sampling)")
 
     # Clean data before analysis
     df = clean_data(df)
