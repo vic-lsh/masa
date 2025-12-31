@@ -260,6 +260,84 @@ def _extract_edges_from_trace(trace_df: pd.DataFrame) -> list[tuple[str, str]]:
     
     return edges
 
+def _hierarchical_layout(G: nx.DiGraph) -> dict:
+    """
+    Create a hierarchical layout for a directed graph with roots at the top.
+    
+    Args:
+        G: NetworkX directed graph
+    
+    Returns:
+        Dictionary mapping nodes to (x, y) positions
+    """
+    if G.number_of_nodes() == 0:
+        return {}
+    
+    # Find root nodes (nodes with in_degree == 0)
+    roots = [n for n in G.nodes() if G.in_degree(n) == 0]
+    
+    if not roots:
+        # If no roots found, use nodes with minimum in_degree
+        min_in_degree = min(G.in_degree(n) for n in G.nodes())
+        roots = [n for n in G.nodes() if G.in_degree(n) == min_in_degree]
+    
+    # Compute depth/layer for each node using BFS
+    node_depth = {}
+    visited = set()
+    queue = [(root, 0) for root in roots]
+    
+    while queue:
+        node, depth = queue.pop(0)
+        if node in visited:
+            continue
+        visited.add(node)
+        node_depth[node] = depth
+        
+        # Add children to queue
+        for successor in G.successors(node):
+            if successor not in visited:
+                queue.append((successor, depth + 1))
+    
+    # Handle any unvisited nodes (disconnected components)
+    for node in G.nodes():
+        if node not in node_depth:
+            # Find shortest path to any root
+            min_depth = float('inf')
+            for root in roots:
+                try:
+                    path_length = nx.shortest_path_length(G, root, node)
+                    min_depth = min(min_depth, path_length)
+                except nx.NetworkXNoPath:
+                    continue
+            node_depth[node] = min_depth if min_depth != float('inf') else 0
+    
+    # Group nodes by depth
+    depth_groups = {}
+    for node, depth in node_depth.items():
+        if depth not in depth_groups:
+            depth_groups[depth] = []
+        depth_groups[depth].append(node)
+    
+    max_depth = max(depth_groups.keys()) if depth_groups else 0
+    
+    # Position nodes: roots at top (y=0), children below (y increases downward)
+    pos = {}
+    for depth, nodes in depth_groups.items():
+        # Y position: top is 0, bottom is max_depth (inverted for matplotlib)
+        y = max_depth - depth
+        
+        # X positions: distribute nodes evenly across width
+        n_nodes = len(nodes)
+        if n_nodes == 1:
+            x_positions = [0.0]
+        else:
+            x_positions = [i / (n_nodes - 1) * 2 - 1 for i in range(n_nodes)]
+        
+        for node, x in zip(sorted(nodes), x_positions):
+            pos[node] = (x, y)
+    
+    return pos
+
 def _compute_graph_statistics(G: nx.DiGraph) -> dict:
     """
     Compute statistics for a directed graph.
@@ -344,7 +422,7 @@ def _process_service(
     # Create visualization
     if G.number_of_nodes() > 0:
         plt.figure(figsize=(14, 10))
-        pos = nx.spring_layout(G, k=2, iterations=50)
+        pos = _hierarchical_layout(G)
         
         # Get edge weights for visualization
         edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
