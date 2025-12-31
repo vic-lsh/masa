@@ -98,10 +98,13 @@ def get_csv_path(dataset_number: int) -> Path:
 # Data loading & filtering
 # ----------------------------
 
-def load_concat_datasets(max_dataset: int) -> pd.DataFrame:
+def load_concat_datasets(max_dataset: int, max_rows: int | None = None) -> pd.DataFrame:
+    read_kwargs = {"on_bad_lines": "skip"}
+    if max_rows is not None:
+        read_kwargs["nrows"] = max_rows
     return read_csvs_parallel(
         [get_csv_path(i) for i in range(max_dataset + 1)],
-        on_bad_lines="skip",
+        **read_kwargs,
     )
 
 def sample_traces(df: pd.DataFrame, fraction: float, trace_col: str = "traceid", random_state: int | None = None) -> pd.DataFrame:
@@ -182,10 +185,17 @@ def main() -> None:
         default=None,
         help="Random seed for trace sampling reproducibility (default: None)"
     )
+    parser.add_argument(
+        "--max-rows",
+        type=int,
+        default=None,
+        help="Maximum number of rows to load from each CSV file (default: None, loads all rows)"
+    )
     args = parser.parse_args()
     num_datasets = args.num_datasets
     sample_fraction = args.sample_fraction
     random_state = args.random_state
+    max_rows = args.max_rows
     
     if num_datasets < 1:
         parser.error("Number of datasets must be at least 1")
@@ -193,12 +203,17 @@ def main() -> None:
     if sample_fraction <= 0.0 or sample_fraction > 1.0:
         parser.error("Sample fraction must be in (0.0, 1.0]")
     
+    if max_rows is not None and max_rows < 1:
+        parser.error("Max rows must be at least 1")
+    
     # Convert number of datasets to max dataset ID (0-indexed)
     max_dataset = num_datasets - 1
 
     # Load & concat
     logger.info(f"Loading {num_datasets} dataset(s) (datasets 0 through {max_dataset})")
-    df = load_concat_datasets(max_dataset)
+    if max_rows is not None:
+        logger.info(f"Limiting to {max_rows:,} rows per CSV file")
+    df = load_concat_datasets(max_dataset, max_rows=max_rows)
     logger.info(f"Loaded {len(df)} rows from {num_datasets} dataset(s)")
 
     # Sample traces if requested
