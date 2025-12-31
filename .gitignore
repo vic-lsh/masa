@@ -6,5 +6,6 @@ tags
 .env
 .codex
 !.codex/prompts/
-.vscode
+.vscode/settings.json
+.vscode/launch.json
 **/__pycache__/**

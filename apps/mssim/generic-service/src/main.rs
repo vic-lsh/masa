@@ -1,8 +1,11 @@
 use anyhow::Result;
+use rand::Rng;
+use rand_distr::Exp;
 use service_stubs::service_client::ServiceClient;
 use sim_config::deployment::Deployment;
 use sim_config::svc::{ServiceName, ServiceTraceConfig};
 use std::env;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use tonic::transport::masa_channel::LoadBalancedChannel;
@@ -39,8 +42,10 @@ impl AlibabaService {
         self_svc_name: ServiceName,
         config: ServiceTraceConfig,
         deployment: Deployment,
+        config_dir: std::path::PathBuf,
     ) -> Result<Self> {
-        let (state, bootstrap) = ServiceState::initialize(self_svc_name, config, deployment)?;
+        let (state, bootstrap) =
+            ServiceState::initialize(self_svc_name, config, deployment, config_dir)?;
         if let Some(connection_task) = bootstrap {
             connection_task.spawn();
         }
@@ -62,6 +67,7 @@ impl Service for AlibabaService {
         let parent_chain = parent_chain::decode_parent_chain(request.metadata())?;
         let request = request.into_inner();
         let method_name = request.method_name.clone();
+        let graph_name = request.graph_name.as_str();
 
         self.state()
             .handle_method(
@@ -69,6 +75,7 @@ impl Service for AlibabaService {
                 request.req_id,
                 request.start_at,
                 parent_chain,
+                Some(graph_name),
             )
             .await?;
 
@@ -80,18 +87,30 @@ impl Service for AlibabaService {
 
     async fn root(&self, request: Request<RootRequest>) -> Result<Response<RootResponse>, Status> {
         const ROOT_SVC_NAME: &str = "user";
+        let root_check = self
+            .state()
+            .self_service_name()
+            .as_str()
+            .starts_with(ROOT_SVC_NAME);
 
-        if self.state().self_service_name().as_str() != ROOT_SVC_NAME {
+        if !root_check {
             return Err(Status::permission_denied(format!(
-                "Root endpoint can only be called on service {}, not {}",
+                "Root endpoint can only be called on service start with {}, not {}",
                 ROOT_SVC_NAME,
                 self.state().self_service_name().as_str()
             )));
         }
 
         let request = request.into_inner();
+        let graph_name = request.graph_name.as_str();
+
         self.state()
-            .fanout(request.req_id, request.start_at, Vec::new())
+            .fanout(
+                request.req_id,
+                request.start_at,
+                Vec::new(),
+                Some(graph_name),
+            )
             .await?;
 
         Ok(Response::new(RootResponse {
@@ -134,9 +153,9 @@ fn load_service_config(
     svc_name: &ServiceName,
 ) -> ServiceTraceConfig {
     const ROOT_SVC_NAME: &str = "user";
-    let root_svc_name = ServiceName::from_string(ROOT_SVC_NAME.to_string());
 
-    let svc_name_for_config = if svc_name == &root_svc_name {
+    // check svc name start with ROOT_SVC_NAME
+    let svc_name_for_config = if svc_name.as_str().starts_with(ROOT_SVC_NAME) {
         None
     } else {
         Some(svc_name.clone())
@@ -156,16 +175,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let service_name = env::var("SERVICE_NAME").expect("Failed to get SERVICE_NAME");
     let port = env::var("SERVICE_PORT").unwrap_or_else(|_| "50051".to_string());
 
-    let config_path = config_dir.into();
+    let config_path: PathBuf = config_dir.into();
     let svc_name = ServiceName::from_string(service_name);
-    let config = load_service_config(config_path, &svc_name);
+    let config = load_service_config(config_path.clone(), &svc_name);
     info!("Config parsed");
 
     let deployment_path = deployment_path.into();
     let deployment =
         Deployment::read_from_file(&deployment_path).expect("Failed to parse deployment");
 
-    let svc = AlibabaService::new(svc_name.clone(), config, deployment).await?;
+    let svc = AlibabaService::new(svc_name.clone(), config, deployment, config_path).await?;
 
     let addr = format!("0.0.0.0:{}", port).parse()?;
     info!("🚀 Generic Service {:?} listening on {}", svc_name, addr);
@@ -183,4 +202,21 @@ pub(crate) fn busy_spin(duration: std::time::Duration) {
     while std::time::Instant::now() - start < duration {
         std::hint::spin_loop();
     }
+}
+
+/// Samples from an exponential distribution with the given rate parameter (lambda).
+///
+/// # Arguments
+/// * `rate` - The rate parameter (lambda) of the exponential distribution.
+///            Must be positive. The mean of the distribution is 1/rate.
+///
+/// # Returns
+/// A sample from the exponential distribution.
+///
+/// # Panics
+/// Panics if rate is not positive or if the distribution cannot be created.
+pub(crate) fn sample_exponential(rate: f64) -> f64 {
+    let dist = Exp::new(rate).expect("Failed to create exponential distribution");
+    let mut rng = rand::thread_rng();
+    rng.sample(dist)
 }
