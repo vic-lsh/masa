@@ -14,6 +14,8 @@ import networkx as nx
 import matplotlib
 matplotlib.use("Agg")  # Headless/parallel-safe plotting
 import matplotlib.pyplot as plt
+import copy
+import re
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -356,6 +358,223 @@ def _hierarchical_layout(G: nx.DiGraph, ranksep: float = 2.0, nodesep: float = 0
     
     return pos
 
+def _compute_dynamic_figsize(
+    G: nx.DiGraph,
+    base_width: float = 14.0,
+    base_height: float = 10.0,
+    width_per_node: float = 0.4,
+    height_per_node: float = 0.2,
+    min_width: float = 14.0,
+    min_height: float = 10.0,
+    max_width: float = 80.0,
+    max_height: float = 50.0,
+) -> tuple[float, float]:
+    """
+    Compute dynamic figure size based on graph complexity.
+    
+    Args:
+        G: NetworkX graph
+        base_width, base_height: Base dimensions
+        width_per_node, height_per_node: Scaling factors per node
+        min_width, min_height: Minimum dimensions
+        max_width, max_height: Maximum dimensions
+    
+    Returns:
+        (width, height) tuple for matplotlib figsize
+    """
+    num_nodes = G.number_of_nodes()
+    num_edges = G.number_of_edges()
+    
+    # Base calculation on number of nodes
+    width = base_width + (num_nodes * width_per_node)
+    height = base_height + (num_nodes * height_per_node)
+    
+    # Add extra space for highly connected graphs
+    if num_nodes > 0:
+        edge_density = num_edges / num_nodes
+        if edge_density > 5:
+            width *= 1.1
+            height *= 1.05
+    
+    # Clamp to min/max bounds
+    width = max(min_width, min(width, max_width))
+    height = max(min_height, min(height, max_height))
+    
+    return (width, height)
+
+def _slugify(name: str) -> str:
+    """
+    Convert a service name to a filesystem-safe slug.
+    
+    Args:
+        name: Service name string
+    
+    Returns:
+        Filesystem-safe slug
+    """
+    s = re.sub(r"[^\w\-]+", "_", name.strip())
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s or "service"
+
+def reachable_subgraph(G: nx.DiGraph, source: str = "USER") -> nx.DiGraph:
+    """
+    Extract the subgraph reachable from a source node.
+    
+    Args:
+        G: NetworkX directed graph
+        source: Source node name (default: "USER")
+    
+    Returns:
+        Subgraph containing source and all nodes reachable from it
+    """
+    if source not in G:
+        # Return empty graph if source not found
+        return G.__class__()
+    
+    reachable = {source} | nx.descendants(G, source)
+    view = G.subgraph(reachable)
+    
+    H = G.__class__()
+    H.graph.update(copy.deepcopy(G.graph))
+    H.add_nodes_from((n, copy.deepcopy(view.nodes[n])) for n in view.nodes)
+    
+    if G.is_multigraph():
+        H.add_edges_from(
+            (u, v, k, copy.deepcopy(view.get_edge_data(u, v, k)))
+            for u, v, k in view.edges(keys=True)
+        )
+    else:
+        H.add_edges_from(
+            (u, v, copy.deepcopy(view.get_edge_data(u, v)))
+            for u, v in view.edges()
+        )
+    return H
+
+def _draw_graph(
+    G: nx.DiGraph,
+    title: str,
+    output_path: Path,
+    num_nodes: int,
+) -> None:
+    """
+    Draw a graph with dynamic sizing and save to file.
+    
+    Args:
+        G: NetworkX directed graph to draw
+        title: Title for the graph
+        output_path: Path to save the image
+        num_nodes: Number of nodes in the graph (for sizing)
+    """
+    if G.number_of_nodes() == 0:
+        return
+    
+    # Compute dynamic figure size based on graph complexity
+    if num_nodes < 50:
+        figsize = _compute_dynamic_figsize(
+            G,
+            base_width=14.0,
+            base_height=10.0,
+            width_per_node=0.4,
+            height_per_node=0.2,
+            min_width=14.0,
+            min_height=10.0,
+            max_width=40.0,
+            max_height=30.0,
+        )
+    elif num_nodes < 200:
+        figsize = _compute_dynamic_figsize(
+            G,
+            base_width=16.0,
+            base_height=12.0,
+            width_per_node=0.25,
+            height_per_node=0.15,
+            min_width=16.0,
+            min_height=12.0,
+            max_width=50.0,
+            max_height=35.0,
+        )
+    else:
+        figsize = _compute_dynamic_figsize(
+            G,
+            base_width=18.0,
+            base_height=14.0,
+            width_per_node=0.15,
+            height_per_node=0.1,
+            min_width=18.0,
+            min_height=14.0,
+            max_width=60.0,
+            max_height=40.0,
+        )
+    
+    # Auto-compute node_size, font_size, and spacing based on graph complexity
+    if num_nodes < 20:
+        node_size = 3000
+        font_size = 10
+        ranksep = 2.0
+        nodesep = 0.8
+    elif num_nodes < 50:
+        node_size = 2800
+        font_size = 9
+        ranksep = 1.8
+        nodesep = 0.7
+    elif num_nodes < 100:
+        node_size = 2600
+        font_size = 8
+        ranksep = 1.5
+        nodesep = 0.6
+    elif num_nodes < 200:
+        node_size = 2400
+        font_size = 7
+        ranksep = 1.2
+        nodesep = 0.5
+    else:
+        node_size = 2200
+        font_size = 7
+        ranksep = 1.0
+        nodesep = 0.4
+    
+    plt.figure(figsize=figsize)
+    pos = _hierarchical_layout(G, ranksep=ranksep, nodesep=nodesep)
+    
+    # Get edge weights for visualization
+    edge_weights = [G[u][v].get('weight', 1) for u, v in G.edges()]
+    max_weight = max(edge_weights) if edge_weights else 1
+    min_weight = min(edge_weights) if edge_weights else 1
+    
+    # Normalize edge widths (min 1, max 5)
+    edge_widths = [1 + 4 * (w - min_weight) / (max_weight - min_weight) if max_weight > min_weight else 3 
+                   for w in edge_weights]
+    
+    # Draw nodes
+    nx.draw_networkx_nodes(G, pos, node_color='lightblue', node_size=node_size, alpha=0.9)
+    
+    # Draw edges with varying widths based on frequency
+    nx.draw_networkx_edges(
+        G, pos, 
+        edge_color='gray', 
+        arrows=True, 
+        arrowsize=20, 
+        alpha=0.6,
+        width=edge_widths
+    )
+    
+    # Draw labels
+    nx.draw_networkx_labels(G, pos, font_size=font_size, font_weight='bold')
+    
+    # Add edge labels with frequencies
+    edge_labels = {(u, v): str(G[u][v].get('weight', 1)) for u, v in G.edges()}
+    edge_label_font_size = max(6, font_size - 2)
+    nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=edge_label_font_size)
+    
+    plt.title(title, fontsize=16, fontweight='bold')
+    plt.axis('off')
+    plt.tight_layout()
+    
+    # Save graph
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
 def _compute_graph_statistics(G: nx.DiGraph) -> dict:
     """
     Compute statistics for a directed graph.
@@ -441,49 +660,26 @@ def _process_service(
     # Compute statistics
     stats = _compute_graph_statistics(G)
     
-    # Create visualization only if graph has USER root
+    # Only create visualizations if graph has USER as a root node
     if G.number_of_nodes() > 0 and has_user_root:
-        plt.figure(figsize=(14, 10))
-        pos = _hierarchical_layout(G, ranksep=2.0, nodesep=0.8)
+        # Create service-specific directory
+        service_slug = _slugify(service_name)
+        service_dir = graphs_dir / service_slug
+        service_dir.mkdir(parents=True, exist_ok=True)
         
-        # Get edge weights for visualization
-        edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
-        max_weight = max(edge_weights) if edge_weights else 1
-        min_weight = min(edge_weights) if edge_weights else 1
+        # Draw full graph (all nodes)
+        num_nodes = G.number_of_nodes()
+        output_path = service_dir / "graph_all_nodes.png"
+        title = f"Aggregated Call Graph for Service '{service_name}' (All Nodes)\n(Edge thickness and labels indicate frequency)"
+        _draw_graph(G, title, output_path, num_nodes)
         
-        # Normalize edge widths (min 1, max 5)
-        edge_widths = [1 + 4 * (w - min_weight) / (max_weight - min_weight) if max_weight > min_weight else 3 
-                       for w in edge_weights]
-        
-        # Draw nodes
-        nx.draw_networkx_nodes(G, pos, node_color='lightblue', node_size=2000, alpha=0.9)
-        
-        # Draw edges with varying widths based on frequency
-        nx.draw_networkx_edges(
-            G, pos, 
-            edge_color='gray', 
-            arrows=True, 
-            arrowsize=20, 
-            alpha=0.6,
-            width=edge_widths
-        )
-        
-        # Draw labels
-        nx.draw_networkx_labels(G, pos, font_size=10, font_weight='bold')
-        
-        # Add edge labels with frequencies
-        edge_labels = {(u, v): str(G[u][v]['weight']) for u, v in G.edges()}
-        nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=8)
-        
-        plt.title(f"Aggregated Call Graph for Service '{service_name}'\n(Edge thickness and labels indicate frequency)", 
-                  fontsize=16, fontweight='bold')
-        plt.axis('off')
-        plt.tight_layout()
-        
-        # Save graph
-        output_path = graphs_dir / f"call_graph_service_{service_name}.png"
-        plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        plt.close()
+        # Draw USER-reachable subgraph
+        G_user = reachable_subgraph(G, source="USER")
+        if G_user.number_of_nodes() > 0:
+            num_nodes_user = G_user.number_of_nodes()
+            output_path = service_dir / "graph_user.png"
+            title = f"Aggregated Call Graph for Service '{service_name}' (USER-Reachable Subgraph)\n(Edge thickness and labels indicate frequency)"
+            _draw_graph(G_user, title, output_path, num_nodes_user)
     
     return (service_name, G, stats, has_user_root)
 
@@ -528,7 +724,7 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
     logger.info(f"Graphs will be saved to: {graphs_dir}")
     
     # Group by service
-    logger.info(f"\n{'='*80}")
+    logger.info(f"{'='*80}")
     logger.info("Grouping dataset by service")
     logger.info(f"{'='*80}")
     
@@ -542,7 +738,7 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
     logger.info(f"Found {len(service_names)} service(s)")
     
     # Count traces per service and select top N
-    logger.info(f"\nCounting traces per service...")
+    logger.info(f"Counting traces per service...")
     service_trace_counts = []
     for service_name in service_names:
         service_df = service_groups.get_group(service_name)
@@ -615,7 +811,8 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
         )
     
     logger.info(f"\n{'='*80}")
-    logger.info(f"Generated {len(all_stats)} graph(s) in {graphs_dir}")
+    logger.info(f"Generated graphs for {len(all_stats)} service(s) in {graphs_dir}")
+    logger.info(f"Each service has its own directory with graph_all_nodes.png and graph_user.png (if USER exists)")
     if filtered_count > 0:
         logger.info(f"Filtered out {filtered_count} service(s) that do not have 'USER' as a root node")
     else:
