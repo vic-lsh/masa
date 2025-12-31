@@ -260,14 +260,144 @@ def _extract_edges_from_trace(trace_df: pd.DataFrame) -> list[tuple[str, str]]:
     
     return edges
 
-def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid") -> None:
+def _compute_graph_statistics(G: nx.DiGraph) -> dict:
+    """
+    Compute statistics for a directed graph.
+    
+    Args:
+        G: NetworkX directed graph
+    
+    Returns:
+        Dictionary with statistics: num_nodes, out_degree_avg, out_degree_min, out_degree_max,
+        in_degree_avg, in_degree_min, in_degree_max
+    """
+    if G.number_of_nodes() == 0:
+        return {
+            "num_nodes": 0,
+            "out_degree_avg": 0.0,
+            "out_degree_min": 0,
+            "out_degree_max": 0,
+            "in_degree_avg": 0.0,
+            "in_degree_min": 0,
+            "in_degree_max": 0,
+        }
+    
+    out_degrees = [d for n, d in G.out_degree()]
+    in_degrees = [d for n, d in G.in_degree()]
+    
+    return {
+        "num_nodes": G.number_of_nodes(),
+        "out_degree_avg": sum(out_degrees) / len(out_degrees) if out_degrees else 0.0,
+        "out_degree_min": min(out_degrees) if out_degrees else 0,
+        "out_degree_max": max(out_degrees) if out_degrees else 0,
+        "in_degree_avg": sum(in_degrees) / len(in_degrees) if in_degrees else 0.0,
+        "in_degree_min": min(in_degrees) if in_degrees else 0,
+        "in_degree_max": max(in_degrees) if in_degrees else 0,
+    }
+
+def _process_service(
+    service_name: str,
+    service_df: pd.DataFrame,
+    trace_col: str,
+    graphs_dir: Path,
+) -> tuple[str, nx.DiGraph, dict]:
+    """
+    Process a single service: extract edges, create graph, and save visualization.
+    
+    Args:
+        service_name: Name of the service
+        service_df: DataFrame containing rows for this service
+        trace_col: Column name containing trace IDs
+        graphs_dir: Directory to save graph visualizations
+    
+    Returns:
+        Tuple of (service_name, graph, statistics_dict)
+    """
+    # Get unique traces for this service
+    unique_traces = service_df[trace_col].dropna().unique()
+    
+    if len(unique_traces) == 0:
+        logger.warning(f"No valid traces found for service {service_name}")
+        G = nx.DiGraph()
+        stats = _compute_graph_statistics(G)
+        return (service_name, G, stats)
+    
+    # Aggregate edges across all traces
+    edge_counter: dict[tuple[str, str], int] = {}
+    
+    for trace_id in unique_traces:
+        trace_df = service_df[service_df[trace_col] == trace_id]
+        edges = _extract_edges_from_trace(trace_df)
+        
+        # Count edge frequencies
+        for edge in edges:
+            edge_counter[edge] = edge_counter.get(edge, 0) + 1
+    
+    # Create graph with edge weights
+    G = nx.DiGraph()
+    for (source, target), frequency in edge_counter.items():
+        G.add_edge(source, target, weight=frequency)
+    
+    # Compute statistics
+    stats = _compute_graph_statistics(G)
+    
+    # Create visualization
+    if G.number_of_nodes() > 0:
+        plt.figure(figsize=(14, 10))
+        pos = nx.spring_layout(G, k=2, iterations=50)
+        
+        # Get edge weights for visualization
+        edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
+        max_weight = max(edge_weights) if edge_weights else 1
+        min_weight = min(edge_weights) if edge_weights else 1
+        
+        # Normalize edge widths (min 1, max 5)
+        edge_widths = [1 + 4 * (w - min_weight) / (max_weight - min_weight) if max_weight > min_weight else 3 
+                       for w in edge_weights]
+        
+        # Draw nodes
+        nx.draw_networkx_nodes(G, pos, node_color='lightblue', node_size=2000, alpha=0.9)
+        
+        # Draw edges with varying widths based on frequency
+        nx.draw_networkx_edges(
+            G, pos, 
+            edge_color='gray', 
+            arrows=True, 
+            arrowsize=20, 
+            alpha=0.6,
+            width=edge_widths
+        )
+        
+        # Draw labels
+        nx.draw_networkx_labels(G, pos, font_size=10, font_weight='bold')
+        
+        # Add edge labels with frequencies
+        edge_labels = {(u, v): str(G[u][v]['weight']) for u, v in G.edges()}
+        nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=8)
+        
+        plt.title(f"Aggregated Call Graph for Service '{service_name}'\n(Edge thickness and labels indicate frequency)", 
+                  fontsize=16, fontweight='bold')
+        plt.axis('off')
+        plt.tight_layout()
+        
+        # Save graph
+        output_path = graphs_dir / f"call_graph_service_{service_name}.png"
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        plt.close()
+    
+    return (service_name, G, stats)
+
+def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int = 100) -> None:
     """
     Analyze call graphs by grouping by service and aggregating edges across all traces.
-    For one service, compute the union of all edges and their frequencies, then plot.
+    For each service, compute the union of all edges and their frequencies, then plot.
+    Only processes the top N services by trace count.
+    Print statistics sorted by number of nodes (descending).
     
     Args:
         df: Input dataframe with trace data
         trace_col: Column name containing trace IDs (default: "traceid")
+        top_n: Number of top services by trace count to process (default: 100)
     """
     # Check required columns
     required_cols = ["service", trace_col, "rpc_id", "um", "dm"]
@@ -275,6 +405,11 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid") -> None:
     if missing_cols:
         logger.warning(f"Missing required columns: {missing_cols}. Available columns: {list(df.columns)}")
         return
+    
+    # Create graphs directory
+    graphs_dir = Path(__file__).parent / "graphs"
+    graphs_dir.mkdir(exist_ok=True)
+    logger.info(f"Graphs will be saved to: {graphs_dir}")
     
     # Group by service
     logger.info(f"\n{'='*80}")
@@ -288,98 +423,66 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid") -> None:
         logger.warning("No services found in dataset")
         return
     
-    logger.info(f"Found {len(service_names)} service(s): {service_names}")
+    logger.info(f"Found {len(service_names)} service(s)")
     
-    # Select the first service (or could select by most traces)
-    # selected_service = service_names[2]
-    selected_service = "S_100071952"
-    service_df = service_groups.get_group(selected_service).copy()
+    # Count traces per service and select top N
+    logger.info(f"\nCounting traces per service...")
+    service_trace_counts = []
+    for service_name in service_names:
+        service_df = service_groups.get_group(service_name)
+        unique_traces = service_df[trace_col].dropna().unique()
+        trace_count = len(unique_traces)
+        service_trace_counts.append((service_name, trace_count))
     
-    logger.info(f"\nAnalyzing service: {selected_service}")
-    logger.info(f"Rows for this service: {len(service_df):,}")
+    # Sort by trace count (descending) and take top N
+    service_trace_counts.sort(key=lambda x: x[1], reverse=True)
+    top_services = [name for name, _ in service_trace_counts[:top_n]]
     
-    # Get unique traces for this service
-    unique_traces = service_df[trace_col].dropna().unique()
-    logger.info(f"Number of traces for this service: {len(unique_traces):,}")
+    logger.info(f"Selecting top {min(top_n, len(service_names))} service(s) by trace count")
+    logger.info(f"Top service: {top_services[0]} with {service_trace_counts[0][1]:,} traces")
+    if len(top_services) > 1:
+        logger.info(f"Bottom selected service: {top_services[-1]} with {service_trace_counts[min(top_n, len(service_names))-1][1]:,} traces")
     
-    if len(unique_traces) == 0:
-        logger.warning(f"No valid traces found for service {selected_service}")
-        return
+    # Process each selected service
+    all_stats = []
+    logger.info(f"\nProcessing {len(top_services)} service(s)...")
     
-    # Aggregate edges across all traces
-    logger.info(f"\nExtracting edges from all traces...")
-    edge_counter: dict[tuple[str, str], int] = {}
+    for service_name in tqdm(top_services, desc="Processing services", file=sys.stderr):
+        service_df = service_groups.get_group(service_name).copy()
+        _, G, stats = _process_service(service_name, service_df, trace_col, graphs_dir)
+        stats["service_name"] = service_name
+        all_stats.append(stats)
     
-    for trace_id in tqdm(unique_traces, desc="Processing traces", file=sys.stderr):
-        trace_df = service_df[service_df[trace_col] == trace_id]
-        edges = _extract_edges_from_trace(trace_df)
-        
-        # Count edge frequencies
-        for edge in edges:
-            edge_counter[edge] = edge_counter.get(edge, 0) + 1
+    # Sort statistics by number of nodes (descending)
+    all_stats.sort(key=lambda x: x["num_nodes"], reverse=True)
     
-    # Sort edges by frequency (descending)
-    sorted_edges = sorted(edge_counter.items(), key=lambda x: x[1], reverse=True)
-    
-    # Print aggregated edge list with frequencies
+    # Print statistics
     logger.info(f"\n{'='*80}")
-    logger.info(f"Aggregated Edge List for Service '{selected_service}' (caller -> callee, frequency):")
+    logger.info("Graph Statistics (sorted by number of nodes, descending)")
     logger.info(f"{'='*80}")
-    for (source, target), frequency in sorted_edges:
-        logger.info(f"  {source} -> {target} : {frequency}")
+    logger.info(f"{'Service':<20} {'Nodes':<8} {'Out-Degree':<30} {'In-Degree':<30}")
+    logger.info(f"{'':-<20} {'':-<8} {'':-<30} {'':-<30}")
+    logger.info(f"{'':<20} {'':<8} {'Avg':<10} {'Min':<10} {'Max':<10} {'Avg':<10} {'Min':<10} {'Max':<10}")
+    logger.info(f"{'':-<20} {'':-<8} {'':-<30} {'':-<30}")
     
-    logger.info(f"\nTotal unique edges: {len(edge_counter)}")
-    logger.info(f"Total edge occurrences: {sum(edge_counter.values())}")
+    for stats in all_stats:
+        service_name = stats["service_name"]
+        num_nodes = stats["num_nodes"]
+        out_avg = stats["out_degree_avg"]
+        out_min = stats["out_degree_min"]
+        out_max = stats["out_degree_max"]
+        in_avg = stats["in_degree_avg"]
+        in_min = stats["in_degree_min"]
+        in_max = stats["in_degree_max"]
+        
+        logger.info(
+            f"{service_name:<20} {num_nodes:<8} "
+            f"{out_avg:<10.2f} {out_min:<10} {out_max:<10} "
+            f"{in_avg:<10.2f} {in_min:<10} {in_max:<10}"
+        )
     
-    # Create graph with edge weights
-    G = nx.DiGraph()
-    for (source, target), frequency in edge_counter.items():
-        G.add_edge(source, target, weight=frequency)
-    
-    # Create visualization
-    plt.figure(figsize=(14, 10))
-    pos = nx.spring_layout(G, k=2, iterations=50)
-    
-    # Get edge weights for visualization
-    edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
-    max_weight = max(edge_weights) if edge_weights else 1
-    min_weight = min(edge_weights) if edge_weights else 1
-    
-    # Normalize edge widths (min 1, max 5)
-    edge_widths = [1 + 4 * (w - min_weight) / (max_weight - min_weight) if max_weight > min_weight else 3 
-                   for w in edge_weights]
-    
-    # Draw nodes
-    nx.draw_networkx_nodes(G, pos, node_color='lightblue', node_size=2000, alpha=0.9)
-    
-    # Draw edges with varying widths based on frequency
-    nx.draw_networkx_edges(
-        G, pos, 
-        edge_color='gray', 
-        arrows=True, 
-        arrowsize=20, 
-        alpha=0.6,
-        width=edge_widths
-    )
-    
-    # Draw labels
-    nx.draw_networkx_labels(G, pos, font_size=10, font_weight='bold')
-    
-    # Add edge labels with frequencies
-    edge_labels = {(u, v): str(G[u][v]['weight']) for u, v in G.edges()}
-    nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=8)
-    
-    plt.title(f"Aggregated Call Graph for Service '{selected_service}'\n(Edge thickness and labels indicate frequency)", 
-              fontsize=16, fontweight='bold')
-    plt.axis('off')
-    plt.tight_layout()
-    
-    # Save graph
-    output_path = Path(__file__).parent / f"call_graph_service_{selected_service}.png"
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close()
-    
-    logger.info(f"\nGraph visualization saved to: {output_path}")
+    logger.info(f"\n{'='*80}")
+    logger.info(f"Generated {len(all_stats)} graph(s) in {graphs_dir}")
 
 # ----------------------------
 # main()
@@ -421,11 +524,18 @@ def main() -> None:
         default=None,
         help="Maximum number of rows to load from each CSV file (default: None, loads all rows)"
     )
+    parser.add_argument(
+        "--top-services",
+        type=int,
+        default=100,
+        help="Number of top services by trace count to process (default: 100)"
+    )
     args = parser.parse_args()
     num_datasets = args.num_datasets
     sample_fraction = args.sample_fraction
     random_state = args.random_state
     max_rows = args.max_rows
+    top_services = args.top_services
     
     if num_datasets < 1:
         parser.error("Number of datasets must be at least 1")
@@ -435,6 +545,9 @@ def main() -> None:
     
     if max_rows is not None and max_rows < 1:
         parser.error("Max rows must be at least 1")
+    
+    if top_services < 1:
+        parser.error("Top services must be at least 1")
     
     # Convert number of datasets to max dataset ID (0-indexed)
     max_dataset = num_datasets - 1
@@ -457,7 +570,7 @@ def main() -> None:
     df = clean_data(df)
 
     # Analyze call graphs
-    analyze_call_graphs(df)
+    analyze_call_graphs(df, top_n=top_services)
 
 if __name__ == "__main__":
     main()
