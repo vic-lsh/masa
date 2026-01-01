@@ -19,6 +19,7 @@ from matplotlib.collections import LineCollection
 import copy
 import re
 import numpy as np
+import json
 from collections import defaultdict
 
 # Set up logger
@@ -973,12 +974,13 @@ def _aggregate_call_sequences(
     total_traces: int,
 ) -> list[dict[str, float]]:
     """
-    Aggregate call sequences from multiple traces using semantic alignment.
+    Aggregate call sequences from multiple traces using precedence inference.
 
     Algorithm:
-    1. Cluster sequences by similarity
-    2. For the largest cluster, perform multiple sequence alignment
-    3. Build consensus pattern with probabilities
+    1. Build pairwise precedence counts from per-trace stage ordering.
+    2. Add a precedence edge A->B when A precedes B in enough co-occurrences.
+    3. Derive stages via topological layering; nodes in the same layer are parallel.
+    4. Probability for each child is its appearance rate across traces.
 
     Args:
         sequences: List of sequences, where each sequence is a list of sets (stages)
@@ -991,65 +993,100 @@ def _aggregate_call_sequences(
     if not sequences:
         return []
 
-    if len(sequences) == 1:
-        # Only one sequence - convert to probability format
-        result = []
-        for stage in sequences[0]:
-            stage_probs = {child: 1.0 for child in stage}
-            result.append(stage_probs)
-        return result
+    precedence_threshold = 0.7
 
-    # Step 1: Find the most common sequence pattern (use as reference)
-    # Use the median-length sequence that's most similar to others
-    sequence_scores = []
+    appearance_counts: dict[str, int] = defaultdict(int)
+    co_counts: dict[tuple[str, str], int] = defaultdict(int)
+    precede_counts: dict[tuple[str, str], int] = defaultdict(int)
 
-    for i, seq in enumerate(sequences):
-        total_similarity = 0.0
-        for j, other_seq in enumerate(sequences):
-            if i != j:
-                total_similarity += _compute_sequence_similarity(seq, other_seq)
-        avg_similarity = total_similarity / (len(sequences) - 1) if len(sequences) > 1 else 0.0
-        sequence_scores.append((i, avg_similarity, len(seq)))
+    for seq in sequences:
+        stage_positions: dict[str, int] = {}
+        present_children = set()
+        for stage_idx, stage in enumerate(seq):
+            for child in stage:
+                present_children.add(child)
+                if child not in stage_positions:
+                    stage_positions[child] = stage_idx
 
-    # Sort by similarity (descending), then by length (prefer median length)
-    median_len = sorted([s[2] for s in sequence_scores])[len(sequence_scores) // 2]
-    sequence_scores.sort(key=lambda x: (x[1], -abs(x[2] - median_len)), reverse=True)
+        for child in present_children:
+            appearance_counts[child] += 1
 
-    reference_idx = sequence_scores[0][0]
-    reference_seq = sequences[reference_idx]
+        children_list = list(stage_positions.keys())
+        for i in range(len(children_list)):
+            for j in range(i + 1, len(children_list)):
+                child_a = children_list[i]
+                child_b = children_list[j]
+                pair = tuple(sorted((child_a, child_b)))
+                co_counts[pair] += 1
 
-    # Step 2: Align all sequences to the reference
-    aligned_sequences = [reference_seq]
+                idx_a = stage_positions[child_a]
+                idx_b = stage_positions[child_b]
+                if idx_a < idx_b:
+                    precede_counts[(child_a, child_b)] += 1
+                elif idx_b < idx_a:
+                    precede_counts[(child_b, child_a)] += 1
 
-    for i, seq in enumerate(sequences):
-        if i == reference_idx:
+    if not appearance_counts:
+        return []
+
+    edges: dict[tuple[str, str], float] = {}
+    for (child_a, child_b), co in co_counts.items():
+        if co <= 0:
+            continue
+        ab = precede_counts.get((child_a, child_b), 0) / co
+        ba = precede_counts.get((child_b, child_a), 0) / co
+
+        if ab >= precedence_threshold and ab > ba:
+            edges[(child_a, child_b)] = ab
+        elif ba >= precedence_threshold and ba > ab:
+            edges[(child_b, child_a)] = ba
+
+    nodes = set(appearance_counts.keys())
+    adjacency: dict[str, set[str]] = {node: set() for node in nodes}
+    indegree: dict[str, int] = {node: 0 for node in nodes}
+    edge_weights = dict(edges)
+
+    for (src, dst), weight in edge_weights.items():
+        adjacency[src].add(dst)
+        indegree[dst] += 1
+
+    layers: list[set[str]] = []
+    remaining = set(nodes)
+
+    while remaining:
+        zero_indegree = [node for node in remaining if indegree[node] == 0]
+        if not zero_indegree:
+            weakest_edge = min(
+                (edge for edge in edge_weights if edge[0] in remaining and edge[1] in remaining),
+                key=lambda edge: edge_weights[edge],
+                default=None,
+            )
+            if weakest_edge is None:
+                layers.append(set(remaining))
+                break
+            src, dst = weakest_edge
+            edge_weights.pop(weakest_edge, None)
+            if dst in adjacency[src]:
+                adjacency[src].remove(dst)
+                indegree[dst] = max(0, indegree[dst] - 1)
             continue
 
-        aligned_ref, aligned_seq = _align_sequence_pair(reference_seq, seq)
-        aligned_sequences.append(aligned_seq)
+        current_layer = set(zero_indegree)
+        layers.append(current_layer)
+        for node in current_layer:
+            remaining.remove(node)
+        for node in current_layer:
+            for child in list(adjacency[node]):
+                indegree[child] = max(0, indegree[child] - 1)
+            adjacency[node].clear()
 
-    # Step 3: Build consensus sequence
-    consensus = _build_consensus_from_aligned(aligned_sequences)
-
-    # Step 4: Calculate probabilities for each child in each consensus stage
     prob_stages = []
-
-    for consensus_stage in consensus:
-        stage_probs = {}
-
-        for child in consensus_stage:
-            # Count how many traces have this child
-            count = 0
-            for seq in sequences:
-                # Check if child appears anywhere in this sequence
-                for stage in seq:
-                    if child in stage:
-                        count += 1
-                        break  # Count each trace only once
-
-            probability = count / total_traces
-            stage_probs[child] = probability
-
+    total_traces = max(total_traces, 1)
+    for layer in layers:
+        stage_probs = {
+            child: appearance_counts[child] / total_traces
+            for child in sorted(layer)
+        }
         if stage_probs:
             prob_stages.append(stage_probs)
 
@@ -1991,161 +2028,6 @@ def _compute_graph_statistics(G: nx.DiGraph) -> dict:
         "in_degree_max": max(in_degrees) if in_degrees else 0,
     }
 
-def _draw_call_sequence_graph(
-    parent: str,
-    call_sequence: list[dict[str, float]],
-    output_path: Path,
-) -> None:
-    """
-    Draw a call sequence diagram showing sequential stages with parallel fanout and probabilities.
-
-    Args:
-        parent: Parent service name
-        call_sequence: List of dicts mapping child -> probability for each stage
-        output_path: Path to save the image
-    """
-    if not call_sequence:
-        return
-
-    num_stages = len(call_sequence)
-
-    # Calculate figure size based on complexity
-    max_fanout = max(len(stage) for stage in call_sequence)
-    fig_width = max(12, num_stages * 4)
-    fig_height = max(8, max_fanout * 1.5)
-
-    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-
-    # Layout parameters
-    stage_spacing = 1.0 / (num_stages + 1)  # Horizontal spacing between stages
-    node_height = 0.8 / max_fanout if max_fanout > 0 else 0.1  # Vertical spacing
-
-    # Track node positions for drawing edges
-    node_positions = {}
-
-    # Draw parent node
-    parent_x = 0.05
-    parent_y = 0.5
-    node_positions[parent] = (parent_x, parent_y)
-
-    ax.add_patch(plt.Rectangle((parent_x - 0.03, parent_y - 0.03), 0.06, 0.06,
-                                facecolor='lightgreen', edgecolor='black', linewidth=2))
-    ax.text(parent_x, parent_y, parent, ha='center', va='center',
-            fontsize=10, fontweight='bold')
-
-    # Draw each stage
-    for stage_idx, stage_probs in enumerate(call_sequence):
-        stage_x = 0.15 + (stage_idx + 1) * stage_spacing
-
-        # Sort children by probability (descending) for consistent layout
-        sorted_children = sorted(stage_probs.items(), key=lambda x: x[1], reverse=True)
-        num_children = len(sorted_children)
-
-        # Calculate vertical positions (centered)
-        if num_children == 1:
-            y_positions = [0.5]
-        else:
-            y_start = 0.5 - (num_children - 1) * node_height / 2
-            y_positions = [y_start + i * node_height for i in range(num_children)]
-
-        # Draw stage label
-        ax.text(stage_x, 0.95, f'Stage {stage_idx + 1}', ha='center', va='top',
-                fontsize=9, fontweight='bold', style='italic', color='gray')
-
-        # Draw children in this stage
-        for child_idx, ((child, prob), y_pos) in enumerate(zip(sorted_children, y_positions)):
-            node_positions[f"{child}_stage_{stage_idx}"] = (stage_x, y_pos)
-
-            # Color based on probability (green = high, yellow = medium, red = low)
-            if prob >= 0.8:
-                color = '#90EE90'  # Light green
-            elif prob >= 0.5:
-                color = '#FFD700'  # Gold
-            else:
-                color = '#FFB6C1'  # Light pink
-
-            # Draw node rectangle
-            ax.add_patch(plt.Rectangle((stage_x - 0.035, y_pos - 0.025), 0.07, 0.05,
-                                       facecolor=color, edgecolor='black', linewidth=1.5,
-                                       alpha=0.8))
-
-            # Draw child name and probability
-            ax.text(stage_x, y_pos + 0.01, child, ha='center', va='center',
-                    fontsize=8, fontweight='bold')
-            ax.text(stage_x, y_pos - 0.015, f'p={prob:.2f}', ha='center', va='center',
-                    fontsize=7, style='italic', color='darkblue')
-
-    # Draw arrows from parent to first stage
-    if call_sequence:
-        first_stage = call_sequence[0]
-        stage_x = 0.15 + stage_spacing
-        sorted_children = sorted(first_stage.items(), key=lambda x: x[1], reverse=True)
-        num_children = len(sorted_children)
-
-        if num_children == 1:
-            y_positions = [0.5]
-        else:
-            y_start = 0.5 - (num_children - 1) * node_height / 2
-            y_positions = [y_start + i * node_height for i in range(num_children)]
-
-        for (child, prob), y_pos in zip(sorted_children, y_positions):
-            ax.annotate('', xy=(stage_x - 0.035, y_pos), xytext=(parent_x + 0.03, parent_y),
-                       arrowprops=dict(arrowstyle='->', color='black', lw=1.5, alpha=0.6))
-
-    # Draw arrows between sequential stages
-    for stage_idx in range(len(call_sequence) - 1):
-        current_stage = call_sequence[stage_idx]
-        next_stage = call_sequence[stage_idx + 1]
-
-        current_x = 0.15 + (stage_idx + 1) * stage_spacing
-        next_x = 0.15 + (stage_idx + 2) * stage_spacing
-
-        # Get positions for current stage
-        sorted_current = sorted(current_stage.items(), key=lambda x: x[1], reverse=True)
-        num_current = len(sorted_current)
-        if num_current == 1:
-            current_y_positions = [0.5]
-        else:
-            y_start = 0.5 - (num_current - 1) * node_height / 2
-            current_y_positions = [y_start + i * node_height for i in range(num_current)]
-
-        # Get positions for next stage
-        sorted_next = sorted(next_stage.items(), key=lambda x: x[1], reverse=True)
-        num_next = len(sorted_next)
-        if num_next == 1:
-            next_y_positions = [0.5]
-        else:
-            y_start = 0.5 - (num_next - 1) * node_height / 2
-            next_y_positions = [y_start + i * node_height for i in range(num_next)]
-
-        # Draw arrows from each child in current stage to each child in next stage
-        for current_y in current_y_positions:
-            for next_y in next_y_positions:
-                ax.annotate('', xy=(next_x - 0.035, next_y), xytext=(current_x + 0.035, current_y),
-                           arrowprops=dict(arrowstyle='->', color='gray', lw=1.0, alpha=0.3))
-
-    # Set axis properties
-    ax.set_xlim(-0.05, 1.05)
-    ax.set_ylim(-0.05, 1.05)
-    ax.axis('off')
-
-    # Add title
-    title = f"Call Sequence Pattern for Parent '{parent}'\n(Sequential stages with parallel fanout and probabilities)"
-    plt.title(title, fontsize=12, fontweight='bold', pad=20)
-
-    # Add legend
-    legend_elements = [
-        mpatches.Patch(facecolor='#90EE90', label='High Probability (≥0.8)', alpha=0.8),
-        mpatches.Patch(facecolor='#FFD700', label='Medium Probability (0.5-0.8)', alpha=0.8),
-        mpatches.Patch(facecolor='#FFB6C1', label='Low Probability (<0.5)', alpha=0.8),
-    ]
-    ax.legend(handles=legend_elements, loc='lower right', fontsize=8)
-
-    plt.tight_layout()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close()
-
 def _build_hierarchical_call_tree(
     parent_sequences: dict[str, list[dict[str, float]]],
     root: str = "USER",
@@ -2599,20 +2481,12 @@ def _process_service(
                 title = f"Call Pattern Timeline for Service '{service_name}'\n(Shows sequential vs parallel call patterns)"
                 _draw_timeline_graph(G_user, aggregated_timing, title, output_path, num_nodes_user)
 
-                # Extract and visualize call sequences for each parent node
-                # Focus on nodes that have multiple children (interesting fanout patterns)
-                parent_nodes = [n for n in G_user.nodes() if G_user.out_degree(n) >= 2]
+                # Extract call sequences for each parent node (used for unified visualization)
+                parent_nodes = [n for n in G_user.nodes() if G_user.out_degree(n) >= 1]
+                all_parent_sequences: dict[str, list[dict[str, float]]] = {}
 
                 if parent_nodes:
-                    # Create subdirectory for call sequences
-                    seq_dir = service_dir / "call_sequences"
-                    seq_dir.mkdir(exist_ok=True)
-
                     logger.debug(f"Service {service_name}: Extracting call sequences for {len(parent_nodes)} parent nodes")
-
-                    # Collect all parent sequences for unified visualization
-                    all_parent_sequences = {}
-
                     for parent in parent_nodes:
                         # Extract call sequences from each trace
                         sequences = []
@@ -2639,19 +2513,30 @@ def _process_service(
                                     children_str = ", ".join([f"{child}({prob:.2f})" for child, prob in sorted(stage_probs.items(), key=lambda x: x[1], reverse=True)])
                                     logger.info(f"    Stage {stage_idx + 1}: [{children_str}]")
 
-                                # Draw individual call sequence diagram
-                                parent_slug = _slugify(parent)
-                                output_path = seq_dir / f"sequence_{parent_slug}.png"
-                                _draw_call_sequence_graph(parent, call_sequence, output_path)
-
                                 # Add to collection for unified diagram
                                 all_parent_sequences[parent] = call_sequence
 
-                    # Draw unified call sequence diagram showing all parents
-                    if all_parent_sequences:
-                        output_path = service_dir / "unified_call_sequences.png"
-                        _draw_unified_call_sequence_graph(all_parent_sequences, output_path, service_name)
-                        logger.info(f"  Generated unified call sequence diagram with {len(all_parent_sequences)} parents")
+                missing_sequence_nodes = sorted(set(parent_nodes) - set(all_parent_sequences.keys()))
+                if missing_sequence_nodes:
+                    logger.warning(
+                        f"Service {service_name}: {len(missing_sequence_nodes)} of {len(parent_nodes)} "
+                        "nodes with children have no call sequence"
+                    )
+
+                # Draw unified call sequence diagram showing all parents
+                if all_parent_sequences:
+                    output_path = service_dir / "unified_call_sequences.png"
+                    _draw_unified_call_sequence_graph(all_parent_sequences, output_path, service_name)
+                    logger.info(f"  Generated unified call sequence diagram with {len(all_parent_sequences)} parents")
+
+                # Export call sequence data for this service
+                output_path = service_dir / "call_sequence.json"
+                output_payload = {service_name: all_parent_sequences}
+                with output_path.open("w", encoding="utf-8") as f:
+                    json.dump(output_payload, f, indent=2, sort_keys=True)
+
+                stats["call_sequence_parent_nodes"] = len(parent_nodes)
+                stats["call_sequence_missing_nodes"] = len(missing_sequence_nodes)
 
     # Return both flags separately so we can track rejection reasons
     return (service_name, G, stats, has_user_root, user_subgraph_sufficient)
@@ -2732,6 +2617,9 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
     all_stats = []
     filtered_no_user_root = 0
     filtered_small_user_subgraph = 0
+    missing_sequence_nodes_total = 0
+    missing_sequence_nodes_possible = 0
+    services_missing_sequences = 0
     logger.info(f"\nProcessing {len(top_services)} service(s) in parallel...")
     
     # Prepare arguments for parallel processing (convert Path to string for pickling)
@@ -2788,10 +2676,24 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
             f"{out_avg:<10.2f} {out_min:<10} {out_max:<10} "
             f"{in_avg:<10.2f} {in_min:<10} {in_max:<10}"
         )
+
+        missing_nodes = stats.get("call_sequence_missing_nodes", 0)
+        parent_nodes = stats.get("call_sequence_parent_nodes", 0)
+        if missing_nodes > 0:
+            services_missing_sequences += 1
+            missing_sequence_nodes_total += missing_nodes
+            missing_sequence_nodes_possible += parent_nodes
     
     logger.info(f"{'='*80}")
     logger.info(f"Generated graphs for {len(all_stats)} service(s) in {graphs_dir}")
     logger.info(f"Each service has its own directory with graph_all_nodes.png and graph_user.png")
+
+    if services_missing_sequences > 0:
+        logger.info(
+            "Call sequence coverage: "
+            f"{missing_sequence_nodes_total} of {missing_sequence_nodes_possible} nodes "
+            f"missing call sequences across {services_missing_sequences} service(s)"
+        )
     
     total_filtered = filtered_no_user_root + filtered_small_user_subgraph
     if total_filtered > 0:
