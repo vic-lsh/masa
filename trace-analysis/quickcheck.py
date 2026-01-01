@@ -15,6 +15,8 @@ import matplotlib
 matplotlib.use("Agg")  # Headless/parallel-safe plotting
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
 from matplotlib.collections import LineCollection
 import copy
 import re
@@ -1992,6 +1994,305 @@ def _draw_graph(
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
 
+def _build_call_sequence_graph(
+    call_sequences: dict[str, list[dict[str, float]]],
+) -> tuple[nx.DiGraph, dict[str, float]]:
+    """
+    Build a graph from aggregated call sequences and collect node probabilities.
+
+    Args:
+        call_sequences: Parent -> list of stages, each stage is child -> probability
+
+    Returns:
+        Tuple of (graph, node_probabilities)
+    """
+    G = nx.DiGraph()
+    node_probs: dict[str, float] = {}
+
+    for parent, stages in call_sequences.items():
+        G.add_node(parent)
+        for stage in stages:
+            for child, prob in stage.items():
+                G.add_edge(parent, child)
+                node_probs[child] = max(node_probs.get(child, 0.0), float(prob))
+
+    if "USER" in G.nodes():
+        node_probs["USER"] = 1.0
+
+    return G, node_probs
+
+def _draw_call_sequence_timeline(
+    call_sequences: dict[str, list[dict[str, float]]],
+    title: str,
+    output_path: Path,
+) -> None:
+    """
+    Visualize aggregated call sequences as a timeline.
+
+    X-axis: relative time derived from stage ordering.
+    Y-axis: call graph depth (root at top).
+    """
+    if not call_sequences:
+        return
+
+    G, node_probs = _build_call_sequence_graph(call_sequences)
+    if G.number_of_nodes() == 0:
+        return
+
+    # Determine roots (prefer USER if available).
+    if "USER" in G.nodes():
+        roots = ["USER"]
+    else:
+        roots = [n for n in G.nodes() if G.in_degree(n) == 0]
+
+    if not roots:
+        roots = list(G.nodes())
+
+    # Build a duplicated instance tree so shared children can be drawn per parent.
+    instance_by_key: dict[str, dict] = {}
+    children_by_key: dict[str, list[list[str]]] = {}
+    instance_depth: dict[str, int] = {}
+    traversal: list[str] = []
+    instance_counter = 0
+    max_depth = 50
+
+    def make_instance(name: str, parent_key: str | None, depth: int, path: set[str]) -> str:
+        nonlocal instance_counter
+        key = f"{name}__{instance_counter}"
+        instance_counter += 1
+        instance_by_key[key] = {"key": key, "name": name, "parent": parent_key}
+        instance_depth[key] = depth
+        traversal.append(key)
+
+        if depth >= max_depth or name in path:
+            children_by_key[key] = []
+            return key
+
+        stages = call_sequences.get(name, [])
+        child_stages: list[list[str]] = []
+        for stage in stages:
+            stage_children: list[str] = []
+            sorted_children = sorted(
+                stage.items(),
+                key=lambda item: (-float(item[1]), item[0]),
+            )
+            for child, _prob in sorted_children:
+                child_key = make_instance(child, key, depth + 1, path | {name})
+                stage_children.append(child_key)
+            child_stages.append(stage_children)
+        children_by_key[key] = child_stages
+        return key
+
+    root_keys: list[str] = []
+    for root in roots:
+        root_keys.append(make_instance(root, None, 0, set()))
+
+    # Compute subtree span based on stage counts (parallel uses max child span).
+    span_cache: dict[str, float] = {}
+    in_progress: set[str] = set()
+
+    def compute_span(key: str) -> float:
+        if key in span_cache:
+            return span_cache[key]
+        if key in in_progress:
+            return 1.0
+        in_progress.add(key)
+        try:
+            stages = children_by_key.get(key, [])
+            if not stages:
+                span_cache[key] = 1.0
+                return 1.0
+            total = 0.0
+            for stage in stages:
+                if stage:
+                    child_spans = [compute_span(child_key) for child_key in stage]
+                    total += max(child_spans) if child_spans else 1.0
+                else:
+                    total += 1.0
+            span_cache[key] = max(total, 1.0)
+            return span_cache[key]
+        finally:
+            in_progress.discard(key)
+
+    # Assign intervals to instances based on stage ordering.
+    intervals: dict[str, tuple[float, float]] = {}
+    stage_bounds: dict[str, tuple[float, float]] = {}
+
+    def assign_intervals(key: str, start: float, end: float) -> None:
+        if key in intervals:
+            return
+        intervals[key] = (start, end)
+        stages = children_by_key.get(key, [])
+        if not stages:
+            return
+
+        stage_spans = []
+        for stage in stages:
+            if stage:
+                child_spans = [compute_span(child_key) for child_key in stage]
+                stage_spans.append(max(child_spans) if child_spans else 1.0)
+            else:
+                stage_spans.append(1.0)
+
+        total_span = sum(stage_spans)
+        if total_span <= 0.0:
+            total_span = 1.0
+
+        current = start
+        total_width = max(end - start, 1.0)
+        for stage, stage_span in zip(stages, stage_spans):
+            width = total_width * (stage_span / total_span)
+            stage_start = current
+            stage_end = current + width
+            for child_key in stage:
+                stage_bounds[child_key] = (stage_start, stage_end)
+                assign_intervals(child_key, stage_start, stage_end)
+            current = stage_end
+
+    current_x = 0.0
+    root_gap = 0.5
+    for root_key in root_keys:
+        root_span = compute_span(root_key)
+        assign_intervals(root_key, current_x, current_x + root_span)
+        current_x += root_span + root_gap
+
+    # Assign y positions: stack parallel siblings, reuse rows across sequential stages.
+    node_y: dict[str, float] = {}
+
+    def layout_node(key: str, top_y: float) -> float:
+        node_y[key] = top_y
+        stages = children_by_key.get(key, [])
+        if not stages:
+            return 1.0
+
+        base_y = top_y + 1.0
+        max_stage_height = 0.0
+        for stage in stages:
+            current_y = base_y
+            stage_height = 0.0
+            for child_key in stage:
+                child_height = layout_node(child_key, current_y)
+                current_y += child_height
+                stage_height += child_height
+            max_stage_height = max(max_stage_height, stage_height)
+
+        return 1.0 + max_stage_height
+
+    total_height = 0.0
+    for root_key in root_keys:
+        root_height = layout_node(root_key, total_height)
+        total_height += root_height
+
+    traversal = list(instance_by_key.keys())
+
+    # Plot
+    num_nodes = len(traversal)
+    fig_width = max(12.0, min(40.0, 8.0 + num_nodes * 0.3))
+    fig_height = max(6.0, min(24.0, 4.0 + num_nodes * 0.2))
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    max_time = max(end for _, end in intervals.values()) if intervals else 1.0
+    bar_height = 0.32
+
+    norm = mcolors.Normalize(vmin=0.0, vmax=1.0)
+    cmap = cm.get_cmap("viridis")
+
+    display_intervals: dict[str, tuple[float, float]] = {}
+    draw_items: list[tuple[str, float, float, float, float, str]] = []
+
+    margin = 0.002 * max_time
+    for key in traversal:
+        start, end = intervals.get(key, (0.0, 1.0))
+        depth = instance_depth.get(key, 0)
+        base_width = max(0.05, end - start)
+        inset_frac = min(0.12, 0.03 * (depth + 1))
+        inset = base_width * inset_frac
+        display_start = start + inset
+        display_end = end - inset
+        if display_end <= display_start:
+            display_start = start
+            display_end = end
+        parent_key = instance_by_key[key]["parent"]
+        if parent_key and parent_key in display_intervals:
+            parent_start, parent_end = display_intervals[parent_key]
+            display_start = max(display_start, parent_start + margin)
+            display_end = min(display_end, parent_end - margin)
+        if key in stage_bounds:
+            stage_start, stage_end = stage_bounds[key]
+            display_start = max(display_start, stage_start + margin)
+            display_end = min(display_end, stage_end - margin)
+        if display_end <= display_start:
+            mid = (display_start + display_end) / 2.0
+            display_start = mid - 0.5 * margin
+            display_end = mid + 0.5 * margin
+        width = max(0.05, display_end - display_start)
+        y = node_y.get(key, 0.0)
+        name = instance_by_key[key]["name"]
+        prob = node_probs.get(name, 1.0 if name in roots else 0.5)
+        display_intervals[key] = (display_start, display_end)
+        draw_items.append((key, display_start, display_end, y, prob, name))
+
+    draw_items.sort(key=lambda item: (item[3], item[1]))
+
+    for key, display_start, display_end, y, prob, name in draw_items:
+        width = max(0.05, display_end - display_start)
+        color = cmap(norm(prob))
+        ax.barh(y, width, left=display_start, height=bar_height, color=color,
+                edgecolor="black", linewidth=0.6, alpha=0.85, zorder=2)
+
+        label_x = display_start + 0.02 * max_time
+        ax.text(label_x, y, name, fontsize=7, va="center", ha="left",
+                color="black", zorder=3)
+
+    # Draw dependency arrows from parent left edge to child left edge.
+    for parent_key, stage_list in children_by_key.items():
+        for stage in stage_list:
+            for child_key in stage:
+                if parent_key not in display_intervals or child_key not in display_intervals:
+                    continue
+                parent_start, parent_end = display_intervals[parent_key]
+                child_start, child_end = display_intervals[child_key]
+                y_parent = node_y.get(parent_key, 0.0)
+                y_child = node_y.get(child_key, 0.0)
+                x_offset = 0.01 * max_time
+                arrow_start_x = max(child_start - x_offset, parent_start + 0.002 * max_time)
+                arrow_start_x = min(arrow_start_x, parent_end - 0.002 * max_time)
+                ax.annotate(
+                    "",
+                    xy=(child_start, y_child + bar_height / 2),
+                    xytext=(arrow_start_x, y_parent - bar_height / 2),
+                    arrowprops=dict(arrowstyle="->", color="black", lw=0.8, alpha=0.6),
+                    zorder=1,
+                )
+                child_end_x = child_end
+                arrow_end_x = min(child_end_x + x_offset, parent_end - 0.002 * max_time)
+                arrow_end_x = max(arrow_end_x, parent_start + 0.002 * max_time)
+                ax.annotate(
+                    "",
+                    xy=(arrow_end_x, y_parent - bar_height / 2),
+                    xytext=(child_end_x, y_child + bar_height / 2),
+                    arrowprops=dict(arrowstyle="->", color="black", lw=0.8, alpha=0.6),
+                    zorder=1,
+                )
+
+    ax.set_xlim(-0.05 * max_time, max_time * 1.05)
+    ax.set_ylim(-0.5, total_height + 0.5)
+    ax.invert_yaxis()
+    ax.set_xlabel("Time (relative stage order)")
+    ax.set_ylabel("Call sequence (root at top)")
+    ax.set_title(title, fontsize=11, fontweight="bold")
+    ax.grid(True, axis="x", alpha=0.3)
+
+    sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=ax, pad=0.01)
+    cbar.set_label("Call probability", fontsize=9)
+
+    plt.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close()
+
 def _compute_graph_statistics(G: nx.DiGraph) -> dict:
     """
     Compute statistics for a directed graph.
@@ -2027,342 +2328,6 @@ def _compute_graph_statistics(G: nx.DiGraph) -> dict:
         "in_degree_max": max(in_degrees) if in_degrees else 0,
     }
 
-def _build_hierarchical_call_tree(
-    parent_sequences: dict[str, list[dict[str, float]]],
-    root: str = "USER",
-    max_depth: int = 10,
-) -> dict:
-    """
-    Build a hierarchical call tree by recursively chaining sequences together.
-    Preserves sequential ordering and parallel grouping from call sequences.
-
-    Args:
-        parent_sequences: Dict mapping parent -> call_sequence
-        root: Root node to start from (default: "USER")
-        max_depth: Maximum recursion depth to prevent infinite loops
-
-    Returns:
-        Nested dict representing the call tree with stages:
-        {
-            "name": "USER",
-            "prob": 1.0,
-            "stages": [
-                {
-                    "stage_num": 1,
-                    "children": [
-                        {"name": "A", "prob": 0.95, "stages": [...]},
-                        {"name": "B", "prob": 0.92, "stages": [...]}
-                    ]
-                },
-                {
-                    "stage_num": 2,
-                    "children": [
-                        {"name": "C", "prob": 0.90, "stages": [...]}
-                    ]
-                }
-            ]
-        }
-    """
-    visited = set()
-
-    def _build_tree_recursive(node: str, prob: float, depth: int) -> dict:
-        """Recursively build tree for a given node, preserving stages."""
-        if depth >= max_depth:
-            return {"name": node, "prob": prob, "stages": []}
-        if node in visited:
-            return {"name": node, "prob": prob, "stages": []}
-
-        visited.add(node)
-        tree_node = {"name": node, "prob": prob, "stages": []}
-
-        # If this node has its own call sequence, expand it
-        if node in parent_sequences:
-            call_sequence = parent_sequences[node]
-
-            # Process each stage in the sequence (preserves ordering)
-            for stage_idx, stage_probs in enumerate(call_sequence):
-                stage_children = []
-
-                # For each child in this stage, recursively build subtree
-                for child, child_prob in stage_probs.items():
-                    subtree = _build_tree_recursive(child, child_prob, depth + 1)
-                    stage_children.append(subtree)
-
-                # Add this stage with all its parallel children
-                tree_node["stages"].append({
-                    "stage_num": stage_idx + 1,
-                    "children": stage_children
-                })
-        visited.discard(node)  # Allow node to appear in different branches
-        return tree_node
-
-    # Start building from root
-    if root not in parent_sequences:
-        logger.warning(f"Root node '{root}' not found in parent_sequences")
-        return {"name": root, "prob": 1.0, "stages": []}
-
-    return _build_tree_recursive(root, 1.0, 0)
-
-
-def _compute_tree_layout(tree: dict, x_spacing: float = 1.0, y_spacing: float = 1.0) -> dict[str, tuple[float, float]]:
-    """
-    Compute (x, y) positions for all nodes in the tree using a hierarchical layout.
-
-    Args:
-        tree: Tree structure from _build_hierarchical_call_tree
-        x_spacing: Horizontal spacing between nodes
-        y_spacing: Vertical spacing between levels
-
-    Returns:
-        Dict mapping node_id -> (x, y) position
-    """
-    positions = {}
-    node_counter = [0]  # Use list to make it mutable in nested function
-
-    def _layout_recursive(node: dict, depth: int, parent_x: float | None = None) -> tuple[float, float]:
-        """
-        Recursively compute positions using a top-down approach.
-        Returns (x, y) position of this node.
-        """
-        node_id = f"{node['name']}_{node_counter[0]}"
-        node_counter[0] += 1
-
-        y = -depth * y_spacing  # Top to bottom
-
-        if not node["children"]:
-            # Leaf node - place at next available x position
-            x = len([p for p in positions.values() if p[1] == y]) * x_spacing
-            positions[node_id] = (x, y)
-            return x, y
-
-        # Internal node - recursively layout children first
-        child_positions = []
-        for child in node["children"]:
-            child_x, child_y = _layout_recursive(child, depth + 1, None)
-            child_positions.append(child_x)
-
-        # Place this node at the midpoint of its children
-        if child_positions:
-            x = (min(child_positions) + max(child_positions)) / 2
-        else:
-            x = 0
-
-        positions[node_id] = (x, y)
-        return x, y
-
-    _layout_recursive(tree, 0)
-    return positions
-
-
-def _draw_unified_call_sequence_graph(
-    call_sequence_path: Path,
-    output_path: Path,
-    service_name: str,
-) -> None:
-    """
-    Draw a unified hierarchical call sequence tree starting from USER root.
-
-    Visualization:
-    - X-axis: Timeline (stages progress left to right)
-    - Y-axis: Call depth (USER at top, children below, grandchildren further below)
-
-    Args:
-        call_sequence_path: Path to call_sequence.json
-        output_path: Path to save the image
-        service_name: Name of the service (for title)
-    """
-    if not call_sequence_path.exists():
-        logger.warning(f"Call sequence file not found for {service_name}: {call_sequence_path}")
-        return
-
-    with call_sequence_path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    parent_sequences = data.get(service_name)
-    if parent_sequences is None:
-        # Fall back to first entry if the service name key is missing
-        parent_sequences = next(iter(data.values()), {})
-
-    if not parent_sequences:
-        return
-
-    # Build hierarchical tree starting from USER
-    root = "USER"
-    if root not in parent_sequences:
-        logger.warning(f"Root node '{root}' not found in parent_sequences, cannot create unified tree")
-        return
-
-    tree = _build_hierarchical_call_tree(parent_sequences, root=root, max_depth=20)
-
-    # Flatten tree to get all nodes and edges with positions
-    nodes_list = []
-    edges_list = []
-    node_counter = [0]
-
-    def _traverse_tree(node: dict, parent_id: str | None = None, parent_x: float = 0, tree_depth: int = 0):
-        """
-        Traverse tree and collect nodes/edges.
-
-        Args:
-            node: Current node in tree
-            parent_id: ID of parent node
-            parent_x: X position where parent appears (timeline position)
-            tree_depth: Depth in call hierarchy (USER=0, children=1, etc.)
-        """
-        node_id = f"{node['name']}_{node_counter[0]}"
-        node_counter[0] += 1
-
-        # This node appears at parent's X position
-        node_x = parent_x
-        node_y = tree_depth
-
-        nodes_list.append({
-            "id": node_id,
-            "name": node["name"],
-            "prob": node["prob"],
-            "x": node_x,
-            "y": node_y,
-            "tree_depth": tree_depth
-        })
-
-        if parent_id is not None:
-            edges_list.append((parent_id, node_id))
-
-        # Process stages sequentially (each stage advances timeline)
-        current_x = parent_x
-        for stage in node["stages"]:
-            stage_num = stage["stage_num"]
-            # Advance timeline for this stage
-            stage_x = parent_x + stage_num
-
-            # Process children in this stage (all at same X, different Y)
-            for child in stage["children"]:
-                _traverse_tree(child, node_id, stage_x, tree_depth + 1)
-
-    _traverse_tree(tree)
-
-    if not nodes_list:
-        logger.warning("No nodes found in hierarchical tree")
-        return
-
-    # Create position dictionary
-    pos = {node["id"]: (node["x"], -node["y"]) for node in nodes_list}  # Negative Y so USER is at top
-
-    # Compute axis ranges
-    max_x = max(node["x"] for node in nodes_list)
-    max_y = max(node["y"] for node in nodes_list)
-
-    # Create figure
-    x_spacing = 200  # Pixels per stage
-    y_spacing = 150  # Pixels per depth level
-
-    fig_width = max(16, (max_x + 2) * x_spacing / 100)
-    fig_height = max(10, (max_y + 2) * y_spacing / 100)
-
-    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-
-    # Scale positions for better visualization
-    scaled_pos = {
-        node_id: (x * x_spacing, y * y_spacing)
-        for node_id, (x, y) in pos.items()
-    }
-
-    # Draw edges
-    for parent_id, child_id in edges_list:
-        x1, y1 = scaled_pos[parent_id]
-        x2, y2 = scaled_pos[child_id]
-
-        ax.annotate('', xy=(x2, y2 + 40), xytext=(x1, y1 - 40),
-                   arrowprops=dict(arrowstyle='->', color='gray',
-                                 lw=1.5, alpha=0.6))
-
-    # Draw grid lines for timeline stages
-    for x_stage in range(int(max_x) + 2):
-        x_pos = x_stage * x_spacing
-        ax.axvline(x=x_pos, color='lightgray', linestyle='--', linewidth=0.5, alpha=0.3, zorder=0)
-        # Label the stage at top
-        ax.text(x_pos, max_y * y_spacing + 60, f'S{x_stage}' if x_stage > 0 else 'Start',
-               ha='center', va='bottom', fontsize=8, color='gray', fontweight='bold')
-
-    # Draw horizontal lines for depth levels
-    for y_depth in range(int(max_y) + 1):
-        y_pos = -y_depth * y_spacing
-        ax.axhline(y=y_pos, color='lightgray', linestyle='--', linewidth=0.5, alpha=0.3, zorder=0)
-        # Label the depth on the left
-        ax.text(-x_spacing * 0.3, y_pos, f'Depth {y_depth}',
-               ha='right', va='center', fontsize=8, color='gray', style='italic')
-
-    # Draw nodes
-    for node in nodes_list:
-        node_id = node["id"]
-        x, y = scaled_pos[node_id]
-        prob = node["prob"]
-        name = node["name"]
-        tree_depth = node["tree_depth"]
-
-        # Color based on probability
-        if prob >= 0.8:
-            color = '#90EE90'
-        elif prob >= 0.5:
-            color = '#FFD700'
-        else:
-            color = '#FFB6C1'
-
-        # Special color for root
-        if tree_depth == 0:
-            color = '#87CEEB'  # Sky blue for root
-
-        # Draw node circle
-        circle = plt.Circle((x, y), radius=40, facecolor=color, edgecolor='black',
-                           linewidth=2.0, alpha=0.9, zorder=2)
-        ax.add_patch(circle)
-
-        # Draw node label
-        ax.text(x, y, name, ha='center', va='center',
-               fontsize=9, fontweight='bold', zorder=3)
-
-        # Draw probability below node
-        if tree_depth > 0:  # Don't show prob for root
-            ax.text(x, y - 55, f'{prob:.2f}', ha='center', va='top',
-                   fontsize=7, color='darkblue', zorder=3)
-
-    # Set axis properties
-    ax.set_aspect('equal')
-    ax.axis('off')
-
-    # Set axis limits with margins
-    x_margin = x_spacing * 0.5
-    y_margin = y_spacing * 0.5
-    ax.set_xlim(-x_spacing * 0.5, (max_x + 1) * x_spacing + x_margin)
-    ax.set_ylim(-(max_y + 1) * y_spacing - y_margin, y_spacing)
-
-    # Add title
-    title = f"Unified Call Sequence Timeline for Service '{service_name}'\n" \
-            f"(X-axis: Timeline/Stages | Y-axis: Call Depth)"
-    plt.title(title, fontsize=14, fontweight='bold', pad=20)
-
-    # Add legend
-    legend_elements = [
-        mpatches.Patch(facecolor='#87CEEB', label='Root (USER)', alpha=0.9),
-        mpatches.Patch(facecolor='#90EE90', label='High Prob (≥0.8)', alpha=0.9),
-        mpatches.Patch(facecolor='#FFD700', label='Med Prob (0.5-0.8)', alpha=0.9),
-        mpatches.Patch(facecolor='#FFB6C1', label='Low Prob (<0.5)', alpha=0.9),
-    ]
-    ax.legend(handles=legend_elements, loc='upper right', fontsize=9)
-
-    # Add axis labels
-    ax.text(0.5, -0.02, '→ Timeline (Sequential Stages) →',
-            ha='center', va='top', fontsize=10, style='italic', color='gray',
-            fontweight='bold', transform=ax.transAxes)
-
-    ax.text(-0.02, 0.5, '← Call Depth (Hierarchy) ←',
-            ha='right', va='center', fontsize=10, style='italic', color='gray',
-            fontweight='bold', rotation=90, transform=ax.transAxes)
-
-    plt.tight_layout()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close()
 
 def _process_service(
     service_name: str,
@@ -2505,14 +2470,19 @@ def _process_service(
                 with output_path.open("w", encoding="utf-8") as f:
                     json.dump(output_payload, f, indent=2, sort_keys=True)
 
-                # Draw unified call sequence diagram based on call_sequence.json
-                if all_parent_sequences:
-                    graph_path = service_dir / "unified_call_sequences.png"
-                    _draw_unified_call_sequence_graph(output_path, graph_path, service_name)
-                    logger.info(f"  Generated unified call sequence diagram with {len(all_parent_sequences)} parents")
+                # Visualize aggregated call sequence timeline
+                output_path = service_dir / "call_sequence_timeline.png"
+                title = f"Call Sequence Timeline for Service '{service_name}'\n(Aggregated stage ordering)"
+                _draw_call_sequence_timeline(all_parent_sequences, title, output_path)
 
                 stats["call_sequence_parent_nodes"] = len(parent_nodes)
                 stats["call_sequence_missing_nodes"] = len(missing_sequence_nodes)
+
+    logger.info(
+        f"Finished processing service '{service_name}' "
+        f"(nodes={G.number_of_nodes()}, has_user_root={has_user_root}, "
+        f"user_subgraph_ok={user_subgraph_sufficient})"
+    )
 
     # Return both flags separately so we can track rejection reasons
     return (service_name, G, stats, has_user_root, user_subgraph_sufficient)
