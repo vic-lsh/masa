@@ -685,7 +685,6 @@ def _extract_timing_from_trace(
                 # Child must start at or after parent and end at or before parent
                 if child_start < parent_start or child_end > parent_end:
                     # Child span exceeds parent span - adjust to fit within parent
-                    logger.debug(f"Adjusting child span for rpc_id {rpc_id}: child [{child_start}, {child_end}] exceeds parent [{parent_start}, {parent_end}]")
                     child_start = max(child_start, parent_start)
                     child_end = min(child_end, parent_end)
                     # Ensure child end is still after start
@@ -2069,10 +2068,8 @@ def _build_hierarchical_call_tree(
     def _build_tree_recursive(node: str, prob: float, depth: int) -> dict:
         """Recursively build tree for a given node, preserving stages."""
         if depth >= max_depth:
-            logger.debug(f"Max depth ({max_depth}) reached for node '{node}' at depth {depth}")
             return {"name": node, "prob": prob, "stages": []}
         if node in visited:
-            logger.debug(f"Node '{node}' already being processed (cycle detected)")
             return {"name": node, "prob": prob, "stages": []}
 
         visited.add(node)
@@ -2080,7 +2077,6 @@ def _build_hierarchical_call_tree(
 
         # If this node has its own call sequence, expand it
         if node in parent_sequences:
-            logger.debug(f"Expanding node '{node}' at depth {depth} (has {len(parent_sequences[node])} stages)")
             call_sequence = parent_sequences[node]
 
             # Process each stage in the sequence (preserves ordering)
@@ -2097,9 +2093,6 @@ def _build_hierarchical_call_tree(
                     "stage_num": stage_idx + 1,
                     "children": stage_children
                 })
-        else:
-            logger.debug(f"Node '{node}' has no call sequence (leaf node or not in parent_sequences)")
-
         visited.discard(node)  # Allow node to appear in different branches
         return tree_node
 
@@ -2162,7 +2155,7 @@ def _compute_tree_layout(tree: dict, x_spacing: float = 1.0, y_spacing: float = 
 
 
 def _draw_unified_call_sequence_graph(
-    parent_sequences: dict[str, list[dict[str, float]]],
+    call_sequence_path: Path,
     output_path: Path,
     service_name: str,
 ) -> None:
@@ -2174,10 +2167,22 @@ def _draw_unified_call_sequence_graph(
     - Y-axis: Call depth (USER at top, children below, grandchildren further below)
 
     Args:
-        parent_sequences: Dict mapping parent -> call_sequence
+        call_sequence_path: Path to call_sequence.json
         output_path: Path to save the image
         service_name: Name of the service (for title)
     """
+    if not call_sequence_path.exists():
+        logger.warning(f"Call sequence file not found for {service_name}: {call_sequence_path}")
+        return
+
+    with call_sequence_path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    parent_sequences = data.get(service_name)
+    if parent_sequences is None:
+        # Fall back to first entry if the service name key is missing
+        parent_sequences = next(iter(data.values()), {})
+
     if not parent_sequences:
         return
 
@@ -2188,20 +2193,6 @@ def _draw_unified_call_sequence_graph(
         return
 
     tree = _build_hierarchical_call_tree(parent_sequences, root=root, max_depth=20)
-
-    # Debug: Print tree structure
-    def _debug_print_tree(node: dict, indent: int = 0):
-        """Debug helper to print tree structure."""
-        prefix = "  " * indent
-        logger.info(f"{prefix}{node['name']} (prob={node['prob']:.2f}, stages={len(node['stages'])})")
-        for stage in node["stages"]:
-            logger.info(f"{prefix}  Stage {stage['stage_num']} ({len(stage['children'])} children)")
-            for child in stage["children"]:
-                _debug_print_tree(child, indent + 2)
-
-    logger.info(f"\n{'='*60}\nDEBUG: Tree structure for {service_name}:")
-    _debug_print_tree(tree)
-    logger.info(f"{'='*60}\n")
 
     # Flatten tree to get all nodes and edges with positions
     nodes_list = []
@@ -2249,9 +2240,6 @@ def _draw_unified_call_sequence_graph(
                 _traverse_tree(child, node_id, stage_x, tree_depth + 1)
 
     _traverse_tree(tree)
-
-    logger.info(f"DEBUG: Found {len(nodes_list)} total nodes in tree, {len(edges_list)} edges")
-    logger.info(f"DEBUG: Nodes by depth: {dict(sorted([(d, len([n for n in nodes_list if n['tree_depth'] == d])) for d in set(n['tree_depth'] for n in nodes_list)]))}")
 
     if not nodes_list:
         logger.warning("No nodes found in hierarchical tree")
@@ -2471,11 +2459,6 @@ def _process_service(
                         if edge in G_user.edges():  # Only include edges in USER subgraph
                             aggregated_timing[edge].extend(timings)
                 
-                # Log edges in graph but without timing data for debugging
-                edges_without_timing = set(G_user.edges()) - set(aggregated_timing.keys())
-                if edges_without_timing:
-                    logger.debug(f"Service {service_name}: {len(edges_without_timing)} edges in graph but no timing data: {list(edges_without_timing)[:5]}...")
-                
                 # Draw timeline graph (even if no timing data, to show structure)
                 output_path = service_dir / "pattern_timeline.png"
                 title = f"Call Pattern Timeline for Service '{service_name}'\n(Shows sequential vs parallel call patterns)"
@@ -2486,7 +2469,6 @@ def _process_service(
                 all_parent_sequences: dict[str, list[dict[str, float]]] = {}
 
                 if parent_nodes:
-                    logger.debug(f"Service {service_name}: Extracting call sequences for {len(parent_nodes)} parent nodes")
                     for parent in parent_nodes:
                         # Extract call sequences from each trace
                         sequences = []
@@ -2507,12 +2489,6 @@ def _process_service(
                             call_sequence = _aggregate_call_sequences(sequences, len(sequences))
 
                             if call_sequence:
-                                # Log the call sequence pattern
-                                logger.info(f"  Parent '{parent}' call sequence ({len(sequences)} traces):")
-                                for stage_idx, stage_probs in enumerate(call_sequence):
-                                    children_str = ", ".join([f"{child}({prob:.2f})" for child, prob in sorted(stage_probs.items(), key=lambda x: x[1], reverse=True)])
-                                    logger.info(f"    Stage {stage_idx + 1}: [{children_str}]")
-
                                 # Add to collection for unified diagram
                                 all_parent_sequences[parent] = call_sequence
 
@@ -2523,17 +2499,17 @@ def _process_service(
                         "nodes with children have no call sequence"
                     )
 
-                # Draw unified call sequence diagram showing all parents
-                if all_parent_sequences:
-                    output_path = service_dir / "unified_call_sequences.png"
-                    _draw_unified_call_sequence_graph(all_parent_sequences, output_path, service_name)
-                    logger.info(f"  Generated unified call sequence diagram with {len(all_parent_sequences)} parents")
-
                 # Export call sequence data for this service
                 output_path = service_dir / "call_sequence.json"
                 output_payload = {service_name: all_parent_sequences}
                 with output_path.open("w", encoding="utf-8") as f:
                     json.dump(output_payload, f, indent=2, sort_keys=True)
+
+                # Draw unified call sequence diagram based on call_sequence.json
+                if all_parent_sequences:
+                    graph_path = service_dir / "unified_call_sequences.png"
+                    _draw_unified_call_sequence_graph(output_path, graph_path, service_name)
+                    logger.info(f"  Generated unified call sequence diagram with {len(all_parent_sequences)} parents")
 
                 stats["call_sequence_parent_nodes"] = len(parent_nodes)
                 stats["call_sequence_missing_nodes"] = len(missing_sequence_nodes)
