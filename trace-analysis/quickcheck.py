@@ -22,7 +22,7 @@ import copy
 import re
 import numpy as np
 import json
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -587,6 +587,30 @@ def _slugify(name: str) -> str:
     s = re.sub(r"_+", "_", s).strip("_")
     return s or "service"
 
+def _normalize_interface(value: object) -> str:
+    """
+    Normalize interface values into a stable, display-friendly string.
+    """
+    if value is None or pd.isna(value):
+        return "<none>"
+    text = str(value).strip()
+    if not text or text.lower() == "nan":
+        return "<none>"
+    return text
+
+def _format_dm_interface(dm: str, interface: str | None) -> str:
+    """
+    Format dm/interface into a call label.
+    """
+    iface = _normalize_interface(interface)
+    return f"{dm}::{iface}"
+
+def _strip_interface_label(label: str) -> str:
+    """
+    Return the dm portion of a dm::interface label.
+    """
+    return label.split("::", 1)[0]
+
 def _extract_timing_from_trace(
     trace_df: pd.DataFrame,
     G: nx.DiGraph,
@@ -625,6 +649,11 @@ def _extract_timing_from_trace(
             dm_values = group["dm"].dropna().unique()
             if len(dm_values) > 0:
                 dm = dm_values[0]
+                interface = "<none>"
+                if "interface" in group.columns:
+                    interface_values = group["interface"].dropna().unique()
+                    if len(interface_values) > 0:
+                        interface = _normalize_interface(interface_values[0])
                 # Use min start and max end to handle multiple rows with same rpc_id
                 # Try to get valid timestamps - use median if min/max are invalid
                 valid_timestamps = group["timestamp"].dropna()
@@ -637,6 +666,7 @@ def _extract_timing_from_trace(
                     if pd.notna(start_time) and pd.notna(end_time) and end_time >= start_time:
                         rpc_info[rpc_id] = {
                             "dm": dm,
+                            "interface": interface,
                             "start_time": start_time,
                             "end_time": end_time,
                         }
@@ -668,6 +698,7 @@ def _extract_timing_from_trace(
                         "parent_start": info["start_time"],  # USER call starts when child starts
                         "parent_end": info["end_time"],
                         "rpc_id": rpc_id,
+                        "interface": info.get("interface"),
                     })
         else:
             # Child call - find parent's timing
@@ -701,6 +732,7 @@ def _extract_timing_from_trace(
                         "parent_start": parent_start,
                         "parent_end": parent_end,
                         "rpc_id": rpc_id,
+                        "interface": info.get("interface"),
                     })
             elif parent_rpc_id in rpc_to_dm_no_timing:
                 # Child has timing but parent doesn't - still try to include child timing
@@ -716,6 +748,7 @@ def _extract_timing_from_trace(
                         "parent_start": info["start_time"],  # Estimate: parent starts when child starts
                         "parent_end": info["end_time"],  # Estimate: parent ends when child ends
                         "rpc_id": rpc_id,
+                        "interface": info.get("interface"),
                     })
     
     return dict(timing_data)
@@ -736,7 +769,7 @@ def _extract_call_sequence_from_trace(
 
     Returns:
         List of sets, where each set is a parallel fanout stage
-        Example: [{B, C}, {D}, {E, F, G}] means B+C -> D -> E+F+G
+        Example: [{B::iface1, C::iface2}, {D::iface3}] means B+C -> D
     """
     # Get all children of this parent with their timings
     children_calls = []  # List of (child, start, end) tuples
@@ -745,7 +778,7 @@ def _extract_call_sequence_from_trace(
         if p == parent:
             for timing in timings:
                 children_calls.append({
-                    'child': c,
+                    'child': _format_dm_interface(c, timing.get("interface")),
                     'start': timing.get('start_time', timing.get('start', 0)),
                     'end': timing.get('end_time', timing.get('end', 0)),
                 })
@@ -1835,6 +1868,185 @@ def _draw_timeline_graph(
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
 
+def _extract_edges_with_interface_from_trace(trace_df: pd.DataFrame) -> list[tuple[str, str, str]]:
+    """
+    Extract edges (um -> dm) with interface information from a single trace based on rpc_id hierarchy.
+    
+    Args:
+        trace_df: DataFrame containing rows for a single trace
+    
+    Returns:
+        List of (source, target, interface) tuples
+    """
+    if "rpc_id" not in trace_df.columns or "dm" not in trace_df.columns:
+        return []
+    
+    trace_df = trace_df.copy()
+    trace_df["rpc_id_str"] = trace_df["rpc_id"].astype(str).str.strip()
+    
+    # Create mapping from rpc_id to dm
+    rpc_to_dm = {}
+    rpc_groups = trace_df.groupby("rpc_id_str")
+    
+    for rpc_id, group in rpc_groups:
+        if rpc_id and rpc_id != "" and rpc_id != "nan":
+            dm_values = group["dm"].dropna().unique()
+            if len(dm_values) > 0:
+                rpc_to_dm[rpc_id] = dm_values[0]
+    
+    # Create mapping from rpc_id to list of interfaces (one per row with that rpc_id)
+    rpc_to_interfaces: dict[str, list[str]] = defaultdict(list)
+    for _, row in trace_df.iterrows():
+        rpc_id_str = str(row["rpc_id"]).strip()
+        if rpc_id_str and rpc_id_str != "" and rpc_id_str != "nan":
+            if "interface" in row.index and pd.notna(row["interface"]):
+                interface = _normalize_interface(row["interface"])
+            else:
+                interface = "<none>"
+            rpc_to_interfaces[rpc_id_str].append(interface)
+    
+    # Build edge list with interface (one edge per (rpc_id, interface) combination)
+    edges = []
+    for rpc_id, dm in rpc_to_dm.items():
+        parent_rpc_id = _parent_rpc_id(rpc_id)
+        
+        if parent_rpc_id is None:
+            # Root call - edge from USER to dm
+            source = "USER"
+            target = dm
+        else:
+            # Child call - edge from parent's dm to current dm
+            if parent_rpc_id in rpc_to_dm:
+                source = rpc_to_dm[parent_rpc_id]
+                target = dm
+            else:
+                # Parent not found, skip this edge
+                continue
+        
+        # Add one edge per interface for this rpc_id
+        interfaces = rpc_to_interfaces.get(rpc_id, ["<none>"])
+        for interface in interfaces:
+            edges.append((source, target, interface))
+    
+    return edges
+
+def compute_latency_distributions(df: pd.DataFrame) -> dict:
+    """
+    Compute latency distributions grouped by (dm, interface).
+    
+    Args:
+        df: DataFrame with columns "dm", "interface", and "rt"
+    
+    Returns:
+        Dictionary mapping (dm, interface) tuples to lists of latency values
+    """
+    if "rt" not in df.columns or "dm" not in df.columns:
+        return {}
+    
+    # Normalize interface column
+    df = df.copy()
+    if "interface" in df.columns:
+        df["interface"] = df["interface"].apply(_normalize_interface)
+    else:
+        df["interface"] = "<none>"
+    
+    # Group by dm and interface, aggregate rt values
+    result = (
+        df.groupby(["dm", "interface"])["rt"]
+        .agg(list)
+        .to_dict()
+    )
+    return result
+
+def query_latency_distribution(latency_dict: dict, dm_name: str, iface_name: str) -> list:
+    """
+    Query latency distribution for a given (dm, interface) pair.
+    
+    Args:
+        latency_dict: Dictionary from compute_latency_distributions
+        dm_name: Destination microservice name
+        iface_name: Interface name (normalized)
+    
+    Returns:
+        List of latency values, or empty list if not found
+    """
+    return latency_dict.get((dm_name, iface_name), [])
+
+def _export_graph_reports(
+    service_name: str,
+    G_user: nx.DiGraph,
+    latency_dists: dict,
+    output_dir: Path,
+) -> None:
+    """
+    Export edges.csv, interface_distribution.json, and latency_percentiles.json
+    for a service's graph_user subgraph.
+    
+    Args:
+        service_name: Name of the service
+        G_user: USER-reachable subgraph with interface_counts in edge data
+        latency_dists: Dictionary from compute_latency_distributions
+        output_dir: Directory to save the reports
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Percentiles to compute
+    base = list(range(1, 101))
+    tails = [99.5, 99.9, 99.95, 99.99]
+    percentiles = sorted(set(base + tails))
+    
+    # Collect edge data
+    edges_rows: list[tuple[str, str, str, float]] = []
+    iface_counts_by_callee: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
+    seen_callee_ifaces: set[tuple[str, str]] = set()
+    
+    for caller, callee, data in G_user.edges(data=True):
+        raw_weight = data.get("weight")
+        weight = float(raw_weight) if raw_weight is not None else 0.0
+        edges_rows.append((service_name, caller, callee, weight))
+        
+        # Extract interface_counts from edge data
+        iface_counts = data.get("interface_counts", {}) or {}
+        if iface_counts:
+            iface_counts_by_callee[(service_name, callee)].update(iface_counts)
+            for iface in iface_counts.keys():
+                seen_callee_ifaces.add((callee, iface))
+    
+    # (1) Export edges.csv
+    if edges_rows:
+        df_edges = pd.DataFrame(
+            edges_rows,
+            columns=pd.Index(["service", "caller", "callee", "weight"]),
+        ).drop_duplicates()
+        df_edges.to_csv(output_dir / "edges.csv", index=False)
+    
+    # (2) Export interface_distribution.json
+    iface_json: dict[str, dict[str, int]] = {}
+    for (_service, callee), ctr in iface_counts_by_callee.items():
+        if not ctr:
+            continue
+        callee_map = iface_json.setdefault(callee, {})
+        for iface, cnt in ctr.items():
+            callee_map[iface] = int(cnt)
+    
+    if iface_json:
+        with open(output_dir / "interface_distribution.json", "w") as f:
+            json.dump(iface_json, f, indent=2)
+    
+    # (3) Export latency_percentiles.json
+    lat_json: dict[str, dict[str, dict[str, float]]] = {}
+    for (callee, iface) in sorted(seen_callee_ifaces):
+        latencies = query_latency_distribution(latency_dists, callee, iface)
+        if not latencies:
+            continue
+        arr = np.asarray(latencies, dtype=float)
+        vals = np.percentile(arr, percentiles)
+        lat_json.setdefault(callee, {})[iface] = {str(p): float(v) for p, v in zip(percentiles, vals)}
+    
+    if lat_json:
+        with open(output_dir / "latency_percentiles.json", "w") as f:
+            json.dump(lat_json, f, indent=2)
+
 def reachable_subgraph(G: nx.DiGraph, source: str = "USER") -> nx.DiGraph:
     """
     Extract the subgraph reachable from a source node.
@@ -2035,7 +2247,19 @@ def _draw_call_sequence_timeline(
     if not call_sequences:
         return
 
-    G, node_probs = _build_call_sequence_graph(call_sequences)
+    # Collapse dm::interface labels down to dm for visualization/lookups.
+    normalized_sequences: dict[str, list[dict[str, float]]] = {}
+    for parent, stages in call_sequences.items():
+        norm_stages: list[dict[str, float]] = []
+        for stage in stages:
+            norm_stage: dict[str, float] = {}
+            for child, prob in stage.items():
+                dm_child = _strip_interface_label(child)
+                norm_stage[dm_child] = max(norm_stage.get(dm_child, 0.0), float(prob))
+            norm_stages.append(norm_stage)
+        normalized_sequences[parent] = norm_stages
+
+    G, node_probs = _build_call_sequence_graph(normalized_sequences)
     if G.number_of_nodes() == 0:
         return
 
@@ -2068,7 +2292,7 @@ def _draw_call_sequence_timeline(
             children_by_key[key] = []
             return key
 
-        stages = call_sequences.get(name, [])
+        stages = normalized_sequences.get(name, [])
         child_stages: list[list[str]] = []
         for stage in stages:
             stage_children: list[str] = []
@@ -2359,21 +2583,26 @@ def _process_service(
         stats["num_traces"] = 0
         return (service_name, G, stats, False, False)
     
-    # Aggregate edges across all traces
+    # Aggregate edges across all traces with interface information
     edge_counter: dict[tuple[str, str], int] = {}
+    edge_interface_counts: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
     
     for trace_id in unique_traces:
         trace_df = service_df[service_df[trace_col] == trace_id]
-        edges = _extract_edges_from_trace(trace_df)
+        # Extract edges with interface information
+        edges_with_iface = _extract_edges_with_interface_from_trace(trace_df)
         
-        # Count edge frequencies
-        for edge in edges:
+        # Count edge frequencies and track interface counts
+        for source, target, interface in edges_with_iface:
+            edge = (source, target)
             edge_counter[edge] = edge_counter.get(edge, 0) + 1
+            edge_interface_counts[edge][interface] += 1
     
-    # Create graph with edge weights
+    # Create graph with edge weights and interface_counts
     G = nx.DiGraph()
     for (source, target), frequency in edge_counter.items():
-        G.add_edge(source, target, weight=frequency)
+        interface_counts = dict(edge_interface_counts[(source, target)])
+        G.add_edge(source, target, weight=frequency, interface_counts=interface_counts)
     
     # Check if graph has 'USER' as a root node (in_degree == 0)
     has_user_root = "USER" in G.nodes() and G.in_degree("USER") == 0
@@ -2399,7 +2628,7 @@ def _process_service(
         # Draw full graph (all nodes)
         num_nodes = G.number_of_nodes()
         output_path = service_dir / "graph_all_nodes.png"
-        title = f"Aggregated Call Graph for Service '{service_name}' (All Nodes)\n(Edge thickness and labels indicate frequency)"
+        title = f"Aggregated Call Graph for Service '{service_name}' (All Nodes: {num_nodes})\n(Edge thickness and labels indicate frequency)"
         _draw_graph(G, title, output_path, num_nodes)
         
         # Draw USER-reachable subgraph
@@ -2407,8 +2636,13 @@ def _process_service(
         if G_user.number_of_nodes() > 0:
             num_nodes_user = G_user.number_of_nodes()
             output_path = service_dir / "graph_user.png"
-            title = f"Aggregated Call Graph for Service '{service_name}' (USER-Reachable Subgraph)\n(Edge thickness and labels indicate frequency)"
+            title = f"Aggregated Call Graph for Service '{service_name}' (USER-Reachable Subgraph: {num_nodes_user} nodes)\n(Edge thickness and labels indicate frequency)"
             _draw_graph(G_user, title, output_path, num_nodes_user)
+            
+            # Export edges.csv, interface_distribution.json, and latency_percentiles.json
+            # Compute latency distributions from service_df
+            latency_dists = compute_latency_distributions(service_df)
+            _export_graph_reports(service_name, G_user, latency_dists, service_dir)
             
             # Extract and aggregate timing data for timeline visualization
             if "timestamp" in service_df.columns and "rt" in service_df.columns:
