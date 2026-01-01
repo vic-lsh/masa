@@ -674,13 +674,30 @@ def _extract_timing_from_trace(
                 parent_dm = parent_info["dm"]
                 child_dm = info["dm"]
                 
+                # Validate that child span is within parent span (or at most equal)
+                child_start = info["start_time"]
+                child_end = info["end_time"]
+                parent_start = parent_info["start_time"]
+                parent_end = parent_info["end_time"]
+                
+                # Check if child span is strictly shorter than or equal to parent span
+                # Child must start at or after parent and end at or before parent
+                if child_start < parent_start or child_end > parent_end:
+                    # Child span exceeds parent span - adjust to fit within parent
+                    logger.debug(f"Adjusting child span for rpc_id {rpc_id}: child [{child_start}, {child_end}] exceeds parent [{parent_start}, {parent_end}]")
+                    child_start = max(child_start, parent_start)
+                    child_end = min(child_end, parent_end)
+                    # Ensure child end is still after start
+                    if child_end <= child_start:
+                        child_end = child_start + 1  # Minimal duration
+                
                 # Only include if this edge exists in the graph
                 if (parent_dm, child_dm) in G.edges():
                     timing_data[(parent_dm, child_dm)].append({
-                        "start_time": info["start_time"],
-                        "end_time": info["end_time"],
-                        "parent_start": parent_info["start_time"],
-                        "parent_end": parent_info["end_time"],
+                        "start_time": child_start,
+                        "end_time": child_end,
+                        "parent_start": parent_start,
+                        "parent_end": parent_end,
                         "rpc_id": rpc_id,
                     })
             elif parent_rpc_id in rpc_to_dm_no_timing:
@@ -797,7 +814,8 @@ def _draw_timeline_graph(
 ) -> None:
     """
     Draw a timeline graph showing parent-child call patterns over time.
-    The layout mirrors the DAG structure with time on x-axis and hierarchy on y-axis.
+    Parent's time is inclusive of children. Sequential children are left/right,
+    parallel children are vertically aligned. This is done recursively for all layers.
     
     Args:
         G: NetworkX directed graph (USER subgraph)
@@ -842,27 +860,35 @@ def _draw_timeline_graph(
     ax_left.axis('off')
     
     # Right panel: Timeline visualization
-    # First, classify patterns using original timings
-    # Then normalize for visualization
-    edge_timelines = {}
+    # First, normalize all timings relative to root (USER) start
+    # Find the earliest parent_start across all timing data (this is the root start)
+    root_start = None
+    for timings in timing_data.values():
+        for timing in timings:
+            if root_start is None or timing["parent_start"] < root_start:
+                root_start = timing["parent_start"]
     
+    if root_start is None:
+        plt.close()
+        return
+    
+    # Normalize all timings relative to root start
+    edge_timelines = {}
     for (parent, child), timings in timing_data.items():
         if not timings or (parent, child) not in G.edges():
             continue
         
-        # Normalize timestamps relative to parent start for each trace
         normalized_timings = []
         for timing in timings:
-            parent_start = timing["parent_start"]
-            relative_start = timing["start_time"] - parent_start
-            relative_end = timing["end_time"] - parent_start
+            relative_start = timing["start_time"] - root_start
+            relative_end = timing["end_time"] - root_start
             normalized_timings.append({
                 "start": relative_start,
                 "end": relative_end,
                 "start_time": timing["start_time"],  # Keep original for classification
                 "end_time": timing["end_time"],  # Keep original for classification
-                "parent_start": timing["parent_start"],  # Keep original for grouping
-                "parent_end": timing["parent_end"],  # Keep original for grouping
+                "parent_start": timing["parent_start"] - root_start,  # Normalized
+                "parent_end": timing["parent_end"] - root_start,  # Normalized
             })
         
         edge_timelines[(parent, child)] = normalized_timings
@@ -897,195 +923,528 @@ def _draw_timeline_graph(
     
     max_level = len(y_to_level) - 1
     
-    # Calculate hierarchy depth for each node (for horizontal positioning)
-    # Depth = distance from USER (or root)
-    node_depths = {}
-    if "USER" in G.nodes():
-        # BFS from USER to calculate depths
-        queue = [("USER", 0)]
-        visited = set()
-        while queue:
-            node, depth = queue.pop(0)
-            if node in visited:
-                continue
-            visited.add(node)
-            node_depths[node] = depth
-            for child in G.successors(node):
-                if child not in visited:
-                    queue.append((child, depth + 1))
-        # Handle any unvisited nodes (shouldn't happen in USER subgraph, but be safe)
-        for node in G.nodes():
-            if node not in node_depths:
-                node_depths[node] = 0
-    else:
-        # No USER node, use in-degree to estimate depth
-        for node in G.nodes():
-            node_depths[node] = 0
-    
-    max_depth = max(node_depths.values()) if node_depths else 0
-    
     # Colors for different patterns
     colors = {'sequential': '#2E86AB', 'parallel': '#A23B72', 'mixed': '#F18F01'}
     
-    # Calculate column width for hierarchy levels
-    # Each depth level gets a column, with time flowing horizontally within
-    column_width = max_time * 1.2  # Extra space for labels
+    # Build node timing information recursively
+    # For each node, calculate its inclusive time span (from earliest child to latest child)
+    node_timings = {}  # node -> {"start": float, "end": float, "has_children": bool}
+    calculating = set()  # Track nodes currently being calculated to detect cycles
+    max_recursion_depth = 1000  # Safety limit
     
-    # Calculate max visualization depth (may be deeper than BFS depth due to parent+1 placement)
-    max_vis_depth = max_depth
-    for parent in G.nodes():
-        if parent in node_depths:
-            parent_depth = node_depths[parent]
-            children = list(G.successors(parent))
-            if children:
-                # Children will be at parent_depth + 1
-                max_vis_depth = max(max_vis_depth, parent_depth + 1)
-    
-    total_width = (max_vis_depth + 1) * column_width
-    
-    # Track which (node, x_pos) combinations have been labeled to avoid duplicates
-    labeled_positions = set()
-    
-    # First, draw all node labels at their base hierarchy depth
-    for node in G.nodes():
-        if node not in node_y_positions:
-            continue
-        level = node_y_positions[node]
-        depth = node_depths.get(node, 0)
-        x_pos = depth * column_width
-        pos_key = (node, x_pos, level)
+    def calculate_node_timing(node: str, depth: int = 0) -> dict:
+        """Recursively calculate inclusive timing for a node.
         
-        if pos_key not in labeled_positions:
-            # Draw node label at its depth column
-            ax_right.text(x_pos - 0.05 * max_time, level, node, 
-                         fontsize=8, ha='right', va='center', fontweight='bold',
-                         bbox=dict(boxstyle='round,pad=0.3', facecolor='lightgray', alpha=0.5))
-            labeled_positions.add(pos_key)
-    
-    # For each parent node, show when it calls its children
-    for parent in sorted(G.nodes(), key=lambda n: node_y_positions.get(n, 0)):
-        if parent not in node_y_positions:
-            continue
+        Args:
+            node: Node to calculate timing for
+            depth: Current recursion depth (for cycle detection)
         
-        parent_level = node_y_positions[parent]
-        parent_depth = node_depths.get(parent, 0)
-        parent_x = parent_depth * column_width
+        Returns:
+            Dictionary with start, end, and has_children keys
+        """
+        # Check if already calculated
+        if node in node_timings:
+            return node_timings[node]
         
-        children = sorted([child for child in G.successors(parent) if child in node_y_positions])
+        # Check for cycles or excessive recursion
+        if node in calculating:
+            # Cycle detected - return placeholder to break recursion
+            logger.warning(f"Cycle detected in graph at node '{node}', using placeholder timing")
+            node_timings[node] = {"start": 0.0, "end": 0.1 * max_time, "has_children": False}
+            return node_timings[node]
         
-        if not children:
-            # Leaf node - already labeled above, skip timeline bars
-            continue
+        if depth > max_recursion_depth:
+            # Excessive recursion - likely a very deep graph or cycle
+            logger.warning(f"Maximum recursion depth exceeded for node '{node}', using placeholder timing")
+            node_timings[node] = {"start": 0.0, "end": 0.1 * max_time, "has_children": False}
+            return node_timings[node]
         
-        # Get timing data for all children of this parent
-        child_timings = {}
-        for child in children:
-            edge = (parent, child)
-            if edge in edge_timelines:
-                child_timings[child] = edge_timelines[edge]
+        # Mark as currently calculating
+        calculating.add(node)
         
-        # Classify pattern for this parent's children (if we have timing data)
-        if child_timings:
-            pattern_type, parallel_ratio = _classify_call_pattern(child_timings)
-            color = colors.get(pattern_type, 'gray')
-        else:
-            # No timing data - use gray
-            color = 'gray'
-        
-        # Draw parent node label (overwrite the gray one)
-        parent_pos_key = (parent, parent_x, parent_level)
-        ax_right.text(parent_x - 0.05 * max_time, parent_level, parent, 
-                     fontsize=8, ha='right', va='center', fontweight='bold',
-                     bbox=dict(boxstyle='round,pad=0.3', facecolor='lightblue', alpha=0.7))
-        labeled_positions.add(parent_pos_key)
-        
-        # Draw timeline bars for each child
-        # Children appear in the next column to the right of their parent
-        for i, child in enumerate(children):
-            edge = (parent, child)
-            child_level = node_y_positions[child]
-            # For visualization, place child one column to the right of parent
-            # This ensures the DAG structure is clear: children are always to the right
-            child_vis_depth = parent_depth + 1
-            child_x = child_vis_depth * column_width
+        try:
+            children = list(G.successors(node))
             
-            # Calculate y position with slight offset for multiple children at same level
-            y_offset = (i - len(children) / 2 + 0.5) * 0.12
-            y_pos = child_level + y_offset
+            if not children:
+                # Leaf node - use its own timing if available
+                # Find timing from any edge where this node is a child
+                min_start = None
+                max_end = None
+                for (parent, child), timings in edge_timelines.items():
+                    if child == node and timings:
+                        for timing in timings:
+                            if min_start is None or timing["start"] < min_start:
+                                min_start = timing["start"]
+                            if max_end is None or timing["end"] > max_end:
+                                max_end = timing["end"]
+                
+                if min_start is not None and max_end is not None:
+                    node_timings[node] = {"start": min_start, "end": max_end, "has_children": False}
+                else:
+                    # No timing data - use placeholder
+                    node_timings[node] = {"start": 0.0, "end": 0.1 * max_time, "has_children": False}
+                return node_timings[node]
             
-            if edge in child_timings and child_timings[edge]:
-                timings = child_timings[edge]
-                
-                # Use median start and end times for visualization
-                starts = [t["start"] for t in timings]
-                ends = [t["end"] for t in timings]
-                median_start = np.median(starts)
-                median_end = np.median(ends)
-                
-                # Draw bar at child's column position
-                width = max(0.005 * max_time, median_end - median_start)
-                ax_right.barh(y_pos, width, left=child_x + median_start, height=0.15, 
-                             color=color, alpha=0.7, edgecolor='black', linewidth=0.5)
-                
-                # Draw connecting line from parent to child (horizontal then vertical)
-                # Make edges thicker and more prominent to show dependency structure
-                # Horizontal line from parent to start of child column
-                ax_right.plot([parent_x, child_x], [parent_level, parent_level], 
-                             color='black', linestyle='--', linewidth=2.0, alpha=0.6, zorder=1)
-                # Vertical line down to child
-                ax_right.plot([child_x, child_x], [parent_level, y_pos], 
-                             color='black', linestyle='--', linewidth=2.0, alpha=0.6, zorder=1)
-                # Horizontal line to child's timeline bar
-                ax_right.plot([child_x, child_x + median_start], [y_pos, y_pos], 
-                             color='black', linestyle='--', linewidth=2.0, alpha=0.6, zorder=1)
-                
-                # Label child at its column (only if not already labeled at this position)
-                child_pos_key = (child, child_x, y_pos)
-                if child_pos_key not in labeled_positions:
-                    ax_right.text(child_x - 0.02 * max_time, y_pos, child,
-                                fontsize=7, ha='right', va='center', fontstyle='italic')
-                    labeled_positions.add(child_pos_key)
+            # Parent node - calculate from children
+            child_starts = []
+            child_ends = []
+            
+            for child in children:
+                child_timing = calculate_node_timing(child, depth + 1)
+                child_starts.append(child_timing["start"])
+                child_ends.append(child_timing["end"])
+            
+            if child_starts and child_ends:
+                node_start = min(child_starts)
+                node_end = max(child_ends)
+                # Ensure parent end is strictly greater than all child ends
+                # Add a small buffer to ensure children are narrower than parent
+                if node_end <= max(child_ends):
+                    node_end = max(child_ends) + 0.01 * max_time
             else:
-                # No timing data - draw a placeholder at child's column
-                placeholder_start = child_x + 0.1 * max_time
-                placeholder_width = 0.05 * max_time
-                placeholder_center = placeholder_start + placeholder_width / 2
-                ax_right.barh(y_pos, placeholder_width, left=placeholder_start, height=0.15, 
-                             color='lightgray', alpha=0.3, edgecolor='gray', linewidth=0.5)
+                # No child timing data - use placeholder
+                node_start = 0.0
+                node_end = 0.1 * max_time
+            
+            node_timings[node] = {"start": node_start, "end": node_end, "has_children": True}
+            return node_timings[node]
+        
+        finally:
+            # Always remove from calculating set when done
+            calculating.discard(node)
+    
+    # Calculate timings for all nodes (starting from root)
+    if "USER" in G.nodes():
+        calculate_node_timing("USER")
+        # Also calculate for all other nodes
+        for node in G.nodes():
+            if node not in node_timings:
+                calculate_node_timing(node)
+    else:
+        # No USER node - calculate for all nodes
+        for node in G.nodes():
+            if node not in node_timings:
+                calculate_node_timing(node)
+    
+    # Determine if children are sequential or parallel
+    def are_children_sequential(parent: str, children: list[str], overlap_threshold: float = 0.1) -> dict[str, bool]:
+        """Determine which children are sequential vs parallel."""
+        if len(children) < 2:
+            return {child: True for child in children}
+        
+        result = {}
+        child_ranges = {}
+        
+        # Get timing ranges for each child
+        for child in children:
+            if child in node_timings:
+                child_ranges[child] = (node_timings[child]["start"], node_timings[child]["end"])
+            else:
+                child_ranges[child] = (0.0, 0.1 * max_time)
+        
+        # Sort children by start time
+        sorted_children = sorted(children, key=lambda c: child_ranges[c][0])
+        
+        # Check each child against previous ones
+        for i, child in enumerate(sorted_children):
+            is_sequential = True
+            child_start, child_end = child_ranges[child]
+            
+            # Check if this child overlaps significantly with any previous child
+            for prev_child in sorted_children[:i]:
+                prev_start, prev_end = child_ranges[prev_child]
                 
-                # Draw connecting line from parent to child (thinner for no-data case)
-                ax_right.plot([parent_x, child_x], [parent_level, parent_level], 
-                             color='gray', linestyle=':', linewidth=1.5, alpha=0.4, zorder=1)
-                ax_right.plot([child_x, child_x], [parent_level, y_pos], 
-                             color='gray', linestyle=':', linewidth=1.5, alpha=0.4, zorder=1)
-                ax_right.plot([child_x, placeholder_start], [y_pos, y_pos], 
-                             color='gray', linestyle=':', linewidth=1.5, alpha=0.4, zorder=1)
+                # Check overlap
+                overlap_start = max(prev_start, child_start)
+                overlap_end = min(prev_end, child_end)
                 
-                # Label child inside the placeholder bar (only if not already labeled at this position)
-                child_pos_key = (child, child_x, y_pos)
-                if child_pos_key not in labeled_positions:
-                    ax_right.text(placeholder_center, y_pos, child + " (no data)",
-                                fontsize=6, ha='center', va='center', fontstyle='italic', 
-                                color='black', alpha=0.8, weight='bold',
-                                bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7, edgecolor='none'))
-                    labeled_positions.add(child_pos_key)
+                if overlap_start < overlap_end:
+                    overlap_duration = overlap_end - overlap_start
+                    min_duration = min(prev_end - prev_start, child_end - child_start)
+                    if min_duration > 0:
+                        overlap_ratio = overlap_duration / min_duration
+                        if overlap_ratio >= overlap_threshold:
+                            is_sequential = False
+                            break
+            
+            result[child] = is_sequential
+        
+        return result
+    
+    # Position nodes on timeline with proper spacing to prevent overlaps
+    node_x_positions = {}  # node -> x position (start time)
+    node_y_timeline_positions = {}  # node -> y position on timeline
+    node_visual_timings = {}  # node -> visual timing for display
+    layout_in_progress = set()  # Track nodes currently being laid out (cycle detection)
+
+    def layout_subtree(node: str, parent_x_start: float, parent_x_end: float,
+                       base_y: float, depth: int = 0) -> float:
+        """
+        Recursively layout a subtree, returning the minimum y position used.
+
+        Args:
+            node: Current node to layout
+            parent_x_start: Parent's start time (or 0 for root)
+            parent_x_end: Parent's end time (or max_time for root)
+            base_y: Y position for this node
+            depth: Recursion depth (for cycle detection)
+
+        Returns:
+            Minimum y position used by this subtree
+        """
+        # Check if already positioned (avoid re-processing)
+        if node in node_y_timeline_positions:
+            return node_y_timeline_positions[node]
+
+        # Check for cycles
+        if node in layout_in_progress:
+            logger.warning(f"Cycle detected in graph at node '{node}', skipping to prevent infinite recursion")
+            # Position node with placeholder to break cycle
+            node_x_positions[node] = parent_x_start
+            node_y_timeline_positions[node] = base_y
+            node_visual_timings[node] = {
+                "start": parent_x_start,
+                "end": min(parent_x_start + 0.01 * max_time, parent_x_end),
+                "has_children": False
+            }
+            return base_y
+
+        if depth > 100:
+            logger.warning(f"Maximum recursion depth exceeded for node '{node}'")
+            return base_y
+
+        # Mark as being processed
+        layout_in_progress.add(node)
+
+        try:
+            # Get timing for this node
+            timing = node_timings.get(node, {"start": 0.0, "end": 0.1 * max_time})
+
+            # Ensure node timing fits within parent bounds (with small inset)
+            inset = 0.01 * max_time
+            node_start = max(timing["start"], parent_x_start + inset)
+            node_end = min(timing["end"], parent_x_end - inset)
+
+            # Ensure end > start
+            if node_end <= node_start:
+                node_end = node_start + 0.01 * max_time
+
+            # Position this node
+            node_x_positions[node] = node_start
+            node_y_timeline_positions[node] = base_y
+            node_visual_timings[node] = {
+                "start": node_start,
+                "end": node_end,
+                "has_children": timing.get("has_children", False)
+            }
+
+            # Get children
+            children = list(G.successors(node))
+            if not children:
+                return base_y  # Leaf node, return current y
+
+            # Determine which children are sequential vs parallel
+            seq_parallel = are_children_sequential(node, children)
+
+            # Sort children by their original start time
+            children_sorted = sorted(children, key=lambda c: node_timings.get(c, {}).get("start", 0.0))
+
+            # Group into sequential segments and parallel groups
+            groups = []  # List of (is_parallel, [children])
+            current_parallel = []
+
+            for child in children_sorted:
+                if not seq_parallel.get(child, True):  # Parallel
+                    current_parallel.append(child)
+                else:  # Sequential
+                    if current_parallel:
+                        groups.append((True, current_parallel))
+                        current_parallel = []
+                    groups.append((False, [child]))
+
+            if current_parallel:
+                groups.append((True, current_parallel))
+
+            # Layout children with proper time budget allocation
+            bar_height = 0.1
+            gap = 0.05
+            inter_child_gap = 0.005 * max_time
+            child_base_y = base_y - (bar_height + gap)
+
+            # Calculate available time for children
+            available_time = node_end - node_start - 2 * inset
+
+            if available_time <= 0:
+                available_time = 0.01 * max_time
+
+            # First pass: Calculate how much time each group needs
+            group_time_needs = []
+            total_time_needed = 0
+
+            for is_parallel, group in groups:
+                if is_parallel:
+                    # Parallel group: needs time for the longest child
+                    group_timings = [node_timings.get(c, {"start": 0.0, "end": 0.1 * max_time}) for c in group]
+                    max_duration = max(t["end"] - t["start"] for t in group_timings)
+                    group_time_needs.append(max_duration)
+                    total_time_needed += max_duration
+                else:
+                    # Sequential group: needs sum of all children's durations
+                    group_duration = 0
+                    for child in group:
+                        child_timing = node_timings.get(child, {"start": 0.0, "end": 0.1 * max_time})
+                        child_duration = child_timing["end"] - child_timing["start"]
+                        group_duration += child_duration
+                    group_time_needs.append(group_duration)
+                    total_time_needed += group_duration
+
+            # Add gaps between groups
+            if len(groups) > 1:
+                total_time_needed += inter_child_gap * (len(groups) - 1)
+
+            # Calculate scaling factor if children don't fit
+            if total_time_needed > available_time:
+                # Need to compress children to fit within parent
+                scale_factor = (available_time - inter_child_gap * max(0, len(groups) - 1)) / (total_time_needed - inter_child_gap * max(0, len(groups) - 1))
+                scale_factor = max(0.05, scale_factor)  # Minimum 5% of original size
+            else:
+                scale_factor = 1.0
+
+            # Second pass: Layout children with allocated time budgets
+            current_x = node_start + inset
+            min_y_used = child_base_y
+
+            for idx, (is_parallel, group) in enumerate(groups):
+                allocated_time = group_time_needs[idx] * scale_factor
+
+                # Ensure minimum allocation
+                allocated_time = max(allocated_time, 0.01 * max_time)
+
+                # Ensure we don't exceed parent bounds
+                group_end = min(current_x + allocated_time, node_end - inset)
+
+                if group_end <= current_x:
+                    group_end = current_x + 0.01 * max_time
+
+                if is_parallel:
+                    # Parallel children: stack vertically, same x range
+                    current_y = child_base_y
+                    for child in group:
+                        child_min_y = layout_subtree(child, current_x, group_end, current_y, depth + 1)
+                        # Move down for next parallel sibling
+                        current_y = child_min_y - (bar_height + gap)
+                        min_y_used = min(min_y_used, child_min_y)
+
+                    # Move current_x past the parallel section
+                    current_x = group_end + inter_child_gap
+
+                else:
+                    # Sequential children: distribute allocated time among them
+                    # Calculate individual time budgets based on original proportions
+                    group_timings = []
+                    total_group_duration = 0
+                    for child in group:
+                        child_timing = node_timings.get(child, {"start": 0.0, "end": 0.1 * max_time})
+                        child_duration = child_timing["end"] - child_timing["start"]
+                        group_timings.append(child_duration)
+                        total_group_duration += child_duration
+
+                    # Allocate time proportionally
+                    child_x = current_x
+                    for i, child in enumerate(group):
+                        if total_group_duration > 0:
+                            # Proportional allocation
+                            child_allocated = allocated_time * (group_timings[i] / total_group_duration)
+                        else:
+                            # Equal allocation if no timing info
+                            child_allocated = allocated_time / len(group)
+
+                        # Ensure minimum size
+                        child_allocated = max(child_allocated, 0.01 * max_time)
+
+                        child_end = min(child_x + child_allocated, node_end - inset)
+
+                        if child_end <= child_x:
+                            child_end = child_x + 0.01 * max_time
+
+                        child_min_y = layout_subtree(child, child_x, child_end, child_base_y, depth + 1)
+                        min_y_used = min(min_y_used, child_min_y)
+
+                        # Move to next sequential child (with small gap)
+                        child_x = child_end + inter_child_gap
+
+                    # Update current_x to after all sequential children
+                    current_x = child_x
+
+            return min_y_used
+
+        finally:
+            # Always remove from in-progress set when done
+            layout_in_progress.discard(node)
+
+    # Start layout from root
+    if "USER" in G.nodes():
+        root_y = max_level if max_level > 0 else 0.0
+        layout_subtree("USER", 0.0, max_time, root_y)
+    else:
+        # Multiple roots
+        roots = [n for n in G.nodes() if G.in_degree(n) == 0]
+        root_y = max_level if max_level > 0 else 0.0
+        for root in roots:
+            layout_subtree(root, 0.0, max_time, root_y)
+
+    # Ensure all nodes are positioned (handle disconnected components)
+    for node in G.nodes():
+        if node not in node_y_timeline_positions:
+            timing = node_timings.get(node, {"start": 0.0, "end": 0.1 * max_time})
+            node_x_positions[node] = timing["start"]
+            node_y_timeline_positions[node] = 0.0
+            node_visual_timings[node] = timing.copy()
+    
+    # Draw timeline bars
+    # Sort nodes by y position (lowest first = bottom first)
+    nodes_by_y = sorted(G.nodes(), key=lambda n: node_y_timeline_positions.get(n, 0))
+    
+    bar_height = 0.1
+    gap = 0.05
+    
+    # Track label positions to prevent overlaps
+    label_positions = []  # List of (x_start, x_end, y, text) tuples
+    
+    def check_label_overlap(x_start: float, x_end: float, y: float, text: str, fontsize: int = 7) -> tuple[float, float]:
+        """Check if label would overlap with existing labels, adjust if needed.
+        
+        Returns:
+            (label_x, label_y) position for the label
+        """
+        # Estimate text width in data coordinates
+        char_width = 0.008 * max_time
+        text_width = char_width * len(text)
+        text_height = bar_height
+        
+        # Try to place label in the middle of the bar
+        bar_center_x = x_start + (x_end - x_start) / 2
+        label_x = bar_center_x - text_width / 2
+        
+        # Check for overlaps with existing labels at similar y positions
+        for existing_x_start, existing_x_end, existing_y, _ in label_positions:
+            # Check if y positions are close (within bar height)
+            if abs(y - existing_y) < text_height * 1.2:
+                # Check if x positions overlap
+                if not (label_x + text_width < existing_x_start or label_x > existing_x_end):
+                    # Overlap detected - try to shift left or right
+                    if existing_x_end < bar_center_x:
+                        # Existing label is to the left, shift right
+                        label_x = existing_x_end + 0.01 * max_time
+                    else:
+                        # Existing label is to the right, shift left
+                        label_x = existing_x_start - text_width - 0.01 * max_time
+        
+        # Clamp to bar bounds (with small padding)
+        padding = 0.01 * max_time
+        if label_x < x_start + padding:
+            label_x = x_start + padding
+        if label_x + text_width > x_end - padding:
+            label_x = x_end - text_width - padding
+            # If still doesn't fit, just center it
+            if label_x < x_start + padding:
+                label_x = bar_center_x - text_width / 2
+        
+        # Record this label position
+        label_positions.append((label_x, label_x + text_width, y, text))
+        
+        return label_x, y
+    
+    # Draw all nodes
+    for node in nodes_by_y:
+        if node not in node_y_timeline_positions:
+            continue
+        
+        visual_timing = node_visual_timings.get(node, node_timings.get(node, {"start": 0.0, "end": 0.1 * max_time}))
+        x_pos = node_x_positions.get(node, visual_timing["start"])
+        y_pos = node_y_timeline_positions[node]
+        
+        # Draw node bar using visual timing
+        min_width = 0.01 * max_time
+        width = max(min_width, visual_timing["end"] - visual_timing["start"])
+        
+        # Determine color based on children pattern
+        children = list(G.successors(node))
+        if children:
+            child_timings_dict = {}
+            for child in children:
+                edge = (node, child)
+                if edge in edge_timelines:
+                    child_timings_dict[child] = edge_timelines[edge]
+            
+            if child_timings_dict:
+                pattern_type, _ = _classify_call_pattern(child_timings_dict)
+                color = colors.get(pattern_type, 'gray')
+            else:
+                color = 'gray'
+        else:
+            # Leaf node - use light gray
+            color = 'lightgray'
+        
+        # Draw bar
+        ax_right.barh(y_pos, width, left=x_pos, height=bar_height, 
+                     color=color, alpha=0.7, edgecolor='black', linewidth=1.0, zorder=2)
+        
+        # Draw node label INSIDE the bar (centered, with overlap checking)
+        label_x, label_y = check_label_overlap(x_pos, x_pos + width, y_pos, node, fontsize=7)
+        
+        # Use white text with semi-transparent background for better visibility
+        ax_right.text(label_x, label_y, node, 
+                     fontsize=7, ha='left', va='center', fontweight='bold',
+                     color='white', zorder=3,
+                     bbox=dict(boxstyle='round,pad=0.1', facecolor='black', alpha=0.4, edgecolor='white', linewidth=0.5))
+    
+    # Draw arrows from parents to children (straight arrows pointing down)
+    for node in G.nodes():
+        if node not in node_y_timeline_positions or node not in node_x_positions:
+            continue
+        
+        node_visual_timing = node_visual_timings.get(node, node_timings.get(node, {"start": 0.0, "end": 0.1 * max_time}))
+        node_x = node_x_positions[node]
+        node_y = node_y_timeline_positions[node]
+        
+        # Draw arrows to all children
+        for child in G.successors(node):
+            if child not in node_y_timeline_positions or child not in node_x_positions:
+                continue
+            
+            child_visual_timing = node_visual_timings.get(child, node_timings.get(child, {"start": 0.0, "end": 0.1 * max_time}))
+            child_x = node_x_positions[child]
+            child_y = node_y_timeline_positions[child]
+            
+            # Arrow starts from left side of parent span
+            parent_left_x = node_x
+            # Arrow points to center of child span
+            child_center_x = child_x + (child_visual_timing["end"] - child_visual_timing["start"]) / 2
+            
+            # Draw straight arrow from parent bottom-left to child top-center
+            ax_right.annotate('', xy=(child_center_x, child_y + bar_height / 2), 
+                            xytext=(parent_left_x, node_y - bar_height / 2),
+                            arrowprops=dict(arrowstyle='->', color='black', lw=1.5, alpha=0.5, mutation_scale=15),
+                            zorder=1)
     
     # Set axis properties
-    # X-axis: hierarchy depth (columns) with time flowing within each column
-    # Y-axis: hierarchy level (vertical position)
-    ax_right.set_xlim(-0.1 * max_time, total_width + 0.1 * max_time)
-    ax_right.set_ylim(-0.5, max_level + 0.5)
-    ax_right.set_xlabel('Hierarchy Depth (columns) → Time (within each column, normalized to parent start)', 
-                       fontsize=9)
+    # Calculate y limits based on node positions
+    if node_y_timeline_positions:
+        all_y_positions = list(node_y_timeline_positions.values())
+        min_y = min(all_y_positions) - 0.5
+        max_y = max(all_y_positions) + 0.5
+    else:
+        min_y = -0.5
+        max_y = max_level + 0.5
+    
+    ax_right.set_xlim(-0.05 * max_time, max_time * 1.1)
+    ax_right.set_ylim(min_y, max_y)
+    ax_right.set_xlabel('Time (normalized to root start)', fontsize=10)
     ax_right.set_ylabel('Hierarchy Level (from USER)', fontsize=10)
-    ax_right.set_title('Call Pattern Timeline (Children appear to the right of their parent)', 
+    ax_right.set_title('Call Pattern Timeline (Parent time is inclusive of children)', 
                      fontsize=10, fontweight='bold')
     ax_right.grid(True, alpha=0.3, axis='both')
-    
-    # Add vertical lines to separate hierarchy depth columns
-    for depth in range(max_vis_depth + 2):
-        x_pos = depth * column_width
-        ax_right.axvline(x=x_pos, color='lightgray', linestyle='--', linewidth=0.5, alpha=0.3)
     
     # Add legend
     legend_elements = [
