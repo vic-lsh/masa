@@ -971,7 +971,7 @@ def _build_consensus_from_aligned(
 
 def _aggregate_call_sequences(
     sequences: list[list[set[str]]],
-    total_traces: int,
+    parent_trace_count: int,
 ) -> list[dict[str, float]]:
     """
     Aggregate call sequences from multiple traces using precedence inference.
@@ -984,7 +984,7 @@ def _aggregate_call_sequences(
 
     Args:
         sequences: List of sequences, where each sequence is a list of sets (stages)
-        total_traces: Total number of traces analyzed
+        parent_trace_count: Number of traces where the parent appears
 
     Returns:
         List of dicts mapping child -> probability for each sequential stage
@@ -1081,10 +1081,10 @@ def _aggregate_call_sequences(
             adjacency[node].clear()
 
     prob_stages = []
-    total_traces = max(total_traces, 1)
+    parent_trace_count = max(parent_trace_count, 1)
     for layer in layers:
         stage_probs = {
-            child: appearance_counts[child] / total_traces
+            child: appearance_counts[child] / parent_trace_count
             for child in sorted(layer)
         }
         if stage_probs:
@@ -2504,7 +2504,7 @@ def _process_service(
 
                         # Aggregate sequences across traces
                         if sequences:
-                            call_sequence = _aggregate_call_sequences(sequences, len(unique_traces))
+                            call_sequence = _aggregate_call_sequences(sequences, len(sequences))
 
                             if call_sequence:
                                 # Log the call sequence pattern
