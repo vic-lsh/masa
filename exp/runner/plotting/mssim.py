@@ -48,6 +48,18 @@ def _parse_rps_dir(path: Path) -> float:
     return float(token)
 
 
+_RPS_FILE_RE = re.compile(r"root_latencies_(?P<rps>[0-9_]+(?:\.[0-9_]+)?)rps\.csv$")
+
+
+def _parse_rps_from_filename(path: Path) -> float:
+    """Parse RPS value from CSV filename like 'root_latencies_200rps.csv'."""
+    match = _RPS_FILE_RE.match(path.name)
+    if not match:
+        raise ValueError(f"Unexpected RPS filename: {path}")
+    token = match.group("rps").replace("_", ".")
+    return float(token)
+
+
 def _load_json(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as fh:
         return json.load(fh)
@@ -102,43 +114,82 @@ def _load_policy_data(
 
     data_by_rps: Dict[float, List[pd.DataFrame]] = {}
 
-    for rps_dir in sorted(policy_dir.glob("rps_*")):
-        try:
-            rps = _parse_rps_dir(rps_dir)
-        except ValueError:
-            print(f"Warning: skipping unexpected directory {rps_dir}")
-            continue
+    # Try new structure first: look for run_* directories with CSV files directly
+    run_dirs = sorted(policy_dir.glob("run_*"))
+    if run_dirs:
+        # New structure: CSV files are directly in run_* directories
+        for run_dir in run_dirs:
+            csv_paths = sorted(run_dir.glob("root_latencies_*rps.csv"))
+            for csv_path in csv_paths:
+                try:
+                    rps = _parse_rps_from_filename(csv_path)
+                except ValueError:
+                    print(f"Warning: skipping unexpected CSV filename {csv_path}")
+                    continue
 
-        csv_paths = sorted(rps_dir.rglob("root_latencies_*rps.csv"))
-        if not csv_paths:
-            print(f"Warning: no latency samples found in {rps_dir}")
-            continue
+                df = pd.read_csv(csv_path)
+                df.columns = [col.strip() for col in df.columns]
 
-        for csv_path in csv_paths:
-            df = pd.read_csv(csv_path)
-            df.columns = [col.strip() for col in df.columns]
+                if "e2e_latency_us" not in df.columns:
+                    print(f"Warning: missing e2e_latency_us in {csv_path}")
+                    continue
 
-            if "e2e_latency_us" not in df.columns:
-                print(f"Warning: missing e2e_latency_us in {csv_path}")
+                df = _filter_errors(df)
+                df = _filter_after_warmup(df, warmup_sec, csv_path)
+                if df.empty:
+                    continue
+
+                df = df.copy()
+                df["e2e_latency_ms"] = pd.to_numeric(
+                    df["e2e_latency_us"], errors="coerce"
+                ) / 1_000.0
+                if "queue_latency_us" in df.columns:
+                    queue_us = pd.to_numeric(df["queue_latency_us"], errors="coerce").fillna(0.0)
+                else:
+                    queue_us = 0.0
+                df["queue_latency_ms"] = queue_us / 1_000.0
+                df["start_at"] = pd.to_numeric(df.get("start_at"), errors="coerce")
+
+                data_by_rps.setdefault(rps, []).append(df)
+    else:
+        # Fallback to old structure: rps_* directories
+        for rps_dir in sorted(policy_dir.glob("rps_*")):
+            try:
+                rps = _parse_rps_dir(rps_dir)
+            except ValueError:
+                print(f"Warning: skipping unexpected directory {rps_dir}")
                 continue
 
-            df = _filter_errors(df)
-            df = _filter_after_warmup(df, warmup_sec, csv_path)
-            if df.empty:
+            csv_paths = sorted(rps_dir.rglob("root_latencies_*rps.csv"))
+            if not csv_paths:
+                print(f"Warning: no latency samples found in {rps_dir}")
                 continue
 
-            df = df.copy()
-            df["e2e_latency_ms"] = pd.to_numeric(
-                df["e2e_latency_us"], errors="coerce"
-            ) / 1_000.0
-            if "queue_latency_us" in df.columns:
-                queue_us = pd.to_numeric(df["queue_latency_us"], errors="coerce").fillna(0.0)
-            else:
-                queue_us = 0.0
-            df["queue_latency_ms"] = queue_us / 1_000.0
-            df["start_at"] = pd.to_numeric(df.get("start_at"), errors="coerce")
+            for csv_path in csv_paths:
+                df = pd.read_csv(csv_path)
+                df.columns = [col.strip() for col in df.columns]
 
-            data_by_rps.setdefault(rps, []).append(df)
+                if "e2e_latency_us" not in df.columns:
+                    print(f"Warning: missing e2e_latency_us in {csv_path}")
+                    continue
+
+                df = _filter_errors(df)
+                df = _filter_after_warmup(df, warmup_sec, csv_path)
+                if df.empty:
+                    continue
+
+                df = df.copy()
+                df["e2e_latency_ms"] = pd.to_numeric(
+                    df["e2e_latency_us"], errors="coerce"
+                ) / 1_000.0
+                if "queue_latency_us" in df.columns:
+                    queue_us = pd.to_numeric(df["queue_latency_us"], errors="coerce").fillna(0.0)
+                else:
+                    queue_us = 0.0
+                df["queue_latency_ms"] = queue_us / 1_000.0
+                df["start_at"] = pd.to_numeric(df.get("start_at"), errors="coerce")
+
+                data_by_rps.setdefault(rps, []).append(df)
 
     combined: Dict[float, pd.DataFrame] = {}
     for rps, frames in data_by_rps.items():
@@ -342,20 +393,33 @@ def _resolve_rps_values(
     if gen_config.get("Rps"):
         return [float(v) for v in gen_config["Rps"]]
 
+    # Try to find RPS values from output files
     for iteration in iteration_ids:
         for policy in policies:
             policy_dir = data_dir / str(iteration) / policy
             if not policy_dir.is_dir():
                 continue
             rps_values = []
-            for rps_dir in sorted(policy_dir.glob("rps_*")):
-                try:
-                    rps_values.append(_parse_rps_dir(rps_dir))
-                except ValueError:
-                    continue
+            
+            # Try new structure: run_* directories with CSV files
+            for run_dir in sorted(policy_dir.glob("run_*")):
+                for csv_path in run_dir.glob("root_latencies_*rps.csv"):
+                    try:
+                        rps_values.append(_parse_rps_from_filename(csv_path))
+                    except ValueError:
+                        continue
+            
+            # Fallback to old structure: rps_* directories
+            if not rps_values:
+                for rps_dir in sorted(policy_dir.glob("rps_*")):
+                    try:
+                        rps_values.append(_parse_rps_dir(rps_dir))
+                    except ValueError:
+                        continue
+            
             if rps_values:
-                return sorted(rps_values)
-    raise FileNotFoundError("No RPS directories found for MSSIM output")
+                return sorted(set(rps_values))  # Remove duplicates and sort
+    raise FileNotFoundError("No RPS values found for MSSIM output")
 
 
 def generate_plots(args) -> None:
