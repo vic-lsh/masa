@@ -254,7 +254,7 @@ impl ServiceState {
             }
 
             // Wait for all tasks in this step to complete before proceeding to next step
-            for (child_svc, handle) in tasks {
+            for (_child_svc, handle) in tasks {
                 let rpc_result = handle
                     .await
                     .map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
