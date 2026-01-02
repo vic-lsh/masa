@@ -74,8 +74,8 @@ impl WeightedSampler {
         self.keys.is_empty()
     }
 
-    /// Draw one sample. Returns a reference to the chosen key.
-    pub fn sample<'a, R: Rng + ?Sized>(&'a self, rng: &mut R) -> &'a str {
+    /// Draw one sample. Returns the chosen key.
+    pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> MethodId {
         // pick x in [0, total-1]
         let x = rng.random_range(0..self.total);
 
@@ -91,12 +91,12 @@ impl WeightedSampler {
             })
             .unwrap_err(); // binary_search_by returns Err(pos) for insertion point
 
-        &self.keys[idx]
+        self.keys[idx].clone()
     }
 
     /// Draw `n` samples.
     #[allow(dead_code)]
-    pub fn sample_many<R: Rng + ?Sized>(&self, rng: &mut R, n: usize) -> Vec<&str> {
+    pub fn sample_many<R: Rng + ?Sized>(&self, rng: &mut R, n: usize) -> Vec<MethodId> {
         (0..n).map(|_| self.sample(rng)).collect()
     }
 
@@ -123,8 +123,8 @@ impl MethodFreqSampler {
         Ok(Self { sampler })
     }
 
-    /// Draw one sample. Returns a reference to the chosen method id string.
-    pub fn sample<'a, R: Rng + ?Sized>(&'a self, rng: &mut R) -> &'a str {
+    /// Draw one sample. Returns the chosen method id.
+    pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> MethodId {
         self.sampler.sample(rng)
     }
 
@@ -135,7 +135,7 @@ impl MethodFreqSampler {
 
 #[derive(Clone)]
 pub struct SampledMethod {
-    pub method: String,
+    pub method: MethodId,
     pub graph: Option<String>,
 }
 
@@ -148,7 +148,7 @@ impl MethodFreqMap {
     pub fn from_file_path(path: &PathBuf) -> Result<Self> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read method frequency file: {:?}", path))?;
-        
+
         // Extract graph name from directory path (e.g., "S_1823467" from "trace-analysis/graphs/S_1823467")
         let graph_name = path
             .parent()
@@ -156,15 +156,15 @@ impl MethodFreqMap {
             .and_then(|n| n.to_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| "default_graph".to_string());
-        
+
         // Parse as service-level format: { service_name -> { method_id -> freq } }
         let raw_service: RawServiceInvokeFreq = serde_json::from_str(&content)
             .with_context(|| format!("Failed to parse method frequency file: {:?} - expected {{ service: {{ method: frequency }} }}", path))?;
-        
+
         // Convert to graph-level format by wrapping with graph name
         let mut raw_graph: RawGraphInvokeFreq = HashMap::new();
         raw_graph.insert(graph_name, raw_service);
-        
+
         Self::from_graph_map(raw_graph)
     }
 
@@ -253,7 +253,7 @@ impl MethodFreqMap {
         self.aggregated
             .get(svc_name)
             .map(|sampler| SampledMethod {
-                method: sampler.sample(rng).to_string(),
+                method: sampler.sample(rng),
                 graph: None,
             })
             .or_else(|| {
@@ -274,11 +274,11 @@ impl MethodFreqMap {
         graph: &str,
         svc_name: &ServiceName,
         rng: &mut R,
-    ) -> Option<String> {
+    ) -> Option<MethodId> {
         self.by_graph
             .get(graph)
             .and_then(|services| services.get(svc_name))
-            .map(|sampler| sampler.sample(rng).to_string())
+            .map(|sampler| sampler.sample(rng))
     }
 
     fn sample_from_services_map<R: Rng + ?Sized>(
@@ -288,7 +288,7 @@ impl MethodFreqMap {
         rng: &mut R,
     ) -> Option<SampledMethod> {
         services.get(svc_name).map(|sampler| SampledMethod {
-            method: sampler.sample(rng).to_string(),
+            method: sampler.sample(rng),
             graph: None,
         })
     }

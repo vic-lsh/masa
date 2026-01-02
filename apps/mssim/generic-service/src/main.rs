@@ -3,6 +3,7 @@ use rand::Rng;
 use rand_distr::Exp;
 use service_stubs::service_client::ServiceClient;
 use sim_config::deployment::Deployment;
+use sim_config::svc::MethodId;
 use sim_config::svc::{ServiceName, ServiceTraceConfig};
 use std::env;
 use std::path::PathBuf;
@@ -66,7 +67,7 @@ impl Service for AlibabaService {
     ) -> Result<Response<InvokeResponse>, Status> {
         let parent_chain = parent_chain::decode_parent_chain(request.metadata())?;
         let request = request.into_inner();
-        let method_name = request.method_name.clone();
+        let method_name: MethodId = request.method_name.into();
         let graph_name = request.graph_name.as_str();
 
         self.state()
@@ -81,7 +82,7 @@ impl Service for AlibabaService {
 
         Ok(Response::new(InvokeResponse {
             calls: vec![],
-            method_name,
+            method_name: method_name.into(),
         }))
     }
 
