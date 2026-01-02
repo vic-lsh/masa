@@ -112,8 +112,8 @@ pub fn load_call_sequence(
         .with_context(|| format!("Failed to read call_sequence.json from {:?}", config_dir))?;
 
     // Parse JSON: { "call_graph_id": { "service_name": [ { "service::method": prob }, ... ], ... } } }
-    let json_value: serde_json::Value = serde_json::from_str(&content)
-        .with_context(|| "Failed to parse call_sequence.json")?;
+    let json_value: serde_json::Value =
+        serde_json::from_str(&content).with_context(|| "Failed to parse call_sequence.json")?;
 
     // Get the first (and likely only) top-level key (call graph ID)
     let call_graph_obj = match json_value.as_object() {
@@ -159,6 +159,73 @@ pub fn load_call_sequence(
     Ok(sequence)
 }
 
+/// Loads the root USER call sequence from a JSON file.
+///
+/// This function looks up "USER" directly as a string key (not through ServiceName formatting)
+/// in the first top-level graph entry of the call_sequence.json file.
+///
+/// The expected JSON format is:
+/// ```json
+/// {
+///   "call_graph_id": {
+///     "USER": [
+///       { "service::method": probability },
+///       ...
+///     ],
+///     ...
+///   }
+/// }
+/// ```
+///
+/// # Arguments
+/// * `config_dir` - The directory containing the `call_sequence.json` file
+///
+/// # Returns
+/// * `Ok(CallSequence)` if the file exists and contains a USER sequence
+/// * `Err` if there's an error reading, parsing, or if USER sequence is not found
+pub fn load_root_user_call_sequence(config_dir: &PathBuf) -> Result<CallSequence> {
+    let call_sequence_path = config_dir.join("call_sequence.json");
+
+    if !call_sequence_path.exists() {
+        return Err(anyhow::anyhow!(
+            "call_sequence.json not found in {:?}",
+            config_dir
+        ));
+    }
+
+    let content = std::fs::read_to_string(&call_sequence_path)
+        .with_context(|| format!("Failed to read call_sequence.json from {:?}", config_dir))?;
+
+    let json_value: serde_json::Value =
+        serde_json::from_str(&content).with_context(|| "Failed to parse call_sequence.json")?;
+
+    // Get the first (and likely only) top-level key (call graph ID)
+    let call_graph_obj = match json_value.as_object() {
+        Some(obj) if !obj.is_empty() => obj.values().next().unwrap(),
+        _ => {
+            return Err(anyhow::anyhow!(
+                "call_sequence.json has no top-level entries"
+            ));
+        }
+    };
+
+    // Look up "USER" directly as a string key
+    match call_graph_obj.get("USER") {
+        Some(seq_value) => {
+            let raw_steps: Vec<HashMap<String, f64>> = serde_json::from_value(seq_value.clone())
+                .with_context(|| "Failed to parse call sequence for USER")?;
+
+            // Parse each step: convert HashMap<String, f64> to Vec<CallSequenceEntry>
+            let mut parsed_steps = Vec::new();
+            for raw_step in raw_steps {
+                parsed_steps.push(parse_call_sequence_step(raw_step));
+            }
+            Ok(parsed_steps)
+        }
+        None => Err(anyhow::anyhow!("USER call sequence not found")),
+    }
+}
+
 /// Parse a call sequence step (HashMap<String, f64>) into a Vec<CallSequenceEntry>.
 /// Normalizes probabilities so they sum to 1.0 within the step.
 /// The normalized probability for each entry is: probability_in_file / sum_of_probabilities_in_step
@@ -184,7 +251,10 @@ fn parse_call_sequence_step(raw_step: HashMap<String, f64>) -> CallSequenceStep 
         }
     } else {
         // If sum is 0 or negative, set all probabilities to 0
-        eprintln!("Warning: Sum of probabilities in step is {}, setting all to 0", sum);
+        eprintln!(
+            "Warning: Sum of probabilities in step is {}, setting all to 0",
+            sum
+        );
         for entry in &mut parsed_step {
             entry.probability = 0.0;
         }
@@ -242,7 +312,12 @@ mod tests {
     fn test_call_sequence_entry_invalid_format_no_separator() {
         let result = CallSequenceEntry::try_from(("invalid", 0.5));
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid call sequence entry format"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid call sequence entry format")
+        );
     }
 
     #[test]
@@ -352,7 +427,7 @@ mod tests {
         let parsed = parse_call_sequence_step(raw_step);
         // Should only have 2 valid entries
         assert_eq!(parsed.len(), 2);
-        
+
         // Probabilities should still be normalized
         let sum: f64 = parsed.iter().map(|e| e.probability).sum();
         assert!((sum - 1.0).abs() < 1e-10);
@@ -373,9 +448,21 @@ mod tests {
         assert!((sum - 1.0).abs() < 1e-10);
 
         // Check ratios are preserved
-        let prob_a = parsed.iter().find(|e| e.service_name.as_str() == "service-a").unwrap().probability;
-        let prob_b = parsed.iter().find(|e| e.service_name.as_str() == "service-b").unwrap().probability;
-        let prob_c = parsed.iter().find(|e| e.service_name.as_str() == "service-c").unwrap().probability;
+        let prob_a = parsed
+            .iter()
+            .find(|e| e.service_name.as_str() == "service-a")
+            .unwrap()
+            .probability;
+        let prob_b = parsed
+            .iter()
+            .find(|e| e.service_name.as_str() == "service-b")
+            .unwrap()
+            .probability;
+        let prob_c = parsed
+            .iter()
+            .find(|e| e.service_name.as_str() == "service-c")
+            .unwrap()
+            .probability;
 
         // 1:2:3 ratio should be preserved
         assert!((prob_a * 6.0 - 1.0).abs() < 1e-10); // 1/6

@@ -104,12 +104,13 @@ impl Service for AlibabaService {
         let request = request.into_inner();
         let graph_name = request.graph_name.as_str();
 
+        // Root uses pre-loaded USER call sequence (loaded at startup)
         self.state()
-            .fanout(
+            .fanout_with_user_call_sequence(
                 request.req_id,
                 request.start_at,
                 Vec::new(),
-                Some(graph_name),
+                graph_name,
             )
             .await?;
 
