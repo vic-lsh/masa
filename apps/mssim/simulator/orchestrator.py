@@ -172,7 +172,7 @@ def _make_environment_def(service_name: str, svc_port: int) -> dict[str, str]:
         "SERVICE_NAME": service_name,
         "SERVICE_PORT": str(svc_port),
         "CONFIG_PATH": "/app/config",
-        "DEPLOYMEN_CONFIG_PATH": "/app/config/deployment.json",
+        "DEPLOYMENT_CONFIG_PATH": "/app/config/deployment.json",
     }
 
     environment.update(_collect_optional_env("FEATURE"))

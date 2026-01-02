@@ -89,8 +89,8 @@ class ExperimentConfig:
         
         logger.info(f"Loaded gen_config.json from {gen_config_path}")
         
-        # Validate required fields in gen_config
-        required_fields = ["Repeats", "Addr"]
+        # Validate required fields in gen_config (app-specific)
+        required_fields = app_plugin.get_required_gen_config_fields()
         for field in required_fields:
             if field not in gen_config:
                 raise ValueError(f"gen_config.json missing required field: {field}")

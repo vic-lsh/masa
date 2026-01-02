@@ -8,7 +8,7 @@ The experiment runner replaces the previous bash script system with a well-struc
 
 ## Features
 
-- **Multiple Applications**: Supports hotel and synthetic applications with extensible plugin architecture
+- **Multiple Applications**: Supports hotel, synthetic, and mssim applications with extensible plugin architecture
 - **Policy Testing**: Run experiments with different scheduling policies (fifo, prio_global, prio_local, etc.)
 - **Automated Workflow**: Handles Docker builds, service orchestration, load generation, and log collection
 - **Result Analysis**: Integrated plotting for goodput and latency metrics
@@ -32,11 +32,17 @@ The experiment runner is part of the MASA repository. Ensure you have Python 3.1
 # Run experiment 'exp1' for the hotel application
 python -m exp.runner run hotel exp1
 
+# Run an MSSIM experiment
+python -m exp.runner run mssim e2e_test
+
 # Run with plot generation
 python -m exp.runner run hotel exp1 --plot
 
 # Run with verbose logging
 python -m exp.runner run hotel exp1 --plot --verbose
+
+# Print what would run (no containers started)
+python -m exp.runner run mssim e2e_test --dry-run
 ```
 
 ### Queue Multiple Experiments
@@ -88,6 +94,41 @@ Experiments are configured using files in `exp/<app>/data/in/<experiment_name>/`
 3. **Application-specific config** (varies by app):
    - Hotel: `hotel.json` - Service replica counts and configuration
    - Synthetic: `config.docker.json` - Child service configuration (optional)
+  - MSSIM: `mssim.json` - Trace/config inputs and MSSIM-specific parameters
+
+### MSSIM Configuration
+
+MSSIM experiments live under `exp/mssim/data/in/<experiment_name>/` and require:
+
+1. **`gen_config.json`** (MSSIM subset)
+   ```json
+   {
+     "Repeats": 1,
+     "Rps": [200, 300, 400],
+     "DurationSecs": 60,
+     "WarmupSecs": 10,
+     "MaxInFlight": 10000
+   }
+   ```
+
+2. **`policies`** (whitespace-separated)
+   ```
+   fifo prio_global
+   ```
+
+3. **`mssim.json`**
+   ```json
+   {
+     "trace_dir": "trace-analysis/graphs/S_14677443",
+     "config_dir": "apps/mssim/simulator/example_config/",
+     "slo_ms": 100,
+     "orchestrator": "localhost:50051",
+     "replay_path": null,
+     "stats_interval_sec": 2,
+     "max_in_flight": 10000,
+     "extra_env": {}
+   }
+   ```
 
 ### Example: Hotel Application
 
@@ -128,6 +169,26 @@ exp/hotel/data/out/exp1/
 
 Plots are generated in `exp/<app>/data/plots/<experiment_name>/`.
 
+### MSSIM Output Layout
+
+MSSIM uses the standard runner output root, with per-RPS subdirectories under each policy:
+
+```
+exp/mssim/data/out/e2e_test/
+├── 0/
+│   ├── fifo/
+│   │   └── rps_200/
+│   │       └── run_0/
+│   │           ├── docker-compose.yml
+│   │           ├── deployment.json
+│   │           ├── metadata.json
+│   │           └── orchestrator.log
+│   └── prio_global/
+│       └── rps_200/
+│           └── run_0/
+└── done
+```
+
 ## Command Reference
 
 ### run
@@ -146,6 +207,7 @@ python -m exp.runner run <app> <experiment> [options]
 - `--plot`: Generate plots after experiment completion
 - `--no-cache`: Disable Docker cache during build
 - `--verbose, -v`: Enable verbose (DEBUG) logging
+- `--dry-run`: Print what would be executed without running containers
 
 **Example:**
 ```bash
@@ -168,6 +230,7 @@ python -m exp.runner run-multiple <app> "<exp1> <exp2> ..." [options]
 - `--plot`: Generate plots after each experiment
 - `--no-cache`: Disable Docker cache during builds
 - `--verbose, -v`: Enable verbose (DEBUG) logging
+- `--dry-run`: Print what would be executed without running containers
 
 **Example:**
 ```bash
