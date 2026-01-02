@@ -1,5 +1,7 @@
 use crate::{
-    body::BoxBody, masa::context::read_context, Code, GrpcMethod, Request, Response, Status,
+    body::BoxBody,
+    masa::context::{read_context, METHOD_NAME_OVERRIDE_HEADER},
+    Code, GrpcMethod, Request, Response, Status,
 };
 use std::{
     collections::HashMap,
@@ -89,11 +91,34 @@ impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
 #[allow(unreachable_pub)]
 pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     method: GrpcMethod,
+    resolved_method: String,
     ctx: Context,
     server: Arc<ServerContext<E>>,
 
     will_early_return: AtomicBool,
-    child_end_times: Mutex<Vec<(MethodId, Instant)>>,
+    child_end_times: Mutex<Vec<(String, Instant)>>,
+    // Map from child_method.id() to resolved child method name
+    resolved_child_methods: Mutex<HashMap<MethodId, String>>,
+}
+
+/// Resolve the method name from HTTP request headers, checking for override header.
+fn resolve_method_name_from_http<B>(method: GrpcMethod, req: &http::Request<B>) -> String {
+    if let Some(header_value) = req.headers().get(METHOD_NAME_OVERRIDE_HEADER) {
+        if let Ok(method_name) = header_value.to_str() {
+            return method_name.to_string();
+        }
+    }
+    method.id().to_string()
+}
+
+/// Resolve the method name from Request metadata, checking for override header.
+fn resolve_method_name_from_request<T>(method: GrpcMethod, request: &Request<T>) -> String {
+    if let Some(header_value) = request.metadata().get(METHOD_NAME_OVERRIDE_HEADER) {
+        if let Ok(method_name) = header_value.to_str() {
+            return method_name.to_string();
+        }
+    }
+    method.id().to_string()
 }
 
 impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
@@ -139,12 +164,15 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         req: &http::Request<B>,
         server_ctx: Arc<ServerContext<E>>,
     ) -> Self {
+        let resolved_method = resolve_method_name_from_http(method, req);
         Self {
             method,
+            resolved_method,
             ctx: read_context(req),
             server: server_ctx,
             will_early_return: AtomicBool::new(false),
             child_end_times: Mutex::new(Vec::new()),
+            resolved_child_methods: Mutex::new(HashMap::new()),
         }
     }
 
@@ -184,9 +212,17 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         // NOTE: we need to include the parent method in the key, because the duration until the
         // end of the parent request after this child request completes will vary for different
         // parent methods (i.e. endpoints on this server)
+        let resolved_child_method = resolve_method_name_from_request(child_method, request);
+
+        // Store the resolved child method name for use in after_child_rpc
+        self.resolved_child_methods
+            .lock()
+            .unwrap()
+            .insert(child_method.id(), resolved_child_method.clone());
+
         let estimate_remaining = estimate_method_latency(
             &*self.server.child_distributions,
-            format!("{}/{}", self.method.id(), child_method.id()),
+            format!("{}/{}", self.resolved_method, resolved_child_method),
         )
         .unwrap_or(0);
 
@@ -216,10 +252,19 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
             return Err(status.clone());
         }
 
+        // Retrieve the resolved child method name that was stored in before_child_rpc
+        let resolved_child_method = self
+            .resolved_child_methods
+            .lock()
+            .unwrap()
+            .get(&child_method.id())
+            .cloned()
+            .unwrap_or_else(|| child_method.id().to_string());
+
         self.child_end_times
             .lock()
             .unwrap()
-            .push((child_method.id(), Instant::now()));
+            .push((resolved_child_method, Instant::now()));
 
         Ok(())
     }
@@ -230,9 +275,10 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         for (child_method, child_end) in self.child_end_times.lock().unwrap().iter() {
             // TODO: The LatencyDistribution instances will regularly sort their data. Should this
             // work be done asynchronously?
+            // Use resolved_method (parent) and child_method (already resolved in after_child_rpc)
             track_method_latency(
                 &*self.server.child_distributions,
-                format!("{}/{}", self.method.id(), child_method),
+                format!("{}/{}", self.resolved_method, child_method),
                 parent_end.duration_since(*child_end).as_micros() as u64,
             );
         }

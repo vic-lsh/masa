@@ -6,6 +6,8 @@ use std::path::PathBuf;
 use crate::svc::{MethodId, ServiceName};
 
 type MethodInvokeFreq = HashMap<MethodId, u64>;
+/// Service-level format: { service_name -> { method_id -> freq } }
+type RawServiceInvokeFreq = HashMap<String, HashMap<String, u64>>;
 /// Graph-oriented format: { graph_name -> { service_name -> { method_id -> freq } } }
 type RawGraphInvokeFreq = HashMap<String, HashMap<String, HashMap<String, u64>>>;
 
@@ -72,8 +74,8 @@ impl WeightedSampler {
         self.keys.is_empty()
     }
 
-    /// Draw one sample. Returns a reference to the chosen key.
-    pub fn sample<'a, R: Rng + ?Sized>(&'a self, rng: &mut R) -> &'a str {
+    /// Draw one sample. Returns the chosen key.
+    pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> MethodId {
         // pick x in [0, total-1]
         let x = rng.random_range(0..self.total);
 
@@ -89,12 +91,12 @@ impl WeightedSampler {
             })
             .unwrap_err(); // binary_search_by returns Err(pos) for insertion point
 
-        &self.keys[idx]
+        self.keys[idx].clone()
     }
 
     /// Draw `n` samples.
     #[allow(dead_code)]
-    pub fn sample_many<R: Rng + ?Sized>(&self, rng: &mut R, n: usize) -> Vec<&str> {
+    pub fn sample_many<R: Rng + ?Sized>(&self, rng: &mut R, n: usize) -> Vec<MethodId> {
         (0..n).map(|_| self.sample(rng)).collect()
     }
 
@@ -121,8 +123,8 @@ impl MethodFreqSampler {
         Ok(Self { sampler })
     }
 
-    /// Draw one sample. Returns a reference to the chosen method id string.
-    pub fn sample<'a, R: Rng + ?Sized>(&'a self, rng: &mut R) -> &'a str {
+    /// Draw one sample. Returns the chosen method id.
+    pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> MethodId {
         self.sampler.sample(rng)
     }
 
@@ -133,7 +135,7 @@ impl MethodFreqSampler {
 
 #[derive(Clone)]
 pub struct SampledMethod {
-    pub method: String,
+    pub method: MethodId,
     pub graph: Option<String>,
 }
 
@@ -146,8 +148,23 @@ impl MethodFreqMap {
     pub fn from_file_path(path: &PathBuf) -> Result<Self> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read method frequency file: {:?}", path))?;
-        let raw_graph: RawGraphInvokeFreq = serde_json::from_str(&content)
-            .with_context(|| format!("Failed to parse method frequency file: {:?}", path))?;
+
+        // Extract graph name from directory path (e.g., "S_1823467" from "trace-analysis/graphs/S_1823467")
+        let graph_name = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "default_graph".to_string());
+
+        // Parse as service-level format: { service_name -> { method_id -> freq } }
+        let raw_service: RawServiceInvokeFreq = serde_json::from_str(&content)
+            .with_context(|| format!("Failed to parse method frequency file: {:?} - expected {{ service: {{ method: frequency }} }}", path))?;
+
+        // Convert to graph-level format by wrapping with graph name
+        let mut raw_graph: RawGraphInvokeFreq = HashMap::new();
+        raw_graph.insert(graph_name, raw_service);
+
         Self::from_graph_map(raw_graph)
     }
 
@@ -236,7 +253,7 @@ impl MethodFreqMap {
         self.aggregated
             .get(svc_name)
             .map(|sampler| SampledMethod {
-                method: sampler.sample(rng).to_string(),
+                method: sampler.sample(rng),
                 graph: None,
             })
             .or_else(|| {
@@ -257,11 +274,11 @@ impl MethodFreqMap {
         graph: &str,
         svc_name: &ServiceName,
         rng: &mut R,
-    ) -> Option<String> {
+    ) -> Option<MethodId> {
         self.by_graph
             .get(graph)
             .and_then(|services| services.get(svc_name))
-            .map(|sampler| sampler.sample(rng).to_string())
+            .map(|sampler| sampler.sample(rng))
     }
 
     fn sample_from_services_map<R: Rng + ?Sized>(
@@ -271,7 +288,7 @@ impl MethodFreqMap {
         rng: &mut R,
     ) -> Option<SampledMethod> {
         services.get(svc_name).map(|sampler| SampledMethod {
-            method: sampler.sample(rng).to_string(),
+            method: sampler.sample(rng),
             graph: None,
         })
     }
@@ -280,32 +297,30 @@ impl MethodFreqMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::io::Write;
-    use tempfile::NamedTempFile;
+    use tempfile::TempDir;
 
     #[test]
     fn parse_graph_method_invoke_freq() {
-        let mut tmp = NamedTempFile::new().expect("create temp file");
+        let temp = TempDir::new().expect("create temp dir");
+        let graph_dir = temp.path().join("graph_alpha");
+        fs::create_dir_all(&graph_dir).expect("create graph dir");
+        let path = graph_dir.join("interface_distribution.json");
+        let mut tmp = fs::File::create(&path).expect("create temp file");
         writeln!(
             tmp,
             r#"{{
-  "graph_alpha": {{
-    "svc_one": {{
-      "method_a": 10,
-      "method_b": 5
-    }}
-  }},
-  "graph_beta": {{
-    "svc_one": {{
-      "method_c": 7
-    }}
+  "svc_one": {{
+    "method_a": 10,
+    "method_b": 5,
+    "method_c": 7
   }}
 }}"#
         )
         .expect("write json");
 
-        let map =
-            MethodFreqMap::from_file_path(&tmp.path().to_path_buf()).expect("parse graph map");
+        let map = MethodFreqMap::from_file_path(&path).expect("parse service map");
 
         let svc = ServiceName::from_string("svc_one".into());
         let freq_map = map.get_service(&svc).expect("service aggregated sampler");
@@ -359,30 +374,25 @@ mod tests {
 
     #[test]
     fn graph_shape_sampling_prefers_graph_hint() {
-        let mut tmp = NamedTempFile::new().expect("create temp file");
+        let temp = TempDir::new().expect("create temp dir");
+        let graph_dir = temp.path().join("graph_b");
+        fs::create_dir_all(&graph_dir).expect("create graph dir");
+        let path = graph_dir.join("interface_distribution.json");
+        let mut tmp = fs::File::create(&path).expect("create temp file");
         writeln!(
             tmp,
             r#"{{
-  "graph_a": {{
-    "svc_one": {{
-      "method_a": 10,
-      "method_b": 5
-    }}
+  "svc_one": {{
+    "method_c": 7
   }},
-  "graph_b": {{
-    "svc_one": {{
-      "method_c": 7
-    }},
-    "svc_two": {{
-      "method_d": 3
-    }}
+  "svc_two": {{
+    "method_d": 3
   }}
 }}"#
         )
         .expect("write json");
 
-        let map =
-            MethodFreqMap::from_file_path(&tmp.path().to_path_buf()).expect("parse graph shape");
+        let map = MethodFreqMap::from_file_path(&path).expect("parse service map");
 
         let svc_one = ServiceName::from_string("svc_one".into());
         let mut rng = rand::rng();
@@ -394,9 +404,9 @@ mod tests {
 
         let svc_two = ServiceName::from_string("svc_two".into());
         let sampled_two = map
-            .sample_method(&svc_two, "graph_b", &mut rng)
-            .expect("default to only graph");
-        assert_eq!(sampled_two.graph.as_deref(), Some("graph_b"));
+            .sample_method(&svc_two, "missing_graph", &mut rng)
+            .expect("fallback to aggregated");
+        assert_eq!(sampled_two.graph.as_deref(), None);
         assert_eq!(sampled_two.method, "method_d");
     }
 }

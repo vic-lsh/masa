@@ -23,10 +23,16 @@ COPY apps apps
 COPY libs libs
 
 ARG FEATURE_ARG=fifo
+# Use a unique cache ID per build to avoid race conditions in parallel builds
+ARG CACHE_ID=mssim
 
 # Build all binaries once so both targets can reuse the output
-RUN cargo build --release --bin mssim-loadgen
-RUN cargo build --release --bin generic-service --features "${FEATURE_ARG}"
+# Use BuildKit cache mounts for faster rebuilds (requires BuildKit/buildx).
+# Keep the target directory in the image so runtime stages can copy the binaries.
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${CACHE_ID},sharing=locked \
+    cargo build --release --bin mssim-loadgen
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${CACHE_ID},sharing=locked \
+    cargo build --release --bin generic-service --features "${FEATURE_ARG}"
 
 COPY trace-analysis trace-analysis
 RUN ln -s /app/trace-analysis /trace-analysis

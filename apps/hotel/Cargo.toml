@@ -253,6 +253,7 @@ clap = { version = "4.4", features = ["derive"] }
 
 [build-dependencies]
 tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
+protoc-bin-vendored = "3"
 
 [patch.crates-io]
 tokio = { path = "./libs/tokio/tokio", version = "1" }
