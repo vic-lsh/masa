@@ -1,3 +1,5 @@
+//! This module is deprecated.
+
 use crate::{body::BoxBody, masa::context::read_context, GrpcMethod, Request, Response, Status};
 use std::{
     collections::HashMap,

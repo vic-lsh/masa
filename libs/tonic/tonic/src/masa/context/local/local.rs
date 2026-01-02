@@ -4,6 +4,7 @@ use crate::{
     Code, GrpcMethod, Request, Response, Status,
 };
 use std::{
+    borrow::Cow,
     collections::HashMap,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -218,7 +219,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         self.resolved_child_methods
             .lock()
             .unwrap()
-            .insert(child_method.id(), resolved_child_method.clone());
+            .insert(child_method.id().into(), resolved_child_method.clone());
 
         let estimate_remaining = estimate_method_latency(
             &*self.server.child_distributions,
@@ -253,11 +254,12 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         }
 
         // Retrieve the resolved child method name that was stored in before_child_rpc
+        let method_id: MethodId = Cow::Borrowed(child_method.id());
         let resolved_child_method = self
             .resolved_child_methods
             .lock()
             .unwrap()
-            .get(&child_method.id())
+            .get(&method_id)
             .cloned()
             .unwrap_or_else(|| child_method.id().to_string());
 
