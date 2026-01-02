@@ -54,7 +54,7 @@ assert_path_exists() {
 }
 
 for policy in "${policies[@]}"; do
-    policy_run_dir="$run_root/$iteration/$policy/rps_${rps_value}/$run_id"
+    policy_run_dir="$run_root/$iteration/$policy/$run_id"
     echo "Validating output for policy '$policy' under $policy_run_dir"
 
     assert_path_exists "$policy_run_dir"
