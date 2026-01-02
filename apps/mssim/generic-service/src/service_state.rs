@@ -92,7 +92,7 @@ impl ServiceState {
 
     pub(crate) async fn handle_method(
         &self,
-        method_name: String,
+        method_id: MethodId,
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
@@ -104,7 +104,6 @@ impl ServiceState {
         let method_latency = self.config.method_latency.as_ref().ok_or_else(|| {
             Status::internal("Configuration error: method latency not configured")
         })?;
-        let method_id: MethodId = method_name.clone().into();
         let latency_dist = method_latency
             .get_method_dist(&method_id, graph_ref)
             .ok_or_else(|| Status::not_found("Method not found"))?;
@@ -229,7 +228,7 @@ impl ServiceState {
                 let mut request = Request::new(InvokeRequest {
                     req_id,
                     start_at,
-                    method_name: entry.method_name.clone(),
+                    method_name: entry.method_name.to_string(),
                     graph_name: graph_name.to_string(),
                 });
 
@@ -326,7 +325,7 @@ impl ServiceState {
             let mut request = Request::new(InvokeRequest {
                 req_id,
                 start_at,
-                method_name: method_to_call.clone(),
+                method_name: method_to_call.to_string(),
                 graph_name: graph_name.to_string(),
             });
 
@@ -374,7 +373,7 @@ impl ServiceState {
         &self,
         child_svc_name: &ServiceName,
         graph_name: &str,
-    ) -> Option<(String, Option<String>)> {
+    ) -> Option<(MethodId, Option<String>)> {
         if let Some(freq_map) = self.config.method_freq_map.as_ref() {
             let mut rng = rand::rng();
             if let Some(sampled) = freq_map.sample_method(child_svc_name, graph_name, &mut rng) {

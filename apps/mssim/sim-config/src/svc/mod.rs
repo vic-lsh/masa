@@ -192,6 +192,6 @@ mod tests {
         let sampled = freq_map
             .sample_method(&svc_name, "graph_main", &mut rng)
             .expect("service must have methods");
-        assert!(["method_x", "method_y", "method_z"].contains(&sampled.method.as_str()));
+        assert!(["method_x", "method_y", "method_z"].contains(&sampled.method.as_ref()));
     }
 }

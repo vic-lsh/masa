@@ -3,8 +3,9 @@
 //! This module provides types and functions for parsing and working with call sequences
 //! that define the order and probability of service method invocations.
 
-use crate::svc::ServiceName;
+use crate::svc::{MethodId, ServiceName};
 use anyhow::{Context, Result};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
@@ -17,7 +18,7 @@ pub struct CallSequenceEntry {
     /// The name of the service to call
     pub service_name: ServiceName,
     /// The name of the method to invoke on the service
-    pub method_name: String,
+    pub method_name: MethodId,
     /// The normalized probability (0.0 to 1.0) of executing this call
     pub probability: f64,
 }
@@ -52,7 +53,7 @@ impl TryFrom<(&str, f64)> for CallSequenceEntry {
         }
 
         let child_svc_name = ServiceName::from_string(parts[0].to_string());
-        let method_name = parts[1].to_string();
+        let method_name: MethodId = Cow::Owned(parts[1].to_string());
         // Don't clamp probability here - it will be normalized in parse_call_sequence_step
         // Only ensure it's non-negative
         let prob = probability.max(0.0);
