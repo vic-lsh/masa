@@ -34,7 +34,8 @@ class Experiment:
         repo_root: Path,
         plot: bool = False,
         no_cache: bool = False,
-        rm_data: bool = False
+        rm_data: bool = False,
+        dry_run: bool = False,
     ):
         """
         Initialize experiment runner.
@@ -53,6 +54,7 @@ class Experiment:
         self.plot = plot
         self.no_cache = no_cache
         self.rm_data = rm_data
+        self.dry_run = dry_run
         self.docker = DockerManager(repo_root)
         
         # Setup working directories
@@ -73,22 +75,24 @@ class Experiment:
         logger.info(f"Application: {self.config.app_name}")
         logger.info(f"Policies: {', '.join(self.config.policies)}")
         logger.info(f"Iterations: {self.config.get_repeats()}")
+        if self.dry_run:
+            logger.info("Dry-run mode enabled (no commands will be executed)")
         
-        # Prepare directories and backup old configs
-        self._prepare_experiment()
-        
-        # Copy configs from input to working directories
-        self._copy_configs()
+        if not self.dry_run:
+            # Prepare directories and backup old configs
+            self._prepare_experiment()
+            # Copy configs from input to working directories
+            self._copy_configs()
         
         # Run experiment iterations
-        try:
-            self._run_iterations()
-        finally:
-            # Mark experiment as complete
+        self._run_iterations()
+
+        # Mark experiment as complete
+        if not self.dry_run:
             self._mark_complete()
         
         # Generate plots if requested
-        if self.plot:
+        if self.plot and not self.dry_run:
             self._generate_plots()
         
         logger.info(f"Experiment {self.config.experiment_name} completed successfully")
@@ -148,7 +152,6 @@ class Experiment:
     def _run_iterations(self) -> None:
         """Run all experiment iterations."""
         repeats = self.config.get_repeats()
-        docker_config = self.app.get_docker_config()
         
         # Set environment variables for app directories
         os.environ["MASA_APP_DIR"] = str(self.config.app_dir)
@@ -166,102 +169,25 @@ class Experiment:
                 
                 # Setup output directory for this iteration/policy
                 output_dir = self.config.out_dir / str(iteration) / policy
-                output_dir.mkdir(parents=True, exist_ok=True)
+                if not self.dry_run:
+                    output_dir.mkdir(parents=True, exist_ok=True)
                 self.current_output_dir = output_dir
-                env_vars: dict = {}
                 try:
-                    # Generate environment variables
-                    env_vars = self.app.generate_env_vars(
-                        self.config.gen_config,
-                        self.config.app_config,
-                        self.config.app_dir
-                    )
-                    
-                    # Add image tag if app supports it
-                    if hasattr(self.app, 'get_image_tag'):
-                        image_tag = self.app.get_image_tag(policy)
-                        env_vars[f"{self.config.app_name.upper()}_IMAGE_TAG"] = image_tag
-                        logger.debug(f"Set {self.config.app_name.upper()}_IMAGE_TAG={image_tag}")
-                    
-                    # Write .env file
-                    env_file = self.app_local_dir / ".env"
-                    with open(env_file, "w") as f:
-                        for key, value in env_vars.items():
-                            f.write(f"{key}={value}\n")
-                    logger.debug(f"Wrote environment variables to {env_file}")
-                    
-                    # Build and start Docker services
-                    builder = self.app.create_builder()
-                    # Get app config path if it exists
-                    app_config_path = None
-                    docker_config = self.app.get_docker_config()
-                    if docker_config.app_config_filename:
-                        app_config_path = self.config.in_dir / docker_config.app_config_filename
-                        if not app_config_path.exists():
-                            raise FileNotFoundError(
-                                f"App config not found at: {app_config_path}"
-                            )
-                    
-                    # Get gen_config.json path
-                    gen_config_path = self.config.in_dir / "gen_config.json"
-                    if not gen_config_path.exists():
-                        raise FileNotFoundError(
-                            f"gen_config.json not found at: {gen_config_path}"
-                        )
-                    
-                    builder.build(
+                    self.app.run_workload(
                         repo_root=self.repo_root,
-                        app_dir=self.config.app_dir,
-                        features=policy,
-                        rust_log="info",
-                        no_cache=self.no_cache,
-                        app_config_path=app_config_path,
-                        gen_config_path=gen_config_path,
-                        dry_run=False,
-                    )
-                    
-                    self.docker.start(
-                        app_dir=self.config.app_dir,
-                        compose_file=docker_config.compose_file,
-                        env_vars=env_vars
-                    )
-                    
-                    # Get container names for log collection
-                    container_names = self.app.get_container_names(env_vars)
-                    
-                    # Start streaming logs in background
-                    log_threads = self.docker.stream_logs(
-                        container_names=container_names,
+                        config=self.config,
+                        docker=self.docker,
+                        policy=policy,
+                        iteration=iteration,
                         output_dir=output_dir,
-                        follow=True
+                        app_local_dir=self.app_local_dir,
+                        no_cache=self.no_cache,
+                        dry_run=self.dry_run,
                     )
-                    
-                    # Run load generator (blocking)
-                    loadgen = self.app.create_load_generator(features=policy)
-                    gen_config_path_for_loadgen = self.config.in_dir / "gen_config.json"
-                    loadgen.run(output_dir=output_dir, env_vars=env_vars, gen_config_path=gen_config_path_for_loadgen)
-                    
-                    logger.info(f"Load generator completed for policy {policy}")
-                    
-                    # Wait a moment for logs to flush
-                    time.sleep(2)
-                    
                 except Exception as e:
                     logger.error(f"Error during iteration {iteration}, policy {policy}: {e}")
                     self._print_log_tails(output_dir)
                     raise
-                finally:
-                    # Stop Docker services
-                    self.docker.stop(
-                        app_dir=self.config.app_dir,
-                        compose_file=docker_config.compose_file,
-                        env_vars=env_vars,
-                    )
-                    
-                    # Clean up .env file
-                    env_file = self.app_local_dir / ".env"
-                    if env_file.exists():
-                        env_file.unlink()
     
     def _print_log_tails(self, output_dir: Path, num_lines: int = 50) -> None:
         """
@@ -275,10 +201,16 @@ class Experiment:
             logger.warning(f"Output directory does not exist: {output_dir}")
             return
         
-        log_files = sorted(output_dir.glob("*.log"))
+        # Include nested logs (e.g., MSSIM stores orchestrator.log under per-RPS subdirectories)
+        log_files = sorted(output_dir.rglob("*.log"))
         if not log_files:
             logger.warning(f"No log files found in {output_dir}")
             return
+
+        # Avoid dumping huge numbers of logs on failure
+        max_logs = 10
+        if len(log_files) > max_logs:
+            log_files = log_files[:max_logs]
         
         logger.error("=" * 80)
         logger.error(f"Tail of relevant logs from {output_dir}:")
@@ -291,7 +223,7 @@ class Experiment:
                     tail_lines = lines[-num_lines:] if len(lines) > num_lines else lines
                     
                     logger.error("")
-                    logger.error(f"--- {log_file.name} (last {len(tail_lines)} lines) ---")
+                    logger.error(f"--- {log_file} (last {len(tail_lines)} lines) ---")
                     for line in tail_lines:
                         # Remove trailing newline to avoid double newlines in logging
                         logger.error(line.rstrip())
