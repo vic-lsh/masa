@@ -21,7 +21,7 @@ impl MethodLatencyDistMap {
     pub fn from_file_path(path: &PathBuf, service_name: ServiceName) -> Result<Self> {
         let config_str = fs::read_to_string(path)
             .with_context(|| format!("Failed to read file: {}", path.display()))?;
-        
+
         // Extract graph name from directory path (e.g., "S_1823467" from "trace-analysis/graphs/S_1823467")
         let graph_name = path
             .parent()
@@ -29,7 +29,7 @@ impl MethodLatencyDistMap {
             .and_then(|n| n.to_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| "default_graph".to_string());
-        
+
         Self::from_str(&config_str, service_name, graph_name)
     }
 
@@ -37,11 +37,11 @@ impl MethodLatencyDistMap {
         // Parse as service-level format: { service: { method: { percentile: latency } } }
         let raw_service: RawServiceShape = serde_json::from_str(config_str)
             .context("Invalid JSON for latency config - expected { service: { method: { percentile: latency } } }")?;
-        
+
         // Convert to graph-level format by wrapping with graph name
         let mut raw: RawGraphShape = HashMap::new();
         raw.insert(graph_name, raw_service);
-        
+
         Self::from_graph_shape(raw, service_name)
     }
 
@@ -163,9 +163,8 @@ mod tests {
         .expect("write json");
 
         let svc_name = ServiceName::from_string("svc_one".into());
-        let dist_map =
-            MethodLatencyDistMap::from_file_path(&path, svc_name.clone())
-                .expect("Parsing should not fail");
+        let dist_map = MethodLatencyDistMap::from_file_path(&path, svc_name.clone())
+            .expect("Parsing should not fail");
 
         let method: MethodId = "method_a".into();
         let dist = dist_map
