@@ -78,6 +78,7 @@ def cmd_run_experiment(args: argparse.Namespace) -> None:
         plot=args.plot,
         no_cache=args.no_cache,
         rm_data=args.rm_data,
+        dry_run=args.dry_run,
     )
     
     try:
@@ -114,6 +115,7 @@ def cmd_queue_experiments(args: argparse.Namespace) -> None:
             plot=args.plot,
             no_cache=args.no_cache,
             rm_data=args.rm_data,
+            dry_run=args.dry_run,
         )
         
         try:
@@ -398,8 +400,8 @@ Examples:
     )
     run_parser.add_argument(
         'app',
-        choices=['hotel', 'synthetic'],
-        help='Application to run (hotel or synthetic)'
+        choices=['hotel', 'mssim', 'synthetic'],
+        help='Application to run (hotel, mssim, or synthetic)'
     )
     run_parser.add_argument(
         'experiment',
@@ -420,6 +422,11 @@ Examples:
         action='store_true',
         help='Remove existing data from experiment output directory before running'
     )
+    run_parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Print what would be executed without running containers'
+    )
     run_parser.set_defaults(func=cmd_run_experiment)
     
     # run-multiple command
@@ -430,8 +437,8 @@ Examples:
     )
     queue_parser.add_argument(
         'app',
-        choices=['hotel', 'synthetic'],
-        help='Application to run (hotel or synthetic)'
+        choices=['hotel', 'mssim', 'synthetic'],
+        help='Application to run (hotel, mssim, or synthetic)'
     )
     queue_parser.add_argument(
         'experiments',
@@ -452,6 +459,11 @@ Examples:
         action='store_true',
         help='Remove existing data from experiment output directory before running'
     )
+    queue_parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Print what would be executed without running containers'
+    )
     queue_parser.set_defaults(func=cmd_queue_experiments)
     
     # build command
@@ -462,8 +474,8 @@ Examples:
     )
     build_parser.add_argument(
         'app',
-        choices=['hotel', 'synthetic'],
-        help='Application to build (hotel or synthetic)'
+        choices=['hotel', 'mssim', 'synthetic'],
+        help='Application to build (hotel, mssim, or synthetic)'
     )
     build_parser.add_argument(
         'experiment',
@@ -488,8 +500,8 @@ Examples:
     )
     build_dryrun_parser.add_argument(
         'app',
-        choices=['hotel', 'synthetic'],
-        help='Application to build (hotel or synthetic)'
+        choices=['hotel', 'mssim', 'synthetic'],
+        help='Application to build (hotel, mssim, or synthetic)'
     )
     build_dryrun_parser.add_argument(
         'experiment',
