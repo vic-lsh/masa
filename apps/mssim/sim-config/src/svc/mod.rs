@@ -1,6 +1,7 @@
 use std::{borrow::Cow, fmt::Display, path::PathBuf};
 
 pub mod call_graph;
+pub mod call_sequence;
 pub mod method_freq;
 pub mod method_latency;
 
