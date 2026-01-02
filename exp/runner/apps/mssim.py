@@ -20,37 +20,31 @@ from pathlib import Path
 from typing import Optional
 
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
+from .utils import normalize_features_to_tag
 
 
 GENERIC_SERVICE_IMAGE = "generic_service"
 MSSIM_LOADGEN_IMAGE = "mssim_load_generator"
 
 
-def _canonicalize_features(feature: str) -> str:
+def _canonicalize_features_for_build(feature: str) -> str:
+    """
+    Canonicalize features for use in build args (FEATURE_ARG).
+    Returns comma-separated, sorted, deduplicated feature string.
+    """
     parts = [part.strip() for part in re.split(r"[\s,]+", feature) if part.strip()]
     if not parts:
-        return ""
+        return "default"
     return ",".join(sorted(set(parts)))
 
 
-def _feature_tag(features: str) -> str:
-    canonical = features or "default"
-    slug = re.sub(r"[^a-z0-9_.-]+", "-", canonical.lower()).strip("-.")
-    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
-    if slug:
-        tag = f"{slug}-{digest}"
-    else:
-        tag = digest
-    if len(tag) > 120:
-        trimmed = slug[:100].rstrip("-.")
-        tag = f"{trimmed}-{digest}" if trimmed else digest
-    return tag
-
-
 def _generic_service_image_for_policy(policy: str) -> str:
-    canonical_features = _canonicalize_features(policy)
-    tag_suffix = _feature_tag(canonical_features)
-    return f"{GENERIC_SERVICE_IMAGE}:{tag_suffix}"
+    """
+    Get the docker image name for a given policy/features.
+    Uses normalized feature flags for tagging like other apps in exp.runner.
+    """
+    tag = normalize_features_to_tag(policy)
+    return f"{GENERIC_SERVICE_IMAGE}:{tag}"
 
 
 def _safe_project_name(*, experiment_name: str, iteration: int, policy: str, rps: float) -> str:
@@ -141,11 +135,13 @@ class MssimBuilder(AppBuilder):
 
         # Build generic service image for policy/features
         policy = (features or "").strip() or "default"
-        canonical_features = _canonicalize_features(policy)
-        feature_key = canonical_features or policy
-        if feature_key not in self._built_feature_keys:
+        # Use normalized tag for image tagging (consistent with other apps)
+        tag = normalize_features_to_tag(policy)
+        # Canonicalize features for build arg (sort, deduplicate)
+        features_for_build = _canonicalize_features_for_build(policy)
+        
+        if tag not in self._built_feature_keys:
             feature_image = _generic_service_image_for_policy(policy)
-            features_for_build = canonical_features or policy
 
             generic_cmd = [
                 "docker",
@@ -174,7 +170,7 @@ class MssimBuilder(AppBuilder):
                 subprocess.run(generic_cmd, cwd=repo_root, check=True)
                 subprocess.run(tag_cmd, cwd=repo_root, check=True)
 
-            self._built_feature_keys.add(feature_key)
+            self._built_feature_keys.add(tag)
 
         return commands if dry_run else None
 
