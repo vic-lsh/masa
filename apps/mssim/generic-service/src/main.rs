@@ -1,8 +1,8 @@
 use anyhow::Result;
+use masa::MethodId;
 use rand::Rng;
 use rand_distr::Exp;
 use service_stubs::service_client::ServiceClient;
-use masa::MethodId;
 use sim_config::deployment::Deployment;
 use sim_config::svc::{ServiceName, ServiceTraceConfig};
 use std::env;

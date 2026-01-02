@@ -1,3 +1,5 @@
+//! This module is deprecated.
+
 use crate::{
     body::BoxBody, masa::context::read_context, Code, GrpcMethod, Request, Response, Status,
 };
