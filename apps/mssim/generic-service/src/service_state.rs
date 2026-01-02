@@ -6,7 +6,9 @@ use crate::service_stubs::{InvokeRequest, ReplayRequest};
 use crate::RpcClient;
 use anyhow::{Context, Result};
 use sim_config::deployment::Deployment;
-use sim_config::svc::call_sequence::{load_call_sequence, CallSequence};
+use sim_config::svc::call_sequence::{
+    load_call_sequence, load_root_user_call_sequence, CallSequence,
+};
 use sim_config::svc::{MethodId, ServiceName, ServiceTraceConfig};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -16,14 +18,14 @@ use tokio::sync::{RwLock, RwLockReadGuard};
 use tonic::{Request, Status};
 use tracing::{error, warn};
 
-
 pub(crate) struct ServiceState {
     config: ServiceTraceConfig,
     pub(crate) clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
-    child_call_probabilities: HashMap<ServiceName, f64>,
     self_svc_name: ServiceName,
     overshot_counter: AtomicUsize,
     call_sequence: Option<CallSequence>,
+    // USER call sequence loaded at startup (one per service instance)
+    user_call_sequence: CallSequence,
 }
 
 impl ServiceState {
@@ -34,7 +36,6 @@ impl ServiceState {
         config_dir: PathBuf,
     ) -> Result<(Arc<Self>, Option<ConnectionBootstrap>)> {
         let child_weights = config.call_graph.callees_of(&self_svc_name);
-        let child_call_probabilities = compute_child_probabilities(&child_weights);
         let clients = Arc::new(RwLock::new(HashMap::new()));
 
         println!("Child services:");
@@ -45,6 +46,12 @@ impl ServiceState {
         // Load call sequence if available
         let call_sequence = load_call_sequence(&config_dir, &self_svc_name)
             .context("Failed to load call sequence")?;
+
+        // Load USER call sequence at startup for root API
+        let user_call_sequence = load_root_user_call_sequence(&config_dir)
+            .context("Failed to load USER call sequence")?;
+
+        println!("USER call sequence: {:?}", user_call_sequence);
 
         let bootstrap = if child_weights.is_empty() {
             None
@@ -65,10 +72,10 @@ impl ServiceState {
         let state = Arc::new(ServiceState {
             config,
             clients,
-            child_call_probabilities,
             self_svc_name,
             overshot_counter: AtomicUsize::new(0),
             call_sequence,
+            user_call_sequence,
         });
 
         Ok((state, bootstrap))
@@ -121,111 +128,20 @@ impl ServiceState {
     ) -> Result<(), Status> {
         let graph_selection = graph_name.unwrap().trim();
 
-        // Use call sequence if available, otherwise fall back to parallel fanout
-        if let Some(ref call_sequence) = self.call_sequence {
-            self
-                .fanout_with_call_sequence(
-                    req_id,
-                    start_at,
-                    parent_chain,
-                    graph_selection,
-                    call_sequence,
-                )
-                .await
-        } else {
-            // Fall back to original parallel fanout behavior
-            self.fanout_parallel(req_id, start_at, parent_chain, graph_name, graph_selection)
-                .await
-        }
-    }
+        // Call sequence is required - panic if not available
+        let call_sequence = self.call_sequence.as_ref().expect(&format!(
+            "Call sequence is required for service {} but was not found",
+            self.self_svc_name.as_str()
+        ));
 
-    async fn fanout_parallel(
-        &self,
-        req_id: u64,
-        start_at: u64,
-        parent_chain: Vec<ServiceName>,
-        graph_name: Option<&str>,
-        graph_selection: &str,
-    ) -> Result<(), Status> {
-        let mut tasks = Vec::new();
-        let mut parent_chain_for_children = parent_chain.clone();
-        parent_chain_for_children.push(self.self_svc_name.clone());
-
-        let parent_chain_metadata = encode_parent_chain(&parent_chain_for_children)?;
-
-        let clients_guard = self.clients.read().await;
-        for (child_svc_name, client) in clients_guard.iter() {
-            if child_svc_name == &self.self_svc_name {
-                continue;
-            }
-
-            if parent_chain.iter().any(|svc| svc == child_svc_name) {
-                continue;
-            }
-
-            let probability = self
-                .child_call_probabilities
-                .get(child_svc_name)
-                .copied()
-                .unwrap_or(0.0)
-                .clamp(0.0, 1.0);
-
-            if probability <= 0.0 {
-                continue;
-            }
-
-            if probability < 1.0 && rand::random::<f64>() >= probability {
-                continue;
-            }
-
-            let (method_to_call, _method_graph) = self
-                .sample_method_for_child(child_svc_name, graph_selection)
-                .ok_or_else(|| {
-                    Status::not_found(format!(
-                        "Configuration error: Service {} has no method to call",
-                        child_svc_name
-                    ))
-                })?;
-
-            let mut client = client.clone();
-            let mut request = Request::new(InvokeRequest {
-                req_id,
-                start_at,
-                method_name: method_to_call,
-                graph_name: graph_name.unwrap().to_string(),
-            });
-
-            if let Some(ref metadata_value) = parent_chain_metadata {
-                request
-                    .metadata_mut()
-                    .insert(PARENT_CHAIN_METADATA_KEY, metadata_value.clone());
-            }
-
-            let child = child_svc_name.clone();
-            let handle = tokio::spawn(async move {
-                client
-                    .invoke(request)
-                    .await
-                    .map_err(|e| Status::internal(format!("RPC to child service failed: {:?}", e)))
-            });
-            tasks.push((child, handle));
-        }
-        drop(clients_guard);
-
-        for (child_svc, handle) in tasks {
-            let rpc_result = handle
-                .await
-                .map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
-            rpc_result.map_err(|err| {
-                error!(
-                    "RPC to child service {} failed: {:?}",
-                    child_svc.as_str(),
-                    err
-                );
-                err
-            })?;
-        }
-        Ok(())
+        self.fanout_with_call_sequence(
+            req_id,
+            start_at,
+            parent_chain,
+            graph_selection,
+            call_sequence,
+        )
+        .await
     }
 
     async fn fanout_with_call_sequence(
@@ -298,12 +214,9 @@ impl ServiceState {
                 // Spawn task for this child
                 let child = child_svc_name.clone();
                 let handle = tokio::spawn(async move {
-                    client_clone
-                        .invoke(request)
-                        .await
-                        .map_err(|e| {
-                            Status::internal(format!("RPC to child service failed: {:?}", e))
-                        })
+                    client_clone.invoke(request).await.map_err(|e| {
+                        Status::internal(format!("RPC to child service failed: {:?}", e))
+                    })
                 });
                 tasks.push((child, handle));
             }
@@ -371,6 +284,26 @@ impl ServiceState {
     ) -> RwLockReadGuard<'_, HashMap<ServiceName, RpcClient>> {
         self.clients.read().await
     }
+
+    /// Use pre-loaded USER call sequence for root API.
+    /// The call sequence is loaded once at startup.
+    pub(crate) async fn fanout_with_user_call_sequence(
+        &self,
+        req_id: u64,
+        start_at: u64,
+        parent_chain: Vec<ServiceName>,
+        graph_name: &str,
+    ) -> Result<(), Status> {
+        // Use the pre-loaded USER call sequence
+        self.fanout_with_call_sequence(
+            req_id,
+            start_at,
+            parent_chain,
+            graph_name,
+            &self.user_call_sequence,
+        )
+        .await
+    }
 }
 
 fn compute_child_probabilities(
@@ -398,4 +331,3 @@ fn compute_child_probabilities(
         })
         .collect()
 }
-
