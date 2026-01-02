@@ -24,8 +24,8 @@ pub mod service_stubs {
 
 use service_stubs::service_server::{Service, ServiceServer};
 use service_stubs::{
-    PingRequest, PingResponse, ReplayRequest, ReplayResponse, ResponseStatus, RootRequest,
-    RootResponse, ServiceRequest, ServiceResponse,
+    InvokeRequest, InvokeResponse, PingRequest, PingResponse, ReplayRequest, ReplayResponse,
+    ResponseStatus, RootRequest, RootResponse,
 };
 
 pub(crate) type RpcClient = ServiceClient<LoadBalancedChannel>;
@@ -55,10 +55,10 @@ impl AlibabaService {
 
 #[tonic::async_trait]
 impl Service for AlibabaService {
-    async fn get_data(
+    async fn invoke(
         &self,
-        request: Request<ServiceRequest>,
-    ) -> Result<Response<ServiceResponse>, Status> {
+        request: Request<InvokeRequest>,
+    ) -> Result<Response<InvokeResponse>, Status> {
         let parent_chain = parent_chain::decode_parent_chain(request.metadata())?;
         let request = request.into_inner();
         let method_name = request.method_name.clone();
@@ -72,7 +72,7 @@ impl Service for AlibabaService {
             )
             .await?;
 
-        Ok(Response::new(ServiceResponse {
+        Ok(Response::new(InvokeResponse {
             calls: vec![],
             method_name,
         }))
