@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 /// Type alias for an API.
 pub type Api = String;
 
@@ -5,7 +7,7 @@ pub type Api = String;
 pub type ServiceId = String;
 
 /// Type alias for a method ID.
-pub type MethodId = &'static str;
+pub type MethodId = Cow<'static, str>;
 
 /// Type alias for a timestamp.
 pub type Timestamp = u64;

@@ -53,7 +53,7 @@ impl TryFrom<(&str, f64)> for CallSequenceEntry {
         }
 
         let child_svc_name = ServiceName::from_string(parts[0].to_string());
-        let method_name: MethodId = Cow::Owned(parts[1].to_string());
+        let method_name: MethodId = parts[1].to_string().into();
         // Don't clamp probability here - it will be normalized in parse_call_sequence_step
         // Only ensure it's non-negative
         let prob = probability.max(0.0);
