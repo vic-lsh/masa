@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 
-"""Run Alibaba simulator experiments from a JSON plan."""
+"""
+DEPRECATED: MSSIM experiments now run via `exp.runner`.
+
+This repository consolidated experiment-running infrastructure. Use:
+
+  python -m exp.runner run mssim <experiment_name>
+
+MSSIM experiments are configured under:
+
+  exp/mssim/data/in/<experiment_name>/
+    - gen_config.json
+    - policies
+    - mssim.json
+"""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
-import os
-import re
-import signal
-import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -354,28 +361,37 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run MSSIM experiments")
     parser.add_argument(
         "--config",
-        required=True,
-        type=Path,
-        help="Path to experiment JSON file",
+        help="(deprecated) Path to the old MSSIM JSON plan. Not supported anymore.",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print planned runs without executing",
+        help="(deprecated) Use `python -m exp.runner run mssim <exp> --dry-run` instead.",
     )
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
-    args = parse_args(argv)
-    try:
-        cfg = load_config(args.config)
-    except Exception as err:
-        print(f"error: {err}", file=sys.stderr)
-        return 1
-    execute(cfg, args.dry_run)
-    return 0
+def main(argv: list[str] | None = None) -> int:
+    _ = parse_args(argv)
+    msg = "\n".join(
+        [
+            "error: exp/mssim/scripts/experiment.py has been deprecated.",
+            "",
+            "Run MSSIM via the unified runner:",
+            "  python -m exp.runner run mssim <experiment_name>",
+            "",
+            "Example:",
+            "  python -m exp.runner run mssim e2e_test",
+            "  python -m exp.runner run mssim e2e_test --dry-run",
+            "",
+            "Configure experiments under:",
+            "  exp/mssim/data/in/<experiment_name>/",
+            "",
+        ]
+    )
+    print(msg, file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

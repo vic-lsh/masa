@@ -3,11 +3,13 @@ use rand::Rng;
 use rand_distr::Exp;
 use service_stubs::service_client::ServiceClient;
 use sim_config::deployment::Deployment;
+use sim_config::svc::MethodId;
 use sim_config::svc::{ServiceName, ServiceTraceConfig};
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use tokio::runtime::current_thread_queue_len;
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::info;
@@ -27,8 +29,8 @@ pub mod service_stubs {
 
 use service_stubs::service_server::{Service, ServiceServer};
 use service_stubs::{
-    PingRequest, PingResponse, ReplayRequest, ReplayResponse, ResponseStatus, RootRequest,
-    RootResponse, ServiceRequest, ServiceResponse,
+    InvokeRequest, InvokeResponse, PingRequest, PingResponse, ReplayRequest, ReplayResponse,
+    ResponseStatus, RootRequest, RootResponse,
 };
 
 pub(crate) type RpcClient = ServiceClient<LoadBalancedChannel>;
@@ -60,13 +62,13 @@ impl AlibabaService {
 
 #[tonic::async_trait]
 impl Service for AlibabaService {
-    async fn get_data(
+    async fn invoke(
         &self,
-        request: Request<ServiceRequest>,
-    ) -> Result<Response<ServiceResponse>, Status> {
+        request: Request<InvokeRequest>,
+    ) -> Result<Response<InvokeResponse>, Status> {
         let parent_chain = parent_chain::decode_parent_chain(request.metadata())?;
         let request = request.into_inner();
-        let method_name = request.method_name.clone();
+        let method_name: MethodId = request.method_name.into();
         let graph_name = request.graph_name.as_str();
 
         self.state()
@@ -79,9 +81,9 @@ impl Service for AlibabaService {
             )
             .await?;
 
-        Ok(Response::new(ServiceResponse {
+        Ok(Response::new(InvokeResponse {
             calls: vec![],
-            method_name,
+            method_name: method_name.into(),
         }))
     }
 
@@ -104,12 +106,13 @@ impl Service for AlibabaService {
         let request = request.into_inner();
         let graph_name = request.graph_name.as_str();
 
+        // Root uses pre-loaded USER call sequence (loaded at startup)
         self.state()
-            .fanout(
+            .fanout_with_user_call_sequence(
                 request.req_id,
                 request.start_at,
                 Vec::new(),
-                Some(graph_name),
+                graph_name,
             )
             .await?;
 
@@ -185,6 +188,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Deployment::read_from_file(&deployment_path).expect("Failed to parse deployment");
 
     let svc = AlibabaService::new(svc_name.clone(), config, deployment, config_path).await?;
+
+    // Spawn a task that prints the queue length every second
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        let start_time = Instant::now();
+        loop {
+            interval.tick().await;
+            let queue_len = current_thread_queue_len();
+            let elapsed = start_time.elapsed();
+            println!(
+                "current_thread_queue_len: {} (elapsed: {:?})",
+                queue_len, elapsed
+            );
+        }
+    });
 
     let addr = format!("0.0.0.0:{}", port).parse()?;
     info!("🚀 Generic Service {:?} listening on {}", svc_name, addr);

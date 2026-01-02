@@ -4,7 +4,7 @@ package service;
 import "google/protobuf/timestamp.proto";
 
 service Service {
-  rpc GetData(ServiceRequest) returns (ServiceResponse);
+  rpc Invoke(InvokeRequest) returns (InvokeResponse);
   rpc Root(RootRequest) returns (RootResponse);
   rpc Replay(ReplayRequest) returns (ReplayResponse);
   rpc Ping(PingRequest) returns (PingResponse);
@@ -23,14 +23,14 @@ message RootResponse {
   uint64 req_id = 1;
 }
 
-message ServiceRequest { 
+message InvokeRequest { 
   uint64 req_id = 1;
   uint64 start_at = 2;
   string method_name = 3;
   string graph_name = 4;
 }
 
-message ServiceResponse {
+message InvokeResponse {
   repeated CallData calls = 1;
   string method_name = 2;
 }

@@ -8,16 +8,22 @@ from pathlib import Path
 
 from . import goodput
 from . import latency
+from . import mssim
 from .util import parse_args
 
 
 def generate_all_plots(args):
     """
-    Generate all plots (goodput and latency) for an experiment.
+    Generate all plots for an experiment.
     
     Args:
         args: Parsed arguments with config_dir, data_dir, and output_dir
     """
+    config_dir = Path(args.config_dir)
+    if (config_dir / "mssim.json").exists():
+        mssim.generate_plots(args)
+        return
+
     # Remove existing plot files before generating new ones
     output_dir = Path(args.output_dir)
     if output_dir.exists():
