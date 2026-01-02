@@ -16,6 +16,7 @@ message PingResponse {}
 message RootRequest {
   uint64 req_id = 1;
   uint64 start_at = 2;
+  string graph_name = 3;
 }
 
 message RootResponse {
@@ -26,6 +27,7 @@ message InvokeRequest {
   uint64 req_id = 1;
   uint64 start_at = 2;
   string method_name = 3;
+  string graph_name = 4;
 }
 
 message InvokeResponse {
@@ -81,4 +83,3 @@ message ReplayResponse {
   uint64 req_id = 1;
   ResponseStatus status = 2;
 }
-

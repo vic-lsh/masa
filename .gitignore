@@ -6,7 +6,8 @@ tags
 .env
 .codex
 !.codex/prompts/
-.vscode
+.vscode/settings.json
+.vscode/launch.json
 **/__pycache__/**
 trace-analysis/plots/**
 trace-analysis/graph_reports/**
