@@ -56,6 +56,9 @@ def generate_service_configs(
 ) -> Deployment:
     """Create service discovery records for each service and persist them."""
     deployment = Deployment()
+    
+    # Use the docker compose project name if provided, otherwise fall back to default
+    project_name = os.environ.get("DOCKER_COMPOSE_PROJECT_NAME", PROJECT_NAME)
 
     for service_name in services:
         replicas = sim_cfg.replicas.count_for(service_name)
@@ -63,7 +66,7 @@ def generate_service_configs(
         deployment.add_service(
             service_name,
             ServiceDiscoveryInfo(
-                ip=f"{PROJECT_NAME}-{service_name}",
+                ip=f"{project_name}-{service_name}",
                 port=DEFAULT_SVC_PORT,
                 replicas=replicas,
             ),

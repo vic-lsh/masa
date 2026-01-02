@@ -326,6 +326,7 @@ class MssimApp(AppPlugin):
                 policy=policy,
                 rps=rps,
             )
+            env["DOCKER_COMPOSE_PROJECT_NAME"] = project_name
 
             trace_cmd = [
                 sys.executable,
