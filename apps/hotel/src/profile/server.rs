@@ -14,16 +14,17 @@ use crate::{
     config::{GlobalConfig, ProfileConfig},
     db,
 };
-use app_utils::pool::McPool;
-use async_memcached::AsciiProtocol;
 use masa::LatencyDistribution;
 use mongodb::{bson::doc, Client as MongoClient};
+use redis::{aio::ConnectionManager as RedisConnectionManager, AsyncCommands};
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
 #[cfg(feature = "workload_stats")]
 use app_utils::AvgTracker;
 use hotel_tonic::{profile, profile::profile_server::Profile};
+
+const CACHE_TTL_SECS: usize = 300;
 
 #[cfg(feature = "synthetic")]
 #[allow(unused)]
@@ -41,8 +42,7 @@ struct SyntheticProfile {
 }
 
 pub struct ProfileImpl {
-    mc_pool: Arc<McPool>,
-    // memc_client: Arc<memcache::Client>,
+    redis_conn: RedisConnectionManager,
     mongo_client: Arc<MongoClient>,
     latency_tracker: Arc<Mutex<LatencyDistribution>>,
     #[cfg(feature = "workload_stats")]
@@ -95,15 +95,10 @@ impl ProfileImpl {
         #[cfg(feature = "synthetic")]
         let cache_miss_rate = global.prob_cache_miss;
 
-        let cache_addr = config
-            .memcached_addr
-            .strip_prefix("memcache://")
-            .map(|addr| format!("tcp://{}", addr))
-            .unwrap()
-            .to_owned();
+        let redis_client = redis::Client::open(config.redis_addr.as_str())?;
+        let redis_conn = RedisConnectionManager::new(redis_client).await?;
         Ok(Self {
-            mc_pool: Arc::new(McPool::new(cache_addr, 256)),
-            // memc_client: Arc::new(memc_client),
+            redis_conn,
             mongo_client: Arc::new(mongo_client),
             latency_tracker,
             #[cfg(feature = "workload_stats")]
@@ -139,18 +134,24 @@ impl Profile for ProfileImpl {
 
         let mut hotels = Vec::new();
 
-        let mut mc = self.mc_pool.get().await;
-        // let mut mc = async_memcached::Client::new(&self.mc_pool.addr)
-        //     .await
-        //     .unwrap();
-        // Check memcached first
-        if let Ok(memc_resp) = mc.get_multi(&request.hotel_ids).await {
-            for entry in memc_resp {
-                let hotel_id = String::from_utf8(entry.key).unwrap();
-                if let Ok(value) = String::from_utf8(entry.data.unwrap()) {
+        // Check redis first
+        let hotel_ids_ref: Vec<&str> = request.hotel_ids.iter().map(|id| id.as_str()).collect();
+        let mut redis_conn = self.redis_conn.clone();
+        let cached_resp: Vec<Option<Vec<u8>>> = redis::cmd("MGET")
+            .arg(&hotel_ids_ref)
+            .query_async(&mut redis_conn)
+            .await
+            .unwrap_or_else(|e| {
+                log::error!("redis mget failed: {}", e);
+                vec![None; hotel_ids_ref.len()]
+            });
+
+        for (hotel_id, maybe_bytes) in request.hotel_ids.iter().zip(cached_resp) {
+            if let Some(raw) = maybe_bytes {
+                if let Ok(value) = String::from_utf8(raw) {
                     if let Ok(hotel) = serde_json::from_str::<db::Hotel>(&value) {
                         hotels.push(hotel);
-                        profile_map.remove(&hotel_id);
+                        profile_map.remove(hotel_id);
                     }
                 }
             }
@@ -162,9 +163,8 @@ impl Profile for ProfileImpl {
         let mut handles = Vec::new();
 
         for hotel_id in missing_ids {
-            let mc_pool = self.mc_pool.clone();
-            // let mc_addr = self.mc_pool.addr.clone();
             let mongo_client = Arc::clone(&self.mongo_client);
+            let redis_conn = self.redis_conn.clone();
 
             // Spawn a task for each missing hotel
             let handle = tokio::spawn(async move {
@@ -176,16 +176,19 @@ impl Profile for ProfileImpl {
                 // Query MongoDB
                 if let Ok(hotel) = collection.find_one(doc! { "id": &hotel_id }, None).await {
                     if let Some(hotel) = hotel {
-                        // Update memcached asynchronously
+                        // Update redis asynchronously
                         if let Ok(prof_json) = serde_json::to_string(&hotel) {
-                            tokio::spawn(async move {
-                                let mut mc = mc_pool.get().await;
-                                // let mut mc = async_memcached::Client::new(&mc_addr).await.unwrap();
-                                let _ = mc
-                                    .set(&hotel_id, prof_json.as_bytes(), None, None)
-                                    .await
-                                    .ok();
-                            });
+                            let mut redis_conn = redis_conn.clone();
+                            if let Err(e) = redis_conn
+                                .set_ex::<&std::string::String, std::string::String, ()>(
+                                    &hotel_id,
+                                    prof_json,
+                                    CACHE_TTL_SECS as u64,
+                                )
+                                .await
+                            {
+                                log::error!("Failed to set redis cache: {}", e);
+                            }
                         }
                         // Update shared hotels vector
                         hotels.push(hotel);
@@ -253,9 +256,18 @@ impl ProfileImpl {
 
         let names_ref = names.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
         let mut hotels = Vec::new();
-        if let Ok(hotel_jsons) = self.memc_client.gets::<String>(&names_ref) {
-            for hotel_json in hotel_jsons.values() {
-                let hotel = serde_json::from_str(hotel_json).expect("Failed to deserialize hotel");
+        let mut redis_conn = self.redis_conn.clone();
+        let cached_resp: Vec<Option<String>> = redis::cmd("MGET")
+            .arg(&names_ref)
+            .query_async(&mut redis_conn)
+            .await
+            .unwrap_or_else(|e| {
+                log::error!("redis mget failed: {}", e);
+                vec![None; names_ref.len()]
+            });
+        for maybe_json in cached_resp {
+            if let Some(hotel_json) = maybe_json {
+                let hotel = serde_json::from_str(&hotel_json).expect("Failed to deserialize hotel");
                 hotels.push(hotel);
             }
         }
@@ -278,9 +290,13 @@ impl ProfileImpl {
             while let Some(hotel) = cursor.next().await {
                 let hotel = hotel.expect("Failed to get hotel");
                 let hotel_json = serde_json::to_string(&hotel).expect("Failed to serialize hotel");
-                self.memc_client
-                    .set(hotel.name.as_str(), hotel_json, 0)
-                    .expect("Failed to set hotel");
+                let mut redis_conn = self.redis_conn.clone();
+                if let Err(e) = redis_conn
+                    .set_ex(hotel.name.as_str(), hotel_json, CACHE_TTL_SECS as u64)
+                    .await
+                {
+                    log::error!("Failed to set redis cache: {}", e);
+                }
             }
         }
 

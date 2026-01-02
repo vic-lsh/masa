@@ -175,3 +175,35 @@ pub async fn initialize_database(url: &str) -> Result<Client, Box<dyn std::error
 
     Ok(client)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::hotel_tonic;
+
+    #[test]
+    fn reviews_round_trip_through_json() {
+        let reviews = generate_test_data();
+        let serialized = serde_json::to_vec(&reviews).expect("serialize reviews");
+        let decoded: Vec<Review> =
+            serde_json::from_slice(&serialized).expect("deserialize cached reviews");
+
+        assert_eq!(decoded, reviews);
+    }
+
+    #[test]
+    fn proto_conversion_maps_all_fields() {
+        let review = generate_test_data()
+            .into_iter()
+            .next()
+            .expect("test review");
+        let proto: hotel_tonic::review::ReviewComm = review.clone().into();
+
+        assert_eq!(proto.review_id, review.review_id);
+        assert_eq!(proto.hotel_id, review.hotel_id);
+        assert_eq!(proto.name, review.name);
+        assert!((proto.rating - review.rating).abs() < f32::EPSILON);
+        assert_eq!(proto.description, review.description);
+        assert_eq!(proto.images.len(), review.images.len());
+    }
+}
