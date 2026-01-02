@@ -377,6 +377,7 @@ Examples:
   
   # Generate plots only
   python -m exp.runner plot hotel exp1
+  python -m exp.runner plot mssim e2e_test
   
   # Run with verbose logging
   python -m exp.runner run hotel exp1 --verbose
@@ -526,8 +527,8 @@ Examples:
     )
     plot_parser.add_argument(
         'app',
-        choices=['hotel', 'synthetic'],
-        help='Application name (hotel or synthetic)'
+        choices=['hotel', 'mssim', 'synthetic'],
+        help='Application name (hotel, mssim, or synthetic)'
     )
     plot_parser.add_argument(
         'experiment',

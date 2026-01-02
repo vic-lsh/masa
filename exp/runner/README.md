@@ -60,6 +60,7 @@ python -m exp.runner run-multiple synthetic "quick_test template-presampled" --p
 ```bash
 # Generate plots from existing experiment output
 python -m exp.runner plot hotel exp1
+python -m exp.runner plot mssim e2e_test
 ```
 
 ## Experiment Configuration
@@ -200,7 +201,7 @@ python -m exp.runner run <app> <experiment> [options]
 ```
 
 **Arguments:**
-- `<app>`: Application name (`hotel` or `synthetic`)
+- `<app>`: Application name (`hotel`, `mssim`, or `synthetic`)
 - `<experiment>`: Experiment name (must exist in `exp/<app>/data/in/`)
 
 **Options:**
@@ -223,7 +224,7 @@ python -m exp.runner run-multiple <app> "<exp1> <exp2> ..." [options]
 ```
 
 **Arguments:**
-- `<app>`: Application name (`hotel` or `synthetic`)
+- `<app>`: Application name (`hotel`, `mssim`, or `synthetic`)
 - `"<experiments>"`: Space-separated list of experiment names (must be quoted)
 
 **Options:**
@@ -246,12 +247,13 @@ python -m exp.runner plot <app> <experiment>
 ```
 
 **Arguments:**
-- `<app>`: Application name (`hotel` or `synthetic`)
+- `<app>`: Application name (`hotel`, `mssim`, or `synthetic`)
 - `<experiment>`: Experiment name to generate plots for
 
 **Example:**
 ```bash
 python -m exp.runner plot hotel exp1
+python -m exp.runner plot mssim e2e_test
 ```
 
 ## Migration from Bash Scripts
