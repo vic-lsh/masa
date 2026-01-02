@@ -208,7 +208,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         self.child_end_times
             .lock()
             .unwrap()
-            .push((child_method.id(), Instant::now()));
+            .push((child_method.id().into(), Instant::now()));
 
         if let Ok(resp) = response {
             if let Some(value) = resp

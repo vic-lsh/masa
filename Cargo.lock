@@ -5423,6 +5423,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "csv",
+ "masa",
  "ordered-float 5.1.0",
  "rand 0.9.2",
  "rand_distr 0.5.1",
