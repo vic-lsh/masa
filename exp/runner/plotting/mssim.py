@@ -22,6 +22,24 @@ plt.rcParams["figure.max_open_warning"] = 0
 _RPS_DIR_RE = re.compile(r"^rps_(?P<rps>[0-9_]+(?:\.[0-9_]+)?)$")
 
 
+def get_policy_color(policy: str) -> str | None:
+    """Get color for a policy. FIFO uses grey hues, prio_global uses blue hues, prio_local uses pink hues."""
+    policy_lower = policy.lower()
+    if policy_lower.startswith("fifo"):
+        if ",early" in policy_lower:
+            return "darkgrey"
+        return "grey"
+    elif policy_lower.startswith("prio_global"):
+        if ",early" in policy_lower:
+            return "cornflowerblue"
+        return "steelblue"
+    elif policy_lower.startswith("prio_local"):
+        if ",early" in policy_lower:
+            return "lightpink"
+        return "hotpink"
+    return None  # Use matplotlib default color cycle
+
+
 def _parse_rps_dir(path: Path) -> float:
     match = _RPS_DIR_RE.match(path.name)
     if not match:
@@ -185,7 +203,9 @@ def _plot_goodput_lines(
 
     for idx, (policy, values) in enumerate(policy_series.items()):
         marker = marker_cycle[idx % len(marker_cycle)]
-        color = cmap(idx % cmap.N)
+        color = get_policy_color(policy)
+        if color is None:
+            color = cmap(idx % cmap.N)
         ax.plot(rps_values, values, marker=marker, label=policy, color=color)
 
     ax.set_xlabel("Offered load (RPS)")
@@ -224,7 +244,9 @@ def _plot_latency_percentiles(
         ax = axes_iter[idx]
         for policy_idx, (policy, percentile_map) in enumerate(policy_percentiles.items()):
             marker = marker_cycle[policy_idx % len(marker_cycle)]
-            color = cmap(policy_idx % cmap.N)
+            color = get_policy_color(policy)
+            if color is None:
+                color = cmap(policy_idx % cmap.N)
             values = percentile_map.get(percentile, [])
             ax.plot(rps_values, values, marker=marker, label=policy, color=color)
 
@@ -241,6 +263,52 @@ def _plot_latency_percentiles(
 
     for ax in axes_iter[-ncols:]:
         ax.set_xlabel("Offered load (RPS)")
+
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+
+def _plot_latency_cdf(
+    output_path: Path,
+    rps: float,
+    policy_data: Dict[str, pd.DataFrame],
+    *,
+    slo_ms: float,
+) -> None:
+    """Plot CDF of e2e latency for all policies at a specific RPS."""
+    fig, ax = plt.subplots(figsize=(10, 6))
+    cmap = plt.get_cmap("tab10")
+
+    any_data = False
+    for idx, (policy, df) in enumerate(policy_data.items()):
+        if df.empty:
+            continue
+        latencies = df["e2e_latency_ms"].dropna()
+        if latencies.empty:
+            continue
+
+        values = np.sort(latencies.to_numpy())
+        cdf = (np.arange(1, len(values) + 1) / len(values)).astype(float)
+        color = get_policy_color(policy)
+        if color is None:
+            color = cmap(idx % cmap.N)
+        ax.plot(values, cdf, label=policy, color=color, linewidth=2)
+        any_data = True
+
+    if not any_data:
+        plt.close(fig)
+        return
+
+    ax.set_xlabel("End-to-end latency (ms)")
+    ax.set_ylabel("CDF")
+    ax.set_title(f"Latency CDF at {rps:g} RPS")
+    ax.grid(True, which="both", linestyle="--", alpha=0.4)
+    if slo_ms > 0:
+        ax.axvline(slo_ms, linestyle="--", color="grey", alpha=0.6, label=f"SLO={slo_ms:g} ms")
+    ax.legend()
+    ax.set_xlim(left=0)
 
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -371,6 +439,18 @@ def generate_plots(args) -> None:
             percentiles=percentiles,
             slo_ms=slo_ms,
         )
+        # Generate CDF plots for each RPS value
+        for rps in rps_values:
+            rps_policy_data = {
+                policy: policy_data.get(policy, {}).get(rps, pd.DataFrame())
+                for policy in policies
+            }
+            _plot_latency_cdf(
+                iteration_output / f"latency_cdf_{rps:g}rps.png",
+                rps,
+                rps_policy_data,
+                slo_ms=slo_ms,
+            )
 
     if per_iteration_goodput:
         avg_goodput: Dict[str, List[float]] = {}
@@ -422,3 +502,26 @@ def generate_plots(args) -> None:
             percentiles=percentiles,
             slo_ms=slo_ms,
         )
+        # Generate averaged CDF plots for each RPS value
+        # Combine data from all iterations for each policy and RPS
+        for rps in rps_values:
+            avg_rps_policy_data: Dict[str, pd.DataFrame] = {}
+            for policy in policies:
+                combined_dfs = []
+                for iteration in iteration_ids:
+                    iteration_dir = data_dir / str(iteration)
+                    policy_dir = iteration_dir / policy
+                    policy_data_iter = _load_policy_data(policy_dir, warmup_sec)
+                    df = policy_data_iter.get(rps, pd.DataFrame())
+                    if not df.empty:
+                        combined_dfs.append(df)
+                if combined_dfs:
+                    avg_rps_policy_data[policy] = pd.concat(combined_dfs, ignore_index=True)
+                else:
+                    avg_rps_policy_data[policy] = pd.DataFrame()
+            _plot_latency_cdf(
+                output_dir / f"latency_cdf_{rps:g}rps_avg.png",
+                rps,
+                avg_rps_policy_data,
+                slo_ms=slo_ms,
+            )
