@@ -53,14 +53,6 @@ pub type DefaultMasaHooks = local::local::LocalDeadlinePolicy;
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = queue_global::QueueGlobal;
 
-#[cfg(any(feature = "prio_local_direct"))]
-#[allow(missing_docs)]
-pub type DefaultMasaHooks = local::LocalDeadlineDirect;
-
-#[cfg(any(feature = "prio_local_indirect"))]
-#[allow(missing_docs)]
-pub type DefaultMasaHooks = local::LocalDeadlineIndirect;
-
 #[cfg(feature = "perfect_lsf")]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = perfect_lsf::PerfectLSF;

@@ -5,11 +5,12 @@ use crate::service_replay::ReplaySpanExecutor;
 use crate::service_stubs::{InvokeRequest, ReplayRequest};
 use crate::RpcClient;
 use anyhow::{Context, Result};
+use masa::MethodId;
 use sim_config::deployment::Deployment;
 use sim_config::svc::call_sequence::{
     load_call_sequence, load_root_user_call_sequence, CallSequence,
 };
-use sim_config::svc::{MethodId, ServiceName, ServiceTraceConfig};
+use sim_config::svc::{ServiceName, ServiceTraceConfig};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};

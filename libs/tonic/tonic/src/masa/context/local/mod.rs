@@ -1,13 +1,6 @@
 pub(crate) mod local;
-pub(crate) mod local_direct;
-pub(crate) mod local_indirect;
 
 use std::{collections::HashMap, sync::RwLock};
-
-#[allow(unused_imports)]
-pub(crate) use local_direct::LocalDeadlineDirect;
-#[allow(unused_imports)]
-pub(crate) use local_indirect::LocalDeadlineIndirect;
 
 use masa::LatencyEstimator;
 
