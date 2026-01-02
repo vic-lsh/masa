@@ -5,5 +5,5 @@
   ],
   "DurationSecs": 20,
   "WarmupSecs": 0,
-  "MaxInFlight": 10000
+  "MaxInFlight": 100
 }
