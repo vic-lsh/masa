@@ -222,8 +222,8 @@ class MssimApp(AppPlugin):
         if warmup > 0:
             env["WARMUP_SEC"] = str(warmup)
 
-        max_in_flight = cfg.get("max_in_flight", gen_config.get("MaxInFlight"))
-        if max_in_flight is not None and int(max_in_flight) > 0:
+        max_in_flight = gen_config.get("MaxInFlight")
+        if max_in_flight is not None:
             env["MAX_IN_FLIGHT"] = str(int(max_in_flight))
 
         stats_interval = cfg.get("stats_interval_sec")
