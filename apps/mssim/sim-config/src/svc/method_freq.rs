@@ -320,8 +320,7 @@ mod tests {
         )
         .expect("write json");
 
-        let map =
-            MethodFreqMap::from_file_path(&path).expect("parse service map");
+        let map = MethodFreqMap::from_file_path(&path).expect("parse service map");
 
         let svc = ServiceName::from_string("svc_one".into());
         let freq_map = map.get_service(&svc).expect("service aggregated sampler");
@@ -393,8 +392,7 @@ mod tests {
         )
         .expect("write json");
 
-        let map =
-            MethodFreqMap::from_file_path(&path).expect("parse service map");
+        let map = MethodFreqMap::from_file_path(&path).expect("parse service map");
 
         let svc_one = ServiceName::from_string("svc_one".into());
         let mut rng = rand::rng();
