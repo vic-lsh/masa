@@ -297,32 +297,31 @@ impl MethodFreqMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::io::Write;
-    use tempfile::NamedTempFile;
+    use tempfile::TempDir;
 
     #[test]
     fn parse_graph_method_invoke_freq() {
-        let mut tmp = NamedTempFile::new().expect("create temp file");
+        let temp = TempDir::new().expect("create temp dir");
+        let graph_dir = temp.path().join("graph_alpha");
+        fs::create_dir_all(&graph_dir).expect("create graph dir");
+        let path = graph_dir.join("interface_distribution.json");
+        let mut tmp = fs::File::create(&path).expect("create temp file");
         writeln!(
             tmp,
             r#"{{
-  "graph_alpha": {{
-    "svc_one": {{
-      "method_a": 10,
-      "method_b": 5
-    }}
-  }},
-  "graph_beta": {{
-    "svc_one": {{
-      "method_c": 7
-    }}
+  "svc_one": {{
+    "method_a": 10,
+    "method_b": 5,
+    "method_c": 7
   }}
 }}"#
         )
         .expect("write json");
 
         let map =
-            MethodFreqMap::from_file_path(&tmp.path().to_path_buf()).expect("parse graph map");
+            MethodFreqMap::from_file_path(&path).expect("parse service map");
 
         let svc = ServiceName::from_string("svc_one".into());
         let freq_map = map.get_service(&svc).expect("service aggregated sampler");
@@ -376,30 +375,26 @@ mod tests {
 
     #[test]
     fn graph_shape_sampling_prefers_graph_hint() {
-        let mut tmp = NamedTempFile::new().expect("create temp file");
+        let temp = TempDir::new().expect("create temp dir");
+        let graph_dir = temp.path().join("graph_b");
+        fs::create_dir_all(&graph_dir).expect("create graph dir");
+        let path = graph_dir.join("interface_distribution.json");
+        let mut tmp = fs::File::create(&path).expect("create temp file");
         writeln!(
             tmp,
             r#"{{
-  "graph_a": {{
-    "svc_one": {{
-      "method_a": 10,
-      "method_b": 5
-    }}
+  "svc_one": {{
+    "method_c": 7
   }},
-  "graph_b": {{
-    "svc_one": {{
-      "method_c": 7
-    }},
-    "svc_two": {{
-      "method_d": 3
-    }}
+  "svc_two": {{
+    "method_d": 3
   }}
 }}"#
         )
         .expect("write json");
 
         let map =
-            MethodFreqMap::from_file_path(&tmp.path().to_path_buf()).expect("parse graph shape");
+            MethodFreqMap::from_file_path(&path).expect("parse service map");
 
         let svc_one = ServiceName::from_string("svc_one".into());
         let mut rng = rand::rng();
@@ -411,9 +406,9 @@ mod tests {
 
         let svc_two = ServiceName::from_string("svc_two".into());
         let sampled_two = map
-            .sample_method(&svc_two, "graph_b", &mut rng)
-            .expect("default to only graph");
-        assert_eq!(sampled_two.graph.as_deref(), Some("graph_b"));
+            .sample_method(&svc_two, "missing_graph", &mut rng)
+            .expect("fallback to aggregated");
+        assert_eq!(sampled_two.graph.as_deref(), None);
         assert_eq!(sampled_two.method, "method_d");
     }
 }
