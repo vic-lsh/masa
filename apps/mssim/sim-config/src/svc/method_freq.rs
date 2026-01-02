@@ -368,9 +368,13 @@ mod tests {
         }
 
         // check distribution
-        assert!(seen[&"A".into()] < seen[&"B".into()]);
-        assert!(seen[&"B".into()] < seen[&"C".into()]);
-        assert!(seen[&"C".into()] < seen[&"D".into()]);
+        let a: MethodId = "A".into();
+        let b: MethodId = "B".into();
+        let c: MethodId = "C".into();
+        let d: MethodId = "D".into();
+        assert!(seen[&a] < seen[&b]);
+        assert!(seen[&b] < seen[&c]);
+        assert!(seen[&c] < seen[&d]);
     }
 
     #[test]
