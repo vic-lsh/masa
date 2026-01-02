@@ -276,7 +276,7 @@ class MssimApp(AppPlugin):
     ) -> None:
         # MSSIM-specific orchestration:
         # - build images (cached across calls)
-        # - for each rps: generate compose + run docker compose up/down
+        # - generate compose once and run all RPS levels in a single docker-compose session
         mssim_cfg = config.app_config or {}
 
         trace_dir = Path(mssim_cfg["trace_dir"]).expanduser().resolve()
@@ -312,197 +312,200 @@ class MssimApp(AppPlugin):
         # Base environment variables for MSSIM stack
         base_env_vars = self.generate_env_vars(config.gen_config, config.app_config, config.app_dir)
 
-        for rps in rps_values:
-            run_dir = output_dir / f"rps_{rps:g}" / f"run_{iteration:01d}"
-            docker_compose_path = run_dir / "docker-compose.yml"
-            deployment_json_path = run_dir / "deployment.json"
-            log_path = run_dir / "orchestrator.log"
+        # Use a single run directory for all RPS values
+        run_dir = output_dir / f"run_{iteration:01d}"
+        docker_compose_path = run_dir / "docker-compose.yml"
+        deployment_json_path = run_dir / "deployment.json"
+        log_path = run_dir / "orchestrator.log"
 
-            feature_image = _generic_service_image_for_policy(policy)
+        feature_image = _generic_service_image_for_policy(policy)
 
-            env = os.environ.copy()
-            env.update({k: str(v) for k, v in base_env_vars.items()})
-            env["FEATURE"] = str(policy)
-            env["RPS"] = f"{rps}"
-            env["SLO_MS"] = str(int(mssim_cfg["slo_ms"]))
-            env["GENERIC_SERVICE_IMAGE"] = feature_image
-            env["HOST_TRACE_DIR"] = str(run_dir.resolve())
+        env = os.environ.copy()
+        env.update({k: str(v) for k, v in base_env_vars.items()})
+        env["FEATURE"] = str(policy)
+        # Pass all RPS values as JSON array
+        env["RPS_VALUES"] = json.dumps(rps_values)
+        env["SLO_MS"] = str(int(mssim_cfg["slo_ms"]))
+        env["GENERIC_SERVICE_IMAGE"] = feature_image
+        env["HOST_TRACE_DIR"] = str(run_dir.resolve())
 
-            project_name = _safe_project_name(
-                experiment_name=config.experiment_name,
-                iteration=iteration,
-                policy=policy,
-                rps=rps,
-            )
-            env["DOCKER_COMPOSE_PROJECT_NAME"] = project_name
+        project_name = _safe_project_name(
+            experiment_name=config.experiment_name,
+            iteration=iteration,
+            policy=policy,
+            rps=0.0,  # Use 0.0 as placeholder since we're running all RPS in one go
+        )
+        env["DOCKER_COMPOSE_PROJECT_NAME"] = project_name
 
-            trace_cmd = [
-                sys.executable,
-                "-m",
-                "simulator.main",
-                "-a",
-                str(trace_dir),
-                "--docker-compose-output-path",
-                str(docker_compose_path),
-                "--deployment-output-path",
-                str(deployment_json_path),
-            ]
-            if config_dir is not None:
-                trace_cmd.extend(["-c", str(config_dir)])
-            if mssim_cfg.get("replay_path"):
-                trace_cmd.extend(["--replay-path", str(Path(mssim_cfg["replay_path"]).expanduser().resolve())])
+        trace_cmd = [
+            sys.executable,
+            "-m",
+            "simulator.main",
+            "-a",
+            str(trace_dir),
+            "--docker-compose-output-path",
+            str(docker_compose_path),
+            "--deployment-output-path",
+            str(deployment_json_path),
+        ]
+        if config_dir is not None:
+            trace_cmd.extend(["-c", str(config_dir)])
+        if mssim_cfg.get("replay_path"):
+            trace_cmd.extend(["--replay-path", str(Path(mssim_cfg["replay_path"]).expanduser().resolve())])
 
-            up_cmd = [
-                "docker",
-                "compose",
-                "-f",
-                str(docker_compose_path),
-                "-p",
-                project_name,
-                "up",
-                "-d",  # Start in detached mode so we can stream individual logs
-            ]
-            down_cmd = [
-                "docker",
-                "compose",
-                "-f",
-                str(docker_compose_path),
-                "-p",
-                project_name,
-                "down",
-                "--volumes",
-            ]
+        up_cmd = [
+            "docker",
+            "compose",
+            "-f",
+            str(docker_compose_path),
+            "-p",
+            project_name,
+            "up",
+            "-d",  # Start in detached mode so we can stream individual logs
+        ]
+        down_cmd = [
+            "docker",
+            "compose",
+            "-f",
+            str(docker_compose_path),
+            "-p",
+            project_name,
+            "down",
+            "--volumes",
+        ]
 
-            if dry_run:
-                print(f"[dry-run] would run mssim policy={policy} rps={rps} iteration={iteration}")
-                print(f"[dry-run] would write outputs under: {run_dir}")
-                print("[dry-run] compose generation:", " ".join(trace_cmd))
-                print("[dry-run] compose up:", " ".join(up_cmd))
-                print("[dry-run] compose down:", " ".join(down_cmd))
-                continue
+        if dry_run:
+            print(f"[dry-run] would run mssim policy={policy} rps_values={rps_values} iteration={iteration}")
+            print(f"[dry-run] would write outputs under: {run_dir}")
+            print("[dry-run] compose generation:", " ".join(trace_cmd))
+            print("[dry-run] compose up:", " ".join(up_cmd))
+            print("[dry-run] compose down:", " ".join(down_cmd))
+            return
 
-            run_dir.mkdir(parents=True, exist_ok=True)
-            metadata = {
-                "app": "mssim",
-                "experiment": config.experiment_name,
-                "iteration": iteration,
-                "policy": policy,
-                "rps": rps,
-                "duration_sec": duration_sec,
-                "trace_dir": str(trace_dir),
-                "config_dir": str(config_dir) if config_dir is not None else None,
-                "generic_service_image": feature_image,
-                "docker_project": project_name,
-            }
-            with (run_dir / "metadata.json").open("w", encoding="utf-8") as fh:
-                json.dump(metadata, fh, indent=2, sort_keys=True)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        metadata = {
+            "app": "mssim",
+            "experiment": config.experiment_name,
+            "iteration": iteration,
+            "policy": policy,
+            "rps_values": rps_values,
+            "duration_sec": duration_sec,
+            "trace_dir": str(trace_dir),
+            "config_dir": str(config_dir) if config_dir is not None else None,
+            "generic_service_image": feature_image,
+            "docker_project": project_name,
+        }
+        with (run_dir / "metadata.json").open("w", encoding="utf-8") as fh:
+            json.dump(metadata, fh, indent=2, sort_keys=True)
 
-            log_threads: list[threading.Thread] = []
-            try:
-                # Generate compose/deployment
-                with log_path.open("wb") as log_file:
-                    gen_proc = subprocess.run(
-                        trace_cmd,
-                        cwd=config.app_dir,
-                        env=env,
-                        stdout=log_file,
-                        stderr=subprocess.STDOUT,
-                    )
-                if gen_proc.returncode != 0:
-                    raise RuntimeError(
-                        f"MSSIM compose generation failed ({gen_proc.returncode}). See log at {log_path}"
-                    )
-
-                # Run the experiment stack in detached mode
-                print(f"Starting services for policy={policy} rps={rps} iteration={iteration}")
-                with log_path.open("ab") as log_file:
-                    up_proc = subprocess.run(
-                        up_cmd,
-                        cwd=config.app_dir,
-                        env=env,
-                        stdout=log_file,
-                        stderr=subprocess.STDOUT,
-                        check=True,
-                    )
-
-                # Wait a moment for containers to start
-                time.sleep(2)
-
-                # Get container names and stream logs to individual files
-                logs_dir = run_dir / "logs"
-                container_names = docker.get_container_names(
-                    compose_path=docker_compose_path,
-                    project_name=project_name,
-                    env_vars=env,
+        log_threads: list[threading.Thread] = []
+        try:
+            # Generate compose/deployment once
+            with log_path.open("wb") as log_file:
+                gen_proc = subprocess.run(
+                    trace_cmd,
+                    cwd=config.app_dir,
+                    env=env,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
                 )
-                
-                if container_names:
-                    print(f"Streaming logs for {len(container_names)} containers to {logs_dir}")
-                    log_threads = docker.stream_logs(
-                        container_names=container_names,
-                        output_dir=logs_dir,
-                        follow=True,
-                    )
-                else:
-                    print("Warning: No containers found for log streaming")
+            if gen_proc.returncode != 0:
+                raise RuntimeError(
+                    f"MSSIM compose generation failed ({gen_proc.returncode}). See log at {log_path}"
+                )
 
-                # Wait for load generator to exit
-                loadgen_container = None
-                for name in container_names:
-                    if "load_generator" in name or "loadgen" in name.lower():
-                        loadgen_container = name
-                        break
+            # Run the experiment stack in detached mode
+            print(f"Starting services for policy={policy} rps_values={rps_values} iteration={iteration}")
+            with log_path.open("ab") as log_file:
+                up_proc = subprocess.run(
+                    up_cmd,
+                    cwd=config.app_dir,
+                    env=env,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    check=True,
+                )
+
+            # Wait a moment for containers to start
+            time.sleep(2)
+
+            # Get container names and stream logs to individual files
+            logs_dir = run_dir / "logs"
+            container_names = docker.get_container_names(
+                compose_path=docker_compose_path,
+                project_name=project_name,
+                env_vars=env,
+            )
+            
+            if container_names:
+                print(f"Streaming logs for {len(container_names)} containers to {logs_dir}")
+                log_threads = docker.stream_logs(
+                    container_names=container_names,
+                    output_dir=logs_dir,
+                    follow=True,
+                )
+            else:
+                print("Warning: No containers found for log streaming")
+
+            # Wait for load generator to exit (it will run all RPS levels)
+            loadgen_container = None
+            for name in container_names:
+                if "load_generator" in name or "loadgen" in name.lower():
+                    loadgen_container = name
+                    break
+            
+            if loadgen_container:
+                # Calculate total timeout: duration per RPS level + grace period
+                grace_period = 300
+                total_duration = duration_sec * len(rps_values) if duration_sec > 0 else 0
+                timeout = total_duration + grace_period if total_duration > 0 else None
+                start_time = time.time()
                 
-                if loadgen_container:
-                    # Wait for load generator container to exit
-                    grace_period = 300
-                    timeout = duration_sec + grace_period if duration_sec > 0 else None
-                    start_time = time.time()
+                while True:
+                    # Check if load generator container has exited
+                    check_cmd = [
+                        "docker",
+                        "inspect",
+                        "--format={{.State.Status}}",
+                        loadgen_container,
+                    ]
+                    try:
+                        result = subprocess.run(
+                            check_cmd,
+                            capture_output=True,
+                            text=True,
+                            check=True,
+                        )
+                        status = result.stdout.strip()
+                        if status == "exited":
+                            break
+                    except subprocess.CalledProcessError:
+                        # Container might not exist yet, wait a bit
+                        pass
                     
-                    while True:
-                        # Check if load generator container has exited
-                        check_cmd = [
-                            "docker",
-                            "inspect",
-                            "--format={{.State.Status}}",
-                            loadgen_container,
-                        ]
-                        try:
-                            result = subprocess.run(
-                                check_cmd,
-                                capture_output=True,
-                                text=True,
-                                check=True,
-                            )
-                            status = result.stdout.strip()
-                            if status == "exited":
-                                break
-                        except subprocess.CalledProcessError:
-                            # Container might not exist yet, wait a bit
-                            pass
-                        
-                        if timeout and (time.time() - start_time) > timeout:
-                            raise RuntimeError(
-                                f"MSSIM timeout expired after {duration_sec} (+{grace_period}) seconds"
-                            )
-                        
-                        time.sleep(1)
-                else:
-                    # Fallback: wait for duration if no load generator found
-                    if duration_sec > 0:
-                        print(f"Waiting {duration_sec} seconds for experiment to complete")
-                        time.sleep(duration_sec)
+                    if timeout and (time.time() - start_time) > timeout:
+                        raise RuntimeError(
+                            f"MSSIM timeout expired after {total_duration} (+{grace_period}) seconds"
+                        )
                     
-            except RuntimeError:
-                # Re-raise RuntimeErrors (including timeout)
-                raise
-            except Exception as exc:
-                raise RuntimeError(f"MSSIM experiment failed: {exc}") from exc
-            finally:
-                # Stop log streaming threads by stopping containers
-                subprocess.run(down_cmd, cwd=config.app_dir, env=env, check=False)
+                    time.sleep(1)
+            else:
+                # Fallback: wait for total duration if no load generator found
+                total_duration = duration_sec * len(rps_values) if duration_sec > 0 else 0
+                if total_duration > 0:
+                    print(f"Waiting {total_duration} seconds for experiment to complete")
+                    time.sleep(total_duration)
                 
-                # Wait for log threads to finish (they should stop when containers stop)
-                for thread in log_threads:
-                    thread.join(timeout=5)
+        except RuntimeError:
+            # Re-raise RuntimeErrors (including timeout)
+            raise
+        except Exception as exc:
+            raise RuntimeError(f"MSSIM experiment failed: {exc}") from exc
+        finally:
+            # Stop log streaming threads by stopping containers
+            subprocess.run(down_cmd, cwd=config.app_dir, env=env, check=False)
+            
+            # Wait for log threads to finish (they should stop when containers stop)
+            for thread in log_threads:
+                thread.join(timeout=5)
 
