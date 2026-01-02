@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Once};
 use tokio::sync::{RwLock, RwLockReadGuard};
-use tonic::{Request, Status};
+use tonic::{masa::context::MasaRequestExt, Request, Status};
 use tracing::{error, info, warn};
 
 pub(crate) struct ServiceState {
@@ -113,7 +113,7 @@ impl ServiceState {
 
         // If this is a leaf service (no child services), directly busy spin
         if self.child_call_probabilities.is_empty() {
-            busy_spin(std::time::Duration::from_millis(total_latency_ms as u64));
+            self.handle_leaf_service(total_latency_ms).await;
         } else {
             let start_time = std::time::Instant::now();
             self.fanout(req_id, start_at, parent_chain, graph_ref)
@@ -127,6 +127,16 @@ impl ServiceState {
         }
 
         Ok(())
+    }
+
+    async fn handle_leaf_service(&self, total_latency_ms: f64) {
+        const SPIN_FRACTION: f64 = 0.1;
+
+        let spin_duration = total_latency_ms * SPIN_FRACTION;
+        let block_duration = total_latency_ms - spin_duration;
+
+        busy_spin(std::time::Duration::from_millis(spin_duration as u64));
+        tokio::time::sleep(std::time::Duration::from_millis(block_duration as u64)).await;
     }
 
     pub(crate) async fn fanout(
@@ -223,6 +233,13 @@ impl ServiceState {
                     graph_name: graph_name.to_string(),
                 });
 
+                // Set method name override for latency tracking
+                request
+                    .set_method_name_override(&entry.method_name)
+                    .map_err(|e| {
+                        Status::internal(format!("Failed to set method name override: {:?}", e))
+                    })?;
+
                 if let Some(ref metadata_value) = parent_chain_metadata {
                     request
                         .metadata_mut()
@@ -245,11 +262,11 @@ impl ServiceState {
                     .await
                     .map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
                 rpc_result.map_err(|err| {
-                    error!(
-                        "RPC to child service {} failed: {:?}",
-                        child_svc.as_str(),
-                        err
-                    );
+                    // error!(
+                    //     "RPC to child service {} failed: {:?}",
+                    //     child_svc.as_str(),
+                    //     err
+                    // );
                     err
                 })?;
             }
@@ -309,9 +326,16 @@ impl ServiceState {
             let mut request = Request::new(InvokeRequest {
                 req_id,
                 start_at,
-                method_name: method_to_call,
+                method_name: method_to_call.clone(),
                 graph_name: graph_name.to_string(),
             });
+
+            // Set method name override for latency tracking
+            request
+                .set_method_name_override(&method_to_call)
+                .map_err(|e| {
+                    Status::internal(format!("Failed to set method name override: {:?}", e))
+                })?;
 
             if let Some(ref metadata_value) = parent_chain_metadata {
                 request
