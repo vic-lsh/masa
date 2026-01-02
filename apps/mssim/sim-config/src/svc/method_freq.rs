@@ -6,6 +6,8 @@ use std::path::PathBuf;
 use crate::svc::{MethodId, ServiceName};
 
 type MethodInvokeFreq = HashMap<MethodId, u64>;
+/// Service-level format: { service_name -> { method_id -> freq } }
+type RawServiceInvokeFreq = HashMap<String, HashMap<String, u64>>;
 /// Graph-oriented format: { graph_name -> { service_name -> { method_id -> freq } } }
 type RawGraphInvokeFreq = HashMap<String, HashMap<String, HashMap<String, u64>>>;
 
@@ -146,8 +148,23 @@ impl MethodFreqMap {
     pub fn from_file_path(path: &PathBuf) -> Result<Self> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read method frequency file: {:?}", path))?;
-        let raw_graph: RawGraphInvokeFreq = serde_json::from_str(&content)
-            .with_context(|| format!("Failed to parse method frequency file: {:?}", path))?;
+        
+        // Extract graph name from directory path (e.g., "S_1823467" from "trace-analysis/graphs/S_1823467")
+        let graph_name = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "default_graph".to_string());
+        
+        // Parse as service-level format: { service_name -> { method_id -> freq } }
+        let raw_service: RawServiceInvokeFreq = serde_json::from_str(&content)
+            .with_context(|| format!("Failed to parse method frequency file: {:?} - expected {{ service: {{ method: frequency }} }}", path))?;
+        
+        // Convert to graph-level format by wrapping with graph name
+        let mut raw_graph: RawGraphInvokeFreq = HashMap::new();
+        raw_graph.insert(graph_name, raw_service);
+        
         Self::from_graph_map(raw_graph)
     }
 
