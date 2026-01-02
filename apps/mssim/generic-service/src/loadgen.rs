@@ -9,6 +9,7 @@ use std::{
 use masa::{time_now, Context as MasaContext};
 use rand_distr::{Distribution, Exp};
 use serde::Deserialize;
+use serde_json;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::time::{Instant, MissedTickBehavior};
@@ -80,16 +81,17 @@ pub struct ClientEntry {
     pub probability: f32,
 }
 
+#[derive(Clone)]
 pub struct ClientPool {
     clients: Arc<Vec<ClientEntry>>,
-    counter: AtomicUsize,
+    counter: Arc<AtomicUsize>,
 }
 
 impl ClientPool {
     pub fn new(entries: Vec<ClientEntry>) -> anyhow::Result<Self> {
         Ok(Self {
             clients: Arc::new(entries),
-            counter: AtomicUsize::new(0),
+            counter: Arc::new(AtomicUsize::new(0)),
         })
     }
 
@@ -297,7 +299,7 @@ async fn flush_root_samples_internal(
     let output_dir = PathBuf::from(OUTPUT_DIR);
 
     let snapshot = {
-        let mut guard = samples.lock().await;
+        let guard = samples.lock().await;
         if guard.is_empty() {
             if log_when_empty {
                 println!(
@@ -461,9 +463,20 @@ async fn print_stats_task(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let rps: f64 = env::var("RPS")
-        .unwrap_or_else(|_| "350".to_string())
-        .parse()?;
+    // Support both RPS (single value) and RPS_VALUES (array of values) for backward compatibility
+    let rps_values: Vec<f64> = if let Ok(rps_values_str) = env::var("RPS_VALUES") {
+        // Parse JSON array of RPS values
+        serde_json::from_str(&rps_values_str)
+            .map_err(|e| anyhow::anyhow!("Failed to parse RPS_VALUES as JSON array: {}", e))?
+    } else if let Ok(rps_str) = env::var("RPS") {
+        // Single RPS value for backward compatibility
+        vec![rps_str
+            .parse()
+            .map_err(|e| anyhow::anyhow!("Failed to parse RPS: {}", e))?]
+    } else {
+        // Default to 350 if neither is set
+        vec![350.0]
+    };
 
     let max_in_flight: usize = env::var("MAX_IN_FLIGHT")
         .unwrap_or_else(|_| "10000".to_string())
@@ -484,8 +497,8 @@ async fn main() -> anyhow::Result<()> {
         .filter(|s| !s.is_empty());
 
     println!(
-        "RPS: {}, MAX_IN_FLIGHT: {}, STATS_INTERVAL_SEC: {}, DURATION: {:?}",
-        rps, max_in_flight, stats_interval_sec, duration
+        "RPS values: {:?}, MAX_IN_FLIGHT: {}, STATS_INTERVAL_SEC: {}, DURATION: {:?}",
+        rps_values, max_in_flight, stats_interval_sec, duration
     );
 
     // If replay_env is set, we are in replay mode
@@ -506,8 +519,10 @@ async fn main() -> anyhow::Result<()> {
     };
 
     if matches!(load_mode, LoadMode::Root) {
-        if rps <= 0.0 {
-            anyhow::bail!("RPS must be > 0");
+        for rps in &rps_values {
+            if *rps <= 0.0 {
+                anyhow::bail!("All RPS values must be > 0, found: {}", rps);
+            }
         }
     }
 
@@ -579,8 +594,8 @@ async fn main() -> anyhow::Result<()> {
 
     if matches!(load_mode, LoadMode::Root) {
         println!(
-            "Starting loadgen with Poisson arrivals: targets={}, rps={}, max_in_flight={}",
-            target_summary, rps, max_in_flight
+            "Starting loadgen with Poisson arrivals: targets={}, rps_values={:?}, max_in_flight={}",
+            target_summary, rps_values, max_in_flight
         );
         println!("Press Ctrl-C to stop.");
     } else if let LoadMode::Replay { work_items } = &load_mode {
@@ -592,48 +607,21 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
-    let stats = Arc::new(Stats::default());
+    // For replay mode, just run once
+    if matches!(load_mode, LoadMode::Replay { .. }) {
+        let stats = Arc::new(Stats::default());
+        let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
+        let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
 
-    let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
-    let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
-
-    let root_samples = Arc::new(Mutex::new(Vec::<RootLatencySample>::new()));
-    let root_latency_file_name = root_latency_file_name_for_rps(rps);
-    let root_samples_handle = if matches!(load_mode, LoadMode::Root) {
-        Some((root_samples.clone(), root_latency_file_name.clone()))
-    } else {
-        None
-    };
-
-    if matches!(load_mode, LoadMode::Root) {
-        let samples = root_samples.clone();
-        let file_name = root_latency_file_name.clone();
-        tokio::spawn(async move { flush_rpc_samples_task(samples, file_name).await });
-    }
-
-    {
-        let stats_interval = Duration::from_secs(stats_interval_sec);
-        let stats = Arc::clone(&stats);
-        tokio::spawn(async move {
-            print_stats_task(latency_sample_rx, stats_interval, stats).await;
-        });
-    }
-
-    match load_mode {
-        LoadMode::Root => {
-            run_root_load(
-                client_pool,
-                rps,
-                stats.clone(),
-                inflight_guard.clone(),
-                max_in_flight,
-                root_samples.clone(),
-                Some(duration),
-                latency_sample_tx.clone(),
-            )
-            .await?;
+        {
+            let stats_interval = Duration::from_secs(stats_interval_sec);
+            let stats = Arc::clone(&stats);
+            tokio::spawn(async move {
+                print_stats_task(latency_sample_rx, stats_interval, stats).await;
+            });
         }
-        LoadMode::Replay { work_items } => {
+
+        if let LoadMode::Replay { work_items } = load_mode {
             run_replay_load(
                 client_pool,
                 work_items,
@@ -643,20 +631,81 @@ async fn main() -> anyhow::Result<()> {
             )
             .await?;
         }
+
+        let s = stats.sent.load(Ordering::Relaxed);
+        let o = stats.ok.load(Ordering::Relaxed);
+        let e = stats.err.load(Ordering::Relaxed);
+        let t = stats.throttled.load(Ordering::Relaxed);
+        println!(
+            "Final stats: sent={}, ok={}, err={}, throttled={}",
+            s, o, e, t
+        );
+        return Ok(());
     }
 
-    let s = stats.sent.load(Ordering::Relaxed);
-    let o = stats.ok.load(Ordering::Relaxed);
-    let e = stats.err.load(Ordering::Relaxed);
-    let t = stats.throttled.load(Ordering::Relaxed);
-    println!(
-        "Final stats: sent={}, ok={}, err={}, throttled={}",
-        s, o, e, t
-    );
+    // For root mode, run each RPS value sequentially
+    for (rps_idx, rps) in rps_values.iter().enumerate() {
+        println!("\n{}", "=".repeat(60));
+        println!(
+            "Starting RPS level {}/{}: {} RPS",
+            rps_idx + 1,
+            rps_values.len(),
+            rps
+        );
+        println!("{}\n", "=".repeat(60));
 
-    if let Some((root_samples, file_name)) = root_samples_handle {
-        flush_root_samples(root_samples, file_name.as_ref()).await?;
+        let stats = Arc::new(Stats::default());
+        let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
+        let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
+
+        let root_samples = Arc::new(Mutex::new(Vec::<RootLatencySample>::new()));
+        let root_latency_file_name = root_latency_file_name_for_rps(*rps);
+
+        // Spawn periodic flush task for this RPS level
+        {
+            let samples = root_samples.clone();
+            let file_name = root_latency_file_name.clone();
+            tokio::spawn(async move { flush_rpc_samples_task(samples, file_name).await });
+        }
+
+        // Spawn stats printing task
+        {
+            let stats_interval = Duration::from_secs(stats_interval_sec);
+            let stats = Arc::clone(&stats);
+            tokio::spawn(async move {
+                print_stats_task(latency_sample_rx, stats_interval, stats).await;
+            });
+        }
+
+        // Run load for this RPS level
+        run_root_load(
+            client_pool.clone(),
+            *rps,
+            stats.clone(),
+            inflight_guard.clone(),
+            max_in_flight,
+            root_samples.clone(),
+            Some(duration),
+            latency_sample_tx.clone(),
+        )
+        .await?;
+
+        // Flush samples for this RPS level
+        flush_root_samples(root_samples, &root_latency_file_name).await?;
+
+        let s = stats.sent.load(Ordering::Relaxed);
+        let o = stats.ok.load(Ordering::Relaxed);
+        let e = stats.err.load(Ordering::Relaxed);
+        let t = stats.throttled.load(Ordering::Relaxed);
+        println!(
+            "\nRPS {} completed - Final stats: sent={}, ok={}, err={}, throttled={}",
+            rps, s, o, e, t
+        );
     }
+
+    println!("\n{}", "=".repeat(60));
+    println!("All RPS levels completed");
+    println!("{}\n", "=".repeat(60));
 
     Ok(())
 }

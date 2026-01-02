@@ -281,7 +281,7 @@ def _make_load_generator_config_yaml(
 ) -> ComposeService:
     environment: dict[str, str] = {}
 
-    environment.update(_collect_optional_env("DURATION", "RPS", "MAX_IN_FLIGHT", "STATS_INTERVAL_SEC"))
+    environment.update(_collect_optional_env("DURATION", "RPS", "RPS_VALUES", "MAX_IN_FLIGHT", "STATS_INTERVAL_SEC"))
 
     host_data_dir = os.environ.get("HOST_TRACE_DIR", None)
     frontend_json_path = frontend_config_dir / "frontend.json"

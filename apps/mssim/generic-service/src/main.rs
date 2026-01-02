@@ -233,8 +233,9 @@ pub(crate) fn busy_spin(duration: std::time::Duration) {
 ///
 /// # Panics
 /// Panics if rate is not positive or if the distribution cannot be created.
+#[allow(dead_code)]
 pub(crate) fn sample_exponential(rate: f64) -> f64 {
     let dist = Exp::new(rate).expect("Failed to create exponential distribution");
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     rng.sample(dist)
 }
