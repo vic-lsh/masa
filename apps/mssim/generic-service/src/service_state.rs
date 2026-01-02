@@ -4,8 +4,9 @@ use crate::parent_chain::{encode_parent_chain, PARENT_CHAIN_METADATA_KEY};
 use crate::service_replay::ReplaySpanExecutor;
 use crate::service_stubs::{InvokeRequest, ReplayRequest};
 use crate::RpcClient;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use sim_config::deployment::Deployment;
+use sim_config::svc::call_sequence::{load_call_sequence, CallSequence};
 use sim_config::svc::{MethodId, ServiceName, ServiceTraceConfig};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -15,12 +16,14 @@ use tokio::sync::{RwLock, RwLockReadGuard};
 use tonic::{Request, Status};
 use tracing::{error, warn};
 
+
 pub(crate) struct ServiceState {
     config: ServiceTraceConfig,
     pub(crate) clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
     child_call_probabilities: HashMap<ServiceName, f64>,
     self_svc_name: ServiceName,
     overshot_counter: AtomicUsize,
+    call_sequence: Option<CallSequence>,
 }
 
 impl ServiceState {
@@ -28,7 +31,7 @@ impl ServiceState {
         self_svc_name: ServiceName,
         config: ServiceTraceConfig,
         deployment: Deployment,
-        _config_dir: PathBuf,
+        config_dir: PathBuf,
     ) -> Result<(Arc<Self>, Option<ConnectionBootstrap>)> {
         let child_weights = config.call_graph.callees_of(&self_svc_name);
         let child_call_probabilities = compute_child_probabilities(&child_weights);
@@ -38,6 +41,10 @@ impl ServiceState {
         for child in child_weights.keys() {
             println!("{}", child.as_str());
         }
+
+        // Load call sequence if available
+        let call_sequence = load_call_sequence(&config_dir, &self_svc_name)
+            .context("Failed to load call sequence")?;
 
         let bootstrap = if child_weights.is_empty() {
             None
@@ -61,6 +68,7 @@ impl ServiceState {
             child_call_probabilities,
             self_svc_name,
             overshot_counter: AtomicUsize::new(0),
+            call_sequence,
         });
 
         Ok((state, bootstrap))
@@ -112,8 +120,33 @@ impl ServiceState {
         graph_name: Option<&str>,
     ) -> Result<(), Status> {
         let graph_selection = graph_name.unwrap().trim();
-        let graph_ref = Some(graph_selection);
 
+        // Use call sequence if available, otherwise fall back to parallel fanout
+        if let Some(ref call_sequence) = self.call_sequence {
+            self
+                .fanout_with_call_sequence(
+                    req_id,
+                    start_at,
+                    parent_chain,
+                    graph_selection,
+                    call_sequence,
+                )
+                .await
+        } else {
+            // Fall back to original parallel fanout behavior
+            self.fanout_parallel(req_id, start_at, parent_chain, graph_name, graph_selection)
+                .await
+        }
+    }
+
+    async fn fanout_parallel(
+        &self,
+        req_id: u64,
+        start_at: u64,
+        parent_chain: Vec<ServiceName>,
+        graph_name: Option<&str>,
+        graph_selection: &str,
+    ) -> Result<(), Status> {
         let mut tasks = Vec::new();
         let mut parent_chain_for_children = parent_chain.clone();
         parent_chain_for_children.push(self.self_svc_name.clone());
@@ -145,7 +178,7 @@ impl ServiceState {
                 continue;
             }
 
-            let (method_to_call, method_graph) = self
+            let (method_to_call, _method_graph) = self
                 .sample_method_for_child(child_svc_name, graph_selection)
                 .ok_or_else(|| {
                     Status::not_found(format!(
@@ -153,7 +186,6 @@ impl ServiceState {
                         child_svc_name
                     ))
                 })?;
-            // let graph_to_send = method_graph.as_deref().or(graph_ref).unwrap();
 
             let mut client = client.clone();
             let mut request = Request::new(InvokeRequest {
@@ -193,6 +225,105 @@ impl ServiceState {
                 err
             })?;
         }
+        Ok(())
+    }
+
+    async fn fanout_with_call_sequence(
+        &self,
+        req_id: u64,
+        start_at: u64,
+        parent_chain: Vec<ServiceName>,
+        graph_name: &str,
+        call_sequence: &CallSequence,
+    ) -> Result<(), Status> {
+        let mut parent_chain_for_children = parent_chain.clone();
+        parent_chain_for_children.push(self.self_svc_name.clone());
+        let parent_chain_metadata = encode_parent_chain(&parent_chain_for_children)?;
+
+        let clients_guard = self.clients.read().await;
+
+        // Execute each step sequentially
+        for step in call_sequence {
+            let mut tasks = Vec::new();
+
+            // Process each child in this step
+            for entry in step {
+                let child_svc_name = &entry.service_name;
+
+                // Skip if this is a self-call or creates a cycle
+                if child_svc_name == &self.self_svc_name {
+                    continue;
+                }
+
+                if parent_chain.iter().any(|svc| svc == child_svc_name) {
+                    continue;
+                }
+
+                // Check probability
+                if entry.probability <= 0.0 {
+                    continue;
+                }
+
+                if entry.probability < 1.0 && rand::random::<f64>() >= entry.probability {
+                    continue;
+                }
+
+                // Get client for this child service
+                let client = match clients_guard.get(child_svc_name) {
+                    Some(client) => client.clone(),
+                    None => {
+                        warn!(
+                            "Child service {} not found in clients map",
+                            child_svc_name.as_str()
+                        );
+                        continue;
+                    }
+                };
+
+                // Create request
+                let mut client_clone = client.clone();
+                let mut request = Request::new(InvokeRequest {
+                    req_id,
+                    start_at,
+                    method_name: entry.method_name.clone(),
+                    graph_name: graph_name.to_string(),
+                });
+
+                if let Some(ref metadata_value) = parent_chain_metadata {
+                    request
+                        .metadata_mut()
+                        .insert(PARENT_CHAIN_METADATA_KEY, metadata_value.clone());
+                }
+
+                // Spawn task for this child
+                let child = child_svc_name.clone();
+                let handle = tokio::spawn(async move {
+                    client_clone
+                        .invoke(request)
+                        .await
+                        .map_err(|e| {
+                            Status::internal(format!("RPC to child service failed: {:?}", e))
+                        })
+                });
+                tasks.push((child, handle));
+            }
+
+            // Wait for all tasks in this step to complete before proceeding to next step
+            for (child_svc, handle) in tasks {
+                let rpc_result = handle
+                    .await
+                    .map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
+                rpc_result.map_err(|err| {
+                    error!(
+                        "RPC to child service {} failed: {:?}",
+                        child_svc.as_str(),
+                        err
+                    );
+                    err
+                })?;
+            }
+        }
+
         Ok(())
     }
 
@@ -267,3 +398,4 @@ fn compute_child_probabilities(
         })
         .collect()
 }
+
