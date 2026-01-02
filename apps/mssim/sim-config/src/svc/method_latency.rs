@@ -12,6 +12,8 @@ pub struct MethodLatencyDistMap {
     primary_graph: Option<String>,
 }
 
+/// Raw service-level format: { service: { method: { percentile: latency } } }
+type RawServiceShape = HashMap<String, HashMap<String, HashMap<String, f64>>>;
 /// Raw graph shape: { graph: { service: { method: { percentile: latency } } } }
 type RawGraphShape = HashMap<String, HashMap<String, HashMap<String, HashMap<String, f64>>>>;
 
@@ -19,12 +21,27 @@ impl MethodLatencyDistMap {
     pub fn from_file_path(path: &PathBuf, service_name: ServiceName) -> Result<Self> {
         let config_str = fs::read_to_string(path)
             .with_context(|| format!("Failed to read file: {}", path.display()))?;
-        Self::from_str(&config_str, service_name)
+        
+        // Extract graph name from directory path (e.g., "S_1823467" from "trace-analysis/graphs/S_1823467")
+        let graph_name = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "default_graph".to_string());
+        
+        Self::from_str(&config_str, service_name, graph_name)
     }
 
-    fn from_str(config_str: &str, service_name: ServiceName) -> Result<Self> {
-        let raw: RawGraphShape =
-            serde_json::from_str(config_str).context("Invalid graph JSON for latency config")?;
+    fn from_str(config_str: &str, service_name: ServiceName, graph_name: String) -> Result<Self> {
+        // Parse as service-level format: { service: { method: { percentile: latency } } }
+        let raw_service: RawServiceShape = serde_json::from_str(config_str)
+            .context("Invalid JSON for latency config - expected { service: { method: { percentile: latency } } }")?;
+        
+        // Convert to graph-level format by wrapping with graph name
+        let mut raw: RawGraphShape = HashMap::new();
+        raw.insert(graph_name, raw_service);
+        
         Self::from_graph_shape(raw, service_name)
     }
 
