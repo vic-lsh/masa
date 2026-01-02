@@ -1,51 +1,34 @@
 {
-	"files.watcherExclude": {
-		"**/.git/objects/**": true,
-		"**/.git/subtree-cache/**": true,
-		"**/target/**": true,
-		"**/build/**": true,
-		"**/node_modules/**": true,
-		// "3rd_party/async-executor": true,
-		// "3rd_party/async-task": true,
-		// "3rd_party/hyper": true,
-		"3rd_party/axum": true,
-		"3rd_party/h2": true,
-		"3rd_party/hyper-timeout": true,
-		"3rd_party/mongodb": true,
-		"3rd_party/smol": true,
-		"3rd_party/tokio": true,
-		"3rd_party/tokio-io-timeout": true,
-		"3rd_party/tokio-openssl": true,
-		"3rd_party/tokio-rustls": true,
-		"3rd_party/tokio-rustls-0.24.1": true,
-		"3rd_party/tower": true,
-		"3rd_party/tower-http": true
-	},
-	"cSpell.words": [
-		"addrs",
-		"bson",
-		"dealloc",
-		"docsrs",
-		"fastrand",
-		"fcfs",
-		"helloworld",
-		"hola",
-		"loadgen",
-		"masa",
-		"MSRV",
-		"notgull",
-		"pqueue",
-		"proto",
-		"qcount",
-		"qlen",
-		"qlens",
-		"sched",
-		"smol",
-		"stddev",
-		"structopt",
-		"TOFIX",
-		"unnotified",
-		"vtable",
-		"Weixin"
-	]
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/target/**": true,
+    "**/build/**": true,
+    "**/node_modules/**": true,
+
+    "3rd_party/axum": true,
+    "3rd_party/h2": true,
+    "3rd_party/hyper-timeout": true,
+    "3rd_party/mongodb": true,
+    "3rd_party/smol": true,
+    "3rd_party/tokio": true,
+    "3rd_party/tokio-io-timeout": true,
+    "3rd_party/tokio-openssl": true,
+    "3rd_party/tokio-rustls": true,
+    "3rd_party/tokio-rustls-0.24.1": true,
+    "3rd_party/tower": true,
+    "3rd_party/tower-http": true
+  },
+
+  "cSpell.words": [
+    "addrs", "bson", "dealloc", "docsrs", "fastrand", "fcfs", "helloworld",
+    "hola", "loadgen", "masa", "MSRV", "notgull", "pqueue", "proto", "qcount",
+    "qlen", "qlens", "sched", "smol", "stddev", "structopt", "TOFIX",
+    "unnotified", "vtable", "Weixin"
+  ],
+
+  "terminal.integrated.defaultProfile.linux": "zsh",
+  "terminal.integrated.profiles.linux": {
+    "zsh": { "path": "/usr/bin/zsh", "args": ["-l"] }
+  }
 }

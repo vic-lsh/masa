@@ -24,6 +24,9 @@ masa = { path = "../../../libs/masa/" }
 tonic-build = { path = "../../../libs/tonic/tonic-build" }
 protoc-bin-vendored = "3"
 
+[dev-dependencies]
+tempfile = "3.13.0"
+
 [[bin]]
 name = "mssim-loadgen"
 path = "src/loadgen.rs"

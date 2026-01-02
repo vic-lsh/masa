@@ -1,6 +1,6 @@
 {
   "experiment_name": "e2e_test",
-  "trace_dir": "trace-analysis/golden/S_86516878",
+  "trace_dir": "trace-analysis/graph_reports/shared01",
   "config_dir": "apps/mssim/simulator/example_config/",
   "output_root": "exp/mssim/data/experiments/",
   "duration_sec": 20,
