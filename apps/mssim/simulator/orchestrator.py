@@ -252,8 +252,14 @@ def _make_service_def(
 
 
 def _make_environment_def(service_name: str, svc_port: int) -> dict[str, str]:
+    # For user-* services, set SERVICE_NAME to "USER" instead of the deployment service name
+    if service_name == FRONTEND_SERVICE_NAME or service_name.startswith(FRONTEND_SERVICE_NAME + "-"):
+        env_service_name = "USER"
+    else:
+        env_service_name = service_name
+    
     environment = {
-        "SERVICE_NAME": service_name,
+        "SERVICE_NAME": env_service_name,
         "SERVICE_PORT": str(svc_port),
         "CONFIG_PATH": "/app/config",
         "DEPLOYMENT_CONFIG_PATH": "/app/config/deployment.json",

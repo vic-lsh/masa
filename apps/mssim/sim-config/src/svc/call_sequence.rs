@@ -128,31 +128,44 @@ pub fn load_call_sequence(
     };
 
     // Get the sequence for this service
-    let service_name_str = service_name.as_str();
-    let sequence = match call_graph_obj.get(service_name_str) {
-        Some(seq_value) => {
-            let raw_steps: Vec<HashMap<String, f64>> = serde_json::from_value(seq_value.clone())
-                .with_context(|| {
-                    format!(
-                        "Failed to parse call sequence for service {}",
-                        service_name_str
-                    )
-                })?;
-
-            // Parse each step: convert HashMap<String, f64> to Vec<CallSequenceEntry>
-            let mut parsed_steps = Vec::new();
-            for raw_step in raw_steps {
-                parsed_steps.push(parse_call_sequence_step(raw_step));
+    // Convert JSON keys to ServiceName for comparison, since ServiceName formats the names
+    let sequence = {
+        let mut found_sequence = None;
+        if let Some(obj) = call_graph_obj.as_object() {
+            for (key, seq_value) in obj {
+                let json_service_name = ServiceName::from_string(key.clone());
+                if &json_service_name == service_name {
+                    found_sequence = Some(seq_value);
+                    break;
+                }
             }
-            Some(parsed_steps)
         }
-        None => {
-            // Service not found in call sequence, use default parallel fanout
-            eprintln!(
-                "Warning: Service {} not found in call_sequence.json, using default parallel fanout",
-                service_name_str
-            );
-            None
+
+        match found_sequence {
+            Some(seq_value) => {
+                let raw_steps: Vec<HashMap<String, f64>> =
+                    serde_json::from_value(seq_value.clone()).with_context(|| {
+                        format!(
+                            "Failed to parse call sequence for service {}",
+                            service_name.as_str()
+                        )
+                    })?;
+
+                // Parse each step: convert HashMap<String, f64> to Vec<CallSequenceEntry>
+                let mut parsed_steps = Vec::new();
+                for raw_step in raw_steps {
+                    parsed_steps.push(parse_call_sequence_step(raw_step));
+                }
+                Some(parsed_steps)
+            }
+            None => {
+                // Service not found in call sequence, use default parallel fanout
+                eprintln!(
+                    "Warning: Service {} not found in call_sequence.json, using default parallel fanout",
+                    service_name.as_str()
+                );
+                None
+            }
         }
     };
 

@@ -13,10 +13,10 @@ use sim_config::svc::{MethodId, ServiceName, ServiceTraceConfig};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tonic::{Request, Status};
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 pub(crate) struct ServiceState {
     config: ServiceTraceConfig,
@@ -24,6 +24,7 @@ pub(crate) struct ServiceState {
     self_svc_name: ServiceName,
     overshot_counter: AtomicUsize,
     call_sequence: Option<CallSequence>,
+    child_call_probabilities: HashMap<ServiceName, f64>,
     // USER call sequence loaded at startup (one per service instance)
     user_call_sequence: CallSequence,
 }
@@ -35,7 +36,10 @@ impl ServiceState {
         deployment: Deployment,
         config_dir: PathBuf,
     ) -> Result<(Arc<Self>, Option<ConnectionBootstrap>)> {
+        info!("Initializing service state for {}", self_svc_name.as_str());
+
         let child_weights = config.call_graph.callees_of(&self_svc_name);
+        let child_call_probabilities = compute_child_probabilities(&child_weights);
         let clients = Arc::new(RwLock::new(HashMap::new()));
 
         println!("Child services:");
@@ -75,6 +79,7 @@ impl ServiceState {
             self_svc_name,
             overshot_counter: AtomicUsize::new(0),
             call_sequence,
+            child_call_probabilities,
             user_call_sequence,
         });
 
@@ -106,14 +111,19 @@ impl ServiceState {
 
         let total_latency_ms = latency_dist.sample(&mut rand::rng());
 
-        let start_time = std::time::Instant::now();
-        self.fanout(req_id, start_at, parent_chain, graph_ref)
-            .await?;
-        let elapsed = start_time.elapsed();
+        // If this is a leaf service (no child services), directly busy spin
+        if self.child_call_probabilities.is_empty() {
+            busy_spin(std::time::Duration::from_millis(total_latency_ms as u64));
+        } else {
+            let start_time = std::time::Instant::now();
+            self.fanout(req_id, start_at, parent_chain, graph_ref)
+                .await?;
+            let elapsed = start_time.elapsed();
 
-        let remaining = total_latency_ms - (elapsed.as_millis() as f64);
-        if remaining > 0.0 {
-            busy_spin(std::time::Duration::from_millis(remaining as u64));
+            let remaining = total_latency_ms - (elapsed.as_millis() as f64);
+            if remaining > 0.0 {
+                busy_spin(std::time::Duration::from_millis(remaining as u64));
+            }
         }
 
         Ok(())
@@ -126,22 +136,30 @@ impl ServiceState {
         parent_chain: Vec<ServiceName>,
         graph_name: Option<&str>,
     ) -> Result<(), Status> {
+        static CALL_SEQUENCE_MISSING_WARN_ONCE: Once = Once::new();
         let graph_selection = graph_name.unwrap().trim();
 
-        // Call sequence is required - panic if not available
-        let call_sequence = self.call_sequence.as_ref().expect(&format!(
-            "Call sequence is required for service {} but was not found",
-            self.self_svc_name.as_str()
-        ));
+        if let Some(call_sequence) = self.call_sequence.as_ref() {
+            return self
+                .fanout_with_call_sequence(
+                    req_id,
+                    start_at,
+                    parent_chain,
+                    graph_selection,
+                    call_sequence,
+                )
+                .await;
+        }
 
-        self.fanout_with_call_sequence(
-            req_id,
-            start_at,
-            parent_chain,
-            graph_selection,
-            call_sequence,
-        )
-        .await
+        CALL_SEQUENCE_MISSING_WARN_ONCE.call_once(|| {
+            warn!(
+                "Call sequence missing for service {}; falling back to default fanout logic",
+                self.self_svc_name.as_str()
+            );
+        });
+
+        self.fanout_default(req_id, start_at, parent_chain, graph_selection)
+            .await
     }
 
     async fn fanout_with_call_sequence(
@@ -237,6 +255,94 @@ impl ServiceState {
             }
         }
 
+        Ok(())
+    }
+
+    async fn fanout_default(
+        &self,
+        req_id: u64,
+        start_at: u64,
+        parent_chain: Vec<ServiceName>,
+        graph_name: &str,
+    ) -> Result<(), Status> {
+        let mut tasks = Vec::new();
+        let mut parent_chain_for_children = parent_chain.clone();
+        parent_chain_for_children.push(self.self_svc_name.clone());
+
+        let parent_chain_metadata = encode_parent_chain(&parent_chain_for_children)?;
+
+        let clients_guard = self.clients.read().await;
+        for (child_svc_name, client) in clients_guard.iter() {
+            if child_svc_name == &self.self_svc_name {
+                continue;
+            }
+
+            if parent_chain.iter().any(|svc| svc == child_svc_name) {
+                continue;
+            }
+
+            let probability = self
+                .child_call_probabilities
+                .get(child_svc_name)
+                .copied()
+                .unwrap_or(0.0)
+                .clamp(0.0, 1.0);
+
+            if probability <= 0.0 {
+                continue;
+            }
+
+            if probability < 1.0 && rand::random::<f64>() >= probability {
+                continue;
+            }
+
+            let (method_to_call, _method_graph) = self
+                .sample_method_for_child(child_svc_name, graph_name)
+                .ok_or_else(|| {
+                    Status::not_found(format!(
+                        "Configuration error: Service {} has no method to call",
+                        child_svc_name
+                    ))
+                })?;
+
+            let mut client = client.clone();
+            let mut request = Request::new(InvokeRequest {
+                req_id,
+                start_at,
+                method_name: method_to_call,
+                graph_name: graph_name.to_string(),
+            });
+
+            if let Some(ref metadata_value) = parent_chain_metadata {
+                request
+                    .metadata_mut()
+                    .insert(PARENT_CHAIN_METADATA_KEY, metadata_value.clone());
+            }
+
+            let child = child_svc_name.clone();
+            let handle = tokio::spawn(async move {
+                client
+                    .invoke(request)
+                    .await
+                    .map_err(|e| Status::internal(format!("RPC to child service failed: {:?}", e)))
+            });
+            tasks.push((child, handle));
+        }
+        drop(clients_guard);
+
+        for (child_svc, handle) in tasks {
+            let rpc_result = handle
+                .await
+                .map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
+            rpc_result.map_err(|err| {
+                error!(
+                    "RPC to child service {} failed: {:?}",
+                    child_svc.as_str(),
+                    err
+                );
+                err
+            })?;
+        }
         Ok(())
     }
 
