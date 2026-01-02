@@ -1,0 +1,2985 @@
+#!/usr/bin/env python
+# coding: utf-8
+from __future__ import annotations
+
+from pathlib import Path
+import pandas as pd
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from functools import partial
+import sys
+import logging
+import argparse
+from tqdm import tqdm
+import networkx as nx
+import matplotlib
+matplotlib.use("Agg")  # Headless/parallel-safe plotting
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
+from matplotlib.collections import LineCollection
+import copy
+import re
+import numpy as np
+import json
+from collections import defaultdict, Counter
+
+# Set up logger
+logger = logging.getLogger(__name__)
+
+class TqdmLoggingHandler(logging.Handler):
+    """Logging handler that uses tqdm.write() to avoid interfering with progress bars."""
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            tqdm.write(msg, file=sys.stderr)
+        except Exception:
+            self.handleError(record)
+
+# ----------------------------
+# Parallel CSV loading (processes)
+# ----------------------------
+
+def _sample_traces_from_df(
+    df: pd.DataFrame,
+    fraction: float,
+    trace_col: str = "traceid",
+    random_state: int | None = None,
+) -> pd.DataFrame:
+    """
+    Sample a fraction of traces from a single dataframe.
+    Helper function for use during parallel CSV loading.
+    
+    Args:
+        df: Input dataframe with trace data
+        fraction: Fraction of traces to sample (0.0 to 1.0)
+        trace_col: Column name containing trace IDs (default: "traceid")
+        random_state: Random seed for reproducibility (default: None)
+    
+    Returns:
+        DataFrame containing all rows for the sampled traces
+    """
+    if fraction >= 1.0:
+        return df
+    
+    if trace_col not in df.columns:
+        return df
+    
+    # Get unique trace IDs
+    unique_traces = df[trace_col].dropna().unique()
+    
+    if len(unique_traces) == 0:
+        return pd.DataFrame()
+    
+    # Sample trace IDs
+    n_samples = max(1, int(len(unique_traces) * fraction))
+    sampled_trace_ids = pd.Series(unique_traces).sample(
+        n=n_samples, 
+        random_state=random_state
+    ).values
+    
+    # Filter dataframe to keep all rows for sampled traces
+    sampled_df = df[df[trace_col].isin(sampled_trace_ids)].copy()
+    
+    return sampled_df
+
+def _read_and_sample_one(args: tuple) -> pd.DataFrame:
+    """
+    Read a CSV file and optionally sample traces from it.
+    
+    Args:
+        args: Tuple of (path, sample_fraction, trace_col, random_state, read_csv_kwargs)
+    
+    Returns:
+        Loaded and optionally sampled DataFrame
+    """
+    path, sample_fraction, trace_col, random_state, read_csv_kwargs = args
+    
+    # Read CSV
+    df = pd.read_csv(path, **read_csv_kwargs)
+    
+    # Sample traces if requested
+    if sample_fraction < 1.0:
+        df = _sample_traces_from_df(df, sample_fraction, trace_col, random_state)
+    
+    return df
+
+def read_csvs_parallel(
+    paths: list[str | Path],
+    n_workers: int | None = None,
+    show_errors: bool = True,
+    sample_fraction: float = 1.0,
+    trace_col: str = "traceid",
+    random_state: int | None = None,
+    **read_csv_kwargs,
+) -> pd.DataFrame:
+    """
+    Read multiple CSV files in parallel and optionally sample traces from each.
+    
+    Args:
+        paths: List of CSV file paths to read
+        n_workers: Number of parallel workers (default: None, uses CPU count)
+        show_errors: Whether to show errors (default: True)
+        sample_fraction: Fraction of traces to sample from each CSV (0.0 to 1.0, default: 1.0)
+        trace_col: Column name containing trace IDs (default: "traceid")
+        random_state: Random seed for reproducibility (default: None)
+        **read_csv_kwargs: Additional arguments to pass to pd.read_csv
+    
+    Returns:
+        Concatenated DataFrame from all CSVs (after sampling if requested)
+    """
+    paths = list(paths)
+    
+    # Prepare arguments for parallel processing
+    process_args = [
+        (path, sample_fraction, trace_col, random_state, read_csv_kwargs)
+        for path in paths
+    ]
+    
+    dfs = []
+
+    with ProcessPoolExecutor(max_workers=n_workers) as ex:
+        futures = {ex.submit(_read_and_sample_one, args): path for args, path in zip(process_args, paths)}
+        for fut in tqdm(as_completed(futures), total=len(futures), desc="Reading CSVs", file=sys.stderr, dynamic_ncols=True):
+            path = futures[fut]
+            try:
+                df = fut.result()
+                dfs.append(df)
+            except Exception as e:
+                logger.error(f"Failed to read {path}: {e!r}")
+                raise
+
+    if not dfs:
+        return pd.DataFrame()
+    return pd.concat(dfs, ignore_index=True, sort=False)
+
+# ----------------------------
+# Paths & utilities
+# ----------------------------
+
+def _get_project_home() -> Path:
+    """
+    Determine project root directory. Works whether script is run from
+    trace-analysis/ or project root.
+    """
+    # First, check if current working directory is the project root
+    cwd = Path.cwd()
+    if (cwd / "traces").exists():
+        return cwd
+    
+    # Otherwise, derive from script location
+    # Script is at trace-analysis/analyze.py, so project root is parent
+    script_dir = Path(__file__).parent.resolve()
+    project_root = script_dir.parent
+    
+    # Verify traces/ exists
+    if (project_root / "traces").exists():
+        return project_root
+    
+    # Fallback: return parent anyway (will fail later with clear error)
+    return project_root
+
+PROJECT_HOME = _get_project_home()
+
+def get_csv_path(dataset_number: int) -> Path:
+    return (
+        PROJECT_HOME
+        / "traces"
+        / "alibaba"
+        / "cluster-trace-microservices-v2022"
+        / "data"
+        / "CallGraph"
+        / f"CallGraph_{dataset_number}.csv"
+    )
+
+# ----------------------------
+# Data loading & filtering
+# ----------------------------
+
+def load_concat_datasets(
+    max_dataset: int,
+    max_rows: int | None = None,
+    sample_fraction: float = 1.0,
+    trace_col: str = "traceid",
+    random_state: int | None = None,
+    n_workers: int | None = None,
+) -> pd.DataFrame:
+    """
+    Load and concatenate multiple CSV datasets in parallel, optionally sampling traces from each.
+    
+    Args:
+        max_dataset: Maximum dataset number (0-indexed, loads datasets 0 through max_dataset)
+        max_rows: Maximum number of rows to load from each CSV file (default: None, loads all)
+        sample_fraction: Fraction of traces to sample from each CSV (0.0 to 1.0, default: 1.0)
+        trace_col: Column name containing trace IDs (default: "traceid")
+        random_state: Random seed for reproducibility (default: None)
+        n_workers: Number of parallel workers (default: None, uses CPU count)
+    
+    Returns:
+        Concatenated DataFrame from all datasets (after sampling if requested)
+    """
+    read_kwargs = {"on_bad_lines": "skip"}
+    if max_rows is not None:
+        read_kwargs["nrows"] = max_rows
+    return read_csvs_parallel(
+        [get_csv_path(i) for i in range(max_dataset + 1)],
+        n_workers=n_workers,
+        sample_fraction=sample_fraction,
+        trace_col=trace_col,
+        random_state=random_state,
+        **read_kwargs,
+    )
+
+def _filter_chunk(args: tuple) -> pd.DataFrame:
+    """
+    Helper function to filter a chunk of dataframe in parallel.
+    
+    Args:
+        args: Tuple of (chunk_df, sampled_trace_ids_set, trace_col)
+    
+    Returns:
+        Filtered chunk dataframe
+    """
+    chunk_df, sampled_trace_ids_set, trace_col = args
+    return chunk_df[chunk_df[trace_col].isin(sampled_trace_ids_set)].copy()
+
+def sample_traces(
+    df: pd.DataFrame, 
+    fraction: float, 
+    trace_col: str = "traceid", 
+    random_state: int | None = None,
+    n_workers: int | None = None,
+    use_parallel: bool = True,
+    chunk_size: int = 10000000
+) -> pd.DataFrame:
+    """
+    Sample a fraction of traces from the dataframe.
+    
+    For rows belonging to the same trace, either keep them all or drop them all
+    (maintains trace integrity).
+    
+    Args:
+        df: Input dataframe with trace data
+        fraction: Fraction of traces to sample (0.0 to 1.0)
+        trace_col: Column name containing trace IDs (default: "traceid")
+        random_state: Random seed for reproducibility (default: None)
+        n_workers: Number of parallel workers for filtering (default: None, uses CPU count)
+        use_parallel: Whether to use parallel filtering (default: True)
+        chunk_size: Number of rows per chunk for parallel processing (default: 100000)
+    
+    Returns:
+        DataFrame containing all rows for the sampled traces
+    """
+    if fraction <= 0.0 or fraction > 1.0:
+        raise ValueError(f"fraction must be in (0.0, 1.0], got {fraction}")
+    
+    if trace_col not in df.columns:
+        raise ValueError(f"Column '{trace_col}' not found in dataframe")
+    
+    # Get unique trace IDs
+    unique_traces = df[trace_col].dropna().unique()
+    
+    if len(unique_traces) == 0:
+        logger.warning("No valid trace IDs found")
+        return pd.DataFrame()
+    
+    # Sample trace IDs
+    n_samples = max(1, int(len(unique_traces) * fraction))
+    sampled_trace_ids = pd.Series(unique_traces).sample(
+        n=n_samples, 
+        random_state=random_state
+    ).values
+    
+    # Convert to set for faster lookup
+    sampled_trace_ids_set = set(sampled_trace_ids)
+    
+    # Filter dataframe to keep all rows for sampled traces
+    # Use parallel filtering for large dataframes
+    if use_parallel and len(df) > chunk_size:
+        # Split dataframe into chunks
+        n_chunks = (len(df) + chunk_size - 1) // chunk_size
+        chunks = [df.iloc[i*chunk_size:(i+1)*chunk_size].copy() for i in range(n_chunks)]
+        
+        logger.info(f"Filtering {len(df):,} rows in {n_chunks} chunk(s) using {n_workers or 'auto'} worker(s)")
+        
+        # Filter chunks in parallel
+        process_args = [(chunk, sampled_trace_ids_set, trace_col) for chunk in chunks]
+        
+        with ProcessPoolExecutor(max_workers=n_workers) as ex:
+            futures = {ex.submit(_filter_chunk, args): i for i, args in enumerate(process_args)}
+            filtered_chunks = [None] * len(chunks)
+            
+            for fut in tqdm(as_completed(futures), total=len(futures), desc="Filtering chunks", file=sys.stderr, dynamic_ncols=True):
+                chunk_idx = futures[fut]
+                try:
+                    filtered_chunks[chunk_idx] = fut.result()
+                except Exception as e:
+                    logger.error(f"Failed to filter chunk {chunk_idx}: {e!r}")
+                    raise
+        
+        # Concatenate filtered chunks
+        sampled_df = pd.concat(filtered_chunks, ignore_index=True, sort=False)
+    else:
+        # Use sequential filtering for small dataframes or when parallel is disabled
+        sampled_df = df[df[trace_col].isin(sampled_trace_ids_set)].copy()
+    
+    logger.info(f"Sampled {len(sampled_trace_ids):,} traces ({fraction*100:.1f}%) from {len(unique_traces):,} unique traces")
+    logger.info(f"Result: {len(sampled_df):,} rows from {len(df):,} original rows")
+    
+    return sampled_df
+
+# ----------------------------
+# Data cleaning
+# ----------------------------
+
+def clean_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Clean the dataframe by removing rows where 'um' or 'dm' equals 'UNKNOWN' or 'UNAVAILABLE'.
+    
+    Args:
+        df: Input dataframe with trace data
+    
+    Returns:
+        Cleaned dataframe
+    """
+    original_len = len(df)
+    
+    # Remove rows where um or dm equals UNKNOWN or UNAVAILABLE
+    if "um" in df.columns and "dm" in df.columns:
+        cleaned_df = df[
+            (df["um"] != "UNKNOWN") & (df["um"] != "UNAVAILABLE") &
+            (df["dm"] != "UNKNOWN") & (df["dm"] != "UNAVAILABLE")
+        ].copy()
+    elif "um" in df.columns:
+        cleaned_df = df[(df["um"] != "UNKNOWN") & (df["um"] != "UNAVAILABLE")].copy()
+    elif "dm" in df.columns:
+        cleaned_df = df[(df["dm"] != "UNKNOWN") & (df["dm"] != "UNAVAILABLE")].copy()
+    else:
+        logger.warning("Columns 'um' or 'dm' not found, skipping cleaning")
+        return df
+    
+    removed = original_len - len(cleaned_df)
+    if removed > 0:
+        logger.info(f"Cleaned data: removed {removed:,} rows where 'um' or 'dm' equals UNKNOWN or UNAVAILABLE (from {original_len:,} to {len(cleaned_df):,} rows)")
+    else:
+        logger.info("No rows found with 'um' or 'dm' equal to UNKNOWN or UNAVAILABLE")
+    
+    return cleaned_df
+
+# ----------------------------
+# Analysis functions
+# ----------------------------
+
+def _parent_rpc_id(rpc_id: str | float | int | None) -> str | None:
+    """
+    Return the parent RPC id for a dotted rpc_id string.
+    Example: '0.1.2' -> '0.1'. Roots (no dot) return None.
+    """
+    if rpc_id is None:
+        return None
+    try:
+        if isinstance(rpc_id, float) and pd.isna(rpc_id):
+            return None
+    except (TypeError, ValueError):
+        pass
+    
+    rpc_str = str(rpc_id).strip()
+    if not rpc_str or "." not in rpc_str:
+        return None
+    return rpc_str.rsplit(".", 1)[0]
+
+def _extract_edges_from_trace(trace_df: pd.DataFrame) -> list[tuple[str, str]]:
+    """
+    Extract edges (um -> dm) from a single trace based on rpc_id hierarchy.
+    
+    Args:
+        trace_df: DataFrame containing rows for a single trace
+    
+    Returns:
+        List of (source, target) edge tuples
+    """
+    if "rpc_id" not in trace_df.columns or "dm" not in trace_df.columns:
+        return []
+    
+    trace_df = trace_df.copy()
+    trace_df["rpc_id_str"] = trace_df["rpc_id"].astype(str).str.strip()
+    
+    # Create mapping from rpc_id to dm
+    rpc_to_dm = {}
+    rpc_groups = trace_df.groupby("rpc_id_str")
+    
+    for rpc_id, group in rpc_groups:
+        if rpc_id and rpc_id != "" and rpc_id != "nan":
+            dm_values = group["dm"].dropna().unique()
+            if len(dm_values) > 0:
+                rpc_to_dm[rpc_id] = dm_values[0]
+    
+    # Build edge list
+    edges = []
+    for rpc_id, dm in rpc_to_dm.items():
+        parent_rpc_id = _parent_rpc_id(rpc_id)
+        
+        if parent_rpc_id is None:
+            # Root call - edge from USER to dm
+            source = "USER"
+            target = dm
+        else:
+            # Child call - edge from parent's dm to current dm
+            if parent_rpc_id in rpc_to_dm:
+                source = rpc_to_dm[parent_rpc_id]
+                target = dm
+            else:
+                # Parent not found, skip this edge
+                continue
+        
+        edges.append((source, target))
+    
+    return edges
+
+def _hierarchical_layout(G: nx.DiGraph, ranksep: float = 2.0, nodesep: float = 0.8) -> dict:
+    """
+    Create a hierarchical layout for a directed graph with roots at the top.
+    Uses Graphviz's 'dot' layout if available (same as analyze.py), otherwise falls back
+    to a custom hierarchical layout.
+    
+    Args:
+        G: NetworkX directed graph
+        ranksep: Minimum distance between ranks/layers (for Graphviz)
+        nodesep: Minimum distance between nodes in the same rank (for Graphviz)
+    
+    Returns:
+        Dictionary mapping nodes to (x, y) positions
+    """
+    if G.number_of_nodes() == 0:
+        return {}
+    
+    # Try to use Graphviz layout (same as analyze.py)
+    try:
+        pos = nx.nx_agraph.graphviz_layout(
+            G, prog="dot", args=f"-Granksep={ranksep} -Gnodesep={nodesep}"
+        )
+        return pos
+    except (ImportError, AttributeError, Exception):
+        # Fall back to custom hierarchical layout if Graphviz is not available
+        pass
+    
+    # Custom hierarchical layout (fallback)
+    # Find root nodes (nodes with in_degree == 0)
+    roots = [n for n in G.nodes() if G.in_degree(n) == 0]
+    
+    if not roots:
+        # If no roots found, use nodes with minimum in_degree
+        min_in_degree = min(G.in_degree(n) for n in G.nodes())
+        roots = [n for n in G.nodes() if G.in_degree(n) == min_in_degree]
+    
+    # Compute depth/layer for each node using BFS
+    node_depth = {}
+    visited = set()
+    queue = [(root, 0) for root in roots]
+    
+    while queue:
+        node, depth = queue.pop(0)
+        if node in visited:
+            continue
+        visited.add(node)
+        node_depth[node] = depth
+        
+        # Add children to queue
+        for successor in G.successors(node):
+            if successor not in visited:
+                queue.append((successor, depth + 1))
+    
+    # Handle any unvisited nodes (disconnected components)
+    for node in G.nodes():
+        if node not in node_depth:
+            # Find shortest path to any root
+            min_depth = float('inf')
+            for root in roots:
+                try:
+                    path_length = nx.shortest_path_length(G, root, node)
+                    min_depth = min(min_depth, path_length)
+                except nx.NetworkXNoPath:
+                    continue
+            node_depth[node] = min_depth if min_depth != float('inf') else 0
+    
+    # Group nodes by depth
+    depth_groups = {}
+    for node, depth in node_depth.items():
+        if depth not in depth_groups:
+            depth_groups[depth] = []
+        depth_groups[depth].append(node)
+    
+    max_depth = max(depth_groups.keys()) if depth_groups else 0
+    
+    # Position nodes: roots at top (y=0), children below (y increases downward)
+    pos = {}
+    for depth, nodes in depth_groups.items():
+        # Y position: top is 0, bottom is max_depth (inverted for matplotlib)
+        y = max_depth - depth
+        
+        # X positions: distribute nodes evenly across width
+        n_nodes = len(nodes)
+        if n_nodes == 1:
+            x_positions = [0.0]
+        else:
+            x_positions = [i / (n_nodes - 1) * 2 - 1 for i in range(n_nodes)]
+        
+        for node, x in zip(sorted(nodes), x_positions):
+            pos[node] = (x, y)
+    
+    return pos
+
+def _compute_dynamic_figsize(
+    G: nx.DiGraph,
+    base_width: float = 14.0,
+    base_height: float = 10.0,
+    width_per_node: float = 0.4,
+    height_per_node: float = 0.2,
+    min_width: float = 14.0,
+    min_height: float = 10.0,
+    max_width: float = 80.0,
+    max_height: float = 50.0,
+) -> tuple[float, float]:
+    """
+    Compute dynamic figure size based on graph complexity.
+    
+    Args:
+        G: NetworkX graph
+        base_width, base_height: Base dimensions
+        width_per_node, height_per_node: Scaling factors per node
+        min_width, min_height: Minimum dimensions
+        max_width, max_height: Maximum dimensions
+    
+    Returns:
+        (width, height) tuple for matplotlib figsize
+    """
+    num_nodes = G.number_of_nodes()
+    num_edges = G.number_of_edges()
+    
+    # Base calculation on number of nodes
+    width = base_width + (num_nodes * width_per_node)
+    height = base_height + (num_nodes * height_per_node)
+    
+    # Add extra space for highly connected graphs
+    if num_nodes > 0:
+        edge_density = num_edges / num_nodes
+        if edge_density > 5:
+            width *= 1.1
+            height *= 1.05
+    
+    # Clamp to min/max bounds
+    width = max(min_width, min(width, max_width))
+    height = max(min_height, min(height, max_height))
+    
+    return (width, height)
+
+def _slugify(name: str) -> str:
+    """
+    Convert a service name to a filesystem-safe slug.
+    
+    Args:
+        name: Service name string
+    
+    Returns:
+        Filesystem-safe slug
+    """
+    s = re.sub(r"[^\w\-]+", "_", name.strip())
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s or "service"
+
+def _normalize_interface(value: object) -> str:
+    """
+    Normalize interface values into a stable, display-friendly string.
+    """
+    if value is None or pd.isna(value):
+        return "<none>"
+    text = str(value).strip()
+    if not text or text.lower() == "nan":
+        return "<none>"
+    return text
+
+def _format_dm_interface(dm: str, interface: str | None) -> str:
+    """
+    Format dm/interface into a call label.
+    """
+    iface = _normalize_interface(interface)
+    return f"{dm}::{iface}"
+
+def _strip_interface_label(label: str) -> str:
+    """
+    Return the dm portion of a dm::interface label.
+    """
+    return label.split("::", 1)[0]
+
+def _extract_timing_from_trace(
+    trace_df: pd.DataFrame,
+    G: nx.DiGraph,
+) -> dict[tuple[str, str], list[dict]]:
+    """
+    Extract timing information for parent-child relationships from a trace.
+    
+    Args:
+        trace_df: DataFrame containing rows for a single trace
+        G: NetworkX graph with the service's call structure
+    
+    Returns:
+        Dictionary mapping (parent_dm, child_dm) -> list of timing dicts
+        Each timing dict has: start_time, end_time, parent_start, parent_end, rpc_id
+    """
+    if "rpc_id" not in trace_df.columns or "dm" not in trace_df.columns:
+        return {}
+    
+    if "timestamp" not in trace_df.columns or "rt" not in trace_df.columns:
+        return {}
+    
+    trace_df = trace_df.copy()
+    trace_df["rpc_id_str"] = trace_df["rpc_id"].astype(str).str.strip()
+    
+    # Convert timestamps and runtime
+    trace_df["timestamp"] = pd.to_numeric(trace_df["timestamp"], errors="coerce")
+    trace_df["rt"] = pd.to_numeric(trace_df["rt"], errors="coerce")
+    trace_df["end_time"] = trace_df["timestamp"] + trace_df["rt"]
+    
+    # Create mapping from rpc_id to (dm, start_time, end_time)
+    rpc_info = {}
+    rpc_groups = trace_df.groupby("rpc_id_str")
+    
+    for rpc_id, group in rpc_groups:
+        if rpc_id and rpc_id != "" and rpc_id != "nan":
+            dm_values = group["dm"].dropna().unique()
+            if len(dm_values) > 0:
+                dm = dm_values[0]
+                interface = "<none>"
+                if "interface" in group.columns:
+                    interface_values = group["interface"].dropna().unique()
+                    if len(interface_values) > 0:
+                        interface = _normalize_interface(interface_values[0])
+                # Use min start and max end to handle multiple rows with same rpc_id
+                # Try to get valid timestamps - use median if min/max are invalid
+                valid_timestamps = group["timestamp"].dropna()
+                valid_end_times = group["end_time"].dropna()
+                
+                if len(valid_timestamps) > 0 and len(valid_end_times) > 0:
+                    start_time = valid_timestamps.min()
+                    end_time = valid_end_times.max()
+                    # Only include if we have reasonable timing data
+                    if pd.notna(start_time) and pd.notna(end_time) and end_time >= start_time:
+                        rpc_info[rpc_id] = {
+                            "dm": dm,
+                            "interface": interface,
+                            "start_time": start_time,
+                            "end_time": end_time,
+                        }
+    
+    # Build parent-child timing relationships
+    timing_data = defaultdict(list)
+    
+    # Also create a mapping from rpc_id to dm for edges without timing
+    rpc_to_dm_no_timing = {}
+    for rpc_id, group in trace_df.groupby("rpc_id_str"):
+        if rpc_id and rpc_id != "" and rpc_id != "nan":
+            dm_values = group["dm"].dropna().unique()
+            if len(dm_values) > 0 and rpc_id not in rpc_info:
+                # This rpc_id exists but has no valid timing data
+                rpc_to_dm_no_timing[rpc_id] = dm_values[0]
+    
+    for rpc_id, info in rpc_info.items():
+        parent_rpc_id = _parent_rpc_id(rpc_id)
+        
+        if parent_rpc_id is None:
+            # Root call - parent is USER
+            if "USER" in G.nodes():
+                parent_dm = "USER"
+                child_dm = info["dm"]
+                if (parent_dm, child_dm) in G.edges():
+                    timing_data[(parent_dm, child_dm)].append({
+                        "start_time": info["start_time"],
+                        "end_time": info["end_time"],
+                        "parent_start": info["start_time"],  # USER call starts when child starts
+                        "parent_end": info["end_time"],
+                        "rpc_id": rpc_id,
+                        "interface": info.get("interface"),
+                    })
+        else:
+            # Child call - find parent's timing
+            if parent_rpc_id in rpc_info:
+                # Both parent and child have valid timing
+                parent_info = rpc_info[parent_rpc_id]
+                parent_dm = parent_info["dm"]
+                child_dm = info["dm"]
+                
+                # Validate that child span is within parent span (or at most equal)
+                child_start = info["start_time"]
+                child_end = info["end_time"]
+                parent_start = parent_info["start_time"]
+                parent_end = parent_info["end_time"]
+                
+                # Check if child span is strictly shorter than or equal to parent span
+                # Child must start at or after parent and end at or before parent
+                if child_start < parent_start or child_end > parent_end:
+                    # Child span exceeds parent span - adjust to fit within parent
+                    child_start = max(child_start, parent_start)
+                    child_end = min(child_end, parent_end)
+                    # Ensure child end is still after start
+                    if child_end <= child_start:
+                        child_end = child_start + 1  # Minimal duration
+                
+                # Only include if this edge exists in the graph
+                if (parent_dm, child_dm) in G.edges():
+                    timing_data[(parent_dm, child_dm)].append({
+                        "start_time": child_start,
+                        "end_time": child_end,
+                        "parent_start": parent_start,
+                        "parent_end": parent_end,
+                        "rpc_id": rpc_id,
+                        "interface": info.get("interface"),
+                    })
+            elif parent_rpc_id in rpc_to_dm_no_timing:
+                # Child has timing but parent doesn't - still try to include child timing
+                # Use child's timing as a fallback for parent timing
+                parent_dm = rpc_to_dm_no_timing[parent_rpc_id]
+                child_dm = info["dm"]
+                
+                if (parent_dm, child_dm) in G.edges():
+                    # Use child's start as parent start estimate
+                    timing_data[(parent_dm, child_dm)].append({
+                        "start_time": info["start_time"],
+                        "end_time": info["end_time"],
+                        "parent_start": info["start_time"],  # Estimate: parent starts when child starts
+                        "parent_end": info["end_time"],  # Estimate: parent ends when child ends
+                        "rpc_id": rpc_id,
+                        "interface": info.get("interface"),
+                    })
+    
+    return dict(timing_data)
+
+def _extract_call_sequence_from_trace(
+    trace_timing: dict[tuple[str, str], list[dict]],
+    parent: str,
+    overlap_threshold: float = 0.1,
+) -> list[set[str]]:
+    """
+    Extract the sequential call pattern for a parent from a single trace.
+    Returns a list of sets, where each set contains children called in parallel.
+
+    Args:
+        trace_timing: Dictionary mapping (parent, child) -> list of timing dicts
+        parent: Parent service name
+        overlap_threshold: Fraction of overlap needed to consider calls parallel (default: 0.1)
+
+    Returns:
+        List of sets, where each set is a parallel fanout stage
+        Example: [{B::iface1, C::iface2}, {D::iface3}] means B+C -> D
+    """
+    # Get all children of this parent with their timings
+    children_calls = []  # List of (child, start, end) tuples
+
+    for (p, c), timings in trace_timing.items():
+        if p == parent:
+            for timing in timings:
+                children_calls.append({
+                    'child': _format_dm_interface(c, timing.get("interface")),
+                    'start': timing.get('start_time', timing.get('start', 0)),
+                    'end': timing.get('end_time', timing.get('end', 0)),
+                })
+
+    if not children_calls:
+        return []
+
+    # Sort all calls by start time
+    children_calls.sort(key=lambda e: e['start'])
+
+    # Group into sequential stages based on temporal ordering
+    # Calls that overlap significantly are in the same stage (parallel)
+    # Calls that don't overlap are in different stages (sequential)
+    stages = []
+    current_stage_calls = [children_calls[0]]
+
+    for call in children_calls[1:]:
+        # Check if this call overlaps with any call in the current stage
+        overlaps_with_stage = False
+
+        for stage_call in current_stage_calls:
+            overlap_start = max(call['start'], stage_call['start'])
+            overlap_end = min(call['end'], stage_call['end'])
+
+            if overlap_start < overlap_end:
+                # Calculate overlap ratio
+                overlap_duration = overlap_end - overlap_start
+                min_duration = min(call['end'] - call['start'], stage_call['end'] - stage_call['start'])
+                if min_duration > 0:
+                    overlap_ratio = overlap_duration / min_duration
+                    if overlap_ratio >= overlap_threshold:
+                        overlaps_with_stage = True
+                        break
+
+        if overlaps_with_stage:
+            # Add to current stage (parallel)
+            current_stage_calls.append(call)
+        else:
+            # Start new stage (sequential)
+            if current_stage_calls:
+                stages.append(set(c['child'] for c in current_stage_calls))
+            current_stage_calls = [call]
+
+    # Add final stage
+    if current_stage_calls:
+        stages.append(set(c['child'] for c in current_stage_calls))
+
+    return stages
+
+def _compute_sequence_similarity(seq1: list[set[str]], seq2: list[set[str]]) -> float:
+    """
+    Compute similarity between two call sequences using Jaccard similarity.
+
+    Args:
+        seq1: First sequence (list of sets)
+        seq2: Second sequence (list of sets)
+
+    Returns:
+        Similarity score between 0.0 and 1.0
+    """
+    if not seq1 or not seq2:
+        return 0.0
+
+    # Flatten both sequences to get all children
+    children1 = set()
+    for stage in seq1:
+        children1.update(stage)
+
+    children2 = set()
+    for stage in seq2:
+        children2.update(stage)
+
+    # Jaccard similarity of children (captures what is called, not order)
+    if not children1 and not children2:
+        return 1.0
+
+    intersection = len(children1 & children2)
+    union = len(children1 | children2)
+
+    if union == 0:
+        return 0.0
+
+    jaccard = intersection / union
+
+    # Also consider sequence length similarity
+    len_similarity = 1.0 - abs(len(seq1) - len(seq2)) / max(len(seq1), len(seq2))
+
+    # Weighted combination: 70% Jaccard (what is called), 30% length (how many stages)
+    return 0.7 * jaccard + 0.3 * len_similarity
+
+def _align_sequence_pair(
+    seq1: list[set[str]],
+    seq2: list[set[str]]
+) -> tuple[list[set[str] | None], list[set[str] | None]]:
+    """
+    Align two sequences using dynamic programming to find optimal alignment.
+
+    Args:
+        seq1: First sequence
+        seq2: Second sequence
+
+    Returns:
+        Tuple of (aligned_seq1, aligned_seq2) with None for gaps
+    """
+    n, m = len(seq1), len(seq2)
+
+    # Score matrix: dp[i][j] = best score for aligning seq1[:i] with seq2[:j]
+    dp = [[0.0] * (m + 1) for _ in range(n + 1)]
+
+    # Traceback matrix for reconstruction
+    traceback = [[None] * (m + 1) for _ in range(n + 1)]
+
+    # Gap penalties
+    gap_penalty = -0.5
+
+    # Fill DP table
+    for i in range(1, n + 1):
+        dp[i][0] = i * gap_penalty
+        traceback[i][0] = 'up'
+
+    for j in range(1, m + 1):
+        dp[0][j] = j * gap_penalty
+        traceback[0][j] = 'left'
+
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            # Match/mismatch score based on Jaccard similarity
+            stage1 = seq1[i - 1]
+            stage2 = seq2[j - 1]
+
+            intersection = len(stage1 & stage2)
+            union = len(stage1 | stage2)
+            match_score = intersection / union if union > 0 else 0.0
+
+            # Three options: match, gap in seq1, gap in seq2
+            match = dp[i - 1][j - 1] + match_score
+            delete = dp[i - 1][j] + gap_penalty
+            insert = dp[i][j - 1] + gap_penalty
+
+            if match >= delete and match >= insert:
+                dp[i][j] = match
+                traceback[i][j] = 'diag'
+            elif delete >= insert:
+                dp[i][j] = delete
+                traceback[i][j] = 'up'
+            else:
+                dp[i][j] = insert
+                traceback[i][j] = 'left'
+
+    # Reconstruct alignment
+    aligned1 = []
+    aligned2 = []
+    i, j = n, m
+
+    while i > 0 or j > 0:
+        direction = traceback[i][j]
+
+        if direction == 'diag':
+            aligned1.append(seq1[i - 1])
+            aligned2.append(seq2[j - 1])
+            i -= 1
+            j -= 1
+        elif direction == 'up':
+            aligned1.append(seq1[i - 1])
+            aligned2.append(None)
+            i -= 1
+        else:  # left
+            aligned1.append(None)
+            aligned2.append(seq2[j - 1])
+            j -= 1
+
+    # Reverse (we built backwards)
+    aligned1.reverse()
+    aligned2.reverse()
+
+    return aligned1, aligned2
+
+def _build_consensus_from_aligned(
+    aligned_sequences: list[list[set[str] | None]]
+) -> list[set[str]]:
+    """
+    Build a consensus sequence from multiple aligned sequences.
+
+    Args:
+        aligned_sequences: List of aligned sequences (with None for gaps)
+
+    Returns:
+        Consensus sequence (list of sets)
+    """
+    if not aligned_sequences:
+        return []
+
+    # Find maximum aligned length
+    max_len = max(len(seq) for seq in aligned_sequences)
+
+    consensus = []
+
+    for pos in range(max_len):
+        # Collect all children that appear at this position
+        children_at_pos = defaultdict(int)
+        num_non_gaps = 0
+
+        for seq in aligned_sequences:
+            if pos < len(seq) and seq[pos] is not None:
+                num_non_gaps += 1
+                for child in seq[pos]:
+                    children_at_pos[child] += 1
+
+        if num_non_gaps == 0:
+            continue  # Skip positions that are all gaps
+
+        # Include children that appear in at least 50% of non-gap sequences at this position
+        threshold = num_non_gaps * 0.5
+        consensus_stage = set()
+
+        for child, count in children_at_pos.items():
+            if count >= threshold:
+                consensus_stage.add(child)
+
+        if consensus_stage:
+            consensus.append(consensus_stage)
+
+    return consensus
+
+def _aggregate_call_sequences(
+    sequences: list[list[set[str]]],
+    parent_trace_count: int,
+) -> list[dict[str, float]]:
+    """
+    Aggregate call sequences from multiple traces using precedence inference.
+
+    Algorithm:
+    1. Build pairwise precedence counts from per-trace stage ordering.
+    2. Add a precedence edge A->B when A precedes B in enough co-occurrences.
+    3. Derive stages via topological layering; nodes in the same layer are parallel.
+    4. Probability for each child is its appearance rate across traces.
+
+    Args:
+        sequences: List of sequences, where each sequence is a list of sets (stages)
+        parent_trace_count: Number of traces where the parent appears
+
+    Returns:
+        List of dicts mapping child -> probability for each sequential stage
+        Example: [{'B': 0.95, 'C': 0.90}, {'D': 0.85}, {'E': 0.70, 'F': 0.65}]
+    """
+    if not sequences:
+        return []
+
+    precedence_threshold = 0.7
+
+    appearance_counts: dict[str, int] = defaultdict(int)
+    co_counts: dict[tuple[str, str], int] = defaultdict(int)
+    precede_counts: dict[tuple[str, str], int] = defaultdict(int)
+
+    for seq in sequences:
+        stage_positions: dict[str, int] = {}
+        present_children = set()
+        for stage_idx, stage in enumerate(seq):
+            for child in stage:
+                present_children.add(child)
+                if child not in stage_positions:
+                    stage_positions[child] = stage_idx
+
+        for child in present_children:
+            appearance_counts[child] += 1
+
+        children_list = list(stage_positions.keys())
+        for i in range(len(children_list)):
+            for j in range(i + 1, len(children_list)):
+                child_a = children_list[i]
+                child_b = children_list[j]
+                pair = tuple(sorted((child_a, child_b)))
+                co_counts[pair] += 1
+
+                idx_a = stage_positions[child_a]
+                idx_b = stage_positions[child_b]
+                if idx_a < idx_b:
+                    precede_counts[(child_a, child_b)] += 1
+                elif idx_b < idx_a:
+                    precede_counts[(child_b, child_a)] += 1
+
+    if not appearance_counts:
+        return []
+
+    edges: dict[tuple[str, str], float] = {}
+    for (child_a, child_b), co in co_counts.items():
+        if co <= 0:
+            continue
+        ab = precede_counts.get((child_a, child_b), 0) / co
+        ba = precede_counts.get((child_b, child_a), 0) / co
+
+        if ab >= precedence_threshold and ab > ba:
+            edges[(child_a, child_b)] = ab
+        elif ba >= precedence_threshold and ba > ab:
+            edges[(child_b, child_a)] = ba
+
+    nodes = set(appearance_counts.keys())
+    adjacency: dict[str, set[str]] = {node: set() for node in nodes}
+    indegree: dict[str, int] = {node: 0 for node in nodes}
+    edge_weights = dict(edges)
+
+    for (src, dst), weight in edge_weights.items():
+        adjacency[src].add(dst)
+        indegree[dst] += 1
+
+    layers: list[set[str]] = []
+    remaining = set(nodes)
+
+    while remaining:
+        zero_indegree = [node for node in remaining if indegree[node] == 0]
+        if not zero_indegree:
+            weakest_edge = min(
+                (edge for edge in edge_weights if edge[0] in remaining and edge[1] in remaining),
+                key=lambda edge: edge_weights[edge],
+                default=None,
+            )
+            if weakest_edge is None:
+                layers.append(set(remaining))
+                break
+            src, dst = weakest_edge
+            edge_weights.pop(weakest_edge, None)
+            if dst in adjacency[src]:
+                adjacency[src].remove(dst)
+                indegree[dst] = max(0, indegree[dst] - 1)
+            continue
+
+        current_layer = set(zero_indegree)
+        layers.append(current_layer)
+        for node in current_layer:
+            remaining.remove(node)
+        for node in current_layer:
+            for child in list(adjacency[node]):
+                indegree[child] = max(0, indegree[child] - 1)
+            adjacency[node].clear()
+
+    prob_stages = []
+    parent_trace_count = max(parent_trace_count, 1)
+    for layer in layers:
+        stage_probs = {
+            child: appearance_counts[child] / parent_trace_count
+            for child in sorted(layer)
+        }
+        if stage_probs:
+            prob_stages.append(stage_probs)
+
+    return prob_stages
+
+def _classify_call_pattern(
+    child_timings_dict: dict[str, list[dict]],
+    overlap_threshold: float = 0.1,
+) -> tuple[str, float]:
+    """
+    Classify whether a parent calls its children sequentially, in parallel, or mixed.
+    Compares all children of the same parent together.
+
+    Args:
+        child_timings_dict: Dictionary mapping child_dm -> list of timing dicts
+        overlap_threshold: Fraction of overlap needed to consider calls parallel (default: 0.1)
+
+    Returns:
+        Tuple of (pattern_type, parallel_ratio)
+        pattern_type: "sequential", "parallel", or "mixed"
+        parallel_ratio: Fraction of sibling pairs that overlap (0.0 to 1.0)
+    """
+    if len(child_timings_dict) < 2:
+        return ("sequential", 0.0)
+
+    # Group timings by parent call instance (same parent_start/end)
+    parent_groups = defaultdict(lambda: defaultdict(list))
+    for child_dm, timings in child_timings_dict.items():
+        for timing in timings:
+            parent_key = (timing["parent_start"], timing["parent_end"])
+            parent_groups[parent_key][child_dm].append(timing)
+
+    if not parent_groups:
+        return ("sequential", 0.0)
+
+    parallel_count = 0
+    total_pairs = 0
+
+    # For each parent call instance, check if children overlap
+    for parent_key, children_timings in parent_groups.items():
+        if len(children_timings) < 2:
+            continue
+
+        # Get the earliest start and latest end for each child in this parent call
+        child_ranges = {}
+        for child_dm, timings in children_timings.items():
+            if timings:
+                # Prefer original keys (start_time/end_time) for classification, fall back to normalized (start/end)
+                if "start_time" in timings[0]:
+                    starts = [t["start_time"] for t in timings]
+                    ends = [t["end_time"] for t in timings]
+                elif "start" in timings[0]:
+                    starts = [t["start"] for t in timings]
+                    ends = [t["end"] for t in timings]
+                else:
+                    continue  # Skip if no timing data
+                child_ranges[child_dm] = (min(starts), max(ends))
+
+        # Compare all pairs of children
+        child_list = list(child_ranges.items())
+        for i in range(len(child_list)):
+            for j in range(i + 1, len(child_list)):
+                child1_dm, (start1, end1) = child_list[i]
+                child2_dm, (start2, end2) = child_list[j]
+
+                total_pairs += 1
+
+                # Check if the two children overlap in time
+                overlap_start = max(start1, start2)
+                overlap_end = min(end1, end2)
+
+                if overlap_start < overlap_end:
+                    # They overlap - calculate overlap ratio
+                    overlap_duration = overlap_end - overlap_start
+                    min_duration = min(end1 - start1, end2 - start2)
+                    if min_duration > 0:
+                        overlap_ratio = overlap_duration / min_duration
+                        if overlap_ratio >= overlap_threshold:
+                            parallel_count += 1
+
+    if total_pairs == 0:
+        return ("sequential", 0.0)
+
+    parallel_ratio = parallel_count / total_pairs
+
+    if parallel_ratio >= 0.7:
+        return ("parallel", parallel_ratio)
+    elif parallel_ratio <= 0.3:
+        return ("sequential", parallel_ratio)
+    else:
+        return ("mixed", parallel_ratio)
+
+def _draw_timeline_graph(
+    G: nx.DiGraph,
+    timing_data: dict[tuple[str, str], list[dict]],
+    title: str,
+    output_path: Path,
+    num_nodes: int,
+) -> None:
+    """
+    Draw a timeline graph showing parent-child call patterns over time.
+    Parent's time is inclusive of children. Sequential children are left/right,
+    parallel children are vertically aligned. This is done recursively for all layers.
+    
+    Args:
+        G: NetworkX directed graph (USER subgraph)
+        timing_data: Dictionary mapping (parent, child) -> list of timing dicts
+        title: Title for the graph
+        output_path: Path to save the image
+        num_nodes: Number of nodes in the graph (for sizing)
+    """
+    if G.number_of_nodes() == 0:
+        return
+    
+    # Get hierarchical layout positions
+    pos = _hierarchical_layout(G)
+    if not pos:
+        return
+    
+    # Compute dynamic figure size
+    if num_nodes < 50:
+        figsize = (20.0, max(12.0, num_nodes * 0.3))
+    elif num_nodes < 200:
+        figsize = (24.0, max(14.0, num_nodes * 0.2))
+    else:
+        figsize = (28.0, max(16.0, num_nodes * 0.15))
+    
+    fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=figsize, 
+                                           gridspec_kw={'width_ratios': [1, 2]})
+    
+    # Left panel: DAG structure (mirror of user graph)
+    # Draw nodes and edges
+    for node, (x, y) in pos.items():
+        ax_left.scatter(x, y, s=500, c='lightblue', edgecolors='black', zorder=3)
+        ax_left.text(x, y, node, fontsize=7, ha='center', va='center', fontweight='bold')
+    
+    # Draw edges
+    for u, v in G.edges():
+        if u in pos and v in pos:
+            x1, y1 = pos[u]
+            x2, y2 = pos[v]
+            ax_left.plot([x1, x2], [y1, y2], 'k-', linewidth=1, alpha=0.3, zorder=1)
+    
+    ax_left.set_title('Call Graph Structure', fontsize=10, fontweight='bold')
+    ax_left.axis('off')
+    
+    # Right panel: Timeline visualization
+    # First, normalize all timings relative to root (USER) start
+    # Find the earliest parent_start across all timing data (this is the root start)
+    root_start = None
+    for timings in timing_data.values():
+        for timing in timings:
+            if root_start is None or timing["parent_start"] < root_start:
+                root_start = timing["parent_start"]
+    
+    if root_start is None:
+        plt.close()
+        return
+    
+    # Normalize all timings relative to root start
+    edge_timelines = {}
+    for (parent, child), timings in timing_data.items():
+        if not timings or (parent, child) not in G.edges():
+            continue
+        
+        normalized_timings = []
+        for timing in timings:
+            relative_start = timing["start_time"] - root_start
+            relative_end = timing["end_time"] - root_start
+            normalized_timings.append({
+                "start": relative_start,
+                "end": relative_end,
+                "start_time": timing["start_time"],  # Keep original for classification
+                "end_time": timing["end_time"],  # Keep original for classification
+                "parent_start": timing["parent_start"] - root_start,  # Normalized
+                "parent_end": timing["parent_end"] - root_start,  # Normalized
+            })
+        
+        edge_timelines[(parent, child)] = normalized_timings
+    
+    if not edge_timelines:
+        plt.close()
+        return
+    
+    # Determine time range for x-axis (use 95th percentile to avoid outliers)
+    all_times = []
+    for timings in edge_timelines.values():
+        for timing in timings:
+            all_times.append(timing["end"])
+            all_times.append(timing["parent_end"])
+    
+    if not all_times:
+        plt.close()
+        return
+    
+    max_time = np.percentile(all_times, 95) if len(all_times) > 0 else max(all_times)
+    if max_time == 0:
+        max_time = 1.0
+    
+    # Map nodes to y-positions based on hierarchy (for vertical layout)
+    node_y_positions = {}
+    y_positions = sorted(set(y for x, y in pos.values()), reverse=True)
+    y_to_level = {y: i for i, y in enumerate(y_positions)}
+    
+    for node, (x, y) in pos.items():
+        level = y_to_level[y]
+        node_y_positions[node] = level
+    
+    max_level = len(y_to_level) - 1
+    
+    # Colors for different patterns
+    colors = {'sequential': '#2E86AB', 'parallel': '#A23B72', 'mixed': '#F18F01'}
+    
+    # Build node timing information recursively
+    # For each node, calculate its inclusive time span (from earliest child to latest child)
+    node_timings = {}  # node -> {"start": float, "end": float, "has_children": bool}
+    calculating = set()  # Track nodes currently being calculated to detect cycles
+    max_recursion_depth = 1000  # Safety limit
+    
+    def calculate_node_timing(node: str, depth: int = 0) -> dict:
+        """Recursively calculate inclusive timing for a node.
+        
+        Args:
+            node: Node to calculate timing for
+            depth: Current recursion depth (for cycle detection)
+        
+        Returns:
+            Dictionary with start, end, and has_children keys
+        """
+        # Check if already calculated
+        if node in node_timings:
+            return node_timings[node]
+        
+        # Check for cycles or excessive recursion
+        if node in calculating:
+            # Cycle detected - return placeholder to break recursion
+            logger.warning(f"Cycle detected in graph at node '{node}', using placeholder timing")
+            node_timings[node] = {"start": 0.0, "end": 0.1 * max_time, "has_children": False}
+            return node_timings[node]
+        
+        if depth > max_recursion_depth:
+            # Excessive recursion - likely a very deep graph or cycle
+            logger.warning(f"Maximum recursion depth exceeded for node '{node}', using placeholder timing")
+            node_timings[node] = {"start": 0.0, "end": 0.1 * max_time, "has_children": False}
+            return node_timings[node]
+        
+        # Mark as currently calculating
+        calculating.add(node)
+        
+        try:
+            children = list(G.successors(node))
+            
+            if not children:
+                # Leaf node - use its own timing if available
+                # Find timing from any edge where this node is a child
+                min_start = None
+                max_end = None
+                for (parent, child), timings in edge_timelines.items():
+                    if child == node and timings:
+                        for timing in timings:
+                            if min_start is None or timing["start"] < min_start:
+                                min_start = timing["start"]
+                            if max_end is None or timing["end"] > max_end:
+                                max_end = timing["end"]
+                
+                if min_start is not None and max_end is not None:
+                    node_timings[node] = {"start": min_start, "end": max_end, "has_children": False}
+                else:
+                    # No timing data - use placeholder
+                    node_timings[node] = {"start": 0.0, "end": 0.1 * max_time, "has_children": False}
+                return node_timings[node]
+            
+            # Parent node - calculate from children
+            child_starts = []
+            child_ends = []
+            
+            for child in children:
+                child_timing = calculate_node_timing(child, depth + 1)
+                child_starts.append(child_timing["start"])
+                child_ends.append(child_timing["end"])
+            
+            if child_starts and child_ends:
+                node_start = min(child_starts)
+                node_end = max(child_ends)
+                # Ensure parent end is strictly greater than all child ends
+                # Add a small buffer to ensure children are narrower than parent
+                if node_end <= max(child_ends):
+                    node_end = max(child_ends) + 0.01 * max_time
+            else:
+                # No child timing data - use placeholder
+                node_start = 0.0
+                node_end = 0.1 * max_time
+            
+            node_timings[node] = {"start": node_start, "end": node_end, "has_children": True}
+            return node_timings[node]
+        
+        finally:
+            # Always remove from calculating set when done
+            calculating.discard(node)
+    
+    # Calculate timings for all nodes (starting from root)
+    if "USER" in G.nodes():
+        calculate_node_timing("USER")
+        # Also calculate for all other nodes
+        for node in G.nodes():
+            if node not in node_timings:
+                calculate_node_timing(node)
+    else:
+        # No USER node - calculate for all nodes
+        for node in G.nodes():
+            if node not in node_timings:
+                calculate_node_timing(node)
+    
+    # Determine if children are sequential or parallel
+    def are_children_sequential(parent: str, children: list[str], overlap_threshold: float = 0.1) -> dict[str, bool]:
+        """Determine which children are sequential vs parallel."""
+        if len(children) < 2:
+            return {child: True for child in children}
+        
+        result = {}
+        child_ranges = {}
+        
+        # Get timing ranges for each child
+        for child in children:
+            if child in node_timings:
+                child_ranges[child] = (node_timings[child]["start"], node_timings[child]["end"])
+            else:
+                child_ranges[child] = (0.0, 0.1 * max_time)
+        
+        # Sort children by start time
+        sorted_children = sorted(children, key=lambda c: child_ranges[c][0])
+        
+        # Check each child against previous ones
+        for i, child in enumerate(sorted_children):
+            is_sequential = True
+            child_start, child_end = child_ranges[child]
+            
+            # Check if this child overlaps significantly with any previous child
+            for prev_child in sorted_children[:i]:
+                prev_start, prev_end = child_ranges[prev_child]
+                
+                # Check overlap
+                overlap_start = max(prev_start, child_start)
+                overlap_end = min(prev_end, child_end)
+                
+                if overlap_start < overlap_end:
+                    overlap_duration = overlap_end - overlap_start
+                    min_duration = min(prev_end - prev_start, child_end - child_start)
+                    if min_duration > 0:
+                        overlap_ratio = overlap_duration / min_duration
+                        if overlap_ratio >= overlap_threshold:
+                            is_sequential = False
+                            break
+            
+            result[child] = is_sequential
+        
+        return result
+    
+    # Position nodes on timeline with proper spacing to prevent overlaps
+    node_x_positions = {}  # node -> x position (start time)
+    node_y_timeline_positions = {}  # node -> y position on timeline
+    node_visual_timings = {}  # node -> visual timing for display
+    layout_in_progress = set()  # Track nodes currently being laid out (cycle detection)
+
+    def layout_subtree(node: str, parent_x_start: float, parent_x_end: float,
+                       base_y: float, depth: int = 0) -> float:
+        """
+        Recursively layout a subtree, returning the minimum y position used.
+
+        Args:
+            node: Current node to layout
+            parent_x_start: Parent's start time (or 0 for root)
+            parent_x_end: Parent's end time (or max_time for root)
+            base_y: Y position for this node
+            depth: Recursion depth (for cycle detection)
+
+        Returns:
+            Minimum y position used by this subtree
+        """
+        # Check if already positioned (avoid re-processing)
+        if node in node_y_timeline_positions:
+            return node_y_timeline_positions[node]
+
+        # Check for cycles
+        if node in layout_in_progress:
+            logger.warning(f"Cycle detected in graph at node '{node}', skipping to prevent infinite recursion")
+            # Position node with placeholder to break cycle
+            node_x_positions[node] = parent_x_start
+            node_y_timeline_positions[node] = base_y
+            node_visual_timings[node] = {
+                "start": parent_x_start,
+                "end": min(parent_x_start + 0.01 * max_time, parent_x_end),
+                "has_children": False
+            }
+            return base_y
+
+        if depth > 100:
+            logger.warning(f"Maximum recursion depth exceeded for node '{node}'")
+            return base_y
+
+        # Mark as being processed
+        layout_in_progress.add(node)
+
+        try:
+            # Get timing for this node
+            timing = node_timings.get(node, {"start": 0.0, "end": 0.1 * max_time})
+
+            # Ensure node timing fits within parent bounds (with small inset)
+            inset = 0.01 * max_time
+            node_start = max(timing["start"], parent_x_start + inset)
+            node_end = min(timing["end"], parent_x_end - inset)
+
+            # Ensure end > start
+            if node_end <= node_start:
+                node_end = node_start + 0.01 * max_time
+
+            # Position this node
+            node_x_positions[node] = node_start
+            node_y_timeline_positions[node] = base_y
+            node_visual_timings[node] = {
+                "start": node_start,
+                "end": node_end,
+                "has_children": timing.get("has_children", False)
+            }
+
+            # Get children
+            children = list(G.successors(node))
+            if not children:
+                return base_y  # Leaf node, return current y
+
+            # Determine which children are sequential vs parallel
+            seq_parallel = are_children_sequential(node, children)
+
+            # Sort children by their original start time
+            children_sorted = sorted(children, key=lambda c: node_timings.get(c, {}).get("start", 0.0))
+
+            # Group into sequential segments and parallel groups
+            groups = []  # List of (is_parallel, [children])
+            current_parallel = []
+
+            for child in children_sorted:
+                if not seq_parallel.get(child, True):  # Parallel
+                    current_parallel.append(child)
+                else:  # Sequential
+                    if current_parallel:
+                        groups.append((True, current_parallel))
+                        current_parallel = []
+                    groups.append((False, [child]))
+
+            if current_parallel:
+                groups.append((True, current_parallel))
+
+            # Layout children with proper time budget allocation
+            bar_height = 0.1
+            gap = 0.05
+            inter_child_gap = 0.005 * max_time
+            child_base_y = base_y - (bar_height + gap)
+
+            # Calculate available time for children
+            available_time = node_end - node_start - 2 * inset
+
+            if available_time <= 0:
+                available_time = 0.01 * max_time
+
+            # First pass: Calculate how much time each group needs
+            group_time_needs = []
+            total_time_needed = 0
+
+            for is_parallel, group in groups:
+                if is_parallel:
+                    # Parallel group: needs time for the longest child
+                    group_timings = [node_timings.get(c, {"start": 0.0, "end": 0.1 * max_time}) for c in group]
+                    max_duration = max(t["end"] - t["start"] for t in group_timings)
+                    group_time_needs.append(max_duration)
+                    total_time_needed += max_duration
+                else:
+                    # Sequential group: needs sum of all children's durations
+                    group_duration = 0
+                    for child in group:
+                        child_timing = node_timings.get(child, {"start": 0.0, "end": 0.1 * max_time})
+                        child_duration = child_timing["end"] - child_timing["start"]
+                        group_duration += child_duration
+                    group_time_needs.append(group_duration)
+                    total_time_needed += group_duration
+
+            # Add gaps between groups
+            if len(groups) > 1:
+                total_time_needed += inter_child_gap * (len(groups) - 1)
+
+            # Calculate scaling factor if children don't fit
+            if total_time_needed > available_time:
+                # Need to compress children to fit within parent
+                scale_factor = (available_time - inter_child_gap * max(0, len(groups) - 1)) / (total_time_needed - inter_child_gap * max(0, len(groups) - 1))
+                scale_factor = max(0.05, scale_factor)  # Minimum 5% of original size
+            else:
+                scale_factor = 1.0
+
+            # Second pass: Layout children with allocated time budgets
+            current_x = node_start + inset
+            min_y_used = child_base_y
+
+            for idx, (is_parallel, group) in enumerate(groups):
+                allocated_time = group_time_needs[idx] * scale_factor
+
+                # Ensure minimum allocation
+                allocated_time = max(allocated_time, 0.01 * max_time)
+
+                # Ensure we don't exceed parent bounds
+                group_end = min(current_x + allocated_time, node_end - inset)
+
+                if group_end <= current_x:
+                    group_end = current_x + 0.01 * max_time
+
+                if is_parallel:
+                    # Parallel children: stack vertically, same x range
+                    current_y = child_base_y
+                    for child in group:
+                        child_min_y = layout_subtree(child, current_x, group_end, current_y, depth + 1)
+                        # Move down for next parallel sibling
+                        current_y = child_min_y - (bar_height + gap)
+                        min_y_used = min(min_y_used, child_min_y)
+
+                    # Move current_x past the parallel section
+                    current_x = group_end + inter_child_gap
+
+                else:
+                    # Sequential children: distribute allocated time among them
+                    # Calculate individual time budgets based on original proportions
+                    group_timings = []
+                    total_group_duration = 0
+                    for child in group:
+                        child_timing = node_timings.get(child, {"start": 0.0, "end": 0.1 * max_time})
+                        child_duration = child_timing["end"] - child_timing["start"]
+                        group_timings.append(child_duration)
+                        total_group_duration += child_duration
+
+                    # Allocate time proportionally
+                    child_x = current_x
+                    for i, child in enumerate(group):
+                        if total_group_duration > 0:
+                            # Proportional allocation
+                            child_allocated = allocated_time * (group_timings[i] / total_group_duration)
+                        else:
+                            # Equal allocation if no timing info
+                            child_allocated = allocated_time / len(group)
+
+                        # Ensure minimum size
+                        child_allocated = max(child_allocated, 0.01 * max_time)
+
+                        child_end = min(child_x + child_allocated, node_end - inset)
+
+                        if child_end <= child_x:
+                            child_end = child_x + 0.01 * max_time
+
+                        child_min_y = layout_subtree(child, child_x, child_end, child_base_y, depth + 1)
+                        min_y_used = min(min_y_used, child_min_y)
+
+                        # Move to next sequential child (with small gap)
+                        child_x = child_end + inter_child_gap
+
+                    # Update current_x to after all sequential children
+                    current_x = child_x
+
+            return min_y_used
+
+        finally:
+            # Always remove from in-progress set when done
+            layout_in_progress.discard(node)
+
+    # Start layout from root
+    if "USER" in G.nodes():
+        root_y = max_level if max_level > 0 else 0.0
+        layout_subtree("USER", 0.0, max_time, root_y)
+    else:
+        # Multiple roots
+        roots = [n for n in G.nodes() if G.in_degree(n) == 0]
+        root_y = max_level if max_level > 0 else 0.0
+        for root in roots:
+            layout_subtree(root, 0.0, max_time, root_y)
+
+    # Ensure all nodes are positioned (handle disconnected components)
+    for node in G.nodes():
+        if node not in node_y_timeline_positions:
+            timing = node_timings.get(node, {"start": 0.0, "end": 0.1 * max_time})
+            node_x_positions[node] = timing["start"]
+            node_y_timeline_positions[node] = 0.0
+            node_visual_timings[node] = timing.copy()
+    
+    # Draw timeline bars
+    # Sort nodes by y position (lowest first = bottom first)
+    nodes_by_y = sorted(G.nodes(), key=lambda n: node_y_timeline_positions.get(n, 0))
+    
+    bar_height = 0.1
+    gap = 0.05
+    
+    # Track label positions to prevent overlaps
+    label_positions = []  # List of (x_start, x_end, y, text) tuples
+    
+    def check_label_overlap(x_start: float, x_end: float, y: float, text: str, fontsize: int = 7) -> tuple[float, float]:
+        """Check if label would overlap with existing labels, adjust if needed.
+        
+        Returns:
+            (label_x, label_y) position for the label
+        """
+        # Estimate text width in data coordinates
+        char_width = 0.008 * max_time
+        text_width = char_width * len(text)
+        text_height = bar_height
+        
+        # Try to place label in the middle of the bar
+        bar_center_x = x_start + (x_end - x_start) / 2
+        label_x = bar_center_x - text_width / 2
+        
+        # Check for overlaps with existing labels at similar y positions
+        for existing_x_start, existing_x_end, existing_y, _ in label_positions:
+            # Check if y positions are close (within bar height)
+            if abs(y - existing_y) < text_height * 1.2:
+                # Check if x positions overlap
+                if not (label_x + text_width < existing_x_start or label_x > existing_x_end):
+                    # Overlap detected - try to shift left or right
+                    if existing_x_end < bar_center_x:
+                        # Existing label is to the left, shift right
+                        label_x = existing_x_end + 0.01 * max_time
+                    else:
+                        # Existing label is to the right, shift left
+                        label_x = existing_x_start - text_width - 0.01 * max_time
+        
+        # Clamp to bar bounds (with small padding)
+        padding = 0.01 * max_time
+        if label_x < x_start + padding:
+            label_x = x_start + padding
+        if label_x + text_width > x_end - padding:
+            label_x = x_end - text_width - padding
+            # If still doesn't fit, just center it
+            if label_x < x_start + padding:
+                label_x = bar_center_x - text_width / 2
+        
+        # Record this label position
+        label_positions.append((label_x, label_x + text_width, y, text))
+        
+        return label_x, y
+    
+    # Draw all nodes
+    for node in nodes_by_y:
+        if node not in node_y_timeline_positions:
+            continue
+        
+        visual_timing = node_visual_timings.get(node, node_timings.get(node, {"start": 0.0, "end": 0.1 * max_time}))
+        x_pos = node_x_positions.get(node, visual_timing["start"])
+        y_pos = node_y_timeline_positions[node]
+        
+        # Draw node bar using visual timing
+        min_width = 0.01 * max_time
+        width = max(min_width, visual_timing["end"] - visual_timing["start"])
+        
+        # Determine color based on children pattern
+        children = list(G.successors(node))
+        if children:
+            child_timings_dict = {}
+            for child in children:
+                edge = (node, child)
+                if edge in edge_timelines:
+                    child_timings_dict[child] = edge_timelines[edge]
+            
+            if child_timings_dict:
+                pattern_type, _ = _classify_call_pattern(child_timings_dict)
+                color = colors.get(pattern_type, 'gray')
+            else:
+                color = 'gray'
+        else:
+            # Leaf node - use light gray
+            color = 'lightgray'
+        
+        # Draw bar
+        ax_right.barh(y_pos, width, left=x_pos, height=bar_height, 
+                     color=color, alpha=0.7, edgecolor='black', linewidth=1.0, zorder=2)
+        
+        # Draw node label INSIDE the bar (centered, with overlap checking)
+        label_x, label_y = check_label_overlap(x_pos, x_pos + width, y_pos, node, fontsize=7)
+        
+        # Use white text with semi-transparent background for better visibility
+        ax_right.text(label_x, label_y, node, 
+                     fontsize=7, ha='left', va='center', fontweight='bold',
+                     color='white', zorder=3,
+                     bbox=dict(boxstyle='round,pad=0.1', facecolor='black', alpha=0.4, edgecolor='white', linewidth=0.5))
+    
+    # Draw arrows from parents to children (straight arrows pointing down)
+    for node in G.nodes():
+        if node not in node_y_timeline_positions or node not in node_x_positions:
+            continue
+        
+        node_visual_timing = node_visual_timings.get(node, node_timings.get(node, {"start": 0.0, "end": 0.1 * max_time}))
+        node_x = node_x_positions[node]
+        node_y = node_y_timeline_positions[node]
+        
+        # Draw arrows to all children
+        for child in G.successors(node):
+            if child not in node_y_timeline_positions or child not in node_x_positions:
+                continue
+            
+            child_visual_timing = node_visual_timings.get(child, node_timings.get(child, {"start": 0.0, "end": 0.1 * max_time}))
+            child_x = node_x_positions[child]
+            child_y = node_y_timeline_positions[child]
+            
+            # Arrow starts from left side of parent span
+            parent_left_x = node_x
+            # Arrow points to center of child span
+            child_center_x = child_x + (child_visual_timing["end"] - child_visual_timing["start"]) / 2
+            
+            # Draw straight arrow from parent bottom-left to child top-center
+            ax_right.annotate('', xy=(child_center_x, child_y + bar_height / 2), 
+                            xytext=(parent_left_x, node_y - bar_height / 2),
+                            arrowprops=dict(arrowstyle='->', color='black', lw=1.5, alpha=0.5, mutation_scale=15),
+                            zorder=1)
+    
+    # Set axis properties
+    # Calculate y limits based on node positions
+    if node_y_timeline_positions:
+        all_y_positions = list(node_y_timeline_positions.values())
+        min_y = min(all_y_positions) - 0.5
+        max_y = max(all_y_positions) + 0.5
+    else:
+        min_y = -0.5
+        max_y = max_level + 0.5
+    
+    ax_right.set_xlim(-0.05 * max_time, max_time * 1.1)
+    ax_right.set_ylim(min_y, max_y)
+    ax_right.set_xlabel('Time (normalized to root start)', fontsize=10)
+    ax_right.set_ylabel('Hierarchy Level (from USER)', fontsize=10)
+    ax_right.set_title('Call Pattern Timeline (Parent time is inclusive of children)', 
+                     fontsize=10, fontweight='bold')
+    ax_right.grid(True, alpha=0.3, axis='both')
+    
+    # Add legend
+    legend_elements = [
+        mpatches.Patch(facecolor=colors['sequential'], label='Sequential', alpha=0.7),
+        mpatches.Patch(facecolor=colors['parallel'], label='Parallel', alpha=0.7),
+        mpatches.Patch(facecolor=colors['mixed'], label='Mixed', alpha=0.7),
+    ]
+    ax_right.legend(handles=legend_elements, loc='upper right', fontsize=8)
+    
+    plt.suptitle(title, fontsize=12, fontweight='bold', y=0.98)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+def _extract_edges_with_interface_from_trace(trace_df: pd.DataFrame) -> list[tuple[str, str, str]]:
+    """
+    Extract edges (um -> dm) with interface information from a single trace based on rpc_id hierarchy.
+    
+    Args:
+        trace_df: DataFrame containing rows for a single trace
+    
+    Returns:
+        List of (source, target, interface) tuples
+    """
+    if "rpc_id" not in trace_df.columns or "dm" not in trace_df.columns:
+        return []
+    
+    trace_df = trace_df.copy()
+    trace_df["rpc_id_str"] = trace_df["rpc_id"].astype(str).str.strip()
+    
+    # Create mapping from rpc_id to dm
+    rpc_to_dm = {}
+    rpc_groups = trace_df.groupby("rpc_id_str")
+    
+    for rpc_id, group in rpc_groups:
+        if rpc_id and rpc_id != "" and rpc_id != "nan":
+            dm_values = group["dm"].dropna().unique()
+            if len(dm_values) > 0:
+                rpc_to_dm[rpc_id] = dm_values[0]
+    
+    # Create mapping from rpc_id to list of interfaces (one per row with that rpc_id)
+    rpc_to_interfaces: dict[str, list[str]] = defaultdict(list)
+    for _, row in trace_df.iterrows():
+        rpc_id_str = str(row["rpc_id"]).strip()
+        if rpc_id_str and rpc_id_str != "" and rpc_id_str != "nan":
+            if "interface" in row.index and pd.notna(row["interface"]):
+                interface = _normalize_interface(row["interface"])
+            else:
+                interface = "<none>"
+            rpc_to_interfaces[rpc_id_str].append(interface)
+    
+    # Build edge list with interface (one edge per (rpc_id, interface) combination)
+    edges = []
+    for rpc_id, dm in rpc_to_dm.items():
+        parent_rpc_id = _parent_rpc_id(rpc_id)
+        
+        if parent_rpc_id is None:
+            # Root call - edge from USER to dm
+            source = "USER"
+            target = dm
+        else:
+            # Child call - edge from parent's dm to current dm
+            if parent_rpc_id in rpc_to_dm:
+                source = rpc_to_dm[parent_rpc_id]
+                target = dm
+            else:
+                # Parent not found, skip this edge
+                continue
+        
+        # Add one edge per interface for this rpc_id
+        interfaces = rpc_to_interfaces.get(rpc_id, ["<none>"])
+        for interface in interfaces:
+            edges.append((source, target, interface))
+    
+    return edges
+
+def compute_latency_distributions(df: pd.DataFrame) -> dict:
+    """
+    Compute latency distributions grouped by (dm, interface).
+    
+    Args:
+        df: DataFrame with columns "dm", "interface", and "rt"
+    
+    Returns:
+        Dictionary mapping (dm, interface) tuples to lists of latency values
+    """
+    if "rt" not in df.columns or "dm" not in df.columns:
+        return {}
+    
+    # Normalize interface column
+    df = df.copy()
+    if "interface" in df.columns:
+        df["interface"] = df["interface"].apply(_normalize_interface)
+    else:
+        df["interface"] = "<none>"
+    
+    # Group by dm and interface, aggregate rt values
+    result = (
+        df.groupby(["dm", "interface"])["rt"]
+        .agg(list)
+        .to_dict()
+    )
+    return result
+
+def query_latency_distribution(latency_dict: dict, dm_name: str, iface_name: str) -> list:
+    """
+    Query latency distribution for a given (dm, interface) pair.
+    
+    Args:
+        latency_dict: Dictionary from compute_latency_distributions
+        dm_name: Destination microservice name
+        iface_name: Interface name (normalized)
+    
+    Returns:
+        List of latency values, or empty list if not found
+    """
+    return latency_dict.get((dm_name, iface_name), [])
+
+def _export_graph_reports(
+    service_name: str,
+    G_user: nx.DiGraph,
+    latency_dists: dict,
+    output_dir: Path,
+) -> None:
+    """
+    Export edges.csv, interface_distribution.json, and latency_percentiles.json
+    for a service's graph_user subgraph.
+    
+    Args:
+        service_name: Name of the service
+        G_user: USER-reachable subgraph with interface_counts in edge data
+        latency_dists: Dictionary from compute_latency_distributions
+        output_dir: Directory to save the reports
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Percentiles to compute
+    base = list(range(1, 101))
+    tails = [99.5, 99.9, 99.95, 99.99]
+    percentiles = sorted(set(base + tails))
+    
+    # Collect edge data
+    edges_rows: list[tuple[str, str, str, float]] = []
+    iface_counts_by_callee: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
+    seen_callee_ifaces: set[tuple[str, str]] = set()
+    
+    for caller, callee, data in G_user.edges(data=True):
+        raw_weight = data.get("weight")
+        weight = float(raw_weight) if raw_weight is not None else 0.0
+        edges_rows.append((service_name, caller, callee, weight))
+        
+        # Extract interface_counts from edge data
+        iface_counts = data.get("interface_counts", {}) or {}
+        if iface_counts:
+            iface_counts_by_callee[(service_name, callee)].update(iface_counts)
+            for iface in iface_counts.keys():
+                seen_callee_ifaces.add((callee, iface))
+    
+    # (1) Export edges.csv
+    if edges_rows:
+        df_edges = pd.DataFrame(
+            edges_rows,
+            columns=pd.Index(["service", "caller", "callee", "weight"]),
+        ).drop_duplicates()
+        df_edges.to_csv(output_dir / "edges.csv", index=False)
+    
+    # (2) Export interface_distribution.json
+    iface_json: dict[str, dict[str, int]] = {}
+    for (_service, callee), ctr in iface_counts_by_callee.items():
+        if not ctr:
+            continue
+        callee_map = iface_json.setdefault(callee, {})
+        for iface, cnt in ctr.items():
+            callee_map[iface] = int(cnt)
+    
+    if iface_json:
+        with open(output_dir / "interface_distribution.json", "w") as f:
+            json.dump(iface_json, f, indent=2)
+    
+    # (3) Export latency_percentiles.json
+    lat_json: dict[str, dict[str, dict[str, float]]] = {}
+    for (callee, iface) in sorted(seen_callee_ifaces):
+        latencies = query_latency_distribution(latency_dists, callee, iface)
+        if not latencies:
+            continue
+        arr = np.asarray(latencies, dtype=float)
+        vals = np.percentile(arr, percentiles)
+        lat_json.setdefault(callee, {})[iface] = {str(p): float(v) for p, v in zip(percentiles, vals)}
+    
+    if lat_json:
+        with open(output_dir / "latency_percentiles.json", "w") as f:
+            json.dump(lat_json, f, indent=2)
+
+def reachable_subgraph(G: nx.DiGraph, source: str = "USER") -> nx.DiGraph:
+    """
+    Extract the subgraph reachable from a source node.
+    
+    Args:
+        G: NetworkX directed graph
+        source: Source node name (default: "USER")
+    
+    Returns:
+        Subgraph containing source and all nodes reachable from it
+    """
+    if source not in G:
+        # Return empty graph if source not found
+        return G.__class__()
+    
+    reachable = {source} | nx.descendants(G, source)
+    view = G.subgraph(reachable)
+    
+    H = G.__class__()
+    H.graph.update(copy.deepcopy(G.graph))
+    H.add_nodes_from((n, copy.deepcopy(view.nodes[n])) for n in view.nodes)
+    
+    if G.is_multigraph():
+        H.add_edges_from(
+            (u, v, k, copy.deepcopy(view.get_edge_data(u, v, k)))
+            for u, v, k in view.edges(keys=True)
+        )
+    else:
+        H.add_edges_from(
+            (u, v, copy.deepcopy(view.get_edge_data(u, v)))
+            for u, v in view.edges()
+        )
+    return H
+
+def _draw_graph(
+    G: nx.DiGraph,
+    title: str,
+    output_path: Path,
+    num_nodes: int,
+) -> None:
+    """
+    Draw a graph with dynamic sizing and save to file.
+    
+    Args:
+        G: NetworkX directed graph to draw
+        title: Title for the graph
+        output_path: Path to save the image
+        num_nodes: Number of nodes in the graph (for sizing)
+    """
+    if G.number_of_nodes() == 0:
+        return
+    
+    # Compute dynamic figure size based on graph complexity
+    if num_nodes < 50:
+        figsize = _compute_dynamic_figsize(
+            G,
+            base_width=14.0,
+            base_height=10.0,
+            width_per_node=0.4,
+            height_per_node=0.2,
+            min_width=14.0,
+            min_height=10.0,
+            max_width=40.0,
+            max_height=30.0,
+        )
+    elif num_nodes < 200:
+        figsize = _compute_dynamic_figsize(
+            G,
+            base_width=16.0,
+            base_height=12.0,
+            width_per_node=0.25,
+            height_per_node=0.15,
+            min_width=16.0,
+            min_height=12.0,
+            max_width=50.0,
+            max_height=35.0,
+        )
+    else:
+        figsize = _compute_dynamic_figsize(
+            G,
+            base_width=18.0,
+            base_height=14.0,
+            width_per_node=0.15,
+            height_per_node=0.1,
+            min_width=18.0,
+            min_height=14.0,
+            max_width=60.0,
+            max_height=40.0,
+        )
+    
+    # Auto-compute node_size, font_size, and spacing based on graph complexity
+    if num_nodes < 20:
+        node_size = 3000
+        font_size = 10
+        ranksep = 2.0
+        nodesep = 0.8
+    elif num_nodes < 50:
+        node_size = 2800
+        font_size = 9
+        ranksep = 1.8
+        nodesep = 0.7
+    elif num_nodes < 100:
+        node_size = 2600
+        font_size = 8
+        ranksep = 1.5
+        nodesep = 0.6
+    elif num_nodes < 200:
+        node_size = 2400
+        font_size = 7
+        ranksep = 1.2
+        nodesep = 0.5
+    else:
+        node_size = 2200
+        font_size = 7
+        ranksep = 1.0
+        nodesep = 0.4
+    
+    plt.figure(figsize=figsize)
+    pos = _hierarchical_layout(G, ranksep=ranksep, nodesep=nodesep)
+    
+    # Get edge weights for visualization
+    edge_weights = [G[u][v].get('weight', 1) for u, v in G.edges()]
+    max_weight = max(edge_weights) if edge_weights else 1
+    min_weight = min(edge_weights) if edge_weights else 1
+    
+    # Normalize edge widths (min 1, max 5)
+    edge_widths = [1 + 4 * (w - min_weight) / (max_weight - min_weight) if max_weight > min_weight else 3 
+                   for w in edge_weights]
+    
+    # Draw nodes
+    nx.draw_networkx_nodes(G, pos, node_color='lightblue', node_size=node_size, alpha=0.9)
+    
+    # Draw edges with varying widths based on frequency
+    nx.draw_networkx_edges(
+        G, pos, 
+        edge_color='gray', 
+        arrows=True, 
+        arrowsize=20, 
+        alpha=0.6,
+        width=edge_widths
+    )
+    
+    # Draw labels
+    nx.draw_networkx_labels(G, pos, font_size=font_size, font_weight='bold')
+    
+    # Add edge labels with frequencies
+    edge_labels = {(u, v): str(G[u][v].get('weight', 1)) for u, v in G.edges()}
+    edge_label_font_size = max(6, font_size - 2)
+    nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=edge_label_font_size)
+    
+    plt.title(title, fontsize=16, fontweight='bold')
+    plt.axis('off')
+    plt.tight_layout()
+    
+    # Save graph
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+def _build_call_sequence_graph(
+    call_sequences: dict[str, list[dict[str, float]]],
+) -> tuple[nx.DiGraph, dict[str, float]]:
+    """
+    Build a graph from aggregated call sequences and collect node probabilities.
+
+    Args:
+        call_sequences: Parent -> list of stages, each stage is child -> probability
+
+    Returns:
+        Tuple of (graph, node_probabilities)
+    """
+    G = nx.DiGraph()
+    node_probs: dict[str, float] = {}
+
+    for parent, stages in call_sequences.items():
+        G.add_node(parent)
+        for stage in stages:
+            for child, prob in stage.items():
+                G.add_edge(parent, child)
+                node_probs[child] = max(node_probs.get(child, 0.0), float(prob))
+
+    if "USER" in G.nodes():
+        node_probs["USER"] = 1.0
+
+    return G, node_probs
+
+def _draw_call_sequence_timeline(
+    call_sequences: dict[str, list[dict[str, float]]],
+    title: str,
+    output_path: Path,
+) -> None:
+    """
+    Visualize aggregated call sequences as a timeline.
+
+    X-axis: relative time derived from stage ordering.
+    Y-axis: call graph depth (root at top).
+    """
+    if not call_sequences:
+        return
+
+    # Collapse dm::interface labels down to dm for visualization/lookups.
+    normalized_sequences: dict[str, list[dict[str, float]]] = {}
+    for parent, stages in call_sequences.items():
+        norm_stages: list[dict[str, float]] = []
+        for stage in stages:
+            norm_stage: dict[str, float] = {}
+            for child, prob in stage.items():
+                dm_child = _strip_interface_label(child)
+                norm_stage[dm_child] = max(norm_stage.get(dm_child, 0.0), float(prob))
+            norm_stages.append(norm_stage)
+        normalized_sequences[parent] = norm_stages
+
+    G, node_probs = _build_call_sequence_graph(normalized_sequences)
+    if G.number_of_nodes() == 0:
+        return
+
+    # Determine roots (prefer USER if available).
+    if "USER" in G.nodes():
+        roots = ["USER"]
+    else:
+        roots = [n for n in G.nodes() if G.in_degree(n) == 0]
+
+    if not roots:
+        roots = list(G.nodes())
+
+    # Build a duplicated instance tree so shared children can be drawn per parent.
+    instance_by_key: dict[str, dict] = {}
+    children_by_key: dict[str, list[list[str]]] = {}
+    instance_depth: dict[str, int] = {}
+    traversal: list[str] = []
+    instance_counter = 0
+    max_depth = 50
+
+    def make_instance(name: str, parent_key: str | None, depth: int, path: set[str]) -> str:
+        nonlocal instance_counter
+        key = f"{name}__{instance_counter}"
+        instance_counter += 1
+        instance_by_key[key] = {"key": key, "name": name, "parent": parent_key}
+        instance_depth[key] = depth
+        traversal.append(key)
+
+        if depth >= max_depth or name in path:
+            children_by_key[key] = []
+            return key
+
+        stages = normalized_sequences.get(name, [])
+        child_stages: list[list[str]] = []
+        for stage in stages:
+            stage_children: list[str] = []
+            sorted_children = sorted(
+                stage.items(),
+                key=lambda item: (-float(item[1]), item[0]),
+            )
+            for child, _prob in sorted_children:
+                child_key = make_instance(child, key, depth + 1, path | {name})
+                stage_children.append(child_key)
+            child_stages.append(stage_children)
+        children_by_key[key] = child_stages
+        return key
+
+    root_keys: list[str] = []
+    for root in roots:
+        root_keys.append(make_instance(root, None, 0, set()))
+
+    # Compute subtree span based on stage counts (parallel uses max child span).
+    span_cache: dict[str, float] = {}
+    in_progress: set[str] = set()
+
+    def compute_span(key: str) -> float:
+        if key in span_cache:
+            return span_cache[key]
+        if key in in_progress:
+            return 1.0
+        in_progress.add(key)
+        try:
+            stages = children_by_key.get(key, [])
+            if not stages:
+                span_cache[key] = 1.0
+                return 1.0
+            total = 0.0
+            for stage in stages:
+                if stage:
+                    child_spans = [compute_span(child_key) for child_key in stage]
+                    total += max(child_spans) if child_spans else 1.0
+                else:
+                    total += 1.0
+            span_cache[key] = max(total, 1.0)
+            return span_cache[key]
+        finally:
+            in_progress.discard(key)
+
+    # Assign intervals to instances based on stage ordering.
+    intervals: dict[str, tuple[float, float]] = {}
+    stage_bounds: dict[str, tuple[float, float]] = {}
+
+    def assign_intervals(key: str, start: float, end: float) -> None:
+        if key in intervals:
+            return
+        intervals[key] = (start, end)
+        stages = children_by_key.get(key, [])
+        if not stages:
+            return
+
+        stage_spans = []
+        for stage in stages:
+            if stage:
+                child_spans = [compute_span(child_key) for child_key in stage]
+                stage_spans.append(max(child_spans) if child_spans else 1.0)
+            else:
+                stage_spans.append(1.0)
+
+        total_span = sum(stage_spans)
+        if total_span <= 0.0:
+            total_span = 1.0
+
+        current = start
+        total_width = max(end - start, 1.0)
+        for stage, stage_span in zip(stages, stage_spans):
+            width = total_width * (stage_span / total_span)
+            stage_start = current
+            stage_end = current + width
+            for child_key in stage:
+                stage_bounds[child_key] = (stage_start, stage_end)
+                assign_intervals(child_key, stage_start, stage_end)
+            current = stage_end
+
+    current_x = 0.0
+    root_gap = 0.5
+    for root_key in root_keys:
+        root_span = compute_span(root_key)
+        assign_intervals(root_key, current_x, current_x + root_span)
+        current_x += root_span + root_gap
+
+    # Assign y positions: stack parallel siblings, reuse rows across sequential stages.
+    node_y: dict[str, float] = {}
+
+    def layout_node(key: str, top_y: float) -> float:
+        node_y[key] = top_y
+        stages = children_by_key.get(key, [])
+        if not stages:
+            return 1.0
+
+        base_y = top_y + 1.0
+        max_stage_height = 0.0
+        for stage in stages:
+            current_y = base_y
+            stage_height = 0.0
+            for child_key in stage:
+                child_height = layout_node(child_key, current_y)
+                current_y += child_height
+                stage_height += child_height
+            max_stage_height = max(max_stage_height, stage_height)
+
+        return 1.0 + max_stage_height
+
+    total_height = 0.0
+    for root_key in root_keys:
+        root_height = layout_node(root_key, total_height)
+        total_height += root_height
+
+    traversal = list(instance_by_key.keys())
+
+    # Plot
+    num_nodes = len(traversal)
+    fig_width = max(12.0, min(40.0, 8.0 + num_nodes * 0.3))
+    fig_height = max(6.0, min(24.0, 4.0 + num_nodes * 0.2))
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    max_time = max(end for _, end in intervals.values()) if intervals else 1.0
+    bar_height = 0.32
+
+    norm = mcolors.Normalize(vmin=0.0, vmax=1.0)
+    cmap = cm.get_cmap("viridis")
+
+    display_intervals: dict[str, tuple[float, float]] = {}
+    draw_items: list[tuple[str, float, float, float, float, str]] = []
+
+    margin = 0.002 * max_time
+    for key in traversal:
+        start, end = intervals.get(key, (0.0, 1.0))
+        depth = instance_depth.get(key, 0)
+        base_width = max(0.05, end - start)
+        inset_frac = min(0.12, 0.03 * (depth + 1))
+        inset = base_width * inset_frac
+        display_start = start + inset
+        display_end = end - inset
+        if display_end <= display_start:
+            display_start = start
+            display_end = end
+        parent_key = instance_by_key[key]["parent"]
+        if parent_key and parent_key in display_intervals:
+            parent_start, parent_end = display_intervals[parent_key]
+            display_start = max(display_start, parent_start + margin)
+            display_end = min(display_end, parent_end - margin)
+        if key in stage_bounds:
+            stage_start, stage_end = stage_bounds[key]
+            display_start = max(display_start, stage_start + margin)
+            display_end = min(display_end, stage_end - margin)
+        if display_end <= display_start:
+            mid = (display_start + display_end) / 2.0
+            display_start = mid - 0.5 * margin
+            display_end = mid + 0.5 * margin
+        width = max(0.05, display_end - display_start)
+        y = node_y.get(key, 0.0)
+        name = instance_by_key[key]["name"]
+        prob = node_probs.get(name, 1.0 if name in roots else 0.5)
+        display_intervals[key] = (display_start, display_end)
+        draw_items.append((key, display_start, display_end, y, prob, name))
+
+    draw_items.sort(key=lambda item: (item[3], item[1]))
+
+    for key, display_start, display_end, y, prob, name in draw_items:
+        width = max(0.05, display_end - display_start)
+        color = cmap(norm(prob))
+        ax.barh(y, width, left=display_start, height=bar_height, color=color,
+                edgecolor="black", linewidth=0.6, alpha=0.85, zorder=2)
+
+        label_x = display_start + 0.02 * max_time
+        ax.text(label_x, y, name, fontsize=7, va="center", ha="left",
+                color="black", zorder=3)
+
+    # Draw dependency arrows from parent left edge to child left edge.
+    for parent_key, stage_list in children_by_key.items():
+        for stage in stage_list:
+            for child_key in stage:
+                if parent_key not in display_intervals or child_key not in display_intervals:
+                    continue
+                parent_start, parent_end = display_intervals[parent_key]
+                child_start, child_end = display_intervals[child_key]
+                y_parent = node_y.get(parent_key, 0.0)
+                y_child = node_y.get(child_key, 0.0)
+                x_offset = 0.01 * max_time
+                arrow_start_x = max(child_start - x_offset, parent_start + 0.002 * max_time)
+                arrow_start_x = min(arrow_start_x, parent_end - 0.002 * max_time)
+                ax.annotate(
+                    "",
+                    xy=(child_start, y_child + bar_height / 2),
+                    xytext=(arrow_start_x, y_parent - bar_height / 2),
+                    arrowprops=dict(arrowstyle="->", color="black", lw=0.8, alpha=0.6),
+                    zorder=1,
+                )
+                child_end_x = child_end
+                arrow_end_x = min(child_end_x + x_offset, parent_end - 0.002 * max_time)
+                arrow_end_x = max(arrow_end_x, parent_start + 0.002 * max_time)
+                ax.annotate(
+                    "",
+                    xy=(arrow_end_x, y_parent - bar_height / 2),
+                    xytext=(child_end_x, y_child + bar_height / 2),
+                    arrowprops=dict(arrowstyle="->", color="black", lw=0.8, alpha=0.6),
+                    zorder=1,
+                )
+
+    ax.set_xlim(-0.05 * max_time, max_time * 1.05)
+    ax.set_ylim(-0.5, total_height + 0.5)
+    ax.invert_yaxis()
+    ax.set_xlabel("Time (relative stage order)")
+    ax.set_ylabel("Call sequence (root at top)")
+    ax.set_title(title, fontsize=11, fontweight="bold")
+    ax.grid(True, axis="x", alpha=0.3)
+
+    sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=ax, pad=0.01)
+    cbar.set_label("Call probability", fontsize=9)
+
+    plt.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close()
+
+def _compute_graph_statistics(G: nx.DiGraph) -> dict:
+    """
+    Compute statistics for a directed graph.
+    
+    Args:
+        G: NetworkX directed graph
+    
+    Returns:
+        Dictionary with statistics: num_nodes, out_degree_avg, out_degree_min, out_degree_max,
+        in_degree_avg, in_degree_min, in_degree_max
+    """
+    if G.number_of_nodes() == 0:
+        return {
+            "num_nodes": 0,
+            "out_degree_avg": 0.0,
+            "out_degree_min": 0,
+            "out_degree_max": 0,
+            "in_degree_avg": 0.0,
+            "in_degree_min": 0,
+            "in_degree_max": 0,
+        }
+    
+    out_degrees = [d for n, d in G.out_degree()]
+    in_degrees = [d for n, d in G.in_degree()]
+    
+    return {
+        "num_nodes": G.number_of_nodes(),
+        "out_degree_avg": sum(out_degrees) / len(out_degrees) if out_degrees else 0.0,
+        "out_degree_min": min(out_degrees) if out_degrees else 0,
+        "out_degree_max": max(out_degrees) if out_degrees else 0,
+        "in_degree_avg": sum(in_degrees) / len(in_degrees) if in_degrees else 0.0,
+        "in_degree_min": min(in_degrees) if in_degrees else 0,
+        "in_degree_max": max(in_degrees) if in_degrees else 0,
+    }
+
+
+def _process_service(
+    service_name: str,
+    service_df: pd.DataFrame,
+    trace_col: str,
+    graphs_dir: Path,
+) -> tuple[str, nx.DiGraph, dict, bool, bool]:
+    """
+    Process a single service: extract edges, create graph, and save visualization.
+    
+    Args:
+        service_name: Name of the service
+        service_df: DataFrame containing rows for this service
+        trace_col: Column name containing trace IDs
+        graphs_dir: Directory to save graph visualizations
+    
+    Returns:
+        Tuple of (service_name, graph, statistics_dict, has_user_root, user_subgraph_sufficient)
+        where has_user_root is True if the graph has 'USER' as a root node,
+        and user_subgraph_sufficient is True if the USER-reachable subgraph has at least 5 nodes
+    """
+    # Get unique traces for this service
+    unique_traces = service_df[trace_col].dropna().unique()
+    
+    if len(unique_traces) == 0:
+        logger.warning(f"No valid traces found for service {service_name}")
+        G = nx.DiGraph()
+        stats = _compute_graph_statistics(G)
+        stats["num_traces"] = 0
+        return (service_name, G, stats, False, False)
+    
+    # Aggregate edges across all traces with interface information
+    edge_counter: dict[tuple[str, str], int] = {}
+    edge_interface_counts: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
+    
+    for trace_id in unique_traces:
+        trace_df = service_df[service_df[trace_col] == trace_id]
+        # Extract edges with interface information
+        edges_with_iface = _extract_edges_with_interface_from_trace(trace_df)
+        
+        # Count edge frequencies and track interface counts
+        for source, target, interface in edges_with_iface:
+            edge = (source, target)
+            edge_counter[edge] = edge_counter.get(edge, 0) + 1
+            edge_interface_counts[edge][interface] += 1
+    
+    # Create graph with edge weights and interface_counts
+    G = nx.DiGraph()
+    for (source, target), frequency in edge_counter.items():
+        interface_counts = dict(edge_interface_counts[(source, target)])
+        G.add_edge(source, target, weight=frequency, interface_counts=interface_counts)
+    
+    # Check if graph has 'USER' as a root node (in_degree == 0)
+    has_user_root = "USER" in G.nodes() and G.in_degree("USER") == 0
+    
+    # Check if USER subgraph has at least 5 nodes
+    user_subgraph_sufficient = False
+    if has_user_root:
+        G_user = reachable_subgraph(G, source="USER")
+        user_subgraph_sufficient = G_user.number_of_nodes() >= 5
+    
+    # Compute statistics
+    stats = _compute_graph_statistics(G)
+    # Add trace count to statistics
+    stats["num_traces"] = len(unique_traces)
+    
+    # Only create visualizations if graph has USER as a root node and USER subgraph has >= 5 nodes
+    if G.number_of_nodes() > 0 and has_user_root and user_subgraph_sufficient:
+        # Create service-specific directory
+        service_slug = _slugify(service_name)
+        service_dir = graphs_dir / service_slug
+        service_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Draw full graph (all nodes)
+        num_nodes = G.number_of_nodes()
+        output_path = service_dir / "graph_all_nodes.png"
+        title = f"Aggregated Call Graph for Service '{service_name}' (All Nodes: {num_nodes})\n(Edge thickness and labels indicate frequency)"
+        _draw_graph(G, title, output_path, num_nodes)
+        
+        # Draw USER-reachable subgraph
+        G_user = reachable_subgraph(G, source="USER")
+        if G_user.number_of_nodes() > 0:
+            num_nodes_user = G_user.number_of_nodes()
+            output_path = service_dir / "graph_user.png"
+            title = f"Aggregated Call Graph for Service '{service_name}' (USER-Reachable Subgraph: {num_nodes_user} nodes)\n(Edge thickness and labels indicate frequency)"
+            _draw_graph(G_user, title, output_path, num_nodes_user)
+            
+            # Export edges.csv, interface_distribution.json, and latency_percentiles.json
+            # Compute latency distributions from service_df
+            latency_dists = compute_latency_distributions(service_df)
+            _export_graph_reports(service_name, G_user, latency_dists, service_dir)
+            
+            # Extract and aggregate timing data for timeline visualization
+            if "timestamp" in service_df.columns and "rt" in service_df.columns:
+                # Aggregate timing data across all traces
+                aggregated_timing: dict[tuple[str, str], list[dict]] = defaultdict(list)
+                
+                for trace_id in unique_traces:
+                    trace_df = service_df[service_df[trace_col] == trace_id]
+                    trace_timing = _extract_timing_from_trace(trace_df, G_user)
+                    
+                    # Merge into aggregated timing
+                    for edge, timings in trace_timing.items():
+                        if edge in G_user.edges():  # Only include edges in USER subgraph
+                            aggregated_timing[edge].extend(timings)
+                
+                # Draw timeline graph (even if no timing data, to show structure)
+                output_path = service_dir / "pattern_timeline.png"
+                title = f"Call Pattern Timeline for Service '{service_name}'\n(Shows sequential vs parallel call patterns)"
+                _draw_timeline_graph(G_user, aggregated_timing, title, output_path, num_nodes_user)
+
+                # Extract call sequences for each parent node (used for unified visualization)
+                parent_nodes = [n for n in G_user.nodes() if G_user.out_degree(n) >= 1]
+                all_parent_sequences: dict[str, list[dict[str, float]]] = {}
+
+                if parent_nodes:
+                    for parent in parent_nodes:
+                        # Extract call sequences from each trace
+                        sequences = []
+
+                        for trace_id in unique_traces:
+                            trace_df = service_df[service_df[trace_col] == trace_id]
+                            trace_timing = _extract_timing_from_trace(trace_df, G_user)
+
+                            # Only process if this parent appears in this trace
+                            parent_appears = any(p == parent for (p, c) in trace_timing.keys())
+                            if parent_appears:
+                                sequence = _extract_call_sequence_from_trace(trace_timing, parent)
+                                if sequence:
+                                    sequences.append(sequence)
+
+                        # Aggregate sequences across traces
+                        if sequences:
+                            call_sequence = _aggregate_call_sequences(sequences, len(sequences))
+
+                            if call_sequence:
+                                # Add to collection for unified diagram
+                                all_parent_sequences[parent] = call_sequence
+
+                missing_sequence_nodes = sorted(set(parent_nodes) - set(all_parent_sequences.keys()))
+                if missing_sequence_nodes:
+                    logger.warning(
+                        f"Service {service_name}: {len(missing_sequence_nodes)} of {len(parent_nodes)} "
+                        "nodes with children have no call sequence"
+                    )
+
+                # Export call sequence data for this service
+                output_path = service_dir / "call_sequence.json"
+                output_payload = {service_name: all_parent_sequences}
+                with output_path.open("w", encoding="utf-8") as f:
+                    json.dump(output_payload, f, indent=2, sort_keys=True)
+
+                # Visualize aggregated call sequence timeline
+                output_path = service_dir / "call_sequence_timeline.png"
+                title = f"Call Sequence Timeline for Service '{service_name}'\n(Aggregated stage ordering)"
+                _draw_call_sequence_timeline(all_parent_sequences, title, output_path)
+
+                stats["call_sequence_parent_nodes"] = len(parent_nodes)
+                stats["call_sequence_missing_nodes"] = len(missing_sequence_nodes)
+
+    logger.info(
+        f"Finished processing service '{service_name}' "
+        f"(nodes={G.number_of_nodes()}, has_user_root={has_user_root}, "
+        f"user_subgraph_ok={user_subgraph_sufficient})"
+    )
+
+    # Return both flags separately so we can track rejection reasons
+    return (service_name, G, stats, has_user_root, user_subgraph_sufficient)
+
+def _process_service_wrapper(args: tuple) -> tuple[str, nx.DiGraph, dict, bool, bool]:
+    """
+    Wrapper function for parallel processing of services.
+    Extracts arguments from tuple for ProcessPoolExecutor compatibility.
+    
+    Args:
+        args: Tuple of (service_name, service_df, trace_col, graphs_dir_str)
+              where graphs_dir_str is a string path that will be converted to Path
+    
+    Returns:
+        Tuple of (service_name, graph, statistics_dict, has_user_root, user_subgraph_sufficient)
+    """
+    service_name, service_df, trace_col, graphs_dir_str = args
+    graphs_dir = Path(graphs_dir_str)
+    return _process_service(service_name, service_df, trace_col, graphs_dir)
+
+def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int = 100, n_workers: int | None = None) -> None:
+    """
+    Analyze call graphs by grouping by service and aggregating edges across all traces.
+    For each service, compute the union of all edges and their frequencies, then plot.
+    Only processes the top N services by trace count.
+    Print statistics sorted by number of nodes (descending).
+    
+    Args:
+        df: Input dataframe with trace data
+        trace_col: Column name containing trace IDs (default: "traceid")
+        top_n: Number of top services by trace count to process (default: 100)
+    """
+    # Check required columns
+    required_cols = ["service", trace_col, "rpc_id", "um", "dm"]
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        logger.warning(f"Missing required columns: {missing_cols}. Available columns: {list(df.columns)}")
+        return
+    
+    # Create graphs directory
+    graphs_dir = Path(__file__).parent / "graphs"
+    graphs_dir.mkdir(exist_ok=True)
+    logger.info(f"Graphs will be saved to: {graphs_dir}")
+    
+    # Group by service
+    logger.info(f"{'='*80}")
+    logger.info("Grouping dataset by service")
+    logger.info(f"{'='*80}")
+    
+    service_groups = df.groupby("service")
+    service_names = list(service_groups.groups.keys())
+    
+    if len(service_names) == 0:
+        logger.warning("No services found in dataset")
+        return
+    
+    logger.info(f"Found {len(service_names)} service(s)")
+    
+    # Count traces per service and select top N
+    logger.info(f"Counting traces per service...")
+    service_trace_counts = []
+    for service_name in service_names:
+        service_df = service_groups.get_group(service_name)
+        unique_traces = service_df[trace_col].dropna().unique()
+        trace_count = len(unique_traces)
+        service_trace_counts.append((service_name, trace_count))
+    
+    # Sort by trace count (descending) and take top N
+    service_trace_counts.sort(key=lambda x: x[1], reverse=True)
+    top_services = [name for name, _ in service_trace_counts[:top_n]]
+    
+    logger.info(f"Selecting top {min(top_n, len(service_names))} service(s) by trace count")
+    logger.info(f"Top service: {top_services[0]} with {service_trace_counts[0][1]:,} traces")
+    if len(top_services) > 1:
+        logger.info(f"Bottom selected service: {top_services[-1]} with {service_trace_counts[min(top_n, len(service_names))-1][1]:,} traces")
+    
+    # Process each selected service in parallel
+    all_stats = []
+    filtered_no_user_root = 0
+    filtered_small_user_subgraph = 0
+    missing_sequence_nodes_total = 0
+    missing_sequence_nodes_possible = 0
+    services_missing_sequences = 0
+    logger.info(f"\nProcessing {len(top_services)} service(s) in parallel...")
+    
+    # Prepare arguments for parallel processing (convert Path to string for pickling)
+    process_args = [
+        (service_name, service_groups.get_group(service_name).copy(), trace_col, str(graphs_dir))
+        for service_name in top_services
+    ]
+    
+    # Process services in parallel
+    with ProcessPoolExecutor(max_workers=n_workers) as ex:
+        futures = {ex.submit(_process_service_wrapper, args): args[0] for args in process_args}
+        for fut in tqdm(as_completed(futures), total=len(futures), desc="Processing services", file=sys.stderr, dynamic_ncols=True):
+            service_name = futures[fut]
+            try:
+                _, G, stats, has_user_root, user_subgraph_sufficient = fut.result()
+                if has_user_root and user_subgraph_sufficient:
+                    stats["service_name"] = service_name
+                    all_stats.append(stats)
+                else:
+                    # Track rejection reasons separately
+                    if not has_user_root:
+                        filtered_no_user_root += 1
+                    elif not user_subgraph_sufficient:
+                        filtered_small_user_subgraph += 1
+            except Exception as e:
+                logger.error(f"Failed to process service {service_name}: {e!r}")
+                raise
+    
+    # Sort statistics by number of nodes (descending)
+    all_stats.sort(key=lambda x: x["num_nodes"], reverse=True)
+    
+    # Print statistics
+    logger.info(f"{'='*80}")
+    logger.info("Graph Statistics (sorted by number of nodes, descending)")
+    logger.info(f"{'='*80}")
+    logger.info(f"{'Service':<20} {'Traces':<10} {'Nodes':<8} {'Out-Degree':<30} {'In-Degree':<30}")
+    logger.info(f"{'':-<20} {'':-<10} {'':-<8} {'':-<30} {'':-<30}")
+    logger.info(f"{'':<20} {'':<10} {'':<8} {'Avg':<10} {'Min':<10} {'Max':<10} {'Avg':<10} {'Min':<10} {'Max':<10}")
+    logger.info(f"{'':-<20} {'':-<10} {'':-<8} {'':-<30} {'':-<30}")
+    
+    for stats in all_stats:
+        service_name = stats["service_name"]
+        num_traces = stats["num_traces"]
+        num_nodes = stats["num_nodes"]
+        out_avg = stats["out_degree_avg"]
+        out_min = stats["out_degree_min"]
+        out_max = stats["out_degree_max"]
+        in_avg = stats["in_degree_avg"]
+        in_min = stats["in_degree_min"]
+        in_max = stats["in_degree_max"]
+        
+        logger.info(
+            f"{service_name:<20} {num_traces:<10,} {num_nodes:<8} "
+            f"{out_avg:<10.2f} {out_min:<10} {out_max:<10} "
+            f"{in_avg:<10.2f} {in_min:<10} {in_max:<10}"
+        )
+
+        missing_nodes = stats.get("call_sequence_missing_nodes", 0)
+        parent_nodes = stats.get("call_sequence_parent_nodes", 0)
+        if missing_nodes > 0:
+            services_missing_sequences += 1
+            missing_sequence_nodes_total += missing_nodes
+            missing_sequence_nodes_possible += parent_nodes
+    
+    logger.info(f"{'='*80}")
+    logger.info(f"Generated graphs for {len(all_stats)} service(s) in {graphs_dir}")
+    logger.info(f"Each service has its own directory with graph_all_nodes.png and graph_user.png")
+
+    if services_missing_sequences > 0:
+        logger.info(
+            "Call sequence coverage: "
+            f"{missing_sequence_nodes_total} of {missing_sequence_nodes_possible} nodes "
+            f"missing call sequences across {services_missing_sequences} service(s)"
+        )
+    
+    total_filtered = filtered_no_user_root + filtered_small_user_subgraph
+    if total_filtered > 0:
+        logger.info(f"\nFiltered out {total_filtered} service(s) (no graphs generated):")
+        logger.info(f"  - {filtered_no_user_root} service(s) do not have 'USER' as a root node")
+        logger.info(f"  - {filtered_small_user_subgraph} service(s) have a USER-reachable subgraph with fewer than 5 nodes")
+    else:
+        logger.info("\nAll processed services have 'USER' as a root node and USER subgraph with >= 5 nodes")
+
+# ----------------------------
+# main()
+# ----------------------------
+
+def main() -> None:
+    # Configure logging to use tqdm.write() to avoid interfering with progress bars
+    handler = TqdmLoggingHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    logging.basicConfig(
+        level=logging.INFO,
+        handlers=[handler]
+    )
+    
+    parser = argparse.ArgumentParser(
+        description="Quick check script for loading CSV datasets"
+    )
+    parser.add_argument(
+        "-n", "--num-datasets",
+        type=int,
+        default=10,
+        help="Number of datasets to load (default: 10). Loads datasets 0 through (n-1)."
+    )
+    parser.add_argument(
+        "-s", "--sample-fraction",
+        type=float,
+        default=1.0,
+        help="Fraction of traces to sample from each CSV during loading (0.0 to 1.0, default: 1.0). Set to 1.0 to use all traces."
+    )
+    parser.add_argument(
+        "--random-state",
+        type=int,
+        default=42,
+        help="Random seed for trace sampling reproducibility (default: 42)"
+    )
+    parser.add_argument(
+        "--max-rows",
+        type=int,
+        default=None,
+        help="Maximum number of rows to load from each CSV file (default: None, loads all rows)"
+    )
+    parser.add_argument(
+        "--top-services",
+        type=int,
+        default=100,
+        help="Number of top services by trace count to process (default: 100)"
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Number of parallel workers for processing services (default: None, uses CPU count)"
+    )
+    args = parser.parse_args()
+    num_datasets = args.num_datasets
+    sample_fraction = args.sample_fraction
+    random_state = args.random_state
+    max_rows = args.max_rows
+    top_services = args.top_services
+    
+    if num_datasets < 1:
+        parser.error("Number of datasets must be at least 1")
+    
+    if sample_fraction <= 0.0 or sample_fraction > 1.0:
+        parser.error("Sample fraction must be in (0.0, 1.0]")
+    
+    if max_rows is not None and max_rows < 1:
+        parser.error("Max rows must be at least 1")
+    
+    if top_services < 1:
+        parser.error("Top services must be at least 1")
+    
+    # Convert number of datasets to max dataset ID (0-indexed)
+    max_dataset = num_datasets - 1
+
+    # Load & concat (with sampling applied during loading)
+    logger.info(f"Loading {num_datasets} dataset(s) (datasets 0 through {max_dataset})")
+    if max_rows is not None:
+        logger.info(f"Limiting to {max_rows:,} rows per CSV file")
+    if sample_fraction < 1.0:
+        logger.info(f"Sampling {sample_fraction*100:.1f}% of traces from each CSV (random_state={random_state})")
+    else:
+        logger.info("Using all traces (no sampling)")
+    
+    df = load_concat_datasets(
+        max_dataset,
+        max_rows=max_rows,
+        sample_fraction=sample_fraction,
+        random_state=random_state,
+        n_workers=args.workers,
+    )
+    logger.info(f"Loaded {len(df):,} rows from {num_datasets} dataset(s) (after sampling)")
+
+    # Clean data before analysis
+    df = clean_data(df)
+
+    # Analyze call graphs
+    analyze_call_graphs(df, top_n=top_services, n_workers=args.workers)
+
+if __name__ == "__main__":
+    main()
