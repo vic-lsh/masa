@@ -359,17 +359,22 @@ mod tests {
         }
 
         for key in freq_map.keys() {
+            let method_id: MethodId = key.clone().into();
             assert!(
-                seen.contains_key(key.as_str()),
+                seen.contains_key(&method_id),
                 "Key {} should be sampled",
                 key
             );
         }
 
         // check distribution
-        assert!(seen["A"] < seen["B"]);
-        assert!(seen["B"] < seen["C"]);
-        assert!(seen["C"] < seen["D"]);
+        let a: MethodId = "A".into();
+        let b: MethodId = "B".into();
+        let c: MethodId = "C".into();
+        let d: MethodId = "D".into();
+        assert!(seen[&a] < seen[&b]);
+        assert!(seen[&b] < seen[&c]);
+        assert!(seen[&c] < seen[&d]);
     }
 
     #[test]
@@ -400,13 +405,13 @@ mod tests {
             .sample_method(&svc_one, "graph_b", &mut rng)
             .expect("graph b sampling");
         assert_eq!(sampled.graph.as_deref(), Some("graph_b"));
-        assert_eq!(sampled.method, "method_c");
+        assert_eq!(sampled.method.as_ref(), "method_c");
 
         let svc_two = ServiceName::from_string("svc_two".into());
         let sampled_two = map
             .sample_method(&svc_two, "missing_graph", &mut rng)
             .expect("fallback to aggregated");
         assert_eq!(sampled_two.graph.as_deref(), None);
-        assert_eq!(sampled_two.method, "method_d");
+        assert_eq!(sampled_two.method.as_ref(), "method_d");
     }
 }

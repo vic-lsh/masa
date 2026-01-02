@@ -5,10 +5,9 @@ pub mod call_sequence;
 pub mod method_freq;
 pub mod method_latency;
 
+use masa::MethodId;
 use method_latency::MethodLatencyDistMap;
 use serde::{Deserialize, Serialize};
-
-pub type MethodId = Cow<'static, str>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ServiceName(Cow<'static, str>);
