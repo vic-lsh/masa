@@ -16,6 +16,8 @@ import re
 import signal
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -348,7 +350,7 @@ class MssimApp(AppPlugin):
                 "-p",
                 project_name,
                 "up",
-                "--abort-on-container-exit",
+                "-d",  # Start in detached mode so we can stream individual logs
             ]
             down_cmd = [
                 "docker",
@@ -385,7 +387,7 @@ class MssimApp(AppPlugin):
             with (run_dir / "metadata.json").open("w", encoding="utf-8") as fh:
                 json.dump(metadata, fh, indent=2, sort_keys=True)
 
-            proc: subprocess.Popen | None = None
+            log_threads: list[threading.Thread] = []
             try:
                 # Generate compose/deployment
                 with log_path.open("wb") as log_file:
@@ -401,32 +403,96 @@ class MssimApp(AppPlugin):
                         f"MSSIM compose generation failed ({gen_proc.returncode}). See log at {log_path}"
                     )
 
-                # Run the experiment stack
+                # Run the experiment stack in detached mode
                 print(f"Starting services for policy={policy} rps={rps} iteration={iteration}")
                 with log_path.open("ab") as log_file:
-                    proc = subprocess.Popen(
+                    up_proc = subprocess.run(
                         up_cmd,
                         cwd=config.app_dir,
                         env=env,
                         stdout=log_file,
                         stderr=subprocess.STDOUT,
+                        check=True,
                     )
 
+                # Wait a moment for containers to start
+                time.sleep(2)
+
+                # Get container names and stream logs to individual files
+                logs_dir = run_dir / "logs"
+                container_names = docker.get_container_names(
+                    compose_path=docker_compose_path,
+                    project_name=project_name,
+                    env_vars=env,
+                )
+                
+                if container_names:
+                    print(f"Streaming logs for {len(container_names)} containers to {logs_dir}")
+                    log_threads = docker.stream_logs(
+                        container_names=container_names,
+                        output_dir=logs_dir,
+                        follow=True,
+                    )
+                else:
+                    print("Warning: No containers found for log streaming")
+
+                # Wait for load generator to exit
+                loadgen_container = None
+                for name in container_names:
+                    if "load_generator" in name or "loadgen" in name.lower():
+                        loadgen_container = name
+                        break
+                
+                if loadgen_container:
+                    # Wait for load generator container to exit
                     grace_period = 300
                     timeout = duration_sec + grace_period if duration_sec > 0 else None
-                    proc.wait(timeout=timeout)
-            except subprocess.TimeoutExpired as exc:
-                raise RuntimeError(
-                    f"MSSIM timeout expired after {duration_sec} (+{grace_period}) seconds"
-                ) from exc
+                    start_time = time.time()
+                    
+                    while True:
+                        # Check if load generator container has exited
+                        check_cmd = [
+                            "docker",
+                            "inspect",
+                            "--format={{.State.Status}}",
+                            loadgen_container,
+                        ]
+                        try:
+                            result = subprocess.run(
+                                check_cmd,
+                                capture_output=True,
+                                text=True,
+                                check=True,
+                            )
+                            status = result.stdout.strip()
+                            if status == "exited":
+                                break
+                        except subprocess.CalledProcessError:
+                            # Container might not exist yet, wait a bit
+                            pass
+                        
+                        if timeout and (time.time() - start_time) > timeout:
+                            raise RuntimeError(
+                                f"MSSIM timeout expired after {duration_sec} (+{grace_period}) seconds"
+                            )
+                        
+                        time.sleep(1)
+                else:
+                    # Fallback: wait for duration if no load generator found
+                    if duration_sec > 0:
+                        print(f"Waiting {duration_sec} seconds for experiment to complete")
+                        time.sleep(duration_sec)
+                    
+            except RuntimeError:
+                # Re-raise RuntimeErrors (including timeout)
+                raise
+            except Exception as exc:
+                raise RuntimeError(f"MSSIM experiment failed: {exc}") from exc
             finally:
-                # Always tear down compose stack, matching old behavior.
-                if proc is not None and proc.poll() is None:
-                    proc.send_signal(signal.SIGINT)
-                    try:
-                        proc.wait(timeout=30)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-
+                # Stop log streaming threads by stopping containers
                 subprocess.run(down_cmd, cwd=config.app_dir, env=env, check=False)
+                
+                # Wait for log threads to finish (they should stop when containers stop)
+                for thread in log_threads:
+                    thread.join(timeout=5)
 
