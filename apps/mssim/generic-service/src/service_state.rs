@@ -120,16 +120,14 @@ impl ServiceState {
             let elapsed = start_time.elapsed();
 
             let remaining = total_latency_ms - (elapsed.as_millis() as f64);
-            if remaining > 0.0 {
-                busy_spin(std::time::Duration::from_millis(remaining as u64));
-            }
+            busy_spin(std::time::Duration::from_millis(remaining.max(1.0) as u64));
         }
 
         Ok(())
     }
 
     async fn handle_leaf_service(&self, total_latency_ms: f64) {
-        const SPIN_FRACTION: f64 = 0.1;
+        const SPIN_FRACTION: f64 = 0.2;
 
         let spin_duration = total_latency_ms * SPIN_FRACTION;
         let block_duration = total_latency_ms - spin_duration;
