@@ -1,5 +1,6 @@
 use std::{sync::Arc, task::Poll};
 
+use crate::metadata::{Ascii, MetadataValue};
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
 mod fifo;
@@ -186,6 +187,45 @@ where
     /// The last lifecycle hook to be invoked. Provides a mutable reference to the response about
     /// to be sent back to the client.
     fn finalize(&self, response: &mut http::Response<BoxBody>) {}
+}
+
+/// Header key for overriding the gRPC method name in latency tracking.
+///
+/// When a service uses a generic gRPC method (e.g., `invoke`) to simulate multiple methods,
+/// this header can be set to specify the actual method name being simulated. This allows
+/// per-method latency estimates to be maintained accurately.
+pub const METHOD_NAME_OVERRIDE_HEADER: &str = "x-masa-method-name";
+
+/// Extension trait for `Request<T>` to set the method name override header.
+pub trait MasaRequestExt<T> {
+    /// Set the method name override header on this request.
+    ///
+    /// This is useful when using a generic gRPC method to simulate multiple methods.
+    /// The override method name will be used for latency tracking instead of the
+    /// actual gRPC method name.
+    ///
+    /// # Arguments
+    ///
+    /// * `method_name` - The actual method name being simulated
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the method name cannot be converted to a valid metadata value.
+    fn set_method_name_override(&mut self, method_name: &str) -> Result<(), Status>;
+}
+
+impl<T> MasaRequestExt<T> for Request<T> {
+    fn set_method_name_override(&mut self, method_name: &str) -> Result<(), Status> {
+        let value = MetadataValue::<Ascii>::try_from(method_name).map_err(|e| {
+            Status::internal(format!(
+                "Failed to create metadata value for method name override: {:?}",
+                e
+            ))
+        })?;
+        self.metadata_mut()
+            .insert(METHOD_NAME_OVERRIDE_HEADER, value);
+        Ok(())
+    }
 }
 
 #[allow(dead_code)]

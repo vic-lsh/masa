@@ -4,11 +4,31 @@ Docker operations manager for building, running, and managing containers.
 
 import logging
 import os
+import re
 import subprocess
 import threading
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def strip_ansi_codes(text: str) -> str:
+    """
+    Remove ANSI escape sequences from text.
+    
+    This function strips color codes and other ANSI escape sequences
+    to make log files more legible while preserving colors in terminal output.
+    
+    Args:
+        text: Text that may contain ANSI escape sequences
+        
+    Returns:
+        Text with ANSI escape sequences removed
+    """
+    # Pattern to match ANSI escape sequences
+    # Matches: ESC[ followed by optional parameters and a command character
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', text)
 
 
 class DockerManager:
@@ -148,6 +168,58 @@ class DockerManager:
         
         return threads
     
+    def get_container_names(
+        self,
+        compose_path: Path,
+        project_name: str,
+        env_vars: dict | None = None,
+    ) -> list[str]:
+        """
+        Get list of container names from a docker compose project.
+        
+        Includes both running and stopped containers to ensure logs are
+        gathered even for containers that crash quickly.
+        
+        Args:
+            compose_path: Path to docker-compose.yml file (absolute or relative)
+            project_name: Docker compose project name
+            env_vars: Optional environment variables
+            
+        Returns:
+            List of container names
+        """
+        env = os.environ.copy()
+        if env_vars:
+            env.update({k: str(v) for k, v in env_vars.items()})
+        
+        cmd = [
+            "docker",
+            "compose",
+            "-f",
+            str(compose_path),
+            "-p",
+            project_name,
+            "ps",
+            "-a",  # Include stopped containers
+            "--format",
+            "{{.Name}}",
+        ]
+        
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=compose_path.parent,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            container_names = [name.strip() for name in result.stdout.strip().split("\n") if name.strip()]
+            return container_names
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Failed to get container names: {e}")
+            return []
+    
     def _stream_container_log(
         self,
         container_name: str,
@@ -156,6 +228,9 @@ class DockerManager:
     ) -> None:
         """
         Stream a single container's logs to a file.
+        
+        ANSI color codes are stripped from logs written to files to make them
+        more legible. Colors are preserved when running manually in terminal.
         
         Args:
             container_name: Name of container
@@ -170,12 +245,40 @@ class DockerManager:
         cmd.append(container_name)
         
         try:
-            with open(log_file, "w") as f:
-                subprocess.run(
+            if follow:
+                # For following logs, read line by line and strip ANSI codes
+                with open(log_file, "w", encoding="utf-8") as f:
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,  # Line buffered
+                    )
+                    
+                    try:
+                        # Read line by line until process exits
+                        for line in iter(process.stdout.readline, ''):
+                            if line:
+                                # Strip ANSI codes before writing to file
+                                cleaned_line = strip_ansi_codes(line)
+                                f.write(cleaned_line)
+                                f.flush()  # Ensure immediate write
+                    finally:
+                        process.wait()
+            else:
+                # For non-following logs, capture all output then strip ANSI codes
+                result = subprocess.run(
                     cmd,
-                    stdout=f,
+                    stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
+                    text=True,
                     check=False,  # Container may exit before we stop following
                 )
+                
+                with open(log_file, "w", encoding="utf-8") as f:
+                    # Strip ANSI codes before writing to file
+                    cleaned_output = strip_ansi_codes(result.stdout)
+                    f.write(cleaned_output)
         except Exception as e:
             logger.warning(f"Error streaming logs from {container_name}: {e}")

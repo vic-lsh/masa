@@ -5,14 +5,19 @@ Base classes and interfaces for application plugins.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 import logging
 import os
 import shlex
 import subprocess
+import time
 
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:  # pragma: no cover
+    from exp.runner.config import ExperimentConfig
+    from exp.runner.docker_manager import DockerManager
 
 
 @dataclass
@@ -342,3 +347,141 @@ class AppPlugin(ABC):
             AppBuilder instance configured for this application
         """
         pass
+
+    def get_required_gen_config_fields(self) -> list[str]:
+        """
+        Return the list of required fields in gen_config.json for this application.
+
+        The default runner apps (hotel/synthetic) expect an address to parse the frontend port.
+        Apps with different orchestration (e.g., MSSIM) can override this.
+        """
+        return ["Repeats", "Addr"]
+
+    def run_workload(
+        self,
+        *,
+        repo_root: Path,
+        config: "ExperimentConfig",
+        docker: "DockerManager",
+        policy: str,
+        iteration: int,
+        output_dir: Path,
+        app_local_dir: Path,
+        no_cache: bool,
+        dry_run: bool = False,
+    ) -> None:
+        """
+        Run a single (iteration, policy) workload.
+
+        Default implementation matches the existing runner behavior:
+        - generate env vars
+        - build images
+        - start docker compose services
+        - stream logs
+        - run load generator
+        - stop docker compose services
+
+        Apps with non-standard orchestration can override this method.
+        """
+        docker_config = self.get_docker_config()
+
+        # Generate environment variables
+        env_vars = self.generate_env_vars(
+            config.gen_config,
+            config.app_config,
+            config.app_dir,
+        )
+
+        # Add image tag if app supports it (feature-specific images)
+        if hasattr(self, "get_image_tag"):
+            image_tag = getattr(self, "get_image_tag")(policy)
+            env_vars[f"{config.app_name.upper()}_IMAGE_TAG"] = image_tag
+            logger.debug(f"Set {config.app_name.upper()}_IMAGE_TAG={image_tag}")
+
+        # Compute config paths for builds/loadgen
+        app_config_path = None
+        if docker_config.app_config_filename:
+            candidate = config.in_dir / docker_config.app_config_filename
+            if not candidate.exists():
+                raise FileNotFoundError(f"App config not found at: {candidate}")
+            app_config_path = candidate
+
+        gen_config_path = config.in_dir / "gen_config.json"
+        if not gen_config_path.exists():
+            raise FileNotFoundError(f"gen_config.json not found at: {gen_config_path}")
+
+        # Build images
+        builder = self.create_builder()
+        if dry_run:
+            commands = builder.build(
+                repo_root=repo_root,
+                app_dir=config.app_dir,
+                features=policy,
+                rust_log="info",
+                no_cache=no_cache,
+                app_config_path=app_config_path,
+                gen_config_path=gen_config_path,
+                dry_run=True,
+            )
+            if commands:
+                print("\n".join(shlex.join(cmd) for cmd in commands))
+            print(f"[dry-run] would run {config.app_name} iteration={iteration} policy={policy}")
+            return
+
+        # Write .env file expected by compose setups (only when actually running)
+        env_file = app_local_dir / ".env"
+        env_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(env_file, "w", encoding="utf-8") as f:
+            for key, value in env_vars.items():
+                f.write(f"{key}={value}\n")
+        logger.debug(f"Wrote environment variables to {env_file}")
+
+        builder.build(
+            repo_root=repo_root,
+            app_dir=config.app_dir,
+            features=policy,
+            rust_log="info",
+            no_cache=no_cache,
+            app_config_path=app_config_path,
+            gen_config_path=gen_config_path,
+            dry_run=False,
+        )
+
+        try:
+            docker.start(
+                app_dir=config.app_dir,
+                compose_file=docker_config.compose_file,
+                env_vars=env_vars,
+            )
+
+            # Start streaming logs in background
+            container_names = self.get_container_names(env_vars)
+            docker.stream_logs(
+                container_names=container_names,
+                output_dir=output_dir,
+                follow=True,
+            )
+
+            # Run load generator (blocking)
+            loadgen = self.create_load_generator(features=policy)
+            loadgen.run(
+                output_dir=output_dir,
+                env_vars=env_vars,
+                gen_config_path=gen_config_path,
+            )
+
+            logger.info(f"Load generator completed for policy {policy}")
+
+            # Wait a moment for logs to flush
+            time.sleep(2)
+        finally:
+            # Stop Docker services
+            docker.stop(
+                app_dir=config.app_dir,
+                compose_file=docker_config.compose_file,
+                env_vars=env_vars,
+            )
+
+            # Clean up .env file
+            if env_file.exists():
+                env_file.unlink()

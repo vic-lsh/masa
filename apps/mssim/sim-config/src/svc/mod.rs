@@ -1,6 +1,7 @@
 use std::{borrow::Cow, fmt::Display, path::PathBuf};
 
 pub mod call_graph;
+pub mod call_sequence;
 pub mod method_freq;
 pub mod method_latency;
 
@@ -127,7 +128,8 @@ mod tests {
     #[test]
     fn test_read_config() {
         let temp = TempDir::new().expect("create temp dir");
-        let dir = temp.path();
+        let dir = temp.path().join("graph_main");
+        fs::create_dir_all(&dir).expect("create graph dir");
 
         let edges_path = dir.join("edges.csv");
         let mut edges_file = fs::File::create(&edges_path).expect("create edges");
@@ -137,12 +139,10 @@ mod tests {
         fs::write(
             dir.join("latency_percentiles.json"),
             r#"{
-  "graph_main": {
-    "svc_alpha": {
-      "method_x": {
-        "50": 5.0,
-        "99": 9.0
-      }
+  "svc_alpha": {
+    "method_x": {
+      "50": 5.0,
+      "99": 9.0
     }
   }
 }"#,
@@ -152,16 +152,10 @@ mod tests {
         fs::write(
             dir.join("interface_distribution.json"),
             r#"{
-  "graph_main": {
-    "svc_alpha": {
-      "method_x": 10,
-      "method_y": 5
-    }
-  },
-  "graph_other": {
-    "svc_alpha": {
-      "method_z": 7
-    }
+  "svc_alpha": {
+    "method_x": 10,
+    "method_y": 5,
+    "method_z": 7
   }
 }"#,
         )
@@ -191,6 +185,6 @@ mod tests {
         let sampled = freq_map
             .sample_method(&svc_name, "graph_main", &mut rng)
             .expect("service must have methods");
-        assert!(["method_x", "method_y", "method_z"].contains(&sampled.method.as_str()));
+        assert!(["method_x", "method_y", "method_z"].contains(&sampled.method.as_ref()));
     }
 }

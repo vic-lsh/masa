@@ -69,11 +69,12 @@ The virtual environment includes all required dependencies (matplotlib, pandas, 
 ### Running an application
 
 Application source lives under `apps/<app>`, and the experiment assets for each app live under `exp/<app>`.
-Masa currently has three applications for experimentation:
+Masa currently has four applications for experimentation:
 
 - `hotel`: Based on the Hotel application in Deathstarbench. We've ported this application to Rust for Masa compatibility.
 - `socialnet`: TODO
 - `synthetic`: A synthetic application with configurable behavior, for understanding Masa in simple scenarios.
+- `mssim`: A microservice simulator-driven workload for trace-based experiments.
 
 Docker compose is the recommended way to run an application. See instructions in the section below.
 
@@ -132,6 +133,7 @@ python3 -m exp.runner plot <app> <experiment-name>
 # For example:
 python3 -m exp.runner plot hotel exp1
 python3 -m exp.runner plot synthetic quick_test
+python3 -m exp.runner plot mssim e2e_test
 ```
 
 The plots will be saved at `exp/<app>/data/plots/<experiment>`.
