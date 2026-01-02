@@ -8,7 +8,8 @@ use sim_config::svc::{ServiceName, ServiceTraceConfig};
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use tokio::runtime::current_thread_queue_len;
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::info;
@@ -187,6 +188,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Deployment::read_from_file(&deployment_path).expect("Failed to parse deployment");
 
     let svc = AlibabaService::new(svc_name.clone(), config, deployment, config_path).await?;
+
+    // Spawn a task that prints the queue length every second
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        let start_time = Instant::now();
+        loop {
+            interval.tick().await;
+            let queue_len = current_thread_queue_len();
+            let elapsed = start_time.elapsed();
+            println!(
+                "current_thread_queue_len: {} (elapsed: {:?})",
+                queue_len, elapsed
+            );
+        }
+    });
 
     let addr = format!("0.0.0.0:{}", port).parse()?;
     info!("🚀 Generic Service {:?} listening on {}", svc_name, addr);
