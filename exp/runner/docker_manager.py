@@ -177,6 +177,9 @@ class DockerManager:
         """
         Get list of container names from a docker compose project.
         
+        Includes both running and stopped containers to ensure logs are
+        gathered even for containers that crash quickly.
+        
         Args:
             compose_path: Path to docker-compose.yml file (absolute or relative)
             project_name: Docker compose project name
@@ -197,6 +200,7 @@ class DockerManager:
             "-p",
             project_name,
             "ps",
+            "-a",  # Include stopped containers
             "--format",
             "{{.Name}}",
         ]
