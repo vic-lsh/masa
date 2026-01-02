@@ -139,20 +139,23 @@ impl MethodLatencyDistMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::io::Write;
 
     #[test]
     fn test_parsing() {
-        let mut tmp = tempfile::NamedTempFile::new().expect("create temp file");
+        let temp = tempfile::TempDir::new().expect("create temp dir");
+        let graph_dir = temp.path().join("graph_alpha");
+        fs::create_dir_all(&graph_dir).expect("create graph dir");
+        let path = graph_dir.join("latency_percentiles.json");
+        let mut tmp = fs::File::create(&path).expect("create temp file");
         writeln!(
             tmp,
             r#"{{
-  "graph_alpha": {{
-    "svc-one": {{
-      "method_a": {{
-        "50": 5.0,
-        "99": 9.0
-      }}
+  "svc-one": {{
+    "method_a": {{
+      "50": 5.0,
+      "99": 9.0
     }}
   }}
 }}"#
@@ -161,7 +164,7 @@ mod tests {
 
         let svc_name = ServiceName::from_string("svc_one".into());
         let dist_map =
-            MethodLatencyDistMap::from_file_path(&tmp.path().to_path_buf(), svc_name.clone())
+            MethodLatencyDistMap::from_file_path(&path, svc_name.clone())
                 .expect("Parsing should not fail");
 
         let method: MethodId = "method_a".into();
@@ -175,22 +178,20 @@ mod tests {
 
     #[test]
     fn graph_shape_parsing() {
-        let mut tmp = tempfile::NamedTempFile::new().expect("create temp file");
+        let temp = tempfile::TempDir::new().expect("create temp dir");
+        let graph_dir = temp.path().join("graph_alpha");
+        fs::create_dir_all(&graph_dir).expect("create graph dir");
+        let path = graph_dir.join("latency_percentiles.json");
+        let mut tmp = fs::File::create(&path).expect("create temp file");
         writeln!(
             tmp,
             r#"{{
-  "graph_alpha": {{
-    "svc-one": {{
-      "method_a": {{
-        "50": 5.0
-      }}
-    }}
-  }},
-  "graph_beta": {{
-    "svc-one": {{
-      "method_b": {{
-        "50": 6.0
-      }}
+  "svc-one": {{
+    "method_a": {{
+      "50": 5.0
+    }},
+    "method_b": {{
+      "50": 6.0
     }}
   }}
 }}"#
@@ -198,8 +199,8 @@ mod tests {
         .expect("write json");
 
         let svc = ServiceName::from_string("svc_one".into());
-        let map = MethodLatencyDistMap::from_file_path(&tmp.path().to_path_buf(), svc.clone())
-            .expect("parse graph latency");
+        let map =
+            MethodLatencyDistMap::from_file_path(&path, svc.clone()).expect("parse graph latency");
 
         assert_eq!(map.primary_graph(), Some("graph_alpha"));
 
@@ -212,7 +213,7 @@ mod tests {
         let method_b: MethodId = "method_b".into();
         let dist_b = map
             .get_method_dist(&method_b, None)
-            .expect("fallback to other graph");
+            .expect("fallback to primary graph");
         assert_eq!(dist_b.quantile(50.0), 6.0);
     }
 }
