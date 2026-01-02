@@ -1,10 +1,7 @@
 {
-  "trace_dir": "trace-analysis/golden/S_86516878",
+  "trace_dir": "trace-analysis/graphs/S_14677443",
   "config_dir": "apps/mssim/simulator/example_config/",
   "slo_ms": 100,
-  "orchestrator": "localhost:50051",
-  "replay_path": null,
   "stats_interval_sec": 2,
-  "max_in_flight": 10000,
   "extra_env": {}
 }
