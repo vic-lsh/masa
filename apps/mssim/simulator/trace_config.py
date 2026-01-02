@@ -78,6 +78,7 @@ class CallGraph:
 class TraceConfig:
     call_graph: CallGraph
     method_freq_map: Optional[dict] = None
+    latency_percentiles: Optional[dict] = None
 
     @classmethod
     def from_config_dir(cls, directory: Path) -> "TraceConfig":
@@ -89,7 +90,16 @@ class TraceConfig:
         if method_freq_path.exists():
             method_freq = json.loads(method_freq_path.read_text())
 
-        return cls(call_graph=call_graph, method_freq_map=method_freq)
+        latency_percentiles_path = directory / "latency_percentiles.json"
+        latency_percentiles = None
+        if latency_percentiles_path.exists():
+            latency_percentiles = json.loads(latency_percentiles_path.read_text())
+
+        return cls(
+            call_graph=call_graph,
+            method_freq_map=method_freq,
+            latency_percentiles=latency_percentiles,
+        )
 
     def iter_services(self) -> Iterable[str]:
         yield from sorted(self.call_graph.services())
