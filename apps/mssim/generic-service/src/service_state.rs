@@ -2,7 +2,7 @@ use crate::bootstrap::ConnectionBootstrap;
 use crate::busy_spin;
 use crate::parent_chain::{encode_parent_chain, PARENT_CHAIN_METADATA_KEY};
 use crate::service_replay::ReplaySpanExecutor;
-use crate::service_stubs::{ReplayRequest, ServiceRequest};
+use crate::service_stubs::{InvokeRequest, ReplayRequest};
 use crate::RpcClient;
 use anyhow::Result;
 use sim_config::deployment::Deployment;
@@ -143,7 +143,7 @@ impl ServiceState {
                 })?;
 
             let mut client = client.clone();
-            let mut request = Request::new(ServiceRequest {
+            let mut request = Request::new(InvokeRequest {
                 req_id,
                 start_at,
                 method_name: method_to_call,
@@ -158,7 +158,7 @@ impl ServiceState {
             let child = child_svc_name.clone();
             let handle = tokio::spawn(async move {
                 client
-                    .get_data(request)
+                    .invoke(request)
                     .await
                     .map_err(|e| Status::internal(format!("RPC to child service failed: {:?}", e)))
             });
