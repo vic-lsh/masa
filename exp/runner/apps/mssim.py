@@ -112,6 +112,9 @@ class MssimBuilder(AppBuilder):
 
         # Build load generator image once
         if not self._loadgen_built:
+            # Use a unique cache ID to avoid race conditions in parallel builds
+            # Use "mssim-loadgen" as a consistent cache ID for the loadgen build
+            loadgen_cache_id = "mssim-loadgen"
             loadgen_cmd = [
                 "docker",
                 "buildx",
@@ -121,6 +124,8 @@ class MssimBuilder(AppBuilder):
                 MSSIM_LOADGEN_IMAGE,
                 "--target",
                 "loadgen",
+                "--build-arg",
+                f"CACHE_ID={loadgen_cache_id}",
                 "-f",
                 str(dockerfile),
                 str(repo_root),
@@ -144,6 +149,9 @@ class MssimBuilder(AppBuilder):
         
         if tag not in self._built_feature_keys:
             feature_image = _generic_service_image_for_policy(policy)
+            # Use a unique cache ID based on features to avoid race conditions in parallel builds
+            # Format: mssim-{tag} to match the pattern used by other apps
+            cache_id = f"mssim-{tag}"
 
             generic_cmd = [
                 "docker",
@@ -154,6 +162,8 @@ class MssimBuilder(AppBuilder):
                 feature_image,
                 "--build-arg",
                 f"FEATURE_ARG={features_for_build}",
+                "--build-arg",
+                f"CACHE_ID={cache_id}",
                 "--target",
                 "generic-service",
                 "-f",
