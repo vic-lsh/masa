@@ -25,8 +25,8 @@ COPY libs libs
 ARG FEATURE_ARG=fifo
 
 # Build all binaries once so both targets can reuse the output
+RUN cargo build --release --bin mssim-loadgen
 RUN cargo build --release --bin generic-service --features "${FEATURE_ARG}"
-RUN cargo build --release --bin mssim-loadgen --features "${FEATURE_ARG}"
 
 COPY trace-analysis trace-analysis
 RUN ln -s /app/trace-analysis /trace-analysis

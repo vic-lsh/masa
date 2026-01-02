@@ -120,42 +120,77 @@ impl ServiceTraceConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn workspace_root() -> PathBuf {
-        env!("CARGO_WORKSPACE_DIR").into()
-    }
+    use std::fs;
+    use std::io::Write;
+    use tempfile::TempDir;
 
     #[test]
     fn test_read_config() {
-        let svc_name = ServiceName::from_string("MS_49817".into());
-        let path = workspace_root().join("./trace-analysis/golden/S_32048416/");
+        let temp = TempDir::new().expect("create temp dir");
+        let dir = temp.path();
 
-        let config = ServiceTraceConfig::from_config_dir(&path, Some(svc_name.clone()))
-            .expect("Reading should not fail");
+        let edges_path = dir.join("edges.csv");
+        let mut edges_file = fs::File::create(&edges_path).expect("create edges");
+        writeln!(edges_file, "caller,callee,weight").unwrap();
+        writeln!(edges_file, "svc_alpha,svc_beta,2").unwrap();
+
+        fs::write(
+            dir.join("latency_percentiles.json"),
+            r#"{
+  "graph_main": {
+    "svc_alpha": {
+      "method_x": {
+        "50": 5.0,
+        "99": 9.0
+      }
+    }
+  }
+}"#,
+        )
+        .expect("write latency");
+
+        fs::write(
+            dir.join("interface_distribution.json"),
+            r#"{
+  "graph_main": {
+    "svc_alpha": {
+      "method_x": 10,
+      "method_y": 5
+    }
+  },
+  "graph_other": {
+    "svc_alpha": {
+      "method_z": 7
+    }
+  }
+}"#,
+        )
+        .expect("write interface distribution");
+
+        let svc_name = ServiceName::from_string("svc_alpha".into());
+
+        let config =
+            ServiceTraceConfig::from_config_dir(&dir.to_path_buf(), Some(svc_name.clone()))
+                .expect("Reading should not fail");
 
         assert!(config.call_graph.callees_of(&svc_name).len() > 0);
 
-        let method = "daq6sEhEBy".into();
+        let method = "method_x".into();
         let dist = config
             .method_latency
             .as_ref()
             .expect("Method latency should be present")
-            .get_method_dist(&method)
+            .get_method_dist(&method, Some("graph_main"))
             .expect("Method distribution should exist");
 
         let p50 = dist.sample(&mut rand::rng());
         assert!(p50 > 0.0);
 
-        let sampled_method = config
-            .method_freq_map
-            .as_ref()
-            .unwrap()
-            .get_service(&svc_name)
-            .expect("service must exist")
-            .sample(&mut rand::rng());
-        assert!(!sampled_method.is_empty());
-
-        let valid_methods = vec!["wZa2gEnTxC", "daq6sEhEBy"];
-        assert!(valid_methods.contains(&sampled_method));
+        let freq_map = config.method_freq_map.as_ref().unwrap();
+        let mut rng = rand::rng();
+        let sampled = freq_map
+            .sample_method(&svc_name, "graph_main", &mut rng)
+            .expect("service must have methods");
+        assert!(["method_x", "method_y", "method_z"].contains(&sampled.method.as_str()));
     }
 }
