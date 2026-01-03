@@ -303,7 +303,7 @@ impl MethodFreqMap {
 
         // Recompute aggregated samplers by combining frequencies
         let mut aggregated_raw: HashMap<ServiceName, HashMap<MethodId, u64>> = HashMap::new();
-        
+
         // Collect from all graphs
         for services in self.by_graph.values() {
             // We can't easily extract frequencies from samplers, so we'll rebuild aggregated
