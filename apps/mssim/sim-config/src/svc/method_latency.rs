@@ -8,8 +8,6 @@ use crate::dist::Distribution;
 #[derive(Debug)]
 pub struct MethodLatencyDistMap {
     by_graph: HashMap<String, HashMap<MethodId, Distribution>>,
-    fallback: HashMap<MethodId, Distribution>,
-    primary_graph: Option<String>,
 }
 
 /// Raw service-level format: { service: { method: { percentile: latency } } }
@@ -47,7 +45,6 @@ impl MethodLatencyDistMap {
 
     fn from_graph_shape(mut raw: RawGraphShape, service_name: ServiceName) -> Result<Self> {
         let mut by_graph: HashMap<String, HashMap<MethodId, Distribution>> = HashMap::new();
-        let mut fallback: HashMap<MethodId, Distribution> = HashMap::new();
         let mut graphs_for_service: Vec<String> = Vec::new();
 
         let mut entries: Vec<_> = raw.drain().collect();
@@ -66,9 +63,6 @@ impl MethodLatencyDistMap {
                         format!("While parsing {svc}.{method} in graph {graph_name}")
                     })?;
                     let method_id: MethodId = method.into();
-                    fallback
-                        .entry(method_id.clone())
-                        .or_insert_with(|| dist.clone());
                     method_map.insert(method_id, dist);
                 }
 
@@ -81,7 +75,7 @@ impl MethodLatencyDistMap {
             }
         }
 
-        if by_graph.is_empty() && fallback.is_empty() {
+        if by_graph.is_empty() {
             return Err(anyhow!(format!(
                 "Service name {} doesn't exist in latency graph config",
                 service_name
@@ -90,49 +84,20 @@ impl MethodLatencyDistMap {
 
         graphs_for_service.sort();
         graphs_for_service.dedup();
-        let primary_graph = graphs_for_service.first().cloned();
 
-        Ok(MethodLatencyDistMap {
-            by_graph,
-            fallback,
-            primary_graph,
-        })
+        Ok(MethodLatencyDistMap { by_graph })
     }
 
-    pub fn get_method_dist(
-        &self,
-        method: &MethodId,
-        graph_hint: Option<&str>,
-    ) -> Option<&Distribution> {
-        if let Some(graph) = graph_hint {
-            if let Some(dist) = self
-                .by_graph
-                .get(graph)
-                .and_then(|methods| methods.get(method))
-            {
-                return Some(dist);
-            }
+    pub fn get_method_dist(&self, method: &MethodId, graph_name: &str) -> Option<&Distribution> {
+        if let Some(dist) = self
+            .by_graph
+            .get(graph_name)
+            .and_then(|methods| methods.get(method))
+        {
+            return Some(dist);
         }
 
-        if let Some(primary) = self.primary_graph() {
-            if let Some(dist) = self
-                .by_graph
-                .get(primary)
-                .and_then(|methods| methods.get(method))
-            {
-                return Some(dist);
-            }
-        }
-
-        self.fallback.get(method).or_else(|| {
-            self.by_graph
-                .values()
-                .find_map(|methods| methods.get(method))
-        })
-    }
-
-    pub fn primary_graph(&self) -> Option<&str> {
-        self.primary_graph.as_deref()
+        None
     }
 }
 
@@ -168,7 +133,7 @@ mod tests {
 
         let method: MethodId = "method_a".into();
         let dist = dist_map
-            .get_method_dist(&method, Some("graph_alpha"))
+            .get_method_dist(&method, "graph_alpha")
             .expect("Method distribution should exist");
 
         assert!(dist.quantile(50.0) >= 5.0);
@@ -201,17 +166,15 @@ mod tests {
         let map =
             MethodLatencyDistMap::from_file_path(&path, svc.clone()).expect("parse graph latency");
 
-        assert_eq!(map.primary_graph(), Some("graph_alpha"));
-
         let method_a: MethodId = "method_a".into();
         let dist_a = map
-            .get_method_dist(&method_a, Some("graph_alpha"))
+            .get_method_dist(&method_a, "graph_alpha")
             .expect("graph alpha method");
         assert_eq!(dist_a.quantile(50.0), 5.0);
 
         let method_b: MethodId = "method_b".into();
         let dist_b = map
-            .get_method_dist(&method_b, None)
+            .get_method_dist(&method_b, "graph_alpha")
             .expect("fallback to primary graph");
         assert_eq!(dist_b.quantile(50.0), 6.0);
     }
