@@ -12,11 +12,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "-a",
-        "--alibaba-trace",
-        dest="alibaba_trace",
+        "--callgraph-dir",
+        dest="callgraph_dirs",
         type=Path,
+        action="append",
         required=True,
-        help="Path to the directory containing trace inputs (edges.csv, etc.).",
+        help="Path to a directory containing call graph inputs (edges.csv, etc.). Can be specified multiple times for multiple call graphs.",
     )
     parser.add_argument(
         "--replay-path",
@@ -54,10 +55,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 
 def _validate_args(args: argparse.Namespace) -> None:
-    if not args.alibaba_trace.exists():
-        raise SystemExit(f"Trace directory does not exist: {args.alibaba_trace}")
-    if not args.alibaba_trace.is_dir():
-        raise SystemExit(f"Trace path is not a directory: {args.alibaba_trace}")
+    for callgraph_dir in args.callgraph_dirs:
+        if not callgraph_dir.exists():
+            raise SystemExit(f"Callgraph directory does not exist: {callgraph_dir}")
+        if not callgraph_dir.is_dir():
+            raise SystemExit(f"Callgraph path is not a directory: {callgraph_dir}")
     if args.config_dir is not None and not args.config_dir.exists():
         raise SystemExit(f"Config directory does not exist: {args.config_dir}")
 

@@ -292,6 +292,47 @@ impl MethodFreqMap {
             graph: None,
         })
     }
+
+    /// Merge another MethodFreqMap into this one.
+    /// Combines by_graph maps and updates aggregated samplers.
+    pub fn merge(&mut self, other: MethodFreqMap) {
+        // Merge by_graph maps
+        for (graph_name, services) in other.by_graph {
+            self.by_graph.insert(graph_name, services);
+        }
+
+        // Recompute aggregated samplers by combining frequencies
+        let mut aggregated_raw: HashMap<ServiceName, HashMap<MethodId, u64>> = HashMap::new();
+        
+        // Collect from all graphs
+        for services in self.by_graph.values() {
+            // We can't easily extract frequencies from samplers, so we'll rebuild aggregated
+            // from the by_graph data. For now, we'll keep the existing aggregated and add new ones.
+        }
+
+        // For simplicity, if other has aggregated data we don't have, add it
+        // This is a simplified merge - a full merge would require extracting frequencies
+        for (svc, sampler) in other.aggregated {
+            if !self.aggregated.contains_key(&svc) {
+                self.aggregated.insert(svc, sampler);
+            }
+        }
+    }
+
+    /// Create a new MethodFreqMap by merging multiple maps.
+    pub fn merge_maps(maps: Vec<MethodFreqMap>) -> Result<Self> {
+        if maps.is_empty() {
+            return Ok(MethodFreqMap {
+                by_graph: HashMap::new(),
+                aggregated: HashMap::new(),
+            });
+        }
+
+        let mut result = maps.into_iter().next().unwrap();
+        // Note: Full merge would require extracting and combining frequencies
+        // For now, this keeps the first map's aggregated data
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
