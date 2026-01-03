@@ -80,7 +80,7 @@ impl CallGraphConfig {
     /// Unions call graphs and merges latency/frequency maps.
     pub fn from_callgraph_dirs(
         dirs: &[PathBuf],
-        svc_name: Option<ServiceName>,
+        svc_name: &ServiceName,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Load and union call graphs from all directories
         let mut call_graphs = Vec::new();
@@ -94,30 +94,22 @@ impl CallGraphConfig {
         let unioned_call_graph = call_graph::CallGraph::union(call_graphs);
 
         // Load and merge method latency from all directories
-        let method_latency = match svc_name {
-            Some(svc_name) => {
-                let mut all_latency_maps = Vec::new();
-                for dir in dirs {
-                    let method_latency_path = dir.join("latency_percentiles.json");
-                    if method_latency_path.exists() {
-                        match MethodLatencyDistMap::from_file_path(
-                            &method_latency_path,
-                            svc_name.clone(),
-                        ) {
-                            Ok(map) => all_latency_maps.push(map),
-                            Err(_) => continue, // Skip if this graph doesn't have latency for this service
-                        }
-                    }
-                }
-
-                if all_latency_maps.is_empty() {
-                    None
-                } else {
-                    // Merge all latency maps
-                    Some(MethodLatencyDistMap::merge_maps(all_latency_maps))
+        let mut all_latency_maps = Vec::new();
+        for dir in dirs {
+            let method_latency_path = dir.join("latency_percentiles.json");
+            if method_latency_path.exists() {
+                match MethodLatencyDistMap::from_file_path(&method_latency_path, svc_name.clone()) {
+                    Ok(map) => all_latency_maps.push(map),
+                    Err(_) => continue, // Skip if this graph doesn't have latency for this service
                 }
             }
-            None => None,
+        }
+
+        let method_latency = if all_latency_maps.is_empty() {
+            None
+        } else {
+            // Merge all latency maps
+            Some(MethodLatencyDistMap::merge_maps(all_latency_maps))
         };
 
         // Load and merge method frequency from all directories
@@ -192,9 +184,8 @@ mod tests {
 
         let svc_name = ServiceName::from_string("svc_alpha".into());
 
-        let config =
-            CallGraphConfig::from_callgraph_dirs(&[dir.to_path_buf()], Some(svc_name.clone()))
-                .expect("Reading should not fail");
+        let config = CallGraphConfig::from_callgraph_dirs(&[dir.to_path_buf()], &svc_name)
+            .expect("Reading should not fail");
 
         assert!(config.call_graph.callees_of(&svc_name).len() > 0);
 
