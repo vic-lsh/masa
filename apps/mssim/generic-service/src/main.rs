@@ -4,7 +4,7 @@ use rand::Rng;
 use rand_distr::Exp;
 use service_stubs::service_client::ServiceClient;
 use sim_config::deployment::Deployment;
-use sim_config::svc::{ServiceName, ServiceTraceConfig};
+use sim_config::svc::{CallGraphConfig, ServiceName};
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -42,7 +42,7 @@ struct AlibabaService {
 impl AlibabaService {
     pub async fn new(
         self_svc_name: ServiceName,
-        config: ServiceTraceConfig,
+        config: CallGraphConfig,
         deployment: Deployment,
         callgraph_dirs: Vec<std::path::PathBuf>,
     ) -> Result<Self> {
@@ -154,7 +154,7 @@ fn init_tracing() {
 fn load_service_config(
     callgraph_dirs: Vec<std::path::PathBuf>,
     svc_name: &ServiceName,
-) -> ServiceTraceConfig {
+) -> CallGraphConfig {
     const ROOT_SVC_NAME: &str = "user";
 
     // check svc name start with ROOT_SVC_NAME
@@ -164,15 +164,8 @@ fn load_service_config(
         Some(svc_name.clone())
     };
 
-    if callgraph_dirs.len() == 1 {
-        // Single directory - use existing method for backward compatibility
-        ServiceTraceConfig::from_config_dir(&callgraph_dirs[0], svc_name_for_config)
-            .expect("Loading config should succeed")
-    } else {
-        // Multiple directories - use new method
-        ServiceTraceConfig::from_multiple_config_dirs(&callgraph_dirs, svc_name_for_config)
-            .expect("Loading config from multiple directories should succeed")
-    }
+    CallGraphConfig::from_callgraph_dirs(&callgraph_dirs, svc_name_for_config)
+        .expect("Loading config should succeed")
 }
 
 #[tokio::main(flavor = "current_thread")]
