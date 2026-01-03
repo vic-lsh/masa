@@ -126,7 +126,10 @@ pub fn load_call_sequence(
                 match obj.get(gid) {
                     Some(graph_obj) => graph_obj,
                     None => {
-                        eprintln!("Warning: graph_id '{}' not found in call_sequence.json, using first available", gid);
+                        eprintln!(
+                            "Warning: graph_id '{}' not found in call_sequence.json, using first available",
+                            gid
+                        );
                         obj.values().next().unwrap()
                     }
                 }
@@ -211,7 +214,10 @@ pub fn load_call_sequence(
 /// # Returns
 /// * `Ok(CallSequence)` if the file exists and contains a USER sequence
 /// * `Err` if there's an error reading, parsing, or if USER sequence is not found
-pub fn load_root_user_call_sequence(config_dir: &PathBuf, graph_id: Option<&str>) -> Result<CallSequence> {
+pub fn load_root_user_call_sequence(
+    config_dir: &PathBuf,
+    graph_id: Option<&str>,
+) -> Result<CallSequence> {
     let call_sequence_path = config_dir.join("call_sequence.json");
 
     if !call_sequence_path.exists() {
