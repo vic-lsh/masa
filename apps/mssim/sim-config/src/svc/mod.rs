@@ -69,56 +69,16 @@ impl Into<String> for &ServiceName {
     }
 }
 
-pub struct ServiceTraceConfig {
+pub struct CallGraphConfig {
     pub method_latency: Option<MethodLatencyDistMap>,
     pub method_freq_map: Option<method_freq::MethodFreqMap>,
     pub call_graph: call_graph::CallGraph,
 }
 
-impl ServiceTraceConfig {
-    pub fn from_config_dir(
-        dir: &PathBuf,
-        svc_name: Option<ServiceName>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let call_graph_path = dir.join("edges.csv");
-        let call_graph = call_graph::CallGraph::from_path(call_graph_path)?;
-
-        let method_latency = match svc_name {
-            Some(svc_name) => {
-                let method_latency_path = dir.join("latency_percentiles.json");
-                if method_latency_path.exists() {
-                    let map = MethodLatencyDistMap::from_file_path(&method_latency_path, svc_name)
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-                    Some(map)
-                } else {
-                    None
-                }
-            }
-            None => None,
-        };
-
-        let method_freq_path = dir.join("interface_distribution.json");
-        if method_freq_path.exists() {
-            let method_freq = method_freq::MethodFreqMap::from_file_path(&method_freq_path)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-
-            return Ok(ServiceTraceConfig {
-                call_graph,
-                method_latency,
-                method_freq_map: Some(method_freq),
-            });
-        } else {
-            return Ok(ServiceTraceConfig {
-                call_graph,
-                method_latency,
-                method_freq_map: None,
-            });
-        }
-    }
-
-    /// Load config from multiple call graph directories.
+impl CallGraphConfig {
+    /// Load config from call graph directories.
     /// Unions call graphs and merges latency/frequency maps.
-    pub fn from_multiple_config_dirs(
+    pub fn from_callgraph_dirs(
         dirs: &[PathBuf],
         svc_name: Option<ServiceName>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -179,7 +139,7 @@ impl ServiceTraceConfig {
             method_freq::MethodFreqMap::merge_maps(all_freq_maps).ok()
         };
 
-        Ok(ServiceTraceConfig {
+        Ok(CallGraphConfig {
             call_graph: unioned_call_graph,
             method_latency,
             method_freq_map,
@@ -233,7 +193,7 @@ mod tests {
         let svc_name = ServiceName::from_string("svc_alpha".into());
 
         let config =
-            ServiceTraceConfig::from_config_dir(&dir.to_path_buf(), Some(svc_name.clone()))
+            CallGraphConfig::from_callgraph_dirs(&[dir.to_path_buf()], Some(svc_name.clone()))
                 .expect("Reading should not fail");
 
         assert!(config.call_graph.callees_of(&svc_name).len() > 0);
