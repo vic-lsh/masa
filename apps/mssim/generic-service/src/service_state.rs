@@ -97,16 +97,13 @@ impl ServiceState {
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
-        graph_name: Option<&str>,
+        graph_name: &str,
     ) -> Result<(), Status> {
-        let graph_selection = graph_name.unwrap().trim();
-        let graph_ref = Some(graph_selection);
-
         let method_latency = self.config.method_latency.as_ref().ok_or_else(|| {
             Status::internal("Configuration error: method latency not configured")
         })?;
         let latency_dist = method_latency
-            .get_method_dist(&method_id, graph_ref)
+            .get_method_dist(&method_id, graph_name)
             .ok_or_else(|| Status::not_found("Method not found"))?;
 
         let total_latency_ms = latency_dist.sample(&mut rand::rng());
@@ -116,7 +113,7 @@ impl ServiceState {
             self.handle_leaf_service(total_latency_ms).await;
         } else {
             let start_time = std::time::Instant::now();
-            self.fanout(req_id, start_at, parent_chain, graph_ref)
+            self.fanout(req_id, start_at, parent_chain, graph_name)
                 .await?;
             let elapsed = start_time.elapsed();
 
@@ -142,10 +139,9 @@ impl ServiceState {
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
-        graph_name: Option<&str>,
+        graph_name: &str,
     ) -> Result<(), Status> {
         static CALL_SEQUENCE_MISSING_WARN_ONCE: Once = Once::new();
-        let graph_selection = graph_name.unwrap().trim();
 
         if let Some(call_sequence) = self.call_sequence.as_ref() {
             return self
@@ -153,7 +149,7 @@ impl ServiceState {
                     req_id,
                     start_at,
                     parent_chain,
-                    graph_selection,
+                    graph_name,
                     call_sequence,
                 )
                 .await;
@@ -166,7 +162,7 @@ impl ServiceState {
             );
         });
 
-        self.fanout_default(req_id, start_at, parent_chain, graph_selection)
+        self.fanout_default(req_id, start_at, parent_chain, graph_name)
             .await
     }
 
