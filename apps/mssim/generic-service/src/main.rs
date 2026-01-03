@@ -215,22 +215,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    // Fallback to old CONFIG_PATH for backward compatibility if no callgraphs found
     if callgraph_dirs.is_empty() {
-        let config_dir = env::var("CONFIG_PATH").unwrap_or_else(|_| "config/".to_string());
-        let config_path = PathBuf::from(config_dir);
-        if config_path.exists() {
-            callgraph_dirs.push(config_path);
-            info!(
-                "Using CONFIG_PATH for backward compatibility: {}",
-                callgraph_dirs[0].display()
-            );
-        } else {
-            panic!(
-                "No call graph directories found. Expected {}/* or CONFIG_PATH.",
-                callgraphs_base.display()
-            );
-        }
+        panic!(
+            "No call graph directories found. Expected {}/*",
+            callgraphs_base.display()
+        );
     }
 
     // Sort for consistent ordering
