@@ -42,10 +42,9 @@ impl AlibabaService {
         self_svc_name: ServiceName,
         config: CallGraphConfig,
         deployment: Deployment,
-        callgraph_dirs: Vec<std::path::PathBuf>,
     ) -> Result<Self> {
         let (state, bootstrap) =
-            ServiceState::initialize(self_svc_name, config, deployment, callgraph_dirs)?;
+            ServiceState::initialize(self_svc_name, config, deployment)?;
         if let Some(connection_task) = bootstrap {
             connection_task.spawn();
         }
@@ -165,18 +164,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = CallGraphConfig::from_multi_callgraph_dir(&callgraphs_base, &svc_name)
         .expect("Failed to load call graph config");
 
-    // Extract callgraph directories for ServiceState::initialize
-    let callgraph_dirs = sim_config::svc::enumerate_callgraph_dirs(&callgraphs_base)
-        .expect("Failed to enumerate callgraph directories");
-
     info!("Config parsed");
 
     let deployment_path = deployment_path.into();
     let deployment =
         Deployment::read_from_file(&deployment_path).expect("Failed to parse deployment");
 
-    // Pass all call graph directories to ServiceState for loading call sequences
-    let svc = AlibabaService::new(svc_name.clone(), config, deployment, callgraph_dirs).await?;
+    let svc = AlibabaService::new(svc_name.clone(), config, deployment).await?;
 
     // Spawn a task that prints the queue length every second
     tokio::spawn(async {
