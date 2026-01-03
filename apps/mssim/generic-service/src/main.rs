@@ -94,17 +94,9 @@ impl Service for AlibabaService {
     }
 
     async fn root(&self, request: Request<RootRequest>) -> Result<Response<RootResponse>, Status> {
-        const ROOT_SVC_NAME: &str = "user";
-        let root_check = self
-            .state()
-            .self_service_name()
-            .as_str()
-            .starts_with(ROOT_SVC_NAME);
-
-        if !root_check {
+        if !self.state().is_root_service() {
             return Err(Status::permission_denied(format!(
-                "Root endpoint can only be called on service start with {}, not {}",
-                ROOT_SVC_NAME,
+                "Root endpoint can only be called on service start with \"user\", not {}",
                 self.state().self_service_name().as_str()
             )));
         }
