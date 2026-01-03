@@ -66,6 +66,12 @@ impl Service for AlibabaService {
         &self,
         request: Request<InvokeRequest>,
     ) -> Result<Response<InvokeResponse>, Status> {
+        if self.state().is_root_service() {
+            return Err(Status::permission_denied(
+                "Root services cannot receive Invoke requests. Use the Root endpoint instead.",
+            ));
+        }
+
         let parent_chain = parent_chain::decode_parent_chain(request.metadata())?;
         let request = request.into_inner();
         let method_name: MethodId = request.method_name.into();
@@ -155,16 +161,7 @@ fn load_service_config(
     callgraph_dirs: Vec<std::path::PathBuf>,
     svc_name: &ServiceName,
 ) -> CallGraphConfig {
-    const ROOT_SVC_NAME: &str = "user";
-
-    // check svc name start with ROOT_SVC_NAME
-    let svc_name_for_config = if svc_name.as_str().starts_with(ROOT_SVC_NAME) {
-        None
-    } else {
-        Some(svc_name.clone())
-    };
-
-    CallGraphConfig::from_callgraph_dirs(&callgraph_dirs, svc_name_for_config)
+    CallGraphConfig::from_callgraph_dirs(&callgraph_dirs, svc_name)
         .expect("Loading config should succeed")
 }
 
