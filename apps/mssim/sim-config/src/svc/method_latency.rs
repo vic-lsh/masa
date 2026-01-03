@@ -99,6 +99,25 @@ impl MethodLatencyDistMap {
 
         None
     }
+
+    /// Merge another MethodLatencyDistMap into this one.
+    /// If the same graph exists in both, the other map's data takes precedence.
+    pub fn merge(&mut self, other: MethodLatencyDistMap) {
+        for (graph_name, methods) in other.by_graph {
+            self.by_graph.insert(graph_name, methods);
+        }
+    }
+
+    /// Create a new MethodLatencyDistMap by merging multiple maps.
+    pub fn merge_maps(maps: Vec<MethodLatencyDistMap>) -> Self {
+        let mut result = MethodLatencyDistMap {
+            by_graph: HashMap::new(),
+        };
+        for map in maps {
+            result.merge(map);
+        }
+        result
+    }
 }
 
 #[cfg(test)]

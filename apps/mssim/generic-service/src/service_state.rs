@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use masa::MethodId;
 use sim_config::deployment::Deployment;
 use sim_config::svc::call_sequence::{
-    load_call_sequence, load_root_user_call_sequence, CallSequence,
+    get_all_graph_ids, load_call_sequence, load_root_user_call_sequence, CallSequence,
 };
 use sim_config::svc::{ServiceName, ServiceTraceConfig};
 use std::collections::HashMap;
@@ -24,10 +24,11 @@ pub(crate) struct ServiceState {
     pub(crate) clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
     self_svc_name: ServiceName,
     overshot_counter: AtomicUsize,
-    call_sequence: Option<CallSequence>,
+    // Call sequences keyed by graph_id, loaded upfront for all graphs
+    call_sequences: HashMap<String, Option<CallSequence>>,
     child_call_probabilities: HashMap<ServiceName, f64>,
-    // USER call sequence loaded at startup (one per service instance)
-    user_call_sequence: CallSequence,
+    // USER call sequences keyed by graph_id, loaded upfront for all graphs
+    user_call_sequences: HashMap<String, CallSequence>,
 }
 
 impl ServiceState {
@@ -35,7 +36,7 @@ impl ServiceState {
         self_svc_name: ServiceName,
         config: ServiceTraceConfig,
         deployment: Deployment,
-        config_dir: PathBuf,
+        callgraph_dirs: Vec<PathBuf>,
     ) -> Result<(Arc<Self>, Option<ConnectionBootstrap>)> {
         info!("Initializing service state for {}", self_svc_name.as_str());
 
@@ -48,15 +49,58 @@ impl ServiceState {
             println!("{}", child.as_str());
         }
 
-        // Load call sequence if available
-        let call_sequence = load_call_sequence(&config_dir, &self_svc_name)
-            .context("Failed to load call sequence")?;
+        // Load call sequences from all call graph directories
+        let mut call_sequences: HashMap<String, Option<CallSequence>> = HashMap::new();
+        let mut user_call_sequences: HashMap<String, CallSequence> = HashMap::new();
 
-        // Load USER call sequence at startup for root API
-        let user_call_sequence = load_root_user_call_sequence(&config_dir)
-            .context("Failed to load USER call sequence")?;
+        for callgraph_dir in &callgraph_dirs {
+            // Extract graph_id from directory name (e.g., "S_14677443" from "/app/callgraphs/S_14677443")
+            let graph_id = callgraph_dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "default".to_string());
 
-        println!("USER call sequence: {:?}", user_call_sequence);
+            // Try loading call sequence for this graph
+            if let Ok(Some(call_sequence)) =
+                load_call_sequence(callgraph_dir, &self_svc_name, Some(&graph_id))
+            {
+                call_sequences.insert(graph_id.clone(), Some(call_sequence));
+            } else if let Ok(Some(call_sequence)) =
+                load_call_sequence(callgraph_dir, &self_svc_name, None)
+            {
+                // Fallback: try without graph_id (backward compatibility)
+                call_sequences.insert(graph_id.clone(), Some(call_sequence));
+            }
+
+            // Try loading USER call sequence for this graph
+            if let Ok(user_call_sequence) =
+                load_root_user_call_sequence(callgraph_dir, Some(&graph_id))
+            {
+                user_call_sequences.insert(graph_id.clone(), user_call_sequence);
+            } else if let Ok(user_call_sequence) = load_root_user_call_sequence(callgraph_dir, None)
+            {
+                // Fallback: try without graph_id
+                user_call_sequences.insert(graph_id.clone(), user_call_sequence);
+            }
+        }
+
+        // If no call sequences were loaded, try loading from first directory with default behavior
+        if call_sequences.is_empty() && !callgraph_dirs.is_empty() {
+            let first_dir = &callgraph_dirs[0];
+            if let Ok(Some(call_sequence)) = load_call_sequence(first_dir, &self_svc_name, None) {
+                call_sequences.insert("default".to_string(), Some(call_sequence));
+            }
+            if let Ok(user_call_sequence) = load_root_user_call_sequence(first_dir, None) {
+                user_call_sequences.insert("default".to_string(), user_call_sequence);
+            }
+        }
+
+        println!("Loaded call sequences for {} graphs", call_sequences.len());
+        println!(
+            "USER call sequences: {:?}",
+            user_call_sequences.keys().collect::<Vec<_>>()
+        );
 
         let bootstrap = if child_weights.is_empty() {
             None
@@ -79,9 +123,9 @@ impl ServiceState {
             clients,
             self_svc_name,
             overshot_counter: AtomicUsize::new(0),
-            call_sequence,
+            call_sequences,
             child_call_probabilities,
-            user_call_sequence,
+            user_call_sequences,
         });
 
         Ok((state, bootstrap))
@@ -143,7 +187,32 @@ impl ServiceState {
     ) -> Result<(), Status> {
         static CALL_SEQUENCE_MISSING_WARN_ONCE: Once = Once::new();
 
-        if let Some(call_sequence) = self.call_sequence.as_ref() {
+        // Look up call sequence for this graph
+        // graph_name might be in format "s-14677443" but graph_id in file is "S_14677443"
+        // Try both formats
+        let graph_id_variants = vec![
+            graph_name.to_string(),
+            graph_name.replace("s-", "S_"),
+            graph_name.replace("-", "_"),
+        ];
+
+        let mut call_sequence_opt = None;
+        for variant in &graph_id_variants {
+            if let Some(seq) = self.call_sequences.get(variant) {
+                call_sequence_opt = seq.as_ref();
+                break;
+            }
+        }
+
+        // If not found, try "default" as fallback
+        if call_sequence_opt.is_none() {
+            call_sequence_opt = self
+                .call_sequences
+                .get("default")
+                .and_then(|opt| opt.as_ref());
+        }
+
+        if let Some(call_sequence) = call_sequence_opt {
             return self
                 .fanout_with_call_sequence(
                     req_id,
@@ -157,8 +226,9 @@ impl ServiceState {
 
         CALL_SEQUENCE_MISSING_WARN_ONCE.call_once(|| {
             warn!(
-                "Call sequence missing for service {}; falling back to default fanout logic",
-                self.self_svc_name.as_str()
+                "Call sequence missing for service {} and graph {}; falling back to default fanout logic",
+                self.self_svc_name.as_str(),
+                graph_name
             );
         });
 
@@ -410,7 +480,7 @@ impl ServiceState {
     }
 
     /// Use pre-loaded USER call sequence for root API.
-    /// The call sequence is loaded once at startup.
+    /// The call sequences are loaded upfront for all graphs at startup.
     pub(crate) async fn fanout_with_user_call_sequence(
         &self,
         req_id: u64,
@@ -418,13 +488,42 @@ impl ServiceState {
         parent_chain: Vec<ServiceName>,
         graph_name: &str,
     ) -> Result<(), Status> {
-        // Use the pre-loaded USER call sequence
+        // Look up USER call sequence for this graph
+        // graph_name might be in format "s-14677443" but graph_id in file is "S_14677443"
+        // Try both formats
+        let graph_id_variants = vec![
+            graph_name.to_string(),
+            graph_name.replace("s-", "S_"),
+            graph_name.replace("-", "_"),
+        ];
+
+        let mut user_call_sequence_opt = None;
+        for variant in &graph_id_variants {
+            if let Some(seq) = self.user_call_sequences.get(variant) {
+                user_call_sequence_opt = Some(seq);
+                break;
+            }
+        }
+
+        // If not found, try "default" as fallback
+        if user_call_sequence_opt.is_none() {
+            user_call_sequence_opt = self.user_call_sequences.get("default");
+        }
+
+        let user_call_sequence = user_call_sequence_opt.ok_or_else(|| {
+            Status::not_found(format!(
+                "USER call sequence not found for graph: {}",
+                graph_name
+            ))
+        })?;
+
+        // Use the pre-loaded USER call sequence for this graph
         self.fanout_with_call_sequence(
             req_id,
             start_at,
             parent_chain,
             graph_name,
-            &self.user_call_sequence,
+            user_call_sequence,
         )
         .await
     }
