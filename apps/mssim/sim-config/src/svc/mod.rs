@@ -115,6 +115,76 @@ impl ServiceTraceConfig {
             });
         }
     }
+
+    /// Load config from multiple call graph directories.
+    /// Unions call graphs and merges latency/frequency maps.
+    pub fn from_multiple_config_dirs(
+        dirs: &[PathBuf],
+        svc_name: Option<ServiceName>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        // Load and union call graphs from all directories
+        let mut call_graphs = Vec::new();
+        for dir in dirs {
+            let call_graph_path = dir.join("edges.csv");
+            let call_graph = call_graph::CallGraph::from_path(call_graph_path)?;
+            call_graphs.push(call_graph);
+        }
+
+        // Union all call graphs
+        let unioned_call_graph = call_graph::CallGraph::union(call_graphs);
+
+        // Load and merge method latency from all directories
+        let method_latency = match svc_name {
+            Some(svc_name) => {
+                let mut all_latency_maps = Vec::new();
+                for dir in dirs {
+                    let method_latency_path = dir.join("latency_percentiles.json");
+                    if method_latency_path.exists() {
+                        match MethodLatencyDistMap::from_file_path(
+                            &method_latency_path,
+                            svc_name.clone(),
+                        ) {
+                            Ok(map) => all_latency_maps.push(map),
+                            Err(_) => continue, // Skip if this graph doesn't have latency for this service
+                        }
+                    }
+                }
+
+                if all_latency_maps.is_empty() {
+                    None
+                } else {
+                    // Merge all latency maps
+                    Some(MethodLatencyDistMap::merge_maps(all_latency_maps))
+                }
+            }
+            None => None,
+        };
+
+        // Load and merge method frequency from all directories
+        let mut all_freq_maps = Vec::new();
+        for dir in dirs {
+            let method_freq_path = dir.join("interface_distribution.json");
+            if method_freq_path.exists() {
+                match method_freq::MethodFreqMap::from_file_path(&method_freq_path) {
+                    Ok(map) => all_freq_maps.push(map),
+                    Err(_) => continue,
+                }
+            }
+        }
+
+        let method_freq_map = if all_freq_maps.is_empty() {
+            None
+        } else {
+            // Merge frequency maps
+            method_freq::MethodFreqMap::merge_maps(all_freq_maps).ok()
+        };
+
+        Ok(ServiceTraceConfig {
+            call_graph: unioned_call_graph,
+            method_latency,
+            method_freq_map,
+        })
+    }
 }
 
 #[cfg(test)]

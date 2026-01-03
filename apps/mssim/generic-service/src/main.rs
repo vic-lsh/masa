@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use tokio::runtime::current_thread_queue_len;
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{transport::Server, Request, Response, Status};
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -44,10 +44,10 @@ impl AlibabaService {
         self_svc_name: ServiceName,
         config: ServiceTraceConfig,
         deployment: Deployment,
-        config_dir: std::path::PathBuf,
+        callgraph_dirs: Vec<std::path::PathBuf>,
     ) -> Result<Self> {
         let (state, bootstrap) =
-            ServiceState::initialize(self_svc_name, config, deployment, config_dir)?;
+            ServiceState::initialize(self_svc_name, config, deployment, callgraph_dirs)?;
         if let Some(connection_task) = bootstrap {
             connection_task.spawn();
         }
@@ -152,7 +152,7 @@ fn init_tracing() {
 }
 
 fn load_service_config(
-    config_dir: std::path::PathBuf,
+    callgraph_dirs: Vec<std::path::PathBuf>,
     svc_name: &ServiceName,
 ) -> ServiceTraceConfig {
     const ROOT_SVC_NAME: &str = "user";
@@ -164,8 +164,15 @@ fn load_service_config(
         Some(svc_name.clone())
     };
 
-    ServiceTraceConfig::from_config_dir(&config_dir, svc_name_for_config)
-        .expect("Loading config should succeed")
+    if callgraph_dirs.len() == 1 {
+        // Single directory - use existing method for backward compatibility
+        ServiceTraceConfig::from_config_dir(&callgraph_dirs[0], svc_name_for_config)
+            .expect("Loading config should succeed")
+    } else {
+        // Multiple directories - use new method
+        ServiceTraceConfig::from_multiple_config_dirs(&callgraph_dirs, svc_name_for_config)
+            .expect("Loading config from multiple directories should succeed")
+    }
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -174,20 +181,79 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let deployment_path =
         env::var("DEPLOYMENT_CONFIG_PATH").unwrap_or_else(|_| "config/deployment.json".to_string());
-    let config_dir = env::var("CONFIG_PATH").unwrap_or_else(|_| "config/".to_string());
     let service_name = env::var("SERVICE_NAME").expect("Failed to get SERVICE_NAME");
     let port = env::var("SERVICE_PORT").unwrap_or_else(|_| "50051".to_string());
 
-    let config_path: PathBuf = config_dir.into();
+    // Get callgraphs base directory from environment variable, default to /app/callgraphs
+    let callgraphs_base = env::var("CALLGRAPHS_BASE_DIR")
+        .map(|s| PathBuf::from(s))
+        .unwrap_or_else(|_| PathBuf::from("/app/callgraphs"));
+
+    let mut callgraph_dirs: Vec<PathBuf> = Vec::new();
+
+    if callgraphs_base.exists() {
+        // Enumerate all directories under the callgraphs base directory
+        match std::fs::read_dir(&callgraphs_base) {
+            Ok(entries) => {
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            callgraph_dirs.push(path);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to read {}: {}", callgraphs_base.display(), e);
+            }
+        }
+    } else {
+        info!(
+            "Callgraphs base directory does not exist: {}",
+            callgraphs_base.display()
+        );
+    }
+
+    // Fallback to old CONFIG_PATH for backward compatibility if no callgraphs found
+    if callgraph_dirs.is_empty() {
+        let config_dir = env::var("CONFIG_PATH").unwrap_or_else(|_| "config/".to_string());
+        let config_path = PathBuf::from(config_dir);
+        if config_path.exists() {
+            callgraph_dirs.push(config_path);
+            info!(
+                "Using CONFIG_PATH for backward compatibility: {}",
+                callgraph_dirs[0].display()
+            );
+        } else {
+            panic!(
+                "No call graph directories found. Expected {}/* or CONFIG_PATH.",
+                callgraphs_base.display()
+            );
+        }
+    }
+
+    // Sort for consistent ordering
+    callgraph_dirs.sort();
+
+    info!(
+        "Loading config from {} call graph directory(ies)",
+        callgraph_dirs.len()
+    );
+    for (i, dir) in callgraph_dirs.iter().enumerate() {
+        info!("  [{}] {}", i + 1, dir.display());
+    }
+
     let svc_name = ServiceName::from_string(service_name);
-    let config = load_service_config(config_path.clone(), &svc_name);
+    let config = load_service_config(callgraph_dirs.clone(), &svc_name);
     info!("Config parsed");
 
     let deployment_path = deployment_path.into();
     let deployment =
         Deployment::read_from_file(&deployment_path).expect("Failed to parse deployment");
 
-    let svc = AlibabaService::new(svc_name.clone(), config, deployment, config_path).await?;
+    // Pass all call graph directories to ServiceState for loading call sequences
+    let svc = AlibabaService::new(svc_name.clone(), config, deployment, callgraph_dirs).await?;
 
     // Spawn a task that prints the queue length every second
     tokio::spawn(async {
