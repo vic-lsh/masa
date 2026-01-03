@@ -650,7 +650,7 @@ mod tests {
         fs::write(config_dir.join("call_sequence.json"), json_content).unwrap();
 
         let service_name = ServiceName::from_string("test_service".to_string());
-        let result = load_call_sequence(&config_dir, &service_name);
+        let result = load_call_sequence(&config_dir, &service_name, None);
 
         assert!(result.is_err());
     }
@@ -668,7 +668,7 @@ mod tests {
         fs::write(config_dir.join("call_sequence.json"), json_content).unwrap();
 
         let service_name = ServiceName::from_string("test_service".to_string());
-        let result = load_call_sequence(&config_dir, &service_name);
+        let result = load_call_sequence(&config_dir, &service_name, None);
 
         // When call graph object is not an object, get() returns None, so it returns None, not an error
         // But actually, when we try to deserialize the sequence, it should fail
