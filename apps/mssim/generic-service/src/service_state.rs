@@ -23,6 +23,7 @@ pub(crate) struct ServiceState {
     config: CallGraphConfig,
     pub(crate) clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
     self_svc_name: ServiceName,
+    is_root_service: bool,
     overshot_counter: AtomicUsize,
     // Call sequences keyed by graph_id, loaded upfront for all graphs
     call_sequences: HashMap<String, Option<CallSequence>>,
@@ -39,6 +40,9 @@ impl ServiceState {
         callgraph_dirs: Vec<PathBuf>,
     ) -> Result<(Arc<Self>, Option<ConnectionBootstrap>)> {
         info!("Initializing service state for {}", self_svc_name.as_str());
+
+        const ROOT_SVC_NAME: &str = "user";
+        let is_root_service = self_svc_name.as_str().starts_with(ROOT_SVC_NAME);
 
         let child_weights = config.call_graph.callees_of(&self_svc_name);
         let child_call_probabilities = compute_child_probabilities(&child_weights);
@@ -122,6 +126,7 @@ impl ServiceState {
             config,
             clients,
             self_svc_name,
+            is_root_service,
             overshot_counter: AtomicUsize::new(0),
             call_sequences,
             child_call_probabilities,
@@ -133,6 +138,10 @@ impl ServiceState {
 
     pub(crate) fn self_service_name(&self) -> &ServiceName {
         &self.self_svc_name
+    }
+
+    pub(crate) fn is_root_service(&self) -> bool {
+        self.is_root_service
     }
 
     pub(crate) async fn handle_method(
