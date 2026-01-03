@@ -10,7 +10,7 @@ use sim_config::deployment::Deployment;
 use sim_config::svc::call_sequence::{
     get_all_graph_ids, load_call_sequence, load_root_user_call_sequence, CallSequence,
 };
-use sim_config::svc::{ServiceName, ServiceTraceConfig};
+use sim_config::svc::{CallGraphConfig, ServiceName};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -20,7 +20,7 @@ use tonic::{masa::context::MasaRequestExt, Request, Status};
 use tracing::{error, info, warn};
 
 pub(crate) struct ServiceState {
-    config: ServiceTraceConfig,
+    config: CallGraphConfig,
     pub(crate) clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
     self_svc_name: ServiceName,
     overshot_counter: AtomicUsize,
@@ -34,7 +34,7 @@ pub(crate) struct ServiceState {
 impl ServiceState {
     pub(crate) fn initialize(
         self_svc_name: ServiceName,
-        config: ServiceTraceConfig,
+        config: CallGraphConfig,
         deployment: Deployment,
         callgraph_dirs: Vec<PathBuf>,
     ) -> Result<(Arc<Self>, Option<ConnectionBootstrap>)> {
