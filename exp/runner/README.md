@@ -123,7 +123,7 @@ MSSIM experiments live under `exp/mssim/data/in/<experiment_name>/` and require:
 3. **`mssim.json`**
    ```json
    {
-     "trace_dir": "trace-analysis/graphs/S_14677443",
+     "callgraph_dirs": ["trace-analysis/graphs/S_14677443"],
      "config_dir": "apps/mssim/simulator/example_config/",
      "slo_ms": 100,
      "orchestrator": "localhost:50051",
@@ -131,6 +131,17 @@ MSSIM experiments live under `exp/mssim/data/in/<experiment_name>/` and require:
      "stats_interval_sec": 2,
      "max_in_flight": 10000,
      "extra_env": {}
+   }
+   ```
+   
+   **Note:** `callgraph_dirs` is a list of call graph directories. For multiple call graphs:
+   ```json
+   {
+     "callgraph_dirs": [
+       "trace-analysis/graphs/S_14677443",
+       "trace-analysis/graphs/S_86516878"
+     ],
+     ...
    }
    ```
 
