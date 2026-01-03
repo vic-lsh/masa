@@ -8,6 +8,7 @@ pub mod method_latency;
 use masa::MethodId;
 use method_latency::MethodLatencyDistMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ServiceName(Cow<'static, str>);
@@ -73,6 +74,10 @@ pub struct CallGraphConfig {
     pub method_latency: Option<MethodLatencyDistMap>,
     pub method_freq_map: Option<method_freq::MethodFreqMap>,
     pub call_graph: call_graph::CallGraph,
+    /// Call sequences for this service, keyed by graph_id
+    pub call_sequences: HashMap<String, Option<call_sequence::CallSequence>>,
+    /// USER call sequences, keyed by graph_id
+    pub user_call_sequences: HashMap<String, call_sequence::CallSequence>,
 }
 
 /// Enumerates all subdirectories under a base directory.
@@ -204,10 +209,65 @@ impl CallGraphConfig {
             method_freq::MethodFreqMap::merge_maps(all_freq_maps).ok()
         };
 
+        // Load call sequences from all directories
+        let mut call_sequences: HashMap<String, Option<call_sequence::CallSequence>> =
+            HashMap::new();
+        let mut user_call_sequences: HashMap<String, call_sequence::CallSequence> = HashMap::new();
+
+        for callgraph_dir in dirs {
+            // Extract graph_id from directory name (e.g., "S_14677443" from "/app/callgraphs/S_14677443")
+            let graph_id = callgraph_dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "default".to_string());
+
+            // Try loading call sequence for this graph
+            if let Ok(Some(call_sequence)) =
+                call_sequence::load_call_sequence(callgraph_dir, svc_name, Some(&graph_id))
+            {
+                call_sequences.insert(graph_id.clone(), Some(call_sequence));
+            } else if let Ok(Some(call_sequence)) =
+                call_sequence::load_call_sequence(callgraph_dir, svc_name, None)
+            {
+                // Fallback: try without graph_id (backward compatibility)
+                call_sequences.insert(graph_id.clone(), Some(call_sequence));
+            }
+
+            // Try loading USER call sequence for this graph
+            if let Ok(user_call_sequence) =
+                call_sequence::load_root_user_call_sequence(callgraph_dir, Some(&graph_id))
+            {
+                user_call_sequences.insert(graph_id.clone(), user_call_sequence);
+            } else if let Ok(user_call_sequence) =
+                call_sequence::load_root_user_call_sequence(callgraph_dir, None)
+            {
+                // Fallback: try without graph_id
+                user_call_sequences.insert(graph_id.clone(), user_call_sequence);
+            }
+        }
+
+        // If no call sequences were loaded, try loading from first directory with default behavior
+        if call_sequences.is_empty() && !dirs.is_empty() {
+            let first_dir = &dirs[0];
+            if let Ok(Some(call_sequence)) =
+                call_sequence::load_call_sequence(first_dir, svc_name, None)
+            {
+                call_sequences.insert("default".to_string(), Some(call_sequence));
+            }
+            if let Ok(user_call_sequence) =
+                call_sequence::load_root_user_call_sequence(first_dir, None)
+            {
+                user_call_sequences.insert("default".to_string(), user_call_sequence);
+            }
+        }
+
         Ok(CallGraphConfig {
             call_graph: unioned_call_graph,
             method_latency,
             method_freq_map,
+            call_sequences,
+            user_call_sequences,
         })
     }
 }
