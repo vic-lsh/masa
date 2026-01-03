@@ -25,7 +25,7 @@ The recommended way to run MSSIM experiments is using the experiment runner scri
 ```json
 {
   "experiment_name": "my_experiment",
-  "trace_dir": "trace-analysis/golden/S_86516878",
+  "callgraph_dirs": ["trace-analysis/golden/S_86516878"],
   "config_dir": "apps/mssim/simulator/example_config/",
   "output_root": "exp/mssim/data/experiments/",
   "duration_sec": 60,
@@ -36,6 +36,17 @@ The recommended way to run MSSIM experiments is using the experiment runner scri
   "max_in_flight": 10000,
   "stats_interval_sec": 2,
   "extra_env": {}
+}
+```
+
+For multiple call graphs, specify multiple directories:
+```json
+{
+  "callgraph_dirs": [
+    "trace-analysis/golden/S_86516878",
+    "trace-analysis/golden/S_14677443"
+  ],
+  ...
 }
 ```
 
@@ -55,7 +66,7 @@ The script will:
 ### Configuration Options
 
 - `experiment_name`: Name of the experiment (used for output directory)
-- `trace_dir`: Path to the Alibaba trace directory (relative to repo root)
+- `callgraph_dirs`: List of paths to call graph directories (relative to repo root). Each directory should contain `edges.csv`, `interface_distribution.json`, `latency_percentiles.json`, and optionally `call_sequence.json`. For multiple call graphs, services are unioned (each service deployed once) and requests are routed by graph_name.
 - `config_dir`: Path to the simulator config directory (relative to repo root)
 - `output_root`: Root directory for experiment outputs (relative to repo root)
 - `duration_sec`: Duration of each experiment run in seconds
