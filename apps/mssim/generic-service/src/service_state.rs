@@ -4,15 +4,12 @@ use crate::parent_chain::{encode_parent_chain, PARENT_CHAIN_METADATA_KEY};
 use crate::service_replay::ReplaySpanExecutor;
 use crate::service_stubs::{InvokeRequest, ReplayRequest};
 use crate::RpcClient;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use masa::MethodId;
 use sim_config::deployment::Deployment;
-use sim_config::svc::call_sequence::{
-    get_all_graph_ids, load_call_sequence, load_root_user_call_sequence, CallSequence,
-};
+use sim_config::svc::call_sequence::CallSequence;
 use sim_config::svc::{CallGraphConfig, ServiceName};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Once};
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -32,11 +29,7 @@ pub(crate) struct ServiceState {
     self_svc_name: ServiceName,
     is_root_service: bool,
     overshot_counter: AtomicUsize,
-    // Call sequences keyed by graph_id, loaded upfront for all graphs
-    call_sequences: HashMap<String, Option<CallSequence>>,
     child_call_probabilities: HashMap<ServiceName, f64>,
-    // USER call sequences keyed by graph_id, loaded upfront for all graphs
-    user_call_sequences: HashMap<String, CallSequence>,
 }
 
 impl ServiceState {
@@ -44,7 +37,6 @@ impl ServiceState {
         self_svc_name: ServiceName,
         config: CallGraphConfig,
         deployment: Deployment,
-        callgraph_dirs: Vec<PathBuf>,
     ) -> Result<(Arc<Self>, Option<ConnectionBootstrap>)> {
         info!("Initializing service state for {}", self_svc_name.as_str());
 
@@ -59,57 +51,13 @@ impl ServiceState {
             println!("{}", child.as_str());
         }
 
-        // Load call sequences from all call graph directories
-        let mut call_sequences: HashMap<String, Option<CallSequence>> = HashMap::new();
-        let mut user_call_sequences: HashMap<String, CallSequence> = HashMap::new();
-
-        for callgraph_dir in &callgraph_dirs {
-            // Extract graph_id from directory name (e.g., "S_14677443" from "/app/callgraphs/S_14677443")
-            let graph_id = callgraph_dir
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "default".to_string());
-
-            // Try loading call sequence for this graph
-            if let Ok(Some(call_sequence)) =
-                load_call_sequence(callgraph_dir, &self_svc_name, Some(&graph_id))
-            {
-                call_sequences.insert(graph_id.clone(), Some(call_sequence));
-            } else if let Ok(Some(call_sequence)) =
-                load_call_sequence(callgraph_dir, &self_svc_name, None)
-            {
-                // Fallback: try without graph_id (backward compatibility)
-                call_sequences.insert(graph_id.clone(), Some(call_sequence));
-            }
-
-            // Try loading USER call sequence for this graph
-            if let Ok(user_call_sequence) =
-                load_root_user_call_sequence(callgraph_dir, Some(&graph_id))
-            {
-                user_call_sequences.insert(graph_id.clone(), user_call_sequence);
-            } else if let Ok(user_call_sequence) = load_root_user_call_sequence(callgraph_dir, None)
-            {
-                // Fallback: try without graph_id
-                user_call_sequences.insert(graph_id.clone(), user_call_sequence);
-            }
-        }
-
-        // If no call sequences were loaded, try loading from first directory with default behavior
-        if call_sequences.is_empty() && !callgraph_dirs.is_empty() {
-            let first_dir = &callgraph_dirs[0];
-            if let Ok(Some(call_sequence)) = load_call_sequence(first_dir, &self_svc_name, None) {
-                call_sequences.insert("default".to_string(), Some(call_sequence));
-            }
-            if let Ok(user_call_sequence) = load_root_user_call_sequence(first_dir, None) {
-                user_call_sequences.insert("default".to_string(), user_call_sequence);
-            }
-        }
-
-        println!("Loaded call sequences for {} graphs", call_sequences.len());
+        println!(
+            "Loaded call sequences for {} graphs",
+            config.call_sequences.len()
+        );
         println!(
             "USER call sequences: {:?}",
-            user_call_sequences.keys().collect::<Vec<_>>()
+            config.user_call_sequences.keys().collect::<Vec<_>>()
         );
 
         let bootstrap = if child_weights.is_empty() {
@@ -134,9 +82,7 @@ impl ServiceState {
             self_svc_name,
             is_root_service,
             overshot_counter: AtomicUsize::new(0),
-            call_sequences,
             child_call_probabilities,
-            user_call_sequences,
         });
 
         Ok((state, bootstrap))
@@ -213,7 +159,7 @@ impl ServiceState {
 
         let mut call_sequence_opt = None;
         for variant in &graph_id_variants {
-            if let Some(seq) = self.call_sequences.get(variant) {
+            if let Some(seq) = self.config.call_sequences.get(variant) {
                 call_sequence_opt = seq.as_ref();
                 break;
             }
@@ -222,6 +168,7 @@ impl ServiceState {
         // If not found, try "default" as fallback
         if call_sequence_opt.is_none() {
             call_sequence_opt = self
+                .config
                 .call_sequences
                 .get("default")
                 .and_then(|opt| opt.as_ref());
@@ -514,7 +461,7 @@ impl ServiceState {
 
         let mut user_call_sequence_opt = None;
         for variant in &graph_id_variants {
-            if let Some(seq) = self.user_call_sequences.get(variant) {
+            if let Some(seq) = self.config.user_call_sequences.get(variant) {
                 user_call_sequence_opt = Some(seq);
                 break;
             }
@@ -522,7 +469,7 @@ impl ServiceState {
 
         // If not found, try "default" as fallback
         if user_call_sequence_opt.is_none() {
-            user_call_sequence_opt = self.user_call_sequences.get("default");
+            user_call_sequence_opt = self.config.user_call_sequences.get("default");
         }
 
         let user_call_sequence = user_call_sequence_opt.ok_or_else(|| {
