@@ -77,7 +77,7 @@ impl Service for AlibabaService {
                 request.req_id,
                 request.start_at,
                 parent_chain,
-                Some(graph_name),
+                graph_name,
             )
             .await?;
 
