@@ -173,7 +173,7 @@ mod tests {
             .method_latency
             .as_ref()
             .expect("Method latency should be present")
-            .get_method_dist(&method, Some("graph_main"))
+            .get_method_dist(&method, "graph_main")
             .expect("Method distribution should exist");
 
         let p50 = dist.sample(&mut rand::rng());
