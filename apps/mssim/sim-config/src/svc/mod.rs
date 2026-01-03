@@ -75,7 +75,80 @@ pub struct CallGraphConfig {
     pub call_graph: call_graph::CallGraph,
 }
 
+/// Enumerates all subdirectories under a base directory.
+/// Returns a sorted list of subdirectories, or an error if the base directory doesn't exist,
+/// cannot be read, or contains no subdirectories.
+fn enumerate_callgraph_dirs(
+    base_dir: &PathBuf,
+) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+    let mut callgraph_dirs: Vec<PathBuf> = Vec::new();
+
+    if base_dir.exists() {
+        // Enumerate all directories under the callgraphs base directory
+        match std::fs::read_dir(base_dir) {
+            Ok(entries) => {
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            callgraph_dirs.push(path);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    format!("Failed to read {}: {}", base_dir.display(), e),
+                )));
+            }
+        }
+    } else {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!(
+                "Callgraphs base directory does not exist: {}",
+                base_dir.display()
+            ),
+        )));
+    }
+
+    if callgraph_dirs.is_empty() {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!(
+                "No call graph directories found. Expected {}/*",
+                base_dir.display()
+            ),
+        )));
+    }
+
+    // Sort for consistent ordering
+    callgraph_dirs.sort();
+    Ok(callgraph_dirs)
+}
+
 impl CallGraphConfig {
+    /// Load config from a base directory containing multiple call graph subdirectories.
+    /// Enumerates all subdirectories under the base directory, sorts them, and loads config from all of them.
+    pub fn from_multi_callgraph_dir(
+        base_dir: &PathBuf,
+        svc_name: &ServiceName,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let callgraph_dirs = enumerate_callgraph_dirs(base_dir)?;
+
+        println!(
+            "Loading config from {} call graph directory(ies)",
+            callgraph_dirs.len()
+        );
+        for (i, dir) in callgraph_dirs.iter().enumerate() {
+            println!("  [{}] {}", i + 1, dir.display());
+        }
+
+        let config = Self::from_callgraph_dirs(&callgraph_dirs, svc_name)?;
+        Ok(config)
+    }
+
     /// Load config from call graph directories.
     /// Unions call graphs and merges latency/frequency maps.
     pub fn from_callgraph_dirs(
