@@ -123,8 +123,12 @@ impl CallGraph {
     pub fn union_with(&mut self, other: &CallGraph) {
         for (caller, callees) in &other.outgoing {
             for (callee, weight) in callees {
-                *self.outgoing.entry(caller.clone()).or_default()
-                    .entry(callee.clone()).or_insert(0) += weight;
+                *self
+                    .outgoing
+                    .entry(caller.clone())
+                    .or_default()
+                    .entry(callee.clone())
+                    .or_insert(0) += weight;
             }
         }
     }
@@ -134,7 +138,7 @@ impl CallGraph {
         if graphs.is_empty() {
             return CallGraph::default();
         }
-        
+
         let mut result = graphs.remove(0);
         for graph in graphs {
             result.union_with(&graph);
