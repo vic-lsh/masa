@@ -1,7 +1,5 @@
 use anyhow::Result;
 use masa::MethodId;
-use rand::Rng;
-use rand_distr::Exp;
 use service_stubs::service_client::ServiceClient;
 use sim_config::deployment::Deployment;
 use sim_config::svc::{CallGraphConfig, ServiceName};
@@ -12,7 +10,7 @@ use std::time::{Duration, Instant};
 use tokio::runtime::current_thread_queue_len;
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{transport::Server, Request, Response, Status};
-use tracing::{info, warn};
+use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -149,14 +147,6 @@ fn init_tracing() {
         .init();
 }
 
-fn load_service_config(
-    callgraph_dirs: Vec<std::path::PathBuf>,
-    svc_name: &ServiceName,
-) -> CallGraphConfig {
-    CallGraphConfig::from_callgraph_dirs(&callgraph_dirs, svc_name)
-        .expect("Loading config should succeed")
-}
-
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_tracing();
@@ -171,52 +161,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| PathBuf::from(s))
         .unwrap_or_else(|_| PathBuf::from("/app/callgraphs"));
 
-    let mut callgraph_dirs: Vec<PathBuf> = Vec::new();
-
-    if callgraphs_base.exists() {
-        // Enumerate all directories under the callgraphs base directory
-        match std::fs::read_dir(&callgraphs_base) {
-            Ok(entries) => {
-                for entry in entries {
-                    if let Ok(entry) = entry {
-                        let path = entry.path();
-                        if path.is_dir() {
-                            callgraph_dirs.push(path);
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                warn!("Failed to read {}: {}", callgraphs_base.display(), e);
-            }
-        }
-    } else {
-        info!(
-            "Callgraphs base directory does not exist: {}",
-            callgraphs_base.display()
-        );
-    }
-
-    if callgraph_dirs.is_empty() {
-        panic!(
-            "No call graph directories found. Expected {}/*",
-            callgraphs_base.display()
-        );
-    }
-
-    // Sort for consistent ordering
-    callgraph_dirs.sort();
-
-    info!(
-        "Loading config from {} call graph directory(ies)",
-        callgraph_dirs.len()
-    );
-    for (i, dir) in callgraph_dirs.iter().enumerate() {
-        info!("  [{}] {}", i + 1, dir.display());
-    }
-
     let svc_name = ServiceName::from_string(service_name);
-    let config = load_service_config(callgraph_dirs.clone(), &svc_name);
+    let config = CallGraphConfig::from_multi_callgraph_dir(&callgraphs_base, &svc_name)
+        .expect("Failed to load call graph config");
+
+    // Extract callgraph directories for ServiceState::initialize
+    let callgraph_dirs = sim_config::svc::enumerate_callgraph_dirs(&callgraphs_base)
+        .expect("Failed to enumerate callgraph directories");
+
     info!("Config parsed");
 
     let deployment_path = deployment_path.into();
