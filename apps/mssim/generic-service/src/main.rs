@@ -1,10 +1,8 @@
 use anyhow::Result;
 use masa::MethodId;
-use rand::Rng;
-use rand_distr::Exp;
 use service_stubs::service_client::ServiceClient;
 use sim_config::deployment::Deployment;
-use sim_config::svc::{ServiceName, ServiceTraceConfig};
+use sim_config::svc::{CallGraphConfig, GraphId, ServiceName};
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -17,11 +15,11 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 mod bootstrap;
+mod core;
 mod parent_chain;
 mod service_replay;
-mod service_state;
 
-use service_state::ServiceState;
+use core::ServiceCore;
 
 pub mod service_stubs {
     tonic::include_proto!("service");
@@ -36,18 +34,16 @@ use service_stubs::{
 pub(crate) type RpcClient = ServiceClient<LoadBalancedChannel>;
 
 struct AlibabaService {
-    state: Arc<ServiceState>,
+    state: Arc<ServiceCore>,
 }
 
 impl AlibabaService {
     pub async fn new(
         self_svc_name: ServiceName,
-        config: ServiceTraceConfig,
+        config: CallGraphConfig,
         deployment: Deployment,
-        config_dir: std::path::PathBuf,
     ) -> Result<Self> {
-        let (state, bootstrap) =
-            ServiceState::initialize(self_svc_name, config, deployment, config_dir)?;
+        let (state, bootstrap) = ServiceCore::initialize(self_svc_name, config, deployment)?;
         if let Some(connection_task) = bootstrap {
             connection_task.spawn();
         }
@@ -55,7 +51,7 @@ impl AlibabaService {
         Ok(Self { state })
     }
 
-    fn state(&self) -> &ServiceState {
+    fn state(&self) -> &ServiceCore {
         &self.state
     }
 }
@@ -66,10 +62,16 @@ impl Service for AlibabaService {
         &self,
         request: Request<InvokeRequest>,
     ) -> Result<Response<InvokeResponse>, Status> {
+        if self.state().is_root_service() {
+            return Err(Status::permission_denied(
+                "Root services cannot receive Invoke requests. Use the Root endpoint instead.",
+            ));
+        }
+
         let parent_chain = parent_chain::decode_parent_chain(request.metadata())?;
         let request = request.into_inner();
         let method_name: MethodId = request.method_name.into();
-        let graph_name = request.graph_name.as_str();
+        let graph_name = GraphId::from_string(request.graph_name);
 
         self.state()
             .handle_method(
@@ -77,7 +79,7 @@ impl Service for AlibabaService {
                 request.req_id,
                 request.start_at,
                 parent_chain,
-                Some(graph_name),
+                &graph_name,
             )
             .await?;
 
@@ -88,23 +90,15 @@ impl Service for AlibabaService {
     }
 
     async fn root(&self, request: Request<RootRequest>) -> Result<Response<RootResponse>, Status> {
-        const ROOT_SVC_NAME: &str = "user";
-        let root_check = self
-            .state()
-            .self_service_name()
-            .as_str()
-            .starts_with(ROOT_SVC_NAME);
-
-        if !root_check {
+        if !self.state().is_root_service() {
             return Err(Status::permission_denied(format!(
-                "Root endpoint can only be called on service start with {}, not {}",
-                ROOT_SVC_NAME,
+                "Root endpoint can only be called on service start with \"user\", not {}",
                 self.state().self_service_name().as_str()
             )));
         }
 
         let request = request.into_inner();
-        let graph_name = request.graph_name.as_str();
+        let graph_name = GraphId::from_string(request.graph_name);
 
         // Root uses pre-loaded USER call sequence (loaded at startup)
         self.state()
@@ -112,7 +106,7 @@ impl Service for AlibabaService {
                 request.req_id,
                 request.start_at,
                 Vec::new(),
-                graph_name,
+                &graph_name,
             )
             .await?;
 
@@ -151,43 +145,31 @@ fn init_tracing() {
         .init();
 }
 
-fn load_service_config(
-    config_dir: std::path::PathBuf,
-    svc_name: &ServiceName,
-) -> ServiceTraceConfig {
-    const ROOT_SVC_NAME: &str = "user";
-
-    // check svc name start with ROOT_SVC_NAME
-    let svc_name_for_config = if svc_name.as_str().starts_with(ROOT_SVC_NAME) {
-        None
-    } else {
-        Some(svc_name.clone())
-    };
-
-    ServiceTraceConfig::from_config_dir(&config_dir, svc_name_for_config)
-        .expect("Loading config should succeed")
-}
-
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_tracing();
 
     let deployment_path =
         env::var("DEPLOYMENT_CONFIG_PATH").unwrap_or_else(|_| "config/deployment.json".to_string());
-    let config_dir = env::var("CONFIG_PATH").unwrap_or_else(|_| "config/".to_string());
     let service_name = env::var("SERVICE_NAME").expect("Failed to get SERVICE_NAME");
     let port = env::var("SERVICE_PORT").unwrap_or_else(|_| "50051".to_string());
 
-    let config_path: PathBuf = config_dir.into();
+    // Get callgraphs base directory from environment variable, default to /app/callgraphs
+    let callgraphs_base = env::var("CALLGRAPHS_BASE_DIR")
+        .map(|s| PathBuf::from(s))
+        .unwrap_or_else(|_| PathBuf::from("/app/callgraphs"));
+
     let svc_name = ServiceName::from_string(service_name);
-    let config = load_service_config(config_path.clone(), &svc_name);
+    let config = CallGraphConfig::from_multi_callgraph_dir(&callgraphs_base, &svc_name)
+        .expect("Failed to load call graph config");
+
     info!("Config parsed");
 
     let deployment_path = deployment_path.into();
     let deployment =
         Deployment::read_from_file(&deployment_path).expect("Failed to parse deployment");
 
-    let svc = AlibabaService::new(svc_name.clone(), config, deployment, config_path).await?;
+    let svc = AlibabaService::new(svc_name.clone(), config, deployment).await?;
 
     // Spawn a task that prints the queue length every second
     tokio::spawn(async {
@@ -197,7 +179,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             interval.tick().await;
             let queue_len = current_thread_queue_len();
             let elapsed = start_time.elapsed();
-            println!(
+            info!(
                 "current_thread_queue_len: {} (elapsed: {:?})",
                 queue_len, elapsed
             );
@@ -220,22 +202,4 @@ pub(crate) fn busy_spin(duration: std::time::Duration) {
     while std::time::Instant::now() - start < duration {
         std::hint::spin_loop();
     }
-}
-
-/// Samples from an exponential distribution with the given rate parameter (lambda).
-///
-/// # Arguments
-/// * `rate` - The rate parameter (lambda) of the exponential distribution.
-///            Must be positive. The mean of the distribution is 1/rate.
-///
-/// # Returns
-/// A sample from the exponential distribution.
-///
-/// # Panics
-/// Panics if rate is not positive or if the distribution cannot be created.
-#[allow(dead_code)]
-pub(crate) fn sample_exponential(rate: f64) -> f64 {
-    let dist = Exp::new(rate).expect("Failed to create exponential distribution");
-    let mut rng = rand::rng();
-    rng.sample(dist)
 }
