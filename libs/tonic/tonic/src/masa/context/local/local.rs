@@ -72,11 +72,7 @@ impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
                             parts.push(format!("{}: (no estimate)", endpoint));
                         }
                     }
-                    println!(
-                        "Estimated Remaining Values (p{}): {}",
-                        PERCENTILE,
-                        parts.join(", ")
-                    );
+                    println!("Est Remaining Values: {}", parts.join(", "));
                 }
             });
         }
@@ -223,12 +219,12 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
 
         let estimate_remaining = estimate_method_latency(
             &*self.server.child_distributions,
-            format!("{}/{}", self.resolved_method, resolved_child_method),
+            format!("{} -> {}", self.resolved_method, resolved_child_method),
         )
         .unwrap_or(0);
 
-                let deadline = self.ctx.deadline() - estimate_remaining;
-if time_now() > deadline {
+        let deadline = self.ctx.deadline() - estimate_remaining;
+        if time_now() > deadline {
             return Err(self.issue_early_return());
         }
 
