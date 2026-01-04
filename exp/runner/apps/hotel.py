@@ -7,6 +7,7 @@ import logging
 import re
 import shlex
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -117,6 +118,9 @@ class HotelBuilder(AppBuilder):
 
         # Collect commands if dry_run
         commands: list[list[str]] = []
+
+        # Start timing the docker build
+        build_start_time = time.time()
 
         # Stage 1: Build all binaries once (shared across all images)
         logger.info("Stage 1: Building all binaries for hotel app")
@@ -268,6 +272,9 @@ class HotelBuilder(AppBuilder):
         if dry_run:
             return commands
         
+        # Calculate and print build duration
+        build_duration = time.time() - build_start_time
+        logger.info(f"Docker image building took {build_duration:.2f} seconds ({build_duration/60:.2f} minutes)")
         logger.info("All hotel app docker images built successfully")
         return None
 

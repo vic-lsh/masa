@@ -8,6 +8,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -222,6 +223,9 @@ class SyntheticBuilder(AppBuilder):
         # Collect commands if dry_run
         commands: list[list[str]] = []
         
+        # Start timing the docker build
+        build_start_time = time.time()
+        
         # Convert to path relative to repo_root if provided
         # If not provided, create a temporary empty config file
         temp_config_file = None
@@ -402,5 +406,8 @@ class SyntheticBuilder(AppBuilder):
         if dry_run:
             return commands
         
+        # Calculate and print build duration
+        build_duration = time.time() - build_start_time
+        logger.info(f"Docker image building took {build_duration:.2f} seconds ({build_duration/60:.2f} minutes)")
         logger.info("All synthetic app docker images built successfully")
         return None
