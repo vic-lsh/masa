@@ -323,26 +323,6 @@ impl CallGraphConfig {
             }
         }
 
-        // If no call sequences were loaded, try loading from first directory with default behavior
-        if call_sequences.is_empty() && !dirs.is_empty() {
-            let first_dir = &dirs[0];
-            if let Ok(Some(call_sequence)) =
-                call_sequence::load_call_sequence(first_dir, svc_name, None)
-            {
-                call_sequences.insert(
-                    GraphId::from_string("default".to_string()),
-                    Some(call_sequence),
-                );
-            }
-            if let Ok(user_call_sequence) =
-                call_sequence::load_root_user_call_sequence(first_dir, None)
-            {
-                user_call_sequences.insert(
-                    GraphId::from_string("default".to_string()),
-                    user_call_sequence,
-                );
-            }
-        }
 
         Ok(CallGraphConfig {
             call_graph: unioned_call_graph,

@@ -540,7 +540,9 @@ async fn main() -> anyhow::Result<()> {
         .iter()
         .flat_map(|cfg| {
             let graph_replication = 9;
-            (0..graph_replication).map(|_| cfg.clone()).collect::<Vec<_>>()
+            (0..graph_replication)
+                .map(|_| cfg.clone())
+                .collect::<Vec<_>>()
         })
         .collect();
 
