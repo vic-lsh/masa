@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import signal
@@ -24,6 +25,7 @@ from typing import Optional
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import normalize_features_to_tag
 
+logger = logging.getLogger(__name__)
 
 GENERIC_SERVICE_IMAGE = "generic_service"
 MSSIM_LOADGEN_IMAGE = "mssim_load_generator"
@@ -106,6 +108,9 @@ class MssimBuilder(AppBuilder):
         # NOTE: rust_log/app_config_path/gen_config_path are unused for MSSIM builds today.
         commands: list[list[str]] = []
 
+        # Start timing the docker build
+        build_start_time = time.time()
+
         dockerfile = repo_root / "apps" / "mssim" / "generic-service" / "Dockerfile"
         if not dockerfile.exists():
             raise FileNotFoundError(f"MSSIM dockerfile not found: {dockerfile}")
@@ -183,6 +188,11 @@ class MssimBuilder(AppBuilder):
                 subprocess.run(tag_cmd, cwd=repo_root, check=True)
 
             self._built_feature_keys.add(tag)
+
+        if not dry_run:
+            # Calculate and print build duration
+            build_duration = time.time() - build_start_time
+            logger.info(f"Docker image building took {build_duration:.2f} seconds ({build_duration/60:.2f} minutes)")
 
         return commands if dry_run else None
 
