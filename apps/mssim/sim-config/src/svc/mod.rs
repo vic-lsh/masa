@@ -70,14 +70,88 @@ impl Into<String> for &ServiceName {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct GraphId(Cow<'static, str>);
+
+impl Display for GraphId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for GraphId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s: String = Deserialize::deserialize(deserializer)?;
+        Ok(GraphId::from_string(s))
+    }
+}
+
+impl Serialize for GraphId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl GraphId {
+    pub fn new<S: Into<String>>(s: S) -> Self {
+        Self::from_string(s.into())
+    }
+
+    pub fn from_string(s: String) -> Self {
+        GraphId(Cow::Owned(Self::normalize_graph_id(s)))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    fn normalize_graph_id(s: String) -> String {
+        // Normalize to canonical format: "S_XXXXX" (uppercase S, underscore)
+        // Handle input formats: "s-XXXXX", "S_XXXXX", "s_XXXXX", etc.
+        let mut normalized = s;
+
+        // Convert "s-" prefix to "S_"
+        if normalized.starts_with("s-") {
+            normalized = normalized.replacen("s-", "S_", 1);
+        } else if normalized.starts_with("s_") {
+            normalized = normalized.replacen("s_", "S_", 1);
+        } else if normalized.starts_with("S-") {
+            normalized = normalized.replacen("S-", "S_", 1);
+        }
+
+        // Convert all remaining hyphens to underscores
+        normalized = normalized.replace('-', "_");
+
+        normalized
+    }
+}
+
+impl Into<String> for GraphId {
+    fn into(self) -> String {
+        self.0.into_owned()
+    }
+}
+
+impl Into<String> for &GraphId {
+    fn into(self) -> String {
+        self.0.to_owned().into_owned()
+    }
+}
+
 pub struct CallGraphConfig {
     pub method_latency: Option<MethodLatencyDistMap>,
     pub method_freq_map: Option<method_freq::MethodFreqMap>,
     pub call_graph: call_graph::CallGraph,
     /// Call sequences for this service, keyed by graph_id
-    pub call_sequences: HashMap<String, Option<call_sequence::CallSequence>>,
+    pub call_sequences: HashMap<GraphId, Option<call_sequence::CallSequence>>,
     /// USER call sequences, keyed by graph_id
-    pub user_call_sequences: HashMap<String, call_sequence::CallSequence>,
+    pub user_call_sequences: HashMap<GraphId, call_sequence::CallSequence>,
 }
 
 /// Enumerates all subdirectories under a base directory.
@@ -210,17 +284,19 @@ impl CallGraphConfig {
         };
 
         // Load call sequences from all directories
-        let mut call_sequences: HashMap<String, Option<call_sequence::CallSequence>> =
+        let mut call_sequences: HashMap<GraphId, Option<call_sequence::CallSequence>> =
             HashMap::new();
-        let mut user_call_sequences: HashMap<String, call_sequence::CallSequence> = HashMap::new();
+        let mut user_call_sequences: HashMap<GraphId, call_sequence::CallSequence> = HashMap::new();
 
         for callgraph_dir in dirs {
             // Extract graph_id from directory name (e.g., "S_14677443" from "/app/callgraphs/S_14677443")
-            let graph_id = callgraph_dir
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "default".to_string());
+            let graph_id = GraphId::from_string(
+                callgraph_dir
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "default".to_string()),
+            );
 
             // Try loading call sequence for this graph
             if let Ok(Some(call_sequence)) =
@@ -253,12 +329,18 @@ impl CallGraphConfig {
             if let Ok(Some(call_sequence)) =
                 call_sequence::load_call_sequence(first_dir, svc_name, None)
             {
-                call_sequences.insert("default".to_string(), Some(call_sequence));
+                call_sequences.insert(
+                    GraphId::from_string("default".to_string()),
+                    Some(call_sequence),
+                );
             }
             if let Ok(user_call_sequence) =
                 call_sequence::load_root_user_call_sequence(first_dir, None)
             {
-                user_call_sequences.insert("default".to_string(), user_call_sequence);
+                user_call_sequences.insert(
+                    GraphId::from_string("default".to_string()),
+                    user_call_sequence,
+                );
             }
         }
 
@@ -323,11 +405,12 @@ mod tests {
         assert!(config.call_graph.callees_of(&svc_name).len() > 0);
 
         let method = "method_x".into();
+        let graph_id = GraphId::from_string("graph_main".to_string());
         let dist = config
             .method_latency
             .as_ref()
             .expect("Method latency should be present")
-            .get_method_dist(&method, "graph_main")
+            .get_method_dist(&method, &graph_id)
             .expect("Method distribution should exist");
 
         let p50 = dist.sample(&mut rand::rng());
@@ -336,7 +419,7 @@ mod tests {
         let freq_map = config.method_freq_map.as_ref().unwrap();
         let mut rng = rand::rng();
         let sampled = freq_map
-            .sample_method(&svc_name, "graph_main", &mut rng)
+            .sample_method(&svc_name, &graph_id, &mut rng)
             .expect("service must have methods");
         assert!(["method_x", "method_y", "method_z"].contains(&sampled.method.as_ref()));
     }

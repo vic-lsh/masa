@@ -8,7 +8,7 @@ use anyhow::Result;
 use masa::MethodId;
 use sim_config::deployment::Deployment;
 use sim_config::svc::call_sequence::CallSequence;
-use sim_config::svc::{CallGraphConfig, ServiceName};
+use sim_config::svc::{CallGraphConfig, GraphId, ServiceName};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Once};
@@ -102,7 +102,7 @@ impl ServiceState {
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
-        graph_name: &str,
+        graph_name: &GraphId,
     ) -> Result<(), Status> {
         let method_latency = self.config.method_latency.as_ref().ok_or_else(|| {
             Status::internal("Configuration error: method latency not configured")
@@ -144,35 +144,25 @@ impl ServiceState {
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
-        graph_name: &str,
+        graph_name: &GraphId,
     ) -> Result<(), Status> {
         static CALL_SEQUENCE_MISSING_WARN_ONCE: Once = Once::new();
 
-        // Look up call sequence for this graph
-        // graph_name might be in format "s-14677443" but graph_id in file is "S_14677443"
-        // Try both formats
-        let graph_id_variants = vec![
-            graph_name.to_string(),
-            graph_name.replace("s-", "S_"),
-            graph_name.replace("-", "_"),
-        ];
-
-        let mut call_sequence_opt = None;
-        for variant in &graph_id_variants {
-            if let Some(seq) = self.config.call_sequences.get(variant) {
-                call_sequence_opt = seq.as_ref();
-                break;
-            }
-        }
+        let call_sequence_opt = self
+            .config
+            .call_sequences
+            .get(graph_name)
+            .and_then(|opt| opt.as_ref());
 
         // If not found, try "default" as fallback
-        if call_sequence_opt.is_none() {
-            call_sequence_opt = self
-                .config
+        let call_sequence_opt = if call_sequence_opt.is_none() {
+            self.config
                 .call_sequences
-                .get("default")
-                .and_then(|opt| opt.as_ref());
-        }
+                .get(&GraphId::from_string("default".to_string()))
+                .and_then(|opt| opt.as_ref())
+        } else {
+            call_sequence_opt
+        };
 
         if let Some(call_sequence) = call_sequence_opt {
             return self
@@ -203,7 +193,7 @@ impl ServiceState {
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
-        graph_name: &str,
+        graph_name: &GraphId,
         call_sequence: &CallSequence,
     ) -> Result<(), Status> {
         let mut parent_chain_for_children = parent_chain.clone();
@@ -256,7 +246,7 @@ impl ServiceState {
                     req_id,
                     start_at,
                     method_name: entry.method_name.to_string(),
-                    graph_name: graph_name.to_string(),
+                    graph_name: graph_name.as_str().to_string(),
                 });
 
                 // Set method name override for latency tracking
@@ -306,7 +296,7 @@ impl ServiceState {
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
-        graph_name: &str,
+        graph_name: &GraphId,
     ) -> Result<(), Status> {
         let mut tasks = Vec::new();
         let mut parent_chain_for_children = parent_chain.clone();
@@ -353,7 +343,7 @@ impl ServiceState {
                 req_id,
                 start_at,
                 method_name: method_to_call.to_string(),
-                graph_name: graph_name.to_string(),
+                graph_name: graph_name.into(),
             });
 
             // Set method name override for latency tracking
@@ -399,8 +389,8 @@ impl ServiceState {
     fn sample_method_for_child(
         &self,
         child_svc_name: &ServiceName,
-        graph_name: &str,
-    ) -> Option<(MethodId, Option<String>)> {
+        graph_name: &GraphId,
+    ) -> Option<(MethodId, Option<GraphId>)> {
         if let Some(freq_map) = self.config.method_freq_map.as_ref() {
             let mut rng = rand::rng();
             if let Some(sampled) = freq_map.sample_method(child_svc_name, graph_name, &mut rng) {
@@ -448,36 +438,23 @@ impl ServiceState {
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
-        graph_name: &str,
+        graph_name: &GraphId,
     ) -> Result<(), Status> {
-        // Look up USER call sequence for this graph
-        // graph_name might be in format "s-14677443" but graph_id in file is "S_14677443"
-        // Try both formats
-        let graph_id_variants = vec![
-            graph_name.to_string(),
-            graph_name.replace("s-", "S_"),
-            graph_name.replace("-", "_"),
-        ];
-
-        let mut user_call_sequence_opt = None;
-        for variant in &graph_id_variants {
-            if let Some(seq) = self.config.user_call_sequences.get(variant) {
-                user_call_sequence_opt = Some(seq);
-                break;
-            }
-        }
+        let user_call_sequence_opt = self.config.user_call_sequences.get(graph_name);
 
         // If not found, try "default" as fallback
-        if user_call_sequence_opt.is_none() {
-            user_call_sequence_opt = self.config.user_call_sequences.get("default");
-        }
-
-        let user_call_sequence = user_call_sequence_opt.ok_or_else(|| {
-            Status::not_found(format!(
-                "USER call sequence not found for graph: {}",
-                graph_name
-            ))
-        })?;
+        let user_call_sequence = user_call_sequence_opt
+            .or_else(|| {
+                self.config
+                    .user_call_sequences
+                    .get(&GraphId::from_string("default".to_string()))
+            })
+            .ok_or_else(|| {
+                Status::not_found(format!(
+                    "USER call sequence not found for graph: {}",
+                    graph_name.as_str()
+                ))
+            })?;
 
         // Use the pre-loaded USER call sequence for this graph
         self.fanout_with_call_sequence(

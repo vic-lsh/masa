@@ -28,7 +28,7 @@ impl TraceConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::svc::ServiceName;
+    use crate::svc::{GraphId, ServiceName};
     use std::fs;
     use std::io::Write;
     use tempfile::TempDir;
@@ -67,8 +67,9 @@ mod tests {
 
         if let Some(method_freq) = config.method_freq_map {
             let mut rng = rand::rng();
+            let graph_id = GraphId::from_string("graph_main".to_string());
             let sampled_method = method_freq
-                .sample_method(&svc_name, "graph_main", &mut rng)
+                .sample_method(&svc_name, &graph_id, &mut rng)
                 .expect("service must exist");
             assert!(["method_a", "method_b"].contains(&sampled_method.method.as_str()));
         }

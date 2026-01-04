@@ -10,6 +10,7 @@ use masa::{time_now, Context as MasaContext};
 use rand_distr::{Distribution, Exp};
 use serde::Deserialize;
 use serde_json;
+use sim_config::svc::GraphId;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::time::{Instant, MissedTickBehavior};
@@ -76,7 +77,7 @@ struct FrontendTargetConfig {
 #[derive(Clone)]
 pub struct ClientEntry {
     pub client: RpcClient,
-    pub graph: String,
+    pub graph: GraphId,
     pub slo_ms: u64,
     pub probability: f32,
 }
@@ -201,7 +202,7 @@ async fn run_root_load(
                     let mut request = Request::new(RootRequest {
                         req_id,
                         start_at,
-                        graph_name: graph_hint,
+                        graph_name: graph_hint.into(),
                     });
 
                     let ctx = {
@@ -273,7 +274,7 @@ async fn run_root_load(
 
 #[derive(Debug, Clone)]
 struct RootLatencySample {
-    graph: String,
+    graph: GraphId,
     req_id: u64,
     start_at: u64,
     queue_latency_us: u64,
@@ -321,7 +322,7 @@ async fn flush_root_samples_internal(
     for sample in &snapshot {
         csv_data.push_str(&format!(
             "{},{},{},{},{},{},{}\n",
-            sample.graph,
+            sample.graph.as_str(),
             sample.req_id,
             sample.is_err,
             sample.start_at,
@@ -539,7 +540,8 @@ async fn main() -> anyhow::Result<()> {
         .iter()
         .flat_map(|cfg| {
             let graph_replication = 9;
-            if cfg.graph != "s-14677443" {
+            let graph_id = GraphId::from_string(cfg.graph.clone());
+            if graph_id.as_str() != "S_14677443" {
                 (0..graph_replication).map(|_| cfg.clone()).collect()
             } else {
                 vec![cfg.clone()]
@@ -565,7 +567,7 @@ async fn main() -> anyhow::Result<()> {
 
         let entry = ClientEntry {
             client: ServiceClient::new(channel),
-            graph: cfg.graph,
+            graph: GraphId::from_string(cfg.graph.clone()),
             slo_ms: cfg.slo_ms,
             probability: cfg.probability,
         };
