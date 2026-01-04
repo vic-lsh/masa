@@ -154,16 +154,6 @@ impl ServiceState {
             .get(graph_name)
             .and_then(|opt| opt.as_ref());
 
-        // If not found, try "default" as fallback
-        let call_sequence_opt = if call_sequence_opt.is_none() {
-            self.config
-                .call_sequences
-                .get(&GraphId::from_string("default".to_string()))
-                .and_then(|opt| opt.as_ref())
-        } else {
-            call_sequence_opt
-        };
-
         if let Some(call_sequence) = call_sequence_opt {
             return self
                 .fanout_with_call_sequence(
@@ -440,15 +430,10 @@ impl ServiceState {
         parent_chain: Vec<ServiceName>,
         graph_name: &GraphId,
     ) -> Result<(), Status> {
-        let user_call_sequence_opt = self.config.user_call_sequences.get(graph_name);
-
-        // If not found, try "default" as fallback
-        let user_call_sequence = user_call_sequence_opt
-            .or_else(|| {
-                self.config
-                    .user_call_sequences
-                    .get(&GraphId::from_string("default".to_string()))
-            })
+        let user_call_sequence = self
+            .config
+            .user_call_sequences
+            .get(graph_name)
             .ok_or_else(|| {
                 Status::not_found(format!(
                     "USER call sequence not found for graph: {}",
