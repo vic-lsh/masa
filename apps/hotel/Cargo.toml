@@ -67,11 +67,6 @@ prio_local = [
   "masa/prio_local",
   "tonic/prio_local",
 ]
-perfect_lsf = [
-  "tokio/perfect_lsf",
-  "masa/perfect_lsf",
-  "tonic/perfect_lsf",
-]
 fifo = ["tokio/fifo", "masa/fifo", "tonic/fifo"]
 
 fifo_span_tracing = [
