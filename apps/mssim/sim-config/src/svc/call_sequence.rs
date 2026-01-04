@@ -300,7 +300,10 @@ pub fn get_all_graph_ids(config_dir: &PathBuf) -> Result<Vec<GraphId>> {
         serde_json::from_str(&content).with_context(|| "Failed to parse call_sequence.json")?;
 
     match json_value.as_object() {
-        Some(obj) => Ok(obj.keys().map(|k| GraphId::from_string(k.clone())).collect()),
+        Some(obj) => Ok(obj
+            .keys()
+            .map(|k| GraphId::from_string(k.clone()))
+            .collect()),
         None => Ok(Vec::new()),
     }
 }
