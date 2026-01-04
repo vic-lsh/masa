@@ -323,7 +323,6 @@ impl CallGraphConfig {
             }
         }
 
-
         Ok(CallGraphConfig {
             call_graph: unioned_call_graph,
             method_latency,
