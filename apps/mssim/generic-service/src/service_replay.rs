@@ -1,5 +1,5 @@
 use crate::busy_spin;
-use crate::service_state::ServiceState;
+use crate::core::ServiceCore;
 use crate::service_stubs::local_span::SpanType;
 use crate::service_stubs::span::Kind;
 use crate::service_stubs::{ChildSpans, LocalSpan, ReplayRequest};
@@ -19,7 +19,7 @@ pub(crate) struct ReplaySpanExecutor<'a> {
 
 impl<'a> ReplaySpanExecutor<'a> {
     pub(crate) async fn new(
-        state: &'a ServiceState,
+        state: &'a ServiceCore,
         request: &'a ReplayRequest,
     ) -> Result<Self, Status> {
         let clients = state.read_clients().await;
