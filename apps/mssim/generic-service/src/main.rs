@@ -179,7 +179,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             interval.tick().await;
             let queue_len = current_thread_queue_len();
             let elapsed = start_time.elapsed();
-            println!(
+            info!(
                 "current_thread_queue_len: {} (elapsed: {:?})",
                 queue_len, elapsed
             );

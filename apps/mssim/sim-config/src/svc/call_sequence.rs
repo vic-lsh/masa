@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
 use std::path::PathBuf;
+use tracing::{warn, error};
 
 /// A single entry in a call sequence step, representing a service method call
 /// with its associated probability.
@@ -125,8 +126,8 @@ pub fn load_call_sequence(
             match obj.get(normalized_id) {
                 Some(graph_obj) => graph_obj,
                 None => {
-                    eprintln!(
-                        "Warning: graph_id '{}' not found in call_sequence.json",
+                    warn!(
+                        "graph_id '{}' not found in call_sequence.json",
                         normalized_id
                     );
                     return Ok(None);
@@ -134,7 +135,7 @@ pub fn load_call_sequence(
             }
         }
         _ => {
-            eprintln!("Warning: call_sequence.json has no top-level entries");
+            warn!("call_sequence.json has no top-level entries");
             return Ok(None);
         }
     };
@@ -172,8 +173,8 @@ pub fn load_call_sequence(
             }
             None => {
                 // Service not found in call sequence, use default parallel fanout
-                eprintln!(
-                    "Warning: Service {} not found in call_sequence.json, using default parallel fanout",
+                warn!(
+                    "Service {} not found in call_sequence.json, using default parallel fanout",
                     service_name.as_str()
                 );
                 None
@@ -308,7 +309,7 @@ fn parse_call_sequence_step(raw_step: HashMap<String, f64>) -> CallSequenceStep 
         match CallSequenceEntry::try_from((service_method_key.as_str(), raw_probability)) {
             Ok(entry) => parsed_step.push(entry),
             Err(e) => {
-                eprintln!("Warning: {}", e);
+                warn!("{}", e);
             }
         }
     }
@@ -323,8 +324,8 @@ fn parse_call_sequence_step(raw_step: HashMap<String, f64>) -> CallSequenceStep 
         }
     } else {
         // If sum is 0 or negative, set all probabilities to 0
-        eprintln!(
-            "Warning: Sum of probabilities in step is {}, setting all to 0",
+        warn!(
+            "Sum of probabilities in step is {}, setting all to 0",
             sum
         );
         for entry in &mut parsed_step {
