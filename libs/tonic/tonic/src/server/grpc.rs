@@ -325,7 +325,9 @@ where
             })
             .build();
 
-        let response = fut.await.map(|r| r.map(|m| tokio_stream::once(Ok(m))));
+        let mut response = fut.await.map(|r| r.map(|m| tokio_stream::once(Ok(m))));
+
+        req_ctx.finalize_before_serialization(&mut response);
 
         let compression_override = compression_override_from_response(&response);
 
