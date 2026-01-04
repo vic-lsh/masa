@@ -540,12 +540,7 @@ async fn main() -> anyhow::Result<()> {
         .iter()
         .flat_map(|cfg| {
             let graph_replication = 9;
-            let graph_id = GraphId::from_string(cfg.graph.clone());
-            if graph_id.as_str() != "S_14677443" {
-                (0..graph_replication).map(|_| cfg.clone()).collect()
-            } else {
-                vec![cfg.clone()]
-            }
+            (0..graph_replication).map(|_| cfg.clone()).collect::<Vec<_>>()
         })
         .collect();
 
