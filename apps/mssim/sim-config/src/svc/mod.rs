@@ -300,25 +300,15 @@ impl CallGraphConfig {
 
             // Try loading call sequence for this graph
             if let Ok(Some(call_sequence)) =
-                call_sequence::load_call_sequence(callgraph_dir, svc_name, Some(&graph_id))
+                call_sequence::load_call_sequence(callgraph_dir, svc_name, &graph_id)
             {
-                call_sequences.insert(graph_id.clone(), Some(call_sequence));
-            } else if let Ok(Some(call_sequence)) =
-                call_sequence::load_call_sequence(callgraph_dir, svc_name, None)
-            {
-                // Fallback: try without graph_id (backward compatibility)
                 call_sequences.insert(graph_id.clone(), Some(call_sequence));
             }
 
             // Try loading USER call sequence for this graph
             if let Ok(user_call_sequence) =
-                call_sequence::load_root_user_call_sequence(callgraph_dir, Some(&graph_id))
+                call_sequence::load_root_user_call_sequence(callgraph_dir, &graph_id)
             {
-                user_call_sequences.insert(graph_id.clone(), user_call_sequence);
-            } else if let Ok(user_call_sequence) =
-                call_sequence::load_root_user_call_sequence(callgraph_dir, None)
-            {
-                // Fallback: try without graph_id
                 user_call_sequences.insert(graph_id.clone(), user_call_sequence);
             }
         }
