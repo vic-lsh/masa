@@ -176,6 +176,13 @@ where
         Ok(())
     }
 
+    /// Invoked after the request handler (or the hook) has produced a response, but before it is serialized.
+    ///
+    /// This is useful for inspecting the response before it is serialized.
+    ///
+    /// `finalize` is invoked after this hook and after the response is serialized.
+    fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {}
+
     /// The last lifecycle hook to be invoked. Provides a mutable reference to the response about
     /// to be sent back to the client.
     fn finalize(&self, response: &mut http::Response<BoxBody>) {}

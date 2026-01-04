@@ -271,19 +271,32 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         Ok(())
     }
 
-    fn finalize(&self, _response: &mut http::Response<BoxBody>) {
+    fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
+        if !is_early_return_response(result) {
+            self.track_latencies();
+        }
+    }
+
+    fn finalize(&self, _response: &mut http::Response<BoxBody>) {}
+}
+
+impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
+    fn track_latencies(&self) {
         let parent_end = Instant::now();
-        // track remaining time after each child
         for (child_method, child_end) in self.child_end_times.lock().unwrap().iter() {
-            // TODO: The LatencyDistribution instances will regularly sort their data. Should this
-            // work be done asynchronously?
-            // Use resolved_method (parent) and child_method (already resolved in after_child_rpc)
             track_method_latency(
                 &*self.server.child_distributions,
-                format!("{}/{}", self.resolved_method, child_method),
+                format!("{} -> {}", self.resolved_method, child_method),
                 parent_end.duration_since(*child_end).as_micros() as u64,
             );
         }
+    }
+}
+
+fn is_early_return_response<T>(response: &Result<Response<T>, Status>) -> bool {
+    match response {
+        Ok(_) => false,
+        Err(status) => status.code() == Code::DeadlineExceeded,
     }
 }
 
