@@ -201,7 +201,12 @@ impl StatsTracker {
                     let mut dist = c.consume();
                     print!("{: <width$}", k, width = name_width);
                     print!("# recs {: <width$}", dist.len(), width = 6);
-                    print!("avg: {} ", dist.average());
+                    let avg = dist.average();
+                    if avg.is_nan() {
+                        print!("avg: NaN ");
+                    } else {
+                        print!("avg: {:.2} ", avg);
+                    }
                     for p in PERCENTILES {
                         print!("p{}: {} ", p, dist.percentile(p));
                     }
