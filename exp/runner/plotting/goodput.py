@@ -638,7 +638,7 @@ def _plot_policy_goodput_comparison(
             where each dict maps request_type -> goodput. Used for stacked bars when api == "ALL".
     """
     if api == "ALL" and policy_goodputs_by_type is not None:
-        output_path = os.path.join(output_dir, f"policy_goodput_comparison_{api}.png")
+        output_path = os.path.join(output_dir, f"goodput_{api}.png")
         _plot_all_api_goodput_clean(
             output_path,
             policies=policies,
@@ -675,7 +675,7 @@ def _plot_policy_goodput_comparison(
     _style_axes(ax)
     fig.tight_layout()
     fig.savefig(
-        os.path.join(output_dir, f"policy_goodput_comparison_{api}.png"),
+        os.path.join(output_dir, f"goodput_{api}.png"),
         dpi=300,
         bbox_inches="tight",
     )
@@ -748,7 +748,7 @@ def _plot_averaged_goodput(
                     if vals:
                         avg_breakdown[policy][rps_idx][rt] = sum(vals) / len(vals)
 
-        output_path = os.path.join(output_dir, f"policy_goodput_comparison_{api}.png")
+        output_path = os.path.join(output_dir, f"goodput_{api}.png")
         _plot_all_api_goodput_clean(
             output_path,
             policies=policies,
@@ -786,7 +786,7 @@ def _plot_averaged_goodput(
     _style_axes(ax)
     fig.tight_layout()
     fig.savefig(
-        os.path.join(output_dir, f"policy_goodput_comparison_{api}.png"),
+        os.path.join(output_dir, f"goodput_{api}.png"),
         dpi=300,
         bbox_inches="tight",
     )
@@ -894,7 +894,7 @@ def generate_plots(args) -> None:
                     early_returns_by_type = policy_early_returns_by_type[i].get(api)
                     total_early_returns = policy_total_early_returns[i].get(api)
                     if early_returns_by_type is not None and total_early_returns is not None:
-                        output_path = os.path.join(output_dir, f"policy_early_return_breakdown_{api}.png")
+                        output_path = os.path.join(output_dir, f"early_return_{api}.png")
                         futures.append(
                             executor.submit(
                                 _plot_early_return_breakdown,
@@ -954,7 +954,7 @@ def generate_plots(args) -> None:
                             if vals:
                                 avg_breakdown[policy][rps_idx][rt] = sum(vals) / len(vals)
                 
-                output_path = os.path.join(output_dir, f"policy_early_return_breakdown_{api}.png")
+                output_path = os.path.join(output_dir, f"early_return_{api}.png")
                 futures.append(
                     executor.submit(
                         _plot_early_return_breakdown,
