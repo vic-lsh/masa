@@ -4,59 +4,50 @@ use crate::parent_chain::{encode_parent_chain, PARENT_CHAIN_METADATA_KEY};
 use crate::service_replay::ReplaySpanExecutor;
 use crate::service_stubs::{InvokeRequest, ReplayRequest};
 use crate::RpcClient;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use masa::MethodId;
 use sim_config::deployment::Deployment;
-use sim_config::svc::call_sequence::{
-    load_call_sequence, load_root_user_call_sequence, CallSequence,
-};
-use sim_config::svc::{ServiceName, ServiceTraceConfig};
+use sim_config::svc::call_sequence::CallSequence;
+use sim_config::svc::{CallGraphConfig, GraphId, ServiceName};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Once};
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tonic::{masa::context::MasaRequestExt, Request, Status};
 use tracing::{error, info, warn};
 
-pub(crate) struct ServiceState {
-    config: ServiceTraceConfig,
-    pub(crate) clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
+pub(crate) struct ServiceCore {
+    config: CallGraphConfig,
+    clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
     self_svc_name: ServiceName,
+    is_root_service: bool,
     overshot_counter: AtomicUsize,
-    call_sequence: Option<CallSequence>,
     child_call_probabilities: HashMap<ServiceName, f64>,
-    // USER call sequence loaded at startup (one per service instance)
-    user_call_sequence: CallSequence,
 }
 
-impl ServiceState {
+impl ServiceCore {
     pub(crate) fn initialize(
         self_svc_name: ServiceName,
-        config: ServiceTraceConfig,
+        config: CallGraphConfig,
         deployment: Deployment,
-        config_dir: PathBuf,
     ) -> Result<(Arc<Self>, Option<ConnectionBootstrap>)> {
         info!("Initializing service state for {}", self_svc_name.as_str());
+
+        let is_root_service = self_svc_name.is_root_service();
 
         let child_weights = config.call_graph.callees_of(&self_svc_name);
         let child_call_probabilities = compute_child_probabilities(&child_weights);
         let clients = Arc::new(RwLock::new(HashMap::new()));
 
-        println!("Child services:");
+        info!("Child services:");
         for child in child_weights.keys() {
-            println!("{}", child.as_str());
+            info!("{}", child.as_str());
         }
 
-        // Load call sequence if available
-        let call_sequence = load_call_sequence(&config_dir, &self_svc_name)
-            .context("Failed to load call sequence")?;
-
-        // Load USER call sequence at startup for root API
-        let user_call_sequence = load_root_user_call_sequence(&config_dir)
-            .context("Failed to load USER call sequence")?;
-
-        println!("USER call sequence: {:?}", user_call_sequence);
+        info!(
+            "Loaded call sequences for {} graphs",
+            config.call_sequences.len()
+        );
 
         let bootstrap = if child_weights.is_empty() {
             None
@@ -74,14 +65,13 @@ impl ServiceState {
             ))
         };
 
-        let state = Arc::new(ServiceState {
+        let state = Arc::new(ServiceCore {
             config,
             clients,
             self_svc_name,
+            is_root_service,
             overshot_counter: AtomicUsize::new(0),
-            call_sequence,
             child_call_probabilities,
-            user_call_sequence,
         });
 
         Ok((state, bootstrap))
@@ -91,22 +81,23 @@ impl ServiceState {
         &self.self_svc_name
     }
 
+    pub(crate) fn is_root_service(&self) -> bool {
+        self.is_root_service
+    }
+
     pub(crate) async fn handle_method(
         &self,
         method_id: MethodId,
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
-        graph_name: Option<&str>,
+        graph_name: &GraphId,
     ) -> Result<(), Status> {
-        let graph_selection = graph_name.unwrap().trim();
-        let graph_ref = Some(graph_selection);
-
         let method_latency = self.config.method_latency.as_ref().ok_or_else(|| {
             Status::internal("Configuration error: method latency not configured")
         })?;
         let latency_dist = method_latency
-            .get_method_dist(&method_id, graph_ref)
+            .get_method_dist(&method_id, graph_name)
             .ok_or_else(|| Status::not_found("Method not found"))?;
 
         let total_latency_ms = latency_dist.sample(&mut rand::rng());
@@ -116,7 +107,7 @@ impl ServiceState {
             self.handle_leaf_service(total_latency_ms).await;
         } else {
             let start_time = std::time::Instant::now();
-            self.fanout(req_id, start_at, parent_chain, graph_ref)
+            self.fanout(req_id, start_at, parent_chain, graph_name)
                 .await?;
             let elapsed = start_time.elapsed();
 
@@ -142,18 +133,23 @@ impl ServiceState {
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
-        graph_name: Option<&str>,
+        graph_name: &GraphId,
     ) -> Result<(), Status> {
         static CALL_SEQUENCE_MISSING_WARN_ONCE: Once = Once::new();
-        let graph_selection = graph_name.unwrap().trim();
 
-        if let Some(call_sequence) = self.call_sequence.as_ref() {
+        let call_sequence_opt = self
+            .config
+            .call_sequences
+            .get(graph_name)
+            .and_then(|opt| opt.as_ref());
+
+        if let Some(call_sequence) = call_sequence_opt {
             return self
                 .fanout_with_call_sequence(
                     req_id,
                     start_at,
                     parent_chain,
-                    graph_selection,
+                    graph_name,
                     call_sequence,
                 )
                 .await;
@@ -161,12 +157,13 @@ impl ServiceState {
 
         CALL_SEQUENCE_MISSING_WARN_ONCE.call_once(|| {
             warn!(
-                "Call sequence missing for service {}; falling back to default fanout logic",
-                self.self_svc_name.as_str()
+                "Call sequence missing for service {} and graph {}; falling back to default fanout logic",
+                self.self_svc_name.as_str(),
+                graph_name
             );
         });
 
-        self.fanout_default(req_id, start_at, parent_chain, graph_selection)
+        self.fanout_default(req_id, start_at, parent_chain, graph_name)
             .await
     }
 
@@ -175,7 +172,7 @@ impl ServiceState {
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
-        graph_name: &str,
+        graph_name: &GraphId,
         call_sequence: &CallSequence,
     ) -> Result<(), Status> {
         let mut parent_chain_for_children = parent_chain.clone();
@@ -228,7 +225,7 @@ impl ServiceState {
                     req_id,
                     start_at,
                     method_name: entry.method_name.to_string(),
-                    graph_name: graph_name.to_string(),
+                    graph_name: graph_name.as_str().to_string(),
                 });
 
                 // Set method name override for latency tracking
@@ -278,7 +275,7 @@ impl ServiceState {
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
-        graph_name: &str,
+        graph_name: &GraphId,
     ) -> Result<(), Status> {
         let mut tasks = Vec::new();
         let mut parent_chain_for_children = parent_chain.clone();
@@ -325,7 +322,7 @@ impl ServiceState {
                 req_id,
                 start_at,
                 method_name: method_to_call.to_string(),
-                graph_name: graph_name.to_string(),
+                graph_name: graph_name.into(),
             });
 
             // Set method name override for latency tracking
@@ -371,8 +368,8 @@ impl ServiceState {
     fn sample_method_for_child(
         &self,
         child_svc_name: &ServiceName,
-        graph_name: &str,
-    ) -> Option<(MethodId, Option<String>)> {
+        graph_name: &GraphId,
+    ) -> Option<(MethodId, Option<GraphId>)> {
         if let Some(freq_map) = self.config.method_freq_map.as_ref() {
             let mut rng = rand::rng();
             if let Some(sampled) = freq_map.sample_method(child_svc_name, graph_name, &mut rng) {
@@ -414,21 +411,33 @@ impl ServiceState {
     }
 
     /// Use pre-loaded USER call sequence for root API.
-    /// The call sequence is loaded once at startup.
+    /// The call sequences are loaded upfront for all graphs at startup.
     pub(crate) async fn fanout_with_user_call_sequence(
         &self,
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
-        graph_name: &str,
+        graph_name: &GraphId,
     ) -> Result<(), Status> {
-        // Use the pre-loaded USER call sequence
+        let user_call_sequence = self
+            .config
+            .call_sequences
+            .get(graph_name)
+            .and_then(|opt| opt.as_ref())
+            .ok_or_else(|| {
+                Status::not_found(format!(
+                    "USER call sequence not found for graph: {}",
+                    graph_name.as_str()
+                ))
+            })?;
+
+        // Use the pre-loaded USER call sequence for this graph
         self.fanout_with_call_sequence(
             req_id,
             start_at,
             parent_chain,
             graph_name,
-            &self.user_call_sequence,
+            user_call_sequence,
         )
         .await
     }

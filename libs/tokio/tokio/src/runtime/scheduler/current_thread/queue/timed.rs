@@ -7,8 +7,6 @@ use crate::runtime::{
 };
 use std::sync::Arc;
 
-type Notified = task::Notified<Arc<Handle>>;
-
 /// Timed Queue
 pub(crate) struct TimedQueue<Q> {
     inner: Q,
