@@ -39,12 +39,12 @@ impl ServiceCore {
         let child_call_probabilities = compute_child_probabilities(&child_weights);
         let clients = Arc::new(RwLock::new(HashMap::new()));
 
-        println!("Child services:");
+        info!("Child services:");
         for child in child_weights.keys() {
-            println!("{}", child.as_str());
+            info!("{}", child.as_str());
         }
 
-        println!(
+        info!(
             "Loaded call sequences for {} graphs",
             config.call_sequences.len()
         );

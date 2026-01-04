@@ -9,6 +9,7 @@ use masa::MethodId;
 use method_latency::MethodLatencyDistMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tracing::info;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ServiceName(Cow<'static, str>);
@@ -221,12 +222,12 @@ impl CallGraphConfig {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let callgraph_dirs = enumerate_callgraph_dirs(base_dir)?;
 
-        println!(
+        info!(
             "Loading config from {} call graph directory(ies)",
             callgraph_dirs.len()
         );
         for (i, dir) in callgraph_dirs.iter().enumerate() {
-            println!("  [{}] {}", i + 1, dir.display());
+            info!("  [{}] {}", i + 1, dir.display());
         }
 
         let config = Self::from_callgraph_dirs(&callgraph_dirs, svc_name)?;
