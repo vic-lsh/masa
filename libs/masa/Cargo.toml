@@ -7,7 +7,6 @@ edition = "2021"
 prio_global = []
 prio_local = []
 fifo = []
-perfect_lsf = []
 fifo_span_tracing = []
 fifo_queue_tracing = []
 prio_global_queue_tracing = []
