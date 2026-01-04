@@ -227,8 +227,10 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         )
         .unwrap_or(0);
 
-        // NOTE(vic): could we have passed the deadline at this point?
-        let deadline = self.ctx.deadline() - estimate_remaining;
+                let deadline = self.ctx.deadline() - estimate_remaining;
+if time_now() > deadline {
+            return Err(self.issue_early_return());
+        }
 
         let child_recv_ctx = Context::new(
             self.ctx.api().clone(),
