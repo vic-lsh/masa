@@ -16,13 +16,6 @@ use tokio::sync::{RwLock, RwLockReadGuard};
 use tonic::{masa::context::MasaRequestExt, Request, Status};
 use tracing::{error, info, warn};
 
-/// Checks if a service name represents a root service.
-/// Root services are those whose name starts with "user".
-pub(crate) fn is_root_service(service_name: &ServiceName) -> bool {
-    const ROOT_SVC_NAME: &str = "user";
-    service_name.as_str().starts_with(ROOT_SVC_NAME)
-}
-
 pub(crate) struct ServiceState {
     config: CallGraphConfig,
     pub(crate) clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
@@ -40,7 +33,7 @@ impl ServiceState {
     ) -> Result<(Arc<Self>, Option<ConnectionBootstrap>)> {
         info!("Initializing service state for {}", self_svc_name.as_str());
 
-        let is_root_service = is_root_service(&self_svc_name);
+        let is_root_service = self_svc_name.is_root_service();
 
         let child_weights = config.call_graph.callees_of(&self_svc_name);
         let child_call_probabilities = compute_child_probabilities(&child_weights);
@@ -54,10 +47,6 @@ impl ServiceState {
         println!(
             "Loaded call sequences for {} graphs",
             config.call_sequences.len()
-        );
-        println!(
-            "USER call sequences: {:?}",
-            config.user_call_sequences.keys().collect::<Vec<_>>()
         );
 
         let bootstrap = if child_weights.is_empty() {
@@ -430,16 +419,17 @@ impl ServiceState {
         parent_chain: Vec<ServiceName>,
         graph_name: &GraphId,
     ) -> Result<(), Status> {
-        let user_call_sequence =
-            self.config
-                .user_call_sequences
-                .get(graph_name)
-                .ok_or_else(|| {
-                    Status::not_found(format!(
-                        "USER call sequence not found for graph: {}",
-                        graph_name.as_str()
-                    ))
-                })?;
+        let user_call_sequence = self
+            .config
+            .call_sequences
+            .get(graph_name)
+            .and_then(|opt| opt.as_ref())
+            .ok_or_else(|| {
+                Status::not_found(format!(
+                    "USER call sequence not found for graph: {}",
+                    graph_name.as_str()
+                ))
+            })?;
 
         // Use the pre-loaded USER call sequence for this graph
         self.fanout_with_call_sequence(
