@@ -18,7 +18,7 @@ use tracing::{error, info, warn};
 
 pub(crate) struct ServiceCore {
     config: CallGraphConfig,
-    pub(crate) clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
+    clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
     self_svc_name: ServiceName,
     is_root_service: bool,
     overshot_counter: AtomicUsize,
