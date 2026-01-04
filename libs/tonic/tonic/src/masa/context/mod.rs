@@ -7,7 +7,6 @@ mod fifo;
 mod global;
 mod local;
 mod noop;
-mod perfect_lsf;
 mod queue_global;
 mod queue_tracing;
 mod tracing;
@@ -52,10 +51,6 @@ pub type DefaultMasaHooks = local::local::LocalDeadlinePolicy;
 #[cfg(any(feature = "prio_global_queue_tracing"))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = queue_global::QueueGlobal;
-
-#[cfg(feature = "perfect_lsf")]
-#[allow(missing_docs)]
-pub type DefaultMasaHooks = perfect_lsf::PerfectLSF;
 
 // TODO: add notes on trait bounds
 /// Trait for specifying the set of hooks to apply in a Masa build.

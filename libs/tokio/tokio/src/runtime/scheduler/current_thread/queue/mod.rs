@@ -3,8 +3,7 @@ mod fifo;
 #[cfg(any(
     feature = "prio_global",
     feature = "prio_global_queue_tracing",
-    feature = "prio_local",
-    feature = "perfect_lsf"
+    feature = "prio_local"
 ))]
 mod prio_bh;
 
@@ -33,15 +32,13 @@ pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
     feature = "prio_global",
     feature = "prio_global_queue_tracing",
     feature = "prio_local",
-    feature = "perfect_lsf",
 )))]
 pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
 
 #[cfg(any(
     feature = "prio_global",
     feature = "prio_global_queue_tracing",
-    feature = "prio_local",
-    feature = "perfect_lsf"
+    feature = "prio_local"
 ))]
 pub(crate) type LocalRunQueueInner<T> = prio_bh::BinaryHeapQueue<T>;
 
