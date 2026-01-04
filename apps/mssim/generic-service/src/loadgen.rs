@@ -266,7 +266,10 @@ async fn run_root_load(
     let t = stats.throttled.load(Ordering::Relaxed);
     tracing::info!(
         "Final stats: sent={}, ok={}, err={}, throttled={}",
-        s, o, e, t
+        s,
+        o,
+        e,
+        t
     );
 
     Ok(())
@@ -414,10 +417,10 @@ async fn print_stats_task(
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                let s = stats.sent.load(Ordering::Relaxed);
-                let o = stats.ok.load(Ordering::Relaxed);
-                let e = stats.err.load(Ordering::Relaxed);
-                let t = stats.throttled.load(Ordering::Relaxed);
+                let sent = stats.sent.load(Ordering::Relaxed);
+                let ok = stats.ok.load(Ordering::Relaxed);
+                let err = stats.err.load(Ordering::Relaxed);
+                let throttled = stats.throttled.load(Ordering::Relaxed);
                 let percentiles = {
                     if latency_buffer.is_empty() {
                         None
@@ -434,23 +437,23 @@ async fn print_stats_task(
                 };
                 tracing::info!(
                     "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), throttled={} (+{}), p50={}, p90={}, p95={}, p99={}",
-                    s,
-                    s - last_sent,
-                    o,
-                    o - last_ok,
-                    e,
-                    e - last_err,
-                    t,
-                    t - last_throttled,
+                    sent,
+                    sent - last_sent,
+                    ok,
+                    ok - last_ok,
+                    err,
+                    err - last_err,
+                    throttled,
+                    throttled - last_throttled,
                     p50_str,
                     p90_str,
                     p95_str,
                     p99_str
                 );
-                last_sent = s;
-                last_ok = o;
-                last_err = e;
-                last_throttled = t;
+                last_sent = sent;
+                last_ok = ok;
+                last_err = err;
+                last_throttled = throttled;
             }
             maybe_sample = latency_rx.recv() => {
                 match maybe_sample {
@@ -499,7 +502,10 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!(
         "RPS values: {:?}, MAX_IN_FLIGHT: {}, STATS_INTERVAL_SEC: {}, DURATION: {:?}",
-        rps_values, max_in_flight, stats_interval_sec, duration
+        rps_values,
+        max_in_flight,
+        stats_interval_sec,
+        duration
     );
 
     // If replay_env is set, we are in replay mode
@@ -583,7 +589,8 @@ async fn main() -> anyhow::Result<()> {
         (LoadMode::Root, _) => tracing::info!("Operating in root() load mode."),
         (LoadMode::Replay { .. }, Some((source, count))) => tracing::info!(
             "Operating in replay() load mode with {} requests from {}.",
-            count, source
+            count,
+            source
         ),
         (LoadMode::Replay { work_items }, None) => tracing::info!(
             "Operating in replay() load mode with {} requests.",
@@ -594,7 +601,9 @@ async fn main() -> anyhow::Result<()> {
     if matches!(load_mode, LoadMode::Root) {
         tracing::info!(
             "Starting loadgen with Poisson arrivals: targets={}, rps_values={:?}, max_in_flight={}",
-            target_summary, rps_values, max_in_flight
+            target_summary,
+            rps_values,
+            max_in_flight
         );
         tracing::info!("Press Ctrl-C to stop.");
     } else if let LoadMode::Replay { work_items } = &load_mode {
@@ -637,7 +646,10 @@ async fn main() -> anyhow::Result<()> {
         let t = stats.throttled.load(Ordering::Relaxed);
         tracing::info!(
             "Final stats: sent={}, ok={}, err={}, throttled={}",
-            s, o, e, t
+            s,
+            o,
+            e,
+            t
         );
         return Ok(());
     }
@@ -692,13 +704,17 @@ async fn main() -> anyhow::Result<()> {
         // Flush samples for this RPS level
         flush_root_samples(root_samples, &root_latency_file_name).await?;
 
-        let s = stats.sent.load(Ordering::Relaxed);
-        let o = stats.ok.load(Ordering::Relaxed);
-        let e = stats.err.load(Ordering::Relaxed);
-        let t = stats.throttled.load(Ordering::Relaxed);
+        let sent = stats.sent.load(Ordering::Relaxed);
+        let ok = stats.ok.load(Ordering::Relaxed);
+        let err = stats.err.load(Ordering::Relaxed);
+        let throttled = stats.throttled.load(Ordering::Relaxed);
         tracing::info!(
             "\nRPS {} completed - Final stats: sent={}, ok={}, err={}, throttled={}",
-            rps, s, o, e, t
+            rps,
+            sent,
+            ok,
+            err,
+            throttled
         );
     }
 
