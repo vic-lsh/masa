@@ -86,7 +86,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     }
 
     // expect frontend method, all other method are going send back their latency trace
-    fn finalize(&self, _response: &mut http::Response<BoxBody>) {
+    fn finalize_after_serialization(&self, _response: &mut http::Response<BoxBody>) {
         let res_header = _response.headers_mut();
         let final_q_lat =
             self.q_lat.load(Ordering::Acquire) + self.max_child.load(Ordering::Acquire);
