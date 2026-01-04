@@ -4,8 +4,6 @@ mod fifo;
     feature = "prio_global",
     feature = "prio_global_queue_tracing",
     feature = "prio_local",
-    feature = "prio_local_direct",
-    feature = "prio_local_indirect",
     feature = "perfect_lsf"
 ))]
 mod prio_bh;
@@ -28,7 +26,6 @@ pub(crate) type LocalRunQueue<T> = timed::TimedQueue<LocalRunQueueInner<T>>;
     feature = "fifo_span_tracing",
     feature = "fifo_queue_tracing",
     feature = "prio_global_queue_tracing",
-    feature = "prio_local_direct",
 )))]
 pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
 
@@ -36,8 +33,6 @@ pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
     feature = "prio_global",
     feature = "prio_global_queue_tracing",
     feature = "prio_local",
-    feature = "prio_local_direct",
-    feature = "prio_local_indirect",
     feature = "perfect_lsf",
 )))]
 pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
@@ -46,8 +41,6 @@ pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
     feature = "prio_global",
     feature = "prio_global_queue_tracing",
     feature = "prio_local",
-    feature = "prio_local_direct",
-    feature = "prio_local_indirect",
     feature = "perfect_lsf"
 ))]
 pub(crate) type LocalRunQueueInner<T> = prio_bh::BinaryHeapQueue<T>;
