@@ -51,6 +51,13 @@ impl ServiceName {
         &self.0
     }
 
+    /// Checks if this service is a root service.
+    /// Root services are those whose name starts with "user".
+    pub fn is_root_service(&self) -> bool {
+        const ROOT_SVC_NAME: &str = "user";
+        self.as_str().starts_with(ROOT_SVC_NAME)
+    }
+
     fn format_svc_name(s: String) -> String {
         // Format the name such that it is a legal docker container name
         let formatted = s.replace('_', "-").to_lowercase();
@@ -150,8 +157,6 @@ pub struct CallGraphConfig {
     pub call_graph: call_graph::CallGraph,
     /// Call sequences for this service, keyed by graph_id
     pub call_sequences: HashMap<GraphId, Option<call_sequence::CallSequence>>,
-    /// USER call sequences, keyed by graph_id
-    pub user_call_sequences: HashMap<GraphId, call_sequence::CallSequence>,
 }
 
 /// Enumerates all subdirectories under a base directory.
@@ -284,9 +289,9 @@ impl CallGraphConfig {
         };
 
         // Load call sequences from all directories
+        let is_root = svc_name.is_root_service();
         let mut call_sequences: HashMap<GraphId, Option<call_sequence::CallSequence>> =
             HashMap::new();
-        let mut user_call_sequences: HashMap<GraphId, call_sequence::CallSequence> = HashMap::new();
 
         for callgraph_dir in dirs {
             // Extract graph_id from directory name (e.g., "S_14677443" from "/app/callgraphs/S_14677443")
@@ -298,18 +303,21 @@ impl CallGraphConfig {
                     .unwrap_or_else(|| "default".to_string()),
             );
 
-            // Try loading call sequence for this graph
-            if let Ok(Some(call_sequence)) =
-                call_sequence::load_call_sequence(callgraph_dir, svc_name, &graph_id)
-            {
-                call_sequences.insert(graph_id.clone(), Some(call_sequence));
-            }
-
-            // Try loading USER call sequence for this graph
-            if let Ok(user_call_sequence) =
-                call_sequence::load_root_user_call_sequence(callgraph_dir, &graph_id)
-            {
-                user_call_sequences.insert(graph_id.clone(), user_call_sequence);
+            // Load call sequence based on whether this is a root service
+            if is_root {
+                // For root services, load USER call sequence
+                if let Ok(user_call_sequence) =
+                    call_sequence::load_root_user_call_sequence(callgraph_dir, &graph_id)
+                {
+                    call_sequences.insert(graph_id.clone(), Some(user_call_sequence));
+                }
+            } else {
+                // For regular services, load service-specific call sequence
+                if let Ok(Some(call_sequence)) =
+                    call_sequence::load_call_sequence(callgraph_dir, svc_name, &graph_id)
+                {
+                    call_sequences.insert(graph_id.clone(), Some(call_sequence));
+                }
             }
         }
 
@@ -318,7 +326,6 @@ impl CallGraphConfig {
             method_latency,
             method_freq_map,
             call_sequences,
-            user_call_sequences,
         })
     }
 }
