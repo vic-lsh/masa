@@ -339,7 +339,7 @@ where
         );
 
         // Request-completed lifecycle hook.
-        req_ctx.finalize(&mut res);
+        req_ctx.finalize_after_serialization(&mut res);
 
         tokio::reset_child_task_poll_hook();
 
