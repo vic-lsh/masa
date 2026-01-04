@@ -275,7 +275,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         }
     }
 
-    fn finalize(&self, _response: &mut http::Response<BoxBody>) {}
+    fn finalize_after_serialization(&self, _response: &mut http::Response<BoxBody>) {}
 }
 
 impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
