@@ -10,6 +10,7 @@ use masa::{time_now, Context as MasaContext};
 use rand_distr::{Distribution, Exp};
 use serde::Deserialize;
 use serde_json;
+use sim_config::svc::GraphId;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::time::{Instant, MissedTickBehavior};
@@ -76,7 +77,7 @@ struct FrontendTargetConfig {
 #[derive(Clone)]
 pub struct ClientEntry {
     pub client: RpcClient,
-    pub graph: String,
+    pub graph: GraphId,
     pub slo_ms: u64,
     pub probability: f32,
 }
@@ -160,11 +161,11 @@ async fn run_root_load(
     loop {
         tokio::select! {
             _ = &mut shutdown_signal => {
-                println!("Received Ctrl-C. Shutting down...");
+                tracing::info!("Received Ctrl-C. Shutting down...");
                 break;
             }
             _ = &mut finish_sleep => {
-                println!("Experiment finished as duration elapsed. Shutting down...");
+                tracing::info!("Experiment finished as duration elapsed. Shutting down...");
                 break;
             }
 
@@ -201,7 +202,7 @@ async fn run_root_load(
                     let mut request = Request::new(RootRequest {
                         req_id,
                         start_at,
-                        graph_name: graph_hint,
+                        graph_name: graph_hint.into(),
                     });
 
                     let ctx = {
@@ -263,9 +264,12 @@ async fn run_root_load(
     let o = stats.ok.load(Ordering::Relaxed);
     let e = stats.err.load(Ordering::Relaxed);
     let t = stats.throttled.load(Ordering::Relaxed);
-    println!(
+    tracing::info!(
         "Final stats: sent={}, ok={}, err={}, throttled={}",
-        s, o, e, t
+        s,
+        o,
+        e,
+        t
     );
 
     Ok(())
@@ -273,7 +277,7 @@ async fn run_root_load(
 
 #[derive(Debug, Clone)]
 struct RootLatencySample {
-    graph: String,
+    graph: GraphId,
     req_id: u64,
     start_at: u64,
     queue_latency_us: u64,
@@ -302,7 +306,7 @@ async fn flush_root_samples_internal(
         let guard = samples.lock().await;
         if guard.is_empty() {
             if log_when_empty {
-                println!(
+                tracing::info!(
                     "No root() latency samples recorded; skipping CSV write to {}",
                     output_dir.display()
                 );
@@ -321,7 +325,7 @@ async fn flush_root_samples_internal(
     for sample in &snapshot {
         csv_data.push_str(&format!(
             "{},{},{},{},{},{},{}\n",
-            sample.graph,
+            sample.graph.as_str(),
             sample.req_id,
             sample.is_err,
             sample.start_at,
@@ -331,7 +335,7 @@ async fn flush_root_samples_internal(
         ));
     }
 
-    println!(
+    tracing::info!(
         "Writing root() latency samples for {} requests to {}",
         snapshot.len(),
         file_path.display()
@@ -339,7 +343,7 @@ async fn flush_root_samples_internal(
 
     fs::write(&file_path, csv_data).await?;
     if log_when_empty {
-        println!(
+        tracing::info!(
             "Wrote root() latency samples for {} requests to {}",
             snapshot.len(),
             file_path.display()
@@ -394,7 +398,7 @@ async fn flush_rpc_samples_task(samples: Arc<Mutex<Vec<RootLatencySample>>>, fil
         if let Err(err) =
             flush_root_samples_internal(samples.clone(), file_name.as_ref(), false).await
         {
-            eprintln!("Failed to periodically flush root() latency samples: {err:?}");
+            tracing::error!("Failed to periodically flush root() latency samples: {err:?}");
         }
     }
 }
@@ -413,10 +417,10 @@ async fn print_stats_task(
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                let s = stats.sent.load(Ordering::Relaxed);
-                let o = stats.ok.load(Ordering::Relaxed);
-                let e = stats.err.load(Ordering::Relaxed);
-                let t = stats.throttled.load(Ordering::Relaxed);
+                let sent = stats.sent.load(Ordering::Relaxed);
+                let ok = stats.ok.load(Ordering::Relaxed);
+                let err = stats.err.load(Ordering::Relaxed);
+                let throttled = stats.throttled.load(Ordering::Relaxed);
                 let percentiles = {
                     if latency_buffer.is_empty() {
                         None
@@ -431,25 +435,25 @@ async fn print_stats_task(
                     }
                     None => ("n/a".to_string(), "n/a".to_string(), "n/a".to_string(), "n/a".to_string()),
                 };
-                println!(
+                tracing::info!(
                     "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), throttled={} (+{}), p50={}, p90={}, p95={}, p99={}",
-                    s,
-                    s - last_sent,
-                    o,
-                    o - last_ok,
-                    e,
-                    e - last_err,
-                    t,
-                    t - last_throttled,
+                    sent,
+                    sent - last_sent,
+                    ok,
+                    ok - last_ok,
+                    err,
+                    err - last_err,
+                    throttled,
+                    throttled - last_throttled,
                     p50_str,
                     p90_str,
                     p95_str,
                     p99_str
                 );
-                last_sent = s;
-                last_ok = o;
-                last_err = e;
-                last_throttled = t;
+                last_sent = sent;
+                last_ok = ok;
+                last_err = err;
+                last_throttled = throttled;
             }
             maybe_sample = latency_rx.recv() => {
                 match maybe_sample {
@@ -496,9 +500,12 @@ async fn main() -> anyhow::Result<()> {
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty());
 
-    println!(
+    tracing::info!(
         "RPS values: {:?}, MAX_IN_FLIGHT: {}, STATS_INTERVAL_SEC: {}, DURATION: {:?}",
-        rps_values, max_in_flight, stats_interval_sec, duration
+        rps_values,
+        max_in_flight,
+        stats_interval_sec,
+        duration
     );
 
     // If replay_env is set, we are in replay mode
@@ -539,11 +546,9 @@ async fn main() -> anyhow::Result<()> {
         .iter()
         .flat_map(|cfg| {
             let graph_replication = 9;
-            if cfg.graph != "s-14677443" {
-                (0..graph_replication).map(|_| cfg.clone()).collect()
-            } else {
-                vec![cfg.clone()]
-            }
+            (0..graph_replication)
+                .map(|_| cfg.clone())
+                .collect::<Vec<_>>()
         })
         .collect();
 
@@ -565,7 +570,7 @@ async fn main() -> anyhow::Result<()> {
 
         let entry = ClientEntry {
             client: ServiceClient::new(channel),
-            graph: cfg.graph,
+            graph: GraphId::from_string(cfg.graph.clone()),
             slo_ms: cfg.slo_ms,
             probability: cfg.probability,
         };
@@ -574,32 +579,35 @@ async fn main() -> anyhow::Result<()> {
     }
     let client_pool = ClientPool::new(clients)?;
 
-    println!(
+    tracing::info!(
         "Configured {} frontend target(s): {}",
         client_pool.len(),
         target_summary
     );
 
     match (&load_mode, &replay_meta) {
-        (LoadMode::Root, _) => println!("Operating in root() load mode."),
-        (LoadMode::Replay { .. }, Some((source, count))) => println!(
+        (LoadMode::Root, _) => tracing::info!("Operating in root() load mode."),
+        (LoadMode::Replay { .. }, Some((source, count))) => tracing::info!(
             "Operating in replay() load mode with {} requests from {}.",
-            count, source
+            count,
+            source
         ),
-        (LoadMode::Replay { work_items }, None) => println!(
+        (LoadMode::Replay { work_items }, None) => tracing::info!(
             "Operating in replay() load mode with {} requests.",
             work_items.len()
         ),
     }
 
     if matches!(load_mode, LoadMode::Root) {
-        println!(
+        tracing::info!(
             "Starting loadgen with Poisson arrivals: targets={}, rps_values={:?}, max_in_flight={}",
-            target_summary, rps_values, max_in_flight
+            target_summary,
+            rps_values,
+            max_in_flight
         );
-        println!("Press Ctrl-C to stop.");
+        tracing::info!("Press Ctrl-C to stop.");
     } else if let LoadMode::Replay { work_items } = &load_mode {
-        println!(
+        tracing::info!(
             "Starting replay: targets={}, requests={}, max_in_flight={}",
             target_summary,
             work_items.len(),
@@ -636,23 +644,26 @@ async fn main() -> anyhow::Result<()> {
         let o = stats.ok.load(Ordering::Relaxed);
         let e = stats.err.load(Ordering::Relaxed);
         let t = stats.throttled.load(Ordering::Relaxed);
-        println!(
+        tracing::info!(
             "Final stats: sent={}, ok={}, err={}, throttled={}",
-            s, o, e, t
+            s,
+            o,
+            e,
+            t
         );
         return Ok(());
     }
 
     // For root mode, run each RPS value sequentially
     for (rps_idx, rps) in rps_values.iter().enumerate() {
-        println!("\n{}", "=".repeat(60));
-        println!(
+        tracing::info!("\n{}", "=".repeat(60));
+        tracing::info!(
             "Starting RPS level {}/{}: {} RPS",
             rps_idx + 1,
             rps_values.len(),
             rps
         );
-        println!("{}\n", "=".repeat(60));
+        tracing::info!("{}\n", "=".repeat(60));
 
         let stats = Arc::new(Stats::default());
         let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
@@ -693,19 +704,23 @@ async fn main() -> anyhow::Result<()> {
         // Flush samples for this RPS level
         flush_root_samples(root_samples, &root_latency_file_name).await?;
 
-        let s = stats.sent.load(Ordering::Relaxed);
-        let o = stats.ok.load(Ordering::Relaxed);
-        let e = stats.err.load(Ordering::Relaxed);
-        let t = stats.throttled.load(Ordering::Relaxed);
-        println!(
+        let sent = stats.sent.load(Ordering::Relaxed);
+        let ok = stats.ok.load(Ordering::Relaxed);
+        let err = stats.err.load(Ordering::Relaxed);
+        let throttled = stats.throttled.load(Ordering::Relaxed);
+        tracing::info!(
             "\nRPS {} completed - Final stats: sent={}, ok={}, err={}, throttled={}",
-            rps, s, o, e, t
+            rps,
+            sent,
+            ok,
+            err,
+            throttled
         );
     }
 
-    println!("\n{}", "=".repeat(60));
-    println!("All RPS levels completed");
-    println!("{}\n", "=".repeat(60));
+    tracing::info!("\n{}", "=".repeat(60));
+    tracing::info!("All RPS levels completed");
+    tracing::info!("{}\n", "=".repeat(60));
 
     Ok(())
 }

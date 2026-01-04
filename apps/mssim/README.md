@@ -20,52 +20,86 @@ The recommended way to run MSSIM experiments is using the experiment runner scri
 
 ### Quick Start
 
-1. Create an experiment configuration file (JSON format). See `exp/mssim/config/template.json` for a template:
+1. Create an experiment directory under `exp/mssim/data/in/<experiment_name>/` with the following files:
 
-```json
-{
-  "experiment_name": "my_experiment",
-  "trace_dir": "trace-analysis/golden/S_86516878",
-  "config_dir": "apps/mssim/simulator/example_config/",
-  "output_root": "exp/mssim/data/experiments/",
-  "duration_sec": 60,
-  "repeats": 1,
-  "slo_ms": 100,
-  "policies": ["fifo", "prio_global"],
-  "rps_values": [200, 300, 400],
-  "max_in_flight": 10000,
-  "stats_interval_sec": 2,
-  "extra_env": {}
-}
-```
+   **`gen_config.json`** - Load generator configuration:
+   ```json
+   {
+     "Repeats": 1,
+     "Rps": [200, 300, 400],
+     "DurationSecs": 60,
+     "WarmupSecs": 10,
+     "MaxInFlight": 10000
+   }
+   ```
+
+   **`mssim.json`** - MSSIM-specific configuration:
+   ```json
+   {
+     "callgraph_dirs": ["trace-analysis/golden/S_86516878"],
+     "config_dir": "apps/mssim/simulator/example_config/",
+     "slo_ms": 100,
+     "orchestrator": "localhost:50051",
+     "replay_path": null,
+     "stats_interval_sec": 2,
+     "extra_env": {}
+   }
+   ```
+
+   For multiple call graphs, specify multiple directories:
+   ```json
+   {
+     "callgraph_dirs": [
+       "trace-analysis/golden/S_86516878",
+       "trace-analysis/golden/S_14677443"
+     ],
+     ...
+   }
+   ```
+
+   **`policies`** - Whitespace-separated list of scheduling policies:
+   ```
+   fifo prio_global
+   ```
 
 2. Run the experiment:
 
 ```bash
 $ cd <masa-project-root>
-$ python3 exp/mssim/scripts/experiment.py --config exp/mssim/config/test_config.json
+$ python -m exp.runner run mssim <experiment_name>
 ```
 
-The script will:
+Or with automatic plot generation:
+```bash
+$ python -m exp.runner run mssim <experiment_name> --plot
+```
+
+The runner will:
 - Build the load generator Docker image
 - Build generic service images for each unique policy
 - Run experiments for each combination of policy and RPS value
-- Save results to `{output_root}/{experiment_name}/{policy}/rps_{rps_value}/run_{repeat_id}/`
+- Save results to `exp/mssim/data/out/<experiment_name>/<iteration>/<policy>/rps_<rps_value>/run_<run_id>/`
 
 ### Configuration Options
 
-- `experiment_name`: Name of the experiment (used for output directory)
-- `trace_dir`: Path to the Alibaba trace directory (relative to repo root)
+**`gen_config.json` fields:**
+- `Repeats`: Number of times to repeat each experiment
+- `Rps`: List of requests per second values to test
+- `DurationSecs`: Duration of each experiment run in seconds
+- `WarmupSecs`: Warmup period in seconds (samples during warmup are excluded from analysis)
+- `MaxInFlight`: Maximum number of in-flight requests (0 = unlimited)
+
+**`mssim.json` fields:**
+- `callgraph_dirs`: List of paths to call graph directories (relative to repo root). Each directory should contain `edges.csv`, `interface_distribution.json`, `latency_percentiles.json`, and optionally `call_sequence.json`. For multiple call graphs, services are unioned (each service deployed once) and requests are routed by graph_name.
 - `config_dir`: Path to the simulator config directory (relative to repo root)
-- `output_root`: Root directory for experiment outputs (relative to repo root)
-- `duration_sec`: Duration of each experiment run in seconds
-- `repeats`: Number of times to repeat each experiment
 - `slo_ms`: Service level objective latency in milliseconds
-- `policies`: List of scheduling policies to test (e.g., `["fifo", "prio_global"]`)
-- `rps_values`: List of requests per second values to test
-- `max_in_flight`: Maximum number of in-flight requests
+- `orchestrator`: Orchestrator address (default: "localhost:50051")
+- `replay_path`: Optional path to replay trace file
 - `stats_interval_sec`: Interval for collecting statistics
 - `extra_env`: Additional environment variables to pass to the experiment
+
+**`policies` file:**
+- Whitespace-separated list of scheduling policies to test (e.g., `fifo prio_global`)
 
 ### Example Test Script
 
@@ -75,13 +109,42 @@ See `scripts/test_mssim_experiment.sh` for a complete example of running an expe
 
 Results are organized as:
 ```
-{output_root}/{experiment_name}/{policy}/rps_{rps_value}/run_{repeat_id}/
-├── metadata.json          # Experiment metadata
-├── docker-compose.yml     # Generated docker-compose configuration
-├── deployment.json        # Generated deployment configuration
-├── orchestrator.log      # Orchestrator logs
-└── root_latencies_{rps}rps.csv  # Latency measurements
+exp/mssim/data/out/<experiment_name>/
+├── <iteration>/
+│   ├── <policy>/
+│   │   └── rps_<rps_value>/
+│   │       └── run_<run_id>/
+│   │           ├── metadata.json          # Experiment metadata
+│   │           ├── docker-compose.yml     # Generated docker-compose configuration
+│   │           ├── deployment.json        # Generated deployment configuration
+│   │           ├── orchestrator.log      # Orchestrator logs
+│   │           └── root_latencies_<rps>rps.csv  # Latency measurements
+│   └── ...
+└── done
 ```
+
+Plots are generated in:
+```
+exp/mssim/data/plots/<experiment_name>/
+├── <iteration>/
+│   ├── goodput_absolute.png
+│   ├── goodput_fraction.png
+│   ├── latency_percentiles.png
+│   └── latency_cdf_<rps>rps.png
+└── goodput_absolute_avg.png
+└── goodput_fraction_avg.png
+└── latency_percentiles_avg.png
+└── latency_cdf_<rps>rps_avg.png
+```
+
+### Generating Plots
+
+To generate plots from existing experiment data:
+```bash
+$ python -m exp.runner plot mssim <experiment_name>
+```
+
+See `exp/runner/README.md` for more details on the experiment runner.
 
 ## Running on new Alibaba call graphs
 

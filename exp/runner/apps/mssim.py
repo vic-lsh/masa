@@ -279,12 +279,25 @@ class MssimApp(AppPlugin):
         # - generate compose once and run all RPS levels in a single docker-compose session
         mssim_cfg = config.app_config or {}
 
-        trace_dir = Path(mssim_cfg["trace_dir"]).expanduser().resolve()
+        # Handle callgraph_dirs as list
+        callgraph_dirs_raw = mssim_cfg.get("callgraph_dirs")
+        if callgraph_dirs_raw is None:
+            raise ValueError("mssim.json must include 'callgraph_dirs' (list of call graph directory paths)")
+        
+        if not isinstance(callgraph_dirs_raw, list):
+            raise ValueError("'callgraph_dirs' must be a list of directory paths")
+        
+        if len(callgraph_dirs_raw) == 0:
+            raise ValueError("'callgraph_dirs' must contain at least one directory path")
+        
+        callgraph_dirs = [Path(d).expanduser().resolve() for d in callgraph_dirs_raw]
+        for callgraph_dir in callgraph_dirs:
+            if not callgraph_dir.exists():
+                raise FileNotFoundError(f"MSSIM callgraph_dir does not exist: {callgraph_dir}")
+        
         config_dir_raw = mssim_cfg.get("config_dir")
         config_dir = Path(config_dir_raw).expanduser().resolve() if config_dir_raw else None
 
-        if not trace_dir.exists():
-            raise FileNotFoundError(f"MSSIM trace_dir does not exist: {trace_dir}")
         if config_dir is not None and not config_dir.exists():
             raise FileNotFoundError(f"MSSIM config_dir does not exist: {config_dir}")
 
@@ -341,13 +354,14 @@ class MssimApp(AppPlugin):
             sys.executable,
             "-m",
             "simulator.main",
-            "-a",
-            str(trace_dir),
             "--docker-compose-output-path",
             str(docker_compose_path),
             "--deployment-output-path",
             str(deployment_json_path),
         ]
+        # Add all callgraph directories
+        for callgraph_dir in callgraph_dirs:
+            trace_cmd.extend(["-a", str(callgraph_dir)])
         if config_dir is not None:
             trace_cmd.extend(["-c", str(config_dir)])
         if mssim_cfg.get("replay_path"):
@@ -390,7 +404,7 @@ class MssimApp(AppPlugin):
             "policy": policy,
             "rps_values": rps_values,
             "duration_sec": duration_sec,
-            "trace_dir": str(trace_dir),
+            "callgraph_dirs": [str(d) for d in callgraph_dirs],
             "config_dir": str(config_dir) if config_dir is not None else None,
             "generic_service_image": feature_image,
             "docker_project": project_name,

@@ -104,3 +104,10 @@ class TraceConfig:
     def iter_services(self) -> Iterable[str]:
         yield from sorted(self.call_graph.services())
 
+    @classmethod
+    def union_services(cls, configs: list["TraceConfig"]) -> Set[str]:
+        """Union all services from multiple TraceConfig objects."""
+        all_services: Set[str] = set()
+        for config in configs:
+            all_services.update(config.call_graph.services())
+        return all_services

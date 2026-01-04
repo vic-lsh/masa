@@ -3,13 +3,13 @@
 //! This module provides types and functions for parsing and working with call sequences
 //! that define the order and probability of service method invocations.
 
-use crate::svc::{MethodId, ServiceName};
+use crate::svc::{GraphId, MethodId, ServiceName};
 use anyhow::{Context, Result};
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
 use std::path::PathBuf;
+use tracing::{error, warn};
 
 /// A single entry in a call sequence step, representing a service method call
 /// with its associated probability.
@@ -93,6 +93,7 @@ pub type CallSequence = Vec<CallSequenceStep>;
 /// # Arguments
 /// * `config_dir` - The directory containing the `call_sequence.json` file
 /// * `service_name` - The name of the service to load the sequence for
+/// * `graph_id` - Graph ID to look up
 ///
 /// # Returns
 /// * `Ok(Some(CallSequence))` if the file exists and contains a sequence for the service
@@ -101,6 +102,7 @@ pub type CallSequence = Vec<CallSequenceStep>;
 pub fn load_call_sequence(
     config_dir: &PathBuf,
     service_name: &ServiceName,
+    graph_id: &GraphId,
 ) -> Result<Option<CallSequence>> {
     let call_sequence_path = config_dir.join("call_sequence.json");
 
@@ -116,14 +118,24 @@ pub fn load_call_sequence(
     let json_value: serde_json::Value =
         serde_json::from_str(&content).with_context(|| "Failed to parse call_sequence.json")?;
 
-    // Get the first (and likely only) top-level key (call graph ID)
+    // Get the call graph object for the specified graph_id
     let call_graph_obj = match json_value.as_object() {
         Some(obj) if !obj.is_empty() => {
-            // Use the first key
-            obj.values().next().unwrap()
+            // Look up specific graph_id using normalized format
+            let normalized_id = graph_id.as_str();
+            match obj.get(normalized_id) {
+                Some(graph_obj) => graph_obj,
+                None => {
+                    warn!(
+                        "graph_id '{}' not found in call_sequence.json",
+                        normalized_id
+                    );
+                    return Ok(None);
+                }
+            }
         }
         _ => {
-            eprintln!("Warning: call_sequence.json has no top-level entries");
+            warn!("call_sequence.json has no top-level entries");
             return Ok(None);
         }
     };
@@ -161,8 +173,8 @@ pub fn load_call_sequence(
             }
             None => {
                 // Service not found in call sequence, use default parallel fanout
-                eprintln!(
-                    "Warning: Service {} not found in call_sequence.json, using default parallel fanout",
+                warn!(
+                    "Service {} not found in call_sequence.json, using default parallel fanout",
                     service_name.as_str()
                 );
                 None
@@ -176,7 +188,7 @@ pub fn load_call_sequence(
 /// Loads the root USER call sequence from a JSON file.
 ///
 /// This function looks up "USER" directly as a string key (not through ServiceName formatting)
-/// in the first top-level graph entry of the call_sequence.json file.
+/// in the specified graph entry of the call_sequence.json file.
 ///
 /// The expected JSON format is:
 /// ```json
@@ -193,11 +205,15 @@ pub fn load_call_sequence(
 ///
 /// # Arguments
 /// * `config_dir` - The directory containing the `call_sequence.json` file
+/// * `graph_id` - Graph ID to look up
 ///
 /// # Returns
 /// * `Ok(CallSequence)` if the file exists and contains a USER sequence
 /// * `Err` if there's an error reading, parsing, or if USER sequence is not found
-pub fn load_root_user_call_sequence(config_dir: &PathBuf) -> Result<CallSequence> {
+pub fn load_root_user_call_sequence(
+    config_dir: &PathBuf,
+    graph_id: &GraphId,
+) -> Result<CallSequence> {
     let call_sequence_path = config_dir.join("call_sequence.json");
 
     if !call_sequence_path.exists() {
@@ -213,9 +229,21 @@ pub fn load_root_user_call_sequence(config_dir: &PathBuf) -> Result<CallSequence
     let json_value: serde_json::Value =
         serde_json::from_str(&content).with_context(|| "Failed to parse call_sequence.json")?;
 
-    // Get the first (and likely only) top-level key (call graph ID)
+    // Get the call graph object for the specified graph_id
     let call_graph_obj = match json_value.as_object() {
-        Some(obj) if !obj.is_empty() => obj.values().next().unwrap(),
+        Some(obj) if !obj.is_empty() => {
+            // Look up specific graph_id using normalized format
+            let normalized_id = graph_id.as_str();
+            match obj.get(normalized_id) {
+                Some(graph_obj) => graph_obj,
+                None => {
+                    return Err(anyhow::anyhow!(
+                        "graph_id '{}' not found in call_sequence.json",
+                        normalized_id
+                    ));
+                }
+            }
+        }
         _ => {
             return Err(anyhow::anyhow!(
                 "call_sequence.json has no top-level entries"
@@ -240,6 +268,37 @@ pub fn load_root_user_call_sequence(config_dir: &PathBuf) -> Result<CallSequence
     }
 }
 
+/// Get all graph IDs from call_sequence.json file.
+///
+/// # Arguments
+/// * `config_dir` - The directory containing the `call_sequence.json` file
+///
+/// # Returns
+/// * `Ok(Vec<GraphId>)` with all graph IDs found in the file (normalized)
+/// * `Ok(Vec::new())` if the file doesn't exist
+/// * `Err` if there's an error reading or parsing the file
+pub fn get_all_graph_ids(config_dir: &PathBuf) -> Result<Vec<GraphId>> {
+    let call_sequence_path = config_dir.join("call_sequence.json");
+
+    if !call_sequence_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = std::fs::read_to_string(&call_sequence_path)
+        .with_context(|| format!("Failed to read call_sequence.json from {:?}", config_dir))?;
+
+    let json_value: serde_json::Value =
+        serde_json::from_str(&content).with_context(|| "Failed to parse call_sequence.json")?;
+
+    match json_value.as_object() {
+        Some(obj) => Ok(obj
+            .keys()
+            .map(|k| GraphId::from_string(k.clone()))
+            .collect()),
+        None => Ok(Vec::new()),
+    }
+}
+
 /// Parse a call sequence step (HashMap<String, f64>) into a Vec<CallSequenceEntry>.
 /// Normalizes probabilities so they sum to 1.0 within the step.
 /// The normalized probability for each entry is: probability_in_file / sum_of_probabilities_in_step
@@ -250,7 +309,7 @@ fn parse_call_sequence_step(raw_step: HashMap<String, f64>) -> CallSequenceStep 
         match CallSequenceEntry::try_from((service_method_key.as_str(), raw_probability)) {
             Ok(entry) => parsed_step.push(entry),
             Err(e) => {
-                eprintln!("Warning: {}", e);
+                warn!("{}", e);
             }
         }
     }
@@ -265,10 +324,7 @@ fn parse_call_sequence_step(raw_step: HashMap<String, f64>) -> CallSequenceStep 
         }
     } else {
         // If sum is 0 or negative, set all probabilities to 0
-        eprintln!(
-            "Warning: Sum of probabilities in step is {}, setting all to 0",
-            sum
-        );
+        warn!("Sum of probabilities in step is {}, setting all to 0", sum);
         for entry in &mut parsed_step {
             entry.probability = 0.0;
         }
@@ -491,8 +547,9 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let config_dir = temp.path().to_path_buf();
         let service_name = ServiceName::from_string("test_service".to_string());
+        let graph_id = GraphId::from_string("graph_123".to_string());
 
-        let result = load_call_sequence(&config_dir, &service_name).unwrap();
+        let result = load_call_sequence(&config_dir, &service_name, &graph_id).unwrap();
         assert!(result.is_none());
     }
 
@@ -519,7 +576,8 @@ mod tests {
         fs::write(config_dir.join("call_sequence.json"), json_content).unwrap();
 
         let service_name = ServiceName::from_string("test_service".to_string());
-        let result = load_call_sequence(&config_dir, &service_name).unwrap();
+        let graph_id = GraphId::from_string("graph_123".to_string());
+        let result = load_call_sequence(&config_dir, &service_name, &graph_id).unwrap();
 
         assert!(result.is_some());
         let sequence = result.unwrap();
@@ -555,7 +613,8 @@ mod tests {
         fs::write(config_dir.join("call_sequence.json"), json_content).unwrap();
 
         let service_name = ServiceName::from_string("test_service".to_string());
-        let result = load_call_sequence(&config_dir, &service_name).unwrap();
+        let graph_id = GraphId::from_string("graph_123".to_string());
+        let result = load_call_sequence(&config_dir, &service_name, &graph_id).unwrap();
 
         // Service not found should return None, not an error
         assert!(result.is_none());
@@ -571,7 +630,8 @@ mod tests {
         fs::write(config_dir.join("call_sequence.json"), json_content).unwrap();
 
         let service_name = ServiceName::from_string("test_service".to_string());
-        let result = load_call_sequence(&config_dir, &service_name).unwrap();
+        let graph_id = GraphId::from_string("graph_123".to_string());
+        let result = load_call_sequence(&config_dir, &service_name, &graph_id).unwrap();
 
         assert!(result.is_none());
     }
@@ -586,7 +646,8 @@ mod tests {
         fs::write(config_dir.join("call_sequence.json"), json_content).unwrap();
 
         let service_name = ServiceName::from_string("test_service".to_string());
-        let result = load_call_sequence(&config_dir, &service_name);
+        let graph_id = GraphId::from_string("graph_123".to_string());
+        let result = load_call_sequence(&config_dir, &service_name, &graph_id);
 
         assert!(result.is_err());
     }
@@ -604,7 +665,8 @@ mod tests {
         fs::write(config_dir.join("call_sequence.json"), json_content).unwrap();
 
         let service_name = ServiceName::from_string("test_service".to_string());
-        let result = load_call_sequence(&config_dir, &service_name);
+        let graph_id = GraphId::from_string("graph_123".to_string());
+        let result = load_call_sequence(&config_dir, &service_name, &graph_id);
 
         // When call graph object is not an object, get() returns None, so it returns None, not an error
         // But actually, when we try to deserialize the sequence, it should fail
@@ -647,16 +709,18 @@ mod tests {
 }"#;
         fs::write(config_dir.join("call_sequence.json"), json_content).unwrap();
 
+        let graph_id = GraphId::from_string("S_14677443".to_string());
+
         // Test loading for MS_52612 (formatted to ms-52612)
         let service_name = ServiceName::from_string("MS_52612".to_string());
-        let result = load_call_sequence(&config_dir, &service_name).unwrap();
+        let result = load_call_sequence(&config_dir, &service_name, &graph_id).unwrap();
         assert!(result.is_some());
         let sequence = result.unwrap();
         assert_eq!(sequence.len(), 2); // Two steps
 
         // Test loading for MS_56394 (formatted to ms-56394)
         let service_name = ServiceName::from_string("MS_56394".to_string());
-        let result = load_call_sequence(&config_dir, &service_name).unwrap();
+        let result = load_call_sequence(&config_dir, &service_name, &graph_id).unwrap();
         assert!(result.is_some());
         let sequence = result.unwrap();
         assert_eq!(sequence.len(), 2); // Two steps
@@ -694,7 +758,8 @@ mod tests {
         fs::write(config_dir.join("call_sequence.json"), json_content).unwrap();
 
         let service_name = ServiceName::from_string("service_a".to_string());
-        let result = load_call_sequence(&config_dir, &service_name).unwrap();
+        let graph_id = GraphId::from_string("graph_1".to_string());
+        let result = load_call_sequence(&config_dir, &service_name, &graph_id).unwrap();
 
         assert!(result.is_some());
         let sequence = result.unwrap();
