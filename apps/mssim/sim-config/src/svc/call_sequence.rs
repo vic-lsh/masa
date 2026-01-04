@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
 use std::path::PathBuf;
-use tracing::{warn, error};
+use tracing::{error, warn};
 
 /// A single entry in a call sequence step, representing a service method call
 /// with its associated probability.
@@ -324,10 +324,7 @@ fn parse_call_sequence_step(raw_step: HashMap<String, f64>) -> CallSequenceStep 
         }
     } else {
         // If sum is 0 or negative, set all probabilities to 0
-        warn!(
-            "Sum of probabilities in step is {}, setting all to 0",
-            sum
-        );
+        warn!("Sum of probabilities in step is {}, setting all to 0", sum);
         for entry in &mut parsed_step {
             entry.probability = 0.0;
         }
