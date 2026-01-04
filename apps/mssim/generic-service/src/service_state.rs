@@ -430,16 +430,16 @@ impl ServiceState {
         parent_chain: Vec<ServiceName>,
         graph_name: &GraphId,
     ) -> Result<(), Status> {
-        let user_call_sequence = self
-            .config
-            .user_call_sequences
-            .get(graph_name)
-            .ok_or_else(|| {
-                Status::not_found(format!(
-                    "USER call sequence not found for graph: {}",
-                    graph_name.as_str()
-                ))
-            })?;
+        let user_call_sequence =
+            self.config
+                .user_call_sequences
+                .get(graph_name)
+                .ok_or_else(|| {
+                    Status::not_found(format!(
+                        "USER call sequence not found for graph: {}",
+                        graph_name.as_str()
+                    ))
+                })?;
 
         // Use the pre-loaded USER call sequence for this graph
         self.fanout_with_call_sequence(

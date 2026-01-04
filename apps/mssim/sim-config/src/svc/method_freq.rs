@@ -152,8 +152,7 @@ impl MethodFreqMap {
 
         // Extract graph name from directory path (e.g., "S_1823467" from "trace-analysis/graphs/S_1823467")
         let graph_name = GraphId::from_string(
-            path
-                .parent()
+            path.parent()
                 .and_then(|p| p.file_name())
                 .and_then(|n| n.to_str())
                 .map(|s| s.to_string())
@@ -172,7 +171,8 @@ impl MethodFreqMap {
     }
 
     fn from_graph_map(raw_graph: RawGraphInvokeFreq) -> Result<Self> {
-        let mut by_graph: HashMap<GraphId, HashMap<ServiceName, MethodFreqSampler>> = HashMap::new();
+        let mut by_graph: HashMap<GraphId, HashMap<ServiceName, MethodFreqSampler>> =
+            HashMap::new();
         let mut aggregated_raw: HashMap<ServiceName, HashMap<MethodId, u64>> = HashMap::new();
 
         for (graph_str, services) in raw_graph {
@@ -206,7 +206,9 @@ impl MethodFreqMap {
                     Err(err) => {
                         return Err(anyhow!(format!(
                             "While building sampler for service {} in graph {}: {:?}",
-                            svc, graph.as_str(), err
+                            svc,
+                            graph.as_str(),
+                            err
                         )));
                     }
                 }
