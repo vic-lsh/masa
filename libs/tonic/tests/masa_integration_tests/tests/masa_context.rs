@@ -382,7 +382,10 @@ async fn test_parent_ctx_finalize_hook() {
             Self {}
         }
 
-        fn finalize(&self, _response: &mut http::Response<tonic::body::BoxBody>) {
+        fn finalize_after_serialization(
+            &self,
+            _response: &mut http::Response<tonic::body::BoxBody>,
+        ) {
             N_FINALIZE.fetch_add(1, Ordering::Relaxed);
         }
     }

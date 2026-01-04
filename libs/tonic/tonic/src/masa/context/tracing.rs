@@ -165,7 +165,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     }
 
     // expect frontend method, all other method are going send back their latency trace
-    fn finalize(&self, _response: &mut http::Response<BoxBody>) {
+    fn finalize_after_serialization(&self, _response: &mut http::Response<BoxBody>) {
         let res_header = _response.headers_mut();
         let traces_json = serde_json::to_string(&*self.latency_traces.lock().unwrap()).unwrap();
         let header_val = http::HeaderValue::from_str(&traces_json).unwrap();
