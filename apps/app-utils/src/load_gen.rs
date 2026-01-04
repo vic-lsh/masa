@@ -701,20 +701,16 @@ async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
         let delta = |k| counters.get(k) - prev.get(k);
 
         log::warn!(
-            "secs: {}, rps: {}, goodput: {}, early returns: {}, deadline misses: {}, timeouts: {}",
+            "secs: {}, rps: {}, good: {}, ER: {}, ddl_miss: {}, timeouts: {}; total: ER {}, ddl_miss {}, timeout {}",
             secs,
             delta("all"),
             delta("good"),
             delta("early_return"),
             delta("deadline_miss"),
             delta("timeout"),
-        );
-        log::warn!(
-            "total early returns: {}, total deadline misses: {}, total timeouts: {}, total unexpected errors: {}",
             counters.get("early_return"),
             counters.get("deadline_miss"),
             counters.get("timeout"),
-            counters.get("unexpected"),
         );
         // clone the Counters struct itself as opposed to creating another reference
         prev = (*counters).clone();
