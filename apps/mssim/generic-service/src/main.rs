@@ -2,7 +2,7 @@ use anyhow::Result;
 use masa::MethodId;
 use service_stubs::service_client::ServiceClient;
 use sim_config::deployment::Deployment;
-use sim_config::svc::{CallGraphConfig, ServiceName};
+use sim_config::svc::{CallGraphConfig, GraphId, ServiceName};
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -43,8 +43,7 @@ impl AlibabaService {
         config: CallGraphConfig,
         deployment: Deployment,
     ) -> Result<Self> {
-        let (state, bootstrap) =
-            ServiceState::initialize(self_svc_name, config, deployment)?;
+        let (state, bootstrap) = ServiceState::initialize(self_svc_name, config, deployment)?;
         if let Some(connection_task) = bootstrap {
             connection_task.spawn();
         }
@@ -72,7 +71,7 @@ impl Service for AlibabaService {
         let parent_chain = parent_chain::decode_parent_chain(request.metadata())?;
         let request = request.into_inner();
         let method_name: MethodId = request.method_name.into();
-        let graph_name = request.graph_name.as_str();
+        let graph_name = GraphId::from_string(request.graph_name);
 
         self.state()
             .handle_method(
@@ -80,7 +79,7 @@ impl Service for AlibabaService {
                 request.req_id,
                 request.start_at,
                 parent_chain,
-                graph_name,
+                &graph_name,
             )
             .await?;
 
@@ -99,7 +98,7 @@ impl Service for AlibabaService {
         }
 
         let request = request.into_inner();
-        let graph_name = request.graph_name.as_str();
+        let graph_name = GraphId::from_string(request.graph_name);
 
         // Root uses pre-loaded USER call sequence (loaded at startup)
         self.state()
@@ -107,7 +106,7 @@ impl Service for AlibabaService {
                 request.req_id,
                 request.start_at,
                 Vec::new(),
-                graph_name,
+                &graph_name,
             )
             .await?;
 

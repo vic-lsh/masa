@@ -3,9 +3,8 @@
 //! This module provides types and functions for parsing and working with call sequences
 //! that define the order and probability of service method invocations.
 
-use crate::svc::{MethodId, ServiceName};
+use crate::svc::{GraphId, MethodId, ServiceName};
 use anyhow::{Context, Result};
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
@@ -102,7 +101,7 @@ pub type CallSequence = Vec<CallSequenceStep>;
 pub fn load_call_sequence(
     config_dir: &PathBuf,
     service_name: &ServiceName,
-    graph_id: Option<&str>,
+    graph_id: Option<&GraphId>,
 ) -> Result<Option<CallSequence>> {
     let call_sequence_path = config_dir.join("call_sequence.json");
 
@@ -122,13 +121,14 @@ pub fn load_call_sequence(
     let call_graph_obj = match json_value.as_object() {
         Some(obj) if !obj.is_empty() => {
             if let Some(gid) = graph_id {
-                // Look up specific graph_id
-                match obj.get(gid) {
+                // Look up specific graph_id using normalized format
+                let normalized_id = gid.as_str();
+                match obj.get(normalized_id) {
                     Some(graph_obj) => graph_obj,
                     None => {
                         eprintln!(
                             "Warning: graph_id '{}' not found in call_sequence.json, using first available",
-                            gid
+                            normalized_id
                         );
                         obj.values().next().unwrap()
                     }
@@ -216,7 +216,7 @@ pub fn load_call_sequence(
 /// * `Err` if there's an error reading, parsing, or if USER sequence is not found
 pub fn load_root_user_call_sequence(
     config_dir: &PathBuf,
-    graph_id: Option<&str>,
+    graph_id: Option<&GraphId>,
 ) -> Result<CallSequence> {
     let call_sequence_path = config_dir.join("call_sequence.json");
 
@@ -237,13 +237,14 @@ pub fn load_root_user_call_sequence(
     let call_graph_obj = match json_value.as_object() {
         Some(obj) if !obj.is_empty() => {
             if let Some(gid) = graph_id {
-                // Look up specific graph_id
-                match obj.get(gid) {
+                // Look up specific graph_id using normalized format
+                let normalized_id = gid.as_str();
+                match obj.get(normalized_id) {
                     Some(graph_obj) => graph_obj,
                     None => {
                         return Err(anyhow::anyhow!(
                             "graph_id '{}' not found in call_sequence.json",
-                            gid
+                            normalized_id
                         ));
                     }
                 }
@@ -282,10 +283,10 @@ pub fn load_root_user_call_sequence(
 /// * `config_dir` - The directory containing the `call_sequence.json` file
 ///
 /// # Returns
-/// * `Ok(Vec<String>)` with all graph IDs found in the file
+/// * `Ok(Vec<GraphId>)` with all graph IDs found in the file (normalized)
 /// * `Ok(Vec::new())` if the file doesn't exist
 /// * `Err` if there's an error reading or parsing the file
-pub fn get_all_graph_ids(config_dir: &PathBuf) -> Result<Vec<String>> {
+pub fn get_all_graph_ids(config_dir: &PathBuf) -> Result<Vec<GraphId>> {
     let call_sequence_path = config_dir.join("call_sequence.json");
 
     if !call_sequence_path.exists() {
@@ -299,7 +300,7 @@ pub fn get_all_graph_ids(config_dir: &PathBuf) -> Result<Vec<String>> {
         serde_json::from_str(&content).with_context(|| "Failed to parse call_sequence.json")?;
 
     match json_value.as_object() {
-        Some(obj) => Ok(obj.keys().cloned().collect()),
+        Some(obj) => Ok(obj.keys().map(|k| GraphId::from_string(k.clone())).collect()),
         None => Ok(Vec::new()),
     }
 }
