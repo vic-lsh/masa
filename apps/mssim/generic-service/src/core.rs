@@ -16,7 +16,7 @@ use tokio::sync::{RwLock, RwLockReadGuard};
 use tonic::{masa::context::MasaRequestExt, Request, Status};
 use tracing::{error, info, warn};
 
-pub(crate) struct ServiceState {
+pub(crate) struct ServiceCore {
     config: CallGraphConfig,
     pub(crate) clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
     self_svc_name: ServiceName,
@@ -25,7 +25,7 @@ pub(crate) struct ServiceState {
     child_call_probabilities: HashMap<ServiceName, f64>,
 }
 
-impl ServiceState {
+impl ServiceCore {
     pub(crate) fn initialize(
         self_svc_name: ServiceName,
         config: CallGraphConfig,
@@ -65,7 +65,7 @@ impl ServiceState {
             ))
         };
 
-        let state = Arc::new(ServiceState {
+        let state = Arc::new(ServiceCore {
             config,
             clients,
             self_svc_name,

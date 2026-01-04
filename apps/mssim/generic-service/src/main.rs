@@ -15,11 +15,11 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 mod bootstrap;
+mod core;
 mod parent_chain;
 mod service_replay;
-mod service_state;
 
-use service_state::ServiceState;
+use core::ServiceCore;
 
 pub mod service_stubs {
     tonic::include_proto!("service");
@@ -34,7 +34,7 @@ use service_stubs::{
 pub(crate) type RpcClient = ServiceClient<LoadBalancedChannel>;
 
 struct AlibabaService {
-    state: Arc<ServiceState>,
+    state: Arc<ServiceCore>,
 }
 
 impl AlibabaService {
@@ -43,7 +43,7 @@ impl AlibabaService {
         config: CallGraphConfig,
         deployment: Deployment,
     ) -> Result<Self> {
-        let (state, bootstrap) = ServiceState::initialize(self_svc_name, config, deployment)?;
+        let (state, bootstrap) = ServiceCore::initialize(self_svc_name, config, deployment)?;
         if let Some(connection_task) = bootstrap {
             connection_task.spawn();
         }
@@ -51,7 +51,7 @@ impl AlibabaService {
         Ok(Self { state })
     }
 
-    fn state(&self) -> &ServiceState {
+    fn state(&self) -> &ServiceCore {
         &self.state
     }
 }
