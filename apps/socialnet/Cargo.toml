@@ -67,6 +67,10 @@ path = "src/media/main.rs"
 name = "unique_id_service"
 path = "src/unique_id/server.rs"
 
+[[bin]]
+name = "socialnet_client_bench"
+path = "src/client/client_bench.rs"
+
 # If you ever needed for command-line test clients, could add these:
 # [[bin]]
 # name = "media_client"
@@ -124,6 +128,7 @@ config = { version = "0.14.0", features = ["json"] }
 url = "2.5"
 rand_distr = "0.4"
 app-utils = { path = "../app-utils" }
+structopt = "0.3.23"
 
 [build-dependencies]
 tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
