@@ -4,6 +4,7 @@ Socialnet application plugin.
 
 import json
 import logging
+import os
 import re
 import shlex
 import subprocess
@@ -84,10 +85,14 @@ class SocialnetBuilder(AppBuilder):
             "url_shorten_server",
         ]
 
+        if app_config_path is None:
+            raise ValueError("app_config_path is required for socialnet app")
+
         if gen_config_path is None:
             raise ValueError("gen_config_path is required for socialnet app")
 
         # Convert to path relative to repo_root
+        config_path_rel = app_config_path.relative_to(repo_root)
         gen_config_path_rel = gen_config_path.relative_to(repo_root)
 
         # Generate tag based on features for deterministic, feature-specific images
@@ -130,7 +135,7 @@ class SocialnetBuilder(AppBuilder):
         if no_cache:
             builder_cmd.append("--no-cache")
         
-        builder_cmd.append(str(repo_root))
+        builder_cmd.extend(["-t", f"{app}_builder:{tag}", "."])
         
         if dry_run:
             commands.append(builder_cmd)
@@ -142,6 +147,15 @@ class SocialnetBuilder(AppBuilder):
 
         # Stage 2: Build runtime-base image (shared dependencies)
         logger.info("Stage 2: Building runtime-base image")
+        runtime_base_build_args: list[str] = []
+        if features:
+            runtime_base_build_args.extend(["--build-arg", f"FEATURES={features}"])
+        runtime_base_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
+        runtime_base_build_args.extend(["--build-arg", f"APP={app}"])
+        runtime_base_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
+        runtime_base_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
+        runtime_base_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
+
         runtime_base_cmd: list[str] = [
             "docker",
             "buildx",
@@ -150,14 +164,16 @@ class SocialnetBuilder(AppBuilder):
             "./exp/common/docker-build/Dockerfile",
             "--target",
             "runtime-base",
-            *builder_build_args,
+            *runtime_base_build_args,
+            "--ulimit",
+            "nofile=4096:4096",
             get_docker_progress_flag(),
         ]
         
         if no_cache:
             runtime_base_cmd.append("--no-cache")
         
-        runtime_base_cmd.append(str(repo_root))
+        runtime_base_cmd.extend(["-t", f"{app}_runtime-base:{tag}", "."])
         
         if dry_run:
             commands.append(runtime_base_cmd)
@@ -172,6 +188,16 @@ class SocialnetBuilder(AppBuilder):
         for binary in binaries_list:
             binary_tag = f"{binary}:{tag}" if tag != "latest" else f"{binary}:latest"
             
+            runtime_build_args: list[str] = []
+            if features:
+                runtime_build_args.extend(["--build-arg", f"FEATURES={features}"])
+            runtime_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
+            runtime_build_args.extend(["--build-arg", f"APP={app}"])
+            runtime_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
+            runtime_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
+            runtime_build_args.extend(["--build-arg", f"BINARY_NAME={binary}"])
+            runtime_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
+
             runtime_cmd: list[str] = [
                 "docker",
                 "buildx",
@@ -180,9 +206,9 @@ class SocialnetBuilder(AppBuilder):
                 "./exp/common/docker-build/Dockerfile",
                 "--target",
                 "runtime",
-                *builder_build_args,
-                "--build-arg",
-                f"BINARY={binary}",
+                *runtime_build_args,
+                "--ulimit",
+                "nofile=4096:4096",
                 "-t",
                 binary_tag,
                 get_docker_progress_flag(),
@@ -191,7 +217,7 @@ class SocialnetBuilder(AppBuilder):
             if no_cache:
                 runtime_cmd.append("--no-cache")
             
-            runtime_cmd.append(str(repo_root))
+            runtime_cmd.append(".")
             
             if dry_run:
                 commands.append(runtime_cmd)
@@ -249,6 +275,9 @@ class SocialnetApp(AppPlugin):
             # Default port if not specified
             env_vars["COMPOSE_POST_PORT"] = "8080"
         
+        if "JWT_SECRET" not in env_vars:
+            env_vars["JWT_SECRET"] = os.environ.get("JWT_SECRET", "test-secret-key-for-ci")
+
         # Set default log level if not specified
         if "LOG_LEVEL" not in env_vars:
             env_vars["LOG_LEVEL"] = "info"
@@ -260,10 +289,9 @@ class SocialnetApp(AppPlugin):
         return DockerConfig(
             compose_file="docker-compose.yaml",
             network_name="socialnet-network",
-            loadgen_container_name="socialnet_client_bench",
             loadgen_image_name="socialnet_client_bench:<features>",
             loadgen_binary_name="socialnet_client_bench",
-            app_config_filename=None,  # Socialnet doesn't use a separate app config file
+            app_config_filename="socialnet.json",
         )
     
     def get_container_names(self, env_vars: dict) -> list[str]:
@@ -272,25 +300,25 @@ class SocialnetApp(AppPlugin):
         
         Includes compose_post and other service containers.
         """
-        container_names = ["compose-post-service"]
-        
-        # Add other service containers (these match the docker-compose service names)
-        # Note: Actual container names may have prefixes/suffixes based on docker-compose scaling
-        services = [
-            "post-storage-service",
-            "user-timeline-service",
-            "home-timeline-service",
-            "user-service",
-            "unique-id-service",
-            "media-service",
-            "text-service",
-            "user-mention-service",
-            "url-shorten-service",
-            "social-graph-service",
-            "write-home-timeline-service",
+        prefix = "socialnet"
+        container_names = [
+            f"{prefix}-compose-post-service-1",
+            f"{prefix}-post-storage-service-1",
+            f"{prefix}-home-timeline-service-1",
+            f"{prefix}-user-service-1",
+            f"{prefix}-unique-id-service-1",
+            f"{prefix}-media-service-1",
+            f"{prefix}-text-service-1",
+            f"{prefix}-user-mention-service-1",
+            f"{prefix}-url-shorten-service-1",
+            f"{prefix}-social-graph-service-1",
+            f"{prefix}-write-home-timeline-service-1",
         ]
-        
-        container_names.extend(services)
+
+        # Scaled services
+        user_timeline_replicas = int(env_vars.get("USER_TIMELINE_REPLICAS", 4))
+        for i in range(1, user_timeline_replicas + 1):
+            container_names.append(f"{prefix}-user-timeline-service-{i}")
         
         return container_names
     
@@ -319,5 +347,4 @@ class SocialnetApp(AppPlugin):
         Returns:
             Image tag string
         """
-        tag = normalize_features_to_tag(features)
-        return f"socialnet_client_bench:{tag}" if tag != "latest" else "socialnet_client_bench:latest"
+        return normalize_features_to_tag(features)
