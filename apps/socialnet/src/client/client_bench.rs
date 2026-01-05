@@ -15,10 +15,10 @@ use app_utils::{
     load_gen::{load_gen_main, Client, Handler, HandlerOuter, LoadGenArgs, RequestType},
     timing::time_now,
 };
-use socialnet::compose_post;
-use socialnet::compose_post::compose_post_service_client::ComposePostServiceClient;
 use gen::get_compose_post_request;
 use masa::Context;
+use socialnet::compose_post;
+use socialnet::compose_post::compose_post_service_client::ComposePostServiceClient;
 
 struct SocialnetClient;
 
