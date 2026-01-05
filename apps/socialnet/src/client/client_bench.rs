@@ -1,6 +1,3 @@
-pub mod compose_post {
-    tonic::include_proto!("compose_post");
-}
 mod gen;
 
 use std::collections::HashMap;
@@ -18,7 +15,8 @@ use app_utils::{
     load_gen::{load_gen_main, Client, Handler, HandlerOuter, LoadGenArgs, RequestType},
     timing::time_now,
 };
-use compose_post::compose_post_service_client::ComposePostServiceClient;
+use socialnet::compose_post;
+use socialnet::compose_post::compose_post_service_client::ComposePostServiceClient;
 use gen::get_compose_post_request;
 use masa::Context;
 
