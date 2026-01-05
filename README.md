@@ -72,7 +72,7 @@ Application source lives under `apps/<app>`, and the experiment assets for each 
 Masa currently has four applications for experimentation:
 
 - `hotel`: Based on the Hotel application in Deathstarbench. We've ported this application to Rust for Masa compatibility.
-- `socialnet`: TODO
+- `socialnet`: Social network microservice workload inspired by the SocialNetwork benchmark.
 - `synthetic`: A synthetic application with configurable behavior, for understanding Masa in simple scenarios.
 - `mssim`: A microservice simulator-driven workload for trace-based experiments.
 
@@ -134,6 +134,7 @@ python3 -m exp.runner plot <app> <experiment-name>
 python3 -m exp.runner plot hotel exp1
 python3 -m exp.runner plot synthetic quick_test
 python3 -m exp.runner plot mssim e2e_test
+python3 -m exp.runner plot socialnet exp1
 ```
 
 The plots will be saved at `exp/<app>/data/plots/<experiment>`.
@@ -146,7 +147,7 @@ python3 -m exp.runner run <app> <experiment-name> --plot
 
 #### Docker compose manual (single-server)
 
-NOTE: This is currently only supported for `hotel` and `synthetic`.
+NOTE: This is currently supported for `hotel`, `synthetic`, and `socialnet`.
 
 For running experiments, use the Python experiment runner:
 
@@ -157,6 +158,7 @@ python3 -m exp.runner run <app> <experiment-name> --plot
 # For example:
 python3 -m exp.runner run hotel exp1 --plot
 python3 -m exp.runner run synthetic quick_test --plot
+python3 -m exp.runner run socialnet exp1 --plot
 
 # Run multiple experiments sequentially
 python3 -m exp.runner run-multiple hotel "exp1 exp2 exp3" --plot

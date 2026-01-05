@@ -8,7 +8,7 @@ The experiment runner replaces the previous bash script system with a well-struc
 
 ## Features
 
-- **Multiple Applications**: Supports hotel, synthetic, and mssim applications with extensible plugin architecture
+- **Multiple Applications**: Supports hotel, socialnet, synthetic, and mssim applications with extensible plugin architecture
 - **Policy Testing**: Run experiments with different scheduling policies (fifo, prio_global, prio_local, etc.)
 - **Automated Workflow**: Handles Docker builds, service orchestration, load generation, and log collection
 - **Result Analysis**: Integrated plotting for goodput, latency, and hotel replica metrics
@@ -32,11 +32,15 @@ The experiment runner is part of the MASA repository. Ensure you have Python 3.1
 # Run experiment 'exp1' for the hotel application
 python -m exp.runner run hotel exp1
 
+# Run experiment 'exp1' for the socialnet application
+python -m exp.runner run socialnet exp1
+
 # Run an MSSIM experiment
 python -m exp.runner run mssim e2e_test
 
 # Run with plot generation
 python -m exp.runner run hotel exp1 --plot
+python -m exp.runner run socialnet exp1 --plot
 
 # Run with verbose logging
 python -m exp.runner run hotel exp1 --plot --verbose
@@ -97,8 +101,9 @@ Experiments are configured using files in `exp/<app>/data/in/<experiment_name>/`
 
 3. **Application-specific config** (varies by app):
    - Hotel: `hotel.json` - Service replica counts and configuration
+   - Socialnet: `socialnet.json` - Placeholder config for Docker builds (can be empty)
    - Synthetic: `config.docker.json` - Child service configuration (optional)
-  - MSSIM: `mssim.json` - Trace/config inputs and MSSIM-specific parameters
+   - MSSIM: `mssim.json` - Trace/config inputs and MSSIM-specific parameters
 
 ### MSSIM Configuration
 
@@ -151,6 +156,15 @@ MSSIM experiments live under `exp/mssim/data/in/<experiment_name>/` and require:
 exp/hotel/data/in/exp1/
 ├── gen_config.json       # Load generator settings
 ├── hotel.json            # Hotel-specific configuration
+└── policies              # Scheduling policies to test
+```
+
+### Example: Socialnet Application
+
+```bash
+exp/socialnet/data/in/exp1/
+├── gen_config.json       # Load generator settings
+├── socialnet.json        # Placeholder config (can be empty)
 └── policies              # Scheduling policies to test
 ```
 

@@ -439,7 +439,7 @@ Examples:
     )
     run_parser.add_argument(
         'app',
-        choices=['hotel', 'mssim', 'synthetic'],
+        choices=['hotel', 'mssim', 'socialnet', 'synthetic'],
         help='Application to run (hotel, mssim, or synthetic)'
     )
     run_parser.add_argument(
@@ -476,7 +476,7 @@ Examples:
     )
     queue_parser.add_argument(
         'app',
-        choices=['hotel', 'mssim', 'synthetic'],
+        choices=['hotel', 'mssim', 'socialnet', 'synthetic'],
         help='Application to run (hotel, mssim, or synthetic)'
     )
     queue_parser.add_argument(
@@ -513,7 +513,7 @@ Examples:
     )
     build_parser.add_argument(
         'app',
-        choices=['hotel', 'mssim', 'synthetic'],
+        choices=['hotel', 'mssim', 'socialnet', 'synthetic'],
         help='Application to build (hotel, mssim, or synthetic)'
     )
     build_parser.add_argument(
@@ -539,7 +539,7 @@ Examples:
     )
     build_dryrun_parser.add_argument(
         'app',
-        choices=['hotel', 'mssim', 'synthetic'],
+        choices=['hotel', 'mssim', 'socialnet', 'synthetic'],
         help='Application to build (hotel, mssim, or synthetic)'
     )
     build_dryrun_parser.add_argument(
@@ -565,7 +565,7 @@ Examples:
     )
     plot_parser.add_argument(
         'app',
-        choices=['hotel', 'mssim', 'synthetic'],
+        choices=['hotel', 'mssim', 'socialnet', 'synthetic'],
         help='Application name (hotel, mssim, or synthetic)'
     )
     plot_parser.add_argument(
@@ -589,12 +589,12 @@ Examples:
     
     # Parse arguments
     args = parser.parse_args()
-    
+
     # Setup logging level
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
         logger.debug("Verbose logging enabled")
-    
+
     # Execute command
     args.func(args)
 
