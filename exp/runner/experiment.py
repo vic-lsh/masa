@@ -5,6 +5,7 @@ Main experiment orchestration logic.
 import logging
 import os
 import shutil
+import threading
 import time
 from argparse import Namespace
 from pathlib import Path
@@ -21,12 +22,12 @@ logger = logging.getLogger(__name__)
 class Experiment:
     """
     Orchestrates the execution of a performance experiment.
-    
+
     An experiment consists of multiple iterations, each testing different
     scheduling policies. For each policy, Docker services are built and started,
     a load generator is run, and logs are collected.
     """
-    
+
     def __init__(
         self,
         app: AppPlugin,
@@ -36,10 +37,11 @@ class Experiment:
         no_cache: bool = False,
         rm_data: bool = False,
         dry_run: bool = False,
+        parallel: bool = False,
     ):
         """
         Initialize experiment runner.
-        
+
         Args:
             app: Application plugin for app-specific behavior
             config: Experiment configuration
@@ -47,6 +49,8 @@ class Experiment:
             plot: Whether to generate plots after experiment
             no_cache: Whether to disable Docker cache during builds
             rm_data: Whether to remove existing data from output directory before running
+            dry_run: Whether to run in dry-run mode (no actual execution)
+            parallel: Whether to run policies in parallel
         """
         self.app = app
         self.config = config
@@ -55,20 +59,21 @@ class Experiment:
         self.no_cache = no_cache
         self.rm_data = rm_data
         self.dry_run = dry_run
+        self.parallel = parallel
         self.docker = DockerManager(repo_root)
-        
+
         # Setup working directories
         self.exp_scripts_dir = config.exp_dir / "scripts"
         self.app_scripts_dir = config.app_dir / "scripts"
         self.app_local_dir = self.app_scripts_dir / "local"
-        
+
         # Track current output directory for error reporting
         self.current_output_dir: Optional[Path] = None
-    
+
     def run(self) -> None:
         """
         Run the full experiment.
-        
+
         This is the main entry point that orchestrates the entire experiment workflow.
         """
         logger.info(f"Starting experiment: {self.config.experiment_name}")
@@ -77,46 +82,48 @@ class Experiment:
         logger.info(f"Iterations: {self.config.get_repeats()}")
         if self.dry_run:
             logger.info("Dry-run mode enabled (no commands will be executed)")
-        
+        if self.parallel:
+            logger.info("Parallel mode enabled (policies will run concurrently)")
+
         if not self.dry_run:
             # Prepare directories and backup old configs
             self._prepare_experiment()
             # Copy configs from input to working directories
             self._copy_configs()
-        
+
         # Run experiment iterations
         self._run_iterations()
 
         # Mark experiment as complete
         if not self.dry_run:
             self._mark_complete()
-        
+
         # Generate plots if requested
         if self.plot and not self.dry_run:
             self._generate_plots()
-        
+
         logger.info(f"Experiment {self.config.experiment_name} completed successfully")
-    
+
     def _prepare_experiment(self) -> None:
         """Prepare directories and backup old configurations."""
         logger.info("Preparing experiment directories")
-        
+
         # Create necessary directories
         self.exp_scripts_dir.mkdir(parents=True, exist_ok=True)
         self.app_local_dir.mkdir(parents=True, exist_ok=True)
         self.config.out_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Backup old configs
         curr_ts = int(time.time())
         backup_dir = Path(f"/tmp/masa-save-{curr_ts}")
         backup_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Note: gen_config.json is no longer stored in exp_scripts_dir,
         # so we don't need to backup it from there.
-        
+
         # Note: App config files are no longer stored in apps/ directory,
         # so we don't need to backup them from there.
-        
+
         # Backup old output
         if self.config.out_dir.exists() and any(self.config.out_dir.iterdir()):
             try:
@@ -124,7 +131,7 @@ class Experiment:
                 logger.debug(f"Backed up old output to {backup_dir}")
             except Exception as e:
                 logger.warning(f"Failed to backup old output: {e}")
-        
+
         # Clear output directory only if rm_data flag is set
         if self.rm_data:
             if self.config.out_dir.exists():
@@ -133,66 +140,222 @@ class Experiment:
                         shutil.rmtree(item)
                     else:
                         item.unlink()
-                logger.info(f"Removed existing data from output directory: {self.config.out_dir}")
+                logger.info(
+                    f"Removed existing data from output directory: {self.config.out_dir}"
+                )
         else:
-            logger.debug(f"Keeping existing data in output directory: {self.config.out_dir}")
-        
+            logger.debug(
+                f"Keeping existing data in output directory: {self.config.out_dir}"
+            )
+
         # Note: plot directory is only cleared when actually generating plots
         # (see _generate_plots method)
-        
+
         logger.info(f"Backed up old configs to {backup_dir}")
-    
+
     def _copy_configs(self) -> None:
         """Copy configuration files from input to working directories."""
         logger.info("Copying configuration files")
-        
+
         # Note: gen_config.json and app config files are no longer copied to working directories.
         # They are passed directly to Docker build via GEN_CONFIG_PATH and APP_CONFIG_PATH.
-    
+
     def _run_iterations(self) -> None:
         """Run all experiment iterations."""
         repeats = self.config.get_repeats()
-        
+
         # Set environment variables for app directories
         os.environ["MASA_APP_DIR"] = str(self.config.app_dir)
         os.environ["MASA_APP_NAME"] = self.config.app_name
-        
+
         for iteration in range(repeats):
-            logger.info(f"{'='*60}")
+            logger.info(f"{'=' * 60}")
             logger.info(f"Iteration {iteration}")
-            logger.info(f"{'='*60}")
-            
-            for policy in self.config.policies:
-                logger.info(f"{'*'*50}")
-                logger.info(f"Policy: {policy}")
-                logger.info(f"{'*'*50}")
-                
-                # Setup output directory for this iteration/policy
-                output_dir = self.config.out_dir / str(iteration) / policy
-                if not self.dry_run:
-                    output_dir.mkdir(parents=True, exist_ok=True)
-                self.current_output_dir = output_dir
-                try:
-                    self.app.run_workload(
-                        repo_root=self.repo_root,
-                        config=self.config,
-                        docker=self.docker,
-                        policy=policy,
-                        iteration=iteration,
-                        output_dir=output_dir,
-                        app_local_dir=self.app_local_dir,
-                        no_cache=self.no_cache,
-                        dry_run=self.dry_run,
-                    )
-                except Exception as e:
-                    logger.error(f"Error during iteration {iteration}, policy {policy}: {e}")
-                    self._print_log_tails(output_dir)
-                    raise
-    
+            logger.info(f"{'=' * 60}")
+
+            if self.parallel:
+                # Run all policies in parallel for this iteration
+                self._run_policies_parallel(iteration)
+            else:
+                # Run policies sequentially (original behavior)
+                self._run_policies_sequential(iteration)
+
+    def _run_policies_sequential(self, iteration: int) -> None:
+        """Run policies sequentially for a given iteration."""
+        for policy in self.config.policies:
+            logger.info(f"{'*' * 50}")
+            logger.info(f"Policy: {policy}")
+            logger.info(f"{'*' * 50}")
+
+            # Setup output directory for this iteration/policy
+            output_dir = self.config.out_dir / str(iteration) / policy
+            if not self.dry_run:
+                # Remove existing logs before running
+                if output_dir.exists():
+                    shutil.rmtree(output_dir)
+                output_dir.mkdir(parents=True, exist_ok=True)
+            self.current_output_dir = output_dir
+            try:
+                self.app.run_workload(
+                    repo_root=self.repo_root,
+                    config=self.config,
+                    docker=self.docker,
+                    policy=policy,
+                    iteration=iteration,
+                    output_dir=output_dir,
+                    app_local_dir=self.app_local_dir,
+                    no_cache=self.no_cache,
+                    dry_run=self.dry_run,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error during iteration {iteration}, policy {policy}: {e}"
+                )
+                self._print_log_tails(output_dir)
+                raise
+
+    def _run_policies_parallel(self, iteration: int) -> None:
+        """Run all policies in parallel for a given iteration."""
+        logger.info(f"Running {len(self.config.policies)} policies in parallel")
+
+        # Assign CPU cores to policies (max 4 concurrent builds)
+        # Each policy gets a set of CPUs to avoid contention
+        max_parallel_builds = 4
+        cpu_assignments = self._assign_cpu_cores(
+            len(self.config.policies), max_parallel_builds
+        )
+
+        # Thread-safe storage for exceptions
+        exceptions = {}
+        exceptions_lock = threading.Lock()
+
+        def run_policy_thread(policy: str, policy_index: int) -> None:
+            """Thread function to run a single policy."""
+            logger.info(f"[{policy}] Starting policy execution")
+
+            # Get CPU assignment and build log file for this policy
+            cpu_affinity = cpu_assignments.get(policy_index)
+            if cpu_affinity:
+                logger.info(f"[{policy}] Assigned to CPUs: {cpu_affinity}")
+
+            # Setup output directory for this iteration/policy
+            output_dir = self.config.out_dir / str(iteration) / policy
+            if not self.dry_run:
+                # Remove existing logs before running
+                if output_dir.exists():
+                    shutil.rmtree(output_dir)
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create build log file for this policy
+            build_log_file = output_dir / f"build_{policy}.log"
+
+            try:
+                self.app.run_workload(
+                    repo_root=self.repo_root,
+                    config=self.config,
+                    docker=self.docker,
+                    policy=policy,
+                    iteration=iteration,
+                    output_dir=output_dir,
+                    app_local_dir=self.app_local_dir,
+                    no_cache=self.no_cache,
+                    dry_run=self.dry_run,
+                    cpu_affinity=cpu_affinity,
+                    build_log_file=build_log_file,
+                )
+                logger.info(f"[{policy}] Completed successfully")
+            except Exception as e:
+                logger.error(f"[{policy}] Failed with error: {e}")
+                with exceptions_lock:
+                    exceptions[policy] = (e, output_dir)
+
+        # Create and start threads for each policy
+        threads = []
+        for policy_index, policy in enumerate(self.config.policies):
+            thread = threading.Thread(
+                target=run_policy_thread,
+                args=(policy, policy_index),
+                name=f"policy-{policy}",
+            )
+            thread.start()
+            threads.append(thread)
+
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join()
+
+        # Check if any policies failed
+        if exceptions:
+            logger.error(f"{'=' * 80}")
+            logger.error(
+                f"{len(exceptions)} policy(ies) failed during parallel execution:"
+            )
+            for policy, (exc, output_dir) in exceptions.items():
+                logger.error(f"  - {policy}: {exc}")
+                self._print_log_tails(output_dir)
+            logger.error(f"{'=' * 80}")
+            # Raise the first exception to fail the experiment
+            first_policy = list(exceptions.keys())[0]
+            raise exceptions[first_policy][0]
+
+        logger.info(f"All {len(self.config.policies)} policies completed successfully")
+
+    def _assign_cpu_cores(
+        self, num_policies: int, max_parallel: int
+    ) -> dict[int, list[int]]:
+        """
+        Assign CPU cores to policies for parallel builds.
+
+        Distributes available CPU cores across policies, ensuring no more than
+        max_parallel policies are building concurrently on distinct CPU sets.
+
+        Args:
+            num_policies: Number of policies to assign CPUs to
+            max_parallel: Maximum number of concurrent builds (max 4)
+
+        Returns:
+            Dictionary mapping policy index to list of CPU core IDs
+        """
+        import os
+
+        # Get number of available CPUs
+        try:
+            num_cpus = len(os.sched_getaffinity(0))
+        except AttributeError:
+            # Fallback for systems without sched_getaffinity
+            num_cpus = os.cpu_count() or 4
+
+        logger.info(f"System has {num_cpus} available CPUs")
+
+        # Limit to max_parallel concurrent builds
+        num_parallel = min(num_policies, max_parallel)
+
+        # Calculate CPUs per policy
+        cpus_per_policy = max(1, num_cpus // num_parallel)
+
+        # Assign CPU cores to each policy
+        assignments = {}
+        for i in range(num_policies):
+            # Cycle through CPU sets if we have more policies than parallel slots
+            slot = i % num_parallel
+            start_cpu = slot * cpus_per_policy
+            end_cpu = start_cpu + cpus_per_policy
+
+            # Ensure we don't exceed available CPUs
+            end_cpu = min(end_cpu, num_cpus)
+
+            # Assign CPUs
+            cpu_list = list(range(start_cpu, end_cpu))
+            if cpu_list:
+                assignments[i] = cpu_list
+                logger.debug(f"Policy {i}: CPUs {cpu_list}")
+
+        return assignments
+
     def _print_log_tails(self, output_dir: Path, num_lines: int = 50) -> None:
         """
         Print the tail of all log files in the output directory.
-        
+
         Args:
             output_dir: Directory containing log files
             num_lines: Number of lines to print from each log file
@@ -200,7 +363,7 @@ class Experiment:
         if not output_dir.exists():
             logger.warning(f"Output directory does not exist: {output_dir}")
             return
-        
+
         # Include nested logs (e.g., MSSIM stores orchestrator.log under per-RPS subdirectories)
         log_files = sorted(output_dir.rglob("*.log"))
         if not log_files:
@@ -211,17 +374,17 @@ class Experiment:
         max_logs = 10
         if len(log_files) > max_logs:
             log_files = log_files[:max_logs]
-        
+
         logger.error("=" * 80)
         logger.error(f"Tail of relevant logs from {output_dir}:")
         logger.error("=" * 80)
-        
+
         for log_file in log_files:
             try:
                 with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
                     lines = f.readlines()
                     tail_lines = lines[-num_lines:] if len(lines) > num_lines else lines
-                    
+
                     logger.error("")
                     logger.error(f"--- {log_file} (last {len(tail_lines)} lines) ---")
                     for line in tail_lines:
@@ -229,32 +392,32 @@ class Experiment:
                         logger.error(line.rstrip())
             except Exception as e:
                 logger.warning(f"Failed to read log file {log_file}: {e}")
-        
+
         logger.error("=" * 80)
-    
+
     def _mark_complete(self) -> None:
         """Mark experiment as complete."""
         done_file = self.config.out_dir / "done"
         done_file.touch()
         logger.info(f"Marked experiment as complete: {done_file}")
-    
+
     def _generate_plots(self) -> None:
         """Generate plots from experiment results."""
         logger.info("Generating plots")
-        
+
         # Clear plot directory before generating new plots
         if self.config.plot_dir.exists():
             shutil.rmtree(self.config.plot_dir)
         self.config.plot_dir.mkdir(parents=True, exist_ok=True)
         logger.debug(f"Cleared plot directory: {self.config.plot_dir}")
-        
+
         # Create args-like object for plotting functions
         args = Namespace(
             config_dir=self.config.in_dir,
             data_dir=self.config.out_dir,
             output_dir=self.config.plot_dir,
         )
-        
+
         try:
             generate_all_plots(args)
             logger.info("Plots generated successfully")

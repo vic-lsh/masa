@@ -1,213 +1,246 @@
 services:
-  rate-mongo:
-    image: mongo:7.0
-    container_name: "rate_mongo"
-    command: --port 27003
-    restart: always
-    networks:
-      - hotel_network
-    volumes:
-      - rate:/data
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    rate-mongo:
+        image: mongo:7.0
+        container_name: "${PROJECT_PREFIX:-}rate_mongo"
+        command: --port 27003
+        restart: always
+        networks:
+            hotel_network:
+                aliases:
+                    - ${PROJECT_PREFIX:-}rate_mongo
+        volumes:
+            - rate:/data
+        deploy:
+            resources:
+                limits:
+                    cpus: "4"
 
-  rate-redis:
-    image: redis:7.2
-    container_name: "rate_redis"
-    command: ["redis-server", "--port", "11003", "--io-threads", "4"]
-    restart: always
-    networks:
-      - hotel_network
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    rate-redis:
+        image: redis:7.2
+        container_name: "${PROJECT_PREFIX:-}rate_redis"
+        command: ["redis-server", "--port", "11003", "--io-threads", "4"]
+        restart: always
+        networks:
+            hotel_network:
+                aliases:
+                    - ${PROJECT_PREFIX:-}rate_redis
+        deploy:
+            resources:
+                limits:
+                    cpus: "4"
 
-  rate-service:
-    image: hotel_rate:${HOTEL_IMAGE_TAG:-latest}
-    scale: ${RATE_REPLICAS}
-    restart: always
-    networks:
-      - hotel_network
-    depends_on:
-      - rate-mongo
-      - rate-redis
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    rate-service:
+        image: hotel_rate:${HOTEL_IMAGE_TAG:-latest}
+        scale: ${RATE_REPLICAS}
+        restart: always
+        networks:
+            hotel_network:
+                aliases:
+                    - ${PROJECT_PREFIX:-}rate-service
+        depends_on:
+            - rate-mongo
+            - rate-redis
+        environment:
+            - LOG_LEVEL=${LOG_LEVEL:-info}
+        deploy:
+            resources:
+                limits:
+                    cpus: "4"
 
-  profile-mongo:
-    image: mongo:7.0
-    container_name: "profile_mongo"
-    command: --port 27004
-    restart: always
-    networks:
-      - hotel_network
-    volumes:
-      - profile:/data
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    profile-mongo:
+        image: mongo:7.0
+        container_name: "${PROJECT_PREFIX:-}profile_mongo"
+        command: --port 27004
+        restart: always
+        networks:
+            hotel_network:
+                aliases:
+                    - ${PROJECT_PREFIX:-}profile_mongo
+        volumes:
+            - profile:/data
+        deploy:
+            resources:
+                limits:
+                    cpus: "4"
 
-  profile-redis:
-    image: redis:7.2
-    container_name: "profile_redis"
-    command: ["redis-server", "--port", "11004", "--io-threads", "4"]
-    restart: always
-    networks:
-      - hotel_network
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    profile-redis:
+        image: redis:7.2
+        container_name: "${PROJECT_PREFIX:-}profile_redis"
+        command: ["redis-server", "--port", "11004", "--io-threads", "4"]
+        restart: always
+        networks:
+            hotel_network:
+                aliases:
+                    - ${PROJECT_PREFIX:-}profile_redis
+        deploy:
+            resources:
+                limits:
+                    cpus: "4"
 
-  profile-service:
-    image: hotel_profile:${HOTEL_IMAGE_TAG:-latest}
-    scale: ${PROFILE_REPLICAS}
-    restart: always
-    networks:
-      - hotel_network
-    depends_on:
-      - profile-mongo
-      - profile-redis
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    profile-service:
+        image: hotel_profile:${HOTEL_IMAGE_TAG:-latest}
+        scale: ${PROFILE_REPLICAS}
+        restart: always
+        networks:
+            hotel_network:
+                aliases:
+                    - ${PROJECT_PREFIX:-}profile-service
+        depends_on:
+            - profile-mongo
+            - profile-redis
+        environment:
+            - LOG_LEVEL=${LOG_LEVEL:-info}
+        deploy:
+            resources:
+                limits:
+                    cpus: "4"
 
-  reservation-mongo:
-    image: mongo:7.0
-    container_name: "reservation_mongo"
-    command: --port 27005
-    restart: always
-    networks:
-      - hotel_network
-    volumes:
-      - reservation:/data
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    reservation-mongo:
+        image: mongo:7.0
+        container_name: "${PROJECT_PREFIX:-}reservation_mongo"
+        command: --port 27005
+        restart: always
+        networks:
+            hotel_network:
+                aliases:
+                    - ${PROJECT_PREFIX:-}reservation_mongo
+        volumes:
+            - reservation:/data
+        deploy:
+            resources:
+                limits:
+                    cpus: "4"
 
-  reservation-redis:
-    image: redis:7.2
-    container_name: "reservation_redis"
-    command: ["redis-server", "--port", "11005", "--io-threads", "4"]
-    restart: always
-    networks:
-      - hotel_network
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    reservation-redis:
+        image: redis:7.2
+        container_name: "${PROJECT_PREFIX:-}reservation_redis"
+        command: ["redis-server", "--port", "11005", "--io-threads", "4"]
+        restart: always
+        networks:
+            hotel_network:
+                aliases:
+                    - ${PROJECT_PREFIX:-}reservation_redis
+        deploy:
+            resources:
+                limits:
+                    cpus: "4"
 
-  reservation-service:
-    image: hotel_reservation:${HOTEL_IMAGE_TAG:-latest}
-    scale: ${RESERVATION_REPLICAS}
-    restart: always
-    networks:
-      - hotel_network
-    depends_on:
-      - reservation-mongo
-      - reservation-redis
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    reservation-service:
+        image: hotel_reservation:${HOTEL_IMAGE_TAG:-latest}
+        scale: ${RESERVATION_REPLICAS}
+        restart: always
+        networks:
+            hotel_network:
+                aliases:
+                    - ${PROJECT_PREFIX:-}reservation-service
+        depends_on:
+            - reservation-mongo
+            - reservation-redis
+        environment:
+            - LOG_LEVEL=${LOG_LEVEL:-info}
+        deploy:
+            resources:
+                limits:
+                    cpus: "4"
 
-  user-mongo:
-    image: mongo:7.0
-    container_name: "user_mongo"
-    command: --port 27006
-    restart: always
-    networks:
-      - hotel_network
-    volumes:
-      - user:/data
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    user-mongo:
+        image: mongo:7.0
+        container_name: "${PROJECT_PREFIX:-}user_mongo"
+        command: --port 27006
+        restart: always
+        networks:
+            hotel_network:
+                aliases:
+                    - ${PROJECT_PREFIX:-}user_mongo
+        volumes:
+            - user:/data
+        deploy:
+            resources:
+                limits:
+                    cpus: "4"
 
-  user-service:
-    image: hotel_user:${HOTEL_IMAGE_TAG:-latest}
-    scale: ${USER_REPLICAS}
-    restart: always
-    networks:
-      - hotel_network
-    depends_on:
-      - user-mongo
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    user-service:
+        image: hotel_user:${HOTEL_IMAGE_TAG:-latest}
+        scale: ${USER_REPLICAS}
+        restart: always
+        networks:
+            hotel_network:
+                aliases:
+                    - ${PROJECT_PREFIX:-}user-service
+        depends_on:
+            - user-mongo
+        environment:
+            - LOG_LEVEL=${LOG_LEVEL:-info}
+        deploy:
+            resources:
+                limits:
+                    cpus: "4"
 
-  geo-service:
-    image: hotel_geo:${HOTEL_IMAGE_TAG:-latest}
-    scale: ${GEO_REPLICAS}
-    restart: always
-    networks:
-      - hotel_network
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    geo-service:
+        image: hotel_geo:${HOTEL_IMAGE_TAG:-latest}
+        scale: ${GEO_REPLICAS}
+        restart: always
+        networks:
+            hotel_network:
+                aliases:
+                    - ${PROJECT_PREFIX:-}geo-service
+        environment:
+            - LOG_LEVEL=${LOG_LEVEL:-info}
+        deploy:
+            resources:
+                limits:
+                    cpus: "4"
 
-  search-service:
-    image: hotel_search:${HOTEL_IMAGE_TAG:-latest}
-    scale: ${SEARCH_REPLICAS}
-    restart: always
-    networks:
-      - hotel_network
-    depends_on:
-      - geo-service
-      - rate-service
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    search-service:
+        image: hotel_search:${HOTEL_IMAGE_TAG:-latest}
+        scale: ${SEARCH_REPLICAS}
+        restart: always
+        networks:
+            hotel_network:
+                aliases:
+                    - ${PROJECT_PREFIX:-}search-service
+        depends_on:
+            - geo-service
+            - rate-service
+        environment:
+            - LOG_LEVEL=${LOG_LEVEL:-info}
+        deploy:
+            resources:
+                limits:
+                    cpus: "4"
 
-  hotel-frontend-service:
-    image: hotel_frontend:${HOTEL_IMAGE_TAG:-latest}
-    container_name: "hotel_frontend"
-    restart: always
-    networks:
-      - hotel_network
-    depends_on:
-      - user-service
-      - reservation-service
-      - profile-service
-      - rate-service
-      - geo-service
-      - search-service
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    hotel-frontend-service:
+        image: hotel_frontend:${HOTEL_IMAGE_TAG:-latest}
+        container_name: "${PROJECT_PREFIX:-}hotel_frontend"
+        restart: always
+        networks:
+            hotel_network:
+                aliases:
+                    - ${PROJECT_PREFIX:-}hotel_frontend
+        depends_on:
+            - user-service
+            - reservation-service
+            - profile-service
+            - rate-service
+            - geo-service
+            - search-service
+        environment:
+            - LOG_LEVEL=${LOG_LEVEL:-info}
+        deploy:
+            resources:
+                limits:
+                    cpus: "4"
 volumes:
-  rate:
-  profile:
-  reservation:
-  user:
+    rate:
+        name: "${PROJECT_PREFIX:-}rate"
+    profile:
+        name: "${PROJECT_PREFIX:-}profile"
+    reservation:
+        name: "${PROJECT_PREFIX:-}reservation"
+    user:
+        name: "${PROJECT_PREFIX:-}user"
 
 networks:
-  hotel_network:
-    driver: bridge
+    hotel_network:
+        name: "${PROJECT_PREFIX:-}hotel_network"
+        driver: bridge
