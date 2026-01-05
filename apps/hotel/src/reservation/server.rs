@@ -18,7 +18,7 @@ use crate::config::ReservationConfig;
 use crate::db;
 use app_util_macros::track_latency;
 use app_utils::stats::latency::StatsTracker;
-use app_utils::stats::latency::{new_latency_tracker, spawn_p50_logger, SyncLatencyTracker};
+use app_utils::stats::latency::{new_latency_tracker, spawn_latency_logger, SyncLatencyTracker};
 use mongodb::{bson::doc, Client as MongoClient, Collection};
 use redis::{aio::ConnectionManager as RedisConnectionManager, AsyncCommands};
 use tonic::{Request, Response, Status};
@@ -125,7 +125,7 @@ impl ReservationImpl {
 
         let redis_err_count = Arc::new(AtomicUsize::new(0));
         let (latency_tracker, latency_consumer) = new_latency_tracker("ReservationSvc");
-        spawn_p50_logger(latency_consumer, Duration::from_secs(30));
+        spawn_latency_logger(latency_consumer, Duration::from_secs(30));
 
         Ok(Self {
             redis_conn,

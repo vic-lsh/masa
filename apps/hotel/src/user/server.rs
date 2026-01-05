@@ -4,7 +4,7 @@ pub mod hotel {
     }
 }
 
-use app_utils::stats::latency::{new_latency_tracker, spawn_p50_logger, SyncLatencyTracker};
+use app_utils::stats::latency::{new_latency_tracker, spawn_latency_logger, SyncLatencyTracker};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Uniform};
 use std::error::Error;
@@ -98,7 +98,7 @@ impl UserImpl {
         )
         .await?;
         let (latency_tracker, latency_consumer) = new_latency_tracker("UserSvc");
-        spawn_p50_logger(latency_consumer, Duration::from_secs(30));
+        spawn_latency_logger(latency_consumer, Duration::from_secs(30));
         let user = UserImpl {
             manager,
             latency_tracker,

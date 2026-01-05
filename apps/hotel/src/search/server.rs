@@ -10,7 +10,7 @@ pub mod hotel_tonic {
     }
 }
 
-use app_utils::stats::latency::{new_latency_tracker, spawn_p50_logger, SyncLatencyTracker};
+use app_utils::stats::latency::{new_latency_tracker, spawn_latency_logger, SyncLatencyTracker};
 use std::time::Duration;
 use tonic::{transport::masa_channel::LoadBalancedChannel, Request, Response, Status};
 
@@ -30,7 +30,7 @@ pub struct SearchImpl {
 impl SearchImpl {
     pub async fn new(geo: GeoConfig, rate: RateConfig) -> Self {
         let (latency_tracker, latency_consumer) = new_latency_tracker("SearchSvc");
-        spawn_p50_logger(latency_consumer, Duration::from_secs(30));
+        spawn_latency_logger(latency_consumer, Duration::from_secs(30));
 
         let channel = LoadBalancedChannel::new(geo.ip.clone(), geo.port, geo.replicas).await;
         let geo_client = GeoClient::new(channel);
