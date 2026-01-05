@@ -195,8 +195,6 @@ Each key in the following list corresponds to a feature flag in the codebase.
 - `fifo`: requests are served in first-in-first-out order.
 - `prio_global`: requests are served based on their end-to-end SLO end time, which is their SLO added to the time at which they arrived at the frontend server.
 - `prio_local`: requests are served based on their local deadline (talk to the project leads if you're interested in how this is calculated); currently this only works for the `hotel` application, as it requires a description of the call graph.
-- `prio_local_direct`: similar to `prio_local`, but without using the callgraph.
-- `prio_local_indirect`: similar to `prio_local`, but without using the callgraph.
 - `fifo_span_tracing`: Based on fifo flag while printing the trace spans when run experiement script
 - `fifo_queue_tracing`: Based on fifo flag while recording the queue latency
 - `prio_global_queue_tracing`: Based on prio_global flag while recording the queue latency

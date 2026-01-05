@@ -87,21 +87,6 @@ prio_local = [
   "masa/prio_local",
   "tonic/prio_local",
 ]
-prio_local_direct = [
-  "tokio/prio_local_direct",
-  "masa/prio_local_direct",
-  "tonic/prio_local_direct",
-]
-prio_local_indirect = [
-  "tokio/prio_local_indirect",
-  "masa/prio_local_indirect",
-  "tonic/prio_local_indirect",
-]
-perfect_lsf = [
-  "tokio/perfect_lsf",
-  "masa/perfect_lsf",
-  "tonic/perfect_lsf",
-]
 fifo = ["tokio/fifo", "masa/fifo", "tonic/fifo"]
 
 [dependencies]
