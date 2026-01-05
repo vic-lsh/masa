@@ -26,7 +26,6 @@ class DockerConfig:
     
     compose_file: str  # Path to docker-compose file relative to app directory
     network_name: str  # Docker network name
-    loadgen_container_name: str  # Name for load generator container
     loadgen_image_name: str  # Docker image for load generator
     loadgen_binary_name: str  # Binary name to run in load generator
     
