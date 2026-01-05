@@ -10,6 +10,8 @@ pub mod hotel_tonic {
     }
 }
 
+use app_utils::stats::latency::{new_latency_tracker, spawn_p50_logger, SyncLatencyTracker};
+use std::time::Duration;
 use tonic::{transport::masa_channel::LoadBalancedChannel, Request, Response, Status};
 
 use hotel_tonic::{
@@ -22,10 +24,14 @@ use crate::config::{GeoConfig, RateConfig};
 pub struct SearchImpl {
     geo_client: GeoClient<LoadBalancedChannel>,
     rate_client: RateClient<LoadBalancedChannel>,
+    latency_tracker: SyncLatencyTracker,
 }
 
 impl SearchImpl {
     pub async fn new(geo: GeoConfig, rate: RateConfig) -> Self {
+        let (latency_tracker, latency_consumer) = new_latency_tracker("SearchSvc");
+        spawn_p50_logger(latency_consumer, Duration::from_secs(30));
+
         let channel = LoadBalancedChannel::new(geo.ip.clone(), geo.port, geo.replicas).await;
         let geo_client = GeoClient::new(channel);
 
@@ -41,6 +47,7 @@ impl SearchImpl {
         SearchImpl {
             geo_client,
             rate_client,
+            latency_tracker,
         }
     }
 }
@@ -51,6 +58,7 @@ impl Search for SearchImpl {
         &self,
         request: Request<search::NearbyRequest>,
     ) -> Result<Response<search::NearbyResponse>, Status> {
+        let start = std::time::Instant::now();
         let request = request.into_inner();
 
         let mut geo_client = self.geo_client.clone();
@@ -76,6 +84,8 @@ impl Search for SearchImpl {
             hotel_ids.push(plan.hotel_id);
         }
         let response = search::NearbyResponse { hotel_ids };
+        self.latency_tracker
+            .track(start.elapsed().as_micros().try_into().unwrap());
         Ok(Response::new(response))
     }
 }
