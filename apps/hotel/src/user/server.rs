@@ -4,10 +4,12 @@ pub mod hotel {
     }
 }
 
+use app_utils::stats::latency::{new_latency_tracker, spawn_p50_logger, SyncLatencyTracker};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Uniform};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use mongodb::{bson::doc, Client, Collection, Database, IndexModel};
 use serde::{Deserialize, Serialize};
@@ -84,6 +86,7 @@ impl HotelManager {
 
 pub struct UserImpl {
     manager: HotelManager,
+    latency_tracker: SyncLatencyTracker,
 }
 
 impl UserImpl {
@@ -94,7 +97,12 @@ impl UserImpl {
             config.prob_check_user,
         )
         .await?;
-        let user = UserImpl { manager };
+        let (latency_tracker, latency_consumer) = new_latency_tracker("UserSvc");
+        spawn_p50_logger(latency_consumer, Duration::from_secs(30));
+        let user = UserImpl {
+            manager,
+            latency_tracker,
+        };
         Ok(user)
     }
 }
@@ -105,6 +113,7 @@ impl User for UserImpl {
         &self,
         request: Request<user::UserRequest>,
     ) -> Result<Response<user::UserResponse>, Status> {
+        let start = std::time::Instant::now();
         let request = request.into_inner();
 
         let success = {
@@ -119,6 +128,8 @@ impl User for UserImpl {
         };
 
         let response = user::UserResponse { success };
+        self.latency_tracker
+            .track(start.elapsed().as_micros().try_into().unwrap());
         Ok(Response::new(response))
     }
 }

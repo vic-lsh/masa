@@ -7,6 +7,7 @@ pub mod hotel_tonic {
 #[cfg(not(feature = "synthetic"))]
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
 #[cfg(feature = "synthetic")]
 use {rand::rngs::StdRng, rand::SeedableRng, rand_distr::Uniform};
 
@@ -14,9 +15,10 @@ use crate::{
     config::{GlobalConfig, ProfileConfig},
     db,
 };
-use masa::LatencyDistribution;
+use app_utils::stats::latency::{new_latency_tracker, spawn_p50_logger, SyncLatencyTracker};
 use mongodb::{bson::doc, Client as MongoClient};
 use redis::{aio::ConnectionManager as RedisConnectionManager, AsyncCommands};
+#[cfg(feature = "synthetic")]
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
@@ -44,7 +46,7 @@ struct SyntheticProfile {
 pub struct ProfileImpl {
     redis_conn: RedisConnectionManager,
     mongo_client: Arc<MongoClient>,
-    latency_tracker: Arc<Mutex<LatencyDistribution>>,
+    latency_tracker: SyncLatencyTracker,
     #[cfg(feature = "workload_stats")]
     fanout_tracker: Arc<AvgTracker>,
     #[cfg(feature = "synthetic")]
@@ -60,10 +62,8 @@ impl ProfileImpl {
         let _ = &global;
         let mongo_client = db::initialize_database(&config.mongodb_addr).await?;
 
-        let latency_tracker = Arc::new(Mutex::new(LatencyDistribution::new(
-            "ProfileSvc".into(),
-            1024,
-        )));
+        let (latency_tracker, latency_consumer) = new_latency_tracker("ProfileSvc");
+        spawn_p50_logger(latency_consumer, Duration::from_secs(30));
 
         #[cfg(feature = "workload_stats")]
         let fanout_tracker = {
@@ -212,9 +212,7 @@ impl Profile for ProfileImpl {
         let response = profile::ProfileResponse { hotels };
 
         let elapsed = start.elapsed().as_micros() as u64;
-        {
-            self.latency_tracker.lock().await.track(elapsed);
-        }
+        self.latency_tracker.track(elapsed);
 
         Ok(tonic::Response::new(response))
     }
@@ -227,11 +225,14 @@ impl Profile for ProfileImpl {
         &self,
         request: Request<profile::ProfileRequest>,
     ) -> Result<Response<profile::ProfileResponse>, Status> {
+        let start = std::time::Instant::now();
         let request = request.into_inner();
         let hotels = self.fetch_mixture(request.hotel_ids).await;
         let hotels = hotels.into_iter().map(|h| h.into()).collect();
         let response = profile::ProfileResponse { hotels };
         log::info!("response: {:?}", response);
+        self.latency_tracker
+            .track(start.elapsed().as_micros().try_into().unwrap());
         Ok(Response::new(response))
     }
 }
