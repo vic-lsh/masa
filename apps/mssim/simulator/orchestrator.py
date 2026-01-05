@@ -420,7 +420,6 @@ def _make_load_generator_config_yaml(
 
     return ComposeService(
         image="mssim_load_generator",
-        container_name=LOADGEN_SERVICE_NAME,
         environment=environment,
         volumes=volumes,
         networks=[NETWORK_NAME],

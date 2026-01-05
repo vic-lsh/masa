@@ -126,7 +126,6 @@ class SyntheticApp(AppPlugin):
         return DockerConfig(
             compose_file="scripts/local/containers+svcs.yaml",
             network_name="local_synthetic_network",
-            loadgen_container_name="synthetic_client_bench",
             loadgen_image_name="synthetic_client_bench:<features>",
             loadgen_binary_name="synthetic_client_bench",
             app_config_filename="config.docker.json",
