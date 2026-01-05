@@ -9,7 +9,7 @@ pub fn get_compose_post_request(rng: &mut StdRng) -> ComposePostRequest {
     // Generate random user ID (similar to hotel's user range)
     let user_id = rng.gen_range(1..=1000);
     let username = format!("user_{}", user_id);
-    
+
     // Generate random text content
     let text_options = vec![
         "Hello World",
@@ -22,7 +22,7 @@ pub fn get_compose_post_request(rng: &mut StdRng) -> ComposePostRequest {
         "Random post content",
     ];
     let text = text_options[rng.gen_range(0..text_options.len())].to_string();
-    
+
     // Randomly decide if we have media
     let has_media = rng.gen_bool(0.5);
     let (media_ids, media_types) = if has_media {
@@ -36,10 +36,10 @@ pub fn get_compose_post_request(rng: &mut StdRng) -> ComposePostRequest {
     } else {
         (vec![], vec![])
     };
-    
+
     // Random post type (0=POST, 1=REPOST, 2=REPLY, 3=DM)
     let post_type = rng.gen_range(0..4);
-    
+
     ComposePostRequest {
         req_id: rng.gen_range(1..=1000000),
         username,
