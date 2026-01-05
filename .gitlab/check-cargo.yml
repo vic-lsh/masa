@@ -1,6 +1,9 @@
 
 cargo_check:
   stage: check
+  parallel:
+    matrix:
+      - FEATURES: ["", "fifo", "prio_global", "prio_global,early", "prio_local,early"]
   script:
     - rustc --version && cargo --version # Print version info for debugging
-    - ./scripts/check.sh
+    - ./scripts/check.sh "$FEATURES"
