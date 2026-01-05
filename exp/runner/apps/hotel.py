@@ -348,7 +348,6 @@ class HotelApp(AppPlugin):
         return DockerConfig(
             compose_file="scripts/local/containers+svcs.yaml",
             network_name="local_hotel_network",
-            loadgen_container_name="hotel_client_bench",
             loadgen_image_name="hotel_client_bench:<features>",  # Actual tag is dynamic based on features
             loadgen_binary_name="hotel_client_bench",
             app_config_filename="hotel.json",
