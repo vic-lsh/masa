@@ -3,6 +3,10 @@
 1. Run `apps/socialnet/build_socialnet.sh`
 2. In `apps/socialnet`, run `docker compose up -d`
 
+The compose file uses the `SOCIALNET_IMAGE_TAG` variable (defaults to `latest`).
+If you build images with a different tag (e.g. via the experiment runner), set
+`SOCIALNET_IMAGE_TAG` before running `docker compose up`.
+
 # Scaling the services
 ## Database services (e.g. those to do with mongo, redis, memached)
 
@@ -14,15 +18,13 @@ Can horizontally scale these by increasing number of replicas. Make sure to do t
 First increase here:
 ```
 user-timeline-service:
-    image: socialnet-generic-svc:latest
+    image: user_timeline_server:${SOCIALNET_IMAGE_TAG:-latest}
     scale: 4
     restart: always
     ports:
       - "8090-8094:8080"
     networks:
       - socialnet-network
-    volumes:
-      - ./socialnet_config.localhost.json:/app/config.json
     environment:
       - BINARY_NAME=user_timeline_server
       - USER_TIMELINE_MONGODB_URI=mongodb://user_timeline_mongo:27017
@@ -66,4 +68,3 @@ Note that each service has disaggregated database services.
 # Getting latency graph
 
 Run `python ./plot_latency.py` to get graphs for tail latencies vs. RPS. You can customize different RPS values by altering the list in the variable `RPS_LEVELS` at the top of the file.
-
