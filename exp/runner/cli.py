@@ -350,8 +350,8 @@ def cmd_plot(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def main() -> None:
-    """Main entry point for the CLI."""
+def create_parser() -> argparse.ArgumentParser:
+    """Create the argument parser for the CLI."""
     parser = argparse.ArgumentParser(
         description="MASA Experiment Runner - Run performance experiments with different scheduling policies",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -401,7 +401,7 @@ Examples:
     )
     run_parser.add_argument(
         'app',
-        choices=['hotel', 'mssim', 'synthetic'],
+        choices=['hotel', 'mssim', 'socialnet', 'synthetic'],
         help='Application to run (hotel, mssim, or synthetic)'
     )
     run_parser.add_argument(
@@ -438,7 +438,7 @@ Examples:
     )
     queue_parser.add_argument(
         'app',
-        choices=['hotel', 'mssim', 'synthetic'],
+        choices=['hotel', 'mssim', 'socialnet', 'synthetic'],
         help='Application to run (hotel, mssim, or synthetic)'
     )
     queue_parser.add_argument(
@@ -475,7 +475,7 @@ Examples:
     )
     build_parser.add_argument(
         'app',
-        choices=['hotel', 'mssim', 'synthetic'],
+        choices=['hotel', 'mssim', 'socialnet', 'synthetic'],
         help='Application to build (hotel, mssim, or synthetic)'
     )
     build_parser.add_argument(
@@ -501,7 +501,7 @@ Examples:
     )
     build_dryrun_parser.add_argument(
         'app',
-        choices=['hotel', 'mssim', 'synthetic'],
+        choices=['hotel', 'mssim', 'socialnet', 'synthetic'],
         help='Application to build (hotel, mssim, or synthetic)'
     )
     build_dryrun_parser.add_argument(
@@ -527,7 +527,7 @@ Examples:
     )
     plot_parser.add_argument(
         'app',
-        choices=['hotel', 'mssim', 'synthetic'],
+        choices=['hotel', 'mssim', 'socialnet', 'synthetic'],
         help='Application name (hotel, mssim, or synthetic)'
     )
     plot_parser.add_argument(
@@ -536,14 +536,19 @@ Examples:
     )
     plot_parser.set_defaults(func=cmd_plot)
     
-    # Parse arguments
+    return parser
+
+
+def main() -> None:
+    """Main entry point for the CLI."""
+    parser = create_parser()
     args = parser.parse_args()
-    
+
     # Setup logging level
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
         logger.debug("Verbose logging enabled")
-    
+
     # Execute command
     args.func(args)
 

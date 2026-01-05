@@ -27,13 +27,11 @@ services:
           cpus: "4"
 
   post-storage-service:
-    image: socialnet-generic-svc:latest
+    image: post_storage_server:${SOCIALNET_IMAGE_TAG:-latest}
     scale: 1
     restart: always
     networks:
       - socialnet-network
-    volumes:
-      - ./socialnet_config.localhost.json:/app/config.json
     environment:
       - BINARY_NAME=post_storage_server
       - POST_STORAGE_MONGODB_URI=mongodb://socialnet-post_storage_mongo:27017
@@ -77,13 +75,11 @@ services:
           cpus: "4"
 
   user-timeline-service:
-    image: socialnet-generic-svc:latest
+    image: user_timeline_server:${SOCIALNET_IMAGE_TAG:-latest}
     scale: 4
     restart: always
     networks:
       - socialnet-network
-    volumes:
-      - ./socialnet_config.localhost.json:/app/config.json
     environment:
       - BINARY_NAME=user_timeline_server
       - USER_TIMELINE_MONGODB_URI=mongodb://socialnet-user_timeline_mongo:27017
@@ -117,13 +113,11 @@ services:
           cpus: "4"
 
   home-timeline-service:
-    image: socialnet-generic-svc:latest
+    image: home_timeline_server:${SOCIALNET_IMAGE_TAG:-latest}
     scale: 1
     restart: always
     networks:
       - socialnet-network
-    volumes:
-      - ./socialnet_config.localhost.json:/app/config.json
     environment:
       - BINARY_NAME=home_timeline_server
       - HOME_TIMELINE_REDIS_URL=redis://socialnet-home_timeline_redis:6379
@@ -161,13 +155,11 @@ services:
           cpus: "4"
 
   write-home-timeline-service:
-    image: socialnet-generic-svc:latest
+    image: write_home_timeline_server:${SOCIALNET_IMAGE_TAG:-latest}
     scale: 1
     restart: always
     networks:
       - socialnet-network
-    volumes:
-      - ./socialnet_config.localhost.json:/app/config.json
     environment:
       - BINARY_NAME=write_home_timeline_server
       - RABBITMQ_URL=amqp://guest:guest@socialnet-rabbitmq:5672
@@ -216,13 +208,11 @@ services:
           cpus: "4"
 
   user-service:
-    image: socialnet-generic-svc:latest
+    image: user_service:${SOCIALNET_IMAGE_TAG:-latest}
     scale: 1
     restart: on-failure
     networks:
       - socialnet-network
-    volumes:
-      - ./socialnet_config.localhost.json:/app/config.json
     environment:
       - BINARY_NAME=user_service
       - MONGO_URL=mongodb://socialnet-user_mongo:27017/user
@@ -267,13 +257,11 @@ services:
           cpus: "4"
 
   social-graph-service:
-    image: socialnet-generic-svc:latest
+    image: social_graph_server:${SOCIALNET_IMAGE_TAG:-latest}
     scale: 1
     restart: always
     networks:
       - socialnet-network
-    volumes:
-      - ./socialnet_config.localhost.json:/app/config.json
     environment:
       - BINARY_NAME=social_graph_server
       - MONGO_URL=mongodb://socialnet-social_graph_mongo:27017/social-graph
@@ -296,13 +284,11 @@ services:
   # Unique ID Section
   # -------------------------------------------
   unique-id-service:
-    image: socialnet-generic-svc:latest
+    image: unique_id_service:${SOCIALNET_IMAGE_TAG:-latest}
     scale: 1
     restart: always
     networks:
       - socialnet-network
-    volumes:
-      - ./socialnet_config.localhost.json:/app/config.json
     environment:
       - BINARY_NAME=unique_id_service
       - MACHINE_ID=01
@@ -315,13 +301,11 @@ services:
   # Media Section
   # -------------------------------------------
   media-service:
-    image: socialnet-generic-svc:latest
+    image: media_service:${SOCIALNET_IMAGE_TAG:-latest}
     scale: 1
     restart: always
     networks:
       - socialnet-network
-    volumes:
-      - ./socialnet_config.localhost.json:/app/config.json
     environment:
       - BINARY_NAME=media_service
     deploy:
@@ -333,13 +317,11 @@ services:
   # Text Service Section
   # -------------------------------------------
   text-service:
-    image: socialnet-generic-svc:latest
+    image: textservice_server:${SOCIALNET_IMAGE_TAG:-latest}
     scale: 1
     restart: always
     networks:
       - socialnet-network
-    volumes:
-      - ./socialnet_config.localhost.json:/app/config.json
     depends_on:
       - user-mention-service
       - url-shorten-service
@@ -387,13 +369,11 @@ services:
           cpus: "4"
 
   user-mention-service:
-    image: socialnet-generic-svc:latest
+    image: usermention_server:${SOCIALNET_IMAGE_TAG:-latest}
     scale: 1
     restart: always
     networks:
       - socialnet-network
-    volumes:
-      - ./socialnet_config.localhost.json:/app/config.json
     environment:
       - BINARY_NAME=usermention_server
       - MONGO_URL=mongodb://socialnet-user_mention_mongo:27017/user-mention
@@ -428,13 +408,11 @@ services:
           memory: 4G
 
   url-shorten-service:
-    image: socialnet-generic-svc:latest
+    image: url_shorten_server:${SOCIALNET_IMAGE_TAG:-latest}
     scale: 1
     restart: always
     networks:
       - socialnet-network
-    volumes:
-      - ./socialnet_config.localhost.json:/app/config.json
     environment:
       - BINARY_NAME=url_shorten_server
       - MONGO_URL=mongodb://socialnet-url_shorten_mongo:27017/url-shorten
@@ -466,15 +444,13 @@ services:
   # Compose Post / Frontend / Gateway
   # -------------------------------------------
   compose-post-service:
-    image: socialnet-generic-svc:latest
+    image: compose_post_server:${SOCIALNET_IMAGE_TAG:-latest}
     scale: 1
     restart: always
     ports:
       - "16987:8080"
     networks:
       - socialnet-network
-    volumes:
-      - ./socialnet_config.localhost.json:/app/config.json
     environment:
       - BINARY_NAME=compose_post_server
 
@@ -545,4 +521,5 @@ volumes:
 
 networks:
   socialnet-network:
+    name: socialnet-network
     driver: bridge
