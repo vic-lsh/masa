@@ -153,6 +153,18 @@ pub struct StatsTracker {
     trackers: HashMap<String, SyncLatencyTracker>,
 }
 
+pub fn spawn_p50_logger(mut consumer: SyncLatencyConsumer, interval: Duration) {
+    let name: String = consumer.name.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(interval).await;
+            let mut dist = consumer.consume();
+            let p999 = dist.percentile(99.9);
+            println!("{} p999: {}us (n={})", name, p999, dist.len());
+        }
+    });
+}
+
 impl StatsTracker {
     pub fn new(keys: Vec<&str>, print: bool) -> Self {
         let mut trackers = HashMap::new();
