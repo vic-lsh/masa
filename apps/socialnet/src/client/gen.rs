@@ -2,9 +2,8 @@
 
 use rand::{rngs::StdRng, Rng};
 
-// Import ComposePostRequest from the parent module
-// Note: This will be resolved at compile time when gen.rs is included as mod gen in client_bench.rs
-use super::compose_post::ComposePostRequest;
+// Import ComposePostRequest from the socialnet crate.
+use socialnet::compose_post::ComposePostRequest;
 
 pub fn get_compose_post_request(rng: &mut StdRng) -> ComposePostRequest {
     // Generate random user ID (similar to hotel's user range)
