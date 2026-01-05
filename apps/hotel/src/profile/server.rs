@@ -15,7 +15,7 @@ use crate::{
     config::{GlobalConfig, ProfileConfig},
     db,
 };
-use app_utils::stats::latency::{new_latency_tracker, spawn_p50_logger, SyncLatencyTracker};
+use app_utils::stats::latency::{new_latency_tracker, spawn_latency_logger, SyncLatencyTracker};
 use mongodb::{bson::doc, Client as MongoClient};
 use redis::{aio::ConnectionManager as RedisConnectionManager, AsyncCommands};
 #[cfg(feature = "synthetic")]
@@ -63,7 +63,7 @@ impl ProfileImpl {
         let mongo_client = db::initialize_database(&config.mongodb_addr).await?;
 
         let (latency_tracker, latency_consumer) = new_latency_tracker("ProfileSvc");
-        spawn_p50_logger(latency_consumer, Duration::from_secs(30));
+        spawn_latency_logger(latency_consumer, Duration::from_secs(30));
 
         #[cfg(feature = "workload_stats")]
         let fanout_tracker = {

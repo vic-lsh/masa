@@ -4,7 +4,7 @@ pub mod hotel_tonic {
     }
 }
 
-use app_utils::stats::latency::{new_latency_tracker, spawn_p50_logger, SyncLatencyTracker};
+use app_utils::stats::latency::{new_latency_tracker, spawn_latency_logger, SyncLatencyTracker};
 use kiddo::KdTree;
 use kiddo::SquaredEuclidean;
 use std::time::Duration;
@@ -56,7 +56,7 @@ pub struct GeoImpl {
 impl GeoImpl {
     pub fn new(_config: GeoConfig) -> Self {
         let (latency_tracker, latency_consumer) = new_latency_tracker("GeoSvc");
-        spawn_p50_logger(latency_consumer, Duration::from_secs(30));
+        spawn_latency_logger(latency_consumer, Duration::from_secs(30));
 
         let points = db::generate_test_data();
         let mut index = GeoIndex::new();

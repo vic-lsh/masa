@@ -5,7 +5,7 @@ pub mod hotel_tonic {
 }
 #[cfg(feature = "workload_stats")]
 use app_utils::AvgTracker;
-use app_utils::stats::latency::{new_latency_tracker, spawn_p50_logger, SyncLatencyTracker};
+use app_utils::stats::latency::{new_latency_tracker, spawn_latency_logger, SyncLatencyTracker};
 use futures::StreamExt;
 #[cfg(not(feature = "synthetic"))]
 use std::collections::HashSet;
@@ -63,7 +63,7 @@ impl RateImpl {
         let mongo_client = db::initialize_database(&config.mongodb_addr).await?;
 
         let (latency_tracker, latency_consumer) = new_latency_tracker("RateSvc");
-        spawn_p50_logger(latency_consumer, Duration::from_secs(30));
+        spawn_latency_logger(latency_consumer, Duration::from_secs(30));
 
         #[cfg(feature = "workload_stats")]
         let fanout_tracker = {
