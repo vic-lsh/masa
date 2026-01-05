@@ -5,6 +5,7 @@ Application plugins for the experiment runner.
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .hotel import HotelApp, HotelLoadGenerator
 from .mssim import MssimApp
+from .socialnet import SocialnetApp, SocialnetLoadGenerator
 from .synthetic import SyntheticApp, SyntheticLoadGenerator
 
 __all__ = [
@@ -15,6 +16,8 @@ __all__ = [
     "HotelApp",
     "HotelLoadGenerator",
     "MssimApp",
+    "SocialnetApp",
+    "SocialnetLoadGenerator",
     "SyntheticApp",
     "SyntheticLoadGenerator",
 ]
@@ -36,6 +39,7 @@ def get_app_plugin(app_name: str) -> AppPlugin:
     apps = {
         "hotel": HotelApp,
         "mssim": MssimApp,
+        "socialnet": SocialnetApp,
         "synthetic": SyntheticApp,
     }
     
