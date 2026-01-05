@@ -64,24 +64,8 @@ echo "========================================"
 
 # Build the socialnet docker image
 build_exit_code=0
-if [ -n "$no_cache" ]; then
-    echo "Building with --no-cache flag..."
-    if ! cd "$repo_root"; then
-        echo "Failed to change to repo root: $repo_root" >&2
-        exit 1
-    fi
-    if ! docker build \
-        --ulimit nofile=65536:65536 \
-        --no-cache \
-        -t socialnet-generic-svc:latest \
-        -f ./apps/socialnet/Dockerfile \
-        .; then
-        build_exit_code=1
-    fi
-else
-    if ! "$build_script"; then
-        build_exit_code=1
-    fi
+if ! "$build_script" $no_cache; then
+    build_exit_code=1
 fi
 
 if [ $build_exit_code -ne 0 ]; then
