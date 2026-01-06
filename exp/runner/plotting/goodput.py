@@ -218,8 +218,30 @@ def _collapse_request_types_for_policy(
     return out
 
 
-def _get_request_type_colors(request_types: list[str]):
+def _get_request_type_colors_mapping(all_request_types: list[str]) -> dict:
+    """Create a stable color mapping for all request types.
+
+    This ensures that each API gets the same color across all plots.
+    Args:
+        all_request_types: All possible request types (sorted for consistency)
+
+    Returns:
+        dict: Mapping from request type to color
+    """
     # Good defaults for 2..10 types; falls back cleanly for larger.
+    cmap = plt.get_cmap("tab10" if len(all_request_types) <= 10 else "tab20")
+    return {rt: cmap(i % cmap.N) for i, rt in enumerate(all_request_types)}
+
+
+def _get_request_type_colors(request_types: list[str], color_mapping: Optional[dict] = None):
+    """Get colors for a subset of request types.
+
+    If color_mapping is provided, uses it for consistent colors across plots.
+    Otherwise, creates colors on-the-fly (legacy behavior).
+    """
+    if color_mapping is not None:
+        return {rt: color_mapping.get(rt, "grey") for rt in request_types}
+    # Legacy behavior: create colors on-the-fly
     cmap = plt.get_cmap("tab10" if len(request_types) <= 10 else "tab20")
     return {rt: cmap(i % cmap.N) for i, rt in enumerate(request_types)}
 
@@ -233,6 +255,7 @@ def _plot_early_return_breakdown(
     policy_early_returns_by_type: dict,
     title: str,
     subtitle: Optional[str] = None,
+    request_type_color_mapping: Optional[dict] = None,
 ) -> None:
     """
     Generate breakdown plot for early-return requests by API:
@@ -247,7 +270,7 @@ def _plot_early_return_breakdown(
     request_types = list(keep)
     if collapsed:
         request_types.append("Other")
-    rt_colors = _get_request_type_colors(request_types)
+    rt_colors = _get_request_type_colors(request_types, request_type_color_mapping)
 
     # Collapse tail per policy if needed
     policy_early_returns_by_type_collapsed = {}
@@ -356,6 +379,7 @@ def _plot_all_api_goodput_clean(
     policy_goodputs_by_type: dict,
     title: str,
     subtitle: Optional[str] = None,
+    request_type_color_mapping: Optional[dict] = None,
 ) -> None:
     """
     Generate two separate plots for ALL:
@@ -371,7 +395,7 @@ def _plot_all_api_goodput_clean(
     request_types = list(keep)
     if collapsed:
         request_types.append("Other")
-    rt_colors = _get_request_type_colors(request_types)
+    rt_colors = _get_request_type_colors(request_types, request_type_color_mapping)
 
     # Collapse tail per policy if needed
     policy_goodputs_by_type_collapsed = {}
@@ -630,12 +654,14 @@ def _plot_policy_goodput_comparison(
     rps_values: list,
     policy_goodputs: dict,
     policy_goodputs_by_type: Optional[dict] = None,
+    request_type_color_mapping: Optional[dict] = None,
 ) -> None:
     """Generate policy goodput comparison plot for a specific repeat and API.
-    
+
     Args:
         policy_goodputs_by_type: Optional dict mapping policy -> list of dicts (one per RPS)
             where each dict maps request_type -> goodput. Used for stacked bars when api == "ALL".
+        request_type_color_mapping: Optional dict mapping request type to color for consistency.
     """
     if api == "ALL" and policy_goodputs_by_type is not None:
         output_path = os.path.join(output_dir, f"goodput_{api}.png")
@@ -647,6 +673,7 @@ def _plot_policy_goodput_comparison(
             policy_goodputs_by_type=policy_goodputs_by_type,
             title="Goodput vs load (ALL) and breakdown by request type",
             subtitle="Panel A: total goodput; Panel B: stacked bars per policy",
+            request_type_color_mapping=request_type_color_mapping,
         )
         return
 
@@ -706,13 +733,15 @@ def _plot_averaged_goodput(
     policy_goodputs: list,
     repeats: int,
     policy_goodputs_by_type: Optional[list] = None,
+    request_type_color_mapping: Optional[dict] = None,
 ) -> None:
     """Generate averaged goodput comparison plot for a specific API.
-    
+
     Args:
         policy_goodputs_by_type: Optional list (one per repeat) of dicts mapping
             policy -> list of dicts (one per RPS) where each dict maps request_type -> goodput.
             Used for stacked bars when api == "ALL".
+        request_type_color_mapping: Optional dict mapping request type to color for consistency.
     """
     sorted_policies = sort_policies_by_type(policies)
     index = np.arange(len(rps_values))
@@ -757,6 +786,7 @@ def _plot_averaged_goodput(
             policy_goodputs_by_type=avg_breakdown,
             title=f"Average goodput vs load (ALL) and breakdown by request type",
             subtitle=f"Averaged over {repeats} run(s). Panel A: total; Panel B: per-policy stacked bars.",
+            request_type_color_mapping=request_type_color_mapping,
         )
         return
 
@@ -807,6 +837,10 @@ def generate_plots(args) -> None:
     # For "ALL" API, compute early-return breakdown by request type
     policy_early_returns_by_type = []
     policy_total_early_returns = []
+
+    # Collect all unique request types for consistent coloring across all plots
+    all_request_types = set()
+
     for i in range(repeats):
         policy_goodputs.append({})
         policy_goodputs_by_type.append({})
@@ -824,11 +858,21 @@ def generate_plots(args) -> None:
                     policy: [compute_goodput_by_request_type(data[policy][rps]) for rps in rps_values]
                     for policy in policies
                 }
+                # Collect all request types for consistent coloring
+                for policy in policies:
+                    for rps_dict in policy_goodputs_by_type[i][api][policy]:
+                        all_request_types.update(rps_dict.keys())
+
                 # Compute early-return breakdown by request type
                 policy_early_returns_by_type[i][api] = {
                     policy: [compute_early_return_by_request_type(data[policy][rps]) for rps in rps_values]
                     for policy in policies
                 }
+                # Collect request types from early returns as well
+                for policy in policies:
+                    for rps_dict in policy_early_returns_by_type[i][api][policy]:
+                        all_request_types.update(rps_dict.keys())
+
                 # Compute total early-return rate per policy
                 policy_total_early_returns[i][api] = {
                     policy: [
@@ -838,10 +882,16 @@ def generate_plots(args) -> None:
                     for policy in policies
                 }
 
+    # Create stable color mapping for all request types
+    request_type_color_mapping = {}
+    if all_request_types:
+        sorted_request_types = sorted(all_request_types)
+        request_type_color_mapping = _get_request_type_colors_mapping(sorted_request_types)
+
     # Generate plots in parallel
     with ThreadPoolExecutor() as executor:
         futures = []
-        
+
         # Submit policy goodput comparison plots for each (repeat, api)
         # Only generate plots for "ALL" API, skip individual APIs
         for i in range(repeats):
@@ -860,6 +910,7 @@ def generate_plots(args) -> None:
                             rps_values,
                             policy_goodputs[i][api],
                             goodputs_by_type,
+                            request_type_color_mapping,
                         )
                     )
         
@@ -883,6 +934,7 @@ def generate_plots(args) -> None:
                         policy_goodputs,
                         repeats,
                         goodputs_by_type,
+                        request_type_color_mapping,
                     )
                 )
         
@@ -904,6 +956,7 @@ def generate_plots(args) -> None:
                                 policy_total_early_returns=total_early_returns,
                                 policy_early_returns_by_type=early_returns_by_type,
                                 title="Early-return requests breakdown by API",
+                                request_type_color_mapping=request_type_color_mapping,
                             )
                         )
         
@@ -964,6 +1017,7 @@ def generate_plots(args) -> None:
                         policy_total_early_returns=avg_total_early_returns,
                         policy_early_returns_by_type=avg_breakdown,
                         title=f"Average early-return requests breakdown by API (averaged over {repeats} run(s))",
+                        request_type_color_mapping=request_type_color_mapping,
                     )
                 )
         
