@@ -224,7 +224,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         .unwrap_or(0);
 
         let deadline = self.ctx.deadline() - estimate_remaining;
-        if time_now() > deadline {
+        if EARLY_RETURN && time_now() > deadline {
             return Err(self.issue_early_return());
         }
 
