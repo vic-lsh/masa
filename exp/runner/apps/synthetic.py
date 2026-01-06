@@ -225,24 +225,6 @@ class SyntheticBuilder(AppBuilder):
         # Start timing the docker build
         build_start_time = time.time()
         
-        # Convert to path relative to repo_root if provided
-        # If not provided, create a temporary empty config file
-        temp_config_file = None
-        config_path_rel = None
-        if app_config_path is not None:
-            config_path_rel = app_config_path.relative_to(repo_root)
-        else:
-            if not dry_run:
-                # Create a temporary empty config file for Docker build
-                temp_config = tempfile.NamedTemporaryFile(
-                    mode='w', suffix='.json', delete=False, dir=repo_root
-                )
-                temp_config.write('{}')
-                temp_config.close()
-                temp_config_file = Path(temp_config.name)
-                config_path_rel = temp_config_file.relative_to(repo_root)
-            # For dry-run, config_path_rel remains None (will be omitted from build args)
-        
         if gen_config_path is None:
             raise ValueError("gen_config_path is required for synthetic app")
         gen_config_path_rel = gen_config_path.relative_to(repo_root)
@@ -299,8 +281,6 @@ class SyntheticBuilder(AppBuilder):
                 runtime_base_build_args.extend(["--build-arg", f"FEATURES={features}"])
             runtime_base_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
             runtime_base_build_args.extend(["--build-arg", f"APP={app}"])
-            if config_path_rel is not None:
-                runtime_base_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
             runtime_base_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
             # Use consistent cache ID based on features across all stages
             runtime_base_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
@@ -348,8 +328,6 @@ class SyntheticBuilder(AppBuilder):
                     runtime_build_args.extend(["--build-arg", f"FEATURES={features}"])
                 runtime_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
                 runtime_build_args.extend(["--build-arg", f"APP={app}"])
-                if config_path_rel is not None:
-                    runtime_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
                 runtime_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
                 runtime_build_args.extend(["--build-arg", f"BINARY_NAME={binary_name}"])
                 # Use consistent cache ID based on features across all stages
@@ -397,10 +375,7 @@ class SyntheticBuilder(AppBuilder):
                 logger.info(f"Successfully built docker image: {image_name}")
         
         finally:
-            # Clean up temporary config file if we created one
-            if not dry_run and temp_config_file is not None and temp_config_file.exists():
-                temp_config_file.unlink()
-                logger.debug(f"Cleaned up temporary config file: {temp_config_file}")
+             pass
         
         if dry_run:
             return commands
