@@ -2,8 +2,10 @@
 Hotel application plugin.
 """
 
+import hashlib
 import json
 import logging
+import os
 import re
 import shlex
 import subprocess
@@ -17,31 +19,160 @@ from .utils import normalize_features_to_tag, get_docker_progress_flag
 logger = logging.getLogger(__name__)
 
 
+def _safe_project_name(*, experiment_name: str, iteration: int, policy: str) -> str:
+    """Generate safe docker-compose project name for hotel experiments.
+
+    Format: hotel-{slug}-{digest}
+    - slug: sanitized experiment name (max 12 chars to keep total name under 63 char docker limit)
+    - digest: 12-char hash for uniqueness
+    """
+    raw = f"{experiment_name}|{iteration}|{policy}"
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+    slug = re.sub(r"[^a-z0-9]+", "-", experiment_name.lower()).strip("-")[:12] or "exp"
+    return f"hotel-{slug}-{digest}"
+
+
+def _generate_gen_config(
+    *,
+    template_config: dict,
+    project_name: str,
+    output_path: Path,
+) -> None:
+    """
+    Generate project-specific gen_config.json with namespaced frontend address.
+
+    Updates the "Addr" field to point to the project-prefixed frontend service.
+    """
+    import copy
+
+    config = copy.deepcopy(template_config)
+
+    # Parse the original address
+    if "Addr" in config:
+        addr = config["Addr"]
+        # Extract protocol and port from original address
+        if "://" in addr:
+            protocol, rest = addr.split("://", 1)
+            if ":" in rest:
+                _, port = rest.rsplit(":", 1)
+            else:
+                port = "8660"  # default
+        else:
+            protocol = "http"
+            port = "8660"
+
+        # Update to project-prefixed frontend service name
+        config["Addr"] = f"{protocol}://{project_name}-hotel-frontend-service-1:{port}"
+
+    # Write to file
+    with output_path.open("w") as f:
+        json.dump(config, f, indent=2)
+
+
+def _generate_hotel_config(
+    *,
+    template_config: dict,
+    project_name: str,
+    output_path: Path,
+) -> None:
+    """
+    Generate project-specific hotel.json with namespaced service names.
+
+    Transforms service IPs from static names to project-prefixed container names:
+    - "local-rate-service" -> "{project_name}-rate-service"
+    - "rate_mongo" -> "{project_name}-rate-mongo-1"
+    """
+    import copy
+
+    config = copy.deepcopy(template_config)
+
+    # Service name mappings: config key -> (compose service name, is_scaled)
+    # Scaled services use service name for DNS load balancing
+    # Non-scaled services get explicit -1 suffix
+    service_mappings = {
+        "geo": ("geo-service", True),
+        "profile": ("profile-service", True),
+        "rate": ("rate-service", True),
+        "recommendation": ("recommendation-service", True),
+        "reservation": ("reservation-service", True),
+        "review": ("review-service", True),
+        "search": ("search-service", True),
+        "user": ("user-service", True),
+        # Frontend is not scaled, but we reference it by service name
+        "frontend": ("hotel-frontend-service", False),
+    }
+
+    # Update service IPs
+    for key, (service_name, is_scaled) in service_mappings.items():
+        if key in config:
+            if is_scaled:
+                # Scaled services: use service name (docker-compose load balances)
+                config[key]["ip"] = f"{project_name}-{service_name}"
+            else:
+                # Non-scaled services: use container name with -1 suffix
+                config[key]["ip"] = f"{project_name}-{service_name}-1"
+
+    # Update infrastructure addresses (mongo, redis)
+    # These are always single containers with -1 suffix
+    infra_mappings = {
+        "profile": {"mongodbAddr": "profile-mongo", "redisAddr": "profile-redis"},
+        "rate": {"mongodbAddr": "rate-mongo", "redisAddr": "rate-redis"},
+        "reservation": {"mongodbAddr": "reservation-mongo", "redisAddr": "reservation-redis"},
+        "user": {"mongodbAddr": "user-mongo"},
+    }
+
+    for service, addrs in infra_mappings.items():
+        if service in config:
+            for addr_key, infra_service in addrs.items():
+                if addr_key in config[service]:
+                    # Parse and update the address
+                    old_addr = config[service][addr_key]
+                    if "://" in old_addr:
+                        protocol, rest = old_addr.split("://", 1)
+                        hostname, *port_parts = rest.split(":", 1)
+                        new_hostname = f"{project_name}-{infra_service}-1"
+                        if port_parts:
+                            new_addr = f"{protocol}://{new_hostname}:{port_parts[0]}"
+                        else:
+                            new_addr = f"{protocol}://{new_hostname}"
+                        config[service][addr_key] = new_addr
+
+    # Write to file
+    with output_path.open("w") as f:
+        json.dump(config, f, indent=2)
+
+
 class HotelLoadGenerator(LoadGenerator):
     """Load generator for the hotel reservation application."""
-    
-    def __init__(self, features: Optional[str] = None):
+
+    def __init__(self, features: Optional[str] = None, project_name: Optional[str] = None):
         """
         Initialize load generator with optional features for image tagging.
-        
+
         Args:
             features: Cargo features used to build the image
+            project_name: Docker compose project name for namespace isolation
         """
         self.features = features
-    
+        self.project_name = project_name
+
     def get_container_name(self) -> str:
+        if self.project_name:
+            return f"{self.project_name}_hotel_client_bench"
         return "hotel_client_bench"
-    
+
     def get_network_name(self) -> str:
+        if self.project_name:
+            return f"{self.project_name}_hotel_network"
         return "local_hotel_network"
-    
+
     def get_image_name(self) -> str:
         tag = normalize_features_to_tag(self.features)
         if tag and tag != "latest":
             return f"hotel_client_bench:{tag}"
         else:
             return "hotel_client_bench:latest"
-    
+
     def get_binary_name(self) -> str:
         return "hotel_client_bench"
 
@@ -383,14 +514,15 @@ class HotelApp(AppPlugin):
         
         return container_names
     
-    def create_load_generator(self, features: Optional[str] = None) -> LoadGenerator:
+    def create_load_generator(self, features: Optional[str] = None, project_name: Optional[str] = None) -> LoadGenerator:
         """
         Create a load generator instance for hotel application.
-        
+
         Args:
             features: Optional cargo features used to build the image
+            project_name: Optional docker compose project name for namespace isolation
         """
-        return HotelLoadGenerator(features=features)
+        return HotelLoadGenerator(features=features, project_name=project_name)
 
     def create_builder(self) -> AppBuilder:
         """Create a builder instance for hotel application."""
@@ -399,11 +531,166 @@ class HotelApp(AppPlugin):
     def get_image_tag(self, features: Optional[str] = None) -> str:
         """
         Get the docker image tag for the given features.
-        
+
         Args:
             features: Optional cargo features
-            
+
         Returns:
             Docker image tag string
         """
         return normalize_features_to_tag(features)
+
+    def run_workload(
+        self,
+        *,
+        repo_root: Path,
+        config: "ExperimentConfig",
+        docker: "DockerManager",
+        policy: str,
+        iteration: int,
+        output_dir: Path,
+        app_local_dir: Path,
+        no_cache: bool,
+        dry_run: bool = False,
+    ) -> None:
+        """Run hotel experiment with namespace isolation."""
+        import sys
+
+        # Generate project name for namespace isolation
+        project_name = _safe_project_name(
+            experiment_name=config.experiment_name,
+            iteration=iteration,
+            policy=policy,
+        )
+
+        # Setup paths - write directly to output_dir (no run_* subdirectory)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate project-specific hotel.json
+        project_config_path = output_dir / "hotel.json"
+        _generate_hotel_config(
+            template_config=config.app_config,
+            project_name=project_name,
+            output_path=project_config_path,
+        )
+
+        # Generate project-specific gen_config.json
+        project_gen_config_path = output_dir / "gen_config.json"
+        _generate_gen_config(
+            template_config=config.gen_config,
+            project_name=project_name,
+            output_path=project_gen_config_path,
+        )
+
+        # Generate environment variables
+        env_vars = self.generate_env_vars(config.gen_config, config.app_config, config.app_dir)
+
+        # Add image tag based on policy/features
+        tag = self.get_image_tag(features=policy)
+        env_vars["HOTEL_IMAGE_TAG"] = tag if tag else "latest"
+
+        # Build docker images (use ORIGINAL config for build, not project-specific)
+        builder = self.create_builder()
+        build_cmds = builder.build(
+            repo_root=repo_root,
+            app_dir=config.app_dir,
+            features=policy,
+            rust_log=env_vars.get("LOG_LEVEL", "info"),
+            no_cache=no_cache,
+            app_config_path=(config.in_dir / "hotel.json"),  # Original config for build
+            gen_config_path=(config.in_dir / "gen_config.json"),
+            dry_run=dry_run,
+        )
+        if dry_run and build_cmds:
+            print("\n".join(" ".join(cmd) for cmd in build_cmds))
+
+        docker_compose_path = config.app_dir / "scripts" / "local" / "containers+svcs.yaml"
+
+        # Setup environment for docker compose
+        env = os.environ.copy()
+        env.update({k: str(v) for k, v in env_vars.items()})
+
+        # Path to mount project-specific config
+        env["PROJECT_CONFIG_PATH"] = str(project_config_path.resolve())
+
+        # Docker compose commands with project name
+        up_cmd = [
+            "docker", "compose",
+            "-f", str(docker_compose_path),
+            "-p", project_name,
+            "up", "-d",
+        ]
+        down_cmd = [
+            "docker", "compose",
+            "-f", str(docker_compose_path),
+            "-p", project_name,
+            "down", "--volumes",
+        ]
+
+        if dry_run:
+            print(f"[dry-run] would run hotel policy={policy} iteration={iteration}")
+            print(f"[dry-run] project name: {project_name}")
+            print(f"[dry-run] generated config: {project_config_path}")
+            print(f"[dry-run] would write outputs under: {output_dir}")
+            print("[dry-run] compose up:", " ".join(up_cmd))
+            print("[dry-run] compose down:", " ".join(down_cmd))
+            return
+
+        # Save metadata
+        metadata = {
+            "app": "hotel",
+            "experiment": config.experiment_name,
+            "iteration": iteration,
+            "policy": policy,
+            "docker_project": project_name,
+        }
+        with (output_dir / "metadata.json").open("w", encoding="utf-8") as fh:
+            json.dump(metadata, fh, indent=2, sort_keys=True)
+
+        log_threads = []
+        try:
+            # Start services
+            print(f"Starting hotel services for policy={policy} iteration={iteration} project={project_name}")
+            subprocess.run(
+                up_cmd,
+                cwd=config.app_dir,
+                env=env,
+                check=True,
+            )
+
+            # Wait for services to be ready
+            time.sleep(3)
+
+            # Get container names for log streaming
+            container_names = docker.get_container_names(
+                compose_path=docker_compose_path,
+                project_name=project_name,
+                env_vars=env,
+            )
+
+            # Stream logs
+            if container_names:
+                logs_dir = output_dir / "logs"
+                print(f"Streaming logs for {len(container_names)} containers to {logs_dir}")
+                log_threads = docker.stream_logs(
+                    container_names=container_names,
+                    output_dir=logs_dir,
+                    follow=True,
+                )
+            else:
+                print("Warning: No containers found for log streaming")
+
+            # Run load generator with project-specific gen_config
+            load_gen = self.create_load_generator(features=policy, project_name=project_name)
+            load_gen.run(
+                output_dir=output_dir,
+                gen_config_path=project_gen_config_path,
+            )
+
+        finally:
+            # Cleanup
+            subprocess.run(down_cmd, cwd=config.app_dir, env=env, check=False)
+
+            # Wait for log threads to finish
+            for thread in log_threads:
+                thread.join(timeout=5)
