@@ -11,86 +11,15 @@ use std::error::Error;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::config::ReservationConfig;
 use crate::db;
-use app_util_macros::track_latency;
-use app_utils::stats::latency::StatsTracker;
 use app_utils::stats::latency::{new_latency_tracker, spawn_latency_logger, SyncLatencyTracker};
 use mongodb::{bson::doc, Client as MongoClient, Collection};
 use redis::{aio::ConnectionManager as RedisConnectionManager, AsyncCommands};
 use tonic::{Request, Response, Status};
 
-const TIMING_LOG_EVERY_SECS: u64 = 3;
-
-struct CheckAvailTiming {
-    last_log: Instant,
-    count: u64,
-    cap_redis_us: u64,
-    cap_mongo_us: u64,
-    build_query_us: u64,
-    reserve_redis_us: u64,
-    mongo_reserve_us: u64,
-    collect_us: u64,
-    total_us: u64,
-}
-
-impl CheckAvailTiming {
-    fn new() -> Self {
-        Self {
-            last_log: Instant::now(),
-            count: 0,
-            cap_redis_us: 0,
-            cap_mongo_us: 0,
-            build_query_us: 0,
-            reserve_redis_us: 0,
-            mongo_reserve_us: 0,
-            collect_us: 0,
-            total_us: 0,
-        }
-    }
-}
-
-static CHECK_AVAIL_TIMING: OnceLock<Mutex<CheckAvailTiming>> = OnceLock::new();
-
-fn record_check_avail_timing(
-    cap_redis: Duration,
-    cap_mongo: Duration,
-    build_query: Duration,
-    reserve_redis: Duration,
-    mongo_reserve: Duration,
-    collect: Duration,
-    total: Duration,
-) {
-    let timing = CHECK_AVAIL_TIMING.get_or_init(|| Mutex::new(CheckAvailTiming::new()));
-    let mut timing = timing.lock().unwrap();
-    timing.count += 1;
-    timing.cap_redis_us += cap_redis.as_micros() as u64;
-    timing.cap_mongo_us += cap_mongo.as_micros() as u64;
-    timing.build_query_us += build_query.as_micros() as u64;
-    timing.reserve_redis_us += reserve_redis.as_micros() as u64;
-    timing.mongo_reserve_us += mongo_reserve.as_micros() as u64;
-    timing.collect_us += collect.as_micros() as u64;
-    timing.total_us += total.as_micros() as u64;
-
-    if timing.last_log.elapsed() >= Duration::from_secs(TIMING_LOG_EVERY_SECS) && timing.count > 0 {
-        let count = timing.count;
-        log::info!(
-            "check_availability avg timing ({} req): cap_redis={}us cap_mongo={}us build_query={}us reserve_redis={}us mongo_reserve={}us collect={}us total={}us",
-            count,
-            timing.cap_redis_us / count,
-            timing.cap_mongo_us / count,
-            timing.build_query_us / count,
-            timing.reserve_redis_us / count,
-            timing.mongo_reserve_us / count,
-            timing.collect_us / count,
-            timing.total_us / count,
-        );
-        *timing = CheckAvailTiming::new();
-    }
-}
 
 pub struct ReservationImpl {
     redis_conn: RedisConnectionManager,
@@ -103,7 +32,6 @@ pub struct ReservationImpl {
     mk_reserve_mongo: Arc<AvgTracker>,
     redis_err_count: Arc<AtomicUsize>,
 
-    check_avail_stats: Arc<StatsTracker>,
     latency_tracker: SyncLatencyTracker,
 }
 
@@ -138,18 +66,6 @@ impl ReservationImpl {
             mk_reserve_mongo,
             redis_err_count,
 
-            check_avail_stats: Arc::new(StatsTracker::new(
-                vec![
-                    "e2e",
-                    "redis_get_capacity",
-                    "mongo_get_capacity",
-                    "redis_set_capacity",
-                    "redis_get_reservations",
-                    "mongo_get_reservations",
-                    "redis_set_reservations",
-                ],
-                true,
-            )),
             latency_tracker,
         })
     }
@@ -163,7 +79,6 @@ impl Reservation for ReservationImpl {
     ) -> Result<Response<reservation::ReservationResponse>, Status> {
         use futures::StreamExt;
 
-        let timing_start = Instant::now();
 
         // even with this the app still hangs under high load...
         // scheduler bug?
@@ -191,17 +106,13 @@ impl Reservation for ReservationImpl {
 
         let mut redis_conn = self.redis_conn.clone();
 
-        let cap_redis_start = Instant::now();
-        let redis_resp = track_latency!(self.check_avail_stats.get("redis_get_capacity"), {
-            tokio::time::timeout(
-                REDIS_TIMEOUT,
-                redis::cmd("MGET")
-                    .arg(&hotel_mem_keys)
-                    .query_async::<_, Vec<Option<Vec<u8>>>>(&mut redis_conn),
-            )
-            .await
-        });
-        let cap_redis_elapsed = cap_redis_start.elapsed();
+        let redis_resp = tokio::time::timeout(
+            REDIS_TIMEOUT,
+            redis::cmd("MGET")
+                .arg(&hotel_mem_keys)
+                .query_async::<_, Vec<Option<Vec<u8>>>>(&mut redis_conn),
+        )
+        .await;
         if let Ok(Ok(redis_resp)) = redis_resp {
             for (key, value) in hotel_mem_keys.iter().zip(redis_resp) {
                 if let Some(raw) = value {
@@ -219,9 +130,7 @@ impl Reservation for ReservationImpl {
         // let mut missing_keys: HashSet<_> = missing_keys.drain().take(max_missing_keys).collect();
         self.check_avail_mongo_hotel_cap.track(missing_keys.len());
         // Handle cache misses with MongoDB
-        let mut cap_mongo_elapsed = Duration::from_micros(0);
         if !missing_keys.is_empty() {
-            let cap_mongo_start = Instant::now();
             let num_collection = self
                 .mongo_client
                 .database("reservation-db")
@@ -237,9 +146,7 @@ impl Reservation for ReservationImpl {
                 .await
                 .map_err(|e| tonic::Status::internal(format!("mongo error: {}", e)))?;
 
-            let results = track_latency!(self.check_avail_stats.get("mongo_get_capacity"), {
-                cursor.collect::<Vec<_>>().await
-            });
+            let results = cursor.collect::<Vec<_>>().await;
 
             for r in results {
                 if let Ok(num) = r {
@@ -247,24 +154,19 @@ impl Reservation for ReservationImpl {
 
                     let key = format!("{}_cap", num.hotel_id);
                     let value = num.number.to_string();
-                    let redis_timeout_resp =
-                        track_latency!(self.check_avail_stats.get("redis_set_capacity"), {
-                            tokio::time::timeout(
-                                REDIS_TIMEOUT,
-                                redis_conn.set::<_, _, ()>(&key, value.clone()),
-                            )
-                            .await
-                        });
+                    let redis_timeout_resp = tokio::time::timeout(
+                        REDIS_TIMEOUT,
+                        redis_conn.set::<_, _, ()>(&key, value.clone()),
+                    )
+                    .await;
                     if redis_timeout_resp.is_err() {
                         self.redis_err_count.fetch_add(1, Ordering::Relaxed);
                     }
                 }
             }
-            cap_mongo_elapsed = cap_mongo_start.elapsed();
         }
 
         // Process date ranges and create queries
-        let build_query_start = Instant::now();
         let mut query_map = HashMap::new();
         let mut req_commands = Vec::new();
 
@@ -286,20 +188,15 @@ impl Reservation for ReservationImpl {
                 query_map.insert(redis_key, (hotel_id.clone(), in_date_str, out_date_str));
             }
         }
-        let build_query_elapsed = build_query_start.elapsed();
 
         self.check_avail_redis_reserve.track(req_commands.len());
-        let reserve_redis_start = Instant::now();
-        let redis_resp = track_latency!(self.check_avail_stats.get("redis_get_reservations"), {
-            tokio::time::timeout(
-                REDIS_TIMEOUT,
-                redis::cmd("MGET")
-                    .arg(&req_commands)
-                    .query_async::<_, Vec<Option<Vec<u8>>>>(&mut redis_conn),
-            )
-            .await
-        });
-        let reserve_redis_elapsed = reserve_redis_start.elapsed();
+        let redis_resp = tokio::time::timeout(
+            REDIS_TIMEOUT,
+            redis::cmd("MGET")
+                .arg(&req_commands)
+                .query_async::<_, Vec<Option<Vec<u8>>>>(&mut redis_conn),
+        )
+        .await;
 
         if let Ok(Ok(redis_resp)) = redis_resp {
             for (key, value) in req_commands.iter().zip(redis_resp) {
@@ -322,7 +219,6 @@ impl Reservation for ReservationImpl {
         }
 
         // Check reservations in parallel
-        let mongo_reserve_start = Instant::now();
         let mut tasks = Vec::new();
 
         // let query_lim = 1;
@@ -340,7 +236,6 @@ impl Reservation for ReservationImpl {
             let cache_cap = cache_cap.clone();
             let room_number = req.room_number;
             let redis_err = self.redis_err_count.clone();
-            let check_avail_stats = self.check_avail_stats.clone();
             tasks.push(tokio::spawn(async move {
                 let collection = mongo_client
                     .database("reservation-db")
@@ -354,10 +249,7 @@ impl Reservation for ReservationImpl {
 
                 let mut redis_conn = redis_conn.clone();
                 if let Ok(cursor) = collection.find(filter, None).await {
-                    let results =
-                        track_latency!(check_avail_stats.get("mongo_get_reservations"), {
-                            cursor.collect::<Vec<_>>().await
-                        });
+                    let results = cursor.collect::<Vec<_>>().await;
 
                     let mut count = 0;
                     for r in results {
@@ -367,14 +259,11 @@ impl Reservation for ReservationImpl {
                     }
 
                     // Update redis
-                    let redis_timeout_res =
-                        track_latency!(check_avail_stats.get("redis_set_reservations"), {
-                            tokio::time::timeout(
-                                REDIS_TIMEOUT,
-                                redis_conn.set::<_, _, ()>(&command, count.to_string()),
-                            )
-                            .await
-                        });
+                    let redis_timeout_res = tokio::time::timeout(
+                        REDIS_TIMEOUT,
+                        redis_conn.set::<_, _, ()>(&command, count.to_string()),
+                    )
+                    .await;
                     if redis_timeout_res.is_err() {
                         redis_err.fetch_add(1, Ordering::Relaxed);
                     }
@@ -394,10 +283,8 @@ impl Reservation for ReservationImpl {
             let (hotel_id, is_available) = task.await.unwrap();
             res_map.insert(hotel_id, is_available);
         }
-        let mongo_reserve_elapsed = mongo_reserve_start.elapsed();
 
         // Collect results
-        let collect_start = Instant::now();
         let mut resp = reservation::ReservationResponse {
             hotel_ids: Vec::new(),
         };
@@ -406,23 +293,9 @@ impl Reservation for ReservationImpl {
                 resp.hotel_ids.push(hotel_id);
             }
         }
-        let collect_elapsed = collect_start.elapsed();
-
-        record_check_avail_timing(
-            cap_redis_elapsed,
-            cap_mongo_elapsed,
-            build_query_elapsed,
-            reserve_redis_elapsed,
-            mongo_reserve_elapsed,
-            collect_elapsed,
-            timing_start.elapsed(),
-        );
 
         {
             let elapsed = start.elapsed().as_micros();
-            self.check_avail_stats
-                .get("e2e")
-                .track(elapsed.try_into().unwrap());
             self.latency_tracker.track(elapsed.try_into().unwrap());
         }
 
