@@ -29,11 +29,14 @@ fn estimate_method_latency<E: LatencyEstimator + Default + 'static>(
     None
 }
 
-// TODO: could reduce lock contention by giving each key it's own lock
-fn track_method_latency<E: LatencyEstimator>(
+fn track_method_latency<E: LatencyEstimator + Default>(
     map: &RwLock<HashMap<String, E>>,
     key: String,
     duration: u64,
 ) {
-    map.write().unwrap().get_mut(&key).unwrap().track(duration);
+    map.write()
+        .expect("Getting write lock on map should succeed")
+        .entry(key)
+        .or_insert_with(E::default)
+        .track(duration);
 }
