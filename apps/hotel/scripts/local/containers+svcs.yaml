@@ -1,7 +1,6 @@
 services:
   rate-mongo:
     image: mongo:7.0
-    container_name: "rate_mongo"
     command: --port 27003
     restart: always
     networks:
@@ -15,7 +14,6 @@ services:
 
   rate-redis:
     image: redis:7.2
-    container_name: "rate_redis"
     command: ["redis-server", "--port", "11003", "--io-threads", "4"]
     restart: always
     networks:
@@ -36,6 +34,8 @@ services:
       - rate-redis
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -43,7 +43,6 @@ services:
 
   profile-mongo:
     image: mongo:7.0
-    container_name: "profile_mongo"
     command: --port 27004
     restart: always
     networks:
@@ -57,7 +56,6 @@ services:
 
   profile-redis:
     image: redis:7.2
-    container_name: "profile_redis"
     command: ["redis-server", "--port", "11004", "--io-threads", "4"]
     restart: always
     networks:
@@ -78,6 +76,8 @@ services:
       - profile-redis
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -85,7 +85,6 @@ services:
 
   reservation-mongo:
     image: mongo:7.0
-    container_name: "reservation_mongo"
     command: --port 27005
     restart: always
     networks:
@@ -99,7 +98,6 @@ services:
 
   reservation-redis:
     image: redis:7.2
-    container_name: "reservation_redis"
     command: ["redis-server", "--port", "11005", "--io-threads", "4"]
     restart: always
     networks:
@@ -120,6 +118,8 @@ services:
       - reservation-redis
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -127,7 +127,6 @@ services:
 
   user-mongo:
     image: mongo:7.0
-    container_name: "user_mongo"
     command: --port 27006
     restart: always
     networks:
@@ -149,6 +148,8 @@ services:
       - user-mongo
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -162,6 +163,8 @@ services:
       - hotel_network
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -178,6 +181,8 @@ services:
       - rate-service
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -200,6 +205,8 @@ services:
       - search-service
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
