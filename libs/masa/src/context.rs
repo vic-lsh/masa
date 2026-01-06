@@ -23,6 +23,7 @@ pub struct Context {
     slo: Latency,
     start_at: Timestamp,
     deadline: Timestamp,
+    prio_hint: Timestamp,
     frontend_elapse: Option<u64>,
 }
 
@@ -34,6 +35,7 @@ impl Context {
         slo: Latency,
         start_at: Timestamp,
         deadline: Timestamp,
+        prio_hint: Timestamp,
     ) -> Self {
         Self {
             api,
@@ -41,6 +43,7 @@ impl Context {
             slo,
             start_at,
             deadline,
+            prio_hint,
             frontend_elapse: None,
         }
     }
@@ -68,6 +71,10 @@ impl Context {
     /// Get the deadline.
     pub fn deadline(&self) -> Timestamp {
         self.deadline
+    }
+
+    pub fn prio_hint(&self) -> Timestamp {
+        self.prio_hint
     }
 
     /// Get the frontend elapse time.
