@@ -129,6 +129,11 @@ fn resolve_method_name_from_request<T>(method: GrpcMethod, request: &Request<T>)
     method.id().to_string()
 }
 
+/// Concatenate parent and child method names.
+fn parent_to_child_identifier(parent: &str, child: &str) -> String {
+    format!("{}=>{}", parent, child)
+}
+
 impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
     #[inline]
     fn check_early_return(&self) -> bool {
@@ -230,13 +235,13 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         // Setup child context to track client runtime
         child_ctx.setup(
-            format!("{} -> {}", self.resolved_method, resolved_child_method),
+            parent_to_child_identifier(&self.resolved_method, &resolved_child_method),
             self.server.clone(),
         );
 
         let estimate_remaining = estimate_method_latency(
             &*self.server.child_distributions,
-            format!("{} -> {}", self.resolved_method, resolved_child_method),
+            parent_to_child_identifier(&self.resolved_method, &resolved_child_method),
         )
         .unwrap_or(0);
 
@@ -316,7 +321,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
         for (child_method, child_end) in self.child_end_times.lock().unwrap().iter() {
             track_method_latency(
                 &*self.server.child_distributions,
-                format!("{} -> {}", self.resolved_method, child_method),
+                parent_to_child_identifier(&self.resolved_method, child_method),
                 parent_end.duration_since(*child_end).as_micros() as u64,
             );
         }
