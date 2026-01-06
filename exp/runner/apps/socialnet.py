@@ -152,7 +152,6 @@ class SocialnetBuilder(AppBuilder):
             runtime_base_build_args.extend(["--build-arg", f"FEATURES={features}"])
         runtime_base_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
         runtime_base_build_args.extend(["--build-arg", f"APP={app}"])
-        runtime_base_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
         runtime_base_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
         runtime_base_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
 
@@ -193,7 +192,6 @@ class SocialnetBuilder(AppBuilder):
                 runtime_build_args.extend(["--build-arg", f"FEATURES={features}"])
             runtime_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
             runtime_build_args.extend(["--build-arg", f"APP={app}"])
-            runtime_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
             runtime_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
             runtime_build_args.extend(["--build-arg", f"BINARY_NAME={binary}"])
             runtime_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
