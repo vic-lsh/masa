@@ -40,6 +40,8 @@ services:
     depends_on:
       - post-storage-mongo
       - post-storage-memcached
+    volumes:
+      - ${APP_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -91,6 +93,8 @@ services:
       - user-timeline-mongo
       - user-timeline-redis
       - post-storage-service
+    volumes:
+      - ${APP_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -136,6 +140,8 @@ services:
       - home-timeline-redis
       - post-storage-service
       - social-graph-service
+    volumes:
+      - ${APP_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -173,6 +179,8 @@ services:
       - rabbitmq
       - write-home-timeline-redis
       - social-graph-service
+    volumes:
+      - ${APP_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -222,6 +230,8 @@ services:
     depends_on:
       - user-mongo
       - user-redis
+    volumes:
+      - ${APP_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -275,6 +285,8 @@ services:
       - social-graph-mongo
       - social-graph-redis
       - user-service
+    volumes:
+      - ${APP_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -292,6 +304,8 @@ services:
     environment:
       - BINARY_NAME=unique_id_service
       - MACHINE_ID=01
+    volumes:
+      - ${APP_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -308,6 +322,8 @@ services:
       - socialnet-network
     environment:
       - BINARY_NAME=media_service
+    volumes:
+      - ${APP_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -336,6 +352,8 @@ services:
       - URL_SHORTEN_SERVICE_IP=socialnet-url-shorten-service
       - URL_SHORTEN_SERVICE_PORT=8080
       - URL_SHORTEN_SERVICE_REPLICAS=1
+    volumes:
+      - ${APP_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -381,6 +399,8 @@ services:
     depends_on:
       - user-mention-mongo
       - user-mention-memcached
+    volumes:
+      - ${APP_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -419,6 +439,8 @@ services:
       - RUST_LOG=tonic=debug,info
     depends_on:
       - url-shorten-mongo
+    volumes:
+      - ${APP_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
@@ -499,6 +521,8 @@ services:
       - text-service
       - user-mention-service
       - url-shorten-service
+    volumes:
+      - ${APP_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
