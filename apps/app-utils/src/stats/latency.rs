@@ -159,8 +159,8 @@ pub fn spawn_latency_logger(mut consumer: SyncLatencyConsumer, interval: Duratio
         loop {
             tokio::time::sleep(interval).await;
             let mut dist = consumer.consume();
-            let p999 = dist.percentile(99.9);
-            println!("{} p999: {}us (n={})", name, p999, dist.len());
+            let p99 = dist.percentile(99.0);
+            println!("{} p99: {}us (n={})", name, p99, dist.len());
         }
     });
 }
