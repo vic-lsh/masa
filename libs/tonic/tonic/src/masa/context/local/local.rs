@@ -245,12 +245,22 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             return Err(self.issue_early_return());
         }
 
+        let est_child = estimate_method_latency(
+            &*self.server.child_call_latencies,
+            resolved_child_method.clone(),
+        )
+        .unwrap_or(0);
+
+        // this encodes the slack: parent deadline - est child latency - est remaining
+        let prio_hint = deadline - est_child;
+
         let child_recv_ctx = Context::new(
             self.ctx.api().clone(),
             self.ctx.request_id(),
             self.ctx.slo(),
             self.ctx.start_at(),
             deadline,
+            prio_hint,
         );
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
 

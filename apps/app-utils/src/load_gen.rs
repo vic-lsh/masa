@@ -579,6 +579,7 @@ where
                     handler.slo(),
                     start_at,
                     deadline,
+                    deadline,
                 )
             };
 
