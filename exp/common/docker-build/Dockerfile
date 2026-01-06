@@ -54,9 +54,6 @@ RUN apt-get install -y\
 # Copy entrypoint script
 COPY exp/common/docker-build/entrypoint.sh /usr/entrypoint.sh
 
-# Copy app config - APP_CONFIG_PATH must be provided as build arg
-# If config is optional for an app, a default/empty config should be provided
-COPY ${APP_CONFIG_PATH} /usr/config.json
 # Copy gen config - GEN_CONFIG_PATH must be provided as build arg
 COPY ${GEN_CONFIG_PATH} /usr/gen_config.json
 

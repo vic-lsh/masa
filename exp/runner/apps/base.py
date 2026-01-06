@@ -404,6 +404,8 @@ class AppPlugin(ABC):
             if not candidate.exists():
                 raise FileNotFoundError(f"App config not found at: {candidate}")
             app_config_path = candidate
+            # Pass app config path to docker compose as env var for volume mounting
+            env_vars["APP_CONFIG_PATH"] = str(app_config_path.resolve())
 
         gen_config_path = config.in_dir / "gen_config.json"
         if not gen_config_path.exists():
