@@ -60,6 +60,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             self.ctx.slo(),
             self.ctx.start_at(),
             deadline,
+            deadline,
         );
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
 

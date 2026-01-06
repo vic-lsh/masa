@@ -46,7 +46,14 @@ impl Client for HotelClient {
             let start_at = time_now();
             let deadline = start_at + slo;
             let req_id = 0;
-            Context::new("ping".to_string(), req_id, slo, start_at, deadline)
+            Context::new(
+                "ping".to_string(),
+                req_id,
+                slo,
+                start_at,
+                deadline,
+                deadline,
+            )
         };
         request.metadata_mut().insert_ctx("ctx", &ctx);
         client.handle_ping(request).await.map(|_| ())
