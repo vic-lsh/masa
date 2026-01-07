@@ -321,11 +321,14 @@ class HotelApp(AppPlugin):
                 env_key = f"{service.upper()}_REPLICAS"
                 replicas = app_config.get(service, {}).get("replicas", default_replicas)
                 env_vars[env_key] = str(replicas)
+            frontend_replicas = app_config.get("frontend", {}).get("replicas", default_replicas)
+            env_vars["FRONTEND_REPLICAS"] = str(frontend_replicas)
         else:
             # Use defaults if no config provided
             for service in services:
                 env_key = f"{service.upper()}_REPLICAS"
                 env_vars[env_key] = str(default_replicas)
+            env_vars["FRONTEND_REPLICAS"] = str(default_replicas)
         
         # Set default log level if not specified
         if "LOG_LEVEL" not in env_vars:
