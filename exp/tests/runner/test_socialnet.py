@@ -49,7 +49,6 @@ class TestSocialnetBuilder:
                 features=features,
                 rust_log="info",
                 no_cache=False,
-                app_config_path=app_config_path,
                 gen_config_path=gen_config_path,
             )
 

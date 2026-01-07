@@ -193,7 +193,6 @@ def cmd_build(args: argparse.Namespace) -> None:
                 features=policy,
                 rust_log="info",
                 no_cache=args.no_cache,
-                app_config_path=app_config_path,
                 gen_config_path=gen_config_path,
                 dry_run=False,
             )
@@ -272,7 +271,6 @@ def cmd_build_dryrun(args: argparse.Namespace) -> None:
                 features=policy,
                 rust_log="info",
                 no_cache=args.no_cache,
-                app_config_path=app_config_path,
                 gen_config_path=gen_config_path,
                 dry_run=True,
             )
