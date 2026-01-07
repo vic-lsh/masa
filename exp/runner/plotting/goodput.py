@@ -160,6 +160,40 @@ def compute_early_return_by_request_type(df):
     return early_return_by_type
 
 
+def compute_slo_miss_by_request_type(df):
+    """Compute SLO miss rate broken down by request type (api column).
+    
+    Returns:
+        dict: Mapping from request type (api) to SLO miss rate (requests per second)
+    """
+    # Filter out /ClientTimeout and /EarlyReturn errors - they are not "SLO misses"
+    df_filtered = filter_excluded_errors(df)
+    
+    if df_filtered.empty or "api" not in df_filtered.columns or "slo" not in df_filtered.columns:
+        return {}
+    
+    # Identify misses (latency > slo)
+    miss_df = df_filtered[df_filtered["latency"] > df_filtered["slo"]]
+    
+    if miss_df.empty:
+        return {}
+    
+    start = df["start_at"].min()
+    end = (df["start_at"] + df["latency"]).max()
+    duration_us = end - start
+    s_to_us = 10**6
+    
+    if duration_us == 0:
+        return {}
+
+    miss_by_type = {}
+    for api_type in miss_df["api"].unique():
+        api_df = miss_df[miss_df["api"] == api_type]
+        miss_by_type[api_type] = len(api_df) / duration_us * s_to_us
+    
+    return miss_by_type
+
+
 def _style_axes(ax):
     ax.grid(axis="y", linestyle="--", alpha=0.4)
     ax.spines["top"].set_visible(False)
@@ -341,6 +375,130 @@ def _plot_early_return_breakdown(
         ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
         ax.set_xlabel("RPS")
         ax.set_ylabel("Early-return rate (req/s)")
+
+    # Hide unused subplots
+    for idx in range(n, len(axes)):
+        axes[idx].set_visible(False)
+
+    # One shared legend for request types
+    handles, labels = [], []
+    if n > 0:
+        # Build stable handle/label list from colors
+        for rt in request_types:
+            patch = matplotlib.patches.Patch(color=rt_colors[rt], label=rt)
+            handles.append(patch)
+            labels.append(rt)
+    fig.legend(
+        handles,
+        labels,
+        title="API",
+        frameon=False,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.02),
+        ncols=len(request_types),
+    )
+
+    fig.suptitle(title, fontsize=14, y=0.98)
+    fig.tight_layout(rect=[0, 0, 1, 0.90])
+    fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_slo_miss_breakdown(
+    output_path: str,
+    *,
+    policies: list[str],
+    rps_values: list,
+    policy_total_slo_misses: dict,
+    policy_slo_misses_by_type: dict,
+    title: str,
+    subtitle: Optional[str] = None,
+    request_type_color_mapping: Optional[dict] = None,
+) -> None:
+    """
+    Generate breakdown plot for SLO-miss requests by API:
+      - Plot: small multiples (one subplot per policy) with stacked bars for API breakdown
+    """
+    sorted_policies = sort_policies_by_type(policies)
+    rps_values = list(rps_values)
+    x = np.arange(len(rps_values))
+
+    # Decide request types + optional collapse
+    keep, collapsed = _request_type_order_and_collapse(policy_slo_misses_by_type, max_types=7)
+    request_types = list(keep)
+    if collapsed:
+        request_types.append("Other")
+    rt_colors = _get_request_type_colors(request_types, request_type_color_mapping)
+
+    # Collapse tail per policy if needed
+    policy_slo_misses_by_type_collapsed = {}
+    for p in sorted_policies:
+        per_rps = (policy_slo_misses_by_type or {}).get(p, [])
+        policy_slo_misses_by_type_collapsed[p] = _collapse_request_types_for_policy(
+            per_rps,
+            keep=keep,
+            collapsed=collapsed,
+            other_label="Other",
+        )
+
+    # Generate output path for breakdown plot
+    breakdown_path = output_path.replace(".png", "_breakdown.png")
+
+    # ===== Plot: Breakdown by API with shared axes =====
+    n = len(sorted_policies)
+    ncols = min(3, max(1, n))
+    nrows = int(np.ceil(n / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(15, 4 + 2.8 * nrows), sharex=True, sharey=True)
+    
+    # Handle case where there's only one subplot
+    if n == 1:
+        axes = [axes]
+    elif nrows == 1:
+        axes = axes if isinstance(axes, np.ndarray) else [axes]
+    else:
+        axes = axes.flatten()
+
+    # Global y-limit for comparability across subplots
+    global_max = 0.0
+    for p in sorted_policies:
+        vals = policy_total_slo_misses.get(p, [])
+        if vals:
+            global_max = max(global_max, max(float(v or 0.0) for v in vals))
+    if global_max <= 0:
+        global_max = 1.0
+    ymax = global_max * 1.08
+
+    for idx, policy in enumerate(sorted_policies):
+        ax = axes[idx]
+        _style_axes(ax)
+
+        bottom = np.zeros(len(rps_values))
+        per_rps = policy_slo_misses_by_type_collapsed.get(policy, [])
+        for rt in request_types:
+            values = []
+            for i in range(len(rps_values)):
+                if i < len(per_rps) and per_rps[i] is not None:
+                    values.append(float(per_rps[i].get(rt, 0.0) or 0.0))
+                else:
+                    values.append(0.0)
+            ax.bar(
+                x,
+                values,
+                bottom=bottom,
+                width=0.78,
+                color=rt_colors[rt],
+                edgecolor="white",
+                linewidth=0.4,
+                label=rt,
+            )
+            bottom += np.array(values)
+
+        ax.set_title(policy, fontsize=11)
+        ax.set_ylim(0, ymax)
+        ax.set_xticks(x)
+        ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
+        ax.set_xlabel("RPS")
+        ax.set_ylabel("SLO miss rate (req/s)")
 
     # Hide unused subplots
     for idx in range(n, len(axes)):
@@ -837,6 +995,9 @@ def generate_plots(args) -> None:
     # For "ALL" API, compute early-return breakdown by request type
     policy_early_returns_by_type = []
     policy_total_early_returns = []
+    # For "ALL" API, compute SLO miss breakdown by request type
+    policy_slo_misses_by_type = []
+    policy_total_slo_misses = []
 
     # Collect all unique request types for consistent coloring across all plots
     all_request_types = set()
@@ -846,6 +1007,8 @@ def generate_plots(args) -> None:
         policy_goodputs_by_type.append({})
         policy_early_returns_by_type.append({})
         policy_total_early_returns.append({})
+        policy_slo_misses_by_type.append({})
+        policy_total_slo_misses.append({})
         for api in apis:
             data = results[i][api]
             policy_goodputs[i][api] = {
@@ -877,6 +1040,25 @@ def generate_plots(args) -> None:
                 policy_total_early_returns[i][api] = {
                     policy: [
                         sum(compute_early_return_by_request_type(data[policy][rps]).values())
+                        for rps in rps_values
+                    ]
+                    for policy in policies
+                }
+
+                # Compute SLO miss breakdown by request type
+                policy_slo_misses_by_type[i][api] = {
+                    policy: [compute_slo_miss_by_request_type(data[policy][rps]) for rps in rps_values]
+                    for policy in policies
+                }
+                # Collect request types from SLO misses as well
+                for policy in policies:
+                    for rps_dict in policy_slo_misses_by_type[i][api][policy]:
+                        all_request_types.update(rps_dict.keys())
+
+                # Compute total SLO miss rate per policy
+                policy_total_slo_misses[i][api] = {
+                    policy: [
+                        sum(compute_slo_miss_by_request_type(data[policy][rps]).values())
                         for rps in rps_values
                     ]
                     for policy in policies
@@ -959,6 +1141,28 @@ def generate_plots(args) -> None:
                                 request_type_color_mapping=request_type_color_mapping,
                             )
                         )
+
+        # Submit SLO miss breakdown plots for each repeat
+        for i in range(repeats):
+            output_dir = os.path.join(args.output_dir, str(i))
+            for api in apis:
+                if api == "ALL":
+                    slo_misses_by_type = policy_slo_misses_by_type[i].get(api)
+                    total_slo_misses = policy_total_slo_misses[i].get(api)
+                    if slo_misses_by_type is not None and total_slo_misses is not None:
+                        output_path = os.path.join(output_dir, f"slo_miss_{api}.png")
+                        futures.append(
+                            executor.submit(
+                                _plot_slo_miss_breakdown,
+                                output_path,
+                                policies=policies,
+                                rps_values=rps_values,
+                                policy_total_slo_misses=total_slo_misses,
+                                policy_slo_misses_by_type=slo_misses_by_type,
+                                title="SLO-miss requests breakdown by API",
+                                request_type_color_mapping=request_type_color_mapping,
+                            )
+                        )
         
         # Submit averaged early-return breakdown plot
         output_dir = args.output_dir
@@ -1017,6 +1221,67 @@ def generate_plots(args) -> None:
                         policy_total_early_returns=avg_total_early_returns,
                         policy_early_returns_by_type=avg_breakdown,
                         title=f"Average early-return requests breakdown by API (averaged over {repeats} run(s))",
+                        request_type_color_mapping=request_type_color_mapping,
+                    )
+                )
+
+        # Submit averaged SLO miss breakdown plot
+        output_dir = args.output_dir
+        for api in apis:
+            if api == "ALL":
+                # Average breakdown per (policy, rps, request_type)
+                avg_total_slo_misses = {}
+                avg_breakdown = {policy: [dict() for _ in range(len(rps_values))] for policy in policies}
+                
+                # Collect all request types present anywhere
+                all_types = set()
+                for i in range(repeats):
+                    if i < len(policy_slo_misses_by_type):
+                        for policy in policies:
+                            per_rps = policy_slo_misses_by_type[i].get(api, {}).get(policy, [])
+                            for d in per_rps:
+                                all_types.update((d or {}).keys())
+                
+                # Average totals
+                for policy in policies:
+                    totals = []
+                    for rps_idx in range(len(rps_values)):
+                        vals = []
+                        for i in range(repeats):
+                            if i < len(policy_total_slo_misses):
+                                per_rps = policy_total_slo_misses[i].get(api, {}).get(policy, [])
+                                if rps_idx < len(per_rps):
+                                    vals.append(float(per_rps[rps_idx] or 0.0))
+                        if vals:
+                            totals.append(sum(vals) / len(vals))
+                        else:
+                            totals.append(0.0)
+                    avg_total_slo_misses[policy] = totals
+                
+                # Average breakdown
+                for policy in policies:
+                    for rps_idx in range(len(rps_values)):
+                        for rt in all_types:
+                            vals = []
+                            for i in range(repeats):
+                                if i >= len(policy_slo_misses_by_type):
+                                    continue
+                                per_rps = policy_slo_misses_by_type[i].get(api, {}).get(policy, [])
+                                if rps_idx < len(per_rps) and per_rps[rps_idx] is not None and rt in per_rps[rps_idx]:
+                                    vals.append(float(per_rps[rps_idx][rt]))
+                            if vals:
+                                avg_breakdown[policy][rps_idx][rt] = sum(vals) / len(vals)
+                
+                output_path = os.path.join(output_dir, f"slo_miss_{api}.png")
+                futures.append(
+                    executor.submit(
+                        _plot_slo_miss_breakdown,
+                        output_path,
+                        policies=policies,
+                        rps_values=rps_values,
+                        policy_total_slo_misses=avg_total_slo_misses,
+                        policy_slo_misses_by_type=avg_breakdown,
+                        title=f"Average SLO-miss requests breakdown by API (averaged over {repeats} run(s))",
                         request_type_color_mapping=request_type_color_mapping,
                     )
                 )
