@@ -83,11 +83,6 @@ class TestBuildCacheIDConsistency:
                     "gen_config_path": gen_config_path,
                 }
                 
-                if app_config_path is not None:
-                    build_kwargs["app_config_path"] = app_config_path
-                else:
-                    build_kwargs["app_config_path"] = None
-                
                 builder.build(**build_kwargs)
                 
                 # Get expected cache ID
@@ -158,11 +153,6 @@ class TestBuildCacheIDConsistency:
                     "gen_config_path": gen_config_path,
                 }
                 
-                if app_config_path is not None:
-                    build_kwargs["app_config_path"] = app_config_path
-                else:
-                    build_kwargs["app_config_path"] = None
-                
                 builder.build(**build_kwargs)
                 
                 # Expected cache ID without features
@@ -215,10 +205,6 @@ class TestBuildCacheIDConsistency:
                         "no_cache": False,
                         "gen_config_path": gen_config_path,
                     }
-                    if app_config_path is not None:
-                        kwargs["app_config_path"] = app_config_path
-                    else:
-                        kwargs["app_config_path"] = None
                     return kwargs
                 
                 # Build with first set of features
@@ -287,11 +273,6 @@ class TestBuildCacheIDConsistency:
                     "no_cache": False,
                     "gen_config_path": gen_config_path,
                 }
-                
-                if app_config_path is not None:
-                    build_kwargs["app_config_path"] = app_config_path
-                else:
-                    build_kwargs["app_config_path"] = None
                 
                 builder.build(**build_kwargs)
                 
