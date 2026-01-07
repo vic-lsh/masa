@@ -199,7 +199,6 @@ class SyntheticBuilder(AppBuilder):
         features: Optional[str] = None,
         rust_log: str = "info",
         no_cache: bool = False,
-        app_config_path: Optional[Path] = None,
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
     ) -> Optional[list[list[str]]]:
