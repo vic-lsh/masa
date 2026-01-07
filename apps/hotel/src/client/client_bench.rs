@@ -16,7 +16,8 @@ use app_utils::load_gen::Client;
 use rand::rngs::StdRng;
 use structopt::StructOpt;
 use tonic::metadata::MetadataMap;
-use tonic::transport::Channel;
+use http::Uri;
+use tonic::transport::{Channel, Endpoint};
 
 use app_utils::{
     load_gen::{HandlerOuter, LoadGenArgs, RequestType},
@@ -34,7 +35,31 @@ impl Client for HotelClient {
     type FrontendClient = FrontendClient<Channel>;
 
     async fn connect(dst: String) -> Result<Self::FrontendClient, tonic::transport::Error> {
-        FrontendClient::connect(dst).await
+        let replicas = std::env::var("FRONTEND_REPLICAS")
+            .ok()
+            .and_then(|val| val.parse::<u8>().ok())
+            .unwrap_or(1);
+        let hostname_override = std::env::var("FRONTEND_HOSTNAME_BASE")
+            .ok()
+            .filter(|val| !val.is_empty());
+        let (normalized, host, port) = match parse_frontend_addr(&dst) {
+            Some(parsed) => parsed,
+            None => {
+                return FrontendClient::connect(dst).await;
+            }
+        };
+
+        if replicas > 1 {
+            let hostname_base = hostname_override.unwrap_or(host);
+            let endpoints = (1..=replicas).map(|idx| {
+                Endpoint::from_shared(format!("http://{}-{}:{}", hostname_base, idx, port))
+            });
+            let endpoints: Vec<_> = endpoints.collect::<Result<_, _>>()?;
+            let channel = Channel::balance_list(endpoints.into_iter());
+            Ok(FrontendClient::new(channel))
+        } else {
+            FrontendClient::connect(normalized).await
+        }
     }
 
     async fn ping(client: &mut Self::FrontendClient) -> Result<(), tonic::Status> {
@@ -190,4 +215,16 @@ impl RequestType<HotelClient> for SearchRequest {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = LoadGenArgs::from_args();
     load_gen_main::<RequestHandler, HotelClient>(args, time_now()).await
+}
+
+fn parse_frontend_addr(addr: &str) -> Option<(String, String, u16)> {
+    let normalized = if addr.contains("://") {
+        addr.to_string()
+    } else {
+        format!("http://{}", addr)
+    };
+    let uri: Uri = normalized.parse().ok()?;
+    let host = uri.host()?.to_string();
+    let port = uri.port_u16()?;
+    Some((normalized, host, port))
 }
