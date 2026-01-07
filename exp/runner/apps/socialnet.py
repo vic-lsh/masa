@@ -92,7 +92,6 @@ class SocialnetBuilder(AppBuilder):
             raise ValueError("gen_config_path is required for socialnet app")
 
         # Convert to path relative to repo_root
-        config_path_rel = app_config_path.relative_to(repo_root)
         gen_config_path_rel = gen_config_path.relative_to(repo_root)
 
         # Generate tag based on features for deterministic, feature-specific images
@@ -152,7 +151,6 @@ class SocialnetBuilder(AppBuilder):
             runtime_base_build_args.extend(["--build-arg", f"FEATURES={features}"])
         runtime_base_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
         runtime_base_build_args.extend(["--build-arg", f"APP={app}"])
-        runtime_base_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
         runtime_base_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
         runtime_base_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
 
@@ -193,7 +191,6 @@ class SocialnetBuilder(AppBuilder):
                 runtime_build_args.extend(["--build-arg", f"FEATURES={features}"])
             runtime_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
             runtime_build_args.extend(["--build-arg", f"APP={app}"])
-            runtime_build_args.extend(["--build-arg", f"APP_CONFIG_PATH={config_path_rel}"])
             runtime_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
             runtime_build_args.extend(["--build-arg", f"BINARY_NAME={binary}"])
             runtime_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])

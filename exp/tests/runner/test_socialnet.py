@@ -61,12 +61,10 @@ class TestSocialnetBuilder:
             tag_index = builder_cmd.index("-t") + 1
             assert builder_cmd[tag_index] == "socialnet_builder:policy-a-policy-b"
 
-            config_arg = f"APP_CONFIG_PATH={app_config_path.relative_to(repo_root)}"
             gen_arg = f"GEN_CONFIG_PATH={gen_config_path.relative_to(repo_root)}"
             binary_arg = "BINARY_NAME=compose_post_server"
 
             flat_cmds = [" ".join(cmd) for cmd in all_cmds]
-            assert any(config_arg in cmd for cmd in flat_cmds)
             assert any(gen_arg in cmd for cmd in flat_cmds)
             assert any(binary_arg in cmd for cmd in flat_cmds)
 
