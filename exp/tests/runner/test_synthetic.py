@@ -80,13 +80,14 @@ class TestSyntheticBuilder:
             # Create config file
             gen_config_path.write_text("{}")
             
+            features = "policy-a,policy-b"
+            
             builder.build(
                 repo_root=repo_root,
                 app_dir=app_dir,
-                features="policy-a,policy-b",
+                features=features,
                 rust_log="info",
                 no_cache=False,
-                app_config_path=None,
                 gen_config_path=gen_config_path,
             )
             
