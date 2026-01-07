@@ -1,7 +1,6 @@
 # How to run socialnet
 
-1. Run `apps/socialnet/build_socialnet.sh`
-2. In `apps/socialnet`, run `docker compose up -d`
+1. In `apps/socialnet`, run `docker compose up -d`
 
 The compose file uses the `SOCIALNET_IMAGE_TAG` variable (defaults to `latest`).
 If you build images with a different tag (e.g. via the experiment runner), set

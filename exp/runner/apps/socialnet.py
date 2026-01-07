@@ -63,7 +63,6 @@ class SocialnetBuilder(AppBuilder):
         features: Optional[str] = None,
         rust_log: str = "info",
         no_cache: bool = False,
-        app_config_path: Optional[Path] = None,
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
     ) -> Optional[list[list[str]]]:
@@ -84,9 +83,6 @@ class SocialnetBuilder(AppBuilder):
             "usermention_server",
             "url_shorten_server",
         ]
-
-        if app_config_path is None:
-            raise ValueError("app_config_path is required for socialnet app")
 
         if gen_config_path is None:
             raise ValueError("gen_config_path is required for socialnet app")
