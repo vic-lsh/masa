@@ -92,7 +92,6 @@ class SocialnetBuilder(AppBuilder):
             raise ValueError("gen_config_path is required for socialnet app")
 
         # Convert to path relative to repo_root
-        config_path_rel = app_config_path.relative_to(repo_root)
         gen_config_path_rel = gen_config_path.relative_to(repo_root)
 
         # Generate tag based on features for deterministic, feature-specific images
