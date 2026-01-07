@@ -140,7 +140,6 @@ class MssimBuilder(AppBuilder):
         features: Optional[str] = None,
         rust_log: str = "info",
         no_cache: bool = False,
-        app_config_path: Optional[Path] = None,
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
     ) -> Optional[list[list[str]]]:
@@ -363,7 +362,6 @@ class MssimApp(AppPlugin):
             features=policy,
             rust_log="info",
             no_cache=no_cache,
-            app_config_path=(config.in_dir / "mssim.json"),
             gen_config_path=(config.in_dir / "gen_config.json"),
             dry_run=dry_run,
         )
