@@ -147,7 +147,7 @@ class Experiment:
         logger.info("Copying configuration files")
         
         # Note: gen_config.json and app config files are no longer copied to working directories.
-        # They are passed directly to Docker build via GEN_CONFIG_PATH and APP_CONFIG_PATH.
+        # They are passed directly to Docker build via GEN_CONFIG_PATH.
     
     def _run_iterations(self) -> None:
         """Run all experiment iterations."""

@@ -178,7 +178,6 @@ class TestHotelBuilder:
                 features=features,
                 rust_log="info",
                 no_cache=False,
-                app_config_path=app_config_path,
                 gen_config_path=gen_config_path,
             )
             
@@ -246,7 +245,6 @@ class TestHotelBuilder:
                 features=None,
                 rust_log="info",
                 no_cache=False,
-                app_config_path=app_config_path,
                 gen_config_path=gen_config_path,
             )
             
@@ -299,7 +297,6 @@ class TestHotelBuilder:
                 features="test",
                 rust_log="info",
                 no_cache=True,
-                app_config_path=app_config_path,
                 gen_config_path=gen_config_path,
             )
             
