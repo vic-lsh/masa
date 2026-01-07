@@ -227,7 +227,6 @@ class AppBuilder(ABC):
         features: Optional[str] = None,
         rust_log: str = "info",
         no_cache: bool = False,
-        app_config_path: Optional[Path] = None,
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
     ) -> Optional[list[list[str]]]:
@@ -240,7 +239,6 @@ class AppBuilder(ABC):
             features: Cargo features to enable (e.g. scheduling policy)
             rust_log: Rust log level to pass into image
             no_cache: Whether to disable Docker cache
-            app_config_path: Path to app config file (relative to repo_root) to include in image
             gen_config_path: Path to gen_config.json file (relative to repo_root) to include in image
             dry_run: If True, return list of commands instead of executing them
 
@@ -420,7 +418,6 @@ class AppPlugin(ABC):
                 features=policy,
                 rust_log="info",
                 no_cache=no_cache,
-                app_config_path=app_config_path,
                 gen_config_path=gen_config_path,
                 dry_run=True,
             )
@@ -443,7 +440,6 @@ class AppPlugin(ABC):
             features=policy,
             rust_log="info",
             no_cache=no_cache,
-            app_config_path=app_config_path,
             gen_config_path=gen_config_path,
             dry_run=False,
         )

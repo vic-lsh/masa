@@ -210,7 +210,6 @@ class HotelBuilder(AppBuilder):
         features: Optional[str] = None,
         rust_log: str = "info",
         no_cache: bool = False,
-        app_config_path: Optional[Path] = None,
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
     ) -> Optional[list[list[str]]]:
@@ -230,14 +229,10 @@ class HotelBuilder(AppBuilder):
             "hotel_recommendation",
         ]
 
-        if app_config_path is None:
-            raise ValueError("app_config_path is required for hotel app")
-
         if gen_config_path is None:
             raise ValueError("gen_config_path is required for hotel app")
 
         # Convert to path relative to repo_root
-        config_path_rel = app_config_path.relative_to(repo_root)
         gen_config_path_rel = gen_config_path.relative_to(repo_root)
 
         # Generate tag based on features for deterministic, feature-specific images
@@ -573,7 +568,6 @@ class HotelApp(AppPlugin):
             features=policy,
             rust_log=env_vars.get("LOG_LEVEL", "info"),
             no_cache=no_cache,
-            app_config_path=(config.in_dir / "hotel.json"),  # Original config for build
             gen_config_path=(config.in_dir / "gen_config.json"),
             dry_run=dry_run,
         )
