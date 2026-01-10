@@ -354,7 +354,11 @@ class HotelApp(AppPlugin):
         Includes frontend and replicated service containers based on
         replica counts from environment variables.
         """
-        container_names = ["hotel_frontend"]
+        frontend_replicas = int(env_vars.get("FRONTEND_REPLICAS", 1))
+        container_names = [
+            f"local-hotel-frontend-service-{i}"
+            for i in range(1, frontend_replicas + 1)
+        ]
         
         # Services that can be replicated
         replicated_services = {
