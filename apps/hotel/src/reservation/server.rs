@@ -20,7 +20,6 @@ use mongodb::{bson::doc, Client as MongoClient, Collection};
 use redis::{aio::ConnectionManager as RedisConnectionManager, AsyncCommands};
 use tonic::{Request, Response, Status};
 
-
 pub struct ReservationImpl {
     redis_conn: RedisConnectionManager,
     mongo_client: MongoClient,
@@ -78,7 +77,6 @@ impl Reservation for ReservationImpl {
         req: Request<reservation::ReservationRequest>,
     ) -> Result<Response<reservation::ReservationResponse>, Status> {
         use futures::StreamExt;
-
 
         // even with this the app still hangs under high load...
         // scheduler bug?
