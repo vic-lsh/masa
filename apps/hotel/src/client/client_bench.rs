@@ -13,12 +13,12 @@ use std::time::Duration;
 
 use app_utils::load_gen::load_gen_main;
 use app_utils::load_gen::Client;
+use http::Uri;
 use rand::rngs::StdRng;
 use structopt::StructOpt;
-use tonic::metadata::MetadataMap;
-use http::Uri;
-use tonic::transport::{Channel, Endpoint};
 use tokio::net::lookup_host;
+use tonic::metadata::MetadataMap;
+use tonic::transport::{Channel, Endpoint};
 
 use app_utils::{
     load_gen::{HandlerOuter, LoadGenArgs, RequestType},
