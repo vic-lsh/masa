@@ -18,6 +18,7 @@ use structopt::StructOpt;
 use tonic::metadata::MetadataMap;
 use http::Uri;
 use tonic::transport::{Channel, Endpoint};
+use tokio::net::lookup_host;
 
 use app_utils::{
     load_gen::{HandlerOuter, LoadGenArgs, RequestType},
@@ -39,9 +40,6 @@ impl Client for HotelClient {
             .ok()
             .and_then(|val| val.parse::<u8>().ok())
             .unwrap_or(1);
-        let hostname_override = std::env::var("FRONTEND_HOSTNAME_BASE")
-            .ok()
-            .filter(|val| !val.is_empty());
         let (normalized, host, port) = match parse_frontend_addr(&dst) {
             Some(parsed) => parsed,
             None => {
@@ -50,16 +48,20 @@ impl Client for HotelClient {
         };
 
         if replicas > 1 {
-            let hostname_base = hostname_override.unwrap_or(host);
-            let endpoints = (1..=replicas).map(|idx| {
-                Endpoint::from_shared(format!("http://{}-{}:{}", hostname_base, idx, port))
-            });
-            let endpoints: Vec<_> = endpoints.collect::<Result<_, _>>()?;
-            let channel = Channel::balance_list(endpoints.into_iter());
-            Ok(FrontendClient::new(channel))
-        } else {
-            FrontendClient::connect(normalized).await
+            print!("Resolving host {} for {} replicas...\n", host, replicas);
+            let addrs = lookup_host((host.as_str(), port)).await;
+            if let Ok(addrs) = addrs {
+                let endpoints: Result<Vec<_>, _> = addrs
+                    .map(|addr| Endpoint::from_shared(format!("http://{}", addr)))
+                    .collect();
+                let endpoints = endpoints?;
+                if endpoints.len() > 1 {
+                    let channel = Channel::balance_list(endpoints.into_iter());
+                    return Ok(FrontendClient::new(channel));
+                }
+            }
         }
+        FrontendClient::connect(normalized).await
     }
 
     async fn ping(client: &mut Self::FrontendClient) -> Result<(), tonic::Status> {

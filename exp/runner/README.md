@@ -161,7 +161,7 @@ exp/hotel/data/out/exp1/
 ├── 0/                           # First iteration
 │   ├── fifo/                    # Results for fifo policy
 │   │   ├── loadgen.log         # Load generator output
-│   │   ├── hotel_frontend.log  # Frontend container logs
+│   │   ├── local-hotel-frontend-service-1.log  # Frontend container logs
 │   │   ├── local-rate-service-1.log
 │   │   ├── *.csv               # Trace files
 │   │   └── ...
