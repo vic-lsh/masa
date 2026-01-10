@@ -3,9 +3,9 @@ pub mod hotel_tonic {
         tonic::include_proto!("rate");
     }
 }
+use app_utils::stats::latency::{new_latency_tracker, spawn_latency_logger, SyncLatencyTracker};
 #[cfg(feature = "workload_stats")]
 use app_utils::AvgTracker;
-use app_utils::stats::latency::{new_latency_tracker, spawn_latency_logger, SyncLatencyTracker};
 use futures::StreamExt;
 #[cfg(not(feature = "synthetic"))]
 use std::collections::HashSet;
