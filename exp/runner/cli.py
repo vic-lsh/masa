@@ -16,6 +16,7 @@ from .apps import get_app_plugin
 from .config import ExperimentConfig
 from .experiment import Experiment
 from .plotting import generate_all_plots
+from .plotting.replicas import generate_replicas_plots
 
 # Setup logging
 logging.basicConfig(
@@ -348,8 +349,42 @@ def cmd_plot(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_plot_replicas(args: argparse.Namespace) -> None:
+    """
+    Generate replica plots for hotel experiments.
+    
+    Args:
+        args: Parsed command-line arguments
+    """
+    repo_root = find_repo_root()
+    app_name = args.app
+
+    if app_name != "hotel":
+        logger.error("Replica plots are only available for the hotel app")
+        sys.exit(1)
+
+    in_dir = repo_root / "exp" / app_name / "data" / "in"
+    output_dir = repo_root / "exp" / app_name / "data" / "plots" / "replicas"
+
+    if not in_dir.exists():
+        logger.error(f"Input directory not found: {in_dir}")
+        sys.exit(1)
+
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        generate_replicas_plots(in_dir, output_dir)
+        logger.info("Replica plots generated successfully!")
+        print(f"Replica plot output directory: {output_dir}")
+    except Exception as e:
+        logger.error(f"Failed to generate replica plots: {e}")
+        sys.exit(1)
+
+
 def create_parser() -> argparse.ArgumentParser:
-    """Create the argument parser for the CLI."""
+    """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
         description="MASA Experiment Runner - Run performance experiments with different scheduling policies",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -376,6 +411,9 @@ Examples:
   # Generate plots only
   python -m exp.runner plot hotel exp1
   python -m exp.runner plot mssim e2e_test
+  
+  # Generate replica plots for hotel experiments
+  python -m exp.runner plot-replicas hotel
   
   # Run with verbose logging
   python -m exp.runner run hotel exp1 --verbose
@@ -533,13 +571,26 @@ Examples:
         help='Name of the experiment to plot'
     )
     plot_parser.set_defaults(func=cmd_plot)
-    
-    return parser
 
+    # plot-replicas command
+    plot_replicas_parser = subparsers.add_parser(
+        'plot-replicas',
+        help='Generate replica plots from hotel experiment inputs',
+        description='Scan exp/<app>/data/in for <policy>_<rps> directories and plot replicas'
+    )
+    plot_replicas_parser.add_argument(
+        'app',
+        choices=['hotel'],
+        help='Application name (hotel only)'
+    )
+    plot_replicas_parser.set_defaults(func=cmd_plot_replicas)
+
+    return parser
 
 def main() -> None:
     """Main entry point for the CLI."""
     parser = create_parser()
+    # Parse arguments
     args = parser.parse_args()
 
     # Setup logging level
@@ -549,7 +600,6 @@ def main() -> None:
 
     # Execute command
     args.func(args)
-
 
 if __name__ == '__main__':
     main()

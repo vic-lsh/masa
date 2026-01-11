@@ -11,7 +11,7 @@ The experiment runner replaces the previous bash script system with a well-struc
 - **Multiple Applications**: Supports hotel, socialnet, synthetic, and mssim applications with extensible plugin architecture
 - **Policy Testing**: Run experiments with different scheduling policies (fifo, prio_global, prio_local, etc.)
 - **Automated Workflow**: Handles Docker builds, service orchestration, load generation, and log collection
-- **Result Analysis**: Integrated plotting for goodput and latency metrics
+- **Result Analysis**: Integrated plotting for goodput, latency, and hotel replica metrics
 - **Type Safety**: Uses Python dataclasses for configuration validation
 - **Better Logging**: Comprehensive logging with configurable verbosity
 
@@ -65,6 +65,9 @@ python -m exp.runner run-multiple synthetic "quick_test template-presampled" --p
 # Generate plots from existing experiment output
 python -m exp.runner plot hotel exp1
 python -m exp.runner plot mssim e2e_test
+
+# Generate replica plots from hotel inputs
+python -m exp.runner plot-replicas hotel
 ```
 
 ## Experiment Configuration
@@ -183,7 +186,7 @@ exp/hotel/data/out/exp1/
 ├── 0/                           # First iteration
 │   ├── fifo/                    # Results for fifo policy
 │   │   ├── loadgen.log         # Load generator output
-│   │   ├── hotel_frontend.log  # Frontend container logs
+│   │   ├── local-hotel-frontend-service-1.log  # Frontend container logs
 │   │   ├── local-rate-service-1.log
 │   │   ├── *.csv               # Trace files
 │   │   └── ...
@@ -194,6 +197,7 @@ exp/hotel/data/out/exp1/
 ```
 
 Plots are generated in `exp/<app>/data/plots/<experiment_name>/`.
+Replica plots are generated in `exp/hotel/data/plots/replicas/`.
 
 ### MSSIM Output Layout
 
@@ -280,6 +284,20 @@ python -m exp.runner plot <app> <experiment>
 python -m exp.runner plot hotel exp1
 python -m exp.runner plot mssim e2e_test
 ```
+
+### plot-replicas
+
+Generate replica plots for hotel experiments by scanning `exp/hotel/data/in`.
+
+```bash
+python -m exp.runner plot-replicas hotel
+```
+
+**Arguments:**
+- `<app>`: Application name (`hotel` only)
+
+**Output:**
+- `exp/hotel/data/plots/replicas/`
 
 ## Migration from Bash Scripts
 
@@ -369,6 +387,7 @@ The runner is organized into several modules:
 - **`plotting/`** - Result visualization
   - `goodput.py` - Goodput plot generation
   - `latency.py` - Latency plot generation
+  - `replicas.py` - Hotel replica plot generation
   - `util.py` - Plotting utilities
 
 ## Troubleshooting

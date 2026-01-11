@@ -48,6 +48,7 @@ def generate_all_plots(args):
                 raise RuntimeError(f"Failed to generate {plot_type} plots: {e}") from e
 
 
+
 if __name__ == "__main__":
     args = parse_args()
     generate_all_plots(args)

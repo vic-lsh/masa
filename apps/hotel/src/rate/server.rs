@@ -3,6 +3,7 @@ pub mod hotel_tonic {
         tonic::include_proto!("rate");
     }
 }
+use app_utils::stats::latency::{new_latency_tracker, spawn_latency_logger, SyncLatencyTracker};
 #[cfg(feature = "workload_stats")]
 use app_utils::AvgTracker;
 use futures::StreamExt;
@@ -16,9 +17,8 @@ use {
     rand_distr::{Distribution, Uniform},
 };
 
-use std::{error::Error, sync::Arc};
+use std::{error::Error, sync::Arc, time::Duration};
 
-use masa::LatencyDistribution;
 use mongodb::{bson::doc, Client as MongoClient};
 use redis::{aio::ConnectionManager as RedisConnectionManager, AsyncCommands};
 use tonic::{Request, Response, Status};
@@ -49,7 +49,7 @@ struct SyntheticRate {
 pub struct RateImpl {
     redis_conn: RedisConnectionManager,
     mongo_client: Arc<MongoClient>,
-    latency_tracker: Arc<Mutex<LatencyDistribution>>,
+    latency_tracker: SyncLatencyTracker,
     #[cfg(feature = "workload_stats")]
     fanout_tracker: Arc<AvgTracker>,
     #[cfg(feature = "synthetic")]
@@ -62,8 +62,8 @@ impl RateImpl {
         let _ = &global;
         let mongo_client = db::initialize_database(&config.mongodb_addr).await?;
 
-        let latency_tracker =
-            Arc::new(Mutex::new(LatencyDistribution::new("RateSvc".into(), 1024)));
+        let (latency_tracker, latency_consumer) = new_latency_tracker("RateSvc");
+        spawn_latency_logger(latency_consumer, Duration::from_secs(30));
 
         #[cfg(feature = "workload_stats")]
         let fanout_tracker = {
@@ -231,12 +231,8 @@ impl Rate for RateImpl {
             rate_plans: final_rate_plans.into_iter().map(|p| p.into()).collect(),
         };
         let end = start.elapsed();
-        {
-            self.latency_tracker
-                .lock()
-                .await
-                .track(end.as_micros().try_into().unwrap());
-        }
+        self.latency_tracker
+            .track(end.as_micros().try_into().unwrap());
         Ok(Response::new(response))
     }
 }
@@ -356,12 +352,8 @@ impl Rate for RateImpl {
         };
         log::info!("response: {:?}", response);
         let end = start.elapsed();
-        {
-            self.latency_tracker
-                .lock()
-                .await
-                .track(end.as_micros().try_into().unwrap());
-        }
+        self.latency_tracker
+            .track(end.as_micros().try_into().unwrap());
         Ok(Response::new(response))
     }
 }
