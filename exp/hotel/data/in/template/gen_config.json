@@ -17,7 +17,7 @@
   "Gap": "const",
   "WarmupSecs": 10,
   "DurationSecs": 20,
-  "Concurrency": 0,
+  "MaxInFlight": 0,
   "Addr": "http://hotel_frontend:8660",
   "Timeouts_ms": [
     1000,
