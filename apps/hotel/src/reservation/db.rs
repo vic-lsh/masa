@@ -86,8 +86,6 @@ fn generate_static_data() -> (Vec<Reservation>, Vec<Number>) {
 }
 
 pub async fn initialize_database(url: &str) -> Result<MongoClient, Box<dyn Error>> {
-    let (new_reservations, new_numbers) = generate_static_data();
-
     info!("Attempting connection to {}", url);
 
     let client_options = ClientOptions::parse(&url).await?;
@@ -95,6 +93,16 @@ pub async fn initialize_database(url: &str) -> Result<MongoClient, Box<dyn Error
     info!("Successfully connected to MongoDB");
 
     let database = client.database("reservation-db");
+    let collection_names = database.list_collection_names(None).await?;
+    if collection_names
+        .iter()
+        .any(|name| name == "reservation" || name == "number")
+    {
+        info!("Reservation collections already exist; skipping initialization.");
+        return Ok(client);
+    }
+
+    let (new_reservations, new_numbers) = generate_static_data();
     let res_collection: Collection<Reservation> = database.collection("reservation");
     let num_collection: Collection<Number> = database.collection("number");
 

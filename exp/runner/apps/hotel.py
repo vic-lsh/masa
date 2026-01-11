@@ -452,11 +452,14 @@ class HotelApp(AppPlugin):
                 env_key = f"{service.upper()}_REPLICAS"
                 replicas = app_config.get(service, {}).get("replicas", default_replicas)
                 env_vars[env_key] = str(replicas)
+            frontend_replicas = app_config.get("frontend", {}).get("replicas", default_replicas)
+            env_vars["FRONTEND_REPLICAS"] = str(frontend_replicas)
         else:
             # Use defaults if no config provided
             for service in services:
                 env_key = f"{service.upper()}_REPLICAS"
                 env_vars[env_key] = str(default_replicas)
+            env_vars["FRONTEND_REPLICAS"] = str(default_replicas)
         
         # Set default log level if not specified
         if "LOG_LEVEL" not in env_vars:
@@ -476,14 +479,33 @@ class HotelApp(AppPlugin):
     
     def get_container_names(self, env_vars: dict) -> list[str]:
         """
-        Return empty list - container names are dynamically retrieved in run_workload().
-
-        When using docker-compose project names, container names are:
-        {project_name}-{service_name}-{index}
-
-        These are discovered dynamically via docker.get_container_names() in run_workload().
+        Get list of container names for hotel application.
+        
+        Includes frontend and replicated service containers based on
+        replica counts from environment variables.
         """
-        return []
+        frontend_replicas = int(env_vars.get("FRONTEND_REPLICAS", 1))
+        container_names = [
+            f"local-hotel-frontend-service-{i}"
+            for i in range(1, frontend_replicas + 1)
+        ]
+        
+        # Services that can be replicated
+        replicated_services = {
+            "rate": int(env_vars.get("RATE_REPLICAS", 1)),
+            "profile": int(env_vars.get("PROFILE_REPLICAS", 1)),
+            "reservation": int(env_vars.get("RESERVATION_REPLICAS", 1)),
+            "geo": int(env_vars.get("GEO_REPLICAS", 1)),
+            "search": int(env_vars.get("SEARCH_REPLICAS", 1)),
+            "user": int(env_vars.get("USER_REPLICAS", 1)),
+        }
+        
+        # Generate container names for each replica
+        for service, count in replicated_services.items():
+            for i in range(1, count + 1):
+                container_names.append(f"local-{service}-service-{i}")
+        
+        return container_names
     
     def create_load_generator(self, features: Optional[str] = None, project_name: Optional[str] = None) -> LoadGenerator:
         """

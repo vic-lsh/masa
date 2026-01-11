@@ -190,9 +190,12 @@ services:
 
   hotel-frontend-service:
     image: hotel_frontend:${HOTEL_IMAGE_TAG:-latest}
+    scale: ${FRONTEND_REPLICAS}
     restart: always
     networks:
-      - hotel_network
+      hotel_network:
+        aliases:
+          - hotel_frontend
     depends_on:
       - user-service
       - reservation-service

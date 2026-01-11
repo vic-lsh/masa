@@ -4,8 +4,10 @@ pub mod hotel_tonic {
     }
 }
 
+use app_utils::stats::latency::{new_latency_tracker, spawn_latency_logger, SyncLatencyTracker};
 use kiddo::KdTree;
 use kiddo::SquaredEuclidean;
+use std::time::Duration;
 use tonic::{Request, Response, Status};
 
 use hotel_tonic::{geo, geo::geo_server::Geo};
@@ -48,16 +50,23 @@ impl GeoIndex {
 
 pub struct GeoImpl {
     index: GeoIndex,
+    latency_tracker: SyncLatencyTracker,
 }
 
 impl GeoImpl {
     pub fn new(_config: GeoConfig) -> Self {
+        let (latency_tracker, latency_consumer) = new_latency_tracker("GeoSvc");
+        spawn_latency_logger(latency_consumer, Duration::from_secs(30));
+
         let points = db::generate_test_data();
         let mut index = GeoIndex::new();
         for p in points {
             index.add_point(p);
         }
-        GeoImpl { index }
+        GeoImpl {
+            index,
+            latency_tracker,
+        }
     }
 }
 
@@ -67,6 +76,7 @@ impl Geo for GeoImpl {
         &self,
         request: Request<geo::NearbyRequest>,
     ) -> Result<Response<geo::NearbyResponse>, Status> {
+        let start = std::time::Instant::now();
         const MAX_SEARCH_RESULTS: usize = 5;
 
         let request = request.into_inner();
@@ -76,6 +86,9 @@ impl Geo for GeoImpl {
 
         let hotel_ids = result.into_iter().map(|r| r.0.pid.to_owned()).collect();
         let response = geo::NearbyResponse { hotel_ids };
+        // log::info!("response: {:?}", response);
+        self.latency_tracker
+            .track(start.elapsed().as_micros().try_into().unwrap());
         Ok(Response::new(response))
     }
 }

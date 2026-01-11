@@ -98,6 +98,12 @@ pub async fn initialize_database(url: &str) -> Result<Client> {
     info!("New session successful...");
 
     let db: Database = client.database("recommendation-db");
+    let collection_names = db.list_collection_names(None).await?;
+    if collection_names.iter().any(|name| name == "recommendation") {
+        info!("Recommendation collection already exists; skipping initialization.");
+        return Ok(client);
+    }
+
     let collection: Collection<Hotel> = db.collection("recommendation");
 
     info!("Generating test data...");
