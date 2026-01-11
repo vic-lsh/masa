@@ -383,7 +383,7 @@ def cmd_plot_replicas(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def main() -> None:
+def create_parser() -> argparse.ArgumentParser:
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
         description="MASA Experiment Runner - Run performance experiments with different scheduling policies",
@@ -584,7 +584,12 @@ Examples:
         help='Application name (hotel only)'
     )
     plot_replicas_parser.set_defaults(func=cmd_plot_replicas)
-    
+
+    return parser
+
+def main() -> None:
+    """Main entry point for the CLI."""
+    parser = create_parser()
     # Parse arguments
     args = parser.parse_args()
 
@@ -595,7 +600,6 @@ Examples:
 
     # Execute command
     args.func(args)
-
 
 if __name__ == '__main__':
     main()
