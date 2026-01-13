@@ -93,6 +93,11 @@ prio_local = [
 ]
 fifo = ["tokio/fifo", "masa/fifo", "tonic/fifo"]
 
+early = [
+    "masa/early",
+    "tonic/early",
+]
+
 [dependencies]
 tonic = { path = "../../libs/tonic/tonic" }
 prost = "0.12"
