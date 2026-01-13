@@ -61,8 +61,8 @@ def _generate_gen_config(
             protocol = "http"
             port = "8660"
 
-        # Update to project-prefixed frontend service name
-        config["Addr"] = f"{protocol}://{project_name}-hotel-frontend-service-1:{port}"
+    # Use the service alias on the compose network so DNS returns all replicas.
+    config["Addr"] = f"{protocol}://hotel_frontend:{port}"
 
     # Write to file
     with output_path.open("w") as f:
@@ -676,6 +676,7 @@ class HotelApp(AppPlugin):
             load_gen = self.create_load_generator(features=policy, project_name=project_name)
             load_gen.run(
                 output_dir=output_dir,
+                env_vars=env_vars,
                 gen_config_path=project_gen_config_path,
             )
 
