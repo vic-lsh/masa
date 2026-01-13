@@ -12,6 +12,8 @@ import shlex
 import subprocess
 import time
 
+from ..cpu_monitor import CPUMonitor
+
 
 logger = logging.getLogger(__name__)
 
@@ -444,12 +446,19 @@ class AppPlugin(ABC):
             dry_run=False,
         )
 
+        # Initialize CPU monitor
+        cpu_stats_file = output_dir / "cpu_stats.csv"
+        cpu_monitor = CPUMonitor(output_path=cpu_stats_file, poll_interval=2.0)
+
         try:
             docker.start(
                 app_dir=config.app_dir,
                 compose_file=docker_config.compose_file,
                 env_vars=env_vars,
             )
+
+            # Start CPU monitoring after services are up
+            cpu_monitor.start()
 
             # Start streaming logs in background
             container_names = self.get_container_names(env_vars)
@@ -472,6 +481,12 @@ class AppPlugin(ABC):
             # Wait a moment for logs to flush
             time.sleep(2)
         finally:
+            # Stop CPU monitoring before stopping services
+            try:
+                cpu_monitor.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping CPU monitor: {e}")
+
             # Stop Docker services
             docker.stop(
                 app_dir=config.app_dir,
