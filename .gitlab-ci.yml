@@ -9,7 +9,6 @@ workflow:
 # Define stages
 stages:
   - quick-checks
-  - check
   - test
 
 before_script:
