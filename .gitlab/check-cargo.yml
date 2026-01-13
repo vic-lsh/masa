@@ -1,6 +1,6 @@
 
 cargo_check:
-  stage: check
+  stage: quick-checks
   parallel:
     matrix:
       - FEATURES: ["", "fifo", "prio_global", "prio_global,early", "prio_local,early"]
