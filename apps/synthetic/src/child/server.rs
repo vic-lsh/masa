@@ -69,25 +69,42 @@ fn busy_spin(duration: Duration) {
 
 #[tonic::async_trait]
 impl Child for ChildImpl {
-    async fn constant_latency(
+    async fn run_synthetic(
         &self,
-        request: Request<child::ConstantLatencyRequest>,
-    ) -> Result<Response<child::ConstantLatencyResponse>, Status> {
+        request: Request<child::RunSyntheticRequest>,
+    ) -> Result<Response<child::RunSyntheticResponse>, Status> {
         let request = request.into_inner();
         let queueing_latency = time_now() - request.sent_at;
         let start = Instant::now();
 
-        let duration = match request.duration_us {
-            Some(duration) => Duration::from_micros(duration),
-            None => Duration::from_micros(self.constant_latency.sample()),
+        let total_duration_us = match request.duration_us {
+            Some(duration) => duration,
+            None => self.constant_latency.sample(),
         };
 
-        if request.busy_spin {
-            // busy_spin(duration);
+        let busy_spin_dur_us = request.busy_spin_dur_us.unwrap_or(0);
 
+        // Validate that busy_spin duration is not greater than total duration
+        if busy_spin_dur_us > total_duration_us {
+            return Err(Status::invalid_argument(format!(
+                "busy_spin_dur_us ({}) cannot be greater than total duration_us ({})",
+                busy_spin_dur_us, total_duration_us
+            )));
+        }
+
+        let sleep_dur_us = total_duration_us - busy_spin_dur_us;
+
+        // Sleep first
+        if sleep_dur_us > 0 {
+            tokio::time::sleep(Duration::from_micros(sleep_dur_us)).await;
+        }
+
+        // Then busy spin
+        if busy_spin_dur_us > 0 {
             let yield_interval = Duration::from_micros(200);
+            let busy_spin_duration = Duration::from_micros(busy_spin_dur_us);
 
-            let mut remaining = duration;
+            let mut remaining = busy_spin_duration;
             while remaining > yield_interval {
                 busy_spin(yield_interval);
                 tokio::task::yield_now().await;
@@ -96,11 +113,9 @@ impl Child for ChildImpl {
             if remaining > Duration::ZERO {
                 busy_spin(remaining);
             }
-        } else {
-            tokio::time::sleep(duration).await;
         }
 
-        Ok(Response::new(child::ConstantLatencyResponse {
+        Ok(Response::new(child::RunSyntheticResponse {
             queueing_latency,
             handler_latency: Instant::now().duration_since(start).as_micros() as u64,
             finished_at: time_now(),
