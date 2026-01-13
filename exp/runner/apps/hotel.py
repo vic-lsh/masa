@@ -15,6 +15,7 @@ from typing import Optional
 
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import normalize_features_to_tag, get_docker_progress_flag
+from ..cpu_monitor import CPUMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -639,6 +640,10 @@ class HotelApp(AppPlugin):
         with (output_dir / "metadata.json").open("w", encoding="utf-8") as fh:
             json.dump(metadata, fh, indent=2, sort_keys=True)
 
+        # Initialize CPU monitor
+        cpu_stats_file = output_dir / "cpu_stats.csv"
+        cpu_monitor = CPUMonitor(output_path=cpu_stats_file, poll_interval=2.0)
+
         log_threads = []
         try:
             # Start services
@@ -652,6 +657,9 @@ class HotelApp(AppPlugin):
 
             # Wait for services to be ready
             time.sleep(3)
+
+            # Start CPU monitoring after services are up
+            cpu_monitor.start()
 
             # Get container names for log streaming
             container_names = docker.get_container_names(
@@ -681,6 +689,12 @@ class HotelApp(AppPlugin):
             )
 
         finally:
+            # Stop CPU monitoring before stopping services
+            try:
+                cpu_monitor.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping CPU monitor: {e}")
+
             # Cleanup
             subprocess.run(down_cmd, cwd=config.app_dir, env=env, check=False)
 
