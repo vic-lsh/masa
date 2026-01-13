@@ -106,9 +106,9 @@ impl Frontend for FrontendImpl {
         let exp_dist = Exp::<f64>::new(lambda).unwrap();
         let duration_us = exp_dist.sample(&mut thread_rng()).round() as u64;
         let response = child_constant_client
-            .constant_latency(child::ConstantLatencyRequest {
+            .run_synthetic(child::RunSyntheticRequest {
                 sent_at: time_now(),
-                busy_spin: false,
+                busy_spin_dur_us: None,
                 duration_us: Some(duration_us),
             })
             .await?;
@@ -158,9 +158,9 @@ impl Frontend for FrontendImpl {
         let exp_dist = Exp::<f64>::new(lambda).unwrap();
         let duration_us = exp_dist.sample(&mut thread_rng()).round() as u64;
         let response = child_constant_client
-            .constant_latency(child::ConstantLatencyRequest {
+            .run_synthetic(child::RunSyntheticRequest {
                 sent_at: time_now(),
-                busy_spin: false,
+                busy_spin_dur_us: None,
                 duration_us: Some(duration_us),
             })
             .await?;

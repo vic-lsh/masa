@@ -4,8 +4,8 @@ package child;
 
 service Child {
   rpc RandomLatency(RandomLatencyRequest) returns (RandomLatencyResponse) {}
-  rpc ConstantLatency(ConstantLatencyRequest)
-      returns (ConstantLatencyResponse) {}
+  rpc RunSynthetic(RunSyntheticRequest)
+      returns (RunSyntheticResponse) {}
   rpc Presampled(PresampledRequest) returns (PresampledResponse) {}
 }
 
@@ -19,12 +19,12 @@ message RandomLatencyResponse {
   uint64 handler_latency = 3;
 }
 
-message ConstantLatencyRequest {
+message RunSyntheticRequest {
   uint64 sent_at = 1;
   optional uint64 duration_us = 2;
-  bool busy_spin = 3;
+  optional uint64 busy_spin_dur_us = 3;
 }
-message ConstantLatencyResponse {
+message RunSyntheticResponse {
   uint64 queueing_latency = 1;
   uint64 handler_latency = 2;
   uint64 finished_at = 3;
