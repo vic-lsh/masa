@@ -728,7 +728,12 @@ async fn main() -> anyhow::Result<()> {
         // Log transition to next RPS level if there is one
         if rps_idx + 1 < rps_values.len() {
             let next_rps = rps_values[rps_idx + 1];
-            tracing::info!("RPS={} ({}/{})", next_rps, rps_idx + 2, rps_values.len());
+            tracing::info!(
+                "RPS={} ({}/{})",
+                next_rps,
+                rps_idx + 2,
+                rps_values.len()
+            );
         }
     }
 
