@@ -14,18 +14,18 @@ from .validator import ValidationError, validate_config
 def run_from_alibaba_trace(
     callgraph_dirs: list[Path],
     replay_path: Optional[Path],
-    config_dir: Optional[Path],
+    replicas_path: Optional[Path],
     docker_compose_output_path: Path,
     deployment_output_path: Path,
 ) -> None:
     # Load trace configs for all callgraph directories
     trace_configs = [TraceConfig.from_config_dir(d) for d in callgraph_dirs]
-    
+
     # Validate all configs
     for trace_config in trace_configs:
         validate_config(trace_config)
-    
-    sim_config = SimulatorConfig.from_config_dir(config_dir)
+
+    sim_config = SimulatorConfig.from_replicas_path(replicas_path)
 
     launch_simulation_from_trace(
         trace_configs,
@@ -43,7 +43,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         run_from_alibaba_trace(
             args.callgraph_dirs,
             args.replay_path,
-            args.config_dir,
+            args.replicas_path,
             args.docker_compose_output_path,
             args.deployment_output_path,
         )
