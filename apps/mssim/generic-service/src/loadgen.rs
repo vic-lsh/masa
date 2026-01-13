@@ -17,6 +17,8 @@ use tokio::time::{Instant, MissedTickBehavior};
 use tokio::{fs, time};
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::Request;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 mod replay;
 use replay::extract_queue_latency;
@@ -467,6 +469,12 @@ async fn print_stats_task(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Initialize tracing
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(tracing::level_filters::LevelFilter::INFO)
+        .init();
+
     // Support both RPS (single value) and RPS_VALUES (array of values) for backward compatibility
     let rps_values: Vec<f64> = if let Ok(rps_values_str) = env::var("RPS_VALUES") {
         // Parse JSON array of RPS values
@@ -716,6 +724,17 @@ async fn main() -> anyhow::Result<()> {
             err,
             throttled
         );
+
+        // Log transition to next RPS level if there is one
+        if rps_idx + 1 < rps_values.len() {
+            let next_rps = rps_values[rps_idx + 1];
+            tracing::info!(
+                "RPS={} ({}/{})",
+                next_rps,
+                rps_idx + 2,
+                rps_values.len()
+            );
+        }
     }
 
     tracing::info!("\n{}", "=".repeat(60));
