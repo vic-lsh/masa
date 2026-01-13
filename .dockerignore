@@ -8,3 +8,8 @@ apps/hotel/scripts
 !apps/hotel/scripts/gen_config.json
 !apps/hotel/scripts/docker/entrypoint.sh
 !apps/hotel/scripts/local/hotel.json
+
+# Ignore large experiment data outputs to speed up build context transfer
+exp/*/data/out
+exp/*/data/experiments
+exp/*/data/plots

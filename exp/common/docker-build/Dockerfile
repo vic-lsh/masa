@@ -65,8 +65,7 @@ ARG FEATURES
 ARG BINARY_NAME
 ARG CACHE_ID=${APP}
 
-COPY --from=builder /usr/src/masa/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
-RUN chmod +x /usr/local/bin/${BINARY_NAME}
+COPY --from=builder --chmod=755 /usr/src/masa/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
 
 ENTRYPOINT [ "sh", "-c" ]
 CMD ["/usr/entrypoint.sh"]
