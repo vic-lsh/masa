@@ -342,12 +342,11 @@ class MssimApp(AppPlugin):
         for callgraph_dir in callgraph_dirs:
             if not callgraph_dir.exists():
                 raise FileNotFoundError(f"MSSIM callgraph_dir does not exist: {callgraph_dir}")
-        
-        config_dir_raw = mssim_cfg.get("config_dir")
-        config_dir = Path(config_dir_raw).expanduser().resolve() if config_dir_raw else None
 
-        if config_dir is not None and not config_dir.exists():
-            raise FileNotFoundError(f"MSSIM config_dir does not exist: {config_dir}")
+        # Look for replicas.json in the experiment input directory
+        replicas_path = config.in_dir / "replicas.json"
+        if not replicas_path.exists():
+            replicas_path = None  # Default to 1 replica per service
 
         rps_values = [float(v) for v in (config.gen_config.get("Rps") or [])]
         if not rps_values:
@@ -409,8 +408,8 @@ class MssimApp(AppPlugin):
         # Add all callgraph directories
         for callgraph_dir in callgraph_dirs:
             trace_cmd.extend(["-a", str(callgraph_dir)])
-        if config_dir is not None:
-            trace_cmd.extend(["-c", str(config_dir)])
+        if replicas_path is not None:
+            trace_cmd.extend(["--replicas-path", str(replicas_path)])
         if mssim_cfg.get("replay_path"):
             trace_cmd.extend(["--replay-path", str(Path(mssim_cfg["replay_path"]).expanduser().resolve())])
 
@@ -452,7 +451,7 @@ class MssimApp(AppPlugin):
             "rps_values": rps_values,
             "duration_sec": duration_sec,
             "callgraph_dirs": [str(d) for d in callgraph_dirs],
-            "config_dir": str(config_dir) if config_dir is not None else None,
+            "replicas_path": str(replicas_path) if replicas_path is not None else None,
             "generic_service_image": feature_image,
             "docker_project": project_name,
         }
