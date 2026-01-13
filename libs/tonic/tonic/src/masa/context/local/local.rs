@@ -4,7 +4,6 @@ use crate::{
     Code, GrpcMethod, Request, Response, Status,
 };
 use std::{
-    borrow::Cow,
     collections::HashMap,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -16,7 +15,8 @@ use std::{
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{estimate_method_latency, track_method_latency, PERCENTILE};
-use masa::{time_now, Context, LatencyEstimator, LatencyRms, MethodId, EARLY_RETURN};
+use masa::{time_now, Context, LatencyEstimator, LatencyRms, EARLY_RETURN};
+use std::sync::atomic::AtomicUsize;
 
 /// Type alias for the latency estimator used in the local deadline policy.
 /// Change this to use a different estimator (e.g., `LatencyRms`).
@@ -77,6 +77,7 @@ pub struct ServerContext<E: LatencyEstimator + Default + 'static = LocalLatencyE
     child_distributions: Arc<RwLock<HashMap<String, E>>>,
     // tracks the actual child RPC call latencies
     child_call_latencies: Arc<RwLock<HashMap<String, E>>>,
+    print_counter: AtomicUsize,
 }
 
 impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
@@ -90,6 +91,7 @@ impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
         Self {
             child_distributions: distributions,
             child_call_latencies: call_latencies,
+            print_counter: AtomicUsize::new(0),
         }
     }
 }
@@ -106,7 +108,7 @@ pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyE
     will_early_return: AtomicBool,
     child_end_times: Mutex<Vec<(String, Instant)>>,
     // Map from child_method.id() to resolved child method name
-    resolved_child_methods: Mutex<HashMap<MethodId, String>>,
+    // resolved_child_methods: Mutex<HashMap<MethodId, String>>,
 }
 
 /// Resolve the method name from HTTP request headers, checking for override header.
@@ -185,7 +187,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             server: server_ctx,
             will_early_return: AtomicBool::new(false),
             child_end_times: Mutex::new(Vec::new()),
-            resolved_child_methods: Mutex::new(HashMap::new()),
+            // resolved_child_methods: Mutex::new(HashMap::new()),
         }
     }
 
@@ -228,20 +230,20 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         let resolved_child_method = resolve_method_name_from_request(child_method, request);
 
         // Store the resolved child method name for use in after_child_rpc
-        self.resolved_child_methods
-            .lock()
-            .unwrap()
-            .insert(child_method.id().into(), resolved_child_method.clone());
+        // self.resolved_child_methods
+        //     .lock()
+        //     .unwrap()
+        //     .insert(child_method.id().into(), resolved_child_method.clone());
+
+        let parent_to_child_id =
+            parent_to_child_identifier(&self.resolved_method, &resolved_child_method);
 
         // Setup child context to track client runtime
-        child_ctx.setup(
-            parent_to_child_identifier(&self.resolved_method, &resolved_child_method),
-            self.server.clone(),
-        );
+        child_ctx.setup(parent_to_child_id.clone(), self.server.clone());
 
         let estimate_remaining = estimate_method_latency(
             &*self.server.child_distributions,
-            parent_to_child_identifier(&self.resolved_method, &resolved_child_method),
+            parent_to_child_id.clone(),
         )
         .unwrap_or(0);
 
@@ -252,12 +254,23 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         let est_child = estimate_method_latency(
             &*self.server.child_call_latencies,
-            resolved_child_method.clone(),
+            parent_to_child_id.clone(),
         )
         .unwrap_or(0);
 
         // this encodes the slack: parent deadline - est child latency - est remaining
         let prio_hint = deadline - est_child;
+
+        if self.server.print_counter.load(Ordering::Relaxed) % 500 == 0 {
+            log::info!(
+                "LAT_EST: child: {}, p=>c: {}, est_child: {}, est_rem: {}",
+                resolved_child_method,
+                parent_to_child_id,
+                est_child,
+                estimate_remaining
+            );
+        }
+        self.server.print_counter.fetch_add(1, Ordering::Relaxed);
 
         let child_recv_ctx = Context::new(
             self.ctx.api().clone(),
@@ -274,7 +287,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
     fn after_child_rpc<T>(
         &self,
-        child_method: GrpcMethod,
+        _child_method: GrpcMethod,
         response: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext<E>,
     ) -> Result<(), Status> {
@@ -287,19 +300,19 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         }
 
         // Retrieve the resolved child method name that was stored in before_child_rpc
-        let method_id: MethodId = Cow::Borrowed(child_method.id());
-        let resolved_child_method = self
-            .resolved_child_methods
-            .lock()
-            .unwrap()
-            .get(&method_id)
-            .cloned()
-            .unwrap_or_else(|| child_method.id().to_string());
+        // let method_id: MethodId = Cow::Borrowed(child_method.id());
+        // let resolved_child_method = self
+        //     .resolved_child_methods
+        //     .lock()
+        //     .unwrap()
+        //     .get(&method_id)
+        //     .cloned()
+        //     .unwrap_or_else(|| child_method.id().to_string());
 
-        self.child_end_times
-            .lock()
-            .unwrap()
-            .push((resolved_child_method, Instant::now()));
+        self.child_end_times.lock().unwrap().push((
+            child_ctx.method.expect("childctx method must be set"),
+            Instant::now(),
+        ));
 
         Ok(())
     }
