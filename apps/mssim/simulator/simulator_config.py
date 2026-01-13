@@ -47,10 +47,9 @@ class SimulatorConfig:
     replicas: ReplicaConfig = field(default_factory=ReplicaConfig)
 
     @classmethod
-    def from_config_dir(cls, config_dir: Optional[Path]) -> "SimulatorConfig":
-        if config_dir is None:
+    def from_replicas_path(cls, replicas_path: Optional[Path]) -> "SimulatorConfig":
+        if replicas_path is None:
             return cls()
-        replicas_path = config_dir / "replicas.json"
         replicas = ReplicaConfig.from_file(replicas_path)
         return cls(replicas=replicas)
 

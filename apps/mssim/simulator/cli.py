@@ -27,12 +27,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Override the replay trace file used by the load generator.",
     )
     parser.add_argument(
-        "-c",
-        "--config-dir",
-        dest="config_dir",
+        "--replicas-path",
+        dest="replicas_path",
         type=Path,
         default=None,
-        help="Optional directory with simulator configuration overrides (e.g., replicas.json).",
+        help="Optional path to replicas.json configuration file.",
     )
     parser.add_argument(
         "--docker-compose-output-path",
@@ -60,6 +59,6 @@ def _validate_args(args: argparse.Namespace) -> None:
             raise SystemExit(f"Callgraph directory does not exist: {callgraph_dir}")
         if not callgraph_dir.is_dir():
             raise SystemExit(f"Callgraph path is not a directory: {callgraph_dir}")
-    if args.config_dir is not None and not args.config_dir.exists():
-        raise SystemExit(f"Config directory does not exist: {args.config_dir}")
+    if args.replicas_path is not None and not args.replicas_path.exists():
+        raise SystemExit(f"Replicas file does not exist: {args.replicas_path}")
 
