@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from . import cpu
+
 plt.rcParams["figure.max_open_warning"] = 0
 
 
@@ -589,3 +591,10 @@ def generate_plots(args) -> None:
                 avg_rps_policy_data,
                 slo_ms=slo_ms,
             )
+
+    # Generate CPU utilization plots
+    print("Generating CPU utilization plots...")
+    try:
+        cpu.plot_cpu_utilization(data_dir, output_dir)
+    except Exception as e:
+        print(f"Warning: Failed to generate CPU plots: {e}")

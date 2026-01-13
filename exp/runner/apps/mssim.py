@@ -24,6 +24,7 @@ from typing import Optional
 
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import normalize_features_to_tag
+from ..cpu_monitor import CPUMonitor
 
 # Import MSSIM constants for container/service naming
 from apps.mssim.simulator.orchestrator import LOADGEN_SERVICE_NAME
@@ -458,6 +459,10 @@ class MssimApp(AppPlugin):
         with (run_dir / "metadata.json").open("w", encoding="utf-8") as fh:
             json.dump(metadata, fh, indent=2, sort_keys=True)
 
+        # Initialize CPU monitor
+        cpu_stats_file = run_dir / "cpu_stats.csv"
+        cpu_monitor = CPUMonitor(output_path=cpu_stats_file, poll_interval=2.0)
+
         log_threads: list[threading.Thread] = []
         try:
             # Generate compose/deployment once
@@ -488,6 +493,9 @@ class MssimApp(AppPlugin):
 
             # Wait a moment for containers to start
             time.sleep(2)
+
+            # Start CPU monitoring after services are up
+            cpu_monitor.start()
 
             # Get container names and stream logs to individual files
             logs_dir = run_dir / "logs"
@@ -562,6 +570,12 @@ class MssimApp(AppPlugin):
         except Exception as exc:
             raise RuntimeError(f"MSSIM experiment failed: {exc}") from exc
         finally:
+            # Stop CPU monitoring before stopping services
+            try:
+                cpu_monitor.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping CPU monitor: {e}")
+
             # Stop log streaming threads by stopping containers
             subprocess.run(down_cmd, cwd=config.app_dir, env=env, check=False)
             
