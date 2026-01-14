@@ -1,21 +1,22 @@
 //! This module is deprecated.
 
 use crate::{
-    body::BoxBody, masa::context::read_context, Code, GrpcMethod, Request, Response, Status,
+    body::BoxBody, masa::context::read_context, GrpcMethod, Request, Response, Status,
 };
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc, Mutex, OnceLock, RwLock,
     },
     task::Poll,
     time::{Duration, Instant},
 };
 
-use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
+use super::super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
+use super::super::common::EarlyReturnHandler;
 use super::{estimate_method_latency, track_method_latency};
-use masa::{time_now, Context, ContextBuilder, LatencyDistribution, LatencyEstimator, MethodId, EARLY_RETURN};
+use masa::{Context, ContextBuilder, LatencyDistribution, LatencyEstimator, MethodId};
 
 static LAST_PRINT_TIME: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
@@ -59,43 +60,8 @@ pub struct ParentContext<E: LatencyEstimator + Default + 'static = LatencyDistri
     ctx: Context,
     q_lat: AtomicU64,
     server: Arc<ServerContext<E>>,
-    will_early_return: AtomicBool,
+    early_return: EarlyReturnHandler,
     child_end_times: Mutex<Vec<(MethodId, Instant)>>,
-}
-
-impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
-    #[inline]
-    fn check_early_return(&self) -> bool {
-        if EARLY_RETURN {
-            self.check_early_return_impl()
-        } else {
-            false
-        }
-    }
-
-    fn check_early_return_impl(&self) -> bool {
-        if self.will_early_return.load(Ordering::Relaxed) {
-            return true;
-        }
-
-        let now = time_now();
-        let should_early_return = now >= self.ctx.deadline();
-
-        if should_early_return {
-            if self
-                .will_early_return
-                .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)
-                .is_ok()
-            {}
-        }
-
-        should_early_return
-    }
-
-    #[inline]
-    fn issue_early_return(&self) -> Status {
-        Status::new(Code::DeadlineExceeded, format!("/EarlyReturn"))
-    }
 }
 
 impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerContext<E>>
@@ -110,15 +76,15 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
             method,
             ctx: read_context(req),
             server: server_ctx,
-            will_early_return: AtomicBool::new(false),
+            early_return: EarlyReturnHandler::new(),
             child_end_times: Mutex::new(Vec::new()),
             q_lat: AtomicU64::new(0),
         }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        if self.check_early_return() {
-            return Err(Err(self.issue_early_return()));
+        if self.early_return.check(&self.ctx) {
+            return Err(Err(self.early_return.issue_error()));
         }
         let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
         if queue_latency > 0 {
@@ -133,8 +99,8 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
         if let Poll::Pending = poll {
-            if self.check_early_return() {
-                return Err(Err(self.issue_early_return()));
+            if self.early_return.check(&self.ctx) {
+                return Err(Err(self.early_return.issue_error()));
             }
         }
 
@@ -147,8 +113,8 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         request: &mut Request<T>,
         _child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
-        if self.check_early_return() {
-            return Err(self.issue_early_return());
+        if self.early_return.check(&self.ctx) {
+            return Err(self.early_return.issue_error());
         }
 
         // NOTE: if we don't have enough data to estimate the duration of the parent or child
