@@ -4,7 +4,6 @@ use crate::{
     Code, GrpcMethod, Request, Response, Status,
 };
 use std::{
-    borrow::Cow,
     collections::HashMap,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -16,7 +15,8 @@ use std::{
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{estimate_method_latency, track_method_latency, PERCENTILE};
-use masa::{time_now, Context, LatencyEstimator, LatencyRms, MethodId, EARLY_RETURN};
+use masa::{time_now, Context, LatencyEstimator, LatencyRms, EARLY_RETURN};
+use std::sync::atomic::AtomicUsize;
 
 /// Type alias for the latency estimator used in the local deadline policy.
 /// Change this to use a different estimator (e.g., `LatencyRms`).
@@ -34,8 +34,39 @@ pub struct LocalDeadlinePolicy;
 
 impl MasaHooks for LocalDeadlinePolicy {
     type ServerContext = ServerContext<LocalLatencyEstimator>;
-    type ChildContext = ChildContext;
+    type ChildContext = ChildContext<LocalLatencyEstimator>;
     type ParentContext = ParentContext<LocalLatencyEstimator>;
+}
+
+/// Spawns a background task to periodically print latency estimates
+fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
+    distributions: Arc<RwLock<HashMap<String, E>>>,
+    label: &'static str,
+) {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            loop {
+                interval.tick().await;
+
+                let distributions_read = distributions.read().unwrap();
+                if distributions_read.is_empty() {
+                    continue;
+                }
+
+                let mut parts = Vec::new();
+                for (endpoint, distribution) in distributions_read.iter() {
+                    if distribution.can_estimate() {
+                        let estimate = distribution.estimate(PERCENTILE);
+                        parts.push(format!("{}: {} us", endpoint, estimate));
+                    } else {
+                        parts.push(format!("{}: (no estimate)", endpoint));
+                    }
+                }
+                println!("{}: {}", label, parts.join(", "));
+            }
+        });
+    }
 }
 
 #[derive(Debug)]
@@ -44,41 +75,23 @@ impl MasaHooks for LocalDeadlinePolicy {
 pub struct ServerContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     // for every method on this server, tracks the remaining duration of the method after an outgoing request has finished
     child_distributions: Arc<RwLock<HashMap<String, E>>>,
+    // tracks the actual child RPC call latencies
+    child_call_latencies: Arc<RwLock<HashMap<String, E>>>,
+    print_counter: AtomicUsize,
 }
 
 impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
     fn new(_service_name: &'static str) -> Self {
         let distributions = Arc::new(RwLock::new(HashMap::<String, E>::new()));
+        let call_latencies = Arc::new(RwLock::new(HashMap::<String, E>::new()));
 
-        // Spawn a background task to print estimated remaining values every second
-        let distributions_clone = distributions.clone();
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_secs(1));
-                loop {
-                    interval.tick().await;
-
-                    let distributions_read = distributions_clone.read().unwrap();
-                    if distributions_read.is_empty() {
-                        continue;
-                    }
-
-                    let mut parts = Vec::new();
-                    for (endpoint, distribution) in distributions_read.iter() {
-                        if distribution.can_estimate() {
-                            let estimate = distribution.estimate(PERCENTILE);
-                            parts.push(format!("{}: {} us", endpoint, estimate));
-                        } else {
-                            parts.push(format!("{}: (no estimate)", endpoint));
-                        }
-                    }
-                    println!("Est Remaining Values: {}", parts.join(", "));
-                }
-            });
-        }
+        spawn_stats_printer(distributions.clone(), "Est Remaining Values");
+        spawn_stats_printer(call_latencies.clone(), "Est Child Call Latencies");
 
         Self {
             child_distributions: distributions,
+            child_call_latencies: call_latencies,
+            print_counter: AtomicUsize::new(0),
         }
     }
 }
@@ -95,7 +108,7 @@ pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyE
     will_early_return: AtomicBool,
     child_end_times: Mutex<Vec<(String, Instant)>>,
     // Map from child_method.id() to resolved child method name
-    resolved_child_methods: Mutex<HashMap<MethodId, String>>,
+    // resolved_child_methods: Mutex<HashMap<MethodId, String>>,
 }
 
 /// Resolve the method name from HTTP request headers, checking for override header.
@@ -116,6 +129,11 @@ fn resolve_method_name_from_request<T>(method: GrpcMethod, request: &Request<T>)
         }
     }
     method.id().to_string()
+}
+
+/// Concatenate parent and child method names.
+fn parent_to_child_identifier(parent: &str, child: &str) -> String {
+    format!("{}=>{}", parent, child)
 }
 
 impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
@@ -153,7 +171,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
     }
 }
 
-impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerContext<E>>
+impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, ServerContext<E>>
     for ParentContext<E>
 {
     fn begin<B>(
@@ -169,7 +187,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
             server: server_ctx,
             will_early_return: AtomicBool::new(false),
             child_end_times: Mutex::new(Vec::new()),
-            resolved_child_methods: Mutex::new(HashMap::new()),
+            // resolved_child_methods: Mutex::new(HashMap::new()),
         }
     }
 
@@ -198,7 +216,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         &self,
         child_method: GrpcMethod,
         request: &mut Request<T>,
-        _child_ctx: &mut ChildContext,
+        child_ctx: &mut ChildContext<E>,
     ) -> Result<(), Status> {
         if self.check_early_return() {
             return Err(self.issue_early_return());
@@ -212,14 +230,20 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         let resolved_child_method = resolve_method_name_from_request(child_method, request);
 
         // Store the resolved child method name for use in after_child_rpc
-        self.resolved_child_methods
-            .lock()
-            .unwrap()
-            .insert(child_method.id().into(), resolved_child_method.clone());
+        // self.resolved_child_methods
+        //     .lock()
+        //     .unwrap()
+        //     .insert(child_method.id().into(), resolved_child_method.clone());
+
+        let parent_to_child_id =
+            parent_to_child_identifier(&self.resolved_method, &resolved_child_method);
+
+        // Setup child context to track client runtime
+        child_ctx.setup(parent_to_child_id.clone(), self.server.clone());
 
         let estimate_remaining = estimate_method_latency(
             &*self.server.child_distributions,
-            format!("{} -> {}", self.resolved_method, resolved_child_method),
+            parent_to_child_id.clone(),
         )
         .unwrap_or(0);
 
@@ -228,12 +252,33 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
             return Err(self.issue_early_return());
         }
 
+        let est_child = estimate_method_latency(
+            &*self.server.child_call_latencies,
+            parent_to_child_id.clone(),
+        )
+        .unwrap_or(0);
+
+        // this encodes the slack: parent deadline - est child latency - est remaining
+        let prio_hint = deadline - est_child;
+
+        if self.server.print_counter.load(Ordering::Relaxed) % 500 == 0 {
+            log::info!(
+                "LAT_EST: child: {}, p=>c: {}, est_child: {}, est_rem: {}",
+                resolved_child_method,
+                parent_to_child_id,
+                est_child,
+                estimate_remaining
+            );
+        }
+        self.server.print_counter.fetch_add(1, Ordering::Relaxed);
+
         let child_recv_ctx = Context::new(
             self.ctx.api().clone(),
             self.ctx.request_id(),
             self.ctx.slo(),
             self.ctx.start_at(),
             deadline,
+            prio_hint,
         );
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
 
@@ -242,29 +287,32 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
 
     fn after_child_rpc<T>(
         &self,
-        child_method: GrpcMethod,
+        _child_method: GrpcMethod,
         response: &mut Result<Response<T>, Status>,
-        _child_ctx: ChildContext,
+        child_ctx: ChildContext<E>,
     ) -> Result<(), Status> {
+        // Finalize child context to track client runtime if response is not early return
+        child_ctx.finalize(response);
+
         if let Err(status) = response {
             // NOTE(vic): could we avoid cloning here?
             return Err(status.clone());
         }
 
         // Retrieve the resolved child method name that was stored in before_child_rpc
-        let method_id: MethodId = Cow::Borrowed(child_method.id());
-        let resolved_child_method = self
-            .resolved_child_methods
-            .lock()
-            .unwrap()
-            .get(&method_id)
-            .cloned()
-            .unwrap_or_else(|| child_method.id().to_string());
+        // let method_id: MethodId = Cow::Borrowed(child_method.id());
+        // let resolved_child_method = self
+        //     .resolved_child_methods
+        //     .lock()
+        //     .unwrap()
+        //     .get(&method_id)
+        //     .cloned()
+        //     .unwrap_or_else(|| child_method.id().to_string());
 
-        self.child_end_times
-            .lock()
-            .unwrap()
-            .push((resolved_child_method, Instant::now()));
+        self.child_end_times.lock().unwrap().push((
+            child_ctx.method.expect("childctx method must be set"),
+            Instant::now(),
+        ));
 
         Ok(())
     }
@@ -281,10 +329,12 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
 impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
     fn track_latencies(&self) {
         let parent_end = Instant::now();
+
+        // Track remaining time after child RPC completes
         for (child_method, child_end) in self.child_end_times.lock().unwrap().iter() {
             track_method_latency(
                 &*self.server.child_distributions,
-                format!("{} -> {}", self.resolved_method, child_method),
+                parent_to_child_identifier(&self.resolved_method, child_method),
                 parent_end.duration_since(*child_end).as_micros() as u64,
             );
         }
@@ -301,10 +351,43 @@ fn is_early_return_response<T>(response: &Result<Response<T>, Status>) -> bool {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct ChildContext {}
+pub struct ChildContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
+    start_time: Option<Instant>,
+    method: Option<String>,
+    server: Option<Arc<ServerContext<E>>>,
+}
 
-impl ClientHooks for ChildContext {
+impl<E: LatencyEstimator + Default + 'static> ClientHooks for ChildContext<E> {
     fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
-        Self {}
+        Self {
+            start_time: None,
+            method: None,
+            server: None,
+        }
+    }
+}
+
+impl<E: LatencyEstimator + Default + 'static> ChildContext<E> {
+    fn setup(&mut self, method: String, server: Arc<ServerContext<E>>) {
+        self.start_time = Some(Instant::now());
+        self.method = Some(method);
+        self.server = Some(server);
+    }
+
+    fn finalize<T>(&self, response: &Result<Response<T>, Status>) {
+        if is_early_return_response(response) {
+            return;
+        }
+
+        if let (Some(start_time), Some(method), Some(server)) =
+            (self.start_time, &self.method, &self.server)
+        {
+            let client_runtime = Instant::now().duration_since(start_time).as_micros() as u64;
+            track_method_latency(
+                &*server.child_call_latencies,
+                method.clone(),
+                client_runtime,
+            );
+        }
     }
 }
