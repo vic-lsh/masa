@@ -1,11 +1,11 @@
 use crate::{masa::context::read_context, GrpcMethod, Request, Status};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
-use crate::{Code, Response};
-use masa::{time_now, Context, ContextBuilder, EARLY_RETURN};
+use super::common::EarlyReturnHandler;
+use crate::Response;
+use masa::{Context, ContextBuilder};
 
 #[derive(Debug)]
 /// FIFO policy with optional early return support.
@@ -34,50 +34,7 @@ impl ServerHooks for ServerContext {
 #[allow(unreachable_pub)]
 pub struct ParentContext {
     ctx: Context,
-    will_early_return: AtomicBool,
-}
-
-impl ParentContext {
-    #[inline]
-    fn check_early_return(&self) -> bool {
-        if EARLY_RETURN {
-            self.check_early_return_impl()
-        } else {
-            false
-        }
-    }
-
-    fn check_early_return_impl(&self) -> bool {
-        if self.will_early_return.load(Ordering::Relaxed) {
-            return true;
-        }
-
-        let now = time_now();
-        let should_early_return = now >= self.ctx.deadline();
-
-        if should_early_return {
-            // `check_early_return` may be invoked at multiple lifecycle hooks.
-            //
-            // this will only be read/written on one thread, so we can use the
-            // weakest ordering guarantees.
-            // it is an atomic because the ParentContext type needs to be Sync:
-            // see the docs for ParentHooks for why.
-            if self
-                .will_early_return
-                .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)
-                .is_ok()
-            {
-                // error!("Request going to early return");
-            }
-        }
-
-        return should_early_return;
-    }
-
-    #[inline]
-    fn issue_early_return(&self) -> Status {
-        Status::new(Code::DeadlineExceeded, format!("/EarlyReturn"))
-    }
+    early_return: EarlyReturnHandler,
 }
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
@@ -88,13 +45,13 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Self {
         Self {
             ctx: read_context(req),
-            will_early_return: AtomicBool::new(false),
+            early_return: EarlyReturnHandler::new(),
         }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        if self.check_early_return() {
-            return Err(Err(self.issue_early_return()));
+        if self.early_return.check(&self.ctx) {
+            return Err(Err(self.early_return.issue_error()));
         }
         Ok(())
     }
@@ -105,8 +62,8 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         request: &mut Request<T>,
         _child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
-        if self.check_early_return() {
-            return Err(self.issue_early_return());
+        if self.early_return.check(&self.ctx) {
+            return Err(self.early_return.issue_error());
         }
 
         let deadline = self.ctx.deadline();
@@ -126,8 +83,8 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Result<(), Result<Response<Ret>, Status>> {
         match poll {
             Poll::Pending => {
-                if self.check_early_return() {
-                    return Err(Err(self.issue_early_return()));
+                if self.early_return.check(&self.ctx) {
+                    return Err(Err(self.early_return.issue_error()));
                 }
             }
             Poll::Ready(_) => {}
