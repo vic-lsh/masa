@@ -12,7 +12,7 @@ use std::{
 
 use super::super::common::EarlyReturnHandler;
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
-use super::{estimate_method_latency, track_method_latency, PERCENTILE};
+use super::{get_estimate, track_method_latency, PERCENTILE};
 use masa::{
     time_now, Context, ContextBuilder, LatencyEstimator, LatencyRms, PriorityHint, EARLY_RETURN,
 };
@@ -74,23 +74,23 @@ fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
 #[allow(unreachable_pub)]
 pub struct ServerContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     // for every method on this server, tracks the remaining duration of the method after an outgoing request has finished
-    child_distributions: Arc<RwLock<HashMap<String, E>>>,
+    est_after_child_latency: Arc<RwLock<HashMap<String, E>>>,
     // tracks the actual child RPC call latencies
-    child_call_latencies: Arc<RwLock<HashMap<String, E>>>,
+    est_child_latency: Arc<RwLock<HashMap<String, E>>>,
     print_counter: AtomicUsize,
 }
 
 impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
     fn new(_service_name: &'static str) -> Self {
-        let distributions = Arc::new(RwLock::new(HashMap::<String, E>::new()));
-        let call_latencies = Arc::new(RwLock::new(HashMap::<String, E>::new()));
+        let est_after_child_latency = Arc::new(RwLock::new(HashMap::<String, E>::new()));
+        let est_child_latency = Arc::new(RwLock::new(HashMap::<String, E>::new()));
 
-        spawn_stats_printer(distributions.clone(), "Est Remaining Values");
-        spawn_stats_printer(call_latencies.clone(), "Est Child Call Latencies");
+        spawn_stats_printer(est_after_child_latency.clone(), "Est Remaining Values");
+        spawn_stats_printer(est_child_latency.clone(), "Est Child Call Latencies");
 
         Self {
-            child_distributions: distributions,
-            child_call_latencies: call_latencies,
+            est_after_child_latency,
+            est_child_latency,
             print_counter: AtomicUsize::new(0),
         }
     }
@@ -152,7 +152,6 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             server: server_ctx,
             early_return: EarlyReturnHandler::new(),
             child_end_times: Mutex::new(Vec::new()),
-            // resolved_child_methods: Mutex::new(HashMap::new()),
         }
     }
 
@@ -194,34 +193,25 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         // parent methods (i.e. endpoints on this server)
         let resolved_child_method = resolve_method_name_from_request(child_method, request);
 
-        // Store the resolved child method name for use in after_child_rpc
-        // self.resolved_child_methods
-        //     .lock()
-        //     .unwrap()
-        //     .insert(child_method.id().into(), resolved_child_method.clone());
-
         let parent_to_child_id =
             parent_to_child_identifier(&self.resolved_method, &resolved_child_method);
 
         // Setup child context to track client runtime
         child_ctx.setup(parent_to_child_id.clone(), self.server.clone());
 
-        let estimate_remaining = estimate_method_latency(
-            &*self.server.child_distributions,
+        let est_remaining = get_estimate(
+            &*self.server.est_after_child_latency,
             parent_to_child_id.clone(),
         )
         .unwrap_or(0);
 
-        let deadline = self.ctx.deadline() - estimate_remaining;
+        let deadline = self.ctx.deadline() - est_remaining;
         if EARLY_RETURN && time_now() > deadline {
             return Err(self.early_return.issue_error());
         }
 
-        let est_child = estimate_method_latency(
-            &*self.server.child_call_latencies,
-            parent_to_child_id.clone(),
-        )
-        .unwrap_or(0);
+        let est_child =
+            get_estimate(&*self.server.est_child_latency, parent_to_child_id.clone()).unwrap_or(0);
 
         // this encodes the slack: parent deadline - est child latency - est remaining
         let prio_hint = deadline - est_child;
@@ -232,7 +222,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
                 resolved_child_method,
                 parent_to_child_id,
                 est_child,
-                estimate_remaining
+                est_remaining
             );
         }
         self.server.print_counter.fetch_add(1, Ordering::Relaxed);
@@ -260,18 +250,10 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             return Err(status.clone());
         }
 
-        // Retrieve the resolved child method name that was stored in before_child_rpc
-        // let method_id: MethodId = Cow::Borrowed(child_method.id());
-        // let resolved_child_method = self
-        //     .resolved_child_methods
-        //     .lock()
-        //     .unwrap()
-        //     .get(&method_id)
-        //     .cloned()
-        //     .unwrap_or_else(|| child_method.id().to_string());
-
         self.child_end_times.lock().unwrap().push((
-            child_ctx.method.expect("childctx method must be set"),
+            child_ctx
+                .parent_to_child_id
+                .expect("childctx method must be set"),
             Instant::now(),
         ));
 
@@ -292,11 +274,14 @@ impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
         let parent_end = Instant::now();
 
         // Track remaining time after child RPC completes
-        for (child_method, child_end) in self.child_end_times.lock().unwrap().iter() {
+        let mut child_end_times = self.child_end_times.lock().unwrap();
+        let child_end_times = std::mem::replace(&mut *child_end_times, Vec::new());
+
+        for (parent_to_child_id, child_end) in child_end_times {
             track_method_latency(
-                &*self.server.child_distributions,
-                parent_to_child_identifier(&self.resolved_method, child_method),
-                parent_end.duration_since(*child_end).as_micros() as u64,
+                &*self.server.est_after_child_latency,
+                parent_to_child_id,
+                parent_end.duration_since(child_end).as_micros() as u64,
             );
         }
     }
@@ -314,7 +299,7 @@ fn is_early_return_response<T>(response: &Result<Response<T>, Status>) -> bool {
 #[allow(unreachable_pub)]
 pub struct ChildContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     start_time: Option<Instant>,
-    method: Option<String>,
+    parent_to_child_id: Option<String>,
     server: Option<Arc<ServerContext<E>>>,
 }
 
@@ -322,16 +307,16 @@ impl<E: LatencyEstimator + Default + 'static> ClientHooks for ChildContext<E> {
     fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
         Self {
             start_time: None,
-            method: None,
+            parent_to_child_id: None,
             server: None,
         }
     }
 }
 
 impl<E: LatencyEstimator + Default + 'static> ChildContext<E> {
-    fn setup(&mut self, method: String, server: Arc<ServerContext<E>>) {
+    fn setup(&mut self, parent_to_child_id: String, server: Arc<ServerContext<E>>) {
         self.start_time = Some(Instant::now());
-        self.method = Some(method);
+        self.parent_to_child_id = Some(parent_to_child_id);
         self.server = Some(server);
     }
 
@@ -340,13 +325,13 @@ impl<E: LatencyEstimator + Default + 'static> ChildContext<E> {
             return;
         }
 
-        if let (Some(start_time), Some(method), Some(server)) =
-            (self.start_time, &self.method, &self.server)
+        if let (Some(start_time), Some(parent_to_child_id), Some(server)) =
+            (self.start_time, &self.parent_to_child_id, &self.server)
         {
             let client_runtime = Instant::now().duration_since(start_time).as_micros() as u64;
             track_method_latency(
-                &*server.child_call_latencies,
-                method.clone(),
+                &*server.est_child_latency,
+                parent_to_child_id.clone(),
                 client_runtime,
             );
         }
