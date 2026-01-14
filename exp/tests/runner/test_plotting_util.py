@@ -1,6 +1,8 @@
+import json
+
 import pytest
 
-from exp.runner.plotting.util import get_policy_display_name
+from exp.runner.plotting.util import get_policy_display_name, read_data, read_policies
 
 
 def test_get_policy_display_name_known_policies():
@@ -17,3 +19,41 @@ def test_get_policy_display_name_known_policies():
 def test_get_policy_display_name_unknown_policies():
     assert get_policy_display_name("custom") == "custom (no-drop)"
     assert get_policy_display_name("custom,early") == "custom"
+
+
+def test_read_policies_from_config_dir(tmp_path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "policies").write_text("fifo prio_global\n", encoding="utf-8")
+
+    policies = read_policies(config_dir)
+
+    assert policies == ["fifo", "prio_global"]
+
+
+def test_read_data_uses_policies_file(tmp_path):
+    config_dir = tmp_path / "config"
+    data_dir = tmp_path / "data"
+    config_dir.mkdir()
+    data_dir.mkdir()
+
+    (config_dir / "gen_config.json").write_text(
+        json.dumps({"Repeats": 1, "Rps": [10], "Apis": ["Login"], "Slos": [1000]}),
+        encoding="utf-8",
+    )
+    (config_dir / "policies").write_text("fifo prio_global\n", encoding="utf-8")
+
+    for policy in ["fifo", "prio_global", "extra_policy"]:
+        policy_dir = data_dir / "0" / policy
+        policy_dir.mkdir(parents=True, exist_ok=True)
+        (policy_dir / "r10_Login.csv").write_text(
+            "start_at,error\n0,\n", encoding="utf-8"
+        )
+
+    repeats, apis, policies, rps_values, results = read_data(config_dir, data_dir)
+
+    assert repeats == 1
+    assert apis[-1] == "ALL"
+    assert policies == ["fifo", "prio_global"]
+    assert rps_values == [10]
+    assert "extra_policy" not in results[0]["Login"]
