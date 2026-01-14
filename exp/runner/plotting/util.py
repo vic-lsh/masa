@@ -7,6 +7,20 @@ from pathlib import Path
 import pandas as pd
 
 
+def read_policies(config_dir: Path) -> list[str]:
+    policies_path = Path(config_dir) / "policies"
+    if not policies_path.exists():
+        raise FileNotFoundError(f"Missing policies file at: {policies_path}")
+
+    policies_text = policies_path.read_text(encoding="utf-8").strip()
+    policies = policies_text.split()
+
+    if not policies:
+        raise ValueError("policies file is empty or contains no policies")
+
+    return policies
+
+
 def read_data(config_dir, data_dir):
     with open(os.path.join(config_dir, "gen_config.json")) as f:
         config = json.load(f)
@@ -23,10 +37,7 @@ def read_data(config_dir, data_dir):
     else:
         raise ValueError(f"Slos array length ({len(slos)}) must match Apis array length ({len(apis)})")
     
-    policies = os.listdir(os.path.join(data_dir, "0"))
-    policies = list(
-        filter(lambda p: os.path.isdir(os.path.join(data_dir, "0", p)), policies)
-    )
+    policies = read_policies(Path(config_dir))
     results = [{} for _ in range(repeats)]
     for i in range(repeats):
         for api in apis + ["ALL"]:
@@ -116,6 +127,36 @@ def get_policy_color(policy: str) -> str | None:
             return "mediumpurple"
         return "purple"
     return None  # Use matplotlib default color cycle
+
+
+def get_policy_display_name(policy: str) -> str:
+    """
+    Return a human-friendly display name for a policy.
+
+    Rules:
+    - Drop the trailing ",early" suffix if present.
+    - Add "(no-drop)" when the policy does not have the ",early" suffix.
+    - Map known base policy names to display names.
+    """
+    base_policy = policy
+    has_early = False
+    if base_policy.endswith(",early"):
+        base_policy = base_policy[: -len(",early")]
+        has_early = True
+
+    base_lower = base_policy.lower()
+    display_name_map = {
+        "fifo": "FIFO",
+        "prio_global": "Masa (global ddl)",
+        "prio_local": "Masa (local ddl)",
+        "prio_oldest": "Tailclipper",
+    }
+    display = display_name_map.get(base_lower, base_policy)
+
+    if not has_early:
+        display = f"{display} (no-drop)"
+
+    return display
 
 
 def filter_excluded_errors(df):
