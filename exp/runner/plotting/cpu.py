@@ -89,6 +89,9 @@ def plot_cpu_utilization(
 
     logger.info(f"CPU utilization plots saved to {output_dir}")
 
+    # Print top 10 services by CPU utilization
+    _print_top_cpu_services(df_all, top_n=10)
+
 
 def _plot_service_cpu(
     df: pd.DataFrame,
@@ -251,6 +254,49 @@ def _sanitize_filename(name: str) -> str:
     # Replace non-alphanumeric characters with underscores
     import re
     return re.sub(r"[^a-zA-Z0-9_-]", "_", name)
+
+
+def _print_top_cpu_services(df: pd.DataFrame, top_n: int = 10) -> None:
+    """
+    Print the top N services by average CPU utilization.
+
+    Args:
+        df: DataFrame with all CPU stats (with service_name column)
+        top_n: Number of top services to display
+    """
+    if df.empty:
+        logger.warning("No CPU data to analyze for top services")
+        return
+
+    # Calculate average CPU utilization per service
+    service_stats = df.groupby("service_name").agg({
+        "cpu_percent": ["mean", "max", "min", "std"]
+    }).reset_index()
+
+    # Flatten column names
+    service_stats.columns = ["service_name", "avg_cpu", "max_cpu", "min_cpu", "std_cpu"]
+
+    # Sort by average CPU utilization
+    service_stats = service_stats.sort_values("avg_cpu", ascending=False)
+
+    # Get top N services
+    top_services = service_stats.head(top_n)
+
+    # Print summary
+    print("\n" + "=" * 80)
+    print(f"Top {min(top_n, len(top_services))} Services by CPU Utilization")
+    print("=" * 80)
+    print(f"{'Rank':<6} {'Service':<30} {'Avg CPU %':<12} {'Max CPU %':<12} {'Min CPU %':<12}")
+    print("-" * 80)
+
+    for rank, (_, row) in enumerate(top_services.iterrows(), 1):
+        service_name = row["service_name"][:28]  # Truncate long names
+        print(
+            f"{rank:<6} {service_name:<30} {row['avg_cpu']:<12.2f} "
+            f"{row['max_cpu']:<12.2f} {row['min_cpu']:<12.2f}"
+        )
+
+    print("=" * 80 + "\n")
 
 
 def plot_cpu_per_policy(
