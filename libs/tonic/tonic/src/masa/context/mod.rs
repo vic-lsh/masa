@@ -7,6 +7,7 @@ mod fifo;
 mod global;
 mod local;
 mod noop;
+mod prio_oldest;
 mod queue_global;
 mod queue_tracing;
 mod tracing;
@@ -16,33 +17,65 @@ mod tls;
 use masa::Context;
 pub use tls::{client, server};
 
-#[cfg(not(feature = "masa"))]
+#[cfg(all(
+    not(feature = "masa"),
+    not(feature = "prio_global"),
+    not(feature = "prio_oldest"),
+    not(feature = "prio_local"),
+    not(feature = "fifo")
+))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = noop::NoopMasaHooks;
 // pub type DefaultMasaHooks = queue_tracing::QueueTracing;
 
-#[cfg(all(feature = "fifo", feature = "early"))]
+#[cfg(all(
+    feature = "fifo",
+    feature = "early",
+    not(feature = "prio_global"),
+    not(feature = "prio_oldest"),
+    not(feature = "prio_local")
+))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = fifo::Fifo;
 
-#[cfg(all(feature = "fifo", not(feature = "early")))]
+#[cfg(all(
+    feature = "fifo",
+    not(feature = "early"),
+    not(feature = "prio_global"),
+    not(feature = "prio_oldest"),
+    not(feature = "prio_local")
+))]
 #[allow(missing_docs)]
 // TODO: revert back to noop for Fifo. Add another feature flag for tracing.
 // pub type DefaultMasaHooks = noop::NoopMasaHooks;
 // pub type DefaultMasaHooks = tracing::Tracing;
 pub type DefaultMasaHooks = noop::NoopMasaHooks;
 
-#[cfg(any(feature = "fifo_span_tracing"))]
+#[cfg(all(
+    feature = "fifo_span_tracing",
+    not(feature = "prio_global"),
+    not(feature = "prio_oldest"),
+    not(feature = "prio_local")
+))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = tracing::Tracing;
 
-#[cfg(any(feature = "fifo_queue_tracing"))]
+#[cfg(all(
+    feature = "fifo_queue_tracing",
+    not(feature = "prio_global"),
+    not(feature = "prio_oldest"),
+    not(feature = "prio_local")
+))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = queue_tracing::QueueTracing;
 
 #[cfg(any(feature = "prio_global"))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = queue_global::QueueGlobal;
+
+#[cfg(any(feature = "prio_oldest"))]
+#[allow(missing_docs)]
+pub type DefaultMasaHooks = prio_oldest::PrioOldest;
 
 #[cfg(any(feature = "prio_local"))]
 #[allow(missing_docs)]
