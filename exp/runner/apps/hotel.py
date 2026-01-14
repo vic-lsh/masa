@@ -724,9 +724,9 @@ class HotelApp(AppPlugin):
         with (output_dir / "metadata.json").open("w", encoding="utf-8") as fh:
             json.dump(metadata, fh, indent=2, sort_keys=True)
 
-        # Initialize CPU monitor
+        # Initialize CPU monitor with project name filter
         cpu_stats_file = output_dir / "cpu_stats.csv"
-        cpu_monitor = CPUMonitor(output_path=cpu_stats_file, poll_interval=2.0)
+        cpu_monitor = CPUMonitor(output_path=cpu_stats_file, poll_interval=2.0, container_prefix=project_name)
 
         log_threads = []
         try:
