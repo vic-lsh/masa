@@ -1,5 +1,9 @@
+use serde::{Deserialize, Serialize};
+
 /// Priority hint of a future. Smaller priorities mean higher priority. The default priority is `infra`.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+
 pub struct PriorityHint(u64);
 
 impl PriorityHint {
@@ -16,6 +20,12 @@ impl PriorityHint {
     /// Get the priority hint.
     pub fn value(&self) -> u64 {
         self.0
+    }
+}
+
+impl Default for PriorityHint {
+    fn default() -> Self {
+        Self::infra()
     }
 }
 

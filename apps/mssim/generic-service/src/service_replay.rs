@@ -4,7 +4,7 @@ use crate::service_stubs::local_span::SpanType;
 use crate::service_stubs::span::Kind;
 use crate::service_stubs::{ChildSpans, LocalSpan, ReplayRequest};
 use crate::RpcClient;
-use masa::Context as MasaContext;
+use masa::ContextBuilder as MasaContextBuilder;
 use sim_config::svc::ServiceName;
 use std::collections::HashMap;
 use tokio::sync::RwLockReadGuard;
@@ -71,14 +71,11 @@ impl<'a> ReplaySpanExecutor<'a> {
             spans: children.spans.clone(),
         });
 
-        let ctx = MasaContext::new(
-            "replay".to_string(),
-            self.request.req_id,
-            self.request.slo,
-            self.request.start_at,
-            self.request.deadline,
-            self.request.deadline,
-        );
+        let ctx = MasaContextBuilder::new("replay".to_string(), self.request.req_id)
+            .slo(self.request.slo)
+            .start_at(self.request.start_at)
+            .deadline(self.request.deadline)
+            .build();
         request.metadata_mut().insert_ctx("ctx", &ctx);
 
         let mut client = client.clone();

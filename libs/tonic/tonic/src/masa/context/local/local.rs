@@ -5,17 +5,17 @@ use crate::{
 };
 use std::{
     collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex, RwLock,
-    },
+    sync::{atomic::Ordering, Arc, Mutex, RwLock},
     task::Poll,
     time::{Duration, Instant},
 };
 
+use super::super::common::EarlyReturnHandler;
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{estimate_method_latency, track_method_latency, PERCENTILE};
-use masa::{time_now, Context, LatencyEstimator, LatencyRms, EARLY_RETURN};
+use masa::{
+    time_now, Context, ContextBuilder, LatencyEstimator, LatencyRms, PriorityHint, EARLY_RETURN,
+};
 use std::sync::atomic::AtomicUsize;
 
 /// Type alias for the latency estimator used in the local deadline policy.
@@ -105,7 +105,7 @@ pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyE
     ctx: Context,
     server: Arc<ServerContext<E>>,
 
-    will_early_return: AtomicBool,
+    early_return: EarlyReturnHandler,
     child_end_times: Mutex<Vec<(String, Instant)>>,
     // Map from child_method.id() to resolved child method name
     // resolved_child_methods: Mutex<HashMap<MethodId, String>>,
@@ -136,41 +136,6 @@ fn parent_to_child_identifier(parent: &str, child: &str) -> String {
     format!("{}=>{}", parent, child)
 }
 
-impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
-    #[inline]
-    fn check_early_return(&self) -> bool {
-        if EARLY_RETURN {
-            self.check_early_return_impl()
-        } else {
-            false
-        }
-    }
-
-    fn check_early_return_impl(&self) -> bool {
-        if self.will_early_return.load(Ordering::Relaxed) {
-            return true;
-        }
-
-        let now = time_now();
-        let should_early_return = now >= self.ctx.deadline();
-
-        if should_early_return {
-            if self
-                .will_early_return
-                .compare_exchange_weak(false, true, Ordering::Relaxed, Ordering::Relaxed)
-                .is_ok()
-            {}
-        }
-
-        should_early_return
-    }
-
-    #[inline]
-    fn issue_early_return(&self) -> Status {
-        Status::new(Code::DeadlineExceeded, format!("/EarlyReturn"))
-    }
-}
-
 impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, ServerContext<E>>
     for ParentContext<E>
 {
@@ -185,15 +150,15 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             resolved_method,
             ctx: read_context(req),
             server: server_ctx,
-            will_early_return: AtomicBool::new(false),
+            early_return: EarlyReturnHandler::new(),
             child_end_times: Mutex::new(Vec::new()),
             // resolved_child_methods: Mutex::new(HashMap::new()),
         }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        if self.check_early_return() {
-            return Err(Err(self.issue_early_return()));
+        if self.early_return.check(&self.ctx) {
+            return Err(Err(self.early_return.issue_error()));
         }
 
         Ok(())
@@ -204,8 +169,8 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
         if let Poll::Pending = poll {
-            if self.check_early_return() {
-                return Err(Err(self.issue_early_return()));
+            if self.early_return.check(&self.ctx) {
+                return Err(Err(self.early_return.issue_error()));
             }
         }
 
@@ -218,8 +183,8 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         request: &mut Request<T>,
         child_ctx: &mut ChildContext<E>,
     ) -> Result<(), Status> {
-        if self.check_early_return() {
-            return Err(self.issue_early_return());
+        if self.early_return.check(&self.ctx) {
+            return Err(self.early_return.issue_error());
         }
 
         // NOTE: if we don't have enough data to estimate the duration of the parent or child
@@ -249,7 +214,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         let deadline = self.ctx.deadline() - estimate_remaining;
         if EARLY_RETURN && time_now() > deadline {
-            return Err(self.issue_early_return());
+            return Err(self.early_return.issue_error());
         }
 
         let est_child = estimate_method_latency(
@@ -272,14 +237,10 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         }
         self.server.print_counter.fetch_add(1, Ordering::Relaxed);
 
-        let child_recv_ctx = Context::new(
-            self.ctx.api().clone(),
-            self.ctx.request_id(),
-            self.ctx.slo(),
-            self.ctx.start_at(),
-            deadline,
-            prio_hint,
-        );
+        let child_recv_ctx = ContextBuilder::from(&self.ctx)
+            .deadline(deadline)
+            .prio_hint(PriorityHint::new(prio_hint))
+            .build();
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
 
         Ok(())

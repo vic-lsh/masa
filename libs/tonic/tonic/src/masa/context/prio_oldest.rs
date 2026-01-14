@@ -3,18 +3,18 @@ use std::sync::Arc;
 use std::task::Poll;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
-use super::common::EarlyReturnHandler;
+use super::common::{EarlyReturnHandler, QueueLatencyTracker};
+use crate::body::BoxBody;
 use crate::Response;
-use masa::{Context, ContextBuilder, PriorityHint};
+use masa::{Context, ContextBuilder};
 
 #[derive(Debug)]
-/// FIFO policy with optional early return support.
-/// Requests are served in first-in-first-out order.
+/// This policy sets the priority of each child request to be the request generation time (prio_hint).
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct Fifo;
+pub struct PrioOldest;
 
-impl MasaHooks for Fifo {
+impl MasaHooks for PrioOldest {
     type ServerContext = ServerContext;
     type ChildContext = ChildContext;
     type ParentContext = ParentContext;
@@ -34,6 +34,7 @@ impl ServerHooks for ServerContext {
 #[allow(unreachable_pub)]
 pub struct ParentContext {
     ctx: Context,
+    q_lat_tracker: QueueLatencyTracker,
     early_return: EarlyReturnHandler,
 }
 
@@ -45,6 +46,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Self {
         Self {
             ctx: read_context(req),
+            q_lat_tracker: QueueLatencyTracker::new(),
             early_return: EarlyReturnHandler::new(),
         }
     }
@@ -53,6 +55,8 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         if self.early_return.check(&self.ctx) {
             return Err(Err(self.early_return.issue_error()));
         }
+
+        self.q_lat_tracker.track_poll();
         Ok(())
     }
 
@@ -67,13 +71,24 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         }
 
         let deadline = self.ctx.deadline();
+        let prio_hint = self.ctx.prio_hint();
 
         let child_recv_ctx = ContextBuilder::from(&self.ctx)
             .deadline(deadline)
-            .prio_hint(PriorityHint::new(deadline))
+            .prio_hint(prio_hint)
             .build();
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
 
+        Ok(())
+    }
+
+    fn after_child_rpc<T>(
+        &self,
+        _method: GrpcMethod,
+        response: &mut Result<Response<T>, Status>,
+        _child_ctx: ChildContext,
+    ) -> Result<(), Status> {
+        self.q_lat_tracker.track_child_response(response);
         Ok(())
     }
 
@@ -91,6 +106,11 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         };
 
         Ok(())
+    }
+
+    // expect frontend method, all other method are going send back their latency trace
+    fn finalize_after_serialization(&self, response: &mut http::Response<BoxBody>) {
+        self.q_lat_tracker.inject_header(response);
     }
 }
 
