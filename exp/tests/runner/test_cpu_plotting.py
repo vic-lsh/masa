@@ -250,14 +250,22 @@ class TestPlotCpuUtilization:
                     base_time = 1000000 + iteration * 100
                     for time_offset in range(0, 20, 2):
                         for replica in [1, 2]:
-                    writer.writerow({
-                        'timestamp': base_time + time_offset,
-                        'container_name': f'hotel-test-abc123def456-rate-service-{replica}',
-                        'cpu_percent': 10.0 + time_offset + replica,
-                        'memory_usage_mb': 100.0,
-                        'memory_limit_mb': 1000.0,
-                        'memory_percent': 10.0,
-                    })
+                            writer.writerow({
+                                'timestamp': base_time + time_offset,
+                                'container_name': f'hotel-test-abc123def456-rate-service-{replica}',
+                                'cpu_percent': 10.0 + time_offset + replica,
+                                'memory_usage_mb': 100.0,
+                                'memory_limit_mb': 1000.0,
+                                'memory_percent': 10.0,
+                            })
+                            writer.writerow({
+                                'timestamp': base_time + time_offset,
+                                'container_name': f'hotel-test-abc123def456-search-service-{replica}',
+                                'cpu_percent': 20.0 + time_offset + replica,
+                                'memory_usage_mb': 200.0,
+                                'memory_limit_mb': 2000.0,
+                                'memory_percent': 10.0,
+                            })
 
     def test_plot_cpu_utilization_filters_policies(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -291,14 +299,6 @@ class TestPlotCpuUtilization:
                 assert mock_plot.called
                 df_arg = mock_plot.call_args[0][0]
                 assert set(df_arg["policy"].unique()) == {"fifo"}
-                            writer.writerow({
-                                'timestamp': base_time + time_offset,
-                                'container_name': f'hotel-test-abc123def456-search-service-{replica}',
-                                'cpu_percent': 20.0 + time_offset + replica,
-                                'memory_usage_mb': 200.0,
-                                'memory_limit_mb': 2000.0,
-                                'memory_percent': 10.0,
-                            })
 
     def test_plot_generation_with_files(self):
         """Test plot generation from CSV files."""
