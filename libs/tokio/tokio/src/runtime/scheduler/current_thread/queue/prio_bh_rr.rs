@@ -213,45 +213,29 @@ mod tests {
     fn test_round_robin_refill() {
         let mut queue = BinaryHeapRoundRobinQueue::<MockTask>::default();
 
-        // Push 4 tasks. N=3.
-        // We use different priorities to make heap order deterministic for the test,
-        // but close enough to illustrate the batching.
-        // Actually, let's strictly control priorities to ensure heap order.
-        // T1 (10), T2 (20), T3 (30), T4 (40).
+        // Push N+1 tasks.
         // Higher priority (smaller val) comes out of heap first.
-        let t1 = MockTask::new(1, 10);
-        let t2 = MockTask::new(2, 20);
-        let t3 = MockTask::new(3, 30);
-        let t4 = MockTask::new(4, 40);
-
-        queue.push(t1).unwrap();
-        queue.push(t2).unwrap();
-        queue.push(t3).unwrap();
-        queue.push(t4).unwrap();
-
-        // Queue state: Heap has [T1, T2, T3, T4], RR is empty.
+        for i in 0..N + 1 {
+            queue
+                .push(MockTask::new(i as u64, (i + 1) as u64 * 10))
+                .unwrap();
+        }
 
         // 1st pop: RR empty. Refills from heap.
-        // Heap should yield T1, T2, T3 (top 3 priorities).
-        // RR becomes [T1, T2, T3]. Heap has [T4].
-        // Pop returns T1. RR is [T2, T3].
+        // Heap should yield top N priorities.
+        // Pop returns first item.
         let popped = queue.pop().unwrap();
-        assert_eq!(popped.id.0, 1);
+        assert_eq!(popped.id.0, 0);
 
-        // 2nd pop: RR has items. Returns T2.
-        let popped = queue.pop().unwrap();
-        assert_eq!(popped.id.0, 2);
+        // Next N-1 pops should come from the initial RR refill.
+        for i in 1..N {
+            let popped = queue.pop().unwrap();
+            assert_eq!(popped.id.0, i as u64);
+        }
 
-        // 3rd pop: RR has items. Returns T3.
+        // Next pop: RR empty. Refills from heap with the last item.
         let popped = queue.pop().unwrap();
-        assert_eq!(popped.id.0, 3);
-
-        // 4th pop: RR empty. Refills from heap.
-        // Heap yields T4.
-        // RR becomes [T4].
-        // Pop returns T4.
-        let popped = queue.pop().unwrap();
-        assert_eq!(popped.id.0, 4);
+        assert_eq!(popped.id.0, N as u64);
 
         assert!(queue.pop().is_err());
     }
@@ -261,39 +245,97 @@ mod tests {
         let mut queue = BinaryHeapRoundRobinQueue::<MockTask>::default();
 
         // Step 1: Populate queue and trigger a refill to move items to RR.
-        // Push T1(10), T2(20), T3(30).
-        queue.push(MockTask::new(1, 10)).unwrap();
-        queue.push(MockTask::new(2, 20)).unwrap();
-        queue.push(MockTask::new(3, 30)).unwrap();
+        // Push N tasks.
+        for i in 0..N {
+            queue
+                .push(MockTask::new(i as u64, (i + 1) as u64 * 10))
+                .unwrap();
+        }
 
         // Pop one to trigger refill.
-        // RR gets [T1, T2, T3].
-        // Pop returns T1.
-        // RR is now [T2, T3].
+        // RR gets N items. Pop returns T0.
+        // RR now has N-1 items.
         let popped = queue.pop().unwrap();
-        assert_eq!(popped.id.0, 1);
+        assert_eq!(popped.id.0, 0);
 
-        // Step 2: Push a high priority task T4(5).
-        // RR has [T2(20), T3(30)].
-        // Lowest priority in RR is T3(30) (remember higher value = lower priority).
-        // T4(5) has higher priority than T3(30).
-        // T3 should be evicted to heap. T4 added to RR.
-        // RR: [T2(20), T4(5)]. Heap: [T3(30)].
-        queue.push(MockTask::new(4, 5)).unwrap();
+        // Step 2: Push a high priority task T_new(5).
+        // It should evict the lowest priority item currently in RR.
+        // The lowest priority item in RR is the one with the largest priority value.
+        // That is T_{N-1} with priority N*10.
+        queue.push(MockTask::new(100, 5)).unwrap();
 
-        // Verify next pop is from RR.
-        // It's a VecDeque, so it pops from front.
-        // T2 was at front. T4 was pushed back.
+        // The RR queue originally had [T1, T2, ..., T_{N-1}].
+        // After eviction and push, it should have [T1, T2, ..., T_{N-2}, T_new].
+        // T_new is pushed to the back of the VecDeque.
+
+        // Pop all from RR.
+        for i in 1..N - 1 {
+            let popped = queue.pop().unwrap();
+            assert_eq!(popped.id.0, i as u64);
+        }
+
+        // Next is T_new.
         let popped = queue.pop().unwrap();
-        assert_eq!(popped.id.0, 2);
+        assert_eq!(popped.id.0, 100);
 
-        // Next pop is T4.
+        // Finally, the evicted T_{N-1} from heap.
         let popped = queue.pop().unwrap();
-        assert_eq!(popped.id.0, 4);
+        assert_eq!(popped.id.0, (N - 1) as u64);
+    }
 
-        // RR is empty. Refill from heap.
-        // Heap has T3.
+    #[test]
+    fn test_push_no_eviction_when_priority_low() {
+        let mut queue = BinaryHeapRoundRobinQueue::<MockTask>::default();
+
+        // Push N tasks.
+        for i in 0..N {
+            queue
+                .push(MockTask::new(i as u64, (i + 1) as u64 * 10))
+                .unwrap();
+        }
+
+        // Pop 1 to refill RR.
         let popped = queue.pop().unwrap();
-        assert_eq!(popped.id.0, 3);
+        assert_eq!(popped.id.0, 0);
+
+        // RR has [T1, ..., T_{N-1}].
+        // Push T_low with priority higher value than any in RR.
+        let low_prio_val = (N + 1) as u64 * 10;
+        queue.push(MockTask::new(100, low_prio_val)).unwrap();
+
+        // All items currently in RR should be popped first.
+        for i in 1..N {
+            let popped = queue.pop().unwrap();
+            assert_eq!(popped.id.0, i as u64);
+        }
+
+        // Then T_low from heap.
+        let popped = queue.pop().unwrap();
+        assert_eq!(popped.id.0, 100);
+    }
+
+    #[test]
+    fn test_len_and_capacity() {
+        let mut queue = BinaryHeapRoundRobinQueue::<MockTask>::default();
+        assert_eq!(queue.len(), 0);
+        assert!(queue.is_empty());
+        assert!(!queue.is_full());
+
+        queue.push(MockTask::new(1, 10)).unwrap();
+        assert_eq!(queue.len(), 1);
+        assert!(!queue.is_empty());
+
+        queue.push(MockTask::new_infra(2)).unwrap();
+        assert_eq!(queue.len(), 2);
+        assert!(!queue.is_empty());
+
+        // Capacity check
+        assert!(queue.capacity().unwrap() >= 2);
+        assert!(!queue.is_full());
+
+        queue.pop().unwrap();
+        queue.pop().unwrap();
+        assert!(queue.is_empty());
+        assert_eq!(queue.len(), 0);
     }
 }
