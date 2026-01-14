@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from . import cpu
-from .util import get_policy_color
+from .util import get_policy_color, get_policy_display_name, read_policies
 
 plt.rcParams["figure.max_open_warning"] = 0
 
@@ -242,7 +242,13 @@ def _plot_goodput_lines(
         color = get_policy_color(policy)
         if color is None:
             color = cmap(idx % cmap.N)
-        ax.plot(rps_values, values, marker=marker, label=policy, color=color)
+        ax.plot(
+            rps_values,
+            values,
+            marker=marker,
+            label=get_policy_display_name(policy),
+            color=color,
+        )
 
     ax.set_xlabel("Offered load (RPS)")
     ax.set_ylabel(ylabel)
@@ -284,7 +290,13 @@ def _plot_latency_percentiles(
             if color is None:
                 color = cmap(policy_idx % cmap.N)
             values = percentile_map.get(percentile, [])
-            ax.plot(rps_values, values, marker=marker, label=policy, color=color)
+            ax.plot(
+                rps_values,
+                values,
+                marker=marker,
+                label=get_policy_display_name(policy),
+                color=color,
+            )
 
         ax.set_title(f"P{percentile:g} latency")
         ax.set_ylabel("Latency (ms)")
@@ -330,7 +342,13 @@ def _plot_latency_cdf(
         color = get_policy_color(policy)
         if color is None:
             color = cmap(idx % cmap.N)
-        ax.plot(values, cdf, label=policy, color=color, linewidth=2)
+        ax.plot(
+            values,
+            cdf,
+            label=get_policy_display_name(policy),
+            color=color,
+            linewidth=2,
+        )
         any_data = True
 
     if not any_data:
@@ -360,13 +378,17 @@ def _resolve_iteration_ids(data_dir: Path, repeats: int) -> List[int]:
     return iteration_ids
 
 
-def _resolve_policies(data_dir: Path, iteration_ids: Sequence[int]) -> List[str]:
+def _resolve_policies(
+    config_dir: Path, data_dir: Path, iteration_ids: Sequence[int]
+) -> List[str]:
+    policies_path = config_dir / "policies"
+    if policies_path.exists():
+        return read_policies(config_dir)
+
     for iteration in iteration_ids:
         iteration_dir = data_dir / str(iteration)
         if iteration_dir.is_dir():
-            policies = [
-                p.name for p in iteration_dir.iterdir() if p.is_dir()
-            ]
+            policies = [p.name for p in iteration_dir.iterdir() if p.is_dir()]
             if policies:
                 return sorted(policies)
     raise FileNotFoundError(f"No policy directories found under {data_dir}")
@@ -424,7 +446,7 @@ def generate_plots(args) -> None:
     if not iteration_ids:
         raise FileNotFoundError(f"No iteration directories found under {data_dir}")
 
-    policies = _resolve_policies(data_dir, iteration_ids)
+    policies = _resolve_policies(config_dir, data_dir, iteration_ids)
     rps_values = _resolve_rps_values(gen_config, data_dir, iteration_ids, policies)
 
     percentiles = (50.0, 90.0, 99.0)
@@ -578,6 +600,6 @@ def generate_plots(args) -> None:
     # Generate CPU utilization plots
     print("Generating CPU utilization plots...")
     try:
-        cpu.plot_cpu_utilization(data_dir, output_dir)
+        cpu.plot_cpu_utilization(data_dir, output_dir, policies=policies)
     except Exception as e:
         print(f"Warning: Failed to generate CPU plots: {e}")
