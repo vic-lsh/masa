@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use masa::{time_now, ContextBuilder as MasaContextBuilder};
+use masa::{time_now, ContextBuilder as MasaContextBuilder, PriorityHint};
 use rand_distr::{Distribution, Exp};
 use serde::Deserialize;
 use serde_json;
@@ -216,7 +216,7 @@ async fn run_root_load(
                             .slo(slo_us)
                             .start_at(start_at)
                             .deadline(deadline)
-                            .prio_hint(prio_hint)
+                            .prio_hint(PriorityHint::new(prio_hint))
                             .build()
                     };
                     request.metadata_mut().insert_ctx("ctx", &ctx);

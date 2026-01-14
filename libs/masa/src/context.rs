@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Api, Latency, RequestId, Timestamp};
+use crate::{Api, Latency, PriorityHint, RequestId, Timestamp};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", content = "duration")]
@@ -23,7 +23,7 @@ pub struct Context {
     slo: Latency,
     start_at: Timestamp,
     deadline: Timestamp,
-    prio_hint: Timestamp,
+    prio_hint: PriorityHint,
     frontend_elapse: Option<u64>,
 }
 
@@ -33,7 +33,7 @@ pub struct ContextBuilder {
     slo: Latency,
     start_at: Timestamp,
     deadline: Timestamp,
-    prio_hint: Option<Timestamp>,
+    prio_hint: Option<PriorityHint>,
     frontend_elapse: Option<u64>,
 }
 
@@ -77,7 +77,7 @@ impl ContextBuilder {
         self
     }
 
-    pub fn prio_hint(mut self, prio_hint: Timestamp) -> Self {
+    pub fn prio_hint(mut self, prio_hint: PriorityHint) -> Self {
         self.prio_hint = Some(prio_hint);
         self
     }
@@ -94,7 +94,7 @@ impl ContextBuilder {
             slo: self.slo,
             start_at: self.start_at,
             deadline: self.deadline,
-            prio_hint: self.prio_hint.unwrap_or(self.deadline),
+            prio_hint: self.prio_hint.unwrap_or(PriorityHint::new(self.deadline)),
             frontend_elapse: self.frontend_elapse,
         }
     }
@@ -126,7 +126,7 @@ impl Context {
         self.deadline
     }
 
-    pub fn prio_hint(&self) -> Timestamp {
+    pub fn prio_hint(&self) -> PriorityHint {
         self.prio_hint
     }
 
