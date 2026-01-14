@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use masa::{time_now, Context as MasaContext};
+use masa::{time_now, ContextBuilder as MasaContextBuilder};
 use rand_distr::{Distribution, Exp};
 use serde::Deserialize;
 use serde_json;
@@ -211,7 +211,11 @@ async fn run_root_load(
                         let slo_us = entry.slo_ms * 1000;
                         let start_at = time_now();
                         let deadline = start_at + slo_us;
-                        MasaContext::new("root".to_string(), req_id, slo_us, start_at, deadline, deadline)
+                        MasaContextBuilder::new("root".to_string(), req_id)
+                            .slo(slo_us)
+                            .start_at(start_at)
+                            .deadline(deadline)
+                            .build()
                     };
                     request.metadata_mut().insert_ctx("ctx", &ctx);
 

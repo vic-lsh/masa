@@ -8,7 +8,7 @@ use std::{
 };
 
 use anyhow::Context;
-use masa::{time_now, Context as MasaContext};
+use masa::{time_now, ContextBuilder as MasaContextBuilder};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::{mpsc, Semaphore};
@@ -273,14 +273,11 @@ pub async fn run_replay_load(
                 let slo = 50_000;
                 let start_at = time_now();
                 let deadline = start_at + slo;
-                MasaContext::new(
-                    "replay".to_string(),
-                    req_id,
-                    slo,
-                    start_at,
-                    deadline,
-                    deadline,
-                )
+                MasaContextBuilder::new("replay".to_string(), req_id)
+                    .slo(slo)
+                    .start_at(start_at)
+                    .deadline(deadline)
+                    .build()
             };
 
             request.metadata_mut().insert_ctx("ctx", &ctx);
