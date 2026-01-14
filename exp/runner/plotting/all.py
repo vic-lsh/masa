@@ -10,7 +10,7 @@ from . import goodput
 from . import latency
 from . import mssim
 from . import cpu
-from .util import parse_args
+from .util import parse_args, read_policies
 
 
 def generate_all_plots(args):
@@ -34,6 +34,8 @@ def generate_all_plots(args):
             except OSError as e:
                 print(f"Warning: Could not remove {png_file}: {e}")
     
+    policies = read_policies(config_dir)
+
     # Generate goodput, latency, and CPU plots in parallel
     data_dir = Path(args.data_dir)
     output_dir = Path(args.output_dir)
@@ -42,7 +44,9 @@ def generate_all_plots(args):
         futures = {
             executor.submit(goodput.generate_plots, args): "goodput",
             executor.submit(latency.generate_plots, args): "latency",
-            executor.submit(cpu.plot_cpu_utilization, data_dir, output_dir): "cpu",
+            executor.submit(
+                cpu.plot_cpu_utilization, data_dir, output_dir, policies=policies
+            ): "cpu",
         }
 
         for future in as_completed(futures):

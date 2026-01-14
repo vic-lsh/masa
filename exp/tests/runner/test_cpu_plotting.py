@@ -250,14 +250,47 @@ class TestPlotCpuUtilization:
                     base_time = 1000000 + iteration * 100
                     for time_offset in range(0, 20, 2):
                         for replica in [1, 2]:
-                            writer.writerow({
-                                'timestamp': base_time + time_offset,
-                                'container_name': f'hotel-test-abc123def456-rate-service-{replica}',
-                                'cpu_percent': 10.0 + time_offset + replica,
-                                'memory_usage_mb': 100.0,
-                                'memory_limit_mb': 1000.0,
-                                'memory_percent': 10.0,
-                            })
+                    writer.writerow({
+                        'timestamp': base_time + time_offset,
+                        'container_name': f'hotel-test-abc123def456-rate-service-{replica}',
+                        'cpu_percent': 10.0 + time_offset + replica,
+                        'memory_usage_mb': 100.0,
+                        'memory_limit_mb': 1000.0,
+                        'memory_percent': 10.0,
+                    })
+
+    def test_plot_cpu_utilization_filters_policies(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "data"
+            output_dir = Path(tmpdir) / "plots"
+            data_dir.mkdir(parents=True, exist_ok=True)
+
+            for policy in ["fifo", "extra_policy"]:
+                policy_dir = data_dir / "0" / policy
+                policy_dir.mkdir(parents=True, exist_ok=True)
+                csv_file = policy_dir / "cpu_stats.csv"
+                with open(csv_file, 'w', newline='') as f:
+                    fieldnames = [
+                        'timestamp', 'container_name', 'cpu_percent',
+                        'memory_usage_mb', 'memory_limit_mb', 'memory_percent'
+                    ]
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerow({
+                        'timestamp': 1000000,
+                        'container_name': 'hotel-test-abc123def456-rate-service-1',
+                        'cpu_percent': 10.0,
+                        'memory_usage_mb': 100.0,
+                        'memory_limit_mb': 1000.0,
+                        'memory_percent': 10.0,
+                    })
+
+            with patch("exp.runner.plotting.cpu._plot_service_cpu") as mock_plot:
+                plot_cpu_utilization(data_dir, output_dir, policies=["fifo"])
+
+                assert mock_plot.called
+                df_arg = mock_plot.call_args[0][0]
+                assert set(df_arg["policy"].unique()) == {"fifo"}
                             writer.writerow({
                                 'timestamp': base_time + time_offset,
                                 'container_name': f'hotel-test-abc123def456-search-service-{replica}',

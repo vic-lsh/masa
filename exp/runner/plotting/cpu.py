@@ -18,6 +18,7 @@ def plot_cpu_utilization(
     data_dir: Path,
     output_dir: Path,
     figsize: tuple[int, int] = (12, 6),
+    policies: Optional[list[str]] = None,
 ) -> None:
     """
     Generate CPU utilization time series plots.
@@ -69,6 +70,12 @@ def plot_cpu_utilization(
     # Combine all data
     df_all = pd.concat(all_data, ignore_index=True)
     logger.info(f"Loaded {len(df_all)} CPU stats records")
+
+    if policies is not None:
+        df_all = df_all[df_all["policy"].isin(policies)].copy()
+        if df_all.empty:
+            logger.warning("No CPU stats data found for requested policies")
+            return
 
     # Add service_name column
     df_all["service_name"] = df_all["container_name"].apply(extract_service_name)
