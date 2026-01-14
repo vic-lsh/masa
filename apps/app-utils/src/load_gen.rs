@@ -30,7 +30,7 @@ use crate::{
     logging::init_logging_file,
     timing::{get_timestamp, time_now},
 };
-use masa::{Context, ContextBuilder};
+use masa::{Context, ContextBuilder, PriorityHint};
 use tonic::Response;
 use tonic::Status;
 
@@ -582,7 +582,7 @@ where
                     .slo(handler.slo())
                     .start_at(start_at)
                     .deadline(deadline)
-                    .prio_hint(prio_hint)
+                    .prio_hint(PriorityHint::new(prio_hint))
                     .build()
             };
 
