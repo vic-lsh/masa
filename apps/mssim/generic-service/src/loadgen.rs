@@ -211,10 +211,12 @@ async fn run_root_load(
                         let slo_us = entry.slo_ms * 1000;
                         let start_at = time_now();
                         let deadline = start_at + slo_us;
+                        let prio_hint = if masa::PRIO_OLDEST { start_at } else { deadline };
                         MasaContextBuilder::new("root".to_string(), req_id)
                             .slo(slo_us)
                             .start_at(start_at)
                             .deadline(deadline)
+                            .prio_hint(prio_hint)
                             .build()
                     };
                     request.metadata_mut().insert_ctx("ctx", &ctx);
