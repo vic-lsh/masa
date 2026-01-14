@@ -5,7 +5,7 @@ use std::task::Poll;
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::common::EarlyReturnHandler;
 use crate::Response;
-use masa::{Context, ContextBuilder};
+use masa::{Context, ContextBuilder, PriorityHint};
 
 #[derive(Debug)]
 /// FIFO policy with optional early return support.
@@ -70,7 +70,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
         let child_recv_ctx = ContextBuilder::from(&self.ctx)
             .deadline(deadline)
-            .prio_hint(deadline)
+            .prio_hint(PriorityHint::new(deadline))
             .build();
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
 

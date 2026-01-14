@@ -10,10 +10,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use super::super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::super::common::EarlyReturnHandler;
+use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{estimate_method_latency, track_method_latency, PERCENTILE};
-use masa::{time_now, Context, ContextBuilder, LatencyEstimator, LatencyRms, EARLY_RETURN};
+use masa::{
+    time_now, Context, ContextBuilder, LatencyEstimator, LatencyRms, PriorityHint, EARLY_RETURN,
+};
 use std::sync::atomic::AtomicUsize;
 
 /// Type alias for the latency estimator used in the local deadline policy.
@@ -237,7 +239,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         let child_recv_ctx = ContextBuilder::from(&self.ctx)
             .deadline(deadline)
-            .prio_hint(prio_hint)
+            .prio_hint(PriorityHint::new(prio_hint))
             .build();
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
 
