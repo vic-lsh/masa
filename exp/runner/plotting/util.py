@@ -118,6 +118,36 @@ def get_policy_color(policy: str) -> str | None:
     return None  # Use matplotlib default color cycle
 
 
+def get_policy_display_name(policy: str) -> str:
+    """
+    Return a human-friendly display name for a policy.
+
+    Rules:
+    - Drop the trailing ",early" suffix if present.
+    - Add "(no-drop)" when the policy does not have the ",early" suffix.
+    - Map known base policy names to display names.
+    """
+    base_policy = policy
+    has_early = False
+    if base_policy.endswith(",early"):
+        base_policy = base_policy[: -len(",early")]
+        has_early = True
+
+    base_lower = base_policy.lower()
+    display_name_map = {
+        "fifo": "FIFO",
+        "prio_global": "Masa (global ddl)",
+        "prio_local": "Masa (local ddl)",
+        "prio_oldest": "Tailclipper",
+    }
+    display = display_name_map.get(base_lower, base_policy)
+
+    if not has_early:
+        display = f"{display} (no-drop)"
+
+    return display
+
+
 def filter_excluded_errors(df):
     """
     Filter out requests with excluded error types.

@@ -13,6 +13,7 @@ matplotlib.use("Agg")  # Non-interactive backend for file output
 import matplotlib.pyplot as plt
 import numpy as np
 
+from .util import get_policy_display_name
 
 _EXPERIMENT_DIR_RE = re.compile(r"^(?P<policy>.+)_(?P<rps>\d+)$")
 _DEFAULT_SERVICE_ORDER = [
@@ -111,7 +112,7 @@ def _plot_replica_distribution(
             )
             bottom += values
 
-        ax.set_title(f"{policy} replica distribution by RPS")
+        ax.set_title(f"{get_policy_display_name(policy)} replica distribution by RPS")
         ax.set_ylabel("Replicas")
         ax.set_xticks(x)
         ax.set_xticklabels([str(rps) for rps in rps_values])
@@ -140,7 +141,7 @@ def _plot_policy_replica_lines(
             sum(int(v or 0) for v in data[policy][rps].values())
             for rps in rps_values
         ]
-        ax.plot(rps_values, totals, marker="o", label=policy)
+        ax.plot(rps_values, totals, marker="o", label=get_policy_display_name(policy))
 
     ax.set_xlabel("Requests Per Second (RPS)")
     ax.set_ylabel("Total replicas")
