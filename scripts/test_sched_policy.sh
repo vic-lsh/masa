@@ -12,6 +12,7 @@ set -e
 policy_flags=(
     "fifo"
     "prio_global"
+    "prio_oldest"
     "prio_local"
 )
 
