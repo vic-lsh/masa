@@ -8,7 +8,7 @@ use std::{
 };
 
 use anyhow::Context;
-use masa::{time_now, ContextBuilder as MasaContextBuilder};
+use masa::{time_now, ContextBuilder as MasaContextBuilder, PriorityHint};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::{mpsc, Semaphore};
@@ -282,7 +282,7 @@ pub async fn run_replay_load(
                     .slo(slo)
                     .start_at(start_at)
                     .deadline(deadline)
-                    .prio_hint(prio_hint)
+                    .prio_hint(PriorityHint::new(prio_hint))
                     .build()
             };
 
