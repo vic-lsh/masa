@@ -8,6 +8,9 @@ mod fifo;
 ))]
 mod prio_bh;
 
+#[cfg(any(feature = "prio_oldest"))]
+mod prio_bh_rr;
+
 #[cfg(any(
     feature = "fifo_span_tracing",
     feature = "fifo_queue_tracing",
@@ -41,9 +44,11 @@ pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
     feature = "prio_global",
     feature = "prio_global_queue_tracing",
     feature = "prio_local",
-    feature = "prio_oldest",
 ))]
 pub(crate) type LocalRunQueueInner<T> = prio_bh::BinaryHeapQueue<T>;
+
+#[cfg(any(feature = "prio_oldest"))]
+pub(crate) type LocalRunQueueInner<T> = prio_bh_rr::BinaryHeapRoundRobinQueue<T>;
 
 /// Describes the different strategies implemented by Masa.
 #[derive(PartialEq, Eq, Debug)]
