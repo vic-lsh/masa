@@ -11,7 +11,14 @@ from typing import Optional
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams['figure.max_open_warning'] = 0
 
-from .util import parse_args, prepare_output_dir, read_data, filter_excluded_errors, get_policy_color
+from .util import (
+    parse_args,
+    prepare_output_dir,
+    read_data,
+    filter_excluded_errors,
+    get_policy_color,
+    get_policy_display_name,
+)
 
 
 def get_request_type_hatch(request_type: str):
@@ -351,7 +358,7 @@ def _plot_early_return_breakdown(
             )
             bottom += np.array(values)
 
-        ax.set_title(policy, fontsize=11)
+        ax.set_title(get_policy_display_name(policy), fontsize=11)
         ax.set_ylim(0, ymax)
         ax.set_xticks(x)
         ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
@@ -475,7 +482,7 @@ def _plot_slo_miss_breakdown(
             )
             bottom += np.array(values)
 
-        ax.set_title(policy, fontsize=11)
+        ax.set_title(get_policy_display_name(policy), fontsize=11)
         ax.set_ylim(0, ymax)
         ax.set_xticks(x)
         ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
@@ -566,7 +573,7 @@ def _plot_all_api_goodput_clean(
             rps_values,
             y,
             marker='o',
-            label=policy,
+            label=get_policy_display_name(policy),
             color=color,
             linewidth=2,
             markersize=6,
@@ -599,7 +606,7 @@ def _plot_all_api_goodput_clean(
             rps_values,
             fraction_values,
             marker='o',
-            label=policy,
+            label=get_policy_display_name(policy),
             color=color,
             linewidth=2,
             markersize=6,
@@ -663,7 +670,7 @@ def _plot_all_api_goodput_clean(
             )
             bottom += np.array(values)
 
-        ax.set_title(policy, fontsize=11)
+        ax.set_title(get_policy_display_name(policy), fontsize=11)
         ax.set_ylim(0, ymax)
         ax.set_xticks(x)
         ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
@@ -829,7 +836,7 @@ def _plot_policy_goodput_comparison(
             index + offset,
             policy_goodputs[policy],
             bar_width,
-            label=policy,
+            label=get_policy_display_name(policy),
             color=color,
         )
 
@@ -943,7 +950,7 @@ def _plot_averaged_goodput(
             index + offset,
             average_goodput,
             bar_width,
-            label=policy,
+            label=get_policy_display_name(policy),
             color=color,
         )
 

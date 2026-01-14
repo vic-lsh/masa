@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from . import cpu
-from .util import get_policy_color
+from .util import get_policy_color, get_policy_display_name
 
 plt.rcParams["figure.max_open_warning"] = 0
 
@@ -242,7 +242,13 @@ def _plot_goodput_lines(
         color = get_policy_color(policy)
         if color is None:
             color = cmap(idx % cmap.N)
-        ax.plot(rps_values, values, marker=marker, label=policy, color=color)
+        ax.plot(
+            rps_values,
+            values,
+            marker=marker,
+            label=get_policy_display_name(policy),
+            color=color,
+        )
 
     ax.set_xlabel("Offered load (RPS)")
     ax.set_ylabel(ylabel)
@@ -284,7 +290,13 @@ def _plot_latency_percentiles(
             if color is None:
                 color = cmap(policy_idx % cmap.N)
             values = percentile_map.get(percentile, [])
-            ax.plot(rps_values, values, marker=marker, label=policy, color=color)
+            ax.plot(
+                rps_values,
+                values,
+                marker=marker,
+                label=get_policy_display_name(policy),
+                color=color,
+            )
 
         ax.set_title(f"P{percentile:g} latency")
         ax.set_ylabel("Latency (ms)")
@@ -330,7 +342,13 @@ def _plot_latency_cdf(
         color = get_policy_color(policy)
         if color is None:
             color = cmap(idx % cmap.N)
-        ax.plot(values, cdf, label=policy, color=color, linewidth=2)
+        ax.plot(
+            values,
+            cdf,
+            label=get_policy_display_name(policy),
+            color=color,
+            linewidth=2,
+        )
         any_data = True
 
     if not any_data:
