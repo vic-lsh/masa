@@ -82,17 +82,53 @@ def parse_args() -> Namespace:
     return args
 
 
+def get_policy_color(policy: str) -> str | None:
+    """
+    Get color for a policy.
+
+    Color scheme:
+    - FIFO uses grey hues
+    - prio_global uses blue hues
+    - prio_local uses pink hues
+    - prio_oldest uses purple hues
+
+    Args:
+        policy: Policy name
+
+    Returns:
+        Color string, or None to use matplotlib default color cycle
+    """
+    policy_lower = policy.lower()
+    if policy_lower.startswith("fifo"):
+        if ",early" in policy_lower:
+            return "darkgrey"
+        return "grey"
+    elif policy_lower.startswith("prio_global"):
+        if ",early" in policy_lower:
+            return "cornflowerblue"
+        return "steelblue"
+    elif policy_lower.startswith("prio_local"):
+        if ",early" in policy_lower:
+            return "lightpink"
+        return "hotpink"
+    elif policy_lower.startswith("prio_oldest"):
+        if ",early" in policy_lower:
+            return "mediumpurple"
+        return "purple"
+    return None  # Use matplotlib default color cycle
+
+
 def filter_excluded_errors(df):
     """
     Filter out requests with excluded error types.
-    
+
     Excludes /ClientTimeout and /EarlyReturn errors as they are not meaningful
     for latency/goodput analysis (timeouts don't represent actual execution,
     and early returns are intentional early exits).
-    
+
     Args:
         df: DataFrame with an 'error' column
-        
+
     Returns:
         DataFrame with excluded errors filtered out
     """
