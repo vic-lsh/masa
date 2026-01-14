@@ -30,6 +30,30 @@ pub struct Hop {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallGraphService {
+    pub id: String,
+    #[serde(default = "one_u8")]
+    pub replicas: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CallGraphLatencyKind {
+    Random,
+    Constant,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallGraphHop {
+    pub service_id: String,
+    pub latency_kind: CallGraphLatencyKind,
+    #[serde(default)]
+    pub duration_us: Option<u64>,
+    #[serde(default = "zero_f64")]
+    pub busy_spin_prob: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyntheticConfig {
     #[serde(default = "one_u8")]
     pub child_constant_replicas: u8,
@@ -44,6 +68,12 @@ pub struct SyntheticConfig {
     pub child_presampled_services: Vec<Vec<f64>>,
     #[serde(default = "empty_map")]
     pub child_presampled_request_types: HashMap<String, Vec<Hop>>,
+    #[serde(default)]
+    pub child_callgraph_services: Vec<CallGraphService>,
+    #[serde(default)]
+    pub child_callgraph_c: Vec<CallGraphHop>,
+    #[serde(default)]
+    pub child_callgraph_d: Vec<CallGraphHop>,
     #[serde(default = "onef64")]
     pub child_cpus_per_replica: f64,
 }
@@ -58,6 +88,10 @@ fn default_constant_latency() -> u64 {
 
 fn zero_u16() -> u16 {
     0
+}
+
+fn zero_f64() -> f64 {
+    0.0
 }
 
 fn default_random_latency() -> LatencyDistribution {
@@ -77,4 +111,47 @@ fn empty_map() -> HashMap<String, Vec<Hop>> {
 
 fn onef64() -> f64 {
     1.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CallGraphLatencyKind, SyntheticConfig};
+    use serde_json::json;
+
+    #[test]
+    fn parses_callgraph_config() {
+        let config = json!({
+            "child_callgraph_services": [
+                { "id": "S1" },
+                { "id": "C6", "replicas": 2 }
+            ],
+            "child_callgraph_c": [
+                {
+                    "service_id": "S1",
+                    "latency_kind": "random",
+                    "busy_spin_prob": 0.7
+                },
+                {
+                    "service_id": "C6",
+                    "latency_kind": "constant",
+                    "duration_us": 12000,
+                    "busy_spin_prob": 0.3
+                }
+            ]
+        });
+
+        let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
+        assert_eq!(parsed.child_callgraph_services.len(), 2);
+        assert_eq!(parsed.child_callgraph_services[1].replicas, 2);
+        assert_eq!(parsed.child_callgraph_c.len(), 2);
+        assert_eq!(
+            parsed.child_callgraph_c[0].latency_kind,
+            CallGraphLatencyKind::Random
+        );
+        assert_eq!(
+            parsed.child_callgraph_c[1].latency_kind,
+            CallGraphLatencyKind::Constant
+        );
+        assert_eq!(parsed.child_callgraph_c[1].duration_us, Some(12000));
+    }
 }

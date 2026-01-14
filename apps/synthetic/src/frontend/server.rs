@@ -7,8 +7,9 @@ use std::{
 
 use app_utils::timing::time_now;
 use rand::thread_rng;
+use rand::Rng;
 use rand_distr::{Distribution, Exp};
-use synthetic::config::SyntheticConfig;
+use synthetic::config::{CallGraphHop, CallGraphLatencyKind, SyntheticConfig};
 use synthetic::util;
 
 use tonic::transport::masa_channel::LoadBalancedChannel;
@@ -25,14 +26,29 @@ pub struct FrontendImpl {
     next_constant_replica: AtomicU8,
     presampled_services_offset: usize,
     presampled_request_types: HashMap<String, Vec<util::Hop>>,
+    callgraph_service_map: HashMap<String, usize>,
+    callgraph_c: Vec<CallGraphHop>,
+    callgraph_d: Vec<CallGraphHop>,
 }
 
 impl FrontendImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
+        let SyntheticConfig {
+            child_constant_replicas,
+            child_presampled_services,
+            child_presampled_request_types,
+            child_callgraph_services,
+            child_callgraph_c,
+            child_callgraph_d,
+            ..
+        } = config;
+
         let mut services = vec![1];
-        services.extend(vec![config.child_constant_replicas]);
+        services.extend(vec![child_constant_replicas]);
         let presampled_services_offset = services.len();
-        services.extend(config.child_presampled_services.iter().map(|v| v[0] as u8));
+        services.extend(child_presampled_services.iter().map(|v| v[0] as u8));
+        let callgraph_services_offset = services.len();
+        services.extend(child_callgraph_services.iter().map(|svc| svc.replicas));
         let mut children = Vec::new();
         let mut start_id = 1;
         for r in services {
@@ -44,19 +60,33 @@ impl FrontendImpl {
         }
 
         let mut presampled_request_types = HashMap::new();
-        for (key, value) in config.child_presampled_request_types {
+        for (key, value) in child_presampled_request_types {
             presampled_request_types.insert(
                 key,
                 value.into_iter().map(|hop| util::Hop::from(hop)).collect(),
             );
         }
 
+        let mut callgraph_service_map = HashMap::new();
+        for (index, service) in child_callgraph_services.iter().enumerate() {
+            let inserted =
+                callgraph_service_map.insert(service.id.clone(), callgraph_services_offset + index);
+            assert!(
+                inserted.is_none(),
+                "duplicate callgraph service id: {}",
+                service.id
+            );
+        }
+
         FrontendImpl {
             children,
-            constant_replicas: config.child_constant_replicas,
+            constant_replicas: child_constant_replicas,
             next_constant_replica: AtomicU8::new(0),
             presampled_request_types,
             presampled_services_offset,
+            callgraph_service_map,
+            callgraph_c: child_callgraph_c,
+            callgraph_d: child_callgraph_d,
         }
     }
 }
@@ -169,6 +199,22 @@ impl Frontend for FrontendImpl {
         Ok(Response::new(frontend::BResponse {}))
     }
 
+    async fn handle_c(
+        &self,
+        _request: Request<frontend::CRequest>,
+    ) -> Result<Response<frontend::CResponse>, Status> {
+        self.handle_callgraph(&self.callgraph_c).await?;
+        Ok(Response::new(frontend::CResponse {}))
+    }
+
+    async fn handle_d(
+        &self,
+        _request: Request<frontend::DRequest>,
+    ) -> Result<Response<frontend::DResponse>, Status> {
+        self.handle_callgraph(&self.callgraph_d).await?;
+        Ok(Response::new(frontend::DResponse {}))
+    }
+
     async fn handle_presampled(
         &self,
         request: Request<frontend::PresampledRequest>,
@@ -197,6 +243,58 @@ impl Frontend for FrontendImpl {
         }
 
         Ok(Response::new(frontend::PresampledResponse {}))
+    }
+}
+
+impl FrontendImpl {
+    async fn handle_callgraph(&self, hops: &[CallGraphHop]) -> Result<(), Status> {
+        if hops.is_empty() {
+            return Err(Status::failed_precondition("callgraph is not configured"));
+        }
+
+        for hop in hops {
+            let service_index =
+                *self
+                    .callgraph_service_map
+                    .get(&hop.service_id)
+                    .ok_or_else(|| {
+                        Status::invalid_argument(format!(
+                            "unknown callgraph service id: {}",
+                            hop.service_id
+                        ))
+                    })?;
+
+            if !(0.0..=1.0).contains(&hop.busy_spin_prob) {
+                return Err(Status::invalid_argument(
+                    "busy_spin_prob must be between 0.0 and 1.0",
+                ));
+            }
+
+            let busy_spin = rand::thread_rng().gen_bool(hop.busy_spin_prob);
+            match hop.latency_kind {
+                CallGraphLatencyKind::Random => {
+                    self.children[service_index]
+                        .clone()
+                        .random_latency(child::RandomLatencyRequest {
+                            sent_at: time_now(),
+                            busy_spin,
+                        })
+                        .await?;
+                }
+                CallGraphLatencyKind::Constant => {
+                    self.children[service_index]
+                        .clone()
+                        .constant_latency(child::ConstantLatencyRequest {
+                            sent_at: time_now(),
+                            busy_spin,
+                            duration_us: hop.duration_us,
+                        })
+                        .await?;
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

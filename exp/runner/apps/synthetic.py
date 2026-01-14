@@ -100,8 +100,19 @@ class SyntheticApp(AppPlugin):
             random_replicas = 1
             env_vars["RANDOM_REPLICAS"] = str(random_replicas)
             
+            # Callgraph replicas from child_callgraph_services (each defaults to 1)
+            callgraph_services = app_config.get("child_callgraph_services", [])
+            callgraph_replicas = sum(
+                service.get("replicas", 1) for service in callgraph_services
+            )
+
             # Total child replicas
-            child_replicas = constant_replicas + random_replicas + presampled_replicas
+            child_replicas = (
+                constant_replicas
+                + random_replicas
+                + presampled_replicas
+                + callgraph_replicas
+            )
             env_vars["CHILD_REPLICAS"] = str(child_replicas)
             
             # CPUs per replica
