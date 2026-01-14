@@ -292,6 +292,8 @@ impl Reservation for ReservationImpl {
             }
         }
 
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
         {
             let elapsed = start.elapsed().as_micros();
             self.latency_tracker.track(elapsed.try_into().unwrap());
