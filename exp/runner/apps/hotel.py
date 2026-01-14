@@ -8,8 +8,10 @@ import logging
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
@@ -213,6 +215,7 @@ class HotelBuilder(AppBuilder):
         no_cache: bool = False,
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
+        build_logs_dir: Optional[Path] = None,
     ) -> Optional[list[list[str]]]:
         app = "hotel"
         # List of binaries to build (each gets its own image)
@@ -251,6 +254,7 @@ class HotelBuilder(AppBuilder):
 
         # Stage 1: Build all binaries once (shared across all images)
         logger.info("Stage 1: Building all binaries for hotel app")
+        stage1_start_time = time.time()
         builder_build_args: list[str] = []
         if features:
             builder_build_args.extend(["--build-arg", f"FEATURES={features}"])
@@ -291,10 +295,12 @@ class HotelBuilder(AppBuilder):
             except subprocess.CalledProcessError as e:
                 logger.error(f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}")
                 raise
-        logger.info("Stage 1 complete: All binaries built")
+        stage1_duration = time.time() - stage1_start_time
+        logger.info(f"Stage 1 complete: All binaries built ({stage1_duration:.2f}s)")
 
         # Stage 2: Build runtime-base (shared across all images)
         logger.info("Stage 2: Building runtime-base image")
+        stage2_start_time = time.time()
         runtime_base_build_args: list[str] = []
         if features:
             runtime_base_build_args.extend(["--build-arg", f"FEATURES={features}"])
@@ -336,63 +342,131 @@ class HotelBuilder(AppBuilder):
             except subprocess.CalledProcessError as e:
                 logger.error(f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}")
                 raise
-        logger.info("Stage 2 complete: Runtime-base image built")
+        stage2_duration = time.time() - stage2_start_time
+        logger.info(f"Stage 2 complete: Runtime-base image built ({stage2_duration:.2f}s)")
 
-        # Stage 3: Build per-binary runtime images
-        for binary_name in binaries_list:
-            logger.info(f"Stage 3: Building runtime image for {binary_name}")
-            
-            runtime_build_args: list[str] = []
-            if features:
-                runtime_build_args.extend(["--build-arg", f"FEATURES={features}"])
-            runtime_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
-            runtime_build_args.extend(["--build-arg", f"APP={app}"])
-            runtime_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
-            runtime_build_args.extend(["--build-arg", f"BINARY_NAME={binary_name}"])
-            # Use consistent cache ID based on features across all stages
-            runtime_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
+        # Stage 3: Build per-binary runtime images IN PARALLEL
+        def build_runtime_image(binary_name: str) -> tuple[str, bool, Optional[str], Optional[Path]]:
+            """Build a single runtime image. Returns (binary_name, success, error_msg, log_file)."""
+            log_file = None
+            try:
+                runtime_build_args: list[str] = []
+                if features:
+                    runtime_build_args.extend(["--build-arg", f"FEATURES={features}"])
+                runtime_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
+                runtime_build_args.extend(["--build-arg", f"APP={app}"])
+                runtime_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
+                runtime_build_args.extend(["--build-arg", f"BINARY_NAME={binary_name}"])
+                # Use consistent cache ID based on features across all stages
+                runtime_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
 
-            # Generate image name: <binary>:<tag> or <binary>:latest if no features
-            # Note: binary_name already includes the hotel_ prefix
-            if tag:
-                image_name = f"{binary_name}:{tag}"
-            else:
-                image_name = f"{binary_name}:latest"
+                # Generate image name: <binary>:<tag> or <binary>:latest if no features
+                # Note: binary_name already includes the hotel_ prefix
+                if tag:
+                    image_name = f"{binary_name}:{tag}"
+                else:
+                    image_name = f"{binary_name}:latest"
 
-            runtime_cmd: list[str] = [
-                "docker",
-                "buildx",
-                "build",
-                "-f",
-                "./exp/common/docker-build/Dockerfile",
-                "--target",
-                "runtime",
-                *runtime_build_args,
-                "--ulimit",
-                "nofile=4096:4096",
-                get_docker_progress_flag(),
-            ]
+                runtime_cmd: list[str] = [
+                    "docker",
+                    "buildx",
+                    "build",
+                    "-f",
+                    "./exp/common/docker-build/Dockerfile",
+                    "--target",
+                    "runtime",
+                    *runtime_build_args,
+                    "--ulimit",
+                    "nofile=4096:4096",
+                ]
 
-            if no_cache:
-                runtime_cmd.append("--no-cache")
+                if no_cache:
+                    runtime_cmd.append("--no-cache")
 
-            runtime_cmd.extend(["-t", image_name, "."])
-            
-            if dry_run:
-                commands.append(runtime_cmd.copy())
-            else:
-                try:
+                runtime_cmd.extend(["-t", image_name, "."])
+
+                if dry_run:
+                    # Add progress flag for dry-run display
+                    runtime_cmd.insert(-1, get_docker_progress_flag())
+                    commands.append(runtime_cmd.copy())
+                    return (binary_name, True, None, None)
+
+                # Write output to log file instead of terminal (for parallel builds)
+                if build_logs_dir:
+                    build_logs_dir.mkdir(parents=True, exist_ok=True)
+                    log_file = build_logs_dir / f"{binary_name}.log"
+                    logger.info(f"Building {image_name} (log: {log_file})")
+
+                    # Use --progress=plain for file output (not tty)
+                    build_cmd_with_progress = runtime_cmd.copy()
+                    build_cmd_with_progress.insert(-1, "--progress=plain")
+
+                    with open(log_file, "w") as f:
+                        result = subprocess.run(
+                            build_cmd_with_progress,
+                            cwd=repo_root,
+                            check=True,
+                            stdout=f,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                        )
+                else:
+                    logger.info(f"Building {image_name}")
+                    # Use tty progress for terminal output
+                    build_cmd_with_progress = runtime_cmd.copy()
+                    build_cmd_with_progress.insert(-1, get_docker_progress_flag())
                     subprocess.run(
-                        runtime_cmd,
+                        build_cmd_with_progress,
                         cwd=repo_root,
                         check=True,
                         capture_output=False,
                     )
-                except subprocess.CalledProcessError as e:
-                    logger.error(f"Failed to build runtime image for {binary_name}. Command: {shlex.join(runtime_cmd)}")
-                    raise
-            
-            logger.info(f"Successfully built docker image: {image_name}")
+
+                logger.info(f"Successfully built docker image: {image_name}")
+                return (binary_name, True, None, log_file)
+
+            except subprocess.CalledProcessError as e:
+                error_msg = f"Failed to build runtime image for {binary_name}"
+                return (binary_name, False, error_msg, log_file)
+
+        # Build all runtime images in parallel
+        if not dry_run:
+            logger.info("Stage 3: Building all runtime images in parallel")
+            stage3_start_time = time.time()
+            build_errors = []
+            completed_binaries = []
+
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                # Submit all build tasks
+                futures = {executor.submit(build_runtime_image, binary): binary
+                           for binary in binaries_list}
+
+                # Collect results as they complete
+                for future in as_completed(futures):
+                    binary_name, success, error_msg, log_file = future.result()
+                    if success:
+                        completed_binaries.append(binary_name)
+                    else:
+                        build_errors.append((binary_name, error_msg, log_file))
+
+            # Check if any builds failed
+            if build_errors:
+                logger.error(f"Failed to build {len(build_errors)} images:")
+                for binary_name, error_msg, log_file in build_errors:
+                    msg = f"  - {binary_name}: {error_msg}"
+                    if log_file:
+                        msg += f" (see {log_file})"
+                    logger.error(msg)
+                raise RuntimeError(f"Failed to build {len(build_errors)} runtime images")
+
+            stage3_duration = time.time() - stage3_start_time
+            logger.info(f"Stage 3 complete: Built all {len(completed_binaries)} runtime images ({stage3_duration:.2f}s)")
+            if build_logs_dir:
+                logger.info(f"Build logs written to: {build_logs_dir}")
+        else:
+            # In dry-run mode, still call build_runtime_image to collect commands
+            for binary_name in binaries_list:
+                build_runtime_image(binary_name)
         
         if dry_run:
             return commands
@@ -400,6 +474,9 @@ class HotelBuilder(AppBuilder):
         # Calculate and print build duration
         build_duration = time.time() - build_start_time
         logger.info(f"Docker image building took {build_duration:.2f} seconds ({build_duration/60:.2f} minutes)")
+        logger.info(f"  Stage 1 (build binaries): {stage1_duration:.2f}s")
+        logger.info(f"  Stage 2 (runtime-base): {stage2_duration:.2f}s")
+        logger.info(f"  Stage 3 (parallel copying): {stage3_duration:.2f}s")
         logger.info("All hotel app docker images built successfully")
         return None
 
@@ -583,6 +660,12 @@ class HotelApp(AppPlugin):
         tag = self.get_image_tag(features=policy)
         env_vars["HOTEL_IMAGE_TAG"] = tag if tag else "latest"
 
+        # Clean up old build logs before building
+        build_logs_dir = repo_root / "exp" / "hotel" / "data" / "out" / config.experiment_name / str(iteration) / policy / "build_logs"
+        if build_logs_dir.exists():
+            logger.info(f"Cleaning build logs directory: {build_logs_dir}")
+            shutil.rmtree(build_logs_dir, ignore_errors=True)
+
         # Build docker images (use ORIGINAL config for build, not project-specific)
         builder = self.create_builder()
         build_cmds = builder.build(
@@ -593,6 +676,7 @@ class HotelApp(AppPlugin):
             no_cache=no_cache,
             gen_config_path=(config.in_dir / "gen_config.json"),
             dry_run=dry_run,
+            build_logs_dir=build_logs_dir,
         )
         if dry_run and build_cmds:
             print("\n".join(" ".join(cmd) for cmd in build_cmds))

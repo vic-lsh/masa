@@ -77,6 +77,7 @@ impl<'a> ReplaySpanExecutor<'a> {
             self.request.slo,
             self.request.start_at,
             self.request.deadline,
+            self.request.deadline,
         );
         request.metadata_mut().insert_ctx("ctx", &ctx);
 
