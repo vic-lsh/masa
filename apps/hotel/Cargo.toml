@@ -62,6 +62,11 @@ prio_global = [
   "masa/prio_global",
   "tonic/prio_global",
 ]
+prio_oldest = [
+  "tokio/prio_oldest",
+  "masa/prio_oldest",
+  "tonic/prio_oldest",
+]
 prio_local = [
   "tokio/prio_local",
   "masa/prio_local",

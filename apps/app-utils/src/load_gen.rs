@@ -30,7 +30,7 @@ use crate::{
     logging::init_logging_file,
     timing::{get_timestamp, time_now},
 };
-use masa::Context;
+use masa::{Context, ContextBuilder, PriorityHint};
 use tonic::Response;
 use tonic::Status;
 
@@ -572,15 +572,18 @@ where
 
                 let start_at = time_now();
                 let deadline = start_at + handler.slo();
+                let prio_hint = if masa::PRIO_OLDEST {
+                    start_at
+                } else {
+                    deadline
+                };
 
-                Context::new(
-                    handler.api().to_string(),
-                    request_id,
-                    handler.slo(),
-                    start_at,
-                    deadline,
-                    deadline,
-                )
+                ContextBuilder::new(handler.api().to_string(), request_id)
+                    .slo(handler.slo())
+                    .start_at(start_at)
+                    .deadline(deadline)
+                    .prio_hint(PriorityHint::new(prio_hint))
+                    .build()
             };
 
             let client = self.client.clone();
