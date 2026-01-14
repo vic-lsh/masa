@@ -11,25 +11,7 @@ import seaborn as sns
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams['figure.max_open_warning'] = 0
 
-from .util import parse_args, prepare_output_dir, read_data, filter_excluded_errors
-
-
-def get_policy_color(policy: str) -> str:
-    """Get color for a policy. FIFO uses grey hues, prio_global uses blue hues, prio_local uses pink hues."""
-    policy_lower = policy.lower()
-    if policy_lower.startswith("fifo"):
-        if ",early" in policy_lower:
-            return "darkgrey"
-        return "grey"
-    elif policy_lower.startswith("prio_global"):
-        if ",early" in policy_lower:
-            return "cornflowerblue"
-        return "steelblue"
-    elif policy_lower.startswith("prio_local"):
-        if ",early" in policy_lower:
-            return "lightpink"
-        return "hotpink"
-    return None  # Use matplotlib default color cycle
+from .util import parse_args, prepare_output_dir, read_data, filter_excluded_errors, get_policy_color
 
 
 def _convert_to_milliseconds(data, policies, rps_values):
