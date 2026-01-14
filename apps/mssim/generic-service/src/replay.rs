@@ -273,10 +273,16 @@ pub async fn run_replay_load(
                 let slo = 50_000;
                 let start_at = time_now();
                 let deadline = start_at + slo;
+                let prio_hint = if masa::PRIO_OLDEST {
+                    start_at
+                } else {
+                    deadline
+                };
                 MasaContextBuilder::new("replay".to_string(), req_id)
                     .slo(slo)
                     .start_at(start_at)
                     .deadline(deadline)
+                    .prio_hint(prio_hint)
                     .build()
             };
 
