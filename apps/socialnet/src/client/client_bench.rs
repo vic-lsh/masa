@@ -16,7 +16,7 @@ use app_utils::{
     timing::time_now,
 };
 use gen::get_compose_post_request;
-use masa::Context;
+use masa::{Context, ContextBuilder};
 use socialnet::compose_post;
 use socialnet::compose_post::compose_post_service_client::ComposePostServiceClient;
 
@@ -46,14 +46,11 @@ impl Client for SocialnetClient {
             let start_at = time_now();
             let deadline = start_at + slo;
             let req_id = 0;
-            Context::new(
-                "ping".to_string(),
-                req_id,
-                slo,
-                start_at,
-                deadline,
-                deadline,
-            )
+            ContextBuilder::new("ping".to_string(), req_id)
+                .slo(slo)
+                .start_at(start_at)
+                .deadline(deadline)
+                .build()
         };
         request.metadata_mut().insert_ctx("ctx", &ctx);
         client.compose_post(request).await.map(|_| ())
