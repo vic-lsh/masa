@@ -26,13 +26,15 @@ fn ms_since_init(value: u64) -> u64 {
 
 const N: usize = 6;
 
-pub(crate) struct BinaryHeapRoundRobinQueue<T> {
+pub(crate) struct BinaryHeapRoundRobinQueue<T, const USE_INFRA_QUEUE: bool = false> {
     heap: BinaryHeap<T>,
     rr_queue: VecDeque<T>,
     infra_rr_queue: VecDeque<T>,
 }
 
-impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapRoundRobinQueue<T> {
+impl<T: Ord + PartialOrd + Prioritize + Identifiable, const USE_INFRA_QUEUE: bool> Queue
+    for BinaryHeapRoundRobinQueue<T, USE_INFRA_QUEUE>
+{
     type Item = T;
 
     fn with_capacity(cap: usize) -> Self {
@@ -44,7 +46,7 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapRoundR
     }
 
     fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
-        if item.priority() == PriorityHint::infra() {
+        if USE_INFRA_QUEUE && item.priority() == PriorityHint::infra() {
             self.infra_rr_queue.push_back(item);
             return Ok(());
         }
@@ -72,8 +74,10 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapRoundR
     }
 
     fn pop(&mut self) -> Result<Self::Item, PopError> {
-        if let Some(item) = self.infra_rr_queue.pop_front() {
-            return Ok(item);
+        if USE_INFRA_QUEUE {
+            if let Some(item) = self.infra_rr_queue.pop_front() {
+                return Ok(item);
+            }
         }
 
         if self.rr_queue.is_empty() {
@@ -101,7 +105,9 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapRoundR
     }
 }
 
-impl<T: Ord> Default for BinaryHeapRoundRobinQueue<T> {
+impl<T: Ord, const USE_INFRA_QUEUE: bool> Default
+    for BinaryHeapRoundRobinQueue<T, USE_INFRA_QUEUE>
+{
     fn default() -> Self {
         Self {
             heap: BinaryHeap::new(),
@@ -111,7 +117,9 @@ impl<T: Ord> Default for BinaryHeapRoundRobinQueue<T> {
     }
 }
 
-impl<T> IntoSchedFlavor for BinaryHeapRoundRobinQueue<T> {
+impl<T, const USE_INFRA_QUEUE: bool> IntoSchedFlavor
+    for BinaryHeapRoundRobinQueue<T, USE_INFRA_QUEUE>
+{
     fn into_sched_flavor() -> SchedFlavor {
         SchedFlavor::Prio
     }
@@ -185,7 +193,7 @@ mod tests {
 
     #[test]
     fn test_infra_priority() {
-        let mut queue = BinaryHeapRoundRobinQueue::<MockTask>::default();
+        let mut queue = BinaryHeapRoundRobinQueue::<MockTask, true>::default();
 
         let t1 = MockTask::new(1, 100);
         let t2 = MockTask::new_infra(2);
