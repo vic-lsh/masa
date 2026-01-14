@@ -3,6 +3,7 @@ use std::{sync::Arc, task::Poll};
 use crate::metadata::{Ascii, MetadataValue};
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
+mod common;
 mod fifo;
 mod global;
 mod local;
