@@ -5,8 +5,8 @@ mod priority;
 mod timing;
 mod typing;
 
-pub use context::{Context, ContextBuilder};
 pub use context::FutureSpan;
+pub use context::{Context, ContextBuilder};
 pub use flag::{
     EARLY_RETURN, FIFO, FIFO_QUEUE_TRACING, FIFO_SPAN_TRACING, PRIO_GLOBAL,
     PRIO_GLOBAL_QUEUE_TRACING, PRIO_LOCAL,
