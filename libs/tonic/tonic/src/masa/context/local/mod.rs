@@ -7,7 +7,7 @@ use masa::LatencyEstimator;
 // TODO: tweak these values. should they be specific to each local priority selector?
 pub(crate) const PERCENTILE: usize = 50;
 
-fn estimate_method_latency<E: LatencyEstimator + Default + 'static>(
+fn get_estimate<E: LatencyEstimator + Default + 'static>(
     map: &RwLock<HashMap<String, E>>,
     key: String,
 ) -> Option<u64> {
