@@ -5,7 +5,7 @@ use std::task::Poll;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use crate::{Code, Response};
-use masa::{time_now, Context, EARLY_RETURN};
+use masa::{time_now, Context, ContextBuilder, EARLY_RETURN};
 
 #[derive(Debug)]
 /// FIFO policy with optional early return support.
@@ -111,14 +111,10 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
         let deadline = self.ctx.deadline();
 
-        let child_recv_ctx = Context::new(
-            self.ctx.api().clone(),
-            self.ctx.request_id(),
-            self.ctx.slo(),
-            self.ctx.start_at(),
-            deadline,
-            deadline,
-        );
+        let child_recv_ctx = ContextBuilder::from(&self.ctx)
+            .deadline(deadline)
+            .prio_hint(deadline)
+            .build();
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
 
         Ok(())
