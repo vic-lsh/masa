@@ -1,11 +1,11 @@
 use std::{
-    collections::BinaryHeap,
+    collections::{BinaryHeap, VecDeque},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
 use crate::runtime::task::Identifiable;
-use masa::Prioritize;
+use masa::{Prioritize, PriorityHint};
 
 #[allow(dead_code)]
 static INIT: std::sync::LazyLock<u64> = std::sync::LazyLock::new(time_now);
@@ -26,6 +26,7 @@ fn ms_since_init(value: u64) -> u64 {
 
 pub(crate) struct BinaryHeapQueue<T> {
     q: BinaryHeap<T>,
+    infra_q: VecDeque<T>,
     push_count: u64,
     // reorder_count: u64,
 }
@@ -36,13 +37,17 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapQueue<
     fn with_capacity(cap: usize) -> Self {
         Self {
             q: BinaryHeap::with_capacity(cap),
+            infra_q: VecDeque::with_capacity(cap),
             push_count: 0,
         }
     }
 
     fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
-        // let id = item.id();
-        self.q.push(item);
+        if super::USE_INFRA_QUEUE && item.priority() == PriorityHint::infra() {
+            self.infra_q.push_back(item);
+        } else {
+            self.q.push(item);
+        }
         self.push_count += 1;
 
         // Get slice of binary heap and find the index of the newly added element
@@ -59,6 +64,11 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapQueue<
     }
 
     fn pop(&mut self) -> Result<Self::Item, PopError> {
+        if super::USE_INFRA_QUEUE {
+            if let Some(item) = self.infra_q.pop_front() {
+                return Ok(item);
+            }
+        }
         // [TODO] Do something with a task if it is already expired.
         self.q.pop().ok_or(PopError::Empty).map(|e| {
             // for debugging
@@ -74,7 +84,7 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapQueue<
     }
 
     fn len(&self) -> usize {
-        self.q.len()
+        self.q.len() + self.infra_q.len()
     }
 
     fn is_full(&self) -> bool {
@@ -82,7 +92,7 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapQueue<
     }
 
     fn capacity(&self) -> Option<usize> {
-        Some(self.q.capacity())
+        Some(self.q.capacity() + self.infra_q.capacity())
     }
 }
 
@@ -90,6 +100,7 @@ impl<T: Ord> Default for BinaryHeapQueue<T> {
     fn default() -> Self {
         Self {
             q: BinaryHeap::new(),
+            infra_q: VecDeque::new(),
             push_count: 0,
         }
     }
