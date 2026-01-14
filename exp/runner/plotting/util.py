@@ -7,6 +7,20 @@ from pathlib import Path
 import pandas as pd
 
 
+def read_policies(config_dir: Path) -> list[str]:
+    policies_path = Path(config_dir) / "policies"
+    if not policies_path.exists():
+        raise FileNotFoundError(f"Missing policies file at: {policies_path}")
+
+    policies_text = policies_path.read_text(encoding="utf-8").strip()
+    policies = policies_text.split()
+
+    if not policies:
+        raise ValueError("policies file is empty or contains no policies")
+
+    return policies
+
+
 def read_data(config_dir, data_dir):
     with open(os.path.join(config_dir, "gen_config.json")) as f:
         config = json.load(f)
@@ -23,10 +37,7 @@ def read_data(config_dir, data_dir):
     else:
         raise ValueError(f"Slos array length ({len(slos)}) must match Apis array length ({len(apis)})")
     
-    policies = os.listdir(os.path.join(data_dir, "0"))
-    policies = list(
-        filter(lambda p: os.path.isdir(os.path.join(data_dir, "0", p)), policies)
-    )
+    policies = read_policies(Path(config_dir))
     results = [{} for _ in range(repeats)]
     for i in range(repeats):
         for api in apis + ["ALL"]:
