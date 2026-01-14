@@ -22,7 +22,7 @@ impl<T: Prioritize> Queue for FifoInfraQueue<T> {
     }
 
     fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
-        if super::USE_INFRA_QUEUE && item.priority() == PriorityHint::infra() {
+        if item.priority() == PriorityHint::infra() {
             self.infra_q.push_back(item);
         } else {
             self.other_q.push_back(item);
@@ -32,10 +32,8 @@ impl<T: Prioritize> Queue for FifoInfraQueue<T> {
     }
 
     fn pop(&mut self) -> Result<Self::Item, PopError> {
-        if super::USE_INFRA_QUEUE {
-            if let Some(item) = self.infra_q.pop_front() {
-                return Ok(item);
-            }
+        if let Some(item) = self.infra_q.pop_front() {
+            return Ok(item);
         }
         if let Some(item) = self.other_q.pop_front() {
             return Ok(item);
