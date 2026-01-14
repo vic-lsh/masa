@@ -15,7 +15,7 @@ use std::{
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{estimate_method_latency, track_method_latency};
-use masa::{time_now, Context, LatencyDistribution, LatencyEstimator, MethodId, EARLY_RETURN};
+use masa::{time_now, Context, ContextBuilder, LatencyDistribution, LatencyEstimator, MethodId, EARLY_RETURN};
 
 static LAST_PRINT_TIME: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
@@ -184,13 +184,9 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         // NOTE(vic): could we have passed the deadline at this point?
         let deadline = self.ctx.deadline() - estimate_remaining;
 
-        let child_recv_ctx = Context::new(
-            self.ctx.api().clone(),
-            self.ctx.request_id(),
-            self.ctx.slo(),
-            self.ctx.start_at(),
-            deadline,
-        );
+        let child_recv_ctx = ContextBuilder::from(&self.ctx)
+            .deadline(deadline)
+            .build();
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
 
         Ok(())

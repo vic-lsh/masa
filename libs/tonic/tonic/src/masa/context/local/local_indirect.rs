@@ -9,7 +9,7 @@ use std::{
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{estimate_method_latency, track_method_latency};
-use masa::{Context, LatencyDistribution, LatencyEstimator, LatencyTracker};
+use masa::{Context, ContextBuilder, LatencyDistribution, LatencyEstimator, LatencyTracker};
 
 #[derive(Debug)]
 /// Same as LocalDeadlineDirect, but e_rem
@@ -114,13 +114,9 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         };
         let deadline = self.ctx.deadline() - estimate_remaining;
 
-        let child_recv_ctx = Context::new(
-            self.ctx.api().clone(),
-            self.ctx.request_id(),
-            self.ctx.slo(),
-            self.ctx.start_at(),
-            deadline,
-        );
+        let child_recv_ctx = ContextBuilder::from(&self.ctx)
+            .deadline(deadline)
+            .build();
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
 
         Ok(())
