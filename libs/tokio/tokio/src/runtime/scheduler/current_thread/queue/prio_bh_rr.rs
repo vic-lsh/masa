@@ -44,7 +44,7 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapRoundR
     }
 
     fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
-        if item.priority() == PriorityHint::infra() {
+        if super::USE_INFRA_QUEUE && item.priority() == PriorityHint::infra() {
             self.infra_rr_queue.push_back(item);
             return Ok(());
         }
@@ -72,8 +72,10 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapRoundR
     }
 
     fn pop(&mut self) -> Result<Self::Item, PopError> {
-        if let Some(item) = self.infra_rr_queue.pop_front() {
-            return Ok(item);
+        if super::USE_INFRA_QUEUE {
+            if let Some(item) = self.infra_rr_queue.pop_front() {
+                return Ok(item);
+            }
         }
 
         if self.rr_queue.is_empty() {
