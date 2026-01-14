@@ -9,6 +9,10 @@
 - When introducing a new feature, write tests for it.
 - When updating existing code's behavior, either update the test to reflect the new behavior, or add a new test to cover the new behavior.
 
+### Code format
+
+- Run formatting script to format the code.
+
 ## Codebase detail
 
 ### exp.runner
