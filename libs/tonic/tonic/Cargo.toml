@@ -56,9 +56,10 @@ channel = []
 
 # masa-specific features
 masa = []
-prio_global = ["masa"]
-prio_local = ["masa"]
-fifo = ["masa"]
+prio_global = ["masa/prio_global", "tokio/prio_global"]
+prio_oldest = ["masa/prio_oldest", "tokio/prio_oldest"]
+prio_local = ["masa/prio_local", "tokio/prio_local"]
+fifo = ["masa/fifo", "tokio/fifo"]
 fifo_span_tracing = ["masa"]
 fifo_queue_tracing = ["masa"]
 prio_global_queue_tracing = ["masa"]
