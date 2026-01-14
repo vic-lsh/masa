@@ -572,11 +572,17 @@ where
 
                 let start_at = time_now();
                 let deadline = start_at + handler.slo();
+                let prio_hint = if masa::PRIO_OLDEST {
+                    start_at
+                } else {
+                    deadline
+                };
 
                 ContextBuilder::new(handler.api().to_string(), request_id)
                     .slo(handler.slo())
                     .start_at(start_at)
                     .deadline(deadline)
+                    .prio_hint(prio_hint)
                     .build()
             };
 
