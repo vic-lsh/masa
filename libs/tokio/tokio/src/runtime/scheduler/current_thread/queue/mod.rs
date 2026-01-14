@@ -127,8 +127,6 @@ pub(crate) trait Queue {
     fn with_capacity(cap: usize) -> Self;
 }
 
-pub(crate) const USE_INFRA_QUEUE: bool = true;
-
 #[derive(Debug)]
 #[allow(dead_code)]
 pub(crate) enum PushError<T> {
