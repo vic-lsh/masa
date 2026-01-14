@@ -1,4 +1,5 @@
 mod fifo;
+mod fifo_infra;
 
 #[cfg(any(
     feature = "prio_global",
