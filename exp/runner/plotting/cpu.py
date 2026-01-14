@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from ..container_utils import extract_service_name, group_containers_by_service
+from .util import get_policy_color
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +205,7 @@ def _apply_ewma(values: np.ndarray, alpha: float) -> np.ndarray:
 
 def _get_policy_colors(policies: list[str]) -> dict[str, str]:
     """
-    Get colors for policies, matching the color scheme from MSSIM plots.
+    Get colors for policies, matching the color scheme from plotting utilities.
 
     Args:
         policies: List of policy names
@@ -217,17 +218,7 @@ def _get_policy_colors(policies: list[str]) -> dict[str, str]:
     default_idx = 0
 
     for policy in policies:
-        policy_lower = policy.lower()
-        color = None
-
-        # Match MSSIM color scheme
-        if policy_lower.startswith("fifo"):
-            color = "darkgrey" if ",early" in policy_lower else "grey"
-        elif policy_lower.startswith("prio_global"):
-            color = "cornflowerblue" if ",early" in policy_lower else "steelblue"
-        elif policy_lower.startswith("prio_local"):
-            color = "lightpink" if ",early" in policy_lower else "hotpink"
-
+        color = get_policy_color(policy)
         if color:
             result[policy] = color
         else:

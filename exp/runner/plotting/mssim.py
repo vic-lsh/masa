@@ -17,29 +17,12 @@ import numpy as np
 import pandas as pd
 
 from . import cpu
+from .util import get_policy_color
 
 plt.rcParams["figure.max_open_warning"] = 0
 
 
 _RPS_DIR_RE = re.compile(r"^rps_(?P<rps>[0-9_]+(?:\.[0-9_]+)?)$")
-
-
-def get_policy_color(policy: str) -> str | None:
-    """Get color for a policy. FIFO uses grey hues, prio_global uses blue hues, prio_local uses pink hues."""
-    policy_lower = policy.lower()
-    if policy_lower.startswith("fifo"):
-        if ",early" in policy_lower:
-            return "darkgrey"
-        return "grey"
-    elif policy_lower.startswith("prio_global"):
-        if ",early" in policy_lower:
-            return "cornflowerblue"
-        return "steelblue"
-    elif policy_lower.startswith("prio_local"):
-        if ",early" in policy_lower:
-            return "lightpink"
-        return "hotpink"
-    return None  # Use matplotlib default color cycle
 
 
 def _parse_rps_dir(path: Path) -> float:
