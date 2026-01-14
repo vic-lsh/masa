@@ -5,6 +5,7 @@ edition = "2021"
 
 [features]
 prio_global = []
+prio_oldest = []
 prio_local = []
 fifo = []
 fifo_span_tracing = []
