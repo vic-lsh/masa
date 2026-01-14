@@ -24,7 +24,7 @@ fn ms_since_init(value: u64) -> u64 {
     (value - *INIT) / 1000
 }
 
-const N: usize = 3;
+const N: usize = 6;
 
 pub(crate) struct BinaryHeapRoundRobinQueue<T> {
     heap: BinaryHeap<T>,
