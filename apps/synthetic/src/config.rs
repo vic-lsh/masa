@@ -41,8 +41,8 @@ pub struct RequestHop {
     pub service_id: String,
     #[serde(default)]
     pub duration_us: Option<u64>,
-    #[serde(default = "zero_f64")]
-    pub busy_spin_prob: f64,
+    #[serde(default)]
+    pub busy_spin_dur_us: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,10 +66,6 @@ pub struct SyntheticConfig {
 
 fn one_u8() -> u8 {
     1
-}
-
-fn zero_f64() -> f64 {
-    0.0
 }
 
 fn default_random_latency() -> LatencyDistribution {
@@ -106,11 +102,11 @@ mod tests {
                 {
                     "service_id": "S1",
                     "duration_us": 12000,
-                    "busy_spin_prob": 0.7
+                    "busy_spin_dur_us": 3000
                 },
                 {
                     "service_id": "C6",
-                    "busy_spin_prob": 0.3
+                    "busy_spin_dur_us": 1000
                 }
             ]
         });
@@ -120,7 +116,7 @@ mod tests {
         assert_eq!(parsed.child_services[1].replicas, 2);
         assert_eq!(parsed.request_a_hops.len(), 2);
         assert_eq!(parsed.request_a_hops[0].duration_us, Some(12000));
-        assert!((parsed.request_a_hops[0].busy_spin_prob - 0.7).abs() < f64::EPSILON);
+        assert_eq!(parsed.request_a_hops[0].busy_spin_dur_us, Some(3000));
     }
 
     #[test]

@@ -3,7 +3,6 @@ use std::iter::zip;
 use std::time::Instant;
 
 use app_utils::timing::time_now;
-use rand::Rng;
 use synthetic::config::{ChildService, RequestHop, SyntheticConfig};
 use synthetic::util;
 
@@ -188,17 +187,16 @@ impl FrontendImpl {
                 Status::invalid_argument(format!("unknown child service id: {}", hop.service_id))
             })?;
 
-            if !(0.0..=1.0).contains(&hop.busy_spin_prob) {
-                return Err(Status::invalid_argument(
-                    "busy_spin_prob must be between 0.0 and 1.0",
-                ));
-            }
-
             let duration_us = hop
                 .duration_us
                 .unwrap_or_else(|| self.random_latency.sample());
-            let busy_spin = rand::thread_rng().gen_bool(hop.busy_spin_prob);
-            let busy_spin_dur_us = if busy_spin { duration_us } else { 0 };
+            let busy_spin_dur_us = hop.busy_spin_dur_us.unwrap_or(0);
+            if busy_spin_dur_us > duration_us {
+                return Err(Status::invalid_argument(format!(
+                    "busy_spin_dur_us ({}) cannot be greater than duration_us ({})",
+                    busy_spin_dur_us, duration_us
+                )));
+            }
             let sent_at = time_now();
             let response = self.children[service_index]
                 .clone()
