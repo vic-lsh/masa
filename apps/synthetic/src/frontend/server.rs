@@ -20,6 +20,7 @@ pub struct FrontendImpl {
     presampled_services_offset: usize,
     presampled_request_types: HashMap<String, Vec<util::Hop>>,
     service_map: HashMap<String, usize>,
+    random_latency: util::LatencyDistribution,
     request_a_hops: Vec<RequestHop>,
     request_b_hops: Vec<RequestHop>,
 }
@@ -27,6 +28,7 @@ pub struct FrontendImpl {
 impl FrontendImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
         let SyntheticConfig {
+            child_random_latency,
             child_presampled_services,
             child_presampled_request_types,
             child_services,
@@ -74,11 +76,14 @@ impl FrontendImpl {
             );
         }
 
+        let random_latency = util::LatencyDistribution::from(child_random_latency);
+
         FrontendImpl {
             children,
             presampled_request_types,
             presampled_services_offset,
             service_map,
+            random_latency,
             request_a_hops,
             request_b_hops,
         }
@@ -114,11 +119,11 @@ impl Frontend for FrontendImpl {
 
         Ok(Response::new(frontend::AResponse {
             child1_queueing_latency: hop1.response.queueing_latency,
-            child1_sleep_latency: hop1.response.sleep_latency,
+            child1_sleep_latency: hop1.sleep_latency_us(),
             child1_handler_latency: hop1.response.handler_latency,
             child2_queueing_latency: hop2.response.queueing_latency,
             child2_handler_latency: hop2.response.handler_latency,
-            child2_reply_latency: hop2.finished_at - hop2.sent_at,
+            child2_reply_latency: time_now() - hop2.response.finished_at,
             handler_latency: Instant::now().duration_since(start).as_micros() as u64,
         }))
     }
@@ -189,21 +194,24 @@ impl FrontendImpl {
                 ));
             }
 
+            let duration_us = hop
+                .duration_us
+                .unwrap_or_else(|| self.random_latency.sample());
             let busy_spin = rand::thread_rng().gen_bool(hop.busy_spin_prob);
+            let busy_spin_dur_us = if busy_spin { duration_us } else { 0 };
             let sent_at = time_now();
             let response = self.children[service_index]
                 .clone()
-                .random_latency(child::RandomLatencyRequest {
+                .run_synthetic(child::RunSyntheticRequest {
                     sent_at,
-                    busy_spin,
-                    duration_us: hop.duration_us,
+                    duration_us: Some(duration_us),
+                    busy_spin_dur_us: Some(busy_spin_dur_us),
                 })
                 .await?;
-            let finished_at = time_now();
             results.push(HopResult {
                 response: response.into_inner(),
-                sent_at,
-                finished_at,
+                duration_us,
+                busy_spin_dur_us,
             });
         }
 
@@ -212,9 +220,15 @@ impl FrontendImpl {
 }
 
 struct HopResult {
-    response: child::RandomLatencyResponse,
-    sent_at: u64,
-    finished_at: u64,
+    response: child::RunSyntheticResponse,
+    duration_us: u64,
+    busy_spin_dur_us: u64,
+}
+
+impl HopResult {
+    fn sleep_latency_us(&self) -> u64 {
+        self.duration_us.saturating_sub(self.busy_spin_dur_us)
+    }
 }
 
 fn reversed_prefix_sum(v: &Vec<u64>) -> Vec<u64> {

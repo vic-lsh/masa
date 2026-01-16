@@ -11,7 +11,14 @@ import seaborn as sns
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams['figure.max_open_warning'] = 0
 
-from .util import parse_args, prepare_output_dir, read_data, filter_excluded_errors, get_policy_color
+from .util import (
+    parse_args,
+    prepare_output_dir,
+    read_data,
+    filter_excluded_errors,
+    get_policy_color,
+    get_policy_display_name,
+)
 
 
 def _convert_to_milliseconds(data, policies, rps_values):
@@ -42,7 +49,7 @@ def _plot_latency_cdf(output_dir: str, api: str, rps: int, policies: list, data:
         percentiles = np.linspace(0, 100, len(latencies))
 
         color = get_policy_color(policy)
-        ax.plot(latencies, percentiles, label=f"{policy}", color=color)
+        ax.plot(latencies, percentiles, label=get_policy_display_name(policy), color=color)
 
     # Add labels and title
     ax.set_xlabel("Latency (milliseconds)")
@@ -76,7 +83,9 @@ def _plot_latency_histogram(
 
     # Add labels and title
     ax.set_xlabel("Latency (milliseconds)")
-    ax.set_title(f"Latency Histogram for {api} API - {policy} - {rps} RPS")
+    ax.set_title(
+        f"Latency Histogram for {api} API - {get_policy_display_name(policy)} - {rps} RPS"
+    )
     dir = os.path.join(output_dir, policy)
     os.makedirs(dir, exist_ok=True)
     fig.savefig(
@@ -103,7 +112,7 @@ def _plot_p99_latency(
                 p99_latency = df_filtered["latency"].quantile(0.99)
             p99_values.append(p99_latency)
         color = get_policy_color(policy)
-        ax.plot(rps_values, p99_values, "o-", label=f"{policy}", color=color)
+        ax.plot(rps_values, p99_values, "o-", label=get_policy_display_name(policy), color=color)
 
     ax.set_xlabel("Requests Per Second (RPS)")
     ax.set_ylabel("p99 latency (milliseconds)")
@@ -146,7 +155,13 @@ def _plot_averaged_percentile_latency(
                 percentile_values.append(percentile_latency)
             averaged_percentile += np.array(percentile_values)
         color = get_policy_color(policy)
-        ax.plot(rps_values, averaged_percentile / repeats, "o-", label=f"{policy}", color=color)
+        ax.plot(
+            rps_values,
+            averaged_percentile / repeats,
+            "o-",
+            label=get_policy_display_name(policy),
+            color=color,
+        )
 
     p = int(percentile * 100)
     ax.set_xlabel("Requests Per Second (RPS)")
