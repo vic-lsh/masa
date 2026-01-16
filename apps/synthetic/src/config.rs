@@ -30,23 +30,15 @@ pub struct Hop {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CallGraphService {
+pub struct ChildService {
     pub id: String,
     #[serde(default = "one_u8")]
     pub replicas: u8,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum CallGraphLatencyKind {
-    Random,
-    Constant,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CallGraphHop {
+pub struct RequestHop {
     pub service_id: String,
-    pub latency_kind: CallGraphLatencyKind,
     #[serde(default)]
     pub duration_us: Option<u64>,
     #[serde(default = "zero_f64")]
@@ -55,12 +47,6 @@ pub struct CallGraphHop {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyntheticConfig {
-    #[serde(default = "one_u8")]
-    pub child_constant_replicas: u8,
-    #[serde(default = "default_constant_latency")]
-    pub child_constant_latency: u64,
-    #[serde(default = "zero_u16")]
-    pub child_constant_latency_slowdown_duration: u16, // ms
     #[serde(default = "default_random_latency")]
     pub child_random_latency: LatencyDistribution,
     // list of tuples of replica count and CPU share
@@ -69,11 +55,11 @@ pub struct SyntheticConfig {
     #[serde(default = "empty_map")]
     pub child_presampled_request_types: HashMap<String, Vec<Hop>>,
     #[serde(default)]
-    pub child_callgraph_services: Vec<CallGraphService>,
+    pub child_services: Vec<ChildService>,
     #[serde(default)]
-    pub child_callgraph_c: Vec<CallGraphHop>,
+    pub request_a_hops: Vec<RequestHop>,
     #[serde(default)]
-    pub child_callgraph_d: Vec<CallGraphHop>,
+    pub request_b_hops: Vec<RequestHop>,
     #[serde(default = "onef64")]
     pub child_cpus_per_replica: f64,
 }
@@ -82,22 +68,13 @@ fn one_u8() -> u8 {
     1
 }
 
-fn default_constant_latency() -> u64 {
-    500
-}
-
-fn zero_u16() -> u16 {
-    0
-}
-
 fn zero_f64() -> f64 {
     0.0
 }
 
 fn default_random_latency() -> LatencyDistribution {
-    LatencyDistribution::Discrete {
-        weights: vec![0.95, 0.05],
-        values: vec![5000, 30000],
+    LatencyDistribution::Exponential {
+        lambda: 1.0 / 10000.0,
     }
 }
 
@@ -115,43 +92,47 @@ fn onef64() -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{CallGraphLatencyKind, SyntheticConfig};
+    use super::{LatencyDistribution, SyntheticConfig};
     use serde_json::json;
 
     #[test]
-    fn parses_callgraph_config() {
+    fn parses_request_hops_config() {
         let config = json!({
-            "child_callgraph_services": [
+            "child_services": [
                 { "id": "S1" },
                 { "id": "C6", "replicas": 2 }
             ],
-            "child_callgraph_c": [
+            "request_a_hops": [
                 {
                     "service_id": "S1",
-                    "latency_kind": "random",
+                    "duration_us": 12000,
                     "busy_spin_prob": 0.7
                 },
                 {
                     "service_id": "C6",
-                    "latency_kind": "constant",
-                    "duration_us": 12000,
                     "busy_spin_prob": 0.3
                 }
             ]
         });
 
         let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
-        assert_eq!(parsed.child_callgraph_services.len(), 2);
-        assert_eq!(parsed.child_callgraph_services[1].replicas, 2);
-        assert_eq!(parsed.child_callgraph_c.len(), 2);
-        assert_eq!(
-            parsed.child_callgraph_c[0].latency_kind,
-            CallGraphLatencyKind::Random
+        assert_eq!(parsed.child_services.len(), 2);
+        assert_eq!(parsed.child_services[1].replicas, 2);
+        assert_eq!(parsed.request_a_hops.len(), 2);
+        assert_eq!(parsed.request_a_hops[0].duration_us, Some(12000));
+        assert!((parsed.request_a_hops[0].busy_spin_prob - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn uses_default_random_latency_distribution() {
+        let config = json!({});
+        let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
+        assert!(
+            matches!(
+                parsed.child_random_latency,
+                LatencyDistribution::Exponential { .. }
+            ),
+            "expected default exponential for random latency"
         );
-        assert_eq!(
-            parsed.child_callgraph_c[1].latency_kind,
-            CallGraphLatencyKind::Constant
-        );
-        assert_eq!(parsed.child_callgraph_c[1].duration_us, Some(12000));
     }
 }
