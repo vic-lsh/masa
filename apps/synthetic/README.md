@@ -6,20 +6,12 @@ The synthetic application is meant to be a benchmark that is as simple as possib
 
 ### a
 
-This endpoint makes two requests sequentially. The first request uses the child random latency distribution from the app config. The second request sends a constant-latency RPC with a per-request duration sampled from an exponential distribution.
+This endpoint makes two requests sequentially. The hops, service targets, optional per-hop latency overrides, and busy-spin probabilities are configured in `request_a_hops`. If more than two hops are configured, all hops execute, but the response fields report only the first two.
 
 ### b
 
-This endpoint makes two requests sequentially, like `a`, but with a longer exponential duration for the constant-latency call.
+This endpoint makes two requests sequentially, like `a`, but uses `request_b_hops`.
 
-### c
+## Hop Configuration
 
-This endpoint executes a configurable call graph defined in the app config under `child_callgraph_c`.
-
-### d
-
-This endpoint executes a configurable call graph defined in the app config under `child_callgraph_d`.
-
-## Call Graph Configuration
-
-To use endpoints `c` and `d`, define `child_callgraph_services` along with `child_callgraph_c` and `child_callgraph_d` in the app config. Each hop references a `service_id` from `child_callgraph_services`, chooses `latency_kind` (`random` or `constant`), and sets a `busy_spin_prob` to randomize compute vs sleep per call. For constant hops, `duration_us` can override the default constant latency distribution.
+Define `child_services` along with `request_a_hops` and `request_b_hops` in the app config. Each hop references a `service_id` from `child_services`, sets an optional `duration_us` override, and provides a `busy_spin_prob` to randomize compute vs sleep per call.

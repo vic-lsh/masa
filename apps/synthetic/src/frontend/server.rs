@@ -1,15 +1,10 @@
 use std::collections::HashMap;
 use std::iter::zip;
-use std::{
-    sync::atomic::{AtomicU8, Ordering},
-    time::Instant,
-};
+use std::time::Instant;
 
 use app_utils::timing::time_now;
-use rand::thread_rng;
 use rand::Rng;
-use rand_distr::{Distribution, Exp};
-use synthetic::config::{CallGraphHop, CallGraphLatencyKind, SyntheticConfig};
+use synthetic::config::{ChildService, RequestHop, SyntheticConfig};
 use synthetic::util;
 
 use tonic::transport::masa_channel::LoadBalancedChannel;
@@ -22,33 +17,35 @@ use synthetic::tonic::{
 
 pub struct FrontendImpl {
     children: Vec<ChildClient<LoadBalancedChannel>>,
-    constant_replicas: u8,
-    next_constant_replica: AtomicU8,
     presampled_services_offset: usize,
     presampled_request_types: HashMap<String, Vec<util::Hop>>,
-    callgraph_service_map: HashMap<String, usize>,
-    callgraph_c: Vec<CallGraphHop>,
-    callgraph_d: Vec<CallGraphHop>,
+    service_map: HashMap<String, usize>,
+    request_a_hops: Vec<RequestHop>,
+    request_b_hops: Vec<RequestHop>,
 }
 
 impl FrontendImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
         let SyntheticConfig {
-            child_constant_replicas,
             child_presampled_services,
             child_presampled_request_types,
-            child_callgraph_services,
-            child_callgraph_c,
-            child_callgraph_d,
+            child_services,
+            request_a_hops,
+            request_b_hops,
             ..
         } = config;
 
-        let mut services = vec![1];
-        services.extend(vec![child_constant_replicas]);
+        let mut services = Vec::new();
+        let mut random_services = child_services;
+        if random_services.is_empty() {
+            random_services.push(ChildService {
+                id: "default".to_string(),
+                replicas: 1,
+            });
+        }
+        services.extend(random_services.iter().map(|svc| svc.replicas));
         let presampled_services_offset = services.len();
         services.extend(child_presampled_services.iter().map(|v| v[0] as u8));
-        let callgraph_services_offset = services.len();
-        services.extend(child_callgraph_services.iter().map(|svc| svc.replicas));
         let mut children = Vec::new();
         let mut start_id = 1;
         for r in services {
@@ -67,26 +64,23 @@ impl FrontendImpl {
             );
         }
 
-        let mut callgraph_service_map = HashMap::new();
-        for (index, service) in child_callgraph_services.iter().enumerate() {
-            let inserted =
-                callgraph_service_map.insert(service.id.clone(), callgraph_services_offset + index);
+        let mut service_map = HashMap::new();
+        for (index, service) in random_services.iter().enumerate() {
+            let inserted = service_map.insert(service.id.clone(), index);
             assert!(
                 inserted.is_none(),
-                "duplicate callgraph service id: {}",
+                "duplicate child service id: {}",
                 service.id
             );
         }
 
         FrontendImpl {
             children,
-            constant_replicas: child_constant_replicas,
-            next_constant_replica: AtomicU8::new(0),
             presampled_request_types,
             presampled_services_offset,
-            callgraph_service_map,
-            callgraph_c: child_callgraph_c,
-            callgraph_d: child_callgraph_d,
+            service_map,
+            request_a_hops,
+            request_b_hops,
         }
     }
 }
@@ -109,48 +103,22 @@ impl Frontend for FrontendImpl {
         _request: Request<frontend::ARequest>,
     ) -> Result<Response<frontend::AResponse>, Status> {
         let start = Instant::now();
-        let mut hop1 = self.children.last().unwrap().clone();
-        // let response = child_random_client
-        //     .random_latency(child::RandomLatencyRequest {
-        //         sent_at: time_now(),
-        //     })
-        //     .await?;
-        // let child_random_response = response.into_inner();
-
-        let response = hop1
-            .random_latency(child::RandomLatencyRequest {
-                sent_at: time_now(),
-                busy_spin: true,
-            })
-            .await?;
-        let hop1_response = response.into_inner();
-
-        // let next =
-        //     self.next_constant_replica.fetch_add(1, Ordering::SeqCst) % self.constant_replicas;
-        // let mut child_constant_client = self.children[next as usize].clone();
-
-        let mut child_constant_client = self.children.first().unwrap().clone();
-        // Sample from exponential distribution with mean = 10000
-        let mean = 10000.0;
-        let lambda = 1.0 / mean;
-        let exp_dist = Exp::<f64>::new(lambda).unwrap();
-        let duration_us = exp_dist.sample(&mut thread_rng()).round() as u64;
-        let response = child_constant_client
-            .constant_latency(child::ConstantLatencyRequest {
-                sent_at: time_now(),
-                busy_spin: false,
-                duration_us: Some(duration_us),
-            })
-            .await?;
-        let child_constant_response = response.into_inner();
+        let results = self.execute_request_hops(&self.request_a_hops).await?;
+        if results.len() < 2 {
+            return Err(Status::failed_precondition(
+                "request_a_hops must contain at least 2 hops",
+            ));
+        }
+        let hop1 = &results[0];
+        let hop2 = &results[1];
 
         Ok(Response::new(frontend::AResponse {
-            child1_queueing_latency: 0,
-            child1_sleep_latency: 0,
-            child1_handler_latency: 0,
-            child2_queueing_latency: child_constant_response.queueing_latency,
-            child2_handler_latency: child_constant_response.handler_latency,
-            child2_reply_latency: time_now() - child_constant_response.finished_at,
+            child1_queueing_latency: hop1.response.queueing_latency,
+            child1_sleep_latency: hop1.response.sleep_latency,
+            child1_handler_latency: hop1.response.handler_latency,
+            child2_queueing_latency: hop2.response.queueing_latency,
+            child2_handler_latency: hop2.response.handler_latency,
+            child2_reply_latency: hop2.finished_at - hop2.sent_at,
             handler_latency: Instant::now().duration_since(start).as_micros() as u64,
         }))
     }
@@ -160,59 +128,14 @@ impl Frontend for FrontendImpl {
         _request: Request<frontend::BRequest>,
     ) -> Result<Response<frontend::BResponse>, Status> {
         let _start = Instant::now();
-        // let mut child_random_client = self.children.last().unwrap().clone();
-        // let response = child_random_client
-        //     .random_latency(child::RandomLatencyRequest {
-        //         sent_at: time_now(),
-        //     })
-        //     .await?;
-        // let _child_random_response = response.into_inner();
-
-        let mut hop1 = self.children.last().unwrap().clone();
-        let response = hop1
-            .random_latency(child::RandomLatencyRequest {
-                sent_at: time_now(),
-                busy_spin: true,
-            })
-            .await?;
-        let hop1_response = response.into_inner();
-
-        // let next =
-        //     self.next_constant_replica.fetch_add(1, Ordering::SeqCst) % self.constant_replicas;
-        // let mut child_constant_client = self.children[next as usize].clone();
-
-        let mut child_constant_client = self.children.first().unwrap().clone();
-        // Sample from exponential distribution with mean = 100000
-        let mean = 100000.0;
-        let lambda = 1.0 / mean;
-        let exp_dist = Exp::<f64>::new(lambda).unwrap();
-        let duration_us = exp_dist.sample(&mut thread_rng()).round() as u64;
-        let response = child_constant_client
-            .constant_latency(child::ConstantLatencyRequest {
-                sent_at: time_now(),
-                busy_spin: false,
-                duration_us: Some(duration_us),
-            })
-            .await?;
-        let _child_constant_response = response.into_inner();
+        let results = self.execute_request_hops(&self.request_b_hops).await?;
+        if results.len() < 2 {
+            return Err(Status::failed_precondition(
+                "request_b_hops must contain at least 2 hops",
+            ));
+        }
 
         Ok(Response::new(frontend::BResponse {}))
-    }
-
-    async fn handle_c(
-        &self,
-        _request: Request<frontend::CRequest>,
-    ) -> Result<Response<frontend::CResponse>, Status> {
-        self.handle_callgraph(&self.callgraph_c).await?;
-        Ok(Response::new(frontend::CResponse {}))
-    }
-
-    async fn handle_d(
-        &self,
-        _request: Request<frontend::DRequest>,
-    ) -> Result<Response<frontend::DResponse>, Status> {
-        self.handle_callgraph(&self.callgraph_d).await?;
-        Ok(Response::new(frontend::DResponse {}))
     }
 
     async fn handle_presampled(
@@ -247,22 +170,18 @@ impl Frontend for FrontendImpl {
 }
 
 impl FrontendImpl {
-    async fn handle_callgraph(&self, hops: &[CallGraphHop]) -> Result<(), Status> {
+    async fn execute_request_hops(&self, hops: &[RequestHop]) -> Result<Vec<HopResult>, Status> {
         if hops.is_empty() {
-            return Err(Status::failed_precondition("callgraph is not configured"));
+            return Err(Status::failed_precondition(
+                "request hops are not configured",
+            ));
         }
 
+        let mut results = Vec::with_capacity(hops.len());
         for hop in hops {
-            let service_index =
-                *self
-                    .callgraph_service_map
-                    .get(&hop.service_id)
-                    .ok_or_else(|| {
-                        Status::invalid_argument(format!(
-                            "unknown callgraph service id: {}",
-                            hop.service_id
-                        ))
-                    })?;
+            let service_index = *self.service_map.get(&hop.service_id).ok_or_else(|| {
+                Status::invalid_argument(format!("unknown child service id: {}", hop.service_id))
+            })?;
 
             if !(0.0..=1.0).contains(&hop.busy_spin_prob) {
                 return Err(Status::invalid_argument(
@@ -271,31 +190,31 @@ impl FrontendImpl {
             }
 
             let busy_spin = rand::thread_rng().gen_bool(hop.busy_spin_prob);
-            match hop.latency_kind {
-                CallGraphLatencyKind::Random => {
-                    self.children[service_index]
-                        .clone()
-                        .random_latency(child::RandomLatencyRequest {
-                            sent_at: time_now(),
-                            busy_spin,
-                        })
-                        .await?;
-                }
-                CallGraphLatencyKind::Constant => {
-                    self.children[service_index]
-                        .clone()
-                        .constant_latency(child::ConstantLatencyRequest {
-                            sent_at: time_now(),
-                            busy_spin,
-                            duration_us: hop.duration_us,
-                        })
-                        .await?;
-                }
-            }
+            let sent_at = time_now();
+            let response = self.children[service_index]
+                .clone()
+                .random_latency(child::RandomLatencyRequest {
+                    sent_at,
+                    busy_spin,
+                    duration_us: hop.duration_us,
+                })
+                .await?;
+            let finished_at = time_now();
+            results.push(HopResult {
+                response: response.into_inner(),
+                sent_at,
+                finished_at,
+            });
         }
 
-        Ok(())
+        Ok(results)
     }
+}
+
+struct HopResult {
+    response: child::RandomLatencyResponse,
+    sent_at: u64,
+    finished_at: u64,
 }
 
 fn reversed_prefix_sum(v: &Vec<u64>) -> Vec<u64> {

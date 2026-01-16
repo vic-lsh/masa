@@ -52,8 +52,6 @@ const PRESAMPLED_PREFIX: &'static str = "presampled_";
 enum RequestHandler {
     ARequest(Handler<ARequest, SyntheticClient>),
     BRequest(Handler<BRequest, SyntheticClient>),
-    CRequest(Handler<CRequest, SyntheticClient>),
-    DRequest(Handler<DRequest, SyntheticClient>),
     PresampledRequest(Handler<PresampledRequest, SyntheticClient>),
 }
 
@@ -63,10 +61,6 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
             RequestHandler::ARequest(Handler::new(api, rps, timeout, slo))
         } else if api == "b" {
             RequestHandler::BRequest(Handler::new(api, rps, timeout, slo))
-        } else if api == "c" {
-            RequestHandler::CRequest(Handler::new(api, rps, timeout, slo))
-        } else if api == "d" {
-            RequestHandler::DRequest(Handler::new(api, rps, timeout, slo))
         } else if api.starts_with(PRESAMPLED_PREFIX) {
             RequestHandler::PresampledRequest(Handler::new(api, rps, timeout, slo))
         } else {
@@ -84,8 +78,6 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
         match self {
             Self::ARequest(h) => h.send_request(rng, client, ctx, trace).await,
             Self::BRequest(h) => h.send_request(rng, client, ctx, trace).await,
-            Self::CRequest(h) => h.send_request(rng, client, ctx, trace).await,
-            Self::DRequest(h) => h.send_request(rng, client, ctx, trace).await,
             Self::PresampledRequest(h) => h.send_request(rng, client, ctx, trace).await,
         }
     }
@@ -94,8 +86,6 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
         match self {
             Self::ARequest(h) => h.fetch_traces(output_path).await,
             Self::BRequest(h) => h.fetch_traces(output_path).await,
-            Self::CRequest(h) => h.fetch_traces(output_path).await,
-            Self::DRequest(h) => h.fetch_traces(output_path).await,
             Self::PresampledRequest(h) => h.fetch_traces(output_path).await,
         }
     }
@@ -104,8 +94,6 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
         match self {
             Self::ARequest(h) => h.api.as_str(),
             Self::BRequest(h) => h.api.as_str(),
-            Self::CRequest(h) => h.api.as_str(),
-            Self::DRequest(h) => h.api.as_str(),
             Self::PresampledRequest(h) => h.api.as_str(),
         }
     }
@@ -114,8 +102,6 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
         match self {
             Self::ARequest(h) => h.slo,
             Self::BRequest(h) => h.slo,
-            Self::CRequest(h) => h.slo,
-            Self::DRequest(h) => h.slo,
             Self::PresampledRequest(h) => h.slo,
         }
     }
@@ -196,72 +182,6 @@ impl RequestType<SyntheticClient> for BRequest {
 
     fn response_output_headers(&self) -> Vec<String> {
         Vec::new()
-    }
-
-    fn response_to_row(_metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
-        Vec::new()
-    }
-}
-
-struct CRequest {}
-
-impl CRequest {
-    const HEADERS: [&'static str; 0] = [];
-}
-
-impl RequestType<SyntheticClient> for CRequest {
-    type ResponseType = frontend::CResponse;
-
-    fn new(_api: &str) -> Self {
-        Self {}
-    }
-
-    async fn create_request(
-        &self,
-        _rng: &mut StdRng,
-        mut client: FrontendClient<Channel>,
-        ctx: &Context,
-    ) -> Result<Response<Self::ResponseType>, Status> {
-        let mut r = tonic::Request::new(frontend::CRequest {});
-        r.metadata_mut().insert_ctx("ctx", &ctx);
-        client.handle_c(r).await
-    }
-
-    fn response_output_headers(&self) -> Vec<String> {
-        Self::HEADERS.iter().map(|s| s.to_string()).collect()
-    }
-
-    fn response_to_row(_metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
-        Vec::new()
-    }
-}
-
-struct DRequest {}
-
-impl DRequest {
-    const HEADERS: [&'static str; 0] = [];
-}
-
-impl RequestType<SyntheticClient> for DRequest {
-    type ResponseType = frontend::DResponse;
-
-    fn new(_api: &str) -> Self {
-        Self {}
-    }
-
-    async fn create_request(
-        &self,
-        _rng: &mut StdRng,
-        mut client: FrontendClient<Channel>,
-        ctx: &Context,
-    ) -> Result<Response<Self::ResponseType>, Status> {
-        let mut r = tonic::Request::new(frontend::DRequest {});
-        r.metadata_mut().insert_ctx("ctx", &ctx);
-        client.handle_d(r).await
-    }
-
-    fn response_output_headers(&self) -> Vec<String> {
-        Self::HEADERS.iter().map(|s| s.to_string()).collect()
     }
 
     fn response_to_row(_metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {

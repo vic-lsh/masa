@@ -85,10 +85,6 @@ class SyntheticApp(AppPlugin):
             raise ValueError(f"Unable to extract port from address: {addr}")
         
         if app_config:
-            # Calculate replica counts
-            constant_replicas = app_config.get("child_constant_replicas", 1)
-            env_vars["CONSTANT_REPLICAS"] = str(constant_replicas)
-            
             # Calculate presampled replicas from child_presampled_services
             presampled_services = app_config.get("child_presampled_services", [])
             presampled_replicas = sum(
@@ -96,23 +92,16 @@ class SyntheticApp(AppPlugin):
             ) if presampled_services else 0
             env_vars["PRESAMPLED_REPLICAS"] = str(presampled_replicas)
             
-            # Random replicas is always 1
-            random_replicas = 1
-            env_vars["RANDOM_REPLICAS"] = str(random_replicas)
+            child_services = app_config.get("child_services", [])
+            if child_services:
+                random_replicas = sum(
+                    service.get("replicas", 1) for service in child_services
+                )
+            else:
+                random_replicas = 1
             
-            # Callgraph replicas from child_callgraph_services (each defaults to 1)
-            callgraph_services = app_config.get("child_callgraph_services", [])
-            callgraph_replicas = sum(
-                service.get("replicas", 1) for service in callgraph_services
-            )
-
             # Total child replicas
-            child_replicas = (
-                constant_replicas
-                + random_replicas
-                + presampled_replicas
-                + callgraph_replicas
-            )
+            child_replicas = random_replicas + presampled_replicas
             env_vars["CHILD_REPLICAS"] = str(child_replicas)
             
             # CPUs per replica
@@ -120,10 +109,8 @@ class SyntheticApp(AppPlugin):
             env_vars["CPUS_PER_REPLICA"] = str(cpus_per_replica)
         else:
             # Use defaults if no config provided
-            env_vars["CONSTANT_REPLICAS"] = "1"
             env_vars["PRESAMPLED_REPLICAS"] = "0"
-            env_vars["RANDOM_REPLICAS"] = "1"
-            env_vars["CHILD_REPLICAS"] = "2"
+            env_vars["CHILD_REPLICAS"] = "1"
             env_vars["CPUS_PER_REPLICA"] = "1"
         
         # Set default log level if not specified
