@@ -4,13 +4,14 @@ package child;
 
 service Child {
   rpc RandomLatency(RandomLatencyRequest) returns (RandomLatencyResponse) {}
+  rpc RunSynthetic(RunSyntheticRequest)
+      returns (RunSyntheticResponse) {}
   rpc Presampled(PresampledRequest) returns (PresampledResponse) {}
 }
 
 message RandomLatencyRequest {
   uint64 sent_at = 1;
   bool busy_spin = 2;
-  optional uint64 duration_us = 3;
 }
 message RandomLatencyResponse {
   uint64 queueing_latency = 1;
@@ -18,6 +19,16 @@ message RandomLatencyResponse {
   uint64 handler_latency = 3;
 }
 
+message RunSyntheticRequest {
+  uint64 sent_at = 1;
+  optional uint64 duration_us = 2;
+  optional uint64 busy_spin_dur_us = 3;
+}
+message RunSyntheticResponse {
+  uint64 queueing_latency = 1;
+  uint64 handler_latency = 2;
+  uint64 finished_at = 3;
+}
 message PresampledRequest {
   Latency latency = 1;
   double sleep = 2;
