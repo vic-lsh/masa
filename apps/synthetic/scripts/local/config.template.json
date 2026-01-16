@@ -3,7 +3,21 @@
   "FrontendPort": 8660,
   "ChildIps": ["child-service-0", "child-service-1"],
   "ChildPorts": [8661, 8662],
-  "ChildConstantLatency": 10000,
-  "ChildRandomMean": 10000,
-  "ChildRandomStd": 5000
+  "child_random_latency": {
+    "Exponential": {
+      "lambda": 0.0001
+    }
+  },
+  "child_services": [
+    { "id": "S1" },
+    { "id": "S2" }
+  ],
+  "request_a_hops": [
+    { "service_id": "S1", "duration_us": 8000, "busy_spin_prob": 0.2 },
+    { "service_id": "S2", "duration_us": 12000, "busy_spin_prob": 0.1 }
+  ],
+  "request_b_hops": [
+    { "service_id": "S1", "duration_us": 15000, "busy_spin_prob": 0.2 },
+    { "service_id": "S2", "duration_us": 10000, "busy_spin_prob": 0.1 }
+  ]
 }

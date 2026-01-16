@@ -12,20 +12,16 @@ use tonic::{Request, Response, Status};
 
 use crate::server::synthetic_tonic::child::Periodic;
 use app_utils::timing::time_now;
-use rand_distr::WeightedIndex;
 use synthetic::config::SyntheticConfig;
 use synthetic::util;
 use synthetic_tonic::{child, child::child_server::Child};
 
 pub struct ChildImpl {
-    constant_latency: util::LatencyDistribution,
     random_latency: util::LatencyDistribution,
 }
 
 impl ChildImpl {
     pub fn new(config: SyntheticConfig) -> Self {
-        assert!(config.child_constant_latency_slowdown_duration <= 1000);
-
         let random_latency = util::LatencyDistribution::from(config.child_random_latency);
 
         // Spawn a task that prints the queue length every 500ms
@@ -43,21 +39,11 @@ impl ChildImpl {
             }
         });
 
-        ChildImpl {
-            // constant_latency: util::LatencyDistribution::Periodic {
-            //     fast_latency: config.child_constant_latency,
-            //     slow_latency: 2 * config.child_constant_latency,
-            //     slow_duration_ms: config.child_constant_latency_slowdown_duration,
-            // },
-            constant_latency: util::LatencyDistribution::Discrete(
-                WeightedIndex::new(vec![0.80, 0.20]).unwrap(),
-                vec![
-                    config.child_constant_latency,
-                    5 * config.child_constant_latency,
-                ],
-            ),
-            random_latency,
-        }
+        ChildImpl { random_latency }
+    }
+
+    fn resolve_random_latency_us(&self, duration_us: Option<u64>) -> u64 {
+        duration_us.unwrap_or_else(|| self.random_latency.sample())
     }
 }
 
@@ -69,22 +55,19 @@ fn busy_spin(duration: Duration) {
 
 #[tonic::async_trait]
 impl Child for ChildImpl {
-    async fn constant_latency(
+    async fn random_latency(
         &self,
-        request: Request<child::ConstantLatencyRequest>,
-    ) -> Result<Response<child::ConstantLatencyResponse>, Status> {
+        request: Request<child::RandomLatencyRequest>,
+    ) -> Result<Response<child::RandomLatencyResponse>, Status> {
         let request = request.into_inner();
         let queueing_latency = time_now() - request.sent_at;
         let start = Instant::now();
 
-        let duration = match request.duration_us {
-            Some(duration) => Duration::from_micros(duration),
-            None => Duration::from_micros(self.constant_latency.sample()),
-        };
+        let duration_us = self.resolve_random_latency_us(request.duration_us);
+        // sleep has millisecond granularity so we round the duration time
 
+        let duration = Duration::from_micros(duration_us);
         if request.busy_spin {
-            // busy_spin(duration);
-
             let yield_interval = Duration::from_micros(200);
 
             let mut remaining = duration;
@@ -96,31 +79,6 @@ impl Child for ChildImpl {
             if remaining > Duration::ZERO {
                 busy_spin(remaining);
             }
-        } else {
-            tokio::time::sleep(duration).await;
-        }
-
-        Ok(Response::new(child::ConstantLatencyResponse {
-            queueing_latency,
-            handler_latency: Instant::now().duration_since(start).as_micros() as u64,
-            finished_at: time_now(),
-        }))
-    }
-
-    async fn random_latency(
-        &self,
-        request: Request<child::RandomLatencyRequest>,
-    ) -> Result<Response<child::RandomLatencyResponse>, Status> {
-        let request = request.into_inner();
-        let queueing_latency = time_now() - request.sent_at;
-        let start = Instant::now();
-
-        let duration_us = self.random_latency.sample();
-        // sleep has millisecond granularity so we round the duration time
-
-        let duration = Duration::from_micros(duration_us);
-        if request.busy_spin {
-            busy_spin(duration);
         } else {
             tokio::time::sleep(duration).await;
         }
@@ -167,5 +125,20 @@ impl Child for ChildImpl {
         // TODO: ... and here
 
         Ok(Response::new(child::PresampledResponse {}))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ChildImpl;
+    use synthetic::config::SyntheticConfig;
+
+    #[test]
+    fn resolves_random_latency_override() {
+        let config = serde_json::json!({});
+        let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
+        let child = ChildImpl::new(parsed);
+
+        assert_eq!(child.resolve_random_latency_us(Some(1234)), 1234);
     }
 }
