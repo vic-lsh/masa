@@ -15,16 +15,19 @@ logger = logging.getLogger(__name__)
 class CPUMonitor:
     """Monitors CPU and memory utilization of Docker containers over time."""
 
-    def __init__(self, output_path: Path, poll_interval: float = 2.0):
+    def __init__(self, output_path: Path, poll_interval: float = 2.0, container_prefix: Optional[str] = None):
         """
         Initialize CPU monitor.
 
         Args:
             output_path: Path to save the CPU stats CSV file
             poll_interval: Seconds between docker stats polling (default: 2.0)
+            container_prefix: Optional prefix to filter containers (e.g., "mssim-exp1-abc123")
+                            If provided, only containers with names starting with this prefix will be monitored
         """
         self.output_path = output_path
         self.poll_interval = poll_interval
+        self.container_prefix = container_prefix
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._stats_data: list[dict] = []
@@ -40,7 +43,8 @@ class CPUMonitor:
         self._stats_data = []
         self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._thread.start()
-        logger.info(f"Started CPU monitoring (poll_interval={self.poll_interval}s)")
+        prefix_msg = f", prefix={self.container_prefix}" if self.container_prefix else ""
+        logger.info(f"Started CPU monitoring (poll_interval={self.poll_interval}s{prefix_msg})")
 
     def stop(self) -> None:
         """Stop monitoring and save collected stats to file."""
@@ -106,6 +110,10 @@ class CPUMonitor:
                     continue
 
                 container_name, cpu_str, mem_usage_str, mem_percent_str = parts
+
+                # Filter by container prefix if specified
+                if self.container_prefix and not container_name.startswith(self.container_prefix):
+                    continue
 
                 # Parse CPU percentage (e.g., "12.34%" -> 12.34)
                 cpu_percent = self._parse_percentage(cpu_str)

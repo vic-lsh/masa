@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from ..container_utils import extract_service_name, group_containers_by_service
-from .util import get_policy_color
+from .util import get_policy_color, get_policy_display_name
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +18,7 @@ def plot_cpu_utilization(
     data_dir: Path,
     output_dir: Path,
     figsize: tuple[int, int] = (12, 6),
+    policies: Optional[list[str]] = None,
 ) -> None:
     """
     Generate CPU utilization time series plots.
@@ -69,6 +70,12 @@ def plot_cpu_utilization(
     # Combine all data
     df_all = pd.concat(all_data, ignore_index=True)
     logger.info(f"Loaded {len(df_all)} CPU stats records")
+
+    if policies is not None:
+        df_all = df_all[df_all["policy"].isin(policies)].copy()
+        if df_all.empty:
+            logger.warning("No CPU stats data found for requested policies")
+            return
 
     # Add service_name column
     df_all["service_name"] = df_all["container_name"].apply(extract_service_name)
@@ -157,7 +164,7 @@ def _plot_service_cpu(
         ax.plot(
             df_policy["time_bin_mid"],
             smoothed_cpu,
-            label=policy,
+            label=get_policy_display_name(policy),
             color=colors.get(policy, None),
             linewidth=2,
             marker="o",
@@ -383,7 +390,11 @@ def _plot_policy_services(
     for idx in range(n_services, len(axes_flat)):
         axes_flat[idx].set_visible(False)
 
-    fig.suptitle(f"CPU Utilization - {policy}", fontsize=14, fontweight="bold")
+    fig.suptitle(
+        f"CPU Utilization - {get_policy_display_name(policy)}",
+        fontsize=14,
+        fontweight="bold",
+    )
     fig.tight_layout()
 
     output_file = output_dir / f"cpu_policy_{_sanitize_filename(policy)}.png"
