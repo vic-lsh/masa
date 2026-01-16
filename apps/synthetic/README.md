@@ -14,4 +14,4 @@ This endpoint makes two requests sequentially, like `a`, but uses `request_b_hop
 
 ## Hop Configuration
 
-Define `child_services` along with `request_a_hops` and `request_b_hops` in the app config. Each hop references a `service_id` from `child_services`, sets an optional `duration_us` override, and provides a `busy_spin_prob` to randomize compute vs sleep per call.
+Define `child_services` along with `request_a_hops` and `request_b_hops` in the app config. Each hop references a `service_id` from `child_services`, sets an optional `duration_us` mean for an exponential sample, and can provide a `busy_spin_dur_us` to spin for part of the sampled hop duration.

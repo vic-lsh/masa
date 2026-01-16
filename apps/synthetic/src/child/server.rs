@@ -6,6 +6,8 @@ pub mod synthetic_tonic {
 
 use std::time::{Duration, Instant};
 
+use rand::thread_rng;
+use rand_distr::{Distribution, Exp};
 use tokio;
 use tokio::runtime::current_thread_queue_len;
 use tonic::{Request, Response, Status};
@@ -41,6 +43,21 @@ impl ChildImpl {
 
         ChildImpl { random_latency }
     }
+
+    fn sample_total_duration_us(&self, mean_duration_us: Option<u64>) -> Result<u64, Status> {
+        match mean_duration_us {
+            Some(0) => Err(Status::invalid_argument(
+                "duration_us must be greater than 0",
+            )),
+            Some(mean) => {
+                let lambda = 1.0 / mean as f64;
+                let exp = Exp::<f64>::new(lambda)
+                    .map_err(|_| Status::invalid_argument("duration_us must be greater than 0"))?;
+                Ok(exp.sample(&mut thread_rng()).round() as u64)
+            }
+            None => Ok(self.random_latency.sample()),
+        }
+    }
 }
 
 fn busy_spin(duration: Duration) {
@@ -59,10 +76,7 @@ impl Child for ChildImpl {
         let queueing_latency = time_now() - request.sent_at;
         let start = Instant::now();
 
-        let total_duration_us = match request.duration_us {
-            Some(duration) => duration,
-            None => self.random_latency.sample(),
-        };
+        let total_duration_us = self.sample_total_duration_us(request.duration_us)?;
 
         let busy_spin_dur_us = request.busy_spin_dur_us.unwrap_or(0);
 
