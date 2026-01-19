@@ -72,6 +72,36 @@ def _read_request_csv(file_path: str) -> pd.DataFrame:
     We do not rely on pandas' CSV parser here because malformed 'error' fields may contain
     unescaped commas, which breaks tokenization.
     """
+    def _needs_repair(parts: list[str], *, expected_fields: int) -> bool:
+        # Obvious mismatch.
+        if len(parts) != expected_fields:
+            return True
+
+        # Subtle mismatch: unescaped commas in the error field can "balance out" missing
+        # trailing latency fields, resulting in the *correct* number of tokens while still
+        # shifting data into latency columns.
+        #
+        # For the expected synthetic schema:
+        #   fixed(6) + error(1) + optional numeric latencies(N)
+        # the optional latency columns should be either empty or plain integers.
+        if expected_fields < 7:
+            return False
+
+        n_optional_latencies = expected_fields - 7
+        if n_optional_latencies <= 0:
+            return False
+
+        trailing = parts[-n_optional_latencies:]
+        for tok in trailing:
+            t = tok.strip()
+            if t == "":
+                continue
+            # Allow negative integers defensively.
+            if t.lstrip("-").isdigit():
+                continue
+            return True
+        return False
+
     with open(file_path, "r", encoding="utf-8", errors="replace") as f:
         header = f.readline()
         if not header:
@@ -88,7 +118,7 @@ def _read_request_csv(file_path: str) -> pd.DataFrame:
                 continue
 
             parts = line.split(",")
-            if len(parts) != expected:
+            if _needs_repair(parts, expected_fields=expected):
                 repaired += 1
                 parts = _repair_row_parts(parts, expected_fields=expected)
             rows.append(parts)
