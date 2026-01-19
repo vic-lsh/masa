@@ -11,10 +11,6 @@ mod tests {
         let config: SyntheticConfig = serde_json::from_str(json).unwrap();
 
         // Should have default values
-        assert!(matches!(
-            config.child_random_latency,
-            LatencyDistribution::Exponential { .. }
-        ));
         assert!(config.child_services.is_empty());
         assert!(config.request_a_hops.is_empty());
         assert!(config.request_b_hops.is_empty());
@@ -200,19 +196,5 @@ mod tests {
         assert_eq!(method.call_sequence_raw.len(), 1);
         assert_eq!(method.call_sequence_raw[0].len(), 1);
         assert!(method.call_sequence_raw[0].contains_key("service1::method1"));
-    }
-
-    #[test]
-    fn test_default_random_latency() {
-        let config: SyntheticConfig = serde_json::from_str("{}").unwrap();
-
-        match config.child_random_latency {
-            LatencyDistribution::Exponential { lambda, mean, .. } => {
-                // Default should be exponential with mean 10000 (lambda = 1/10000)
-                assert!((lambda - 0.0001).abs() < 1e-10);
-                assert_eq!(mean, Some(10000.0));
-            }
-            _ => panic!("Expected default exponential distribution"),
-        }
     }
 }

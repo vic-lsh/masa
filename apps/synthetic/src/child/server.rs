@@ -9,7 +9,7 @@ use tonic::{Request, Response, Status};
 use app_utils::timing::time_now;
 use crate::bootstrap::ConnectionBootstrap;
 use crate::config::{
-    CallGraphConfig, CallTarget, LatencyDistribution, SyntheticConfig, parse_call_sequences,
+    CallGraphConfig, CallTarget, SyntheticConfig, parse_call_sequences,
 };
 use crate::service_registry::ServiceRegistry;
 use crate::util::should_make_call;
@@ -17,7 +17,6 @@ use crate::tonic::{child, child::child_server::Child};
 use tracing::warn;
 
 pub struct ChildImpl {
-    random_latency: LatencyDistribution,
     call_graph: Option<CallGraphConfig>,
     _service_id: Option<String>,
     service_registry: Option<ServiceRegistry>,
@@ -25,8 +24,6 @@ pub struct ChildImpl {
 
 impl ChildImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
-        let random_latency = config.child_random_latency.clone();
-
         // Spawn a task that prints the queue length every 500ms
         tokio::spawn(async {
             let mut interval = tokio::time::interval(Duration::from_millis(500));
@@ -97,7 +94,6 @@ impl ChildImpl {
         };
 
         ChildImpl {
-            random_latency,
             call_graph,
             _service_id: service_id,
             service_registry,
@@ -202,7 +198,9 @@ impl ChildImpl {
                     .map_err(|_| Status::invalid_argument("duration_us must be greater than 0"))?;
                 Ok(exp.sample(&mut thread_rng()).round() as u64)
             }
-            None => Ok(self.random_latency.sample()),
+            None => Err(Status::invalid_argument(
+                "duration_us must be provided",
+            )),
         }
     }
 }
@@ -269,41 +267,6 @@ impl Child for ChildImpl {
             queueing_latency,
             handler_latency: Instant::now().duration_since(start).as_micros() as u64,
             finished_at: time_now(),
-        }))
-    }
-
-    async fn random_latency(
-        &self,
-        request: Request<child::RandomLatencyRequest>,
-    ) -> Result<Response<child::RandomLatencyResponse>, Status> {
-        let request = request.into_inner();
-        let queueing_latency = time_now() - request.sent_at;
-        let start = Instant::now();
-
-        let duration_us = self.random_latency.sample();
-        // sleep has millisecond granularity so we round the duration time
-
-        let duration = Duration::from_micros(duration_us);
-        if request.busy_spin {
-            let yield_interval = Duration::from_micros(200);
-
-            let mut remaining = duration;
-            while remaining > yield_interval {
-                busy_spin(yield_interval);
-                tokio::task::yield_now().await;
-                remaining -= yield_interval;
-            }
-            if remaining > Duration::ZERO {
-                busy_spin(remaining);
-            }
-        } else {
-            tokio::time::sleep(duration).await;
-        }
-
-        Ok(Response::new(child::RandomLatencyResponse {
-            queueing_latency,
-            sleep_latency: duration.as_micros() as u64,
-            handler_latency: Instant::now().duration_since(start).as_micros() as u64,
         }))
     }
 

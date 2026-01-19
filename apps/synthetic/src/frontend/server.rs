@@ -5,8 +5,7 @@ use tokio::sync::RwLock;
 
 use crate::bootstrap::ConnectionBootstrap;
 use crate::config::{
-    parse_call_sequences, parse_service_method, ChildService, LatencyDistribution, RequestHop,
-    SyntheticConfig,
+    parse_call_sequences, parse_service_method, ChildService, RequestHop, SyntheticConfig,
 };
 use app_utils::timing::time_now;
 use tracing::{info, warn};
@@ -21,7 +20,6 @@ use crate::tonic::{
 pub struct FrontendImpl {
     children: Vec<ChildClient<LoadBalancedChannel>>,
     service_map: HashMap<String, usize>,
-    random_latency: LatencyDistribution,
     request_a_hops: Vec<RequestHop>,
     request_b_hops: Vec<RequestHop>,
     call_graph_entry_point: Option<(String, String)>, // (service_id, method_name)
@@ -31,7 +29,6 @@ pub struct FrontendImpl {
 impl FrontendImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
         let SyntheticConfig {
-            child_random_latency,
             child_services,
             request_a_hops,
             request_b_hops,
@@ -39,12 +36,9 @@ impl FrontendImpl {
             ..
         } = config;
 
-        info!("Child random latency: {:?}", child_random_latency);
         info!("Child services: {:?}", child_services);
         info!("Request a hops: {:?}", request_a_hops);
         info!("Request b hops: {:?}", request_b_hops);
-
-        let random_latency = child_random_latency;
 
         // Handle call graph configuration
         let (call_graph_entry_point, call_graph_clients, children, service_map) =
@@ -145,7 +139,6 @@ impl FrontendImpl {
         FrontendImpl {
             children,
             service_map,
-            random_latency,
             request_a_hops,
             request_b_hops,
             call_graph_entry_point,
@@ -279,9 +272,9 @@ impl FrontendImpl {
                 Status::invalid_argument(format!("unknown child service id: {}", hop.service_id))
             })?;
 
-            let duration_us = hop
-                .duration_us
-                .unwrap_or_else(|| self.random_latency.sample());
+            let duration_us = hop.duration_us.ok_or_else(|| {
+                Status::invalid_argument("duration_us must be specified for request hop")
+            })?;
             let busy_spin_dur_us = hop.busy_spin_dur_us.unwrap_or(0);
             if busy_spin_dur_us > duration_us {
                 return Err(Status::invalid_argument(format!(
