@@ -9,6 +9,7 @@ import shlex
 import subprocess
 import tempfile
 import time
+import hashlib
 from pathlib import Path
 from typing import Optional
 
@@ -20,10 +21,29 @@ from .utils import normalize_features_to_tag, get_docker_progress_flag
 logger = logging.getLogger(__name__)
 
 
+def _safe_project_name(*, experiment_name: str, iteration: int, policy: str) -> str:
+    """
+    Generate a docker-compose project name that is safe and deterministic.
+
+    Policy strings may contain characters like commas (e.g., "fifo,early") that
+    Docker Compose will normalize. We avoid any mismatch by using a digest-based
+    project name that contains only safe characters.
+    """
+    raw = f"{experiment_name}|{iteration}|{policy}"
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+    slug = re.sub(r"[^a-z0-9]+", "-", experiment_name.lower()).strip("-")[:16] or "exp"
+    return f"synthetic-{slug}-{digest}"
+
+
 class SyntheticLoadGenerator(LoadGenerator):
     """Load generator for the synthetic benchmark application."""
 
-    def __init__(self, features: Optional[str] = None, project_name: Optional[str] = None):
+    def __init__(
+        self,
+        features: Optional[str] = None,
+        project_name: Optional[str] = None,
+        network_name: Optional[str] = None,
+    ):
         """
         Initialize load generator with optional features for image tagging.
 
@@ -33,8 +53,11 @@ class SyntheticLoadGenerator(LoadGenerator):
         """
         self.features = features
         self.project_name = project_name
+        self.network_name = network_name
 
     def get_container_name(self) -> str:
+        if self.project_name:
+            return f"{self.project_name}_synthetic_client_bench"
         return "synthetic_client_bench"
 
     def get_network_name(self) -> str:
@@ -45,11 +68,12 @@ class SyntheticLoadGenerator(LoadGenerator):
         Docker Compose creates networks as {project_name}_{network_key} when networks
         are defined in the compose file.
         """
+        if self.network_name:
+            return self.network_name
         if self.project_name:
             return f"{self.project_name}_synthetic_network"
-        else:
-            # Fallback to old network name for backwards compatibility
-            return "local_synthetic_network"
+        # Fallback for the static compose which pins network name
+        return "local_synthetic_network"
 
     def get_image_name(self) -> str:
         tag = normalize_features_to_tag(self.features)
@@ -367,15 +391,25 @@ class SyntheticApp(AppPlugin):
         
         return container_names
     
-    def create_load_generator(self, features: Optional[str] = None, project_name: Optional[str] = None) -> LoadGenerator:
+    def create_load_generator(
+        self,
+        features: Optional[str] = None,
+        project_name: Optional[str] = None,
+        network_name: Optional[str] = None,
+    ) -> LoadGenerator:
         """
         Create a load generator instance for synthetic application.
         
         Args:
             features: Optional cargo features used to build the image
             project_name: Docker Compose project name (used to determine network name)
+            network_name: Optional explicit docker network name to connect to
         """
-        return SyntheticLoadGenerator(features=features, project_name=project_name)
+        return SyntheticLoadGenerator(
+            features=features,
+            project_name=project_name,
+            network_name=network_name,
+        )
 
     def create_builder(self) -> AppBuilder:
         """
@@ -439,10 +473,14 @@ class SyntheticApp(AppPlugin):
             # Pass app config path to docker compose as env var for volume mounting
             env_vars["APP_CONFIG_PATH"] = str(app_config_path.resolve())
         
-        # Derive project name from output directory (Docker Compose uses directory name)
-        # The output_dir is like: exp/synthetic/data/out/exp1/0/fifo
-        # The project name is the last component (fifo)
-        project_name = output_dir.name
+        # Use a safe docker-compose project name.
+        # Policy strings may contain commas (e.g., "fifo,early") which Docker Compose
+        # will normalize, causing mismatches if we try to build names from the raw policy.
+        project_name = _safe_project_name(
+            experiment_name=config.experiment_name,
+            iteration=iteration,
+            policy=policy,
+        )
         
         # Pass project name to services via environment variable
         env_vars["DOCKER_COMPOSE_PROJECT_NAME"] = project_name
@@ -493,6 +531,14 @@ class SyntheticApp(AppPlugin):
             compose_file = generated_compose.name
             compose_app_dir = output_dir
             self._generated_compose_path = generated_compose
+
+        # Choose the network name for the load generator.
+        # - Static compose pins the network to "local_synthetic_network".
+        # - Generated call-graph compose uses network key "synthetic_network", which becomes
+        #   "{project_name}_synthetic_network" under docker compose.
+        loadgen_network_name = (
+            f"{project_name}_synthetic_network" if has_call_graph else "local_synthetic_network"
+        )
         
         # Build images (use template gen_config.json for build, not project-specific one)
         # The project-specific gen_config.json is only used by the load generator at runtime
@@ -539,6 +585,7 @@ class SyntheticApp(AppPlugin):
                 app_dir=compose_app_dir,
                 compose_file=compose_file,
                 env_vars=env_vars,
+                project_name=project_name,
             )
             
             # Start CPU monitoring after services are up
@@ -563,7 +610,11 @@ class SyntheticApp(AppPlugin):
                 )
             
             # Run load generator
-            loadgen = self.create_load_generator(features=policy, project_name=project_name)
+            loadgen = self.create_load_generator(
+                features=policy,
+                project_name=project_name,
+                network_name=loadgen_network_name,
+            )
             loadgen.run(
                 output_dir=output_dir,
                 env_vars=env_vars,
@@ -586,6 +637,7 @@ class SyntheticApp(AppPlugin):
                 app_dir=compose_app_dir,
                 compose_file=compose_file,
                 env_vars=env_vars,
+                project_name=project_name,
             )
             
             # Keep generated compose file for debugging/inspection
@@ -646,6 +698,9 @@ class SyntheticBuilder(AppBuilder):
         
         try:
             # Stage 1: Build all binaries once (shared across all images)
+            # Note: We don't use --load for intermediate stages (builder, runtime-base)
+            # to avoid slow layer export. BuildKit handles COPY --from and FROM internally.
+            # Only final runtime images use --load since they're used by docker-compose.
             logger.info("Stage 1: Building all binaries for synthetic app")
             builder_build_args: list[str] = []
             if features:
@@ -663,6 +718,9 @@ class SyntheticBuilder(AppBuilder):
                 "./exp/common/docker-build/Dockerfile",
                 "--target",
                 "builder",
+                # Don't use --load for builder stage - it's an intermediate stage
+                # BuildKit handles COPY --from=builder internally without loading.
+                # Removing --load avoids slow layer export (~300s -> ~10s on some systems).
                 *builder_build_args,
                 "--ulimit",
                 "nofile=4096:4096",
@@ -672,7 +730,9 @@ class SyntheticBuilder(AppBuilder):
             if no_cache:
                 builder_cmd.append("--no-cache")
             
-            builder_cmd.extend(["-t", f"{app}_builder:{tag}", "."])
+            # Don't tag builder stage - it's only used as intermediate stage
+            # The stage is still available for COPY --from=builder in subsequent stages.
+            builder_cmd.append(".")
             
             if dry_run:
                 commands.append(builder_cmd.copy())
@@ -708,6 +768,9 @@ class SyntheticBuilder(AppBuilder):
                 "./exp/common/docker-build/Dockerfile",
                 "--target",
                 "runtime-base",
+                # Don't use --load for runtime-base - it's an intermediate stage.
+                # BuildKit handles FROM runtime-base internally without loading.
+                # Removing --load avoids slow layer export (~300s -> ~10s on some systems).
                 *runtime_base_build_args,
                 "--ulimit",
                 "nofile=4096:4096",
@@ -717,6 +780,7 @@ class SyntheticBuilder(AppBuilder):
             if no_cache:
                 runtime_base_cmd.append("--no-cache")
             
+            # Tag runtime-base for potential inspection/debugging, but don't load it
             runtime_base_cmd.extend(["-t", f"{app}_runtime-base:{tag}", "."])
             
             if dry_run:
@@ -762,6 +826,7 @@ class SyntheticBuilder(AppBuilder):
                     "./exp/common/docker-build/Dockerfile",
                     "--target",
                     "runtime",
+                    "--load",
                     *runtime_build_args,
                     "--ulimit",
                     "nofile=4096:4096",
