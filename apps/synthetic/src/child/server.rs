@@ -1,9 +1,3 @@
-pub mod synthetic_tonic {
-    pub mod child {
-        tonic::include_proto!("child");
-    }
-}
-
 use std::time::{Duration, Instant};
 
 use rand::thread_rng;
@@ -12,21 +6,20 @@ use tokio;
 use tokio::runtime::current_thread_queue_len;
 use tonic::{Request, Response, Status};
 
-use crate::server::synthetic_tonic::child::Periodic;
 use app_utils::timing::time_now;
-use synthetic::bootstrap::ConnectionBootstrap;
-use synthetic::config::{
-    parse_call_sequences, CallGraphConfig, CallTarget, LatencyDistribution, SyntheticConfig,
+use crate::bootstrap::ConnectionBootstrap;
+use crate::config::{
+    CallGraphConfig, CallTarget, LatencyDistribution, SyntheticConfig, parse_call_sequences,
 };
-use synthetic::service_registry::ServiceRegistry;
-use synthetic::util::should_make_call;
-use synthetic_tonic::{child, child::child_server::Child};
+use crate::service_registry::ServiceRegistry;
+use crate::util::should_make_call;
+use crate::tonic::{child, child::child_server::Child, child::Periodic};
 use tracing::warn;
 
 pub struct ChildImpl {
     random_latency: LatencyDistribution,
     call_graph: Option<CallGraphConfig>,
-    service_id: Option<String>,
+    _service_id: Option<String>,
     service_registry: Option<ServiceRegistry>,
 }
 
@@ -106,7 +99,7 @@ impl ChildImpl {
         ChildImpl {
             random_latency,
             call_graph,
-            service_id,
+            _service_id: service_id,
             service_registry,
         }
     }
@@ -148,7 +141,7 @@ impl ChildImpl {
                     let task = tokio::spawn(async move {
                         client
                             .clone()
-                            .handle_method(synthetic::tonic::child::MethodRequest {
+                            .handle_method(crate::tonic::child::MethodRequest {
                                 service_id: target_service_id,
                                 method_name: target_method_name,
                                 sent_at,
@@ -174,7 +167,7 @@ impl ChildImpl {
         &self,
         service_id: &str,
         method_name: &str,
-    ) -> Result<&synthetic::config::ServiceMethod, Status> {
+    ) -> Result<&crate::config::ServiceMethod, Status> {
         let call_graph = self
             .call_graph
             .as_ref()

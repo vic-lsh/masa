@@ -4,19 +4,19 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
 
-use app_utils::timing::time_now;
-use synthetic::bootstrap::ConnectionBootstrap;
-use synthetic::config::{
+use crate::bootstrap::ConnectionBootstrap;
+use crate::config::{
     parse_call_sequences, parse_service_method, ChildService, LatencyDistribution, RequestHop,
     SyntheticConfig,
 };
-use synthetic::util;
+use crate::util;
+use app_utils::timing::time_now;
 use tracing::{info, warn};
 
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{Request, Response, Status};
 
-use synthetic::tonic::{
+use crate::tonic::{
     child, child::child_client::ChildClient, child::Fixed, child::Periodic, frontend,
     frontend::frontend_server::Frontend,
 };
