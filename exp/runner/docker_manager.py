@@ -54,7 +54,8 @@ class DockerManager:
         self,
         app_dir: Path,
         compose_file: str,
-        env_vars: dict
+        env_vars: dict,
+        project_name: str | None = None,
     ) -> None:
         """
         Start Docker Compose services with environment variables.
@@ -74,8 +75,12 @@ class DockerManager:
         env.update({k: str(v) for k, v in env_vars.items()})
         
         # First, ensure any existing services are stopped
+        base_cmd = ["docker", "compose", "-f", str(compose_path)]
+        if project_name:
+            base_cmd.extend(["-p", project_name])
+
         subprocess.run(
-            ["docker", "compose", "-f", str(compose_path), "down"],
+            [*base_cmd, "down"],
             cwd=app_dir,
             check=False,  # Don't fail if nothing to stop
             env=env,
@@ -91,7 +96,7 @@ class DockerManager:
         
         # Start services
         subprocess.run(
-            ["docker", "compose", "-f", str(compose_path), "up", "-d"],
+            [*base_cmd, "up", "-d"],
             cwd=app_dir,
             check=True,
             env=env,
@@ -104,6 +109,7 @@ class DockerManager:
         app_dir: Path,
         compose_file: str,
         env_vars: dict | None = None,
+        project_name: str | None = None,
     ) -> None:
         """
         Stop Docker Compose services.
@@ -119,8 +125,12 @@ class DockerManager:
         if env_vars:
             env.update({k: str(v) for k, v in env_vars.items()})
 
+        base_cmd = ["docker", "compose", "-f", str(compose_path)]
+        if project_name:
+            base_cmd.extend(["-p", project_name])
+
         subprocess.run(
-            ["docker", "compose", "-f", str(compose_path), "down"],
+            [*base_cmd, "down"],
             cwd=app_dir,
             check=False,  # Don't fail if already stopped
             env=env,
