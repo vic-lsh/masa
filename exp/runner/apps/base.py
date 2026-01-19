@@ -123,6 +123,32 @@ class LoadGenerator(ABC):
             check=False,
         )
         
+        # Ensure network exists (create if it doesn't)
+        # Note: Docker Compose project networks (matching pattern {project}_{network_key})
+        # are created automatically by docker compose, so we don't create them here
+        check_network = subprocess.run(
+            ["docker", "network", "inspect", network_name],
+            capture_output=True,
+            check=False,
+        )
+        if check_network.returncode != 0:
+            # Check if this looks like a Docker Compose project network
+            # Pattern: {project_name}_{network_key} (e.g., "fifo_synthetic_network")
+            # We detect this by checking if network_name contains an underscore and
+            # if a network with a similar pattern might exist
+            if "_" in network_name and not network_name.startswith("local_"):
+                # Likely a Docker Compose project network - should already exist from docker compose
+                logger.info(f"Using Docker Compose project network: {network_name}")
+                logger.warning(f"Network {network_name} not found yet - ensure docker compose has started services")
+            else:
+                # Non-compose network - create it if it doesn't exist
+                logger.warning(f"Network {network_name} not found, creating it...")
+                subprocess.run(
+                    ["docker", "network", "create", network_name],
+                    check=True,
+                )
+                logger.info(f"Network {network_name} created")
+        
         # Ensure output directory exists
         output_dir.mkdir(parents=True, exist_ok=True)
         
