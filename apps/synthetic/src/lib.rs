@@ -22,8 +22,8 @@ pub mod tonic {
 }
 
 // Re-export for binary access
-pub use config::{LatencyDistribution, SyntheticConfig};
 pub use child::server::ChildImpl;
+pub use config::{LatencyDistribution, SyntheticConfig};
 pub use frontend::server::FrontendImpl;
 pub use tonic::child::child_server::ChildServer;
 pub use tonic::frontend::frontend_server::FrontendServer;
