@@ -74,7 +74,6 @@ mod tests {
                     }
                 ]
             }
-        }
         }"#;
 
         let config: SyntheticConfig = serde_json::from_str(json).unwrap();
@@ -193,13 +192,15 @@ mod tests {
             "name": "test_method",
             "latency_distribution": {"Exponential": {"mean": 5000.0}},
             "call_sequence": [
-                [{"service1::method1": 1.0}]
+                {"service1::method1": 1.0}
             ]
         }"#;
 
         let method: ServiceMethod = serde_json::from_str(method_json).unwrap();
         assert_eq!(method.name, "test_method");
-        assert!(method.call_sequence_raw.is_empty()); // Will be parsed later
+        assert_eq!(method.call_sequence_raw.len(), 1);
+        assert_eq!(method.call_sequence_raw[0].len(), 1);
+        assert!(method.call_sequence_raw[0].contains_key("service1::method1"));
     }
 
     #[test]
