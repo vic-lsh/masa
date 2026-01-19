@@ -49,7 +49,9 @@ impl ChildImpl {
         });
 
         // Handle call graph configuration
-        let (call_graph, service_id, service_registry) = if let Some(mut call_graph) = config.call_graph {
+        let (call_graph, service_id, service_registry) = if let Some(mut call_graph) =
+            config.call_graph
+        {
             // Parse and validate call sequences
             if let Err(e) = parse_call_sequences(&mut call_graph) {
                 panic!("Failed to parse call graph: {}", e);
@@ -62,7 +64,7 @@ impl ChildImpl {
             let project_name = std::env::var("DOCKER_COMPOSE_PROJECT_NAME")
                 .ok()
                 .filter(|s| !s.is_empty());
-            
+
             let registry = ServiceRegistry::new();
             let mut services_to_connect = Vec::new();
             for service in &call_graph.services {
@@ -74,13 +76,9 @@ impl ChildImpl {
                 } else {
                     base_service_name
                 };
-                services_to_connect.push((
-                    service.id.clone(),
-                    hostname_base,
-                    service.replicas,
-                ));
+                services_to_connect.push((service.id.clone(), hostname_base, service.replicas));
             }
-            
+
             // Spawn bootstrap task to connect asynchronously
             if !services_to_connect.is_empty() {
                 let bootstrap = ConnectionBootstrap::new(services_to_connect, registry.clients());
@@ -128,9 +126,7 @@ impl ChildImpl {
 
             for (target, probability) in step {
                 if should_make_call(*probability) {
-                    let client = registry
-                        .get_client_clone(&target.service_id)
-                        .await;
+                    let client = registry.get_client_clone(&target.service_id).await;
 
                     let client = match client {
                         Some(client) => client,
@@ -194,7 +190,12 @@ impl ChildImpl {
             .methods
             .iter()
             .find(|m| m.name == method_name)
-            .ok_or_else(|| Status::not_found(format!("Method '{}' not found in service '{}'", method_name, service_id)))
+            .ok_or_else(|| {
+                Status::not_found(format!(
+                    "Method '{}' not found in service '{}'",
+                    method_name, service_id
+                ))
+            })
     }
 
     fn sample_total_duration_us(&self, mean_duration_us: Option<u64>) -> Result<u64, Status> {
@@ -366,10 +367,9 @@ impl Child for ChildImpl {
         let duration_us = latency_dist.sample();
 
         // Calculate busy spin duration if ratio is specified
-        let busy_spin_dur_us: u64 = if let Some(ratio) = method.busy_spin_ratio {
+        let busy_spin_dur_us: u64 = {
+            let ratio = method.busy_spin_ratio.unwrap_or(0.1);
             (duration_us as f64 * ratio).round() as u64
-        } else {
-            0
         };
 
         let sleep_dur_us = duration_us.saturating_sub(busy_spin_dur_us);
@@ -397,7 +397,8 @@ impl Child for ChildImpl {
 
         // Execute call sequence
         if !method.parsed_call_sequence.is_empty() {
-            self.execute_call_sequence(&method.parsed_call_sequence).await?;
+            self.execute_call_sequence(&method.parsed_call_sequence)
+                .await?;
         }
 
         Ok(Response::new(child::MethodResponse {
