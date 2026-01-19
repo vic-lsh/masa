@@ -52,7 +52,7 @@ The `call_sequence` field is a vector of maps (JSON objects):
         "methods": [
           {
             "name": "GqI6UW1mU4",
-            "latency_distribution": {"Exponential": {"lambda": 0.0001}},
+            "latency_distribution": {"Exponential": {"mean": 10000.0}},
             "call_sequence": []
           },
           {
@@ -66,7 +66,7 @@ The `call_sequence` field is a vector of maps (JSON objects):
           },
           {
             "name": "method_with_fanout",
-            "latency_distribution": {"Exponential": {"lambda": 0.0001}},
+            "latency_distribution": {"Exponential": {"mean": 10000.0}},
             "call_sequence": [
               {"MS_37691::method1": 1.0, "MS_37691::method2": 0.8},
               {"MS_73106::method3": 1.0}
@@ -80,7 +80,7 @@ The `call_sequence` field is a vector of maps (JSON objects):
         "methods": [
           {
             "name": "y_DKOh-Gts",
-            "latency_distribution": {"Exponential": {"lambda": 0.0001}},
+            "latency_distribution": {"Exponential": {"mean": 10000.0}},
             "call_sequence": []
           }
         ]
@@ -94,7 +94,7 @@ The `call_sequence` field is a vector of maps (JSON objects):
 
 Each method can use one of the following latency distributions:
 
-- **Exponential**: `{"Exponential": {"lambda": 0.0001}}`
+- **Exponential**: `{"Exponential": {"lambda": 0.0001}}` or `{"Exponential": {"mean": 10000.0}}` (mean = 1/lambda)
 - **Normal**: `{"Normal": {"mean": 10000.0, "std": 2000.0}}`
 - **Discrete/Bimodal**: `{"Discrete": {"weights": [0.5, 0.5], "values": [5000, 50000]}}`
 - **Periodic**: `{"Periodic": {"slow_latency": 50000, "fast_latency": 5000, "slow_duration_ms": 200}}`

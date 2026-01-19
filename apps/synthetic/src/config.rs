@@ -20,6 +20,7 @@ pub enum LatencyDistribution {
     },
     Exponential {
         lambda: f64,
+        mean: Option<f64>,
         dist: Exp<f64>,
     },
     Discrete {
@@ -101,9 +102,10 @@ impl Clone for LatencyDistribution {
                 std: *std,
                 dist: Normal::new(*mean, *std).unwrap(),
             },
-            LatencyDistribution::Exponential { lambda, .. } => {
+            LatencyDistribution::Exponential { lambda, mean, .. } => {
                 LatencyDistribution::Exponential {
                     lambda: *lambda,
+                    mean: *mean,
                     dist: Exp::new(*lambda).unwrap(),
                 }
             }
@@ -134,9 +136,19 @@ impl Serialize for LatencyDistribution {
     {
         #[derive(Serialize)]
         enum LatencyDistributionSer {
-            Normal { mean: f64, std: f64 },
-            Exponential { lambda: f64 },
-            Discrete { weights: Vec<f64>, values: Vec<u64> },
+            Normal {
+                mean: f64,
+                std: f64,
+            },
+            Exponential {
+                lambda: f64,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                mean: Option<f64>,
+            },
+            Discrete {
+                weights: Vec<f64>,
+                values: Vec<u64>,
+            },
             Periodic {
                 slow_latency: u64,
                 fast_latency: u64,
@@ -145,14 +157,15 @@ impl Serialize for LatencyDistribution {
         }
 
         let ser = match self {
-            LatencyDistribution::Normal { mean, std, .. } => {
-                LatencyDistributionSer::Normal {
+            LatencyDistribution::Normal { mean, std, .. } => LatencyDistributionSer::Normal {
+                mean: *mean,
+                std: *std,
+            },
+            LatencyDistribution::Exponential { lambda, mean, .. } => {
+                LatencyDistributionSer::Exponential {
+                    lambda: *lambda,
                     mean: *mean,
-                    std: *std,
                 }
-            }
-            LatencyDistribution::Exponential { lambda, .. } => {
-                LatencyDistributionSer::Exponential { lambda: *lambda }
             }
             LatencyDistribution::Discrete {
                 weights, values, ..
@@ -181,9 +194,20 @@ impl<'de> Deserialize<'de> for LatencyDistribution {
     {
         #[derive(Deserialize)]
         enum LatencyDistributionDe {
-            Normal { mean: f64, std: f64 },
-            Exponential { lambda: f64 },
-            Discrete { weights: Vec<f64>, values: Vec<u64> },
+            Normal {
+                mean: f64,
+                std: f64,
+            },
+            Exponential {
+                #[serde(default)]
+                lambda: Option<f64>,
+                #[serde(default)]
+                mean: Option<f64>,
+            },
+            Discrete {
+                weights: Vec<f64>,
+                values: Vec<u64>,
+            },
             Periodic {
                 slow_latency: u64,
                 fast_latency: u64,
@@ -198,10 +222,37 @@ impl<'de> Deserialize<'de> for LatencyDistribution {
                 std,
                 dist: Normal::new(mean, std).map_err(serde::de::Error::custom)?,
             },
-            LatencyDistributionDe::Exponential { lambda } => {
+            LatencyDistributionDe::Exponential { lambda, mean } => {
+                let (lambda_val, mean_val) = match (lambda, mean) {
+                    (Some(_l), Some(m)) => {
+                        // If both provided, prefer mean
+                        let lambda_from_mean = 1.0 / m;
+                        (lambda_from_mean, Some(m))
+                    }
+                    (Some(l), None) => (l, None),
+                    (None, Some(m)) => {
+                        if m <= 0.0 {
+                            return Err(serde::de::Error::custom(
+                                "Exponential mean must be positive",
+                            ));
+                        }
+                        (1.0 / m, Some(m))
+                    }
+                    (None, None) => {
+                        return Err(serde::de::Error::custom(
+                            "Exponential distribution requires either 'lambda' or 'mean' parameter",
+                        ));
+                    }
+                };
+                if lambda_val <= 0.0 {
+                    return Err(serde::de::Error::custom(
+                        "Exponential lambda must be positive",
+                    ));
+                }
                 LatencyDistribution::Exponential {
-                    lambda,
-                    dist: Exp::new(lambda).map_err(serde::de::Error::custom)?,
+                    lambda: lambda_val,
+                    mean: mean_val,
+                    dist: Exp::new(lambda_val).map_err(serde::de::Error::custom)?,
                 }
             }
             LatencyDistributionDe::Discrete { weights, values } => {
@@ -209,8 +260,7 @@ impl<'de> Deserialize<'de> for LatencyDistribution {
                 LatencyDistribution::Discrete {
                     weights: weights.clone(),
                     values: values.clone(),
-                    dist: WeightedIndex::new(weights)
-                        .map_err(serde::de::Error::custom)?,
+                    dist: WeightedIndex::new(weights).map_err(serde::de::Error::custom)?,
                 }
             }
             LatencyDistributionDe::Periodic {
@@ -304,6 +354,7 @@ fn default_random_latency() -> LatencyDistribution {
     let lambda = 1.0 / 10000.0;
     LatencyDistribution::Exponential {
         lambda,
+        mean: Some(10000.0),
         dist: Exp::new(lambda).unwrap(),
     }
 }
@@ -399,13 +450,17 @@ pub fn parse_call_sequences(config: &mut CallGraphConfig) -> Result<(), String> 
 
 #[cfg(test)]
 mod tests {
-    use super::{LatencyDistribution, SyntheticConfig};
+    use super::{
+        parse_call_sequences, parse_service_method, validate_call_graph, CallGraphConfig,
+        LatencyDistribution, ServiceDefinition, ServiceMethod, SyntheticConfig,
+    };
     use rand_distr::Exp;
     use serde_json::json;
 
     fn exponential(lambda: f64) -> LatencyDistribution {
         LatencyDistribution::Exponential {
             lambda,
+            mean: None,
             dist: Exp::new(lambda).unwrap(),
         }
     }
@@ -449,6 +504,74 @@ mod tests {
             ),
             "expected default exponential for random latency"
         );
+    }
+
+    #[test]
+    fn parses_exponential_with_mean() {
+        let config = json!({
+            "call_graph": {
+                "entry_point": "MS_1::method1",
+                "services": [
+                    {
+                        "id": "MS_1",
+                        "replicas": 1,
+                        "methods": [
+                            {
+                                "name": "method1",
+                                "latency_distribution": {"Exponential": {"mean": 10000.0}},
+                                "call_sequence": []
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
+        let call_graph = parsed.call_graph.as_ref().unwrap();
+        let method = &call_graph.services[0].methods[0];
+        match &method.latency_distribution {
+            LatencyDistribution::Exponential { lambda, mean, .. } => {
+                // mean = 10000, so lambda should be 1/10000 = 0.0001
+                assert!((lambda - 0.0001).abs() < 1e-10);
+                assert_eq!(mean, &Some(10000.0));
+            }
+            _ => panic!("Expected Exponential distribution"),
+        }
+    }
+
+    #[test]
+    fn parses_exponential_with_both_mean_and_lambda_prefers_mean() {
+        let config = json!({
+            "call_graph": {
+                "entry_point": "MS_1::method1",
+                "services": [
+                    {
+                        "id": "MS_1",
+                        "replicas": 1,
+                        "methods": [
+                            {
+                                "name": "method1",
+                                "latency_distribution": {"Exponential": {"lambda": 0.0002, "mean": 10000.0}},
+                                "call_sequence": []
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
+        let call_graph = parsed.call_graph.as_ref().unwrap();
+        let method = &call_graph.services[0].methods[0];
+        match &method.latency_distribution {
+            LatencyDistribution::Exponential { lambda, mean, .. } => {
+                // Should prefer mean, so lambda should be 1/10000 = 0.0001, not 0.0002
+                assert!((lambda - 0.0001).abs() < 1e-10);
+                assert_eq!(mean, &Some(10000.0));
+            }
+            _ => panic!("Expected Exponential distribution"),
+        }
     }
 
     #[test]
