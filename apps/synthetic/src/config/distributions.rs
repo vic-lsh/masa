@@ -1,6 +1,5 @@
 // Latency distribution implementations
 
-use crate::constants::*;
 use crate::error::{ConfigError, Result};
 use app_utils::timing::time_now;
 use rand::thread_rng;
@@ -181,16 +180,5 @@ impl Clone for LatencyDistribution {
                 slow_duration_ms: *slow_duration_ms,
             },
         }
-    }
-}
-
-/// Create default exponential distribution
-pub fn default_random_latency() -> LatencyDistribution {
-    let lambda = 1.0 / DEFAULT_EXPONENTIAL_LATENCY_US as f64;
-    let dist = Exp::new(lambda).unwrap();
-    LatencyDistribution::Exponential {
-        lambda,
-        mean: Some(DEFAULT_EXPONENTIAL_LATENCY_US as f64),
-        dist,
     }
 }

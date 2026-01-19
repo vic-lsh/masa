@@ -65,9 +65,6 @@ pub struct RequestHop {
 /// Main synthetic configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyntheticConfig {
-    #[serde(default = "default_random_latency")]
-    pub child_random_latency: LatencyDistribution,
-
     #[serde(default)]
     pub child_services: Vec<ChildService>,
 
@@ -85,7 +82,7 @@ pub struct SyntheticConfig {
 }
 
 // Re-export from distributions module
-pub use super::distributions::{default_random_latency, LatencyDistribution};
+pub use super::distributions::LatencyDistribution;
 
 // Helper functions for serde defaults
 fn one_u8() -> u8 {

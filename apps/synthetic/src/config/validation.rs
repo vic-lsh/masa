@@ -148,9 +148,6 @@ pub fn validate_synthetic_config(config: &SyntheticConfig) -> Result<()> {
         }
     }
 
-    // Validate random latency distribution
-    config.child_random_latency.validate()?;
-
     Ok(())
 }
 

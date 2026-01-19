@@ -298,8 +298,6 @@ pub struct CallGraphConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyntheticConfig {
-    #[serde(default = "default_random_latency")]
-    pub child_random_latency: LatencyDistribution,
     #[serde(default)]
     pub child_services: Vec<ChildService>,
     #[serde(default)]
@@ -314,15 +312,6 @@ pub struct SyntheticConfig {
 
 fn one_u8() -> u8 {
     1
-}
-
-fn default_random_latency() -> LatencyDistribution {
-    let lambda = 1.0 / 10000.0;
-    LatencyDistribution::Exponential {
-        lambda,
-        mean: Some(10000.0),
-        dist: Exp::new(lambda).unwrap(),
-    }
 }
 
 fn onef64() -> f64 {
@@ -455,19 +444,6 @@ mod tests {
         assert_eq!(parsed.request_a_hops.len(), 2);
         assert_eq!(parsed.request_a_hops[0].duration_us, Some(12000));
         assert_eq!(parsed.request_a_hops[0].busy_spin_dur_us, Some(3000));
-    }
-
-    #[test]
-    fn uses_default_random_latency_distribution() {
-        let config = json!({});
-        let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
-        assert!(
-            matches!(
-                parsed.child_random_latency,
-                LatencyDistribution::Exponential { .. }
-            ),
-            "expected default exponential for random latency"
-        );
     }
 
     #[test]
