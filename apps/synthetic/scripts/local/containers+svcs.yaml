@@ -36,4 +36,5 @@ services:
 
 networks:
   synthetic_network:
+    name: local_synthetic_network
     driver: bridge

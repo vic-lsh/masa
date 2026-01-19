@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let child_addr = format!("{}:{}", "[::]", PORT)
         .parse()
         .expect("Failed to parse address");
-    let child = ChildImpl::new(cfg);
+    let child = ChildImpl::new(cfg).await;
     log::warn!("Server listening on {}...", child_addr);
     Server::builder()
         .add_service(ChildServer::new(child))

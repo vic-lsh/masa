@@ -1,6 +1,6 @@
 use crate::tonic;
 use app_utils::timing::time_now;
-use rand::thread_rng;
+use rand::{thread_rng, Rng};
 use rand_distr::{Distribution, Exp, Normal, WeightedIndex};
 
 use crate::{
@@ -115,4 +115,11 @@ impl LatencyDistribution {
             latency_type: Some(latency),
         }
     }
+}
+
+/// Sample whether a call should be made based on probability.
+/// Returns true if a random value [0.0, 1.0) is less than the given probability.
+pub fn should_make_call(probability: f64) -> bool {
+    let mut rng = thread_rng();
+    rng.gen::<f64>() < probability
 }

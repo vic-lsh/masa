@@ -7,6 +7,7 @@ service Child {
   rpc RunSynthetic(RunSyntheticRequest)
       returns (RunSyntheticResponse) {}
   rpc Presampled(PresampledRequest) returns (PresampledResponse) {}
+  rpc HandleMethod(MethodRequest) returns (MethodResponse) {}
 }
 
 message RandomLatencyRequest {
@@ -50,4 +51,16 @@ message Periodic {
   uint64 slow_latency = 1;
   uint64 fast_latency = 2;
   uint32 slow_duration_ms = 3;
+}
+
+message MethodRequest {
+  string service_id = 1;
+  string method_name = 2;
+  uint64 sent_at = 3;
+}
+
+message MethodResponse {
+  uint64 queueing_latency = 1;
+  uint64 handler_latency = 2;
+  uint64 finished_at = 3;
 }
