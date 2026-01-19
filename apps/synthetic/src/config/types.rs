@@ -44,14 +44,6 @@ pub struct CallGraphConfig {
     pub child_cpus_per_replica: f64,
 }
 
-/// Hop configuration for presampled requests
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Hop {
-    pub service: usize,
-    pub sleep: f64,
-    pub latency_distribution: LatencyDistribution,
-}
-
 /// Child service configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChildService {
@@ -76,13 +68,6 @@ pub struct SyntheticConfig {
     #[serde(default = "default_random_latency")]
     pub child_random_latency: LatencyDistribution,
 
-    // List of tuples of replica count and CPU share
-    #[serde(default = "empty_vec")]
-    pub child_presampled_services: Vec<Vec<f64>>,
-
-    #[serde(default = "empty_map")]
-    pub child_presampled_request_types: HashMap<String, Vec<Hop>>,
-
     #[serde(default)]
     pub child_services: Vec<ChildService>,
 
@@ -105,14 +90,6 @@ pub use super::distributions::{default_random_latency, LatencyDistribution};
 // Helper functions for serde defaults
 fn one_u8() -> u8 {
     DEFAULT_REPLICAS
-}
-
-fn empty_vec() -> Vec<Vec<f64>> {
-    Vec::new()
-}
-
-fn empty_map() -> HashMap<String, Vec<Hop>> {
-    HashMap::new()
 }
 
 fn onef64() -> f64 {

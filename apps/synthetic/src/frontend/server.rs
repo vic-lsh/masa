@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::iter::zip;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
@@ -9,7 +8,6 @@ use crate::config::{
     parse_call_sequences, parse_service_method, ChildService, LatencyDistribution, RequestHop,
     SyntheticConfig,
 };
-use crate::util;
 use app_utils::timing::time_now;
 use tracing::{info, warn};
 
@@ -17,14 +15,11 @@ use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{Request, Response, Status};
 
 use crate::tonic::{
-    child, child::child_client::ChildClient, child::Fixed, child::Periodic, frontend,
-    frontend::frontend_server::Frontend,
+    child, child::child_client::ChildClient, frontend, frontend::frontend_server::Frontend,
 };
 
 pub struct FrontendImpl {
     children: Vec<ChildClient<LoadBalancedChannel>>,
-    presampled_services_offset: usize,
-    presampled_request_types: HashMap<String, Vec<util::Hop>>,
     service_map: HashMap<String, usize>,
     random_latency: LatencyDistribution,
     request_a_hops: Vec<RequestHop>,
@@ -37,8 +32,6 @@ impl FrontendImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
         let SyntheticConfig {
             child_random_latency,
-            child_presampled_services,
-            child_presampled_request_types,
             child_services,
             request_a_hops,
             request_b_hops,
@@ -47,11 +40,6 @@ impl FrontendImpl {
         } = config;
 
         info!("Child random latency: {:?}", child_random_latency);
-        info!("Child presampled services: {:?}", child_presampled_services);
-        info!(
-            "Child presampled request types: {:?}",
-            child_presampled_request_types
-        );
         info!("Child services: {:?}", child_services);
         info!("Request a hops: {:?}", request_a_hops);
         info!("Request b hops: {:?}", request_b_hops);
@@ -59,14 +47,8 @@ impl FrontendImpl {
         let random_latency = child_random_latency;
 
         // Handle call graph configuration
-        let (
-            call_graph_entry_point,
-            call_graph_clients,
-            children,
-            presampled_services_offset,
-            presampled_request_types,
-            service_map,
-        ) = if let Some(mut call_graph) = call_graph {
+        let (call_graph_entry_point, call_graph_clients, children, service_map) =
+            if let Some(mut call_graph) = call_graph {
             // Parse and validate call sequences
             if let Err(e) = parse_call_sequences(&mut call_graph) {
                 panic!("Failed to parse call graph: {}", e);
@@ -115,13 +97,10 @@ impl FrontendImpl {
                 entry_point,
                 clients, // Arc<RwLock<HashMap>>
                 Vec::new(),
-                0,
-                HashMap::new(),
                 HashMap::new(),
             )
         } else {
             // Traditional mode: create children clients
-            let mut services = Vec::new();
             let mut random_services = child_services;
             if random_services.is_empty() {
                 random_services.push(ChildService {
@@ -129,26 +108,20 @@ impl FrontendImpl {
                     replicas: 1,
                 });
             }
-            services.extend(random_services.iter().map(|svc| svc.replicas));
-            let presampled_services_offset = services.len();
-            services.extend(child_presampled_services.iter().map(|v| v[0] as u8));
             let mut children = Vec::new();
             let mut start_id = 1;
-            for r in services {
+            for svc in &random_services {
                 let hostname_base = "local-child-service";
                 children.push(ChildClient::new(
-                    LoadBalancedChannel::new_from(hostname_base.to_string(), 8000, r, start_id)
-                        .await,
+                    LoadBalancedChannel::new_from(
+                        hostname_base.to_string(),
+                        8000,
+                        svc.replicas,
+                        start_id,
+                    )
+                    .await,
                 ));
-                start_id += r;
-            }
-
-            let mut presampled_request_types = HashMap::new();
-            for (key, value) in child_presampled_request_types {
-                presampled_request_types.insert(
-                    key,
-                    value.into_iter().map(|hop| util::Hop::from(hop)).collect(),
-                );
+                start_id += svc.replicas;
             }
 
             let mut service_map = HashMap::new();
@@ -165,16 +138,12 @@ impl FrontendImpl {
                 None,
                 Arc::new(RwLock::new(HashMap::new())),
                 children,
-                presampled_services_offset,
-                presampled_request_types,
                 service_map,
             )
         };
 
         FrontendImpl {
             children,
-            presampled_request_types,
-            presampled_services_offset,
             service_map,
             random_latency,
             request_a_hops,
@@ -294,36 +263,6 @@ impl Frontend for FrontendImpl {
 
         Ok(Response::new(frontend::BResponse {}))
     }
-
-    async fn handle_presampled(
-        &self,
-        request: Request<frontend::PresampledRequest>,
-    ) -> Result<Response<frontend::PresampledResponse>, Status> {
-        let request_type = request.into_inner().request_type;
-        let hops = self.presampled_request_types.get(&request_type).unwrap();
-        // sample latencies
-        let latencies: Vec<child::Latency> = hops
-            .iter()
-            .map(|hop| hop.latency_distribution.presample())
-            .collect();
-        let concrete_latencies = latencies.iter().map(child_latency_to_value).collect();
-        let remaining_execution_times = reversed_prefix_sum(&concrete_latencies);
-        for (hop, (latency, remaining)) in zip(hops, zip(latencies, remaining_execution_times)) {
-            let service = self.presampled_services_offset + hop.service;
-            let mut request = Request::new({
-                child::PresampledRequest {
-                    latency: Some(latency),
-                    sleep: hop.sleep,
-                }
-            });
-            request
-                .metadata_mut()
-                .insert("remaining_execution_time", remaining.into());
-            let _response = self.children[service].clone().presampled(request).await?;
-        }
-
-        Ok(Response::new(frontend::PresampledResponse {}))
-    }
 }
 
 impl FrontendImpl {
@@ -379,33 +318,5 @@ struct HopResult {
 impl HopResult {
     fn sleep_latency_us(&self) -> u64 {
         self.duration_us.saturating_sub(self.busy_spin_dur_us)
-    }
-}
-
-fn reversed_prefix_sum(v: &Vec<u64>) -> Vec<u64> {
-    let mut result = Vec::new();
-    result.push(*v.last().expect("array is empty"));
-
-    for x in v.iter().rev().skip(1) {
-        result.push(x + *result.last().unwrap());
-    }
-
-    result.reverse();
-    result
-}
-
-fn child_latency_to_value(latency: &child::Latency) -> u64 {
-    match latency.latency_type.as_ref().unwrap() {
-        child::latency::LatencyType::Periodic(Periodic {
-            slow_latency,
-            fast_latency,
-            slow_duration_ms,
-        }) => {
-            let slow_fraction = *slow_duration_ms as f64 / 1000.0;
-            let average =
-                slow_fraction * *slow_latency as f64 + (1.0 - slow_fraction) * *fast_latency as f64;
-            average.round() as u64
-        }
-        child::latency::LatencyType::Fixed(Fixed { latency }) => *latency,
     }
 }

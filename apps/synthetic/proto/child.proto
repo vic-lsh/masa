@@ -6,7 +6,6 @@ service Child {
   rpc RandomLatency(RandomLatencyRequest) returns (RandomLatencyResponse) {}
   rpc RunSynthetic(RunSyntheticRequest)
       returns (RunSyntheticResponse) {}
-  rpc Presampled(PresampledRequest) returns (PresampledResponse) {}
   rpc HandleMethod(MethodRequest) returns (MethodResponse) {}
 }
 
@@ -29,28 +28,6 @@ message RunSyntheticResponse {
   uint64 queueing_latency = 1;
   uint64 handler_latency = 2;
   uint64 finished_at = 3;
-}
-message PresampledRequest {
-  Latency latency = 1;
-  double sleep = 2;
-}
-message PresampledResponse {}
-
-message Latency {
-  oneof latency_type {
-    Fixed fixed = 1;
-    Periodic periodic = 2;
-  }
-}
-
-message Fixed {
-  uint64 latency = 1;
-}
-
-message Periodic {
-  uint64 slow_latency = 1;
-  uint64 fast_latency = 2;
-  uint32 slow_duration_ms = 3;
 }
 
 message MethodRequest {

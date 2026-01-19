@@ -13,7 +13,7 @@ use crate::config::{
 };
 use crate::service_registry::ServiceRegistry;
 use crate::util::should_make_call;
-use crate::tonic::{child, child::child_server::Child, child::Periodic};
+use crate::tonic::{child, child::child_server::Child};
 use tracing::warn;
 
 pub struct ChildImpl {
@@ -305,43 +305,6 @@ impl Child for ChildImpl {
             sleep_latency: duration.as_micros() as u64,
             handler_latency: Instant::now().duration_since(start).as_micros() as u64,
         }))
-    }
-
-    async fn presampled(
-        &self,
-        request: Request<child::PresampledRequest>,
-    ) -> Result<Response<child::PresampledResponse>, Status> {
-        let request = request.into_inner();
-
-        let total_duration = match request.latency.unwrap().latency_type.unwrap() {
-            child::latency::LatencyType::Fixed(fixed) => fixed.latency,
-            child::latency::LatencyType::Periodic(Periodic {
-                slow_latency,
-                fast_latency,
-                slow_duration_ms,
-            }) => LatencyDistribution::Periodic {
-                slow_latency,
-                fast_latency,
-                slow_duration_ms: slow_duration_ms as u16,
-            }
-            .sample(),
-        };
-        let sleep_duration = (request.sleep * total_duration as f64).round() as u64;
-        let spin_duration = total_duration - sleep_duration;
-
-        if spin_duration > 0 {
-            busy_spin(Duration::from_micros(spin_duration));
-        }
-
-        // TODO: might want to update slack here
-
-        if sleep_duration > 0 {
-            tokio::time::sleep(Duration::from_micros(sleep_duration)).await;
-        }
-
-        // TODO: ... and here
-
-        Ok(Response::new(child::PresampledResponse {}))
     }
 
     async fn handle_method(

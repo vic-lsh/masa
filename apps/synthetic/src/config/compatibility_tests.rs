@@ -1,9 +1,8 @@
 #[cfg(test)]
 mod tests {
     use serde_json;
-    use std::collections::HashMap;
 
-    use crate::config::types::{Hop, LatencyDistribution, ServiceMethod, SyntheticConfig};
+    use crate::config::types::{LatencyDistribution, ServiceMethod, SyntheticConfig};
 
     #[test]
     fn test_backward_compatibility_minimal_config() {
@@ -201,31 +200,6 @@ mod tests {
         assert_eq!(method.call_sequence_raw.len(), 1);
         assert_eq!(method.call_sequence_raw[0].len(), 1);
         assert!(method.call_sequence_raw[0].contains_key("service1::method1"));
-    }
-
-    #[test]
-    fn test_presampled_request_types() {
-        let mut presampled_types = HashMap::new();
-        presampled_types.insert(
-            "type1".to_string(),
-            vec![Hop {
-                service: 0,
-                sleep: 0.5,
-                latency_distribution: LatencyDistribution::Exponential {
-                    lambda: 0.0001,
-                    mean: None,
-                    dist: rand_distr::Exp::new(0.0001).unwrap(),
-                },
-            }],
-        );
-
-        let config_json = serde_json::to_string(&presampled_types).unwrap();
-        let deserialized: HashMap<String, Vec<Hop>> = serde_json::from_str(&config_json).unwrap();
-
-        assert!(deserialized.contains_key("type1"));
-        assert_eq!(deserialized["type1"].len(), 1);
-        assert_eq!(deserialized["type1"][0].service, 0);
-        assert_eq!(deserialized["type1"][0].sleep, 0.5);
     }
 
     #[test]
