@@ -6,7 +6,7 @@ use structopt::StructOpt;
 use tonic::transport::Server;
 
 use app_utils::logging::init_logging;
-use synthetic::{SyntheticConfig, ChildServer, ChildImpl};
+use synthetic::{ChildImpl, ChildServer, SyntheticConfig};
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Synthetic Args")]

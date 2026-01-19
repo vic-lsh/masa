@@ -43,98 +43,99 @@ impl FrontendImpl {
         // Handle call graph configuration
         let (call_graph_entry_point, call_graph_clients, children, service_map) =
             if let Some(mut call_graph) = call_graph {
-            // Parse and validate call sequences
-            if let Err(e) = parse_call_sequences(&mut call_graph) {
-                panic!("Failed to parse call graph: {}", e);
-            }
+                // Parse and validate call sequences
+                if let Err(e) = parse_call_sequences(&mut call_graph) {
+                    panic!("Failed to parse call graph: {}", e);
+                }
 
-            // Parse entry point
-            let entry_target =
-                parse_service_method(&call_graph.entry_point).expect("Failed to parse entry point");
-            let entry_point = Some((
-                entry_target.service_id.clone(),
-                entry_target.method_name.clone(),
-            ));
-
-            // Build connection info for all services in call graph
-            // Docker Compose creates containers with names like: {project}-{service}-{replica_number}
-            // We need to connect to individual replica endpoints: {project}-local-{service-id}-service-1, -2, etc.
-            // Read project name from environment variable (set by exp.runner)
-            let project_name = std::env::var("DOCKER_COMPOSE_PROJECT_NAME")
-                .ok()
-                .filter(|s| !s.is_empty());
-
-            let mut services_to_connect = Vec::new();
-            for service in &call_graph.services {
-                // Service name matches the compose file service name: "local-{service-id}-service"
-                // Docker Compose creates containers like: {project}-local-{service-id}-service-1, -2, etc.
-                let base_service_name = format!("local-{}-service", service.id.to_lowercase());
-                let hostname_base = if let Some(ref project) = project_name {
-                    format!("{}-{}", project, base_service_name)
-                } else {
-                    base_service_name
-                };
-                services_to_connect.push((service.id.clone(), hostname_base, service.replicas));
-            }
-
-            // Create empty clients map - will be populated by bootstrap task
-            let clients = Arc::new(RwLock::new(HashMap::new()));
-
-            // Spawn bootstrap task to connect asynchronously
-            if !services_to_connect.is_empty() {
-                let bootstrap = ConnectionBootstrap::new(services_to_connect, Arc::clone(&clients));
-                bootstrap.spawn();
-            }
-
-            // When using call graph, don't create old-style children clients
-            (
-                entry_point,
-                clients, // Arc<RwLock<HashMap>>
-                Vec::new(),
-                HashMap::new(),
-            )
-        } else {
-            // Traditional mode: create children clients
-            let mut random_services = child_services;
-            if random_services.is_empty() {
-                random_services.push(ChildService {
-                    id: "default".to_string(),
-                    replicas: 1,
-                });
-            }
-            let mut children = Vec::new();
-            let mut start_id = 1;
-            for svc in &random_services {
-                let hostname_base = "local-child-service";
-                children.push(ChildClient::new(
-                    LoadBalancedChannel::new_from(
-                        hostname_base.to_string(),
-                        8000,
-                        svc.replicas,
-                        start_id,
-                    )
-                    .await,
+                // Parse entry point
+                let entry_target = parse_service_method(&call_graph.entry_point)
+                    .expect("Failed to parse entry point");
+                let entry_point = Some((
+                    entry_target.service_id.clone(),
+                    entry_target.method_name.clone(),
                 ));
-                start_id += svc.replicas;
-            }
 
-            let mut service_map = HashMap::new();
-            for (index, service) in random_services.iter().enumerate() {
-                let inserted = service_map.insert(service.id.clone(), index);
-                assert!(
-                    inserted.is_none(),
-                    "duplicate child service id: {}",
-                    service.id
-                );
-            }
+                // Build connection info for all services in call graph
+                // Docker Compose creates containers with names like: {project}-{service}-{replica_number}
+                // We need to connect to individual replica endpoints: {project}-local-{service-id}-service-1, -2, etc.
+                // Read project name from environment variable (set by exp.runner)
+                let project_name = std::env::var("DOCKER_COMPOSE_PROJECT_NAME")
+                    .ok()
+                    .filter(|s| !s.is_empty());
 
-            (
-                None,
-                Arc::new(RwLock::new(HashMap::new())),
-                children,
-                service_map,
-            )
-        };
+                let mut services_to_connect = Vec::new();
+                for service in &call_graph.services {
+                    // Service name matches the compose file service name: "local-{service-id}-service"
+                    // Docker Compose creates containers like: {project}-local-{service-id}-service-1, -2, etc.
+                    let base_service_name = format!("local-{}-service", service.id.to_lowercase());
+                    let hostname_base = if let Some(ref project) = project_name {
+                        format!("{}-{}", project, base_service_name)
+                    } else {
+                        base_service_name
+                    };
+                    services_to_connect.push((service.id.clone(), hostname_base, service.replicas));
+                }
+
+                // Create empty clients map - will be populated by bootstrap task
+                let clients = Arc::new(RwLock::new(HashMap::new()));
+
+                // Spawn bootstrap task to connect asynchronously
+                if !services_to_connect.is_empty() {
+                    let bootstrap =
+                        ConnectionBootstrap::new(services_to_connect, Arc::clone(&clients));
+                    bootstrap.spawn();
+                }
+
+                // When using call graph, don't create old-style children clients
+                (
+                    entry_point,
+                    clients, // Arc<RwLock<HashMap>>
+                    Vec::new(),
+                    HashMap::new(),
+                )
+            } else {
+                // Traditional mode: create children clients
+                let mut random_services = child_services;
+                if random_services.is_empty() {
+                    random_services.push(ChildService {
+                        id: "default".to_string(),
+                        replicas: 1,
+                    });
+                }
+                let mut children = Vec::new();
+                let mut start_id = 1;
+                for svc in &random_services {
+                    let hostname_base = "local-child-service";
+                    children.push(ChildClient::new(
+                        LoadBalancedChannel::new_from(
+                            hostname_base.to_string(),
+                            8000,
+                            svc.replicas,
+                            start_id,
+                        )
+                        .await,
+                    ));
+                    start_id += svc.replicas;
+                }
+
+                let mut service_map = HashMap::new();
+                for (index, service) in random_services.iter().enumerate() {
+                    let inserted = service_map.insert(service.id.clone(), index);
+                    assert!(
+                        inserted.is_none(),
+                        "duplicate child service id: {}",
+                        service.id
+                    );
+                }
+
+                (
+                    None,
+                    Arc::new(RwLock::new(HashMap::new())),
+                    children,
+                    service_map,
+                )
+            };
 
         FrontendImpl {
             children,
