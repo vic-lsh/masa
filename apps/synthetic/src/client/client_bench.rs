@@ -158,10 +158,6 @@ impl RequestType<SyntheticClient> for ARequest {
 
 struct BRequest {}
 
-impl BRequest {
-    const HEADERS: [&'static str; 0] = [];
-}
-
 impl RequestType<SyntheticClient> for BRequest {
     type ResponseType = frontend::BResponse;
 

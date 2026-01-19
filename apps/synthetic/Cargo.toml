@@ -182,6 +182,7 @@ kiddo = "4.2.1"
 # used by reservation service
 chrono = "0.4.38"
 clap = { version = "4.4", features = ["derive"] }
+thiserror = "1.0"
 
 
 [build-dependencies]
