@@ -2,7 +2,6 @@
 
 use crate::constants::*;
 use crate::error::{ConfigError, Result};
-use crate::tonic::child::{latency::LatencyType, Fixed, Periodic};
 use app_utils::timing::time_now;
 use rand::thread_rng;
 use rand_distr::{Distribution, Exp, Normal, WeightedIndex};
@@ -60,28 +59,6 @@ impl LatencyDistribution {
                     *fast_latency
                 }
             }
-        }
-    }
-
-    /// Create a presampled latency for gRPC transmission
-    pub fn presample(&self) -> crate::tonic::child::Latency {
-        let latency = match self {
-            LatencyDistribution::Periodic {
-                slow_latency,
-                fast_latency,
-                slow_duration_ms,
-            } => LatencyType::Periodic(Periodic {
-                slow_latency: *slow_latency,
-                fast_latency: *fast_latency,
-                slow_duration_ms: *slow_duration_ms as u32,
-            }),
-            _ => LatencyType::Fixed(Fixed {
-                latency: self.sample(),
-            }),
-        };
-
-        crate::tonic::child::Latency {
-            latency_type: Some(latency),
         }
     }
 

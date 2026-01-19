@@ -70,28 +70,6 @@ impl LatencyDistribution {
             }
         }
     }
-
-    pub fn presample(&self) -> crate::tonic::child::Latency {
-        use crate::tonic::child::{latency::LatencyType, Fixed, Periodic};
-        let latency = match self {
-            LatencyDistribution::Periodic {
-                slow_latency,
-                fast_latency,
-                slow_duration_ms,
-            } => LatencyType::Periodic(Periodic {
-                slow_latency: *slow_latency,
-                fast_latency: *fast_latency,
-                slow_duration_ms: *slow_duration_ms as u32,
-            }),
-            x => LatencyType::Fixed(Fixed {
-                latency: x.sample(),
-            }),
-        };
-
-        crate::tonic::child::Latency {
-            latency_type: Some(latency),
-        }
-    }
 }
 
 impl Clone for LatencyDistribution {
@@ -277,13 +255,6 @@ impl<'de> Deserialize<'de> for LatencyDistribution {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Hop {
-    pub service: usize,
-    pub sleep: f64,
-    pub latency_distribution: LatencyDistribution,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChildService {
     pub id: String,
     #[serde(default = "one_u8")]
@@ -329,11 +300,6 @@ pub struct CallGraphConfig {
 pub struct SyntheticConfig {
     #[serde(default = "default_random_latency")]
     pub child_random_latency: LatencyDistribution,
-    // list of tuples of replica count and CPU share
-    #[serde(default = "empty_vec")]
-    pub child_presampled_services: Vec<Vec<f64>>,
-    #[serde(default = "empty_map")]
-    pub child_presampled_request_types: HashMap<String, Vec<Hop>>,
     #[serde(default)]
     pub child_services: Vec<ChildService>,
     #[serde(default)]
@@ -357,14 +323,6 @@ fn default_random_latency() -> LatencyDistribution {
         mean: Some(10000.0),
         dist: Exp::new(lambda).unwrap(),
     }
-}
-
-fn empty_vec() -> Vec<Vec<f64>> {
-    Vec::new()
-}
-
-fn empty_map() -> HashMap<String, Vec<Hop>> {
-    HashMap::new()
 }
 
 fn onef64() -> f64 {
