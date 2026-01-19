@@ -5,6 +5,7 @@ use std::time::Instant;
 use app_utils::timing::time_now;
 use synthetic::config::{ChildService, RequestHop, SyntheticConfig};
 use synthetic::util;
+use tracing::info;
 
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{Request, Response, Status};
@@ -35,6 +36,16 @@ impl FrontendImpl {
             request_b_hops,
             ..
         } = config;
+
+        info!("Child random latency: {:?}", child_random_latency);
+        info!("Child presampled services: {:?}", child_presampled_services);
+        info!(
+            "Child presampled request types: {:?}",
+            child_presampled_request_types
+        );
+        info!("Child services: {:?}", child_services);
+        info!("Request a hops: {:?}", request_a_hops);
+        info!("Request b hops: {:?}", request_b_hops);
 
         let mut services = Vec::new();
         let mut random_services = child_services;
@@ -193,7 +204,7 @@ impl FrontendImpl {
             let busy_spin_dur_us = hop.busy_spin_dur_us.unwrap_or(0);
             if busy_spin_dur_us > duration_us {
                 return Err(Status::invalid_argument(format!(
-                    "busy_spin_dur_us ({}) cannot be greater than duration_us ({})",
+                    "Frontend: busy_spin_dur_us ({}) cannot be greater than duration_us ({})",
                     busy_spin_dur_us, duration_us
                 )));
             }
