@@ -318,30 +318,27 @@ mod tests {
                 ServiceDefinition {
                     id: "MS_56394".to_string(),
                     replicas: 1,
-                    methods: vec![
-                        ServiceMethod {
-                            name: "GqI6UW1mU4".to_string(),
-                            latency_distribution: LatencyDistribution::Exponential { lambda: 0.0001 },
-                            call_sequence_raw: vec![
-                                [("MS_37691::y_DKOh-Gts".to_string(), 1.0)].iter().cloned().collect(),
-                            ],
-                            parsed_call_sequence: vec![],
-                            busy_spin_ratio: None,
-                        },
-                    ],
+                    methods: vec![ServiceMethod {
+                        name: "GqI6UW1mU4".to_string(),
+                        latency_distribution: LatencyDistribution::Exponential { lambda: 0.0001 },
+                        call_sequence_raw: vec![[("MS_37691::y_DKOh-Gts".to_string(), 1.0)]
+                            .iter()
+                            .cloned()
+                            .collect()],
+                        parsed_call_sequence: vec![],
+                        busy_spin_ratio: None,
+                    }],
                 },
                 ServiceDefinition {
                     id: "MS_37691".to_string(),
                     replicas: 1,
-                    methods: vec![
-                        ServiceMethod {
-                            name: "y_DKOh-Gts".to_string(),
-                            latency_distribution: LatencyDistribution::Exponential { lambda: 0.0001 },
-                            call_sequence_raw: vec![],
-                            parsed_call_sequence: vec![],
-                            busy_spin_ratio: None,
-                        },
-                    ],
+                    methods: vec![ServiceMethod {
+                        name: "y_DKOh-Gts".to_string(),
+                        latency_distribution: LatencyDistribution::Exponential { lambda: 0.0001 },
+                        call_sequence_raw: vec![],
+                        parsed_call_sequence: vec![],
+                        busy_spin_ratio: None,
+                    }],
                 },
             ],
         };
@@ -368,27 +365,25 @@ mod tests {
                 ServiceDefinition {
                     id: "MS_56394".to_string(),
                     replicas: 1,
-                    methods: vec![
-                        ServiceMethod {
-                            name: "GqI6UW1mU4".to_string(),
-                            latency_distribution: LatencyDistribution::Exponential { lambda: 0.0001 },
-                            call_sequence_raw: vec![
-                                [
-                                    ("MS_37691::y_DKOh-Gts".to_string(), 1.0),
-                                    ("MS_37691::ykccIz2fkK".to_string(), 0.8),
-                                ]
+                    methods: vec![ServiceMethod {
+                        name: "GqI6UW1mU4".to_string(),
+                        latency_distribution: LatencyDistribution::Exponential { lambda: 0.0001 },
+                        call_sequence_raw: vec![
+                            [
+                                ("MS_37691::y_DKOh-Gts".to_string(), 1.0),
+                                ("MS_37691::ykccIz2fkK".to_string(), 0.8),
+                            ]
+                            .iter()
+                            .cloned()
+                            .collect(),
+                            [("MS_73106::method3".to_string(), 1.0)]
                                 .iter()
                                 .cloned()
                                 .collect(),
-                                [("MS_73106::method3".to_string(), 1.0)]
-                                    .iter()
-                                    .cloned()
-                                    .collect(),
-                            ],
-                            parsed_call_sequence: vec![],
-                            busy_spin_ratio: None,
-                        },
-                    ],
+                        ],
+                        parsed_call_sequence: vec![],
+                        busy_spin_ratio: None,
+                    }],
                 },
                 ServiceDefinition {
                     id: "MS_37691".to_string(),
@@ -396,14 +391,18 @@ mod tests {
                     methods: vec![
                         ServiceMethod {
                             name: "y_DKOh-Gts".to_string(),
-                            latency_distribution: LatencyDistribution::Exponential { lambda: 0.0001 },
+                            latency_distribution: LatencyDistribution::Exponential {
+                                lambda: 0.0001,
+                            },
                             call_sequence_raw: vec![],
                             parsed_call_sequence: vec![],
                             busy_spin_ratio: None,
                         },
                         ServiceMethod {
                             name: "ykccIz2fkK".to_string(),
-                            latency_distribution: LatencyDistribution::Exponential { lambda: 0.0001 },
+                            latency_distribution: LatencyDistribution::Exponential {
+                                lambda: 0.0001,
+                            },
                             call_sequence_raw: vec![],
                             parsed_call_sequence: vec![],
                             busy_spin_ratio: None,
@@ -430,7 +429,10 @@ mod tests {
         assert_eq!(method.parsed_call_sequence[0].len(), 2);
         assert_eq!(method.parsed_call_sequence[1].len(), 1);
         assert_eq!(method.parsed_call_sequence[0][0].0.service_id, "MS_37691");
-        assert_eq!(method.parsed_call_sequence[0][0].0.method_name, "y_DKOh-Gts");
+        assert_eq!(
+            method.parsed_call_sequence[0][0].0.method_name,
+            "y_DKOh-Gts"
+        );
         assert_eq!(method.parsed_call_sequence[0][0].1, 1.0);
     }
 }
