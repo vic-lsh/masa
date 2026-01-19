@@ -7,7 +7,8 @@ use tokio::sync::RwLock;
 use app_utils::timing::time_now;
 use synthetic::bootstrap::ConnectionBootstrap;
 use synthetic::config::{
-    parse_call_sequences, parse_service_method, ChildService, RequestHop, SyntheticConfig,
+    parse_call_sequences, parse_service_method, ChildService, LatencyDistribution, RequestHop,
+    SyntheticConfig,
 };
 use synthetic::util;
 use tracing::{info, warn};
@@ -25,7 +26,7 @@ pub struct FrontendImpl {
     presampled_services_offset: usize,
     presampled_request_types: HashMap<String, Vec<util::Hop>>,
     service_map: HashMap<String, usize>,
-    random_latency: util::LatencyDistribution,
+    random_latency: LatencyDistribution,
     request_a_hops: Vec<RequestHop>,
     request_b_hops: Vec<RequestHop>,
     call_graph_entry_point: Option<(String, String)>, // (service_id, method_name)
@@ -55,7 +56,7 @@ impl FrontendImpl {
         info!("Request a hops: {:?}", request_a_hops);
         info!("Request b hops: {:?}", request_b_hops);
 
-        let random_latency = util::LatencyDistribution::from(child_random_latency);
+        let random_latency = child_random_latency;
 
         // Handle call graph configuration
         let (
@@ -215,8 +216,7 @@ impl FrontendImpl {
                 method_name: method_name.clone(),
                 sent_at,
             })
-            .await
-            .map_err(|e| Status::internal(format!("RPC error: {}", e)))?;
+            .await?;
 
         Ok(())
     }
