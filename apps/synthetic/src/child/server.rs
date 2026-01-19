@@ -6,14 +6,12 @@ use tokio;
 use tokio::runtime::current_thread_queue_len;
 use tonic::{Request, Response, Status};
 
-use app_utils::timing::time_now;
 use crate::bootstrap::ConnectionBootstrap;
-use crate::config::{
-    CallGraphConfig, CallTarget, SyntheticConfig, parse_call_sequences,
-};
+use crate::config::{parse_call_sequences, CallGraphConfig, CallTarget, SyntheticConfig};
 use crate::service_registry::ServiceRegistry;
-use crate::util::should_make_call;
 use crate::tonic::{child, child::child_server::Child};
+use crate::util::should_make_call;
+use app_utils::timing::time_now;
 use tracing::warn;
 
 pub struct ChildImpl {
@@ -198,9 +196,7 @@ impl ChildImpl {
                     .map_err(|_| Status::invalid_argument("duration_us must be greater than 0"))?;
                 Ok(exp.sample(&mut thread_rng()).round() as u64)
             }
-            None => Err(Status::invalid_argument(
-                "duration_us must be provided",
-            )),
+            None => Err(Status::invalid_argument("duration_us must be provided")),
         }
     }
 }
