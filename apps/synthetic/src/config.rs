@@ -761,11 +761,28 @@ mod tests {
         assert_eq!(method.parsed_call_sequence.len(), 2);
         assert_eq!(method.parsed_call_sequence[0].len(), 2);
         assert_eq!(method.parsed_call_sequence[1].len(), 1);
-        assert_eq!(method.parsed_call_sequence[0][0].0.service_id, "MS_37691");
-        assert_eq!(
-            method.parsed_call_sequence[0][0].0.method_name,
-            "y_DKOh-Gts"
-        );
-        assert_eq!(method.parsed_call_sequence[0][0].1, 1.0);
+
+        // Check that both methods are present in the first step (order doesn't matter due to HashMap)
+        let method_names: Vec<&str> = method.parsed_call_sequence[0]
+            .iter()
+            .map(|(target, _)| target.method_name.as_str())
+            .collect();
+        assert!(method_names.contains(&"y_DKOh-Gts"));
+        assert!(method_names.contains(&"ykccIz2fkK"));
+
+        // Check service_id and probabilities
+        for (target, prob) in &method.parsed_call_sequence[0] {
+            assert_eq!(target.service_id, "MS_37691");
+            if target.method_name == "y_DKOh-Gts" {
+                assert_eq!(*prob, 1.0);
+            } else if target.method_name == "ykccIz2fkK" {
+                assert_eq!(*prob, 0.8);
+            }
+        }
+
+        // Check second step
+        assert_eq!(method.parsed_call_sequence[1][0].0.service_id, "MS_73106");
+        assert_eq!(method.parsed_call_sequence[1][0].0.method_name, "method3");
+        assert_eq!(method.parsed_call_sequence[1][0].1, 1.0);
     }
 }

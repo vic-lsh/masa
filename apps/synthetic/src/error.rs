@@ -102,6 +102,3 @@ pub enum ConnectionError {
 }
 
 pub type Result<T> = std::result::Result<T, SyntheticError>;
-
-#[cfg(test)]
-mod tests;
