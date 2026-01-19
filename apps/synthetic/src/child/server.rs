@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use rand::thread_rng;
@@ -7,17 +8,17 @@ use tokio::runtime::current_thread_queue_len;
 use tonic::{Request, Response, Status};
 
 use crate::bootstrap::ConnectionBootstrap;
-use crate::config::{parse_call_sequences, CallGraphConfig, CallTarget, SyntheticConfig};
+use crate::config::{parse_call_sequences, CallTarget, ServiceMethod, SyntheticConfig};
 use crate::service_registry::ServiceRegistry;
 use crate::tonic::{child, child::child_server::Child};
-use crate::util::should_make_call;
+use crate::util::{should_make_call, simulate_work};
 use app_utils::timing::time_now;
 use tracing::warn;
 
 pub struct ChildImpl {
-    call_graph: Option<CallGraphConfig>,
     _service_id: Option<String>,
     service_registry: Option<ServiceRegistry>,
+    method_lookup: HashMap<(String, String), ServiceMethod>,
 }
 
 impl ChildImpl {
@@ -91,10 +92,20 @@ impl ChildImpl {
             (None, None, None)
         };
 
+        // Pre-compute method lookup table
+        let mut method_lookup = HashMap::new();
+        if let Some(ref cg) = call_graph {
+            for service in &cg.services {
+                for method in &service.methods {
+                    method_lookup.insert((service.id.clone(), method.name.clone()), method.clone());
+                }
+            }
+        }
+
         ChildImpl {
-            call_graph,
             _service_id: service_id,
             service_registry,
+            method_lookup,
         }
     }
 
@@ -157,26 +168,9 @@ impl ChildImpl {
         Ok(())
     }
 
-    fn get_method(
-        &self,
-        service_id: &str,
-        method_name: &str,
-    ) -> Result<&crate::config::ServiceMethod, Status> {
-        let call_graph = self
-            .call_graph
-            .as_ref()
-            .ok_or_else(|| Status::failed_precondition("Call graph not configured"))?;
-
-        let service = call_graph
-            .services
-            .iter()
-            .find(|s| s.id == service_id)
-            .ok_or_else(|| Status::not_found(format!("Service '{}' not found", service_id)))?;
-
-        service
-            .methods
-            .iter()
-            .find(|m| m.name == method_name)
+    fn get_method(&self, service_id: &str, method_name: &str) -> Result<&ServiceMethod, Status> {
+        self.method_lookup
+            .get(&(service_id.to_string(), method_name.to_string()))
             .ok_or_else(|| {
                 Status::not_found(format!(
                     "Method '{}' not found in service '{}'",
@@ -199,12 +193,6 @@ impl ChildImpl {
             None => Err(Status::invalid_argument("duration_us must be provided")),
         }
     }
-}
-
-fn busy_spin(duration: Duration) {
-    let end = Instant::now() + duration;
-
-    while Instant::now() < end {}
 }
 
 #[tonic::async_trait]
@@ -230,34 +218,15 @@ impl Child for ChildImpl {
             )));
         }
 
-        let busy_spin_to_total_ratio = busy_spin_dur_us as f64 / total_duration_us as f64;
+        let busy_spin_to_total_ratio = if total_duration_us > 0 {
+            busy_spin_dur_us as f64 / total_duration_us as f64
+        } else {
+            0.0
+        };
 
         let sampled_total_duration_us = self.sample_total_duration_us(Some(total_duration_us))?;
-        let sampled_busy_spin_dur_us =
-            (sampled_total_duration_us as f64 * busy_spin_to_total_ratio).round() as u64;
 
-        let sleep_dur_us = sampled_total_duration_us - sampled_busy_spin_dur_us;
-
-        // Sleep first
-        if sleep_dur_us > 0 {
-            tokio::time::sleep(Duration::from_micros(sleep_dur_us)).await;
-        }
-
-        // Then busy spin
-        if sampled_busy_spin_dur_us > 0 {
-            let yield_interval = Duration::from_micros(200);
-            let busy_spin_duration = Duration::from_micros(sampled_busy_spin_dur_us);
-
-            let mut remaining = busy_spin_duration;
-            while remaining > yield_interval {
-                busy_spin(yield_interval);
-                tokio::task::yield_now().await;
-                remaining -= yield_interval;
-            }
-            if remaining > Duration::ZERO {
-                busy_spin(remaining);
-            }
-        }
+        simulate_work(sampled_total_duration_us, busy_spin_to_total_ratio).await;
 
         Ok(Response::new(child::RunSyntheticResponse {
             queueing_latency,
@@ -280,34 +249,9 @@ impl Child for ChildImpl {
         // Sample latency from method's distribution
         let duration_us = method.latency_distribution.sample();
 
-        // Calculate busy spin duration if ratio is specified
-        let busy_spin_dur_us: u64 = {
-            let ratio = method.busy_spin_ratio.unwrap_or(0.1);
-            (duration_us as f64 * ratio).round() as u64
-        };
+        let busy_spin_ratio = method.busy_spin_ratio.unwrap_or(0.1);
 
-        let sleep_dur_us = duration_us.saturating_sub(busy_spin_dur_us);
-
-        // Sleep first
-        if sleep_dur_us > 0 {
-            tokio::time::sleep(Duration::from_micros(sleep_dur_us)).await;
-        }
-
-        // Then busy spin if needed
-        if busy_spin_dur_us > 0 {
-            let yield_interval = Duration::from_micros(200);
-            let busy_spin_duration = Duration::from_micros(busy_spin_dur_us);
-
-            let mut remaining = busy_spin_duration;
-            while remaining > yield_interval {
-                busy_spin(yield_interval);
-                tokio::task::yield_now().await;
-                remaining -= yield_interval;
-            }
-            if remaining > Duration::ZERO {
-                busy_spin(remaining);
-            }
-        }
+        simulate_work(duration_us, busy_spin_ratio).await;
 
         // Execute call sequence
         if !method.parsed_call_sequence.is_empty() {
