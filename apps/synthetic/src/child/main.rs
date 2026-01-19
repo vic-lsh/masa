@@ -1,5 +1,3 @@
-mod server;
-
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -8,9 +6,7 @@ use structopt::StructOpt;
 use tonic::transport::Server;
 
 use app_utils::logging::init_logging;
-use server::synthetic_tonic::child::child_server::ChildServer;
-use server::ChildImpl;
-use synthetic::config::SyntheticConfig;
+use synthetic::{SyntheticConfig, ChildServer, ChildImpl};
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Synthetic Args")]
