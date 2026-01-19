@@ -395,12 +395,6 @@ pub fn parse_call_sequences(config: &mut CallGraphConfig) -> Result<(), String> 
     Ok(())
 }
 
-pub mod compatibility_tests;
-pub mod distributions;
-pub mod parsers;
-pub mod types;
-pub mod validation;
-
 #[cfg(test)]
 mod tests {
     use super::{
