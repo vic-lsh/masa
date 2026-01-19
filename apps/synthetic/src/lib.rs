@@ -3,6 +3,7 @@ pub mod child;
 pub mod client;
 pub mod config;
 pub mod constants;
+pub mod distribution;
 pub mod error;
 pub mod frontend;
 pub mod service_registry;
@@ -22,7 +23,8 @@ pub mod tonic {
 
 // Re-export for binary access
 pub use child::server::ChildImpl;
-pub use config::{LatencyDistribution, SyntheticConfig};
+pub use config::SyntheticConfig;
+pub use distribution::LatencyDistribution;
 pub use frontend::server::FrontendImpl;
 pub use tonic::child::child_server::ChildServer;
 pub use tonic::frontend::frontend_server::FrontendServer;
