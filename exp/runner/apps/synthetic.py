@@ -296,27 +296,16 @@ class SyntheticApp(AppPlugin):
                 # CPUs per replica (use default if not specified)
                 cpus_per_replica = app_config.get("child_cpus_per_replica", 1)
                 env_vars["CPUS_PER_REPLICA"] = str(cpus_per_replica)
-                
-                # Presampled services not used in call graph mode
-                env_vars["PRESAMPLED_REPLICAS"] = "0"
             else:
-                # Traditional mode: calculate presampled replicas from child_presampled_services
-                presampled_services = app_config.get("child_presampled_services", [])
-                presampled_replicas = sum(
-                    service[0] for service in presampled_services if service
-                ) if presampled_services else 0
-                env_vars["PRESAMPLED_REPLICAS"] = str(presampled_replicas)
-                
+                # Traditional mode: calculate child replicas from child_services
                 child_services = app_config.get("child_services", [])
                 if child_services:
-                    random_replicas = sum(
+                    child_replicas = sum(
                         service.get("replicas", 1) for service in child_services
                     )
                 else:
-                    random_replicas = 1
-                
-                # Total child replicas
-                child_replicas = random_replicas + presampled_replicas
+                    child_replicas = 1
+
                 env_vars["CHILD_REPLICAS"] = str(child_replicas)
                 
                 # CPUs per replica
@@ -324,7 +313,6 @@ class SyntheticApp(AppPlugin):
                 env_vars["CPUS_PER_REPLICA"] = str(cpus_per_replica)
         else:
             # Use defaults if no config provided
-            env_vars["PRESAMPLED_REPLICAS"] = "0"
             env_vars["CHILD_REPLICAS"] = "1"
             env_vars["CPUS_PER_REPLICA"] = "1"
         

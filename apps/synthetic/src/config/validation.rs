@@ -151,20 +151,6 @@ pub fn validate_synthetic_config(config: &SyntheticConfig) -> Result<()> {
     // Validate random latency distribution
     config.child_random_latency.validate()?;
 
-    // Validate presampled configurations
-    for (key, hops) in &config.child_presampled_request_types {
-        if key.trim().is_empty() {
-            return Err(ConfigError::InvalidServiceConfig(
-                "Presampled request type key cannot be empty".to_string(),
-            )
-            .into());
-        }
-
-        for hop in hops {
-            hop.latency_distribution.validate()?;
-        }
-    }
-
     Ok(())
 }
 

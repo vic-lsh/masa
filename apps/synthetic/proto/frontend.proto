@@ -6,7 +6,6 @@ service Frontend {
   rpc HandlePing(PingRequest) returns (PingResponse) {}
   rpc HandleA(ARequest) returns (AResponse) {}
   rpc HandleB(BRequest) returns (BResponse) {}
-  rpc HandlePresampled(PresampledRequest) returns (PresampledResponse) {}
 }
 
 message PingRequest { string message = 1; }
@@ -29,6 +28,3 @@ message AResponse {
 message BRequest {}
 message BResponse {
 }
-
-message PresampledRequest { string request_type = 1; }
-message PresampledResponse {}
