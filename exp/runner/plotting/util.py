@@ -1,10 +1,110 @@
 from argparse import Namespace
 import argparse
 import json
+import logging
 import os
 from pathlib import Path
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+
+def _repair_row_parts(parts: list[str], *, expected_fields: int) -> list[str]:
+    """
+    Best-effort repair for malformed request CSV rows.
+
+    We expect synthetic request CSVs to have:
+      api, request_id, slo, start_at, deadline, latency, error, <7 optional numeric latencies>
+
+    Some rows are malformed in two common ways:
+    - Missing trailing latency fields (e.g. early-return rows end with a trailing comma).
+    - error field contains unescaped commas (e.g. gRPC error strings), which increases the
+      observed field count while also omitting the trailing latency fields.
+
+    This function repairs by:
+    - Treating the first 6 fields as fixed.
+    - Treating the last 7 fields as optional numeric latencies *only if* they are plain integers.
+    - Joining any remaining middle fields back into the 'error' column.
+    - Padding any missing fields with empty strings.
+    """
+    if expected_fields <= 0:
+        return []
+
+    # Generic fallback for unexpected schemas.
+    if expected_fields < 7:
+        if len(parts) >= expected_fields:
+            return parts[:expected_fields]
+        return parts + [""] * (expected_fields - len(parts))
+
+    # Ensure we have at least the fixed prefix.
+    fixed = (parts + [""] * 6)[:6]
+    remaining = parts[6:]
+
+    # Drop trailing empty tokens caused by a trailing comma.
+    while remaining and remaining[-1] == "":
+        remaining.pop()
+
+    # Try to peel off trailing numeric latency fields (up to 7).
+    n_optional_latencies = expected_fields - 7  # 7 = fixed(6) + error(1)
+    latencies_reversed: list[str] = []
+    while remaining and len(latencies_reversed) < n_optional_latencies:
+        tok = remaining[-1].strip()
+        if tok.isdigit():
+            latencies_reversed.append(remaining.pop())
+        else:
+            break
+    latencies_reversed.reverse()
+
+    error = ",".join(remaining).strip()
+    row = fixed + [error] + latencies_reversed
+    if len(row) < expected_fields:
+        row += [""] * (expected_fields - len(row))
+    elif len(row) > expected_fields:
+        row = row[:expected_fields]
+    return row
+
+
+def _read_request_csv(file_path: str) -> pd.DataFrame:
+    """
+    Read a request CSV, repairing malformed rows when needed.
+
+    We do not rely on pandas' CSV parser here because malformed 'error' fields may contain
+    unescaped commas, which breaks tokenization.
+    """
+    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+        header = f.readline()
+        if not header:
+            return pd.DataFrame()
+
+        columns = header.rstrip("\n").split(",")
+        expected = len(columns)
+        rows: list[list[str]] = []
+        repaired = 0
+
+        for line_no, line in enumerate(f, start=2):
+            line = line.rstrip("\n")
+            if not line:
+                continue
+
+            parts = line.split(",")
+            if len(parts) != expected:
+                repaired += 1
+                parts = _repair_row_parts(parts, expected_fields=expected)
+            rows.append(parts)
+
+    df = pd.DataFrame(rows, columns=columns)
+
+    # Convert any non-string columns to numeric where possible.
+    for col in columns:
+        if col in ("api", "error"):
+            continue
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    if repaired:
+        logger.warning("Repaired %d malformed row(s) while reading %s", repaired, file_path)
+
+    return df
 
 
 def read_policies(config_dir: Path) -> list[str]:
@@ -50,7 +150,7 @@ def read_data(config_dir, data_dir):
                 # pyrefly: ignore  # bad-assignment
                 for api in apis:
                     file_path = os.path.join(policy_folder, f"r{rps}_{api}.csv")
-                    df = pd.read_csv(file_path)
+                    df = _read_request_csv(file_path)
                     # Replace SLO column with value from gen_config.json
                     if api in api_to_slo:
                         df["slo"] = api_to_slo[api]
