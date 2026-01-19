@@ -3,20 +3,9 @@ syntax = "proto3";
 package child;
 
 service Child {
-  rpc RandomLatency(RandomLatencyRequest) returns (RandomLatencyResponse) {}
   rpc RunSynthetic(RunSyntheticRequest)
       returns (RunSyntheticResponse) {}
   rpc HandleMethod(MethodRequest) returns (MethodResponse) {}
-}
-
-message RandomLatencyRequest {
-  uint64 sent_at = 1;
-  bool busy_spin = 2;
-}
-message RandomLatencyResponse {
-  uint64 queueing_latency = 1;
-  uint64 sleep_latency = 2;
-  uint64 handler_latency = 3;
 }
 
 message RunSyntheticRequest {

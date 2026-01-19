@@ -3,11 +3,6 @@
   "FrontendPort": 8660,
   "ChildIps": ["child-service-0", "child-service-1"],
   "ChildPorts": [8661, 8662],
-  "child_random_latency": {
-    "Exponential": {
-      "lambda": 0.0001
-    }
-  },
   "child_services": [
     { "id": "S1" },
     { "id": "S2" }
