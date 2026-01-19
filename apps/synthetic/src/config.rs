@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
+use app_utils::timing::time_now;
+use rand::thread_rng;
+use rand_distr::{Distribution, Exp, Normal, WeightedIndex};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CallTarget {
@@ -8,24 +11,219 @@ pub struct CallTarget {
     pub method_name: String,
 }
 
-#[derive(Deserialize, Clone, Debug, Serialize)]
+#[derive(Debug)]
 pub enum LatencyDistribution {
     Normal {
         mean: f64,
         std: f64,
+        dist: Normal<f64>,
     },
     Exponential {
         lambda: f64,
+        dist: Exp<f64>,
     },
     Discrete {
         weights: Vec<f64>,
         values: Vec<u64>,
+        dist: WeightedIndex<f64>,
     },
     Periodic {
         slow_latency: u64,
         fast_latency: u64,
         slow_duration_ms: u16,
     },
+}
+
+impl LatencyDistribution {
+    // returns latency in us
+    pub fn sample(&self) -> u64 {
+        match self {
+            LatencyDistribution::Normal { dist, .. } => {
+                let mut l = dist.sample(&mut thread_rng()).round();
+
+                // make sure latency is non-negative
+                if l < 0.0 {
+                    l = 0.0;
+                }
+
+                l as u64
+            }
+            LatencyDistribution::Exponential { dist, .. } => {
+                dist.sample(&mut thread_rng()).round() as u64
+            }
+            LatencyDistribution::Discrete { dist, values, .. } => {
+                values[dist.sample(&mut thread_rng())]
+            }
+            LatencyDistribution::Periodic {
+                slow_latency,
+                fast_latency,
+                slow_duration_ms,
+            } => {
+                let now_ms = (time_now() / 1000) % 1000;
+
+                if now_ms < *slow_duration_ms as u64 {
+                    *slow_latency
+                } else {
+                    *fast_latency
+                }
+            }
+        }
+    }
+
+    pub fn presample(&self) -> crate::tonic::child::Latency {
+        use crate::tonic::child::{latency::LatencyType, Fixed, Periodic};
+        let latency = match self {
+            LatencyDistribution::Periodic {
+                slow_latency,
+                fast_latency,
+                slow_duration_ms,
+            } => LatencyType::Periodic(Periodic {
+                slow_latency: *slow_latency,
+                fast_latency: *fast_latency,
+                slow_duration_ms: *slow_duration_ms as u32,
+            }),
+            x => LatencyType::Fixed(Fixed {
+                latency: x.sample(),
+            }),
+        };
+
+        crate::tonic::child::Latency {
+            latency_type: Some(latency),
+        }
+    }
+}
+
+impl Clone for LatencyDistribution {
+    fn clone(&self) -> Self {
+        match self {
+            LatencyDistribution::Normal { mean, std, .. } => LatencyDistribution::Normal {
+                mean: *mean,
+                std: *std,
+                dist: Normal::new(*mean, *std).unwrap(),
+            },
+            LatencyDistribution::Exponential { lambda, .. } => {
+                LatencyDistribution::Exponential {
+                    lambda: *lambda,
+                    dist: Exp::new(*lambda).unwrap(),
+                }
+            }
+            LatencyDistribution::Discrete {
+                weights, values, ..
+            } => LatencyDistribution::Discrete {
+                weights: weights.clone(),
+                values: values.clone(),
+                dist: WeightedIndex::new(weights.clone()).unwrap(),
+            },
+            LatencyDistribution::Periodic {
+                slow_latency,
+                fast_latency,
+                slow_duration_ms,
+            } => LatencyDistribution::Periodic {
+                slow_latency: *slow_latency,
+                fast_latency: *fast_latency,
+                slow_duration_ms: *slow_duration_ms,
+            },
+        }
+    }
+}
+
+impl Serialize for LatencyDistribution {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        #[derive(Serialize)]
+        enum LatencyDistributionSer {
+            Normal { mean: f64, std: f64 },
+            Exponential { lambda: f64 },
+            Discrete { weights: Vec<f64>, values: Vec<u64> },
+            Periodic {
+                slow_latency: u64,
+                fast_latency: u64,
+                slow_duration_ms: u16,
+            },
+        }
+
+        let ser = match self {
+            LatencyDistribution::Normal { mean, std, .. } => {
+                LatencyDistributionSer::Normal {
+                    mean: *mean,
+                    std: *std,
+                }
+            }
+            LatencyDistribution::Exponential { lambda, .. } => {
+                LatencyDistributionSer::Exponential { lambda: *lambda }
+            }
+            LatencyDistribution::Discrete {
+                weights, values, ..
+            } => LatencyDistributionSer::Discrete {
+                weights: weights.clone(),
+                values: values.clone(),
+            },
+            LatencyDistribution::Periodic {
+                slow_latency,
+                fast_latency,
+                slow_duration_ms,
+            } => LatencyDistributionSer::Periodic {
+                slow_latency: *slow_latency,
+                fast_latency: *fast_latency,
+                slow_duration_ms: *slow_duration_ms,
+            },
+        };
+        ser.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for LatencyDistribution {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        enum LatencyDistributionDe {
+            Normal { mean: f64, std: f64 },
+            Exponential { lambda: f64 },
+            Discrete { weights: Vec<f64>, values: Vec<u64> },
+            Periodic {
+                slow_latency: u64,
+                fast_latency: u64,
+                slow_duration_ms: u16,
+            },
+        }
+
+        let de = LatencyDistributionDe::deserialize(deserializer)?;
+        Ok(match de {
+            LatencyDistributionDe::Normal { mean, std } => LatencyDistribution::Normal {
+                mean,
+                std,
+                dist: Normal::new(mean, std).map_err(serde::de::Error::custom)?,
+            },
+            LatencyDistributionDe::Exponential { lambda } => {
+                LatencyDistribution::Exponential {
+                    lambda,
+                    dist: Exp::new(lambda).map_err(serde::de::Error::custom)?,
+                }
+            }
+            LatencyDistributionDe::Discrete { weights, values } => {
+                assert_eq!(weights.len(), values.len());
+                LatencyDistribution::Discrete {
+                    weights: weights.clone(),
+                    values: values.clone(),
+                    dist: WeightedIndex::new(weights)
+                        .map_err(serde::de::Error::custom)?,
+                }
+            }
+            LatencyDistributionDe::Periodic {
+                slow_latency,
+                fast_latency,
+                slow_duration_ms,
+            } => LatencyDistribution::Periodic {
+                slow_latency,
+                fast_latency,
+                slow_duration_ms,
+            },
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,8 +301,10 @@ fn one_u8() -> u8 {
 }
 
 fn default_random_latency() -> LatencyDistribution {
+    let lambda = 1.0 / 10000.0;
     LatencyDistribution::Exponential {
-        lambda: 1.0 / 10000.0,
+        lambda,
+        dist: Exp::new(lambda).unwrap(),
     }
 }
 
@@ -200,7 +400,15 @@ pub fn parse_call_sequences(config: &mut CallGraphConfig) -> Result<(), String> 
 #[cfg(test)]
 mod tests {
     use super::{LatencyDistribution, SyntheticConfig};
+    use rand_distr::Exp;
     use serde_json::json;
+
+    fn exponential(lambda: f64) -> LatencyDistribution {
+        LatencyDistribution::Exponential {
+            lambda,
+            dist: Exp::new(lambda).unwrap(),
+        }
+    }
 
     #[test]
     fn parses_request_hops_config() {
@@ -320,7 +528,7 @@ mod tests {
                     replicas: 1,
                     methods: vec![ServiceMethod {
                         name: "GqI6UW1mU4".to_string(),
-                        latency_distribution: LatencyDistribution::Exponential { lambda: 0.0001 },
+                        latency_distribution: exponential(0.0001),
                         call_sequence_raw: vec![[("MS_37691::y_DKOh-Gts".to_string(), 1.0)]
                             .iter()
                             .cloned()
@@ -334,7 +542,7 @@ mod tests {
                     replicas: 1,
                     methods: vec![ServiceMethod {
                         name: "y_DKOh-Gts".to_string(),
-                        latency_distribution: LatencyDistribution::Exponential { lambda: 0.0001 },
+                        latency_distribution: exponential(0.0001),
                         call_sequence_raw: vec![],
                         parsed_call_sequence: vec![],
                         busy_spin_ratio: None,
@@ -367,7 +575,7 @@ mod tests {
                     replicas: 1,
                     methods: vec![ServiceMethod {
                         name: "GqI6UW1mU4".to_string(),
-                        latency_distribution: LatencyDistribution::Exponential { lambda: 0.0001 },
+                        latency_distribution: exponential(0.0001),
                         call_sequence_raw: vec![
                             [
                                 ("MS_37691::y_DKOh-Gts".to_string(), 1.0),
@@ -391,18 +599,14 @@ mod tests {
                     methods: vec![
                         ServiceMethod {
                             name: "y_DKOh-Gts".to_string(),
-                            latency_distribution: LatencyDistribution::Exponential {
-                                lambda: 0.0001,
-                            },
+                            latency_distribution: exponential(0.0001),
                             call_sequence_raw: vec![],
                             parsed_call_sequence: vec![],
                             busy_spin_ratio: None,
                         },
                         ServiceMethod {
                             name: "ykccIz2fkK".to_string(),
-                            latency_distribution: LatencyDistribution::Exponential {
-                                lambda: 0.0001,
-                            },
+                            latency_distribution: exponential(0.0001),
                             call_sequence_raw: vec![],
                             parsed_call_sequence: vec![],
                             busy_spin_ratio: None,
@@ -414,7 +618,7 @@ mod tests {
                     replicas: 1,
                     methods: vec![ServiceMethod {
                         name: "method3".to_string(),
-                        latency_distribution: LatencyDistribution::Exponential { lambda: 0.0001 },
+                        latency_distribution: exponential(0.0001),
                         call_sequence_raw: vec![],
                         parsed_call_sequence: vec![],
                         busy_spin_ratio: None,
