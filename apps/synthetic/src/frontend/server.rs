@@ -86,7 +86,7 @@ impl FrontendImpl {
             let project_name = std::env::var("DOCKER_COMPOSE_PROJECT_NAME")
                 .ok()
                 .filter(|s| !s.is_empty());
-            
+
             let mut services_to_connect = Vec::new();
             for service in &call_graph.services {
                 // Service name matches the compose file service name: "local-{service-id}-service"
@@ -97,16 +97,12 @@ impl FrontendImpl {
                 } else {
                     base_service_name
                 };
-                services_to_connect.push((
-                    service.id.clone(),
-                    hostname_base,
-                    service.replicas,
-                ));
+                services_to_connect.push((service.id.clone(), hostname_base, service.replicas));
             }
-            
+
             // Create empty clients map - will be populated by bootstrap task
             let clients = Arc::new(RwLock::new(HashMap::new()));
-            
+
             // Spawn bootstrap task to connect asynchronously
             if !services_to_connect.is_empty() {
                 let bootstrap = ConnectionBootstrap::new(services_to_connect, Arc::clone(&clients));
@@ -203,10 +199,7 @@ impl FrontendImpl {
         let client = match client {
             Some(client) => client,
             None => {
-                warn!(
-                    "Service '{}' not yet connected, skipping call",
-                    service_id
-                );
+                warn!("Service '{}' not yet connected, skipping call", service_id);
                 return Err(Status::unavailable(format!(
                     "Service '{}' not yet connected",
                     service_id
