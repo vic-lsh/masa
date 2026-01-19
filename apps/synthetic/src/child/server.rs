@@ -15,15 +15,16 @@ use tonic::{Request, Response, Status};
 use crate::server::synthetic_tonic::child::Periodic;
 use app_utils::timing::time_now;
 use synthetic::bootstrap::ConnectionBootstrap;
-use synthetic::config::{parse_call_sequences, CallGraphConfig, CallTarget, SyntheticConfig};
+use synthetic::config::{
+    parse_call_sequences, CallGraphConfig, CallTarget, LatencyDistribution, SyntheticConfig,
+};
 use synthetic::service_registry::ServiceRegistry;
-use synthetic::util;
 use synthetic::util::should_make_call;
 use synthetic_tonic::{child, child::child_server::Child};
 use tracing::warn;
 
 pub struct ChildImpl {
-    random_latency: util::LatencyDistribution,
+    random_latency: LatencyDistribution,
     call_graph: Option<CallGraphConfig>,
     service_id: Option<String>,
     service_registry: Option<ServiceRegistry>,
@@ -31,7 +32,7 @@ pub struct ChildImpl {
 
 impl ChildImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
-        let random_latency = util::LatencyDistribution::from(config.child_random_latency.clone());
+        let random_latency = config.child_random_latency.clone();
 
         // Spawn a task that prints the queue length every 500ms
         tokio::spawn(async {
@@ -162,8 +163,7 @@ impl ChildImpl {
             // Wait for all parallel calls in this step to complete
             for task in tasks {
                 task.await
-                    .map_err(|e| Status::internal(format!("Task join error: {}", e)))?
-                    .map_err(|e| Status::internal(format!("RPC error: {}", e)))?;
+                    .map_err(|e| Status::internal(format!("Task join error: {}", e)))??;
             }
         }
 
@@ -326,7 +326,7 @@ impl Child for ChildImpl {
                 slow_latency,
                 fast_latency,
                 slow_duration_ms,
-            }) => util::LatencyDistribution::Periodic {
+            }) => LatencyDistribution::Periodic {
                 slow_latency,
                 fast_latency,
                 slow_duration_ms: slow_duration_ms as u16,
@@ -363,8 +363,7 @@ impl Child for ChildImpl {
         let method = self.get_method(&request.service_id, &request.method_name)?;
 
         // Sample latency from method's distribution
-        let latency_dist = util::LatencyDistribution::from(method.latency_distribution.clone());
-        let duration_us = latency_dist.sample();
+        let duration_us = method.latency_distribution.sample();
 
         // Calculate busy spin duration if ratio is specified
         let busy_spin_dur_us: u64 = {
