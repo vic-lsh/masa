@@ -76,7 +76,8 @@ impl Child for ChildImpl {
         let queueing_latency = time_now() - request.sent_at;
         let start = Instant::now();
 
-        let total_duration_us = self.sample_total_duration_us(request.duration_us)?;
+        // let total_duration_us = self.sample_total_duration_us(request.duration_us)?;
+        let total_duration_us = request.duration_us.unwrap_or(0);
 
         let busy_spin_dur_us = request.busy_spin_dur_us.unwrap_or(0);
 
@@ -88,7 +89,13 @@ impl Child for ChildImpl {
             )));
         }
 
-        let sleep_dur_us = total_duration_us - busy_spin_dur_us;
+        let busy_spin_to_total_ratio = busy_spin_dur_us as f64 / total_duration_us as f64;
+
+        let sampled_total_duration_us = self.sample_total_duration_us(Some(total_duration_us))?;
+        let sampled_busy_spin_dur_us =
+            (sampled_total_duration_us as f64 * busy_spin_to_total_ratio).round() as u64;
+
+        let sleep_dur_us = sampled_total_duration_us - sampled_busy_spin_dur_us;
 
         // Sleep first
         if sleep_dur_us > 0 {
@@ -96,9 +103,9 @@ impl Child for ChildImpl {
         }
 
         // Then busy spin
-        if busy_spin_dur_us > 0 {
+        if sampled_busy_spin_dur_us > 0 {
             let yield_interval = Duration::from_micros(200);
-            let busy_spin_duration = Duration::from_micros(busy_spin_dur_us);
+            let busy_spin_duration = Duration::from_micros(sampled_busy_spin_dur_us);
 
             let mut remaining = busy_spin_duration;
             while remaining > yield_interval {
