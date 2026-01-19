@@ -16,20 +16,17 @@ impl ConnectionBootstrap {
         services: Vec<(String, String, u8)>,
         clients: Arc<RwLock<HashMap<String, ChildClient<LoadBalancedChannel>>>>,
     ) -> Self {
-        Self {
-            services,
-            clients,
-        }
+        Self { services, clients }
     }
 
     pub fn spawn(self) {
         tokio::spawn(async move {
-            let ConnectionBootstrap {
-                services,
-                clients,
-            } = self;
+            let ConnectionBootstrap { services, clients } = self;
 
-            info!(count = services.len(), "Connecting to children asynchronously");
+            info!(
+                count = services.len(),
+                "Connecting to children asynchronously"
+            );
             let connected_clients = Self::connect_to_children(services).await;
 
             info!("Children connected");

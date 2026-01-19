@@ -1,7 +1,7 @@
+pub mod bootstrap;
 pub mod config;
 pub mod service_registry;
 pub mod util;
-pub mod bootstrap;
 
 pub mod tonic {
     pub mod frontend {

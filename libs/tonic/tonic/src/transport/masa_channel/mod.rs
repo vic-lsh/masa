@@ -114,8 +114,7 @@ impl LoadBalancedChannel {
     pub async fn new_from_service_name(service_name: String, port: u16, _replicas: u8) -> Self {
         // For Docker Compose, use the service name directly - Docker Compose DNS
         // will handle load balancing across replicas automatically
-        let endpoint = Endpoint::from_shared(format!("http://{}:{}", service_name, port))
-            .unwrap();
+        let endpoint = Endpoint::from_shared(format!("http://{}:{}", service_name, port)).unwrap();
         let channel = Channel::new(std::iter::once(endpoint)).await;
         Self { channel }
     }
