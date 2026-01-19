@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import yaml
+
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import normalize_features_to_tag, get_docker_progress_flag
 
@@ -21,20 +23,33 @@ logger = logging.getLogger(__name__)
 class SyntheticLoadGenerator(LoadGenerator):
     """Load generator for the synthetic benchmark application."""
 
-    def __init__(self, features: Optional[str] = None):
+    def __init__(self, features: Optional[str] = None, project_name: Optional[str] = None):
         """
         Initialize load generator with optional features for image tagging.
 
         Args:
             features: Cargo features used to build the image
+            project_name: Docker Compose project name (used to determine network name)
         """
         self.features = features
+        self.project_name = project_name
 
     def get_container_name(self) -> str:
         return "synthetic_client_bench"
 
     def get_network_name(self) -> str:
-        return "local_synthetic_network"
+        """
+        Return the Docker network name to connect to.
+        
+        Uses the docker-compose project's network: {project_name}_synthetic_network
+        Docker Compose creates networks as {project_name}_{network_key} when networks
+        are defined in the compose file.
+        """
+        if self.project_name:
+            return f"{self.project_name}_synthetic_network"
+        else:
+            # Fallback to old network name for backwards compatibility
+            return "local_synthetic_network"
 
     def get_image_name(self) -> str:
         tag = normalize_features_to_tag(self.features)
@@ -53,7 +68,14 @@ class SyntheticApp(AppPlugin):
     
     The synthetic app has a simpler architecture with child services that can
     be configured with different replication strategies.
+    
+    When call_graph is configured, it dynamically generates a docker compose file
+    with separate services for each service in the call graph.
     """
+    
+    def __init__(self):
+        """Initialize synthetic app plugin."""
+        self._generated_compose_path: Optional[Path] = None
     
     def get_app_name(self) -> str:
         return "synthetic"
@@ -62,6 +84,158 @@ class SyntheticApp(AppPlugin):
         """Load config.docker.json configuration file."""
         with open(config_path) as f:
             return json.load(f)
+    
+    def _generate_gen_config(
+        self,
+        template_config_path: Path,
+        output_path: Path,
+        project_name: str,
+    ) -> None:
+        """
+        Generate project-specific gen_config.json with correct frontend service name.
+        
+        Updates the "Addr" field to point to the Docker Compose service name
+        (synthetic-frontend-service). Docker Compose DNS resolution uses service names,
+        not container names. The container name will be automatically prefixed with
+        the project name by Docker Compose.
+        """
+        with open(template_config_path) as f:
+            config = json.load(f)
+        
+        # Parse the original address
+        if "Addr" in config:
+            addr = config["Addr"]
+            # Extract protocol and port from original address
+            if "://" in addr:
+                protocol, rest = addr.split("://", 1)
+                if ":" in rest:
+                    _, port = rest.rsplit(":", 1)
+                else:
+                    port = "8000"  # default
+            else:
+                protocol = "http"
+                port = "8000"
+            
+            # Use the service name from Docker Compose (synthetic-frontend-service)
+            # Docker Compose DNS resolution uses service names, not container names
+            # The container will be named {project_name}-synthetic-frontend-service-1
+            # but DNS resolution uses the service name
+            config["Addr"] = f"{protocol}://synthetic-frontend-service:{port}"
+        
+        # Write to file
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "w") as f:
+            json.dump(config, f, indent=2)
+        
+        logger.debug(f"Generated gen_config.json at {output_path} with address {config.get('Addr', 'N/A')} for project {project_name}")
+    
+    def _generate_call_graph_compose(
+        self,
+        app_dir: Path,
+        app_config: dict,
+        image_tag: str,
+        app_config_path: Path,
+        output_dir: Path,
+    ) -> Path:
+        """
+        Generate a docker compose file for call graph configuration.
+        
+        Creates a compose file with:
+        - Frontend service
+        - One service per call graph service, each with its own SERVICE_ID
+        
+        Args:
+            app_dir: Application directory
+            app_config: Application configuration dict
+            image_tag: Docker image tag
+            app_config_path: Path to app config file
+            output_dir: Output directory for generated compose file
+            
+        Returns:
+            Path to generated compose file
+        """
+        call_graph = app_config.get("call_graph")
+        if not call_graph:
+            raise ValueError("call_graph not found in app_config")
+        
+        services = {}
+        
+        # Add frontend service
+        # Build depends_on list for all call graph services
+        # Use "local-{service-id}-service" naming to match service names
+        depends_on = [f"local-{svc['id'].lower()}-service" for svc in call_graph["services"]]
+        services["synthetic-frontend-service"] = {
+            "image": f"synthetic_frontend:{image_tag}",
+            "restart": "always",
+            "networks": ["synthetic_network"],
+            "ports": ["${FRONTEND_PORT}:8000"],
+            "depends_on": depends_on,
+            "environment": [
+                "BINARY_NAME=synthetic_frontend",
+                "LOG_LEVEL=${LOG_LEVEL:-info}",
+                "DOCKER_COMPOSE_PROJECT_NAME=${DOCKER_COMPOSE_PROJECT_NAME:-}",
+            ],
+            "volumes": [
+                "${APP_CONFIG_PATH}:/usr/config.json:ro"
+            ],
+            "deploy": {
+                "resources": {
+                    "limits": {
+                        "cpus": "4"
+                    }
+                }
+            }
+        }
+        
+        # Add one service per call graph service
+        # Use "local-{service-id}-service" naming to match frontend expectations
+        for service_def in call_graph["services"]:
+            service_id = service_def["id"]
+            service_name = f"local-{service_id.lower()}-service"
+            replicas = service_def.get("replicas", 1)
+            
+            services[service_name] = {
+                "image": f"synthetic_child:{image_tag}",
+                "scale": replicas,
+                "networks": ["synthetic_network"],
+                "environment": [
+                    "BINARY_NAME=synthetic_child",
+                    "LOG_LEVEL=${LOG_LEVEL:-info}",
+                    f"SERVICE_ID={service_id}",
+                    "DOCKER_COMPOSE_PROJECT_NAME=${DOCKER_COMPOSE_PROJECT_NAME:-}",
+                ],
+                "volumes": [
+                    "${APP_CONFIG_PATH}:/usr/config.json:ro"
+                ],
+                "deploy": {
+                    "resources": {
+                        "limits": {
+                            "cpus": "${CPUS_PER_REPLICA}"
+                        }
+                    }
+                }
+            }
+        
+        compose_content = {
+            "services": services,
+            "networks": {
+                "synthetic_network": {
+                    "driver": "bridge"
+                }
+            }
+        }
+        
+        # Write compose file to output directory
+        output_dir.mkdir(parents=True, exist_ok=True)
+        compose_path = output_dir / "docker-compose-callgraph.yaml"
+        
+        with open(compose_path, "w") as f:
+            yaml.dump(compose_content, f, default_flow_style=False, sort_keys=False)
+        
+        logger.info(f"Generated call graph docker compose file: {compose_path}")
+        logger.info(f"Services in call graph: {[s['id'] for s in call_graph['services']]}")
+        
+        return compose_path
     
     def generate_env_vars(
         self,
@@ -73,6 +247,7 @@ class SyntheticApp(AppPlugin):
         Generate environment variables for synthetic application.
         
         Calculates child replica counts from config and extracts frontend port.
+        When call_graph is present, handles call graph services instead.
         """
         env_vars = {}
         
@@ -85,28 +260,44 @@ class SyntheticApp(AppPlugin):
             raise ValueError(f"Unable to extract port from address: {addr}")
         
         if app_config:
-            # Calculate presampled replicas from child_presampled_services
-            presampled_services = app_config.get("child_presampled_services", [])
-            presampled_replicas = sum(
-                service[0] for service in presampled_services if service
-            ) if presampled_services else 0
-            env_vars["PRESAMPLED_REPLICAS"] = str(presampled_replicas)
-            
-            child_services = app_config.get("child_services", [])
-            if child_services:
-                random_replicas = sum(
-                    service.get("replicas", 1) for service in child_services
+            # Check if call_graph is configured
+            call_graph = app_config.get("call_graph")
+            if call_graph:
+                # Call graph mode: calculate total replicas from call graph services
+                total_replicas = sum(
+                    service.get("replicas", 1) for service in call_graph.get("services", [])
                 )
+                env_vars["CHILD_REPLICAS"] = str(total_replicas)
+                
+                # CPUs per replica (use default if not specified)
+                cpus_per_replica = app_config.get("child_cpus_per_replica", 1)
+                env_vars["CPUS_PER_REPLICA"] = str(cpus_per_replica)
+                
+                # Presampled services not used in call graph mode
+                env_vars["PRESAMPLED_REPLICAS"] = "0"
             else:
-                random_replicas = 1
-            
-            # Total child replicas
-            child_replicas = random_replicas + presampled_replicas
-            env_vars["CHILD_REPLICAS"] = str(child_replicas)
-            
-            # CPUs per replica
-            cpus_per_replica = app_config.get("child_cpus_per_replica", 1)
-            env_vars["CPUS_PER_REPLICA"] = str(cpus_per_replica)
+                # Traditional mode: calculate presampled replicas from child_presampled_services
+                presampled_services = app_config.get("child_presampled_services", [])
+                presampled_replicas = sum(
+                    service[0] for service in presampled_services if service
+                ) if presampled_services else 0
+                env_vars["PRESAMPLED_REPLICAS"] = str(presampled_replicas)
+                
+                child_services = app_config.get("child_services", [])
+                if child_services:
+                    random_replicas = sum(
+                        service.get("replicas", 1) for service in child_services
+                    )
+                else:
+                    random_replicas = 1
+                
+                # Total child replicas
+                child_replicas = random_replicas + presampled_replicas
+                env_vars["CHILD_REPLICAS"] = str(child_replicas)
+                
+                # CPUs per replica
+                cpus_per_replica = app_config.get("child_cpus_per_replica", 1)
+                env_vars["CPUS_PER_REPLICA"] = str(cpus_per_replica)
         else:
             # Use defaults if no config provided
             env_vars["PRESAMPLED_REPLICAS"] = "0"
@@ -120,7 +311,12 @@ class SyntheticApp(AppPlugin):
         return env_vars
     
     def get_docker_config(self) -> DockerConfig:
-        """Return Docker configuration for synthetic application."""
+        """
+        Return Docker configuration for synthetic application.
+        
+        Note: When call_graph is configured, this is called first with default values.
+        The actual compose file generation happens in run_workload override.
+        """
         return DockerConfig(
             compose_file="scripts/local/containers+svcs.yaml",
             network_name="local_synthetic_network",
@@ -129,31 +325,57 @@ class SyntheticApp(AppPlugin):
             app_config_filename="config.docker.json",
         )
     
-    def get_container_names(self, env_vars: dict) -> list[str]:
+    def get_container_names(self, env_vars: dict, app_config: Optional[dict] = None) -> list[str]:
         """
         Get list of container names for synthetic application.
         
         Includes frontend and child service containers based on replica count.
+        When call_graph is configured, includes containers for each call graph service.
+        
+        Note: This method returns container name patterns without project prefix.
+        The actual container names will include the project prefix when Docker Compose
+        creates them. For actual container names, use docker.get_container_names() which
+        queries Docker Compose directly.
         """
-        container_names = ["synthetic_frontend"]
+        # Frontend container name pattern (without project prefix)
+        # Docker Compose will create: {project}-synthetic-frontend-service-1
+        container_names = []
         
-        # Get child replica count
-        child_replicas = int(env_vars.get("CHILD_REPLICAS", 1))
-        
-        # Generate container names for each child replica
-        for i in range(1, child_replicas + 1):
-            container_names.append(f"local-child-service-{i}")
+        # Check if call_graph is configured
+        if app_config and app_config.get("call_graph"):
+            # Call graph mode: generate container names for each service
+            call_graph = app_config["call_graph"]
+            for service_def in call_graph.get("services", []):
+                service_id = service_def["id"]
+                service_name = f"local-{service_id.lower()}-service"
+                replicas = service_def.get("replicas", 1)
+                
+                # Generate container names for each replica
+                # Docker compose naming: {project}-{service}-{replica_number}
+                # Service names use "local-{service_id}-service" to match frontend expectations
+                for i in range(1, replicas + 1):
+                    # Docker compose creates containers like: {project}-{service}-{i}
+                    # We use a pattern that matches what docker compose generates
+                    container_names.append(f"{service_name}-{i}")
+        else:
+            # Traditional mode: get child replica count
+            child_replicas = int(env_vars.get("CHILD_REPLICAS", 1))
+            
+            # Generate container names for each child replica
+            for i in range(1, child_replicas + 1):
+                container_names.append(f"local-child-service-{i}")
         
         return container_names
     
-    def create_load_generator(self, features: Optional[str] = None) -> LoadGenerator:
+    def create_load_generator(self, features: Optional[str] = None, project_name: Optional[str] = None) -> LoadGenerator:
         """
         Create a load generator instance for synthetic application.
         
         Args:
             features: Optional cargo features used to build the image
+            project_name: Docker Compose project name (used to determine network name)
         """
-        return SyntheticLoadGenerator(features=features) if features is not None else SyntheticLoadGenerator()
+        return SyntheticLoadGenerator(features=features, project_name=project_name)
 
     def create_builder(self) -> AppBuilder:
         """
@@ -172,6 +394,202 @@ class SyntheticApp(AppPlugin):
             Docker image tag string
         """
         return normalize_features_to_tag(features)
+    
+    def run_workload(
+        self,
+        *,
+        repo_root: Path,
+        config,  # ExperimentConfig
+        docker,  # DockerManager
+        policy: str,
+        iteration: int,
+        output_dir: Path,
+        app_local_dir: Path,
+        no_cache: bool,
+        dry_run: bool = False,
+    ) -> None:
+        """
+        Run a single (iteration, policy) workload.
+        
+        Overrides base implementation to handle call graph compose file generation.
+        """
+        from .base import CPUMonitor
+        
+        docker_config = self.get_docker_config()
+        
+        # Generate environment variables
+        env_vars = self.generate_env_vars(
+            config.gen_config,
+            config.app_config,
+            config.app_dir,
+        )
+        
+        # Add image tag if app supports it (feature-specific images)
+        image_tag = self.get_image_tag(policy)
+        env_vars[f"{config.app_name.upper()}_IMAGE_TAG"] = image_tag
+        logger.debug(f"Set {config.app_name.upper()}_IMAGE_TAG={image_tag}")
+        
+        # Compute config paths for builds/loadgen
+        app_config_path = None
+        if docker_config.app_config_filename:
+            candidate = config.in_dir / docker_config.app_config_filename
+            if not candidate.exists():
+                raise FileNotFoundError(f"App config not found at: {candidate}")
+            app_config_path = candidate
+            # Pass app config path to docker compose as env var for volume mounting
+            env_vars["APP_CONFIG_PATH"] = str(app_config_path.resolve())
+        
+        # Derive project name from output directory (Docker Compose uses directory name)
+        # The output_dir is like: exp/synthetic/data/out/exp1/0/fifo
+        # The project name is the last component (fifo)
+        project_name = output_dir.name
+        
+        # Pass project name to services via environment variable
+        env_vars["DOCKER_COMPOSE_PROJECT_NAME"] = project_name
+        
+        # Use template gen_config.json for Docker build (like hotel app does)
+        # The build happens before we generate the project-specific config
+        template_gen_config_path = config.in_dir / "gen_config.json"
+        if not template_gen_config_path.exists():
+            raise FileNotFoundError(f"gen_config.json not found at: {template_gen_config_path}")
+        
+        # Generate project-specific gen_config.json for load generator (with correct service name)
+        # Docker Compose DNS resolution uses service names, not container names
+        output_dir.mkdir(parents=True, exist_ok=True)
+        gen_config_path = output_dir / "gen_config.json"
+        self._generate_gen_config(
+            template_config_path=template_gen_config_path,
+            output_path=gen_config_path,
+            project_name=project_name,
+        )
+        
+        # Generate call graph compose file if needed
+        compose_file = docker_config.compose_file
+        compose_app_dir = config.app_dir
+        
+        # Check if call_graph is configured
+        has_call_graph = (
+            config.app_config is not None 
+            and "call_graph" in config.app_config 
+            and config.app_config.get("call_graph") is not None
+        )
+        
+        if config.app_config is not None and "call_graph" not in config.app_config:
+            logger.warning(
+                f"config.docker.json exists but does not contain 'call_graph' key. "
+                f"Available keys: {list(config.app_config.keys())}"
+            )
+        
+        if has_call_graph:
+            logger.info("Call graph detected, generating docker compose file")
+            generated_compose = self._generate_call_graph_compose(
+                app_dir=config.app_dir,
+                app_config=config.app_config,
+                image_tag=image_tag,
+                app_config_path=app_config_path,
+                output_dir=output_dir,
+            )
+            # Use output_dir as app_dir and just the filename for compose_file
+            compose_file = generated_compose.name
+            compose_app_dir = output_dir
+            self._generated_compose_path = generated_compose
+        
+        # Build images (use template gen_config.json for build, not project-specific one)
+        # The project-specific gen_config.json is only used by the load generator at runtime
+        builder = self.create_builder()
+        if dry_run:
+            commands = builder.build(
+                repo_root=repo_root,
+                app_dir=config.app_dir,
+                features=policy,
+                rust_log="info",
+                no_cache=no_cache,
+                gen_config_path=template_gen_config_path,
+                dry_run=True,
+            )
+            if commands:
+                print("\n".join(shlex.join(cmd) for cmd in commands))
+            print(f"[dry-run] would run {config.app_name} iteration={iteration} policy={policy}")
+            return
+        
+        # Write .env file expected by compose setups (only when actually running)
+        env_file = app_local_dir / ".env"
+        env_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(env_file, "w", encoding="utf-8") as f:
+            for key, value in env_vars.items():
+                f.write(f"{key}={value}\n")
+        logger.debug(f"Wrote environment variables to {env_file}")
+        
+        builder.build(
+            repo_root=repo_root,
+            app_dir=config.app_dir,
+            features=policy,
+            rust_log="info",
+            no_cache=no_cache,
+            gen_config_path=template_gen_config_path,
+            dry_run=False,
+        )
+        
+        # Initialize CPU monitor
+        cpu_stats_file = output_dir / "cpu_stats.csv"
+        cpu_monitor = CPUMonitor(output_path=cpu_stats_file, poll_interval=2.0)
+        
+        try:
+            docker.start(
+                app_dir=compose_app_dir,
+                compose_file=compose_file,
+                env_vars=env_vars,
+            )
+            
+            # Start CPU monitoring after services are up
+            cpu_monitor.start()
+            
+            # Get container names for log streaming
+            # Query Docker Compose for actual container names (includes project prefix)
+            compose_path = compose_app_dir / compose_file
+            container_names = docker.get_container_names(
+                compose_path=compose_path,
+                project_name=project_name,
+                env_vars=env_vars,
+            )
+            if container_names:
+                logs_dir = output_dir / "logs"
+                logs_dir.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Streaming logs for {len(container_names)} containers to {logs_dir}")
+                docker.stream_logs(
+                    container_names=container_names,
+                    output_dir=logs_dir,
+                    follow=True,
+                )
+            
+            # Run load generator
+            loadgen = self.create_load_generator(features=policy, project_name=project_name)
+            loadgen.run(
+                output_dir=output_dir,
+                env_vars=env_vars,
+                gen_config_path=gen_config_path,
+            )
+            
+            logger.info(f"Load generator completed for policy {policy}")
+            
+            # Wait a moment for logs to flush
+            time.sleep(2)
+        finally:
+            # Stop CPU monitoring before stopping services
+            try:
+                cpu_monitor.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping CPU monitor: {e}")
+            
+            # Stop Docker services
+            docker.stop(
+                app_dir=compose_app_dir,
+                compose_file=compose_file,
+                env_vars=env_vars,
+            )
+            
+            # Keep generated compose file for debugging/inspection
+            # (Previously cleaned up, but kept for troubleshooting)
 
 
 class SyntheticBuilder(AppBuilder):

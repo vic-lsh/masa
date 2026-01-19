@@ -14,17 +14,24 @@ use tonic::{Request, Response, Status};
 
 use crate::server::synthetic_tonic::child::Periodic;
 use app_utils::timing::time_now;
-use synthetic::config::SyntheticConfig;
+use synthetic::bootstrap::ConnectionBootstrap;
+use synthetic::config::{parse_call_sequences, CallGraphConfig, CallTarget, SyntheticConfig};
+use synthetic::service_registry::ServiceRegistry;
 use synthetic::util;
+use synthetic::util::should_make_call;
 use synthetic_tonic::{child, child::child_server::Child};
+use tracing::warn;
 
 pub struct ChildImpl {
     random_latency: util::LatencyDistribution,
+    call_graph: Option<CallGraphConfig>,
+    service_id: Option<String>,
+    service_registry: Option<ServiceRegistry>,
 }
 
 impl ChildImpl {
-    pub fn new(config: SyntheticConfig) -> Self {
-        let random_latency = util::LatencyDistribution::from(config.child_random_latency);
+    pub async fn new(config: SyntheticConfig) -> Self {
+        let random_latency = util::LatencyDistribution::from(config.child_random_latency.clone());
 
         // Spawn a task that prints the queue length every 500ms
         tokio::spawn(async {
@@ -41,7 +48,153 @@ impl ChildImpl {
             }
         });
 
-        ChildImpl { random_latency }
+        // Handle call graph configuration
+        let (call_graph, service_id, service_registry) = if let Some(mut call_graph) = config.call_graph {
+            // Parse and validate call sequences
+            if let Err(e) = parse_call_sequences(&mut call_graph) {
+                panic!("Failed to parse call graph: {}", e);
+            }
+
+            // Build connection info for service registry
+            // Docker Compose creates containers with names like: {project}-{service}-{replica_number}
+            // We need to connect to individual replica endpoints: {project}-local-{service-id}-service-1, -2, etc.
+            // Read project name from environment variable (set by exp.runner)
+            let project_name = std::env::var("DOCKER_COMPOSE_PROJECT_NAME")
+                .ok()
+                .filter(|s| !s.is_empty());
+            
+            let registry = ServiceRegistry::new();
+            let mut services_to_connect = Vec::new();
+            for service in &call_graph.services {
+                // Service name matches the compose file service name: "local-{service-id}-service"
+                // Docker Compose creates containers like: {project}-local-{service-id}-service-1, -2, etc.
+                let base_service_name = format!("local-{}-service", service.id.to_lowercase());
+                let hostname_base = if let Some(ref project) = project_name {
+                    format!("{}-{}", project, base_service_name)
+                } else {
+                    base_service_name
+                };
+                services_to_connect.push((
+                    service.id.clone(),
+                    hostname_base,
+                    service.replicas,
+                ));
+            }
+            
+            // Spawn bootstrap task to connect asynchronously
+            if !services_to_connect.is_empty() {
+                let bootstrap = ConnectionBootstrap::new(services_to_connect, registry.clients());
+                bootstrap.spawn();
+            }
+
+            // Determine current service ID from environment variable
+            // This should be set when deploying the service
+            let current_service_id = std::env::var("SERVICE_ID")
+                .ok()
+                .or_else(|| {
+                    // Fallback: try to infer from hostname
+                    // In docker compose, hostname might be like "synthetic-child-service-1"
+                    // For now, we'll require SERVICE_ID to be set explicitly
+                    None
+                })
+                .expect("SERVICE_ID environment variable must be set when using call graph");
+
+            (Some(call_graph), Some(current_service_id), Some(registry))
+        } else {
+            (None, None, None)
+        };
+
+        ChildImpl {
+            random_latency,
+            call_graph,
+            service_id,
+            service_registry,
+        }
+    }
+
+    async fn execute_call_sequence(
+        &self,
+        call_sequence: &[Vec<(CallTarget, f64)>],
+    ) -> Result<(), Status> {
+        let registry = self
+            .service_registry
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("Service registry not initialized"))?;
+
+        // Execute steps sequentially
+        for step in call_sequence {
+            // Collect tasks for parallel calls in this step
+            let mut tasks = Vec::new();
+
+            for (target, probability) in step {
+                if should_make_call(*probability) {
+                    let client = registry
+                        .get_client_clone(&target.service_id)
+                        .await;
+
+                    let client = match client {
+                        Some(client) => client,
+                        None => {
+                            warn!(
+                                "Service '{}' not yet connected, skipping call",
+                                target.service_id
+                            );
+                            continue;
+                        }
+                    };
+
+                    let sent_at = time_now();
+
+                    // Spawn task to make the call
+                    let target_service_id = target.service_id.clone();
+                    let target_method_name = target.method_name.clone();
+                    let task = tokio::spawn(async move {
+                        client
+                            .clone()
+                            .handle_method(synthetic::tonic::child::MethodRequest {
+                                service_id: target_service_id,
+                                method_name: target_method_name,
+                                sent_at,
+                            })
+                            .await
+                    });
+
+                    tasks.push(task);
+                }
+            }
+
+            // Wait for all parallel calls in this step to complete
+            for task in tasks {
+                task.await
+                    .map_err(|e| Status::internal(format!("Task join error: {}", e)))?
+                    .map_err(|e| Status::internal(format!("RPC error: {}", e)))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn get_method(
+        &self,
+        service_id: &str,
+        method_name: &str,
+    ) -> Result<&synthetic::config::ServiceMethod, Status> {
+        let call_graph = self
+            .call_graph
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("Call graph not configured"))?;
+
+        let service = call_graph
+            .services
+            .iter()
+            .find(|s| s.id == service_id)
+            .ok_or_else(|| Status::not_found(format!("Service '{}' not found", service_id)))?;
+
+        service
+            .methods
+            .iter()
+            .find(|m| m.name == method_name)
+            .ok_or_else(|| Status::not_found(format!("Method '{}' not found in service '{}'", method_name, service_id)))
     }
 
     fn sample_total_duration_us(&self, mean_duration_us: Option<u64>) -> Result<u64, Status> {
@@ -195,5 +348,62 @@ impl Child for ChildImpl {
         // TODO: ... and here
 
         Ok(Response::new(child::PresampledResponse {}))
+    }
+
+    async fn handle_method(
+        &self,
+        request: Request<child::MethodRequest>,
+    ) -> Result<Response<child::MethodResponse>, Status> {
+        let request = request.into_inner();
+        let queueing_latency = time_now() - request.sent_at;
+        let start = Instant::now();
+
+        // Get the method definition
+        let method = self.get_method(&request.service_id, &request.method_name)?;
+
+        // Sample latency from method's distribution
+        let latency_dist = util::LatencyDistribution::from(method.latency_distribution.clone());
+        let duration_us = latency_dist.sample();
+
+        // Calculate busy spin duration if ratio is specified
+        let busy_spin_dur_us: u64 = if let Some(ratio) = method.busy_spin_ratio {
+            (duration_us as f64 * ratio).round() as u64
+        } else {
+            0
+        };
+
+        let sleep_dur_us = duration_us.saturating_sub(busy_spin_dur_us);
+
+        // Sleep first
+        if sleep_dur_us > 0 {
+            tokio::time::sleep(Duration::from_micros(sleep_dur_us)).await;
+        }
+
+        // Then busy spin if needed
+        if busy_spin_dur_us > 0 {
+            let yield_interval = Duration::from_micros(200);
+            let busy_spin_duration = Duration::from_micros(busy_spin_dur_us);
+
+            let mut remaining = busy_spin_duration;
+            while remaining > yield_interval {
+                busy_spin(yield_interval);
+                tokio::task::yield_now().await;
+                remaining -= yield_interval;
+            }
+            if remaining > Duration::ZERO {
+                busy_spin(remaining);
+            }
+        }
+
+        // Execute call sequence
+        if !method.parsed_call_sequence.is_empty() {
+            self.execute_call_sequence(&method.parsed_call_sequence).await?;
+        }
+
+        Ok(Response::new(child::MethodResponse {
+            queueing_latency,
+            handler_latency: Instant::now().duration_since(start).as_micros() as u64,
+            finished_at: time_now(),
+        }))
     }
 }
