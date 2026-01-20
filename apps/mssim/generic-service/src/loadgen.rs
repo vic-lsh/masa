@@ -232,6 +232,7 @@ async fn run_root_load(
                                 graph: entry.graph,
                                 missed_slo: elapsed > entry.slo_ms * 1000,
                                 is_err: false,
+                                error: String::new(),
                                 req_id,
                                 start_at,
                                 queue_latency_us: queue_latency.unwrap_or(0),
@@ -243,12 +244,13 @@ async fn run_root_load(
                             }
                             let _ = latency_sample_tx.send(elapsed);
                         }
-                        Err(_) => {
+                        Err(status) => {
                             stats.err.fetch_add(1, Ordering::Relaxed);
                             let sample = RootLatencySample {
                                 graph: entry.graph,
                                 missed_slo: false,
                                 is_err: true,
+                                error: status.message().to_string(),
                                 req_id,
                                 start_at,
                                 queue_latency_us: 0,
@@ -291,6 +293,7 @@ struct RootLatencySample {
     queue_latency_us: u64,
     e2e_latency_us: u64,
     is_err: bool,
+    error: String,
     missed_slo: bool,
 }
 
@@ -328,14 +331,26 @@ async fn flush_root_samples_internal(
     fs::create_dir_all(&output_dir).await?;
     let file_path = output_dir.join(file_name);
 
-    let mut csv_data =
-        String::from("graph,req_id,is_err,start_at,queue_latency_us,e2e_latency_us, missed_slo\n");
+    let mut csv_data = String::from(
+        "graph,req_id,is_err,error,start_at,queue_latency_us,e2e_latency_us,missed_slo\n",
+    );
     for sample in &snapshot {
+        // Escape error string if needed (simple CSV escaping)
+        let error_escaped = if sample.error.contains(',')
+            || sample.error.contains('"')
+            || sample.error.contains('\n')
+        {
+            format!("\"{}\"", sample.error.replace('"', "\"\""))
+        } else {
+            sample.error.clone()
+        };
+
         csv_data.push_str(&format!(
-            "{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{}\n",
             sample.graph.as_str(),
             sample.req_id,
             sample.is_err,
+            error_escaped,
             sample.start_at,
             sample.queue_latency_us,
             sample.e2e_latency_us,

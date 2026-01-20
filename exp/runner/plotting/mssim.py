@@ -61,7 +61,9 @@ def _filter_errors(df: pd.DataFrame) -> pd.DataFrame:
     if "is_err" not in df.columns:
         return df
     err_mask = _normalize_bool_series(df["is_err"])
-    return df.loc[~err_mask].copy()
+    # We don't filter errors here anymore, because we want to analyze early returns.
+    # The caller functions (like goodput calculation) should filter errors if needed.
+    return df
 
 
 def _filter_after_warmup(
@@ -91,9 +93,7 @@ def _filter_after_warmup(
     return filtered
 
 
-def _load_policy_data(
-    policy_dir: Path, warmup_sec: float
-) -> Dict[float, pd.DataFrame]:
+def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.DataFrame]:
     if not policy_dir.is_dir():
         raise FileNotFoundError(f"Policy directory not found: {policy_dir}")
 
@@ -125,11 +125,13 @@ def _load_policy_data(
                     continue
 
                 df = df.copy()
-                df["e2e_latency_ms"] = pd.to_numeric(
-                    df["e2e_latency_us"], errors="coerce"
-                ) / 1_000.0
+                df["e2e_latency_ms"] = (
+                    pd.to_numeric(df["e2e_latency_us"], errors="coerce") / 1_000.0
+                )
                 if "queue_latency_us" in df.columns:
-                    queue_us = pd.to_numeric(df["queue_latency_us"], errors="coerce").fillna(0.0)
+                    queue_us = pd.to_numeric(
+                        df["queue_latency_us"], errors="coerce"
+                    ).fillna(0.0)
                 else:
                     queue_us = 0.0
                 df["queue_latency_ms"] = queue_us / 1_000.0
@@ -164,11 +166,13 @@ def _load_policy_data(
                     continue
 
                 df = df.copy()
-                df["e2e_latency_ms"] = pd.to_numeric(
-                    df["e2e_latency_us"], errors="coerce"
-                ) / 1_000.0
+                df["e2e_latency_ms"] = (
+                    pd.to_numeric(df["e2e_latency_us"], errors="coerce") / 1_000.0
+                )
                 if "queue_latency_us" in df.columns:
-                    queue_us = pd.to_numeric(df["queue_latency_us"], errors="coerce").fillna(0.0)
+                    queue_us = pd.to_numeric(
+                        df["queue_latency_us"], errors="coerce"
+                    ).fillna(0.0)
                 else:
                     queue_us = 0.0
                 df["queue_latency_ms"] = queue_us / 1_000.0
@@ -210,6 +214,15 @@ def _compute_goodput(
 ) -> float:
     if df.empty:
         return 0.0
+
+    # Filter out errors for goodput calculation
+    if "is_err" in df.columns:
+        err_mask = _normalize_bool_series(df["is_err"])
+        df = df.loc[~err_mask]
+
+    if df.empty:
+        return 0.0
+
     meets_slo = df["e2e_latency_ms"] <= slo_ms
     denom = _effective_duration_sec(df, duration_sec, warmup_sec)
     return float(meets_slo.sum()) / denom
@@ -220,9 +233,16 @@ def _compute_latency_percentiles(
 ) -> Dict[float, float]:
     if df.empty:
         return {p: float("nan") for p in percentiles}
-    return {
-        p: float(df["e2e_latency_ms"].quantile(p / 100.0)) for p in percentiles
-    }
+
+    # Filter out errors for latency calculation
+    if "is_err" in df.columns:
+        err_mask = _normalize_bool_series(df["is_err"])
+        df = df.loc[~err_mask]
+
+    if df.empty:
+        return {p: float("nan") for p in percentiles}
+
+    return {p: float(df["e2e_latency_ms"].quantile(p / 100.0)) for p in percentiles}
 
 
 def _plot_goodput_lines(
@@ -284,7 +304,9 @@ def _plot_latency_percentiles(
         if idx >= len(axes_iter):
             break
         ax = axes_iter[idx]
-        for policy_idx, (policy, percentile_map) in enumerate(policy_percentiles.items()):
+        for policy_idx, (policy, percentile_map) in enumerate(
+            policy_percentiles.items()
+        ):
             marker = marker_cycle[policy_idx % len(marker_cycle)]
             color = get_policy_color(policy)
             if color is None:
@@ -333,6 +355,12 @@ def _plot_latency_cdf(
     for idx, (policy, df) in enumerate(policy_data.items()):
         if df.empty:
             continue
+
+        # Filter out errors for CDF
+        if "is_err" in df.columns:
+            err_mask = _normalize_bool_series(df["is_err"])
+            df = df.loc[~err_mask]
+
         latencies = df["e2e_latency_ms"].dropna()
         if latencies.empty:
             continue
@@ -360,7 +388,9 @@ def _plot_latency_cdf(
     ax.set_title(f"Latency CDF at {rps:g} RPS")
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
     if slo_ms > 0:
-        ax.axvline(slo_ms, linestyle="--", color="grey", alpha=0.6, label=f"SLO={slo_ms:g} ms")
+        ax.axvline(
+            slo_ms, linestyle="--", color="grey", alpha=0.6, label=f"SLO={slo_ms:g} ms"
+        )
     ax.legend()
     ax.set_xlim(left=0)
 
@@ -395,7 +425,10 @@ def _resolve_policies(
 
 
 def _resolve_rps_values(
-    gen_config: dict, data_dir: Path, iteration_ids: Sequence[int], policies: Sequence[str]
+    gen_config: dict,
+    data_dir: Path,
+    iteration_ids: Sequence[int],
+    policies: Sequence[str],
 ) -> List[float]:
     if gen_config.get("Rps"):
         return [float(v) for v in gen_config["Rps"]]
@@ -407,7 +440,7 @@ def _resolve_rps_values(
             if not policy_dir.is_dir():
                 continue
             rps_values = []
-            
+
             # Try new structure: run_* directories with CSV files
             for run_dir in sorted(policy_dir.glob("run_*")):
                 for csv_path in run_dir.glob("root_latencies_*rps.csv"):
@@ -415,7 +448,7 @@ def _resolve_rps_values(
                         rps_values.append(_parse_rps_from_filename(csv_path))
                     except ValueError:
                         continue
-            
+
             # Fallback to old structure: rps_* directories
             if not rps_values:
                 for rps_dir in sorted(policy_dir.glob("rps_*")):
@@ -423,7 +456,7 @@ def _resolve_rps_values(
                         rps_values.append(_parse_rps_dir(rps_dir))
                     except ValueError:
                         continue
-            
+
             if rps_values:
                 return sorted(set(rps_values))  # Remove duplicates and sort
     raise FileNotFoundError("No RPS values found for MSSIM output")
@@ -481,14 +514,6 @@ def generate_plots(args) -> None:
         per_iteration_goodput.append(goodput_by_policy)
         per_iteration_percentiles.append(percentiles_by_policy)
 
-        iteration_output = output_dir / str(iteration)
-        _plot_goodput_lines(
-            iteration_output / "goodput_absolute.png",
-            rps_values,
-            goodput_by_policy,
-            title=f"Goodput vs RPS (SLO={slo_ms:g} ms)",
-            ylabel="Goodput (RPS)",
-        )
         fraction_by_policy = {
             policy: [
                 (val / rps) if rps else float("nan")
@@ -496,6 +521,8 @@ def generate_plots(args) -> None:
             ]
             for policy, values in goodput_by_policy.items()
         }
+
+        iteration_output = output_dir / str(iteration)
         _plot_goodput_lines(
             iteration_output / "goodput_fraction.png",
             rps_values,
@@ -540,7 +567,9 @@ def generate_plots(args) -> None:
                 avg_goodput[policy].append(float(np.nanmean(values)))
                 for p in percentiles:
                     pct_values = [
-                        per_iter.get(policy, {}).get(p, [float("nan")] * len(rps_values))[idx]
+                        per_iter.get(policy, {}).get(
+                            p, [float("nan")] * len(rps_values)
+                        )[idx]
                         for per_iter in per_iteration_percentiles
                     ]
                     avg_percentiles[policy][p].append(float(np.nanmean(pct_values)))
@@ -587,7 +616,9 @@ def generate_plots(args) -> None:
                     if not df.empty:
                         combined_dfs.append(df)
                 if combined_dfs:
-                    avg_rps_policy_data[policy] = pd.concat(combined_dfs, ignore_index=True)
+                    avg_rps_policy_data[policy] = pd.concat(
+                        combined_dfs, ignore_index=True
+                    )
                 else:
                     avg_rps_policy_data[policy] = pd.DataFrame()
             _plot_latency_cdf(

@@ -261,3 +261,13 @@ fn read_context<B>(req: &http::Request<B>) -> Context {
     let ctx_str = req.headers()["ctx"].to_str().unwrap();
     Context::from_json(ctx_str)
 }
+
+/// Resolve the method name from HTTP request headers, checking for override header.
+pub(crate) fn resolve_method_name<B>(method: GrpcMethod, req: &http::Request<B>) -> String {
+    if let Some(header_value) = req.headers().get(METHOD_NAME_OVERRIDE_HEADER) {
+        if let Ok(method_name) = header_value.to_str() {
+            return method_name.to_string();
+        }
+    }
+    method.method().to_string()
+}
