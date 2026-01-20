@@ -18,7 +18,6 @@ WORKDIR /usr/src/masa
 # Copy source code
 COPY Cargo.toml Cargo.toml
 COPY Cargo.lock Cargo.lock
-COPY 3rd_party 3rd_party
 COPY apps apps
 COPY libs libs
 

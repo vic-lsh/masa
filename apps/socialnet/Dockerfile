@@ -11,7 +11,6 @@ COPY Cargo.toml Cargo.lock ./
 # Copy all necessary source folders from the project root
 COPY apps ./apps
 COPY libs ./libs
-COPY 3rd_party ./3rd_party
 COPY apps/socialnet/proto ./apps/socialnet/proto
 
 # Build the entire workspace
