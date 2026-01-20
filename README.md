@@ -12,14 +12,12 @@ The codebase is structured as follows:
 
 ```
 .
-├── 3rd_party     # vendored in dependencies; not modified
 ├── apps          # microservice applications and testbeds
 └── libs          # Masa libraries and modified libraries
 ```
 
 Masa is implemented by modifying a few crates; these are contained in `libs`. To evaluate Masa, we have a few microservice applications in `apps`.
 
-We have also included the source code of a few 3rd-party crates in `3rd_party`. These crates are included by source to make it simpler to link them against Masa's modified crates in `libs`.
 
 ## Getting started
 
