@@ -1,8 +1,6 @@
 //! This module is deprecated.
 
-use crate::{
-    body::BoxBody, masa::context::read_context, GrpcMethod, Request, Response, Status,
-};
+use crate::{body::BoxBody, masa::context::read_context, GrpcMethod, Request, Response, Status};
 use std::{
     collections::HashMap,
     sync::{
@@ -15,6 +13,7 @@ use std::{
 
 use super::super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::super::common::EarlyReturnHandler;
+use super::super::resolve_method_name;
 use super::{estimate_method_latency, track_method_latency};
 use masa::{Context, ContextBuilder, LatencyDistribution, LatencyEstimator, MethodId};
 
@@ -76,7 +75,10 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
             method,
             ctx: read_context(req),
             server: server_ctx,
-            early_return: EarlyReturnHandler::new(),
+            early_return: EarlyReturnHandler::new(
+                method.service(),
+                resolve_method_name(method, req),
+            ),
             child_end_times: Mutex::new(Vec::new()),
             q_lat: AtomicU64::new(0),
         }
@@ -150,9 +152,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         // NOTE(vic): could we have passed the deadline at this point?
         let deadline = self.ctx.deadline() - estimate_remaining;
 
-        let child_recv_ctx = ContextBuilder::from(&self.ctx)
-            .deadline(deadline)
-            .build();
+        let child_recv_ctx = ContextBuilder::from(&self.ctx).deadline(deadline).build();
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
 
         Ok(())
