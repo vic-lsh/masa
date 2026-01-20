@@ -1,63 +1,189 @@
 use std::collections::HashMap;
-use std::iter::zip;
-use std::{
-    sync::atomic::{AtomicU8, Ordering},
-    time::Instant,
-};
+use std::sync::Arc;
+use std::time::Instant;
+use tokio::sync::RwLock;
 
+use crate::bootstrap::ConnectionBootstrap;
+use crate::config::{
+    parse_call_sequences, parse_service_method, ChildService, RequestHop, SyntheticConfig,
+};
 use app_utils::timing::time_now;
-use rand::thread_rng;
-use rand_distr::{Distribution, Exp};
-use synthetic::config::SyntheticConfig;
-use synthetic::util;
+use tracing::{info, warn};
 
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{Request, Response, Status};
 
-use synthetic::tonic::{
-    child, child::child_client::ChildClient, child::Fixed, child::Periodic, frontend,
-    frontend::frontend_server::Frontend,
+use crate::tonic::{
+    child, child::child_client::ChildClient, frontend, frontend::frontend_server::Frontend,
 };
 
 pub struct FrontendImpl {
     children: Vec<ChildClient<LoadBalancedChannel>>,
-    constant_replicas: u8,
-    next_constant_replica: AtomicU8,
-    presampled_services_offset: usize,
-    presampled_request_types: HashMap<String, Vec<util::Hop>>,
+    service_map: HashMap<String, usize>,
+    request_a_hops: Vec<RequestHop>,
+    request_b_hops: Vec<RequestHop>,
+    call_graph_entry_point: Option<(String, String)>, // (service_id, method_name)
+    call_graph_clients: Arc<RwLock<HashMap<String, ChildClient<LoadBalancedChannel>>>>,
 }
 
 impl FrontendImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
-        let mut services = vec![1];
-        services.extend(vec![config.child_constant_replicas]);
-        let presampled_services_offset = services.len();
-        services.extend(config.child_presampled_services.iter().map(|v| v[0] as u8));
-        let mut children = Vec::new();
-        let mut start_id = 1;
-        for r in services {
-            let hostname_base = "local-child-service";
-            children.push(ChildClient::new(
-                LoadBalancedChannel::new_from(hostname_base.to_string(), 8000, r, start_id).await,
-            ));
-            start_id += r;
-        }
+        let SyntheticConfig {
+            child_services,
+            request_a_hops,
+            request_b_hops,
+            call_graph,
+            ..
+        } = config;
 
-        let mut presampled_request_types = HashMap::new();
-        for (key, value) in config.child_presampled_request_types {
-            presampled_request_types.insert(
-                key,
-                value.into_iter().map(|hop| util::Hop::from(hop)).collect(),
-            );
-        }
+        info!("Child services: {:?}", child_services);
+        info!("Request a hops: {:?}", request_a_hops);
+        info!("Request b hops: {:?}", request_b_hops);
+
+        // Read project name from environment variable (set by exp.runner)
+        let project_name = std::env::var("DOCKER_COMPOSE_PROJECT_NAME")
+            .ok()
+            .filter(|s| !s.is_empty());
+
+        // Handle call graph configuration
+        let (call_graph_entry_point, call_graph_clients, children, service_map) =
+            if let Some(mut call_graph) = call_graph {
+                // Parse and validate call sequences
+                if let Err(e) = parse_call_sequences(&mut call_graph) {
+                    panic!("Failed to parse call graph: {}", e);
+                }
+
+                // Parse entry point
+                let entry_target = parse_service_method(&call_graph.entry_point)
+                    .expect("Failed to parse entry point");
+                let entry_point = Some((
+                    entry_target.service_id.clone(),
+                    entry_target.method_name.clone(),
+                ));
+
+                // Build connection info for all services in call graph
+                // Docker Compose creates containers with names like: {project}-{service}-{replica_number}
+                // We need to connect to individual replica endpoints: {project}-local-{service-id}-service-1, -2, etc.
+
+                let mut services_to_connect = Vec::new();
+                for service in &call_graph.services {
+                    // Service name matches the compose file service name: "local-{service-id}-service"
+                    // Docker Compose creates containers like: {project}-local-{service-id}-service-1, -2, etc.
+                    let base_service_name = format!("local-{}-service", service.id.to_lowercase());
+                    let hostname_base = if let Some(ref project) = project_name {
+                        format!("{}-{}", project, base_service_name)
+                    } else {
+                        base_service_name
+                    };
+                    services_to_connect.push((service.id.clone(), hostname_base, service.replicas));
+                }
+
+                // Create empty clients map - will be populated by bootstrap task
+                let clients = Arc::new(RwLock::new(HashMap::new()));
+
+                // Spawn bootstrap task to connect asynchronously
+                if !services_to_connect.is_empty() {
+                    let bootstrap =
+                        ConnectionBootstrap::new(services_to_connect, Arc::clone(&clients));
+                    bootstrap.spawn();
+                }
+
+                // When using call graph, don't create old-style children clients
+                (
+                    entry_point,
+                    clients, // Arc<RwLock<HashMap>>
+                    Vec::new(),
+                    HashMap::new(),
+                )
+            } else {
+                // Traditional mode: create children clients
+                let mut random_services = child_services;
+                if random_services.is_empty() {
+                    random_services.push(ChildService {
+                        id: "default".to_string(),
+                        replicas: 1,
+                    });
+                }
+                let mut children = Vec::new();
+                let mut start_id = 1;
+                for svc in &random_services {
+                    let base_service_name = "local-child-service";
+                    let hostname_base = if let Some(ref project) = project_name {
+                        format!("{}-{}", project, base_service_name)
+                    } else {
+                        base_service_name.to_string()
+                    };
+
+                    children.push(ChildClient::new(
+                        LoadBalancedChannel::new_from(hostname_base, 8000, svc.replicas, start_id)
+                            .await,
+                    ));
+                    start_id += svc.replicas;
+                }
+
+                let mut service_map = HashMap::new();
+                for (index, service) in random_services.iter().enumerate() {
+                    let inserted = service_map.insert(service.id.clone(), index);
+                    assert!(
+                        inserted.is_none(),
+                        "duplicate child service id: {}",
+                        service.id
+                    );
+                }
+
+                (
+                    None,
+                    Arc::new(RwLock::new(HashMap::new())),
+                    children,
+                    service_map,
+                )
+            };
 
         FrontendImpl {
             children,
-            constant_replicas: config.child_constant_replicas,
-            next_constant_replica: AtomicU8::new(0),
-            presampled_request_types,
-            presampled_services_offset,
+            service_map,
+            request_a_hops,
+            request_b_hops,
+            call_graph_entry_point,
+            call_graph_clients,
         }
+    }
+
+    async fn call_entry_point(&self) -> Result<(), Status> {
+        let (service_id, method_name) = self
+            .call_graph_entry_point
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("Call graph not configured"))?;
+
+        let client = self
+            .call_graph_clients
+            .read()
+            .await
+            .get(service_id)
+            .cloned();
+
+        let client = match client {
+            Some(client) => client,
+            None => {
+                warn!("Service '{}' not yet connected, skipping call", service_id);
+                return Err(Status::unavailable(format!(
+                    "Service '{}' not yet connected",
+                    service_id
+                )));
+            }
+        };
+
+        let sent_at = time_now();
+        client
+            .clone()
+            .handle_method(child::MethodRequest {
+                service_id: service_id.clone(),
+                method_name: method_name.clone(),
+                sent_at,
+            })
+            .await?;
+
+        Ok(())
     }
 }
 
@@ -79,50 +205,44 @@ impl Frontend for FrontendImpl {
         _request: Request<frontend::ARequest>,
     ) -> Result<Response<frontend::AResponse>, Status> {
         let start = Instant::now();
-        let mut hop1 = self.children.last().unwrap().clone();
-        // let response = child_random_client
-        //     .random_latency(child::RandomLatencyRequest {
-        //         sent_at: time_now(),
-        //     })
-        //     .await?;
-        // let child_random_response = response.into_inner();
 
-        let response = hop1
-            .random_latency(child::RandomLatencyRequest {
-                sent_at: time_now(),
-                busy_spin: true,
-            })
-            .await?;
-        let hop1_response = response.into_inner();
+        // If call graph is configured, use it; otherwise use traditional hops
+        if let Some(_) = &self.call_graph_entry_point {
+            // Call the entry point method
+            self.call_entry_point().await?;
 
-        // let next =
-        //     self.next_constant_replica.fetch_add(1, Ordering::SeqCst) % self.constant_replicas;
-        // let mut child_constant_client = self.children[next as usize].clone();
+            // For call graph mode, return minimal response
+            // (could be enhanced to return more detailed metrics)
+            Ok(Response::new(frontend::AResponse {
+                child1_queueing_latency: 0,
+                child1_sleep_latency: 0,
+                child1_handler_latency: 0,
+                child2_queueing_latency: 0,
+                child2_handler_latency: 0,
+                child2_reply_latency: 0,
+                handler_latency: Instant::now().duration_since(start).as_micros() as u64,
+            }))
+        } else {
+            // Traditional mode
+            let results = self.execute_request_hops(&self.request_a_hops).await?;
+            if results.len() < 2 {
+                return Err(Status::failed_precondition(
+                    "request_a_hops must contain at least 2 hops",
+                ));
+            }
+            let hop1 = &results[0];
+            let hop2 = &results[1];
 
-        let mut child_constant_client = self.children.first().unwrap().clone();
-        // Sample from exponential distribution with mean = 10000
-        let mean = 10000.0;
-        let lambda = 1.0 / mean;
-        let exp_dist = Exp::<f64>::new(lambda).unwrap();
-        let duration_us = exp_dist.sample(&mut thread_rng()).round() as u64;
-        let response = child_constant_client
-            .run_synthetic(child::RunSyntheticRequest {
-                sent_at: time_now(),
-                busy_spin_dur_us: None,
-                duration_us: Some(duration_us),
-            })
-            .await?;
-        let child_constant_response = response.into_inner();
-
-        Ok(Response::new(frontend::AResponse {
-            child1_queueing_latency: 0,
-            child1_sleep_latency: 0,
-            child1_handler_latency: 0,
-            child2_queueing_latency: child_constant_response.queueing_latency,
-            child2_handler_latency: child_constant_response.handler_latency,
-            child2_reply_latency: time_now() - child_constant_response.finished_at,
-            handler_latency: Instant::now().duration_since(start).as_micros() as u64,
-        }))
+            Ok(Response::new(frontend::AResponse {
+                child1_queueing_latency: hop1.response.queueing_latency,
+                child1_sleep_latency: hop1.sleep_latency_us(),
+                child1_handler_latency: hop1.response.handler_latency,
+                child2_queueing_latency: hop2.response.queueing_latency,
+                child2_handler_latency: hop2.response.handler_latency,
+                child2_reply_latency: time_now() - hop2.response.finished_at,
+                handler_latency: Instant::now().duration_since(start).as_micros() as u64,
+            }))
+        }
     }
 
     async fn handle_b(
@@ -130,100 +250,69 @@ impl Frontend for FrontendImpl {
         _request: Request<frontend::BRequest>,
     ) -> Result<Response<frontend::BResponse>, Status> {
         let _start = Instant::now();
-        // let mut child_random_client = self.children.last().unwrap().clone();
-        // let response = child_random_client
-        //     .random_latency(child::RandomLatencyRequest {
-        //         sent_at: time_now(),
-        //     })
-        //     .await?;
-        // let _child_random_response = response.into_inner();
-
-        let mut hop1 = self.children.last().unwrap().clone();
-        let response = hop1
-            .random_latency(child::RandomLatencyRequest {
-                sent_at: time_now(),
-                busy_spin: true,
-            })
-            .await?;
-        let hop1_response = response.into_inner();
-
-        // let next =
-        //     self.next_constant_replica.fetch_add(1, Ordering::SeqCst) % self.constant_replicas;
-        // let mut child_constant_client = self.children[next as usize].clone();
-
-        let mut child_constant_client = self.children.first().unwrap().clone();
-        // Sample from exponential distribution with mean = 100000
-        let mean = 100000.0;
-        let lambda = 1.0 / mean;
-        let exp_dist = Exp::<f64>::new(lambda).unwrap();
-        let duration_us = exp_dist.sample(&mut thread_rng()).round() as u64;
-        let response = child_constant_client
-            .run_synthetic(child::RunSyntheticRequest {
-                sent_at: time_now(),
-                busy_spin_dur_us: None,
-                duration_us: Some(duration_us),
-            })
-            .await?;
-        let _child_constant_response = response.into_inner();
+        let results = self.execute_request_hops(&self.request_b_hops).await?;
+        if results.len() < 2 {
+            return Err(Status::failed_precondition(
+                "request_b_hops must contain at least 2 hops",
+            ));
+        }
 
         Ok(Response::new(frontend::BResponse {}))
     }
+}
 
-    async fn handle_presampled(
-        &self,
-        request: Request<frontend::PresampledRequest>,
-    ) -> Result<Response<frontend::PresampledResponse>, Status> {
-        let request_type = request.into_inner().request_type;
-        let hops = self.presampled_request_types.get(&request_type).unwrap();
-        // sample latencies
-        let latencies: Vec<child::Latency> = hops
-            .iter()
-            .map(|hop| hop.latency_distribution.presample())
-            .collect();
-        let concrete_latencies = latencies.iter().map(child_latency_to_value).collect();
-        let remaining_execution_times = reversed_prefix_sum(&concrete_latencies);
-        for (hop, (latency, remaining)) in zip(hops, zip(latencies, remaining_execution_times)) {
-            let service = self.presampled_services_offset + hop.service;
-            let mut request = Request::new({
-                child::PresampledRequest {
-                    latency: Some(latency),
-                    sleep: hop.sleep,
-                }
+impl FrontendImpl {
+    async fn execute_request_hops(&self, hops: &[RequestHop]) -> Result<Vec<HopResult>, Status> {
+        if hops.is_empty() {
+            return Err(Status::failed_precondition(
+                "request hops are not configured",
+            ));
+        }
+
+        let mut results = Vec::with_capacity(hops.len());
+        for hop in hops {
+            let service_index = *self.service_map.get(&hop.service_id).ok_or_else(|| {
+                Status::invalid_argument(format!("unknown child service id: {}", hop.service_id))
+            })?;
+
+            let duration_us = hop.duration_us.ok_or_else(|| {
+                Status::invalid_argument("duration_us must be specified for request hop")
+            })?;
+            let busy_spin_dur_us = hop.busy_spin_dur_us.unwrap_or(0);
+            if busy_spin_dur_us > duration_us {
+                return Err(Status::invalid_argument(format!(
+                    "Frontend: busy_spin_dur_us ({}) cannot be greater than duration_us ({})",
+                    busy_spin_dur_us, duration_us
+                )));
+            }
+            let sent_at = time_now();
+            let response = self.children[service_index]
+                .clone()
+                .run_synthetic(child::RunSyntheticRequest {
+                    sent_at,
+                    duration_us: Some(duration_us),
+                    busy_spin_dur_us: Some(busy_spin_dur_us),
+                })
+                .await?;
+            results.push(HopResult {
+                response: response.into_inner(),
+                duration_us,
+                busy_spin_dur_us,
             });
-            request
-                .metadata_mut()
-                .insert("remaining_execution_time", remaining.into());
-            let _response = self.children[service].clone().presampled(request).await?;
         }
 
-        Ok(Response::new(frontend::PresampledResponse {}))
+        Ok(results)
     }
 }
 
-fn reversed_prefix_sum(v: &Vec<u64>) -> Vec<u64> {
-    let mut result = Vec::new();
-    result.push(*v.last().expect("array is empty"));
-
-    for x in v.iter().rev().skip(1) {
-        result.push(x + *result.last().unwrap());
-    }
-
-    result.reverse();
-    result
+struct HopResult {
+    response: child::RunSyntheticResponse,
+    duration_us: u64,
+    busy_spin_dur_us: u64,
 }
 
-fn child_latency_to_value(latency: &child::Latency) -> u64 {
-    match latency.latency_type.as_ref().unwrap() {
-        child::latency::LatencyType::Periodic(Periodic {
-            slow_latency,
-            fast_latency,
-            slow_duration_ms,
-        }) => {
-            let slow_fraction = *slow_duration_ms as f64 / 1000.0;
-            let average =
-                slow_fraction * *slow_latency as f64 + (1.0 - slow_fraction) * *fast_latency as f64;
-            average.round() as u64
-        }
-        child::latency::LatencyType::Fixed(Fixed { latency }) => *latency,
+impl HopResult {
+    fn sleep_latency_us(&self) -> u64 {
+        self.duration_us.saturating_sub(self.busy_spin_dur_us)
     }
 }

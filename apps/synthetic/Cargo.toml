@@ -28,6 +28,12 @@ prio_local = [
   "masa/prio_local",
   "tonic/prio_local",
 ]
+prio_oldest = [
+  "tokio/prio_oldest",
+  "masa/prio_oldest",
+  "tonic/prio_oldest",
+]
+
 fifo = [
 	"tokio/fifo", 
 	"masa/fifo", 
@@ -176,6 +182,7 @@ kiddo = "4.2.1"
 # used by reservation service
 chrono = "0.4.38"
 clap = { version = "4.4", features = ["derive"] }
+thiserror = "1.0"
 
 
 [build-dependencies]

@@ -17,7 +17,6 @@ from .util import get_policy_display_name
 
 _EXPERIMENT_DIR_RE = re.compile(r"^(?P<policy>.+)_(?P<rps>\d+)$")
 _DEFAULT_SERVICE_ORDER = [
-    "frontend",
     "geo",
     "profile",
     "rate",
@@ -27,11 +26,14 @@ _DEFAULT_SERVICE_ORDER = [
     "search",
     "user",
 ]
+_EXCLUDED_SERVICES = {"frontend"}
 
 
 def _extract_replicas(hotel_config: dict) -> dict[str, int]:
     replicas: dict[str, int] = {}
     for service, config in hotel_config.items():
+        if service in _EXCLUDED_SERVICES:
+            continue
         if not isinstance(config, dict):
             continue
         if "replicas" not in config:

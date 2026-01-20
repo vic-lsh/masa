@@ -1,5 +1,6 @@
 import json
 
+import pandas as pd
 import pytest
 
 from exp.runner.plotting.util import get_policy_display_name, read_data, read_policies
@@ -57,3 +58,72 @@ def test_read_data_uses_policies_file(tmp_path):
     assert policies == ["fifo", "prio_global"]
     assert rps_values == [10]
     assert "extra_policy" not in results[0]["Login"]
+
+
+def test_read_data_repairs_malformed_request_csv_rows(tmp_path):
+    """
+    Synthetic request CSVs can contain malformed rows where:
+    - the error field contains unescaped commas (e.g. gRPC error strings), and/or
+    - trailing latency fields are missing (e.g. early-return rows).
+
+    Plot generation should still work by repairing those rows during read.
+    """
+    config_dir = tmp_path / "config"
+    data_dir = tmp_path / "data"
+    config_dir.mkdir()
+    data_dir.mkdir()
+
+    (config_dir / "gen_config.json").write_text(
+        json.dumps(
+            {
+                "Repeats": 1,
+                "Rps": [300],
+                "Apis": ["a"],
+                "Slos": [150000],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (config_dir / "policies").write_text("prio_local,early\n", encoding="utf-8")
+
+    policy_dir = data_dir / "0" / "prio_local,early"
+    policy_dir.mkdir(parents=True, exist_ok=True)
+
+    header = (
+        "api,request_id,slo,start_at,deadline,latency,error,frontend_latency,"
+        "child1_queueing_latency,child1_sleep_latency,child1_handler_latency,"
+        "child2_queueing_latency,child2_handler_latency,child2_reply_latency"
+    )
+    good = "a,1,150000,0,150000,100,/None,90,0,0,0,0,0,0"
+    early_return_missing_tail = "a,2,150000,1,150001,150542,/EarlyReturn,"
+    grpc_error_with_commas_missing_tail = (
+        'a,3,150000,2,150002,139592,RPC error: status: Internal, message: '
+        '"RPC error: status: DeadlineExceeded, message: \\"/EarlyReturn\\", details: [], metadata: '
+        'MetadataMap { headers: {\\"content-type\\": \\"application/grpc\\"} }", details: [], '
+        'metadata: MetadataMap { headers: {"content-type": "application/grpc"} },'
+    )
+
+    (policy_dir / "r300_a.csv").write_text(
+        "\n".join([header, good, early_return_missing_tail, grpc_error_with_commas_missing_tail]) + "\n",
+        encoding="utf-8",
+    )
+
+    repeats, apis, policies, rps_values, results = read_data(config_dir, data_dir)
+
+    assert repeats == 1
+    assert apis == ["a", "ALL"]
+    assert policies == ["prio_local,early"]
+    assert rps_values == [300]
+
+    df = results[0]["a"]["prio_local,early"][300]
+    assert list(df.columns) == header.split(",")
+    assert len(df) == 3
+
+    # Error field should be preserved even when it contains commas.
+    err = df.loc[df["request_id"] == 3, "error"].iloc[0]
+    assert "RPC error" in err
+    assert "/EarlyReturn" in err
+
+    # Missing trailing latency fields should become NaN after numeric conversion.
+    assert df.loc[df["request_id"] == 2, "error"].iloc[0] == "/EarlyReturn"
+    assert pd.isna(df.loc[df["request_id"] == 2, "frontend_latency"].iloc[0])

@@ -17,6 +17,7 @@ from exp.runner.apps.synthetic import (
     SyntheticApp,
     SyntheticBuilder,
     SyntheticLoadGenerator,
+    _safe_project_name,
 )
 from exp.runner.apps.utils import normalize_features_to_tag
 
@@ -38,14 +39,29 @@ class TestSyntheticLoadGenerator:
         assert loadgen2.get_image_name() == "synthetic_client_bench:latest"
 
     def test_container_name(self):
-        """Test that container name is constant."""
+        """Test default container name."""
         loadgen = SyntheticLoadGenerator(features="test")
         assert loadgen.get_container_name() == "synthetic_client_bench"
 
+    def test_container_name_with_project(self):
+        """Test that container name is namespaced with a project."""
+        loadgen = SyntheticLoadGenerator(features="test", project_name="proj")
+        assert loadgen.get_container_name() == "proj_synthetic_client_bench"
+
     def test_network_name(self):
-        """Test that network name is constant."""
+        """Test default network name for static compose."""
         loadgen = SyntheticLoadGenerator(features="test")
         assert loadgen.get_network_name() == "local_synthetic_network"
+
+    def test_network_name_with_project(self):
+        """Test that compose project network is derived from project name."""
+        loadgen = SyntheticLoadGenerator(features="test", project_name="proj")
+        assert loadgen.get_network_name() == "proj_synthetic_network"
+
+    def test_network_name_override(self):
+        """Test explicit network override is honored."""
+        loadgen = SyntheticLoadGenerator(features="test", project_name="proj", network_name="net")
+        assert loadgen.get_network_name() == "net"
 
     def test_binary_name(self):
         """Test that binary name is constant."""
@@ -122,6 +138,14 @@ class TestSyntheticApp:
         assert isinstance(loadgen, SyntheticLoadGenerator)
         assert loadgen.features == features
         assert loadgen.get_image_name() == "synthetic_client_bench:policy-x-policy-y"
+
+    def test_safe_project_name(self):
+        name = _safe_project_name(experiment_name="exp 1", iteration=0, policy="fifo,early")
+        # docker compose project name allowed chars: [a-z0-9_-]
+        assert "," not in name
+        assert " " not in name
+        assert name.startswith("synthetic-")
+        assert all(c.islower() or c.isdigit() or c in "-_" for c in name)
 
     def test_create_load_generator_without_features(self):
         """Test that app creates load generator without features."""
