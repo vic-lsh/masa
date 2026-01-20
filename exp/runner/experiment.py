@@ -38,6 +38,7 @@ class Experiment:
         rm_data: bool = False,
         dry_run: bool = False,
         deploy_mode: str = "docker",
+        namespace: str = "default",
     ):
         """
         Initialize experiment runner.
@@ -49,7 +50,9 @@ class Experiment:
             plot: Whether to generate plots after experiment
             no_cache: Whether to disable Docker cache during builds
             rm_data: Whether to remove existing data from output directory before running
+            dry_run: Whether to run in dry-run mode
             deploy_mode: Deployment mode ("docker" or "k8s")
+            namespace: Kubernetes namespace (only used if deploy_mode="k8s")
         """
         self.app = app
         self.config = config
@@ -59,9 +62,10 @@ class Experiment:
         self.rm_data = rm_data
         self.dry_run = dry_run
         self.deploy_mode = deploy_mode
+        self.namespace = namespace
 
         if deploy_mode == "k8s":
-            self.deployment = K8sManager(repo_root)
+            self.deployment = K8sManager(repo_root, namespace=namespace)
         else:
             self.deployment = DockerManager(repo_root)
 

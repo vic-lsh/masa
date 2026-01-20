@@ -86,19 +86,24 @@ ensure_k8s_deps() {
     fi
 }
 
-cleanup_kind_cluster() {
-    if [ "${KIND_CLUSTER_CREATED:-false}" = "true" ]; then
-        echo "Deleting kind cluster..."
-        kind delete cluster
-    fi
-}
-
 setup_kind_cluster() {
+    # Check if cluster exists
     if ! kind get clusters | grep -q "kind"; then
         echo "Creating kind cluster..."
-        kind create cluster
-        export KIND_CLUSTER_CREATED=true
-        trap cleanup_kind_cluster EXIT
+        # Try to create, ignore failure (race condition with other parallel jobs)
+        kind create cluster || true
+    fi
+    # We do NOT destroy the cluster on exit, as it may be shared by parallel jobs.
+    # The CI environment or a dedicated cleanup job should handle cluster deletion.
+}
+
+# Generate a unique namespace for this test run
+NAMESPACE="test-syn-$(date +%s)-$RANDOM"
+
+cleanup_namespace() {
+    if [ -n "$NAMESPACE" ]; then
+        echo "Cleaning up namespace $NAMESPACE..."
+        kubectl delete namespace "$NAMESPACE" --wait=false || true
     fi
 }
 
@@ -134,7 +139,18 @@ run_test() {
 
     echo "Running synthetic experiment: $exp_name"
     cd "$repo_root"
-    ./exp/synthetic/scripts/run-experiment.sh "$exp_name" --deploy-mode "$deploy_mode" $no_cache
+    
+    # Pass namespace if using k8s
+    extra_args=""
+    if [ "$deploy_mode" == "k8s" ]; then
+        extra_args="--namespace $NAMESPACE"
+        # Ensure namespace exists
+        kubectl create namespace "$NAMESPACE" || true
+        # Clean up namespace on exit
+        trap cleanup_namespace EXIT
+    fi
+    
+    ./exp/synthetic/scripts/run-experiment.sh "$exp_name" --deploy-mode "$deploy_mode" $no_cache $extra_args
 
     echo "Validating experiment output..."
 

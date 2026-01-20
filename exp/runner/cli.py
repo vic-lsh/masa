@@ -81,6 +81,7 @@ def cmd_run_experiment(args: argparse.Namespace) -> None:
         rm_data=args.rm_data,
         dry_run=args.dry_run,
         deploy_mode=args.deploy_mode,
+        namespace=args.namespace,
     )
 
     try:
@@ -118,7 +119,54 @@ def cmd_queue_experiments(args: argparse.Namespace) -> None:
             no_cache=args.no_cache,
             rm_data=args.rm_data,
             dry_run=args.dry_run,
+            deploy_mode="docker",  # run-multiple only supports docker for now? or should we inherit?
+            # Wait, run-multiple doesn't expose deploy_mode argument in the parser below.
+            # Assuming docker for now, or I should add deploy_mode to run-multiple too.
+            # But the user asked for k8s.
+            # The previous code didn't set deploy_mode, so it defaulted to "docker" inside Experiment.__init__ (default arg)
+            # but wait, Experiment.__init__ has default "docker".
+            # cmd_run_experiment gets deploy_mode from args.
+            # cmd_queue_experiments creates a Namespace.
+            # If I add namespace=args.namespace here, I also need to ensure namespace is in args.
+            namespace=args.namespace,
         )
+
+        # NOTE: run-multiple command definition below does not include deploy_mode or namespace.
+        # I should probably add them if I want to support them in run-multiple.
+        # But for now, let's just make sure cmd_run_experiment doesn't crash if they are missing in the Namespace.
+        # Actually cmd_run_experiment accesses args.deploy_mode.
+        # In the original code:
+        # exp_args = argparse.Namespace(..., deploy_mode="docker" implicitly?)
+        # No, cmd_run_experiment accesses args.deploy_mode. If it's missing in Namespace, it raises AttributeError.
+        # Wait, the original code for cmd_queue_experiments:
+        # exp_args = argparse.Namespace(..., )
+        # cmd_run_experiment(exp_args)
+        # Inside cmd_run_experiment: experiment = Experiment(..., deploy_mode=args.deploy_mode)
+        # So args.deploy_mode MUST exist.
+        # Looking at the original code again:
+        # queue_parser arguments did NOT include deploy_mode.
+        # So running `python -m exp.runner run-multiple ...` would likely crash if it called cmd_run_experiment
+        # which tries to access args.deploy_mode.
+        # Unless I missed something.
+        # Let's check cmd_run_experiment again.
+        # 00083|         deploy_mode=args.deploy_mode,
+        # Yes.
+        # So run-multiple was probably broken or only used for docker where deploy_mode might default?
+        # No, args.deploy_mode is accessed.
+        # Let's check if the parser adds defaults.
+        # run_parser adds deploy_mode with default="docker".
+        # queue_parser does NOT.
+        # So run-multiple IS BROKEN if it calls cmd_run_experiment.
+        # However, the user is running `run` command in the script, not `run-multiple`.
+        # So I only really need to fix `run` command.
+        # But I should probably fix `run-multiple` too or just leave it if I'm not using it.
+        # Let's just fix `run` parser and `cmd_run_experiment` call.
+
+        # Re-reading my edit above:
+        # experiment = Experiment(..., namespace=args.namespace)
+        # So args.namespace MUST exist.
+
+        # So I must add namespace to the parser.
 
         try:
             cmd_run_experiment(exp_args)
@@ -471,6 +519,11 @@ Examples:
         default="docker",
         help="Deployment mode (docker or k8s)",
     )
+    run_parser.add_argument(
+        "--namespace",
+        default="default",
+        help="Kubernetes namespace (only for k8s mode)",
+    )
     run_parser.set_defaults(func=cmd_run_experiment)
 
     # run-multiple command
@@ -502,6 +555,11 @@ Examples:
         "--dry-run",
         action="store_true",
         help="Print what would be executed without running containers",
+    )
+    queue_parser.add_argument(
+        "--namespace",
+        default="default",
+        help="Kubernetes namespace (only for k8s mode)",
     )
     queue_parser.set_defaults(func=cmd_queue_experiments)
 

@@ -21,9 +21,9 @@ class K8sManager(DeploymentManager):
     Manages Kubernetes deployments using Helm.
     """
 
-    def __init__(self, repo_root: Path):
+    def __init__(self, repo_root: Path, namespace: str = "default"):
         super().__init__(repo_root)
-        self.namespace = "default"  # Could be configurable
+        self.namespace = namespace
 
     def start(
         self,
@@ -60,6 +60,9 @@ class K8sManager(DeploymentManager):
             "--install",
             project_name,
             str(full_chart_path),
+            "--namespace",
+            self.namespace,
+            "--create-namespace",
             "--wait",  # Wait for pods to be ready
             "--timeout",
             "5m",
@@ -121,9 +124,18 @@ class K8sManager(DeploymentManager):
         if not project_name:
             return
 
-        logger.info(f"Uninstalling Helm release {project_name}")
+        logger.info(
+            f"Uninstalling Helm release {project_name} in namespace {self.namespace}"
+        )
 
-        cmd = ["helm", "uninstall", project_name, "--wait"]
+        cmd = [
+            "helm",
+            "uninstall",
+            project_name,
+            "--namespace",
+            self.namespace,
+            "--wait",
+        ]
 
         try:
             subprocess.run(
@@ -163,6 +175,8 @@ class K8sManager(DeploymentManager):
             "kubectl",
             "get",
             "pods",
+            "-n",
+            self.namespace,
             "--no-headers",
             "-o",
             "custom-columns=:metadata.name",
@@ -205,7 +219,7 @@ class K8sManager(DeploymentManager):
         return threads
 
     def _stream_pod_log(self, pod_name: str, log_file: Path, follow: bool) -> None:
-        cmd = ["kubectl", "logs"]
+        cmd = ["kubectl", "logs", "-n", self.namespace]
         if follow:
             cmd.append("-f")
         cmd.append(pod_name)
