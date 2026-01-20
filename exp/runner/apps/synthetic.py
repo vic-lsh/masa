@@ -196,7 +196,7 @@ class SyntheticApp(AppPlugin):
             "image": f"synthetic_frontend:{image_tag}",
             "restart": "always",
             "networks": ["synthetic_network"],
-            "ports": ["${FRONTEND_PORT}:8000"],
+            # "ports": ["${FRONTEND_PORT}:8000"],
             "depends_on": depends_on,
             "environment": [
                 "BINARY_NAME=synthetic_frontend",
