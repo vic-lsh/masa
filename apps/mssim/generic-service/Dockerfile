@@ -18,7 +18,6 @@ RUN rustup override set nightly
 # Copy workspace sources needed for a full build
 COPY Cargo.toml Cargo.toml
 COPY Cargo.lock Cargo.lock
-COPY 3rd_party 3rd_party
 COPY apps apps
 COPY libs libs
 
