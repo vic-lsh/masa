@@ -66,6 +66,42 @@ assert_path_exists() {
     fi
 }
 
+ensure_k8s_deps() {
+    # Ensure local bin is in PATH
+    mkdir -p "$HOME/.local/bin"
+    export PATH="$HOME/.local/bin:$PATH"
+
+    if ! command -v kubectl >/dev/null 2>&1; then
+        echo "Installing kubectl..."
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        mv kubectl "$HOME/.local/bin/"
+    fi
+
+    if ! command -v kind >/dev/null 2>&1; then
+        echo "Installing kind..."
+        curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
+        chmod +x ./kind
+        mv ./kind "$HOME/.local/bin/"
+    fi
+}
+
+cleanup_kind_cluster() {
+    if [ "${KIND_CLUSTER_CREATED:-false}" = "true" ]; then
+        echo "Deleting kind cluster..."
+        kind delete cluster
+    fi
+}
+
+setup_kind_cluster() {
+    if ! kind get clusters | grep -q "kind"; then
+        echo "Creating kind cluster..."
+        kind create cluster
+        export KIND_CLUSTER_CREATED=true
+        trap cleanup_kind_cluster EXIT
+    fi
+}
+
 run_test() {
     local exp_name="$1"
     local deploy_mode="$2"
@@ -147,6 +183,15 @@ else
         deploy_modes+=("k8s")
     fi
 fi
+
+# Ensure k8s tools and cluster are available if k8s mode is selected
+for mode in "${deploy_modes[@]}"; do
+    if [ "$mode" == "k8s" ]; then
+        ensure_k8s_deps
+        setup_kind_cluster
+        break
+    fi
+done
 
 for exp in "${exp_names[@]}"; do
     for mode in "${deploy_modes[@]}"; do
