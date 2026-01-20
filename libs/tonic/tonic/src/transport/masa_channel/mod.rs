@@ -107,6 +107,17 @@ impl LoadBalancedChannel {
     pub async fn new(hostname_base: String, port: u16, replicas: u8) -> Self {
         Self::new_from(hostname_base, port, replicas, 1).await
     }
+
+    /// Construct a new LoadBalancedChannel using service name directly (for Docker Compose).
+    /// Docker Compose handles load balancing automatically when using `scale`, so we use
+    /// the service name directly instead of individual replica hostnames.
+    pub async fn new_from_service_name(service_name: String, port: u16, _replicas: u8) -> Self {
+        // For Docker Compose, use the service name directly - Docker Compose DNS
+        // will handle load balancing across replicas automatically
+        let endpoint = Endpoint::from_shared(format!("http://{}:{}", service_name, port)).unwrap();
+        let channel = Channel::new(std::iter::once(endpoint)).await;
+        Self { channel }
+    }
 }
 
 impl Service<http::Request<BoxBody>> for LoadBalancedChannel {

@@ -47,12 +47,9 @@ impl Client for SyntheticClient {
     }
 }
 
-const PRESAMPLED_PREFIX: &'static str = "presampled_";
-
 enum RequestHandler {
     ARequest(Handler<ARequest, SyntheticClient>),
     BRequest(Handler<BRequest, SyntheticClient>),
-    PresampledRequest(Handler<PresampledRequest, SyntheticClient>),
 }
 
 impl HandlerOuter<SyntheticClient> for RequestHandler {
@@ -61,8 +58,6 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
             RequestHandler::ARequest(Handler::new(api, rps, timeout, slo))
         } else if api == "b" {
             RequestHandler::BRequest(Handler::new(api, rps, timeout, slo))
-        } else if api.starts_with(PRESAMPLED_PREFIX) {
-            RequestHandler::PresampledRequest(Handler::new(api, rps, timeout, slo))
         } else {
             panic!("unknown API {}", api)
         }
@@ -78,7 +73,6 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
         match self {
             Self::ARequest(h) => h.send_request(rng, client, ctx, trace).await,
             Self::BRequest(h) => h.send_request(rng, client, ctx, trace).await,
-            Self::PresampledRequest(h) => h.send_request(rng, client, ctx, trace).await,
         }
     }
 
@@ -86,7 +80,6 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
         match self {
             Self::ARequest(h) => h.fetch_traces(output_path).await,
             Self::BRequest(h) => h.fetch_traces(output_path).await,
-            Self::PresampledRequest(h) => h.fetch_traces(output_path).await,
         }
     }
 
@@ -94,7 +87,6 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
         match self {
             Self::ARequest(h) => h.api.as_str(),
             Self::BRequest(h) => h.api.as_str(),
-            Self::PresampledRequest(h) => h.api.as_str(),
         }
     }
 
@@ -102,7 +94,6 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
         match self {
             Self::ARequest(h) => h.slo,
             Self::BRequest(h) => h.slo,
-            Self::PresampledRequest(h) => h.slo,
         }
     }
 }
@@ -158,10 +149,6 @@ impl RequestType<SyntheticClient> for ARequest {
 
 struct BRequest {}
 
-impl BRequest {
-    const HEADERS: [&'static str; 0] = [];
-}
-
 impl RequestType<SyntheticClient> for BRequest {
     type ResponseType = frontend::BResponse;
 
@@ -178,44 +165,6 @@ impl RequestType<SyntheticClient> for BRequest {
         let mut r = tonic::Request::new(frontend::BRequest {});
         r.metadata_mut().insert_ctx("ctx", &ctx);
         client.handle_b(r).await
-    }
-
-    fn response_output_headers(&self) -> Vec<String> {
-        Vec::new()
-    }
-
-    fn response_to_row(_metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
-        Vec::new()
-    }
-}
-
-struct PresampledRequest {
-    api: String,
-}
-
-impl PresampledRequest {}
-
-impl RequestType<SyntheticClient> for PresampledRequest {
-    type ResponseType = frontend::PresampledResponse;
-
-    fn new(api: &str) -> Self {
-        Self {
-            api: api.to_string(),
-        }
-    }
-
-    async fn create_request(
-        &self,
-        _rng: &mut StdRng,
-        mut client: <SyntheticClient as Client>::FrontendClient,
-        ctx: &Context,
-    ) -> Result<Response<Self::ResponseType>, Status> {
-        // TODO: provide seed for RNG on frontend side
-        let mut r = tonic::Request::new(frontend::PresampledRequest {
-            request_type: self.api[PRESAMPLED_PREFIX.len()..].to_string(),
-        });
-        r.metadata_mut().insert_ctx("ctx", &ctx);
-        client.handle_presampled(r).await
     }
 
     fn response_output_headers(&self) -> Vec<String> {

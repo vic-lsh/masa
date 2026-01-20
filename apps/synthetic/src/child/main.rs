@@ -1,5 +1,3 @@
-mod server;
-
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -8,9 +6,7 @@ use structopt::StructOpt;
 use tonic::transport::Server;
 
 use app_utils::logging::init_logging;
-use server::synthetic_tonic::child::child_server::ChildServer;
-use server::ChildImpl;
-use synthetic::config::SyntheticConfig;
+use synthetic::{ChildImpl, ChildServer, SyntheticConfig};
 
 #[derive(StructOpt, Debug, Clone)]
 #[structopt(about = "Synthetic Args")]
@@ -40,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let child_addr = format!("{}:{}", "[::]", PORT)
         .parse()
         .expect("Failed to parse address");
-    let child = ChildImpl::new(cfg);
+    let child = ChildImpl::new(cfg).await;
     log::warn!("Server listening on {}...", child_addr);
     Server::builder()
         .add_service(ChildServer::new(child))

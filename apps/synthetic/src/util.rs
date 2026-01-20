@@ -1,118 +1,49 @@
-use crate::tonic;
-use app_utils::timing::time_now;
-use rand::thread_rng;
-use rand_distr::{Distribution, Exp, Normal, WeightedIndex};
+use rand::{thread_rng, Rng};
+use std::time::{Duration, Instant};
 
-use crate::{
-    config,
-    util::tonic::child::{Fixed, Periodic},
-};
-
-pub struct Hop {
-    pub service: usize,
-    pub sleep: f64,
-    pub latency_distribution: LatencyDistribution,
+/// Sample whether a call should be made based on probability.
+/// Returns true if a random value [0.0, 1.0) is less than the given probability.
+pub fn should_make_call(probability: f64) -> bool {
+    let mut rng = thread_rng();
+    rng.gen::<f64>() < probability
 }
 
-impl From<config::Hop> for Hop {
-    fn from(value: config::Hop) -> Self {
-        Self {
-            service: value.service,
-            sleep: value.sleep,
-            latency_distribution: LatencyDistribution::from(value.latency_distribution),
+/// Simulates work by sleeping and busy-spinning.
+///
+/// * `duration_us` - The total duration of work in microseconds.
+/// * `busy_spin_ratio` - The fraction of time to busy-spin [0.0, 1.0].
+pub async fn simulate_work(duration_us: u64, busy_spin_ratio: f64) {
+    if duration_us == 0 {
+        return;
+    }
+
+    let busy_spin_dur_us = (duration_us as f64 * busy_spin_ratio).round() as u64;
+    let sleep_dur_us = duration_us.saturating_sub(busy_spin_dur_us);
+
+    // Sleep first
+    if sleep_dur_us > 0 {
+        tokio::time::sleep(Duration::from_micros(sleep_dur_us)).await;
+    }
+
+    // Then busy spin if needed
+    if busy_spin_dur_us > 0 {
+        let yield_interval = Duration::from_micros(200);
+        let busy_spin_duration = Duration::from_micros(busy_spin_dur_us);
+
+        let mut remaining = busy_spin_duration;
+        while remaining > yield_interval {
+            busy_spin(yield_interval);
+            tokio::task::yield_now().await;
+            remaining -= yield_interval;
+        }
+        if remaining > Duration::ZERO {
+            busy_spin(remaining);
         }
     }
 }
 
-pub enum LatencyDistribution {
-    Normal(Normal<f64>),
-    Exponential(Exp<f64>),
-    Discrete(WeightedIndex<f64>, Vec<u64>),
-    Periodic {
-        slow_latency: u64,
-        fast_latency: u64,
-        slow_duration_ms: u16,
-    },
-}
+fn busy_spin(duration: Duration) {
+    let end = Instant::now() + duration;
 
-impl LatencyDistribution {
-    // returns latency in us
-    pub fn sample(&self) -> u64 {
-        match self {
-            LatencyDistribution::Normal(d) => {
-                let mut l = d.sample(&mut thread_rng()).round();
-
-                // make sure latency is non-negative
-                if l < 0.0 {
-                    l = 0.0;
-                }
-
-                l as u64
-            }
-            LatencyDistribution::Exponential(d) => d.sample(&mut thread_rng()).round() as u64,
-            LatencyDistribution::Discrete(d, values) => values[d.sample(&mut thread_rng())],
-            LatencyDistribution::Periodic {
-                slow_latency,
-                fast_latency,
-                slow_duration_ms,
-            } => {
-                let now_ms = (time_now() / 1000) % 1000;
-
-                if now_ms < *slow_duration_ms as u64 {
-                    *slow_latency
-                } else {
-                    *fast_latency
-                }
-            }
-        }
-    }
-}
-
-impl From<config::LatencyDistribution> for LatencyDistribution {
-    fn from(value: config::LatencyDistribution) -> Self {
-        match value {
-            config::LatencyDistribution::Normal { mean, std } => {
-                LatencyDistribution::Normal(Normal::new(mean, std).unwrap())
-            }
-            config::LatencyDistribution::Exponential { lambda } => {
-                LatencyDistribution::Exponential(Exp::new(lambda).unwrap())
-            }
-            config::LatencyDistribution::Discrete { weights, values } => {
-                assert_eq!(weights.len(), values.len());
-                LatencyDistribution::Discrete(WeightedIndex::new(weights).unwrap(), values)
-            }
-            config::LatencyDistribution::Periodic {
-                slow_latency,
-                fast_latency,
-                slow_duration_ms,
-            } => LatencyDistribution::Periodic {
-                slow_latency,
-                fast_latency,
-                slow_duration_ms,
-            },
-        }
-    }
-}
-
-impl LatencyDistribution {
-    pub fn presample(&self) -> tonic::child::Latency {
-        let latency = match self {
-            LatencyDistribution::Periodic {
-                slow_latency,
-                fast_latency,
-                slow_duration_ms,
-            } => tonic::child::latency::LatencyType::Periodic(Periodic {
-                slow_latency: *slow_latency,
-                fast_latency: *fast_latency,
-                slow_duration_ms: *slow_duration_ms as u32,
-            }),
-            x => tonic::child::latency::LatencyType::Fixed(Fixed {
-                latency: x.sample(),
-            }),
-        };
-
-        tonic::child::Latency {
-            latency_type: Some(latency),
-        }
-    }
+    while Instant::now() < end {}
 }
