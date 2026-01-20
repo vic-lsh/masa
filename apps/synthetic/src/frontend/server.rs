@@ -40,6 +40,11 @@ impl FrontendImpl {
         info!("Request a hops: {:?}", request_a_hops);
         info!("Request b hops: {:?}", request_b_hops);
 
+        // Read project name from environment variable (set by exp.runner)
+        let project_name = std::env::var("DOCKER_COMPOSE_PROJECT_NAME")
+            .ok()
+            .filter(|s| !s.is_empty());
+
         // Handle call graph configuration
         let (call_graph_entry_point, call_graph_clients, children, service_map) =
             if let Some(mut call_graph) = call_graph {
@@ -59,10 +64,6 @@ impl FrontendImpl {
                 // Build connection info for all services in call graph
                 // Docker Compose creates containers with names like: {project}-{service}-{replica_number}
                 // We need to connect to individual replica endpoints: {project}-local-{service-id}-service-1, -2, etc.
-                // Read project name from environment variable (set by exp.runner)
-                let project_name = std::env::var("DOCKER_COMPOSE_PROJECT_NAME")
-                    .ok()
-                    .filter(|s| !s.is_empty());
 
                 let mut services_to_connect = Vec::new();
                 for service in &call_graph.services {
@@ -106,15 +107,16 @@ impl FrontendImpl {
                 let mut children = Vec::new();
                 let mut start_id = 1;
                 for svc in &random_services {
-                    let hostname_base = "local-child-service";
+                    let base_service_name = "local-child-service";
+                    let hostname_base = if let Some(ref project) = project_name {
+                        format!("{}-{}", project, base_service_name)
+                    } else {
+                        base_service_name.to_string()
+                    };
+
                     children.push(ChildClient::new(
-                        LoadBalancedChannel::new_from(
-                            hostname_base.to_string(),
-                            8000,
-                            svc.replicas,
-                            start_id,
-                        )
-                        .await,
+                        LoadBalancedChannel::new_from(hostname_base, 8000, svc.replicas, start_id)
+                            .await,
                     ));
                     start_id += svc.replicas;
                 }
