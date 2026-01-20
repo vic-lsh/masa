@@ -1,5 +1,8 @@
 test_synthetic_experiment:
   stage: test
+  parallel:
+    matrix:
+      - EXP_NAME: [ci, ci_call_graph]
   cache:
     key:
       files:
@@ -18,4 +21,4 @@ test_synthetic_experiment:
     - on-host
   script:
     - groups $(whoami) # make sure that gitlab runner is in the 'docker' group
-    - ./scripts/test_synthetic_experiment.sh
+    - ./scripts/test_synthetic_experiment.sh $EXP_NAME
