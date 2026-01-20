@@ -21,6 +21,7 @@ from ..cpu_monitor import CPUMonitor
 if TYPE_CHECKING:
     from exp.runner.config import ExperimentConfig
     from exp.runner.docker_manager import DockerManager
+    from exp.runner.deployment_manager import DeploymentManager
 
 logger = logging.getLogger(__name__)
 
@@ -390,7 +391,7 @@ class SocialnetApp(AppPlugin):
         *,
         repo_root: Path,
         config: "ExperimentConfig",
-        docker: "DockerManager",
+        deployment: "DeploymentManager",
         policy: str,
         iteration: int,
         output_dir: Path,
@@ -532,8 +533,8 @@ class SocialnetApp(AppPlugin):
             cpu_monitor.start()
 
             # Get container names for log streaming
-            container_names = docker.get_container_names(
-                compose_path=docker_compose_path,
+            container_names = deployment.get_container_names(
+                config={"compose_path": docker_compose_path},
                 project_name=project_name,
                 env_vars=env,
             )
@@ -544,7 +545,7 @@ class SocialnetApp(AppPlugin):
                 logger.info(
                     f"Streaming logs for {len(container_names)} containers to {logs_dir}"
                 )
-                log_threads = docker.stream_logs(
+                log_threads = deployment.stream_logs(
                     container_names=container_names,
                     output_dir=logs_dir,
                     follow=True,
