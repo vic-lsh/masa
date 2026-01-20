@@ -139,12 +139,6 @@ structopt = "0.3.23"
 tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
 protoc-bin-vendored = "3"
 
-# trying to fix depdnedncies
-[patch.crates-io]
-tokio = { path = "../../libs/tokio/tokio" }
-tokio-macros = { path = "../../libs/tokio/tokio-macros" }
-tokio-util = { path = "../../libs/tokio/tokio-util" }
-hyper = { path = "../../libs/hyper" }
-tower-service = { path = "../../libs/tower/tower-service" }
+
 
 
