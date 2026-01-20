@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
 use std::path::PathBuf;
-use tracing::{error, warn};
+use tracing::warn;
 
 /// A single entry in a call sequence step, representing a service method call
 /// with its associated probability.
@@ -382,12 +382,10 @@ mod tests {
     fn test_call_sequence_entry_invalid_format_no_separator() {
         let result = CallSequenceEntry::try_from(("invalid", 0.5));
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid call sequence entry format")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid call sequence entry format"));
     }
 
     #[test]
