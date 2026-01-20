@@ -383,6 +383,57 @@ def compute_slo_miss_by_request_type(df):
     return miss_by_type
 
 
+def _print_goodput_table(
+    apis: list[str],
+    policies: list[str],
+    rps_values: list,
+    policy_goodputs: list,
+    repeats: int,
+) -> None:
+    if repeats <= 0:
+        return
+
+    sorted_policies = sort_policies_by_type(policies)
+    rps_headers = [str(rps) for rps in rps_values]
+
+    for api in apis:
+        rows = []
+        for policy in sorted_policies:
+            values = []
+            for rps_idx in range(len(rps_values)):
+                per_repeat = []
+                for i in range(repeats):
+                    per_api = policy_goodputs[i].get(api, {})
+                    per_policy = per_api.get(policy, [])
+                    if rps_idx < len(per_policy):
+                        per_repeat.append(float(per_policy[rps_idx] or 0.0))
+                avg = sum(per_repeat) / len(per_repeat) if per_repeat else 0.0
+                values.append(f"{avg:.2f}")
+            rows.append([get_policy_display_name(policy)] + values)
+
+        if not rows:
+            continue
+
+        col_headers = ["Policy"] + rps_headers
+        col_widths = [len(h) for h in col_headers]
+        for row in rows:
+            for idx, cell in enumerate(row):
+                col_widths[idx] = max(col_widths[idx], len(cell))
+
+        separator = "+".join("-" * (w + 2) for w in col_widths)
+        print(f"\nGoodput (avg over {repeats} run(s)) for API: {api}")
+        print(separator)
+        header_row = "|".join(
+            f" {col_headers[i].ljust(col_widths[i])} " for i in range(len(col_headers))
+        )
+        print(header_row)
+        print(separator)
+        for row in rows:
+            line = "|".join(f" {row[i].ljust(col_widths[i])} " for i in range(len(row)))
+            print(line)
+        print(separator)
+
+
 def _style_axes(ax):
     ax.grid(axis="y", linestyle="--", alpha=0.4)
     ax.spines["top"].set_visible(False)
@@ -469,6 +520,165 @@ def _get_request_type_colors(
     # Legacy behavior: create colors on-the-fly
     cmap = plt.get_cmap("tab10" if len(request_types) <= 10 else "tab20")
     return {rt: cmap(i % cmap.N) for i, rt in enumerate(request_types)}
+
+
+def _plot_early_return_breakdown(
+    output_path: str,
+    *,
+    policies: list[str],
+    rps_values: list,
+    policy_total_early_returns: dict,
+    policy_early_returns_by_type: dict,
+    title: str,
+    subtitle: Optional[str] = None,
+    request_type_color_mapping: Optional[dict] = None,
+    legend_title: str = "API",
+) -> None:
+    """
+    Generate breakdown plot for early-return requests by API:
+      - Plot: small multiples (one subplot per policy) with stacked bars for API breakdown
+    """
+    sorted_policies = sort_policies_by_type(policies)
+    rps_values = list(rps_values)
+    x = np.arange(len(rps_values))
+
+    # Decide request types + optional collapse
+    keep, collapsed = _request_type_order_and_collapse(policy_early_returns_by_type, max_types=7)
+    request_types = list(keep)
+    if collapsed:
+        request_types.append("Other")
+    rt_colors = _get_request_type_colors(request_types, request_type_color_mapping)
+
+    # Collapse tail per policy if needed
+    policy_early_returns_by_type_collapsed = {}
+    for p in sorted_policies:
+        per_rps = (policy_early_returns_by_type or {}).get(p, [])
+        policy_early_returns_by_type_collapsed[p] = _collapse_request_types_for_policy(
+            per_rps,
+            keep=keep,
+            collapsed=collapsed,
+            other_label="Other",
+        )
+
+    # Generate output path for breakdown plot
+    breakdown_path = output_path.replace(".png", "_breakdown.png")
+
+    # ===== Plot: Breakdown by API with shared axes =====
+    n = len(sorted_policies)
+    ncols = min(3, max(1, n))
+    nrows = int(np.ceil(n / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(15, 4 + 2.8 * nrows), sharex=True, sharey=True)
+    
+    # Handle case where there's only one subplot
+    if n == 1:
+        axes = [axes]
+    elif nrows == 1:
+        axes = axes if isinstance(axes, np.ndarray) else [axes]
+    else:
+        axes = axes.flatten()
+
+    # Global y-limit for comparability across subplots
+    global_max = 0.0
+    for p in sorted_policies:
+        vals = policy_total_early_returns.get(p, [])
+        if vals:
+            global_max = max(global_max, max(float(v or 0.0) for v in vals))
+    if global_max <= 0:
+        global_max = 1.0
+    ymax = global_max * 1.08
+
+    for idx, policy in enumerate(sorted_policies):
+        ax = axes[idx]
+        _style_axes(ax)
+
+        bottom = np.zeros(len(rps_values))
+        per_rps = policy_early_returns_by_type_collapsed.get(policy, [])
+        for rt in request_types:
+            values = []
+            for i in range(len(rps_values)):
+                if i < len(per_rps) and per_rps[i] is not None:
+                    values.append(float(per_rps[i].get(rt, 0.0) or 0.0))
+                else:
+                    values.append(0.0)
+            ax.bar(
+                x,
+                values,
+                bottom=bottom,
+                width=0.78,
+                color=rt_colors[rt],
+                edgecolor="white",
+                linewidth=0.4,
+                label=rt,
+            )
+            bottom += np.array(values)
+
+        ax.set_title(get_policy_display_name(policy), fontsize=11)
+        ax.set_ylim(0, ymax)
+        ax.set_xticks(x)
+        ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
+        ax.set_xlabel("RPS")
+        ax.set_ylabel("Early-return rate (req/s)")
+
+    # Hide unused subplots
+    for idx in range(n, len(axes)):
+        axes[idx].set_visible(False)
+
+    # One shared legend for request types
+    handles, labels = [], []
+    if n > 0:
+        # Build stable handle/label list from colors
+        for rt in request_types:
+            patch = matplotlib.patches.Patch(color=rt_colors[rt], label=rt)
+            handles.append(patch)
+            labels.append(rt)
+    fig.legend(
+        handles,
+        labels,
+        title=legend_title,
+        frameon=False,
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.02),
+        ncols=min(4, len(request_types)),
+    )
+
+    fig.suptitle(title, fontsize=14, y=0.98)
+    fig.tight_layout(rect=[0, 0.06, 1, 0.92])
+    fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_early_return_total(
+    output_path: str,
+    *,
+    policies: list[str],
+    rps_values: list,
+    policy_total_early_returns: dict,
+    title: str,
+    subtitle: Optional[str] = None,
+) -> None:
+    fig, ax = plt.subplots(figsize=(8, 5))
+    index = np.arange(len(rps_values))
+
+    for policy in policies:
+        vals = policy_total_early_returns.get(policy, [])
+        ax.plot(
+            index,
+            vals,
+            marker="o",
+            label=get_policy_display_name(policy),
+            color=get_policy_color(policy),
+        )
+
+    ax.set_xlabel("RPS")
+    ax.set_ylabel("Early-return rate (req/s)")
+    ax.set_title(title)
+    ax.set_xticks(index)
+    ax.set_xticklabels([str(rps) for rps in rps_values])
+    ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+    _style_axes(ax)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
 
 
 def _plot_slo_miss_breakdown(
@@ -1180,6 +1390,8 @@ def generate_plots(args) -> None:
         request_type_color_mapping = _get_request_type_colors_mapping(
             sorted_request_types
         )
+
+    _print_goodput_table(apis, policies, rps_values, policy_goodputs, repeats)
 
     # Generate plots in parallel
     with ThreadPoolExecutor() as executor:
