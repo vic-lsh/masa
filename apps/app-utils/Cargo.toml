@@ -16,7 +16,7 @@ masa = { path = "../../libs/masa" }
 tokio = { path = "../../libs/tokio/tokio", features = ["full"] }
 tonic = { path = "../../libs/tonic/tonic" }
 tower = { path = "../../libs/tower/tower" }
-async-memcached = { path = "../../3rd_party/async-memcached" }
+async-memcached = "0.5.0"
 rand = { version = "0.8" }
 structopt = "0.3.23"
 rand_distr = "0.4"
