@@ -110,7 +110,15 @@ Validation fails fast with clear error messages if any issues are found.
 
 ### Deployment
 
-When using call graphs:
+#### Docker
+When using call graphs with Docker:
 - Each service instance must have the `SERVICE_ID` environment variable set to its service ID
 - Services connect to each other using hostname pattern: `local-{service-id}-service`
 - The frontend automatically calls the entry point when the `/a` endpoint is invoked (if call graph is configured)
+
+#### Kubernetes
+The synthetic application can also be deployed on Kubernetes using the experiment runner:
+```bash
+python -m exp.runner run synthetic <experiment_name> --deploy-mode k8s
+```
+This uses the Helm chart located in `deploy/helm` to orchestrate the services and ConfigMaps.

@@ -177,16 +177,15 @@ Note: The old bash scripts (`get-env.sh`, `docker-run.sh`, `loadgen-run.sh`, `do
 
 #### K8s (work-in-progress)
 
-WARNING: This section is outdated and the functionality is likely broken.
+NOTE: This is currently supported for `synthetic` (via `exp.runner`) and `hotel` (legacy scripts).
 
-NOTE: This is currently only supported for `hotel`.
-NOTE: Running with k8s hasn't been well-tested. Please report issues if you find any.
+To run the `synthetic` application on Kubernetes:
 
-You should install k8s on your system before running scripts in this section. For local setups, [minikube](https://minikube.sigs.k8s.io/docs/) is recommeded.
+```bash
+python3 -m exp.runner run synthetic <experiment> --deploy-mode k8s
+```
 
-For a one-click setup, run `apps/hotel/snippets/k8s/run_snippet.sh`.
-
-To see how to run the K8s step by step, read this ![README](apps/hotel/scripts/k8s/README.md) file in the k8s folder.
+For `hotel`, see `apps/hotel/scripts/k8s/README.md`.
 
 ## List of policies
 

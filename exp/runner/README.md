@@ -10,8 +10,9 @@ The experiment runner replaces the previous bash script system with a well-struc
 
 - **Multiple Applications**: Supports hotel, socialnet, synthetic, and mssim applications with extensible plugin architecture
 - **Policy Testing**: Run experiments with different scheduling policies (fifo, prio_global, prio_local, etc.)
-- **Automated Workflow**: Handles Docker builds, service orchestration, load generation, and log collection
+- **Automated Workflow**: Handles Docker/K8s builds, service orchestration, load generation, and log collection
 - **Result Analysis**: Integrated plotting for goodput, latency, and hotel replica metrics
+- **Deployment Flexibility**: Supports both Docker Compose and Kubernetes deployments
 - **Type Safety**: Uses Python dataclasses for configuration validation
 - **Better Logging**: Comprehensive logging with configurable verbosity
 
@@ -41,6 +42,9 @@ python -m exp.runner run mssim e2e_test
 # Run with plot generation
 python -m exp.runner run hotel exp1 --plot
 python -m exp.runner run socialnet exp1 --plot
+
+# Run on Kubernetes (for supported apps)
+python -m exp.runner run synthetic exp1 --deploy-mode k8s
 
 # Run with verbose logging
 python -m exp.runner run hotel exp1 --plot --verbose
@@ -238,10 +242,12 @@ python -m exp.runner run <app> <experiment> [options]
 - `--no-cache`: Disable Docker cache during build
 - `--verbose, -v`: Enable verbose (DEBUG) logging
 - `--dry-run`: Print what would be executed without running containers
+- `--deploy-mode`: Deployment backend (`docker` or `k8s`, default: `docker`)
 
 **Example:**
 ```bash
 python -m exp.runner run hotel exp1 --plot --verbose
+python -m exp.runner run synthetic exp1 --deploy-mode k8s
 ```
 
 ### run-multiple
@@ -401,10 +407,12 @@ Check that the experiment exists: `ls exp/<app>/data/in/`
 ### "Required app config not found" error
 For hotel experiments, ensure `hotel.json` exists in the experiment input directory.
 
-### Docker errors
+### Docker/K8s errors
 - Ensure Docker daemon is running: `docker ps`
 - Check Docker Compose is installed: `docker compose version`
+- For K8s: Ensure `kubectl` is configured and `helm` is installed
 - Verify sufficient disk space for images and containers
+
 
 ### Import errors
 Ensure you're using Python 3.10+ and all dependencies from `pyproject.toml` are installed.

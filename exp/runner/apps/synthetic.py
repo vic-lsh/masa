@@ -17,6 +17,7 @@ import yaml
 
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import normalize_features_to_tag, get_docker_progress_flag
+from ..k8s_manager import K8sManager
 
 logger = logging.getLogger(__name__)
 
@@ -24,15 +25,202 @@ logger = logging.getLogger(__name__)
 def _safe_project_name(*, experiment_name: str, iteration: int, policy: str) -> str:
     """
     Generate a docker-compose project name that is safe and deterministic.
-
-    Policy strings may contain characters like commas (e.g., "fifo,early") that
-    Docker Compose will normalize. We avoid any mismatch by using a digest-based
-    project name that contains only safe characters.
     """
     raw = f"{experiment_name}|{iteration}|{policy}"
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+    # K8s release names must be lowercase, alphanumeric + hyphens, start with alpha
     slug = re.sub(r"[^a-z0-9]+", "-", experiment_name.lower()).strip("-")[:16] or "exp"
     return f"synthetic-{slug}-{digest}"
+
+
+class K8sSyntheticLoadGenerator(LoadGenerator):
+    """Load generator for K8s deployment."""
+
+    def __init__(
+        self,
+        features: Optional[str] = None,
+        project_name: Optional[str] = None,
+    ):
+        self.features = features
+        self.project_name = project_name
+
+    def get_container_name(self) -> str:
+        if self.project_name:
+            return f"{self.project_name}-client-bench"
+        return "synthetic-client-bench"
+
+    def get_network_name(self) -> str:
+        return "default"  # Unused for K8s
+
+    def get_image_name(self) -> str:
+        tag = normalize_features_to_tag(self.features)
+        if tag and tag != "latest":
+            return f"synthetic_client_bench:{tag}"
+        return "synthetic_client_bench:latest"
+
+    def get_binary_name(self) -> str:
+        return "synthetic_client_bench"
+
+    def run(
+        self,
+        output_dir: Path,
+        env_vars: Optional[dict] = None,
+        gen_config_path: Optional[Path] = None,
+    ) -> None:
+        """Run load generator as a Pod in K8s."""
+        pod_name = self.get_container_name()
+        image_name = self.get_image_name()
+
+        logger.info(f"Running load generator pod: {pod_name}")
+
+        # Create ConfigMap for gen_config.json if provided
+        config_map_name = f"{pod_name}-config"
+        if gen_config_path and gen_config_path.exists():
+            subprocess.run(
+                [
+                    "kubectl",
+                    "create",
+                    "configmap",
+                    config_map_name,
+                    f"--from-file=config.json={gen_config_path}",
+                ],
+                check=True,
+                capture_output=True,
+            )
+
+        # Build env vars for kubectl run
+        load_env = self.get_env_vars(env_vars)
+        env_args = []
+        for k, v in load_env.items():
+            env_args.extend(["--env", f"{k}={v}"])
+
+        # We need to mount the config map if created.
+        # `kubectl run` doesn't support volume mounts easily.
+        # We should generate a Pod manifest and apply it.
+
+        pod_manifest = {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {"name": pod_name},
+            "spec": {
+                "restartPolicy": "Never",
+                "containers": [
+                    {
+                        "name": "loadgen",
+                        "image": image_name,
+                        "imagePullPolicy": "IfNotPresent",
+                        "env": [
+                            {"name": k, "value": str(v)} for k, v in load_env.items()
+                        ],
+                    }
+                ],
+            },
+        }
+
+        if gen_config_path:
+            pod_manifest["spec"]["containers"][0]["volumeMounts"] = [
+                {
+                    "name": "config",
+                    "mountPath": "/usr/gen_config.json",
+                    "subPath": "config.json",
+                    "readOnly": True,
+                }
+            ]
+            pod_manifest["spec"]["volumes"] = [
+                {"name": "config", "configMap": {"name": config_map_name}}
+            ]
+
+        manifest_path = output_dir / "loadgen_pod.yaml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(pod_manifest, f)
+
+        try:
+            # Delete existing pod if any
+            subprocess.run(
+                ["kubectl", "delete", "pod", pod_name, "--ignore-not-found"], check=True
+            )
+
+            # Apply pod
+            subprocess.run(["kubectl", "apply", "-f", str(manifest_path)], check=True)
+
+            # Wait for completion
+            logger.info("Waiting for load generator to complete...")
+            subprocess.run(
+                [
+                    "kubectl",
+                    "wait",
+                    "--for=condition=Ready",
+                    "pod",
+                    pod_name,
+                    "--timeout=30s",
+                ],
+                check=False,
+            )
+
+            # Stream logs to file while waiting?
+            # Or just wait for Pod to finish?
+            # `kubectl wait --for=condition=Complete` (only for Jobs?)
+            # For Pods, we can watch status.
+
+            # Simplified: follow logs until exit.
+            log_file = output_dir / "loadgen.log"
+            with open(log_file, "w") as f:
+                subprocess.run(
+                    ["kubectl", "logs", "-f", pod_name], stdout=f, check=True
+                )
+
+            # Copy traces
+            self._copy_traces(pod_name, output_dir)
+
+        finally:
+            # Cleanup
+            subprocess.run(
+                ["kubectl", "delete", "pod", pod_name, "--ignore-not-found"],
+                check=False,
+                capture_output=True,
+            )
+            if gen_config_path:
+                subprocess.run(
+                    [
+                        "kubectl",
+                        "delete",
+                        "configmap",
+                        config_map_name,
+                        "--ignore-not-found",
+                    ],
+                    check=False,
+                    capture_output=True,
+                )
+
+    def _copy_traces(self, container_name: str, output_dir: Path) -> None:
+        # container_name here is actually the pod_name
+        container_trace_path = self.get_container_trace_path()
+        temp_subdir = output_dir / "masa-load-gen"
+
+        # kubectl cp is similar to docker cp
+        try:
+            # Syntax: kubectl cp <pod>:<path> <local_path>
+            # Note: kubectl cp requires tar in the container image usually.
+            subprocess.run(
+                [
+                    "kubectl",
+                    "cp",
+                    f"{container_name}:{container_trace_path}",
+                    str(output_dir),
+                ],
+                check=True,
+                capture_output=True,
+            )
+
+            # Flatten logic same as Docker (omitted for brevity, can call super if refactored, but copying here)
+            if temp_subdir.exists() and temp_subdir.is_dir():
+                for trace_file in temp_subdir.iterdir():
+                    dest = output_dir / trace_file.name
+                    trace_file.rename(dest)
+                temp_subdir.rmdir()
+
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Failed to copy traces from pod: {e}")
 
 
 class SyntheticLoadGenerator(LoadGenerator):
@@ -368,6 +556,7 @@ class SyntheticApp(AppPlugin):
     def create_load_generator(
         self,
         features: Optional[str] = None,
+        deploy_mode: str = "docker",
         project_name: Optional[str] = None,
         network_name: Optional[str] = None,
     ) -> LoadGenerator:
@@ -376,9 +565,16 @@ class SyntheticApp(AppPlugin):
 
         Args:
             features: Optional cargo features used to build the image
-            project_name: Docker Compose project name (used to determine network name)
+            deploy_mode: Deployment mode ("docker" or "k8s")
+            project_name: Docker Compose project name or K8s release name
             network_name: Optional explicit docker network name to connect to
         """
+        if deploy_mode == "k8s":
+            return K8sSyntheticLoadGenerator(
+                features=features,
+                project_name=project_name,
+            )
+
         return SyntheticLoadGenerator(
             features=features,
             project_name=project_name,
@@ -408,7 +604,7 @@ class SyntheticApp(AppPlugin):
         *,
         repo_root: Path,
         config,  # ExperimentConfig
-        docker,  # DockerManager
+        deployment,  # DeploymentManager
         policy: str,
         iteration: int,
         output_dir: Path,
@@ -424,6 +620,7 @@ class SyntheticApp(AppPlugin):
         from .base import CPUMonitor
 
         docker_config = self.get_docker_config()
+        is_k8s = isinstance(deployment, K8sManager)
 
         # Generate environment variables
         env_vars = self.generate_env_vars(
@@ -447,9 +644,7 @@ class SyntheticApp(AppPlugin):
             # Pass app config path to docker compose as env var for volume mounting
             env_vars["APP_CONFIG_PATH"] = str(app_config_path.resolve())
 
-        # Use a safe docker-compose project name.
-        # Policy strings may contain commas (e.g., "fifo,early") which Docker Compose
-        # will normalize, causing mismatches if we try to build names from the raw policy.
+        # Use a safe project name.
         project_name = _safe_project_name(
             experiment_name=config.experiment_name,
             iteration=iteration,
@@ -467,17 +662,31 @@ class SyntheticApp(AppPlugin):
                 f"gen_config.json not found at: {template_gen_config_path}"
             )
 
-        # Generate project-specific gen_config.json for load generator (with correct service name)
-        # Docker Compose DNS resolution uses service names, not container names
+        # Generate project-specific gen_config.json for load generator
         output_dir.mkdir(parents=True, exist_ok=True)
         gen_config_path = output_dir / "gen_config.json"
-        self._generate_gen_config(
-            template_config_path=template_gen_config_path,
-            output_path=gen_config_path,
-            project_name=project_name,
-        )
 
-        # Generate call graph compose file if needed
+        if is_k8s:
+            # For K8s, we rely on K8s DNS
+            # Assuming load generator runs in the same namespace
+            # Frontend service: synthetic-frontend-service
+            # We need to update gen_config.json to point to this service
+            # We can reuse _generate_gen_config but might need tweaking
+            self._generate_gen_config(
+                template_config_path=template_gen_config_path,
+                output_path=gen_config_path,
+                project_name=project_name,
+            )
+            # Override Addr for K8s if needed, but _generate_gen_config sets it to synthetic-frontend-service:8000
+            # which is correct for K8s service too.
+        else:
+            self._generate_gen_config(
+                template_config_path=template_gen_config_path,
+                output_path=gen_config_path,
+                project_name=project_name,
+            )
+
+        # Generate call graph compose file if needed (only for Docker)
         compose_file = docker_config.compose_file
         # Default to experiment scripts dir for static compose
         compose_app_dir = repo_root / "exp/synthetic/scripts"
@@ -499,23 +708,25 @@ class SyntheticApp(AppPlugin):
             if config.app_config is None:
                 raise ValueError("app_config is required for call_graph mode")
 
-            logger.info("Call graph detected, generating docker compose file")
-            generated_compose = self._generate_call_graph_compose(
-                app_dir=config.app_dir,
-                app_config=config.app_config,
-                image_tag=image_tag,
-                app_config_path=app_config_path,
-                output_dir=output_dir,
-            )
-            # Use output_dir as app_dir and just the filename for compose_file
-            compose_file = generated_compose.name
-            compose_app_dir = output_dir
-            self._generated_compose_path = generated_compose
+            if is_k8s:
+                # For K8s, we handle call graph in values.yaml logic
+                # We need to pass the call graph structure to Helm
+                pass
+            else:
+                logger.info("Call graph detected, generating docker compose file")
+                generated_compose = self._generate_call_graph_compose(
+                    app_dir=config.app_dir,
+                    app_config=config.app_config,
+                    image_tag=image_tag,
+                    app_config_path=app_config_path,
+                    output_dir=output_dir,
+                )
+                # Use output_dir as app_dir and just the filename for compose_file
+                compose_file = generated_compose.name
+                compose_app_dir = output_dir
+                self._generated_compose_path = generated_compose
 
         # Choose the network name for the load generator.
-        # - Static compose (docker-compose.yaml) defines network key "synthetic_network".
-        # - Generated call-graph compose also defines network key "synthetic_network".
-        # In both cases, Docker Compose creates "{project_name}_synthetic_network".
         loadgen_network_name = f"{project_name}_synthetic_network"
 
         # Build images (use template gen_config.json for build, not project-specific one)
@@ -561,31 +772,83 @@ class SyntheticApp(AppPlugin):
         cpu_monitor = CPUMonitor(output_path=cpu_stats_file, poll_interval=2.0)
 
         try:
-            docker.start(
-                app_dir=compose_app_dir,
-                compose_file=compose_file,
-                env_vars=env_vars,
-                project_name=project_name,
-            )
+            if is_k8s:
+                # Prepare K8s config
+                # Read app config content to pass as value?
+                # We need to pass 'appConfig' (content of config.json) to Helm
+
+                app_config_content = "{}"
+                if app_config_path:
+                    with open(app_config_path) as f:
+                        app_config_content = f.read()
+
+                # Construct Helm values
+                # Map env vars to values.yaml structure
+                # Our chart uses:
+                # image.tag
+                # env.LOG_LEVEL
+                # frontend.port
+                # child.replicas
+                # child.services (for call graph)
+                # appConfig
+
+                helm_values = {
+                    "image": {"tag": image_tag},
+                    "env": {"LOG_LEVEL": env_vars.get("LOG_LEVEL", "info")},
+                    "frontend": {"port": env_vars.get("FRONTEND_PORT", 8000)},
+                    "appConfig": app_config_content,
+                }
+
+                if has_call_graph and config.app_config:
+                    helm_values["child"] = {
+                        "services": config.app_config["call_graph"]["services"]
+                    }
+                else:
+                    helm_values["child"] = {
+                        "replicas": int(env_vars.get("CHILD_REPLICAS", 1))
+                    }
+
+                deployment.start(
+                    app_dir=config.app_dir,
+                    config={
+                        "chart_path": "deploy/helm",
+                        "values": None,  # Unused, we use helm_values
+                        "helm_values": helm_values,
+                    },
+                    env_vars=env_vars,  # Passed as flat env vars too
+                    project_name=project_name,
+                )
+            else:
+                deployment.start(
+                    app_dir=compose_app_dir,
+                    config={"compose_file": compose_file},
+                    env_vars=env_vars,
+                    project_name=project_name,
+                )
 
             # Start CPU monitoring after services are up
             cpu_monitor.start()
 
             # Get container names for log streaming
-            # Query Docker Compose for actual container names (includes project prefix)
-            compose_path = compose_app_dir / compose_file
-            container_names = docker.get_container_names(
-                compose_path=compose_path,
-                project_name=project_name,
-                env_vars=env_vars,
-            )
+            if is_k8s:
+                container_names = deployment.get_container_names(
+                    config={}, project_name=project_name, env_vars=env_vars
+                )
+            else:
+                compose_path = compose_app_dir / compose_file
+                container_names = deployment.get_container_names(
+                    config={"compose_path": compose_path},
+                    project_name=project_name,
+                    env_vars=env_vars,
+                )
+
             if container_names:
                 logs_dir = output_dir / "logs"
                 logs_dir.mkdir(parents=True, exist_ok=True)
                 logger.info(
                     f"Streaming logs for {len(container_names)} containers to {logs_dir}"
                 )
-                docker.stream_logs(
+                deployment.stream_logs(
                     container_names=container_names,
                     output_dir=logs_dir,
                     follow=True,
@@ -594,6 +857,7 @@ class SyntheticApp(AppPlugin):
             # Run load generator
             loadgen = self.create_load_generator(
                 features=policy,
+                deploy_mode="k8s" if is_k8s else "docker",
                 project_name=project_name,
                 network_name=loadgen_network_name,
             )
@@ -614,16 +878,25 @@ class SyntheticApp(AppPlugin):
             except Exception as e:
                 logger.warning(f"Error stopping CPU monitor: {e}")
 
-            # Stop Docker services
-            docker.stop(
-                app_dir=compose_app_dir,
-                compose_file=compose_file,
-                env_vars=env_vars,
-                project_name=project_name,
-            )
+            # Stop Docker/K8s services
+            if is_k8s:
+                deployment.stop(
+                    app_dir=config.app_dir,
+                    config={"chart_path": "deploy/helm"},
+                    env_vars=env_vars,
+                    project_name=project_name,
+                )
+            else:
+                deployment.stop(
+                    app_dir=compose_app_dir,
+                    config={"compose_file": compose_file},
+                    env_vars=env_vars,
+                    project_name=project_name,
+                )
 
-            # Keep generated compose file for debugging/inspection
-            # (Previously cleaned up, but kept for troubleshooting)
+            # Clean up .env file
+            if env_file.exists():
+                env_file.unlink()
 
 
 class SyntheticBuilder(AppBuilder):

@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-frontend
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: synthetic_frontend:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: BINARY_NAME
+              value: synthetic_frontend
+            - name: LOG_LEVEL
+              value: {{ .Values.env.LOG_LEVEL }}
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - name: config-volume
+              mountPath: /usr/config.json
+              subPath: config.json
+              readOnly: true
+          resources:
+            limits:
+              cpu: {{ .Values.frontend.cpus }}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: {{ .Release.Name }}-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: synthetic-frontend-service
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .Release.Name }}-frontend
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000

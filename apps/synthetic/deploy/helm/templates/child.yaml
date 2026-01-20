@@ -1,0 +1,106 @@
+{{- if .Values.child.services }}
+# Call Graph Mode
+{{- range .Values.child.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Release.Name }}-child-{{ .id | lower }}
+spec:
+  replicas: {{ .replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ $.Release.Name }}-child-{{ .id | lower }}
+  template:
+    metadata:
+      labels:
+        app: {{ $.Release.Name }}-child-{{ .id | lower }}
+    spec:
+      containers:
+        - name: child
+          image: synthetic_child:{{ $.Values.image.tag }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          env:
+            - name: BINARY_NAME
+              value: synthetic_child
+            - name: LOG_LEVEL
+              value: {{ $.Values.env.LOG_LEVEL }}
+            - name: SERVICE_ID
+              value: {{ .id | quote }}
+          volumeMounts:
+            - name: config-volume
+              mountPath: /usr/config.json
+              subPath: config.json
+              readOnly: true
+          resources:
+            limits:
+              cpu: {{ $.Values.child.cpus }}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: {{ $.Release.Name }}-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: local-{{ .id | lower }}-service
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ $.Release.Name }}-child-{{ .id | lower }}
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+{{- end }}
+{{- else }}
+# Simple Mode
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-child
+spec:
+  replicas: {{ .Values.child.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-child
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-child
+    spec:
+      containers:
+        - name: child
+          image: synthetic_child:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: BINARY_NAME
+              value: synthetic_child
+            - name: LOG_LEVEL
+              value: {{ .Values.env.LOG_LEVEL }}
+          volumeMounts:
+            - name: config-volume
+              mountPath: /usr/config.json
+              subPath: config.json
+              readOnly: true
+          resources:
+            limits:
+              cpu: {{ .Values.child.cpus }}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: {{ .Release.Name }}-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: local-child-service
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .Release.Name }}-child
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+{{- end }}

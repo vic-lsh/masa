@@ -1,0 +1,17 @@
+image:
+  tag: latest
+  pullPolicy: IfNotPresent
+
+frontend:
+  port: 8000
+  cpus: "4"
+
+child:
+  replicas: 1
+  cpus: "1"
+  # services: []
+
+env:
+  LOG_LEVEL: info
+
+appConfig: "{}"
