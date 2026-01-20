@@ -4,7 +4,6 @@ services:
   # -------------------------------------------
   post-storage-mongo:
     image: mongo:7.0
-    container_name: "socialnet-post_storage_mongo"
     restart: always
     networks:
       - socialnet-network
@@ -17,7 +16,6 @@ services:
 
   post-storage-memcached:
     image: memcached:1.6
-    container_name: "socialnet-post_storage_memcached"
     restart: always
     networks:
       - socialnet-network
@@ -34,9 +32,9 @@ services:
       - socialnet-network
     environment:
       - BINARY_NAME=post_storage_server
-      - POST_STORAGE_MONGODB_URI=mongodb://socialnet-post_storage_mongo:27017
+      - POST_STORAGE_MONGODB_URI=mongodb://post-storage-mongo:27017
       - POST_STORAGE_MONGODB_DATABASE=post-storage
-      - POST_STORAGE_MEMCACHED_ADDR=tcp://socialnet-post_storage_memcached:11211
+      - POST_STORAGE_MEMCACHED_ADDR=tcp://post-storage-memcached:11211
     depends_on:
       - post-storage-mongo
       - post-storage-memcached
@@ -52,7 +50,6 @@ services:
   # -------------------------------------------
   user-timeline-mongo:
     image: mongo:7.0
-    container_name: "socialnet-user_timeline_mongo"
     restart: always
     networks:
       - socialnet-network
@@ -65,7 +62,6 @@ services:
 
   user-timeline-redis:
     image: redis:7.2
-    container_name: "socialnet-user_timeline_redis"
     restart: always
     networks:
       - socialnet-network
@@ -84,9 +80,9 @@ services:
       - socialnet-network
     environment:
       - BINARY_NAME=user_timeline_server
-      - USER_TIMELINE_MONGODB_URI=mongodb://socialnet-user_timeline_mongo:27017
-      - USER_TIMELINE_REDIS_URL=redis://socialnet-user_timeline_redis:6379
-      - POST_STORAGE_IP=socialnet-post-storage-service
+      - USER_TIMELINE_MONGODB_URI=mongodb://user-timeline-mongo:27017
+      - USER_TIMELINE_REDIS_URL=redis://user-timeline-redis:6379
+      - POST_STORAGE_IP=${PROJECT_NAME}-post-storage-service
       - POST_STORAGE_PORT=8080
       - POST_STORAGE_REPLICAS=1
     depends_on:
@@ -105,7 +101,6 @@ services:
   # -------------------------------------------
   home-timeline-redis:
     image: redis:7.2
-    container_name: "socialnet-home_timeline_redis"
     restart: always
     networks:
       - socialnet-network
@@ -124,16 +119,16 @@ services:
       - socialnet-network
     environment:
       - BINARY_NAME=home_timeline_server
-      - HOME_TIMELINE_REDIS_URL=redis://socialnet-home_timeline_redis:6379
-      # - POST_STORAGE_SERVICE_ADDR=http://socialnet-post-storage-service:8080
-      # - SOCIAL_GRAPH_SERVICE_ADDR=http://socialnet-social-graph-service:8080
+      - HOME_TIMELINE_REDIS_URL=redis://home-timeline-redis:6379
+      # - POST_STORAGE_SERVICE_ADDR=http://post-storage-service:8080
+      # - SOCIAL_GRAPH_SERVICE_ADDR=http://social-graph-service:8080
       # Post Storage Config
-      - POST_STORAGE_SERVICE_IP=socialnet-post-storage-service
+      - POST_STORAGE_SERVICE_IP=${PROJECT_NAME}-post-storage-service
       - POST_STORAGE_SERVICE_PORT=8080
       - POST_STORAGE_SERVICE_REPLICAS=1
 
       # Social Graph Config
-      - SOCIAL_GRAPH_SERVICE_IP=socialnet-social-graph-service
+      - SOCIAL_GRAPH_SERVICE_IP=${PROJECT_NAME}-social-graph-service
       - SOCIAL_GRAPH_SERVICE_PORT=8080
       - SOCIAL_GRAPH_SERVICE_REPLICAS=1
     depends_on:
@@ -149,7 +144,6 @@ services:
 
   write-home-timeline-redis:
     image: redis:7.2
-    container_name: "socialnet-write_home_timeline_redis"
     restart: always
     networks:
       - socialnet-network
@@ -168,11 +162,11 @@ services:
       - socialnet-network
     environment:
       - BINARY_NAME=write_home_timeline_server
-      - RABBITMQ_URL=amqp://guest:guest@socialnet-rabbitmq:5672
-      - REDIS_URL=redis://socialnet-write_home_timeline_redis:6379
-      # - SOCIAL_GRAPH_SERVICE_ADDR=http://socialnet-social-graph-service:8080
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - REDIS_URL=redis://write-home-timeline-redis:6379
+      # - SOCIAL_GRAPH_SERVICE_ADDR=http://social-graph-service:8080
       # Social Graph Config
-      - SOCIAL_GRAPH_SERVICE_IP=socialnet-social-graph-service
+      - SOCIAL_GRAPH_SERVICE_IP=${PROJECT_NAME}-social-graph-service
       - SOCIAL_GRAPH_SERVICE_PORT=8080
       - SOCIAL_GRAPH_SERVICE_REPLICAS=1
     depends_on:
@@ -191,7 +185,6 @@ services:
   # -------------------------------------------
   user-mongo:
     image: mongo:7.0
-    container_name: "socialnet-user_mongo"
     restart: always
     networks:
       - socialnet-network
@@ -204,7 +197,6 @@ services:
 
   user-redis:
     image: redis:7.2
-    container_name: "socialnet-user_redis"
     restart: always
     networks:
       - socialnet-network
@@ -223,8 +215,8 @@ services:
       - socialnet-network
     environment:
       - BINARY_NAME=user_service
-      - MONGO_URL=mongodb://socialnet-user_mongo:27017/user
-      - REDIS_URL=redis://socialnet-user_redis:6379
+      - MONGO_URL=mongodb://user-mongo:27017/user
+      - REDIS_URL=redis://user-redis:6379
       - JWT_SECRET=${JWT_SECRET}
       - MACHINE_ID=02
     depends_on:
@@ -242,7 +234,6 @@ services:
   # -------------------------------------------
   social-graph-mongo:
     image: mongo:7.0
-    container_name: "socialnet-social_graph_mongo"
     restart: always
     networks:
       - socialnet-network
@@ -255,7 +246,6 @@ services:
 
   social-graph-redis:
     image: redis:7.2
-    container_name: "socialnet-social_graph_redis"
     restart: always
     networks:
       - socialnet-network
@@ -274,11 +264,11 @@ services:
       - socialnet-network
     environment:
       - BINARY_NAME=social_graph_server
-      - MONGO_URL=mongodb://socialnet-social_graph_mongo:27017/social-graph
-      - REDIS_URL=redis://socialnet-social_graph_redis:6379
-      # - USER_SERVICE_ADDR=http://socialnet-user-service:8080
+      - MONGO_URL=mongodb://social-graph-mongo:27017/social-graph
+      - REDIS_URL=redis://social-graph-redis:6379
+      # - USER_SERVICE_ADDR=http://user-service:8080
       # User Service Configuration
-      - USER_SERVICE_IP=socialnet-user-service
+      - USER_SERVICE_IP=${PROJECT_NAME}-user-service
       - USER_SERVICE_PORT=8080
       - USER_SERVICE_REPLICAS=1
     depends_on:
@@ -343,13 +333,13 @@ services:
       - url-shorten-service
     environment:
       - BINARY_NAME=textservice_server
-      # - USER_MENTION_SERVICE_ADDR=http://socialnet-user-mention-service:8080
-      # - URL_SHORTEN_SERVICE_ADDR=http://socialnet-url-shorten-service:8080
-      - USER_MENTION_SERVICE_IP=socialnet-user-mention-service
+      # - USER_MENTION_SERVICE_ADDR=http://user-mention-service:8080
+      # - URL_SHORTEN_SERVICE_ADDR=http://url-shorten-service:8080
+      - USER_MENTION_SERVICE_IP=${PROJECT_NAME}-user-mention-service
       - USER_MENTION_SERVICE_PORT=8080
       - USER_MENTION_SERVICE_REPLICAS=1
 
-      - URL_SHORTEN_SERVICE_IP=socialnet-url-shorten-service
+      - URL_SHORTEN_SERVICE_IP=${PROJECT_NAME}-url-shorten-service
       - URL_SHORTEN_SERVICE_PORT=8080
       - URL_SHORTEN_SERVICE_REPLICAS=1
     volumes:
@@ -364,7 +354,6 @@ services:
   # -------------------------------------------
   user-mention-mongo:
     image: mongo:7.0
-    container_name: "socialnet-user_mention_mongo"
     restart: always
     networks:
       - socialnet-network
@@ -377,7 +366,6 @@ services:
 
   user-mention-memcached:
     image: memcached:1.6
-    container_name: "socialnet-user_mention_memcached"
     restart: always
     networks:
       - socialnet-network
@@ -394,8 +382,8 @@ services:
       - socialnet-network
     environment:
       - BINARY_NAME=usermention_server
-      - MONGO_URL=mongodb://socialnet-user_mention_mongo:27017/user-mention
-      - MEMCACHED_URL=tcp://socialnet-user_mention_memcached:11211
+      - MONGO_URL=mongodb://user-mention-mongo:27017/user-mention
+      - MEMCACHED_URL=tcp://user-mention-memcached:11211
     depends_on:
       - user-mention-mongo
       - user-mention-memcached
@@ -411,7 +399,6 @@ services:
   # -------------------------------------------
   url-shorten-mongo:
     image: mongo:7.0
-    container_name: "socialnet-url_shorten_mongo"
     restart: always
     ulimits:
       nofile:
@@ -435,7 +422,7 @@ services:
       - socialnet-network
     environment:
       - BINARY_NAME=url_shorten_server
-      - MONGO_URL=mongodb://socialnet-url_shorten_mongo:27017/url-shorten
+      - MONGO_URL=mongodb://url-shorten-mongo:27017/url-shorten
       - RUST_LOG=tonic=debug,info
     depends_on:
       - url-shorten-mongo
@@ -451,7 +438,6 @@ services:
   # -------------------------------------------
   rabbitmq:
     image: rabbitmq:3.13-management
-    container_name: socialnet-rabbitmq
     restart: always
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
@@ -469,46 +455,44 @@ services:
     image: compose_post_server:${SOCIALNET_IMAGE_TAG:-latest}
     scale: 1
     restart: always
-    ports:
-      - "16987:8080"
     networks:
       - socialnet-network
     environment:
       - BINARY_NAME=compose_post_server
 
-      - POST_STORAGE_IP=socialnet-post-storage-service
+      - POST_STORAGE_IP=${PROJECT_NAME}-post-storage-service
       - POST_STORAGE_PORT=8080
       - POST_STORAGE_REPLICAS=1
 
-      - USER_TIMELINE_IP=socialnet-user-timeline-service
+      - USER_TIMELINE_IP=${PROJECT_NAME}-user-timeline-service
       - USER_TIMELINE_PORT=8080
       - USER_TIMELINE_REPLICAS=4
 
-      - HOME_TIMELINE_IP=socialnet-home-timeline-service
+      - HOME_TIMELINE_IP=${PROJECT_NAME}-home-timeline-service
       - HOME_TIMELINE_PORT=8080
       - HOME_TIMELINE_REPLICAS=1
 
-      - USER_SERVICE_IP=socialnet-user-service
+      - USER_SERVICE_IP=${PROJECT_NAME}-user-service
       - USER_SERVICE_PORT=8080
       - USER_SERVICE_REPLICAS=1
 
-      - MEDIA_SERVICE_IP=socialnet-media-service
+      - MEDIA_SERVICE_IP=${PROJECT_NAME}-media-service
       - MEDIA_SERVICE_PORT=8080
       - MEDIA_SERVICE_REPLICAS=1
 
-      - TEXT_SERVICE_IP=socialnet-text-service
+      - TEXT_SERVICE_IP=${PROJECT_NAME}-text-service
       - TEXT_SERVICE_PORT=8080
       - TEXT_SERVICE_REPLICAS=1
 
-      - USER_MENTION_SERVICE_IP=socialnet-user-mention-service
+      - USER_MENTION_SERVICE_IP=${PROJECT_NAME}-user-mention-service
       - USER_MENTION_SERVICE_PORT=8080
       - USER_MENTION_SERVICE_REPLICAS=1
 
-      - URL_SHORTEN_SERVICE_IP=socialnet-url-shorten-service
+      - URL_SHORTEN_SERVICE_IP=${PROJECT_NAME}-url-shorten-service
       - URL_SHORTEN_SERVICE_PORT=8080
       - URL_SHORTEN_SERVICE_REPLICAS=1
 
-      - UNIQUE_ID_SERVICE_IP=socialnet-unique-id-service
+      - UNIQUE_ID_SERVICE_IP=${PROJECT_NAME}-unique-id-service
       - UNIQUE_ID_SERVICE_PORT=8080
       - UNIQUE_ID_SERVICE_REPLICAS=1
     depends_on:
@@ -545,5 +529,4 @@ volumes:
 
 networks:
   socialnet-network:
-    name: socialnet-network
     driver: bridge

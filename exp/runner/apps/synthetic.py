@@ -196,7 +196,7 @@ class SyntheticApp(AppPlugin):
             "image": f"synthetic_frontend:{image_tag}",
             "restart": "always",
             "networks": ["synthetic_network"],
-            "ports": ["${FRONTEND_PORT}:8000"],
+            # "ports": ["${FRONTEND_PORT}:8000"],
             "depends_on": depends_on,
             "environment": [
                 "BINARY_NAME=synthetic_frontend",
@@ -314,7 +314,7 @@ class SyntheticApp(AppPlugin):
         The actual compose file generation happens in run_workload override.
         """
         return DockerConfig(
-            compose_file="scripts/local/containers+svcs.yaml",
+            compose_file="docker-compose.yaml",
             network_name="local_synthetic_network",
             loadgen_image_name="synthetic_client_bench:<features>",
             loadgen_binary_name="synthetic_client_bench",
@@ -479,7 +479,8 @@ class SyntheticApp(AppPlugin):
 
         # Generate call graph compose file if needed
         compose_file = docker_config.compose_file
-        compose_app_dir = config.app_dir
+        # Default to experiment scripts dir for static compose
+        compose_app_dir = repo_root / "exp/synthetic/scripts"
 
         # Check if call_graph is configured
         has_call_graph = (
@@ -512,7 +513,7 @@ class SyntheticApp(AppPlugin):
             self._generated_compose_path = generated_compose
 
         # Choose the network name for the load generator.
-        # - Static compose (containers+svcs.yaml) defines network key "synthetic_network".
+        # - Static compose (docker-compose.yaml) defines network key "synthetic_network".
         # - Generated call-graph compose also defines network key "synthetic_network".
         # In both cases, Docker Compose creates "{project_name}_synthetic_network".
         loadgen_network_name = f"{project_name}_synthetic_network"
@@ -538,7 +539,7 @@ class SyntheticApp(AppPlugin):
             return
 
         # Write .env file expected by compose setups (only when actually running)
-        env_file = app_local_dir / ".env"
+        env_file = output_dir / ".env"
         env_file.parent.mkdir(parents=True, exist_ok=True)
         with open(env_file, "w", encoding="utf-8") as f:
             for key, value in env_vars.items():

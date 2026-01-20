@@ -19,8 +19,6 @@ services:
     restart: always
     networks:
       - synthetic_network
-    ports:
-      - "${FRONTEND_PORT}:8000"
     depends_on:
       - local-child-service
     environment:
