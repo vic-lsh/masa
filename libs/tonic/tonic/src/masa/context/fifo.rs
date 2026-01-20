@@ -35,23 +35,25 @@ impl ServerHooks for ServerContext {
 pub struct ParentContext {
     ctx: Context,
     early_return: EarlyReturnHandler,
+    method_label: String,
 }
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn begin<B>(
-        _method: GrpcMethod,
+        method: GrpcMethod,
         req: &http::Request<B>,
         _server_ctx: Arc<ServerContext>,
     ) -> Self {
         Self {
             ctx: read_context(req),
             early_return: EarlyReturnHandler::new(),
+            method_label: method.id().to_string(),
         }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         if self.early_return.check(&self.ctx) {
-            return Err(Err(self.early_return.issue_error()));
+            return Err(Err(self.early_return.issue_error(&self.method_label)));
         }
         Ok(())
     }
@@ -63,7 +65,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         _child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
         if self.early_return.check(&self.ctx) {
-            return Err(self.early_return.issue_error());
+            return Err(self.early_return.issue_error(&self.method_label));
         }
 
         let deadline = self.ctx.deadline();
@@ -84,7 +86,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         match poll {
             Poll::Pending => {
                 if self.early_return.check(&self.ctx) {
-                    return Err(Err(self.early_return.issue_error()));
+                    return Err(Err(self.early_return.issue_error(&self.method_label)));
                 }
             }
             Poll::Ready(_) => {}

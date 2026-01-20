@@ -12,7 +12,9 @@ use tonic::Response;
 use tonic::Status;
 
 use app_utils::{
-    load_gen::{load_gen_main, Client, Handler, HandlerOuter, LoadGenArgs, RequestType},
+    load_gen::{
+        load_gen_main, Client, Handler, HandlerOuter, LoadGenArgs, RequestOutcome, RequestType,
+    },
     timing::time_now,
 };
 use gen::get_compose_post_request;
@@ -83,7 +85,7 @@ impl HandlerOuter<SocialnetClient> for RequestHandler {
         client: ComposePostServiceClient<Channel>,
         ctx: Context,
         trace: bool,
-    ) -> String {
+    ) -> RequestOutcome {
         match self {
             Self::ComposePostRequest(h) => h.send_request(rng, client, ctx, trace).await,
             // Extensible: Add more match arms here

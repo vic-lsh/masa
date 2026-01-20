@@ -21,7 +21,7 @@ use tonic::metadata::MetadataMap;
 use tonic::transport::{Channel, Endpoint};
 
 use app_utils::{
-    load_gen::{HandlerOuter, LoadGenArgs, RequestType},
+    load_gen::{HandlerOuter, LoadGenArgs, RequestOutcome, RequestType},
     timing::time_now,
 };
 use frontend::frontend_client::FrontendClient;
@@ -106,7 +106,7 @@ impl HandlerOuter<HotelClient> for RequestHandler {
         client: FrontendClient<Channel>,
         ctx: Context,
         trace: bool,
-    ) -> String {
+    ) -> RequestOutcome {
         match self {
             Self::ReservationRequest(h) => h.send_request(rng, client, ctx, trace).await,
             Self::SearchRequest(h) => h.send_request(rng, client, ctx, trace).await,

@@ -101,7 +101,7 @@ impl Frontend for FrontendImpl {
 
         let mut child_constant_client = self.children.first().unwrap().clone();
         // Sample from exponential distribution with mean = 10000
-        let mean = 10000.0;
+        let mean = 40000.0;
         let lambda = 1.0 / mean;
         let exp_dist = Exp::<f64>::new(lambda).unwrap();
         let duration_us = exp_dist.sample(&mut thread_rng()).round() as u64;
@@ -153,7 +153,7 @@ impl Frontend for FrontendImpl {
 
         let mut child_constant_client = self.children.first().unwrap().clone();
         // Sample from exponential distribution with mean = 100000
-        let mean = 100000.0;
+        let mean = 60000.0;
         let lambda = 1.0 / mean;
         let exp_dist = Exp::<f64>::new(lambda).unwrap();
         let duration_us = exp_dist.sample(&mut thread_rng()).round() as u64;

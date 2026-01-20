@@ -61,6 +61,7 @@ pub struct ParentContext<E: LatencyEstimator + Default + 'static = LatencyDistri
     q_lat: AtomicU64,
     server: Arc<ServerContext<E>>,
     early_return: EarlyReturnHandler,
+    method_label: String,
     child_end_times: Mutex<Vec<(MethodId, Instant)>>,
 }
 
@@ -77,6 +78,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
             ctx: read_context(req),
             server: server_ctx,
             early_return: EarlyReturnHandler::new(),
+            method_label: method.id().to_string(),
             child_end_times: Mutex::new(Vec::new()),
             q_lat: AtomicU64::new(0),
         }
@@ -84,7 +86,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         if self.early_return.check(&self.ctx) {
-            return Err(Err(self.early_return.issue_error()));
+            return Err(Err(self.early_return.issue_error(&self.method_label)));
         }
         let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
         if queue_latency > 0 {
@@ -100,7 +102,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
     ) -> Result<(), Result<Response<Ret>, Status>> {
         if let Poll::Pending = poll {
             if self.early_return.check(&self.ctx) {
-                return Err(Err(self.early_return.issue_error()));
+                return Err(Err(self.early_return.issue_error(&self.method_label)));
             }
         }
 
@@ -114,7 +116,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         _child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
         if self.early_return.check(&self.ctx) {
-            return Err(self.early_return.issue_error());
+            return Err(self.early_return.issue_error(&self.method_label));
         }
 
         // NOTE: if we don't have enough data to estimate the duration of the parent or child

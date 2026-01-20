@@ -149,6 +149,40 @@ def compute_early_return_by_request_type(df):
     return early_return_by_type
 
 
+def compute_early_return_by_hop(df):
+    """Compute early-return rate broken down by hop (early_return_hop column).
+
+    Returns:
+        dict: Mapping from hop label to early-return rate (requests per second)
+    """
+    if df.empty or "early_return_hop" not in df.columns or "error" not in df.columns:
+        return {}
+
+    # Filter for early-return requests only
+    early_return_df = df[df["error"] == "/EarlyReturn"]
+
+    if early_return_df.empty:
+        return {}
+
+    start = df["start_at"].min()
+    end = (df["start_at"] + df["latency"]).max()
+    duration_us = end - start
+    s_to_us = 10**6
+
+    if duration_us == 0:
+        return {}
+
+    hop_series = early_return_df["early_return_hop"].fillna("unknown")
+    hop_series = hop_series.apply(lambda v: v if str(v).strip() else "unknown")
+
+    early_return_by_hop = {}
+    for hop in hop_series.unique():
+        hop_df = early_return_df[hop_series == hop]
+        early_return_by_hop[hop] = len(hop_df) / duration_us * s_to_us
+
+    return early_return_by_hop
+
+
 def compute_slo_miss_by_request_type(df):
     """Compute SLO miss rate broken down by request type (api column).
     
@@ -279,6 +313,7 @@ def _plot_early_return_breakdown(
     title: str,
     subtitle: Optional[str] = None,
     request_type_color_mapping: Optional[dict] = None,
+    legend_title: str = "API",
 ) -> None:
     """
     Generate breakdown plot for early-return requests by API:
@@ -380,7 +415,7 @@ def _plot_early_return_breakdown(
     fig.legend(
         handles,
         labels,
-        title="API",
+        title=legend_title,
         frameon=False,
         loc="upper center",
         bbox_to_anchor=(0.5, 1.02),
@@ -390,6 +425,40 @@ def _plot_early_return_breakdown(
     fig.suptitle(title, fontsize=14, y=0.98)
     fig.tight_layout(rect=[0, 0, 1, 0.90])
     fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_early_return_total(
+    output_path: str,
+    *,
+    policies: list[str],
+    rps_values: list,
+    policy_total_early_returns: dict,
+    title: str,
+    subtitle: Optional[str] = None,
+) -> None:
+    fig, ax = plt.subplots(figsize=(8, 5))
+    index = np.arange(len(rps_values))
+
+    for policy in policies:
+        vals = policy_total_early_returns.get(policy, [])
+        ax.plot(
+            index,
+            vals,
+            marker="o",
+            label=get_policy_display_name(policy),
+            color=get_policy_color(policy),
+        )
+
+    ax.set_xlabel("RPS")
+    ax.set_ylabel("Early-return rate (req/s)")
+    ax.set_title(title)
+    ax.set_xticks(index)
+    ax.set_xticklabels([str(rps) for rps in rps_values])
+    ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+    _style_axes(ax)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -984,18 +1053,22 @@ def generate_plots(args) -> None:
     # For "ALL" API, compute early-return breakdown by request type
     policy_early_returns_by_type = []
     policy_total_early_returns = []
+    # For "ALL" API, compute early-return breakdown by hop (if present)
+    policy_early_returns_by_hop = []
     # For "ALL" API, compute SLO miss breakdown by request type
     policy_slo_misses_by_type = []
     policy_total_slo_misses = []
 
     # Collect all unique request types for consistent coloring across all plots
     all_request_types = set()
+    all_hop_types = set()
 
     for i in range(repeats):
         policy_goodputs.append({})
         policy_goodputs_by_type.append({})
         policy_early_returns_by_type.append({})
         policy_total_early_returns.append({})
+        policy_early_returns_by_hop.append({})
         policy_slo_misses_by_type.append({})
         policy_total_slo_misses.append({})
         for api in apis:
@@ -1024,6 +1097,15 @@ def generate_plots(args) -> None:
                 for policy in policies:
                     for rps_dict in policy_early_returns_by_type[i][api][policy]:
                         all_request_types.update(rps_dict.keys())
+
+                # Compute early-return breakdown by hop when available
+                policy_early_returns_by_hop[i][api] = {
+                    policy: [compute_early_return_by_hop(data[policy][rps]) for rps in rps_values]
+                    for policy in policies
+                }
+                for policy in policies:
+                    for rps_dict in policy_early_returns_by_hop[i][api][policy]:
+                        all_hop_types.update(rps_dict.keys())
 
                 # Compute total early-return rate per policy
                 policy_total_early_returns[i][api] = {
@@ -1058,6 +1140,10 @@ def generate_plots(args) -> None:
     if all_request_types:
         sorted_request_types = sorted(all_request_types)
         request_type_color_mapping = _get_request_type_colors_mapping(sorted_request_types)
+    hop_color_mapping = {}
+    if all_hop_types:
+        sorted_hop_types = sorted(all_hop_types)
+        hop_color_mapping = _get_request_type_colors_mapping(sorted_hop_types)
 
     # Generate plots in parallel
     with ThreadPoolExecutor() as executor:
@@ -1128,6 +1214,34 @@ def generate_plots(args) -> None:
                                 policy_early_returns_by_type=early_returns_by_type,
                                 title="Early-return requests breakdown by API",
                                 request_type_color_mapping=request_type_color_mapping,
+                            )
+                        )
+                        total_path = os.path.join(output_dir, f"early_return_total_{api}.png")
+                        futures.append(
+                            executor.submit(
+                                _plot_early_return_total,
+                                total_path,
+                                policies=policies,
+                                rps_values=rps_values,
+                                policy_total_early_returns=total_early_returns,
+                                title="Early-return rate (total)",
+                            )
+                        )
+
+                    early_returns_by_hop = policy_early_returns_by_hop[i].get(api)
+                    if early_returns_by_hop is not None and all_hop_types:
+                        output_path = os.path.join(output_dir, f"early_return_hop_{api}.png")
+                        futures.append(
+                            executor.submit(
+                                _plot_early_return_breakdown,
+                                output_path,
+                                policies=policies,
+                                rps_values=rps_values,
+                                policy_total_early_returns=total_early_returns or {},
+                                policy_early_returns_by_type=early_returns_by_hop,
+                                title="Early-return requests breakdown by hop",
+                                request_type_color_mapping=hop_color_mapping,
+                                legend_title="Hop",
                             )
                         )
 
@@ -1213,6 +1327,61 @@ def generate_plots(args) -> None:
                         request_type_color_mapping=request_type_color_mapping,
                     )
                 )
+                total_path = os.path.join(output_dir, f"early_return_total_{api}.png")
+                futures.append(
+                    executor.submit(
+                        _plot_early_return_total,
+                        total_path,
+                        policies=policies,
+                        rps_values=rps_values,
+                        policy_total_early_returns=avg_total_early_returns,
+                        title=f"Average early-return rate (total, averaged over {repeats} run(s))",
+                    )
+                )
+
+                if all_hop_types:
+                    avg_hop_breakdown = {
+                        policy: [dict() for _ in range(len(rps_values))] for policy in policies
+                    }
+                    all_types = set()
+                    for i in range(repeats):
+                        if i < len(policy_early_returns_by_hop):
+                            for policy in policies:
+                                per_rps = policy_early_returns_by_hop[i].get(api, {}).get(policy, [])
+                                for d in per_rps:
+                                    all_types.update((d or {}).keys())
+
+                    for policy in policies:
+                        for rps_idx in range(len(rps_values)):
+                            for rt in all_types:
+                                vals = []
+                                for i in range(repeats):
+                                    if i >= len(policy_early_returns_by_hop):
+                                        continue
+                                    per_rps = policy_early_returns_by_hop[i].get(api, {}).get(policy, [])
+                                    if (
+                                        rps_idx < len(per_rps)
+                                        and per_rps[rps_idx] is not None
+                                        and rt in per_rps[rps_idx]
+                                    ):
+                                        vals.append(float(per_rps[rps_idx][rt]))
+                                if vals:
+                                    avg_hop_breakdown[policy][rps_idx][rt] = sum(vals) / len(vals)
+
+                    output_path = os.path.join(output_dir, f"early_return_hop_{api}.png")
+                    futures.append(
+                        executor.submit(
+                            _plot_early_return_breakdown,
+                            output_path,
+                            policies=policies,
+                            rps_values=rps_values,
+                            policy_total_early_returns=avg_total_early_returns,
+                            policy_early_returns_by_type=avg_hop_breakdown,
+                            title=f"Average early-return requests breakdown by hop (averaged over {repeats} run(s))",
+                            request_type_color_mapping=hop_color_mapping,
+                            legend_title="Hop",
+                        )
+                    )
 
         # Submit averaged SLO miss breakdown plot
         output_dir = args.output_dir

@@ -13,7 +13,7 @@ use std::iter::zip;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Semaphore;
@@ -165,6 +165,8 @@ const DEFAULT_COUNTER_KEYS: [&'static str; 6] = [
     "unexpected",
 ];
 
+const EARLY_RETURN_HOP_HEADER: &str = "x-early-return-hop";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FutureSpanType {
     Compute,
@@ -200,6 +202,28 @@ impl Clone for Counters {
     }
 }
 
+#[derive(Debug, Default)]
+struct HopCounters {
+    counts: Mutex<HashMap<String, usize>>,
+}
+
+impl HopCounters {
+    fn increment(&self, hop: &str) {
+        let mut counts = self.counts.lock().unwrap();
+        *counts.entry(hop.to_string()).or_insert(0) += 1;
+    }
+
+    fn snapshot(&self) -> HashMap<String, usize> {
+        self.counts.lock().unwrap().clone()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RequestOutcome {
+    pub error: String,
+    pub early_return_hop: Option<String>,
+}
+
 impl Counters {
     pub fn new(keys: &[&str]) -> Self {
         let mut map = HashMap::new();
@@ -230,6 +254,7 @@ where
     ctx: Context,
     latency: u64,
     error: String,
+    early_return_hop: Option<String>,
     response: Option<(MetadataMap, R::ResponseType)>,
 }
 
@@ -238,7 +263,7 @@ where
     R: RequestType<C>,
     C: Client,
 {
-    const HEADERS: [&'static str; 7] = [
+    const HEADERS: [&'static str; 8] = [
         "api",
         "request_id",
         "slo",
@@ -246,32 +271,37 @@ where
         "deadline",
         "latency",
         "error",
+        Self::EARLY_RETURN_HOP_HEADER,
     ];
+    const EARLY_RETURN_HOP_HEADER: &'static str = "early_return_hop";
 
     fn new(
         ctx: Context,
         latency: u64,
         error: String,
+        early_return_hop: Option<String>,
         response: Option<(MetadataMap, R::ResponseType)>,
     ) -> Self {
         Self {
             ctx,
             latency,
             error,
+            early_return_hop,
             response,
         }
     }
 
     fn to_row(&self) -> String {
         let generic = format!(
-            "{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{}",
             self.ctx.api(),
             self.ctx.request_id(),
             self.ctx.slo(),
             self.ctx.start_at(),
             self.ctx.deadline(),
             self.latency,
-            self.error
+            self.error,
+            self.early_return_hop.as_deref().unwrap_or("")
         );
 
         let specific = match &self.response {
@@ -323,7 +353,7 @@ where
         client: C::FrontendClient,
         ctx: Context,
         trace: bool,
-    ) -> String {
+    ) -> RequestOutcome {
         let latency;
         let response = {
             let send_at = time_now();
@@ -337,15 +367,21 @@ where
             r
         };
 
-        let (response, error) = map_response(response, latency <= self.slo);
+        let (response, outcome) = map_response(response, latency <= self.slo);
 
-        let stats = RequestStats::new(ctx, latency, error.clone(), response);
+        let stats = RequestStats::new(
+            ctx,
+            latency,
+            outcome.error.clone(),
+            outcome.early_return_hop.clone(),
+            response,
+        );
 
         if trace {
             self.trace_tx.as_ref().unwrap().send(stats).unwrap();
         }
 
-        error
+        outcome
     }
 
     pub async fn fetch_traces(&mut self, output_path: &Path) {
@@ -443,7 +479,7 @@ where
         client: C::FrontendClient,
         ctx: Context,
         trace: bool,
-    ) -> impl Future<Output = String> + Send;
+    ) -> impl Future<Output = RequestOutcome> + Send;
 
     async fn fetch_traces(&mut self, output_path: &Path);
 
@@ -495,9 +531,14 @@ where
         let counter_keys = &DEFAULT_COUNTER_KEYS;
         let counters = Arc::new(Counters::new(counter_keys));
 
-        let h = tokio::task::spawn(stats_logger(Arc::clone(&counters), pause_at));
+        let hop_counters = Arc::new(HopCounters::default());
+        let h = tokio::task::spawn(stats_logger(
+            Arc::clone(&counters),
+            Arc::clone(&hop_counters),
+            pause_at,
+        ));
 
-        self.generate_load(counters, init_at, trace_at, warm_at, pause_at)
+        self.generate_load(counters, hop_counters, init_at, trace_at, warm_at, pause_at)
             .await;
 
         let _ = h.await;
@@ -520,6 +561,7 @@ where
     async fn generate_load(
         &mut self,
         counters: Arc<Counters>,
+        hop_counters: Arc<HopCounters>,
         init_at: Instant,
         trace_at: Instant,
         warm_at: Instant,
@@ -588,6 +630,7 @@ where
 
             let client = self.client.clone();
             let ctrs = Arc::clone(&counters);
+            let hop_ctrs = Arc::clone(&hop_counters);
             let rng = self.rng.clone();
             let trace = Instant::now() > trace_at;
 
@@ -595,11 +638,11 @@ where
                 let _permit = permit; // Hold permit until task completes
                 ctrs.increment("all");
 
-                let error = handler.send_request(rng, client, ctx, trace).await;
+                let outcome = handler.send_request(rng, client, ctx, trace).await;
 
                 if trace {
                     // increment the right counters
-                    match error.as_str() {
+                    match outcome.error.as_str() {
                         "/None" => {
                             ctrs.increment("good");
                         }
@@ -617,6 +660,10 @@ where
                             log::error!("unexpected request error '{}'", e);
                         }
                     };
+
+                    if let Some(hop) = outcome.early_return_hop.as_deref() {
+                        hop_ctrs.increment(hop);
+                    }
                 }
             });
         }
@@ -695,47 +742,68 @@ where
     Ok(())
 }
 
-async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
+async fn stats_logger(counters: Arc<Counters>, hop_counters: Arc<HopCounters>, pause_at: Instant) {
     let mut secs = 0;
     let mut prev = Counters::new(&DEFAULT_COUNTER_KEYS);
+    let mut prev_hops: HashMap<String, usize> = HashMap::new();
     while Instant::now() < pause_at {
         tokio::time::sleep(Duration::from_secs(1)).await;
         secs += 1;
 
         let delta = |k| counters.get(k) - prev.get(k);
+        let hop_snapshot = hop_counters.snapshot();
+        let mut hop_parts = Vec::new();
+        for (hop, total) in hop_snapshot.iter() {
+            let prev_total = prev_hops.get(hop).copied().unwrap_or(0);
+            let hop_delta = total.saturating_sub(prev_total);
+            if hop_delta > 0 {
+                hop_parts.push(format!("{}:{}", hop, hop_delta));
+            }
+        }
+        hop_parts.sort();
+        let hop_summary = if hop_parts.is_empty() {
+            "none".to_string()
+        } else {
+            hop_parts.join(",")
+        };
 
         log::warn!(
-            "secs: {}, rps: {}, good: {}, ER: {}, ddl_miss: {}, timeouts: {}; total: ER {}, ddl_miss {}, timeout {}",
+            "secs: {}, rps: {}, good: {}, ER: {}, ddl_miss: {}, timeouts: {}; ER hops: {}; total: ER {}, ddl_miss {}, timeout {}",
             secs,
             delta("all"),
             delta("good"),
             delta("early_return"),
             delta("deadline_miss"),
             delta("timeout"),
+            hop_summary,
             counters.get("early_return"),
             counters.get("deadline_miss"),
             counters.get("timeout"),
         );
         // clone the Counters struct itself as opposed to creating another reference
         prev = (*counters).clone();
+        prev_hops = hop_snapshot;
     }
 }
 
 fn map_response<T>(
     response: Result<Result<Response<T>, Status>, Elapsed>,
     met_slo: bool,
-) -> (Option<(MetadataMap, T)>, String) {
-    let error = match &response {
+) -> (Option<(MetadataMap, T)>, RequestOutcome) {
+    let (error, early_return_hop) = match &response {
         Ok(response) => {
             if let Err(ref status) = response {
-                status.message().to_string()
+                (
+                    status.message().to_string(),
+                    extract_early_return_hop(status),
+                )
             } else if !met_slo {
-                "/ClientMiss".to_string()
+                ("/ClientMiss".to_string(), None)
             } else {
-                "/None".to_string()
+                ("/None".to_string(), None)
             }
         }
-        Err(_) => "/ClientTimeout".to_string(),
+        Err(_) => ("/ClientTimeout".to_string(), None),
     };
     let response = match response {
         Ok(r) => r
@@ -746,7 +814,53 @@ fn map_response<T>(
             .ok(),
         Err(_) => None,
     };
-    (response, error)
+    (
+        response,
+        RequestOutcome {
+            error,
+            early_return_hop,
+        },
+    )
+}
+
+fn extract_early_return_hop(status: &Status) -> Option<String> {
+    if status.message() != "/EarlyReturn" {
+        return None;
+    }
+    status
+        .metadata()
+        .get(EARLY_RETURN_HOP_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tonic::Code;
+
+    #[test]
+    fn map_response_captures_early_return_hop() {
+        let mut status = Status::new(Code::DeadlineExceeded, "/EarlyReturn");
+        status
+            .metadata_mut()
+            .insert(EARLY_RETURN_HOP_HEADER, "hop_a".parse().unwrap());
+        let (response, outcome) = map_response::<()>(Ok(Err(status)), true);
+        assert!(response.is_none());
+        assert_eq!(outcome.error, "/EarlyReturn");
+        assert_eq!(outcome.early_return_hop.as_deref(), Some("hop_a"));
+    }
+
+    #[test]
+    fn map_response_ignores_non_early_return_hop() {
+        let mut status = Status::new(Code::InvalidArgument, "bad");
+        status
+            .metadata_mut()
+            .insert(EARLY_RETURN_HOP_HEADER, "hop_b".parse().unwrap());
+        let (_response, outcome) = map_response::<()>(Ok(Err(status)), true);
+        assert_eq!(outcome.error, "bad");
+        assert!(outcome.early_return_hop.is_none());
+    }
 }
 
 // pub fn parse_tasks_from_file<P: AsRef<Path>>(path: P) -> io::Result<Vec<Task>> {

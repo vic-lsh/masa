@@ -157,7 +157,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         if self.early_return.check(&self.ctx) {
-            return Err(Err(self.early_return.issue_error()));
+            return Err(Err(self.early_return.issue_error(&self.resolved_method)));
         }
 
         Ok(())
@@ -169,7 +169,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
     ) -> Result<(), Result<Response<Ret>, Status>> {
         if let Poll::Pending = poll {
             if self.early_return.check(&self.ctx) {
-                return Err(Err(self.early_return.issue_error()));
+                return Err(Err(self.early_return.issue_error(&self.resolved_method)));
             }
         }
 
@@ -183,7 +183,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         child_ctx: &mut ChildContext<E>,
     ) -> Result<(), Status> {
         if self.early_return.check(&self.ctx) {
-            return Err(self.early_return.issue_error());
+            return Err(self.early_return.issue_error(&self.resolved_method));
         }
 
         // NOTE: if we don't have enough data to estimate the duration of the parent or child
@@ -207,7 +207,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         let deadline = self.ctx.deadline() - est_remaining;
         if EARLY_RETURN && time_now() > deadline {
-            return Err(self.early_return.issue_error());
+            return Err(self.early_return.issue_error(&self.resolved_method));
         }
 
         let est_child =

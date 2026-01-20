@@ -12,7 +12,9 @@ use tonic::Response;
 use tonic::Status;
 
 use app_utils::{
-    load_gen::{load_gen_main, Client, Handler, HandlerOuter, LoadGenArgs, RequestType},
+    load_gen::{
+        load_gen_main, Client, Handler, HandlerOuter, LoadGenArgs, RequestOutcome, RequestType,
+    },
     timing::time_now,
 };
 use frontend::frontend_client::FrontendClient;
@@ -74,7 +76,7 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
         client: FrontendClient<Channel>,
         ctx: Context,
         trace: bool,
-    ) -> String {
+    ) -> RequestOutcome {
         match self {
             Self::ARequest(h) => h.send_request(rng, client, ctx, trace).await,
             Self::BRequest(h) => h.send_request(rng, client, ctx, trace).await,

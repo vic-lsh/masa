@@ -2,6 +2,8 @@ use crate::{body::BoxBody, Code, Response, Status};
 use masa::{time_now, Context, EARLY_RETURN};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+pub(crate) const EARLY_RETURN_HOP_HEADER: &str = "x-early-return-hop";
+
 #[derive(Debug)]
 pub(crate) struct EarlyReturnHandler {
     will_early_return: AtomicBool,
@@ -46,8 +48,12 @@ impl EarlyReturnHandler {
         should_early_return
     }
 
-    pub(crate) fn issue_error(&self) -> Status {
-        Status::new(Code::DeadlineExceeded, "/EarlyReturn")
+    pub(crate) fn issue_error(&self, hop_label: &str) -> Status {
+        let mut status = Status::new(Code::DeadlineExceeded, "/EarlyReturn");
+        if let Ok(value) = hop_label.parse() {
+            status.metadata_mut().insert(EARLY_RETURN_HOP_HEADER, value);
+        }
+        status
     }
 }
 
