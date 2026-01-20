@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from exp.runner.plotting.replicas import generate_replicas_plots
+from exp.runner.plotting.replicas import _collect_replica_data, generate_replicas_plots
 
 
 def _write_hotel_config(path: Path, *, reservation_replicas: int) -> None:
@@ -35,3 +35,16 @@ def test_generate_replicas_plot_creates_output(tmp_path: Path) -> None:
 
     assert (output_dir / "replica_distribution.png").exists()
     assert (output_dir / "replica_policy_comparison.png").exists()
+
+
+def test_collect_replica_data_excludes_frontend(tmp_path: Path) -> None:
+    in_dir = tmp_path / "exp" / "hotel" / "data" / "in"
+    fifo_1000 = in_dir / "fifo_1000"
+    fifo_1000.mkdir(parents=True)
+
+    _write_hotel_config(fifo_1000 / "hotel.json", reservation_replicas=2)
+
+    data, service_order = _collect_replica_data(in_dir)
+
+    assert "frontend" not in service_order
+    assert "frontend" not in data["fifo"][1000]

@@ -3,20 +3,9 @@ syntax = "proto3";
 package child;
 
 service Child {
-  rpc RandomLatency(RandomLatencyRequest) returns (RandomLatencyResponse) {}
   rpc RunSynthetic(RunSyntheticRequest)
       returns (RunSyntheticResponse) {}
-  rpc Presampled(PresampledRequest) returns (PresampledResponse) {}
-}
-
-message RandomLatencyRequest {
-  uint64 sent_at = 1;
-  bool busy_spin = 2;
-}
-message RandomLatencyResponse {
-  uint64 queueing_latency = 1;
-  uint64 sleep_latency = 2;
-  uint64 handler_latency = 3;
+  rpc HandleMethod(MethodRequest) returns (MethodResponse) {}
 }
 
 message RunSyntheticRequest {
@@ -30,25 +19,14 @@ message RunSyntheticResponse {
   uint64 finished_at = 3;
 }
 
-message PresampledRequest {
-  Latency latency = 1;
-  double sleep = 2;
-}
-message PresampledResponse {}
-
-message Latency {
-  oneof latency_type {
-    Fixed fixed = 1;
-    Periodic periodic = 2;
-  }
+message MethodRequest {
+  string service_id = 1;
+  string method_name = 2;
+  uint64 sent_at = 3;
 }
 
-message Fixed {
-  uint64 latency = 1;
-}
-
-message Periodic {
-  uint64 slow_latency = 1;
-  uint64 fast_latency = 2;
-  uint32 slow_duration_ms = 3;
+message MethodResponse {
+  uint64 queueing_latency = 1;
+  uint64 handler_latency = 2;
+  uint64 finished_at = 3;
 }
