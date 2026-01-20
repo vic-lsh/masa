@@ -28,15 +28,17 @@ def read_data(config_dir, data_dir):
     rps_values = config["Rps"]
     apis = config["Apis"]
     slos = config.get("Slos", [])
-    
+
     # Create mapping from API name to SLO value (in microseconds)
     api_to_slo = {}
     if len(slos) == len(apis):
         for api, slo in zip(apis, slos):
             api_to_slo[api] = slo
     else:
-        raise ValueError(f"Slos array length ({len(slos)}) must match Apis array length ({len(apis)})")
-    
+        raise ValueError(
+            f"Slos array length ({len(slos)}) must match Apis array length ({len(apis)})"
+        )
+
     policies = read_policies(Path(config_dir))
     results = [{} for _ in range(repeats)]
     for i in range(repeats):
@@ -173,5 +175,7 @@ def filter_excluded_errors(df):
     Returns:
         DataFrame with excluded errors filtered out
     """
-    excluded_errors = df["error"].isin(["/ClientTimeout", "/EarlyReturn"])
+    excluded_errors = df["error"].isin(["/ClientTimeout"]) | df["error"].str.startswith(
+        "/EarlyReturn"
+    )
     return df[~excluded_errors].copy()

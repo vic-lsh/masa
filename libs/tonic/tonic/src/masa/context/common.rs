@@ -5,19 +5,27 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 #[derive(Debug)]
 pub(crate) struct EarlyReturnHandler {
     will_early_return: AtomicBool,
+    service: &'static str,
+    method: String,
 }
 
 impl Default for EarlyReturnHandler {
     fn default() -> Self {
         Self {
             will_early_return: AtomicBool::new(false),
+            service: "",
+            method: String::new(),
         }
     }
 }
 
 impl EarlyReturnHandler {
-    pub(crate) fn new() -> Self {
-        Self::default()
+    pub(crate) fn new(service: &'static str, method: String) -> Self {
+        Self {
+            will_early_return: AtomicBool::new(false),
+            service,
+            method,
+        }
     }
 
     pub(crate) fn check(&self, ctx: &Context) -> bool {
@@ -47,7 +55,10 @@ impl EarlyReturnHandler {
     }
 
     pub(crate) fn issue_error(&self) -> Status {
-        Status::new(Code::DeadlineExceeded, "/EarlyReturn")
+        Status::new(
+            Code::DeadlineExceeded,
+            format!("/EarlyReturn:{}:{}", self.service, self.method),
+        )
     }
 }
 

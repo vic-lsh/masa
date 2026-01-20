@@ -4,6 +4,7 @@ use std::task::Poll;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::common::EarlyReturnHandler;
+use super::resolve_method_name;
 use crate::Response;
 use masa::{Context, ContextBuilder, PriorityHint};
 
@@ -39,13 +40,16 @@ pub struct ParentContext {
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn begin<B>(
-        _method: GrpcMethod,
+        method: GrpcMethod,
         req: &http::Request<B>,
         _server_ctx: Arc<ServerContext>,
     ) -> Self {
         Self {
             ctx: read_context(req),
-            early_return: EarlyReturnHandler::new(),
+            early_return: EarlyReturnHandler::new(
+                method.service(),
+                resolve_method_name(method, req),
+            ),
         }
     }
 
