@@ -660,7 +660,7 @@ dependencies = [
  "tokio-stream",
  "tokio-tungstenite",
  "tower",
- "tower-http 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower-http",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -682,7 +682,7 @@ dependencies = [
  "mime",
  "rustversion",
  "tokio",
- "tower-http 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower-http",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -715,7 +715,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tower",
- "tower-http 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower-http",
  "tower-layer",
  "tower-service",
 ]
@@ -890,34 +890,13 @@ dependencies = [
 
 [[package]]
 name = "brotli"
-version = "3.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d640d25bc63c50fb1f0b545ffd80207d2e10a4c965530809b40ba3386825c391"
-dependencies = [
- "alloc-no-stdlib",
- "alloc-stdlib",
- "brotli-decompressor 2.5.1",
-]
-
-[[package]]
-name = "brotli"
 version = "8.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4bd8b9603c7aa97359dbd97ecf258968c95f3adddd6db2f7e7a5bef101c84560"
 dependencies = [
  "alloc-no-stdlib",
  "alloc-stdlib",
- "brotli-decompressor 5.0.0",
-]
-
-[[package]]
-name = "brotli-decompressor"
-version = "2.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e2e4afe60d7dd600fdd3de8d0f08c2b7ec039712e3b6137ff98b7004e82de4f"
-dependencies = [
- "alloc-no-stdlib",
- "alloc-stdlib",
+ "brotli-decompressor",
 ]
 
 [[package]]
@@ -1210,7 +1189,7 @@ dependencies = [
  "tonic",
  "tonic-build",
  "tower",
- "tower-http 0.4.4",
+ "tower-http",
 ]
 
 [[package]]
@@ -1219,12 +1198,10 @@ version = "0.4.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00828ba6fd27b45a448e57dbfe84f1029d4c9f26b368157e9a448a5f49a2ec2a"
 dependencies = [
- "brotli 8.0.2",
+ "brotli",
  "compression-core",
  "flate2",
  "memchr",
- "zstd 0.13.3",
- "zstd-safe 7.2.4",
 ]
 
 [[package]]
@@ -1934,7 +1911,7 @@ dependencies = [
  "tonic-types",
  "tonic-web",
  "tower",
- "tower-http 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
  "warp",
@@ -2604,7 +2581,7 @@ dependencies = [
  "tonic-types",
  "tonic-web",
  "tower",
- "tower-http 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
  "warp",
@@ -2972,7 +2949,7 @@ dependencies = [
  "tonic",
  "tonic-build",
  "tower",
- "tower-http 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower-http",
  "tower-service",
  "tracing",
  "tracing-subscriber",
@@ -5752,7 +5729,7 @@ dependencies = [
  "tonic-types",
  "tonic-web",
  "tower",
- "tower-http 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
  "warp",
@@ -6246,7 +6223,7 @@ dependencies = [
  "tower-service",
  "tracing",
  "webpki-roots 0.26.11",
- "zstd 0.12.4",
+ "zstd",
 ]
 
 [[package]]
@@ -6307,7 +6284,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
- "tower-http 0.4.4",
+ "tower-http",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -6337,42 +6314,6 @@ dependencies = [
  "tower-test",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "tower-http"
-version = "0.4.4"
-dependencies = [
- "async-compression",
- "base64 0.21.7",
- "bitflags 2.10.0",
- "brotli 3.5.0",
- "bytes",
- "flate2",
- "futures",
- "futures-core",
- "futures-util",
- "http",
- "http-body",
- "http-range-header",
- "httpdate",
- "hyper",
- "iri-string",
- "mime",
- "mime_guess",
- "once_cell",
- "percent-encoding",
- "pin-project-lite",
- "serde_json",
- "tokio",
- "tokio-util",
- "tower",
- "tower-layer",
- "tower-service",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "zstd 0.12.4",
 ]
 
 [[package]]
@@ -7575,16 +7516,7 @@ version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a27595e173641171fc74a1232b7b1c7a7cb6e18222c11e9dfb9888fa424c53c"
 dependencies = [
- "zstd-safe 6.0.6",
-]
-
-[[package]]
-name = "zstd"
-version = "0.13.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a"
-dependencies = [
- "zstd-safe 7.2.4",
+ "zstd-safe",
 ]
 
 [[package]]
@@ -7594,15 +7526,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee98ffd0b48ee95e6c5168188e44a54550b1564d9d530ee21d5f0eaed1069581"
 dependencies = [
  "libc",
- "zstd-sys",
-]
-
-[[package]]
-name = "zstd-safe"
-version = "7.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f49c4d5f0abb602a93fb8736af2a4f4dd9512e36f7f570d66e65ff867ed3b9d"
-dependencies = [
  "zstd-sys",
 ]
 
