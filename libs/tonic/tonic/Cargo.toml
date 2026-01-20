@@ -113,7 +113,7 @@ tower = { path = "../../../libs/tower/tower", default-features = false, features
   "timeout",
   "util",
 ], optional = true }
-axum = { path = "../../../3rd_party/axum/axum", default-features = false, optional = true }
+axum = { version = "0.6.20", default-features = false, optional = true }
 
 # rustls
 async-stream = { version = "0.3", optional = true }
