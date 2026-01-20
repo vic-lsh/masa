@@ -5,6 +5,7 @@ Synthetic application plugin.
 import json
 import logging
 import re
+import shutil
 import shlex
 import subprocess
 import tempfile
@@ -378,7 +379,8 @@ class SyntheticApp(AppPlugin):
         # Build depends_on list for all call graph services
         # Use "local-{service-id}-service" naming to match service names
         depends_on = [
-            f"local-{svc['id'].lower()}-service" for svc in call_graph["services"]
+            f"local-{svc['id'].lower().replace('_', '-')}-service"
+            for svc in call_graph["services"]
         ]
         services["synthetic-frontend-service"] = {
             "image": f"synthetic_frontend:{image_tag}",
@@ -399,7 +401,9 @@ class SyntheticApp(AppPlugin):
         # Use "local-{service-id}-service" naming to match frontend expectations
         for service_def in call_graph["services"]:
             service_id = service_def["id"]
-            service_name = f"local-{service_id.lower()}-service"
+            # Sanitise service ID for Docker/K8s compatibility (no underscores)
+            service_id_clean = service_id.lower().replace("_", "-")
+            service_name = f"local-{service_id_clean}-service"
             replicas = service_def.get("replicas", 1)
 
             services[service_name] = {
@@ -533,7 +537,8 @@ class SyntheticApp(AppPlugin):
             call_graph = app_config["call_graph"]
             for service_def in call_graph.get("services", []):
                 service_id = service_def["id"]
-                service_name = f"local-{service_id.lower()}-service"
+                service_id_clean = service_id.lower().replace("_", "-")
+                service_name = f"local-{service_id_clean}-service"
                 replicas = service_def.get("replicas", 1)
 
                 # Generate container names for each replica
@@ -598,6 +603,46 @@ class SyntheticApp(AppPlugin):
             Docker image tag string
         """
         return normalize_features_to_tag(features)
+
+    def _load_images_into_kind(self, images: list[str]) -> None:
+        """
+        Load docker images into Kind cluster if running against Kind.
+        """
+        # Check if kind is installed
+        if shutil.which("kind") is None:
+            return
+
+        # Check if we are running against kind
+        try:
+            # Check current context
+            result = subprocess.run(
+                ["kubectl", "config", "current-context"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            context = result.stdout.strip()
+
+            # Heuristic: Kind contexts usually start with "kind-"
+            if not context.startswith("kind-"):
+                return
+
+            # Extract cluster name (kind-kind -> kind)
+            cluster_name = context[5:]
+
+            logger.info(
+                f"Detected Kind cluster '{cluster_name}', loading images: {images}"
+            )
+
+            for image in images:
+                logger.info(f"Loading {image} into Kind...")
+                subprocess.run(
+                    ["kind", "load", "docker-image", image, "--name", cluster_name],
+                    check=True,
+                )
+
+        except (subprocess.CalledProcessError, Exception) as e:
+            logger.warning(f"Failed to load images into Kind: {e}")
 
     def run_workload(
         self,
@@ -766,6 +811,20 @@ class SyntheticApp(AppPlugin):
             gen_config_path=template_gen_config_path,
             dry_run=False,
         )
+
+        if is_k8s:
+            # Load images into Kind if needed
+            tag = self.get_image_tag(policy)
+            suffix = f":{tag}" if tag else ":latest"
+            images_to_load = [
+                f"{binary}{suffix}"
+                for binary in [
+                    "synthetic_frontend",
+                    "synthetic_child",
+                    "synthetic_client_bench",
+                ]
+            ]
+            self._load_images_into_kind(images_to_load)
 
         # Initialize CPU monitor
         cpu_stats_file = output_dir / "cpu_stats.csv"

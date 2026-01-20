@@ -69,7 +69,9 @@ impl FrontendImpl {
                 for service in &call_graph.services {
                     // Service name matches the compose file service name: "local-{service-id}-service"
                     // Docker Compose creates containers like: {project}-local-{service-id}-service-1, -2, etc.
-                    let base_service_name = format!("local-{}-service", service.id.to_lowercase());
+                    // Note: K8s service names cannot contain underscores, so we replace them with hyphens.
+                    let service_id_clean = service.id.to_lowercase().replace("_", "-");
+                    let base_service_name = format!("local-{}-service", service_id_clean);
                     let hostname_base = if let Some(ref project) = project_name {
                         format!("{}-{}", project, base_service_name)
                     } else {
@@ -106,6 +108,8 @@ impl FrontendImpl {
                 }
                 let mut children = Vec::new();
                 let mut start_id = 1;
+                let is_k8s = std::env::var("KUBERNETES_SERVICE_HOST").is_ok();
+
                 for svc in &random_services {
                     let base_service_name = "local-child-service";
                     let hostname_base = if let Some(ref project) = project_name {
@@ -114,10 +118,19 @@ impl FrontendImpl {
                         base_service_name.to_string()
                     };
 
-                    children.push(ChildClient::new(
+                    let channel = if is_k8s {
+                        LoadBalancedChannel::new_from_service_name(
+                            hostname_base,
+                            8000,
+                            svc.replicas,
+                        )
+                        .await
+                    } else {
                         LoadBalancedChannel::new_from(hostname_base, 8000, svc.replicas, start_id)
-                            .await,
-                    ));
+                            .await
+                    };
+
+                    children.push(ChildClient::new(channel));
                     start_id += svc.replicas;
                 }
 

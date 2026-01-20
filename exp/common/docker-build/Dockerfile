@@ -47,7 +47,8 @@ RUN apt-get update
 
 # Install runtime dependencies
 RUN apt-get install -y\
-  libssl-dev
+  libssl-dev\
+  tar
 
 # Copy entrypoint script
 COPY exp/common/docker-build/entrypoint.sh /usr/entrypoint.sh

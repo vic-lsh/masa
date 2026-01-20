@@ -5,16 +5,16 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ $.Release.Name }}-child-{{ .id | lower }}
+  name: {{ $.Release.Name }}-child-{{ .id | lower | replace "_" "-" }}
 spec:
   replicas: {{ .replicas | default 1 }}
   selector:
     matchLabels:
-      app: {{ $.Release.Name }}-child-{{ .id | lower }}
+      app: {{ $.Release.Name }}-child-{{ .id | lower | replace "_" "-" }}
   template:
     metadata:
       labels:
-        app: {{ $.Release.Name }}-child-{{ .id | lower }}
+        app: {{ $.Release.Name }}-child-{{ .id | lower | replace "_" "-" }}
     spec:
       containers:
         - name: child
@@ -43,11 +43,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: local-{{ .id | lower }}-service
+  name: local-{{ .id | lower | replace "_" "-" }}-service
 spec:
   type: ClusterIP
   selector:
-    app: {{ $.Release.Name }}-child-{{ .id | lower }}
+    app: {{ $.Release.Name }}-child-{{ .id | lower | replace "_" "-" }}
   ports:
     - protocol: TCP
       port: 8000
