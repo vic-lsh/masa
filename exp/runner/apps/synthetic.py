@@ -131,6 +131,13 @@ class K8sSyntheticLoadGenerator(LoadGenerator):
                 {"name": "config", "configMap": {"name": config_map_name}}
             ]
 
+        # Keep pod alive after loadgen finishes so we can copy traces
+        pod_manifest["spec"]["containers"][0]["command"] = [
+            "/bin/bash",
+            "-c",
+            "/usr/entrypoint.sh; echo 'Loadgen finished'; sleep infinity",
+        ]
+
         manifest_path = output_dir / "loadgen_pod.yaml"
         with open(manifest_path, "w") as f:
             yaml.dump(pod_manifest, f)
@@ -158,17 +165,30 @@ class K8sSyntheticLoadGenerator(LoadGenerator):
                 check=False,
             )
 
-            # Stream logs to file while waiting?
-            # Or just wait for Pod to finish?
-            # `kubectl wait --for=condition=Complete` (only for Jobs?)
-            # For Pods, we can watch status.
-
-            # Simplified: follow logs until exit.
+            # Stream logs and wait for completion marker
             log_file = output_dir / "loadgen.log"
             with open(log_file, "w") as f:
-                subprocess.run(
-                    ["kubectl", "logs", "-f", pod_name], stdout=f, check=True
+                proc = subprocess.Popen(
+                    ["kubectl", "logs", "-f", pod_name],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
                 )
+
+                try:
+                    for line in proc.stdout:
+                        f.write(line)
+                        f.flush()
+                        # Check for completion marker from load_gen.rs or our echo
+                        if "Load generator done" in line or "Loadgen finished" in line:
+                            logger.info("Load generator finished successfully")
+                            break
+                finally:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=1)
+                    except TimeoutError:
+                        proc.kill()
 
             # Copy traces
             self._copy_traces(pod_name, output_dir)
@@ -222,6 +242,10 @@ class K8sSyntheticLoadGenerator(LoadGenerator):
 
         except subprocess.CalledProcessError as e:
             logger.warning(f"Failed to copy traces from pod: {e}")
+            if e.stderr:
+                logger.warning(f"kubectl cp stderr: {e.stderr.decode('utf-8')}")
+            if e.stdout:
+                logger.warning(f"kubectl cp stdout: {e.stdout.decode('utf-8')}")
 
 
 class SyntheticLoadGenerator(LoadGenerator):
@@ -329,11 +353,11 @@ class SyntheticApp(AppPlugin):
                 protocol = "http"
                 port = "8000"
 
-            # Use the service name from Docker Compose (synthetic-frontend-service)
+            # Use the service name from Docker Compose (synthetic-frontend)
             # Docker Compose DNS resolution uses service names, not container names
-            # The container will be named {project_name}-synthetic-frontend-service-1
+            # The container will be named {project_name}-synthetic-frontend-1
             # but DNS resolution uses the service name
-            config["Addr"] = f"{protocol}://synthetic-frontend-service:{port}"
+            config["Addr"] = f"{protocol}://synthetic-frontend:{port}"
 
         # Write to file
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -377,12 +401,11 @@ class SyntheticApp(AppPlugin):
 
         # Add frontend service
         # Build depends_on list for all call graph services
-        # Use "local-{service-id}-service" naming to match service names
+        # Use "{service-id}" naming to match service names (sanitized)
         depends_on = [
-            f"local-{svc['id'].lower().replace('_', '-')}-service"
-            for svc in call_graph["services"]
+            f"{svc['id'].lower().replace('_', '-')}" for svc in call_graph["services"]
         ]
-        services["synthetic-frontend-service"] = {
+        services["synthetic-frontend"] = {
             "image": f"synthetic_frontend:{image_tag}",
             "restart": "always",
             "networks": ["synthetic_network"],
@@ -398,12 +421,12 @@ class SyntheticApp(AppPlugin):
         }
 
         # Add one service per call graph service
-        # Use "local-{service-id}-service" naming to match frontend expectations
+        # Use "{service-id}" naming to match frontend expectations (sanitized)
         for service_def in call_graph["services"]:
             service_id = service_def["id"]
             # Sanitise service ID for Docker/K8s compatibility (no underscores)
             service_id_clean = service_id.lower().replace("_", "-")
-            service_name = f"local-{service_id_clean}-service"
+            service_name = f"{service_id_clean}"
             replicas = service_def.get("replicas", 1)
 
             services[service_name] = {
@@ -538,12 +561,12 @@ class SyntheticApp(AppPlugin):
             for service_def in call_graph.get("services", []):
                 service_id = service_def["id"]
                 service_id_clean = service_id.lower().replace("_", "-")
-                service_name = f"local-{service_id_clean}-service"
+                service_name = f"{service_id_clean}"
                 replicas = service_def.get("replicas", 1)
 
                 # Generate container names for each replica
                 # Docker compose naming: {project}-{service}-{replica_number}
-                # Service names use "local-{service_id}-service" to match frontend expectations
+                # Service names use "{service_id}" to match frontend expectations
                 for i in range(1, replicas + 1):
                     # Docker compose creates containers like: {project}-{service}-{i}
                     # We use a pattern that matches what docker compose generates
@@ -554,7 +577,7 @@ class SyntheticApp(AppPlugin):
 
             # Generate container names for each child replica
             for i in range(1, child_replicas + 1):
-                container_names.append(f"local-child-service-{i}")
+                container_names.append(f"child-{i}")
 
         return container_names
 
@@ -714,7 +737,7 @@ class SyntheticApp(AppPlugin):
         if is_k8s:
             # For K8s, we rely on K8s DNS
             # Assuming load generator runs in the same namespace
-            # Frontend service: synthetic-frontend-service
+            # Frontend service: synthetic-frontend
             # We need to update gen_config.json to point to this service
             # We can reuse _generate_gen_config but might need tweaking
             self._generate_gen_config(
@@ -722,7 +745,7 @@ class SyntheticApp(AppPlugin):
                 output_path=gen_config_path,
                 project_name=project_name,
             )
-            # Override Addr for K8s if needed, but _generate_gen_config sets it to synthetic-frontend-service:8000
+            # Override Addr for K8s if needed, but _generate_gen_config sets it to synthetic-frontend:8000
             # which is correct for K8s service too.
         else:
             self._generate_gen_config(

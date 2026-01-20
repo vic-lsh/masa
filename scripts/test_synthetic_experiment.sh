@@ -8,11 +8,16 @@ exp_names=()
 no_cache=""
 
 # Parse arguments
+deploy_mode_arg=""
 while [[ $# -gt 0 ]]; do
     case $1 in
     --no-cache)
         no_cache="--no-cache"
         shift 1
+        ;;
+    --deploy-mode)
+        deploy_mode_arg="$2"
+        shift 2
         ;;
     ci|ci_call_graph)
         exp_names+=("$1")
@@ -20,7 +25,7 @@ while [[ $# -gt 0 ]]; do
         ;;
     *)
         echo "Unknown argument: $1" >&2
-        echo "Usage: $0 [ci|ci_call_graph] [--no-cache]" >&2
+        echo "Usage: $0 [ci|ci_call_graph] [--no-cache] [--deploy-mode <docker|k8s>]" >&2
         exit 1
         ;;
     esac
@@ -63,8 +68,9 @@ assert_path_exists() {
 
 run_test() {
     local exp_name="$1"
+    local deploy_mode="$2"
     echo "--------------------------------------------------"
-    echo "Running test for experiment: $exp_name"
+    echo "Running test for experiment: $exp_name (mode: $deploy_mode)"
     echo "--------------------------------------------------"
 
     local config_dir="$exp_dir/data/in/$exp_name"
@@ -92,7 +98,7 @@ run_test() {
 
     echo "Running synthetic experiment: $exp_name"
     cd "$repo_root"
-    ./exp/synthetic/scripts/run-experiment.sh "$exp_name" $no_cache
+    ./exp/synthetic/scripts/run-experiment.sh "$exp_name" --deploy-mode "$deploy_mode" $no_cache
 
     echo "Validating experiment output..."
 
@@ -128,11 +134,24 @@ run_test() {
     cd "$repo_root"
     python -m exp.runner plot synthetic "$exp_name"
 
-    echo "Test for $exp_name passed."
+    echo "Test for $exp_name ($deploy_mode) passed."
 }
 
+deploy_modes=()
+if [ -n "$deploy_mode_arg" ]; then
+    deploy_modes+=("$deploy_mode_arg")
+else
+    deploy_modes+=("docker")
+    # Only run k8s if kubectl is available
+    if command -v kubectl >/dev/null 2>&1; then
+        deploy_modes+=("k8s")
+    fi
+fi
+
 for exp in "${exp_names[@]}"; do
-    run_test "$exp"
+    for mode in "${deploy_modes[@]}"; do
+        run_test "$exp" "$mode"
+    done
 done
 
 echo "All synthetic CI experiment tests passed."

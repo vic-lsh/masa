@@ -67,11 +67,11 @@ impl FrontendImpl {
 
                 let mut services_to_connect = Vec::new();
                 for service in &call_graph.services {
-                    // Service name matches the compose file service name: "local-{service-id}-service"
-                    // Docker Compose creates containers like: {project}-local-{service-id}-service-1, -2, etc.
+                    // Service name matches the compose file service name: "{service-id}"
+                    // Docker Compose creates containers like: {project}-{service-id}-1, -2, etc.
                     // Note: K8s service names cannot contain underscores, so we replace them with hyphens.
                     let service_id_clean = service.id.to_lowercase().replace("_", "-");
-                    let base_service_name = format!("local-{}-service", service_id_clean);
+                    let base_service_name = service_id_clean;
                     let hostname_base = if let Some(ref project) = project_name {
                         format!("{}-{}", project, base_service_name)
                     } else {
@@ -111,7 +111,7 @@ impl FrontendImpl {
                 let is_k8s = std::env::var("KUBERNETES_SERVICE_HOST").is_ok();
 
                 for svc in &random_services {
-                    let base_service_name = "local-child-service";
+                    let base_service_name = "child";
                     let hostname_base = if let Some(ref project) = project_name {
                         format!("{}-{}", project, base_service_name)
                     } else {

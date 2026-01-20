@@ -43,7 +43,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: local-{{ .id | lower | replace "_" "-" }}-service
+  name: {{ .id | lower | replace "_" "-" }}
 spec:
   type: ClusterIP
   selector:
@@ -94,7 +94,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: local-child-service
+  name: child
 spec:
   type: ClusterIP
   selector:

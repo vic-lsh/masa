@@ -3,6 +3,7 @@ test_synthetic_experiment:
   parallel:
     matrix:
       - EXP_NAME: [ci, ci_call_graph]
+        DEPLOY_MODE: [docker, k8s]
   cache:
     key:
       files:
@@ -21,4 +22,4 @@ test_synthetic_experiment:
     - on-host
   script:
     - groups $(whoami) # make sure that gitlab runner is in the 'docker' group
-    - ./scripts/test_synthetic_experiment.sh $EXP_NAME
+    - ./scripts/test_synthetic_experiment.sh $EXP_NAME --deploy-mode $DEPLOY_MODE

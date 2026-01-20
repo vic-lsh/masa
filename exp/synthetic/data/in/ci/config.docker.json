@@ -1,17 +1,32 @@
 {
-    "child_constant_replicas": 1,
-    "child_constant_latency": 500,
-    "child_constant_latency_slowdown_duration": 200,
-    "child_random_latency": {
-        "Discrete": {
-            "weights": [
-                0.95,
-                0.05
-            ],
-            "values": [
-                5000,
-                30000
-            ]
+    "child_services": [
+        {
+            "id": "child",
+            "replicas": 1
         }
-    }
+    ],
+    "request_a_hops": [
+        {
+            "service_id": "child",
+            "duration_us": 500,
+            "busy_spin_dur_us": 0
+        },
+        {
+            "service_id": "child",
+            "duration_us": 500,
+            "busy_spin_dur_us": 0
+        }
+    ],
+    "request_b_hops": [
+        {
+            "service_id": "child",
+            "duration_us": 500,
+            "busy_spin_dur_us": 0
+        },
+        {
+            "service_id": "child",
+            "duration_us": 500,
+            "busy_spin_dur_us": 0
+        }
+    ]
 }
