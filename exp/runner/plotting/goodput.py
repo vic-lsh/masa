@@ -217,6 +217,57 @@ def compute_slo_miss_by_request_type(df):
     return miss_by_type
 
 
+def _print_goodput_table(
+    apis: list[str],
+    policies: list[str],
+    rps_values: list,
+    policy_goodputs: list,
+    repeats: int,
+) -> None:
+    if repeats <= 0:
+        return
+
+    sorted_policies = sort_policies_by_type(policies)
+    rps_headers = [str(rps) for rps in rps_values]
+
+    for api in apis:
+        rows = []
+        for policy in sorted_policies:
+            values = []
+            for rps_idx in range(len(rps_values)):
+                per_repeat = []
+                for i in range(repeats):
+                    per_api = policy_goodputs[i].get(api, {})
+                    per_policy = per_api.get(policy, [])
+                    if rps_idx < len(per_policy):
+                        per_repeat.append(float(per_policy[rps_idx] or 0.0))
+                avg = sum(per_repeat) / len(per_repeat) if per_repeat else 0.0
+                values.append(f"{avg:.2f}")
+            rows.append([get_policy_display_name(policy)] + values)
+
+        if not rows:
+            continue
+
+        col_headers = ["Policy"] + rps_headers
+        col_widths = [len(h) for h in col_headers]
+        for row in rows:
+            for idx, cell in enumerate(row):
+                col_widths[idx] = max(col_widths[idx], len(cell))
+
+        separator = "+".join("-" * (w + 2) for w in col_widths)
+        print(f"\nGoodput (avg over {repeats} run(s)) for API: {api}")
+        print(separator)
+        header_row = "|".join(
+            f" {col_headers[i].ljust(col_widths[i])} " for i in range(len(col_headers))
+        )
+        print(header_row)
+        print(separator)
+        for row in rows:
+            line = "|".join(f" {row[i].ljust(col_widths[i])} " for i in range(len(row)))
+            print(line)
+        print(separator)
+
+
 def _style_axes(ax):
     ax.grid(axis="y", linestyle="--", alpha=0.4)
     ax.spines["top"].set_visible(False)
@@ -417,13 +468,13 @@ def _plot_early_return_breakdown(
         labels,
         title=legend_title,
         frameon=False,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 1.02),
-        ncols=len(request_types),
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.02),
+        ncols=min(4, len(request_types)),
     )
 
     fig.suptitle(title, fontsize=14, y=0.98)
-    fig.tight_layout(rect=[0, 0, 1, 0.90])
+    fig.tight_layout(rect=[0, 0.06, 1, 0.92])
     fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -457,7 +508,7 @@ def _plot_early_return_total(
     ax.set_xticklabels([str(rps) for rps in rps_values])
     ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
     _style_axes(ax)
-    fig.tight_layout()
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -1144,6 +1195,8 @@ def generate_plots(args) -> None:
     if all_hop_types:
         sorted_hop_types = sorted(all_hop_types)
         hop_color_mapping = _get_request_type_colors_mapping(sorted_hop_types)
+
+    _print_goodput_table(apis, policies, rps_values, policy_goodputs, repeats)
 
     # Generate plots in parallel
     with ThreadPoolExecutor() as executor:
