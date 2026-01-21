@@ -168,183 +168,6 @@ def compute_early_return_breakdown(df):
     return breakdown
 
 
-def _plot_early_return_breakdown(
-    output_path: str,
-    *,
-    policies: list[str],
-    rps_values: list,
-    policy_total_early_returns: dict,
-    policy_early_returns_breakdown: dict,
-    title: str,
-) -> None:
-    """
-    Generate breakdown plot for early-return requests by Service::Method:
-      - Plot: small multiples (one subplot per policy) with stacked bars
-      - Color: Service
-      - Hatch: Method
-    """
-    sorted_policies = sort_policies_by_type(policies)
-    rps_values = list(rps_values)
-    x = np.arange(len(rps_values))
-
-    # Collect all unique Services and Methods to assign consistent colors/hatches
-    all_services = set()
-    all_methods = set()
-
-    for p in sorted_policies:
-        per_rps = policy_early_returns_breakdown.get(p, [])
-        for d in per_rps:
-            for key in (d or {}).keys():
-                if "::" in key:
-                    svc, mth = key.split("::", 1)
-                    all_services.add(svc)
-                    all_methods.add(mth)
-
-    sorted_services = sorted(all_services)
-    sorted_methods = sorted(all_methods)
-
-    # Color mapping for services
-    svc_cmap = plt.get_cmap("tab10" if len(sorted_services) <= 10 else "tab20")
-    service_colors = {
-        svc: svc_cmap(i % svc_cmap.N) for i, svc in enumerate(sorted_services)
-    }
-
-    # Hatch mapping for methods
-    hatches = ["", "///", "\\\\", "|||", "---", "+++", "xxx", "ooo", "...", "***"]
-    method_hatches = {
-        mth: hatches[i % len(hatches)] for i, mth in enumerate(sorted_methods)
-    }
-
-    # Generate output path
-    breakdown_path = output_path.replace(".png", "_breakdown.png")
-
-    # ===== Plot: Breakdown by Service::Method =====
-    n = len(sorted_policies)
-    ncols = min(3, max(1, n))
-    nrows = int(np.ceil(n / ncols))
-    fig, axes = plt.subplots(
-        nrows, ncols, figsize=(15, 4 + 2.8 * nrows), sharex=True, sharey=True
-    )
-
-    if n == 1:
-        axes = [axes]
-    elif nrows == 1:
-        axes = axes if isinstance(axes, np.ndarray) else [axes]
-    else:
-        axes = axes.flatten()
-
-    # Global y-limit
-    global_max = 0.0
-    for p in sorted_policies:
-        vals = policy_total_early_returns.get(p, [])
-        if vals:
-            global_max = max(global_max, max(float(v or 0.0) for v in vals))
-    if global_max <= 0:
-        global_max = 1.0
-    ymax = global_max * 1.08
-
-    for idx, policy in enumerate(sorted_policies):
-        ax = axes[idx]
-        _style_axes(ax)
-
-        bottom = np.zeros(len(rps_values))
-        per_rps = policy_early_returns_breakdown.get(policy, [])
-
-        # Iterate over all possible (Service, Method) pairs to maintain stack order?
-        # Or just iterate over present keys?
-        # To be safe and consistent, let's iterate over sorted keys present in this policy
-        # Actually, let's sort by Service then Method
-        present_keys = set()
-        for d in per_rps:
-            present_keys.update((d or {}).keys())
-
-        sorted_keys = sorted(present_keys)
-
-        for key in sorted_keys:
-            svc, mth = key.split("::", 1)
-            values = []
-            for i in range(len(rps_values)):
-                if i < len(per_rps) and per_rps[i] is not None:
-                    values.append(float(per_rps[i].get(key, 0.0) or 0.0))
-                else:
-                    values.append(0.0)
-
-            ax.bar(
-                x,
-                values,
-                bottom=bottom,
-                width=0.78,
-                color=service_colors.get(svc, "grey"),
-                hatch=method_hatches.get(mth, ""),
-                edgecolor="white",
-                linewidth=0.4,
-                label=key,  # Label will be used for legend later if we wanted per-item legend
-            )
-            bottom += np.array(values)
-
-        ax.set_title(get_policy_display_name(policy), fontsize=11)
-        ax.set_ylim(0, ymax)
-        ax.set_xticks(x)
-        ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
-        ax.set_xlabel("RPS")
-        ax.set_ylabel("Early-return rate (req/s)")
-
-    # Hide unused subplots
-    for idx in range(n, len(axes)):
-        axes[idx].set_visible(False)
-
-    # Double Legend: One for Services (Colors), One for Methods (Hatches)
-    # Create proxy artists
-    service_handles = [
-        matplotlib.patches.Patch(
-            facecolor=service_colors[svc], label=svc, edgecolor="black", linewidth=0.5
-        )
-        for svc in sorted_services
-    ]
-    method_handles = [
-        matplotlib.patches.Patch(
-            facecolor="white",
-            hatch=method_hatches[mth],
-            label=mth,
-            edgecolor="black",
-            linewidth=0.5,
-        )
-        for mth in sorted_methods
-    ]
-
-    # Legend 1: Services
-    if service_handles:
-        legend1 = fig.legend(
-            service_handles,
-            sorted_services,
-            title="Service (Color)",
-            frameon=False,
-            loc="upper center",
-            bbox_to_anchor=(0.3, 1.02),
-            ncols=min(4, len(sorted_services)),
-        )
-        fig.add_artist(legend1)
-
-    # Legend 2: Methods
-    if method_handles:
-        fig.legend(
-            method_handles,
-            sorted_methods,
-            title="Method (Hatch)",
-            frameon=False,
-            loc="upper center",
-            bbox_to_anchor=(0.7, 1.02),
-            ncols=min(4, len(sorted_methods)),
-        )
-
-    fig.suptitle(
-        title, fontsize=14, y=1.05
-    )  # Moved up slightly to make room for legends
-    fig.tight_layout(rect=[0, 0, 1, 0.90])
-    fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
-
-
 def compute_slo_miss_by_request_type(df):
     """Compute SLO miss rate broken down by request type (api column).
 
@@ -1464,8 +1287,10 @@ def generate_plots(args) -> None:
                                 policies=policies,
                                 rps_values=rps_values,
                                 policy_total_early_returns=total_early_returns,
-                                policy_early_returns_breakdown=early_returns_by_type,
+                                policy_early_returns_by_type=early_returns_by_type,
                                 title="Early-return requests breakdown by Service::Method",
+                                request_type_color_mapping=request_type_color_mapping,
+                                legend_title="Service::Method",
                             )
                         )
 
@@ -1567,8 +1392,10 @@ def generate_plots(args) -> None:
                         policies=policies,
                         rps_values=rps_values,
                         policy_total_early_returns=avg_total_early_returns,
-                        policy_early_returns_breakdown=avg_breakdown,
+                        policy_early_returns_by_type=avg_breakdown,
                         title=f"Average early-return requests breakdown by Service::Method (averaged over {repeats} run(s))",
+                        request_type_color_mapping=request_type_color_mapping,
+                        legend_title="Service::Method",
                     )
                 )
 
