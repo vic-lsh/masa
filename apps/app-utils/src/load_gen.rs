@@ -599,24 +599,18 @@ where
 
                 if trace {
                     // increment the right counters
-                    match error.as_str() {
-                        "/None" => {
-                            ctrs.increment("good");
-                        }
-                        "/ClientMiss" => {
-                            ctrs.increment("deadline_miss");
-                        }
-                        "/EarlyReturn" => {
-                            ctrs.increment("early_return");
-                        }
-                        "/ClientTimeout" => {
-                            ctrs.increment("timeout");
-                        }
-                        e => {
-                            ctrs.increment("unexpected");
-                            log::error!("unexpected request error '{}'", e);
-                        }
-                    };
+                    if error == "/None" {
+                        ctrs.increment("good");
+                    } else if error == "/ClientMiss" {
+                        ctrs.increment("deadline_miss");
+                    } else if error == "/ClientTimeout" {
+                        ctrs.increment("timeout");
+                    } else if error.starts_with("/EarlyReturn") {
+                        ctrs.increment("early_return");
+                    } else {
+                        ctrs.increment("unexpected");
+                        log::error!("unexpected request error '{}'", error);
+                    }
                 }
             });
         }
