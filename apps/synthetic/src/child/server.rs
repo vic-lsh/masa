@@ -8,7 +8,7 @@ use tokio::runtime::current_thread_queue_len;
 use tonic::{Request, Response, Status};
 
 use crate::bootstrap::ConnectionBootstrap;
-use crate::config::{parse_call_sequences, CallTarget, ServiceMethod, SyntheticConfig};
+use crate::config::{resolve_call_graphs, CallTarget, ServiceMethod, SyntheticConfig};
 use crate::service_registry::ServiceRegistry;
 use crate::tonic::{child, child::child_server::Child};
 use crate::util::{should_make_call, simulate_work};
@@ -38,73 +38,60 @@ impl ChildImpl {
             }
         });
 
-        // Handle call graph configuration
-        let (call_graph, service_id, service_registry) = if let Some(mut call_graph) =
-            config.call_graph
-        {
-            // Parse and validate call sequences
-            if let Err(e) = parse_call_sequences(&mut call_graph) {
-                panic!("Failed to parse call graph: {}", e);
-            }
+        let resolved = resolve_call_graphs(&config)
+            .unwrap_or_else(|e| panic!("Failed to resolve call graphs: {}", e));
 
-            // Build connection info for service registry
-            // Docker Compose creates containers with names like: {project}-{service}-{replica_number}
-            // We need to connect to individual replica endpoints: {project}-local-{service-id}-service-1, -2, etc.
-            // Read project name from environment variable (set by exp.runner)
-            let project_name = std::env::var("DOCKER_COMPOSE_PROJECT_NAME")
-                .ok()
-                .filter(|s| !s.is_empty());
+        // Build connection info for service registry
+        // Docker Compose creates containers with names like: {project}-{service}-{replica_number}
+        // We need to connect to individual replica endpoints: {project}-local-{service-id}-service-1, -2, etc.
+        // Read project name from environment variable (set by exp.runner)
+        let project_name = std::env::var("DOCKER_COMPOSE_PROJECT_NAME")
+            .ok()
+            .filter(|s| !s.is_empty());
 
-            let registry = ServiceRegistry::new();
-            let mut services_to_connect = Vec::new();
-            for service in &call_graph.services {
-                // Service name matches the compose file service name: "local-{service-id}-service"
-                // Docker Compose creates containers like: {project}-local-{service-id}-service-1, -2, etc.
-                let base_service_name = format!("local-{}-service", service.id.to_lowercase());
-                let hostname_base = if let Some(ref project) = project_name {
-                    format!("{}-{}", project, base_service_name)
-                } else {
-                    base_service_name
-                };
-                services_to_connect.push((service.id.clone(), hostname_base, service.replicas));
-            }
+        let registry = ServiceRegistry::new();
+        let mut services_to_connect = Vec::new();
+        for service in &resolved.services {
+            // Service name matches the compose file service name: "local-{service-id}-service"
+            // Docker Compose creates containers like: {project}-local-{service-id}-service-1, -2, etc.
+            let base_service_name = format!("local-{}-service", service.id.to_lowercase());
+            let hostname_base = if let Some(ref project) = project_name {
+                format!("{}-{}", project, base_service_name)
+            } else {
+                base_service_name
+            };
+            services_to_connect.push((service.id.clone(), hostname_base, service.replicas));
+        }
 
-            // Spawn bootstrap task to connect asynchronously
-            if !services_to_connect.is_empty() {
-                let bootstrap = ConnectionBootstrap::new(services_to_connect, registry.clients());
-                bootstrap.spawn();
-            }
+        // Spawn bootstrap task to connect asynchronously
+        if !services_to_connect.is_empty() {
+            let bootstrap = ConnectionBootstrap::new(services_to_connect, registry.clients());
+            bootstrap.spawn();
+        }
 
-            // Determine current service ID from environment variable
-            // This should be set when deploying the service
-            let current_service_id = std::env::var("SERVICE_ID")
-                .ok()
-                .or_else(|| {
-                    // Fallback: try to infer from hostname
-                    // In docker compose, hostname might be like "synthetic-child-service-1"
-                    // For now, we'll require SERVICE_ID to be set explicitly
-                    None
-                })
-                .expect("SERVICE_ID environment variable must be set when using call graph");
-
-            (Some(call_graph), Some(current_service_id), Some(registry))
-        } else {
-            (None, None, None)
-        };
+        // Determine current service ID from environment variable
+        // This should be set when deploying the service
+        let current_service_id = std::env::var("SERVICE_ID")
+            .ok()
+            .or_else(|| {
+                // Fallback: try to infer from hostname
+                // In docker compose, hostname might be like "synthetic-child-service-1"
+                // For now, we'll require SERVICE_ID to be set explicitly
+                None
+            })
+            .expect("SERVICE_ID environment variable must be set when using call graph");
 
         // Pre-compute method lookup table
         let mut method_lookup = HashMap::new();
-        if let Some(ref cg) = call_graph {
-            for service in &cg.services {
-                for method in &service.methods {
-                    method_lookup.insert((service.id.clone(), method.name.clone()), method.clone());
-                }
+        for service in &resolved.services {
+            for method in &service.methods {
+                method_lookup.insert((service.id.clone(), method.name.clone()), method.clone());
             }
         }
 
         ChildImpl {
-            _service_id: service_id,
-            service_registry,
+            _service_id: Some(current_service_id),
+            service_registry: Some(registry),
             method_lookup,
         }
     }

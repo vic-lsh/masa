@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::distribution::LatencyDistribution;
 use serde::{Deserialize, Serialize};
@@ -52,17 +52,28 @@ pub struct CallGraphConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallGraphSpec {
+    pub entry_point: String,
+    #[serde(default)]
+    pub services: Vec<ServiceDefinition>,
+    #[serde(default)]
+    pub service_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiSpec {
+    pub name: String,
+    pub call_graph: String,
+    pub traffic_weight: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyntheticConfig {
-    #[serde(default)]
-    pub child_services: Vec<ChildService>,
-    #[serde(default)]
-    pub request_a_hops: Vec<RequestHop>,
-    #[serde(default)]
-    pub request_b_hops: Vec<RequestHop>,
+    pub services: Vec<ServiceDefinition>,
+    pub call_graphs: HashMap<String, CallGraphSpec>,
+    pub apis: Vec<ApiSpec>,
     #[serde(default = "onef64")]
     pub child_cpus_per_replica: f64,
-    #[serde(default)]
-    pub call_graph: Option<CallGraphConfig>,
 }
 
 fn one_u8() -> u8 {
@@ -89,30 +100,30 @@ pub fn parse_service_method(s: &str) -> Result<CallTarget, String> {
 }
 
 /// Validate that all referenced services and methods exist in the call graph
-pub fn validate_call_graph(config: &CallGraphConfig) -> Result<(), String> {
-    // Build a set of all valid service::method combinations
-    let mut valid_targets = HashMap::new();
-    for service in &config.services {
+pub struct ResolvedCallGraphs {
+    pub services: Vec<ServiceDefinition>,
+    pub api_entry_points: HashMap<String, CallTarget>,
+}
+
+fn build_target_set(services: &[ServiceDefinition]) -> HashSet<String> {
+    let mut targets = HashSet::new();
+    for service in services {
         for method in &service.methods {
-            let target = format!("{}::{}", service.id, method.name);
-            valid_targets.insert(target, (service.id.clone(), method.name.clone()));
+            targets.insert(format!("{}::{}", service.id, method.name));
         }
     }
+    targets
+}
 
-    // Validate entry_point
-    if !valid_targets.contains_key(&config.entry_point) {
-        return Err(format!(
-            "Entry point '{}' does not exist in call graph",
-            config.entry_point
-        ));
-    }
-
-    // Validate all call sequences
-    for service in &config.services {
+fn validate_call_sequences(
+    services: &[ServiceDefinition],
+    valid_targets: &HashSet<String>,
+) -> Result<(), String> {
+    for service in services {
         for method in &service.methods {
             for step in &method.call_sequence_raw {
                 for (target_str, _prob) in step {
-                    if !valid_targets.contains_key(target_str) {
+                    if !valid_targets.contains(target_str) {
                         return Err(format!(
                             "Service '{}' method '{}' references non-existent target '{}'",
                             service.id, method.name, target_str
@@ -122,17 +133,15 @@ pub fn validate_call_graph(config: &CallGraphConfig) -> Result<(), String> {
             }
         }
     }
-
     Ok(())
 }
 
-/// Parse and validate call sequences for all methods in a call graph config
-pub fn parse_call_sequences(config: &mut CallGraphConfig) -> Result<(), String> {
-    // First validate the graph structure
-    validate_call_graph(config)?;
-
-    // Parse all call sequences
-    for service in &mut config.services {
+fn parse_call_sequences_for_services(
+    services: &mut [ServiceDefinition],
+    valid_targets: &HashSet<String>,
+) -> Result<(), String> {
+    validate_call_sequences(services, valid_targets)?;
+    for service in services {
         for method in &mut service.methods {
             let mut parsed = Vec::new();
             for step in &method.call_sequence_raw {
@@ -146,80 +155,144 @@ pub fn parse_call_sequences(config: &mut CallGraphConfig) -> Result<(), String> 
             method.parsed_call_sequence = parsed;
         }
     }
-
     Ok(())
+}
+
+fn build_merged_services(config: &SyntheticConfig) -> Result<Vec<ServiceDefinition>, String> {
+    let mut services = Vec::new();
+    let mut seen = HashSet::new();
+
+    fn add_service(
+        services: &mut Vec<ServiceDefinition>,
+        seen: &mut HashSet<String>,
+        svc: &ServiceDefinition,
+    ) -> Result<(), String> {
+        if seen.contains(&svc.id) {
+            return Err(format!("Duplicate service id '{}'", svc.id));
+        }
+        seen.insert(svc.id.clone());
+        services.push(svc.clone());
+        Ok(())
+    }
+
+    for svc in &config.services {
+        add_service(&mut services, &mut seen, svc)?;
+    }
+
+    for graph in config.call_graphs.values() {
+        for svc in &graph.services {
+            add_service(&mut services, &mut seen, svc)?;
+        }
+        for svc_id in &graph.service_refs {
+            if !seen.contains(svc_id) {
+                return Err(format!(
+                    "Call graph references missing service id '{}'",
+                    svc_id
+                ));
+            }
+        }
+    }
+
+    Ok(services)
+}
+
+pub fn resolve_call_graphs(config: &SyntheticConfig) -> Result<ResolvedCallGraphs, String> {
+    if config.apis.is_empty() {
+        return Err("apis must not be empty".to_string());
+    }
+
+    let mut merged_services = build_merged_services(config)?;
+    let valid_targets = build_target_set(&merged_services);
+
+    let mut api_entry_points = HashMap::new();
+    let mut api_names = HashSet::new();
+    let mut has_weight = false;
+
+    for api in &config.apis {
+        if api.traffic_weight < 0.0 {
+            return Err(format!(
+                "API '{}' has negative traffic_weight",
+                api.name
+            ));
+        }
+        if api.traffic_weight > 0.0 {
+            has_weight = true;
+        }
+        if !api_names.insert(api.name.clone()) {
+            return Err(format!("Duplicate API name '{}'", api.name));
+        }
+
+        let graph = config
+            .call_graphs
+            .get(&api.call_graph)
+            .ok_or_else(|| format!("API '{}' references unknown call graph", api.name))?;
+
+        let entry_target = parse_service_method(&graph.entry_point)?;
+        let entry_key = format!("{}::{}", entry_target.service_id, entry_target.method_name);
+        if !valid_targets.contains(&entry_key) {
+            return Err(format!(
+                "Entry point '{}' does not exist in merged services",
+                graph.entry_point
+            ));
+        }
+
+        api_entry_points.insert(api.name.clone(), entry_target);
+    }
+
+    if !has_weight {
+        return Err("At least one api must have traffic_weight > 0".to_string());
+    }
+
+    validate_call_sequences(&merged_services, &valid_targets)?;
+    parse_call_sequences_for_services(&mut merged_services, &valid_targets)?;
+
+    Ok(ResolvedCallGraphs {
+        services: merged_services,
+        api_entry_points,
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        parse_call_sequences, parse_service_method, validate_call_graph, CallGraphConfig,
-        ServiceDefinition, ServiceMethod, SyntheticConfig,
-    };
+    use super::{parse_service_method, resolve_call_graphs, SyntheticConfig};
     use crate::distribution::LatencyDistribution;
-    use rand_distr::Exp;
     use serde_json::json;
 
-    fn exponential(lambda: f64) -> LatencyDistribution {
-        LatencyDistribution::Exponential {
-            lambda,
-            mean: None,
-            dist: Exp::new(lambda).unwrap(),
-        }
-    }
-
     #[test]
-    fn parses_request_hops_config() {
+    fn parses_exponential_with_mean() {
         let config = json!({
-            "child_services": [
-                { "id": "S1" },
-                { "id": "C6", "replicas": 2 }
+            "services": [
+                {
+                    "id": "MS_1",
+                    "replicas": 1,
+                    "methods": [
+                        {
+                            "name": "method1",
+                            "latency_distribution": {"Exponential": {"mean": 10000.0}},
+                            "call_sequence": []
+                        }
+                    ]
+                }
             ],
-            "request_a_hops": [
+            "call_graphs": {
+                "graph1": {
+                    "entry_point": "MS_1::method1",
+                    "services": [],
+                    "service_refs": ["MS_1"]
+                }
+            },
+            "apis": [
                 {
-                    "service_id": "S1",
-                    "duration_us": 12000,
-                    "busy_spin_dur_us": 3000
-                },
-                {
-                    "service_id": "C6",
-                    "busy_spin_dur_us": 1000
+                    "name": "api1",
+                    "call_graph": "graph1",
+                    "traffic_weight": 1.0
                 }
             ]
         });
 
         let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
-        assert_eq!(parsed.child_services.len(), 2);
-        assert_eq!(parsed.child_services[1].replicas, 2);
-        assert_eq!(parsed.request_a_hops.len(), 2);
-        assert_eq!(parsed.request_a_hops[0].duration_us, Some(12000));
-        assert_eq!(parsed.request_a_hops[0].busy_spin_dur_us, Some(3000));
-    }
-
-    #[test]
-    fn parses_exponential_with_mean() {
-        let config = json!({
-            "call_graph": {
-                "entry_point": "MS_1::method1",
-                "services": [
-                    {
-                        "id": "MS_1",
-                        "replicas": 1,
-                        "methods": [
-                            {
-                                "name": "method1",
-                                "latency_distribution": {"Exponential": {"mean": 10000.0}},
-                                "call_sequence": []
-                            }
-                        ]
-                    }
-                ]
-            }
-        });
-
-        let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
-        let call_graph = parsed.call_graph.as_ref().unwrap();
-        let method = &call_graph.services[0].methods[0];
+        let resolved = resolve_call_graphs(&parsed).expect("resolve call graphs");
+        let method = &resolved.services[0].methods[0];
         match &method.latency_distribution {
             LatencyDistribution::Exponential { lambda, mean, .. } => {
                 // mean = 10000, so lambda should be 1/10000 = 0.0001
@@ -233,27 +306,38 @@ mod tests {
     #[test]
     fn parses_exponential_with_both_mean_and_lambda_prefers_mean() {
         let config = json!({
-            "call_graph": {
-                "entry_point": "MS_1::method1",
-                "services": [
-                    {
-                        "id": "MS_1",
-                        "replicas": 1,
-                        "methods": [
-                            {
-                                "name": "method1",
-                                "latency_distribution": {"Exponential": {"lambda": 0.0002, "mean": 10000.0}},
-                                "call_sequence": []
-                            }
-                        ]
-                    }
-                ]
-            }
+            "services": [
+                {
+                    "id": "MS_1",
+                    "replicas": 1,
+                    "methods": [
+                        {
+                            "name": "method1",
+                            "latency_distribution": {"Exponential": {"lambda": 0.0002, "mean": 10000.0}},
+                            "call_sequence": []
+                        }
+                    ]
+                }
+            ],
+            "call_graphs": {
+                "graph1": {
+                    "entry_point": "MS_1::method1",
+                    "services": [],
+                    "service_refs": ["MS_1"]
+                }
+            },
+            "apis": [
+                {
+                    "name": "api1",
+                    "call_graph": "graph1",
+                    "traffic_weight": 1.0
+                }
+            ]
         });
 
         let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
-        let call_graph = parsed.call_graph.as_ref().unwrap();
-        let method = &call_graph.services[0].methods[0];
+        let resolved = resolve_call_graphs(&parsed).expect("resolve call graphs");
+        let method = &resolved.services[0].methods[0];
         match &method.latency_distribution {
             LatencyDistribution::Exponential { lambda, mean, .. } => {
                 // Should prefer mean, so lambda should be 1/10000 = 0.0001, not 0.0002
@@ -267,58 +351,72 @@ mod tests {
     #[test]
     fn parses_call_graph_config() {
         let config = json!({
-            "call_graph": {
-                "entry_point": "MS_56394::GqI6UW1mU4",
-                "services": [
-                    {
-                        "id": "MS_56394",
-                        "replicas": 1,
-                        "methods": [
-                            {
-                                "name": "GqI6UW1mU4",
-                                "latency_distribution": {"Exponential": {"lambda": 0.0001}},
-                                "call_sequence": []
-                            },
-                            {
-                                "name": "method1",
-                                "latency_distribution": {"Normal": {"mean": 10000.0, "std": 2000.0}},
-                                "call_sequence": [
-                                    {"MS_37691::y_DKOh-Gts": 1.0},
-                                    {"MS_37691::ykccIz2fkK": 1.0}
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        "id": "MS_37691",
-                        "replicas": 1,
-                        "methods": [
-                            {
-                                "name": "y_DKOh-Gts",
-                                "latency_distribution": {"Exponential": {"lambda": 0.0001}},
-                                "call_sequence": []
-                            },
-                            {
-                                "name": "ykccIz2fkK",
-                                "latency_distribution": {"Exponential": {"lambda": 0.0001}},
-                                "call_sequence": []
-                            }
-                        ]
-                    }
-                ]
-            }
+            "services": [
+                {
+                    "id": "MS_37691",
+                    "replicas": 1,
+                    "methods": [
+                        {
+                            "name": "y_DKOh-Gts",
+                            "latency_distribution": {"Exponential": {"lambda": 0.0001}},
+                            "call_sequence": []
+                        },
+                        {
+                            "name": "ykccIz2fkK",
+                            "latency_distribution": {"Exponential": {"lambda": 0.0001}},
+                            "call_sequence": []
+                        }
+                    ]
+                }
+            ],
+            "call_graphs": {
+                "graph1": {
+                    "entry_point": "MS_56394::GqI6UW1mU4",
+                    "services": [
+                        {
+                            "id": "MS_56394",
+                            "replicas": 1,
+                            "methods": [
+                                {
+                                    "name": "GqI6UW1mU4",
+                                    "latency_distribution": {"Exponential": {"lambda": 0.0001}},
+                                    "call_sequence": []
+                                },
+                                {
+                                    "name": "method1",
+                                    "latency_distribution": {"Normal": {"mean": 10000.0, "std": 2000.0}},
+                                    "call_sequence": [
+                                        {"MS_37691::y_DKOh-Gts": 1.0},
+                                        {"MS_37691::ykccIz2fkK": 1.0}
+                                    ]
+                                }
+                            ]
+                        }
+                    ],
+                    "service_refs": ["MS_37691"]
+                }
+            },
+            "apis": [
+                {
+                    "name": "api1",
+                    "call_graph": "graph1",
+                    "traffic_weight": 1.0
+                }
+            ]
         });
 
         let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
-        assert!(parsed.call_graph.is_some());
-        let call_graph = parsed.call_graph.as_ref().unwrap();
-        assert_eq!(call_graph.entry_point, "MS_56394::GqI6UW1mU4");
-        assert_eq!(call_graph.services.len(), 2);
-        assert_eq!(call_graph.services[0].id, "MS_56394");
-        assert_eq!(call_graph.services[0].methods.len(), 2);
-        assert_eq!(call_graph.services[0].methods[0].name, "GqI6UW1mU4");
-        assert_eq!(call_graph.services[0].methods[0].call_sequence_raw.len(), 0);
-        assert_eq!(call_graph.services[0].methods[1].call_sequence_raw.len(), 2);
+        let resolved = resolve_call_graphs(&parsed).expect("resolve call graphs");
+        assert_eq!(resolved.services.len(), 2);
+        let ms_56394 = resolved
+            .services
+            .iter()
+            .find(|svc| svc.id == "MS_56394")
+            .expect("missing MS_56394");
+        assert_eq!(ms_56394.methods.len(), 2);
+        assert_eq!(ms_56394.methods[0].name, "GqI6UW1mU4");
+        assert_eq!(ms_56394.methods[0].call_sequence_raw.len(), 0);
+        assert_eq!(ms_56394.methods[1].call_sequence_raw.len(), 2);
     }
 
     #[test]
@@ -332,141 +430,87 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_call_graph() {
-        let mut config = CallGraphConfig {
-            entry_point: "MS_56394::GqI6UW1mU4".to_string(),
-            services: vec![
-                ServiceDefinition {
-                    id: "MS_56394".to_string(),
-                    replicas: 1,
-                    methods: vec![ServiceMethod {
-                        name: "GqI6UW1mU4".to_string(),
-                        latency_distribution: exponential(0.0001),
-                        call_sequence_raw: vec![[("MS_37691::y_DKOh-Gts".to_string(), 1.0)]
-                            .iter()
-                            .cloned()
-                            .collect()],
-                        parsed_call_sequence: vec![],
-                        busy_spin_ratio: None,
-                    }],
+    fn resolves_call_graphs_and_parses_call_sequences() {
+        let config = json!({
+            "services": [
+                {
+                    "id": "MS_37691",
+                    "replicas": 1,
+                    "methods": [
+                        {
+                            "name": "y_DKOh-Gts",
+                            "latency_distribution": {"Exponential": {"lambda": 0.0001}},
+                            "call_sequence": []
+                        },
+                        {
+                            "name": "ykccIz2fkK",
+                            "latency_distribution": {"Exponential": {"lambda": 0.0001}},
+                            "call_sequence": []
+                        }
+                    ]
                 },
-                ServiceDefinition {
-                    id: "MS_37691".to_string(),
-                    replicas: 1,
-                    methods: vec![ServiceMethod {
-                        name: "y_DKOh-Gts".to_string(),
-                        latency_distribution: exponential(0.0001),
-                        call_sequence_raw: vec![],
-                        parsed_call_sequence: vec![],
-                        busy_spin_ratio: None,
-                    }],
-                },
+                {
+                    "id": "MS_73106",
+                    "replicas": 1,
+                    "methods": [
+                        {
+                            "name": "method3",
+                            "latency_distribution": {"Exponential": {"lambda": 0.0001}},
+                            "call_sequence": []
+                        }
+                    ]
+                }
             ],
-        };
-
-        // Should validate successfully
-        assert!(validate_call_graph(&config).is_ok());
-
-        // Test invalid entry point
-        config.entry_point = "INVALID::method".to_string();
-        assert!(validate_call_graph(&config).is_err());
-
-        // Test invalid target reference
-        config.entry_point = "MS_56394::GqI6UW1mU4".to_string();
-        config.services[0].methods[0].call_sequence_raw[0]
-            .insert("INVALID::method".to_string(), 1.0);
-        assert!(validate_call_graph(&config).is_err());
-    }
-
-    #[test]
-    fn test_parse_call_sequences() {
-        let mut config = CallGraphConfig {
-            entry_point: "MS_56394::GqI6UW1mU4".to_string(),
-            services: vec![
-                ServiceDefinition {
-                    id: "MS_56394".to_string(),
-                    replicas: 1,
-                    methods: vec![ServiceMethod {
-                        name: "GqI6UW1mU4".to_string(),
-                        latency_distribution: exponential(0.0001),
-                        call_sequence_raw: vec![
-                            [
-                                ("MS_37691::y_DKOh-Gts".to_string(), 1.0),
-                                ("MS_37691::ykccIz2fkK".to_string(), 0.8),
+            "call_graphs": {
+                "graph1": {
+                    "entry_point": "MS_56394::GqI6UW1mU4",
+                    "services": [
+                        {
+                            "id": "MS_56394",
+                            "replicas": 1,
+                            "methods": [
+                                {
+                                    "name": "GqI6UW1mU4",
+                                    "latency_distribution": {"Exponential": {"lambda": 0.0001}},
+                                    "call_sequence": [
+                                        {
+                                            "MS_37691::y_DKOh-Gts": 1.0,
+                                            "MS_37691::ykccIz2fkK": 0.8
+                                        },
+                                        {
+                                            "MS_73106::method3": 1.0
+                                        }
+                                    ]
+                                }
                             ]
-                            .iter()
-                            .cloned()
-                            .collect(),
-                            [("MS_73106::method3".to_string(), 1.0)]
-                                .iter()
-                                .cloned()
-                                .collect(),
-                        ],
-                        parsed_call_sequence: vec![],
-                        busy_spin_ratio: None,
-                    }],
-                },
-                ServiceDefinition {
-                    id: "MS_37691".to_string(),
-                    replicas: 1,
-                    methods: vec![
-                        ServiceMethod {
-                            name: "y_DKOh-Gts".to_string(),
-                            latency_distribution: exponential(0.0001),
-                            call_sequence_raw: vec![],
-                            parsed_call_sequence: vec![],
-                            busy_spin_ratio: None,
-                        },
-                        ServiceMethod {
-                            name: "ykccIz2fkK".to_string(),
-                            latency_distribution: exponential(0.0001),
-                            call_sequence_raw: vec![],
-                            parsed_call_sequence: vec![],
-                            busy_spin_ratio: None,
-                        },
+                        }
                     ],
-                },
-                ServiceDefinition {
-                    id: "MS_73106".to_string(),
-                    replicas: 1,
-                    methods: vec![ServiceMethod {
-                        name: "method3".to_string(),
-                        latency_distribution: exponential(0.0001),
-                        call_sequence_raw: vec![],
-                        parsed_call_sequence: vec![],
-                        busy_spin_ratio: None,
-                    }],
-                },
-            ],
-        };
+                    "service_refs": ["MS_37691", "MS_73106"]
+                }
+            },
+            "apis": [
+                {
+                    "name": "api1",
+                    "call_graph": "graph1",
+                    "traffic_weight": 1.0
+                }
+            ]
+        });
 
-        assert!(parse_call_sequences(&mut config).is_ok());
-        let method = &config.services[0].methods[0];
+        let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
+        let resolved = resolve_call_graphs(&parsed).expect("resolve call graphs");
+        let method = resolved
+            .services
+            .iter()
+            .find(|svc| svc.id == "MS_56394")
+            .expect("missing MS_56394")
+            .methods
+            .iter()
+            .find(|m| m.name == "GqI6UW1mU4")
+            .expect("missing method");
+
         assert_eq!(method.parsed_call_sequence.len(), 2);
         assert_eq!(method.parsed_call_sequence[0].len(), 2);
         assert_eq!(method.parsed_call_sequence[1].len(), 1);
-
-        // Check that both methods are present in the first step (order doesn't matter due to HashMap)
-        let method_names: Vec<&str> = method.parsed_call_sequence[0]
-            .iter()
-            .map(|(target, _)| target.method_name.as_str())
-            .collect();
-        assert!(method_names.contains(&"y_DKOh-Gts"));
-        assert!(method_names.contains(&"ykccIz2fkK"));
-
-        // Check service_id and probabilities
-        for (target, prob) in &method.parsed_call_sequence[0] {
-            assert_eq!(target.service_id, "MS_37691");
-            if target.method_name == "y_DKOh-Gts" {
-                assert_eq!(*prob, 1.0);
-            } else if target.method_name == "ykccIz2fkK" {
-                assert_eq!(*prob, 0.8);
-            }
-        }
-
-        // Check second step
-        assert_eq!(method.parsed_call_sequence[1][0].0.service_id, "MS_73106");
-        assert_eq!(method.parsed_call_sequence[1][0].0.method_name, "method3");
-        assert_eq!(method.parsed_call_sequence[1][0].1, 1.0);
     }
 }

@@ -48,19 +48,12 @@ impl Client for SyntheticClient {
 }
 
 enum RequestHandler {
-    ARequest(Handler<ARequest, SyntheticClient>),
-    BRequest(Handler<BRequest, SyntheticClient>),
+    GenericRequest(Handler<GenericRequest, SyntheticClient>),
 }
 
 impl HandlerOuter<SyntheticClient> for RequestHandler {
     fn new(api: &str, rps: u64, timeout: Duration, slo: u64) -> Self {
-        if api == "a" {
-            RequestHandler::ARequest(Handler::new(api, rps, timeout, slo))
-        } else if api == "b" {
-            RequestHandler::BRequest(Handler::new(api, rps, timeout, slo))
-        } else {
-            panic!("unknown API {}", api)
-        }
+        RequestHandler::GenericRequest(Handler::new(api, rps, timeout, slo))
     }
 
     async fn send_request(
@@ -71,36 +64,32 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
         trace: bool,
     ) -> String {
         match self {
-            Self::ARequest(h) => h.send_request(rng, client, ctx, trace).await,
-            Self::BRequest(h) => h.send_request(rng, client, ctx, trace).await,
+            Self::GenericRequest(h) => h.send_request(rng, client, ctx, trace).await,
         }
     }
 
     async fn fetch_traces(&mut self, output_path: &Path) {
         match self {
-            Self::ARequest(h) => h.fetch_traces(output_path).await,
-            Self::BRequest(h) => h.fetch_traces(output_path).await,
+            Self::GenericRequest(h) => h.fetch_traces(output_path).await,
         }
     }
 
     fn api(&self) -> &str {
         match self {
-            Self::ARequest(h) => h.api.as_str(),
-            Self::BRequest(h) => h.api.as_str(),
+            Self::GenericRequest(h) => h.api.as_str(),
         }
     }
 
     fn slo(&self) -> u64 {
         match self {
-            Self::ARequest(h) => h.slo,
-            Self::BRequest(h) => h.slo,
+            Self::GenericRequest(h) => h.slo,
         }
     }
 }
 
-struct ARequest {}
+struct GenericRequest {}
 
-impl ARequest {
+impl GenericRequest {
     const HEADERS: [&'static str; 7] = [
         "frontend_latency",
         "child1_queueing_latency",
@@ -112,7 +101,7 @@ impl ARequest {
     ];
 }
 
-impl RequestType<SyntheticClient> for ARequest {
+impl RequestType<SyntheticClient> for GenericRequest {
     type ResponseType = frontend::AResponse;
 
     fn new(_api: &str) -> Self {
@@ -144,35 +133,6 @@ impl RequestType<SyntheticClient> for ARequest {
             r.child2_handler_latency.to_string(),
             r.child2_reply_latency.to_string(),
         ]
-    }
-}
-
-struct BRequest {}
-
-impl RequestType<SyntheticClient> for BRequest {
-    type ResponseType = frontend::BResponse;
-
-    fn new(_api: &str) -> Self {
-        Self {}
-    }
-
-    async fn create_request(
-        &self,
-        _rng: &mut StdRng,
-        mut client: FrontendClient<Channel>,
-        ctx: &Context,
-    ) -> Result<Response<Self::ResponseType>, Status> {
-        let mut r = tonic::Request::new(frontend::BRequest {});
-        r.metadata_mut().insert_ctx("ctx", &ctx);
-        client.handle_b(r).await
-    }
-
-    fn response_output_headers(&self) -> Vec<String> {
-        Vec::new()
-    }
-
-    fn response_to_row(_metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
-        Vec::new()
     }
 }
 

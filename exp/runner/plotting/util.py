@@ -156,17 +156,19 @@ def read_data(config_dir, data_dir):
         config = json.load(f)
     repeats = config["Repeats"]
     rps_values = config["Rps"]
-    apis = config["Apis"]
+    apis = _normalize_apis(config["Apis"])
     slos = config.get("Slos", [])
 
     # Create mapping from API name to SLO value (in microseconds)
     api_to_slo = {}
-    if len(slos) == len(apis):
+    if len(slos) == 1:
+        api_to_slo = {api: slos[0] for api in apis}
+    elif len(slos) == len(apis):
         for api, slo in zip(apis, slos):
             api_to_slo[api] = slo
     else:
         raise ValueError(
-            f"Slos array length ({len(slos)}) must match Apis array length ({len(apis)})"
+            f"Slos array length ({len(slos)}) must be 1 or match Apis length ({len(apis)})"
         )
 
     policies = read_policies(Path(config_dir))
@@ -181,7 +183,8 @@ def read_data(config_dir, data_dir):
                 combined = None
                 # pyrefly: ignore  # bad-assignment
                 for api in apis:
-                    file_path = os.path.join(policy_folder, f"r{rps}_{api}.csv")
+                    safe_api = api.replace("/", "_").replace(" ", "_")
+                    file_path = os.path.join(policy_folder, f"r{rps}_{safe_api}.csv")
                     df = _read_request_csv(file_path)
                     # Replace SLO column with value from gen_config.json
                     if api in api_to_slo:
@@ -202,6 +205,19 @@ def read_data(config_dir, data_dir):
     apis.append("ALL")
 
     return repeats, apis, policies, rps_values, results
+
+
+def _normalize_apis(apis_config):
+    apis = []
+    for api in apis_config:
+        if isinstance(api, dict):
+            name = api.get("Name") or api.get("name")
+            if not name:
+                raise ValueError(f"API entry missing name: {api}")
+            apis.append(name)
+        else:
+            apis.append(api)
+    return apis
 
 
 def prepare_output_dir(args) -> None:

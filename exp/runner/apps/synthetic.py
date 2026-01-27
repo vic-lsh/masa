@@ -114,6 +114,7 @@ class SyntheticApp(AppPlugin):
         template_config_path: Path,
         output_path: Path,
         project_name: str,
+        app_config: Optional[dict] = None,
     ) -> None:
         """
         Generate project-specific gen_config.json with correct frontend service name.
@@ -125,6 +126,60 @@ class SyntheticApp(AppPlugin):
         """
         with open(template_config_path) as f:
             config = json.load(f)
+
+        def _normalize_api_names(apis_config: list) -> list[str]:
+            names: list[str] = []
+            for api in apis_config:
+                if isinstance(api, dict):
+                    name = api.get("Name") or api.get("name")
+                    if not name:
+                        raise ValueError(f"API entry missing name: {api}")
+                    names.append(name)
+                else:
+                    names.append(api)
+            return names
+
+        def _expand_values(
+            values: list, api_names: list[str], template_names: list[str], label: str
+        ) -> list:
+            if len(values) == 1:
+                return [values[0]] * len(api_names)
+            if len(values) == len(api_names):
+                return values
+            if template_names and len(values) == len(template_names):
+                value_map = {name: values[i] for i, name in enumerate(template_names)}
+                return [value_map[name] for name in api_names]
+            raise ValueError(
+                f"{label} length must be 1, match api count, or match template Apis length"
+            )
+
+        template_api_names = _normalize_api_names(config.get("Apis", []))
+
+        # Apply API list/weights from app_config if present
+        if app_config and app_config.get("apis"):
+            api_specs = app_config["apis"]
+            for api in api_specs:
+                weight = float(api.get("traffic_weight", 0.0))
+                if weight <= 0:
+                    raise ValueError("api traffic_weight must be > 0")
+
+            api_names = [api["name"] for api in api_specs]
+            config["Apis"] = [
+                {"Name": api["name"], "Weight": float(api["traffic_weight"])}
+                for api in api_specs
+            ]
+
+            if "Slos" in config:
+                slos = config["Slos"]
+                config["Slos"] = _expand_values(
+                    slos, api_names, template_api_names, "Slos"
+                )
+
+            if "Timeouts_ms" in config:
+                timeouts = config["Timeouts_ms"]
+                config["Timeouts_ms"] = _expand_values(
+                    timeouts, api_names, template_api_names, "Timeouts_ms"
+                )
 
         # Parse the original address
         if "Addr" in config:
@@ -180,18 +235,18 @@ class SyntheticApp(AppPlugin):
         Returns:
             Path to generated compose file
         """
-        call_graph = app_config.get("call_graph")
-        if not call_graph:
-            raise ValueError("call_graph not found in app_config")
+        call_graphs = app_config.get("call_graphs")
+        if not call_graphs:
+            raise ValueError("call_graphs not found in app_config")
+
+        services_list = self._collect_call_graph_services(app_config)
 
         services = {}
 
         # Add frontend service
         # Build depends_on list for all call graph services
         # Use "local-{service-id}-service" naming to match service names
-        depends_on = [
-            f"local-{svc['id'].lower()}-service" for svc in call_graph["services"]
-        ]
+        depends_on = [f"local-{svc['id'].lower()}-service" for svc in services_list]
         services["synthetic-frontend-service"] = {
             "image": f"synthetic_frontend:{image_tag}",
             "restart": "always",
@@ -209,7 +264,7 @@ class SyntheticApp(AppPlugin):
 
         # Add one service per call graph service
         # Use "local-{service-id}-service" naming to match frontend expectations
-        for service_def in call_graph["services"]:
+        for service_def in services_list:
             service_id = service_def["id"]
             service_name = f"local-{service_id.lower()}-service"
             replicas = service_def.get("replicas", 1)
@@ -242,10 +297,35 @@ class SyntheticApp(AppPlugin):
 
         logger.info(f"Generated call graph docker compose file: {compose_path}")
         logger.info(
-            f"Services in call graph: {[s['id'] for s in call_graph['services']]}"
+            f"Services in call graph: {[s['id'] for s in services_list]}"
         )
 
         return compose_path
+
+    def _collect_call_graph_services(self, app_config: dict) -> list[dict]:
+        services_list: list[dict] = []
+        seen: set[str] = set()
+
+        def add_service(service_def: dict) -> None:
+            service_id = service_def["id"]
+            if service_id in seen:
+                raise ValueError(f"Duplicate service id '{service_id}' in call graph config")
+            seen.add(service_id)
+            services_list.append(service_def)
+
+        for service_def in app_config.get("services", []):
+            add_service(service_def)
+
+        for graph in app_config.get("call_graphs", {}).values():
+            for service_def in graph.get("services", []):
+                add_service(service_def)
+            for service_id in graph.get("service_refs", []):
+                if service_id not in seen:
+                    raise ValueError(
+                        f"Call graph references missing service id '{service_id}'"
+                    )
+
+        return services_list
 
     def generate_env_vars(
         self, gen_config: dict, app_config: Optional[dict], app_dir: Path
@@ -267,34 +347,12 @@ class SyntheticApp(AppPlugin):
             raise ValueError(f"Unable to extract port from address: {addr}")
 
         if app_config:
-            # Check if call_graph is configured
-            call_graph = app_config.get("call_graph")
-            if call_graph:
-                # Call graph mode: calculate total replicas from call graph services
-                total_replicas = sum(
-                    service.get("replicas", 1)
-                    for service in call_graph.get("services", [])
-                )
-                env_vars["CHILD_REPLICAS"] = str(total_replicas)
+            services_list = self._collect_call_graph_services(app_config)
+            total_replicas = sum(service.get("replicas", 1) for service in services_list)
+            env_vars["CHILD_REPLICAS"] = str(total_replicas)
 
-                # CPUs per replica (use default if not specified)
-                cpus_per_replica = app_config.get("child_cpus_per_replica", 1)
-                env_vars["CPUS_PER_REPLICA"] = str(cpus_per_replica)
-            else:
-                # Traditional mode: calculate child replicas from child_services
-                child_services = app_config.get("child_services", [])
-                if child_services:
-                    child_replicas = sum(
-                        service.get("replicas", 1) for service in child_services
-                    )
-                else:
-                    child_replicas = 1
-
-                env_vars["CHILD_REPLICAS"] = str(child_replicas)
-
-                # CPUs per replica
-                cpus_per_replica = app_config.get("child_cpus_per_replica", 1)
-                env_vars["CPUS_PER_REPLICA"] = str(cpus_per_replica)
+            cpus_per_replica = app_config.get("child_cpus_per_replica", 1)
+            env_vars["CPUS_PER_REPLICA"] = str(cpus_per_replica)
         else:
             # Use defaults if no config provided
             env_vars["CHILD_REPLICAS"] = "1"
@@ -340,10 +398,9 @@ class SyntheticApp(AppPlugin):
         container_names = []
 
         # Check if call_graph is configured
-        if app_config and app_config.get("call_graph"):
-            # Call graph mode: generate container names for each service
-            call_graph = app_config["call_graph"]
-            for service_def in call_graph.get("services", []):
+        if app_config and app_config.get("call_graphs"):
+            services_list = self._collect_call_graph_services(app_config)
+            for service_def in services_list:
                 service_id = service_def["id"]
                 service_name = f"local-{service_id.lower()}-service"
                 replicas = service_def.get("replicas", 1)
@@ -475,6 +532,7 @@ class SyntheticApp(AppPlugin):
             template_config_path=template_gen_config_path,
             output_path=gen_config_path,
             project_name=project_name,
+            app_config=config.app_config,
         )
 
         # Generate call graph compose file if needed
@@ -485,13 +543,13 @@ class SyntheticApp(AppPlugin):
         # Check if call_graph is configured
         has_call_graph = (
             config.app_config is not None
-            and "call_graph" in config.app_config
-            and config.app_config.get("call_graph") is not None
+            and "call_graphs" in config.app_config
+            and config.app_config.get("call_graphs") is not None
         )
 
-        if config.app_config is not None and "call_graph" not in config.app_config:
+        if config.app_config is not None and "call_graphs" not in config.app_config:
             logger.warning(
-                f"config.docker.json exists but does not contain 'call_graph' key. "
+                f"config.docker.json exists but does not contain 'call_graphs' key. "
                 f"Available keys: {list(config.app_config.keys())}"
             )
 

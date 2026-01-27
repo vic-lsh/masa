@@ -19,7 +19,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Semaphore;
 use tokio::time::{timeout, Duration, Instant};
 
-use rand::Rng;
+use rand::distributions::{Distribution as RandDistribution, WeightedIndex};
 use rand_distr::{Distribution, Exp};
 use structopt::StructOpt;
 use tokio::task::JoinSet;
@@ -110,12 +110,47 @@ impl ArrivalTimer {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiSpec {
+    #[serde(rename = "Name", alias = "name")]
+    pub name: String,
+    #[serde(rename = "Weight", alias = "weight", default = "default_api_weight")]
+    pub weight: f64,
+}
+
+fn default_api_weight() -> f64 {
+    1.0
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ApiEntry {
+    Name(String),
+    Spec(ApiSpec),
+}
+
+impl ApiEntry {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Name(name) => name,
+            Self::Spec(spec) => &spec.name,
+        }
+    }
+
+    pub fn weight(&self) -> f64 {
+        match self {
+            Self::Name(_) => 1.0,
+            Self::Spec(spec) => spec.weight,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GenConfig {
     #[serde(rename = "Repeats")]
     pub repeats: u64,
     #[serde(rename = "Apis")]
-    pub apis: Vec<String>,
+    pub apis: Vec<ApiEntry>,
     #[serde(rename = "Slos")]
     pub slos: Vec<u64>,
     #[serde(rename = "Timeouts_ms")]
@@ -137,6 +172,22 @@ pub struct GenConfig {
 
 fn default_max_in_flight() -> usize {
     0 // 0 means unlimited
+}
+
+fn expand_config_values(
+    values: &[u64],
+    count: usize,
+    label: &str,
+) -> Result<Vec<u64>, Box<dyn std::error::Error>> {
+    match values.len() {
+        0 => Err(format!("{label} must not be empty").into()),
+        1 => Ok(vec![values[0]; count]),
+        n if n == count => Ok(values.to_vec()),
+        n => Err(format!(
+            "{label} length ({n}) must be 1 or match Apis length ({count})"
+        )
+        .into()),
+    }
 }
 
 #[derive(StructOpt, Debug, Clone)]
@@ -353,8 +404,9 @@ where
         {
             self.trace_tx.take()
         };
+        let safe_api = self.api.replace('/', "_").replace(' ', "_");
         let mut file =
-            File::create(output_path.join(format!("r{}_{}.csv", self.rps, self.api))).unwrap();
+            File::create(output_path.join(format!("r{}_{}.csv", self.rps, safe_api))).unwrap();
         writeln!(file, "{}", self.header_row()).unwrap();
         while let Some(stats) = self.trace_rx.recv().await {
             writeln!(file, "{}", stats.to_row()).unwrap();
@@ -462,6 +514,7 @@ where
     rps: u64,
     client: C::FrontendClient,
     api_handlers: Vec<Arc<H>>,
+    api_weight_index: WeightedIndex<f64>,
 }
 
 impl<H, C> LoadGenerator<H, C>
@@ -475,6 +528,7 @@ where
         rps: u64,
         client: C::FrontendClient,
         api_handlers: Vec<Arc<H>>,
+        api_weight_index: WeightedIndex<f64>,
     ) -> Self {
         Self {
             rng: StdRng::seed_from_u64(seed + rps),
@@ -482,6 +536,7 @@ where
             rps,
             client,
             api_handlers,
+            api_weight_index,
         }
     }
 
@@ -563,7 +618,7 @@ where
                 None
             };
 
-            let i = self.rng.gen_range(0..self.api_handlers.len());
+            let i = self.api_weight_index.sample(&mut self.rng);
             let handler = Arc::clone(&self.api_handlers[i]);
 
             let ctx = {
@@ -649,13 +704,17 @@ where
     for rps in &gen_cfg.rps_values {
         log::info!("Running rps: {}... ({})", rps, get_timestamp());
 
-        assert_eq!(gen_cfg.apis.len(), gen_cfg.timeouts_ms.len());
-        assert_eq!(gen_cfg.apis.len(), gen_cfg.slos.len());
+        if gen_cfg.apis.is_empty() {
+            return Err("Apis must not be empty".into());
+        }
+        let slos = expand_config_values(&gen_cfg.slos, gen_cfg.apis.len(), "Slos")?;
+        let timeouts_ms =
+            expand_config_values(&gen_cfg.timeouts_ms, gen_cfg.apis.len(), "Timeouts_ms")?;
         let mut api_handlers = Vec::new();
-        for (api, (timeout_ms, slo)) in zip(&gen_cfg.apis, zip(&gen_cfg.timeouts_ms, &gen_cfg.slos))
+        for (api, (timeout_ms, slo)) in zip(&gen_cfg.apis, zip(&timeouts_ms, &slos))
         {
             api_handlers.push(Arc::new(H::new(
-                api,
+                api.name(),
                 *rps,
                 Duration::from_millis(*timeout_ms),
                 *slo,
@@ -678,7 +737,19 @@ where
 
             log::info!("Connected to {}", gen_cfg.addr);
 
-            let load_gen = LoadGenerator::new(seed, gen_cfg.clone(), *rps, client, api_handlers);
+            let weights: Vec<f64> = gen_cfg.apis.iter().map(|api| api.weight()).collect();
+            if weights.iter().any(|w| *w <= 0.0) {
+                return Err("All API weights must be > 0".into());
+            }
+            let api_weight_index = WeightedIndex::new(&weights)?;
+            let load_gen = LoadGenerator::new(
+                seed,
+                gen_cfg.clone(),
+                *rps,
+                client,
+                api_handlers,
+                api_weight_index,
+            );
             load_gen
         };
 
