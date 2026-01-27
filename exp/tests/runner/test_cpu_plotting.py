@@ -300,6 +300,44 @@ class TestPlotCpuUtilization:
                 df_arg = mock_plot.call_args[0][0]
                 assert set(df_arg["policy"].unique()) == {"fifo"}
 
+    def test_plot_cpu_utilization_filters_experiment_containers(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "local12a"
+            output_dir = Path(tmpdir) / "plots"
+            policy_dir = data_dir / "0" / "fifo"
+            policy_dir.mkdir(parents=True, exist_ok=True)
+
+            csv_file = policy_dir / "cpu_stats.csv"
+            with open(csv_file, 'w', newline='') as f:
+                fieldnames = [
+                    'timestamp', 'container_name', 'cpu_percent',
+                    'memory_usage_mb', 'memory_limit_mb', 'memory_percent'
+                ]
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerow({
+                    'timestamp': 1000000,
+                    'container_name': 'synthetic-local12a-abc123def456-service-1',
+                    'cpu_percent': 10.0,
+                    'memory_usage_mb': 100.0,
+                    'memory_limit_mb': 1000.0,
+                    'memory_percent': 10.0,
+                })
+                writer.writerow({
+                    'timestamp': 1000000,
+                    'container_name': 'synthetic-local11a-xyz987654321-service-1',
+                    'cpu_percent': 20.0,
+                    'memory_usage_mb': 200.0,
+                    'memory_limit_mb': 2000.0,
+                    'memory_percent': 20.0,
+                })
+
+            with patch("exp.runner.plotting.cpu._plot_service_cpu") as mock_plot:
+                plot_cpu_utilization(data_dir, output_dir)
+                assert mock_plot.called
+                df_arg = mock_plot.call_args[0][0]
+                assert all("local12a" in name for name in df_arg["container_name"].str.lower())
+
     def test_plot_generation_with_files(self):
         """Test plot generation from CSV files."""
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -1,6 +1,7 @@
 """CPU utilization plotting for experiment results."""
 
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -12,6 +13,47 @@ from ..container_utils import extract_service_name, group_containers_by_service
 from .util import get_policy_color, get_policy_display_name
 
 logger = logging.getLogger(__name__)
+
+def _experiment_slug_candidates(data_dir: Path) -> list[str]:
+    name = data_dir.name.strip().lower()
+    if not name:
+        return []
+    slug = re.sub(r"[^a-z0-9]+", "-", name).strip("-")
+    if not slug:
+        return []
+    candidates = []
+    for length in (None, 24, 16, 12):
+        candidate = slug if length is None else slug[:length]
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
+
+
+def _filter_experiment_containers(df: pd.DataFrame, data_dir: Path) -> pd.DataFrame:
+    if "container_name" not in df.columns:
+        return df
+
+    candidates = _experiment_slug_candidates(data_dir)
+    if not candidates:
+        return df
+
+    pattern = r"(?:^|[-_])(?:%s)(?:[-_])" % "|".join(re.escape(c) for c in candidates)
+    matches = df["container_name"].str.contains(pattern, case=False, regex=True, na=False)
+    if matches.any():
+        filtered = df[matches].copy()
+        logger.info(
+            "Filtered CPU stats to experiment '%s': %d/%d rows",
+            data_dir.name,
+            len(filtered),
+            len(df),
+        )
+        return filtered
+
+    logger.info(
+        "No container names matched experiment '%s'; keeping all CPU stats",
+        data_dir.name,
+    )
+    return df
 
 
 def plot_cpu_utilization(
@@ -76,6 +118,8 @@ def plot_cpu_utilization(
         if df_all.empty:
             logger.warning("No CPU stats data found for requested policies")
             return
+
+    df_all = _filter_experiment_containers(df_all, data_dir)
 
     # Add service_name column
     df_all["service_name"] = df_all["container_name"].apply(extract_service_name)
@@ -300,6 +344,7 @@ def plot_cpu_per_policy(
         return
 
     df_all = pd.concat(all_data, ignore_index=True)
+    df_all = _filter_experiment_containers(df_all, data_dir)
     df_all["service_name"] = df_all["container_name"].apply(extract_service_name)
 
     # Filter out load generator containers

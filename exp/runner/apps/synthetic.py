@@ -558,7 +558,11 @@ class SyntheticApp(AppPlugin):
 
         # Initialize CPU monitor
         cpu_stats_file = output_dir / "cpu_stats.csv"
-        cpu_monitor = CPUMonitor(output_path=cpu_stats_file, poll_interval=2.0)
+        cpu_monitor = CPUMonitor(
+            output_path=cpu_stats_file,
+            poll_interval=2.0,
+            container_prefix=project_name,
+        )
 
         try:
             docker.start(
