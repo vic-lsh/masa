@@ -1,6 +1,7 @@
 use app_utils::timing::time_now;
+use masa::Latency;
 use rand::thread_rng;
-use rand_distr::{Distribution, Exp, Normal, WeightedIndex};
+use rand_distr::{Distribution, Exp, Normal, WeightedIndex, LogNormal};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug)]
@@ -14,6 +15,11 @@ pub enum LatencyDistribution {
         lambda: f64,
         mean: Option<f64>,
         dist: Exp<f64>,
+    },
+    LogNormal {
+        mean: f64,
+        std: f64,
+        dist: LogNormal<f64>,
     },
     Discrete {
         weights: Vec<f64>,
@@ -44,6 +50,11 @@ impl LatencyDistribution {
             LatencyDistribution::Exponential { dist, .. } => {
                 dist.sample(&mut thread_rng()).round() as u64
             }
+
+            LatencyDistribution::LogNormal { dist, .. } => {
+                dist.sample(&mut thread_rng()).round() as u64
+            }
+
             LatencyDistribution::Discrete { dist, values, .. } => {
                 values[dist.sample(&mut thread_rng())]
             }
@@ -115,6 +126,10 @@ impl Serialize for LatencyDistribution {
                 #[serde(skip_serializing_if = "Option::is_none")]
                 mean: Option<f64>,
             },
+            LogNormal {
+                mean: f64,
+                std: f64,
+            },
             Discrete {
                 weights: Vec<f64>,
                 values: Vec<u64>,
@@ -137,6 +152,10 @@ impl Serialize for LatencyDistribution {
                     mean: *mean,
                 }
             }
+            LatencyDistribution::LogNormal { mean, std, .. } => LatencyDistributionSer::LogNormal {
+                mean: *mean,
+                std: *std,
+            },
             LatencyDistribution::Discrete {
                 weights, values, ..
             } => LatencyDistributionSer::Discrete {
@@ -173,6 +192,10 @@ impl<'de> Deserialize<'de> for LatencyDistribution {
                 lambda: Option<f64>,
                 #[serde(default)]
                 mean: Option<f64>,
+            },
+            LogNormal {
+                mean: f64,
+                std: f64,
             },
             Discrete {
                 weights: Vec<f64>,
@@ -225,6 +248,12 @@ impl<'de> Deserialize<'de> for LatencyDistribution {
                     dist: Exp::new(lambda_val).map_err(serde::de::Error::custom)?,
                 }
             }
+            LatencyDistributionDe::LogNormal { mean, std } => LatencyDistribution::LogNormal {
+                mean,
+                std,
+                dist: LogNormal::new(mean, std).map_err(serde::de::Error::custom)?,
+            },
+
             LatencyDistributionDe::Discrete { weights, values } => {
                 assert_eq!(weights.len(), values.len());
                 LatencyDistribution::Discrete {
