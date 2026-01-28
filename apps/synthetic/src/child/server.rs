@@ -13,6 +13,7 @@ use crate::service_registry::ServiceRegistry;
 use crate::tonic::{child, child::child_server::Child};
 use crate::util::{should_make_call, simulate_work};
 use app_utils::timing::time_now;
+use tonic::masa::MasaRequestExt;
 use tracing::warn;
 
 pub struct ChildImpl {
@@ -144,14 +145,20 @@ impl ChildImpl {
                     let target_service_id = target.service_id.clone();
                     let target_method_name = target.method_name.clone();
                     let task = tokio::spawn(async move {
-                        client
-                            .clone()
-                            .handle_method(crate::tonic::child::MethodRequest {
-                                service_id: target_service_id,
-                                method_name: target_method_name,
-                                sent_at,
-                            })
-                            .await
+                        let mut request = Request::new(crate::tonic::child::MethodRequest {
+                            service_id: target_service_id,
+                            method_name: target_method_name.clone(),
+                            sent_at,
+                        });
+                        request
+                            .set_method_name_override(&target_method_name)
+                            .map_err(|e| {
+                                Status::internal(format!(
+                                    "Failed to set method name override: {:?}",
+                                    e
+                                ))
+                            })?;
+                        client.clone().handle_method(request).await
                     });
 
                     tasks.push(task);
