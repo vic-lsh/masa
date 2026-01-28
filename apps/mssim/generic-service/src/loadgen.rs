@@ -214,7 +214,7 @@ async fn run_root_load(
                         let prio_hint = if masa::PRIO_OLDEST { start_at } else { deadline };
                         MasaContextBuilder::new("root".to_string(), req_id)
                             .slo(slo_us)
-                            .start_at(start_at)
+                            .gateway_entry(start_at)
                             .deadline(deadline)
                             .prio_hint(PriorityHint::new(prio_hint))
                             .build()
