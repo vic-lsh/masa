@@ -73,7 +73,7 @@ impl<'a> ReplaySpanExecutor<'a> {
 
         let ctx = MasaContextBuilder::new("replay".to_string(), self.request.req_id)
             .slo(self.request.slo)
-            .start_at(self.request.start_at)
+            .gateway_entry(self.request.start_at)
             .deadline(self.request.deadline)
             .build();
         request.metadata_mut().insert_ctx("ctx", &ctx);
