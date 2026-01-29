@@ -249,15 +249,15 @@ impl Child for ChildImpl {
         // Sample latency from method's distribution
         let duration_us = method.latency_distribution.sample();
 
-        let busy_spin_ratio = method.busy_spin_ratio.unwrap_or(0.1);
-
-        simulate_work(duration_us, busy_spin_ratio).await;
-
         // Execute call sequence
         if !method.parsed_call_sequence.is_empty() {
             self.execute_call_sequence(&method.parsed_call_sequence)
                 .await?;
         }
+
+        let busy_spin_ratio = method.busy_spin_ratio.unwrap_or(0.1);
+
+        simulate_work(duration_us, busy_spin_ratio).await;
 
         Ok(Response::new(child::MethodResponse {
             queueing_latency,
