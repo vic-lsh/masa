@@ -51,8 +51,16 @@ def extract_service_name(container_name: str) -> str:
         name = name[6:]  # Remove "local-"
 
     # Handle synthetic prefix
-    elif name.startswith("synthetic_") or name.startswith("synthetic-"):
-        name = re.sub(r"^synthetic[-_]", "", name)
+    elif name.startswith("synthetic-"):
+        # Match pattern: synthetic-{slug}-{hexdigest}-{service}-{replica}
+        match = re.match(r"synthetic-[a-z0-9-]+-[a-f0-9]{12}-(.*)", name)
+        if match:
+            name = match.group(1)
+        else:
+            name = name[10:]  # Remove "synthetic-"
+
+    elif name.startswith("synthetic_"):
+        name = name[10:]  # Remove "synthetic_"
 
     # Remove trailing replica number (e.g., "-1", "-2")
     # Match pattern: {service}-{number} at the end
@@ -93,9 +101,10 @@ def parse_container_name(container_name: str) -> dict:
     # Check if this is a load generator
     name_lower = container_name.lower()
     is_loadgen = (
-        "loadgen" in name_lower or
-        "client" in name_lower and "bench" in name_lower or
-        "load_generator" in name_lower
+        "loadgen" in name_lower
+        or "client" in name_lower
+        and "bench" in name_lower
+        or "load_generator" in name_lower
     )
 
     return {

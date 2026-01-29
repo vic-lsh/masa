@@ -48,7 +48,7 @@ impl Client for SocialnetClient {
             let req_id = 0;
             ContextBuilder::new("ping".to_string(), req_id)
                 .slo(slo)
-                .start_at(start_at)
+                .gateway_entry(start_at)
                 .deadline(deadline)
                 .build()
         };
