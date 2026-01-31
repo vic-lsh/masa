@@ -67,6 +67,7 @@ The virtual environment includes all required dependencies (matplotlib, pandas, 
 ### Running an application
 
 Application source lives under `apps/<app>`, and the experiment assets for each app live under `exp/<app>`.
+See `EXPERIMENT_WORKFLOW.md` for a detailed guide on running experiments.
 Masa currently has four applications for experimentation:
 
 - `hotel`: Based on the Hotel application in Deathstarbench. We've ported this application to Rust for Masa compatibility.
@@ -126,13 +127,13 @@ To generate plots for visualizing goodput and latency of an experiment, use the 
 
 ```bash
 # Generate plots for an existing experiment
-python3 -m exp.runner plot <app> <experiment-name>
+uv run python -m exp.runner plot <app> <experiment-name>
 
 # For example:
-python3 -m exp.runner plot hotel exp1
-python3 -m exp.runner plot synthetic quick_test
-python3 -m exp.runner plot mssim e2e_test
-python3 -m exp.runner plot socialnet exp1
+uv run python -m exp.runner plot hotel exp1
+uv run python -m exp.runner plot synthetic quick_test
+uv run python -m exp.runner plot mssim e2e_test
+uv run python -m exp.runner plot socialnet exp1
 ```
 
 The plots will be saved at `exp/<app>/data/plots/<experiment>`.
@@ -140,7 +141,7 @@ The plots will be saved at `exp/<app>/data/plots/<experiment>`.
 You can also pass a `--plot` option when running experiments to automatically generate plots after completion:
 
 ```bash
-python3 -m exp.runner run <app> <experiment-name> --plot
+uv run python -m exp.runner run <app> <experiment-name> --plot
 ```
 
 #### Docker compose manual (single-server)
@@ -151,15 +152,15 @@ For running experiments, use the Python experiment runner:
 
 ```bash
 # Run a full experiment (builds, starts services, runs load generator, collects logs)
-python3 -m exp.runner run <app> <experiment-name> --plot
+uv run python -m exp.runner run <app> <experiment-name> --plot
 
 # For example:
-python3 -m exp.runner run hotel exp1 --plot
-python3 -m exp.runner run synthetic quick_test --plot
-python3 -m exp.runner run socialnet exp1 --plot
+uv run python -m exp.runner run hotel exp1 --plot
+uv run python -m exp.runner run synthetic quick_test --plot
+uv run python -m exp.runner run socialnet exp1 --plot
 
 # Run multiple experiments sequentially
-python3 -m exp.runner run-multiple hotel "exp1 exp2 exp3" --plot
+uv run python -m exp.runner run-multiple hotel "exp1 exp2 exp3" --plot
 ```
 
 See `exp/runner/README.md` for full documentation on the experiment runner.
