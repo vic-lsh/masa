@@ -46,8 +46,9 @@ source .venv/bin/activate
 pytest
 
 # Run experiments (they run for a long time; don't run unless the user asks you to)
-python3 -m exp.runner run <app> <experiment_name> --plot
-python3 -m exp.runner plot <app> <experiment_name>
+# See EXPERIMENT_WORKFLOW.md for detailed instructions
+uv run python -m exp.runner run <app> <experiment_name> --plot
+uv run python -m exp.runner plot <app> <experiment_name>
 ```
 
 ## Scheduling Policies (Feature Flags)
