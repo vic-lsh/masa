@@ -30,10 +30,12 @@ Start with the aggregated metrics to get the "big picture" of performance.
 
 **Key Files to Analyze:**
 
+Here are a suggested list of things to look for. Feel free to analyze other things that you find interesting, in addition to these.
+
 | File Name | Purpose | What to Look For |
 | :--- | :--- | :--- |
 | `goodput_ALL_aggregated.csv` | Overall Throughput | **Saturation Point:** At what RPS does goodput stop increasing?<br>**Max Goodput:** Which policy achieves the highest peak goodput?<br>**Collapse:** Does performance degrade significantly after saturation? |
-| `latency_summary_ALL.csv` | Latency Stats | **SLO Compliance:** specific attention to p99 latency. Does it stay under the deadline?<br>**Capping:** Do policies with early return successfully cap latency at the deadline? |
+| `latency_summary_ALL.csv` | Latency Stats | **SLO Compliance:** specific attention to p99 latency. Does it stay under the deadline? |
 | `early_return_ALL_breakdown.csv` | Load Shedding | **Drop Location:** Which services are performing the drops? (Frontend vs. Leaf/Child)<br>**Drop Rate:** How does the drop rate correlate with goodput? |
 
 ## 3. Deep Dive & Validation (Logs)
@@ -71,12 +73,6 @@ Check these if behavior is inexplicable (e.g., zero goodput, sudden crashes).
 ## 4. Formulating Hypotheses & Actionable Next Steps
 
 End your analysis by synthesizing your findings into a hypothesis and proposing the next step.
-
-**Template:**
-> **Observation:** Policy X performs poorly at high load.
-> **Evidence:** `goodput_ALL_aggregated.csv` shows a plateau at 500 RPS. `early_return_ALL_breakdown.csv` shows 0 drops at leaf nodes.
-> **Hypothesis:** Policy X is not propagating deadline information correctly to child nodes, leading to wasted work on the backend.
-> **Validation:** `grep` on raw traces shows all errors are `DeadlineExceeded` at the frontend, confirming late detection.
 
 **Example Actionable Next Steps:**
 
