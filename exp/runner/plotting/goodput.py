@@ -2,6 +2,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import matplotlib
+import pandas as pd
 
 matplotlib.use("Agg")  # Use non-interactive backend for thread safety
 import matplotlib.pyplot as plt
@@ -343,6 +344,26 @@ def _plot_early_return_breakdown(
     fig.tight_layout(rect=[0, 0, 1, 0.90])
     fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
+
+    # Save CSV
+    csv_path = output_path.replace(".png", "_breakdown.csv")
+    csv_data = []
+    for policy in sorted_policies:
+        per_rps = policy_early_returns_breakdown.get(policy, [])
+        for i, rps in enumerate(rps_values):
+            if i < len(per_rps) and per_rps[i] is not None:
+                for key, val in per_rps[i].items():
+                    svc, mth = key.split("::", 1)
+                    csv_data.append({
+                        "RPS": rps,
+                        "Policy": policy,
+                        "Service": svc,
+                        "Method": mth,
+                        "Rate": float(val or 0.0)
+                    })
+    
+    if csv_data:
+        pd.DataFrame(csv_data).to_csv(csv_path, index=False)
 
 
 def compute_slo_miss_by_request_type(df):
@@ -796,6 +817,40 @@ def _plot_all_api_goodput_clean(
     fig2.tight_layout(rect=[0, 0, 1, 0.90])
     fig2.savefig(breakdown_path, dpi=300, bbox_inches="tight")
     plt.close(fig2)
+
+    # Save Aggregated Goodput CSV
+    agg_csv_path = base_path + "_aggregated.csv"
+    agg_data = []
+    for policy in sorted_policies:
+        goodput_values = policy_total_goodputs.get(policy, [])
+        for i, rps in enumerate(rps_values):
+            if i < len(goodput_values):
+                gp = float(goodput_values[i] or 0.0)
+                agg_data.append({
+                    "RPS": rps,
+                    "Policy": policy,
+                    "Goodput": gp,
+                    "Fraction": gp / rps if rps > 0 else 0.0
+                })
+    if agg_data:
+        pd.DataFrame(agg_data).to_csv(agg_csv_path, index=False)
+
+    # Save Breakdown Goodput CSV
+    breakdown_csv_path = base_path + "_breakdown.csv"
+    breakdown_data = []
+    for policy in sorted_policies:
+        per_rps = policy_goodputs_by_type.get(policy, [])
+        for i, rps in enumerate(rps_values):
+            if i < len(per_rps) and per_rps[i] is not None:
+                for rt, val in per_rps[i].items():
+                    breakdown_data.append({
+                        "RPS": rps,
+                        "Policy": policy,
+                        "RequestType": rt,
+                        "Goodput": float(val or 0.0)
+                    })
+    if breakdown_data:
+        pd.DataFrame(breakdown_data).to_csv(breakdown_csv_path, index=False)
 
 
 def compute_goodput_time_series(df, bucket_seconds: float = 1.0):
