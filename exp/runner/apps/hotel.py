@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
-from .utils import normalize_features_to_tag, get_docker_progress_flag
+from .utils import get_docker_progress_flag
 from ..cpu_monitor import CPUMonitor
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,38 @@ def _safe_project_name(*, experiment_name: str, iteration: int, policy: str) -> 
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
     slug = re.sub(r"[^a-z0-9]+", "-", experiment_name.lower()).strip("-")[:12] or "exp"
     return f"hotel-{slug}-{digest}"
+
+
+def _policy_to_flags(policy: str) -> str:
+    """Map legacy policy string to new CLI flags."""
+    flags = []
+    
+    parts = policy.split(",")
+    base_policy = parts[0]
+    
+    if base_policy == "fifo":
+        flags.append("--queue fifo")
+        flags.append("--deadline-policy none")
+    elif base_policy == "prio_global":
+        flags.append("--queue prio")
+        flags.append("--deadline-policy global")
+    elif base_policy == "prio_local":
+        flags.append("--queue prio")
+        flags.append("--deadline-policy local")
+    elif base_policy == "prio_oldest":
+        # TailClipper usually implies oldest-first
+        flags.append("--queue prio-oldest")
+        flags.append("--deadline-policy oldest")
+    else:
+        # Fallback for unknown policies - assume valid CLI args or default
+        logger.warning(f"Unknown base policy '{base_policy}', using defaults")
+        flags.append("--queue fifo")
+        flags.append("--deadline-policy none")
+
+    if "early" in parts:
+        flags.append("--early-return")
+        
+    return " ".join(flags)
 
 
 def _generate_gen_config(
@@ -170,11 +202,7 @@ class HotelLoadGenerator(LoadGenerator):
         return "local_hotel_network"
 
     def get_image_name(self) -> str:
-        tag = normalize_features_to_tag(self.features)
-        if tag and tag != "latest":
-            return f"hotel_client_bench:{tag}"
-        else:
-            return "hotel_client_bench:latest"
+        return "hotel_client_bench:latest"
 
     def get_binary_name(self) -> str:
         return "hotel_client_bench"
@@ -239,13 +267,11 @@ class HotelBuilder(AppBuilder):
         # Convert to path relative to repo_root
         gen_config_path_rel = gen_config_path.relative_to(repo_root)
 
-        # Generate tag based on features for deterministic, feature-specific images
-        tag = normalize_features_to_tag(features)
+        # Always use 'latest' tag as we don't build separate images per policy anymore
+        tag = "latest"
         
         logger.info(f"Building {len(binaries_list)} docker images for hotel app using multi-stage build")
-        if features:
-            logger.info(f"Using features: {features}")
-
+        
         # Collect commands if dry_run
         commands: list[list[str]] = []
 
@@ -256,8 +282,7 @@ class HotelBuilder(AppBuilder):
         logger.info("Stage 1: Building all binaries for hotel app")
         stage1_start_time = time.time()
         builder_build_args: list[str] = []
-        if features:
-            builder_build_args.extend(["--build-arg", f"FEATURES={features}"])
+        # features are no longer passed to build
         builder_build_args.extend(["--build-arg", f"APP={app}"])
         # Use a unique cache ID to avoid race conditions in parallel builds
         cache_id = f"{app}-{tag}"
@@ -302,8 +327,7 @@ class HotelBuilder(AppBuilder):
         logger.info("Stage 2: Building runtime-base image")
         stage2_start_time = time.time()
         runtime_base_build_args: list[str] = []
-        if features:
-            runtime_base_build_args.extend(["--build-arg", f"FEATURES={features}"])
+        # features are no longer passed to build
         runtime_base_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
         runtime_base_build_args.extend(["--build-arg", f"APP={app}"])
         runtime_base_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
@@ -351,8 +375,7 @@ class HotelBuilder(AppBuilder):
             log_file = None
             try:
                 runtime_build_args: list[str] = []
-                if features:
-                    runtime_build_args.extend(["--build-arg", f"FEATURES={features}"])
+                # features are no longer passed to build
                 runtime_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
                 runtime_build_args.extend(["--build-arg", f"APP={app}"])
                 runtime_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
@@ -360,12 +383,9 @@ class HotelBuilder(AppBuilder):
                 # Use consistent cache ID based on features across all stages
                 runtime_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
 
-                # Generate image name: <binary>:<tag> or <binary>:latest if no features
+                # Generate image name: <binary>:<tag>
                 # Note: binary_name already includes the hotel_ prefix
-                if tag:
-                    image_name = f"{binary_name}:{tag}"
-                else:
-                    image_name = f"{binary_name}:latest"
+                image_name = f"{binary_name}:{tag}"
 
                 runtime_cmd: list[str] = [
                     "docker",
@@ -550,7 +570,7 @@ class HotelApp(AppPlugin):
         return DockerConfig(
             compose_file="scripts/local/containers+svcs.yaml",
             network_name="local_hotel_network",
-            loadgen_image_name="hotel_client_bench:<features>",  # Actual tag is dynamic based on features
+            loadgen_image_name="hotel_client_bench:latest",  # Actual tag is dynamic based on features
             loadgen_binary_name="hotel_client_bench",
             app_config_filename="hotel.json",
         )
@@ -609,7 +629,7 @@ class HotelApp(AppPlugin):
         Returns:
             Docker image tag string
         """
-        return normalize_features_to_tag(features)
+        return "latest"
 
     def run_workload(
         self,
@@ -659,6 +679,9 @@ class HotelApp(AppPlugin):
         # Add image tag based on policy/features
         tag = self.get_image_tag(features=policy)
         env_vars["HOTEL_IMAGE_TAG"] = tag if tag else "latest"
+        
+        # Set EXTRA_FLAGS for runtime configuration
+        env_vars["EXTRA_FLAGS"] = _policy_to_flags(policy)
 
         # Clean up old build logs before building
         build_logs_dir = repo_root / "exp" / "hotel" / "data" / "out" / config.experiment_name / str(iteration) / policy / "build_logs"

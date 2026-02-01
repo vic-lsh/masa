@@ -3,7 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
+use super::{PopError, PushError, Queue, SchedFlavor};
 use crate::runtime::task::Identifiable;
 use masa::{Prioritize, PriorityHint};
 
@@ -117,6 +117,10 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable, const USE_INFRA_QUEUE: boo
     fn capacity(&self) -> Option<usize> {
         Some(self.heap.capacity() + self.rr_queue.capacity() + self.infra_rr_queue.capacity())
     }
+
+    fn sched_flavor(&self) -> SchedFlavor {
+        SchedFlavor::Prio
+    }
 }
 
 impl<T: Ord, const USE_INFRA_QUEUE: bool> Default
@@ -128,14 +132,6 @@ impl<T: Ord, const USE_INFRA_QUEUE: bool> Default
             rr_queue: VecDeque::new(),
             infra_rr_queue: VecDeque::new(),
         }
-    }
-}
-
-impl<T, const USE_INFRA_QUEUE: bool> IntoSchedFlavor
-    for BinaryHeapRoundRobinQueue<T, USE_INFRA_QUEUE>
-{
-    fn into_sched_flavor() -> SchedFlavor {
-        SchedFlavor::Prio
     }
 }
 
@@ -195,14 +191,6 @@ mod tests {
         fn id(&self) -> Id {
             self.id
         }
-    }
-
-    #[test]
-    fn test_prio_bh_rr_queue_sched_flavor() {
-        assert_eq!(
-            BinaryHeapRoundRobinQueue::<u64>::into_sched_flavor(),
-            SchedFlavor::Prio
-        );
     }
 
     #[test]

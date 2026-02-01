@@ -136,6 +136,7 @@ async fn run_root_load(
     root_samples: Arc<Mutex<Vec<RootLatencySample>>>,
     finish_after: Option<Duration>,
     latency_sample_tx: mpsc::UnboundedSender<u64>,
+    prio_hint_mode: String,
 ) -> anyhow::Result<()> {
     // Create exponential distribution for Poisson process
     // For Poisson process with rate lambda (rps), inter-arrival times are exponential with rate lambda
@@ -198,6 +199,7 @@ async fn run_root_load(
                 next_req_id += 1;
 
                 let stats = Arc::clone(&stats);
+                let prio_hint_mode = prio_hint_mode.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
                     let start_at = time_now();
@@ -211,7 +213,7 @@ async fn run_root_load(
                         let slo_us = entry.slo_ms * 1000;
                         let start_at = time_now();
                         let deadline = start_at + slo_us;
-                        let prio_hint = if masa::PRIO_OLDEST { start_at } else { deadline };
+                        let prio_hint = if prio_hint_mode == "start_at" || prio_hint_mode == "oldest" { start_at } else { deadline };
                         MasaContextBuilder::new("root".to_string(), req_id)
                             .slo(slo_us)
                             .gateway_entry(start_at)
@@ -524,17 +526,20 @@ async fn main() -> anyhow::Result<()> {
         .parse()?;
     let duration = Duration::from_secs(duration as u64);
 
+    let prio_hint_mode = env::var("PRIO_HINT_MODE").unwrap_or_else(|_| "deadline".to_string());
+
     let replay_env = env::var("REPLAY_TRACE_PATH")
         .ok()
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty());
 
     tracing::info!(
-        "RPS values: {:?}, MAX_IN_FLIGHT: {}, STATS_INTERVAL_SEC: {}, DURATION: {:?}",
+        "RPS values: {:?}, MAX_IN_FLIGHT: {}, STATS_INTERVAL_SEC: {}, DURATION: {:?}, PRIO_HINT_MODE: {}",
         rps_values,
         max_in_flight,
         stats_interval_sec,
-        duration
+        duration,
+        prio_hint_mode
     );
 
     // If replay_env is set, we are in replay mode
@@ -665,6 +670,7 @@ async fn main() -> anyhow::Result<()> {
                 stats.clone(),
                 inflight_guard.clone(),
                 latency_sample_tx.clone(),
+                prio_hint_mode,
             )
             .await?;
         }
@@ -727,6 +733,7 @@ async fn main() -> anyhow::Result<()> {
             root_samples.clone(),
             Some(duration),
             latency_sample_tx.clone(),
+            prio_hint_mode.clone(),
         )
         .await?;
 

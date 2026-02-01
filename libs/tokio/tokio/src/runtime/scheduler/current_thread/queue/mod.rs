@@ -4,18 +4,6 @@ pub(crate) mod prio_bh;
 pub(crate) mod prio_bh_rr;
 pub(crate) mod timed;
 
-#[cfg(any(
-    feature = "fifo_span_tracing",
-    feature = "fifo_queue_tracing",
-    feature = "prio_global_queue_tracing",
-))]
-pub(crate) type LocalRunQueue<T> = timed::TimedQueue<LocalRunQueueInner<T>>;
-
-#[cfg(not(any(
-    feature = "fifo_span_tracing",
-    feature = "fifo_queue_tracing",
-    feature = "prio_global_queue_tracing",
-)))]
 pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
 
 pub(crate) enum LocalRunQueueInner<T> {
@@ -83,13 +71,13 @@ where
             Self::PrioOldest(q) => q.capacity(),
         }
     }
-}
 
-impl<T> IntoSchedFlavor for LocalRunQueueInner<T> {
-    fn into_sched_flavor() -> SchedFlavor {
-        // Dynamic flavor is tricky here as this trait is for compile-time info.
-        // We'll return Prio as it's the superset.
-        SchedFlavor::Prio
+    fn sched_flavor(&self) -> SchedFlavor {
+        match self {
+            Self::Fifo(_) => SchedFlavor::Fifo,
+            Self::Prio(_) => SchedFlavor::Prio,
+            Self::PrioOldest(_) => SchedFlavor::Prio,
+        }
     }
 }
 
@@ -102,15 +90,25 @@ pub enum SchedFlavor {
     Prio,
 }
 
-trait IntoSchedFlavor {
-    // Note that this does not operate on a concrete struct instance. It operates
-    // on the struct type information only.
-    fn into_sched_flavor() -> SchedFlavor;
-}
-
 /// Get the scheduling flavor used by this runtime instantiation.
 pub fn get_sched_flavor() -> SchedFlavor {
-    LocalRunQueueInner::<u64>::into_sched_flavor()
+    use crate::runtime::context;
+    use crate::runtime::scheduler::Context;
+
+    context::with_scheduler(|maybe_context| {
+        let context = match maybe_context {
+            Some(Context::CurrentThread(ctx)) => ctx,
+            #[cfg(feature = "rt-multi-thread")]
+            Some(_) => return SchedFlavor::Prio,
+            None => return SchedFlavor::Fifo, // Default/Fallback
+        };
+
+        let core = context.core.borrow();
+        match core.as_ref() {
+            Some(core) => core.tasks.sched_flavor(),
+            None => SchedFlavor::Fifo,
+        }
+    })
 }
 
 /// Get the current queue length for the current_thread runtime.
@@ -162,6 +160,8 @@ pub(crate) trait Queue {
     fn with_capacity(cap: usize) -> Self;
 
     fn new(ty: Option<masa::QueueType>, cap: usize) -> Self;
+
+    fn sched_flavor(&self) -> SchedFlavor;
 }
 
 #[derive(Debug)]

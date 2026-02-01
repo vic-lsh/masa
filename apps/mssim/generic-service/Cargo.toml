@@ -32,17 +32,4 @@ name = "mssim-loadgen"
 path = "src/loadgen.rs"
 
 [features]
-early = [
-    "masa/early",
-    "tonic/early",
-]
 
-fifo = ["tokio/fifo", "masa/fifo", "tonic/fifo"]
-
-prio_oldest = ["tokio/prio_oldest", "masa/prio_oldest", "tonic/prio_oldest"]
-
-prio_global = [
-  "tokio/prio_global",
-  "masa/prio_global",
-  "tonic/prio_global",
-]

@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Optional
 
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
-from .utils import normalize_features_to_tag
 from ..cpu_monitor import CPUMonitor
 
 # Import MSSIM constants for container/service naming
@@ -35,24 +34,12 @@ GENERIC_SERVICE_IMAGE = "generic_service"
 MSSIM_LOADGEN_IMAGE = "mssim_load_generator"
 
 
-def _canonicalize_features_for_build(feature: str) -> str:
-    """
-    Canonicalize features for use in build args (FEATURE_ARG).
-    Returns comma-separated, sorted, deduplicated feature string.
-    """
-    parts = [part.strip() for part in re.split(r"[\s,]+", feature) if part.strip()]
-    if not parts:
-        return "default"
-    return ",".join(sorted(set(parts)))
-
-
 def _generic_service_image_for_policy(policy: str) -> str:
     """
-    Get the docker image name for a given policy/features.
-    Uses normalized feature flags for tagging like other apps in exp.runner.
+    Get the docker image name for the generic service.
+    Always returns latest as we don't build separate images per policy anymore.
     """
-    tag = normalize_features_to_tag(policy)
-    return f"{GENERIC_SERVICE_IMAGE}:{tag}"
+    return f"{GENERIC_SERVICE_IMAGE}:latest"
 
 
 def _safe_project_name(*, experiment_name: str, iteration: int, policy: str, rps: float) -> str:
@@ -184,17 +171,13 @@ class MssimBuilder(AppBuilder):
 
             self._loadgen_built = True
 
-        # Build generic service image for policy/features
-        policy = (features or "").strip() or "default"
-        # Use normalized tag for image tagging (consistent with other apps)
-        tag = normalize_features_to_tag(policy)
-        # Canonicalize features for build arg (sort, deduplicate)
-        features_for_build = _canonicalize_features_for_build(policy)
+        # Build generic service image
+        # Always use 'latest' tag
+        tag = "latest"
         
         if tag not in self._built_feature_keys:
-            feature_image = _generic_service_image_for_policy(policy)
-            # Use a unique cache ID based on features to avoid race conditions in parallel builds
-            # Format: mssim-{tag} to match the pattern used by other apps
+            feature_image = _generic_service_image_for_policy("latest")
+            # Use a unique cache ID based on tag (which is now fixed)
             cache_id = f"mssim-{tag}"
 
             generic_cmd = [
@@ -204,8 +187,7 @@ class MssimBuilder(AppBuilder):
                 "--load",
                 "-t",
                 feature_image,
-                "--build-arg",
-                f"FEATURE_ARG={features_for_build}",
+                # features/FEATURE_ARG removed
                 "--build-arg",
                 f"CACHE_ID={cache_id}",
                 "--target",

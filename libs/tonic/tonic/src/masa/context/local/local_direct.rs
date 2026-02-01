@@ -29,9 +29,6 @@ static LAST_PRINT_TIME: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 #[allow(unreachable_pub)]
 pub struct LocalDeadlineDirect;
 
-#[cfg(feature = "early")]
-type DirectHandler = super::super::common::RealEarlyReturnHandler;
-#[cfg(not(feature = "early"))]
 type DirectHandler = super::super::common::NoopEarlyReturnHandler;
 
 impl MasaHooks for LocalDeadlineDirect {

@@ -145,8 +145,45 @@ fn init_tracing() {
         .init();
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let feature = env::var("FEATURE").unwrap_or_else(|_| "fifo".to_string());
+    
+    // Simple parsing logic matching what app-utils does
+    let (base, early) = if let Some(stripped) = feature.strip_suffix(",early") {
+        (stripped, true)
+    } else {
+        (feature.as_str(), false)
+    };
+
+    match (base, early) {
+        ("fifo", false) => run_with_policy::<masa::CompositePolicy<masa::Fifo, masa::EarlyReturnDisabled, masa::DeadlinePolicyNone>>(),
+        ("fifo", true) => run_with_policy::<masa::CompositePolicy<masa::Fifo, masa::EarlyReturnEnabled, masa::DeadlinePolicyNone>>(),
+        
+        ("prio_global", false) => run_with_policy::<masa::CompositePolicy<masa::Prio, masa::EarlyReturnDisabled, masa::DeadlinePolicyGlobal>>(),
+        ("prio_global", true) => run_with_policy::<masa::CompositePolicy<masa::Prio, masa::EarlyReturnEnabled, masa::DeadlinePolicyGlobal>>(),
+        
+        ("prio_local", false) => run_with_policy::<masa::CompositePolicy<masa::Prio, masa::EarlyReturnDisabled, masa::DeadlinePolicyLocal>>(),
+        ("prio_local", true) => run_with_policy::<masa::CompositePolicy<masa::Prio, masa::EarlyReturnEnabled, masa::DeadlinePolicyLocal>>(),
+        
+        ("prio_oldest", false) => run_with_policy::<masa::CompositePolicy<masa::PrioOldest, masa::EarlyReturnDisabled, masa::DeadlinePolicyOldest>>(),
+        ("prio_oldest", true) => run_with_policy::<masa::CompositePolicy<masa::PrioOldest, masa::EarlyReturnEnabled, masa::DeadlinePolicyOldest>>(),
+
+        _ => {
+            eprintln!("Unknown feature policy: {}. Defaulting to Fifo.", feature);
+            run_with_policy::<masa::CompositePolicy<masa::Fifo, masa::EarlyReturnDisabled, masa::DeadlinePolicyNone>>()
+        }
+    }
+}
+
+fn run_with_policy<P: masa::Policy>() -> Result<(), Box<dyn std::error::Error>> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .policy::<P>()
+        .build()?
+        .block_on(async_main())
+}
+
+async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     init_tracing();
 
     let deployment_path =

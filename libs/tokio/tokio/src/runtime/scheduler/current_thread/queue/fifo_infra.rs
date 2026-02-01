@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use masa::{Prioritize, PriorityHint};
 
-use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
+use super::{PopError, PushError, Queue, SchedFlavor};
 
 pub(crate) struct FifoInfraQueue<T> {
     infra_q: VecDeque<T>,
@@ -56,10 +56,8 @@ impl<T: Prioritize> Queue for FifoInfraQueue<T> {
     fn capacity(&self) -> Option<usize> {
         Some(self.infra_q.capacity() + self.other_q.capacity())
     }
-}
 
-impl<T> IntoSchedFlavor for FifoInfraQueue<T> {
-    fn into_sched_flavor() -> SchedFlavor {
+    fn sched_flavor(&self) -> SchedFlavor {
         SchedFlavor::Fifo
     }
 }

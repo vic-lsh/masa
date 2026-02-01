@@ -243,6 +243,7 @@ pub async fn run_replay_load(
     stats: Arc<Stats>,
     inflight_guard: Arc<Semaphore>,
     latency_sample_tx: mpsc::UnboundedSender<u64>,
+    prio_hint_mode: String,
 ) -> anyhow::Result<()> {
     let start_instant = Instant::now();
     let mut handles = Vec::with_capacity(work_items.len());
@@ -257,6 +258,7 @@ pub async fn run_replay_load(
         let entry = client_pool.acquire();
         let mut rpc_client = entry.client.clone();
         let stats = Arc::clone(&stats);
+        let prio_hint_mode = prio_hint_mode.clone();
 
         let handle = tokio::spawn(async move {
             tokio::time::sleep_until(schedule_time).await;
@@ -273,7 +275,7 @@ pub async fn run_replay_load(
                 let slo = 50_000;
                 let start_at = time_now();
                 let deadline = start_at + slo;
-                let prio_hint = if masa::PRIO_OLDEST {
+                let prio_hint = if prio_hint_mode == "start_at" || prio_hint_mode == "oldest" {
                     start_at
                 } else {
                     deadline

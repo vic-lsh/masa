@@ -1,4 +1,4 @@
-use crate::runtime::scheduler::current_thread::queue::{PopError, PushError, Queue};
+use crate::runtime::scheduler::current_thread::queue::{PopError, PushError, Queue, SchedFlavor};
 use super::super::Notified;
 
 /// Timed Queue
@@ -42,5 +42,9 @@ impl<Q: Queue<Item = Notified>> Queue for TimedQueue<Q> {
 
     fn capacity(&self) -> Option<usize> {
         self.inner.capacity()
+    }
+
+    fn sched_flavor(&self) -> SchedFlavor {
+        self.inner.sched_flavor()
     }
 }

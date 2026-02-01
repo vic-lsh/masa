@@ -81,22 +81,6 @@ path = "src/client/client_bench.rs"
 # path = "src/unique_id/client.rs"
 
 [features]
-prio_global = [
-  "tokio/prio_global",
-  "masa/prio_global",
-  "tonic/prio_global",
-]
-prio_local = [
-  "tokio/prio_local",
-  "masa/prio_local",
-  "tonic/prio_local",
-]
-fifo = ["tokio/fifo", "masa/fifo", "tonic/fifo"]
-
-early = [
-    "masa/early",
-    "tonic/early",
-]
 
 [dependencies]
 tonic = { path = "../../libs/tonic/tonic" }

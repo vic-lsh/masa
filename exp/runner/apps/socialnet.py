@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
-from .utils import normalize_features_to_tag, get_docker_progress_flag
+from .utils import get_docker_progress_flag
 from ..cpu_monitor import CPUMonitor
 
 if TYPE_CHECKING:
@@ -92,11 +92,7 @@ class SocialnetLoadGenerator(LoadGenerator):
         return "socialnet-network"
 
     def get_image_name(self) -> str:
-        tag = normalize_features_to_tag(self.features)
-        if tag and tag != "latest":
-            return f"socialnet_client_bench:{tag}"
-        else:
-            return "socialnet_client_bench:latest"
+        return "socialnet_client_bench:latest"
 
     def get_binary_name(self) -> str:
         return "socialnet_client_bench"
@@ -145,14 +141,12 @@ class SocialnetBuilder(AppBuilder):
         # Convert to path relative to repo_root
         gen_config_path_rel = gen_config_path.relative_to(repo_root)
 
-        # Generate tag based on features for deterministic, feature-specific images
-        tag = normalize_features_to_tag(features)
+        # Always use 'latest' tag as we don't build separate images per policy anymore
+        tag = "latest"
 
         logger.info(
             f"Building {len(binaries_list)} docker images for socialnet app using multi-stage build"
         )
-        if features:
-            logger.info(f"Using features: {features}")
 
         # Collect commands if dry_run
         commands: list[list[str]] = []
@@ -163,8 +157,7 @@ class SocialnetBuilder(AppBuilder):
         # Stage 1: Build all binaries once (shared across all images)
         logger.info("Stage 1: Building all binaries for socialnet app")
         builder_build_args: list[str] = []
-        if features:
-            builder_build_args.extend(["--build-arg", f"FEATURES={features}"])
+        # features are no longer passed to build
         builder_build_args.extend(["--build-arg", f"APP={app}"])
         # Use a unique cache ID to avoid race conditions in parallel builds
         cache_id = f"{app}-{tag}"
@@ -200,8 +193,7 @@ class SocialnetBuilder(AppBuilder):
         # Stage 2: Build runtime-base image (shared dependencies)
         logger.info("Stage 2: Building runtime-base image")
         runtime_base_build_args: list[str] = []
-        if features:
-            runtime_base_build_args.extend(["--build-arg", f"FEATURES={features}"])
+        # features are no longer passed to build
         runtime_base_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
         runtime_base_build_args.extend(["--build-arg", f"APP={app}"])
         runtime_base_build_args.extend(
@@ -239,11 +231,10 @@ class SocialnetBuilder(AppBuilder):
         # Stage 3: Build individual runtime images for each binary
         logger.info("Stage 3: Building individual runtime images")
         for binary in binaries_list:
-            binary_tag = f"{binary}:{tag}" if tag != "latest" else f"{binary}:latest"
+            binary_tag = f"{binary}:{tag}"
 
             runtime_build_args: list[str] = []
-            if features:
-                runtime_build_args.extend(["--build-arg", f"FEATURES={features}"])
+            # features are no longer passed to build
             runtime_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
             runtime_build_args.extend(["--build-arg", f"APP={app}"])
             runtime_build_args.extend(
@@ -338,7 +329,7 @@ class SocialnetApp(AppPlugin):
         return DockerConfig(
             compose_file="apps/socialnet/docker-compose.yaml",
             network_name="socialnet-network",
-            loadgen_image_name="socialnet_client_bench:<features>",
+            loadgen_image_name="socialnet_client_bench:latest",
             loadgen_binary_name="socialnet_client_bench",
             app_config_filename="socialnet.json",
         )
@@ -383,7 +374,7 @@ class SocialnetApp(AppPlugin):
         Returns:
             Image tag string
         """
-        return normalize_features_to_tag(features)
+        return "latest"
 
     def run_workload(
         self,

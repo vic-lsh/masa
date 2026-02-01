@@ -16,7 +16,7 @@ from typing import Optional
 import yaml
 
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
-from .utils import normalize_features_to_tag, get_docker_progress_flag
+from .utils import get_docker_progress_flag
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +76,7 @@ class SyntheticLoadGenerator(LoadGenerator):
         return "local_synthetic_network"
 
     def get_image_name(self) -> str:
-        tag = normalize_features_to_tag(self.features)
-        if tag and tag != "latest":
-            return f"synthetic_client_bench:{tag}"
-        else:
-            return "synthetic_client_bench:latest"
+        return "synthetic_client_bench:latest"
 
     def get_binary_name(self) -> str:
         return "synthetic_client_bench"
@@ -316,7 +312,7 @@ class SyntheticApp(AppPlugin):
         return DockerConfig(
             compose_file="docker-compose.yaml",
             network_name="local_synthetic_network",
-            loadgen_image_name="synthetic_client_bench:<features>",
+            loadgen_image_name="synthetic_client_bench:latest",
             loadgen_binary_name="synthetic_client_bench",
             app_config_filename="config.docker.json",
         )
@@ -401,7 +397,7 @@ class SyntheticApp(AppPlugin):
         Returns:
             Docker image tag string
         """
-        return normalize_features_to_tag(features)
+        return "latest"
 
     def run_workload(
         self,
@@ -661,14 +657,12 @@ class SyntheticBuilder(AppBuilder):
             "synthetic_client_bench",
         ]
 
-        # Generate tag based on features for deterministic, feature-specific images
-        tag = normalize_features_to_tag(features)
+        # Always use 'latest' tag
+        tag = "latest"
 
         logger.info(
             f"Building {len(binaries)} docker images for synthetic app using multi-stage build"
         )
-        if features:
-            logger.info(f"Using features: {features}")
 
         # Collect commands if dry_run
         commands: list[list[str]] = []
@@ -687,8 +681,7 @@ class SyntheticBuilder(AppBuilder):
             # Only final runtime images use --load since they're used by docker-compose.
             logger.info("Stage 1: Building all binaries for synthetic app")
             builder_build_args: list[str] = []
-            if features:
-                builder_build_args.extend(["--build-arg", f"FEATURES={features}"])
+            # features are no longer passed to build
             builder_build_args.extend(["--build-arg", f"APP={app}"])
             # Use a unique cache ID to avoid race conditions in parallel builds
             cache_id = f"{app}-{tag}"
@@ -738,8 +731,7 @@ class SyntheticBuilder(AppBuilder):
             # Stage 2: Build runtime-base (shared across all images)
             logger.info("Stage 2: Building runtime-base image")
             runtime_base_build_args: list[str] = []
-            if features:
-                runtime_base_build_args.extend(["--build-arg", f"FEATURES={features}"])
+            # features are no longer passed to build
             runtime_base_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
             runtime_base_build_args.extend(["--build-arg", f"APP={app}"])
             runtime_base_build_args.extend(
@@ -793,8 +785,7 @@ class SyntheticBuilder(AppBuilder):
                 logger.info(f"Stage 3: Building runtime image for {binary_name}")
 
                 runtime_build_args: list[str] = []
-                if features:
-                    runtime_build_args.extend(["--build-arg", f"FEATURES={features}"])
+                # features are no longer passed to build
                 runtime_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
                 runtime_build_args.extend(["--build-arg", f"APP={app}"])
                 runtime_build_args.extend(
@@ -804,11 +795,8 @@ class SyntheticBuilder(AppBuilder):
                 # Use consistent cache ID based on features across all stages
                 runtime_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
 
-                # Image name: synthetic_<binary>:<tag> or synthetic_<binary>:latest if no features
-                if tag:
-                    image_name = f"{binary_name}:{tag}"
-                else:
-                    image_name = f"{binary_name}:latest"
+                # Image name: synthetic_<binary>:<tag>
+                image_name = f"{binary_name}:{tag}"
 
                 runtime_cmd: list[str] = [
                     "docker",

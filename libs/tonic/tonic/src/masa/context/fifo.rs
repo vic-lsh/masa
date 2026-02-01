@@ -15,9 +15,6 @@ use masa::{Context, ContextBuilder, PriorityHint};
 #[allow(unreachable_pub)]
 pub struct Fifo;
 
-#[cfg(feature = "early")]
-type FifoHandler = super::common::RealEarlyReturnHandler;
-#[cfg(not(feature = "early"))]
 type FifoHandler = super::common::NoopEarlyReturnHandler;
 
 impl MasaHooks for Fifo {

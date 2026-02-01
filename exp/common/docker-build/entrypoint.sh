@@ -42,6 +42,10 @@ else
     CMD="${CMD} --config /usr/config.json"
 fi
 
+if [ -n "${EXTRA_FLAGS}" ]; then
+    CMD="${CMD} ${EXTRA_FLAGS}"
+fi
+
 echo "Executing: ${CMD}"
 
 # Execute the final command.

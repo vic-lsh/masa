@@ -3,7 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
+use super::{PopError, PushError, Queue, SchedFlavor};
 use crate::runtime::task::Identifiable;
 use masa::Prioritize;
 
@@ -96,6 +96,10 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapQueue<
     fn capacity(&self) -> Option<usize> {
         Some(self.q.capacity())
     }
+
+    fn sched_flavor(&self) -> SchedFlavor {
+        SchedFlavor::Prio
+    }
 }
 
 impl<T: Ord> Default for BinaryHeapQueue<T> {
@@ -104,24 +108,5 @@ impl<T: Ord> Default for BinaryHeapQueue<T> {
             q: BinaryHeap::new(),
             push_count: 0,
         }
-    }
-}
-
-impl<T> IntoSchedFlavor for BinaryHeapQueue<T> {
-    fn into_sched_flavor() -> SchedFlavor {
-        SchedFlavor::Prio
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_prio_queue_sched_flavor() {
-        assert_eq!(
-            BinaryHeapQueue::<u64>::into_sched_flavor(),
-            SchedFlavor::Prio
-        );
     }
 }

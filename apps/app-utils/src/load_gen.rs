@@ -133,6 +133,8 @@ pub struct GenConfig {
     pub max_in_flight: usize,
     #[serde(rename = "Addr")]
     pub addr: String,
+    #[serde(rename = "PrioHintMode", default)]
+    pub prio_hint_mode: Option<String>,
 }
 
 fn default_max_in_flight() -> usize {
@@ -572,7 +574,8 @@ where
 
                 let start_at = time_now();
                 let deadline = start_at + handler.slo();
-                let prio_hint = if masa::PRIO_OLDEST {
+                let prio_hint_mode = self.gen_cfg.prio_hint_mode.as_deref().unwrap_or("deadline");
+                let prio_hint = if prio_hint_mode == "start_at" || prio_hint_mode == "oldest" {
                     start_at
                 } else {
                     deadline
