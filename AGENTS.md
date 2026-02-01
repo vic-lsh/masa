@@ -1,130 +1,120 @@
-# AGENTS.md
+# CLAUDE.md
 
-> **Purpose**: This file provides context, commands, and guidelines for AI agents (and humans) working on the Masa repository.
-> **Repo**: Masa is an RPC system improving goodput via dynamic prioritization, built on Tonic, Hyper, and Tokio.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 1. Project Structure & Environment
+## Project Overview
 
-### Directory Layout
-- `libs/`: Core Rust libraries (modified `tonic`, `masa` support).
-- `apps/`: Microservice applications (`hotel`, `socialnet`, `synthetic`) and simulators.
-- `exp/`: Python-based experiment orchestration (`exp.runner`) and analysis tools.
-- `scripts/`: Shell scripts for CI/CD workflows (test, check, format).
+Masa is an RPC system that improves goodput (throughput for requests under SLO) via dynamic RPC prioritization, built on modified versions of Tonic, Hyper, and Tokio. It detects which RPCs are "running late" at runtime and dynamically adjusts priority based on end-to-end SLO constraints.
 
-### Environment Setup
-- **Rust**: Ensure `cargo` is installed.
-- **Python**: Uses `uv` for dependency management.
-    ```bash
-    # Install uv (if needed)
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    
-    # Sync dependencies
-    uv sync
-    
-    # Activate environment
-    source .venv/bin/activate
-    ```
+## Repository Structure
 
----
+- `libs/`: Core Rust libraries - modified `tonic`, `hyper`, `tokio`, `tower`, and Masa-specific `masa` crate
+- `apps/`: Microservice applications for evaluation (`hotel`, `socialnet`, `synthetic`, `mssim`)
+- `exp/`: Python-based experiment orchestration and analysis tools
+- `scripts/`: Shell scripts for CI/CD (test, check, format)
 
-## 2. Workflows & Commands
+## Build and Test Commands
 
-### Rust Development
-*Always run checks from the root directory.*
+### Rust Development (run from repo root)
 
-- **Format Code**:
-  ```bash
-  ./scripts/format.sh
-  # Equivalent to: cargo fmt
-  ```
+```bash
+# Format code
+./scripts/format.sh   # or: cargo fmt
 
-- **Lint / Check**:
-  ```bash
-  ./scripts/check.sh
-  # Checks standard and feature-flagged builds (fifo, prio_global, etc.)
-  ```
+# Check all feature flag combinations
+./scripts/check.sh
 
-- **Run All Tests**:
-  ```bash
-  ./scripts/test.sh
-  # Runs specific shell scripts + cargo test for known-good packages
-  ```
+# Run all tests
+./scripts/test.sh
 
-- **Run Single Package Test**:
-  ```bash
-  cargo test -p <package_name>
-  # Example: cargo test -p masa
-  ```
+# Test single package
+cargo test -p <package_name>
 
-- **Run Specific Test Case**:
-  ```bash
-  cargo test -p <package_name> -- <test_function_name>
-  ```
+# Test specific function
+cargo test -p <package_name> -- <test_function_name>
+```
 
-### Python Development (Experiments)
-*Ensure venv is active or use `uv run`.*
+### Python Development
 
-- **Run Tests**:
-  ```bash
-  pytest
-  # Configured in pytest.ini to check exp/tests
-  ```
+```bash
+# Setup (one-time)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync
+source .venv/bin/activate
 
-- **Experiment Runner**:
-  The `exp.runner` module is the entry point for experiments.
-  ```bash
-  # Run an experiment
-  python3 -m exp.runner run <app> <experiment_name> --plot
-  
-  # Plot existing results
-  python3 -m exp.runner plot <app> <experiment_name>
-  ```
+# Run Python tests
+pytest
 
----
+# Run experiments (they run for a long time; don't run unless the user asks you to)
+# See EXPERIMENT_WORKFLOW.md for detailed instructions
+uv run python -m exp.runner run <app> <experiment_name> --plot
+uv run python -m exp.runner plot <app> <experiment_name>
+```
 
-## 3. Code Style & Conventions
+## Scheduling Policies (Feature Flags)
 
-### General Rules
-- **Formatting**: Strictly follow `rustfmt` for Rust.
-- **Cleanup**: Remove unused code immediately; do not comment it out.
-- **Complexity**: Prefer simple designs. If a feature makes code complex, question if the feature is needed.
-- **Documentation**: 
-  - Update `README.md` in relevant directories if CLI interfaces or usage instructions change.
-  - Document *why* complex logic exists, not *what* it does.
+The codebase uses feature flags for scheduling policies. Key combinations checked by CI:
+- `fifo`: FIFO ordering
+- `prio_global`: Priority by end-to-end SLO end time
+- `prio_oldest`: Oldest request first (from the TailClipper paper)
+- `prio_global,early`: Global priority with early return
+- `prio_local,early`: Local deadline-based priority
+- `prio_oldest,early`: Oldest request first with early return (from the TailClipper paper)
 
-### Rust Conventions
-- **Async/Await**: The codebase relies heavily on `tokio`. Use standard async patterns.
-- **Error Handling**: Use `Result` and `Option` idiomatically. Avoid `unwrap()` unless in tests or strictly necessary with comments.
-- **Feature Flags**: Masa uses feature flags for scheduling policies (e.g., `fifo`, `prio_global`).
-    - When adding core logic, consider if it needs to be behind a feature flag.
-    - Check `./scripts/check.sh` to see important flag combinations.
-- **Libraries**:
-    - **Tonic**: gRPC implementation. Changes often involve `tonic` internals in `libs/tonic`.
-    - **Hyper/Tower**: HTTP and Service abstraction layers.
+Early return is a feature that allows the server to return a response early if the request is past its (e2e) deadline. This is useful for avoiding wasteful work that cannot be counted as goodput.
 
-### Python Conventions
-- **Type Hints**: Use type hints for function arguments and return values.
-- **Dependencies**: Do not use `pip` directly. Use `uv add <package>` or edit `pyproject.toml` and run `uv sync`.
-- **Structure**: Experiment logic goes in `exp/runner`, tests in `exp/tests`.
+## Architecture
 
-### Testing Guidelines
-- **New Features**: Must include new tests.
-- **Behavior Changes**: Update existing tests or add new ones.
-- **Integration**: `apps/` contains integration testbeds (e.g., `hotel`).
-    - Use `test_e2e_hotel.sh` or similar scripts in `scripts/` for end-to-end verification.
+### libs/masa
+Core Masa types and utilities:
+- `Context`/`ContextBuilder`: RPC context with deadline/priority info
+- `Prioritize`, `PriorityHint`: Priority calculation traits
+- `LatencyEstimator`: Latency distribution tracking
 
----
+### libs/tonic/tonic/src/masa/
+Masa integration into Tonic gRPC:
+- `context/`: Multiple context implementations (fifo, global, local, tracing variants)
+- `transport/masa_channel/`: Masa-aware channel transport
 
-## 4. Key Configurations
+### Patched Libraries
+The workspace patches crates.io dependencies with local modified versions (see `Cargo.toml` `[patch.crates-io]`):
+- `tokio`, `tokio-util`, `tokio-stream`, `tokio-test`, `tokio-macros`
+- `hyper`
+- `tower`, `tower-service`, `tower-layer`
 
-- **`Cargo.toml`**: Workspace definition. `libs/tonic/*` are members.
-- **`pyproject.toml`**: Python dependencies and tool config.
-- **`scripts/test.sh`**: The source of truth for which packages are currently passing tests. check this file to see which packages to skip if tests are failing.
+## Conventions
 
-## 5. Agent Instructions
-- **Analysis First**: Before editing, use `grep` and `glob` to understand call sites and dependencies.
-- **Scoped Changes**: Do not change code outside the scope of the request unless necessary for correctness.
-- **Verification**: 
-    - For Rust: Run `./scripts/check.sh` after changes.
-    - For Python: Run `pytest` if touching `exp/`.
-- **Safety**: Do not commit secrets. Explain destructive `bash` commands before running.
+### General
+- Prefer simple designs; question if a feature is needed when it adds complexity
+- Remove unused code immediately - do not comment it out
+- Document *why* complex logic exists, not *what* it does
+- Update `README.md` in relevant directories if CLI interfaces change
+
+### Rust
+- Use `Result` and `Option` idiomatically; avoid `unwrap()` except in tests
+- The codebase relies heavily on `tokio`; use standard async patterns
+- After changes: run `./scripts/check.sh`
+
+### Python
+- Use type hints for function arguments and return values
+- Use `uv add <package>` for dependencies, not pip directly
+- Experiment logic goes in `exp/runner`, tests in `exp/tests`
+- After changes in `exp/`: run `pytest`
+
+### Testing
+- New features must include tests
+- Behavior changes require updating existing tests or adding new ones
+- `scripts/test.sh` is the source of truth for which packages are currently passing tests
+- Use `scripts/test_e2e_hotel.sh` or similar scripts for end-to-end verification
+
+### Working in this Codebase
+- Before editing, understand call sites and dependencies
+- Keep changes scoped to the request unless necessary for correctness
+
+## Applications
+
+Experiment apps in `apps/` with experiment configs in `exp/<app>/data/in/<experiment>/`:
+- `hotel`: Rust port of Deathstarbench Hotel application
+- `socialnet`: Social network microservice benchmark
+- `synthetic`: Configurable synthetic workload
+- `mssim`: Trace-driven microservice simulator

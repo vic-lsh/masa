@@ -39,6 +39,7 @@ members = [
   "apps/mssim/sim-config",
   "apps/app-utils",
   "apps/app-util-macros",
+  "apps/benchmark",
 ]
 resolver = "2"
 
@@ -61,4 +62,3 @@ tokio-util = { path = "./libs/tokio/tokio-util" }
 tokio-stream = { path = "./libs/tokio/tokio-stream" }
 tokio-test = { path = "./libs/tokio/tokio-test" }
 tokio-macros = { path = "./libs/tokio/tokio-macros" }
-

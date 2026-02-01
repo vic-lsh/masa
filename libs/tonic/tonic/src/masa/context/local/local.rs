@@ -45,7 +45,7 @@ fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
 ) {
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         handle.spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            let mut interval = tokio::time::interval(Duration::from_secs(5));
             loop {
                 interval.tick().await;
 
@@ -63,7 +63,7 @@ fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
                         parts.push(format!("{}: (no estimate)", endpoint));
                     }
                 }
-                println!("{}: {}", label, parts.join(", "));
+                log::info!("{}: {}", label, parts.join(", "));
             }
         });
     }
@@ -219,16 +219,14 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         // this encodes the slack: parent deadline - est child latency - est remaining
         let prio_hint = deadline - est_child;
 
-        if self.server.print_counter.load(Ordering::Relaxed) % 500 == 0 {
+        if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
             log::info!(
-                "LAT_EST: child: {}, p=>c: {}, est_child: {}, est_rem: {}",
-                resolved_child_method,
+                "LAT_EST: p=>c: {}, est_child: {}, est_rem: {}",
                 parent_to_child_id,
                 est_child,
                 est_remaining
             );
         }
-        self.server.print_counter.fetch_add(1, Ordering::Relaxed);
 
         let child_recv_ctx = ContextBuilder::from(&self.ctx)
             .deadline(deadline)

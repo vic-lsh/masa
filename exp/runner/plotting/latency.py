@@ -2,6 +2,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import matplotlib
+import pandas as pd
 matplotlib.use('Agg')  # Use non-interactive backend for thread safety
 import matplotlib.pyplot as plt
 import numpy as np
@@ -179,6 +180,54 @@ def _plot_averaged_percentile_latency(
     plt.close(fig)
 
 
+def _save_latency_summary_csv(
+    output_dir: str,
+    api: str,
+    policies: list,
+    rps_values: list,
+    results: list,
+    repeats: int,
+) -> None:
+    """Generate averaged latency summary CSV."""
+    percentiles = [0.50, 0.90, 0.95, 0.99]
+    summary_data = []
+
+    for policy in policies:
+        for rps in rps_values:
+            # Initialize accumulators for this policy/rps combination
+            perc_acc = {p: [] for p in percentiles}
+            
+            for i in range(repeats):
+                data = results[i][api]
+                if policy not in data or rps not in data[policy]:
+                    continue
+                    
+                df = data[policy][rps]
+                df_filtered = filter_excluded_errors(df)
+                
+                if not df_filtered.empty:
+                    for p in percentiles:
+                        perc_acc[p].append(df_filtered["latency"].quantile(p))
+            
+            row = {"API": api, "Policy": policy, "RPS": rps}
+            for p in percentiles:
+                col_name = f"p{int(p*100)}"
+                values = perc_acc[p]
+                if values:
+                    row[col_name] = sum(values) / len(values)
+                else:
+                    row[col_name] = np.nan
+            summary_data.append(row)
+
+    if summary_data:
+        df = pd.DataFrame(summary_data)
+        # Sort for better readability
+        if not df.empty:
+            df = df.sort_values(by=["Policy", "RPS"])
+        output_path = os.path.join(output_dir, f"latency_summary_{api}.csv")
+        df.to_csv(output_path, index=False)
+
+
 def generate_plots(args) -> None:
     prepare_output_dir(args)
 
@@ -247,6 +296,21 @@ def generate_plots(args) -> None:
                         repeats,
                     )
                 )
+
+        # Generate summary CSV (fast enough to run serially or as one task)
+        output_dir = args.output_dir
+        for api in apis:
+             futures.append(
+                executor.submit(
+                    _save_latency_summary_csv,
+                    output_dir,
+                    api,
+                    policies,
+                    rps_values,
+                    results,
+                    repeats,
+                )
+            )
         
         # Wait for all plots to complete
         for future in as_completed(futures):

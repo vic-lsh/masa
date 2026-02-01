@@ -268,7 +268,7 @@ where
             self.ctx.api(),
             self.ctx.request_id(),
             self.ctx.slo(),
-            self.ctx.start_at(),
+            self.ctx.gateway_entry(),
             self.ctx.deadline(),
             self.latency,
             self.error
@@ -580,7 +580,7 @@ where
 
                 ContextBuilder::new(handler.api().to_string(), request_id)
                     .slo(handler.slo())
-                    .start_at(start_at)
+                    .gateway_entry(start_at)
                     .deadline(deadline)
                     .prio_hint(PriorityHint::new(prio_hint))
                     .build()

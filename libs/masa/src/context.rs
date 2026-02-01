@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::{Deserialize, Serialize};
 
 use crate::{Api, Latency, PriorityHint, RequestId, Timestamp};
@@ -21,7 +22,7 @@ pub struct Context {
     api: Api,
     request_id: RequestId,
     slo: Latency,
-    start_at: Timestamp,
+    gateway_entry: Timestamp,
     deadline: Timestamp,
     prio_hint: PriorityHint,
     frontend_elapse: Option<u64>,
@@ -31,7 +32,7 @@ pub struct ContextBuilder {
     api: Api,
     request_id: RequestId,
     slo: Latency,
-    start_at: Timestamp,
+    gateway_entry: Timestamp,
     deadline: Timestamp,
     prio_hint: Option<PriorityHint>,
     frontend_elapse: Option<u64>,
@@ -43,7 +44,7 @@ impl ContextBuilder {
             api: api.into(),
             request_id,
             slo: 0,
-            start_at: 0,
+            gateway_entry: 0,
             deadline: 0,
             prio_hint: None,
             frontend_elapse: None,
@@ -55,7 +56,7 @@ impl ContextBuilder {
             api: ctx.api.clone(),
             request_id: ctx.request_id,
             slo: ctx.slo,
-            start_at: ctx.start_at,
+            gateway_entry: ctx.gateway_entry,
             deadline: ctx.deadline,
             prio_hint: Some(ctx.prio_hint),
             frontend_elapse: ctx.frontend_elapse,
@@ -67,8 +68,8 @@ impl ContextBuilder {
         self
     }
 
-    pub fn start_at(mut self, start_at: Timestamp) -> Self {
-        self.start_at = start_at;
+    pub fn gateway_entry(mut self, gateway_entry: Timestamp) -> Self {
+        self.gateway_entry = gateway_entry;
         self
     }
 
@@ -92,7 +93,7 @@ impl ContextBuilder {
             api: self.api,
             request_id: self.request_id,
             slo: self.slo,
-            start_at: self.start_at,
+            gateway_entry: self.gateway_entry,
             deadline: self.deadline,
             prio_hint: self.prio_hint.unwrap_or(PriorityHint::new(self.deadline)),
             frontend_elapse: self.frontend_elapse,
@@ -117,13 +118,18 @@ impl Context {
     }
 
     /// Get the start timestamp.
-    pub fn start_at(&self) -> Timestamp {
-        self.start_at
+    pub fn gateway_entry(&self) -> Timestamp {
+        self.gateway_entry
     }
 
     /// Get the deadline.
     pub fn deadline(&self) -> Timestamp {
         self.deadline
+    }
+
+    /// Get the e2e deadline.
+    pub fn e2e_deadline(&self) -> Timestamp {
+        self.gateway_entry + self.slo
     }
 
     pub fn prio_hint(&self) -> PriorityHint {
@@ -148,5 +154,17 @@ impl Context {
     /// Convert a Masa context to JSON.
     pub fn to_json(&self) -> String {
         serde_json::to_string(&self).unwrap()
+    }
+
+    /// Create a new Masa context from Base64 encoded bincode.
+    pub fn from_header_string(s: &str) -> Self {
+        let bytes = BASE64.decode(s).unwrap();
+        bincode::deserialize(&bytes).unwrap()
+    }
+
+    /// Convert a Masa context to Base64 encoded bincode.
+    pub fn to_header_string(&self) -> String {
+        let bytes = bincode::serialize(&self).unwrap();
+        BASE64.encode(bytes)
     }
 }

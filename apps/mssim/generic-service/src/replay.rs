@@ -280,7 +280,7 @@ pub async fn run_replay_load(
                 };
                 MasaContextBuilder::new("replay".to_string(), req_id)
                     .slo(slo)
-                    .start_at(start_at)
+                    .gateway_entry(start_at)
                     .deadline(deadline)
                     .prio_hint(PriorityHint::new(prio_hint))
                     .build()
