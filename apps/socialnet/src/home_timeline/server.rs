@@ -3,6 +3,7 @@ use deadpool_redis::{Connection, Pool};
 use log::{error, warn};
 use std::collections::HashSet;
 use tonic::{Request, Response, Status};
+use structopt::StructOpt;
 
 pub mod home_timeline {
     tonic::include_proto!("home_timeline");
@@ -29,41 +30,23 @@ use std::env;
 
 use socialnet::user_timeline;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, StructOpt)]
 pub struct Args {
     // Post Storage Config
+    #[structopt(long, env = "POST_STORAGE_SERVICE_IP", default_value = "socialnet-post-storage-service")]
     pub post_storage_ip: String,
+    #[structopt(long, env = "POST_STORAGE_SERVICE_PORT", default_value = "8080")]
     pub post_storage_port: u16,
+    #[structopt(long, env = "POST_STORAGE_SERVICE_REPLICAS", default_value = "1")]
     pub post_storage_replicas: u8,
 
     // Social Graph Config
+    #[structopt(long, env = "SOCIAL_GRAPH_SERVICE_IP", default_value = "socialnet-social-graph-service")]
     pub social_graph_ip: String,
+    #[structopt(long, env = "SOCIAL_GRAPH_SERVICE_PORT", default_value = "8080")]
     pub social_graph_port: u16,
+    #[structopt(long, env = "SOCIAL_GRAPH_SERVICE_REPLICAS", default_value = "1")]
     pub social_graph_replicas: u8,
-}
-
-impl Args {
-    pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
-        Ok(Self {
-            post_storage_ip: env::var("POST_STORAGE_SERVICE_IP")
-                .unwrap_or_else(|_| "socialnet-post-storage-service".to_string()),
-            post_storage_port: env::var("POST_STORAGE_SERVICE_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()?,
-            post_storage_replicas: env::var("POST_STORAGE_SERVICE_REPLICAS")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()?,
-
-            social_graph_ip: env::var("SOCIAL_GRAPH_SERVICE_IP")
-                .unwrap_or_else(|_| "socialnet-social-graph-service".to_string()),
-            social_graph_port: env::var("SOCIAL_GRAPH_SERVICE_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()?,
-            social_graph_replicas: env::var("SOCIAL_GRAPH_SERVICE_REPLICAS")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()?,
-        })
-    }
 }
 
 #[derive(Clone)]

@@ -1,55 +1,53 @@
-// Use the 'tracing' macros (info!, error!, etc.)
-use tracing::{info, Level};
-use tracing_subscriber::FmtSubscriber;
+use tracing::info;
+use structopt::StructOpt;
+use app_utils::logging::init_logging;
+use app_utils::{config::PolicyArgs, launch_masa_server};
+use mongodb::Client as MongoClient;
+use deadpool_redis::{Config, Runtime};
 
 mod server;
 use server::{social_network::user_service_server::UserServiceServer, UserServer};
 
-use mongodb::Client as MongoClient;
-use std::env;
-use tonic::transport::Server;
+#[derive(StructOpt, Debug, Clone)]
+pub struct Args {
+    #[structopt(flatten)]
+    pub policy: PolicyArgs,
 
-use deadpool_redis::{Config, Runtime};
+    #[structopt(long, env = "USER_SERVICE_LISTEN_ADDR", default_value = "0.0.0.0:8080")]
+    pub listen_addr: String,
 
-// Import the AsyncCommands trait from deadpool's re-exported redis crate
-// use deadpool_redis::redis::AsyncCommands;
+    #[structopt(long, env = "MONGO_URL")]
+    pub mongo_url: String,
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Initialize centralized logging
-    // This will collect logs from your app, tonic, mongodb, and redis.
-    // You can control log level by setting RUST_LOG=info
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+    #[structopt(long, env = "REDIS_URL")]
+    pub redis_url: String,
 
-    // 2. Read ALL necessary environment variables
-    let listen_addr =
-        env::var("USER_SERVICE_LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
-    let mongo_url = env::var("MONGO_URL").expect("MONGO_URL environment variable must be set");
-    let redis_url = env::var("REDIS_URL").expect("REDIS_URL environment variable must be set");
-    let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET environment variable must be set");
-    let machine_id = env::var("MACHINE_ID").unwrap_or_else(|_| "01".to_string());
+    #[structopt(long, env = "JWT_SECRET")]
+    pub jwt_secret: String,
 
-    // 3. Initialize MongoDB client
-    let mongo_client = MongoClient::with_uri_str(&mongo_url).await?;
+    #[structopt(long, env = "MACHINE_ID", default_value = "01")]
+    pub machine_id: String,
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_logging();
+    let args = Args::from_args();
+    launch_masa_server!(UserServiceServer, args.policy, build_service, args)
+}
+
+async fn build_service(
+    args: Args,
+) -> Result<(UserServer, std::net::SocketAddr), Box<dyn std::error::Error>> {
+    let mongo_client = MongoClient::with_uri_str(&args.mongo_url).await?;
     info!("Successfully connected to MongoDB.");
 
-    // --- THIS IS THE ROBUST REDIS CONNECTION POOL ---
-    // 4. Initialize Redis connection pool
-    let cfg = Config::from_url(redis_url);
+    let cfg = Config::from_url(args.redis_url);
     let pool = cfg.create_pool(Some(Runtime::Tokio1))?;
     info!("Successfully created Redis connection pool.");
 
-    // Test the pool by getting a connection
+    // Test the pool
     {
-        let mut conn = pool
-            .get()
-            .await
-            .expect("Failed to get Redis connection from pool");
-        // --- THIS IS THE FIX ---
-        // Use the .ping() method from the AsyncCommands trait
+        let mut conn = pool.get().await.expect("Failed to get Redis connection from pool");
         let _: () = deadpool_redis::redis::cmd("PING")
             .query_async(&mut conn)
             .await
@@ -57,22 +55,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Successfully tested Redis connection pool.");
     }
 
-    // 5. Create your service instance
     let user_service = UserServer::new(
         mongo_client.database("user").collection("user"),
-        pool, // Pass the pool, not a single connection
-        jwt_secret,
-        machine_id,
+        pool,
+        args.jwt_secret,
+        args.machine_id,
     );
 
-    // 6. Start the gRPC server
-    let addr = listen_addr.parse()?;
+    let addr = args.listen_addr.parse()?;
     info!("User Service listening on {}", addr);
 
-    Server::builder()
-        .add_service(UserServiceServer::new(user_service))
-        .serve(addr)
-        .await?;
-
-    Ok(())
+    Ok((user_service, addr))
 }

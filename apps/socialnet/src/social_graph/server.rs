@@ -11,6 +11,7 @@ use deadpool_redis::{Connection, Pool};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tonic::{Request, Response, Status};
+use structopt::StructOpt;
 
 // NEW IMPORT
 use tonic::transport::masa_channel::LoadBalancedChannel;
@@ -34,27 +35,15 @@ use user::user_service_client::UserServiceClient;
 use user::GetUserIdRequest;
 
 // --- NEW ARGS STRUCT ---
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, StructOpt)]
 pub struct Args {
     // User Service Config
+    #[structopt(long, env = "USER_SERVICE_IP", default_value = "socialnet-user-service")]
     pub user_service_ip: String,
+    #[structopt(long, env = "USER_SERVICE_PORT", default_value = "8080")]
     pub user_service_port: u16,
+    #[structopt(long, env = "USER_SERVICE_REPLICAS", default_value = "1")]
     pub user_service_replicas: u8,
-}
-
-impl Args {
-    pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
-        Ok(Self {
-            user_service_ip: env::var("USER_SERVICE_IP")
-                .unwrap_or_else(|_| "socialnet-user-service".to_string()),
-            user_service_port: env::var("USER_SERVICE_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()?,
-            user_service_replicas: env::var("USER_SERVICE_REPLICAS")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()?,
-        })
-    }
 }
 
 /// Represents an edge (follower/followee relationship) in the MongoDB document.

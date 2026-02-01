@@ -15,10 +15,6 @@ use crate::url_shorten::{
     GetExtendedUrlsResponse, ServiceException, Url,
 };
 
-pub mod url_shorten {
-    tonic::include_proto!("url_shorten");
-}
-
 const HOSTNAME: &str = "http://short-url/";
 const RANDOM_STR_LENGTH: usize = 10;
 

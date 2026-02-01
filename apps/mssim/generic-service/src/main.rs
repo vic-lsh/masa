@@ -14,6 +14,10 @@ use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
+use structopt::StructOpt;
+use app_utils::{config::PolicyArgs, launch_masa_server};
+use std::net::SocketAddr;
+
 mod bootstrap;
 mod core;
 mod parent_chain;
@@ -139,72 +143,45 @@ impl Service for AlibabaService {
 }
 
 fn init_tracing() {
-    tracing_subscriber::registry()
+    let _ = tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
         .with(tracing::level_filters::LevelFilter::INFO)
-        .init();
+        .try_init();
+}
+
+#[derive(StructOpt, Debug, Clone)]
+pub struct Args {
+    #[structopt(flatten)]
+    pub policy: PolicyArgs,
+
+    #[structopt(long, env = "DEPLOYMENT_CONFIG_PATH", default_value = "config/deployment.json")]
+    pub deployment_config: PathBuf,
+
+    #[structopt(long, env = "SERVICE_NAME")]
+    pub service_name: String,
+
+    #[structopt(long, env = "SERVICE_PORT", default_value = "50051")]
+    pub port: u16,
+
+    #[structopt(long, env = "CALLGRAPHS_BASE_DIR", default_value = "/app/callgraphs")]
+    pub callgraphs_base: PathBuf,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let feature = env::var("FEATURE").unwrap_or_else(|_| "fifo".to_string());
-    
-    // Simple parsing logic matching what app-utils does
-    let (base, early) = if let Some(stripped) = feature.strip_suffix(",early") {
-        (stripped, true)
-    } else {
-        (feature.as_str(), false)
-    };
-
-    match (base, early) {
-        ("fifo", false) => run_with_policy::<masa::CompositePolicy<masa::Fifo, masa::EarlyReturnDisabled, masa::DeadlinePolicyNone>>(),
-        ("fifo", true) => run_with_policy::<masa::CompositePolicy<masa::Fifo, masa::EarlyReturnEnabled, masa::DeadlinePolicyNone>>(),
-        
-        ("prio_global", false) => run_with_policy::<masa::CompositePolicy<masa::Prio, masa::EarlyReturnDisabled, masa::DeadlinePolicyGlobal>>(),
-        ("prio_global", true) => run_with_policy::<masa::CompositePolicy<masa::Prio, masa::EarlyReturnEnabled, masa::DeadlinePolicyGlobal>>(),
-        
-        ("prio_local", false) => run_with_policy::<masa::CompositePolicy<masa::Prio, masa::EarlyReturnDisabled, masa::DeadlinePolicyLocal>>(),
-        ("prio_local", true) => run_with_policy::<masa::CompositePolicy<masa::Prio, masa::EarlyReturnEnabled, masa::DeadlinePolicyLocal>>(),
-        
-        ("prio_oldest", false) => run_with_policy::<masa::CompositePolicy<masa::PrioOldest, masa::EarlyReturnDisabled, masa::DeadlinePolicyOldest>>(),
-        ("prio_oldest", true) => run_with_policy::<masa::CompositePolicy<masa::PrioOldest, masa::EarlyReturnEnabled, masa::DeadlinePolicyOldest>>(),
-
-        _ => {
-            eprintln!("Unknown feature policy: {}. Defaulting to Fifo.", feature);
-            run_with_policy::<masa::CompositePolicy<masa::Fifo, masa::EarlyReturnDisabled, masa::DeadlinePolicyNone>>()
-        }
-    }
+    let args = Args::from_args();
+    launch_masa_server!(ServiceServer, args.policy, build_service, args)
 }
 
-fn run_with_policy<P: masa::Policy>() -> Result<(), Box<dyn std::error::Error>> {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .policy::<P>()
-        .build()?
-        .block_on(async_main())
-}
-
-async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
+async fn build_service(args: Args) -> Result<(AlibabaService, SocketAddr), Box<dyn std::error::Error>> {
     init_tracing();
 
-    let deployment_path =
-        env::var("DEPLOYMENT_CONFIG_PATH").unwrap_or_else(|_| "config/deployment.json".to_string());
-    let service_name = env::var("SERVICE_NAME").expect("Failed to get SERVICE_NAME");
-    let port = env::var("SERVICE_PORT").unwrap_or_else(|_| "50051".to_string());
-
-    // Get callgraphs base directory from environment variable, default to /app/callgraphs
-    let callgraphs_base = env::var("CALLGRAPHS_BASE_DIR")
-        .map(|s| PathBuf::from(s))
-        .unwrap_or_else(|_| PathBuf::from("/app/callgraphs"));
-
-    let svc_name = ServiceName::from_string(service_name);
-    let config = CallGraphConfig::from_multi_callgraph_dir(&callgraphs_base, &svc_name)
+    let svc_name = ServiceName::from_string(args.service_name);
+    let config = CallGraphConfig::from_multi_callgraph_dir(&args.callgraphs_base, &svc_name)
         .expect("Failed to load call graph config");
 
     info!("Config parsed");
 
-    let deployment_path = deployment_path.into();
-    let deployment =
-        Deployment::read_from_file(&deployment_path).expect("Failed to parse deployment");
+    let deployment = Deployment::read_from_file(&args.deployment_config).expect("Failed to parse deployment");
 
     let svc = AlibabaService::new(svc_name.clone(), config, deployment).await?;
 
@@ -223,15 +200,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let addr = format!("0.0.0.0:{}", port).parse()?;
+    let addr = format!("0.0.0.0:{}", args.port).parse()?;
     info!("🚀 Generic Service {:?} listening on {}", svc_name, addr);
-
-    Server::builder()
-        .add_service(ServiceServer::new(svc))
-        .serve(addr)
-        .await?;
-
-    Ok(())
+    
+    Ok((svc, addr))
 }
 
 pub(crate) fn busy_spin(duration: std::time::Duration) {

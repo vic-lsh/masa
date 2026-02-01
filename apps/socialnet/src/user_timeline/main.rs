@@ -1,17 +1,30 @@
+use structopt::StructOpt;
+use app_utils::logging::init_logging;
+use app_utils::{config::PolicyArgs, launch_masa_server};
+use std::net::SocketAddr;
+use crate::server::user_timeline::user_timeline_service_server::UserTimelineServiceServer;
+use crate::server::{Args, UserTimelineServiceImpl};
+
 mod server;
 
-use server::{run, Args};
+#[derive(StructOpt, Debug, Clone)]
+pub struct CLIArgs {
+    #[structopt(flatten)]
+    pub policy: PolicyArgs,
 
-use tracing::Level;
-use tracing_subscriber::FmtSubscriber;
+    #[structopt(flatten)]
+    pub server_args: Args,
+}
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Replaced env_logger with tracing for consistency
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
-    let args = Args::from_env()?;
-    run(args).await
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_logging();
+    let args = CLIArgs::from_args();
+    launch_masa_server!(UserTimelineServiceServer, args.policy, build_service, args)
+}
+
+async fn build_service(args: CLIArgs) -> Result<(UserTimelineServiceImpl, SocketAddr), Box<dyn std::error::Error>> {
+    let addr = args.server_args.listen_addr.parse()?;
+    let service = UserTimelineServiceImpl::new(args.server_args).await?;
+    log::info!("UserTimelineService listening on {}", addr);
+    Ok((service, addr))
 }

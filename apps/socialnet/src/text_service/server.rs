@@ -2,6 +2,7 @@ use log::{error, info};
 use regex::Regex;
 
 use tonic::{Request, Response, Status};
+use structopt::StructOpt;
 
 use text_svc::text_service::text_service_server::{TextService, TextServiceServer};
 use text_svc::text_service::{TextReply, TextRequest};
@@ -28,14 +29,20 @@ pub mod text_svc {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, StructOpt)]
 pub struct Args {
+    #[structopt(long, env = "URL_SHORTEN_SERVICE_IP", default_value = "socialnet-url-shorten-service")]
     pub url_shorten_service_ip: String,
+    #[structopt(long, env = "URL_SHORTEN_SERVICE_PORT", default_value = "8080")]
     pub url_shorten_service_port: u16,
+    #[structopt(long, env = "URL_SHORTEN_SERVICE_REPLICAS", default_value = "1")]
     pub url_shorten_service_replicas: u8,
 
+    #[structopt(long, env = "USER_MENTION_SERVICE_IP", default_value = "socialnet-user-mention-service")]
     pub user_mention_service_ip: String,
+    #[structopt(long, env = "USER_MENTION_SERVICE_PORT", default_value = "8080")]
     pub user_mention_service_port: u16,
+    #[structopt(long, env = "USER_MENTION_SERVICE_REPLICAS", default_value = "1")]
     pub user_mention_service_replicas: u8,
 }
 
@@ -43,30 +50,6 @@ pub struct Args {
 pub struct TextSvcImpl {
     url_shorten_client: UrlShortenServiceClient<LoadBalancedChannel>,
     user_mention_client: UserMentionServiceClient<LoadBalancedChannel>,
-}
-
-impl Args {
-    pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
-        Ok(Self {
-            url_shorten_service_ip: env::var("URL_SHORTEN_SERVICE_IP")
-                .unwrap_or_else(|_| "socialnet-url-shorten-service".to_string()),
-            url_shorten_service_port: env::var("URL_SHORTEN_SERVICE_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()?,
-            url_shorten_service_replicas: env::var("URL_SHORTEN_SERVICE_REPLICAS")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()?,
-
-            user_mention_service_ip: env::var("USER_MENTION_SERVICE_IP")
-                .unwrap_or_else(|_| "socialnet-user-mention-service".to_string()),
-            user_mention_service_port: env::var("USER_MENTION_SERVICE_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()?,
-            user_mention_service_replicas: env::var("USER_MENTION_SERVICE_REPLICAS")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()?,
-        })
-    }
 }
 
 impl TextSvcImpl {
@@ -241,16 +224,4 @@ impl TextService for TextSvcImpl {
         // return the processed text
         Ok(Response::new(reply))
     }
-}
-
-pub async fn create_service() -> TextServiceServer<TextSvcImpl> {
-    println!("trying to connect text service");
-    let args = Args::from_env().expect("Failed to parse environment variables");
-    let service = TextSvcImpl::new(&args)
-        .await
-        .expect("Failed to initialize TextService");
-
-    println!("connected to text service");
-
-    TextServiceServer::new(service)
 }

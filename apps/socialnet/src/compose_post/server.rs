@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::env;
 use std::net::SocketAddr;
 
 use chrono::Utc;
@@ -11,6 +10,7 @@ use tonic::async_trait;
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
+use structopt::StructOpt;
 
 use crate::compose_post::compose_post_service_server::{
     ComposePostService, ComposePostServiceServer,
@@ -41,190 +41,83 @@ use uniqueid::unique_id_service_client::UniqueIdServiceClient;
 use uniqueid::UniqueIdRequest;
 
 /// Configuration required to bootstrap the ComposePost gRPC server.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, StructOpt)]
 pub struct Args {
     /// gRPC listen address for the ComposePost service, e.g. `0.0.0.0:50064`.
+    #[structopt(long, env = "COMPOSE_POST_LISTEN_ADDR", default_value = "0.0.0.0:8080")]
     pub listen_addr: String,
 
     /// Endpoint of the PostStorage gRPC service.
-    // pub post_storage_addr: String,
+    #[structopt(long, env = "POST_STORAGE_IP", default_value = "post-storage-service")]
     pub post_storage_ip: String,
+    #[structopt(long, env = "POST_STORAGE_PORT", default_value = "8080")]
     pub post_storage_port: u16,
+    #[structopt(long, env = "POST_STORAGE_REPLICAS", default_value = "1")]
     pub post_storage_replicas: u8,
 
     /// Endpoint of the UserTimeline gRPC service.
-    // pub user_timeline_addr: String,
+    #[structopt(long, env = "USER_TIMELINE_IP", default_value = "user-timeline-service")]
     pub user_timeline_ip: String,
+    #[structopt(long, env = "USER_TIMELINE_PORT", default_value = "8080")]
     pub user_timeline_port: u16,
+    #[structopt(long, env = "USER_TIMELINE_REPLICAS", default_value = "1")]
     pub user_timeline_replicas: u8,
 
     /// Endpoint of the HomeTimeline gRPC service.
-    // pub home_timeline_addr: String,
+    #[structopt(long, env = "HOME_TIMELINE_IP", default_value = "home-timeline-service")]
     pub home_timeline_ip: String,
+    #[structopt(long, env = "HOME_TIMELINE_PORT", default_value = "8080")]
     pub home_timeline_port: u16,
+    #[structopt(long, env = "HOME_TIMELINE_REPLICAS", default_value = "1")]
     pub home_timeline_replicas: u8,
 
     /// Endpoint of the User gRPC service.
-    // pub user_service_addr: String,
+    #[structopt(long, env = "USER_SERVICE_IP", default_value = "user-service")]
     pub user_service_ip: String,
+    #[structopt(long, env = "USER_SERVICE_PORT", default_value = "8080")]
     pub user_service_port: u16,
+    #[structopt(long, env = "USER_SERVICE_REPLICAS", default_value = "1")]
     pub user_service_replicas: u8,
 
     /// Endpoint of the UniqueId gRPC service.
-    // pub unique_id_service_addr: String,
+    #[structopt(long, env = "UNIQUE_ID_SERVICE_IP", default_value = "socialnet-unique-id-service")]
     pub unique_id_ip: String,
+    #[structopt(long, env = "UNIQUE_ID_SERVICE_PORT", default_value = "8080")]
     pub unique_id_port: u16,
+    #[structopt(long, env = "UNIQUE_ID_SERVICE_REPLICAS", default_value = "1")]
     pub unique_id_replicas: u8,
 
     /// Endpoint of the Media gRPC service.
-    // pub media_service_addr: String,
+    #[structopt(long, env = "MEDIA_SERVICE_IP", default_value = "media-service")]
     pub media_service_ip: String,
+    #[structopt(long, env = "MEDIA_SERVICE_PORT", default_value = "8080")]
     pub media_service_port: u16,
+    #[structopt(long, env = "MEDIA_SERVICE_REPLICAS", default_value = "1")]
     pub media_service_replicas: u8,
 
     /// Endpoint of the Text gRPC service.
-    // pub text_service_addr: String,
+    #[structopt(long, env = "TEXT_SERVICE_IP", default_value = "text-service")]
     pub text_service_ip: String,
+    #[structopt(long, env = "TEXT_SERVICE_PORT", default_value = "8080")]
     pub text_service_port: u16,
+    #[structopt(long, env = "TEXT_SERVICE_REPLICAS", default_value = "1")]
     pub text_service_replicas: u8,
 
     /// Endpoint of the UserMention gRPC service.
-    // pub user_mention_service_addr: String,
+    #[structopt(long, env = "USER_MENTION_SERVICE_IP", default_value = "user-mention-service")]
     pub user_mention_service_ip: String,
+    #[structopt(long, env = "USER_MENTION_SERVICE_PORT", default_value = "8080")]
     pub user_mention_service_port: u16,
+    #[structopt(long, env = "USER_MENTION_SERVICE_REPLICAS", default_value = "1")]
     pub user_mention_service_replicas: u8,
 
     /// Endpoint of the UrlShorten gRPC service.
-    // pub url_shorten_service_addr: String,
+    #[structopt(long, env = "URL_SHORTEN_SERVICE_IP", default_value = "url-shorten-service")]
     pub url_shorten_service_ip: String,
+    #[structopt(long, env = "URL_SHORTEN_SERVICE_PORT", default_value = "8080")]
     pub url_shorten_service_port: u16,
+    #[structopt(long, env = "URL_SHORTEN_SERVICE_REPLICAS", default_value = "1")]
     pub url_shorten_service_replicas: u8,
-}
-
-impl Args {
-    pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
-        Ok(Self {
-            listen_addr: env::var("COMPOSE_POST_LISTEN_ADDR")
-                .unwrap_or_else(|_| "0.0.0.0:8080".to_string()),
-
-            post_storage_ip: env::var("POST_STORAGE_IP")
-                .unwrap_or_else(|_| "post-storage-service".to_string()), // Default docker service name
-
-            post_storage_port: env::var("POST_STORAGE_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()
-                .expect("POST_STORAGE_PORT must be a valid number"),
-
-            post_storage_replicas: env::var("POST_STORAGE_REPLICAS")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()
-                .expect("POST_STORAGE_REPLICAS must be a valid number"),
-
-            user_timeline_ip: env::var("USER_TIMELINE_IP")
-                .unwrap_or_else(|_| "user-timeline-service".to_string()), // Default docker service name
-
-            user_timeline_port: env::var("USER_TIMELINE_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()
-                .expect("USER_TIMELINE_PORT must be a valid number"),
-
-            user_timeline_replicas: env::var("USER_TIMELINE_REPLICAS")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()
-                .expect("USER_TIMELINE_REPLICAS must be a valid number"),
-
-            home_timeline_ip: env::var("HOME_TIMELINE_IP")
-                .unwrap_or_else(|_| "home-timeline-service".to_string()), // Default docker service name
-
-            home_timeline_port: env::var("HOME_TIMELINE_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()
-                .expect("HOME_TIMELINE_PORT must be a valid number"),
-
-            home_timeline_replicas: env::var("HOME_TIMELINE_REPLICAS")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()
-                .expect("HOME_TIMELINE_REPLICAS must be a valid number"),
-
-            user_service_ip: env::var("USER_SERVICE_IP")
-                .unwrap_or_else(|_| "user-service".to_string()), // Default docker service name
-
-            user_service_port: env::var("USER_SERVICE_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()
-                .expect("USER_SERVICE_PORT must be a valid number"),
-
-            user_service_replicas: env::var("USER_SERVICE_REPLICAS")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()
-                .expect("USER_SERVICE_REPLICAS must be a valid number"),
-
-            media_service_ip: env::var("MEDIA_SERVICE_IP")
-                .unwrap_or_else(|_| "media-service".to_string()), // Default docker service name
-
-            media_service_port: env::var("MEDIA_SERVICE_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()
-                .expect("MEDIA_PORT must be a valid number"),
-
-            media_service_replicas: env::var("MEDIA_SERVICE_REPLICAS")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()
-                .expect("MEDIA_REPLICAS must be a valid number"),
-
-            text_service_ip: env::var("TEXT_SERVICE_IP")
-                .unwrap_or_else(|_| "text-service".to_string()), // Default docker service name
-
-            text_service_port: env::var("TEXT_SERVICE_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()
-                .expect("TEXT_SERVICE_PORT must be a valid number"),
-
-            text_service_replicas: env::var("TEXT_SERVICE_REPLICAS")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()
-                .expect("TEXT_SERVICE_REPLICAS must be a valid number"),
-
-            user_mention_service_ip: env::var("USER_MENTION_SERVICE_IP")
-                .unwrap_or_else(|_| "user-mention-service".to_string()), // Default docker service name
-
-            user_mention_service_port: env::var("USER_MENTION_SERVICE_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()
-                .expect("USER_MENTION_SERVICE_PORT must be a valid number"),
-
-            user_mention_service_replicas: env::var("USER_MENTION_SERVICE_REPLICAS")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()
-                .expect("USER_MENTION_SERVICE_REPLICAS must be a valid number"),
-
-            url_shorten_service_ip: env::var("URL_SHORTEN_SERVICE_IP")
-                .unwrap_or_else(|_| "url-shorten-service".to_string()), // Default docker service name
-
-            url_shorten_service_port: env::var("URL_SHORTEN_SERVICE_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()
-                .expect("URL_SHORTEN_SERVICE_PORT must be a valid number"),
-
-            url_shorten_service_replicas: env::var("URL_SHORTEN_SERVICE_REPLICAS")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()
-                .expect("URL_SHORTEN_SERVICE_REPLICAS must be a valid number"),
-
-            unique_id_ip: env::var("UNIQUE_ID_SERVICE_IP")
-                .unwrap_or_else(|_| "socialnet-unique-id-service".to_string()), // Default docker service name
-
-            unique_id_port: env::var("UNIQUE_ID_SERVICE_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()
-                .expect("UNIQUE_ID_PORT must be a valid number"),
-
-            unique_id_replicas: env::var("UNIQUE_ID_SERVICE_REPLICAS")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()
-                .expect("UNIQUE_ID_REPLICAS must be a valid number"),
-        })
-    }
 }
 
 #[derive(Clone)]

@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 use tonic::async_trait;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
+use structopt::StructOpt;
 
 use crate::media::Media as MediaProto;
 use crate::post_storage::post_storage_service_server::{
@@ -26,47 +27,26 @@ use crate::user::Creator as CreatorProto;
 use crate::user_timeline::Post as PostProto;
 use crate::usermention::UserMention as UserMentionProto;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, StructOpt)]
 pub struct Args {
     /// gRPC listen address for the PostStorage service, e.g. `0.0.0.0:50065`.
+    #[structopt(long, env = "POST_STORAGE_LISTEN_ADDR", default_value = "0.0.0.0:8080")]
     pub listen_addr: String,
     /// MongoDB connection string that stores posts.
+    #[structopt(long, env = "POST_STORAGE_MONGODB_URI", default_value = "mongodb://127.0.0.1:27017")]
     pub mongodb_uri: String,
     /// MongoDB database name used to persist posts.
+    #[structopt(long, env = "POST_STORAGE_MONGODB_DATABASE", default_value = "post-db")]
     pub mongodb_database: String,
     /// MongoDB collection name used to persist posts.
+    #[structopt(long, env = "POST_STORAGE_MONGODB_COLLECTION", default_value = "post")]
     pub mongodb_collection: String,
     /// Memcached endpoint (ASCII protocol) used for caching post documents.
+    #[structopt(long, env = "POST_STORAGE_MEMCACHED_ADDR", default_value = "tcp://127.0.0.1:11211")]
     pub memcached_addr: String,
     /// Optional time-to-live for cached posts in seconds; `None` leaves entries without an expiry.
+    #[structopt(long, env = "POST_STORAGE_MEMCACHED_TTL")]
     pub memcached_ttl_seconds: Option<u32>,
-}
-
-impl Args {
-    pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
-        let listen_addr = std::env::var("POST_STORAGE_LISTEN_ADDR")
-            .unwrap_or_else(|_| "0.0.0.0:8080".to_string());
-        let mongodb_uri = std::env::var("POST_STORAGE_MONGODB_URI")
-            .unwrap_or_else(|_| "mongodb://127.0.0.1:27017".to_string());
-        let mongodb_database = std::env::var("POST_STORAGE_MONGODB_DATABASE")
-            .unwrap_or_else(|_| "post-db".to_string());
-        let mongodb_collection =
-            std::env::var("POST_STORAGE_MONGODB_COLLECTION").unwrap_or_else(|_| "post".to_string());
-        let memcached_addr = std::env::var("POST_STORAGE_MEMCACHED_ADDR")
-            .unwrap_or_else(|_| "tcp://127.0.0.1:11211".to_string());
-        let memcached_ttl_seconds = std::env::var("POST_STORAGE_MEMCACHED_TTL")
-            .ok()
-            .and_then(|value| value.parse::<u32>().ok());
-
-        Ok(Self {
-            listen_addr,
-            mongodb_uri,
-            mongodb_database,
-            mongodb_collection,
-            memcached_addr,
-            memcached_ttl_seconds,
-        })
-    }
 }
 
 #[derive(Clone)]
@@ -428,21 +408,6 @@ impl PostStorageServiceImpl {
         }
         Ok(records)
     }
-}
-
-pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
-    println!("creating post storage service...");
-    let service_impl = PostStorageServiceImpl::new(&args).await?;
-    let listen_addr: SocketAddr = args.listen_addr.parse()?;
-    log::info!("PostStorageService listening on {}", listen_addr);
-    println!("PostStorageService listening on {}", listen_addr);
-
-    Server::builder()
-        .add_service(PostStorageServiceServer::new(service_impl))
-        .serve(listen_addr)
-        .await?;
-
-    Ok(())
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

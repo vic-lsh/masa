@@ -14,6 +14,7 @@ use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 use tracing::{error, info, warn};
+use structopt::StructOpt;
 
 use post_storage::post_storage_service_client::PostStorageServiceClient;
 use post_storage::ReadPostsRequest;
@@ -50,58 +51,39 @@ pub mod url_shorten {
 }
 
 /// Configuration required to bootstrap the user timeline gRPC server.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, StructOpt)]
 pub struct Args {
+    #[structopt(long, env = "USER_TIMELINE_LISTEN_ADDR", default_value = "0.0.0.0:8080")]
     pub listen_addr: String,
+    
+    #[structopt(long, env = "USER_TIMELINE_MONGODB_URI", default_value = "mongodb://127.0.0.1:27017")]
     pub mongodb_uri: String,
+    
+    #[structopt(long, env = "USER_TIMELINE_MONGODB_DATABASE", default_value = "user-timeline")]
     pub mongodb_database: String,
+    
+    #[structopt(long, env = "USER_TIMELINE_MONGODB_COLLECTION", default_value = "user-timeline")]
     pub mongodb_collection: String,
+
+    #[structopt(long, env = "USER_TIMELINE_REDIS_URL")]
     pub redis_url: Option<String>,
+    
+    #[structopt(long, env = "USER_TIMELINE_REDIS_PRIMARY_URL")]
     pub redis_primary_url: Option<String>,
+    
+    #[structopt(long, env = "USER_TIMELINE_REDIS_REPLICA_URL")]
     pub redis_replica_url: Option<String>,
+    
+    #[structopt(long, env = "USER_TIMELINE_REDIS_CLUSTER_URLS")]
     pub redis_cluster_urls: Option<String>,
 
     // --- CHANGE 2: Replace single address with IP, Port, and Replicas ---
-    // Old: pub post_storage_addr: String,
+    #[structopt(long, env = "POST_STORAGE_IP", default_value = "post_storage")]
     pub post_storage_ip: String,
+    #[structopt(long, env = "POST_STORAGE_PORT", default_value = "8080")]
     pub post_storage_port: u16,
+    #[structopt(long, env = "POST_STORAGE_REPLICAS", default_value = "1")]
     pub post_storage_replicas: u8,
-}
-
-impl Args {
-    pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
-        Ok(Self {
-            listen_addr: env::var("USER_TIMELINE_LISTEN_ADDR")
-                .unwrap_or_else(|_| "0.0.0.0:8080".to_string()),
-
-            mongodb_uri: env::var("USER_TIMELINE_MONGODB_URI")
-                .expect("USER_TIMELINE_MONGODB_URI must be set"),
-
-            // --- CHANGE 3: Parse the new connection details ---
-            post_storage_ip: env::var("POST_STORAGE_IP")
-                .unwrap_or_else(|_| "post_storage".to_string()), // Default docker service name
-
-            post_storage_port: env::var("POST_STORAGE_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()
-                .expect("POST_STORAGE_PORT must be a valid number"),
-
-            post_storage_replicas: env::var("POST_STORAGE_REPLICAS")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()
-                .expect("POST_STORAGE_REPLICAS must be a valid number"),
-
-            redis_url: env::var("USER_TIMELINE_REDIS_URL").ok(),
-            redis_primary_url: env::var("USER_TIMELINE_REDIS_PRIMARY_URL").ok(),
-            redis_replica_url: env::var("USER_TIMELINE_REDIS_REPLICA_URL").ok(),
-            redis_cluster_urls: env::var("USER_TIMELINE_REDIS_CLUSTER_URLS").ok(),
-
-            mongodb_database: env::var("USER_TIMELINE_MONGODB_DATABASE")
-                .unwrap_or_else(|_| "user-timeline".to_string()),
-            mongodb_collection: env::var("USER_TIMELINE_MONGODB_COLLECTION")
-                .unwrap_or_else(|_| "user-timeline".to_string()),
-        })
-    }
 }
 
 #[derive(Clone)]

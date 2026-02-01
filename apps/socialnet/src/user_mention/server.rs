@@ -27,8 +27,8 @@ pub struct UserMentionServiceImpl {
 use crate::user_mention::db::{initialize_database, initialize_memcached, UserMentionStruct};
 
 impl UserMentionServiceImpl {
-    pub async fn new() -> Result<Self, Box<dyn Error>> {
-        let mongo_client = match initialize_database().await {
+    pub async fn new(mongo_url: &str, memcached_url: &str) -> Result<Self, Box<dyn Error>> {
+        let mongo_client = match initialize_database(mongo_url).await {
             Ok(client) => client,
             Err(e) => {
                 eprintln!("Failed to initialize MongoDB: {:?}", e);
@@ -36,7 +36,7 @@ impl UserMentionServiceImpl {
             }
         };
 
-        let mc_client = match initialize_memcached().await {
+        let mc_client = match initialize_memcached(memcached_url).await {
             Ok(client) => client,
             Err(e) => {
                 eprintln!("Failed to initialize Memcached: {:?}", e);
@@ -150,15 +150,4 @@ impl UserMentionService for UserMentionServiceImpl {
             exception,
         }))
     }
-}
-
-pub async fn create_service() -> UserMentionServiceServer<UserMentionServiceImpl> {
-    let service = match UserMentionServiceImpl::new().await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Failed to create UserMentionServiceImpl: {:?}", e);
-            panic!("Failed to create UserMentionServiceImpl");
-        }
-    };
-    UserMentionServiceServer::new(service)
 }

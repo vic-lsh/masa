@@ -1,22 +1,34 @@
-use socialnet::user_mention::server::create_service;
-use std::env;
+use structopt::StructOpt;
+use app_utils::logging::init_logging;
+use app_utils::{config::PolicyArgs, launch_masa_server};
 use std::net::SocketAddr;
-use tonic::transport::Server;
+use socialnet::user_mention::server::user_mention_service::user_mention_service_server::UserMentionServiceServer;
+use socialnet::user_mention::server::UserMentionServiceImpl;
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let listen_addr =
-        env::var("USER_MENTION_LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
+#[derive(StructOpt, Debug, Clone)]
+pub struct CLIArgs {
+    #[structopt(flatten)]
+    pub policy: PolicyArgs,
 
-    let addr = listen_addr.parse::<SocketAddr>()?;
+    #[structopt(long, env = "USER_MENTION_LISTEN_ADDR", default_value = "0.0.0.0:8080")]
+    pub listen_addr: String,
 
-    // Create the service
-    let service = create_service().await;
+    #[structopt(long, env = "MONGO_URL")]
+    pub mongo_url: String,
+    
+    #[structopt(long, env = "MEMCACHED_URL")]
+    pub memcached_url: String,
+}
 
-    println!("User Mention Service listening on {}", addr);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_logging();
+    let args = CLIArgs::from_args();
+    launch_masa_server!(UserMentionServiceServer, args.policy, build_service, args)
+}
 
-    // Run the server
-    Server::builder().add_service(service).serve(addr).await?;
-
-    Ok(())
+async fn build_service(args: CLIArgs) -> Result<(UserMentionServiceImpl, SocketAddr), Box<dyn std::error::Error>> {
+    let addr = args.listen_addr.parse()?;
+    let service = UserMentionServiceImpl::new(&args.mongo_url, &args.memcached_url).await?;
+    log::info!("User Mention Service listening on {}", addr);
+    Ok((service, addr))
 }

@@ -1965,6 +1965,7 @@ name = "generic-service"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "app-utils",
  "clap 4.5.54",
  "futures",
  "masa",
@@ -1976,6 +1977,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sim-config",
+ "structopt",
  "tempfile",
  "tokio",
  "tonic",

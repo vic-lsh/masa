@@ -1,30 +1,35 @@
-use socialnet::url_shorten::server::create_service;
-use std::env;
+use structopt::StructOpt;
+use app_utils::logging::init_logging;
+use app_utils::{config::PolicyArgs, launch_masa_server};
 use std::net::SocketAddr;
-use tonic::transport::Server;
+use socialnet::url_shorten::url_shorten_service_server::UrlShortenServiceServer;
+use socialnet::url_shorten::server::UrlShortenServiceImpl;
+use socialnet::url_shorten::db::initialize_database;
 
-pub mod url_shorten {
-    tonic::include_proto!("url_shorten");
+#[derive(StructOpt, Debug, Clone)]
+pub struct CLIArgs {
+    #[structopt(flatten)]
+    pub policy: PolicyArgs,
+
+    #[structopt(long, env = "URL_SHORTEN_LISTEN_ADDR", default_value = "0.0.0.0:8080")]
+    pub listen_addr: String,
+
+    #[structopt(long, env = "MONGO_URL")]
+    pub mongo_url: String,
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_logging();
+    let args = CLIArgs::from_args();
+    launch_masa_server!(UrlShortenServiceServer, args.policy, build_service, args)
+}
 
-    println!("inside url_shorten");
-
-    let listen_addr =
-        env::var("URL_SHORTEN_LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
-
-    let addr = listen_addr.parse::<SocketAddr>()?;
-
-    let service = create_service().await?;
-
-    println!("URL Shortening Service listening on {}", addr);
-
-    Server::builder().add_service(service).serve(addr).await?;
-
-    Ok(())
+async fn build_service(args: CLIArgs) -> Result<(UrlShortenServiceImpl, SocketAddr), Box<dyn std::error::Error>> {
+    let addr = args.listen_addr.parse()?;
+    
+    let mongo_client = initialize_database(&args.mongo_url).await?;
+    let service = UrlShortenServiceImpl::new(mongo_client);
+    
+    log::info!("URL Shortening Service listening on {}", addr);
+    Ok((service, addr))
 }

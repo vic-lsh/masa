@@ -1,68 +1,41 @@
+use structopt::StructOpt;
+use app_utils::logging::init_logging;
+use app_utils::{config::PolicyArgs, launch_masa_server};
+use std::net::SocketAddr;
+use deadpool_redis::{Config, Runtime};
 use crate::server::home_timeline::home_timeline_service_server::HomeTimelineServiceServer;
-use std::env;
-use tonic::transport::Server;
-use tracing::Level;
+use crate::server::{Args, HomeTimelineService};
 
 mod server;
-// Import the Service struct and the Args struct we defined in server.rs
-use server::{Args as ServiceArgs, HomeTimelineService};
-use tracing_subscriber::FmtSubscriber;
 
-use deadpool_redis::{Config, Runtime};
+#[derive(StructOpt, Debug, Clone)]
+pub struct CLIArgs {
+    #[structopt(flatten)]
+    pub policy: PolicyArgs,
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Use tracing for consistent logging
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+    #[structopt(long, env = "HOME_TIMELINE_LISTEN_ADDR", default_value = "0.0.0.0:8080")]
+    pub listen_addr: String,
 
-    // 1. Load Local Configuration (Listen Address & Redis) directly from Env
-    let listen_addr =
-        env::var("HOME_TIMELINE_LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
+    #[structopt(long, env = "HOME_TIMELINE_REDIS_URL")]
+    pub redis_url: String,
 
-    let redis_url =
-        env::var("HOME_TIMELINE_REDIS_URL").expect("HOME_TIMELINE_REDIS_URL must be set");
+    #[structopt(flatten)]
+    pub server_args: Args,
+}
 
-    // 2. Load Downstream Service Configuration (IPs, Ports, Replicas)
-    // This uses the logic we added to server.rs
-    let service_args = ServiceArgs::from_env()?;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_logging();
+    let args = CLIArgs::from_args();
+    launch_masa_server!(HomeTimelineServiceServer, args.policy, build_service, args)
+}
 
-    println!("Creating redis pool...");
-
-    // --- Create Deadpool Redis Pool ---
-    let cfg = Config::from_url(redis_url);
+async fn build_service(args: CLIArgs) -> Result<(HomeTimelineService, SocketAddr), Box<dyn std::error::Error>> {
+    let addr = args.listen_addr.parse()?;
+    
+    let cfg = Config::from_url(args.redis_url);
     let redis_pool = cfg.create_pool(Some(Runtime::Tokio1))?;
-    println!("Successfully created Redis connection pool.");
 
-    // Test the pool
-    {
-        let mut conn = redis_pool
-            .get()
-            .await
-            .expect("Failed to get Redis connection");
-
-        let _: String = deadpool_redis::redis::cmd("PING")
-            .query_async(&mut conn)
-            .await
-            .expect("Redis PING failed");
-        println!("Successfully tested Redis connection pool.");
-    }
-
-    println!("creating service...");
-
-    // 3. Initialize the Service
-    // We pass the pool and the service_args (which contains the replica info)
-    let service = HomeTimelineService::new(redis_pool, &service_args).await?;
-
-    let addr = listen_addr.parse()?;
-    println!("HomeTimelineService listening on {}", addr);
-
-    Server::builder()
-        .add_service(HomeTimelineServiceServer::new(service))
-        .serve(addr)
-        .await?;
-
-    Ok(())
+    let service = HomeTimelineService::new(redis_pool, &args.server_args).await?;
+    log::info!("HomeTimelineService listening on {}", addr);
+    Ok((service, addr))
 }

@@ -1,22 +1,34 @@
-use socialnet::text_service::server::create_service;
-use std::env;
 use std::net::SocketAddr;
-use tonic::transport::Server;
+use structopt::StructOpt;
+use app_utils::logging::init_logging;
+use app_utils::{config::PolicyArgs, launch_masa_server};
+use socialnet::text_service::server::TextSvcImpl;
+use socialnet::text_service::server::text_svc::text_service::text_service_server::TextServiceServer;
+use socialnet::text_service::server::Args;
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let listen_addr =
-        env::var("TEXT_SERVICE_LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
+mod server;
 
-    let addr = listen_addr.parse::<SocketAddr>()?;
+#[derive(StructOpt, Debug, Clone)]
+pub struct CLIArgs {
+    #[structopt(flatten)]
+    pub policy: PolicyArgs,
 
-    // Create the service
-    let service = create_service().await;
+    #[structopt(long, env = "TEXT_SERVICE_LISTEN_ADDR", default_value = "0.0.0.0:8080")]
+    pub listen_addr: String,
+    
+    #[structopt(flatten)]
+    pub server_args: Args,
+}
 
-    println!("Text Service listening on {}", addr);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_logging();
+    let args = CLIArgs::from_args();
+    launch_masa_server!(TextServiceServer, args.policy, build_service, args)
+}
 
-    // Run the server
-    Server::builder().add_service(service).serve(addr).await?;
-
-    Ok(())
+async fn build_service(args: CLIArgs) -> Result<(TextSvcImpl, SocketAddr), Box<dyn std::error::Error>> {
+    let addr = args.listen_addr.parse()?;
+    let service = TextSvcImpl::new(&args.server_args).await?;
+    log::info!("Text Service listening on {}", addr);
+    Ok((service, addr))
 }
