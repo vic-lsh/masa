@@ -26,15 +26,15 @@ macro_rules! launch_masa_server {
 macro_rules! dispatch_early_return {
     ($Queue:ty, $policy_args:expr, $run_fn:ident, $app_args:expr) => {
         match $policy_args.early_return {
-            true => { $crate::dispatch_policy!($Queue, true, $policy_args, $run_fn, $app_args) }
-            false => { $crate::dispatch_policy!($Queue, false, $policy_args, $run_fn, $app_args) }
+            true => { $crate::dispatch_policy!($Queue, masa::EarlyReturnEnabled, $policy_args, $run_fn, $app_args) }
+            false => { $crate::dispatch_policy!($Queue, masa::EarlyReturnDisabled, $policy_args, $run_fn, $app_args) }
         }
     }
 }
 
 #[macro_export]
 macro_rules! dispatch_policy {
-    ($Queue:ty, $Early:literal, $policy_args:expr, $run_fn:ident, $app_args:expr) => {
+    ($Queue:ty, $Early:ty, $policy_args:expr, $run_fn:ident, $app_args:expr) => {
         match $policy_args.deadline_policy {
             masa::DeadlinePolicyType::None => {
                 $run_fn::<masa::CompositePolicy<$Queue, $Early, masa::DeadlinePolicyNone>>($app_args)

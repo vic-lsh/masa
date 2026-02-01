@@ -42,31 +42,50 @@ pub enum DeadlinePolicyType {
     Oldest,
 }
 
+// Early Return Markers
+pub trait EarlyReturnMode: 'static + Send + Sync + Copy {
+    const ENABLED: bool;
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct EarlyReturnEnabled;
+impl EarlyReturnMode for EarlyReturnEnabled {
+    const ENABLED: bool = true;
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct EarlyReturnDisabled;
+impl EarlyReturnMode for EarlyReturnDisabled {
+    const ENABLED: bool = false;
+}
+
 /// Core Policy trait defining the configuration at compile time.
 pub trait Policy: 'static + Send + Sync + Copy {
     type Queue: Queue;
-    const EARLY_RETURN: bool;
+    type EarlyReturn: EarlyReturnMode;
+    const EARLY_RETURN: bool = Self::EarlyReturn::ENABLED;
 }
 
 /// A composite policy struct.
-/// Q: Queue Type, E: Early Return (bool), P: Deadline Policy Marker
-pub struct CompositePolicy<Q, const E: bool, P>(std::marker::PhantomData<(Q, P)>);
+/// Q: Queue Type, E: Early Return Mode, P: Deadline Policy Marker
+pub struct CompositePolicy<Q, E, P>(std::marker::PhantomData<(Q, E, P)>);
 
-impl<Q, const E: bool, P> Clone for CompositePolicy<Q, E, P> {
+impl<Q, E, P> Clone for CompositePolicy<Q, E, P> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<Q, const E: bool, P> Copy for CompositePolicy<Q, E, P> {}
+impl<Q, E, P> Copy for CompositePolicy<Q, E, P> {}
 
-impl<Q, const E: bool, P> Policy for CompositePolicy<Q, E, P>
+impl<Q, E, P> Policy for CompositePolicy<Q, E, P>
 where
     Q: Queue,
+    E: EarlyReturnMode,
     P: DeadlinePolicyMarker,
 {
     type Queue = Q;
-    const EARLY_RETURN: bool = E;
+    type EarlyReturn = E;
 }
 
 // Marker traits for deadline policies

@@ -3,10 +3,10 @@ use std::sync::Arc;
 use std::task::Poll;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
-use super::common::EarlyReturnHandler;
+use super::common::EarlyReturnHandlerTrait;
 use super::resolve_method_name;
 use crate::Response;
-use masa::{Context, ContextBuilder, PriorityHint, EARLY_RETURN};
+use masa::{Context, ContextBuilder, PriorityHint};
 
 #[derive(Debug)]
 /// FIFO policy with optional early return support.
@@ -15,10 +15,15 @@ use masa::{Context, ContextBuilder, PriorityHint, EARLY_RETURN};
 #[allow(unreachable_pub)]
 pub struct Fifo;
 
+#[cfg(feature = "early")]
+type FifoHandler = super::common::RealEarlyReturnHandler;
+#[cfg(not(feature = "early"))]
+type FifoHandler = super::common::NoopEarlyReturnHandler;
+
 impl MasaHooks for Fifo {
     type ServerContext = ServerContext;
     type ChildContext = ChildContext;
-    type ParentContext = ParentContext;
+    type ParentContext = ParentContext<FifoHandler>;
 }
 
 #[derive(Debug)]
@@ -33,12 +38,12 @@ impl ServerHooks for ServerContext {
 
 #[derive(Debug)]
 #[allow(unreachable_pub)]
-pub struct ParentContext {
+pub struct ParentContext<ER> {
     ctx: Context,
-    early_return: EarlyReturnHandler,
+    early_return: ER,
 }
 
-impl ParentHooks<ChildContext, ServerContext> for ParentContext {
+impl<ER: EarlyReturnHandlerTrait> ParentHooks<ChildContext, ServerContext> for ParentContext<ER> {
     fn begin<B>(
         method: GrpcMethod,
         req: &http::Request<B>,
@@ -46,7 +51,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Self {
         Self {
             ctx: read_context(req),
-            early_return: EarlyReturnHandler::new(
+            early_return: ER::new(
                 method.service(),
                 resolve_method_name(method, req),
             ),
@@ -54,7 +59,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        if self.early_return.check(&self.ctx, EARLY_RETURN) {
+        if self.early_return.check(&self.ctx) {
             return Err(Err(self.early_return.issue_error()));
         }
         Ok(())
@@ -66,7 +71,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         request: &mut Request<T>,
         _child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
-        if self.early_return.check(&self.ctx, EARLY_RETURN) {
+        if self.early_return.check(&self.ctx) {
             return Err(self.early_return.issue_error());
         }
 
@@ -87,7 +92,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Result<(), Result<Response<Ret>, Status>> {
         match poll {
             Poll::Pending => {
-                if self.early_return.check(&self.ctx, EARLY_RETURN) {
+                if self.early_return.check(&self.ctx) {
                     return Err(Err(self.early_return.issue_error()));
                 }
             }

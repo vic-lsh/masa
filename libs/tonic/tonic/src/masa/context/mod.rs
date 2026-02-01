@@ -4,6 +4,7 @@ use crate::metadata::{Ascii, MetadataValue};
 use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 
 mod common;
+pub use common::{EarlyReturnHandlerTrait, MapEarlyReturn};
 mod fifo;
 mod global;
 /// Local queue context.

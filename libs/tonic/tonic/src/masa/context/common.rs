@@ -1,26 +1,23 @@
 use crate::{body::BoxBody, Code, Response, Status};
-use masa::{time_now, Context};
+use masa::{time_now, Context, EarlyReturnEnabled, EarlyReturnDisabled};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+pub trait EarlyReturnHandlerTrait: Send + Sync + 'static {
+    fn new(service: &'static str, method: String) -> Self;
+    fn check(&self, ctx: &Context) -> bool;
+    fn check_deadline(&self, deadline: u64) -> bool;
+    fn issue_error(&self) -> Status;
+}
+
 #[derive(Debug)]
-pub(crate) struct EarlyReturnHandler {
+pub struct RealEarlyReturnHandler {
     will_early_return: AtomicBool,
     service: &'static str,
     method: String,
 }
 
-impl Default for EarlyReturnHandler {
-    fn default() -> Self {
-        Self {
-            will_early_return: AtomicBool::new(false),
-            service: "",
-            method: String::new(),
-        }
-    }
-}
-
-impl EarlyReturnHandler {
-    pub(crate) fn new(service: &'static str, method: String) -> Self {
+impl EarlyReturnHandlerTrait for RealEarlyReturnHandler {
+    fn new(service: &'static str, method: String) -> Self {
         Self {
             will_early_return: AtomicBool::new(false),
             service,
@@ -28,11 +25,7 @@ impl EarlyReturnHandler {
         }
     }
 
-    pub(crate) fn check(&self, ctx: &Context, enabled: bool) -> bool {
-        if !enabled {
-            return false;
-        }
-
+    fn check(&self, ctx: &Context) -> bool {
         if self.will_early_return.load(Ordering::Relaxed) {
             return true;
         }
@@ -54,12 +47,62 @@ impl EarlyReturnHandler {
         should_early_return
     }
 
-    pub(crate) fn issue_error(&self) -> Status {
+    fn check_deadline(&self, deadline: u64) -> bool {
+        if self.will_early_return.load(Ordering::Relaxed) {
+            return true;
+        }
+
+        let now = time_now();
+        let should_early_return = now >= deadline;
+
+        if should_early_return {
+            let _ = self.will_early_return.compare_exchange_weak(
+                false,
+                true,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            );
+        }
+
+        should_early_return
+    }
+
+    fn issue_error(&self) -> Status {
         Status::new(
             Code::DeadlineExceeded,
             format!("/EarlyReturn:{}:{}", self.service, self.method),
         )
     }
+}
+
+#[derive(Debug)]
+pub struct NoopEarlyReturnHandler;
+
+impl EarlyReturnHandlerTrait for NoopEarlyReturnHandler {
+    fn new(_service: &'static str, _method: String) -> Self {
+        Self
+    }
+    fn check(&self, _ctx: &Context) -> bool {
+        false
+    }
+    fn check_deadline(&self, _deadline: u64) -> bool {
+        false
+    }
+    fn issue_error(&self) -> Status {
+        Status::ok("NoopEarlyReturnHandler")
+    }
+}
+
+pub trait MapEarlyReturn {
+    type Handler: EarlyReturnHandlerTrait;
+}
+
+impl MapEarlyReturn for EarlyReturnEnabled {
+    type Handler = RealEarlyReturnHandler;
+}
+
+impl MapEarlyReturn for EarlyReturnDisabled {
+    type Handler = NoopEarlyReturnHandler;
 }
 
 #[derive(Debug)]

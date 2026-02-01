@@ -12,10 +12,10 @@ use std::{
 };
 
 use super::super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
-use super::super::common::EarlyReturnHandler;
+use super::super::common::EarlyReturnHandlerTrait;
 use super::super::resolve_method_name;
 use super::{estimate_method_latency, track_method_latency};
-use masa::{Context, ContextBuilder, LatencyDistribution, LatencyEstimator, MethodId, EARLY_RETURN};
+use masa::{Context, ContextBuilder, LatencyDistribution, LatencyEstimator, MethodId};
 
 static LAST_PRINT_TIME: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
@@ -29,10 +29,15 @@ static LAST_PRINT_TIME: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 #[allow(unreachable_pub)]
 pub struct LocalDeadlineDirect;
 
+#[cfg(feature = "early")]
+type DirectHandler = super::super::common::RealEarlyReturnHandler;
+#[cfg(not(feature = "early"))]
+type DirectHandler = super::super::common::NoopEarlyReturnHandler;
+
 impl MasaHooks for LocalDeadlineDirect {
     type ServerContext = ServerContext<LatencyDistribution>;
     type ChildContext = ChildContext;
-    type ParentContext = ParentContext<LatencyDistribution>;
+    type ParentContext = ParentContext<DirectHandler, LatencyDistribution>;
 }
 
 #[derive(Debug)]
@@ -54,17 +59,17 @@ impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
 #[derive(Debug)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct ParentContext<E: LatencyEstimator + Default + 'static = LatencyDistribution> {
+pub struct ParentContext<ER, E: LatencyEstimator + Default + 'static = LatencyDistribution> {
     method: GrpcMethod,
     ctx: Context,
     q_lat: AtomicU64,
     server: Arc<ServerContext<E>>,
-    early_return: EarlyReturnHandler,
+    early_return: ER,
     child_end_times: Mutex<Vec<(MethodId, Instant)>>,
 }
 
-impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerContext<E>>
-    for ParentContext<E>
+impl<ER: EarlyReturnHandlerTrait, E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerContext<E>>
+    for ParentContext<ER, E>
 {
     fn begin<B>(
         method: GrpcMethod,
@@ -75,7 +80,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
             method,
             ctx: read_context(req),
             server: server_ctx,
-            early_return: EarlyReturnHandler::new(
+            early_return: ER::new(
                 method.service(),
                 resolve_method_name(method, req),
             ),
@@ -85,7 +90,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        if self.early_return.check(&self.ctx, EARLY_RETURN) {
+        if self.early_return.check(&self.ctx) {
             return Err(Err(self.early_return.issue_error()));
         }
         let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
@@ -101,7 +106,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
         if let Poll::Pending = poll {
-            if self.early_return.check(&self.ctx, EARLY_RETURN) {
+            if self.early_return.check(&self.ctx) {
                 return Err(Err(self.early_return.issue_error()));
             }
         }
@@ -115,7 +120,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         request: &mut Request<T>,
         _child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
-        if self.early_return.check(&self.ctx, EARLY_RETURN) {
+        if self.early_return.check(&self.ctx) {
             return Err(self.early_return.issue_error());
         }
 
@@ -151,6 +156,11 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
 
         // NOTE(vic): could we have passed the deadline at this point?
         let deadline = self.ctx.deadline() - estimate_remaining;
+        
+        // This effectively replaces "EARLY_RETURN && check()"
+        if self.early_return.check_deadline(deadline) {
+             return Err(self.early_return.issue_error());
+        }
 
         let child_recv_ctx = ContextBuilder::from(&self.ctx).deadline(deadline).build();
         request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
