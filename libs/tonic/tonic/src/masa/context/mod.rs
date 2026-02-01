@@ -6,12 +6,18 @@ use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
 mod common;
 mod fifo;
 mod global;
-mod local;
+/// Local queue context.
+pub mod local;
 mod noop;
 mod prio_oldest;
 mod queue_global;
 mod queue_tracing;
 mod tracing;
+
+pub use local::local::LocalDeadlinePolicy;
+pub use noop::NoopMasaHooks;
+pub use prio_oldest::PrioOldest;
+pub use queue_global::QueueGlobal;
 
 pub mod runtime;
 mod tls;

@@ -2,9 +2,17 @@ use std::collections::VecDeque;
 
 use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
 
-pub(crate) struct FifoQueue<T> {
+/// A First-In-First-Out queue
+#[derive(Debug)]
+pub struct FifoQueue<T> {
     inner: VecDeque<T>,
     push_count: u64,
+}
+
+impl<T: 'static + Send + Sync> masa::Queue for FifoQueue<T> {
+    fn queue_type() -> masa::QueueType {
+        masa::QueueType::Fifo
+    }
 }
 
 impl<T> Queue for FifoQueue<T> {
@@ -15,6 +23,10 @@ impl<T> Queue for FifoQueue<T> {
             inner: VecDeque::with_capacity(cap),
             push_count: 0,
         }
+    }
+
+    fn new(_ty: Option<masa::QueueType>, cap: usize) -> Self {
+        Self::with_capacity(cap)
     }
 
     fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {

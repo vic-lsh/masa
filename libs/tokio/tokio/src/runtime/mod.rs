@@ -347,6 +347,8 @@ cfg_signal_internal_and_unix! {
 
 cfg_rt! {
     pub(crate) mod task;
+    /// Runtime queue implementation
+    pub mod queue;
 
     mod config;
     use config::Config;

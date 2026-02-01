@@ -3,6 +3,7 @@ use std::sync::Arc;
 use super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use crate::{GrpcMethod, Request};
 
+/// A no-op implementation of Masa hooks.
 #[derive(Debug)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]

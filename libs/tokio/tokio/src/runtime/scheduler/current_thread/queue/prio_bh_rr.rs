@@ -26,10 +26,20 @@ fn ms_since_init(value: u64) -> u64 {
 
 const N: usize = 6;
 
-pub(crate) struct BinaryHeapRoundRobinQueue<T, const USE_INFRA_QUEUE: bool = false> {
+/// A Priority Queue with Round Robin scheduling for top items
+#[derive(Debug)]
+pub struct BinaryHeapRoundRobinQueue<T, const USE_INFRA_QUEUE: bool = false> {
     heap: BinaryHeap<T>,
     rr_queue: VecDeque<T>,
     infra_rr_queue: VecDeque<T>,
+}
+
+impl<T: 'static + Send + Sync, const USE_INFRA_QUEUE: bool> masa::Queue
+    for BinaryHeapRoundRobinQueue<T, USE_INFRA_QUEUE>
+{
+    fn queue_type() -> masa::QueueType {
+        masa::QueueType::PrioOldest
+    }
 }
 
 impl<T: Ord + PartialOrd + Prioritize + Identifiable, const USE_INFRA_QUEUE: bool> Queue
@@ -43,6 +53,10 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable, const USE_INFRA_QUEUE: boo
             rr_queue: VecDeque::with_capacity(N),
             infra_rr_queue: VecDeque::with_capacity(cap),
         }
+    }
+
+    fn new(_ty: Option<masa::QueueType>, cap: usize) -> Self {
+        Self::with_capacity(cap)
     }
 
     fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {

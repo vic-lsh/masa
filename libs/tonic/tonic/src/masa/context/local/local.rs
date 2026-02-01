@@ -14,7 +14,7 @@ use super::super::common::EarlyReturnHandler;
 use super::super::{resolve_method_name, ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{get_estimate, track_method_latency, PERCENTILE};
 use masa::{
-    time_now, Context, ContextBuilder, LatencyEstimator, LatencyRms, PriorityHint, EARLY_RETURN,
+    time_now, Context, ContextBuilder, LatencyEstimator, LatencyRms, Policy, PriorityHint,
 };
 use std::sync::atomic::AtomicUsize;
 
@@ -30,12 +30,12 @@ pub(crate) type LocalLatencyEstimator = LatencyRms;
 /// distribution of observed values for e_rem.
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct LocalDeadlinePolicy;
+pub struct LocalDeadlinePolicy<P>(std::marker::PhantomData<P>);
 
-impl MasaHooks for LocalDeadlinePolicy {
+impl<P: Policy> MasaHooks for LocalDeadlinePolicy<P> {
     type ServerContext = ServerContext<LocalLatencyEstimator>;
     type ChildContext = ChildContext<LocalLatencyEstimator>;
-    type ParentContext = ParentContext<LocalLatencyEstimator>;
+    type ParentContext = ParentContext<P, LocalLatencyEstimator>;
 }
 
 /// Spawns a background task to periodically print latency estimates
@@ -99,7 +99,7 @@ impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
 #[derive(Debug)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
+pub struct ParentContext<P, E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     method: GrpcMethod,
     resolved_method: String,
     ctx: Context,
@@ -109,6 +109,7 @@ pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyE
     child_end_times: Mutex<Vec<(String, Instant)>>,
     // Map from child_method.id() to resolved child method name
     // resolved_child_methods: Mutex<HashMap<MethodId, String>>,
+    _marker: std::marker::PhantomData<P>,
 }
 
 /// Resolve the method name from HTTP request headers, checking for override header.
@@ -136,8 +137,8 @@ fn parent_to_child_identifier(parent: &str, child: &str) -> String {
     format!("{}=>{}", parent, child)
 }
 
-impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, ServerContext<E>>
-    for ParentContext<E>
+impl<P: Policy, E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, ServerContext<E>>
+    for ParentContext<P, E>
 {
     fn begin<B>(
         method: GrpcMethod,
@@ -155,11 +156,12 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
                 resolve_method_name(method, req),
             ),
             child_end_times: Mutex::new(Vec::new()),
+            _marker: std::marker::PhantomData,
         }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        if self.early_return.check(&self.ctx) {
+        if self.early_return.check(&self.ctx, P::EARLY_RETURN) {
             return Err(Err(self.early_return.issue_error()));
         }
 
@@ -171,7 +173,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
         if let Poll::Pending = poll {
-            if self.early_return.check(&self.ctx) {
+            if self.early_return.check(&self.ctx, P::EARLY_RETURN) {
                 return Err(Err(self.early_return.issue_error()));
             }
         }
@@ -185,7 +187,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         request: &mut Request<T>,
         child_ctx: &mut ChildContext<E>,
     ) -> Result<(), Status> {
-        if self.early_return.check(&self.ctx) {
+        if self.early_return.check(&self.ctx, P::EARLY_RETURN) {
             return Err(self.early_return.issue_error());
         }
 
@@ -209,7 +211,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         .unwrap_or(0);
 
         let deadline = self.ctx.deadline() - est_remaining;
-        if EARLY_RETURN && time_now() > deadline {
+        if P::EARLY_RETURN && time_now() > deadline {
             return Err(self.early_return.issue_error());
         }
 
@@ -270,7 +272,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
     fn finalize_after_serialization(&self, _response: &mut http::Response<BoxBody>) {}
 }
 
-impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
+impl<P, E: LatencyEstimator + Default + 'static> ParentContext<P, E> {
     fn track_latencies(&self) {
         let parent_end = Instant::now();
 

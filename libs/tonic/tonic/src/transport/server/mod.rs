@@ -142,6 +142,11 @@ impl Server {
             ..Default::default()
         }
     }
+
+    /// Create a new server builder with a specific policy.
+    pub fn builder_with_policy<P: crate::masa::policy::TonicPolicy>() -> Self {
+        Self::builder()
+    }
 }
 
 impl<L> Server<L> {

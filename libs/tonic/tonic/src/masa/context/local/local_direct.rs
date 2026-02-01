@@ -15,7 +15,7 @@ use super::super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::super::common::EarlyReturnHandler;
 use super::super::resolve_method_name;
 use super::{estimate_method_latency, track_method_latency};
-use masa::{Context, ContextBuilder, LatencyDistribution, LatencyEstimator, MethodId};
+use masa::{Context, ContextBuilder, LatencyDistribution, LatencyEstimator, MethodId, EARLY_RETURN};
 
 static LAST_PRINT_TIME: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
@@ -85,7 +85,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        if self.early_return.check(&self.ctx) {
+        if self.early_return.check(&self.ctx, EARLY_RETURN) {
             return Err(Err(self.early_return.issue_error()));
         }
         let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
@@ -101,7 +101,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
         if let Poll::Pending = poll {
-            if self.early_return.check(&self.ctx) {
+            if self.early_return.check(&self.ctx, EARLY_RETURN) {
                 return Err(Err(self.early_return.issue_error()));
             }
         }
@@ -115,7 +115,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
         request: &mut Request<T>,
         _child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
-        if self.early_return.check(&self.ctx) {
+        if self.early_return.check(&self.ctx, EARLY_RETURN) {
             return Err(self.early_return.issue_error());
         }
 

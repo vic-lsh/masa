@@ -1,11 +1,5 @@
-use crate::runtime::{
-    scheduler::current_thread::{
-        queue::{PopError, PushError, Queue},
-        Handle,
-    },
-    task,
-};
-use std::sync::Arc;
+use crate::runtime::scheduler::current_thread::queue::{PopError, PushError, Queue};
+use super::super::Notified;
 
 /// Timed Queue
 pub(crate) struct TimedQueue<Q> {
@@ -18,6 +12,12 @@ impl<Q: Queue<Item = Notified>> Queue for TimedQueue<Q> {
     fn with_capacity(cap: usize) -> Self {
         Self {
             inner: Q::with_capacity(cap),
+        }
+    }
+
+    fn new(ty: Option<masa::QueueType>, cap: usize) -> Self {
+        Self {
+            inner: Q::new(ty, cap),
         }
     }
 

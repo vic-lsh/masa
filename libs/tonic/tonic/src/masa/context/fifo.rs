@@ -6,7 +6,7 @@ use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::common::EarlyReturnHandler;
 use super::resolve_method_name;
 use crate::Response;
-use masa::{Context, ContextBuilder, PriorityHint};
+use masa::{Context, ContextBuilder, PriorityHint, EARLY_RETURN};
 
 #[derive(Debug)]
 /// FIFO policy with optional early return support.
@@ -54,7 +54,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        if self.early_return.check(&self.ctx) {
+        if self.early_return.check(&self.ctx, EARLY_RETURN) {
             return Err(Err(self.early_return.issue_error()));
         }
         Ok(())
@@ -66,7 +66,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         request: &mut Request<T>,
         _child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
-        if self.early_return.check(&self.ctx) {
+        if self.early_return.check(&self.ctx, EARLY_RETURN) {
             return Err(self.early_return.issue_error());
         }
 
@@ -87,7 +87,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Result<(), Result<Response<Ret>, Status>> {
         match poll {
             Poll::Pending => {
-                if self.early_return.check(&self.ctx) {
+                if self.early_return.check(&self.ctx, EARLY_RETURN) {
                     return Err(Err(self.early_return.issue_error()));
                 }
             }

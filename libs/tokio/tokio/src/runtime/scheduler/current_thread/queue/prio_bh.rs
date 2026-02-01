@@ -24,10 +24,18 @@ fn ms_since_init(value: u64) -> u64 {
     (value - *INIT) / 1000
 }
 
-pub(crate) struct BinaryHeapQueue<T> {
+/// A Binary Heap based Priority Queue
+#[derive(Debug)]
+pub struct BinaryHeapQueue<T> {
     q: BinaryHeap<T>,
     push_count: u64,
     // reorder_count: u64,
+}
+
+impl<T: 'static + Send + Sync> masa::Queue for BinaryHeapQueue<T> {
+    fn queue_type() -> masa::QueueType {
+        masa::QueueType::Prio
+    }
 }
 
 impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapQueue<T> {
@@ -38,6 +46,10 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapQueue<
             q: BinaryHeap::with_capacity(cap),
             push_count: 0,
         }
+    }
+
+    fn new(_ty: Option<masa::QueueType>, cap: usize) -> Self {
+        Self::with_capacity(cap)
     }
 
     fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {

@@ -1,5 +1,5 @@
 use crate::{body::BoxBody, Code, Response, Status};
-use masa::{time_now, Context, EARLY_RETURN};
+use masa::{time_now, Context};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 #[derive(Debug)]
@@ -28,8 +28,8 @@ impl EarlyReturnHandler {
         }
     }
 
-    pub(crate) fn check(&self, ctx: &Context) -> bool {
-        if !EARLY_RETURN {
+    pub(crate) fn check(&self, ctx: &Context, enabled: bool) -> bool {
+        if !enabled {
             return false;
         }
 

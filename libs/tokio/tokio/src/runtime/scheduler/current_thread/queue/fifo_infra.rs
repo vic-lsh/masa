@@ -21,6 +21,10 @@ impl<T: Prioritize> Queue for FifoInfraQueue<T> {
         }
     }
 
+    fn new(_ty: Option<masa::QueueType>, cap: usize) -> Self {
+        Self::with_capacity(cap)
+    }
+
     fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
         if item.priority() == PriorityHint::infra() {
             self.infra_q.push_back(item);

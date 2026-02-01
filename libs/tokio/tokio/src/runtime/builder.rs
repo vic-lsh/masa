@@ -109,6 +109,8 @@ pub struct Builder {
     /// Configures the task poll count histogram
     pub(super) metrics_poll_count_histogram: HistogramBuilder,
 
+    pub(super) queue_type: Option<masa::QueueType>,
+
     #[cfg(tokio_unstable)]
     pub(super) unhandled_panic: UnhandledPanic,
 }
@@ -312,6 +314,8 @@ impl Builder {
 
             metrics_poll_count_histogram: HistogramBuilder::default(),
 
+            queue_type: None,
+
             disable_lifo_slot: false,
         }
     }
@@ -342,6 +346,13 @@ impl Builder {
         #[cfg(feature = "time")]
         self.enable_time();
 
+        self
+    }
+
+    /// Configures the runtime policy.
+    pub fn policy<P: masa::Policy>(&mut self) -> &mut Self {
+        use masa::Queue;
+        self.queue_type = Some(P::Queue::queue_type());
         self
     }
 
@@ -1120,6 +1131,7 @@ impl Builder {
                 global_queue_interval: self.global_queue_interval,
                 event_interval: self.event_interval,
                 local_queue_capacity: self.local_queue_capacity,
+                queue_type: self.queue_type,
                 #[cfg(tokio_unstable)]
                 unhandled_panic: self.unhandled_panic.clone(),
                 disable_lifo_slot: self.disable_lifo_slot,
@@ -1271,6 +1283,7 @@ cfg_rt_multi_thread! {
                     global_queue_interval: self.global_queue_interval,
                     event_interval: self.event_interval,
                     local_queue_capacity: self.local_queue_capacity,
+                    queue_type: self.queue_type,
                     #[cfg(tokio_unstable)]
                     unhandled_panic: self.unhandled_panic.clone(),
                     disable_lifo_slot: self.disable_lifo_slot,
@@ -1318,6 +1331,7 @@ cfg_rt_multi_thread! {
                         global_queue_interval: self.global_queue_interval,
                         event_interval: self.event_interval,
                         local_queue_capacity: self.local_queue_capacity,
+                        queue_type: self.queue_type,
                         #[cfg(tokio_unstable)]
                         unhandled_panic: self.unhandled_panic.clone(),
                         disable_lifo_slot: self.disable_lifo_slot,

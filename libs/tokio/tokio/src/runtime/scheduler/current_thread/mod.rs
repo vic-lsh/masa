@@ -20,7 +20,7 @@ use std::task::Poll::{Pending, Ready};
 use std::task::Waker;
 use std::time::Duration;
 
-mod queue;
+pub(crate) mod queue;
 use queue::Queue;
 
 pub use queue::get_sched_flavor;
@@ -138,6 +138,8 @@ impl CurrentThread {
             .global_queue_interval
             .unwrap_or(DEFAULT_GLOBAL_QUEUE_INTERVAL);
 
+        let queue_type = config.queue_type;
+
         let handle = Arc::new(Handle {
             shared: Shared {
                 inject: Inject::new(),
@@ -153,7 +155,7 @@ impl CurrentThread {
         });
 
         let core = AtomicCell::new(Some(Box::new(Core {
-            tasks: LocalRunQueue::with_capacity(INITIAL_CAPACITY),
+            tasks: LocalRunQueue::new(queue_type, INITIAL_CAPACITY),
             tick: 0,
             driver: Some(driver),
             metrics: MetricsBatch::new(&handle.shared.worker_metrics),
