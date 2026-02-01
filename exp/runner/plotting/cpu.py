@@ -89,6 +89,11 @@ def plot_cpu_utilization(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    try:
+        _save_cpu_summary_csv(df_all, output_dir)
+    except Exception as e:
+        logger.error(f"Failed to save CPU summary CSV: {e}")
+
     for service in sorted(services):
         try:
             _plot_service_cpu(df_all, service, output_dir, figsize)
@@ -402,3 +407,44 @@ def _plot_policy_services(
     plt.close(fig)
 
     logger.info(f"Saved per-policy CPU plot for {policy}: {output_file}")
+
+
+def _save_cpu_summary_csv(df: pd.DataFrame, output_dir: Path) -> None:
+    """
+    Save CPU utilization summary stats to CSV.
+
+    Args:
+        df: DataFrame with all CPU stats (must have service_name, policy columns)
+        output_dir: Directory to save CSV
+    """
+    summary_data = []
+
+    # Group by service and policy
+    # We aggregate across all iterations and time points
+    # This gives a single row per (service, policy)
+    for (service, policy), group in df.groupby(["service_name", "policy"]):
+        cpu_values = group["cpu_percent"]
+        if cpu_values.empty:
+            continue
+
+        summary_data.append({
+            "Service": service,
+            "Policy": policy,
+            "Mean_CPU": cpu_values.mean(),
+            "Median_CPU": cpu_values.median(),
+            "P90_CPU": cpu_values.quantile(0.90),
+            "P99_CPU": cpu_values.quantile(0.99),
+            "Max_CPU": cpu_values.max(),
+            "Sample_Count": len(cpu_values)
+        })
+
+    if not summary_data:
+        return
+
+    summary_df = pd.DataFrame(summary_data)
+    # Sort for better readability
+    summary_df = summary_df.sort_values(["Service", "Policy"])
+
+    output_file = output_dir / "cpu_summary.csv"
+    summary_df.to_csv(output_file, index=False)
+    logger.info(f"Saved CPU summary CSV to {output_file}")
