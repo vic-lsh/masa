@@ -149,12 +149,85 @@ def compute_early_return_breakdown(df):
     def parse_error(err):
         if not err.startswith("/EarlyReturn"):
             return "Unknown", "Unknown"
+            
+        # Strip off the last child part if present (starting with |)
+        if "|" in err:
+            err = err.split("|")[0]
+            
         parts = err.split(":")
         if len(parts) >= 3:
             return parts[1], parts[2]
         return "Unknown", "Unknown"
 
     early_return_df["parsed"] = early_return_df["error"].apply(parse_error)
+    early_return_df["service"] = early_return_df["parsed"].apply(lambda x: x[0])
+    early_return_df["method"] = early_return_df["parsed"].apply(lambda x: x[1])
+    early_return_df["key"] = (
+        early_return_df["service"] + "::" + early_return_df["method"]
+    )
+
+    breakdown = {}
+    for key in early_return_df["key"].unique():
+        count = len(early_return_df[early_return_df["key"] == key])
+        breakdown[key] = count / duration_us * s_to_us
+
+    return breakdown
+
+
+def compute_early_return_last_child_breakdown(df):
+    """
+    Compute breakdown of early returns by LastChild (Service:Method).
+
+    Returns:
+        dict: Mapping from "LastChildService:LastChildMethod" -> request rate (req/s)
+    """
+    if df.empty or "error" not in df.columns:
+        return {}
+
+    # Filter for early-return requests only
+    early_return_df = df[df["error"].str.startswith("/EarlyReturn")].copy()
+
+    if early_return_df.empty:
+        return {}
+
+    start = df["start_at"].min()
+    end = (df["start_at"] + df["latency"]).max()
+    duration_us = end - start
+    s_to_us = 10**6
+
+    if duration_us == 0:
+        return {}
+
+    # Parse LastChild from error string
+    # Format: /EarlyReturn:<Service>:<Method>|<LastChild>
+    def parse_last_child(err):
+        if not err.startswith("/EarlyReturn"):
+            return "Unknown", "Unknown"
+            
+        if "|" in err:
+            parts = err.split("|", 1)
+            if len(parts) < 2:
+                return "None", "None"
+            last_child = parts[1]
+        else:
+            # Legacy format with : separator
+            parts = err.split(":", 3)
+            if len(parts) < 4:
+                return "None", "None"
+            last_child = parts[3]
+        
+        if last_child == "None:None":
+            return "Ingress", "Drop"
+            
+        # Try to parse /Service/Method from last_child
+        # It usually looks like /package.Service/Method
+        child_parts = last_child.split("/")
+        if len(child_parts) >= 3:
+            return child_parts[-2], child_parts[-1]
+            
+        return "Unknown", last_child
+
+    early_return_df["parsed"] = early_return_df["error"].apply(parse_last_child)
     early_return_df["service"] = early_return_df["parsed"].apply(lambda x: x[0])
     early_return_df["method"] = early_return_df["parsed"].apply(lambda x: x[1])
     early_return_df["key"] = (
@@ -1147,6 +1220,9 @@ def generate_plots(args) -> None:
     # For "ALL" API, compute early-return breakdown by request type
     policy_early_returns_by_type = []
     policy_total_early_returns = []
+    # For "ALL" API, compute early-return breakdown by LAST CHILD
+    policy_early_returns_last_child_by_type = []
+    policy_total_early_returns_last_child = []
     # For "ALL" API, compute SLO miss breakdown by request type
     policy_slo_misses_by_type = []
     policy_total_slo_misses = []
@@ -1199,6 +1275,30 @@ def generate_plots(args) -> None:
                     policy: [
                         sum(d.values())
                         for d in policy_early_returns_by_type[i][api][policy]
+                    ]
+                    for policy in policies
+                }
+                
+                # Compute early-return breakdown by LAST CHILD
+                policy_early_returns_last_child_by_type.append({})
+                policy_total_early_returns_last_child.append({})
+                policy_early_returns_last_child_by_type[i][api] = {
+                    policy: [
+                        compute_early_return_last_child_breakdown(data[policy][rps])
+                        for rps in rps_values
+                    ]
+                    for policy in policies
+                }
+                # Collect keys
+                for policy in policies:
+                    for rps_dict in policy_early_returns_last_child_by_type[i][api][policy]:
+                        all_request_types.update(rps_dict.keys())
+                        
+                # Compute total
+                policy_total_early_returns_last_child[i][api] = {
+                    policy: [
+                        sum(d.values())
+                        for d in policy_early_returns_last_child_by_type[i][api][policy]
                     ]
                     for policy in policies
                 }
@@ -1312,6 +1412,27 @@ def generate_plots(args) -> None:
                             )
                         )
 
+                    early_returns_last_child_by_type = policy_early_returns_last_child_by_type[i].get(api)
+                    total_early_returns_last_child = policy_total_early_returns_last_child[i].get(api)
+                    if (
+                        early_returns_last_child_by_type is not None
+                        and total_early_returns_last_child is not None
+                    ):
+                        output_path = os.path.join(
+                            output_dir, f"early_return_last_child_{api}.png"
+                        )
+                        futures.append(
+                            executor.submit(
+                                _plot_early_return_breakdown,
+                                output_path,
+                                policies=policies,
+                                rps_values=rps_values,
+                                policy_total_early_returns=total_early_returns_last_child,
+                                policy_early_returns_breakdown=early_returns_last_child_by_type,
+                                title="Early-return requests breakdown by Last Child Service::Method",
+                            )
+                        )
+
         # Submit SLO miss breakdown plots for each repeat
         for i in range(repeats):
             output_dir = os.path.join(args.output_dir, str(i))
@@ -1412,6 +1533,80 @@ def generate_plots(args) -> None:
                         policy_total_early_returns=avg_total_early_returns,
                         policy_early_returns_breakdown=avg_breakdown,
                         title=f"Average early-return requests breakdown by Service::Method (averaged over {repeats} run(s))",
+                    )
+                )
+
+                # Average breakdown for LAST CHILD
+                avg_total_early_returns_lc = {}
+                avg_breakdown_lc = {
+                    policy: [dict() for _ in range(len(rps_values))]
+                    for policy in policies
+                }
+                
+                all_types_lc = set()
+                for i in range(repeats):
+                    if i < len(policy_early_returns_last_child_by_type):
+                        for policy in policies:
+                            per_rps = (
+                                policy_early_returns_last_child_by_type[i]
+                                .get(api, {})
+                                .get(policy, [])
+                            )
+                            for d in per_rps:
+                                all_types_lc.update((d or {}).keys())
+
+                for policy in policies:
+                    totals = []
+                    for rps_idx in range(len(rps_values)):
+                        vals = []
+                        for i in range(repeats):
+                            if i < len(policy_total_early_returns_last_child):
+                                per_rps = (
+                                    policy_total_early_returns_last_child[i]
+                                    .get(api, {})
+                                    .get(policy, [])
+                                )
+                                if rps_idx < len(per_rps):
+                                    vals.append(float(per_rps[rps_idx] or 0.0))
+                        if vals:
+                            totals.append(sum(vals) / len(vals))
+                        else:
+                            totals.append(0.0)
+                    avg_total_early_returns_lc[policy] = totals
+
+                for policy in policies:
+                    for rps_idx in range(len(rps_values)):
+                        for rt in all_types_lc:
+                            vals = []
+                            for i in range(repeats):
+                                if i >= len(policy_early_returns_last_child_by_type):
+                                    continue
+                                per_rps = (
+                                    policy_early_returns_last_child_by_type[i]
+                                    .get(api, {})
+                                    .get(policy, [])
+                                )
+                                if (
+                                    rps_idx < len(per_rps)
+                                    and per_rps[rps_idx] is not None
+                                    and rt in per_rps[rps_idx]
+                                ):
+                                    vals.append(float(per_rps[rps_idx][rt]))
+                            if vals:
+                                avg_breakdown_lc[policy][rps_idx][rt] = sum(vals) / len(
+                                    vals
+                                )
+
+                output_path = os.path.join(output_dir, f"early_return_last_child_{api}.png")
+                futures.append(
+                    executor.submit(
+                        _plot_early_return_breakdown,
+                        output_path,
+                        policies=policies,
+                        rps_values=rps_values,
+                        policy_total_early_returns=avg_total_early_returns_lc,
+                        policy_early_returns_breakdown=avg_breakdown_lc,
+                        title=f"Average early-return requests breakdown by Last Child Service::Method (averaged over {repeats} run(s))",
                     )
                 )
 

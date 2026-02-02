@@ -238,7 +238,7 @@ where
     R: RequestType<C>,
     C: Client,
 {
-    const HEADERS: [&'static str; 7] = [
+    const HEADERS: [&'static str; 9] = [
         "api",
         "request_id",
         "slo",
@@ -246,6 +246,8 @@ where
         "deadline",
         "latency",
         "error",
+        "q_lat_init",
+        "q_lat_resume",
     ];
 
     fn new(
@@ -263,15 +265,34 @@ where
     }
 
     fn to_row(&self) -> String {
+        let (init_lat, resume_lat) = match &self.response {
+            Some((metadata, _)) => {
+                let init = metadata
+                    .get("x-queue-latency-initial")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let resume = metadata
+                    .get("x-queue-latency-resume")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(0);
+                (init, resume)
+            }
+            None => (0, 0),
+        };
+
         let generic = format!(
-            "{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{}",
             self.ctx.api(),
             self.ctx.request_id(),
             self.ctx.slo(),
             self.ctx.gateway_entry(),
             self.ctx.deadline(),
             self.latency,
-            self.error
+            self.error,
+            init_lat,
+            resume_lat
         );
 
         let specific = match &self.response {
@@ -599,24 +620,19 @@ where
 
                 if trace {
                     // increment the right counters
-                    match error.as_str() {
-                        "/None" => {
-                            ctrs.increment("good");
-                        }
-                        "/ClientMiss" => {
-                            ctrs.increment("deadline_miss");
-                        }
-                        "/EarlyReturn" => {
-                            ctrs.increment("early_return");
-                        }
-                        "/ClientTimeout" => {
-                            ctrs.increment("timeout");
-                        }
-                        e => {
-                            ctrs.increment("unexpected");
-                            log::error!("unexpected request error '{}'", e);
-                        }
-                    };
+                    let err_str = error.as_str();
+                    if err_str == "/None" {
+                        ctrs.increment("good");
+                    } else if err_str == "/ClientMiss" {
+                        ctrs.increment("deadline_miss");
+                    } else if err_str.starts_with("/EarlyReturn") {
+                        ctrs.increment("early_return");
+                    } else if err_str == "/ClientTimeout" {
+                        ctrs.increment("timeout");
+                    } else {
+                        ctrs.increment("unexpected");
+                        log::error!("unexpected request error '{}'", err_str);
+                    }
                 }
             });
         }

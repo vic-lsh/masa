@@ -486,6 +486,16 @@ impl<S: 'static> Notified<S> {
     }
 }
 
+pub(crate) trait Traceable {
+    fn timer(&mut self) -> &mut TraceTimer;
+}
+
+impl<S: 'static> Traceable for Notified<S> {
+    fn timer(&mut self) -> &mut TraceTimer {
+        Notified::timer(self)
+    }
+}
+
 impl<S: 'static> Notified<S> {
     pub(crate) unsafe fn from_raw(ptr: RawTask) -> Notified<S> {
         Notified(Task::new(ptr))
