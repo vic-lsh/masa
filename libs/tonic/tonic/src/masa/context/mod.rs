@@ -15,7 +15,7 @@ mod tracing;
 
 pub mod runtime;
 mod tls;
-use masa::Context;
+use masa_core::Context;
 pub use tls::{client, server};
 
 #[cfg(all(

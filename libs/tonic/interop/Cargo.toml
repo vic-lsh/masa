@@ -26,7 +26,7 @@ prost = "0.12"
 tokio = {path = "../../tokio/tokio", features = ["rt-multi-thread", "time", "macros"]}
 tokio-stream = { path = "../../tokio/tokio-stream" }
 tonic = {path = "../tonic", features = ["tls"]}
-masa = {path = "../../masa"}
+masa-core = { path = "../../masa-core" }
 tower = {path = "../../../libs/tower/tower"}
 tracing-subscriber = {version = "0.3"}
 

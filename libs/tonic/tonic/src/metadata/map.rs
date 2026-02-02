@@ -6,7 +6,7 @@ use super::encoding::{Ascii, Binary, ValueEncoding};
 use super::key::{InvalidMetadataKey, MetadataKey};
 use super::value::MetadataValue;
 
-use masa::Context;
+use masa_core::Context;
 
 use std::marker::PhantomData;
 

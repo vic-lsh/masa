@@ -3,7 +3,7 @@ use futures_lite::future;
 use hello_world::greeter_server::{Greeter, GreeterServer};
 use hello_world::{HelloReply, HelloRequest};
 use hyper::rt::{Exec, Executor};
-use masa::PriorityHint;
+use masa_core::PriorityHint;
 use rand_distr::{Distribution, Normal};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
