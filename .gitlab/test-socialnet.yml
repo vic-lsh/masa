@@ -1,5 +1,7 @@
 test_socialnet:
   stage: test
+  variables:
+    CI: "true"
   before_script: []
   tags:
     - on-host
