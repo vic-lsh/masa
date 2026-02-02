@@ -16,6 +16,12 @@ pub enum FutureSpan {
     Queueing(u64),
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct QueueLatencies {
+    pub initial: u64,
+    pub resume: u64,
+}
+
 /// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Context {
@@ -26,6 +32,8 @@ pub struct Context {
     deadline: Timestamp,
     prio_hint: PriorityHint,
     frontend_elapse: Option<u64>,
+    #[serde(default)]
+    pub queue_latencies: Option<QueueLatencies>,
 }
 
 pub struct ContextBuilder {
@@ -36,6 +44,7 @@ pub struct ContextBuilder {
     deadline: Timestamp,
     prio_hint: Option<PriorityHint>,
     frontend_elapse: Option<u64>,
+    queue_latencies: Option<QueueLatencies>,
 }
 
 impl ContextBuilder {
@@ -48,6 +57,7 @@ impl ContextBuilder {
             deadline: 0,
             prio_hint: None,
             frontend_elapse: None,
+            queue_latencies: None,
         }
     }
 
@@ -60,6 +70,7 @@ impl ContextBuilder {
             deadline: ctx.deadline,
             prio_hint: Some(ctx.prio_hint),
             frontend_elapse: ctx.frontend_elapse,
+            queue_latencies: ctx.queue_latencies.clone(),
         }
     }
 
@@ -88,6 +99,11 @@ impl ContextBuilder {
         self
     }
 
+    pub fn queue_latencies(mut self, queue_latencies: QueueLatencies) -> Self {
+        self.queue_latencies = Some(queue_latencies);
+        self
+    }
+
     pub fn build(self) -> Context {
         Context {
             api: self.api,
@@ -97,6 +113,7 @@ impl ContextBuilder {
             deadline: self.deadline,
             prio_hint: self.prio_hint.unwrap_or(PriorityHint::new(self.deadline)),
             frontend_elapse: self.frontend_elapse,
+            queue_latencies: self.queue_latencies,
         }
     }
 }
