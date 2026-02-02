@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-output_root="$repo_root/exp/mssim/data/out"
+output_root="$repo_root/exp/mssim/out"
 experiment_name="e2e_test"
 run_root="$output_root/$experiment_name"
 
@@ -53,7 +53,7 @@ assert_path_exists() {
     fi
 }
 
-gen_config="$repo_root/exp/mssim/data/in/$experiment_name/gen_config.json"
+gen_config="$repo_root/exp/mssim/in/$experiment_name/gen_config.json"
 duration="$(python -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["DurationSecs"]))' "$gen_config")"
 
 for policy in "${policies[@]}"; do

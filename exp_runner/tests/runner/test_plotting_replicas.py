@@ -1,7 +1,10 @@
 import json
 from pathlib import Path
 
-from exp_runner.runner.plotting.replicas import _collect_replica_data, generate_replicas_plots
+from exp_runner.runner.plotting.replicas import (
+    _collect_replica_data,
+    generate_replicas_plots,
+)
 
 
 def _write_hotel_config(path: Path, *, reservation_replicas: int) -> None:
@@ -17,7 +20,7 @@ def _write_hotel_config(path: Path, *, reservation_replicas: int) -> None:
 
 
 def test_generate_replicas_plot_creates_output(tmp_path: Path) -> None:
-    in_dir = tmp_path / "exp" / "hotel" / "data" / "in"
+    in_dir = tmp_path / "exp" / "hotel" / "in"
     fifo_1000 = in_dir / "fifo_1000"
     prio_1500 = in_dir / "prio_1500"
     noise_dir = in_dir / "template"
@@ -38,7 +41,7 @@ def test_generate_replicas_plot_creates_output(tmp_path: Path) -> None:
 
 
 def test_collect_replica_data_excludes_frontend(tmp_path: Path) -> None:
-    in_dir = tmp_path / "exp" / "hotel" / "data" / "in"
+    in_dir = tmp_path / "exp" / "hotel" / "in"
     fifo_1000 = in_dir / "fifo_1000"
     fifo_1000.mkdir(parents=True)
 
