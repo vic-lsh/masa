@@ -54,12 +54,12 @@ After running `uv sync`, you can use Python commands in two ways:
 1. **Activate the virtual environment** (recommended for interactive use):
    ```bash
    source .venv/bin/activate
-   python3 -m exp.runner plot hotel exp1
+   python3 -m exp_runner.runner plot hotel exp1
    ```
 
 2. **Use `uv run`** (no activation needed):
    ```bash
-   uv run python3 -m exp.runner plot hotel exp1
+   uv run python3 -m exp_runner.runner plot hotel exp1
    ```
 
 The virtual environment includes all required dependencies (matplotlib, pandas, numpy, etc.) needed for running experiments and generating plots.
@@ -127,13 +127,13 @@ To generate plots for visualizing goodput and latency of an experiment, use the 
 
 ```bash
 # Generate plots for an existing experiment
-uv run python -m exp.runner plot <app> <experiment-name>
+uv run python -m exp_runner.runner plot <app> <experiment-name>
 
 # For example:
-uv run python -m exp.runner plot hotel exp1
-uv run python -m exp.runner plot synthetic quick_test
-uv run python -m exp.runner plot mssim e2e_test
-uv run python -m exp.runner plot socialnet exp1
+uv run python -m exp_runner.runner plot hotel exp1
+uv run python -m exp_runner.runner plot synthetic quick_test
+uv run python -m exp_runner.runner plot mssim e2e_test
+uv run python -m exp_runner.runner plot socialnet exp1
 ```
 
 The plots will be saved at `exp/<app>/data/plots/<experiment>`.
@@ -141,7 +141,7 @@ The plots will be saved at `exp/<app>/data/plots/<experiment>`.
 You can also pass a `--plot` option when running experiments to automatically generate plots after completion:
 
 ```bash
-uv run python -m exp.runner run <app> <experiment-name> --plot
+uv run python -m exp_runner.runner run <app> <experiment-name> --plot
 ```
 
 #### Docker compose manual (single-server)
@@ -152,18 +152,18 @@ For running experiments, use the Python experiment runner:
 
 ```bash
 # Run a full experiment (builds, starts services, runs load generator, collects logs)
-uv run python -m exp.runner run <app> <experiment-name> --plot
+uv run python -m exp_runner.runner run <app> <experiment-name> --plot
 
 # For example:
-uv run python -m exp.runner run hotel exp1 --plot
-uv run python -m exp.runner run synthetic quick_test --plot
-uv run python -m exp.runner run socialnet exp1 --plot
+uv run python -m exp_runner.runner run hotel exp1 --plot
+uv run python -m exp_runner.runner run synthetic quick_test --plot
+uv run python -m exp_runner.runner run socialnet exp1 --plot
 
 # Run multiple experiments sequentially
-uv run python -m exp.runner run-multiple hotel "exp1 exp2 exp3" --plot
+uv run python -m exp_runner.runner run-multiple hotel "exp1 exp2 exp3" --plot
 ```
 
-See `exp/runner/README.md` for full documentation on the experiment runner.
+See `exp_runner/runner/README.md` for full documentation on the experiment runner.
 
 For manual Docker operations (without the full experiment workflow):
 

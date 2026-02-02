@@ -56,16 +56,13 @@ run_test() {
     local exp_name="$1"
     echo "--------------------------------------------------"
     echo "Running test for experiment: $exp_name"
-    echo "--------------------------------------------------"
-
-    local out_dir="$exp_dir/data/out/$exp_name"
-
+    local out_dir="$exp_dir/out/$exp_name"
     echo "Cleaning previous experiment output at $out_dir"
     rm -rf "$out_dir"
 
     echo "Running synthetic experiment: $exp_name"
     cd "$repo_root"
-    python -m exp.runner run synthetic "$exp_name" $no_cache --smoke-test --plot
+    python -m exp_runner.runner run synthetic "$exp_name" $no_cache --smoke-test --plot
 
     echo "Test for $exp_name passed."
 }

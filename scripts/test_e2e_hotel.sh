@@ -5,7 +5,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 exp_dir="$repo_root/exp/hotel"
 exp_name="ci"
-out_dir="$exp_dir/data/out/$exp_name"
+out_dir="$exp_dir/out/$exp_name"
 no_cache=""
 
 # Parse arguments
@@ -28,8 +28,8 @@ if [ ! -d "$exp_dir" ]; then
     exit 1
 fi
 
-if [ ! -d "$exp_dir/data/in/$exp_name" ]; then
-    echo "CI experiment config not found at $exp_dir/data/in/$exp_name" >&2
+if [ ! -d "$exp_dir/in/$exp_name" ]; then
+    echo "CI experiment config not found at $exp_dir/in/$exp_name" >&2
     exit 1
 fi
 
@@ -66,6 +66,6 @@ rm -rf "$out_dir"
 
 echo "Running hotel experiment: $exp_name"
 cd "$repo_root"
-python -m exp.runner run hotel "$exp_name" $no_cache --smoke-test --plot
+python -m exp_runner.runner run hotel "$exp_name" $no_cache --smoke-test --plot
 
 echo "Hotel CI experiment test passed."

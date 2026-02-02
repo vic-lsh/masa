@@ -51,7 +51,7 @@ impl ChildImpl {
             // Build connection info for service registry
             // Docker Compose creates containers with names like: {project}-{service}-{replica_number}
             // We need to connect to individual replica endpoints: {project}-local-{service-id}-service-1, -2, etc.
-            // Read project name from environment variable (set by exp.runner)
+            // Read project name from environment variable (set by exp_runner.runner)
             let project_name = std::env::var("DOCKER_COMPOSE_PROJECT_NAME")
                 .ok()
                 .filter(|s| !s.is_empty());
