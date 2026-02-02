@@ -15,7 +15,7 @@ mod tracing;
 
 pub mod runtime;
 mod tls;
-use masa::Context;
+use masa_core::Context;
 pub use tls::{client, server};
 
 #[cfg(all(
@@ -259,7 +259,7 @@ impl<T> MasaRequestExt<T> for Request<T> {
 #[allow(dead_code)]
 fn read_context<B>(req: &http::Request<B>) -> Context {
     let ctx_str = req.headers()["ctx"].to_str().unwrap();
-    Context::from_json(ctx_str)
+    Context::from_header_string(ctx_str)
 }
 
 /// Resolve the method name from HTTP request headers, checking for override header.

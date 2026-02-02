@@ -7,7 +7,7 @@ use super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::{resolve_method_name, METHOD_NAME_OVERRIDE_HEADER};
 use crate::body::BoxBody;
 use crate::Response;
-use masa::{Context, ContextBuilder};
+use masa_core::{Context, ContextBuilder};
 
 #[derive(Debug)]
 /// This policy sets the priority of each child request to be the request generation time (prio_hint).

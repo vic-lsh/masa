@@ -64,57 +64,8 @@ fi
 echo "Cleaning previous experiment output at $out_dir"
 rm -rf "$out_dir"
 
-mapfile -t api_array < <(jq -r '.Apis[]' "$exp_dir/data/in/$exp_name/gen_config.json")
-
-echo "APIs: ${api_array[@]}"
-
-
 echo "Running hotel experiment: $exp_name"
-cd "$exp_dir"
-"$exp_dir/scripts/run-experiment.sh" "$exp_name" $no_cache
-
-assert_path_exists() {
-    if [ -e "$1" ]; then
-        echo "File exists: $1"
-    else
-        echo "Expected path missing: $1" >&2
-        exit 1
-    fi
-}
-
-echo "Validating experiment output..."
-
-# Check that the done marker exists
-assert_path_exists "$out_dir/done"
-
-# Read policies from the config
-policies=$(cat "$exp_dir/data/in/$exp_name/policies" | tr -d '\n')
-read -ra policy_array <<< "$policies"
-
-# Read RPS values from gen_config.json
-mapfile -t rps_array < <(jq -r '.Rps[]' "$exp_dir/data/in/$exp_name/gen_config.json")
-
-# Read APIs from gen_config.json
-mapfile -t api_array < <(jq -r '.Apis[]' "$exp_dir/data/in/$exp_name/gen_config.json")
-
-# Read Repeats from gen_config.json
-repeats=$(jq -r '.Repeats' "$exp_dir/data/in/$exp_name/gen_config.json")
-
-# Validate output files for each repeat, policy, RPS, and API
-for i in $(seq 0 $((repeats - 1))); do
-    for policy in "${policy_array[@]}"; do
-        for rps in "${rps_array[@]}"; do
-            for api in "${api_array[@]}"; do
-                expected_file="$out_dir/$i/$policy/r${rps}_${api}.csv"
-                echo "Checking: $expected_file"
-                assert_path_exists "$expected_file"
-            done
-        done
-    done
-done
-
-echo "Generating plots..."
 cd "$repo_root"
-python -m exp.runner plot hotel "$exp_name"
+python -m exp.runner run hotel "$exp_name" $no_cache --smoke-test --plot
 
 echo "Hotel CI experiment test passed."

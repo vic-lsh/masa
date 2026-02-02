@@ -56,14 +56,14 @@ channel = []
 
 # masa-specific features
 masa = []
-prio_global = ["masa/prio_global", "tokio/prio_global"]
-prio_oldest = ["masa/prio_oldest", "tokio/prio_oldest"]
-prio_local = ["masa/prio_local", "tokio/prio_local"]
-fifo = ["masa/fifo", "tokio/fifo"]
-fifo_span_tracing = ["masa"]
-fifo_queue_tracing = ["masa"]
-prio_global_queue_tracing = ["masa"]
-early = ["masa"]
+prio_global = ["masa-core/prio_global", "tokio/prio_global"]
+prio_oldest = ["masa-core/prio_oldest", "tokio/prio_oldest"]
+prio_local = ["masa-core/prio_local", "tokio/prio_local"]
+fifo = ["masa-core/fifo", "tokio/fifo"]
+fifo_span_tracing = ["masa", "masa-core/fifo_span_tracing"]
+fifo_queue_tracing = ["masa", "masa-core/fifo_queue_tracing"]
+prio_global_queue_tracing = ["masa", "masa-core/prio_global_queue_tracing"]
+early = ["masa", "masa-core/early"]
 
 
 # [[bench]]
@@ -87,7 +87,7 @@ tower-layer = { path = "../../../libs/tower/tower-layer/" }
 tower-service = { path = "../../../libs/tower/tower-service" }
 
 # Needed for our code-gen modification
-masa = { path = "../../masa" }
+masa-core = { path = "../../masa-core" }
 
 # prost
 prost = { version = "0.12", default-features = false, features = [

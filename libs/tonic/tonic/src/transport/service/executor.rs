@@ -2,7 +2,7 @@ use crate::transport::BoxFuture;
 use std::{future::Future, sync::Arc};
 
 pub(crate) use hyper::rt::Executor;
-use masa::PriorityHint;
+use masa_core::PriorityHint;
 
 #[derive(Copy, Clone)]
 struct TokioExec;

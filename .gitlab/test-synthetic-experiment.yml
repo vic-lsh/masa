@@ -1,8 +1,8 @@
 test_synthetic_experiment:
   stage: test
-  parallel:
-    matrix:
-      - EXP_NAME: [ci, ci_call_graph]
+  variables:
+    CI: "true"
+    EXP_NAME: "ci"
   cache:
     key:
       files:

@@ -1,4 +1,4 @@
-use masa::PriorityHint;
+use masa_core::PriorityHint;
 
 use crate::future::poll_fn;
 use crate::loom::sync::atomic::AtomicBool;

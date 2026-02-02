@@ -18,7 +18,7 @@ use tracing::{debug, trace};
 
 use super::client::Ver;
 use crate::common::exec::Exec;
-use masa::PriorityHint;
+use masa_core::PriorityHint;
 
 // FIXME: allow() required due to `impl Trait` leaking types to this lint
 #[allow(missing_debug_implementations)]
