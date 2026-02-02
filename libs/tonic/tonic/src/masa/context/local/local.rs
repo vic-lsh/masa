@@ -10,7 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use super::super::common::EarlyReturnHandler;
+use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::super::{resolve_method_name, ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{get_estimate, track_method_latency, PERCENTILE};
 use masa::{
@@ -106,6 +106,7 @@ pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyE
     ctx: Context,
     server: Arc<ServerContext<E>>,
 
+    q_lat_tracker: QueueLatencyTracker,
     early_return: EarlyReturnHandler,
     child_end_times: Mutex<Vec<(String, Instant)>>,
     // Map from child_method.id() to resolved child method name
@@ -151,6 +152,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             resolved_method,
             ctx: read_context(req),
             server: server_ctx,
+            q_lat_tracker: QueueLatencyTracker::new(),
             early_return: EarlyReturnHandler::new(
                 method.service(),
                 resolve_method_name(method, req),
@@ -164,6 +166,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             return Err(Err(self.early_return.issue_error()));
         }
 
+        self.q_lat_tracker.track_poll();
         Ok(())
     }
 
@@ -244,6 +247,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         response: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext<E>,
     ) -> Result<(), Status> {
+        self.q_lat_tracker.track_child_response(response);
         // Finalize child context to track client runtime if response is not early return
         child_ctx.finalize(response);
 
@@ -274,7 +278,9 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         }
     }
 
-    fn finalize_after_serialization(&self, _response: &mut http::Response<BoxBody>) {}
+    fn finalize_after_serialization(&self, response: &mut http::Response<BoxBody>) {
+        self.q_lat_tracker.inject_header(response);
+    }
 }
 
 impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {

@@ -1,9 +1,9 @@
-use crate::{masa::context::read_context, GrpcMethod, Request, Status};
+use crate::{body::BoxBody, masa::context::read_context, GrpcMethod, Request, Status};
 use std::sync::Arc;
 use std::task::Poll;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
-use super::common::EarlyReturnHandler;
+use super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::{resolve_method_name, METHOD_NAME_OVERRIDE_HEADER};
 use crate::Response;
 use masa::{Context, ContextBuilder, PriorityHint};
@@ -35,6 +35,7 @@ impl ServerHooks for ServerContext {
 #[allow(unreachable_pub)]
 pub struct ParentContext {
     ctx: Context,
+    q_lat_tracker: QueueLatencyTracker,
     early_return: EarlyReturnHandler,
 }
 
@@ -56,6 +57,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Self {
         Self {
             ctx: read_context(req),
+            q_lat_tracker: QueueLatencyTracker::new(),
             early_return: EarlyReturnHandler::new(
                 method.service(),
                 resolve_method_name(method, req),
@@ -67,6 +69,8 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         if self.early_return.check(&self.ctx) {
             return Err(Err(self.early_return.issue_error()));
         }
+
+        self.q_lat_tracker.track_poll();
         Ok(())
     }
 
@@ -97,9 +101,10 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn after_child_rpc<T>(
         &self,
         _child_method: GrpcMethod,
-        _response: &mut Result<Response<T>, Status>,
+        response: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext,
     ) -> Result<(), Status> {
+        self.q_lat_tracker.track_child_response(response);
         if let Some(child) = child_ctx.child_method_name {
             self.early_return.set_last_child(child);
         }
@@ -120,6 +125,11 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         };
 
         Ok(())
+    }
+
+    // expect frontend method, all other method are going send back their latency trace
+    fn finalize_after_serialization(&self, response: &mut http::Response<BoxBody>) {
+        self.q_lat_tracker.inject_header(response);
     }
 }
 
