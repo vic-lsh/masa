@@ -9,6 +9,7 @@ MSSIM differs from the default runner flow:
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import logging
@@ -308,6 +309,83 @@ class MssimApp(AppPlugin):
 
     def create_builder(self) -> AppBuilder:
         return self._builder
+
+    def verify_results(self, config: "ExperimentConfig") -> bool:
+        """
+        Verification logic for MSSIM.
+        Checks for presence of metadata and latency files, and validates goodput.
+        """
+        logger.info(f"Verifying MSSIM experiment: {config.experiment_name}")
+        
+        gen_config = config.gen_config
+        try:
+            rps_list = gen_config["Rps"]
+            repeats = gen_config.get("Repeats", 1)
+            duration = gen_config["DurationSecs"]
+        except KeyError as e:
+            logger.error(f"Missing key in gen_config.json: {e}")
+            return False
+            
+        policies = config.policies
+        run_id = "run_0"
+        
+        # Check done marker
+        done_file = config.out_dir / "done"
+        if not done_file.exists():
+            logger.error(f"Experiment not marked as complete: {done_file} missing")
+            return False
+            
+        all_passed = True
+        
+        for i in range(repeats):
+            for policy in policies:
+                # MSSIM structure: {out_dir}/{iteration}/{policy}/run_0/
+                policy_run_dir = config.out_dir / str(i) / policy / run_id
+                if not policy_run_dir.exists():
+                    logger.error(f"MSSIM policy run directory missing: {policy_run_dir}")
+                    all_passed = False
+                    continue
+                    
+                if not (policy_run_dir / "metadata.json").exists():
+                    logger.error(f"MSSIM metadata.json missing: {policy_run_dir / 'metadata.json'}")
+                    all_passed = False
+                    
+                for rps in rps_list:
+                    latency_file = policy_run_dir / f"root_latencies_{int(rps)}rps.csv"
+                    if not latency_file.exists():
+                        logger.error(f"MSSIM latency file missing: {latency_file}")
+                        all_passed = False
+                        continue
+                        
+                    # Calculate goodput
+                    goodput = 0
+                    try:
+                        with open(latency_file, "r") as f:
+                            reader = csv.reader(f)
+                            # MSSIM: index 2 is is_err
+                            for row in reader:
+                                if len(row) > 2 and row[2].strip().lower() == "false":
+                                    goodput += 1
+                    except Exception as e:
+                        logger.error(f"Failed to read MSSIM CSV {latency_file}: {e}")
+                        all_passed = False
+                        continue
+                        
+                    expected_total = rps * duration
+                    lower = expected_total * 0.8
+                    upper = expected_total * 1.2
+                    
+                    if not (lower <= goodput <= upper):
+                        observed_rps = goodput / duration
+                        logger.error(
+                            f"Goodput mismatch in {latency_file.name} (Policy: {policy}, Iteration: {i})\n"
+                            f"  Expected: ~{expected_total:.0f} (+/- 20%)\n"
+                            f"  Got: {goodput}\n"
+                            f"  Observed RPS: {observed_rps:.2f} (Target: {rps:.2f})"
+                        )
+                        all_passed = False
+                        
+        return all_passed
 
     def run_workload(
         self,
