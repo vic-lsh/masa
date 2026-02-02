@@ -4,13 +4,13 @@
     "a"
   ],
   "Slos": [
-    50000
+    150000
   ],
   "Rps": [
-    100
+    200
   ],
   "Gap": "const",
-  "WarmupSecs": 10,
+  "WarmupSecs": 0,
   "DurationSecs": 20,
   "Addr": "http://synthetic_frontend:8000",
   "Timeouts_ms": [
