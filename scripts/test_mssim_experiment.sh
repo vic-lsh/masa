@@ -41,8 +41,8 @@ else
     cd "$repo_root"
 fi
 
-echo "Running MSSIM experiment using exp.runner"
-python -m exp.runner run mssim "$experiment_name" --rm-data
+echo "Running MSSIM experiment using exp_runner.runner"
+python -m exp_runner.runner run mssim "$experiment_name" --rm-data
 
 assert_path_exists() {
     if [ -e "$1" ]; then

@@ -202,7 +202,7 @@ class HotelBuilder(AppBuilder):
     - hotel_user:latest - user service
     - hotel_recommendation:latest - recommendation service
 
-    Mirrors the behavior of exp/common/scripts/docker-build.sh, but lives in Python
+    Mirrors the behavior of exp_runner/common/scripts/docker-build.sh, but lives in Python
     so the runner can select an app-specific build implementation.
     """
 
@@ -269,7 +269,7 @@ class HotelBuilder(AppBuilder):
             "buildx",
             "build",
             "-f",
-            "./exp/common/docker-build/Dockerfile",
+            "./exp_runner/common/docker-build/Dockerfile",
             "--target",
             "builder",
             *builder_build_args,
@@ -316,7 +316,7 @@ class HotelBuilder(AppBuilder):
             "buildx",
             "build",
             "-f",
-            "./exp/common/docker-build/Dockerfile",
+            "./exp_runner/common/docker-build/Dockerfile",
             "--target",
             "runtime-base",
             *runtime_base_build_args,
@@ -373,7 +373,7 @@ class HotelBuilder(AppBuilder):
                     "buildx",
                     "build",
                     "-f",
-                    "./exp/common/docker-build/Dockerfile",
+                    "./exp_runner/common/docker-build/Dockerfile",
                     "--target",
                     "runtime",
                     *runtime_build_args,

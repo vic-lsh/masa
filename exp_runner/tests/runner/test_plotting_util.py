@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import pytest
 
-from exp.runner.plotting.util import get_policy_display_name, read_data, read_policies
+from exp_runner.runner.plotting.util import get_policy_display_name, read_data, read_policies
 
 
 def test_get_policy_display_name_known_policies():

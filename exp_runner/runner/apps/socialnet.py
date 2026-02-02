@@ -19,8 +19,8 @@ from .utils import normalize_features_to_tag, get_docker_progress_flag
 from ..cpu_monitor import CPUMonitor
 
 if TYPE_CHECKING:
-    from exp.runner.config import ExperimentConfig
-    from exp.runner.docker_manager import DockerManager
+    from exp_runner.runner.config import ExperimentConfig
+    from exp_runner.runner.docker_manager import DockerManager
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +175,7 @@ class SocialnetBuilder(AppBuilder):
             "buildx",
             "build",
             "-f",
-            "./exp/common/docker-build/Dockerfile",
+            "./exp_runner/common/docker-build/Dockerfile",
             "--target",
             "builder",
             *builder_build_args,
@@ -214,7 +214,7 @@ class SocialnetBuilder(AppBuilder):
             "buildx",
             "build",
             "-f",
-            "./exp/common/docker-build/Dockerfile",
+            "./exp_runner/common/docker-build/Dockerfile",
             "--target",
             "runtime-base",
             *runtime_base_build_args,
@@ -257,7 +257,7 @@ class SocialnetBuilder(AppBuilder):
                 "buildx",
                 "build",
                 "-f",
-                "./exp/common/docker-build/Dockerfile",
+                "./exp_runner/common/docker-build/Dockerfile",
                 "--target",
                 "runtime",
                 *runtime_build_args,

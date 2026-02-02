@@ -79,7 +79,7 @@ rm -rf "$out_dir"
 
 echo "Running socialnet experiment: $exp_name"
 cd "$repo_root"
-python -m exp.runner run socialnet "$exp_name" $no_cache
+python -m exp_runner.runner run socialnet "$exp_name" $no_cache
 
 assert_path_exists() {
     if [ -e "$1" ]; then
@@ -147,6 +147,6 @@ done
 
 echo "Generating plots..."
 cd "$repo_root"
-python -m exp.runner plot socialnet "$exp_name"
+python -m exp_runner.runner plot socialnet "$exp_name"
 
 echo "Socialnet experiment test passed."

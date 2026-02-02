@@ -19,7 +19,7 @@ import pandas as pd
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend for testing
 
-from exp.runner.plotting.cpu import (
+from exp_runner.runner.plotting.cpu import (
     plot_cpu_utilization,
     _plot_service_cpu,
     _get_policy_colors,
@@ -293,7 +293,7 @@ class TestPlotCpuUtilization:
                         'memory_percent': 10.0,
                     })
 
-            with patch("exp.runner.plotting.cpu._plot_service_cpu") as mock_plot:
+            with patch("exp_runner.runner.plotting.cpu._plot_service_cpu") as mock_plot:
                 plot_cpu_utilization(data_dir, output_dir, policies=["fifo"])
 
                 assert mock_plot.called
@@ -489,7 +489,7 @@ class TestMssimCpuPlotting:
         This test catches the bug where MSSIM plotting bypassed CPU plotting
         because it has a separate plotting path in all.py.
         """
-        from exp.runner.plotting.mssim import generate_plots
+        from exp_runner.runner.plotting.mssim import generate_plots
         from argparse import Namespace
         import json
 
@@ -580,7 +580,7 @@ class TestMssimCpuPlotting:
 
     def test_mssim_cpu_plots_with_multiple_iterations(self):
         """Test MSSIM CPU plotting with multiple iterations (averaging)."""
-        from exp.runner.plotting.mssim import generate_plots
+        from exp_runner.runner.plotting.mssim import generate_plots
         from argparse import Namespace
         import json
 

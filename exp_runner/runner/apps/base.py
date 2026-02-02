@@ -18,8 +18,8 @@ from ..cpu_monitor import CPUMonitor
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
-    from exp.runner.config import ExperimentConfig
-    from exp.runner.docker_manager import DockerManager
+    from exp_runner.runner.config import ExperimentConfig
+    from exp_runner.runner.docker_manager import DockerManager
 
 
 @dataclass

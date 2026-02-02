@@ -142,6 +142,6 @@ done
 
 echo "Generating plots..."
 cd "$repo_root"
-python -m exp.runner plot hotel "$exp_name"
+python -m exp_runner.runner plot hotel "$exp_name"
 
 echo "Hotel CI experiment test passed."
