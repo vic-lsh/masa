@@ -5,7 +5,6 @@ use std::task::Poll;
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::{resolve_method_name, METHOD_NAME_OVERRIDE_HEADER};
-use crate::body::BoxBody;
 use crate::Response;
 use masa_core::{Context, ContextBuilder};
 
@@ -129,8 +128,9 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     }
 
     // expect frontend method, all other method are going send back their latency trace
-    fn finalize_after_serialization(&self, response: &mut http::Response<BoxBody>) {
-        self.q_lat_tracker.inject_header(response);
+    fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
+        self.q_lat_tracker
+            .inject_context_metadata(&self.ctx, result);
     }
 }
 
