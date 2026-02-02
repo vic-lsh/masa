@@ -14,13 +14,14 @@ use super::super::common::EarlyReturnHandler;
 use super::super::{resolve_method_name, ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{get_estimate, track_method_latency, PERCENTILE};
 use masa::{
-    time_now, Context, ContextBuilder, LatencyEstimator, LatencyRms, PriorityHint, EARLY_RETURN,
+    time_now, Context, ContextBuilder, LatencyDistribution, LatencyEstimator, PriorityHint,
+    EARLY_RETURN,
 };
 use std::sync::atomic::AtomicUsize;
 
 /// Type alias for the latency estimator used in the local deadline policy.
 /// Change this to use a different estimator (e.g., `LatencyRms`).
-pub(crate) type LocalLatencyEstimator = LatencyRms;
+pub(crate) type LocalLatencyEstimator = LatencyDistribution;
 
 #[derive(Debug)]
 /// This policy computes the deadline d of a child request as  
@@ -245,6 +246,12 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
     ) -> Result<(), Status> {
         // Finalize child context to track client runtime if response is not early return
         child_ctx.finalize(response);
+
+        if let Some(parent_to_child_id) = &child_ctx.parent_to_child_id {
+            if let Some((_, child)) = parent_to_child_id.split_once("=>") {
+                self.early_return.set_last_child(child.to_string());
+            }
+        }
 
         if let Err(status) = response {
             // NOTE(vic): could we avoid cloning here?

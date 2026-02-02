@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
-use crate::runtime::task::Identifiable;
+use crate::runtime::task::{Identifiable, Traceable};
 use masa::Prioritize;
 
 #[allow(dead_code)]
@@ -30,7 +30,7 @@ pub(crate) struct BinaryHeapQueue<T> {
     // reorder_count: u64,
 }
 
-impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapQueue<T> {
+impl<T: Ord + PartialOrd + Prioritize + Identifiable + Traceable> Queue for BinaryHeapQueue<T> {
     type Item = T;
 
     fn with_capacity(cap: usize) -> Self {
@@ -40,7 +40,8 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapQueue<
         }
     }
 
-    fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
+    fn push(&mut self, mut item: Self::Item) -> Result<(), PushError<Self::Item>> {
+        item.timer().set_enqueue_time();
         // let id = item.id();
         self.q.push(item);
         self.push_count += 1;
@@ -60,7 +61,8 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable> Queue for BinaryHeapQueue<
 
     fn pop(&mut self) -> Result<Self::Item, PopError> {
         // [TODO] Do something with a task if it is already expired.
-        self.q.pop().ok_or(PopError::Empty).map(|e| {
+        self.q.pop().ok_or(PopError::Empty).map(|mut e| {
+            e.timer().record_queue_lat();
             // for debugging
             // let prio = e.priority();
             // let ms_since_launch = if prio.value() == 0 {
