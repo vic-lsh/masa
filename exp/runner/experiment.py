@@ -186,7 +186,8 @@ class Experiment:
                     )
                 except Exception as e:
                     logger.error(f"Error during iteration {iteration}, policy {policy}: {e}")
-                    self._print_log_tails(output_dir)
+                    if os.environ.get("CI") == "true":
+                        self._print_log_tails(output_dir)
                     raise
     
     def _print_log_tails(self, output_dir: Path, num_lines: int = 50) -> None:

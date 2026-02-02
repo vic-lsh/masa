@@ -1,6 +1,8 @@
 pytest:
   image: python:3.11
   stage: quick-checks
+  variables:
+    CI: "true"
   cache:
     key:
       files:
