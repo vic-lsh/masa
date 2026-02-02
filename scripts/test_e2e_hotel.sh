@@ -5,7 +5,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 exp_dir="$repo_root/exp/hotel"
 exp_name="ci"
-out_dir="$exp_dir/data/out/$exp_name"
+out_dir="$exp_dir/out/$exp_name"
 no_cache=""
 
 # Parse arguments
@@ -28,8 +28,8 @@ if [ ! -d "$exp_dir" ]; then
     exit 1
 fi
 
-if [ ! -d "$exp_dir/data/in/$exp_name" ]; then
-    echo "CI experiment config not found at $exp_dir/data/in/$exp_name" >&2
+if [ ! -d "$exp_dir/in/$exp_name" ]; then
+    echo "CI experiment config not found at $exp_dir/in/$exp_name" >&2
     exit 1
 fi
 
@@ -64,14 +64,14 @@ fi
 echo "Cleaning previous experiment output at $out_dir"
 rm -rf "$out_dir"
 
-mapfile -t api_array < <(jq -r '.Apis[]' "$exp_dir/data/in/$exp_name/gen_config.json")
+mapfile -t api_array < <(jq -r '.Apis[]' "$exp_dir/in/$exp_name/gen_config.json")
 
 echo "APIs: ${api_array[@]}"
 
 
 echo "Running hotel experiment: $exp_name"
-cd "$exp_dir"
-"$exp_dir/scripts/run-experiment.sh" "$exp_name" $no_cache
+cd "$repo_root"
+python -m exp_runner.runner run hotel "$exp_name" $no_cache
 
 assert_path_exists() {
     if [ -e "$1" ]; then
@@ -88,20 +88,20 @@ echo "Validating experiment output..."
 assert_path_exists "$out_dir/done"
 
 # Read policies from the config
-policies=$(cat "$exp_dir/data/in/$exp_name/policies" | tr -d '\n')
+policies=$(cat "$exp_dir/in/$exp_name/policies" | tr -d '\n')
 read -ra policy_array <<< "$policies"
 
 # Read RPS values from gen_config.json
-mapfile -t rps_array < <(jq -r '.Rps[]' "$exp_dir/data/in/$exp_name/gen_config.json")
+mapfile -t rps_array < <(jq -r '.Rps[]' "$exp_dir/in/$exp_name/gen_config.json")
 
 # Read APIs from gen_config.json
-mapfile -t api_array < <(jq -r '.Apis[]' "$exp_dir/data/in/$exp_name/gen_config.json")
+mapfile -t api_array < <(jq -r '.Apis[]' "$exp_dir/in/$exp_name/gen_config.json")
 
 # Read Repeats from gen_config.json
-repeats=$(jq -r '.Repeats' "$exp_dir/data/in/$exp_name/gen_config.json")
+repeats=$(jq -r '.Repeats' "$exp_dir/in/$exp_name/gen_config.json")
 
 # Read DurationSecs from gen_config.json
-duration=$(jq -r '.DurationSecs' "$exp_dir/data/in/$exp_name/gen_config.json")
+duration=$(jq -r '.DurationSecs' "$exp_dir/in/$exp_name/gen_config.json")
 num_apis=${#api_array[@]}
 
 # Validate output files for each repeat, policy, RPS, and API
