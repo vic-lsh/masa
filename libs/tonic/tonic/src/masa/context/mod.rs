@@ -10,8 +10,6 @@ mod local;
 mod noop;
 mod prio_oldest;
 mod queue_global;
-mod queue_tracing;
-mod tracing;
 
 pub mod runtime;
 mod tls;
@@ -27,7 +25,6 @@ pub use tls::{client, server};
 ))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = noop::NoopMasaHooks;
-// pub type DefaultMasaHooks = queue_tracing::QueueTracing;
 
 #[cfg(all(
     feature = "fifo",
@@ -52,24 +49,6 @@ pub type DefaultMasaHooks = fifo::Fifo;
 // pub type DefaultMasaHooks = tracing::Tracing;
 pub type DefaultMasaHooks = noop::NoopMasaHooks;
 
-#[cfg(all(
-    feature = "fifo_span_tracing",
-    not(feature = "prio_global"),
-    not(feature = "prio_oldest"),
-    not(feature = "prio_local")
-))]
-#[allow(missing_docs)]
-pub type DefaultMasaHooks = tracing::Tracing;
-
-#[cfg(all(
-    feature = "fifo_queue_tracing",
-    not(feature = "prio_global"),
-    not(feature = "prio_oldest"),
-    not(feature = "prio_local")
-))]
-#[allow(missing_docs)]
-pub type DefaultMasaHooks = queue_tracing::QueueTracing;
-
 #[cfg(any(feature = "prio_global"))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = queue_global::QueueGlobal;
@@ -81,10 +60,6 @@ pub type DefaultMasaHooks = prio_oldest::PrioOldest;
 #[cfg(any(feature = "prio_local"))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = local::local::LocalDeadlinePolicy;
-
-#[cfg(any(feature = "prio_global_queue_tracing"))]
-#[allow(missing_docs)]
-pub type DefaultMasaHooks = queue_global::QueueGlobal;
 
 // TODO: add notes on trait bounds
 /// Trait for specifying the set of hooks to apply in a Masa build.
