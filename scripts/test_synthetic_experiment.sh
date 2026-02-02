@@ -67,10 +67,10 @@ run_test() {
     echo "Running test for experiment: $exp_name"
     echo "--------------------------------------------------"
 
-    local config_dir="$exp_dir/data/in/$exp_name"
+    local config_dir="$exp_dir/in/$exp_name"
     local gen_config="$config_dir/gen_config.json"
     local policies_file="$config_dir/policies"
-    local out_dir="$exp_dir/data/out/$exp_name"
+    local out_dir="$exp_dir/out/$exp_name"
 
     if [ ! -d "$config_dir" ]; then
         echo "Experiment config not found at $config_dir" >&2
@@ -92,7 +92,7 @@ run_test() {
 
     echo "Running synthetic experiment: $exp_name"
     cd "$repo_root"
-    ./exp/synthetic/scripts/run-experiment.sh "$exp_name" $no_cache
+    python -m exp_runner.runner run synthetic "$exp_name" $no_cache
 
     echo "Validating experiment output..."
 

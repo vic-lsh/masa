@@ -24,12 +24,14 @@ def test_experiment_config_load_mssim_minimal() -> None:
 
         # Minimal repo layout required by ExperimentConfig.load
         (repo_root / "apps" / "mssim").mkdir(parents=True)
-        in_dir = repo_root / "exp" / "mssim" / "data" / "in" / "e2e_test"
+        in_dir = repo_root / "exp" / "mssim" / "in" / "e2e_test"
         in_dir.mkdir(parents=True)
 
         (in_dir / "policies").write_text("fifo\n", encoding="utf-8")
         (in_dir / "gen_config.json").write_text(
-            json.dumps({"Repeats": 1, "Rps": [200], "DurationSecs": 1, "WarmupSecs": 0}),
+            json.dumps(
+                {"Repeats": 1, "Rps": [200], "DurationSecs": 1, "WarmupSecs": 0}
+            ),
             encoding="utf-8",
         )
         (in_dir / "mssim.json").write_text(
