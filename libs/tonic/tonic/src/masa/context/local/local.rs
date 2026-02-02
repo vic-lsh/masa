@@ -13,7 +13,7 @@ use std::{
 use super::super::common::EarlyReturnHandler;
 use super::super::{resolve_method_name, ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{get_estimate, track_method_latency, PERCENTILE};
-use masa::{
+use masa_core::{
     time_now, Context, ContextBuilder, LatencyEstimator, LatencyRms, PriorityHint, EARLY_RETURN,
 };
 use std::sync::atomic::AtomicUsize;

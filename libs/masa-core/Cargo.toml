@@ -1,0 +1,22 @@
+[package]
+name = "masa-core"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+prio_global = []
+prio_oldest = []
+prio_local = []
+fifo = []
+fifo_span_tracing = []
+fifo_queue_tracing = []
+prio_global_queue_tracing = []
+early = []
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = "1.3"
+base64 = "0.21"
+log = "0.4"
+http = "0.2"

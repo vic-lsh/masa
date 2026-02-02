@@ -57,45 +57,18 @@ path = "src/loadgen/main.rs"
 scheduler_trace = [
     "tokio/scheduler_trace",
 ]
-prio_global = [
-  "tokio/prio_global",
-  "masa/prio_global",
-  "tonic/prio_global",
-]
-prio_oldest = [
-  "tokio/prio_oldest",
-  "masa/prio_oldest",
-  "tonic/prio_oldest",
-]
-prio_local = [
-  "tokio/prio_local",
-  "masa/prio_local",
-  "tonic/prio_local",
-]
-fifo = ["tokio/fifo", "masa/fifo", "tonic/fifo"]
+prio_global = ["masa/prio_global"]
+prio_oldest = ["masa/prio_oldest"]
+prio_local = ["masa/prio_local"]
+fifo = ["masa/fifo"]
 
-fifo_span_tracing = [
-  "tokio/fifo_span_tracing",
-  "masa/fifo_span_tracing",
-  "tonic/fifo_span_tracing",
-]
+fifo_span_tracing = ["masa/fifo_span_tracing"]
 
-fifo_queue_tracing = [
-  "tokio/fifo_queue_tracing",
-  "masa/fifo_queue_tracing",
-  "tonic/fifo_queue_tracing",
-]
+fifo_queue_tracing = ["masa/fifo_queue_tracing"]
 
-prio_global_queue_tracing = [
-  "tokio/prio_global_queue_tracing",
-  "masa/prio_global_queue_tracing",
-  "tonic/prio_global_queue_tracing",
-]
+prio_global_queue_tracing = ["masa/prio_global_queue_tracing"]
 
-early = [
-    "masa/early",
-    "tonic/early",
-]
+early = ["masa/early"]
 
 synthetic = []
 workload_stats = []
