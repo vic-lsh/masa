@@ -6,7 +6,7 @@
 //! The collections can be closed to prevent adding new tasks during shutdown of
 //! the scheduler with the collection.
 
-use masa::PriorityHint;
+use masa_core::PriorityHint;
 
 use crate::future::Future;
 use crate::loom::cell::UnsafeCell;

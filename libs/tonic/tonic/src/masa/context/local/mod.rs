@@ -2,7 +2,7 @@ pub(crate) mod local;
 
 use std::{collections::HashMap, sync::RwLock};
 
-use masa::LatencyEstimator;
+use masa_core::LatencyEstimator;
 
 // TODO: tweak these values. should they be specific to each local priority selector?
 pub(crate) const PERCENTILE: usize = 50;

@@ -7,7 +7,7 @@ use super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::resolve_method_name;
 use crate::body::BoxBody;
 use crate::Response;
-use masa::{Context, ContextBuilder, PriorityHint};
+use masa_core::{Context, ContextBuilder, PriorityHint};
 
 #[derive(Debug)]
 /// This policy always sets the deadline of each request as

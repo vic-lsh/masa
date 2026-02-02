@@ -27,10 +27,10 @@ default = []
 
 scheduler_trace = []
 static = []
-prio_global = ["masa/prio_global"]
-prio_oldest = ["masa/prio_oldest"]
-prio_local = ["masa/prio_local"]
-fifo = ["masa/fifo"]
+prio_global = ["masa-core/prio_global"]
+prio_oldest = ["masa-core/prio_oldest"]
+prio_local = ["masa-core/prio_local"]
+fifo = ["masa-core/fifo"]
 fifo_span_tracing = []
 fifo_queue_tracing = []
 prio_global_queue_tracing = []
@@ -102,7 +102,7 @@ time = []
 tokio-macros = { version = "~2.2.0", path = "../tokio-macros", optional = true }
 
 pin-project-lite = "0.2.11"
-masa = { path = "../../masa" }
+masa-core = { path = "../../masa-core" }
 
 # Everything else is optional...
 bytes = { version = "1.0.0", optional = true }

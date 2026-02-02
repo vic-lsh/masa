@@ -17,7 +17,7 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::task::Poll;
 
-use masa::PriorityHint;
+use masa_core::PriorityHint;
 use pin_project_lite::pin_project;
 
 cfg_rt! {
@@ -373,7 +373,7 @@ cfg_rt! {
 
 
     #[track_caller]
-    pub(super) fn spawn_local_inner<F>(future: F, name: Option<&str>, priority: masa::PriorityHint) -> JoinHandle<F::Output>
+    pub(super) fn spawn_local_inner<F>(future: F, name: Option<&str>, priority: masa_core::PriorityHint) -> JoinHandle<F::Output>
     where F: Future + 'static,
           F::Output: 'static
     {

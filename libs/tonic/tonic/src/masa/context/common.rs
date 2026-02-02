@@ -1,5 +1,5 @@
 use crate::{body::BoxBody, Code, Response, Status};
-use masa::{time_now, Context, EARLY_RETURN};
+use masa_core::{time_now, Context, EARLY_RETURN};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 #[derive(Debug)]

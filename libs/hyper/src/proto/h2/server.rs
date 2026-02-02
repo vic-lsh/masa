@@ -29,7 +29,7 @@ use crate::service::HttpService;
 use crate::upgrade::{OnUpgrade, Pending, Upgraded};
 use crate::{Body, Response};
 
-use masa::Context as MasaContext;
+use masa_core::Context as MasaContext;
 
 // Our defaults are chosen for the "majority" case, which usually are not
 // resource constrained, and so the spec default of 64kb can be too limiting

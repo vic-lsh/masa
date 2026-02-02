@@ -15,7 +15,7 @@ use super::super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::super::common::EarlyReturnHandler;
 use super::super::resolve_method_name;
 use super::{estimate_method_latency, track_method_latency};
-use masa::{Context, ContextBuilder, LatencyDistribution, LatencyEstimator, MethodId};
+use masa_core::{Context, ContextBuilder, LatencyDistribution, LatencyEstimator, MethodId};
 
 static LAST_PRINT_TIME: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
