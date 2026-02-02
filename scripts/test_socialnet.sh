@@ -102,6 +102,8 @@ read -ra policy_array <<< "$(tr '\n' ' ' < "$policies_file")"
 mapfile -t rps_array < <(python -c 'import json,sys; print("\n".join(str(x) for x in json.load(open(sys.argv[1]))["Rps"]))' "$gen_config")
 mapfile -t api_array < <(python -c 'import json,sys; print("\n".join(str(x) for x in json.load(open(sys.argv[1]))["Apis"]))' "$gen_config")
 repeats="$(python -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["Repeats"]))' "$gen_config")"
+duration="$(python -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["DurationSecs"]))' "$gen_config")"
+num_apis=${#api_array[@]}
 
 # Validate output files for each repeat, policy, RPS, and API
 for i in $(seq 0 $((repeats - 1))); do
@@ -115,6 +117,29 @@ for i in $(seq 0 $((repeats - 1))); do
                 expected_file="$policy_out_dir/r${rps}_${api}.csv"
                 echo "Checking: $expected_file"
                 assert_path_exists "$expected_file"
+
+                # Check goodput
+                # Count rows where error (column 7) is /None
+                goodput=$(awk -F, '$7 == "/None" {count++} END {print count+0}' "$expected_file")
+
+                # Expected requests per API = (RPS * Duration) / NumApis
+                # Note: This assumes uniform distribution across APIs which is how load_gen works.
+                expected_total=$(( rps * duration ))
+                expected_per_api=$(( expected_total / num_apis ))
+
+                # Calculate observed RPS
+                observed_rps=$(python -c "print(f'{ $goodput / $duration :.2f}')")
+                expected_rps_per_api=$(python -c "print(f'{ $expected_per_api / $duration :.2f}')")
+                echo "  Goodput: $goodput requests (Observed RPS: $observed_rps, Expected RPS: $expected_rps_per_api)"
+
+                # Allow 20% margin
+                lower=$(( expected_per_api * 8 / 10 ))
+                upper=$(( expected_per_api * 12 / 10 ))
+
+                if (( goodput < lower )) || (( goodput > upper )); then
+                    echo "Error: Goodput mismatch in $expected_file. Expected ~$expected_per_api (+/- 20%), got $goodput" >&2
+                    exit 1
+                fi
             done
         done
     done
