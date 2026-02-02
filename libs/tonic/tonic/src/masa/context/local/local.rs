@@ -1,5 +1,4 @@
 use crate::{
-    body::BoxBody,
     masa::context::{read_context, METHOD_NAME_OVERRIDE_HEADER},
     Code, GrpcMethod, Request, Response, Status,
 };
@@ -276,10 +275,8 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         if !is_early_return_response(result) {
             self.track_latencies();
         }
-    }
-
-    fn finalize_after_serialization(&self, response: &mut http::Response<BoxBody>) {
-        self.q_lat_tracker.inject_header(response);
+        self.q_lat_tracker
+            .inject_context_metadata(&self.ctx, result);
     }
 }
 

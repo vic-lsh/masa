@@ -1,5 +1,7 @@
-use crate::{body::BoxBody, Code, Response, Status};
+use crate::{Code, Response, Status};
 use masa_core::{time_now, Context, EARLY_RETURN};
+#[cfg(feature = "trace-queue")]
+use masa_core::QueueLatencies;
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "trace-queue")]
 use std::sync::atomic::AtomicU64;
@@ -122,47 +124,33 @@ impl QueueLatencyTracker {
 
     pub(crate) fn track_child_response<T>(&self, response: &Result<Response<T>, Status>) {
         if let Ok(resp) = response {
-            if let Some(value) = resp
-                .metadata()
-                .get("x-queue-latency-initial")
-                .or_else(|| resp.metadata().get("X-Queue-Latency-Initial"))
-            {
-                if let Ok(v) = value.to_str() {
-                    if let Ok(parsed) = v.parse::<u64>() {
-                        self.initial_q_lat.fetch_add(parsed, Ordering::AcqRel);
-                    }
-                }
-            }
-
-            if let Some(value) = resp
-                .metadata()
-                .get("x-queue-latency-resume")
-                .or_else(|| resp.metadata().get("X-Queue-Latency-Resume"))
-            {
-                if let Ok(v) = value.to_str() {
-                    if let Ok(parsed) = v.parse::<u64>() {
-                        self.resume_q_lat.fetch_add(parsed, Ordering::AcqRel);
+            if let Some(ctx_header) = resp.metadata().get("ctx") {
+                if let Ok(ctx_str) = ctx_header.to_str() {
+                    let ctx = Context::from_header_string(ctx_str);
+                    if let Some(ql) = ctx.queue_latencies {
+                        self.initial_q_lat.fetch_add(ql.initial, Ordering::AcqRel);
+                        self.resume_q_lat.fetch_add(ql.resume, Ordering::AcqRel);
                     }
                 }
             }
         }
     }
 
-    pub(crate) fn inject_header(&self, response: &mut http::Response<BoxBody>) {
-        let res_header = response.headers_mut();
+    pub(crate) fn inject_context_metadata<T>(&self, ctx: &Context, result: &mut Result<Response<T>, Status>) {
+        let metadata = match result {
+            Ok(resp) => resp.metadata_mut(),
+            Err(status) => status.metadata_mut(),
+        };
 
+        let mut ctx = ctx.clone();
+        
         let initial = self.initial_q_lat.load(Ordering::Acquire);
         let resume = self.resume_q_lat.load(Ordering::Acquire);
-        let total = initial + resume;
+        ctx.queue_latencies = Some(QueueLatencies { initial, resume });
 
-        if let Ok(header_val) = http::HeaderValue::from_str(&initial.to_string()) {
-            res_header.insert("x-queue-latency-initial", header_val);
-        }
-        if let Ok(header_val) = http::HeaderValue::from_str(&resume.to_string()) {
-            res_header.insert("x-queue-latency-resume", header_val);
-        }
-        if let Ok(header_val) = http::HeaderValue::from_str(&total.to_string()) {
-            res_header.insert("x-queue-latency", header_val);
+        let val = ctx.to_header_string();
+        if let Ok(header_val) = val.parse::<crate::metadata::MetadataValue<crate::metadata::Ascii>>() {
+            metadata.insert("ctx", header_val);
         }
     }
 }
@@ -181,5 +169,5 @@ impl QueueLatencyTracker {
 
     pub(crate) fn track_child_response<T>(&self, _response: &Result<Response<T>, Status>) {}
 
-    pub(crate) fn inject_header(&self, _response: &mut http::Response<BoxBody>) {}
+    pub(crate) fn inject_context_metadata<T>(&self, _ctx: &Context, _result: &mut Result<Response<T>, Status>) {}
 }

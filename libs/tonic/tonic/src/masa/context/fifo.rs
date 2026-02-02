@@ -1,4 +1,4 @@
-use crate::{body::BoxBody, masa::context::read_context, GrpcMethod, Request, Status};
+use crate::{masa::context::read_context, GrpcMethod, Request, Status};
 use std::sync::Arc;
 use std::task::Poll;
 
@@ -128,8 +128,9 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     }
 
     // expect frontend method, all other method are going send back their latency trace
-    fn finalize_after_serialization(&self, response: &mut http::Response<BoxBody>) {
-        self.q_lat_tracker.inject_header(response);
+    fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
+        self.q_lat_tracker
+            .inject_context_metadata(&self.ctx, result);
     }
 }
 
