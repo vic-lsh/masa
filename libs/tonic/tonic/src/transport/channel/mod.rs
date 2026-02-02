@@ -38,7 +38,7 @@ use tower::{
     Service,
 };
 
-use masa::PriorityHint;
+use masa_core::PriorityHint;
 
 pub(crate) type Svc =
     Either<Connection, BoxService<Request<BoxBody>, Response<hyper::Body>, crate::Error>>;

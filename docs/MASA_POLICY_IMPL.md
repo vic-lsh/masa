@@ -4,7 +4,7 @@ This document explains the implementation of Masa's dynamic RPC prioritization s
 
 ## 1. Feature Flags and Build Configuration
 
-Masa uses Rust feature flags to select the scheduling policy at compile time. These flags are defined in `libs/masa/Cargo.toml` and propagated through `libs/tonic` and `libs/tokio`.
+Masa uses Rust feature flags to select the scheduling policy at compile time. These flags are defined in `libs/masa/Cargo.toml` (the facade) and propagated to `libs/masa-core`, `libs/tonic` and `libs/tokio`.
 
 Key feature flags include:
 - `fifo`: First-In-First-Out ordering (baseline).
@@ -24,7 +24,8 @@ Features propagate from application crates through a dependency chain:
 ```
 Application Cargo.toml (e.g., apps/hotel --features prio_global)
   └─ libs/tonic/tonic/Cargo.toml:  prio_global = ["masa/prio_global", "tokio/prio_global"]
-       ├─ libs/masa/Cargo.toml:    prio_global = []   (sets cfg flag only)
+       ├─ libs/masa/Cargo.toml:    prio_global = []   (forwards to masa-core, tokio, tonic)
+├─ libs/masa-core/Cargo.toml: prio_global = []   (sets cfg flag)
        └─ libs/tokio/tokio/Cargo.toml: prio_global = ["masa/prio_global"]
 ```
 
@@ -47,7 +48,7 @@ Each flag also selects the corresponding tokio queue implementation (see Section
 
 ### Compile-Time Constants
 
-In `libs/masa/src/flag.rs`, each feature flag is exposed as a `const bool`:
+In `libs/masa-core/src/flag.rs`, each feature flag is exposed as a `const bool`:
 ```
 pub const PRIO_GLOBAL: bool = cfg!(feature = "prio_global");
 pub const EARLY_RETURN: bool = cfg!(feature = "early");
@@ -55,11 +56,11 @@ pub const EARLY_RETURN: bool = cfg!(feature = "early");
 ```
 These allow `if PRIO_GLOBAL { ... }` branches to be optimized away by the compiler when the flag is off.
 
-## 2. Core Data Structures (`libs/masa`)
+## 2. Core Data Structures (`libs/masa-core`)
 
 The `masa` crate defines the fundamental types shared across the system.
 
-**Important**: All timestamps, deadlines, SLOs, and latency values throughout the system are in **microseconds** (not milliseconds). `time_now()` in `libs/masa/src/timing.rs` returns `SystemTime::now().as_micros() as u64`.
+**Important**: All timestamps, deadlines, SLOs, and latency values throughout the system are in **microseconds** (not milliseconds). `time_now()` in `libs/masa-core/src/timing.rs` returns `SystemTime::now().as_micros() as u64`.
 
 ### `Context` and `ContextBuilder`
 
@@ -314,7 +315,7 @@ This means the tonic `before_poll`/`after_poll` closures (installed on the top-l
 
 ### Early Return
 
-Early Return uses poll hooks to abort requests that have already missed their deadline, avoiding wasteful computation. It is gated by the compile-time `early` feature flag (`libs/masa/src/flag.rs`: `pub const EARLY_RETURN: bool = cfg!(feature = "early")`).
+Early Return uses poll hooks to abort requests that have already missed their deadline, avoiding wasteful computation. It is gated by the compile-time `early` feature flag (`libs/masa-core/src/flag.rs`: `pub const EARLY_RETURN: bool = cfg!(feature = "early")`).
 
 The `EarlyReturnHandler` (`libs/tonic/tonic/src/masa/context/common.rs`) tracks whether a request should be aborted:
 

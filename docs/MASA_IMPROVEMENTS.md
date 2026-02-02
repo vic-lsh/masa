@@ -11,8 +11,8 @@ The context deserialization path uses `.unwrap()` at every step. A malformed `ct
 | Location | Call | Failure mode |
 |---|---|---|
 | `libs/hyper/src/proto/h2/server.rs` | `ctx.to_str().unwrap()` | Panics if header contains non-UTF-8 bytes |
-| `libs/masa/src/context.rs` | `BASE64.decode(s).unwrap()` | Panics if base64 encoding is invalid |
-| `libs/masa/src/context.rs` | `bincode::deserialize(&bytes).unwrap()` | Panics if binary payload is corrupted or schema-mismatched |
+| `libs/masa-core/src/context.rs` | `BASE64.decode(s).unwrap()` | Panics if base64 encoding is invalid |
+| `libs/masa-core/src/context.rs` | `bincode::deserialize(&bytes).unwrap()` | Panics if binary payload is corrupted or schema-mismatched |
 | `libs/tonic/tonic/src/metadata/map.rs` | `.parse().unwrap()` in `insert_ctx` | Panics if serialized value is not valid header content |
 
 **Impact**: A single malformed request can take down a server connection. In a microservice graph, a bug in one service's serialization could cascade.
@@ -66,7 +66,7 @@ Access requires `unsafe` and relies on the invariant that the pointer is valid f
 
 ## 7. `LatencyTracker` Panics on Misuse
 
-`LatencyTracker` (`libs/masa/src/timing.rs`) panics if `start()` is called twice or `record_latency()` is called without a prior `start()`. These are programming errors rather than runtime conditions, but in a complex async system, ordering bugs could be subtle.
+`LatencyTracker` (`libs/masa-core/src/timing.rs`) panics if `start()` is called twice or `record_latency()` is called without a prior `start()`. These are programming errors rather than runtime conditions, but in a complex async system, ordering bugs could be subtle.
 
 **Possible improvement**: Return `Result` instead of panicking, or use a typestate pattern to make misuse a compile-time error.
 

@@ -9,7 +9,7 @@ use std::{
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::{estimate_method_latency, track_method_latency};
-use masa::{Context, ContextBuilder, LatencyDistribution, LatencyEstimator, LatencyTracker};
+use masa_core::{Context, ContextBuilder, LatencyDistribution, LatencyEstimator, LatencyTracker};
 
 #[derive(Debug)]
 /// Same as LocalDeadlineDirect, but e_rem

@@ -29,6 +29,7 @@ members = [
   "libs/tonic/tests/use_arc_self",
   "libs/tonic/tests/default_stubs",
   # masa support
+  "libs/masa-core",
   "libs/masa",
 
   # evaluation applications

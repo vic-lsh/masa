@@ -9,7 +9,7 @@
 //! Make sure to consult the relevant safety section of each function before
 //! use.
 
-use masa::PriorityHint;
+use masa_core::PriorityHint;
 
 use crate::future::Future;
 use crate::loom::cell::UnsafeCell;

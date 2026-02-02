@@ -18,32 +18,13 @@ name = "synthetic_child"
 path = "src/child/main.rs"
 
 [features]
-prio_global = [
-  "tokio/prio_global",
-  "masa/prio_global",
-  "tonic/prio_global",
-]
-prio_local = [
-  "tokio/prio_local",
-  "masa/prio_local",
-  "tonic/prio_local",
-]
-prio_oldest = [
-  "tokio/prio_oldest",
-  "masa/prio_oldest",
-  "tonic/prio_oldest",
-]
+prio_global = ["masa/prio_global"]
+prio_local = ["masa/prio_local"]
+prio_oldest = ["masa/prio_oldest"]
 
-fifo = [
-	"tokio/fifo", 
-	"masa/fifo", 
-	"tonic/fifo"
-]
+fifo = ["masa/fifo"]
 
-early = [
-    "masa/early",
-    "tonic/early",
-]
+early = ["masa/early"]
 
 gcp = ["dep:prost-types", "tonic/tls"]
 routeguide = [

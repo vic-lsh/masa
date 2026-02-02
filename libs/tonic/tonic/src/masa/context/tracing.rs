@@ -13,7 +13,7 @@ use std::{
 };
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
-use masa::{time_now, FutureSpan};
+use masa_core::{time_now, FutureSpan};
 
 #[derive(Debug)]
 #[allow(dead_code)]

@@ -15,7 +15,7 @@ use tower::{
     Service,
 };
 
-use masa::PriorityHint;
+use masa_core::PriorityHint;
 
 /// minimal reimplementation of crate::transport::channel::Channel:
 /// - uses a fixed list of services for load balancing and eagerly connects to them
