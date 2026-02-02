@@ -370,7 +370,7 @@ async-compat = "0.2.3"
 futures-lite = { version = "2.0.0" }
 structopt = "0.3.23"
 crossbeam-channel = "0.5"
-masa = { path = "../../masa" }
+masa-core = { path = "../../masa-core" }
 
 # Common dependencies
 tokio = { path = "../../tokio/tokio", features = [

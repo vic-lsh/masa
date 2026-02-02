@@ -1,4 +1,4 @@
-use masa::PriorityHint;
+use masa_core::PriorityHint;
 
 use crate::future::Future;
 use crate::runtime::task::core::{Core, Trailer};

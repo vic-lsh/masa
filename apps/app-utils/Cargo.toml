@@ -9,7 +9,7 @@ full = [
 	"json-codec",
 ]
 default = ["full"]
-prio_oldest = ["masa/prio_oldest", "tokio/prio_oldest", "tonic/prio_oldest"]
+prio_oldest = ["masa/prio_oldest"]
 
 [dependencies]
 masa = { path = "../../libs/masa" }

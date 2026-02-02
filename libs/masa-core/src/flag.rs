@@ -13,3 +13,13 @@ pub const FIFO_QUEUE_TRACING: bool = cfg!(feature = "fifo_queue_tracing");
 pub const PRIO_GLOBAL_QUEUE_TRACING: bool = cfg!(feature = "prio_global_queue_tracing");
 
 pub const EARLY_RETURN: bool = cfg!(feature = "early");
+
+#[cfg(any(
+    all(feature = "fifo", feature = "prio_global"),
+    all(feature = "fifo", feature = "prio_oldest"),
+    all(feature = "fifo", feature = "prio_local"),
+    all(feature = "prio_global", feature = "prio_oldest"),
+    all(feature = "prio_global", feature = "prio_local"),
+    all(feature = "prio_oldest", feature = "prio_local"),
+))]
+compile_error!("Enable at most one policy feature: fifo | prio_global | prio_oldest | prio_local");

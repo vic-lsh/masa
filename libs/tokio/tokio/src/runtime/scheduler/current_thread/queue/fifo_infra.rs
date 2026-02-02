@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use masa::{Prioritize, PriorityHint};
+use masa_core::{Prioritize, PriorityHint};
 
 use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
 
