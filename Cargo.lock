@@ -58,7 +58,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 name = "ambiguous_methods"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tonic",
  "tonic-build",
@@ -120,6 +120,12 @@ checksum = "819e7219dbd41043ac279b19830f2efc897156490d7fd6ea916720117ee66311"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "anes"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "ansi_term"
@@ -635,6 +641,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7dfdb4953a096c551ce9ace855a604d702e6e62d77fac690575ae347571717f5"
 
 [[package]]
+name = "bincode"
+version = "1.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -795,6 +810,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "ciborium"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42e69ffd6f0917f5c029256a24d0161db17cea3997d185db0d35926308770f0e"
+dependencies = [
+ "ciborium-io",
+ "ciborium-ll",
+ "serde",
+]
+
+[[package]]
+name = "ciborium-io"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05afea1e0a06c9be33d539b876f1ce3692f4afea2cb41f740e7743225ed1c757"
+
+[[package]]
+name = "ciborium-ll"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57663b653d948a338bfb3eeba9bb2fd5fcfaecb9e199e87e1eda4d9e8b240fd9"
+dependencies = [
+ "ciborium-io",
+ "half",
+]
+
+[[package]]
 name = "cipher"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -916,7 +958,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "masa",
+ "masa-core",
  "paste",
  "pin-project",
  "prost",
@@ -1057,10 +1099,67 @@ dependencies = [
 ]
 
 [[package]]
+name = "criterion"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2b12d017a929603d80db1831cd3a24082f8137ce19c69e6447f54f5fc8d692f"
+dependencies = [
+ "anes",
+ "cast",
+ "ciborium",
+ "clap 4.5.54",
+ "criterion-plot",
+ "futures",
+ "is-terminal",
+ "itertools 0.10.5",
+ "num-traits",
+ "once_cell",
+ "oorandom",
+ "plotters",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "tinytemplate",
+ "tokio",
+ "walkdir",
+]
+
+[[package]]
+name = "criterion-plot"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b50826342786a51a89e2da3a28f1c32b06e387201bc2d19791f622c673706b1"
+dependencies = [
+ "cast",
+ "itertools 0.10.5",
+]
+
+[[package]]
 name = "crossbeam-channel"
 version = "0.5.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "82b8f8f868b36967f9606790d1903570de9ceaf870a7bf9fbbd3016d636a2cb2"
+dependencies = [
+ "crossbeam-utils",
+]
+
+[[package]]
+name = "crossbeam-deque"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9dd111b7b7f7d55b72c0a6ae361660ee5853c9af73f70c3c2ef6858b950e2e51"
+dependencies = [
+ "crossbeam-epoch",
+ "crossbeam-utils",
+]
+
+[[package]]
+name = "crossbeam-epoch"
+version = "0.9.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b82ac4a3c2ca9c3460964f020e1402edd5753411d7737aa39c3714ad1b5420e"
 dependencies = [
  "crossbeam-utils",
 ]
@@ -1184,7 +1283,7 @@ dependencies = [
 name = "default_stubs"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tokio",
  "tokio-stream",
@@ -1293,7 +1392,7 @@ dependencies = [
 name = "disable-comments"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "prost-build",
  "tonic",
@@ -1523,7 +1622,7 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "listenfd",
- "masa",
+ "masa-core",
  "prost",
  "prost-types",
  "rand 0.8.5",
@@ -2043,7 +2142,11 @@ version = "7.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "765c9198f173dd59ce26ff9f95ef0aafd0a0fe01fb9d72841bc5066a4c06511d"
 dependencies = [
+ "base64 0.21.7",
  "byteorder",
+ "crossbeam-channel",
+ "flate2",
+ "nom",
  "num-traits",
 ]
 
@@ -2265,7 +2368,7 @@ dependencies = [
  "itoa",
  "libc",
  "log",
- "masa",
+ "masa-core",
  "matches",
  "num_cpus",
  "pin-project-lite",
@@ -2473,7 +2576,7 @@ dependencies = [
 name = "included_service"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tonic",
  "tonic-build",
@@ -2531,7 +2634,7 @@ dependencies = [
  "base64 0.21.7",
  "bytes",
  "hyper",
- "masa",
+ "masa-core",
  "prost",
  "tokio",
  "tokio-stream",
@@ -2549,7 +2652,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "masa",
+ "masa-core",
  "prost",
  "tokio",
  "tokio-stream",
@@ -2571,7 +2674,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "masa",
+ "masa-core",
  "pico-args",
  "prost",
  "strum",
@@ -2868,6 +2971,34 @@ dependencies = [
 name = "masa"
 version = "0.1.0"
 dependencies = [
+ "masa-core",
+ "tokio",
+ "tonic",
+]
+
+[[package]]
+name = "masa-benchmark"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "bincode",
+ "criterion",
+ "hdrhistogram",
+ "masa",
+ "prost",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
+name = "masa-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "bincode",
  "http",
  "log",
  "serde",
@@ -2880,7 +3011,7 @@ version = "0.1.0"
 dependencies = [
  "http",
  "hyper",
- "masa",
+ "masa-core",
  "prost",
  "prost-build",
  "tokio",
@@ -3624,6 +3755,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
+name = "plotters"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5aeb6f403d7a4911efb1e33402027fc44f29b5bf6def3effcc22d7bb75f2b747"
+dependencies = [
+ "num-traits",
+ "plotters-backend",
+ "plotters-svg",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
+name = "plotters-backend"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df42e13c12958a16b3f7f4386b9ab1f3e7933914ecea48da7139435263a4172a"
+
+[[package]]
+name = "plotters-svg"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51bae2ac328883f7acdfea3d66a7c35751187f870bc81f94563733a154d7a670"
+dependencies = [
+ "plotters-backend",
+]
+
+[[package]]
 name = "pnet_base"
 version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4074,6 +4233,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "rayon"
+version = "1.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "368f01d005bf8fd9b1206fb6fa653e6c4a81ceb1466406b81792d87c5677a58f"
+dependencies = [
+ "either",
+ "rayon-core",
+]
+
+[[package]]
+name = "rayon-core"
+version = "1.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
+dependencies = [
+ "crossbeam-deque",
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "rc2"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4261,7 +4440,7 @@ dependencies = [
 name = "root-crate-path"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tonic",
  "tonic-build",
@@ -4507,7 +4686,7 @@ dependencies = [
 name = "same_name"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tonic",
  "tonic-build",
@@ -4709,7 +4888,7 @@ dependencies = [
 name = "service_named_result"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tonic",
  "tonic-build",
@@ -4719,7 +4898,7 @@ dependencies = [
 name = "service_named_service"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tonic",
  "tonic-build",
@@ -4968,7 +5147,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "stream_conflict"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tonic",
  "tonic-build",
@@ -5331,6 +5510,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tinytemplate"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be4d6b5f19ff7664e8c98d03e2139cb510db9b0a60b55f8e8709b689d939b6bc"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "tinyvec"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5355,7 +5544,7 @@ dependencies = [
  "futures",
  "libc",
  "loom",
- "masa",
+ "masa-core",
  "mio",
  "mio-aio",
  "mockall",
@@ -5543,7 +5732,7 @@ dependencies = [
  "hyper",
  "hyper-timeout",
  "log",
- "masa",
+ "masa-core",
  "once_cell",
  "percent-encoding",
  "pin-project",
@@ -5968,7 +6157,7 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 name = "use_arc_self"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tokio-stream",
  "tonic",
@@ -6234,7 +6423,7 @@ dependencies = [
 name = "wellknown"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "prost-types",
  "tonic",
@@ -6245,7 +6434,7 @@ dependencies = [
 name = "wellknown-compiled"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "prost-build",
  "tonic",

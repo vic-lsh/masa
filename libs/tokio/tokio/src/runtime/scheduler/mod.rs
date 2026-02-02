@@ -29,7 +29,7 @@ cfg_rt_multi_thread! {
     }
 }
 
-use masa::PriorityHint;
+use masa_core::PriorityHint;
 
 use crate::runtime::driver;
 

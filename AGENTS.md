@@ -24,7 +24,7 @@ Masa is an RPC system that improves goodput (throughput for requests under SLO) 
 # Check all feature flag combinations
 ./scripts/check.sh
 
-# Run all tests
+# Run all tests (see script for which packages are tested; tokio tests are skipped due to flakiness)
 ./scripts/test.sh
 
 # Test single package
@@ -53,34 +53,57 @@ uv run python -m exp.runner plot <app> <experiment_name>
 
 ## Scheduling Policies (Feature Flags)
 
-The codebase uses feature flags for scheduling policies. Key combinations checked by CI:
-- `fifo`: FIFO ordering
+Policies are selected at **compile time** via feature flags. Applications must be built with the desired policy:
+```bash
+cargo build -p hotel --features prio_global --release
+cargo build -p hotel --features "prio_global,early" --release
+```
+
+Key policy flags:
+- `fifo`: FIFO ordering (baseline)
 - `prio_global`: Priority by end-to-end SLO end time
 - `prio_oldest`: Oldest request first (from the TailClipper paper)
-- `prio_global,early`: Global priority with early return
-- `prio_local,early`: Local deadline-based priority
-- `prio_oldest,early`: Oldest request first with early return (from the TailClipper paper)
+- `prio_local`: Priority by local deadline — **only works for `hotel`** as it requires a call graph description
+- `early`: Combined with a policy (e.g., `prio_global,early`) to return early for requests past their e2e deadline, avoiding wasteful work
 
-Early return is a feature that allows the server to return a response early if the request is past its (e2e) deadline. This is useful for avoiding wasteful work that cannot be counted as goodput.
+Tracing variants exist for instrumentation: `fifo_span_tracing`, `fifo_queue_tracing`, `prio_global_queue_tracing`.
+
+`scripts/check.sh` checks: default (no features), `fifo`, `prio_global`, `prio_global,early`, `prio_local,early`. CI additionally checks `prio_oldest,early`.
 
 ## Architecture
 
-### libs/masa
+### Data Flow
+1. Client's `MasaHooks` calculates child deadline/priority, serializes `Context` to JSON in HTTP/2 header (`ctx` key)
+2. Server-side `hyper` parses `ctx` header, extracts `PriorityHint`
+3. `hyper` calls `tokio::spawn_with_prio(handler_future, priority)` via the `Exec::Masa` executor
+4. Modified `tokio` runtime enqueues task in a priority queue (binary heap); lower `PriorityHint` value = higher priority
+
+### Application Integration Requirements
+- Use `.serve_with_masa(addr)` instead of `.serve(addr)` to enable priority-aware execution
+- Use `#[tokio::main(flavor = "current_thread")]` — the priority scheduler is implemented in the single-threaded runtime
+- `PriorityHint::infra()` (value 0) is reserved for infrastructure tasks and always runs first
+
+### libs/masa & libs/masa-core
 Core Masa types and utilities:
 - `Context`/`ContextBuilder`: RPC context with deadline/priority info
-- `Prioritize`, `PriorityHint`: Priority calculation traits
+- `PriorityHint`: Priority value (lower = higher priority; reversed `Ord` for `BinaryHeap`)
+- `Prioritize`: Priority calculation trait
 - `LatencyEstimator`: Latency distribution tracking
 
 ### libs/tonic/tonic/src/masa/
 Masa integration into Tonic gRPC:
-- `context/`: Multiple context implementations (fifo, global, local, tracing variants)
+- `context/mod.rs`: `MasaHooks` trait with `before_child_rpc`, `before_poll`, `after_poll` hooks; feature flags select the `DefaultMasaHooks` implementation
+- `context/`: Policy implementations — `fifo.rs`, `global.rs`, `local/`, `prio_oldest.rs`, `queue_global.rs`, tracing variants
 - `transport/masa_channel/`: Masa-aware channel transport
 
 ### Patched Libraries
-The workspace patches crates.io dependencies with local modified versions (see `Cargo.toml` `[patch.crates-io]`):
-- `tokio`, `tokio-util`, `tokio-stream`, `tokio-test`, `tokio-macros`
-- `hyper`
+The workspace patches crates.io dependencies with local modified versions (see `Cargo.toml` `[patch.crates-io]`). All must be built from local copies:
+- `tokio`, `tokio-util`, `tokio-stream`, `tokio-test`, `tokio-macros` — priority-aware scheduler
+- `hyper` — priority-aware HTTP/2 stream handling
 - `tower`, `tower-service`, `tower-layer`
+
+### Deep Dive
+See `docs/MASA_POLICY_IMPL.md` for detailed implementation walkthrough covering feature flags, context serialization, transport layer changes, and runtime integration.
 
 ## Conventions
 
@@ -118,3 +141,7 @@ Experiment apps in `apps/` with experiment configs in `exp/<app>/data/in/<experi
 - `socialnet`: Social network microservice benchmark
 - `synthetic`: Configurable synthetic workload
 - `mssim`: Trace-driven microservice simulator
+
+There is also `apps/benchmark/` for measuring serialization overhead and E2E latency (`cargo bench -p masa-benchmark`).
+
+See `EXPERIMENT_WORKFLOW.md` for running experiments and `EXPERIMENT_ANALYSIS.md` for interpreting results.

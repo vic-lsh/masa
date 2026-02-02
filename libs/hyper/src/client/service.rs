@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use masa::PriorityHint;
+use masa_core::PriorityHint;
 
 use tracing::debug;
 

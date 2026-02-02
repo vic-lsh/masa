@@ -6,7 +6,7 @@ use super::encoding::{Ascii, Binary, ValueEncoding};
 use super::key::{InvalidMetadataKey, MetadataKey};
 use super::value::MetadataValue;
 
-use masa::Context;
+use masa_core::Context;
 
 use std::marker::PhantomData;
 
@@ -467,7 +467,7 @@ impl MetadataMap {
     {
         let value = self.get(key);
         if let Some(value) = value {
-            return Some(Context::from_json(value.to_str().unwrap()));
+            return Some(Context::from_header_string(value.to_str().unwrap()));
         }
         None
     }
@@ -1024,9 +1024,9 @@ impl MetadataMap {
     where
         K: IntoMetadataKey<Ascii>,
     {
-        let value = key.insert(self, val.to_json().parse().unwrap());
+        let value = key.insert(self, val.to_header_string().parse().unwrap());
         if let Some(value) = value {
-            return Some(Context::from_json(value.to_str().unwrap()));
+            return Some(Context::from_header_string(value.to_str().unwrap()));
         }
         None
     }

@@ -6,7 +6,7 @@ use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::{resolve_method_name, METHOD_NAME_OVERRIDE_HEADER};
 use crate::Response;
-use masa::{Context, ContextBuilder, PriorityHint};
+use masa_core::{Context, ContextBuilder, PriorityHint};
 
 #[derive(Debug)]
 /// FIFO policy with optional early return support.

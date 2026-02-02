@@ -29,6 +29,7 @@ members = [
   "libs/tonic/tests/use_arc_self",
   "libs/tonic/tests/default_stubs",
   # masa support
+  "libs/masa-core",
   "libs/masa",
 
   # evaluation applications
@@ -39,6 +40,7 @@ members = [
   "apps/mssim/sim-config",
   "apps/app-utils",
   "apps/app-util-macros",
+  "apps/benchmark",
 ]
 resolver = "2"
 
@@ -61,4 +63,3 @@ tokio-util = { path = "./libs/tokio/tokio-util" }
 tokio-stream = { path = "./libs/tokio/tokio-stream" }
 tokio-test = { path = "./libs/tokio/tokio-test" }
 tokio-macros = { path = "./libs/tokio/tokio-macros" }
-
