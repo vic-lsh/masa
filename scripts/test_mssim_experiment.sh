@@ -37,7 +37,7 @@ fi
 echo "Cleaning previous experiment output at $out_dir"
 rm -rf "$out_dir"
 
-echo "Running MSSIM experiment using exp.runner"
-python -m exp.runner run mssim "$experiment_name" --smoke-test
+echo "Running MSSIM experiment using exp_runner.runner"
+python -m exp_runner.runner run mssim "$experiment_name" --rm-data --smoke-test
 
 echo "MSSIM experiment smoke test passed."
