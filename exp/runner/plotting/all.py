@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import goodput
 from . import latency
+from . import queueing
 from . import mssim
 from . import cpu
 from .util import parse_args, read_policies
@@ -44,6 +45,7 @@ def generate_all_plots(args):
         futures = {
             executor.submit(goodput.generate_plots, args): "goodput",
             executor.submit(latency.generate_plots, args): "latency",
+            executor.submit(queueing.generate_plots, args): "queueing",
             executor.submit(
                 cpu.plot_cpu_utilization, data_dir, output_dir, policies=policies
             ): "cpu",
