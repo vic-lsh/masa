@@ -13,6 +13,7 @@ import subprocess
 import time
 
 from ..cpu_monitor import CPUMonitor
+from .utils import verify_standard_workload
 
 
 logger = logging.getLogger(__name__)
@@ -381,6 +382,21 @@ class AppPlugin(ABC):
         Apps with different orchestration (e.g., MSSIM) can override this.
         """
         return ["Repeats", "Addr"]
+
+    def verify_results(self, config: "ExperimentConfig") -> bool:
+        """
+        Verify the results of an experiment.
+
+        Default implementation uses the standard workload verification (checking goodput/files).
+        Subclasses can override this to implement custom verification logic.
+
+        Args:
+            config: Experiment configuration object
+
+        Returns:
+            True if verification passed, False otherwise
+        """
+        return verify_standard_workload(config)
 
     def run_workload(
         self,
