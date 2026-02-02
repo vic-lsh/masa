@@ -14,8 +14,4 @@ prio_oldest = ["masa-core/prio_oldest", "tokio/prio_oldest", "tonic/prio_oldest"
 prio_local  = ["masa-core/prio_local",  "tokio/prio_local",  "tonic/prio_local"]
 fifo        = ["masa-core/fifo",        "tokio/fifo",        "tonic/fifo"]
 
-fifo_span_tracing         = ["masa-core/fifo_span_tracing", "tokio/fifo_span_tracing", "tonic/fifo_span_tracing"]
-fifo_queue_tracing        = ["masa-core/fifo_queue_tracing", "tokio/fifo_queue_tracing", "tonic/fifo_queue_tracing"]
-prio_global_queue_tracing = ["masa-core/prio_global_queue_tracing", "tokio/prio_global_queue_tracing", "tonic/prio_global_queue_tracing"]
-
 early = ["masa-core/early", "tonic/early"]

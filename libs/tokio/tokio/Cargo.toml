@@ -31,10 +31,6 @@ prio_global = ["masa-core/prio_global"]
 prio_oldest = ["masa-core/prio_oldest"]
 prio_local = ["masa-core/prio_local"]
 fifo = ["masa-core/fifo"]
-fifo_span_tracing = []
-fifo_queue_tracing = []
-prio_global_queue_tracing = []
-
 # enable everything
 full = [
   "fs",
