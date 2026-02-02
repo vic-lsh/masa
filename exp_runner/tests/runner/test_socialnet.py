@@ -6,8 +6,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from exp.runner.apps.socialnet import SocialnetBuilder, SocialnetLoadGenerator
-from exp.runner.cli import create_parser
+from exp_runner.runner.apps.socialnet import SocialnetBuilder, SocialnetLoadGenerator
+from exp_runner.runner.cli import create_parser
 
 
 class TestSocialnetLoadGenerator:
@@ -25,7 +25,7 @@ class TestSocialnetLoadGenerator:
 
 
 class TestSocialnetBuilder:
-    @patch("exp.runner.apps.socialnet.subprocess.run")
+    @patch("exp_runner.runner.apps.socialnet.subprocess.run")
     def test_build_with_features(self, mock_subprocess):
         builder = SocialnetBuilder()
         mock_subprocess.return_value = Mock(returncode=0)

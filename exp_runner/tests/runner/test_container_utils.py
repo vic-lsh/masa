@@ -8,7 +8,7 @@ This module tests the container name parsing and grouping functionality:
 """
 
 import pytest
-from exp.runner.container_utils import (
+from exp_runner.runner.container_utils import (
     extract_service_name,
     parse_container_name,
     group_containers_by_service,

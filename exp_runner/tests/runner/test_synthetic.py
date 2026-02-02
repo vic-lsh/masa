@@ -13,13 +13,13 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from exp.runner.apps.synthetic import (
+from exp_runner.runner.apps.synthetic import (
     SyntheticApp,
     SyntheticBuilder,
     SyntheticLoadGenerator,
     _safe_project_name,
 )
-from exp.runner.apps.utils import normalize_features_to_tag
+from exp_runner.runner.apps.utils import normalize_features_to_tag
 
 
 class TestSyntheticLoadGenerator:
@@ -78,8 +78,8 @@ class TestSyntheticLoadGenerator:
 class TestSyntheticBuilder:
     """Tests for SyntheticBuilder with feature-based tags and cache ID consistency."""
 
-    @patch('exp.runner.apps.synthetic.subprocess.run')
-    @patch('exp.runner.apps.synthetic.logger')
+    @patch('exp_runner.runner.apps.synthetic.subprocess.run')
+    @patch('exp_runner.runner.apps.synthetic.logger')
     def test_build_with_features(self, mock_logger, mock_subprocess):
         """Test that builder creates correct docker build command with features."""
         builder = SyntheticBuilder()

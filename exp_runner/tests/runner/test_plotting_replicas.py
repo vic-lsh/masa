@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from exp.runner.plotting.replicas import _collect_replica_data, generate_replicas_plots
+from exp_runner.runner.plotting.replicas import _collect_replica_data, generate_replicas_plots
 
 
 def _write_hotel_config(path: Path, *, reservation_replicas: int) -> None:
