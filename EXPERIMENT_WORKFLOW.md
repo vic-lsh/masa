@@ -7,7 +7,7 @@ This document outlines the workflow for running performance experiments in the M
 All experiments follow this common pattern:
 
 1.  **Configure**: Create an experiment directory in `exp/<app>/data/in/<experiment_name>/` containing the required configuration files.
-2.  **Run**: Execute the experiment using the Python runner: `uv run python -m exp.runner run <app> <experiment_name>`.
+2.  **Run**: Execute the experiment using the Python runner: `uv run python -m exp_runner.runner run <app> <experiment_name>`.
 3.  **Analyze**: Results are automatically saved to `exp/<app>/data/out/`, and plots can be generated with the `--plot` flag or a separate command.
 
 ### 1. Configuration (`exp/<app>/data/in/<experiment_name>/`)
@@ -36,7 +36,7 @@ Every experiment directory **must** contain these two files:
       "Addr": "http://[::1]:8659"
     }
     ```
-*   **`policies`**: A whitespace-separated list of scheduling policies to test (e.g., `fifo prio_global prio_local`).
+*   **`policies`**: A newline-separated list of scheduling policies to test.
 
 In addition to these, each application requires its own specific configuration file (detailed below).
 
@@ -46,7 +46,7 @@ Run commands from the repository root.
 
 **Single Experiment:**
 ```bash
-uv run python -m exp.runner run <app> <experiment_name> --plot
+uv run python -m exp_runner.runner run <app> <experiment_name> --plot
 ```
 *   **`<app>`**: `hotel`, `mssim`, `socialnet`, or `synthetic`.
 *   **`<experiment_name>`**: The name of the directory created in step 1.
@@ -55,7 +55,7 @@ uv run python -m exp.runner run <app> <experiment_name> --plot
 
 **Multiple Experiments:**
 ```bash
-uv run python -m exp.runner run-multiple <app> "<exp1> <exp2>" --plot
+uv run python -m exp_runner.runner run-multiple <app> "<exp1> <exp2>" --plot
 ```
 
 ### 3. Viewing Results
@@ -65,7 +65,7 @@ uv run python -m exp.runner run-multiple <app> "<exp1> <exp2>" --plot
     *   Contains logs (`*.log`) and trace CSVs.
 *   **Plots**: Saved in `exp/<app>/data/plots/<experiment_name>/`.
     *   Includes goodput, latency CDFs, and CPU usage.
-    *   To generate plots later: `uv run python -m exp.runner plot <app> <experiment_name>`.
+    *   To generate plots later: `uv run python -m exp_runner.runner plot <app> <experiment_name>`.
 
 ---
 
@@ -84,7 +84,7 @@ A microservices-based hotel reservation system.
           "rate": { "replicas": 1, ... }
         }
         ```
-*   **Additional Plots**: `uv run python -m exp.runner plot-replicas hotel` (generates replica-specific metrics).
+*   **Additional Plots**: `uv run python -m exp_runner.runner plot-replicas hotel` (generates replica-specific metrics).
 
 ### MSSIM
 A trace-driven microservice simulator.
