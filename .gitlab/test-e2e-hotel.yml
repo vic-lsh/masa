@@ -1,5 +1,7 @@
 test_e2e_hotel:
   stage: test
+  variables:
+    CI: "true"
   cache:
     key:
       files:
