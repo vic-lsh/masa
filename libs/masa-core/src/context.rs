@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::{Deserialize, Serialize};
 
 use crate::{Api, Latency, PriorityHint, RequestId, Timestamp};
@@ -153,5 +154,17 @@ impl Context {
     /// Convert a Masa context to JSON.
     pub fn to_json(&self) -> String {
         serde_json::to_string(&self).unwrap()
+    }
+
+    /// Create a new Masa context from Base64 encoded bincode.
+    pub fn from_header_string(s: &str) -> Self {
+        let bytes = BASE64.decode(s).unwrap();
+        bincode::deserialize(&bytes).unwrap()
+    }
+
+    /// Convert a Masa context to Base64 encoded bincode.
+    pub fn to_header_string(&self) -> String {
+        let bytes = bincode::serialize(&self).unwrap();
+        BASE64.encode(bytes)
     }
 }

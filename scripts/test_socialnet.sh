@@ -79,49 +79,6 @@ rm -rf "$out_dir"
 
 echo "Running socialnet experiment: $exp_name"
 cd "$repo_root"
-python -m exp.runner run socialnet "$exp_name" $no_cache
-
-assert_path_exists() {
-    if [ -e "$1" ]; then
-        echo "File exists: $1"
-    else
-        echo "Expected path missing: $1" >&2
-        exit 1
-    fi
-}
-
-echo "Validating experiment output..."
-
-# Check that the done marker exists
-assert_path_exists "$out_dir/done"
-
-# Read policies from the policies file (whitespace-separated)
-read -ra policy_array <<< "$(tr '\n' ' ' < "$policies_file")"
-
-# Read RPS values, APIs, and repeats from gen_config.json
-mapfile -t rps_array < <(python -c 'import json,sys; print("\n".join(str(x) for x in json.load(open(sys.argv[1]))["Rps"]))' "$gen_config")
-mapfile -t api_array < <(python -c 'import json,sys; print("\n".join(str(x) for x in json.load(open(sys.argv[1]))["Apis"]))' "$gen_config")
-repeats="$(python -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["Repeats"]))' "$gen_config")"
-
-# Validate output files for each repeat, policy, RPS, and API
-for i in $(seq 0 $((repeats - 1))); do
-    for policy in "${policy_array[@]}"; do
-        policy_out_dir="$out_dir/$i/$policy"
-        assert_path_exists "$policy_out_dir"
-        assert_path_exists "$policy_out_dir/loadgen.log"
-
-        for rps in "${rps_array[@]}"; do
-            for api in "${api_array[@]}"; do
-                expected_file="$policy_out_dir/r${rps}_${api}.csv"
-                echo "Checking: $expected_file"
-                assert_path_exists "$expected_file"
-            done
-        done
-    done
-done
-
-echo "Generating plots..."
-cd "$repo_root"
-python -m exp.runner plot socialnet "$exp_name"
+python -m exp.runner run socialnet "$exp_name" $no_cache --smoke-test --plot
 
 echo "Socialnet experiment test passed."

@@ -5,7 +5,7 @@ use std::{
 
 use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
 use crate::runtime::task::{Identifiable, Traceable};
-use masa::{Prioritize, PriorityHint};
+use masa_core::{Prioritize, PriorityHint};
 
 #[allow(dead_code)]
 static INIT: std::sync::LazyLock<u64> = std::sync::LazyLock::new(time_now);

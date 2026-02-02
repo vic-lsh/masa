@@ -1,6 +1,8 @@
 
 cargo_fmt:
   stage: quick-checks
+  variables:
+    CI: "true"
   script:
     - rustup component add rustfmt
     - ./scripts/check_format.sh

@@ -12,7 +12,7 @@ prost = "0.12"
 hyper = { path = "../../../hyper" }
 tokio = { path = "../../../tokio/tokio", features = ["macros"] }
 tonic = { path = "../../tonic" }
-masa = { path = "../../../masa" }
+masa-core = { path = "../../../masa-core" }
 http = { version = "0.2" }
 
 [build-dependencies]
