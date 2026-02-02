@@ -53,6 +53,9 @@ assert_path_exists() {
     fi
 }
 
+gen_config="$repo_root/exp/mssim/data/in/$experiment_name/gen_config.json"
+duration="$(python -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["DurationSecs"]))' "$gen_config")"
+
 for policy in "${policies[@]}"; do
     policy_run_dir="$run_root/$iteration/$policy/$run_id"
     echo "Validating output for policy '$policy' under $policy_run_dir"
@@ -60,6 +63,27 @@ for policy in "${policies[@]}"; do
     assert_path_exists "$policy_run_dir"
     assert_path_exists "$policy_run_dir/metadata.json"
     assert_path_exists "$policy_run_dir/$latency_file"
+
+    # Check goodput
+    # Count rows where is_err (column 3) is false
+    goodput=$(awk -F, '$3 == "false" {count++} END {print count+0}' "$policy_run_dir/$latency_file")
+
+    # Expected requests = RPS * Duration
+    # MSSIM loadgen uses Poisson arrival process for the target RPS
+    expected_total=$(( rps_value * duration ))
+
+    # Calculate observed RPS
+    observed_rps=$(python -c "print(f'{ $goodput / $duration :.2f}')")
+    echo "  Goodput: $goodput requests (Observed RPS: $observed_rps, Expected RPS: $rps_value)"
+
+    # Allow 20% margin
+    lower=$(( expected_total * 8 / 10 ))
+    upper=$(( expected_total * 12 / 10 ))
+
+    if (( goodput < lower )) || (( goodput > upper )); then
+        echo "Error: Goodput mismatch in $policy_run_dir/$latency_file. Expected ~$expected_total (+/- 20%), got $goodput" >&2
+        exit 1
+    fi
 done
 
 echo "MSSIM experiment smoke test passed."
