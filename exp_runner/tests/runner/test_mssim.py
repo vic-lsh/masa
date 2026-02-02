@@ -6,8 +6,8 @@ import json
 import tempfile
 from pathlib import Path
 
-from exp.runner.apps import get_app_plugin
-from exp.runner.config import ExperimentConfig
+from exp_runner.runner.apps import get_app_plugin
+from exp_runner.runner.config import ExperimentConfig
 
 
 def test_get_app_plugin_mssim() -> None:

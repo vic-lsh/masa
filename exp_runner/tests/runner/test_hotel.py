@@ -13,12 +13,12 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from exp.runner.apps.hotel import (
+from exp_runner.runner.apps.hotel import (
     HotelApp,
     HotelBuilder,
     HotelLoadGenerator,
 )
-from exp.runner.apps.utils import normalize_features_to_tag
+from exp_runner.runner.apps.utils import normalize_features_to_tag
 
 
 class TestNormalizeFeaturesToTag:
@@ -151,8 +151,8 @@ class TestHotelLoadGenerator:
 class TestHotelBuilder:
     """Tests for HotelBuilder with feature-based tags."""
 
-    @patch('exp.runner.apps.hotel.subprocess.run')
-    @patch('exp.runner.apps.hotel.logger')
+    @patch('exp_runner.runner.apps.hotel.subprocess.run')
+    @patch('exp_runner.runner.apps.hotel.logger')
     def test_build_with_features(self, mock_logger, mock_subprocess):
         """Test that builder creates correct docker build command with features."""
         builder = HotelBuilder()
@@ -219,8 +219,8 @@ class TestHotelBuilder:
             # Check logging
             assert mock_logger.info.call_count >= 1
 
-    @patch('exp.runner.apps.hotel.subprocess.run')
-    @patch('exp.runner.apps.hotel.logger')
+    @patch('exp_runner.runner.apps.hotel.subprocess.run')
+    @patch('exp_runner.runner.apps.hotel.logger')
     def test_build_without_features(self, mock_logger, mock_subprocess):
         """Test that builder uses 'latest' tag without features."""
         builder = HotelBuilder()
@@ -272,7 +272,7 @@ class TestHotelBuilder:
             # Check logging
             assert mock_logger.info.call_count >= 1
 
-    @patch('exp.runner.apps.hotel.subprocess.run')
+    @patch('exp_runner.runner.apps.hotel.subprocess.run')
     def test_build_with_no_cache(self, mock_subprocess):
         """Test that --no-cache flag is added when requested."""
         builder = HotelBuilder()

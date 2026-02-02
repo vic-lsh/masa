@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
-from exp.runner.cpu_monitor import CPUMonitor
+from exp_runner.runner.cpu_monitor import CPUMonitor
 
 
 class TestCPUMonitor:
@@ -87,7 +87,7 @@ class TestCPUMonitor:
             assert usage == 0.0
             assert limit == 0.0
 
-    @patch('exp.runner.cpu_monitor.subprocess.run')
+    @patch('exp_runner.runner.cpu_monitor.subprocess.run')
     def test_collect_stats_success(self, mock_run):
         """Test successful stats collection."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -121,7 +121,7 @@ class TestCPUMonitor:
             assert stats[1]["memory_limit_mb"] == 2048.0
             assert stats[1]["memory_percent"] == 25.00
 
-    @patch('exp.runner.cpu_monitor.subprocess.run')
+    @patch('exp_runner.runner.cpu_monitor.subprocess.run')
     def test_collect_stats_timeout(self, mock_run):
         """Test stats collection with timeout."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -135,7 +135,7 @@ class TestCPUMonitor:
             stats = monitor._collect_stats()
             assert stats == []
 
-    @patch('exp.runner.cpu_monitor.subprocess.run')
+    @patch('exp_runner.runner.cpu_monitor.subprocess.run')
     def test_collect_stats_error(self, mock_run):
         """Test stats collection with command error."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -151,7 +151,7 @@ class TestCPUMonitor:
             stats = monitor._collect_stats()
             assert stats == []
 
-    @patch('exp.runner.cpu_monitor.subprocess.run')
+    @patch('exp_runner.runner.cpu_monitor.subprocess.run')
     def test_start_and_stop(self, mock_run):
         """Test starting and stopping the monitor."""
         with tempfile.TemporaryDirectory() as tmpdir:

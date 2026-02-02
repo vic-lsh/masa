@@ -50,7 +50,7 @@ RUN apt-get install -y\
   libssl-dev
 
 # Copy entrypoint script
-COPY exp/common/docker-build/entrypoint.sh /usr/entrypoint.sh
+COPY exp_runner/common/docker-build/entrypoint.sh /usr/entrypoint.sh
 
 # Copy gen config - GEN_CONFIG_PATH must be provided as build arg
 COPY ${GEN_CONFIG_PATH} /usr/gen_config.json

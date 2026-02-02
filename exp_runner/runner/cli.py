@@ -391,32 +391,32 @@ def create_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   # Run a single experiment
-  python -m exp.runner run hotel exp1 --plot
+  python -m exp_runner.runner run hotel exp1 --plot
   
   # Build Docker images for an experiment
-  python -m exp.runner build hotel exp1
+  python -m exp_runner.runner build hotel exp1
   
   # Build images for a specific policy
-  python -m exp.runner build synthetic exp1 --policy prio_global
+  python -m exp_runner.runner build synthetic exp1 --policy prio_global
   
   # Show build commands without executing them
-  python -m exp.runner build-dryrun hotel exp1
+  python -m exp_runner.runner build-dryrun hotel exp1
   
   # Show build commands for a specific policy
-  python -m exp.runner build-dryrun synthetic exp1 --policy prio_global
+  python -m exp_runner.runner build-dryrun synthetic exp1 --policy prio_global
   
   # Queue multiple experiments
-  python -m exp.runner run-multiple synthetic "exp1 exp2 exp3" --plot
+  python -m exp_runner.runner run-multiple synthetic "exp1 exp2 exp3" --plot
   
   # Generate plots only
-  python -m exp.runner plot hotel exp1
-  python -m exp.runner plot mssim e2e_test
+  python -m exp_runner.runner plot hotel exp1
+  python -m exp_runner.runner plot mssim e2e_test
   
   # Generate replica plots for hotel experiments
-  python -m exp.runner plot-replicas hotel
+  python -m exp_runner.runner plot-replicas hotel
   
   # Run with verbose logging
-  python -m exp.runner run hotel exp1 --verbose
+  python -m exp_runner.runner run hotel exp1 --verbose
         """
     )
     

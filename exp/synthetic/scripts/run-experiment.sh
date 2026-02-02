@@ -15,7 +15,7 @@ if [[ -z "${1:-}" ]]; then
     echo "Usage: $0 <experiment-name> [--plot] [--no-cache]" >&2
     echo "" >&2
     echo "This script wraps the Python experiment runner for convenience." >&2
-    echo "For more options, use: python3 -m exp.runner run --help" >&2
+    echo "For more options, use: python3 -m exp_runner.runner run --help" >&2
     exit 1
 fi
 
@@ -23,4 +23,4 @@ experiment=$1
 shift 1
 
 cd "$REPO_ROOT"
-exec python3 -m exp.runner run synthetic "$experiment" "$@"
+exec python3 -m exp_runner.runner run synthetic "$experiment" "$@"

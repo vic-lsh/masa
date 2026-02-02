@@ -30,44 +30,44 @@ The experiment runner is part of the MASA repository. Ensure you have Python 3.1
 
 ```bash
 # Run experiment 'exp1' for the hotel application
-python -m exp.runner run hotel exp1
+python -m exp_runner.runner run hotel exp1
 
 # Run experiment 'exp1' for the socialnet application
-python -m exp.runner run socialnet exp1
+python -m exp_runner.runner run socialnet exp1
 
 # Run an MSSIM experiment
-python -m exp.runner run mssim e2e_test
+python -m exp_runner.runner run mssim e2e_test
 
 # Run with plot generation
-python -m exp.runner run hotel exp1 --plot
-python -m exp.runner run socialnet exp1 --plot
+python -m exp_runner.runner run hotel exp1 --plot
+python -m exp_runner.runner run socialnet exp1 --plot
 
 # Run with verbose logging
-python -m exp.runner run hotel exp1 --plot --verbose
+python -m exp_runner.runner run hotel exp1 --plot --verbose
 
 # Print what would run (no containers started)
-python -m exp.runner run mssim e2e_test --dry-run
+python -m exp_runner.runner run mssim e2e_test --dry-run
 ```
 
 ### Queue Multiple Experiments
 
 ```bash
 # Run multiple experiments sequentially
-python -m exp.runner run-multiple hotel "exp1 exp2 exp3" --plot
+python -m exp_runner.runner run-multiple hotel "exp1 exp2 exp3" --plot
 
 # For synthetic application
-python -m exp.runner run-multiple synthetic "quick_test template-presampled" --plot
+python -m exp_runner.runner run-multiple synthetic "quick_test template-presampled" --plot
 ```
 
 ### Generate Plots Only
 
 ```bash
 # Generate plots from existing experiment output
-python -m exp.runner plot hotel exp1
-python -m exp.runner plot mssim e2e_test
+python -m exp_runner.runner plot hotel exp1
+python -m exp_runner.runner plot mssim e2e_test
 
 # Generate replica plots from hotel inputs
-python -m exp.runner plot-replicas hotel
+python -m exp_runner.runner plot-replicas hotel
 ```
 
 ## Experiment Configuration
@@ -226,7 +226,7 @@ exp/mssim/data/out/e2e_test/
 Run a single performance experiment.
 
 ```bash
-python -m exp.runner run <app> <experiment> [options]
+python -m exp_runner.runner run <app> <experiment> [options]
 ```
 
 **Arguments:**
@@ -241,7 +241,7 @@ python -m exp.runner run <app> <experiment> [options]
 
 **Example:**
 ```bash
-python -m exp.runner run hotel exp1 --plot --verbose
+python -m exp_runner.runner run hotel exp1 --plot --verbose
 ```
 
 ### run-multiple
@@ -249,7 +249,7 @@ python -m exp.runner run hotel exp1 --plot --verbose
 Run multiple experiments sequentially.
 
 ```bash
-python -m exp.runner run-multiple <app> "<exp1> <exp2> ..." [options]
+python -m exp_runner.runner run-multiple <app> "<exp1> <exp2> ..." [options]
 ```
 
 **Arguments:**
@@ -264,7 +264,7 @@ python -m exp.runner run-multiple <app> "<exp1> <exp2> ..." [options]
 
 **Example:**
 ```bash
-python -m exp.runner run-multiple hotel "exp1 exp2 exp3" --plot
+python -m exp_runner.runner run-multiple hotel "exp1 exp2 exp3" --plot
 ```
 
 ### plot
@@ -272,7 +272,7 @@ python -m exp.runner run-multiple hotel "exp1 exp2 exp3" --plot
 Generate plots for an existing experiment.
 
 ```bash
-python -m exp.runner plot <app> <experiment>
+python -m exp_runner.runner plot <app> <experiment>
 ```
 
 **Arguments:**
@@ -281,8 +281,8 @@ python -m exp.runner plot <app> <experiment>
 
 **Example:**
 ```bash
-python -m exp.runner plot hotel exp1
-python -m exp.runner plot mssim e2e_test
+python -m exp_runner.runner plot hotel exp1
+python -m exp_runner.runner plot mssim e2e_test
 ```
 
 ### plot-replicas
@@ -290,7 +290,7 @@ python -m exp.runner plot mssim e2e_test
 Generate replica plots for hotel experiments by scanning `exp/hotel/data/in`.
 
 ```bash
-python -m exp.runner plot-replicas hotel
+python -m exp_runner.runner plot-replicas hotel
 ```
 
 **Arguments:**
@@ -316,7 +316,7 @@ cd /path/to/masa
 ### After (Python)
 ```bash
 cd /path/to/masa
-python -m exp.runner run hotel exp1 --plot
+python -m exp_runner.runner run hotel exp1 --plot
 ```
 
 ### Key Differences
@@ -330,7 +330,7 @@ python -m exp.runner run hotel exp1 --plot
 
 To add support for a new application:
 
-1. Create a new plugin class in `exp/runner/apps/your_app.py`:
+1. Create a new plugin class in `exp_runner/runner/apps/your_app.py`:
 
 ```python
 from .base import AppPlugin, DockerConfig
@@ -356,7 +356,7 @@ class YourApp(AppPlugin):
         pass
 ```
 
-2. Register the plugin in `exp/runner/apps/__init__.py`:
+2. Register the plugin in `exp_runner/runner/apps/__init__.py`:
 
 ```python
 from .your_app import YourApp
@@ -370,7 +370,7 @@ def get_app_plugin(app_name: str) -> AppPlugin:
     # ...
 ```
 
-3. Update CLI choices in `exp/runner/cli.py` to include your app name.
+3. Update CLI choices in `exp_runner/runner/cli.py` to include your app name.
 
 ## Architecture
 
@@ -414,18 +414,18 @@ Ensure you're using Python 3.10+ and all dependencies from `pyproject.toml` are 
 ### Running Tests
 ```bash
 # Test CLI with dry-run commands
-python -m exp.runner --help
-python -m exp.runner run --help
+python -m exp_runner.runner --help
+python -m exp_runner.runner run --help
 
 # Run a quick test experiment
-python -m exp.runner run synthetic quick_test --verbose
+python -m exp_runner.runner run synthetic quick_test --verbose
 ```
 
 ### Logging
 Set logging levels programmatically or use `--verbose` flag:
 ```python
 import logging
-logging.getLogger('exp.runner').setLevel(logging.DEBUG)
+logging.getLogger('exp_runner.runner').setLevel(logging.DEBUG)
 ```
 
 ## License

@@ -699,7 +699,7 @@ class SyntheticBuilder(AppBuilder):
                 "buildx",
                 "build",
                 "-f",
-                "./exp/common/docker-build/Dockerfile",
+                "./exp_runner/common/docker-build/Dockerfile",
                 "--target",
                 "builder",
                 # Don't use --load for builder stage - it's an intermediate stage
@@ -753,7 +753,7 @@ class SyntheticBuilder(AppBuilder):
                 "buildx",
                 "build",
                 "-f",
-                "./exp/common/docker-build/Dockerfile",
+                "./exp_runner/common/docker-build/Dockerfile",
                 "--target",
                 "runtime-base",
                 # Don't use --load for runtime-base - it's an intermediate stage.
@@ -815,7 +815,7 @@ class SyntheticBuilder(AppBuilder):
                     "buildx",
                     "build",
                     "-f",
-                    "./exp/common/docker-build/Dockerfile",
+                    "./exp_runner/common/docker-build/Dockerfile",
                     "--target",
                     "runtime",
                     "--load",

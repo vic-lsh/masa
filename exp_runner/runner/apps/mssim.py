@@ -49,7 +49,7 @@ def _canonicalize_features_for_build(feature: str) -> str:
 def _generic_service_image_for_policy(policy: str) -> str:
     """
     Get the docker image name for a given policy/features.
-    Uses normalized feature flags for tagging like other apps in exp.runner.
+    Uses normalized feature flags for tagging like other apps in exp_runner.runner.
     """
     tag = normalize_features_to_tag(policy)
     return f"{GENERIC_SERVICE_IMAGE}:{tag}"

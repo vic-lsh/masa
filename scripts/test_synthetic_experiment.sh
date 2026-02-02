@@ -151,7 +151,7 @@ run_test() {
 
     echo "Generating plots..."
     cd "$repo_root"
-    python -m exp.runner plot synthetic "$exp_name"
+    python -m exp_runner.runner plot synthetic "$exp_name"
 
     echo "Test for $exp_name passed."
 }

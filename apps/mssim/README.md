@@ -66,12 +66,12 @@ The recommended way to run MSSIM experiments is using the experiment runner scri
 
 ```bash
 $ cd <masa-project-root>
-$ python -m exp.runner run mssim <experiment_name>
+$ python -m exp_runner.runner run mssim <experiment_name>
 ```
 
 Or with automatic plot generation:
 ```bash
-$ python -m exp.runner run mssim <experiment_name> --plot
+$ python -m exp_runner.runner run mssim <experiment_name> --plot
 ```
 
 The runner will:
@@ -141,10 +141,10 @@ exp/mssim/data/plots/<experiment_name>/
 
 To generate plots from existing experiment data:
 ```bash
-$ python -m exp.runner plot mssim <experiment_name>
+$ python -m exp_runner.runner plot mssim <experiment_name>
 ```
 
-See `exp/runner/README.md` for more details on the experiment runner.
+See `exp_runner/runner/README.md` for more details on the experiment runner.
 
 ## Running on new Alibaba call graphs
 

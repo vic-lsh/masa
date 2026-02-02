@@ -12,9 +12,9 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from exp.runner.apps.hotel import HotelBuilder
-from exp.runner.apps.synthetic import SyntheticBuilder
-from exp.runner.apps.utils import normalize_features_to_tag
+from exp_runner.runner.apps.hotel import HotelBuilder
+from exp_runner.runner.apps.synthetic import SyntheticBuilder
+from exp_runner.runner.apps.utils import normalize_features_to_tag
 
 
 # Test fixtures for different builders
@@ -47,7 +47,7 @@ class TestBuildCacheIDConsistency:
     def test_cache_id_consistency_across_stages(self, builder_class, config):
         """Test that CACHE_ID is consistent across all stages and includes features."""
         # Patch the appropriate module based on builder type
-        module_name = f"exp.runner.apps.{config['app_name']}"
+        module_name = f"exp_runner.runner.apps.{config['app_name']}"
         
         with patch(f"{module_name}.subprocess.run") as mock_subprocess, \
              patch(f"{module_name}.logger") as mock_logger:
@@ -119,7 +119,7 @@ class TestBuildCacheIDConsistency:
     def test_cache_id_without_features(self, builder_class, config):
         """Test that CACHE_ID uses 'latest' tag when no features are provided."""
         # Patch the appropriate module based on builder type
-        module_name = f"exp.runner.apps.{config['app_name']}"
+        module_name = f"exp_runner.runner.apps.{config['app_name']}"
         
         with patch(f"{module_name}.subprocess.run") as mock_subprocess, \
              patch(f"{module_name}.logger") as mock_logger:
@@ -171,7 +171,7 @@ class TestBuildCacheIDConsistency:
     def test_cache_id_different_features_produce_different_ids(self, builder_class, config):
         """Test that different features produce different cache IDs."""
         # Patch the appropriate module based on builder type
-        module_name = f"exp.runner.apps.{config['app_name']}"
+        module_name = f"exp_runner.runner.apps.{config['app_name']}"
         
         with patch(f"{module_name}.subprocess.run") as mock_subprocess, \
              patch(f"{module_name}.logger") as mock_logger:
@@ -238,7 +238,7 @@ class TestBuildCacheIDConsistency:
     def test_cache_id_format(self, builder_class, config):
         """Test that cache ID follows the expected format: {app}-{tag}."""
         # Patch the appropriate module based on builder type
-        module_name = f"exp.runner.apps.{config['app_name']}"
+        module_name = f"exp_runner.runner.apps.{config['app_name']}"
         
         with patch(f"{module_name}.subprocess.run") as mock_subprocess, \
              patch(f"{module_name}.logger") as mock_logger:
