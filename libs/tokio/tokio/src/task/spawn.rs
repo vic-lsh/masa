@@ -1,6 +1,6 @@
 use crate::task::JoinHandle;
 
-use masa::PriorityHint;
+use masa_core::PriorityHint;
 use std::future::Future;
 
 cfg_rt! {

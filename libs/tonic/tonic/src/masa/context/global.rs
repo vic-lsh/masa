@@ -2,7 +2,7 @@ use crate::{masa::context::read_context, GrpcMethod, Request, Status};
 use std::sync::Arc;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
-use masa::{Context, ContextBuilder, PriorityHint};
+use masa_core::{Context, ContextBuilder, PriorityHint};
 
 #[derive(Debug)]
 /// This policy always sets the deadline of each request as

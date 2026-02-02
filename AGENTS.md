@@ -83,7 +83,7 @@ Tracing variants exist for instrumentation: `fifo_span_tracing`, `fifo_queue_tra
 - Use `#[tokio::main(flavor = "current_thread")]` — the priority scheduler is implemented in the single-threaded runtime
 - `PriorityHint::infra()` (value 0) is reserved for infrastructure tasks and always runs first
 
-### libs/masa
+### libs/masa & libs/masa-core
 Core Masa types and utilities:
 - `Context`/`ContextBuilder`: RPC context with deadline/priority info
 - `PriorityHint`: Priority value (lower = higher priority; reversed `Ord` for `BinaryHeap`)

@@ -58,7 +58,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 name = "ambiguous_methods"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tonic",
  "tonic-build",
@@ -958,7 +958,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "masa",
+ "masa-core",
  "paste",
  "pin-project",
  "prost",
@@ -1283,7 +1283,7 @@ dependencies = [
 name = "default_stubs"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tokio",
  "tokio-stream",
@@ -1392,7 +1392,7 @@ dependencies = [
 name = "disable-comments"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "prost-build",
  "tonic",
@@ -1622,7 +1622,7 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "listenfd",
- "masa",
+ "masa-core",
  "prost",
  "prost-types",
  "rand 0.8.5",
@@ -2368,7 +2368,7 @@ dependencies = [
  "itoa",
  "libc",
  "log",
- "masa",
+ "masa-core",
  "matches",
  "num_cpus",
  "pin-project-lite",
@@ -2576,7 +2576,7 @@ dependencies = [
 name = "included_service"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tonic",
  "tonic-build",
@@ -2634,7 +2634,7 @@ dependencies = [
  "base64 0.21.7",
  "bytes",
  "hyper",
- "masa",
+ "masa-core",
  "prost",
  "tokio",
  "tokio-stream",
@@ -2652,7 +2652,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "masa",
+ "masa-core",
  "prost",
  "tokio",
  "tokio-stream",
@@ -2674,7 +2674,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "masa",
+ "masa-core",
  "pico-args",
  "prost",
  "strum",
@@ -2971,12 +2971,9 @@ dependencies = [
 name = "masa"
 version = "0.1.0"
 dependencies = [
- "base64 0.21.7",
- "bincode",
- "http",
- "log",
- "serde",
- "serde_json",
+ "masa-core",
+ "tokio",
+ "tonic",
 ]
 
 [[package]]
@@ -2997,12 +2994,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "masa-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "bincode",
+ "http",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "masa-integration-tests"
 version = "0.1.0"
 dependencies = [
  "http",
  "hyper",
- "masa",
+ "masa-core",
  "prost",
  "prost-build",
  "tokio",
@@ -4431,7 +4440,7 @@ dependencies = [
 name = "root-crate-path"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tonic",
  "tonic-build",
@@ -4677,7 +4686,7 @@ dependencies = [
 name = "same_name"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tonic",
  "tonic-build",
@@ -4879,7 +4888,7 @@ dependencies = [
 name = "service_named_result"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tonic",
  "tonic-build",
@@ -4889,7 +4898,7 @@ dependencies = [
 name = "service_named_service"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tonic",
  "tonic-build",
@@ -5138,7 +5147,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "stream_conflict"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tonic",
  "tonic-build",
@@ -5535,7 +5544,7 @@ dependencies = [
  "futures",
  "libc",
  "loom",
- "masa",
+ "masa-core",
  "mio",
  "mio-aio",
  "mockall",
@@ -5723,7 +5732,7 @@ dependencies = [
  "hyper",
  "hyper-timeout",
  "log",
- "masa",
+ "masa-core",
  "once_cell",
  "percent-encoding",
  "pin-project",
@@ -6148,7 +6157,7 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 name = "use_arc_self"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "tokio-stream",
  "tonic",
@@ -6414,7 +6423,7 @@ dependencies = [
 name = "wellknown"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "prost-types",
  "tonic",
@@ -6425,7 +6434,7 @@ dependencies = [
 name = "wellknown-compiled"
 version = "0.1.0"
 dependencies = [
- "masa",
+ "masa-core",
  "prost",
  "prost-build",
  "tonic",
