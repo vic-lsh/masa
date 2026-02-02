@@ -36,7 +36,7 @@ Every experiment directory **must** contain these two files:
       "Addr": "http://[::1]:8659"
     }
     ```
-*   **`policies`**: A whitespace-separated list of scheduling policies to test (e.g., `fifo prio_global prio_local`).
+*   **`policies`**: A newline-separated list of scheduling policies to test.
 
 In addition to these, each application requires its own specific configuration file (detailed below).
 

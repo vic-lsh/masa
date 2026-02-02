@@ -100,8 +100,7 @@ class ExperimentConfig:
             raise FileNotFoundError(f"Missing policies file at: {policies_path}")
 
         with open(policies_path) as f:
-            policies_text = f.read().strip()
-            policies = policies_text.split()
+            policies = [line.strip() for line in f if line.strip()]
 
         if not policies:
             raise ValueError("policies file is empty or contains no policies")
