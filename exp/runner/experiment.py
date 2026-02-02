@@ -36,6 +36,7 @@ class Experiment:
         no_cache: bool = False,
         rm_data: bool = False,
         dry_run: bool = False,
+        smoke_test: bool = False,
     ):
         """
         Initialize experiment runner.
@@ -47,6 +48,7 @@ class Experiment:
             plot: Whether to generate plots after experiment
             no_cache: Whether to disable Docker cache during builds
             rm_data: Whether to remove existing data from output directory before running
+            smoke_test: Whether to verify results after execution (e.g. check goodput)
         """
         self.app = app
         self.config = config
@@ -55,6 +57,7 @@ class Experiment:
         self.no_cache = no_cache
         self.rm_data = rm_data
         self.dry_run = dry_run
+        self.smoke_test = smoke_test
         self.docker = DockerManager(repo_root)
         
         # Setup working directories
@@ -90,6 +93,12 @@ class Experiment:
         # Mark experiment as complete
         if not self.dry_run:
             self._mark_complete()
+            
+        # Verify results if requested (smoke test)
+        if self.smoke_test and not self.dry_run:
+            logger.info("Running smoke test verification...")
+            if not self.app.verify_results(self.config):
+                raise RuntimeError("Smoke test verification failed")
         
         # Generate plots if requested
         if self.plot and not self.dry_run:

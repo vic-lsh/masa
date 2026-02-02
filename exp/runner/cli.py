@@ -80,6 +80,7 @@ def cmd_run_experiment(args: argparse.Namespace) -> None:
         no_cache=args.no_cache,
         rm_data=args.rm_data,
         dry_run=args.dry_run,
+        smoke_test=args.smoke_test,
     )
     
     try:
@@ -117,6 +118,7 @@ def cmd_queue_experiments(args: argparse.Namespace) -> None:
             no_cache=args.no_cache,
             rm_data=args.rm_data,
             dry_run=args.dry_run,
+            smoke_test=args.smoke_test,
         )
         
         try:
@@ -464,6 +466,11 @@ Examples:
         action='store_true',
         help='Print what would be executed without running containers'
     )
+    run_parser.add_argument(
+        '--smoke-test',
+        action='store_true',
+        help='Verify experiment results (goodput/files) after completion'
+    )
     run_parser.set_defaults(func=cmd_run_experiment)
     
     # run-multiple command
@@ -500,6 +507,11 @@ Examples:
         '--dry-run',
         action='store_true',
         help='Print what would be executed without running containers'
+    )
+    queue_parser.add_argument(
+        '--smoke-test',
+        action='store_true',
+        help='Verify experiment results (goodput/files) after completion'
     )
     queue_parser.set_defaults(func=cmd_queue_experiments)
     
