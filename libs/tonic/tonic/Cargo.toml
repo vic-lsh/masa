@@ -56,6 +56,7 @@ channel = []
 
 # masa-specific features
 masa = []
+trace-queue = []
 prio_global = ["masa-core/prio_global", "tokio/prio_global"]
 prio_oldest = ["masa-core/prio_oldest", "tokio/prio_oldest"]
 prio_local = ["masa-core/prio_local", "tokio/prio_local"]

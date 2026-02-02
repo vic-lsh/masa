@@ -1,6 +1,8 @@
 use crate::{body::BoxBody, Code, Response, Status};
 use masa_core::{time_now, Context, EARLY_RETURN};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "trace-queue")]
+use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
 
 #[derive(Debug)]
@@ -81,6 +83,7 @@ impl EarlyReturnHandler {
     }
 }
 
+#[cfg(feature = "trace-queue")]
 #[derive(Debug)]
 pub(crate) struct QueueLatencyTracker {
     initial_q_lat: AtomicU64,
@@ -88,6 +91,7 @@ pub(crate) struct QueueLatencyTracker {
     is_first_poll: AtomicBool,
 }
 
+#[cfg(feature = "trace-queue")]
 impl Default for QueueLatencyTracker {
     fn default() -> Self {
         Self {
@@ -98,6 +102,7 @@ impl Default for QueueLatencyTracker {
     }
 }
 
+#[cfg(feature = "trace-queue")]
 impl QueueLatencyTracker {
     pub(crate) fn new() -> Self {
         Self::default()
@@ -160,4 +165,21 @@ impl QueueLatencyTracker {
             res_header.insert("x-queue-latency", header_val);
         }
     }
+}
+
+#[cfg(not(feature = "trace-queue"))]
+#[derive(Debug, Default)]
+pub(crate) struct QueueLatencyTracker;
+
+#[cfg(not(feature = "trace-queue"))]
+impl QueueLatencyTracker {
+    pub(crate) fn new() -> Self {
+        Self
+    }
+
+    pub(crate) fn track_poll(&self) {}
+
+    pub(crate) fn track_child_response<T>(&self, _response: &Result<Response<T>, Status>) {}
+
+    pub(crate) fn inject_header(&self, _response: &mut http::Response<BoxBody>) {}
 }
