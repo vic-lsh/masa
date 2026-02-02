@@ -10,6 +10,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -766,11 +767,66 @@ class HotelApp(AppPlugin):
 
             # Run load generator with project-specific gen_config
             load_gen = self.create_load_generator(features=policy, project_name=project_name)
-            load_gen.run(
-                output_dir=output_dir,
-                env_vars=env_vars,
-                gen_config_path=project_gen_config_path,
-            )
+            
+            # Run load generator in a separate thread to allow monitoring
+            load_gen_error = None
+            
+            def run_load_gen():
+                nonlocal load_gen_error
+                try:
+                    load_gen.run(
+                        output_dir=output_dir,
+                        env_vars=env_vars,
+                        gen_config_path=project_gen_config_path,
+                    )
+                except Exception as e:
+                    load_gen_error = e
+
+            load_gen_thread = threading.Thread(target=run_load_gen)
+            load_gen_thread.start()
+
+            # Monitor loop
+            while load_gen_thread.is_alive():
+                # Check container health
+                failed_containers = docker.check_project_health(
+                    compose_path=docker_compose_path,
+                    project_name=project_name,
+                    env_vars=env,
+                )
+                
+                if failed_containers:
+                    error_msg = f"Experiment failed: The following containers crashed: {failed_containers}"
+                    logger.error(error_msg)
+                    
+                    # Kill load generator container to stop the thread
+                    try:
+                        subprocess.run(
+                            ["docker", "rm", "-f", load_gen.get_container_name()],
+                            check=False,
+                            capture_output=True
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to kill load generator container: {e}")
+                        
+                    # Raise error to stop experiment
+                    raise RuntimeError(error_msg)
+                
+                load_gen_thread.join(timeout=2.0)
+            
+            # If thread finished, check for errors
+            if load_gen_error:
+                # Check project health one last time to see if a container crash caused the load gen failure
+                failed_containers = docker.check_project_health(
+                    compose_path=docker_compose_path,
+                    project_name=project_name,
+                    env_vars=env,
+                )
+                if failed_containers:
+                    error_msg = f"Experiment failed: The following containers crashed: {failed_containers}. Load generator also failed: {load_gen_error}"
+                    logger.error(error_msg)
+                    raise RuntimeError(error_msg)
+
+                raise load_gen_error
 
         finally:
             # Stop CPU monitoring before stopping services

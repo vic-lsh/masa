@@ -230,6 +230,84 @@ class DockerManager:
             logger.warning(f"Failed to get container names: {e}")
             return []
     
+    def check_project_health(
+        self,
+        compose_path: Path,
+        project_name: str,
+        env_vars: dict | None = None,
+    ) -> list[tuple[str, int]]:
+        """
+        Check if any containers in the project have failed (exited with non-zero code).
+        
+        Args:
+            compose_path: Path to docker-compose.yml file
+            project_name: Docker compose project name
+            env_vars: Optional environment variables
+            
+        Returns:
+            List of (container_name, exit_code) for failed containers.
+            Returns empty list if all containers are healthy (running or exited with 0).
+        """
+        env = os.environ.copy()
+        if env_vars:
+            env.update({k: str(v) for k, v in env_vars.items()})
+        
+        cmd = [
+            "docker",
+            "compose",
+            "-f",
+            str(compose_path),
+            "-p",
+            project_name,
+            "ps",
+            "-a",
+            "--format",
+            "json",
+        ]
+        
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=compose_path.parent,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            
+            import json
+            containers = []
+            try:
+                # Try parsing as a single JSON array (standard format)
+                containers = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                # Fallback: Try parsing as newline-delimited JSON (NDJSON)
+                # Some versions/configurations output one JSON object per line
+                try:
+                    containers = [json.loads(line) for line in result.stdout.strip().split('\n') if line.strip()]
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Failed to parse docker compose ps output: {e}\nOutput was: {result.stdout}")
+                    return []
+            
+            failed_containers = []
+            if isinstance(containers, list):
+                for c in containers:
+                    # Check for non-zero exit code
+                    exit_code = c.get("ExitCode", 0)
+                    state = c.get("State", "").lower()
+                    name = c.get("Name", "unknown")
+                    
+                    # If it's exited with non-zero code, it's a failure.
+                    # Also consider "restarting" (crash loop) and "dead" as failures.
+                    if (state == "exited" and exit_code != 0) or state in ("restarting", "dead"):
+                        failed_containers.append((name, exit_code))
+                        
+            return failed_containers
+            
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Failed to check project health: {e}")
+            return []
+
     def _stream_container_log(
         self,
         container_name: str,

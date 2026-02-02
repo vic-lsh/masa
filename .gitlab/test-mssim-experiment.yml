@@ -1,5 +1,7 @@
 test_mssim_experiment:
   stage: test
+  variables:
+    CI: "true"
   cache:
     key:
       files:
