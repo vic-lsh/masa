@@ -57,9 +57,10 @@ The recommended way to run MSSIM experiments is using the experiment runner scri
    }
    ```
 
-   **`policies`** - Whitespace-separated list of scheduling policies:
+   **`policies`** - Newline-separated list of scheduling policies:
    ```
-   fifo prio_global
+   fifo
+   prio_global
    ```
 
 2. Run the experiment:
@@ -99,7 +100,7 @@ The runner will:
 - `extra_env`: Additional environment variables to pass to the experiment
 
 **`policies` file:**
-- Whitespace-separated list of scheduling policies to test (e.g., `fifo prio_global`)
+- Newline-separated list of scheduling policies to test
 
 ### Example Test Script
 
