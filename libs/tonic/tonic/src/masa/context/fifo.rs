@@ -2,8 +2,8 @@ use crate::{masa::context::read_context, GrpcMethod, Request, Status};
 use std::sync::Arc;
 use std::task::Poll;
 
-use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
+use super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::{
     resolve_method_name, resolve_service_name, MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER,
 };
