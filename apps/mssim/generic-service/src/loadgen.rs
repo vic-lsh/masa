@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use masa::{time_now, ContextBuilder as MasaContextBuilder, PriorityHint};
+use masa::time_now;
 use rand_distr::{Distribution, Exp};
 use serde::Deserialize;
 use serde_json;
@@ -207,18 +207,7 @@ async fn run_root_load(
                         graph_name: graph_hint.into(),
                     });
 
-                    let ctx = {
-                        let slo_us = entry.slo_ms * 1000;
-                        let start_at = time_now();
-                        let deadline = start_at + slo_us;
-                        let prio_hint = if masa::PRIO_OLDEST { start_at } else { deadline };
-                        MasaContextBuilder::new("root".to_string(), req_id)
-                            .slo(slo_us)
-                            .gateway_entry(start_at)
-                            .deadline(deadline)
-                            .prio_hint(PriorityHint::new(prio_hint))
-                            .build()
-                    };
+                    let ctx = masa::create_context("root", Duration::from_millis(entry.slo_ms));
                     request.metadata_mut().insert_ctx("ctx", &ctx);
 
                     let start_time = Instant::now();
