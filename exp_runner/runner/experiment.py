@@ -12,7 +12,9 @@ from typing import Optional
 
 from .apps.base import AppPlugin
 from .config import ExperimentConfig
+from .deployment_manager import DeploymentManager
 from .docker_manager import DockerManager
+from .k8s_manager import K8sManager
 from .plotting import generate_all_plots
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,7 @@ class Experiment:
         rm_data: bool = False,
         dry_run: bool = False,
         smoke_test: bool = False,
+        use_k8s: bool = False,
     ):
         """
         Initialize experiment runner.
@@ -49,6 +52,7 @@ class Experiment:
             no_cache: Whether to disable Docker cache during builds
             rm_data: Whether to remove existing data from output directory before running
             smoke_test: Whether to verify results after execution (e.g. check goodput)
+            use_k8s: Whether to use Kubernetes instead of Docker Compose
         """
         self.app = app
         self.config = config
@@ -58,7 +62,13 @@ class Experiment:
         self.rm_data = rm_data
         self.dry_run = dry_run
         self.smoke_test = smoke_test
-        self.docker = DockerManager(repo_root)
+        self.use_k8s = use_k8s
+
+        self.docker: DeploymentManager
+        if use_k8s:
+            self.docker = K8sManager(repo_root)
+        else:
+            self.docker = DockerManager(repo_root)
 
         # Setup working directories
         self.app_scripts_dir = config.app_dir / "scripts"

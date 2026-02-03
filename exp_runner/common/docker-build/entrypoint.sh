@@ -45,5 +45,24 @@ fi
 echo "Executing: ${CMD}"
 
 # Execute the final command.
-# 'exec' replaces the shell process with the command, which is good practice.
-exec ${CMD}
+if echo "${BINARY_NAME}" | grep -q "_client_bench$"; then
+    # Run the command and capture exit code
+    ${CMD}
+    EXIT_CODE=$?
+    
+    # Cat all .csv files in output_path to stdout with a separator
+    if [ -d "$output_path" ]; then
+        echo "---BEGIN TRACES---"
+        for f in "$output_path"/*.csv; do
+            if [ -f "$f" ]; then
+                echo "FILE: $(basename "$f")"
+                cat "$f"
+                echo "---END FILE---"
+            fi
+        done
+        echo "---END TRACES---"
+    fi
+    exit $EXIT_CODE
+else
+    exec ${CMD}
+fi
