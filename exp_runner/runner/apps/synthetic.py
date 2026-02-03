@@ -669,7 +669,9 @@ class SyntheticApp(AppPlugin):
         from .base import CPUMonitor
 
         docker_config = self.get_docker_config()
-        is_k8s = hasattr(docker, "load_image_to_cluster")
+        # Check for kube_context to distinguish K8sManager from DockerManager
+        # (load_image_to_cluster is now in the base class, so hasattr check is not sufficient)
+        is_k8s = hasattr(docker, "kube_context")
 
         # Generate environment variables
         env_vars = self.generate_env_vars(
