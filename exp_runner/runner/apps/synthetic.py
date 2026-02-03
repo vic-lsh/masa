@@ -426,7 +426,7 @@ class SyntheticApp(AppPlugin):
         # Build depends_on list for all call graph services
         # Use "local-{service-id}-service" naming to match service names
         depends_on = [
-            f"local-{svc['id'].lower()}-service" for svc in call_graph["services"]
+            f"local-{svc['id'].lower().replace('_', '-')}-service" for svc in call_graph["services"]
         ]
         services["synthetic-frontend-service"] = {
             "image": f"synthetic_frontend:{image_tag}",
@@ -447,7 +447,7 @@ class SyntheticApp(AppPlugin):
         # Use "local-{service-id}-service" naming to match frontend expectations
         for service_def in call_graph["services"]:
             service_id = service_def["id"]
-            service_name = f"local-{service_id.lower()}-service"
+            service_name = f"local-{service_id.lower().replace('_', '-')}-service"
             replicas = service_def.get("replicas", 1)
 
             services[service_name] = {
@@ -581,7 +581,7 @@ class SyntheticApp(AppPlugin):
             call_graph = app_config["call_graph"]
             for service_def in call_graph.get("services", []):
                 service_id = service_def["id"]
-                service_name = f"local-{service_id.lower()}-service"
+                service_name = f"local-{service_id.lower().replace('_', '-')}-service"
                 replicas = service_def.get("replicas", 1)
 
                 # Generate container names for each replica
