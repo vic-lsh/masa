@@ -1,24 +1,61 @@
 test_synthetic_experiment:
-  stage: test
-  variables:
-    CI: "true"
-    EXP_NAME: "ci"
-  cache:
-    key:
-      files:
-        - uv.lock
-    paths:
-      - .venv
-  before_script:
-    - |
-      if ! command -v uv &> /dev/null; then
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-      fi
-    - uv sync
-    - source .venv/bin/activate
-  tags:
-    - on-host
-  script:
-    - groups $(whoami) # make sure that gitlab runner is in the 'docker' group
-    - ./scripts/test_synthetic_experiment.sh $EXP_NAME
+    stage: test
+    parallel:
+        matrix:
+            - DEPLOY_MODE: [docker, kind]
+    variables:
+        CI: "true"
+        EXP_NAME: "ci"
+    cache:
+        key:
+            files:
+                - uv.lock
+        paths:
+            - .venv
+    before_script:
+        - mkdir -p $HOME/.local/bin
+        - export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+        - |
+            if ! command -v uv &> /dev/null; then
+              curl -LsSf https://astral.sh/uv/install.sh | sh
+            fi
+        - |
+            if [[ "$DEPLOY_MODE" == "kind" ]]; then
+              if ! command -v kind &> /dev/null; then
+                echo "Installing kind..."
+                curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+                chmod +x ./kind
+                mv ./kind $HOME/.local/bin/kind
+              fi
+              if ! command -v kubectl &> /dev/null; then
+                echo "Installing kubectl..."
+                curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                chmod +x kubectl
+                mv kubectl $HOME/.local/bin/kubectl
+              fi
+              if ! command -v helm &> /dev/null; then
+                echo "Installing helm..."
+                curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+                chmod 700 get_helm.sh
+                HELM_INSTALL_DIR=$HOME/.local/bin ./get_helm.sh --no-sudo
+                rm get_helm.sh
+              fi
+              if ! kind get clusters | grep -q "^kind$"; then
+                 echo "Creating kind cluster..."
+                 kind create cluster
+              fi
+            fi
+        - uv sync
+        - source .venv/bin/activate
+    tags:
+        - on-host
+    script:
+        - groups $(whoami) # make sure that gitlab runner is in the 'docker' group
+        - ./scripts/test_synthetic_experiment.sh $EXP_NAME --deploy-mode $DEPLOY_MODE
+    after_script:
+        - export PATH="$HOME/.local/bin:$PATH"
+        - |
+            if [[ "$DEPLOY_MODE" == "kind" ]]; then
+                echo "Deleting kind cluster..."
+                kind delete cluster
+            fi
