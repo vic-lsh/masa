@@ -23,6 +23,7 @@ use crate::config::HotelConfig;
 // use hotel_tonic::review::review_client::ReviewClient;
 use std::time::Instant;
 
+use tonic::masa::{MasaRequestExt, MasaResponseExt};
 use tonic::{transport::masa_channel::LoadBalancedChannel, Request, Response, Status};
 
 use hotel_tonic::{
@@ -114,7 +115,7 @@ impl Frontend for FrontendImpl {
         use masa::time_now;
 
         let start = Instant::now();
-        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        let mut ctx = request.get_masa_context().unwrap();
         let request = request.into_inner();
 
         let mut child_traces = Vec::new();
@@ -203,10 +204,9 @@ impl Frontend for FrontendImpl {
             hotels,
             child_traces,
         };
-
         let mut response = Response::new(response);
         ctx.set_frontend_elapse(start.elapsed().as_micros() as u64);
-        response.metadata_mut().insert_ctx("ctx", &ctx);
+        response.set_masa_context(&ctx);
 
         Ok(response)
     }
@@ -216,7 +216,7 @@ impl Frontend for FrontendImpl {
         request: Request<frontend::ReservationRequest>,
     ) -> Result<Response<frontend::ReservationResponse>, Status> {
         let start = Instant::now();
-        let mut ctx = request.metadata().get_ctx("ctx").unwrap();
+        let mut ctx = request.get_masa_context().unwrap();
         let request = request.into_inner();
 
         let mut user_client = self.user_client.clone();
@@ -252,7 +252,7 @@ impl Frontend for FrontendImpl {
 
         let mut response = Response::new(response);
         ctx.set_frontend_elapse(start.elapsed().as_micros() as u64);
-        response.metadata_mut().insert_ctx("ctx", &ctx);
+        response.set_masa_context(&ctx);
 
         Ok(response)
     }

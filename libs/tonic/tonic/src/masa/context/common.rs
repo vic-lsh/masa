@@ -1,12 +1,18 @@
-use crate::{body::BoxBody, Code, Response, Status};
+use crate::{Code, Response, Status};
+#[cfg(feature = "trace-queue")]
+use masa_core::QueueLatencies;
 use masa_core::{time_now, Context, EARLY_RETURN};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+#[cfg(feature = "trace-queue")]
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 #[derive(Debug)]
 pub(crate) struct EarlyReturnHandler {
     will_early_return: AtomicBool,
     service: &'static str,
     method: String,
+    last_child: Mutex<Option<String>>,
 }
 
 impl Default for EarlyReturnHandler {
@@ -15,6 +21,7 @@ impl Default for EarlyReturnHandler {
             will_early_return: AtomicBool::new(false),
             service: "",
             method: String::new(),
+            last_child: Mutex::new(None),
         }
     }
 }
@@ -25,6 +32,13 @@ impl EarlyReturnHandler {
             will_early_return: AtomicBool::new(false),
             service,
             method,
+            last_child: Mutex::new(None),
+        }
+    }
+
+    pub(crate) fn set_last_child(&self, child: String) {
+        if let Ok(mut last) = self.last_child.lock() {
+            *last = Some(child);
         }
     }
 
@@ -55,26 +69,42 @@ impl EarlyReturnHandler {
     }
 
     pub(crate) fn issue_error(&self) -> Status {
+        let last_child = self
+            .last_child
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .unwrap_or_else(|| "None:None".to_string());
         Status::new(
             Code::DeadlineExceeded,
-            format!("/EarlyReturn:{}:{}", self.service, self.method),
+            format!(
+                "/EarlyReturn:{}:{}|{}",
+                self.service, self.method, last_child
+            ),
         )
     }
 }
 
+#[cfg(feature = "trace-queue")]
 #[derive(Debug)]
 pub(crate) struct QueueLatencyTracker {
-    q_lat: AtomicU64,
+    initial_q_lat: AtomicU64,
+    resume_q_lat: AtomicU64,
+    is_first_poll: AtomicBool,
 }
 
+#[cfg(feature = "trace-queue")]
 impl Default for QueueLatencyTracker {
     fn default() -> Self {
         Self {
-            q_lat: AtomicU64::new(0),
+            initial_q_lat: AtomicU64::new(0),
+            resume_q_lat: AtomicU64::new(0),
+            is_first_poll: AtomicBool::new(true),
         }
     }
 }
 
+#[cfg(feature = "trace-queue")]
 impl QueueLatencyTracker {
     pub(crate) fn new() -> Self {
         Self::default()
@@ -83,31 +113,65 @@ impl QueueLatencyTracker {
     pub(crate) fn track_poll(&self) {
         let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
         if queue_latency > 0 {
-            self.q_lat.fetch_add(queue_latency, Ordering::AcqRel);
+            if self.is_first_poll.swap(false, Ordering::Relaxed) {
+                self.initial_q_lat
+                    .fetch_add(queue_latency, Ordering::AcqRel);
+            } else {
+                self.resume_q_lat.fetch_add(queue_latency, Ordering::AcqRel);
+            }
         }
     }
 
     pub(crate) fn track_child_response<T>(&self, response: &Result<Response<T>, Status>) {
         if let Ok(resp) = response {
-            if let Some(value) = resp
-                .metadata()
-                .get("x-queue-latency")
-                .or_else(|| resp.metadata().get("X-Queue-Latency"))
-            {
-                if let Ok(v) = value.to_str() {
-                    if let Ok(parsed) = v.parse::<u64>() {
-                        self.q_lat.fetch_add(parsed, Ordering::AcqRel);
-                    }
+            use super::MasaResponseExt;
+            if let Some(ctx) = resp.get_masa_context() {
+                if let Some(ql) = ctx.queue_latencies {
+                    self.initial_q_lat.fetch_add(ql.initial, Ordering::AcqRel);
+                    self.resume_q_lat.fetch_add(ql.resume, Ordering::AcqRel);
                 }
             }
         }
     }
 
-    pub(crate) fn inject_header(&self, response: &mut http::Response<BoxBody>) {
-        let res_header = response.headers_mut();
-        let total = self.q_lat.load(Ordering::Acquire).to_string();
-        if let Ok(header_val) = http::HeaderValue::from_str(&total) {
-            res_header.insert("x-queue-latency", header_val);
-        }
+    pub(crate) fn inject_context_metadata<T>(
+        &self,
+        ctx: &Context,
+        result: &mut Result<Response<T>, Status>,
+    ) {
+        use super::{MasaResponseExt, MasaStatusExt};
+
+        let mut ctx = ctx.clone();
+
+        let initial = self.initial_q_lat.load(Ordering::Acquire);
+        let resume = self.resume_q_lat.load(Ordering::Acquire);
+        ctx.queue_latencies = Some(QueueLatencies { initial, resume });
+
+        match result {
+            Ok(resp) => resp.set_masa_context(&ctx),
+            Err(status) => status.set_masa_context(&ctx),
+        };
+    }
+}
+
+#[cfg(not(feature = "trace-queue"))]
+#[derive(Debug, Default)]
+pub(crate) struct QueueLatencyTracker;
+
+#[cfg(not(feature = "trace-queue"))]
+impl QueueLatencyTracker {
+    pub(crate) fn new() -> Self {
+        Self
+    }
+
+    pub(crate) fn track_poll(&self) {}
+
+    pub(crate) fn track_child_response<T>(&self, _response: &Result<Response<T>, Status>) {}
+
+    pub(crate) fn inject_context_metadata<T>(
+        &self,
+        _ctx: &Context,
+        _result: &mut Result<Response<T>, Status>,
+    ) {
     }
 }

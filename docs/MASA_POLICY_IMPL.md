@@ -13,8 +13,6 @@ Key feature flags include:
 - `prio_local`: Priority based on local deadlines.
 - `early`: Enables "Early Return" to drop requests that have already missed their deadline.
 
-Tracing variants exist for instrumentation: `fifo_span_tracing`, `fifo_queue_tracing`, `prio_global_queue_tracing`.
-
 When a specific feature flag (e.g., `prio_global`) is enabled, it activates corresponding conditional compilation modules (`#[cfg(feature = "...")]`) across the modified libraries.
 
 ### Feature Flag Propagation
@@ -38,11 +36,9 @@ The `DefaultMasaHooks` type alias (in `libs/tonic/tonic/src/masa/context/mod.rs`
 1. `prio_local` → `LocalDeadlinePolicy`
 2. `prio_oldest` → `PrioOldest`
 3. `prio_global` → `QueueGlobal`
-4. `fifo_queue_tracing` → `QueueTracing`
-5. `fifo_span_tracing` → `Tracing`
-6. `fifo` + `early` → `Fifo`
-7. `fifo` (without `early`) → `NoopMasaHooks`
-8. Default (no features) → `NoopMasaHooks`
+4. `fifo` + `early` → `Fifo`
+5. `fifo` (without `early`) → `NoopMasaHooks`
+6. Default (no features) → `NoopMasaHooks`
 
 Each flag also selects the corresponding tokio queue implementation (see Section 5).
 
@@ -150,11 +146,9 @@ Different modules implement `MasaHooks` based on the active feature flag:
 *   **`QueueGlobal`** (for `prio_global`): In `before_child_rpc`, it calculates the deadline and priority for the child request and injects a `ctx` header. Tracks queue latency via `QueueLatencyTracker`.
 *   **`PrioOldest`** (for `prio_oldest`): Like `QueueGlobal`, but the priority hint is the request creation time (older requests = higher priority), implementing the TailClipper approach.
 *   **`LocalDeadlinePolicy`** (for `prio_local`): Computes local deadlines by subtracting estimated remaining processing time from the parent deadline. Maintains per-method-pair `LatencyRms` estimators. Only works for applications with a known call graph (currently `hotel`).
-*   **`Fifo`**: Passes through deadline/priority. Handles `early` return checks if the `early` feature is also enabled.
-*   **`Global`**: Simplified global deadline policy without queue latency tracking (no early return support).
-*   **Tracing variants**: `Tracing` (span-level) and `QueueTracing` (queue-level) add timing instrumentation.
-*   **`Noop`**: No-op hooks. Selected when `fifo` is enabled without `early`, or when no policy feature is active.
-
+*   **Fifo**: Passes through deadline/priority. Handles `early` return checks if the `early` feature is also enabled.
+*   **Global**: Simplified global deadline policy without queue latency tracking (no early return support).
+*   **Noop**: No-op hooks. Selected when `fifo` is enabled without `early`, or when no policy feature is active.
 ### Client Code Generation
 
 `tonic-build` (`libs/tonic/tonic-build/src/client.rs`) generates client stub methods that integrate with the hook architecture. Each generated unary method:
@@ -234,7 +228,7 @@ The `TraceTimer` struct in the task header measures how long a task sits in the 
 2.  **On pop**: `TimedQueue::pop()` computes `elapsed = now - last_enqueue` and stores it in `timer.q_lat`.
 3.  **On read**: `tokio::task::obtain_task_queue_latency()` reads `timer.q_lat` from the current task header.
 
-This measurement only occurs when a tracing feature (`fifo_queue_tracing`, `prio_global_queue_tracing`, etc.) is enabled, since only then is the `TimedQueue` wrapper compiled in.
+This measurement only occurs when a tracing feature (`fifo_queue_tracing`) is enabled, since only then is the `TimedQueue` wrapper compiled in.
 
 ## 6. Poll Hooks
 
@@ -333,7 +327,7 @@ Policies with Early Return: `Fifo`, `QueueGlobal`, `PrioOldest`, and `Local`.
 
 Some policies use `before_poll` to accumulate queue latency — the time a task spent in the ready queue before being polled. The `QueueLatencyTracker` (`libs/tonic/tonic/src/masa/context/common.rs`) calls `tokio::task::obtain_task_queue_latency()` during `before_poll` to read the current task's queue wait time from its `TraceTimer` in the task header. This value is accumulated across all polls and child RPC responses (via the `x-queue-latency` response header), then injected into the outgoing response in `finalize_after_serialization`.
 
-Policies with queue latency tracking: `QueueGlobal`, `PrioOldest`, and the queue-tracing variants.
+Policies with queue latency tracking: `QueueGlobal` and `PrioOldest`.
 
 ### Per-Policy Summary
 
@@ -345,7 +339,6 @@ Policies with queue latency tracking: `QueueGlobal`, `PrioOldest`, and the queue
 | `Local` | Early return check | Early return check (on `Pending`) |
 | `Global` | Default (no-op) | Default (no-op) |
 | `Noop` | No-op | No-op |
-| Tracing variants | Timing instrumentation | Timing instrumentation |
 
 ## 7. Application Integration
 
@@ -366,7 +359,7 @@ Services connect to downstream replicas using `LoadBalancedChannel` (`libs/tonic
 
 ### `x-queue-latency` Response Header
 
-Policies that track queue latency (`QueueGlobal`, `PrioOldest`, queue-tracing variants) propagate accumulated queue wait times in the `x-queue-latency` response header. The `QueueLatencyTracker` aggregates:
+Policies that track queue latency (`QueueGlobal` and `PrioOldest`) propagate accumulated queue wait times in the `x-queue-latency` response header. The `QueueLatencyTracker` aggregates:
 *   The current task's queue latency (from `tokio::task::obtain_task_queue_latency()`).
 *   Queue latency reported by child RPCs (parsed from their `x-queue-latency` response headers).
 

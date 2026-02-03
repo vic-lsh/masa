@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use masa::time_now;
+use masa::{time_now, ContextBuilder as MasaContextBuilder, PriorityHint};
 use rand_distr::{Distribution, Exp};
 use serde::Deserialize;
 use serde_json;
@@ -15,6 +15,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::time::{Instant, MissedTickBehavior};
 use tokio::{fs, time};
+use tonic::masa::MasaRequestExt;
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::Request;
 use tracing_subscriber::layer::SubscriberExt;
@@ -201,14 +202,25 @@ async fn run_root_load(
                 tokio::spawn(async move {
                     let _permit = permit;
                     let start_at = time_now();
-                    let mut request = Request::new(RootRequest {
+                    let request = Request::new(RootRequest {
                         req_id,
                         start_at,
                         graph_name: graph_hint.into(),
                     });
 
-                    let ctx = masa::create_context("root", Duration::from_millis(entry.slo_ms));
-                    request.metadata_mut().insert_ctx("ctx", &ctx);
+                    let ctx = {
+                        let slo_us = entry.slo_ms * 1000;
+                        let start_at = time_now();
+                        let deadline = start_at + slo_us;
+                        let prio_hint = if masa::PRIO_OLDEST { start_at } else { deadline };
+                        MasaContextBuilder::new("root".to_string(), req_id)
+                            .slo(slo_us)
+                            .gateway_entry(start_at)
+                            .deadline(deadline)
+                            .prio_hint(PriorityHint::new(prio_hint))
+                            .build()
+                    };
+                    let request = request.with_masa_context(&ctx);
 
                     let start_time = Instant::now();
                     let res = rpc_client.root(request).await;

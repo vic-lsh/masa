@@ -2,7 +2,8 @@ use crate::{masa::context::read_context, GrpcMethod, Request, Status};
 use std::sync::Arc;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
-use masa_core::{Context, ContextBuilder, PriorityHint};
+use super::MasaRequestExt;
+use masa_core::{Context, ContextBuilder};
 
 #[derive(Debug)]
 /// This policy always sets the deadline of each request as
@@ -53,12 +54,13 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Result<(), Status> {
         // TODO: early return logic
         let deadline = self.ctx.deadline();
+        let prio_hint = self.ctx.prio_hint();
 
         let child_recv_ctx = ContextBuilder::from(&self.ctx)
             .deadline(deadline)
-            .prio_hint(PriorityHint::new(deadline))
+            .prio_hint(prio_hint)
             .build();
-        request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
+        request.set_masa_context(&child_recv_ctx);
 
         Ok(())
     }

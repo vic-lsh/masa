@@ -1,5 +1,4 @@
 use crate::{
-    body::BoxBody,
     masa::context::{read_context, METHOD_NAME_OVERRIDE_HEADER},
     Code, GrpcMethod, Request, Response, Status,
 };
@@ -10,20 +9,23 @@ use std::{
     time::{Duration, Instant},
 };
 
-use super::super::common::EarlyReturnHandler;
-use super::super::{resolve_method_name, ClientHooks, MasaHooks, ParentHooks, ServerHooks};
+use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
+use super::super::{
+    resolve_method_name, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks,
+};
 use super::{get_estimate, track_method_latency, PERCENTILE};
 use masa_core::{
-    time_now, Context, ContextBuilder, LatencyEstimator, LatencyRms, PriorityHint, EARLY_RETURN,
+    time_now, Context, ContextBuilder, LatencyDistribution, LatencyEstimator, PriorityHint,
+    EARLY_RETURN,
 };
 use std::sync::atomic::AtomicUsize;
 
 /// Type alias for the latency estimator used in the local deadline policy.
 /// Change this to use a different estimator (e.g., `LatencyRms`).
-pub(crate) type LocalLatencyEstimator = LatencyRms;
+pub(crate) type LocalLatencyEstimator = LatencyDistribution;
 
 #[derive(Debug)]
-/// This policy computes the deadline d of a child request as  
+/// This policy computes the deadline d of a child request as
 ///   d = d_p - e_rem
 /// where d_p is the deadline of the parent request and e_rem is an estimate for the remaining time
 /// left in the request after this child request executes. e_rem is estimated by sampling from the
@@ -105,6 +107,7 @@ pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyE
     ctx: Context,
     server: Arc<ServerContext<E>>,
 
+    q_lat_tracker: QueueLatencyTracker,
     early_return: EarlyReturnHandler,
     child_end_times: Mutex<Vec<(String, Instant)>>,
     // Map from child_method.id() to resolved child method name
@@ -150,6 +153,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             resolved_method,
             ctx: read_context(req),
             server: server_ctx,
+            q_lat_tracker: QueueLatencyTracker::new(),
             early_return: EarlyReturnHandler::new(
                 method.service(),
                 resolve_method_name(method, req),
@@ -163,6 +167,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             return Err(Err(self.early_return.issue_error()));
         }
 
+        self.q_lat_tracker.track_poll();
         Ok(())
     }
 
@@ -232,7 +237,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             .deadline(deadline)
             .prio_hint(PriorityHint::new(prio_hint))
             .build();
-        request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
+        request.set_masa_context(&child_recv_ctx);
 
         Ok(())
     }
@@ -243,8 +248,15 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         response: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext<E>,
     ) -> Result<(), Status> {
+        self.q_lat_tracker.track_child_response(response);
         // Finalize child context to track client runtime if response is not early return
         child_ctx.finalize(response);
+
+        if let Some(parent_to_child_id) = &child_ctx.parent_to_child_id {
+            if let Some((_, child)) = parent_to_child_id.split_once("=>") {
+                self.early_return.set_last_child(child.to_string());
+            }
+        }
 
         if let Err(status) = response {
             // NOTE(vic): could we avoid cloning here?
@@ -265,9 +277,9 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         if !is_early_return_response(result) {
             self.track_latencies();
         }
+        self.q_lat_tracker
+            .inject_context_metadata(&self.ctx, result);
     }
-
-    fn finalize_after_serialization(&self, _response: &mut http::Response<BoxBody>) {}
 }
 
 impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
