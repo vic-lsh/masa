@@ -1,9 +1,10 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use masa::{Context, ContextBuilder};
+use masa::Context;
+use std::time::Duration;
 use tonic::metadata::MetadataMap;
 
 fn bench_serialization(c: &mut Criterion) {
-    let ctx = ContextBuilder::new("test-api", 123).slo(100).build();
+    let ctx = masa::create_context("test-api", Duration::from_micros(100));
     let ctx_str = ctx.to_header_string();
 
     let mut group = c.benchmark_group("Serialization");
@@ -20,7 +21,7 @@ fn bench_serialization(c: &mut Criterion) {
 }
 
 fn bench_metadata_map(c: &mut Criterion) {
-    let ctx = ContextBuilder::new("test-api", 123).slo(100).build();
+    let ctx = masa::create_context("test-api", Duration::from_micros(100));
 
     let mut group = c.benchmark_group("MetadataMap");
 

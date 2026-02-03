@@ -8,7 +8,6 @@ use std::{
 };
 
 use anyhow::Context;
-use masa::{time_now, ContextBuilder as MasaContextBuilder, PriorityHint};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::{mpsc, Semaphore};
@@ -250,7 +249,6 @@ pub async fn run_replay_load(
     for item in work_items.iter().cloned() {
         let ReplayWorkItem { offset_us, payload } = item;
 
-        let req_id = payload.req_id;
         let schedule_time = start_instant + Duration::from_micros(offset_us);
         let permit_pool = inflight_guard.clone();
         let latency_sample_tx = latency_sample_tx.clone();
@@ -269,22 +267,7 @@ pub async fn run_replay_load(
             stats.sent.fetch_add(1, Ordering::Relaxed);
             let mut request = Request::new(payload);
 
-            let ctx = {
-                let slo = 50_000;
-                let start_at = time_now();
-                let deadline = start_at + slo;
-                let prio_hint = if masa::PRIO_OLDEST {
-                    start_at
-                } else {
-                    deadline
-                };
-                MasaContextBuilder::new("replay".to_string(), req_id)
-                    .slo(slo)
-                    .gateway_entry(start_at)
-                    .deadline(deadline)
-                    .prio_hint(PriorityHint::new(prio_hint))
-                    .build()
-            };
+            let ctx = masa::create_context("replay", Duration::from_micros(50_000));
 
             request.metadata_mut().insert_ctx("ctx", &ctx);
             let send_started = StdInstant::now();
