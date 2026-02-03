@@ -164,4 +164,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = LoadGenArgs::from_args();
     load_gen_main::<RequestHandler, SyntheticClient>(args, time_now()).await
 }
-

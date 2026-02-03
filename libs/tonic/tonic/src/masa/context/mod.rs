@@ -203,9 +203,7 @@ pub const METHOD_NAME_OVERRIDE_HEADER: &str = "x-masa-method-name";
 pub(crate) const MASA_CONTEXT_HEADER: &str = masa_core::MASA_CONTEXT_HEADER;
 
 /// Get the MASA context from metadata.
-pub fn get_masa_context_from_metadata(
-    metadata: &crate::metadata::MetadataMap,
-) -> Option<Context> {
+pub fn get_masa_context_from_metadata(metadata: &crate::metadata::MetadataMap) -> Option<Context> {
     metadata
         .get(MASA_CONTEXT_HEADER)
         .and_then(|v| v.to_str().ok())
@@ -213,10 +211,7 @@ pub fn get_masa_context_from_metadata(
 }
 
 /// Set the MASA context in metadata.
-pub fn set_masa_context_in_metadata(
-    metadata: &mut crate::metadata::MetadataMap,
-    ctx: &Context,
-) {
+pub fn set_masa_context_in_metadata(metadata: &mut crate::metadata::MetadataMap, ctx: &Context) {
     metadata.insert_ctx(MASA_CONTEXT_HEADER, ctx);
 }
 
