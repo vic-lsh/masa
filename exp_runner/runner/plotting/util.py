@@ -168,17 +168,14 @@ def _parse_error_columns(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[mask_er, "error_type"] = "EarlyReturn"
 
     # 3. Vectorized extraction using Regex
-    # Regex captures: /EarlyReturn:<Service>:<Method>(|<LastChild>)?
+    # Regex captures: /EarlyReturn?src=<svc>::<method>?last_rpc=<last_child>
     # Pattern explanation:
-    # ^/EarlyReturn:      Start with literal
-    # (?P<er_service>[^:]+)  Capture service (chars until next colon)
-    # :                   Literal colon
-    # (?P<er_method>[^|]+)   Capture method (chars until pipe or end)
-    # (?:\|(?P<er_last_child>.*))?  Optional group: pipe followed by anything (last child)
-    # Updated to support legacy format with colon separator as well:
-    # (?P<er_method>[^:|]+)  Capture method (chars until colon, pipe, or end)
-    # (?:[|:](?P<er_last_child>.*))? Optional group: separator (pipe or colon) + last child
-    pattern = r"^/EarlyReturn:(?P<er_service>[^:]+):(?P<er_method>[^:|]+)(?:[|:](?P<er_last_child>.*))?$"
+    # ^/EarlyReturn\?src=         Start with literal prefix
+    # (?P<er_service>.+?)         Capture service (non-greedy)
+    # ::                          Literal separator
+    # (?P<er_method>[^?]+)        Capture method (until next ? or end)
+    # (?:\?last_rpc=(?P<er_last_child>.*))?  Optional group: ?last_rpc= followed by anything
+    pattern = r"^/EarlyReturn\?src=(?P<er_service>.+?)::(?P<er_method>[^?]+)(?:\?last_rpc=(?P<er_last_child>.*))?$"
 
     extracted_data = df.loc[mask_er, "error"].str.extract(pattern)
 
