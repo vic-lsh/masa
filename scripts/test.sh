@@ -26,7 +26,7 @@ packages=(
     # our evaluation apps test suite
     "hotel"
     "socialnet"
-    
+
     # simulator
     "generic-service"
     "sim-config"
@@ -71,16 +71,30 @@ for package in "${packages[@]}"; do
         # otherwise, test with package name and optionally with feature flags
         cargo test -p "$package" $features
     fi
-    
-    
+
+
     test_status=$?
-    
+
     # If the test failed, update the overall status to nonzero
     if [ $test_status -ne 0 ]; then
         overall_status=1
         failed_packages+=("$package")
     fi
 done
+
+echo "======== Testing tonic (masa features: prio_local + est-rms) ========"
+cargo test -p tonic --features "masa,prio_local,est-rms"
+if [ $? -ne 0 ]; then
+    overall_status=1
+    failed_packages+=("tonic (prio_local,est-rms)")
+fi
+
+echo "======== Testing tonic (masa features: prio_local + est-hist) ========"
+cargo test -p tonic --features "masa,prio_local,est-hist"
+if [ $? -ne 0 ]; then
+    overall_status=1
+    failed_packages+=("tonic (prio_local,est-hist)")
+fi
 
 if [ ${#failed_packages[@]} -ne 0 ]; then
     echo "The following packages failed their tests:"
@@ -92,4 +106,3 @@ else
 fi
 
 exit $overall_status
-

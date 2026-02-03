@@ -14,14 +14,15 @@ use super::super::{
     resolve_method_name, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks,
 };
 use super::{get_estimate, track_method_latency, PERCENTILE};
-use masa_core::{
-    time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint, EARLY_RETURN,
-};
+use masa_core::{time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint, EARLY_RETURN};
 
 #[cfg(feature = "est-hist")]
 use masa_core::LatencyDistribution as LatencyHistogram;
 
-#[cfg(any(feature = "est-rms", all(not(feature = "est-rms"), not(feature = "est-hist"))))]
+#[cfg(any(
+    feature = "est-rms",
+    all(not(feature = "est-rms"), not(feature = "est-hist"))
+))]
 use masa_core::LatencyRms;
 
 use std::sync::atomic::AtomicUsize;
@@ -37,7 +38,10 @@ compile_error!("Features 'est-rms' or 'est-hist' require 'prio_local' to be enab
 #[cfg(feature = "est-hist")]
 pub(crate) type LocalLatencyEstimator = LatencyHistogram;
 
-#[cfg(any(feature = "est-rms", all(not(feature = "est-rms"), not(feature = "est-hist"))))]
+#[cfg(any(
+    feature = "est-rms",
+    all(not(feature = "est-rms"), not(feature = "est-hist"))
+))]
 pub(crate) type LocalLatencyEstimator = LatencyRms;
 
 #[derive(Debug)]
@@ -364,5 +368,50 @@ impl<E: LatencyEstimator + Default + 'static> ChildContext<E> {
                 client_runtime,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use masa_core::LatencyRms;
+
+    #[test]
+    fn test_server_context_rms_integration() {
+        let ctx = ServerContext::<LatencyRms>::new("test_service");
+        let method = "test_method".to_string();
+
+        // Inject an estimator with a short update interval (2) for testing.
+        // By default, LatencyRms has a large update interval (512), which makes testing hard.
+        {
+            let mut map = ctx.est_child_latency.write().unwrap();
+            map.insert(method.clone(), LatencyRms::new(2));
+        }
+
+        // 1st track: sum_sq=100, count=1, since_update=1. No update yet.
+        track_method_latency(&*ctx.est_child_latency, method.clone(), 10);
+
+        // Estimate uses cached RMS value (initially 0).
+        let est = get_estimate(&*ctx.est_child_latency, method.clone());
+        assert_eq!(est, Some(0));
+
+        // 2nd track: sum_sq=200, count=2, since_update=2. Update triggers.
+        // RMS = sqrt( (10^2 + 10^2) / 2 ) = 10.
+        track_method_latency(&*ctx.est_child_latency, method.clone(), 10);
+
+        let est = get_estimate(&*ctx.est_child_latency, method.clone());
+        assert_eq!(est, Some(10));
+
+        // 3rd track: sum_sq=200+400=600, count=3, since_update=1. No update yet.
+        track_method_latency(&*ctx.est_child_latency, method.clone(), 20);
+        let est = get_estimate(&*ctx.est_child_latency, method.clone());
+        assert_eq!(est, Some(10)); // Still 10
+
+        // 4th track: sum_sq=600+400=1000, count=4, since_update=2. Update triggers.
+        // RMS = sqrt( (100 + 100 + 400 + 400) / 4 ) = sqrt(250) ≈ 15.
+        track_method_latency(&*ctx.est_child_latency, method.clone(), 20);
+        let est = get_estimate(&*ctx.est_child_latency, method.clone());
+        // integer_sqrt(250) is 15 (15*15=225, 16*16=256)
+        assert_eq!(est, Some(15));
     }
 }
