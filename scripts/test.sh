@@ -82,18 +82,18 @@ for package in "${packages[@]}"; do
     fi
 done
 
-echo "======== Testing tonic (masa features: prio_local + est-rms) ========"
-cargo test -p tonic --features "masa,prio_local,est-rms"
+echo "======== Testing tonic (masa features: prio_local + est_rms) ========"
+cargo test -p tonic --features "masa,prio_local,est_rms"
 if [ $? -ne 0 ]; then
     overall_status=1
-    failed_packages+=("tonic (prio_local,est-rms)")
+    failed_packages+=("tonic (prio_local,est_rms)")
 fi
 
-echo "======== Testing tonic (masa features: prio_local + est-hist) ========"
-cargo test -p tonic --features "masa,prio_local,est-hist"
+echo "======== Testing tonic (masa features: prio_local + est_hist) ========"
+cargo test -p tonic --features "masa,prio_local,est_hist"
 if [ $? -ne 0 ]; then
     overall_status=1
-    failed_packages+=("tonic (prio_local,est-hist)")
+    failed_packages+=("tonic (prio_local,est_hist)")
 fi
 
 if [ ${#failed_packages[@]} -ne 0 ]; then
