@@ -1,10 +1,10 @@
 use crate::{Code, Response, Status};
-use masa_core::{time_now, Context, EARLY_RETURN};
 #[cfg(feature = "trace-queue")]
 use masa_core::QueueLatencies;
-use std::sync::atomic::{AtomicBool, Ordering};
+use masa_core::{time_now, Context, EARLY_RETURN};
 #[cfg(feature = "trace-queue")]
 use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 #[derive(Debug)]
@@ -168,5 +168,10 @@ impl QueueLatencyTracker {
 
     pub(crate) fn track_child_response<T>(&self, _response: &Result<Response<T>, Status>) {}
 
-    pub(crate) fn inject_context_metadata<T>(&self, _ctx: &Context, _result: &mut Result<Response<T>, Status>) {}
+    pub(crate) fn inject_context_metadata<T>(
+        &self,
+        _ctx: &Context,
+        _result: &mut Result<Response<T>, Status>,
+    ) {
+    }
 }
