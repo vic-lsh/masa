@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
-use crate::runtime::task::Identifiable;
+use crate::runtime::task::{Identifiable, Traceable};
 use masa_core::{Prioritize, PriorityHint};
 
 #[allow(dead_code)]
@@ -32,7 +32,7 @@ pub(crate) struct BinaryHeapRoundRobinQueue<T, const USE_INFRA_QUEUE: bool = fal
     infra_rr_queue: VecDeque<T>,
 }
 
-impl<T: Ord + PartialOrd + Prioritize + Identifiable, const USE_INFRA_QUEUE: bool> Queue
+impl<T: Ord + PartialOrd + Prioritize + Identifiable + Traceable, const USE_INFRA_QUEUE: bool> Queue
     for BinaryHeapRoundRobinQueue<T, USE_INFRA_QUEUE>
 {
     type Item = T;
@@ -45,7 +45,8 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable, const USE_INFRA_QUEUE: boo
         }
     }
 
-    fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
+    fn push(&mut self, mut item: Self::Item) -> Result<(), PushError<Self::Item>> {
+        item.timer().set_enqueue_time();
         if USE_INFRA_QUEUE && item.priority() == PriorityHint::infra() {
             self.infra_rr_queue.push_back(item);
             return Ok(());
@@ -75,7 +76,8 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable, const USE_INFRA_QUEUE: boo
 
     fn pop(&mut self) -> Result<Self::Item, PopError> {
         if USE_INFRA_QUEUE {
-            if let Some(item) = self.infra_rr_queue.pop_front() {
+            if let Some(mut item) = self.infra_rr_queue.pop_front() {
+                item.timer().record_queue_lat();
                 return Ok(item);
             }
         }
@@ -89,7 +91,13 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable, const USE_INFRA_QUEUE: boo
             }
         }
 
-        self.rr_queue.pop_front().ok_or(PopError::Empty)
+        self.rr_queue
+            .pop_front()
+            .ok_or(PopError::Empty)
+            .map(|mut e| {
+                e.timer().record_queue_lat();
+                e
+            })
     }
 
     fn len(&self) -> usize {
@@ -128,12 +136,22 @@ impl<T, const USE_INFRA_QUEUE: bool> IntoSchedFlavor
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::task::Id;
+    use crate::runtime::task::{Id, TraceTimer, Traceable};
 
-    #[derive(Debug, Clone)]
+    #[derive(Clone)]
     struct MockTask {
         id: Id,
         priority: PriorityHint,
+        timer: TraceTimer,
+    }
+
+    impl std::fmt::Debug for MockTask {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("MockTask")
+                .field("id", &self.id)
+                .field("priority", &self.priority)
+                .finish()
+        }
     }
 
     impl MockTask {
@@ -141,13 +159,21 @@ mod tests {
             Self {
                 id: Id(id),
                 priority: PriorityHint::new(priority),
+                timer: TraceTimer::new(),
             }
         }
         fn new_infra(id: u64) -> Self {
             Self {
                 id: Id(id),
                 priority: PriorityHint::infra(),
+                timer: TraceTimer::new(),
             }
+        }
+    }
+
+    impl Traceable for MockTask {
+        fn timer(&mut self) -> &mut TraceTimer {
+            &mut self.timer
         }
     }
 

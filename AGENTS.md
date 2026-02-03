@@ -65,8 +65,6 @@ Key policy flags:
 - `prio_local`: Priority by local deadline — **only works for `hotel`** as it requires a call graph description
 - `early`: Combined with a policy (e.g., `prio_global,early`) to return early for requests past their e2e deadline, avoiding wasteful work
 
-Tracing variants exist for instrumentation: `fifo_span_tracing`, `fifo_queue_tracing`, `prio_global_queue_tracing`.
-
 `scripts/check.sh` checks: default (no features), `fifo`, `prio_global`, `prio_global,early`, `prio_local,early`. CI additionally checks `prio_oldest,early`.
 
 ## Architecture
@@ -135,6 +133,7 @@ See `docs/MASA_POLICY_IMPL.md` for detailed implementation walkthrough covering 
 ### Working in this Codebase
 - Before editing, understand call sites and dependencies
 - Keep changes scoped to the request unless necessary for correctness
+- When adding a new feature flag, be sure to update the documentation and include it in all applications.
 
 ## Applications
 

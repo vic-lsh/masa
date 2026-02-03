@@ -12,6 +12,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::{mpsc, Semaphore};
 use tokio::time::Instant;
+use tonic::masa::MasaRequestExt;
 use tonic::metadata::MetadataMap;
 use tonic::Request;
 
@@ -265,11 +266,11 @@ pub async fn run_replay_load(
             let _permit = permit;
 
             stats.sent.fetch_add(1, Ordering::Relaxed);
-            let mut request = Request::new(payload);
+            let request = Request::new(payload);
 
             let ctx = masa::create_context("replay", Duration::from_micros(50_000));
 
-            request.metadata_mut().insert_ctx("ctx", &ctx);
+            let request = request.with_masa_context(&ctx);
             let send_started = StdInstant::now();
             let res = rpc_client.replay(request).await;
             let e2e_latency_us = send_started.elapsed().as_micros().min(u64::MAX as u128) as u64;
@@ -296,9 +297,12 @@ pub async fn run_replay_load(
 }
 
 pub fn extract_queue_latency(metadata: &MetadataMap) -> Option<u64> {
-    metadata
-        .get("x-queue-latency")
-        .or_else(|| metadata.get("X-Queue-Latency"))
-        .and_then(|value| value.to_str().ok())
-        .and_then(|s| s.parse::<u64>().ok())
+    if let Some(ctx_str) = metadata.get("ctx").and_then(|v| v.to_str().ok()) {
+        let ctx = masa::Context::from_header_string(ctx_str);
+        if let Some(ql) = ctx.queue_latencies {
+            return Some(ql.initial + ql.resume);
+        }
+    }
+
+    None
 }

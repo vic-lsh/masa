@@ -4,10 +4,9 @@ use std::task::Poll;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::common::{EarlyReturnHandler, QueueLatencyTracker};
-use super::resolve_method_name;
-use crate::body::BoxBody;
+use super::{resolve_method_name, MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER};
 use crate::Response;
-use masa_core::{Context, ContextBuilder, PriorityHint};
+use masa_core::{Context, ContextBuilder};
 
 #[derive(Debug)]
 /// This policy always sets the deadline of each request as
@@ -41,6 +40,16 @@ pub struct ParentContext {
     early_return: EarlyReturnHandler,
 }
 
+/// Resolve the method name from Request metadata, checking for override header.
+fn resolve_method_name_from_request<T>(method: GrpcMethod, request: &Request<T>) -> String {
+    if let Some(header_value) = request.metadata().get(METHOD_NAME_OVERRIDE_HEADER) {
+        if let Ok(method_name) = header_value.to_str() {
+            return method_name.to_string();
+        }
+    }
+    method.id().to_string()
+}
+
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn begin<B>(
         method: GrpcMethod,
@@ -68,21 +77,25 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
     fn before_child_rpc<T>(
         &self,
-        _child_method: GrpcMethod,
+        child_method: GrpcMethod,
         request: &mut Request<T>,
-        _child_ctx: &mut ChildContext,
+        child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
         if self.early_return.check(&self.ctx) {
             return Err(self.early_return.issue_error());
         }
 
+        let child_method_name = resolve_method_name_from_request(child_method, request);
+        child_ctx.set_method_name(child_method_name);
+
         let deadline = self.ctx.deadline();
+        let prio_hint = self.ctx.prio_hint();
 
         let child_recv_ctx = ContextBuilder::from(&self.ctx)
             .deadline(deadline)
-            .prio_hint(PriorityHint::new(deadline))
+            .prio_hint(prio_hint)
             .build();
-        request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
+        request.set_masa_context(&child_recv_ctx);
 
         Ok(())
     }
@@ -91,9 +104,12 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         &self,
         _method: GrpcMethod,
         response: &mut Result<Response<T>, Status>,
-        _child_ctx: ChildContext,
+        child_ctx: ChildContext,
     ) -> Result<(), Status> {
         self.q_lat_tracker.track_child_response(response);
+        if let Some(child) = child_ctx.child_method_name {
+            self.early_return.set_last_child(child);
+        }
         Ok(())
     }
 
@@ -114,17 +130,28 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     }
 
     // expect frontend method, all other method are going send back their latency trace
-    fn finalize_after_serialization(&self, response: &mut http::Response<BoxBody>) {
-        self.q_lat_tracker.inject_header(response);
+    fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
+        self.q_lat_tracker
+            .inject_context_metadata(&self.ctx, result);
     }
 }
 
 #[derive(Debug, Clone)]
 #[allow(unreachable_pub)]
-pub struct ChildContext {}
+pub struct ChildContext {
+    pub child_method_name: Option<String>,
+}
 
 impl ClientHooks for ChildContext {
     fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
-        Self {}
+        Self {
+            child_method_name: None,
+        }
+    }
+}
+
+impl ChildContext {
+    pub(super) fn set_method_name(&mut self, name: String) {
+        self.child_method_name = Some(name);
     }
 }

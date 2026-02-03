@@ -3,6 +3,9 @@ name = "masa-benchmark"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
+
 [dependencies]
 masa = { path = "../../libs/masa" }
 tonic = { path = "../../libs/tonic/tonic" }
