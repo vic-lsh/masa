@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents (e.g., Claude Code, Codex, Gemini CLI) when working with code in this repository.
 
 ## Project Overview
 
@@ -47,8 +47,8 @@ pytest
 
 # Run experiments (they run for a long time; don't run unless the user asks you to)
 # See EXPERIMENT_WORKFLOW.md for detailed instructions
-uv run python -m exp.runner run <app> <experiment_name> --plot
-uv run python -m exp.runner plot <app> <experiment_name>
+uv run python -m exp_runner.runner run <app> <experiment_name> --plot
+uv run python -m exp_runner.runner plot <app> <experiment_name>
 ```
 
 ## Scheduling Policies (Feature Flags)
@@ -115,11 +115,14 @@ See `docs/MASA_POLICY_IMPL.md` for detailed implementation walkthrough covering 
 - Use `Result` and `Option` idiomatically; avoid `unwrap()` except in tests
 - The codebase relies heavily on `tokio`; use standard async patterns
 - After changes: run `./scripts/check.sh`
+- Do not tolerate any warnings in cargo-check. Always fix them.
+- Use `./scripts/format.sh` to format code consistently.
+- Write idiomatic Rust code.
 
 ### Python
 - Use type hints for function arguments and return values
 - Use `uv add <package>` for dependencies, not pip directly
-- Experiment logic goes in `exp/runner`, tests in `exp/tests`
+- Experiment logic goes in `exp_runner/runner`, tests in `exp_runner/tests`
 - After changes in `exp/`: run `pytest`
 
 ### Testing

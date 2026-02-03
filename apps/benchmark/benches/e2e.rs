@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use masa::ContextBuilder;
+
 use std::time::Duration;
 use tonic::{transport::Server, Request, Response, Status};
 
@@ -67,7 +67,7 @@ fn bench_e2e_reused_client(c: &mut Criterion) {
     group.bench_function("ping_rpc", |b| {
         b.to_async(&rt).iter(|| async {
             let mut client = client.clone();
-            let ctx = ContextBuilder::new("test-api", 123).slo(100).build();
+            let ctx = masa::create_context("test-api", Duration::from_micros(100));
             let mut req = Request::new(PingRequest {
                 message: "ping".into(),
             });
