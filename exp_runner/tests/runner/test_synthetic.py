@@ -8,10 +8,11 @@ This module tests the synthetic app functionality including:
 - Application component integration
 """
 
-import pytest
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
+
+import pytest
 
 from exp_runner.runner.apps.synthetic import (
     SyntheticApp,
@@ -34,7 +35,7 @@ class TestSyntheticLoadGenerator:
         """Test that load generator uses 'latest' without features."""
         loadgen = SyntheticLoadGenerator(features=None)
         assert loadgen.get_image_name() == "synthetic_client_bench:latest"
-        
+
         loadgen2 = SyntheticLoadGenerator(features="")
         assert loadgen2.get_image_name() == "synthetic_client_bench:latest"
 
@@ -59,8 +60,9 @@ class TestSyntheticLoadGenerator:
         assert loadgen.get_network_name() == "proj_synthetic_network"
 
     def test_network_name_override(self):
-        """Test explicit network override is honored."""
-        loadgen = SyntheticLoadGenerator(features="test", project_name="proj", network_name="net")
+        loadgen = SyntheticLoadGenerator(
+            features="test", project_name="proj", network_name="net"
+        )
         assert loadgen.get_network_name() == "net"
 
     def test_binary_name(self):
@@ -78,26 +80,26 @@ class TestSyntheticLoadGenerator:
 class TestSyntheticBuilder:
     """Tests for SyntheticBuilder with feature-based tags and cache ID consistency."""
 
-    @patch('exp_runner.runner.apps.synthetic.subprocess.run')
-    @patch('exp_runner.runner.apps.synthetic.logger')
+    @patch("exp_runner.runner.apps.synthetic.subprocess.run")
+    @patch("exp_runner.runner.apps.synthetic.logger")
     def test_build_with_features(self, mock_logger, mock_subprocess):
         """Test that builder creates correct docker build command with features."""
         builder = SyntheticBuilder()
         mock_subprocess.return_value = Mock(returncode=0)
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             repo_root = Path(tmpdir) / "repo"
             app_dir = Path(tmpdir) / "app"
             repo_root.mkdir()
             app_dir.mkdir()
-            
+
             gen_config_path = repo_root / "gen_config.json"
-            
+
             # Create config file
             gen_config_path.write_text("{}")
-            
+
             features = "policy-a,policy-b"
-            
+
             builder.build(
                 repo_root=repo_root,
                 app_dir=app_dir,
@@ -106,15 +108,16 @@ class TestSyntheticBuilder:
                 no_cache=False,
                 gen_config_path=gen_config_path,
             )
-            
+
             # Check that subprocess.run was called multiple times
             assert mock_subprocess.call_count >= 3
-            
+
             # Check that all calls include docker build
             all_calls = [call[0][0] for call in mock_subprocess.call_args_list]
             for cmd in all_calls:
                 assert "docker" in cmd
                 assert "build" in cmd
+
 
 class TestSyntheticApp:
     """Tests for SyntheticApp integration with feature-based tags."""
@@ -122,7 +125,7 @@ class TestSyntheticApp:
     def test_get_image_tag(self):
         """Test that app returns correct image tag."""
         app = SyntheticApp()
-        
+
         assert app.get_image_tag("policy-a,policy-b") == "policy-a-policy-b"
         assert app.get_image_tag("scheduling-fifo") == "scheduling-fifo"
         assert app.get_image_tag(None) == "latest"
@@ -132,27 +135,29 @@ class TestSyntheticApp:
         """Test that app creates load generator with features."""
         app = SyntheticApp()
         features = "policy-x,policy-y"
-        
+
         loadgen = app.create_load_generator(features=features)
-        
+
         assert isinstance(loadgen, SyntheticLoadGenerator)
         assert loadgen.features == features
         assert loadgen.get_image_name() == "synthetic_client_bench:policy-x-policy-y"
 
     def test_safe_project_name(self):
-        name = _safe_project_name(experiment_name="exp 1", iteration=0, policy="fifo,early")
+        name = _safe_project_name(
+            experiment_name="exp 1", iteration=0, policy="fifo,early"
+        )
         # docker compose project name allowed chars: [a-z0-9_-]
         assert "," not in name
         assert " " not in name
-        assert name.startswith("synthetic-")
+        assert name.startswith("syn-")
         assert all(c.islower() or c.isdigit() or c in "-_" for c in name)
 
     def test_create_load_generator_without_features(self):
         """Test that app creates load generator without features."""
         app = SyntheticApp()
-        
+
         loadgen = app.create_load_generator(features=None)
-        
+
         assert isinstance(loadgen, SyntheticLoadGenerator)
         assert loadgen.features is None
         assert loadgen.get_image_name() == "synthetic_client_bench:latest"
@@ -161,10 +166,9 @@ class TestSyntheticApp:
         """Test that app creates correct builder."""
         app = SyntheticApp()
         builder = app.create_builder()
-        
+
         assert isinstance(builder, SyntheticBuilder)
 
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-
