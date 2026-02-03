@@ -31,8 +31,8 @@ def _safe_project_name(*, experiment_name: str, iteration: int, policy: str) -> 
     """
     raw = f"{experiment_name}|{iteration}|{policy}"
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
-    slug = re.sub(r"[^a-z0-9]+", "-", experiment_name.lower()).strip("-")[:16] or "exp"
-    return f"synthetic-{slug}-{digest}"
+    slug = re.sub(r"[^a-z0-9]+", "-", experiment_name.lower()).strip("-")[:12] or "exp"
+    return f"syn-{slug}-{digest}"
 
 
 class SyntheticLoadGenerator(LoadGenerator):
