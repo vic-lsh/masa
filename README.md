@@ -169,18 +169,31 @@ docker stats
 
 Note: The old bash scripts (`get-env.sh`, `docker-run.sh`, `loadgen-run.sh`, `docker-stop.sh`) have been replaced by the Python experiment runner.
 
-#### K8s (work-in-progress)
+#### K8s / Kind
 
-WARNING: This section is outdated and the functionality is likely broken.
+NOTE: This is currently only supported for `synthetic`.
 
-NOTE: This is currently only supported for `hotel`.
-NOTE: Running with k8s hasn't been well-tested. Please report issues if you find any.
+You can run experiments on Kubernetes (K8s) or Kind (Kubernetes in Docker) using the experiment runner.
 
-You should install k8s on your system before running scripts in this section. For local setups, [minikube](https://minikube.sigs.k8s.io/docs/) is recommeded.
+For Kind (recommended for local development):
+1. Ensure [Kind](https://kind.sigs.k8s.io/) is installed.
+2. Run with the `--kind` flag:
 
-For a one-click setup, run `apps/hotel/snippets/k8s/run_snippet.sh`.
+```bash
+uv run -m exp_runner run synthetic <experiment-name> --kind --plot
+```
 
-To see how to run the K8s step by step, read this ![README](apps/hotel/scripts/k8s/README.md) file in the k8s folder.
+The `--kind` flag implies `--k8s` and handles loading images into the Kind cluster automatically.
+
+For standard Kubernetes clusters:
+1. Ensure `kubectl` is configured to point to your cluster.
+2. Run with the `--k8s` flag:
+
+```bash
+uv run -m exp_runner run synthetic <experiment-name> --k8s --plot
+```
+
+Note: When using `--k8s` without `--kind`, you must ensure the container images are available to your cluster (e.g., pushed to a registry).
 
 ## List of policies
 

@@ -1,0 +1,85 @@
+# Default values for synthetic.
+
+image:
+    repository: ""
+    frontendName: synthetic_frontend
+    childName: synthetic_child
+    tag: latest
+    pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+    create: true
+    annotations: {}
+    name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+    # fsGroup: 2000
+
+securityContext: {}
+    # capabilities:
+    #   drop:
+    #   - ALL
+    # readOnlyRootFilesystem: true
+    # runAsNonRoot: true
+    # runAsUser: 1000
+
+service:
+    type: ClusterIP
+    port: 8000
+
+ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+        - host: chart-example.local
+          paths:
+              - path: /
+                pathType: ImplementationSpecific
+    tls: []
+
+resources:
+    frontend:
+        limits:
+            cpu: 1
+            memory: 1Gi
+        requests:
+            cpu: 100m
+            memory: 128Mi
+    child:
+        limits:
+            cpu: 500m
+            memory: 512Mi
+        requests:
+            cpu: 100m
+            memory: 128Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Log level for the application
+logLevel: "info"
+
+# Application Configuration
+# This object is converted to JSON and mounted at /usr/config.json
+# It is also used to generate the Kubernetes manifests for child services.
+appConfig:
+    call_graph:
+        # entry_point: "MS_56394::GqI6UW1mU4"
+        services: []
+        # Example:
+        # services:
+        #   - id: "MS_56394"
+        #     replicas: 1
+        #     methods:
+        #       - name: "GqI6UW1mU4"
+        #         latency_distribution: {"Exponential": {"mean": 10000.0}}
+        #         call_sequence: []

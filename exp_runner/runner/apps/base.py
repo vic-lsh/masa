@@ -32,7 +32,9 @@ class DockerConfig:
     loadgen_binary_name: str  # Binary name to run in load generator
 
     # Optional app-specific config
-    app_config_filename: Optional[str] = None  # Filename for loading from exp/ directory
+    app_config_filename: Optional[str] = (
+        None  # Filename for loading from exp/ directory
+    )
     app_config_filename: Optional[str] = (
         None  # Filename for loading from exp/ directory
     )
@@ -426,6 +428,7 @@ class AppPlugin(ABC):
         app_local_dir: Path,
         no_cache: bool,
         dry_run: bool = False,
+        **kwargs,
     ) -> None:
         """
         Run a single (iteration, policy) workload.
