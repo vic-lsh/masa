@@ -722,9 +722,17 @@ class SyntheticApp(AppPlugin):
         gen_config_path = output_dir / "gen_config.json"
 
         # Service name override for K8s
-        # In K8s chart, frontend service name is derived from release name (project_name)
-        # and suffix "-frontend".
-        service_name_override = f"{project_name}-frontend" if is_k8s else None
+        # In K8s chart, frontend service name is derived from the fullname helper
+        # which appends the chart name if not present in release name.
+        if is_k8s:
+            chart_name = "synthetic"
+            if chart_name in project_name:
+                fullname = project_name
+            else:
+                fullname = f"{project_name}-{chart_name}"
+            service_name_override = f"{fullname}-frontend"
+        else:
+            service_name_override = None
 
         self._generate_gen_config(
             template_config_path=template_gen_config_path,
