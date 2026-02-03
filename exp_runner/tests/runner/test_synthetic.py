@@ -146,7 +146,6 @@ class TestSyntheticApp:
         name = _safe_project_name(
             experiment_name="exp 1", iteration=0, policy="fifo,early"
         )
-        name = _safe_project_name(experiment_name="exp 1", iteration=0, policy="fifo,early")
         # docker compose project name allowed chars: [a-z0-9_-]
         assert "," not in name
         assert " " not in name

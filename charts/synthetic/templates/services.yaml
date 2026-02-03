@@ -1,0 +1,73 @@
+{{- range $service := .Values.appConfig.call_graph.services }}
+{{- $replicas := (int (default 1 $service.replicas)) }}
+{{- range $i, $e := until $replicas }}
+{{- $replicaNum := add1 $i }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "synthetic.fullname" $ }}-local-{{ $service.id | lower | replace "_" "-" }}-service-{{ $replicaNum }}
+  labels:
+    {{- include "synthetic.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: child-{{ $service.id | lower | replace "_" "-" }}-{{ $replicaNum }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "synthetic.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: child-{{ $service.id | lower | replace "_" "-" }}-{{ $replicaNum }}
+  template:
+    metadata:
+      labels:
+        {{- include "synthetic.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: child-{{ $service.id | lower | replace "_" "-" }}-{{ $replicaNum }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
+    spec:
+      containers:
+        - name: child
+          image: "{{ $.Values.image.repository }}{{ $.Values.image.childName }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          env:
+            - name: BINARY_NAME
+              value: synthetic_child
+            - name: LOG_LEVEL
+              value: {{ $.Values.logLevel | quote }}
+            - name: SERVICE_ID
+              value: {{ $service.id | quote }}
+            - name: DOCKER_COMPOSE_PROJECT_NAME
+              value: {{ include "synthetic.fullname" $ | quote }}
+          ports:
+            - containerPort: 8000
+              name: http
+          resources:
+            {{- toYaml $.Values.resources.child | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /usr/config.json
+              subPath: config.json
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "synthetic.fullname" $ }}-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # The service name must match what the client constructs: {project}-local-{service}-service-{replica}
+  name: {{ include "synthetic.fullname" $ }}-local-{{ $service.id | lower | replace "_" "-" }}-service-{{ $replicaNum }}
+  labels:
+    {{- include "synthetic.labels" $ | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "synthetic.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: child-{{ $service.id | lower | replace "_" "-" }}-{{ $replicaNum }}
+{{- end }}
+{{- end }}

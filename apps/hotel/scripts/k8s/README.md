@@ -1,5 +1,7 @@
 # k8s setup
 
+**NOTE: These scripts are for manual deployment only. The `exp_runner` automation tool does not yet support running the hotel benchmark on Kubernetes.**
+
 ## Configure k8s environment
 
 To run locally, install [minikube](https://minikube.sigs.k8s.io/docs/).
