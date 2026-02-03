@@ -20,4 +20,4 @@ pytest:
     - uv sync --dev
     - source .venv/bin/activate
   script:
-    - pytest
+    - ./scripts/test_python.sh
