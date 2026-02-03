@@ -2,6 +2,7 @@
 Synthetic application plugin.
 """
 
+import hashlib
 import json
 import logging
 import re
@@ -9,14 +10,13 @@ import shlex
 import subprocess
 import tempfile
 import time
-import hashlib
 from pathlib import Path
 from typing import Optional
 
 import yaml
 
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
-from .utils import normalize_features_to_tag, get_docker_progress_flag
+from .utils import get_docker_progress_flag, normalize_features_to_tag
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +31,8 @@ def _safe_project_name(*, experiment_name: str, iteration: int, policy: str) -> 
     """
     raw = f"{experiment_name}|{iteration}|{policy}"
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
-    slug = re.sub(r"[^a-z0-9]+", "-", experiment_name.lower()).strip("-")[:16] or "exp"
-    return f"synthetic-{slug}-{digest}"
+    slug = re.sub(r"[^a-z0-9]+", "-", experiment_name.lower()).strip("-")[:12] or "exp"
+    return f"syn-{slug}-{digest}"
 
 
 class SyntheticLoadGenerator(LoadGenerator):
@@ -558,7 +558,9 @@ class SyntheticApp(AppPlugin):
 
         # Initialize CPU monitor
         cpu_stats_file = output_dir / "cpu_stats.csv"
-        cpu_monitor = CPUMonitor(output_path=cpu_stats_file, poll_interval=2.0)
+        cpu_monitor = CPUMonitor(
+            output_path=cpu_stats_file, poll_interval=2.0, container_prefix=project_name
+        )
 
         try:
             docker.start(

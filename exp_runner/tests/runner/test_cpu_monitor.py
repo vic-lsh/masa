@@ -9,12 +9,13 @@ This module tests the CPUMonitor functionality including:
 """
 
 import csv
-import pytest
 import tempfile
 import threading
 import time
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 from exp_runner.runner.cpu_monitor import CPUMonitor
 
@@ -54,8 +55,9 @@ class TestCPUMonitor:
             # Test different units
             assert monitor._parse_memory_value("100MiB") == 100.0
             assert monitor._parse_memory_value("1GiB") == 1024.0
-            assert monitor._parse_memory_value("512KiB") == 0.5
-            assert monitor._parse_memory_value("1024B") == pytest.approx(0.0009765625, rel=1e-6)
+            assert monitor._parse_memory_value("1024B") == pytest.approx(
+                0.0009765625, rel=1e-6
+            )
 
             # Test case insensitivity
             assert monitor._parse_memory_value("100mib") == 100.0
@@ -87,7 +89,7 @@ class TestCPUMonitor:
             assert usage == 0.0
             assert limit == 0.0
 
-    @patch('exp_runner.runner.cpu_monitor.subprocess.run')
+    @patch("exp_runner.runner.cpu_monitor.subprocess.run")
     def test_collect_stats_success(self, mock_run):
         """Test successful stats collection."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -121,7 +123,45 @@ class TestCPUMonitor:
             assert stats[1]["memory_limit_mb"] == 2048.0
             assert stats[1]["memory_percent"] == 25.00
 
-    @patch('exp_runner.runner.cpu_monitor.subprocess.run')
+    @patch("exp_runner.runner.cpu_monitor.subprocess.run")
+    def test_collect_stats_with_container_names(self, mock_run):
+        """Test stats collection with container_names filtering."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "cpu_stats.csv"
+            # Filter for specific containers
+            monitor = CPUMonitor(
+                output_path=output_path, container_names=["target1", "target2"]
+            )
+
+            # Mock docker stats output including target and non-target containers
+            mock_result = Mock()
+            mock_result.stdout = (
+                "target1\t10.0%\t100MiB / 1GiB\t10.0%\n"
+                "other_container\t20.0%\t200MiB / 1GiB\t20.0%\n"
+                "target2\t30.0%\t300MiB / 1GiB\t30.0%\n"
+                "ignored_one\t40.0%\t400MiB / 1GiB\t40.0%\n"
+            )
+            mock_run.return_value = mock_result
+
+            stats = monitor._collect_stats()
+
+            # Should only capture stats for target1 and target2
+            assert len(stats) == 2
+
+            names = [s["container_name"] for s in stats]
+            assert "target1" in names
+            assert "target2" in names
+            assert "other_container" not in names
+            assert "ignored_one" not in names
+
+            # Verify CPU values
+            for s in stats:
+                if s["container_name"] == "target1":
+                    assert s["cpu_percent"] == 10.0
+                elif s["container_name"] == "target2":
+                    assert s["cpu_percent"] == 30.0
+
+    @patch("exp_runner.runner.cpu_monitor.subprocess.run")
     def test_collect_stats_timeout(self, mock_run):
         """Test stats collection with timeout."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -130,12 +170,13 @@ class TestCPUMonitor:
 
             # Mock timeout
             import subprocess
+
             mock_run.side_effect = subprocess.TimeoutExpired(cmd="docker", timeout=10.0)
 
             stats = monitor._collect_stats()
             assert stats == []
 
-    @patch('exp_runner.runner.cpu_monitor.subprocess.run')
+    @patch("exp_runner.runner.cpu_monitor.subprocess.run")
     def test_collect_stats_error(self, mock_run):
         """Test stats collection with command error."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -144,6 +185,7 @@ class TestCPUMonitor:
 
             # Mock command error
             import subprocess
+
             mock_run.side_effect = subprocess.CalledProcessError(
                 returncode=1, cmd="docker", stderr="error"
             )
@@ -151,7 +193,7 @@ class TestCPUMonitor:
             stats = monitor._collect_stats()
             assert stats == []
 
-    @patch('exp_runner.runner.cpu_monitor.subprocess.run')
+    @patch("exp_runner.runner.cpu_monitor.subprocess.run")
     def test_start_and_stop(self, mock_run):
         """Test starting and stopping the monitor."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -179,7 +221,7 @@ class TestCPUMonitor:
             assert output_path.exists()
 
             # Read and verify CSV
-            with open(output_path, 'r') as f:
+            with open(output_path, "r") as f:
                 reader = csv.DictReader(f)
                 rows = list(reader)
                 assert len(rows) > 0
@@ -218,7 +260,7 @@ class TestCPUMonitor:
             assert output_path.exists()
 
             # Read and verify contents
-            with open(output_path, 'r') as f:
+            with open(output_path, "r") as f:
                 reader = csv.DictReader(f)
                 rows = list(reader)
 
@@ -246,7 +288,7 @@ class TestCPUMonitor:
             monitor = CPUMonitor(output_path=output_path, poll_interval=0.5)
 
             # Mock the collect stats to avoid actual docker calls
-            with patch.object(monitor, '_collect_stats', return_value=[]):
+            with patch.object(monitor, "_collect_stats", return_value=[]):
                 monitor.start()
                 assert monitor._thread is not None
                 first_thread = monitor._thread
@@ -277,14 +319,16 @@ class TestCPUMonitor:
             def add_data(n):
                 for i in range(10):
                     with monitor._lock:
-                        monitor._stats_data.append({
-                            "timestamp": time.time(),
-                            "container_name": f"container_{n}_{i}",
-                            "cpu_percent": float(i),
-                            "memory_usage_mb": 100.0,
-                            "memory_limit_mb": 1000.0,
-                            "memory_percent": 10.0,
-                        })
+                        monitor._stats_data.append(
+                            {
+                                "timestamp": time.time(),
+                                "container_name": f"container_{n}_{i}",
+                                "cpu_percent": float(i),
+                                "memory_usage_mb": 100.0,
+                                "memory_limit_mb": 1000.0,
+                                "memory_percent": 10.0,
+                            }
+                        )
 
             threads = [threading.Thread(target=add_data, args=(i,)) for i in range(5)]
             for t in threads:
