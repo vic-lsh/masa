@@ -30,7 +30,7 @@ use crate::{
     logging::init_logging_file,
     timing::{get_timestamp, time_now},
 };
-use masa::{Context, ContextBuilder, PriorityHint};
+use masa::Context;
 use tonic::Response;
 use tonic::Status;
 
@@ -525,8 +525,6 @@ where
         warm_at: Instant,
         pause_at: Instant,
     ) {
-        let mut counter_request_id = 0;
-
         let mut set = JoinSet::new();
         let max_in_flight = self.gen_cfg.max_in_flight;
 
@@ -566,25 +564,10 @@ where
             let i = self.rng.gen_range(0..self.api_handlers.len());
             let handler = Arc::clone(&self.api_handlers[i]);
 
-            let ctx = {
-                let request_id = counter_request_id;
-                counter_request_id += 1;
-
-                let start_at = time_now();
-                let deadline = start_at + handler.slo();
-                let prio_hint = if masa::PRIO_OLDEST {
-                    start_at
-                } else {
-                    deadline
-                };
-
-                ContextBuilder::new(handler.api().to_string(), request_id)
-                    .slo(handler.slo())
-                    .gateway_entry(start_at)
-                    .deadline(deadline)
-                    .prio_hint(PriorityHint::new(prio_hint))
-                    .build()
-            };
+            let ctx = masa::create_context(
+                handler.api(),
+                std::time::Duration::from_micros(handler.slo()),
+            );
 
             let client = self.client.clone();
             let ctrs = Arc::clone(&counters);
