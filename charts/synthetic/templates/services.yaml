@@ -6,21 +6,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "synthetic.fullname" $ }}-local-{{ $service.id | lower }}-service-{{ $replicaNum }}
+  name: {{ include "synthetic.fullname" $ }}-local-{{ $service.id | lower | replace "_" "-" }}-service-{{ $replicaNum }}
   labels:
     {{- include "synthetic.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: child-{{ $service.id | lower }}-{{ $replicaNum }}
+    app.kubernetes.io/component: child-{{ $service.id | lower | replace "_" "-" }}-{{ $replicaNum }}
 spec:
   replicas: 1
   selector:
     matchLabels:
       {{- include "synthetic.selectorLabels" $ | nindent 6 }}
-      app.kubernetes.io/component: child-{{ $service.id | lower }}-{{ $replicaNum }}
+      app.kubernetes.io/component: child-{{ $service.id | lower | replace "_" "-" }}-{{ $replicaNum }}
   template:
     metadata:
       labels:
         {{- include "synthetic.selectorLabels" $ | nindent 8 }}
-        app.kubernetes.io/component: child-{{ $service.id | lower }}-{{ $replicaNum }}
+        app.kubernetes.io/component: child-{{ $service.id | lower | replace "_" "-" }}-{{ $replicaNum }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
     spec:
@@ -56,7 +56,7 @@ apiVersion: v1
 kind: Service
 metadata:
   # The service name must match what the client constructs: {project}-local-{service}-service-{replica}
-  name: {{ include "synthetic.fullname" $ }}-local-{{ $service.id | lower }}-service-{{ $replicaNum }}
+  name: {{ include "synthetic.fullname" $ }}-local-{{ $service.id | lower | replace "_" "-" }}-service-{{ $replicaNum }}
   labels:
     {{- include "synthetic.labels" $ | nindent 4 }}
 spec:
@@ -68,6 +68,6 @@ spec:
       name: http
   selector:
     {{- include "synthetic.selectorLabels" $ | nindent 4 }}
-    app.kubernetes.io/component: child-{{ $service.id | lower }}-{{ $replicaNum }}
+    app.kubernetes.io/component: child-{{ $service.id | lower | replace "_" "-" }}-{{ $replicaNum }}
 {{- end }}
 {{- end }}
