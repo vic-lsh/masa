@@ -399,32 +399,32 @@ def create_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   # Run a single experiment
-  python -m exp_runner.runner run hotel exp1 --plot
+  python -m exp_runner run hotel exp1 --plot
 
   # Build Docker images for an experiment
-  python -m exp_runner.runner build hotel exp1
+  python -m exp_runner build hotel exp1
 
   # Build images for a specific policy
-  python -m exp_runner.runner build synthetic exp1 --policy prio_global
+  python -m exp_runner build synthetic exp1 --policy prio_global
 
   # Show build commands without executing them
-  python -m exp_runner.runner build-dryrun hotel exp1
+  python -m exp_runner build-dryrun hotel exp1
 
   # Show build commands for a specific policy
-  python -m exp_runner.runner build-dryrun synthetic exp1 --policy prio_global
+  python -m exp_runner build-dryrun synthetic exp1 --policy prio_global
 
   # Queue multiple experiments
-  python -m exp_runner.runner run-multiple synthetic "exp1 exp2 exp3" --plot
+  python -m exp_runner run-multiple synthetic "exp1 exp2 exp3" --plot
 
   # Generate plots only
-  python -m exp_runner.runner plot hotel exp1
-  python -m exp_runner.runner plot mssim e2e_test
+  python -m exp_runner plot hotel exp1
+  python -m exp_runner plot mssim e2e_test
 
   # Generate replica plots for hotel experiments
-  python -m exp_runner.runner plot-replicas hotel
+  python -m exp_runner plot-replicas hotel
 
   # Run with verbose logging
-  python -m exp_runner.runner run hotel exp1 --verbose
+  python -m exp_runner run hotel exp1 --verbose
         """,
     )
 
@@ -467,9 +467,9 @@ Examples:
         help="Print what would be executed without running containers",
     )
     run_parser.add_argument(
-        '--smoke-test',
-        action='store_true',
-        help='Verify experiment results (goodput/files) after completion'
+        "--smoke-test",
+        action="store_true",
+        help="Verify experiment results (goodput/files) after completion",
     )
     run_parser.set_defaults(func=cmd_run_experiment)
 
@@ -504,9 +504,9 @@ Examples:
         help="Print what would be executed without running containers",
     )
     queue_parser.add_argument(
-        '--smoke-test',
-        action='store_true',
-        help='Verify experiment results (goodput/files) after completion'
+        "--smoke-test",
+        action="store_true",
+        help="Verify experiment results (goodput/files) after completion",
     )
     queue_parser.set_defaults(func=cmd_queue_experiments)
 
@@ -601,6 +601,7 @@ def main() -> None:
 
     # Execute command
     args.func(args)
+
 
 if __name__ == "__main__":
     main()
