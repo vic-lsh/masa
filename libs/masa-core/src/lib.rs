@@ -12,3 +12,6 @@ pub use latency_estimator::{LatencyDistribution, LatencyEstimator, LatencyRms};
 pub use priority::{Prioritize, PriorityHint};
 pub use timing::{time_now, LatencyTracker};
 pub use typing::{Address, Api, Latency, MethodId, RequestId, ServiceId, Timestamp};
+
+/// Header key for MASA context.
+pub const MASA_CONTEXT_HEADER: &str = "ctx";

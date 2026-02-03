@@ -124,34 +124,33 @@ impl QueueLatencyTracker {
 
     pub(crate) fn track_child_response<T>(&self, response: &Result<Response<T>, Status>) {
         if let Ok(resp) = response {
-            if let Some(ctx_header) = resp.metadata().get("ctx") {
-                if let Ok(ctx_str) = ctx_header.to_str() {
-                    let ctx = Context::from_header_string(ctx_str);
-                    if let Some(ql) = ctx.queue_latencies {
-                        self.initial_q_lat.fetch_add(ql.initial, Ordering::AcqRel);
-                        self.resume_q_lat.fetch_add(ql.resume, Ordering::AcqRel);
-                    }
+            use super::MasaResponseExt;
+            if let Some(ctx) = resp.get_masa_context() {
+                if let Some(ql) = ctx.queue_latencies {
+                    self.initial_q_lat.fetch_add(ql.initial, Ordering::AcqRel);
+                    self.resume_q_lat.fetch_add(ql.resume, Ordering::AcqRel);
                 }
             }
         }
     }
 
-    pub(crate) fn inject_context_metadata<T>(&self, ctx: &Context, result: &mut Result<Response<T>, Status>) {
-        let metadata = match result {
-            Ok(resp) => resp.metadata_mut(),
-            Err(status) => status.metadata_mut(),
-        };
+    pub(crate) fn inject_context_metadata<T>(
+        &self,
+        ctx: &Context,
+        result: &mut Result<Response<T>, Status>,
+    ) {
+        use super::{MasaResponseExt, MasaStatusExt};
 
         let mut ctx = ctx.clone();
-        
+
         let initial = self.initial_q_lat.load(Ordering::Acquire);
         let resume = self.resume_q_lat.load(Ordering::Acquire);
         ctx.queue_latencies = Some(QueueLatencies { initial, resume });
 
-        let val = ctx.to_header_string();
-        if let Ok(header_val) = val.parse::<crate::metadata::MetadataValue<crate::metadata::Ascii>>() {
-            metadata.insert("ctx", header_val);
-        }
+        match result {
+            Ok(resp) => resp.set_masa_context(&ctx),
+            Err(status) => status.set_masa_context(&ctx),
+        };
     }
 }
 

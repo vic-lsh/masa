@@ -7,7 +7,7 @@ use std::{
     time::Instant,
 };
 
-use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
+use super::super::{ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks};
 use super::{estimate_method_latency, track_method_latency};
 use masa_core::{Context, ContextBuilder, LatencyDistribution, LatencyEstimator, LatencyTracker};
 
@@ -113,11 +113,13 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
             _ => 0,
         };
         let deadline = self.ctx.deadline() - estimate_remaining;
+        let prio_hint = self.ctx.prio_hint();
 
         let child_recv_ctx = ContextBuilder::from(&self.ctx)
             .deadline(deadline)
+            .prio_hint(prio_hint)
             .build();
-        request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
+        request.set_masa_context(&child_recv_ctx);
 
         Ok(())
     }

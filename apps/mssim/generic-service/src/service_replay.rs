@@ -9,6 +9,7 @@ use sim_config::svc::ServiceName;
 use std::collections::HashMap;
 use tokio::sync::RwLockReadGuard;
 use tokio::time::{sleep, Duration};
+use tonic::masa::MasaRequestExt;
 use tonic::{Request, Status};
 use tracing::warn;
 
@@ -76,7 +77,7 @@ impl<'a> ReplaySpanExecutor<'a> {
             .gateway_entry(self.request.start_at)
             .deadline(self.request.deadline)
             .build();
-        request.metadata_mut().insert_ctx("ctx", &ctx);
+        let request = request.with_masa_context(&ctx);
 
         let mut client = client.clone();
         client.replay(request).await.map_err(|e| {
