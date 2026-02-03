@@ -25,7 +25,7 @@ use std::sync::atomic::AtomicUsize;
 pub(crate) type LocalLatencyEstimator = LatencyDistribution;
 
 #[derive(Debug)]
-/// This policy computes the deadline d of a child request as  
+/// This policy computes the deadline d of a child request as
 ///   d = d_p - e_rem
 /// where d_p is the deadline of the parent request and e_rem is an estimate for the remaining time
 /// left in the request after this child request executes. e_rem is estimated by sampling from the
@@ -235,7 +235,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         let child_recv_ctx = ContextBuilder::from(&self.ctx)
             .deadline(deadline)
-            .prio_hint(prio_hint)
+            .prio_hint(PriorityHint::new(prio_hint))
             .build();
         request.set_masa_context(&child_recv_ctx);
 

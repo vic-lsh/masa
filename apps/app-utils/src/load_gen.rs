@@ -267,17 +267,16 @@ where
     fn to_row(&self) -> String {
         let (init_lat, resume_lat) = match &self.response {
             Some((metadata, _)) => {
-                let init = metadata
-                    .get("x-queue-latency-initial")
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(0);
-                let resume = metadata
-                    .get("x-queue-latency-resume")
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(0);
-                (init, resume)
+                if let Some(ctx_str) = metadata.get("ctx").and_then(|v| v.to_str().ok()) {
+                    let ctx = Context::from_header_string(ctx_str);
+                    if let Some(ql) = ctx.queue_latencies {
+                        (ql.initial, ql.resume)
+                    } else {
+                        (0, 0)
+                    }
+                } else {
+                    (0, 0)
+                }
             }
             None => (0, 0),
         };
