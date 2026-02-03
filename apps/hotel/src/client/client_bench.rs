@@ -27,6 +27,7 @@ use app_utils::{
 use frontend::frontend_client::FrontendClient;
 use hotel::profile_layer::extract_latency_traces;
 use masa::{Context, ContextBuilder};
+use tonic::masa::MasaRequestExt;
 use tonic::Response;
 use tonic::Status;
 
@@ -65,21 +66,10 @@ impl Client for HotelClient {
     }
 
     async fn ping(client: &mut Self::FrontendClient) -> Result<(), tonic::Status> {
-        let mut request = tonic::Request::new(frontend::PingRequest {
+        let request = tonic::Request::new(frontend::PingRequest {
             message: "ping".to_string(),
-        });
-        let ctx = {
-            let slo = 1_000_000;
-            let start_at = time_now();
-            let deadline = start_at + slo;
-            let req_id = 0;
-            ContextBuilder::new("ping".to_string(), req_id)
-                .slo(slo)
-                .gateway_entry(start_at)
-                .deadline(deadline)
-                .build()
-        };
-        request.metadata_mut().insert_ctx("ctx", &ctx);
+        })
+        .with_masa_context(&ctx);
         client.handle_ping(request).await.map(|_| ())
     }
 }
@@ -150,8 +140,7 @@ impl RequestType<HotelClient> for ReservationRequest {
         mut client: FrontendClient<Channel>,
         ctx: &Context,
     ) -> Result<Response<Self::ResponseType>, Status> {
-        let mut r = tonic::Request::new(get_reservation_request(rng));
-        r.metadata_mut().insert_ctx("ctx", &ctx);
+        let r = tonic::Request::new(get_reservation_request(rng)).with_masa_context(ctx);
         client.handle_reservation(r).await
     }
 
@@ -196,8 +185,7 @@ impl RequestType<HotelClient> for SearchRequest {
         mut client: FrontendClient<Channel>,
         ctx: &Context,
     ) -> Result<Response<Self::ResponseType>, Status> {
-        let mut r = tonic::Request::new(get_search_request(rng));
-        r.metadata_mut().insert_ctx("ctx", &ctx);
+        let r = tonic::Request::new(get_search_request(rng)).with_masa_context(ctx);
         client.handle_search(r).await
     }
 
