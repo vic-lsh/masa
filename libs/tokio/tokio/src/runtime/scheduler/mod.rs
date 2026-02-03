@@ -1,4 +1,6 @@
 cfg_rt! {
+    use masa_core::PriorityHint;
+
     pub(crate) mod current_thread;
     pub(crate) use current_thread::CurrentThread;
 
@@ -28,8 +30,6 @@ cfg_rt_multi_thread! {
         pub(crate) use multi_thread_alt::MultiThread as MultiThreadAlt;
     }
 }
-
-use masa_core::PriorityHint;
 
 use crate::runtime::driver;
 
