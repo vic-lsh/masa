@@ -592,9 +592,9 @@ class MssimApp(AppPlugin):
                 f"Starting services for policy={policy} rps_values={rps_values} iteration={iteration}"
             )
             docker.start(
-                app_dir=config.app_dir,
+                app_dir=run_dir,
                 deployment_config="docker-compose.yml",
-                env_vars=env_vars,
+                env_vars=env,
                 project_name=project_name,
             )
 
@@ -608,9 +608,9 @@ class MssimApp(AppPlugin):
             logs_dir = run_dir / "logs"
             # Get container names for log streaming
             container_names = docker.get_container_names(
-                config_path=config_path,
+                config_path=docker_compose_path,
                 project_name=project_name,
-                env_vars=env_vars,
+                env_vars=env,
             )
 
             if container_names:
@@ -693,9 +693,9 @@ class MssimApp(AppPlugin):
                 logger.warning(f"Error stopping CPU monitor: {e}")
 
             docker.stop(
-                app_dir=config.app_dir,
+                app_dir=run_dir,
                 deployment_config="docker-compose.yml",
-                env_vars=env_vars,
+                env_vars=env,
                 project_name=project_name,
             )
 
