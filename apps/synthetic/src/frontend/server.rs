@@ -40,7 +40,7 @@ impl FrontendImpl {
         info!("Request a hops: {:?}", request_a_hops);
         info!("Request b hops: {:?}", request_b_hops);
 
-        // Read project name from environment variable (set by exp.runner)
+        // Read project name from environment variable (set by exp_runner.runner)
         let project_name = std::env::var("DOCKER_COMPOSE_PROJECT_NAME")
             .ok()
             .filter(|s| !s.is_empty());

@@ -5,10 +5,10 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 exp_dir="$repo_root/exp/socialnet"
 exp_name="ci"
-config_dir="$exp_dir/data/in/$exp_name"
+config_dir="$exp_dir/in/$exp_name"
 gen_config="$config_dir/gen_config.json"
 policies_file="$config_dir/policies"
-out_dir="$exp_dir/data/out/$exp_name"
+out_dir="$exp_dir/out/$exp_name"
 no_cache=""
 
 # Parse arguments
@@ -79,6 +79,6 @@ rm -rf "$out_dir"
 
 echo "Running socialnet experiment: $exp_name"
 cd "$repo_root"
-python -m exp.runner run socialnet "$exp_name" $no_cache --smoke-test --plot
+python -m exp_runner.runner run socialnet "$exp_name" $no_cache --smoke-test --plot
 
 echo "Socialnet experiment test passed."

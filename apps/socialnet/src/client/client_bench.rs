@@ -32,7 +32,7 @@ impl Client for SocialnetClient {
 
     async fn ping(client: &mut Self::FrontendClient) -> Result<(), tonic::Status> {
         // Option B: Use minimal ComposePost request as ping
-        let mut request = tonic::Request::new(compose_post::ComposePostRequest {
+        let request = tonic::Request::new(compose_post::ComposePostRequest {
             req_id: 0,
             username: "ping_user".to_string(),
             user_id: 0,

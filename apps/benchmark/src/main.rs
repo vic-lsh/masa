@@ -1,5 +1,5 @@
 use hdrhistogram::Histogram;
-use masa::{Context, ContextBuilder};
+use masa::Context;
 use std::time::{Duration, Instant};
 use tonic::metadata::MetadataMap;
 use tonic::{transport::Server, Request, Response, Status};
@@ -37,7 +37,7 @@ impl Frontend for MyFrontend {
 
 fn benchmark_serialization() {
     println!("--- Microbenchmark: Serialization ---");
-    let ctx = ContextBuilder::new("test-api", 123).slo(100).build();
+    let ctx = masa::create_context("test-api", Duration::from_micros(100));
 
     let iterations = 100_000;
 
@@ -101,7 +101,7 @@ async fn benchmark_e2e() -> Result<(), Box<dyn std::error::Error>> {
 
     let iterations = 10_000;
     let mut hist = Histogram::<u64>::new(3).unwrap();
-    let ctx = ContextBuilder::new("test-api", 123).slo(100).build();
+    let ctx = masa::create_context("test-api", Duration::from_micros(100));
 
     for _ in 0..iterations {
         let mut req = Request::new(PingRequest {
