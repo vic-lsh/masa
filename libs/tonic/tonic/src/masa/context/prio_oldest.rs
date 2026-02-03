@@ -149,7 +149,7 @@ impl ClientHooks for ChildContext {
 }
 
 impl ChildContext {
-    pub fn set_method_name(&mut self, name: String) {
+    pub(super) fn set_method_name(&mut self, name: String) {
         self.child_method_name = Some(name);
     }
 }

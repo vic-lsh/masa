@@ -6,7 +6,7 @@ use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::{resolve_method_name, MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER};
 use crate::Response;
-use masa_core::{Context, ContextBuilder, PriorityHint};
+use masa_core::{Context, ContextBuilder};
 
 #[derive(Debug)]
 /// FIFO policy with optional early return support.
@@ -150,7 +150,7 @@ impl ClientHooks for ChildContext {
 }
 
 impl ChildContext {
-    pub fn set_method_name(&mut self, name: String) {
+    pub(super) fn set_method_name(&mut self, name: String) {
         self.child_method_name = Some(name);
     }
 }

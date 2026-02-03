@@ -63,7 +63,7 @@ impl<'a> ReplaySpanExecutor<'a> {
             Status::not_found(format!("Child service {} not found", children.name))
         })?;
 
-        let mut request = Request::new(ReplayRequest {
+        let request = Request::new(ReplayRequest {
             req_id: self.request.req_id,
             exclude_queue_latency: self.request.exclude_queue_latency,
             slo: self.request.slo,

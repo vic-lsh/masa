@@ -202,7 +202,7 @@ async fn run_root_load(
                 tokio::spawn(async move {
                     let _permit = permit;
                     let start_at = time_now();
-                    let mut request = Request::new(RootRequest {
+                    let request = Request::new(RootRequest {
                         req_id,
                         start_at,
                         graph_name: graph_hint.into(),

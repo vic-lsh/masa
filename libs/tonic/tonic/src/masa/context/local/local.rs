@@ -15,8 +15,8 @@ use super::super::{
 };
 use super::{get_estimate, track_method_latency, PERCENTILE};
 use masa_core::{
-    time_now, Context, ContextBuilder, LatencyDistribution, LatencyEstimator, LatencyRms,
-    PriorityHint, EARLY_RETURN,
+    time_now, Context, ContextBuilder, LatencyDistribution, LatencyEstimator, PriorityHint,
+    EARLY_RETURN,
 };
 use std::sync::atomic::AtomicUsize;
 
