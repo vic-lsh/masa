@@ -33,6 +33,7 @@ path = "src/loadgen.rs"
 
 [features]
 early = ["masa/early"]
+trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
 
 fifo = ["masa/fifo"]
 

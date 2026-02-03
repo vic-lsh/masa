@@ -23,8 +23,8 @@ use crate::config::HotelConfig;
 // use hotel_tonic::review::review_client::ReviewClient;
 use std::time::Instant;
 
-use tonic::{transport::masa_channel::LoadBalancedChannel, Request, Response, Status};
 use tonic::masa::{MasaRequestExt, MasaResponseExt};
+use tonic::{transport::masa_channel::LoadBalancedChannel, Request, Response, Status};
 
 use hotel_tonic::{
     frontend, frontend::frontend_server::Frontend, profile, profile::profile_client::ProfileClient,
@@ -200,6 +200,10 @@ impl Frontend for FrontendImpl {
             });
         }
 
+        let response = frontend::SearchResponse {
+            hotels,
+            child_traces,
+        };
         let mut response = Response::new(response);
         ctx.set_frontend_elapse(start.elapsed().as_micros() as u64);
         response.set_masa_context(&ctx);

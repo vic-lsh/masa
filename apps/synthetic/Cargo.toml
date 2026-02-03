@@ -25,6 +25,7 @@ prio_oldest = ["masa/prio_oldest"]
 fifo = ["masa/fifo"]
 
 early = ["masa/early"]
+trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
 
 gcp = ["dep:prost-types", "tonic/tls"]
 routeguide = [

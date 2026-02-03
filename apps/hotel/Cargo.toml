@@ -63,6 +63,7 @@ prio_local = ["masa/prio_local"]
 fifo = ["masa/fifo"]
 
 early = ["masa/early"]
+trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
 
 synthetic = []
 workload_stats = []
@@ -211,5 +212,3 @@ clap = { version = "4.4", features = ["derive"] }
 [build-dependencies]
 tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
 protoc-bin-vendored = "3"
-
-
