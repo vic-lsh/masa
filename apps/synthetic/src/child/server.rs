@@ -61,7 +61,10 @@ impl ChildImpl {
             for service in &call_graph.services {
                 // Service name matches the compose file service name: "local-{service-id}-service"
                 // Docker Compose creates containers like: {project}-local-{service-id}-service-1, -2, etc.
-                let base_service_name = format!("local-{}-service", service.id.to_lowercase().replace("_", "-"));
+                let base_service_name = format!(
+                    "local-{}-service",
+                    service.id.to_lowercase().replace("_", "-")
+                );
                 let hostname_base = if let Some(ref project) = project_name {
                     format!("{}-{}", project, base_service_name)
                 } else {
