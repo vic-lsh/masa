@@ -401,6 +401,11 @@ class SocialnetApp(AppPlugin):
     ) -> None:
         """Run socialnet experiment with namespace isolation."""
 
+        if type(docker).__name__ == "K8sManager":
+            raise NotImplementedError(
+                "Socialnet app does not support Kubernetes execution yet"
+            )
+
         # Generate project name for namespace isolation
         project_name = _safe_project_name(
             experiment_name=config.experiment_name,
@@ -459,41 +464,15 @@ class SocialnetApp(AppPlugin):
         if dry_run and build_cmds:
             print("\n".join(" ".join(cmd) for cmd in build_cmds))
 
-        docker_compose_path = config.app_dir / "docker-compose.yaml"
-
-        # Setup environment for docker compose
-        env = os.environ.copy()
-        env.update({k: str(v) for k, v in env_vars.items()})
-
-        # Docker compose commands with project name
-        up_cmd = [
-            "docker",
-            "compose",
-            "-f",
-            str(docker_compose_path),
-            "-p",
-            project_name,
-            "up",
-            "-d",
-        ]
-        down_cmd = [
-            "docker",
-            "compose",
-            "-f",
-            str(docker_compose_path),
-            "-p",
-            project_name,
-            "down",
-            "--volumes",
-        ]
+        deployment_config = "docker-compose.yaml"
+        config_path = config.app_dir / deployment_config
 
         if dry_run:
             print(
                 f"[dry-run] would run socialnet policy={policy} iteration={iteration}"
             )
             print(f"[dry-run] project name: {project_name}")
-            print("[dry-run] compose up:", " ".join(up_cmd))
-            print("[dry-run] compose down:", " ".join(down_cmd))
+            print(f"[dry-run] would start services from {config_path}")
             return
 
         # Save metadata
@@ -519,11 +498,11 @@ class SocialnetApp(AppPlugin):
             logger.info(
                 f"Starting socialnet services for policy={policy} iteration={iteration} project={project_name}"
             )
-            subprocess.run(
-                up_cmd,
-                cwd=config.app_dir,
-                env=env,
-                check=True,
+            docker.start(
+                app_dir=config.app_dir,
+                deployment_config=deployment_config,
+                env_vars=env_vars,
+                project_name=project_name,
             )
 
             # Wait for services to be ready
@@ -534,9 +513,9 @@ class SocialnetApp(AppPlugin):
 
             # Get container names for log streaming
             container_names = docker.get_container_names(
-                compose_path=docker_compose_path,
+                config_path=config_path,
                 project_name=project_name,
-                env_vars=env,
+                env_vars=env_vars,
             )
 
             # Stream logs
@@ -572,7 +551,12 @@ class SocialnetApp(AppPlugin):
                 logger.warning(f"Error stopping CPU monitor: {e}")
 
             # Cleanup
-            subprocess.run(down_cmd, cwd=config.app_dir, env=env, check=False)
+            docker.stop(
+                app_dir=config.app_dir,
+                deployment_config=deployment_config,
+                env_vars=env_vars,
+                project_name=project_name,
+            )
 
             # Wait for log threads
             for thread in log_threads:

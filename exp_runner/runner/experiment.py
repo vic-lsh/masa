@@ -12,6 +12,7 @@ from typing import Optional
 
 from .apps.base import AppPlugin
 from .config import ExperimentConfig
+from .deployment_manager import DeploymentManager
 from .docker_manager import DockerManager
 from .k8s_manager import K8sManager
 from .plotting import generate_all_plots
@@ -63,6 +64,7 @@ class Experiment:
         self.smoke_test = smoke_test
         self.use_k8s = use_k8s
 
+        self.docker: DeploymentManager
         if use_k8s:
             self.docker = K8sManager(repo_root)
         else:
