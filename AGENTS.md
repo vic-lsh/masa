@@ -47,6 +47,12 @@ uv run pytest
 # Run experiments (they run for a long time; don't run unless the user asks you to)
 # See EXPERIMENT_WORKFLOW.md for detailed instructions
 uv run -m exp_runner run <app> <experiment_name> --plot
+# Run on Kind (Kubernetes in Docker) - supported for hotel, synthetic
+uv run -m exp_runner run hotel <experiment_name> --kind --plot
+uv run -m exp_runner run synthetic <experiment_name> --kind --plot
+# Run on generic Kubernetes
+uv run -m exp_runner run hotel <experiment_name> --k8s --plot
+uv run -m exp_runner run synthetic <experiment_name> --k8s --plot
 uv run -m exp_runner plot <app> <experiment_name>
 ```
 
