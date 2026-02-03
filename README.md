@@ -171,7 +171,7 @@ Note: The old bash scripts (`get-env.sh`, `docker-run.sh`, `loadgen-run.sh`, `do
 
 #### K8s / Kind
 
-NOTE: This is currently only supported for `hotel` and `synthetic`.
+NOTE: This is currently only supported for `synthetic`.
 
 You can run experiments on Kubernetes (K8s) or Kind (Kubernetes in Docker) using the experiment runner.
 
@@ -180,8 +180,6 @@ For Kind (recommended for local development):
 2. Run with the `--kind` flag:
 
 ```bash
-uv run -m exp_runner run hotel <experiment-name> --kind --plot
-# Or for synthetic
 uv run -m exp_runner run synthetic <experiment-name> --kind --plot
 ```
 
@@ -192,8 +190,6 @@ For standard Kubernetes clusters:
 2. Run with the `--k8s` flag:
 
 ```bash
-uv run -m exp_runner run hotel <experiment-name> --k8s --plot
-# Or for synthetic
 uv run -m exp_runner run synthetic <experiment-name> --k8s --plot
 ```
 
