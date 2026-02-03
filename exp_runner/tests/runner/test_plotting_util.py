@@ -3,7 +3,11 @@ import json
 import pandas as pd
 import pytest
 
-from exp_runner.runner.plotting.util import get_policy_display_name, read_data, read_policies
+from exp_runner.runner.plotting.util import (
+    get_policy_display_name,
+    read_data,
+    read_policies,
+)
 
 
 def test_get_policy_display_name_known_policies():
@@ -120,7 +124,13 @@ def test_read_data_repairs_malformed_request_csv_rows(tmp_path):
     assert rps_values == [300]
 
     df = results[0]["a"]["prio_local,early"][300]
-    assert list(df.columns) == header.split(",")
+    # Original columns should be present
+    for col in header.split(","):
+        assert col in df.columns
+    # New metadata columns should also be present
+    assert "error_type" in df.columns
+    assert "er_service" in df.columns
+
     assert len(df) == 3
 
     # Error field should be preserved even when it contains commas.
