@@ -214,12 +214,6 @@ impl Frontend for FrontendImpl {
             // For call graph mode, return minimal response
             // (could be enhanced to return more detailed metrics)
             Ok(Response::new(frontend::AResponse {
-                child1_queueing_latency: 0,
-                child1_sleep_latency: 0,
-                child1_handler_latency: 0,
-                child2_queueing_latency: 0,
-                child2_handler_latency: 0,
-                child2_reply_latency: 0,
                 handler_latency: Instant::now().duration_since(start).as_micros() as u64,
             }))
         } else {
@@ -230,16 +224,7 @@ impl Frontend for FrontendImpl {
                     "request_a_hops must contain at least 2 hops",
                 ));
             }
-            let hop1 = &results[0];
-            let hop2 = &results[1];
-
             Ok(Response::new(frontend::AResponse {
-                child1_queueing_latency: hop1.response.queueing_latency,
-                child1_sleep_latency: hop1.sleep_latency_us(),
-                child1_handler_latency: hop1.response.handler_latency,
-                child2_queueing_latency: hop2.response.queueing_latency,
-                child2_handler_latency: hop2.response.handler_latency,
-                child2_reply_latency: time_now() - hop2.response.finished_at,
                 handler_latency: Instant::now().duration_since(start).as_micros() as u64,
             }))
         }

@@ -105,15 +105,7 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
 struct ARequest {}
 
 impl ARequest {
-    const HEADERS: [&'static str; 7] = [
-        "frontend_latency",
-        "child1_queueing_latency",
-        "child1_sleep_latency",
-        "child1_handler_latency",
-        "child2_queueing_latency",
-        "child2_handler_latency",
-        "child2_reply_latency",
-    ];
+    const HEADERS: [&'static str; 1] = ["frontend_latency"];
 }
 
 impl RequestType<SyntheticClient> for ARequest {
@@ -138,15 +130,7 @@ impl RequestType<SyntheticClient> for ARequest {
     }
 
     fn response_to_row(_metadata: &MetadataMap, r: &Self::ResponseType) -> Vec<String> {
-        vec![
-            r.handler_latency.to_string(),
-            r.child1_queueing_latency.to_string(),
-            r.child1_sleep_latency.to_string(),
-            r.child1_handler_latency.to_string(),
-            r.child2_queueing_latency.to_string(),
-            r.child2_handler_latency.to_string(),
-            r.child2_reply_latency.to_string(),
-        ]
+        vec![r.handler_latency.to_string()]
     }
 }
 
