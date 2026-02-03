@@ -14,6 +14,8 @@ policy_flags=(
     "prio_global"
     "prio_oldest"
     "prio_local"
+    "prio_local,est-rms"
+    "prio_local,est-hist"
 )
 
 # Todo: add other applications
