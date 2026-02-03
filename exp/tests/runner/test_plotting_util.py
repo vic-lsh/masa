@@ -89,22 +89,26 @@ def test_read_data_repairs_malformed_request_csv_rows(tmp_path):
     policy_dir = data_dir / "0" / "prio_local,early"
     policy_dir.mkdir(parents=True, exist_ok=True)
 
-    header = (
-        "api,request_id,slo,start_at,deadline,latency,error,frontend_latency,"
-        "child1_queueing_latency,child1_sleep_latency,child1_handler_latency,"
-        "child2_queueing_latency,child2_handler_latency,child2_reply_latency"
-    )
-    good = "a,1,150000,0,150000,100,/None,90,0,0,0,0,0,0"
+    header = "api,request_id,slo,start_at,deadline,latency,error,frontend_latency"
+    good = "a,1,150000,0,150000,100,/None,90"
     early_return_missing_tail = "a,2,150000,1,150001,150542,/EarlyReturn,"
     grpc_error_with_commas_missing_tail = (
-        'a,3,150000,2,150002,139592,RPC error: status: Internal, message: '
+        "a,3,150000,2,150002,139592,RPC error: status: Internal, message: "
         '"RPC error: status: DeadlineExceeded, message: \\"/EarlyReturn\\", details: [], metadata: '
         'MetadataMap { headers: {\\"content-type\\": \\"application/grpc\\"} }", details: [], '
         'metadata: MetadataMap { headers: {"content-type": "application/grpc"} },'
     )
 
     (policy_dir / "r300_a.csv").write_text(
-        "\n".join([header, good, early_return_missing_tail, grpc_error_with_commas_missing_tail]) + "\n",
+        "\n".join(
+            [
+                header,
+                good,
+                early_return_missing_tail,
+                grpc_error_with_commas_missing_tail,
+            ]
+        )
+        + "\n",
         encoding="utf-8",
     )
 
