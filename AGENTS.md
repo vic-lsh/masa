@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents (e.g., Claude Code, Codex, Gemini CLI) when working with code in this repository.
 
 ## Project Overview
 
@@ -117,6 +117,9 @@ See `docs/MASA_POLICY_IMPL.md` for detailed implementation walkthrough covering 
 - Use `Result` and `Option` idiomatically; avoid `unwrap()` except in tests
 - The codebase relies heavily on `tokio`; use standard async patterns
 - After changes: run `./scripts/check.sh`
+- Do not tolerate any warnings in cargo-check. Always fix them.
+- Use `./scripts/format.sh` to format code consistently.
+- Write idiomatic Rust code.
 
 ### Python
 - Use type hints for function arguments and return values
