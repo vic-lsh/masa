@@ -47,8 +47,8 @@ pytest
 
 # Run experiments (they run for a long time; don't run unless the user asks you to)
 # See EXPERIMENT_WORKFLOW.md for detailed instructions
-uv run python -m exp_runner.runner run <app> <experiment_name> --plot
-uv run python -m exp_runner.runner plot <app> <experiment_name>
+uv run python -m exp_runner run <app> <experiment_name> --plot
+uv run python -m exp_runner plot <app> <experiment_name>
 ```
 
 ## Scheduling Policies (Feature Flags)
