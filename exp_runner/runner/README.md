@@ -30,44 +30,44 @@ The experiment runner is part of the MASA repository. Ensure you have Python 3.1
 
 ```bash
 # Run experiment 'exp1' for the hotel application
-python -m exp_runner run hotel exp1
+uv run -m exp_runner run hotel exp1
 
 # Run experiment 'exp1' for the socialnet application
-python -m exp_runner run socialnet exp1
+uv run -m exp_runner run socialnet exp1
 
 # Run an MSSIM experiment
-python -m exp_runner run mssim e2e_test
+uv run -m exp_runner run mssim e2e_test
 
 # Run with plot generation
-python -m exp_runner run hotel exp1 --plot
-python -m exp_runner run socialnet exp1 --plot
+uv run -m exp_runner run hotel exp1 --plot
+uv run -m exp_runner run socialnet exp1 --plot
 
 # Run with verbose logging
-python -m exp_runner run hotel exp1 --plot --verbose
+uv run -m exp_runner run hotel exp1 --plot --verbose
 
 # Print what would run (no containers started)
-python -m exp_runner run mssim e2e_test --dry-run
+uv run -m exp_runner run mssim e2e_test --dry-run
 ```
 
 ### Queue Multiple Experiments
 
 ```bash
 # Run multiple experiments sequentially
-python -m exp_runner run-multiple hotel "exp1 exp2 exp3" --plot
+uv run -m exp_runner run-multiple hotel "exp1 exp2 exp3" --plot
 
 # For synthetic application
-python -m exp_runner run-multiple synthetic "quick_test template-presampled" --plot
+uv run -m exp_runner run-multiple synthetic "quick_test template-presampled" --plot
 ```
 
 ### Generate Plots Only
 
 ```bash
 # Generate plots from existing experiment output
-python -m exp_runner plot hotel exp1
-python -m exp_runner plot mssim e2e_test
+uv run -m exp_runner plot hotel exp1
+uv run -m exp_runner plot mssim e2e_test
 
 # Generate replica plots from hotel inputs
-python -m exp_runner plot-replicas hotel
+uv run -m exp_runner plot-replicas hotel
 ```
 
 ## Experiment Configuration
@@ -226,7 +226,7 @@ exp/mssim/data/out/e2e_test/
 Run a single performance experiment.
 
 ```bash
-python -m exp_runner run <app> <experiment> [options]
+uv run -m exp_runner run <app> <experiment> [options]
 ```
 
 **Arguments:**
@@ -241,7 +241,7 @@ python -m exp_runner run <app> <experiment> [options]
 
 **Example:**
 ```bash
-python -m exp_runner run hotel exp1 --plot --verbose
+uv run -m exp_runner run hotel exp1 --plot --verbose
 ```
 
 ### run-multiple
@@ -249,7 +249,7 @@ python -m exp_runner run hotel exp1 --plot --verbose
 Run multiple experiments sequentially.
 
 ```bash
-python -m exp_runner run-multiple <app> "<exp1> <exp2> ..." [options]
+uv run -m exp_runner run-multiple <app> "<exp1> <exp2> ..." [options]
 ```
 
 **Arguments:**
@@ -264,7 +264,7 @@ python -m exp_runner run-multiple <app> "<exp1> <exp2> ..." [options]
 
 **Example:**
 ```bash
-python -m exp_runner run-multiple hotel "exp1 exp2 exp3" --plot
+uv run -m exp_runner run-multiple hotel "exp1 exp2 exp3" --plot
 ```
 
 ### plot
@@ -272,7 +272,7 @@ python -m exp_runner run-multiple hotel "exp1 exp2 exp3" --plot
 Generate plots for an existing experiment.
 
 ```bash
-python -m exp_runner plot <app> <experiment>
+uv run -m exp_runner plot <app> <experiment>
 ```
 
 **Arguments:**
@@ -281,8 +281,8 @@ python -m exp_runner plot <app> <experiment>
 
 **Example:**
 ```bash
-python -m exp_runner plot hotel exp1
-python -m exp_runner plot mssim e2e_test
+uv run -m exp_runner plot hotel exp1
+uv run -m exp_runner plot mssim e2e_test
 ```
 
 ### plot-replicas
@@ -290,7 +290,7 @@ python -m exp_runner plot mssim e2e_test
 Generate replica plots for hotel experiments by scanning `exp/hotel/data/in`.
 
 ```bash
-python -m exp_runner plot-replicas hotel
+uv run -m exp_runner plot-replicas hotel
 ```
 
 **Arguments:**
@@ -316,7 +316,7 @@ cd /path/to/masa
 ### After (Python)
 ```bash
 cd /path/to/masa
-python -m exp_runner run hotel exp1 --plot
+uv run -m exp_runner run hotel exp1 --plot
 ```
 
 ### Key Differences
@@ -414,11 +414,11 @@ Ensure you're using Python 3.10+ and all dependencies from `pyproject.toml` are 
 ### Running Tests
 ```bash
 # Test CLI with dry-run commands
-python -m exp_runner --help
-python -m exp_runner run --help
+uv run -m exp_runner --help
+uv run -m exp_runner run --help
 
 # Run a quick test experiment
-python -m exp_runner run synthetic quick_test --verbose
+uv run -m exp_runner run synthetic quick_test --verbose
 ```
 
 ### Logging
