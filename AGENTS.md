@@ -40,15 +40,14 @@ cargo test -p <package_name> -- <test_function_name>
 # Setup (one-time)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
-source .venv/bin/activate
 
 # Run Python tests
-pytest
+uv run pytest
 
 # Run experiments (they run for a long time; don't run unless the user asks you to)
 # See EXPERIMENT_WORKFLOW.md for detailed instructions
-uv run python -m exp_runner.runner run <app> <experiment_name> --plot
-uv run python -m exp_runner.runner plot <app> <experiment_name>
+uv run -m exp_runner run <app> <experiment_name> --plot
+uv run -m exp_runner plot <app> <experiment_name>
 ```
 
 ## Scheduling Policies (Feature Flags)
@@ -125,7 +124,7 @@ See `docs/MASA_POLICY_IMPL.md` for detailed implementation walkthrough covering 
 - Use type hints for function arguments and return values
 - Use `uv add <package>` for dependencies, not pip directly
 - Experiment logic goes in `exp_runner/runner`, tests in `exp_runner/tests`
-- After changes in `exp/`: run `pytest`
+- After changes in `exp/`: run `uv run pytest`
 
 ### Testing
 - New features must include tests
