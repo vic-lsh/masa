@@ -160,13 +160,16 @@ def compute_early_return_breakdown(df):
             if not err.startswith("/EarlyReturn"):
                 return "Unknown", "Unknown"
 
-            # Strip off the last child part if present (starting with |)
-            if "|" in err:
-                err = err.split("|")[0]
+            # New format: /EarlyReturn?src=Svc::Method
+            if "?src=" in err:
+                try:
+                    src_part = err.split("?src=")[1]
+                    src_val = src_part.split("?")[0]
+                    if "::" in src_val:
+                        return src_val.split("::", 1)
+                except IndexError:
+                    pass
 
-            parts = err.split(":")
-            if len(parts) >= 3:
-                return parts[1], parts[2]
             return "Unknown", "Unknown"
 
         early_return_df["parsed"] = early_return_df["error"].apply(parse_error)
@@ -221,11 +224,12 @@ def compute_early_return_last_child_breakdown(df):
                 return "None", "None"
 
             if last_child == "None:None":
-                return "Ingress", "Drop"
+                return "None", "None"
 
-            child_parts = str(last_child).split("/")
-            if len(child_parts) >= 3:
-                return child_parts[-2], child_parts[-1]
+            # New format: Svc::Method
+            if "::" in str(last_child):
+                parts = str(last_child).split("::", 1)
+                return parts[0], parts[1]
 
             return "Unknown", str(last_child)
 
@@ -242,28 +246,20 @@ def compute_early_return_last_child_breakdown(df):
             if not err.startswith("/EarlyReturn"):
                 return "Unknown", "Unknown"
 
-            if "|" in err:
-                parts = err.split("|", 1)
-                if len(parts) < 2:
-                    return "None", "None"
-                last_child = parts[1]
-            else:
-                # Legacy format with : separator
-                parts = err.split(":", 3)
-                if len(parts) < 4:
-                    return "None", "None"
-                last_child = parts[3]
+            # New format: /EarlyReturn?src=...
+            if "?src=" in err:
+                if "?last_rpc=" in err:
+                    try:
+                        val = err.split("?last_rpc=")[1]
+                        if "::" in val:
+                            return val.split("::", 1)
+                        return "Unknown", val
+                    except IndexError:
+                        pass
+                # Has src but no last_rpc -> None/None
+                return "None", "None"
 
-            if last_child == "None:None":
-                return "Ingress", "Drop"
-
-            # Try to parse /Service/Method from last_child
-            # It usually looks like /package.Service/Method
-            child_parts = last_child.split("/")
-            if len(child_parts) >= 3:
-                return child_parts[-2], child_parts[-1]
-
-            return "Unknown", last_child
+            return "Unknown", "Unknown"
 
         early_return_df["parsed"] = early_return_df["error"].apply(parse_last_child)
         early_return_df["service"] = early_return_df["parsed"].apply(lambda x: x[0])

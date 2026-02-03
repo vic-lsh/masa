@@ -1,30 +1,40 @@
 import pandas as pd
 import pytest
-from runner.plotting.util import _parse_error_columns
+
+from exp_runner.runner.plotting.util import _parse_error_columns
 
 
 class TestErrorParsing:
     def test_standard_early_return(self):
-        df = pd.DataFrame({"error": ["/EarlyReturn:frontend:Login"]})
+        # Old: /EarlyReturn:frontend:Login
+        # New: /EarlyReturn?src=frontend::Login
+        df = pd.DataFrame({"error": ["/EarlyReturn?src=frontend::Login"]})
         df = _parse_error_columns(df)
 
         assert df.iloc[0]["error_type"] == "EarlyReturn"
         assert df.iloc[0]["er_service"] == "frontend"
         assert df.iloc[0]["er_method"] == "Login"
+        # er_last_child should be NaN/None
         assert (
             pd.isna(df.iloc[0]["er_last_child"]) or df.iloc[0]["er_last_child"] is None
         )
 
     def test_early_return_with_last_child(self):
+        # Old: /EarlyReturn:frontend:Login|/user.Service/GetUser
+        # New: /EarlyReturn?src=frontend::Login?last_rpc=user.Service::GetUser
         df = pd.DataFrame(
-            {"error": ["/EarlyReturn:frontend:Login|/user.Service/GetUser"]}
+            {
+                "error": [
+                    "/EarlyReturn?src=frontend::Login?last_rpc=user.Service::GetUser"
+                ]
+            }
         )
         df = _parse_error_columns(df)
 
         assert df.iloc[0]["error_type"] == "EarlyReturn"
         assert df.iloc[0]["er_service"] == "frontend"
         assert df.iloc[0]["er_method"] == "Login"
-        assert df.iloc[0]["er_last_child"] == "/user.Service/GetUser"
+        assert df.iloc[0]["er_last_child"] == "user.Service::GetUser"
 
     def test_generic_error(self):
         df = pd.DataFrame({"error": ["/ClientTimeout", "RPC Error", ""]})
@@ -35,8 +45,8 @@ class TestErrorParsing:
 
     def test_mixed_errors(self):
         data = [
-            "/EarlyReturn:A:Op1",
-            "/EarlyReturn:B:Op2|Child",
+            "/EarlyReturn?src=A::Op1",
+            "/EarlyReturn?src=B::Op2?last_rpc=Child",
             "/ClientTimeout",
             "SomeOtherError",
         ]
