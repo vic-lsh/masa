@@ -16,7 +16,7 @@ use app_utils::{
     timing::time_now,
 };
 use frontend::frontend_client::FrontendClient;
-use masa::{Context, ContextBuilder};
+use masa::Context;
 
 struct SyntheticClient;
 
@@ -31,17 +31,7 @@ impl Client for SyntheticClient {
         let mut request = tonic::Request::new(frontend::PingRequest {
             message: "ping".to_string(),
         });
-        let ctx = {
-            let slo = 1_000_000;
-            let start_at = time_now();
-            let deadline = start_at + slo;
-            let req_id = 0;
-            ContextBuilder::new("ping".to_string(), req_id)
-                .slo(slo)
-                .gateway_entry(start_at)
-                .deadline(deadline)
-                .build()
-        };
+        let ctx = masa::create_context("ping", Duration::from_micros(1_000_000));
         request.metadata_mut().insert_ctx("ctx", &ctx);
         client.handle_ping(request).await.map(|_| ())
     }

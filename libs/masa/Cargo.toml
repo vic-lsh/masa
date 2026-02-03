@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 masa-core = { path = "../masa-core" }
 tokio = { path = "../tokio/tokio", optional = true }
-tonic = { path = "../tonic/tonic", optional = true }
+tonic = { path = "../tonic/tonic" }
 
 [features]
 prio_global = ["masa-core/prio_global", "tokio/prio_global", "tonic/prio_global"]
