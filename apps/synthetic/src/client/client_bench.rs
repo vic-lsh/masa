@@ -29,9 +29,6 @@ impl Client for SyntheticClient {
     }
 
     async fn ping(client: &mut Self::FrontendClient) -> Result<(), tonic::Status> {
-        let mut request = tonic::Request::new(frontend::PingRequest {
-            message: "ping".to_string(),
-        });
         let ctx = {
             let slo = 1_000_000;
             let start_at = time_now();
@@ -167,3 +164,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = LoadGenArgs::from_args();
     load_gen_main::<RequestHandler, SyntheticClient>(args, time_now()).await
 }
+
