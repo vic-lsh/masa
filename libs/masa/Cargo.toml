@@ -14,8 +14,8 @@ prio_oldest = ["masa-core/prio_oldest", "tokio/prio_oldest", "tonic/prio_oldest"
 prio_local  = ["masa-core/prio_local",  "tokio/prio_local",  "tonic/prio_local"]
 fifo        = ["masa-core/fifo",        "tokio/fifo",        "tonic/fifo"]
 
-est-rms = ["tonic/est-rms"]
-est-hist = ["tonic/est-hist"]
+est_rms = ["tonic/est_rms"]
+est_hist = ["tonic/est_hist"]
 
 early = ["masa-core/early", "tonic/early"]
 trace-queue = ["tonic/trace-queue"]
