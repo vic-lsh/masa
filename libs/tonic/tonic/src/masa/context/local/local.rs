@@ -10,7 +10,9 @@ use std::{
 };
 
 use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
-use super::super::{resolve_method_name, ClientHooks, MasaHooks, ParentHooks, ServerHooks};
+use super::super::{
+    resolve_method_name, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks,
+};
 use super::{get_estimate, track_method_latency, PERCENTILE};
 use masa_core::{
     time_now, Context, ContextBuilder, LatencyDistribution, LatencyEstimator, LatencyRms,
@@ -233,9 +235,9 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         let child_recv_ctx = ContextBuilder::from(&self.ctx)
             .deadline(deadline)
-            .prio_hint(PriorityHint::new(prio_hint))
+            .prio_hint(prio_hint)
             .build();
-        request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
+        request.set_masa_context(&child_recv_ctx);
 
         Ok(())
     }

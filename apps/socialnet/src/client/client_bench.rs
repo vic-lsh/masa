@@ -19,6 +19,7 @@ use gen::get_compose_post_request;
 use masa::{Context, ContextBuilder};
 use socialnet::compose_post;
 use socialnet::compose_post::compose_post_service_client::ComposePostServiceClient;
+use tonic::masa::MasaRequestExt;
 
 struct SocialnetClient;
 
@@ -52,7 +53,7 @@ impl Client for SocialnetClient {
                 .deadline(deadline)
                 .build()
         };
-        request.metadata_mut().insert_ctx("ctx", &ctx);
+        let request = request.with_masa_context(&ctx);
         client.compose_post(request).await.map(|_| ())
     }
 }
@@ -127,8 +128,7 @@ impl RequestType<SocialnetClient> for ComposePostRequestType {
         mut client: ComposePostServiceClient<Channel>,
         ctx: &Context,
     ) -> Result<Response<Self::ResponseType>, Status> {
-        let mut r = tonic::Request::new(get_compose_post_request(rng));
-        r.metadata_mut().insert_ctx("ctx", &ctx);
+        let r = tonic::Request::new(get_compose_post_request(rng)).with_masa_context(ctx);
         client.compose_post(r).await
     }
 

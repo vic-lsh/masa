@@ -15,6 +15,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::time::{Instant, MissedTickBehavior};
 use tokio::{fs, time};
+use tonic::masa::MasaRequestExt;
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::Request;
 use tracing_subscriber::layer::SubscriberExt;
@@ -219,7 +220,7 @@ async fn run_root_load(
                             .prio_hint(PriorityHint::new(prio_hint))
                             .build()
                     };
-                    request.metadata_mut().insert_ctx("ctx", &ctx);
+                    let request = request.with_masa_context(&ctx);
 
                     let start_time = Instant::now();
                     let res = rpc_client.root(request).await;

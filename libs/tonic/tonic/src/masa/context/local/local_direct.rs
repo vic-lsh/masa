@@ -11,7 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use super::super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
+use super::super::super::{ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks};
 use super::super::common::EarlyReturnHandler;
 use super::super::resolve_method_name;
 use super::{estimate_method_latency, track_method_latency};
@@ -151,9 +151,13 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
 
         // NOTE(vic): could we have passed the deadline at this point?
         let deadline = self.ctx.deadline() - estimate_remaining;
+        let prio_hint = self.ctx.prio_hint();
 
-        let child_recv_ctx = ContextBuilder::from(&self.ctx).deadline(deadline).build();
-        request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
+        let child_recv_ctx = ContextBuilder::from(&self.ctx)
+            .deadline(deadline)
+            .prio_hint(prio_hint)
+            .build();
+        request.set_masa_context(&child_recv_ctx);
 
         Ok(())
     }

@@ -17,6 +17,7 @@ use app_utils::{
 };
 use frontend::frontend_client::FrontendClient;
 use masa::{Context, ContextBuilder};
+use tonic::masa::MasaRequestExt;
 
 struct SyntheticClient;
 
@@ -42,7 +43,10 @@ impl Client for SyntheticClient {
                 .deadline(deadline)
                 .build()
         };
-        request.metadata_mut().insert_ctx("ctx", &ctx);
+        let request = tonic::Request::new(frontend::PingRequest {
+            message: "ping".to_string(),
+        })
+        .with_masa_context(&ctx);
         client.handle_ping(request).await.map(|_| ())
     }
 }
@@ -125,8 +129,7 @@ impl RequestType<SyntheticClient> for ARequest {
         mut client: FrontendClient<Channel>,
         ctx: &Context,
     ) -> Result<Response<Self::ResponseType>, Status> {
-        let mut r = tonic::Request::new(frontend::ARequest {});
-        r.metadata_mut().insert_ctx("ctx", &ctx);
+        let r = tonic::Request::new(frontend::ARequest {}).with_masa_context(ctx);
         client.handle_a(r).await
     }
 
@@ -162,8 +165,7 @@ impl RequestType<SyntheticClient> for BRequest {
         mut client: FrontendClient<Channel>,
         ctx: &Context,
     ) -> Result<Response<Self::ResponseType>, Status> {
-        let mut r = tonic::Request::new(frontend::BRequest {});
-        r.metadata_mut().insert_ctx("ctx", &ctx);
+        let r = tonic::Request::new(frontend::BRequest {}).with_masa_context(ctx);
         client.handle_b(r).await
     }
 

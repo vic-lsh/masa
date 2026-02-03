@@ -4,7 +4,7 @@ use std::task::Poll;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::common::{EarlyReturnHandler, QueueLatencyTracker};
-use super::{resolve_method_name, METHOD_NAME_OVERRIDE_HEADER};
+use super::{resolve_method_name, MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER};
 use crate::Response;
 use masa_core::{Context, ContextBuilder};
 
@@ -93,7 +93,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             .deadline(deadline)
             .prio_hint(prio_hint)
             .build();
-        request.metadata_mut().insert_ctx("ctx", &child_recv_ctx);
+        request.set_masa_context(&child_recv_ctx);
 
         Ok(())
     }

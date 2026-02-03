@@ -13,6 +13,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::{mpsc, Semaphore};
 use tokio::time::Instant;
+use tonic::masa::MasaRequestExt;
 use tonic::metadata::MetadataMap;
 use tonic::Request;
 
@@ -286,7 +287,7 @@ pub async fn run_replay_load(
                     .build()
             };
 
-            request.metadata_mut().insert_ctx("ctx", &ctx);
+            let request = request.with_masa_context(&ctx);
             let send_started = StdInstant::now();
             let res = rpc_client.replay(request).await;
             let e2e_latency_us = send_started.elapsed().as_micros().min(u64::MAX as u128) as u64;
