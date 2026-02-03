@@ -346,7 +346,7 @@ where
                             req.extensions_mut().insert(Protocol::from_inner(protocol));
                         }
 
-                        if let Some(ctx) = req.headers().get("ctx") {
+                        if let Some(ctx) = req.headers().get(masa_core::MASA_CONTEXT_HEADER) {
                             // [NOTE] Get priority from context.
                             let ctx_str = ctx.to_str().unwrap();
                             let ctx = MasaContext::from_header_string(ctx_str);

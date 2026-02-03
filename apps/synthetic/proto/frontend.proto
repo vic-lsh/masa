@@ -13,13 +13,7 @@ message PingResponse { string message = 1; }
 
 message ARequest {}
 message AResponse {
-  uint64 child1_queueing_latency = 1;
-  uint64 child1_sleep_latency = 2;
-  uint64 child1_handler_latency = 3;
 
-  uint64 child2_queueing_latency = 4;
-  uint64 child2_handler_latency = 5;
-  uint64 child2_reply_latency = 6;
 
   uint64 handler_latency = 7;
 }

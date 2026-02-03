@@ -16,7 +16,8 @@ use app_utils::{
     timing::time_now,
 };
 use frontend::frontend_client::FrontendClient;
-use masa::Context;
+use masa::{Context, ContextBuilder};
+use tonic::masa::MasaRequestExt;
 
 struct SyntheticClient;
 
@@ -28,11 +29,21 @@ impl Client for SyntheticClient {
     }
 
     async fn ping(client: &mut Self::FrontendClient) -> Result<(), tonic::Status> {
-        let mut request = tonic::Request::new(frontend::PingRequest {
+        let ctx = {
+            let slo = 1_000_000;
+            let start_at = time_now();
+            let deadline = start_at + slo;
+            let req_id = 0;
+            ContextBuilder::new("ping".to_string(), req_id)
+                .slo(slo)
+                .gateway_entry(start_at)
+                .deadline(deadline)
+                .build()
+        };
+        let request = tonic::Request::new(frontend::PingRequest {
             message: "ping".to_string(),
-        });
-        let ctx = masa::create_context("ping", Duration::from_micros(1_000_000));
-        request.metadata_mut().insert_ctx("ctx", &ctx);
+        })
+        .with_masa_context(&ctx);
         client.handle_ping(request).await.map(|_| ())
     }
 }
@@ -91,15 +102,7 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
 struct ARequest {}
 
 impl ARequest {
-    const HEADERS: [&'static str; 7] = [
-        "frontend_latency",
-        "child1_queueing_latency",
-        "child1_sleep_latency",
-        "child1_handler_latency",
-        "child2_queueing_latency",
-        "child2_handler_latency",
-        "child2_reply_latency",
-    ];
+    const HEADERS: [&'static str; 1] = ["frontend_latency"];
 }
 
 impl RequestType<SyntheticClient> for ARequest {
@@ -115,8 +118,7 @@ impl RequestType<SyntheticClient> for ARequest {
         mut client: FrontendClient<Channel>,
         ctx: &Context,
     ) -> Result<Response<Self::ResponseType>, Status> {
-        let mut r = tonic::Request::new(frontend::ARequest {});
-        r.metadata_mut().insert_ctx("ctx", &ctx);
+        let r = tonic::Request::new(frontend::ARequest {}).with_masa_context(ctx);
         client.handle_a(r).await
     }
 
@@ -125,15 +127,7 @@ impl RequestType<SyntheticClient> for ARequest {
     }
 
     fn response_to_row(_metadata: &MetadataMap, r: &Self::ResponseType) -> Vec<String> {
-        vec![
-            r.handler_latency.to_string(),
-            r.child1_queueing_latency.to_string(),
-            r.child1_sleep_latency.to_string(),
-            r.child1_handler_latency.to_string(),
-            r.child2_queueing_latency.to_string(),
-            r.child2_handler_latency.to_string(),
-            r.child2_reply_latency.to_string(),
-        ]
+        vec![r.handler_latency.to_string()]
     }
 }
 
@@ -152,8 +146,7 @@ impl RequestType<SyntheticClient> for BRequest {
         mut client: FrontendClient<Channel>,
         ctx: &Context,
     ) -> Result<Response<Self::ResponseType>, Status> {
-        let mut r = tonic::Request::new(frontend::BRequest {});
-        r.metadata_mut().insert_ctx("ctx", &ctx);
+        let r = tonic::Request::new(frontend::BRequest {}).with_masa_context(ctx);
         client.handle_b(r).await
     }
 

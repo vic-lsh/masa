@@ -9,6 +9,7 @@ use sim_config::svc::ServiceName;
 use std::collections::HashMap;
 use tokio::sync::RwLockReadGuard;
 use tokio::time::{sleep, Duration};
+use tonic::masa::MasaRequestExt;
 use tonic::{Request, Status};
 use tracing::warn;
 
@@ -62,7 +63,7 @@ impl<'a> ReplaySpanExecutor<'a> {
             Status::not_found(format!("Child service {} not found", children.name))
         })?;
 
-        let mut request = Request::new(ReplayRequest {
+        let request = Request::new(ReplayRequest {
             req_id: self.request.req_id,
             exclude_queue_latency: self.request.exclude_queue_latency,
             slo: self.request.slo,
@@ -76,7 +77,7 @@ impl<'a> ReplaySpanExecutor<'a> {
             .gateway_entry(self.request.start_at)
             .deadline(self.request.deadline)
             .build();
-        request.metadata_mut().insert_ctx("ctx", &ctx);
+        let request = request.with_masa_context(&ctx);
 
         let mut client = client.clone();
         client.replay(request).await.map_err(|e| {

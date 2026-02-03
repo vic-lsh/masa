@@ -16,9 +16,10 @@ use app_utils::{
     timing::time_now,
 };
 use gen::get_compose_post_request;
-use masa::Context;
+use masa::{Context, ContextBuilder};
 use socialnet::compose_post;
 use socialnet::compose_post::compose_post_service_client::ComposePostServiceClient;
+use tonic::masa::MasaRequestExt;
 
 struct SocialnetClient;
 
@@ -31,7 +32,7 @@ impl Client for SocialnetClient {
 
     async fn ping(client: &mut Self::FrontendClient) -> Result<(), tonic::Status> {
         // Option B: Use minimal ComposePost request as ping
-        let mut request = tonic::Request::new(compose_post::ComposePostRequest {
+        let request = tonic::Request::new(compose_post::ComposePostRequest {
             req_id: 0,
             username: "ping_user".to_string(),
             user_id: 0,
@@ -41,7 +42,18 @@ impl Client for SocialnetClient {
             post_type: 0, // POST = 0
             carrier: HashMap::new(),
         });
-        masa::attach_context(&mut request, "ping", Duration::from_micros(1_000_000));
+        let ctx = {
+            let slo = 1_000_000;
+            let start_at = time_now();
+            let deadline = start_at + slo;
+            let req_id = 0;
+            ContextBuilder::new("ping".to_string(), req_id)
+                .slo(slo)
+                .gateway_entry(start_at)
+                .deadline(deadline)
+                .build()
+        };
+        let request = request.with_masa_context(&ctx);
         client.compose_post(request).await.map(|_| ())
     }
 }
@@ -116,8 +128,7 @@ impl RequestType<SocialnetClient> for ComposePostRequestType {
         mut client: ComposePostServiceClient<Channel>,
         ctx: &Context,
     ) -> Result<Response<Self::ResponseType>, Status> {
-        let mut r = tonic::Request::new(get_compose_post_request(rng));
-        r.metadata_mut().insert_ctx("ctx", &ctx);
+        let r = tonic::Request::new(get_compose_post_request(rng)).with_masa_context(ctx);
         client.compose_post(r).await
     }
 
