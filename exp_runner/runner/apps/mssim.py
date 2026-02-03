@@ -409,6 +409,11 @@ class MssimApp(AppPlugin):
         dry_run: bool = False,
         **kwargs,
     ) -> None:
+        """Run mssim experiment."""
+        if type(docker).__name__ == "K8sManager":
+            raise NotImplementedError(
+                "Mssim app does not support Kubernetes execution yet"
+            )
         # MSSIM-specific orchestration:
         # - build images (cached across calls)
         # - generate compose once and run all RPS levels in a single docker-compose session
@@ -586,15 +591,12 @@ class MssimApp(AppPlugin):
             print(
                 f"Starting services for policy={policy} rps_values={rps_values} iteration={iteration}"
             )
-            with log_path.open("ab") as log_file:
-                up_proc = subprocess.run(
-                    up_cmd,
-                    cwd=config.app_dir,
-                    env=env,
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
-                    check=True,
-                )
+            docker.start(
+                app_dir=config.app_dir,
+                deployment_config="docker-compose.yml",
+                env_vars=env_vars,
+                project_name=project_name,
+            )
 
             # Wait a moment for containers to start
             time.sleep(2)
@@ -604,10 +606,11 @@ class MssimApp(AppPlugin):
 
             # Get container names and stream logs to individual files
             logs_dir = run_dir / "logs"
+            # Get container names for log streaming
             container_names = docker.get_container_names(
-                compose_path=docker_compose_path,
+                config_path=config_path,
                 project_name=project_name,
-                env_vars=env,
+                env_vars=env_vars,
             )
 
             if container_names:
@@ -689,8 +692,12 @@ class MssimApp(AppPlugin):
             except Exception as e:
                 logger.warning(f"Error stopping CPU monitor: {e}")
 
-            # Stop log streaming threads by stopping containers
-            subprocess.run(down_cmd, cwd=config.app_dir, env=env, check=False)
+            docker.stop(
+                app_dir=config.app_dir,
+                deployment_config="docker-compose.yml",
+                env_vars=env_vars,
+                project_name=project_name,
+            )
 
             # Wait for log threads to finish (they should stop when containers stop)
             for thread in log_threads:

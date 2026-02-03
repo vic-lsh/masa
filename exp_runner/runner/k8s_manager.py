@@ -7,7 +7,9 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+from .deployment_manager import DeploymentManager
 
 # Attempt to import strip_ansi_codes from docker_manager if available
 try:
@@ -23,7 +25,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class K8sManager:
+class K8sManager(DeploymentManager):
     """
     Manages Kubernetes operations for experiments using Helm and Kubectl.
     """
@@ -63,22 +65,15 @@ class K8sManager:
     def start(
         self,
         app_dir: Path,
-        compose_file: str,  # Treated as chart path relative to app_dir or absolute
-        env_vars: dict,
-        project_name: str | None = None,
+        deployment_config: str,
+        env_vars: Dict[str, str],
+        project_name: str,
     ) -> None:
         """
         Start services using Helm.
-        Matches DockerManager.start interface.
         """
-        if not project_name:
-            raise ValueError("project_name is required for K8s deployment")
-
-        # In K8s mode, compose_file is interpreted as the chart path
-        chart_path = app_dir / compose_file
-        if not chart_path.exists():
-            # Fallback: maybe it's just the name of the chart directory in app_dir
-            pass
+        # In K8s mode, deployment_config is interpreted as the chart path
+        chart_path = app_dir / deployment_config
 
         logger.info(
             f"Installing helm chart {project_name} from {chart_path} in namespace {self.namespace}..."
@@ -90,46 +85,10 @@ class K8sManager:
         if self.kube_context:
             cmd.extend(["--kube-context", self.kube_context])
 
-        # Handle environment variables by creating a temporary values file
-        if env_vars:
-            import json
-            import tempfile
-
-            import yaml
-
-            values = {}
-
-            # Map APP_CONFIG_PATH to appConfig
-            if "APP_CONFIG_PATH" in env_vars:
-                try:
-                    with open(env_vars["APP_CONFIG_PATH"]) as f:
-                        app_config = json.load(f)
-                    values["appConfig"] = app_config
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to load app config from {env_vars['APP_CONFIG_PATH']}: {e}"
-                    )
-
-            # Map LOG_LEVEL
-            if "LOG_LEVEL" in env_vars:
-                values["logLevel"] = env_vars["LOG_LEVEL"]
-
-            # Map *_IMAGE_TAG to image.tag
-            for k, v in env_vars.items():
-                if k.endswith("_IMAGE_TAG"):
-                    if "image" not in values:
-                        values["image"] = {}
-                    values["image"]["tag"] = v
-                    break
-
-            # Use a temporary file for values
-            if values:
-                with tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".yaml", delete=False
-                ) as tmp:
-                    yaml.dump(values, tmp)
-                    values_file = tmp.name
-                cmd.extend(["-f", values_file])
+        # Handle environment variables
+        # We look for HELM_VALUES_FILE in env_vars to pass generic values
+        if "HELM_VALUES_FILE" in env_vars:
+            cmd.extend(["-f", env_vars["HELM_VALUES_FILE"]])
 
         # Wait for deployment
         cmd.extend(["--wait", "--timeout", "300s"])
@@ -213,13 +172,12 @@ class K8sManager:
     def stop(
         self,
         app_dir: Path,
-        compose_file: str,
-        env_vars: dict | None = None,
-        project_name: str | None = None,
+        deployment_config: str,
+        env_vars: Optional[Dict[str, str]] = None,
+        project_name: Optional[str] = None,
     ) -> None:
         """
         Stop services (uninstall Helm release).
-        Matches DockerManager.stop interface.
         """
         if not project_name:
             logger.warning("No project_name provided to stop, skipping k8s uninstall")
@@ -259,13 +217,12 @@ class K8sManager:
 
     def get_container_names(
         self,
-        compose_path: Path,
+        config_path: Path,
         project_name: str,
-        env_vars: dict | None = None,
-    ) -> list[str]:
+        env_vars: Optional[Dict[str, str]] = None,
+    ) -> List[str]:
         """
         Get list of pod names for the release.
-        Matches DockerManager.get_container_names interface.
         """
         # Selector for the release
         label_selector = f"app.kubernetes.io/instance={project_name}"
@@ -273,21 +230,17 @@ class K8sManager:
 
     def stream_logs(
         self,
-        container_names: list[str],
+        container_names: List[str],
         output_dir: Path,
         follow: bool = True,
-    ) -> list[threading.Thread]:
+    ) -> List[threading.Thread]:
         """
         Stream logs from pods to files.
-        Matches DockerManager.stream_logs interface.
         """
-        # Rename arg for internal consistency, but interface uses container_names
-        pod_names = container_names
-
         output_dir.mkdir(parents=True, exist_ok=True)
         threads = []
 
-        for pod_name in pod_names:
+        for pod_name in container_names:
             log_file = output_dir / f"{pod_name}.log"
 
             if follow:
@@ -339,13 +292,12 @@ class K8sManager:
 
     def check_project_health(
         self,
-        compose_path: Path,
+        config_path: Path,
         project_name: str,
-        env_vars: dict | None = None,
-    ) -> list[tuple[str, int]]:
+        env_vars: Optional[Dict[str, str]] = None,
+    ) -> List[Tuple[str, int]]:
         """
         Check if any pods in the project have failed.
-        Matches DockerManager.check_project_health interface.
         """
         # Get pods and their statuses
         label_selector = f"app.kubernetes.io/instance={project_name}"
@@ -393,7 +345,7 @@ class K8sManager:
 
     def port_forward(
         self, service_name: str, local_port: int, remote_port: int
-    ) -> subprocess.Popen:
+    ) -> Optional[subprocess.Popen]:
         """
         Start port forwarding in a background process.
         Returns the Popen object so it can be terminated later.
@@ -425,7 +377,7 @@ class K8sManager:
 
         return process
 
-    def load_image_to_kind(self, cluster_name: str, image_names: List[str]) -> None:
+    def load_image_to_cluster(self, cluster_name: str, image_names: List[str]) -> None:
         """
         Load docker images into kind cluster.
         """
@@ -434,14 +386,16 @@ class K8sManager:
             cmd = ["kind", "load", "docker-image", img, "--name", cluster_name]
             self._run_cmd(cmd)
 
-    def copy_from_pod(self, pod_name: str, src_path: str, dest_path: Path) -> None:
+    def copy_from_container(
+        self, container_name: str, src_path: str, dest_path: Path
+    ) -> None:
         """
         Copy file/directory from a pod to local path.
         """
         cmd = [
             "kubectl",
             "cp",
-            f"{pod_name}:{src_path}",
+            f"{container_name}:{src_path}",
             str(dest_path),
             "-n",
             self.namespace,

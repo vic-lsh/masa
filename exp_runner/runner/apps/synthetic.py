@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 import yaml
 
+from ..deployment_manager import DeploymentManager
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import get_docker_progress_flag, normalize_features_to_tag
 
@@ -245,10 +246,12 @@ class K8sSyntheticLoadGenerator(LoadGenerator):
         try:
             with open(log_file, "r") as f:
                 log_content = f.read()
-            
+
             if "---BEGIN TRACES---" in log_content:
                 logger.info("Found traces in logs, extracting...")
-                trace_section = log_content.split("---BEGIN TRACES---")[1].split("---END TRACES---")[0]
+                trace_section = log_content.split("---BEGIN TRACES---")[1].split(
+                    "---END TRACES---"
+                )[0]
                 files = trace_section.split("---END FILE---")
                 for file_data in files:
                     if "FILE: " in file_data:
@@ -283,7 +286,7 @@ class K8sSyntheticLoadGenerator(LoadGenerator):
             csv_files = [f for f in files if f.endswith(".csv")]
             for csv in csv_files:
                 try:
-                    self.k8s.copy_from_pod(
+                    self.k8s.copy_from_container(
                         pod_name, f"{output_path}/{csv}", output_dir / csv
                     )
                 except Exception as e:
@@ -603,7 +606,7 @@ class SyntheticApp(AppPlugin):
         features: Optional[str] = None,
         project_name: Optional[str] = None,
         network_name: Optional[str] = None,
-        k8s_manager: Optional[Any] = None,
+        k8s_manager: Optional[DeploymentManager] = None,
     ) -> LoadGenerator:
         """
         Create a load generator instance for synthetic application.
@@ -612,7 +615,7 @@ class SyntheticApp(AppPlugin):
             features: Optional cargo features used to build the image
             project_name: Docker Compose project name (used to determine network name)
             network_name: Optional explicit docker network name to connect to
-            k8s_manager: Optional K8sManager instance (if running on K8s)
+            k8s_manager: Optional DeploymentManager instance (if running on K8s)
         """
         if k8s_manager:
             return K8sSyntheticLoadGenerator(
@@ -666,7 +669,7 @@ class SyntheticApp(AppPlugin):
         from .base import CPUMonitor
 
         docker_config = self.get_docker_config()
-        is_k8s = hasattr(docker, "load_image_to_kind")
+        is_k8s = hasattr(docker, "load_image_to_cluster")
 
         # Generate environment variables
         env_vars = self.generate_env_vars(
@@ -728,7 +731,7 @@ class SyntheticApp(AppPlugin):
         )
 
         # Generate call graph compose file if needed
-        compose_file = docker_config.compose_file
+        deployment_config = docker_config.compose_file
         # Default to experiment scripts dir for static compose
         compose_app_dir = repo_root / "exp/synthetic/scripts"
 
@@ -759,13 +762,13 @@ class SyntheticApp(AppPlugin):
                     output_dir=output_dir,
                 )
                 # Use output_dir as app_dir and just the filename for compose_file
-                compose_file = generated_compose.name
+                deployment_config = generated_compose.name
                 compose_app_dir = output_dir
                 self._generated_compose_path = generated_compose
             else:
                 # For K8s, we use the chart directory
                 compose_app_dir = repo_root / "charts/synthetic"
-                compose_file = "."
+                deployment_config = "."
 
         # Choose the network name for the load generator.
         # - Static compose (docker-compose.yaml) defines network key "synthetic_network".
@@ -801,6 +804,38 @@ class SyntheticApp(AppPlugin):
                 f.write(f"{key}={value}\n")
         logger.debug(f"Wrote environment variables to {env_file}")
 
+        if is_k8s:
+            # Generate Helm values file
+            values = {}
+            # Map APP_CONFIG_PATH to appConfig
+            if "APP_CONFIG_PATH" in env_vars:
+                try:
+                    with open(env_vars["APP_CONFIG_PATH"]) as f:
+                        app_config_json = json.load(f)
+                    values["appConfig"] = app_config_json
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to load app config from {env_vars['APP_CONFIG_PATH']}: {e}"
+                    )
+
+            # Map LOG_LEVEL
+            if "LOG_LEVEL" in env_vars:
+                values["logLevel"] = env_vars["LOG_LEVEL"]
+
+            # Map *_IMAGE_TAG to image.tag
+            for k, v in env_vars.items():
+                if k.endswith("_IMAGE_TAG"):
+                    if "image" not in values:
+                        values["image"] = {}
+                    values["image"]["tag"] = v
+                    break
+
+            # Write values file
+            values_file = output_dir / "values.yaml"
+            with open(values_file, "w", encoding="utf-8") as f:
+                yaml.dump(values, f)
+            env_vars["HELM_VALUES_FILE"] = str(values_file.resolve())
+
         builder.build(
             repo_root=repo_root,
             app_dir=config.app_dir,
@@ -820,7 +855,7 @@ class SyntheticApp(AppPlugin):
 
             try:
                 # TODO: make cluster name configurable
-                docker.load_image_to_kind("kind", images)
+                docker.load_image_to_cluster("kind", images)
             except Exception as e:
                 logger.warning(f"Failed to load images to kind: {e}")
 
@@ -831,7 +866,7 @@ class SyntheticApp(AppPlugin):
         try:
             docker.start(
                 app_dir=compose_app_dir,
-                compose_file=compose_file,
+                deployment_config=deployment_config,
                 env_vars=env_vars,
                 project_name=project_name,
             )
@@ -841,9 +876,9 @@ class SyntheticApp(AppPlugin):
 
             # Get container names for log streaming
             # Query Docker Compose for actual container names (includes project prefix)
-            compose_path = compose_app_dir / compose_file
+            config_path = compose_app_dir / deployment_config
             container_names = docker.get_container_names(
-                compose_path=compose_path,
+                config_path=config_path,
                 project_name=project_name,
                 env_vars=env_vars,
             )
@@ -886,7 +921,7 @@ class SyntheticApp(AppPlugin):
             # Stop Docker services
             docker.stop(
                 app_dir=compose_app_dir,
-                compose_file=compose_file,
+                deployment_config=deployment_config,
                 env_vars=env_vars,
                 project_name=project_name,
             )
