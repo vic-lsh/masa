@@ -26,7 +26,7 @@ use app_utils::{
 };
 use frontend::frontend_client::FrontendClient;
 use hotel::profile_layer::extract_latency_traces;
-use masa::{Context, ContextBuilder};
+use masa::Context;
 use tonic::Response;
 use tonic::Status;
 
@@ -68,18 +68,7 @@ impl Client for HotelClient {
         let mut request = tonic::Request::new(frontend::PingRequest {
             message: "ping".to_string(),
         });
-        let ctx = {
-            let slo = 1_000_000;
-            let start_at = time_now();
-            let deadline = start_at + slo;
-            let req_id = 0;
-            ContextBuilder::new("ping".to_string(), req_id)
-                .slo(slo)
-                .gateway_entry(start_at)
-                .deadline(deadline)
-                .build()
-        };
-        request.metadata_mut().insert_ctx("ctx", &ctx);
+        masa::attach_context(&mut request, "ping", Duration::from_micros(1_000_000));
         client.handle_ping(request).await.map(|_| ())
     }
 }
