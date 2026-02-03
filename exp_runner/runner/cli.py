@@ -52,12 +52,26 @@ def cmd_run_experiment(args: argparse.Namespace) -> None:
     """
     repo_root = find_repo_root()
 
+    # --kind implies --k8s
+    if getattr(args, "kind", False):
+        args.k8s = True
+
     # Get application plugin
     try:
         app_plugin = get_app_plugin(args.app)
     except ValueError as e:
         logger.error(str(e))
         sys.exit(1)
+
+    # If running with --kind, wrap run_workload to inject use_kind=True
+    if getattr(args, "kind", False):
+        original_run_workload = app_plugin.run_workload
+
+        def run_workload_with_kind(*a, **kw):
+            kw["use_kind"] = True
+            return original_run_workload(*a, **kw)
+
+        app_plugin.run_workload = run_workload_with_kind
 
     # Load experiment configuration
     try:
@@ -81,6 +95,7 @@ def cmd_run_experiment(args: argparse.Namespace) -> None:
         rm_data=args.rm_data,
         dry_run=args.dry_run,
         smoke_test=args.smoke_test,
+        use_k8s=args.k8s,
     )
 
     try:
@@ -119,6 +134,8 @@ def cmd_queue_experiments(args: argparse.Namespace) -> None:
             rm_data=args.rm_data,
             dry_run=args.dry_run,
             smoke_test=args.smoke_test,
+            k8s=args.k8s,
+            kind=args.kind,
         )
 
         try:
@@ -471,6 +488,16 @@ Examples:
         action="store_true",
         help="Verify experiment results (goodput/files) after completion",
     )
+    run_parser.add_argument(
+        "--k8s",
+        action="store_true",
+        help="Run on Kubernetes instead of Docker Compose",
+    )
+    run_parser.add_argument(
+        "--kind",
+        action="store_true",
+        help="Run on Kind (implies --k8s) and auto-load images",
+    )
     run_parser.set_defaults(func=cmd_run_experiment)
 
     # run-multiple command
@@ -507,6 +534,16 @@ Examples:
         "--smoke-test",
         action="store_true",
         help="Verify experiment results (goodput/files) after completion",
+    )
+    queue_parser.add_argument(
+        "--k8s",
+        action="store_true",
+        help="Run on Kubernetes instead of Docker Compose",
+    )
+    queue_parser.add_argument(
+        "--kind",
+        action="store_true",
+        help="Run on Kind (implies --k8s) and auto-load images",
     )
     queue_parser.set_defaults(func=cmd_queue_experiments)
 
