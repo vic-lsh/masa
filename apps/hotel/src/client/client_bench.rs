@@ -26,7 +26,7 @@ use app_utils::{
 };
 use frontend::frontend_client::FrontendClient;
 use hotel::profile_layer::extract_latency_traces;
-use masa::{Context, ContextBuilder};
+use masa::Context;
 use tonic::masa::MasaRequestExt;
 use tonic::Response;
 use tonic::Status;
@@ -222,4 +222,3 @@ fn parse_frontend_addr(addr: &str) -> Option<(String, String, u16)> {
     let port = uri.port_u16()?;
     Some((normalized, host, port))
 }
-
