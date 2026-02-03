@@ -234,6 +234,11 @@ impl ServiceCore {
                     .map_err(|e| {
                         Status::internal(format!("Failed to set method name override: {:?}", e))
                     })?;
+                request
+                    .set_service_name_override(child_svc_name.as_str())
+                    .map_err(|e| {
+                        Status::internal(format!("Failed to set service name override: {:?}", e))
+                    })?;
 
                 if let Some(ref metadata_value) = parent_chain_metadata {
                     request
@@ -330,6 +335,11 @@ impl ServiceCore {
                 .set_method_name_override(&method_to_call)
                 .map_err(|e| {
                     Status::internal(format!("Failed to set method name override: {:?}", e))
+                })?;
+            request
+                .set_service_name_override(child_svc_name.as_str())
+                .map_err(|e| {
+                    Status::internal(format!("Failed to set service name override: {:?}", e))
                 })?;
 
             if let Some(ref metadata_value) = parent_chain_metadata {

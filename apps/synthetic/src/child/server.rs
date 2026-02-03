@@ -161,6 +161,14 @@ impl ChildImpl {
                                     e
                                 ))
                             })?;
+                        request
+                            .set_service_name_override(&target_service_id)
+                            .map_err(|e| {
+                                Status::internal(format!(
+                                    "Failed to set service name override: {:?}",
+                                    e
+                                ))
+                            })?;
                         client.clone().handle_method(request).await
                     });
 
