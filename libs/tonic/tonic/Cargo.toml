@@ -62,8 +62,8 @@ prio_oldest = ["masa-core/prio_oldest", "tokio/prio_oldest"]
 prio_local = ["masa-core/prio_local", "tokio/prio_local"]
 fifo = ["masa-core/fifo", "tokio/fifo"]
 early = ["masa", "masa-core/early"]
-est-rms = []
-est-hist = []
+est_rms = []
+est_hist = []
 
 
 # [[bench]]
