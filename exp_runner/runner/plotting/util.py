@@ -1,8 +1,8 @@
-from argparse import Namespace
 import argparse
 import json
 import logging
 import os
+from argparse import Namespace
 from pathlib import Path
 
 import pandas as pd
@@ -72,6 +72,7 @@ def _read_request_csv(file_path: str) -> pd.DataFrame:
     We do not rely on pandas' CSV parser here because malformed 'error' fields may contain
     unescaped commas, which breaks tokenization.
     """
+
     def _needs_repair(parts: list[str], *, expected_fields: int) -> bool:
         # Obvious mismatch.
         if len(parts) != expected_fields:
@@ -132,7 +133,9 @@ def _read_request_csv(file_path: str) -> pd.DataFrame:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     if repaired:
-        logger.warning("Repaired %d malformed row(s) while reading %s", repaired, file_path)
+        logger.warning(
+            "Repaired %d malformed row(s) while reading %s", repaired, file_path
+        )
 
     return df
 
@@ -305,7 +308,14 @@ def filter_excluded_errors(df):
     Returns:
         DataFrame with excluded errors filtered out
     """
-    excluded_errors = df["error"].isin(["/ClientTimeout"]) | df["error"].str.startswith(
-        "/EarlyReturn"
-    )
+
+    # Use apply instead of str.startswith to avoid potential numpy.rec issues
+    # in some pandas/numpy version combinations (specifically pandas < 2.2 with numpy 2.0+).
+    def is_excluded(err):
+        # Treat non-string errors (NaN, None, numbers) as NOT excluded
+        if not isinstance(err, str):
+            return False
+        return err == "/ClientTimeout" or err.startswith("/EarlyReturn")
+
+    excluded_errors = df["error"].apply(is_excluded)
     return df[~excluded_errors].copy()

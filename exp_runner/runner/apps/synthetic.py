@@ -426,7 +426,8 @@ class SyntheticApp(AppPlugin):
         # Build depends_on list for all call graph services
         # Use "local-{service-id}-service" naming to match service names
         depends_on = [
-            f"local-{svc['id'].lower().replace('_', '-')}-service" for svc in call_graph["services"]
+            f"local-{svc['id'].lower().replace('_', '-')}-service"
+            for svc in call_graph["services"]
         ]
         services["synthetic-frontend-service"] = {
             "image": f"synthetic_frontend:{image_tag}",
@@ -809,6 +810,7 @@ class SyntheticApp(AppPlugin):
         if is_k8s:
             # Generate Helm values file
             values = {}
+            values["fullnameOverride"] = project_name
             # Map APP_CONFIG_PATH to appConfig
             if "APP_CONFIG_PATH" in env_vars:
                 try:
@@ -863,7 +865,9 @@ class SyntheticApp(AppPlugin):
 
         # Initialize CPU monitor
         cpu_stats_file = output_dir / "cpu_stats.csv"
-        cpu_monitor = CPUMonitor(output_path=cpu_stats_file, poll_interval=2.0)
+        cpu_monitor = CPUMonitor(
+            output_path=cpu_stats_file, poll_interval=2.0, container_prefix=project_name
+        )
 
         try:
             docker.start(
