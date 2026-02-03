@@ -15,14 +15,30 @@ use super::super::{
 };
 use super::{get_estimate, track_method_latency, PERCENTILE};
 use masa_core::{
-    time_now, Context, ContextBuilder, LatencyDistribution, LatencyEstimator, PriorityHint,
-    EARLY_RETURN,
+    time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint, EARLY_RETURN,
 };
+
+#[cfg(feature = "est-hist")]
+use masa_core::LatencyDistribution as LatencyHistogram;
+
+#[cfg(any(feature = "est-rms", all(not(feature = "est-rms"), not(feature = "est-hist"))))]
+use masa_core::LatencyRms;
+
 use std::sync::atomic::AtomicUsize;
 
+#[cfg(all(feature = "est-rms", feature = "est-hist"))]
+compile_error!("Features 'est-rms' and 'est-hist' cannot be enabled simultaneously");
+
+#[cfg(any(feature = "est-rms", feature = "est-hist"))]
+#[cfg(not(feature = "prio_local"))]
+compile_error!("Features 'est-rms' or 'est-hist' require 'prio_local' to be enabled");
+
 /// Type alias for the latency estimator used in the local deadline policy.
-/// Change this to use a different estimator (e.g., `LatencyRms`).
-pub(crate) type LocalLatencyEstimator = LatencyDistribution;
+#[cfg(feature = "est-hist")]
+pub(crate) type LocalLatencyEstimator = LatencyHistogram;
+
+#[cfg(any(feature = "est-rms", all(not(feature = "est-rms"), not(feature = "est-hist"))))]
+pub(crate) type LocalLatencyEstimator = LatencyRms;
 
 #[derive(Debug)]
 /// This policy computes the deadline d of a child request as

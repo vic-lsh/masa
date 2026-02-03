@@ -85,6 +85,9 @@ prio_global = ["masa/prio_global"]
 prio_local = ["masa/prio_local"]
 fifo = ["masa/fifo"]
 
+est-rms = ["masa/est-rms"]
+est-hist = ["masa/est-hist"]
+
 early = ["masa/early"]
 trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
 
