@@ -137,6 +137,55 @@ def _read_request_csv(file_path: str) -> pd.DataFrame:
             "Repaired %d malformed row(s) while reading %s", repaired, file_path
         )
 
+    # Centralized error parsing
+    df = _parse_error_columns(df)
+
+    return df
+
+
+def _parse_error_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Centralized parsing logic.
+    Extracts metadata from error strings into dedicated columns.
+    """
+    # 1. Initialize default columns
+    # Use object dtype initially to allow strings and NaNs
+    df["error_type"] = "Generic"
+    df["er_service"] = None
+    df["er_method"] = None
+    df["er_last_child"] = None
+
+    if "error" not in df.columns:
+        return df
+
+    # 2. Identify Early Returns
+    # Handle NaN/None in error column safely
+    # We cast to string just in case, though usually it should be string or NaN
+    mask_er = df["error"].astype(str).str.startswith("/EarlyReturn")
+    if not mask_er.any():
+        return df
+
+    df.loc[mask_er, "error_type"] = "EarlyReturn"
+
+    # 3. Vectorized extraction using Regex
+    # Regex captures: /EarlyReturn:<Service>:<Method>(|<LastChild>)?
+    # Pattern explanation:
+    # ^/EarlyReturn:      Start with literal
+    # (?P<er_service>[^:]+)  Capture service (chars until next colon)
+    # :                   Literal colon
+    # (?P<er_method>[^|]+)   Capture method (chars until pipe or end)
+    # (?:\|(?P<er_last_child>.*))?  Optional group: pipe followed by anything (last child)
+    # Updated to support legacy format with colon separator as well:
+    # (?P<er_method>[^:|]+)  Capture method (chars until colon, pipe, or end)
+    # (?:[|:](?P<er_last_child>.*))? Optional group: separator (pipe or colon) + last child
+    pattern = r"^/EarlyReturn:(?P<er_service>[^:]+):(?P<er_method>[^:|]+)(?:[|:](?P<er_last_child>.*))?$"
+
+    extracted_data = df.loc[mask_er, "error"].str.extract(pattern)
+
+    # 4. Merge back into main dataframe
+    if not extracted_data.empty:
+        df.update(extracted_data)
+
     return df
 
 
@@ -308,6 +357,18 @@ def filter_excluded_errors(df):
     Returns:
         DataFrame with excluded errors filtered out
     """
+    if df.empty:
+        return df
+
+    # Fast path: use parsed error_type if available
+    if "error_type" in df.columns:
+        # Exclude EarlyReturn
+        # Also check for ClientTimeout (which is usually just "Generic" type currently,
+        # unless we add it to parser, but let's check string for Timeout for now or add it)
+        # Actually, let's just use string check for ClientTimeout and column for EarlyReturn
+        is_early_return = df["error_type"] == "EarlyReturn"
+        is_timeout = df["error"] == "/ClientTimeout"
+        return df[~(is_early_return | is_timeout)].copy()
 
     # Use apply instead of str.startswith to avoid potential numpy.rec issues
     # in some pandas/numpy version combinations (specifically pandas < 2.2 with numpy 2.0+).
