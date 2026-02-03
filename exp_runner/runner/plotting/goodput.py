@@ -5,21 +5,22 @@ import matplotlib
 import pandas as pd
 
 matplotlib.use("Agg")  # Use non-interactive backend for thread safety
+from typing import Optional
+
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Optional
 
 # Suppress warning about too many open figures when running in parallel
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams["figure.max_open_warning"] = 0
 
 from .util import (
-    parse_args,
-    prepare_output_dir,
-    read_data,
     filter_excluded_errors,
     get_policy_color,
     get_policy_display_name,
+    parse_args,
+    prepare_output_dir,
+    read_data,
 )
 
 
@@ -130,7 +131,10 @@ def compute_early_return_breakdown(df):
         return {}
 
     # Filter for early-return requests only
-    early_return_df = df[df["error"].str.startswith("/EarlyReturn")].copy()
+    if "error_type" in df.columns:
+        early_return_df = df[df["error_type"] == "EarlyReturn"].copy()
+    else:
+        early_return_df = df[df["error"].str.startswith("/EarlyReturn")].copy()
 
     if early_return_df.empty:
         return {}
@@ -143,25 +147,35 @@ def compute_early_return_breakdown(df):
     if duration_us == 0:
         return {}
 
-    # Parse Service and Method from error string
-    # Format: /EarlyReturn:<Service>:<Method>
-    # If legacy format /EarlyReturn, map to "Unknown:Unknown"
-    def parse_error(err):
-        if not err.startswith("/EarlyReturn"):
-            return "Unknown", "Unknown"
-            
-        # Strip off the last child part if present (starting with |)
-        if "|" in err:
-            err = err.split("|")[0]
-            
-        parts = err.split(":")
-        if len(parts) >= 3:
-            return parts[1], parts[2]
-        return "Unknown", "Unknown"
+    # Use pre-parsed columns if available
+    if (
+        "er_service" in early_return_df.columns
+        and "er_method" in early_return_df.columns
+    ):
+        early_return_df["service"] = early_return_df["er_service"].fillna("Unknown")
+        early_return_df["method"] = early_return_df["er_method"].fillna("Unknown")
+    else:
+        # Fallback for data read without new parser
+        def parse_error(err):
+            if not err.startswith("/EarlyReturn"):
+                return "Unknown", "Unknown"
 
-    early_return_df["parsed"] = early_return_df["error"].apply(parse_error)
-    early_return_df["service"] = early_return_df["parsed"].apply(lambda x: x[0])
-    early_return_df["method"] = early_return_df["parsed"].apply(lambda x: x[1])
+            # New format: /EarlyReturn?src=Svc::Method
+            if "?src=" in err:
+                try:
+                    src_part = err.split("?src=")[1]
+                    src_val = src_part.split("?")[0]
+                    if "::" in src_val:
+                        return src_val.split("::", 1)
+                except IndexError:
+                    pass
+
+            return "Unknown", "Unknown"
+
+        early_return_df["parsed"] = early_return_df["error"].apply(parse_error)
+        early_return_df["service"] = early_return_df["parsed"].apply(lambda x: x[0])
+        early_return_df["method"] = early_return_df["parsed"].apply(lambda x: x[1])
+
     early_return_df["key"] = (
         early_return_df["service"] + "::" + early_return_df["method"]
     )
@@ -185,7 +199,10 @@ def compute_early_return_last_child_breakdown(df):
         return {}
 
     # Filter for early-return requests only
-    early_return_df = df[df["error"].str.startswith("/EarlyReturn")].copy()
+    if "error_type" in df.columns:
+        early_return_df = df[df["error_type"] == "EarlyReturn"].copy()
+    else:
+        early_return_df = df[df["error"].str.startswith("/EarlyReturn")].copy()
 
     if early_return_df.empty:
         return {}
@@ -198,38 +215,56 @@ def compute_early_return_last_child_breakdown(df):
     if duration_us == 0:
         return {}
 
-    # Parse LastChild from error string
-    # Format: /EarlyReturn:<Service>:<Method>|<LastChild>
-    def parse_last_child(err):
-        if not err.startswith("/EarlyReturn"):
-            return "Unknown", "Unknown"
-            
-        if "|" in err:
-            parts = err.split("|", 1)
-            if len(parts) < 2:
-                return "None", "None"
-            last_child = parts[1]
-        else:
-            # Legacy format with : separator
-            parts = err.split(":", 3)
-            if len(parts) < 4:
-                return "None", "None"
-            last_child = parts[3]
-        
-        if last_child == "None:None":
-            return "Ingress", "Drop"
-            
-        # Try to parse /Service/Method from last_child
-        # It usually looks like /package.Service/Method
-        child_parts = last_child.split("/")
-        if len(child_parts) >= 3:
-            return child_parts[-2], child_parts[-1]
-            
-        return "Unknown", last_child
+    # Use pre-parsed columns if available
+    if "er_last_child" in early_return_df.columns:
 
-    early_return_df["parsed"] = early_return_df["error"].apply(parse_last_child)
-    early_return_df["service"] = early_return_df["parsed"].apply(lambda x: x[0])
-    early_return_df["method"] = early_return_df["parsed"].apply(lambda x: x[1])
+        def parse_child_path(last_child):
+            # Handle NaN/None (missing last child part)
+            if pd.isna(last_child):
+                return "None", "None"
+
+            if last_child == "None:None":
+                return "None", "None"
+
+            # New format: Svc::Method
+            if "::" in str(last_child):
+                parts = str(last_child).split("::", 1)
+                return parts[0], parts[1]
+
+            return "Unknown", str(last_child)
+
+        early_return_df["parsed"] = early_return_df["er_last_child"].apply(
+            parse_child_path
+        )
+        early_return_df["service"] = early_return_df["parsed"].apply(lambda x: x[0])
+        early_return_df["method"] = early_return_df["parsed"].apply(lambda x: x[1])
+
+    else:
+        # Fallback: Parse LastChild from error string
+        # Format: /EarlyReturn:<Service>:<Method>|<LastChild>
+        def parse_last_child(err):
+            if not err.startswith("/EarlyReturn"):
+                return "Unknown", "Unknown"
+
+            # New format: /EarlyReturn?src=...
+            if "?src=" in err:
+                if "?last_rpc=" in err:
+                    try:
+                        val = err.split("?last_rpc=")[1]
+                        if "::" in val:
+                            return val.split("::", 1)
+                        return "Unknown", val
+                    except IndexError:
+                        pass
+                # Has src but no last_rpc -> None/None
+                return "None", "None"
+
+            return "Unknown", "Unknown"
+
+        early_return_df["parsed"] = early_return_df["error"].apply(parse_last_child)
+        early_return_df["service"] = early_return_df["parsed"].apply(lambda x: x[0])
+        early_return_df["method"] = early_return_df["parsed"].apply(lambda x: x[1])
+
     early_return_df["key"] = (
         early_return_df["service"] + "::" + early_return_df["method"]
     )
@@ -427,14 +462,16 @@ def _plot_early_return_breakdown(
             if i < len(per_rps) and per_rps[i] is not None:
                 for key, val in per_rps[i].items():
                     svc, mth = key.split("::", 1)
-                    csv_data.append({
-                        "RPS": rps,
-                        "Policy": policy,
-                        "Service": svc,
-                        "Method": mth,
-                        "Rate": float(val or 0.0)
-                    })
-    
+                    csv_data.append(
+                        {
+                            "RPS": rps,
+                            "Policy": policy,
+                            "Service": svc,
+                            "Method": mth,
+                            "Rate": float(val or 0.0),
+                        }
+                    )
+
     if csv_data:
         pd.DataFrame(csv_data).to_csv(csv_path, index=False)
 
@@ -899,12 +936,14 @@ def _plot_all_api_goodput_clean(
         for i, rps in enumerate(rps_values):
             if i < len(goodput_values):
                 gp = float(goodput_values[i] or 0.0)
-                agg_data.append({
-                    "RPS": rps,
-                    "Policy": policy,
-                    "Goodput": gp,
-                    "Fraction": gp / rps if rps > 0 else 0.0
-                })
+                agg_data.append(
+                    {
+                        "RPS": rps,
+                        "Policy": policy,
+                        "Goodput": gp,
+                        "Fraction": gp / rps if rps > 0 else 0.0,
+                    }
+                )
     if agg_data:
         pd.DataFrame(agg_data).to_csv(agg_csv_path, index=False)
 
@@ -916,12 +955,14 @@ def _plot_all_api_goodput_clean(
         for i, rps in enumerate(rps_values):
             if i < len(per_rps) and per_rps[i] is not None:
                 for rt, val in per_rps[i].items():
-                    breakdown_data.append({
-                        "RPS": rps,
-                        "Policy": policy,
-                        "RequestType": rt,
-                        "Goodput": float(val or 0.0)
-                    })
+                    breakdown_data.append(
+                        {
+                            "RPS": rps,
+                            "Policy": policy,
+                            "RequestType": rt,
+                            "Goodput": float(val or 0.0),
+                        }
+                    )
     if breakdown_data:
         pd.DataFrame(breakdown_data).to_csv(breakdown_csv_path, index=False)
 
@@ -1278,7 +1319,7 @@ def generate_plots(args) -> None:
                     ]
                     for policy in policies
                 }
-                
+
                 # Compute early-return breakdown by LAST CHILD
                 policy_early_returns_last_child_by_type.append({})
                 policy_total_early_returns_last_child.append({})
@@ -1291,9 +1332,11 @@ def generate_plots(args) -> None:
                 }
                 # Collect keys
                 for policy in policies:
-                    for rps_dict in policy_early_returns_last_child_by_type[i][api][policy]:
+                    for rps_dict in policy_early_returns_last_child_by_type[i][api][
+                        policy
+                    ]:
                         all_request_types.update(rps_dict.keys())
-                        
+
                 # Compute total
                 policy_total_early_returns_last_child[i][api] = {
                     policy: [
@@ -1412,8 +1455,12 @@ def generate_plots(args) -> None:
                             )
                         )
 
-                    early_returns_last_child_by_type = policy_early_returns_last_child_by_type[i].get(api)
-                    total_early_returns_last_child = policy_total_early_returns_last_child[i].get(api)
+                    early_returns_last_child_by_type = (
+                        policy_early_returns_last_child_by_type[i].get(api)
+                    )
+                    total_early_returns_last_child = (
+                        policy_total_early_returns_last_child[i].get(api)
+                    )
                     if (
                         early_returns_last_child_by_type is not None
                         and total_early_returns_last_child is not None
@@ -1542,7 +1589,7 @@ def generate_plots(args) -> None:
                     policy: [dict() for _ in range(len(rps_values))]
                     for policy in policies
                 }
-                
+
                 all_types_lc = set()
                 for i in range(repeats):
                     if i < len(policy_early_returns_last_child_by_type):
@@ -1597,7 +1644,9 @@ def generate_plots(args) -> None:
                                     vals
                                 )
 
-                output_path = os.path.join(output_dir, f"early_return_last_child_{api}.png")
+                output_path = os.path.join(
+                    output_dir, f"early_return_last_child_{api}.png"
+                )
                 futures.append(
                     executor.submit(
                         _plot_early_return_breakdown,
