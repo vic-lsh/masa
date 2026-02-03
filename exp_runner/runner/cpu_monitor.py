@@ -15,7 +15,13 @@ logger = logging.getLogger(__name__)
 class CPUMonitor:
     """Monitors CPU and memory utilization of Docker containers over time."""
 
-    def __init__(self, output_path: Path, poll_interval: float = 2.0, container_prefix: Optional[str] = None):
+    def __init__(
+        self,
+        output_path: Path,
+        poll_interval: float = 2.0,
+        container_prefix: Optional[str] = None,
+        container_names: Optional[list[str]] = None,
+    ):
         """
         Initialize CPU monitor.
 
@@ -24,10 +30,13 @@ class CPUMonitor:
             poll_interval: Seconds between docker stats polling (default: 2.0)
             container_prefix: Optional prefix to filter containers (e.g., "mssim-exp1-abc123")
                             If provided, only containers with names starting with this prefix will be monitored
+            container_names: Optional list of specific container names to monitor
+                            If provided, only containers with names in this list will be monitored
         """
         self.output_path = output_path
         self.poll_interval = poll_interval
         self.container_prefix = container_prefix
+        self.container_names = set(container_names) if container_names else None
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._stats_data: list[dict] = []
@@ -43,8 +52,16 @@ class CPUMonitor:
         self._stats_data = []
         self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._thread.start()
-        prefix_msg = f", prefix={self.container_prefix}" if self.container_prefix else ""
-        logger.info(f"Started CPU monitoring (poll_interval={self.poll_interval}s{prefix_msg})")
+
+        filter_msg = []
+        if self.container_prefix:
+            filter_msg.append(f"prefix={self.container_prefix}")
+        if self.container_names:
+            filter_msg.append(f"names={list(self.container_names)[:3]}...")
+
+        logger.info(
+            f"Started CPU monitoring (poll_interval={self.poll_interval}s, {', '.join(filter_msg)})"
+        )
 
     def stop(self) -> None:
         """Stop monitoring and save collected stats to file."""
@@ -55,7 +72,9 @@ class CPUMonitor:
         self._stop_event.set()
         self._thread.join(timeout=10.0)
         self._save_stats()
-        logger.info(f"Stopped CPU monitoring, saved {len(self._stats_data)} records to {self.output_path}")
+        logger.info(
+            f"Stopped CPU monitoring, saved {len(self._stats_data)} records to {self.output_path}"
+        )
 
     def _monitor_loop(self) -> None:
         """Main monitoring loop that polls docker stats periodically."""
@@ -86,33 +105,42 @@ class CPUMonitor:
             # Use docker stats --no-stream to get a single snapshot
             # Format: container_name, cpu_percent, mem_usage, mem_limit, mem_percent
             cmd = [
-                "docker", "stats", "--no-stream", "--no-trunc",
-                "--format", "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}"
+                "docker",
+                "stats",
+                "--no-stream",
+                "--no-trunc",
+                "--format",
+                "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}",
             ]
 
             result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=10.0,
-                check=True
+                cmd, capture_output=True, text=True, timeout=10.0, check=True
             )
 
             timestamp = time.time()
             stats = []
 
-            for line in result.stdout.strip().split('\n'):
+            for line in result.stdout.strip().split("\n"):
                 if not line:
                     continue
 
-                parts = line.split('\t')
+                parts = line.split("\t")
                 if len(parts) != 4:
                     continue
 
                 container_name, cpu_str, mem_usage_str, mem_percent_str = parts
 
                 # Filter by container prefix if specified
-                if self.container_prefix and not container_name.startswith(self.container_prefix):
+                if self.container_prefix and not container_name.startswith(
+                    self.container_prefix
+                ):
+                    continue
+
+                # Filter by specific container names if specified
+                if (
+                    self.container_names is not None
+                    and container_name not in self.container_names
+                ):
                     continue
 
                 # Parse CPU percentage (e.g., "12.34%" -> 12.34)
@@ -124,14 +152,16 @@ class CPUMonitor:
                 # Parse memory percentage (e.g., "8.23%" -> 8.23)
                 memory_percent = self._parse_percentage(mem_percent_str)
 
-                stats.append({
-                    'timestamp': timestamp,
-                    'container_name': container_name,
-                    'cpu_percent': cpu_percent,
-                    'memory_usage_mb': memory_usage_mb,
-                    'memory_limit_mb': memory_limit_mb,
-                    'memory_percent': memory_percent,
-                })
+                stats.append(
+                    {
+                        "timestamp": timestamp,
+                        "container_name": container_name,
+                        "cpu_percent": cpu_percent,
+                        "memory_usage_mb": memory_usage_mb,
+                        "memory_limit_mb": memory_limit_mb,
+                        "memory_percent": memory_percent,
+                    }
+                )
 
             return stats
 
@@ -148,7 +178,7 @@ class CPUMonitor:
     def _parse_percentage(self, percent_str: str) -> float:
         """Parse percentage string like '12.34%' to float 12.34."""
         try:
-            return float(percent_str.rstrip('%'))
+            return float(percent_str.rstrip("%"))
         except (ValueError, AttributeError):
             return 0.0
 
@@ -160,7 +190,7 @@ class CPUMonitor:
             Tuple of (usage_mb, limit_mb)
         """
         try:
-            parts = mem_str.split(' / ')
+            parts = mem_str.split(" / ")
             if len(parts) != 2:
                 return 0.0, 0.0
 
@@ -179,7 +209,7 @@ class CPUMonitor:
             Memory value in MB
         """
         # Match number followed by unit
-        match = re.match(r'([\d.]+)\s*([A-Za-z]+)', value_str.strip())
+        match = re.match(r"([\d.]+)\s*([A-Za-z]+)", value_str.strip())
         if not match:
             return 0.0
 
@@ -187,15 +217,15 @@ class CPUMonitor:
         unit = match.group(2).upper()
 
         # Convert to MB
-        if unit in ('B', 'BYTES'):
+        if unit in ("B", "BYTES"):
             return value / (1024 * 1024)
-        elif unit in ('KB', 'KIB'):
+        elif unit in ("KB", "KIB"):
             return value / 1024
-        elif unit in ('MB', 'MIB'):
+        elif unit in ("MB", "MIB"):
             return value
-        elif unit in ('GB', 'GIB'):
+        elif unit in ("GB", "GIB"):
             return value * 1024
-        elif unit in ('TB', 'TIB'):
+        elif unit in ("TB", "TIB"):
             return value * 1024 * 1024
         else:
             logger.warning(f"Unknown memory unit: {unit}")
@@ -210,10 +240,14 @@ class CPUMonitor:
         try:
             self.output_path.parent.mkdir(parents=True, exist_ok=True)
 
-            with open(self.output_path, 'w', newline='') as f:
+            with open(self.output_path, "w", newline="") as f:
                 fieldnames = [
-                    'timestamp', 'container_name', 'cpu_percent',
-                    'memory_usage_mb', 'memory_limit_mb', 'memory_percent'
+                    "timestamp",
+                    "container_name",
+                    "cpu_percent",
+                    "memory_usage_mb",
+                    "memory_limit_mb",
+                    "memory_percent",
                 ]
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
@@ -221,7 +255,9 @@ class CPUMonitor:
                 with self._lock:
                     writer.writerows(self._stats_data)
 
-            logger.info(f"Saved {len(self._stats_data)} stats records to {self.output_path}")
+            logger.info(
+                f"Saved {len(self._stats_data)} stats records to {self.output_path}"
+            )
 
         except Exception as e:
             logger.error(f"Failed to save stats to {self.output_path}: {e}")
