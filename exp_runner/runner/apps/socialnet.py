@@ -2,21 +2,21 @@
 Socialnet application plugin.
 """
 
+import hashlib
 import json
 import logging
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import time
-import hashlib
-import shutil
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
-from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
-from .utils import normalize_features_to_tag, get_docker_progress_flag
 from ..cpu_monitor import CPUMonitor
+from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
+from .utils import get_docker_progress_flag, normalize_features_to_tag
 
 if TYPE_CHECKING:
     from exp_runner.runner.config import ExperimentConfig
@@ -397,6 +397,7 @@ class SocialnetApp(AppPlugin):
         app_local_dir: Path,
         no_cache: bool,
         dry_run: bool = False,
+        **kwargs,
     ) -> None:
         """Run socialnet experiment with namespace isolation."""
 
