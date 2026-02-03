@@ -69,7 +69,7 @@ impl Client for HotelClient {
         let request = tonic::Request::new(frontend::PingRequest {
             message: "ping".to_string(),
         })
-        .with_masa_context(&ctx);
+        .with_masa_context(&Context::default());
         client.handle_ping(request).await.map(|_| ())
     }
 }

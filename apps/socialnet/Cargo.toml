@@ -75,7 +75,7 @@ path = "src/client/client_bench.rs"
 # [[bin]]
 # name = "media_client"
 # path = "src/media/client.rs"
-# 
+#
 # [[bin]]
 # name = "unique_id_client"
 # path = "src/unique_id/client.rs"
@@ -86,6 +86,7 @@ prio_local = ["masa/prio_local"]
 fifo = ["masa/fifo"]
 
 early = ["masa/early"]
+trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
 
 [dependencies]
 tonic = { path = "../../libs/tonic/tonic" }
@@ -127,7 +128,3 @@ structopt = "0.3.23"
 [build-dependencies]
 tonic-build = { path = "../../libs/tonic/tonic-build", features = ["prost"] }
 protoc-bin-vendored = "3"
-
-
-
-
