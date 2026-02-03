@@ -314,9 +314,12 @@ pub async fn run_replay_load(
 }
 
 pub fn extract_queue_latency(metadata: &MetadataMap) -> Option<u64> {
-    metadata
-        .get("x-queue-latency")
-        .or_else(|| metadata.get("X-Queue-Latency"))
-        .and_then(|value| value.to_str().ok())
-        .and_then(|s| s.parse::<u64>().ok())
+    if let Some(ctx_str) = metadata.get("ctx").and_then(|v| v.to_str().ok()) {
+        let ctx = masa::Context::from_header_string(ctx_str);
+        if let Some(ql) = ctx.queue_latencies {
+            return Some(ql.initial + ql.resume);
+        }
+    }
+
+    None
 }
