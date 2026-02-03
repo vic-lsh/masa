@@ -73,15 +73,20 @@ impl EarlyReturnHandler {
             .last_child
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .clone()
-            .unwrap_or_else(|| "None:None".to_string());
-        Status::new(
-            Code::DeadlineExceeded,
-            format!(
-                "/EarlyReturn:{}:{}|{}",
-                self.service, self.method, last_child
-            ),
-        )
+            .clone();
+
+        let mut msg = format!("/EarlyReturn?src={}::{}", self.service, self.method);
+
+        if let Some(child) = last_child {
+            let formatted_child = if child.starts_with('/') {
+                child[1..].replace('/', "::")
+            } else {
+                child
+            };
+            msg.push_str(&format!("?last_rpc={}", formatted_child));
+        }
+
+        Status::new(Code::DeadlineExceeded, msg)
     }
 }
 
