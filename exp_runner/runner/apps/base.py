@@ -32,7 +32,9 @@ class DockerConfig:
     loadgen_binary_name: str  # Binary name to run in load generator
 
     # Optional app-specific config
-    app_config_filename: Optional[str] = None  # Filename for loading from exp/ directory
+    app_config_filename: Optional[str] = (
+        None  # Filename for loading from exp/ directory
+    )
     app_config_filename: Optional[str] = (
         None  # Filename for loading from exp/ directory
     )
@@ -487,6 +489,7 @@ class AppPlugin(ABC):
             print(
                 f"[dry-run] would run {config.app_name} iteration={iteration} policy={policy}"
             )
+            return
 
         # Write .env file expected by compose setups (only when actually running)
         env_file = app_local_dir / ".env"
@@ -506,10 +509,16 @@ class AppPlugin(ABC):
             dry_run=False,
         )
 
+        # Get container names for monitoring and logging
+        container_names = self.get_container_names(env_vars)
+
         # Initialize CPU monitor
         cpu_stats_file = output_dir / "cpu_stats.csv"
-        cpu_monitor = CPUMonitor(output_path=cpu_stats_file, poll_interval=2.0)
-
+        cpu_monitor = CPUMonitor(
+            output_path=cpu_stats_file,
+            poll_interval=2.0,
+            container_names=container_names,
+        )
         try:
             docker.start(
                 app_dir=config.app_dir,
@@ -521,7 +530,6 @@ class AppPlugin(ABC):
             cpu_monitor.start()
 
             # Start streaming logs in background
-            container_names = self.get_container_names(env_vars)
             docker.stream_logs(
                 container_names=container_names,
                 output_dir=output_dir,
