@@ -22,6 +22,9 @@ prio_global = ["masa/prio_global"]
 prio_local = ["masa/prio_local"]
 prio_oldest = ["masa/prio_oldest"]
 
+est-rms = ["masa/est-rms"]
+est-hist = ["masa/est-hist"]
+
 fifo = ["masa/fifo"]
 
 early = ["masa/early"]
