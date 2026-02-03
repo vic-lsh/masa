@@ -662,6 +662,11 @@ class HotelApp(AppPlugin):
         """Run hotel experiment with namespace isolation."""
         import sys
 
+        if type(docker).__name__ == "K8sManager":
+            raise NotImplementedError(
+                "Hotel app does not support Kubernetes execution yet"
+            )
+
         # Generate project name for namespace isolation
         project_name = _safe_project_name(
             experiment_name=config.experiment_name,
@@ -728,46 +733,18 @@ class HotelApp(AppPlugin):
         if dry_run and build_cmds:
             print("\n".join(" ".join(cmd) for cmd in build_cmds))
 
-        docker_compose_path = (
-            config.app_dir / "scripts" / "local" / "containers+svcs.yaml"
-        )
-
-        # Setup environment for docker compose
-        env = os.environ.copy()
-        env.update({k: str(v) for k, v in env_vars.items()})
+        deployment_config = "scripts/local/containers+svcs.yaml"
+        config_path = config.app_dir / deployment_config
 
         # Path to mount project-specific config
-        env["PROJECT_CONFIG_PATH"] = str(project_config_path.resolve())
-
-        # Docker compose commands with project name
-        up_cmd = [
-            "docker",
-            "compose",
-            "-f",
-            str(docker_compose_path),
-            "-p",
-            project_name,
-            "up",
-            "-d",
-        ]
-        down_cmd = [
-            "docker",
-            "compose",
-            "-f",
-            str(docker_compose_path),
-            "-p",
-            project_name,
-            "down",
-            "--volumes",
-        ]
+        env_vars["PROJECT_CONFIG_PATH"] = str(project_config_path.resolve())
 
         if dry_run:
             print(f"[dry-run] would run hotel policy={policy} iteration={iteration}")
             print(f"[dry-run] project name: {project_name}")
             print(f"[dry-run] generated config: {project_config_path}")
             print(f"[dry-run] would write outputs under: {output_dir}")
-            print("[dry-run] compose up:", " ".join(up_cmd))
-            print("[dry-run] compose down:", " ".join(down_cmd))
+            print(f"[dry-run] would start services from {config_path}")
             return
 
         # Save metadata
@@ -793,11 +770,11 @@ class HotelApp(AppPlugin):
             print(
                 f"Starting hotel services for policy={policy} iteration={iteration} project={project_name}"
             )
-            subprocess.run(
-                up_cmd,
-                cwd=config.app_dir,
-                env=env,
-                check=True,
+            docker.start(
+                app_dir=config.app_dir,
+                deployment_config=deployment_config,
+                env_vars=env_vars,
+                project_name=project_name,
             )
 
             # Wait for services to be ready
@@ -808,9 +785,9 @@ class HotelApp(AppPlugin):
 
             # Get container names for log streaming
             container_names = docker.get_container_names(
-                compose_path=docker_compose_path,
+                config_path=config_path,
                 project_name=project_name,
-                env_vars=env,
+                env_vars=env_vars,
             )
 
             # Stream logs
@@ -853,9 +830,9 @@ class HotelApp(AppPlugin):
             while load_gen_thread.is_alive():
                 # Check container health
                 failed_containers = docker.check_project_health(
-                    compose_path=docker_compose_path,
+                    config_path=config_path,
                     project_name=project_name,
-                    env_vars=env,
+                    env_vars=env_vars,
                 )
 
                 if failed_containers:
@@ -881,9 +858,9 @@ class HotelApp(AppPlugin):
             if load_gen_error:
                 # Check project health one last time to see if a container crash caused the load gen failure
                 failed_containers = docker.check_project_health(
-                    compose_path=docker_compose_path,
+                    config_path=config_path,
                     project_name=project_name,
-                    env_vars=env,
+                    env_vars=env_vars,
                 )
                 if failed_containers:
                     error_msg = f"Experiment failed: The following containers crashed: {failed_containers}. Load generator also failed: {load_gen_error}"
@@ -900,7 +877,12 @@ class HotelApp(AppPlugin):
                 logger.warning(f"Error stopping CPU monitor: {e}")
 
             # Cleanup
-            subprocess.run(down_cmd, cwd=config.app_dir, env=env, check=False)
+            docker.stop(
+                app_dir=config.app_dir,
+                deployment_config=deployment_config,
+                env_vars=env_vars,
+                project_name=project_name,
+            )
 
             # Wait for log threads to finish
             for thread in log_threads:
