@@ -6,6 +6,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 exp_dir="$repo_root/exp/synthetic"
 exp_names=()
 no_cache=""
+deploy_mode="docker"
+deploy_args=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -14,13 +16,17 @@ while [[ $# -gt 0 ]]; do
         no_cache="--no-cache"
         shift 1
         ;;
+    --deploy-mode)
+        deploy_mode="$2"
+        shift 2
+        ;;
     ci|ci_call_graph)
         exp_names+=("$1")
         shift 1
         ;;
     *)
         echo "Unknown argument: $1" >&2
-        echo "Usage: $0 [ci|ci_call_graph] [--no-cache]" >&2
+        echo "Usage: $0 [ci|ci_call_graph] [--no-cache] [--deploy-mode <docker|kind>]" >&2
         exit 1
         ;;
     esac
@@ -28,6 +34,15 @@ done
 
 if [ ${#exp_names[@]} -eq 0 ]; then
     exp_names=("ci")
+fi
+
+if [[ "$deploy_mode" == "kind" ]]; then
+    deploy_args="--kind"
+elif [[ "$deploy_mode" == "docker" ]]; then
+    deploy_args=""
+else
+    echo "Invalid deploy mode: $deploy_mode. Must be 'docker' or 'kind'." >&2
+    exit 1
 fi
 
 if [ ! -d "$exp_dir" ]; then
@@ -55,14 +70,16 @@ source .venv/bin/activate
 run_test() {
     local exp_name="$1"
     echo "--------------------------------------------------"
-    echo "Running test for experiment: $exp_name"
+    echo "Running test for experiment: $exp_name with mode: $deploy_mode"
     local out_dir="$exp_dir/out/$exp_name"
     echo "Cleaning previous experiment output at $out_dir"
     rm -rf "$out_dir"
 
     echo "Running synthetic experiment: $exp_name"
     cd "$repo_root"
-    python -m exp_runner.runner run synthetic "$exp_name" $no_cache --smoke-test --plot
+    # We use unquoted variables for flags to allow empty strings to disappear
+    # shellcheck disable=SC2086
+    python -m exp_runner.runner run synthetic "$exp_name" $no_cache $deploy_args --smoke-test --plot
 
     echo "Test for $exp_name passed."
 }
