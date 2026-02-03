@@ -16,9 +16,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
-from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
-from .utils import normalize_features_to_tag, get_docker_progress_flag
 from ..cpu_monitor import CPUMonitor
+from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
+from .utils import get_docker_progress_flag, normalize_features_to_tag
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +121,10 @@ def _generate_hotel_config(
     infra_mappings = {
         "profile": {"mongodbAddr": "profile-mongo", "redisAddr": "profile-redis"},
         "rate": {"mongodbAddr": "rate-mongo", "redisAddr": "rate-redis"},
-        "reservation": {"mongodbAddr": "reservation-mongo", "redisAddr": "reservation-redis"},
+        "reservation": {
+            "mongodbAddr": "reservation-mongo",
+            "redisAddr": "reservation-redis",
+        },
         "user": {"mongodbAddr": "user-mongo"},
     }
 
@@ -149,7 +152,9 @@ def _generate_hotel_config(
 class HotelLoadGenerator(LoadGenerator):
     """Load generator for the hotel reservation application."""
 
-    def __init__(self, features: Optional[str] = None, project_name: Optional[str] = None):
+    def __init__(
+        self, features: Optional[str] = None, project_name: Optional[str] = None
+    ):
         """
         Initialize load generator with optional features for image tagging.
 
@@ -242,8 +247,10 @@ class HotelBuilder(AppBuilder):
 
         # Generate tag based on features for deterministic, feature-specific images
         tag = normalize_features_to_tag(features)
-        
-        logger.info(f"Building {len(binaries_list)} docker images for hotel app using multi-stage build")
+
+        logger.info(
+            f"Building {len(binaries_list)} docker images for hotel app using multi-stage build"
+        )
         if features:
             logger.info(f"Using features: {features}")
 
@@ -263,7 +270,7 @@ class HotelBuilder(AppBuilder):
         # Use a unique cache ID to avoid race conditions in parallel builds
         cache_id = f"{app}-{tag}"
         builder_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
-        
+
         builder_cmd: list[str] = [
             "docker",
             "buildx",
@@ -277,12 +284,12 @@ class HotelBuilder(AppBuilder):
             "nofile=4096:4096",
             get_docker_progress_flag(),
         ]
-        
+
         if no_cache:
             builder_cmd.append("--no-cache")
-        
+
         builder_cmd.extend(["-t", f"{app}_builder:{tag}", "."])
-        
+
         if dry_run:
             commands.append(builder_cmd.copy())
         else:
@@ -294,7 +301,9 @@ class HotelBuilder(AppBuilder):
                     capture_output=False,
                 )
             except subprocess.CalledProcessError as e:
-                logger.error(f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}")
+                logger.error(
+                    f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}"
+                )
                 raise
         stage1_duration = time.time() - stage1_start_time
         logger.info(f"Stage 1 complete: All binaries built ({stage1_duration:.2f}s)")
@@ -307,10 +316,12 @@ class HotelBuilder(AppBuilder):
             runtime_base_build_args.extend(["--build-arg", f"FEATURES={features}"])
         runtime_base_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
         runtime_base_build_args.extend(["--build-arg", f"APP={app}"])
-        runtime_base_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
+        runtime_base_build_args.extend(
+            ["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"]
+        )
         # Use consistent cache ID based on features across all stages
         runtime_base_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
-        
+
         runtime_base_cmd: list[str] = [
             "docker",
             "buildx",
@@ -324,12 +335,12 @@ class HotelBuilder(AppBuilder):
             "nofile=4096:4096",
             get_docker_progress_flag(),
         ]
-        
+
         if no_cache:
             runtime_base_cmd.append("--no-cache")
-        
+
         runtime_base_cmd.extend(["-t", f"{app}_runtime-base:{tag}", "."])
-        
+
         if dry_run:
             commands.append(runtime_base_cmd.copy())
         else:
@@ -341,13 +352,19 @@ class HotelBuilder(AppBuilder):
                     capture_output=False,
                 )
             except subprocess.CalledProcessError as e:
-                logger.error(f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}")
+                logger.error(
+                    f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}"
+                )
                 raise
         stage2_duration = time.time() - stage2_start_time
-        logger.info(f"Stage 2 complete: Runtime-base image built ({stage2_duration:.2f}s)")
+        logger.info(
+            f"Stage 2 complete: Runtime-base image built ({stage2_duration:.2f}s)"
+        )
 
         # Stage 3: Build per-binary runtime images IN PARALLEL
-        def build_runtime_image(binary_name: str) -> tuple[str, bool, Optional[str], Optional[Path]]:
+        def build_runtime_image(
+            binary_name: str,
+        ) -> tuple[str, bool, Optional[str], Optional[Path]]:
             """Build a single runtime image. Returns (binary_name, success, error_msg, log_file)."""
             log_file = None
             try:
@@ -356,7 +373,9 @@ class HotelBuilder(AppBuilder):
                     runtime_build_args.extend(["--build-arg", f"FEATURES={features}"])
                 runtime_build_args.extend(["--build-arg", f"LOG_LEVEL={rust_log}"])
                 runtime_build_args.extend(["--build-arg", f"APP={app}"])
-                runtime_build_args.extend(["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"])
+                runtime_build_args.extend(
+                    ["--build-arg", f"GEN_CONFIG_PATH={gen_config_path_rel}"]
+                )
                 runtime_build_args.extend(["--build-arg", f"BINARY_NAME={binary_name}"])
                 # Use consistent cache ID based on features across all stages
                 runtime_build_args.extend(["--build-arg", f"CACHE_ID={cache_id}"])
@@ -439,8 +458,10 @@ class HotelBuilder(AppBuilder):
 
             with ThreadPoolExecutor(max_workers=10) as executor:
                 # Submit all build tasks
-                futures = {executor.submit(build_runtime_image, binary): binary
-                           for binary in binaries_list}
+                futures = {
+                    executor.submit(build_runtime_image, binary): binary
+                    for binary in binaries_list
+                }
 
                 # Collect results as they complete
                 for future in as_completed(futures):
@@ -458,23 +479,29 @@ class HotelBuilder(AppBuilder):
                     if log_file:
                         msg += f" (see {log_file})"
                     logger.error(msg)
-                raise RuntimeError(f"Failed to build {len(build_errors)} runtime images")
+                raise RuntimeError(
+                    f"Failed to build {len(build_errors)} runtime images"
+                )
 
             stage3_duration = time.time() - stage3_start_time
-            logger.info(f"Stage 3 complete: Built all {len(completed_binaries)} runtime images ({stage3_duration:.2f}s)")
+            logger.info(
+                f"Stage 3 complete: Built all {len(completed_binaries)} runtime images ({stage3_duration:.2f}s)"
+            )
             if build_logs_dir:
                 logger.info(f"Build logs written to: {build_logs_dir}")
         else:
             # In dry-run mode, still call build_runtime_image to collect commands
             for binary_name in binaries_list:
                 build_runtime_image(binary_name)
-        
+
         if dry_run:
             return commands
-        
+
         # Calculate and print build duration
         build_duration = time.time() - build_start_time
-        logger.info(f"Docker image building took {build_duration:.2f} seconds ({build_duration/60:.2f} minutes)")
+        logger.info(
+            f"Docker image building took {build_duration:.2f} seconds ({build_duration / 60:.2f} minutes)"
+        )
         logger.info(f"  Stage 1 (build binaries): {stage1_duration:.2f}s")
         logger.info(f"  Stage 2 (runtime-base): {stage2_duration:.2f}s")
         logger.info(f"  Stage 3 (parallel copying): {stage3_duration:.2f}s")
@@ -485,53 +512,58 @@ class HotelBuilder(AppBuilder):
 class HotelApp(AppPlugin):
     """
     Plugin for the hotel reservation microservices application.
-    
+
     The hotel app consists of multiple microservices (rate, profile, reservation,
     geo, search, user, recommendation, review) that can be replicated.
     """
-    
+
     def get_app_name(self) -> str:
         return "hotel"
-    
+
     def load_app_config(self, config_path: Path) -> dict:
         """Load hotel.json configuration file."""
         with open(config_path) as f:
             return json.load(f)
-    
+
     def generate_env_vars(
-        self,
-        gen_config: dict,
-        app_config: Optional[dict],
-        app_dir: Path
+        self, gen_config: dict, app_config: Optional[dict], app_dir: Path
     ) -> dict:
         """
         Generate environment variables for hotel application.
-        
+
         Extracts frontend port from gen_config and replica counts from hotel.json.
         """
         env_vars = {}
-        
+
         # Extract frontend port from address (e.g., "http://[::1]:8659" -> "8659")
         addr = gen_config.get("Addr", "")
-        match = re.search(r':(\d+)$', addr)
+        match = re.search(r":(\d+)$", addr)
         if match:
             env_vars["FRONTEND_PORT"] = match.group(1)
         else:
             raise ValueError(f"Unable to extract port from address: {addr}")
-        
+
         # Set replica counts from hotel.json
         default_replicas = 1
         services = [
-            "rate", "profile", "reservation", "geo",
-            "search", "user", "recommendation", "review"
+            "rate",
+            "profile",
+            "reservation",
+            "geo",
+            "search",
+            "user",
+            "recommendation",
+            "review",
         ]
-        
+
         if app_config:
             for service in services:
                 env_key = f"{service.upper()}_REPLICAS"
                 replicas = app_config.get(service, {}).get("replicas", default_replicas)
                 env_vars[env_key] = str(replicas)
-            frontend_replicas = app_config.get("frontend", {}).get("replicas", default_replicas)
+            frontend_replicas = app_config.get("frontend", {}).get(
+                "replicas", default_replicas
+            )
             env_vars["FRONTEND_REPLICAS"] = str(frontend_replicas)
         else:
             # Use defaults if no config provided
@@ -539,13 +571,13 @@ class HotelApp(AppPlugin):
                 env_key = f"{service.upper()}_REPLICAS"
                 env_vars[env_key] = str(default_replicas)
             env_vars["FRONTEND_REPLICAS"] = str(default_replicas)
-        
+
         # Set default log level if not specified
         if "LOG_LEVEL" not in env_vars:
             env_vars["LOG_LEVEL"] = "info"
-        
+
         return env_vars
-    
+
     def get_docker_config(self) -> DockerConfig:
         """Return Docker configuration for hotel application."""
         return DockerConfig(
@@ -555,20 +587,19 @@ class HotelApp(AppPlugin):
             loadgen_binary_name="hotel_client_bench",
             app_config_filename="hotel.json",
         )
-    
+
     def get_container_names(self, env_vars: dict) -> list[str]:
         """
         Get list of container names for hotel application.
-        
+
         Includes frontend and replicated service containers based on
         replica counts from environment variables.
         """
         frontend_replicas = int(env_vars.get("FRONTEND_REPLICAS", 1))
         container_names = [
-            f"local-hotel-frontend-service-{i}"
-            for i in range(1, frontend_replicas + 1)
+            f"local-hotel-frontend-service-{i}" for i in range(1, frontend_replicas + 1)
         ]
-        
+
         # Services that can be replicated
         replicated_services = {
             "rate": int(env_vars.get("RATE_REPLICAS", 1)),
@@ -578,15 +609,17 @@ class HotelApp(AppPlugin):
             "search": int(env_vars.get("SEARCH_REPLICAS", 1)),
             "user": int(env_vars.get("USER_REPLICAS", 1)),
         }
-        
+
         # Generate container names for each replica
         for service, count in replicated_services.items():
             for i in range(1, count + 1):
                 container_names.append(f"local-{service}-service-{i}")
-        
+
         return container_names
-    
-    def create_load_generator(self, features: Optional[str] = None, project_name: Optional[str] = None) -> LoadGenerator:
+
+    def create_load_generator(
+        self, features: Optional[str] = None, project_name: Optional[str] = None
+    ) -> LoadGenerator:
         """
         Create a load generator instance for hotel application.
 
@@ -599,7 +632,7 @@ class HotelApp(AppPlugin):
     def create_builder(self) -> AppBuilder:
         """Create a builder instance for hotel application."""
         return HotelBuilder()
-    
+
     def get_image_tag(self, features: Optional[str] = None) -> str:
         """
         Get the docker image tag for the given features.
@@ -624,6 +657,7 @@ class HotelApp(AppPlugin):
         app_local_dir: Path,
         no_cache: bool,
         dry_run: bool = False,
+        **kwargs,
     ) -> None:
         """Run hotel experiment with namespace isolation."""
         import sys
@@ -655,14 +689,26 @@ class HotelApp(AppPlugin):
         )
 
         # Generate environment variables
-        env_vars = self.generate_env_vars(config.gen_config, config.app_config, config.app_dir)
+        env_vars = self.generate_env_vars(
+            config.gen_config, config.app_config, config.app_dir
+        )
 
         # Add image tag based on policy/features
         tag = self.get_image_tag(features=policy)
         env_vars["HOTEL_IMAGE_TAG"] = tag if tag else "latest"
 
         # Clean up old build logs before building
-        build_logs_dir = repo_root / "exp" / "hotel" / "data" / "out" / config.experiment_name / str(iteration) / policy / "build_logs"
+        build_logs_dir = (
+            repo_root
+            / "exp"
+            / "hotel"
+            / "data"
+            / "out"
+            / config.experiment_name
+            / str(iteration)
+            / policy
+            / "build_logs"
+        )
         if build_logs_dir.exists():
             logger.info(f"Cleaning build logs directory: {build_logs_dir}")
             shutil.rmtree(build_logs_dir, ignore_errors=True)
@@ -682,7 +728,9 @@ class HotelApp(AppPlugin):
         if dry_run and build_cmds:
             print("\n".join(" ".join(cmd) for cmd in build_cmds))
 
-        docker_compose_path = config.app_dir / "scripts" / "local" / "containers+svcs.yaml"
+        docker_compose_path = (
+            config.app_dir / "scripts" / "local" / "containers+svcs.yaml"
+        )
 
         # Setup environment for docker compose
         env = os.environ.copy()
@@ -693,16 +741,24 @@ class HotelApp(AppPlugin):
 
         # Docker compose commands with project name
         up_cmd = [
-            "docker", "compose",
-            "-f", str(docker_compose_path),
-            "-p", project_name,
-            "up", "-d",
+            "docker",
+            "compose",
+            "-f",
+            str(docker_compose_path),
+            "-p",
+            project_name,
+            "up",
+            "-d",
         ]
         down_cmd = [
-            "docker", "compose",
-            "-f", str(docker_compose_path),
-            "-p", project_name,
-            "down", "--volumes",
+            "docker",
+            "compose",
+            "-f",
+            str(docker_compose_path),
+            "-p",
+            project_name,
+            "down",
+            "--volumes",
         ]
 
         if dry_run:
@@ -727,12 +783,16 @@ class HotelApp(AppPlugin):
 
         # Initialize CPU monitor with project name filter
         cpu_stats_file = output_dir / "cpu_stats.csv"
-        cpu_monitor = CPUMonitor(output_path=cpu_stats_file, poll_interval=2.0, container_prefix=project_name)
+        cpu_monitor = CPUMonitor(
+            output_path=cpu_stats_file, poll_interval=2.0, container_prefix=project_name
+        )
 
         log_threads = []
         try:
             # Start services
-            print(f"Starting hotel services for policy={policy} iteration={iteration} project={project_name}")
+            print(
+                f"Starting hotel services for policy={policy} iteration={iteration} project={project_name}"
+            )
             subprocess.run(
                 up_cmd,
                 cwd=config.app_dir,
@@ -756,7 +816,9 @@ class HotelApp(AppPlugin):
             # Stream logs
             if container_names:
                 logs_dir = output_dir / "logs"
-                print(f"Streaming logs for {len(container_names)} containers to {logs_dir}")
+                print(
+                    f"Streaming logs for {len(container_names)} containers to {logs_dir}"
+                )
                 log_threads = docker.stream_logs(
                     container_names=container_names,
                     output_dir=logs_dir,
@@ -766,11 +828,13 @@ class HotelApp(AppPlugin):
                 print("Warning: No containers found for log streaming")
 
             # Run load generator with project-specific gen_config
-            load_gen = self.create_load_generator(features=policy, project_name=project_name)
-            
+            load_gen = self.create_load_generator(
+                features=policy, project_name=project_name
+            )
+
             # Run load generator in a separate thread to allow monitoring
             load_gen_error = None
-            
+
             def run_load_gen():
                 nonlocal load_gen_error
                 try:
@@ -793,26 +857,26 @@ class HotelApp(AppPlugin):
                     project_name=project_name,
                     env_vars=env,
                 )
-                
+
                 if failed_containers:
                     error_msg = f"Experiment failed: The following containers crashed: {failed_containers}"
                     logger.error(error_msg)
-                    
+
                     # Kill load generator container to stop the thread
                     try:
                         subprocess.run(
                             ["docker", "rm", "-f", load_gen.get_container_name()],
                             check=False,
-                            capture_output=True
+                            capture_output=True,
                         )
                     except Exception as e:
                         logger.warning(f"Failed to kill load generator container: {e}")
-                        
+
                     # Raise error to stop experiment
                     raise RuntimeError(error_msg)
-                
+
                 load_gen_thread.join(timeout=2.0)
-            
+
             # If thread finished, check for errors
             if load_gen_error:
                 # Check project health one last time to see if a container crash caused the load gen failure
