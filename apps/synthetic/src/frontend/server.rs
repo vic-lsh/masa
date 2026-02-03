@@ -290,6 +290,7 @@ impl FrontendImpl {
     }
 }
 
+#[allow(dead_code)]
 struct HopResult {
     response: child::RunSyntheticResponse,
     duration_us: u64,
@@ -297,6 +298,7 @@ struct HopResult {
 }
 
 impl HopResult {
+    #[allow(dead_code)]
     fn sleep_latency_us(&self) -> u64 {
         self.duration_us.saturating_sub(self.busy_spin_dur_us)
     }

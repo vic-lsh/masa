@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::MasaRequestExt;
-use masa_core::{Context, ContextBuilder, PriorityHint};
+use masa_core::{Context, ContextBuilder};
 
 #[derive(Debug)]
 /// This policy always sets the deadline of each request as

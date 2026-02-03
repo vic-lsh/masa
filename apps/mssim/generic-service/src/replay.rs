@@ -266,7 +266,7 @@ pub async fn run_replay_load(
             let _permit = permit;
 
             stats.sent.fetch_add(1, Ordering::Relaxed);
-            let mut request = Request::new(payload);
+            let request = Request::new(payload);
 
             let ctx = masa::create_context("replay", Duration::from_micros(50_000));
 
