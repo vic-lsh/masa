@@ -489,4 +489,3 @@ mod tests {
         assert_eq!(method.parsed_call_sequence[1][0].1, 1.0);
     }
 }
-
