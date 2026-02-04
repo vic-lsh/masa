@@ -8,7 +8,6 @@ import logging
 import os
 import re
 import shlex
-import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -194,7 +193,7 @@ class SocialnetBuilder(AppBuilder):
             logger.info(f"[DRY RUN] Would run: {shlex.join(builder_cmd)}")
         else:
             logger.info(f"Running: {shlex.join(builder_cmd)}")
-            result = subprocess.run(builder_cmd, cwd=repo_root, check=True)
+            subprocess.run(builder_cmd, cwd=repo_root, check=True)
             logger.info("Stage 1 complete")
 
         # Stage 2: Build runtime-base image (shared dependencies)

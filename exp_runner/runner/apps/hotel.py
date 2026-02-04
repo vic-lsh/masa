@@ -5,7 +5,6 @@ Hotel application plugin.
 import hashlib
 import json
 import logging
-import os
 import re
 import shlex
 import shutil
@@ -14,7 +13,11 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from ..config import ExperimentConfig
+    from ..deployment_manager import DeploymentManager as DockerManager
 
 from ..cpu_monitor import CPUMonitor
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
@@ -300,7 +303,7 @@ class HotelBuilder(AppBuilder):
                     check=True,
                     capture_output=False,
                 )
-            except subprocess.CalledProcessError as e:
+            except subprocess.CalledProcessError:
                 logger.error(
                     f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}"
                 )
@@ -351,7 +354,7 @@ class HotelBuilder(AppBuilder):
                     check=True,
                     capture_output=False,
                 )
-            except subprocess.CalledProcessError as e:
+            except subprocess.CalledProcessError:
                 logger.error(
                     f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}"
                 )
@@ -422,7 +425,7 @@ class HotelBuilder(AppBuilder):
                     build_cmd_with_progress.insert(-1, "--progress=plain")
 
                     with open(log_file, "w") as f:
-                        result = subprocess.run(
+                        subprocess.run(
                             build_cmd_with_progress,
                             cwd=repo_root,
                             check=True,
@@ -445,7 +448,7 @@ class HotelBuilder(AppBuilder):
                 logger.info(f"Successfully built docker image: {image_name}")
                 return (binary_name, True, None, log_file)
 
-            except subprocess.CalledProcessError as e:
+            except subprocess.CalledProcessError:
                 error_msg = f"Failed to build runtime image for {binary_name}"
                 return (binary_name, False, error_msg, log_file)
 
@@ -660,7 +663,6 @@ class HotelApp(AppPlugin):
         **kwargs,
     ) -> None:
         """Run hotel experiment with namespace isolation."""
-        import sys
 
         if type(docker).__name__ == "K8sManager":
             raise NotImplementedError(

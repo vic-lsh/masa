@@ -15,10 +15,14 @@ import json
 import logging
 import os
 import re
-import signal
 import subprocess
 import sys
 import threading
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..config import ExperimentConfig
+    from ..deployment_manager import DeploymentManager as DockerManager
 import time
 from pathlib import Path
 from typing import Optional

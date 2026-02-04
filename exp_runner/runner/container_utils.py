@@ -1,7 +1,6 @@
 """Utilities for parsing and grouping Docker container names."""
 
 import re
-from typing import Optional
 
 
 def extract_service_name(container_name: str) -> str:

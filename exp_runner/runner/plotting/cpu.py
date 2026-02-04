@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from ..container_utils import extract_service_name, group_containers_by_service
+from ..container_utils import extract_service_name
 from .util import get_policy_color, get_policy_display_name
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,11 @@ def plot_cpu_utilization(
     df_all["service_name"] = df_all["container_name"].apply(extract_service_name)
 
     # Filter out load generator containers
-    df_all = df_all[~df_all["container_name"].str.contains("loadgen|client.*bench", case=False, regex=True)]
+    df_all = df_all[
+        ~df_all["container_name"].str.contains(
+            "loadgen|client.*bench", case=False, regex=True
+        )
+    ]
 
     # Generate plots for each service
     services = df_all["service_name"].unique()
@@ -134,21 +138,33 @@ def _plot_service_cpu(
     df_service["timestamp_normalized"] = 0.0
     for (iteration, policy), group in df_service.groupby(["iteration", "policy"]):
         min_ts = group["timestamp"].min()
-        df_service.loc[group.index, "timestamp_normalized"] = group["timestamp"] - min_ts
+        df_service.loc[group.index, "timestamp_normalized"] = (
+            group["timestamp"] - min_ts
+        )
 
     # Create time bins (e.g., 2-second intervals)
     bin_size = 2.0  # seconds
     max_time = df_service["timestamp_normalized"].max()
-    time_bins = pd.interval_range(start=0, end=max_time + bin_size, freq=bin_size, closed="left")
+    time_bins = pd.interval_range(
+        start=0, end=max_time + bin_size, freq=bin_size, closed="left"
+    )
     df_service["time_bin"] = pd.cut(df_service["timestamp_normalized"], bins=time_bins)
 
     # Get bin midpoints for plotting
-    df_service["time_bin_mid"] = df_service["time_bin"].apply(lambda x: x.mid if pd.notna(x) else None)
+    df_service["time_bin_mid"] = df_service["time_bin"].apply(
+        lambda x: x.mid if pd.notna(x) else None
+    )
 
     # Group by policy and time bin, compute mean CPU across replicas and iterations
-    df_grouped = df_service.groupby(["policy", "time_bin_mid"], observed=True).agg({
-        "cpu_percent": "mean",
-    }).reset_index()
+    df_grouped = (
+        df_service.groupby(["policy", "time_bin_mid"], observed=True)
+        .agg(
+            {
+                "cpu_percent": "mean",
+            }
+        )
+        .reset_index()
+    )
 
     # Plot
     fig, ax = plt.subplots(figsize=figsize)
@@ -157,7 +173,9 @@ def _plot_service_cpu(
     colors = _get_policy_colors(policies)
 
     for policy in policies:
-        df_policy = df_grouped[df_grouped["policy"] == policy].sort_values("time_bin_mid")
+        df_policy = df_grouped[df_grouped["policy"] == policy].sort_values(
+            "time_bin_mid"
+        )
 
         # Apply EWMA smoothing with alpha=0.5
         cpu_values = df_policy["cpu_percent"].values
@@ -226,7 +244,7 @@ def _get_policy_colors(policies: list[str]) -> dict[str, str]:
         Dict mapping policy name to color
     """
     result = {}
-    default_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    default_colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     default_idx = 0
 
     for policy in policies:
@@ -253,6 +271,7 @@ def _sanitize_filename(name: str) -> str:
     """
     # Replace non-alphanumeric characters with underscores
     import re
+
     return re.sub(r"[^a-zA-Z0-9_-]", "_", name)
 
 
@@ -308,7 +327,11 @@ def plot_cpu_per_policy(
     df_all["service_name"] = df_all["container_name"].apply(extract_service_name)
 
     # Filter out load generator containers
-    df_all = df_all[~df_all["container_name"].str.contains("loadgen|client.*bench", case=False, regex=True)]
+    df_all = df_all[
+        ~df_all["container_name"].str.contains(
+            "loadgen|client.*bench", case=False, regex=True
+        )
+    ]
 
     # Get unique policies and services
     policies = sorted(df_all["policy"].unique())
@@ -368,14 +391,24 @@ def _plot_policy_services(
         # Normalize timestamps
         for iteration, group in df_service.groupby("iteration"):
             min_ts = group["timestamp"].min()
-            df_service.loc[group.index, "timestamp_normalized"] = group["timestamp"] - min_ts
+            df_service.loc[group.index, "timestamp_normalized"] = (
+                group["timestamp"] - min_ts
+            )
 
         # Group by time and compute mean across replicas and iterations
-        df_service["time_rounded"] = (df_service["timestamp_normalized"] // 2) * 2  # 2-second bins
+        df_service["time_rounded"] = (
+            df_service["timestamp_normalized"] // 2
+        ) * 2  # 2-second bins
 
-        df_grouped = df_service.groupby("time_rounded").agg({
-            "cpu_percent": "mean",
-        }).reset_index()
+        df_grouped = (
+            df_service.groupby("time_rounded")
+            .agg(
+                {
+                    "cpu_percent": "mean",
+                }
+            )
+            .reset_index()
+        )
 
         ax.plot(
             df_grouped["time_rounded"],
@@ -427,16 +460,18 @@ def _save_cpu_summary_csv(df: pd.DataFrame, output_dir: Path) -> None:
         if cpu_values.empty:
             continue
 
-        summary_data.append({
-            "Service": service,
-            "Policy": policy,
-            "Mean_CPU": cpu_values.mean(),
-            "Median_CPU": cpu_values.median(),
-            "P90_CPU": cpu_values.quantile(0.90),
-            "P99_CPU": cpu_values.quantile(0.99),
-            "Max_CPU": cpu_values.max(),
-            "Sample_Count": len(cpu_values)
-        })
+        summary_data.append(
+            {
+                "Service": service,
+                "Policy": policy,
+                "Mean_CPU": cpu_values.mean(),
+                "Median_CPU": cpu_values.median(),
+                "P90_CPU": cpu_values.quantile(0.90),
+                "P99_CPU": cpu_values.quantile(0.99),
+                "Max_CPU": cpu_values.max(),
+                "Sample_Count": len(cpu_values),
+            }
+        )
 
     if not summary_data:
         return

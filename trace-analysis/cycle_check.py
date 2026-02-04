@@ -16,10 +16,11 @@ Exit codes:
   1 => cycle exists or input error (details printed to stderr)
 """
 
-import sys
-import csv
 import argparse
+import csv
+import sys
 from collections import defaultdict
+
 
 def read_edges(csv_path, caller_col, callee_col, delimiter, ignore_self_loops):
     adj = defaultdict(list)
@@ -43,21 +44,29 @@ def read_edges(csv_path, caller_col, callee_col, delimiter, ignore_self_loops):
         # Auto-handle common typo
         fieldnames_lower = {name.lower(): name for name in reader.fieldnames or []}
         if caller_col.lower() not in fieldnames_lower:
-            sys.stderr.write(f"ERROR: caller column '{caller_col}' not found in CSV header {reader.fieldnames}\n")
+            sys.stderr.write(
+                f"ERROR: caller column '{caller_col}' not found in CSV header {reader.fieldnames}\n"
+            )
             return None, None, None
         if callee_col.lower() not in fieldnames_lower:
             # try 'calee'
             if "calee" in fieldnames_lower and callee_col.lower() != "calee":
-                sys.stderr.write("NOTE: using 'calee' column (common typo) instead of requested 'callee'.\n")
+                sys.stderr.write(
+                    "NOTE: using 'calee' column (common typo) instead of requested 'callee'.\n"
+                )
                 callee_col = "calee"
             else:
-                sys.stderr.write(f"ERROR: callee column '{callee_col}' not found in CSV header {reader.fieldnames}\n")
+                sys.stderr.write(
+                    f"ERROR: callee column '{callee_col}' not found in CSV header {reader.fieldnames}\n"
+                )
                 return None, None, None
 
         caller_key = fieldnames_lower[caller_col.lower()]
         callee_key = fieldnames_lower[callee_col.lower()]
 
-        for i, row in enumerate(reader, start=2):  # start=2 (line after header) for friendlier messages
+        for i, row in enumerate(
+            reader, start=2
+        ):  # start=2 (line after header) for friendlier messages
             try:
                 u = (row.get(caller_key) or "").strip()
                 v = (row.get(callee_key) or "").strip()
@@ -71,7 +80,8 @@ def read_edges(csv_path, caller_col, callee_col, delimiter, ignore_self_loops):
             if ignore_self_loops and u == v:
                 continue
 
-            nodes.add(u); nodes.add(v)
+            nodes.add(u)
+            nodes.add(v)
             adj[u].append(v)
             m += 1
 
@@ -80,6 +90,7 @@ def read_edges(csv_path, caller_col, callee_col, delimiter, ignore_self_loops):
         adj.setdefault(n, [])
 
     return adj, len(nodes), m
+
 
 def find_cycle(adj):
     """
@@ -94,7 +105,7 @@ def find_cycle(adj):
 
     def dfs(start):
         stack = [start]
-        path_stack = []        # explicit stack for current path simulation
+        path_stack = []  # explicit stack for current path simulation
         iter_stack = []
 
         while stack:
@@ -158,17 +169,36 @@ def find_cycle(adj):
                 return True, cyc
     return False, None
 
+
 def main():
-    p = argparse.ArgumentParser(description="Detect a cycle in a directed graph from a CSV with caller/callee columns.")
+    p = argparse.ArgumentParser(
+        description="Detect a cycle in a directed graph from a CSV with caller/callee columns."
+    )
     p.add_argument("csv", help="Path to CSV file with edges.")
-    p.add_argument("--caller-col", default="caller", help="Column name for caller (default: caller)")
-    p.add_argument("--callee-col", default="callee", help="Column name for callee (default: callee)")
-    p.add_argument("--delimiter", default=None, help="CSV delimiter (default: auto-detect)")
-    p.add_argument("--ignore-self-loops", action="store_true", help="Ignore u->u edges as cycles")
+    p.add_argument(
+        "--caller-col",
+        default="caller",
+        help="Column name for caller (default: caller)",
+    )
+    p.add_argument(
+        "--callee-col",
+        default="callee",
+        help="Column name for callee (default: callee)",
+    )
+    p.add_argument(
+        "--delimiter", default=None, help="CSV delimiter (default: auto-detect)"
+    )
+    p.add_argument(
+        "--ignore-self-loops", action="store_true", help="Ignore u->u edges as cycles"
+    )
     args = p.parse_args()
 
     adj, n_nodes, n_edges = read_edges(
-        args.csv, args.caller_col, args.callee_col, args.delimiter, args.ignore_self_loops
+        args.csv,
+        args.caller_col,
+        args.callee_col,
+        args.delimiter,
+        args.ignore_self_loops,
     )
     if adj is None:
         sys.exit(1)
@@ -185,6 +215,8 @@ def main():
         sys.exit(1)
     else:
         print("Cycle: NO")
+        sys.exit(0)
+
         sys.exit(0)
 
 if __name__ == "__main__":
