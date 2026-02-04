@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt;
 
 /// A type map of protocol extensions.
@@ -78,19 +79,13 @@ impl fmt::Debug for Extensions {
 pub struct GrpcMethod {
     service: &'static str,
     method: &'static str,
-    id: &'static str,
 }
 
 impl GrpcMethod {
     /// Create a new `GrpcMethod` extension.
     #[doc(hidden)]
     pub fn new(service: &'static str, method: &'static str) -> Self {
-        let id = Box::leak(format!("/{}/{}", service, method).into_boxed_str());
-        Self {
-            service,
-            method,
-            id,
-        }
+        Self { service, method }
     }
 
     /// gRPC service name.
@@ -102,9 +97,34 @@ impl GrpcMethod {
     pub fn method(&self) -> &'static str {
         self.method
     }
+}
 
-    /// gRPC method id.
-    pub fn id(&self) -> &'static str {
-        self.id
+/// A gRPC Method info extension.
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct CowGrpcMethod {
+    service: Cow<'static, str>,
+    method: Cow<'static, str>,
+}
+
+impl CowGrpcMethod {
+    /// Create a new `CowGrpcMethod` extension.
+    pub fn new(
+        service: impl Into<Cow<'static, str>>,
+        method: impl Into<Cow<'static, str>>,
+    ) -> Self {
+        Self {
+            service: service.into(),
+            method: method.into(),
+        }
+    }
+
+    /// gRPC service name.
+    pub fn service(&self) -> &str {
+        &self.service
+    }
+
+    /// gRPC method name.
+    pub fn method(&self) -> &str {
+        &self.method
     }
 }
