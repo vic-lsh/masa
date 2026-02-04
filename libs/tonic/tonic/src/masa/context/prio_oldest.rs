@@ -47,7 +47,7 @@ fn resolve_method_name_from_request<T>(method: GrpcMethod, request: &Request<T>)
             return method_name.to_string();
         }
     }
-    method.id().to_string()
+    format!("/{}/{}", method.service(), method.method())
 }
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
