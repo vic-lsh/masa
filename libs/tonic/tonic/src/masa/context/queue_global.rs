@@ -5,7 +5,7 @@ use std::task::Poll;
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::{
-    resolve_method_name, resolve_service_name, MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER,
+    resolve_method_name, resolve_method_name_from_request, resolve_service_name, MasaRequestExt,
 };
 use crate::Response;
 use masa_core::{Context, ContextBuilder};
@@ -40,16 +40,6 @@ pub struct ParentContext {
     ctx: Context,
     q_lat_tracker: QueueLatencyTracker,
     early_return: EarlyReturnHandler,
-}
-
-/// Resolve the method name from Request metadata, checking for override header.
-fn resolve_method_name_from_request<T>(method: GrpcMethod, request: &Request<T>) -> String {
-    if let Some(header_value) = request.metadata().get(METHOD_NAME_OVERRIDE_HEADER) {
-        if let Ok(method_name) = header_value.to_str() {
-            return method_name.to_string();
-        }
-    }
-    format!("/{}/{}", method.service(), method.method())
 }
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {

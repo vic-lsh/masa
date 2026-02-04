@@ -150,21 +150,6 @@ fn resolve_method_name_from_http<B>(method: GrpcMethod, req: &http::Request<B>) 
     format!("/{}/{}", method.service(), method.method())
 }
 
-/// Resolve the method name from Request metadata, checking for override header.
-fn resolve_method_name_from_request<T>(method: GrpcMethod, request: &Request<T>) -> String {
-    if let Some(header_value) = request.metadata().get(METHOD_NAME_OVERRIDE_HEADER) {
-        if let Ok(method_name) = header_value.to_str() {
-            if let Some(service_header) = request.metadata().get(SERVICE_NAME_OVERRIDE_HEADER) {
-                if let Ok(service_name) = service_header.to_str() {
-                    return format!("/{}/{}", service_name, method_name);
-                }
-            }
-            return method_name.to_string();
-        }
-    }
-    format!("/{}/{}", method.service(), method.method())
-}
-
 /// Concatenate parent and child method names.
 fn parent_to_child_identifier(parent: &str, child: &str) -> String {
     format!("{}=>{}", parent, child)
@@ -230,7 +215,8 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         // NOTE: we need to include the parent method in the key, because the duration until the
         // end of the parent request after this child request completes will vary for different
         // parent methods (i.e. endpoints on this server)
-        let resolved_child_method = resolve_method_name_from_request(child_method, request);
+        let resolved_child_method =
+            super::super::resolve_method_name_from_request(child_method, request);
 
         let parent_to_child_id =
             parent_to_child_identifier(&self.resolved_method, &resolved_child_method);
@@ -462,6 +448,7 @@ mod tests {
 
     #[test]
     fn test_resolve_method_name_from_request_with_overrides() {
+        use crate::masa::context::resolve_method_name_from_request;
         use crate::metadata::MetadataValue;
 
         let method = GrpcMethod::new("TestService", "TestMethod");
