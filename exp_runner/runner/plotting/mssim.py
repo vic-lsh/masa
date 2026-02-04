@@ -108,112 +108,54 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
 
     data_by_rps: Dict[float, List[pd.DataFrame]] = {}
 
-    # Try new structure first: look for run_* directories with CSV files directly
+    # Look for run_* directories with CSV files directly
     run_dirs = sorted(policy_dir.glob("run_*"))
-    if run_dirs:
-        # New structure: CSV files are directly in run_* directories
-        for run_dir in run_dirs:
-            csv_paths = sorted(run_dir.glob("root_latencies_*rps.csv"))
-            for csv_path in csv_paths:
-                try:
-                    rps = _parse_rps_from_filename(csv_path)
-                except ValueError:
-                    print(f"Warning: skipping unexpected CSV filename {csv_path}")
-                    continue
-
-                df = pd.read_csv(csv_path)
-                df.columns = [col.strip() for col in df.columns]
-
-                # Map columns from new CSV format if needed
-                if "e2e_latency_us" not in df.columns and "latency" in df.columns:
-                    df.rename(columns={"latency": "e2e_latency_us"}, inplace=True)
-
-                if "queue_latency_us" not in df.columns:
-                    # Sum q_lat_init and q_lat_resume if they exist
-                    q_cols = [
-                        c for c in ["q_lat_init", "q_lat_resume"] if c in df.columns
-                    ]
-                    if q_cols:
-                        df["queue_latency_us"] = df[q_cols].sum(axis=1)
-
-                if "e2e_latency_us" not in df.columns:
-                    print(f"Warning: missing e2e_latency_us in {csv_path}")
-                    continue
-
-                df = _parse_error_columns(df)
-                df = _filter_errors(df)
-                df = _filter_after_warmup(df, warmup_sec, csv_path)
-                if df.empty:
-                    continue
-
-                df = df.copy()
-                df["e2e_latency_ms"] = (
-                    pd.to_numeric(df["e2e_latency_us"], errors="coerce") / 1_000.0
-                )
-                if "queue_latency_us" in df.columns:
-                    queue_us = pd.to_numeric(
-                        df["queue_latency_us"], errors="coerce"
-                    ).fillna(0.0)
-                else:
-                    queue_us = 0.0
-                df["queue_latency_ms"] = queue_us / 1_000.0
-                df["start_at"] = pd.to_numeric(df.get("start_at"), errors="coerce")
-
-                data_by_rps.setdefault(rps, []).append(df)
-    else:
-        # Fallback to old structure: rps_* directories
-        for rps_dir in sorted(policy_dir.glob("rps_*")):
+    for run_dir in run_dirs:
+        csv_paths = sorted(run_dir.glob("root_latencies_*rps.csv"))
+        for csv_path in csv_paths:
             try:
-                rps = _parse_rps_dir(rps_dir)
+                rps = _parse_rps_from_filename(csv_path)
             except ValueError:
-                print(f"Warning: skipping unexpected directory {rps_dir}")
+                print(f"Warning: skipping unexpected CSV filename {csv_path}")
                 continue
 
-            csv_paths = sorted(rps_dir.rglob("root_latencies_*rps.csv"))
-            if not csv_paths:
-                print(f"Warning: no latency samples found in {rps_dir}")
+            df = pd.read_csv(csv_path)
+            df.columns = [col.strip() for col in df.columns]
+
+            # Map columns from new CSV format if needed
+            if "e2e_latency_us" not in df.columns and "latency" in df.columns:
+                df.rename(columns={"latency": "e2e_latency_us"}, inplace=True)
+
+            if "queue_latency_us" not in df.columns:
+                # Sum q_lat_init and q_lat_resume if they exist
+                q_cols = [c for c in ["q_lat_init", "q_lat_resume"] if c in df.columns]
+                if q_cols:
+                    df["queue_latency_us"] = df[q_cols].sum(axis=1)
+
+            if "e2e_latency_us" not in df.columns:
+                print(f"Warning: missing e2e_latency_us in {csv_path}")
                 continue
 
-            for csv_path in csv_paths:
-                df = pd.read_csv(csv_path)
-                df.columns = [col.strip() for col in df.columns]
+            df = _parse_error_columns(df)
+            df = _filter_errors(df)
+            df = _filter_after_warmup(df, warmup_sec, csv_path)
+            if df.empty:
+                continue
 
-                # Map columns from new CSV format if needed
-                if "e2e_latency_us" not in df.columns and "latency" in df.columns:
-                    df.rename(columns={"latency": "e2e_latency_us"}, inplace=True)
+            df = df.copy()
+            df["e2e_latency_ms"] = (
+                pd.to_numeric(df["e2e_latency_us"], errors="coerce") / 1_000.0
+            )
+            if "queue_latency_us" in df.columns:
+                queue_us = pd.to_numeric(
+                    df["queue_latency_us"], errors="coerce"
+                ).fillna(0.0)
+            else:
+                queue_us = 0.0
+            df["queue_latency_ms"] = queue_us / 1_000.0
+            df["start_at"] = pd.to_numeric(df.get("start_at"), errors="coerce")
 
-                if "queue_latency_us" not in df.columns:
-                    # Sum q_lat_init and q_lat_resume if they exist
-                    q_cols = [
-                        c for c in ["q_lat_init", "q_lat_resume"] if c in df.columns
-                    ]
-                    if q_cols:
-                        df["queue_latency_us"] = df[q_cols].sum(axis=1)
-
-                if "e2e_latency_us" not in df.columns:
-                    print(f"Warning: missing e2e_latency_us in {csv_path}")
-                    continue
-
-                df = _parse_error_columns(df)
-                df = _filter_errors(df)
-                df = _filter_after_warmup(df, warmup_sec, csv_path)
-                if df.empty:
-                    continue
-
-                df = df.copy()
-                df["e2e_latency_ms"] = (
-                    pd.to_numeric(df["e2e_latency_us"], errors="coerce") / 1_000.0
-                )
-                if "queue_latency_us" in df.columns:
-                    queue_us = pd.to_numeric(
-                        df["queue_latency_us"], errors="coerce"
-                    ).fillna(0.0)
-                else:
-                    queue_us = 0.0
-                df["queue_latency_ms"] = queue_us / 1_000.0
-                df["start_at"] = pd.to_numeric(df.get("start_at"), errors="coerce")
-
-                data_by_rps.setdefault(rps, []).append(df)
+            data_by_rps.setdefault(rps, []).append(df)
 
     combined: Dict[float, pd.DataFrame] = {}
     for rps, frames in data_by_rps.items():
@@ -481,14 +423,6 @@ def _resolve_rps_values(
                 for csv_path in run_dir.glob("root_latencies_*rps.csv"):
                     try:
                         rps_values.append(_parse_rps_from_filename(csv_path))
-                    except ValueError:
-                        continue
-
-            # Fallback to old structure: rps_* directories
-            if not rps_values:
-                for rps_dir in sorted(policy_dir.glob("rps_*")):
-                    try:
-                        rps_values.append(_parse_rps_dir(rps_dir))
                     except ValueError:
                         continue
 
