@@ -374,9 +374,9 @@ class MssimApp(AppPlugin):
                     try:
                         with open(latency_file, "r") as f:
                             reader = csv.reader(f)
-                            # MSSIM: index 2 is is_err
+                            # New format: error is at index 6. Success is "/None".
                             for row in reader:
-                                if len(row) > 2 and row[2].strip().lower() == "false":
+                                if len(row) > 6 and row[6].strip() == "/None":
                                     goodput += 1
                     except Exception as e:
                         logger.error(f"Failed to read MSSIM CSV {latency_file}: {e}")

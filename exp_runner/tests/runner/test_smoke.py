@@ -151,11 +151,11 @@ class TestMssimSmoke:
         # Create CSV with valid goodput
         # Target RPS = 100, Duration = 1 -> Target Total = 100
         # MSSIM uses root_latencies_{rps}rps.csv
-        # Format: index 2 is is_err (false for success)
+        # New Format: index 6 is error (/None for success)
         csv_path = run_dir / "root_latencies_100rps.csv"
         with open(csv_path, "w") as f:
-            for _ in range(100):
-                f.write("0,0,false\n")
+            for i in range(100):
+                f.write(f"api,{i},100,0,0,10,/None,0,0\n")
 
         assert app.verify_results(mock_config) is True
 
@@ -184,6 +184,6 @@ class TestMssimSmoke:
         # Create CSV with low goodput
         csv_path = run_dir / "root_latencies_100rps.csv"
         with open(csv_path, "w") as f:
-            f.write("0,0,false\n")
+            f.write("api,0,100,0,0,10,/None,0,0\n")
 
         assert app.verify_results(mock_config) is False
