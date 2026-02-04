@@ -299,6 +299,7 @@ def _plot_early_return_breakdown(
     policy_total_early_returns: dict,
     policy_early_returns_breakdown: dict,
     title: str,
+    stacked_services: bool = False,
 ) -> None:
     """
     Generate breakdown plot for early-return requests.
@@ -309,27 +310,44 @@ def _plot_early_return_breakdown(
     rps_values = list(rps_values)
     x = np.arange(len(rps_values))
 
-    # 1. Collect all unique SrcServices and Methods
+    # 1. Collect all unique SrcServices, ColorServices (for coloring), and Methods
     all_src_services = set()
+    all_color_services = set()
     all_methods = set()
+
+    def parse_key(k):
+        if "||" in k:
+            parts = k.split("||", 1)
+            src = parts[0]
+            rest = parts[1]
+            if "::" in rest:
+                c_svc, mth = rest.split("::", 1)
+                return src, c_svc, mth
+            return src, rest, "Unknown"
+        elif "::" in k:
+            src, mth = k.split("::", 1)
+            return src, src, mth
+        else:
+            # Fallback
+            return k, k, "Unknown"
 
     for p in sorted_policies:
         per_rps = policy_early_returns_breakdown.get(p, [])
         for d in per_rps:
             for full_key in (d or {}).keys():
-                # Format is "SrcSvc::Method"
-                if "::" in full_key:
-                    src, mth = full_key.split("::", 1)
-                    all_src_services.add(src)
-                    all_methods.add(mth)
+                src, c_svc, mth = parse_key(full_key)
+                all_src_services.add(src)
+                all_color_services.add(c_svc)
+                all_methods.add(mth)
 
     sorted_src_services = sorted(all_src_services)
+    sorted_color_services = sorted(all_color_services)
     sorted_methods = sorted(all_methods)
 
-    # Color mapping for Src services
-    svc_cmap = plt.get_cmap("tab10" if len(sorted_src_services) <= 10 else "tab20")
+    # Color mapping for Color services
+    svc_cmap = plt.get_cmap("tab10" if len(sorted_color_services) <= 10 else "tab20")
     svc_colors = {
-        svc: svc_cmap(i % svc_cmap.N) for i, svc in enumerate(sorted_src_services)
+        svc: svc_cmap(i % svc_cmap.N) for i, svc in enumerate(sorted_color_services)
     }
 
     # Hatch mapping for Methods
@@ -341,12 +359,61 @@ def _plot_early_return_breakdown(
     # Generate output path
     breakdown_path = output_path.replace(".png", "_breakdown.png")
 
-    # Layout
+    # Determine layout parameters
     n = len(sorted_policies)
+    # Start with default layout preference
     ncols = min(3, max(1, n))
     nrows = int(np.ceil(n / ncols))
+
+    # Calculate required width based on data density
+    # We want a fixed minimum width per bar for readability
+    MIN_BAR_WIDTH_INCH = 0.15
+    # Extra space for axis labels, ticks, and margins per subplot
+    SUBPLOT_PADDING_INCH = 2.0
+
+    num_rps = len(rps_values)
+    num_src = len(sorted_src_services)
+    if num_src == 0:
+        num_src = 1
+
+    # If stacked, we only have 1 bar width per RPS tick.
+    # If not stacked, we have num_src bars per RPS tick.
+    effective_bars_per_tick = 1 if stacked_services else num_src
+
+    # Bars occupy 0.8 of the interval [x-0.5, x+0.5].
+    # The interval width is 1.0 in data coordinates.
+    # We want the 0.8 portion to accommodate 'effective_bars_per_tick' bars
+    # with at least MIN_BAR_WIDTH_INCH each.
+    # So 0.8 data_units -> effective_bars_per_tick * MIN_BAR_WIDTH_INCH
+    # 1.0 data_units -> (effective_bars_per_tick * MIN_BAR_WIDTH_INCH) / 0.8
+
+    group_width_inch = (effective_bars_per_tick * MIN_BAR_WIDTH_INCH) / 0.8
+    # Total width for x-axis data (num_rps ticks)
+    # We use max(num_rps, 1) to avoid zero width
+    x_axis_width_inch = max(num_rps, 1) * group_width_inch
+
+    subplot_width = x_axis_width_inch + SUBPLOT_PADDING_INCH
+
+    # If the plot is very wide, we might want to restrict columns to 1 to avoid massive horizontal scrolling
+    # if the user were viewing on a screen, but for PNGs, we generally prefer satisfying the width request.
+    # However, if it's extremely wide, forcing 1 column helps keep the aspect ratio somewhat sane
+    # if we have many policies.
+    if subplot_width > 12 and ncols > 1:
+        ncols = 1
+        nrows = n
+
+    total_fig_width = ncols * subplot_width
+    # Cap minimum width to avoiding creating tiny plots
+    total_fig_width = max(total_fig_width, 10.0)
+
+    total_fig_height = 4 + 2.8 * nrows
+
     fig, axes = plt.subplots(
-        nrows, ncols, figsize=(15, 4 + 2.8 * nrows), sharex=True, sharey=True
+        nrows,
+        ncols,
+        figsize=(total_fig_width, total_fig_height),
+        sharex=True,
+        sharey=True,
     )
     if n == 1:
         axes = [axes]
@@ -370,36 +437,47 @@ def _plot_early_return_breakdown(
     num_src = len(sorted_src_services)
     if num_src == 0:
         num_src = 1  # avoid division by zero
-    total_width = 0.8
-    bar_width = total_width / num_src
-    # Centers of the groups are at x = 0, 1, 2...
-    # Offsets
-    offsets = np.linspace(
-        -total_width / 2 + bar_width / 2, total_width / 2 - bar_width / 2, num_src
-    )
+
+    if stacked_services:
+        total_width = 0.8
+        bar_width = total_width
+        offsets = np.zeros(num_src)
+    else:
+        total_width = 0.8
+        bar_width = total_width / num_src
+        # Centers of the groups are at x = 0, 1, 2...
+        # Offsets
+        offsets = np.linspace(
+            -total_width / 2 + bar_width / 2, total_width / 2 - bar_width / 2, num_src
+        )
 
     for idx, policy in enumerate(sorted_policies):
         ax = axes[idx]
         _style_axes(ax)
         per_rps = policy_early_returns_breakdown.get(policy, [])
 
+        if stacked_services:
+            bottom = np.zeros(len(rps_values))
+
         # We will iterate by SrcService to draw its bar
         for src_idx, src_svc in enumerate(sorted_src_services):
             bar_x = x + offsets[src_idx]
-            bottom = np.zeros(len(rps_values))
+            if not stacked_services:
+                bottom = np.zeros(len(rps_values))
 
             # Filter keys for this src_svc and sort
             relevant_keys = set()
             for d in per_rps:
                 for full_key in (d or {}).keys():
-                    if full_key.startswith(src_svc + "::"):
+                    src, _, _ = parse_key(full_key)
+                    if src == src_svc:
                         relevant_keys.add(full_key)
 
+            # Sort keys so that colors/segments are consistent
             sorted_keys = sorted(relevant_keys)
 
             for full_key in sorted_keys:
-                # full_key is "Src::Method"
-                src, mth = full_key.split("::", 1)
+                src, c_svc, mth = parse_key(full_key)
 
                 values = []
                 for i in range(len(rps_values)):
@@ -414,7 +492,7 @@ def _plot_early_return_breakdown(
                     values,
                     bottom=bottom,
                     width=bar_width,
-                    color=svc_colors.get(src, "grey"),
+                    color=svc_colors.get(c_svc, "grey"),
                     hatch=method_hatches.get(mth, ""),
                     edgecolor="white",
                     linewidth=0.4,
@@ -422,26 +500,28 @@ def _plot_early_return_breakdown(
                 bottom += values
 
             # Label the subbar (Src Service)
-            for bx in bar_x:
-                ax.text(
-                    bx,
-                    0,
-                    src_svc,
-                    rotation=45,
-                    ha="right",
-                    va="top",
-                    fontsize=9,
-                    rotation_mode="anchor",
-                )
+            if not stacked_services:
+                for bx in bar_x:
+                    ax.text(
+                        bx,
+                        0,
+                        src_svc,
+                        rotation=45,
+                        ha="right",
+                        va="top",
+                        fontsize=12,
+                        rotation_mode="anchor",
+                    )
 
-        ax.set_title(get_policy_display_name(policy), fontsize=11)
+        ax.set_title(get_policy_display_name(policy), fontsize=14)
         ax.set_ylim(0, ymax)
         ax.set_xticks(x)
         # Move RPS labels down to make room for subbar labels
-        ax.tick_params(axis="x", which="major", pad=40)
+        ax.tick_params(axis="x", which="major", pad=40, labelsize=12)
+        ax.tick_params(axis="y", labelsize=12)
         ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
-        ax.set_xlabel("RPS")
-        ax.set_ylabel("Early-return rate (req/s)")
+        ax.set_xlabel("RPS", fontsize=12)
+        ax.set_ylabel("Early-return rate (req/s)", fontsize=12)
 
     # Hide unused subplots
     for idx in range(n, len(axes)):
@@ -456,7 +536,7 @@ def _plot_early_return_breakdown(
             edgecolor="black",
             linewidth=0.5,
         )
-        for svc in sorted_src_services
+        for svc in sorted_color_services
     ]
     # 2. Method (Hatches)
     method_handles = [
@@ -476,12 +556,13 @@ def _plot_early_return_breakdown(
     if svc_handles:
         l2 = fig.legend(
             svc_handles,
-            sorted_src_services,
+            sorted_color_services,
             title="Service (Color)",
             frameon=False,
             loc="upper center",
             bbox_to_anchor=(0.3, 1.02),
             ncols=min(4, len(svc_handles)),
+            fontsize=12,
         )
         fig.add_artist(l2)
 
@@ -494,9 +575,10 @@ def _plot_early_return_breakdown(
             loc="upper center",
             bbox_to_anchor=(0.7, 1.02),
             ncols=min(4, len(method_handles)),
+            fontsize=12,
         )
 
-    fig.suptitle(title, fontsize=14, y=1.13)  # Moved up to make room for legends
+    fig.suptitle(title, fontsize=18, y=1.13)  # Moved up to make room for legends
     fig.tight_layout(rect=[0, 0, 1, 0.88])
     fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -509,18 +591,17 @@ def _plot_early_return_breakdown(
         for i, rps in enumerate(rps_values):
             if i < len(per_rps) and per_rps[i] is not None:
                 for full_key, val in per_rps[i].items():
-                    if "::" in full_key:
-                        src, mth = full_key.split("::", 1)
-                        # Treat Src as Service and Method as Method
-                        csv_data.append(
-                            {
-                                "RPS": rps,
-                                "Policy": policy,
-                                "Service": src,
-                                "Method": mth,
-                                "Rate": float(val or 0.0),
-                            }
-                        )
+                    src, c_svc, mth = parse_key(full_key)
+                    csv_data.append(
+                        {
+                            "RPS": rps,
+                            "Policy": policy,
+                            "SrcService": src,
+                            "ColorService": c_svc,
+                            "Method": mth,
+                            "Rate": float(val or 0.0),
+                        }
+                    )
 
     if csv_data:
         pd.DataFrame(csv_data).to_csv(csv_path, index=False)
