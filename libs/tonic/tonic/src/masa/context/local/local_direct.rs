@@ -13,14 +13,14 @@ use std::{
 
 use super::super::super::{ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks};
 use super::super::common::EarlyReturnHandler;
-use super::super::resolve_method_name;
+use super::super::{resolve_method_name, resolve_service_name};
 use super::{estimate_method_latency, track_method_latency};
 use masa_core::{Context, ContextBuilder, LatencyDistribution, LatencyEstimator, MethodId};
 
 static LAST_PRINT_TIME: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
 #[derive(Debug)]
-/// This policy computes the deadline d of a child request as  
+/// This policy computes the deadline d of a child request as
 ///   d = d_p - e_rem
 /// where d_p is the deadline of the parent request and e_rem is an estimate for the remaining time
 /// left in the request after this child request executes. e_rem is estimated by sampling from the
@@ -76,7 +76,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext, ServerCo
             ctx: read_context(req),
             server: server_ctx,
             early_return: EarlyReturnHandler::new(
-                method.service(),
+                resolve_service_name(method, req),
                 resolve_method_name(method, req),
             ),
             child_end_times: Mutex::new(Vec::new()),
