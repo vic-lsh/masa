@@ -22,7 +22,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 mod replay;
-use replay::extract_queue_latency;
+use replay::extract_queue_latencies;
 
 mod service {
     tonic::include_proto!("service");
@@ -228,15 +228,17 @@ async fn run_root_load(
                     match res {
                         Ok(resp) => {
                             stats.ok.fetch_add(1, Ordering::Relaxed);
-                            let queue_latency = extract_queue_latency(resp.metadata());
+                            let (q_init, q_resume) =
+                                extract_queue_latencies(resp.metadata()).unwrap_or((0, 0));
                             let sample = RootLatencySample {
                                 graph: entry.graph,
                                 missed_slo: elapsed > entry.slo_ms * 1000,
-                                is_err: false,
                                 error: String::new(),
                                 req_id,
+                                slo_us: entry.slo_ms * 1000,
                                 start_at,
-                                queue_latency_us: queue_latency.unwrap_or(0),
+                                queue_latency_init_us: q_init,
+                                queue_latency_resume_us: q_resume,
                                 e2e_latency_us: elapsed,
                             };
                             {
@@ -250,11 +252,12 @@ async fn run_root_load(
                             let sample = RootLatencySample {
                                 graph: entry.graph,
                                 missed_slo: false,
-                                is_err: true,
                                 error: status.message().to_string(),
                                 req_id,
+                                slo_us: entry.slo_ms * 1000,
                                 start_at,
-                                queue_latency_us: 0,
+                                queue_latency_init_us: 0,
+                                queue_latency_resume_us: 0,
                                 e2e_latency_us: elapsed,
                             };
                             {
@@ -290,10 +293,11 @@ async fn run_root_load(
 struct RootLatencySample {
     graph: GraphId,
     req_id: u64,
+    slo_us: u64,
     start_at: u64,
-    queue_latency_us: u64,
+    queue_latency_init_us: u64,
+    queue_latency_resume_us: u64,
     e2e_latency_us: u64,
-    is_err: bool,
     error: String,
     missed_slo: bool,
 }
@@ -333,29 +337,39 @@ async fn flush_root_samples_internal(
     let file_path = output_dir.join(file_name);
 
     let mut csv_data = String::from(
-        "graph,req_id,is_err,error,start_at,queue_latency_us,e2e_latency_us,missed_slo\n",
+        "api,request_id,slo,start_at,deadline,latency,error,q_lat_init,q_lat_resume\n",
     );
     for sample in &snapshot {
+        let deadline = sample.start_at + sample.slo_us;
+
         // Escape error string if needed (simple CSV escaping)
-        let error_escaped = if sample.error.contains(',')
-            || sample.error.contains('"')
-            || sample.error.contains('\n')
-        {
-            format!("\"{}\"", sample.error.replace('"', "\"\""))
-        } else {
+        // Also map to synthetic error codes if possible
+        let error_str = if !sample.error.is_empty() {
             sample.error.clone()
+        } else if sample.missed_slo {
+            "/ClientMiss".to_string()
+        } else {
+            "/None".to_string()
         };
 
+        let error_escaped =
+            if error_str.contains(',') || error_str.contains('"') || error_str.contains('\n') {
+                format!("\"{}\"", error_str.replace('"', "\"\""))
+            } else {
+                error_str
+            };
+
         csv_data.push_str(&format!(
-            "{},{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{},{}\n",
             sample.graph.as_str(),
             sample.req_id,
-            sample.is_err,
-            error_escaped,
+            sample.slo_us,
             sample.start_at,
-            sample.queue_latency_us,
+            deadline,
             sample.e2e_latency_us,
-            sample.missed_slo
+            error_escaped,
+            sample.queue_latency_init_us,
+            sample.queue_latency_resume_us
         ));
     }
 
