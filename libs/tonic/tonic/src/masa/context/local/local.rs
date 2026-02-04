@@ -147,7 +147,7 @@ fn resolve_method_name_from_http<B>(method: GrpcMethod, req: &http::Request<B>) 
             return method_name.to_string();
         }
     }
-    method.id().to_string()
+    format!("/{}/{}", method.service(), method.method())
 }
 
 /// Resolve the method name from Request metadata, checking for override header.
@@ -162,7 +162,7 @@ fn resolve_method_name_from_request<T>(method: GrpcMethod, request: &Request<T>)
             return method_name.to_string();
         }
     }
-    method.id().to_string()
+    format!("/{}/{}", method.service(), method.method())
 }
 
 /// Concatenate parent and child method names.
