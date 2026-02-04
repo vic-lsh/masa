@@ -63,7 +63,7 @@ impl LatencyEstimator for LatencyRms {
         self.count > 0
     }
 
-    fn estimate(&self, _percentile: usize) -> u64 {
+    fn estimate(&self) -> u64 {
         // RMS ignores percentile parameter since it's a single value
         // Just return the cached RMS value
         self.rms
@@ -255,10 +255,8 @@ mod tests {
         LatencyEstimator::track(&mut rms, 20);
 
         // RMS ignores percentile parameter
-        let estimate1 = LatencyEstimator::estimate(&rms, 50);
-        let estimate2 = LatencyEstimator::estimate(&rms, 99);
+        let estimate1 = LatencyEstimator::estimate(&rms);
 
-        assert_eq!(estimate1, estimate2);
         assert_eq!(estimate1, rms.rms());
     }
 
@@ -350,3 +348,4 @@ mod tests {
         assert_eq!(rms.rms(), 10);
     }
 }
+

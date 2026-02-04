@@ -5,9 +5,6 @@ use std::{
 
 use masa_core::LatencyEstimator;
 
-// TODO: tweak these values. should they be specific to each local priority selector?
-pub(crate) const PERCENTILE: usize = 50;
-
 #[derive(Debug)]
 pub(crate) struct LatencyMap<K, E> {
     inner: RwLock<HashMap<K, Mutex<E>>>,
@@ -41,7 +38,7 @@ where
             if let Some(distribution_lock) = m.get(key) {
                 let distribution = distribution_lock.lock().unwrap();
                 if distribution.can_estimate() {
-                    return Some(distribution.estimate(PERCENTILE));
+                    return Some(distribution.estimate());
                 }
                 true // Found but cannot estimate yet
             } else {
@@ -176,3 +173,4 @@ mod tests {
         assert_eq!(map.get_estimate(&key), Some(10));
     }
 }
+
