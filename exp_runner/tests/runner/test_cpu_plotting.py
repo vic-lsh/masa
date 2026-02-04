@@ -17,7 +17,8 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend for testing
+
+matplotlib.use("Agg")  # Use non-interactive backend for testing
 
 from exp_runner.runner.plotting.cpu import (
     plot_cpu_utilization,
@@ -95,7 +96,9 @@ class TestSanitizeFilename:
 
     def test_mixed_characters(self):
         """Test sanitization of mixed special characters."""
-        assert _sanitize_filename("file@#$%name!") == "file____name_"  # @ # % ! -> 4 underscores
+        assert (
+            _sanitize_filename("file@#$%name!") == "file____name_"
+        )  # @ # % ! -> 4 underscores
         assert _sanitize_filename("complex/file:name*test") == "complex_file_name_test"
 
 
@@ -156,17 +159,21 @@ class TestPlotServiceCpu:
             for policy in ["fifo", "prio_global"]:
                 for replica in [1, 2]:
                     for time_offset in range(0, 10, 2):
-                        data.append({
-                            "timestamp": 1000000 + iteration * 100 + time_offset,
-                            "container_name": f"test-exp-abc-service-{replica}",
-                            "cpu_percent": 10.0 + policy.__hash__() % 20 + time_offset,
-                            "memory_usage_mb": 100.0,
-                            "memory_limit_mb": 1000.0,
-                            "memory_percent": 10.0,
-                            "iteration": str(iteration),
-                            "policy": policy,
-                            "service_name": "service",
-                        })
+                        data.append(
+                            {
+                                "timestamp": 1000000 + iteration * 100 + time_offset,
+                                "container_name": f"test-exp-abc-service-{replica}",
+                                "cpu_percent": 10.0
+                                + policy.__hash__() % 20
+                                + time_offset,
+                                "memory_usage_mb": 100.0,
+                                "memory_limit_mb": 1000.0,
+                                "memory_percent": 10.0,
+                                "iteration": str(iteration),
+                                "policy": policy,
+                                "service_name": "service",
+                            }
+                        )
         return pd.DataFrame(data)
 
     def test_plot_generation(self):
@@ -203,17 +210,19 @@ class TestPlotServiceCpu:
         data = []
         for policy in ["fifo", "prio_global", "prio_local"]:
             for time_offset in range(0, 10, 2):
-                data.append({
-                    "timestamp": 1000000 + time_offset,
-                    "container_name": "test-service-1",
-                    "cpu_percent": 10.0 + time_offset,
-                    "memory_usage_mb": 100.0,
-                    "memory_limit_mb": 1000.0,
-                    "memory_percent": 10.0,
-                    "iteration": "0",
-                    "policy": policy,
-                    "service_name": "service",
-                })
+                data.append(
+                    {
+                        "timestamp": 1000000 + time_offset,
+                        "container_name": "test-service-1",
+                        "cpu_percent": 10.0 + time_offset,
+                        "memory_usage_mb": 100.0,
+                        "memory_limit_mb": 1000.0,
+                        "memory_percent": 10.0,
+                        "iteration": "0",
+                        "policy": policy,
+                        "service_name": "service",
+                    }
+                )
         df = pd.DataFrame(data)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -238,10 +247,14 @@ class TestPlotCpuUtilization:
                 policy_dir.mkdir(parents=True, exist_ok=True)
 
                 csv_file = policy_dir / "cpu_stats.csv"
-                with open(csv_file, 'w', newline='') as f:
+                with open(csv_file, "w", newline="") as f:
                     fieldnames = [
-                        'timestamp', 'container_name', 'cpu_percent',
-                        'memory_usage_mb', 'memory_limit_mb', 'memory_percent'
+                        "timestamp",
+                        "container_name",
+                        "cpu_percent",
+                        "memory_usage_mb",
+                        "memory_limit_mb",
+                        "memory_percent",
                     ]
                     writer = csv.DictWriter(f, fieldnames=fieldnames)
                     writer.writeheader()
@@ -250,22 +263,26 @@ class TestPlotCpuUtilization:
                     base_time = 1000000 + iteration * 100
                     for time_offset in range(0, 20, 2):
                         for replica in [1, 2]:
-                            writer.writerow({
-                                'timestamp': base_time + time_offset,
-                                'container_name': f'hotel-test-abc123def456-rate-service-{replica}',
-                                'cpu_percent': 10.0 + time_offset + replica,
-                                'memory_usage_mb': 100.0,
-                                'memory_limit_mb': 1000.0,
-                                'memory_percent': 10.0,
-                            })
-                            writer.writerow({
-                                'timestamp': base_time + time_offset,
-                                'container_name': f'hotel-test-abc123def456-search-service-{replica}',
-                                'cpu_percent': 20.0 + time_offset + replica,
-                                'memory_usage_mb': 200.0,
-                                'memory_limit_mb': 2000.0,
-                                'memory_percent': 10.0,
-                            })
+                            writer.writerow(
+                                {
+                                    "timestamp": base_time + time_offset,
+                                    "container_name": f"hotel-test-abc123def456-rate-service-{replica}",
+                                    "cpu_percent": 10.0 + time_offset + replica,
+                                    "memory_usage_mb": 100.0,
+                                    "memory_limit_mb": 1000.0,
+                                    "memory_percent": 10.0,
+                                }
+                            )
+                            writer.writerow(
+                                {
+                                    "timestamp": base_time + time_offset,
+                                    "container_name": f"hotel-test-abc123def456-search-service-{replica}",
+                                    "cpu_percent": 20.0 + time_offset + replica,
+                                    "memory_usage_mb": 200.0,
+                                    "memory_limit_mb": 2000.0,
+                                    "memory_percent": 10.0,
+                                }
+                            )
 
     def test_plot_cpu_utilization_filters_policies(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -277,21 +294,27 @@ class TestPlotCpuUtilization:
                 policy_dir = data_dir / "0" / policy
                 policy_dir.mkdir(parents=True, exist_ok=True)
                 csv_file = policy_dir / "cpu_stats.csv"
-                with open(csv_file, 'w', newline='') as f:
+                with open(csv_file, "w", newline="") as f:
                     fieldnames = [
-                        'timestamp', 'container_name', 'cpu_percent',
-                        'memory_usage_mb', 'memory_limit_mb', 'memory_percent'
+                        "timestamp",
+                        "container_name",
+                        "cpu_percent",
+                        "memory_usage_mb",
+                        "memory_limit_mb",
+                        "memory_percent",
                     ]
                     writer = csv.DictWriter(f, fieldnames=fieldnames)
                     writer.writeheader()
-                    writer.writerow({
-                        'timestamp': 1000000,
-                        'container_name': 'hotel-test-abc123def456-rate-service-1',
-                        'cpu_percent': 10.0,
-                        'memory_usage_mb': 100.0,
-                        'memory_limit_mb': 1000.0,
-                        'memory_percent': 10.0,
-                    })
+                    writer.writerow(
+                        {
+                            "timestamp": 1000000,
+                            "container_name": "hotel-test-abc123def456-rate-service-1",
+                            "cpu_percent": 10.0,
+                            "memory_usage_mb": 100.0,
+                            "memory_limit_mb": 1000.0,
+                            "memory_percent": 10.0,
+                        }
+                    )
 
             with patch("exp_runner.runner.plotting.cpu._plot_service_cpu") as mock_plot:
                 plot_cpu_utilization(data_dir, output_dir, policies=["fifo"])
@@ -347,32 +370,40 @@ class TestPlotCpuUtilization:
             policy_dir.mkdir(parents=True)
 
             csv_file = policy_dir / "cpu_stats.csv"
-            with open(csv_file, 'w', newline='') as f:
+            with open(csv_file, "w", newline="") as f:
                 fieldnames = [
-                    'timestamp', 'container_name', 'cpu_percent',
-                    'memory_usage_mb', 'memory_limit_mb', 'memory_percent'
+                    "timestamp",
+                    "container_name",
+                    "cpu_percent",
+                    "memory_usage_mb",
+                    "memory_limit_mb",
+                    "memory_percent",
                 ]
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
 
                 # Write service and loadgen data
                 for i in range(5):
-                    writer.writerow({
-                        'timestamp': 1000000 + i,
-                        'container_name': 'test-service-1',
-                        'cpu_percent': 10.0,
-                        'memory_usage_mb': 100.0,
-                        'memory_limit_mb': 1000.0,
-                        'memory_percent': 10.0,
-                    })
-                    writer.writerow({
-                        'timestamp': 1000000 + i,
-                        'container_name': 'test_client_bench',  # Load generator
-                        'cpu_percent': 5.0,
-                        'memory_usage_mb': 50.0,
-                        'memory_limit_mb': 500.0,
-                        'memory_percent': 10.0,
-                    })
+                    writer.writerow(
+                        {
+                            "timestamp": 1000000 + i,
+                            "container_name": "test-service-1",
+                            "cpu_percent": 10.0,
+                            "memory_usage_mb": 100.0,
+                            "memory_limit_mb": 1000.0,
+                            "memory_percent": 10.0,
+                        }
+                    )
+                    writer.writerow(
+                        {
+                            "timestamp": 1000000 + i,
+                            "container_name": "test_client_bench",  # Load generator
+                            "cpu_percent": 5.0,
+                            "memory_usage_mb": 50.0,
+                            "memory_limit_mb": 500.0,
+                            "memory_percent": 10.0,
+                        }
+                    )
 
             plot_cpu_utilization(data_dir, output_dir)
 
@@ -435,10 +466,14 @@ class TestCpuPlottingIntegration:
                     policy_dir.mkdir(parents=True, exist_ok=True)
 
                     csv_file = policy_dir / "cpu_stats.csv"
-                    with open(csv_file, 'w', newline='') as f:
+                    with open(csv_file, "w", newline="") as f:
                         fieldnames = [
-                            'timestamp', 'container_name', 'cpu_percent',
-                            'memory_usage_mb', 'memory_limit_mb', 'memory_percent'
+                            "timestamp",
+                            "container_name",
+                            "cpu_percent",
+                            "memory_usage_mb",
+                            "memory_limit_mb",
+                            "memory_percent",
                         ]
                         writer = csv.DictWriter(f, fieldnames=fieldnames)
                         writer.writeheader()
@@ -449,14 +484,16 @@ class TestCpuPlottingIntegration:
                             # Multiple services with multiple replicas using hotel naming
                             for service in ["frontend", "backend", "database"]:
                                 for replica in [1, 2, 3]:
-                                    writer.writerow({
-                                        'timestamp': base_time + time_offset,
-                                        'container_name': f'hotel-exp-abc123def456-{service}-{replica}',
-                                        'cpu_percent': 15.0 + time_offset + replica,
-                                        'memory_usage_mb': 100.0 * replica,
-                                        'memory_limit_mb': 1000.0,
-                                        'memory_percent': 10.0 * replica,
-                                    })
+                                    writer.writerow(
+                                        {
+                                            "timestamp": base_time + time_offset,
+                                            "container_name": f"hotel-exp-abc123def456-{service}-{replica}",
+                                            "cpu_percent": 15.0 + time_offset + replica,
+                                            "memory_usage_mb": 100.0 * replica,
+                                            "memory_limit_mb": 1000.0,
+                                            "memory_percent": 10.0 * replica,
+                                        }
+                                    )
 
             # Generate plots
             plot_cpu_utilization(data_dir, output_dir)
@@ -508,14 +545,14 @@ class TestMssimCpuPlotting:
                 "DurationSecs": 30,
                 "WarmupSecs": 5,
             }
-            with open(config_dir / "gen_config.json", 'w') as f:
+            with open(config_dir / "gen_config.json", "w") as f:
                 json.dump(gen_config, f)
 
             # Create mssim.json
             mssim_config = {
                 "slo_ms": 100,
             }
-            with open(config_dir / "mssim.json", 'w') as f:
+            with open(config_dir / "mssim.json", "w") as f:
                 json.dump(mssim_config, f)
 
             # Create experiment data structure with CPU stats
@@ -526,10 +563,14 @@ class TestMssimCpuPlotting:
 
                 # Create CPU stats
                 cpu_stats_file = run_dir / "cpu_stats.csv"
-                with open(cpu_stats_file, 'w', newline='') as f:
+                with open(cpu_stats_file, "w", newline="") as f:
                     fieldnames = [
-                        'timestamp', 'container_name', 'cpu_percent',
-                        'memory_usage_mb', 'memory_limit_mb', 'memory_percent'
+                        "timestamp",
+                        "container_name",
+                        "cpu_percent",
+                        "memory_usage_mb",
+                        "memory_limit_mb",
+                        "memory_percent",
                     ]
                     writer = csv.DictWriter(f, fieldnames=fieldnames)
                     writer.writeheader()
@@ -538,23 +579,32 @@ class TestMssimCpuPlotting:
                     # Use realistic MSSIM service names (service names don't have replica numbers)
                     base_time = 1000000
                     for time_offset in range(0, 30, 2):
-                        for service in ["frontend", "backend", "database", "load_generator"]:
-                            writer.writerow({
-                                'timestamp': base_time + time_offset,
-                                'container_name': f'mssim-exp-abc123def456-{service}',
-                                'cpu_percent': 20.0 + time_offset,
-                                'memory_usage_mb': 200.0,
-                                'memory_limit_mb': 2000.0,
-                                'memory_percent': 10.0,
-                            })
+                        for service in [
+                            "frontend",
+                            "backend",
+                            "database",
+                            "load_generator",
+                        ]:
+                            writer.writerow(
+                                {
+                                    "timestamp": base_time + time_offset,
+                                    "container_name": f"mssim-exp-abc123def456-{service}",
+                                    "cpu_percent": 20.0 + time_offset,
+                                    "memory_usage_mb": 200.0,
+                                    "memory_limit_mb": 2000.0,
+                                    "memory_percent": 10.0,
+                                }
+                            )
 
                 # Create minimal latency CSV files for MSSIM plotting
                 for rps in [200, 400]:
                     latency_file = run_dir / f"root_latencies_{rps}rps.csv"
-                    with open(latency_file, 'w', newline='') as f:
+                    with open(latency_file, "w", newline="") as f:
                         f.write("e2e_latency_us,start_at,is_err\n")
                         for i in range(10):
-                            f.write(f"{50000 + i * 1000},{base_time + i * 1000000},false\n")
+                            f.write(
+                                f"{50000 + i * 1000},{base_time + i * 1000000},false\n"
+                            )
 
             # Call MSSIM plotting
             args = Namespace(
@@ -571,7 +621,9 @@ class TestMssimCpuPlotting:
 
             # Should have plots for the microservices
             # Note: load_generator is still plotted, it's just filtered from latency metrics
-            assert len(cpu_plots) >= 3, f"Should have CPU plots for microservices, got {len(cpu_plots)}: {[p.name for p in cpu_plots]}"
+            assert len(cpu_plots) >= 3, (
+                f"Should have CPU plots for microservices, got {len(cpu_plots)}: {[p.name for p in cpu_plots]}"
+            )
 
             # Verify plot files have content
             for plot_file in cpu_plots:
@@ -599,11 +651,11 @@ class TestMssimCpuPlotting:
                 "DurationSecs": 20,
                 "WarmupSecs": 0,
             }
-            with open(config_dir / "gen_config.json", 'w') as f:
+            with open(config_dir / "gen_config.json", "w") as f:
                 json.dump(gen_config, f)
 
             mssim_config = {"slo_ms": 100}
-            with open(config_dir / "mssim.json", 'w') as f:
+            with open(config_dir / "mssim.json", "w") as f:
                 json.dump(mssim_config, f)
 
             # Create data for 2 iterations
@@ -614,27 +666,36 @@ class TestMssimCpuPlotting:
 
                     # CPU stats
                     cpu_stats_file = run_dir / "cpu_stats.csv"
-                    with open(cpu_stats_file, 'w', newline='') as f:
-                        writer = csv.DictWriter(f, fieldnames=[
-                            'timestamp', 'container_name', 'cpu_percent',
-                            'memory_usage_mb', 'memory_limit_mb', 'memory_percent'
-                        ])
+                    with open(cpu_stats_file, "w", newline="") as f:
+                        writer = csv.DictWriter(
+                            f,
+                            fieldnames=[
+                                "timestamp",
+                                "container_name",
+                                "cpu_percent",
+                                "memory_usage_mb",
+                                "memory_limit_mb",
+                                "memory_percent",
+                            ],
+                        )
                         writer.writeheader()
 
                         base_time = 1000000 + iteration * 1000
                         for time_offset in range(0, 20, 2):
-                            writer.writerow({
-                                'timestamp': base_time + time_offset,
-                                'container_name': 'mssim-exp-abc-service-1',
-                                'cpu_percent': 15.0 + time_offset + iteration * 5,
-                                'memory_usage_mb': 150.0,
-                                'memory_limit_mb': 1500.0,
-                                'memory_percent': 10.0,
-                            })
+                            writer.writerow(
+                                {
+                                    "timestamp": base_time + time_offset,
+                                    "container_name": "mssim-exp-abc-service-1",
+                                    "cpu_percent": 15.0 + time_offset + iteration * 5,
+                                    "memory_usage_mb": 150.0,
+                                    "memory_limit_mb": 1500.0,
+                                    "memory_percent": 10.0,
+                                }
+                            )
 
                     # Minimal latency data
                     latency_file = run_dir / "root_latencies_200rps.csv"
-                    with open(latency_file, 'w') as f:
+                    with open(latency_file, "w") as f:
                         f.write("e2e_latency_us,start_at,is_err\n")
                         f.write(f"{50000},{base_time},false\n")
 
