@@ -472,4 +472,3 @@ mod tests {
         assert_eq!(resolved.method(), "OverriddenMethod");
     }
 }
-
