@@ -46,7 +46,6 @@ async fn setup_test_server(
 async fn test_basic_successful_request() -> Result<(), Box<dyn std::error::Error>> {
     let (server_handle, mut client) = setup_test_server(50056).await;
     let usernames: Vec<String> = (1..=2000).map(|i| format!("user{}", i)).collect();
-    let usernames: Vec<String> = (1..=2000).map(|i| format!("user{}", i)).collect();
 
     let request = tonic::Request::new(ComposeUserMentionRequest {
         req_id: 999,
