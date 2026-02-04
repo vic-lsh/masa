@@ -1,6 +1,6 @@
 use crate::{
     masa::context::{read_context, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER},
-    Code, GrpcMethod, Request, Response, Status,
+    Code, CowGrpcMethod, GrpcMethod, Request, Response, Status,
 };
 use std::{
     collections::HashMap,
@@ -45,6 +45,25 @@ pub(crate) type LocalLatencyEstimator = LatencyHistogram;
 ))]
 pub(crate) type LocalLatencyEstimator = LatencyRms;
 
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub(crate) struct ParentToChildId {
+    pub parent: CowGrpcMethod,
+    pub child: CowGrpcMethod,
+}
+
+impl std::fmt::Display for ParentToChildId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "/{}/{}=>/{}/{}",
+            self.parent.service(),
+            self.parent.method(),
+            self.child.service(),
+            self.child.method()
+        )
+    }
+}
+
 #[derive(Debug)]
 /// This policy computes the deadline d of a child request as
 ///   d = d_p - e_rem
@@ -63,7 +82,7 @@ impl MasaHooks for LocalDeadlinePolicy {
 
 /// Spawns a background task to periodically print latency estimates
 fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
-    distributions: Arc<RwLock<HashMap<String, E>>>,
+    distributions: Arc<RwLock<HashMap<ParentToChildId, E>>>,
     label: &'static str,
 ) {
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -97,16 +116,16 @@ fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
 #[allow(unreachable_pub)]
 pub struct ServerContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     // for every method on this server, tracks the remaining duration of the method after an outgoing request has finished
-    est_after_child_latency: Arc<RwLock<HashMap<String, E>>>,
+    est_after_child_latency: Arc<RwLock<HashMap<ParentToChildId, E>>>,
     // tracks the actual child RPC call latencies
-    est_child_latency: Arc<RwLock<HashMap<String, E>>>,
+    est_child_latency: Arc<RwLock<HashMap<ParentToChildId, E>>>,
     print_counter: AtomicUsize,
 }
 
 impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
     fn new(_service_name: &'static str) -> Self {
-        let est_after_child_latency = Arc::new(RwLock::new(HashMap::<String, E>::new()));
-        let est_child_latency = Arc::new(RwLock::new(HashMap::<String, E>::new()));
+        let est_after_child_latency = Arc::new(RwLock::new(HashMap::<ParentToChildId, E>::new()));
+        let est_child_latency = Arc::new(RwLock::new(HashMap::<ParentToChildId, E>::new()));
 
         spawn_stats_printer(est_after_child_latency.clone(), "Est Remaining Values");
         spawn_stats_printer(est_child_latency.clone(), "Est Child Call Latencies");
@@ -124,35 +143,30 @@ impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
 #[allow(unreachable_pub)]
 pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     method: GrpcMethod,
-    resolved_method: String,
+    resolved_method: CowGrpcMethod,
     ctx: Context,
     server: Arc<ServerContext<E>>,
 
     q_lat_tracker: QueueLatencyTracker,
     early_return: EarlyReturnHandler,
-    child_end_times: Mutex<Vec<(String, Instant)>>,
+    child_end_times: Mutex<Vec<(ParentToChildId, Instant)>>,
     // Map from child_method.id() to resolved child method name
     // resolved_child_methods: Mutex<HashMap<MethodId, String>>,
 }
 
 /// Resolve the method name from HTTP request headers, checking for override header.
-fn resolve_method_name_from_http<B>(method: GrpcMethod, req: &http::Request<B>) -> String {
+fn resolve_method_name_from_http<B>(method: GrpcMethod, req: &http::Request<B>) -> CowGrpcMethod {
     if let Some(header_value) = req.headers().get(METHOD_NAME_OVERRIDE_HEADER) {
         if let Ok(method_name) = header_value.to_str() {
             if let Some(service_header) = req.headers().get(SERVICE_NAME_OVERRIDE_HEADER) {
                 if let Ok(service_name) = service_header.to_str() {
-                    return format!("/{}/{}", service_name, method_name);
+                    return CowGrpcMethod::new(service_name.to_string(), method_name.to_string());
                 }
             }
-            return method_name.to_string();
+            return CowGrpcMethod::new(method.service(), method_name.to_string());
         }
     }
-    format!("/{}/{}", method.service(), method.method())
-}
-
-/// Concatenate parent and child method names.
-fn parent_to_child_identifier(parent: &str, child: &str) -> String {
-    format!("{}=>{}", parent, child)
+    CowGrpcMethod::new(method.service(), method.method())
 }
 
 impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, ServerContext<E>>
@@ -218,14 +232,10 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         let resolved_child_method =
             super::super::resolve_method_name_from_request(child_method, request);
 
-        let resolved_child_method_str = format!(
-            "/{}/{}",
-            resolved_child_method.service(),
-            resolved_child_method.method()
-        );
-
-        let parent_to_child_id =
-            parent_to_child_identifier(&self.resolved_method, &resolved_child_method_str);
+        let parent_to_child_id = ParentToChildId {
+            parent: self.resolved_method.clone(),
+            child: resolved_child_method,
+        };
 
         // Setup child context to track client runtime
         child_ctx.setup(parent_to_child_id.clone(), self.server.clone());
@@ -249,7 +259,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
             log::info!(
-                "LAT_EST: p=>c: {}, est_child: {}, est_rem: {}",
+                "LAT_EST: p=>c: {:?}, est_child: {}, est_rem: {}",
                 parent_to_child_id,
                 est_child,
                 est_remaining
@@ -276,9 +286,9 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         child_ctx.finalize(response);
 
         if let Some(parent_to_child_id) = &child_ctx.parent_to_child_id {
-            if let Some((_, child)) = parent_to_child_id.split_once("=>") {
-                self.early_return.set_last_child(child.to_string());
-            }
+            let child = &parent_to_child_id.child;
+            self.early_return
+                .set_last_child(format!("/{}/{}", child.service(), child.method()));
         }
 
         if let Err(status) = response {
@@ -289,6 +299,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         self.child_end_times.lock().unwrap().push((
             child_ctx
                 .parent_to_child_id
+                .clone()
                 .expect("childctx method must be set"),
             Instant::now(),
         ));
@@ -335,7 +346,7 @@ fn is_early_return_response<T>(response: &Result<Response<T>, Status>) -> bool {
 #[allow(unreachable_pub)]
 pub struct ChildContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     start_time: Option<Instant>,
-    parent_to_child_id: Option<String>,
+    parent_to_child_id: Option<ParentToChildId>,
     server: Option<Arc<ServerContext<E>>>,
 }
 
@@ -350,7 +361,7 @@ impl<E: LatencyEstimator + Default + 'static> ClientHooks for ChildContext<E> {
 }
 
 impl<E: LatencyEstimator + Default + 'static> ChildContext<E> {
-    fn setup(&mut self, parent_to_child_id: String, server: Arc<ServerContext<E>>) {
+    fn setup(&mut self, parent_to_child_id: ParentToChildId, server: Arc<ServerContext<E>>) {
         self.start_time = Some(Instant::now());
         self.parent_to_child_id = Some(parent_to_child_id);
         self.server = Some(server);
@@ -382,7 +393,10 @@ mod tests {
     #[test]
     fn test_server_context_rms_integration() {
         let ctx = ServerContext::<LatencyRms>::new("test_service");
-        let method = "test_method".to_string();
+        let method = ParentToChildId {
+            parent: CowGrpcMethod::new("S1", "M1"),
+            child: CowGrpcMethod::new("S2", "M2"),
+        };
 
         // Inject an estimator with a short update interval (2) for testing.
         // By default, LatencyRms has a large update interval (512), which makes testing hard.
@@ -426,30 +440,27 @@ mod tests {
         let mut req = http::Request::new(());
 
         // 1. No overrides
-        assert_eq!(
-            resolve_method_name_from_http(method, &req),
-            "/TestService/TestMethod"
-        );
+        let resolved = resolve_method_name_from_http(method, &req);
+        assert_eq!(resolved.service(), "TestService");
+        assert_eq!(resolved.method(), "TestMethod");
 
         // 2. Method override only
         req.headers_mut().insert(
             METHOD_NAME_OVERRIDE_HEADER,
             HeaderValue::from_static("OverriddenMethod"),
         );
-        assert_eq!(
-            resolve_method_name_from_http(method, &req),
-            "OverriddenMethod"
-        );
+        let resolved = resolve_method_name_from_http(method, &req);
+        assert_eq!(resolved.service(), "TestService");
+        assert_eq!(resolved.method(), "OverriddenMethod");
 
         // 3. Method and Service override
         req.headers_mut().insert(
             SERVICE_NAME_OVERRIDE_HEADER,
             HeaderValue::from_static("OverriddenService"),
         );
-        assert_eq!(
-            resolve_method_name_from_http(method, &req),
-            "/OverriddenService/OverriddenMethod"
-        );
+        let resolved = resolve_method_name_from_http(method, &req);
+        assert_eq!(resolved.service(), "OverriddenService");
+        assert_eq!(resolved.method(), "OverriddenMethod");
     }
 
     #[test]
