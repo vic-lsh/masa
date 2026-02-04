@@ -71,7 +71,9 @@ def align_on_request_id(df_a: pd.DataFrame, df_b: pd.DataFrame) -> pd.DataFrame:
         how="inner",
     )
     if merged.empty:
-        raise ValueError("No overlapping request_id values found between the two files.")
+        raise ValueError(
+            "No overlapping request_id values found between the two files."
+        )
     return merged.sort_values("request_id")
 
 
@@ -86,9 +88,9 @@ def to_milliseconds(series: pd.Series) -> pd.Series:
 
 
 def plot_queue_vs_request_id(df: pd.DataFrame, output_path: Path) -> None:
-    ordered = df.assign(
-        mean_e2e_us=(df["e2e_latency_us_b"]) / 1.0
-    ).sort_values("mean_e2e_us")
+    ordered = df.assign(mean_e2e_us=(df["e2e_latency_us_b"]) / 1.0).sort_values(
+        "mean_e2e_us"
+    )
     x_positions = np.arange(len(ordered), dtype=float)
     prio_color = "tab:blue"
     fifo_color = "tab:orange"

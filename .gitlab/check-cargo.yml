@@ -1,11 +1,26 @@
-
 cargo_check:
-  stage: quick-checks
-  variables:
-    CI: "true"
-  parallel:
-    matrix:
-      - FEATURES: ["", "fifo", "prio_global", "prio_global,early", "prio_local,early", "prio_oldest,early"]
-  script:
-    - rustc --version && cargo --version # Print version info for debugging
-    - ./scripts/check.sh "$FEATURES"
+    stage: quick-checks
+    variables:
+        CI: "true"
+    parallel:
+        matrix:
+            - FEATURES:
+                  [
+                      "",
+                      "fifo",
+                      "prio_global",
+                      "prio_global,early",
+                      "prio_local,early",
+                      "prio_oldest,early",
+                  ]
+    script:
+        - rustc --version && cargo --version # Print version info for debugging
+        - ./scripts/check.sh "$FEATURES"
+
+cargo_check_tests:
+    stage: quick-checks
+    variables:
+        CI: "true"
+    script:
+        - rustc --version && cargo --version # Print version info for debugging
+        - ./scripts/check.sh --tests ""
