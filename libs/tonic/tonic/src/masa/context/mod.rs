@@ -1,7 +1,7 @@
 use std::{sync::Arc, task::Poll};
 
 use crate::metadata::{Ascii, MetadataValue};
-use crate::{body::BoxBody, GrpcMethod, Request, Response, Status};
+use crate::{body::BoxBody, CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
 mod common;
 mod fifo;
@@ -389,16 +389,16 @@ pub(crate) fn resolve_service_name<B>(method: GrpcMethod, req: &http::Request<B>
 pub(crate) fn resolve_method_name_from_request<T>(
     method: GrpcMethod,
     request: &Request<T>,
-) -> String {
+) -> CowGrpcMethod {
     if let Some(header_value) = request.metadata().get(METHOD_NAME_OVERRIDE_HEADER) {
         if let Ok(method_name) = header_value.to_str() {
             if let Some(service_header) = request.metadata().get(SERVICE_NAME_OVERRIDE_HEADER) {
                 if let Ok(service_name) = service_header.to_str() {
-                    return format!("/{}/{}", service_name, method_name);
+                    return CowGrpcMethod::new(service_name.to_string(), method_name.to_string());
                 }
             }
-            return method_name.to_string();
+            return CowGrpcMethod::new(method.service(), method_name.to_string());
         }
     }
-    format!("/{}/{}", method.service(), method.method())
+    CowGrpcMethod::new(method.service(), method.method())
 }
