@@ -1,14 +1,19 @@
-
-cargo_fmt:
-  stage: quick-checks
-  variables:
-    CI: "true"
-  script:
-    - rustup component add rustfmt
-    - ./scripts/check_format.sh
-  # Only run this job if Rust files have changed
-  rules:
-    - changes:
-        - "**/*.rs"
-        - "Cargo.toml"
-        - "Cargo.lock"
+format_check:
+    stage: quick-checks
+    variables:
+        CI: "true"
+    script:
+        - rustup component add rustfmt
+        # Install uv for Python formatting checks
+        - curl -LsSf https://astral.sh/uv/install.sh | sh
+        - export PATH="$HOME/.local/bin:$PATH"
+        - ./scripts/format.sh --check
+    rules:
+        - changes:
+              - "**/*.rs"
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - "**/*.py"
+              - "pyproject.toml"
+              - "uv.lock"
+              - "scripts/**/*"
