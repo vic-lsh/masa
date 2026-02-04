@@ -2,8 +2,7 @@ use crate::{
     masa::context::read_context, Code, CowGrpcMethod, GrpcMethod, Request, Response, Status,
 };
 use std::{
-    collections::HashMap,
-    sync::{atomic::Ordering, Arc, Mutex, RwLock},
+    sync::{atomic::Ordering, Arc, Mutex},
     task::Poll,
     time::{Duration, Instant},
 };
@@ -12,7 +11,7 @@ use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::super::{
     resolve_method_name_from_http, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks,
 };
-use super::{get_estimate, track_method_latency, PERCENTILE};
+use super::{LatencyMap, PERCENTILE};
 use masa_core::{time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint, EARLY_RETURN};
 
 #[cfg(feature = "est_hist")]
@@ -80,7 +79,7 @@ impl MasaHooks for LocalDeadlinePolicy {
 
 /// Spawns a background task to periodically print latency estimates
 fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
-    distributions: Arc<RwLock<HashMap<ParentToChildId, E>>>,
+    distributions: Arc<LatencyMap<ParentToChildId, E>>,
     label: &'static str,
 ) {
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -89,20 +88,19 @@ fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
             loop {
                 interval.tick().await;
 
-                let distributions_read = distributions.read().unwrap();
-                if distributions_read.is_empty() {
+                if distributions.is_empty() {
                     continue;
                 }
 
                 let mut parts = Vec::new();
-                for (endpoint, distribution) in distributions_read.iter() {
+                distributions.for_each(|endpoint, distribution| {
                     if distribution.can_estimate() {
                         let estimate = distribution.estimate(PERCENTILE);
                         parts.push(format!("{}: {} us", endpoint, estimate));
                     } else {
                         parts.push(format!("{}: (no estimate)", endpoint));
                     }
-                }
+                });
                 log::info!("{}: {}", label, parts.join(", "));
             }
         });
@@ -114,16 +112,16 @@ fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
 #[allow(unreachable_pub)]
 pub struct ServerContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     // for every method on this server, tracks the remaining duration of the method after an outgoing request has finished
-    est_after_child_latency: Arc<RwLock<HashMap<ParentToChildId, E>>>,
+    est_after_child_latency: Arc<LatencyMap<ParentToChildId, E>>,
     // tracks the actual child RPC call latencies
-    est_child_latency: Arc<RwLock<HashMap<ParentToChildId, E>>>,
+    est_child_latency: Arc<LatencyMap<ParentToChildId, E>>,
     print_counter: AtomicUsize,
 }
 
 impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
     fn new(_service_name: &'static str) -> Self {
-        let est_after_child_latency = Arc::new(RwLock::new(HashMap::<ParentToChildId, E>::new()));
-        let est_child_latency = Arc::new(RwLock::new(HashMap::<ParentToChildId, E>::new()));
+        let est_after_child_latency = Arc::new(LatencyMap::new());
+        let est_child_latency = Arc::new(LatencyMap::new());
 
         spawn_stats_printer(est_after_child_latency.clone(), "Est Remaining Values");
         spawn_stats_printer(est_child_latency.clone(), "Est Child Call Latencies");
@@ -218,19 +216,22 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         // Setup child context to track client runtime
         child_ctx.setup(parent_to_child_id.clone(), self.server.clone());
 
-        let est_remaining = get_estimate(
-            &*self.server.est_after_child_latency,
-            parent_to_child_id.clone(),
-        )
-        .unwrap_or(0);
+        let est_remaining = self
+            .server
+            .est_after_child_latency
+            .get_estimate(&parent_to_child_id)
+            .unwrap_or(0);
 
         let deadline = self.ctx.deadline() - est_remaining;
         if EARLY_RETURN && time_now() > deadline {
             return Err(self.early_return.issue_error());
         }
 
-        let est_child =
-            get_estimate(&*self.server.est_child_latency, parent_to_child_id.clone()).unwrap_or(0);
+        let est_child = self
+            .server
+            .est_child_latency
+            .get_estimate(&parent_to_child_id)
+            .unwrap_or(0);
 
         // this encodes the slack: parent deadline - est child latency - est remaining
         let prio_hint = deadline - est_child;
@@ -302,8 +303,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
         let child_end_times = std::mem::replace(&mut *child_end_times, Vec::new());
 
         for (parent_to_child_id, child_end) in child_end_times {
-            track_method_latency(
-                &*self.server.est_after_child_latency,
+            self.server.est_after_child_latency.track(
                 parent_to_child_id,
                 parent_end.duration_since(child_end).as_micros() as u64,
             );
@@ -353,11 +353,9 @@ impl<E: LatencyEstimator + Default + 'static> ChildContext<E> {
             (self.start_time, &self.parent_to_child_id, &self.server)
         {
             let client_runtime = Instant::now().duration_since(start_time).as_micros() as u64;
-            track_method_latency(
-                &*server.est_child_latency,
-                parent_to_child_id.clone(),
-                client_runtime,
-            );
+            server
+                .est_child_latency
+                .track(parent_to_child_id.clone(), client_runtime);
         }
     }
 }
@@ -378,33 +376,33 @@ mod tests {
         // Inject an estimator with a short update interval (2) for testing.
         // By default, LatencyRms has a large update interval (512), which makes testing hard.
         {
-            let mut map = ctx.est_child_latency.write().unwrap();
-            map.insert(method.clone(), LatencyRms::new(2));
+            ctx.est_child_latency
+                .insert(method.clone(), LatencyRms::new(2));
         }
 
         // 1st track: sum_sq=100, count=1, since_update=1. No update yet.
-        track_method_latency(&*ctx.est_child_latency, method.clone(), 10);
+        ctx.est_child_latency.track(method.clone(), 10);
 
         // Estimate uses cached RMS value (initially 0).
-        let est = get_estimate(&*ctx.est_child_latency, method.clone());
+        let est = ctx.est_child_latency.get_estimate(&method);
         assert_eq!(est, Some(0));
 
         // 2nd track: sum_sq=200, count=2, since_update=2. Update triggers.
         // RMS = sqrt( (10^2 + 10^2) / 2 ) = 10.
-        track_method_latency(&*ctx.est_child_latency, method.clone(), 10);
+        ctx.est_child_latency.track(method.clone(), 10);
 
-        let est = get_estimate(&*ctx.est_child_latency, method.clone());
+        let est = ctx.est_child_latency.get_estimate(&method);
         assert_eq!(est, Some(10));
 
         // 3rd track: sum_sq=200+400=600, count=3, since_update=1. No update yet.
-        track_method_latency(&*ctx.est_child_latency, method.clone(), 20);
-        let est = get_estimate(&*ctx.est_child_latency, method.clone());
+        ctx.est_child_latency.track(method.clone(), 20);
+        let est = ctx.est_child_latency.get_estimate(&method);
         assert_eq!(est, Some(10)); // Still 10
 
         // 4th track: sum_sq=600+400=1000, count=4, since_update=2. Update triggers.
         // RMS = sqrt( (100 + 100 + 400 + 400) / 4 ) = sqrt(250) ≈ 15.
-        track_method_latency(&*ctx.est_child_latency, method.clone(), 20);
-        let est = get_estimate(&*ctx.est_child_latency, method.clone());
+        ctx.est_child_latency.track(method.clone(), 20);
+        let est = ctx.est_child_latency.get_estimate(&method);
         // integer_sqrt(250) is 15 (15*15=225, 16*16=256)
         assert_eq!(est, Some(15));
     }
@@ -474,3 +472,4 @@ mod tests {
         assert_eq!(resolved.method(), "OverriddenMethod");
     }
 }
+
