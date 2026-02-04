@@ -190,10 +190,10 @@ def compute_early_return_breakdown(df):
 
 def compute_early_return_last_child_breakdown(df):
     """
-    Compute breakdown of early returns by LastChild (Service:Method).
+    Compute breakdown of early returns by SrcService and LastChild.
 
     Returns:
-        dict: Mapping from "LastChildService:LastChildMethod" -> request rate (req/s)
+        dict: Mapping from "SrcService||LastChildService::LastChildMethod" -> request rate (req/s)
     """
     if df.empty or "error" not in df.columns:
         return {}
@@ -202,6 +202,7 @@ def compute_early_return_last_child_breakdown(df):
     if "error_type" in df.columns:
         early_return_df = df[df["error_type"] == "EarlyReturn"].copy()
     else:
+        # Fallback if error_type column not present
         early_return_df = df[df["error"].str.startswith("/EarlyReturn")].copy()
 
     if early_return_df.empty:
@@ -215,58 +216,72 @@ def compute_early_return_last_child_breakdown(df):
     if duration_us == 0:
         return {}
 
-    # Use pre-parsed columns if available
+    # Helper to parse last child
+    def parse_child_path(last_child):
+        # Handle NaN/None (missing last child part)
+        if pd.isna(last_child):
+            return "None", "None"
+        if last_child == "None:None":
+            return "None", "None"
+        # New format: Svc::Method
+        if "::" in str(last_child):
+            parts = str(last_child).split("::", 1)
+            return parts[0], parts[1]
+        return "Unknown", str(last_child)
+
+    # Helper to extract src service from error string if column missing
+    def extract_src_from_error(err):
+        if "?src=" in err:
+            try:
+                # /EarlyReturn?src=frontend::Login...
+                after_src = err.split("?src=")[1]
+                if "::" in after_src:
+                    return after_src.split("::", 1)[0]
+            except IndexError:
+                pass
+        return "Unknown"
+
+    # Helper to extract last child from error string if column missing
+    def extract_last_child_from_error(err):
+        if "?last_rpc=" in err:
+            try:
+                val = err.split("?last_rpc=")[1]
+                return parse_child_path(val)
+            except IndexError:
+                pass
+        return "None", "None"
+
+    # 1. Determine Src Service
+    if "er_service" in early_return_df.columns:
+        # Use existing column, fill NA with Unknown
+        early_return_df["src_svc"] = early_return_df["er_service"].fillna("Unknown")
+    else:
+        # Parse from error string
+        early_return_df["src_svc"] = early_return_df["error"].apply(
+            extract_src_from_error
+        )
+
+    # 2. Determine Last Child (Service, Method)
     if "er_last_child" in early_return_df.columns:
-
-        def parse_child_path(last_child):
-            # Handle NaN/None (missing last child part)
-            if pd.isna(last_child):
-                return "None", "None"
-
-            if last_child == "None:None":
-                return "None", "None"
-
-            # New format: Svc::Method
-            if "::" in str(last_child):
-                parts = str(last_child).split("::", 1)
-                return parts[0], parts[1]
-
-            return "Unknown", str(last_child)
-
         early_return_df["parsed"] = early_return_df["er_last_child"].apply(
             parse_child_path
         )
-        early_return_df["service"] = early_return_df["parsed"].apply(lambda x: x[0])
-        early_return_df["method"] = early_return_df["parsed"].apply(lambda x: x[1])
-
     else:
-        # Fallback: Parse LastChild from error string
-        # Format: /EarlyReturn:<Service>:<Method>|<LastChild>
-        def parse_last_child(err):
-            if not err.startswith("/EarlyReturn"):
-                return "Unknown", "Unknown"
+        # Parse from error string
+        early_return_df["parsed"] = early_return_df["error"].apply(
+            extract_last_child_from_error
+        )
 
-            # New format: /EarlyReturn?src=...
-            if "?src=" in err:
-                if "?last_rpc=" in err:
-                    try:
-                        val = err.split("?last_rpc=")[1]
-                        if "::" in val:
-                            return val.split("::", 1)
-                        return "Unknown", val
-                    except IndexError:
-                        pass
-                # Has src but no last_rpc -> None/None
-                return "None", "None"
+    early_return_df["lc_service"] = early_return_df["parsed"].apply(lambda x: x[0])
+    early_return_df["lc_method"] = early_return_df["parsed"].apply(lambda x: x[1])
 
-            return "Unknown", "Unknown"
-
-        early_return_df["parsed"] = early_return_df["error"].apply(parse_last_child)
-        early_return_df["service"] = early_return_df["parsed"].apply(lambda x: x[0])
-        early_return_df["method"] = early_return_df["parsed"].apply(lambda x: x[1])
-
+    # Key format: "SrcService||LastChildService::LastChildMethod"
     early_return_df["key"] = (
-        early_return_df["service"] + "::" + early_return_df["method"]
+        early_return_df["src_svc"]
+        + "||"
+        + early_return_df["lc_service"]
+        + "::"
+        + early_return_df["lc_method"]
     )
 
     breakdown = {}
@@ -287,54 +302,58 @@ def _plot_early_return_breakdown(
     title: str,
 ) -> None:
     """
-    Generate breakdown plot for early-return requests by Service::Method:
-      - Plot: small multiples (one subplot per policy) with stacked bars
-      - Color: Service
-      - Hatch: Method
+    Generate breakdown plot for early-return requests.
+    - Grouped by Src Service (where the early return happened).
+    - Stacked by Last Child (Service::Method).
     """
     sorted_policies = sort_policies_by_type(policies)
     rps_values = list(rps_values)
     x = np.arange(len(rps_values))
 
-    # Collect all unique Services and Methods to assign consistent colors/hatches
-    all_services = set()
-    all_methods = set()
+    # 1. Collect all unique SrcServices, LastChildServices, LastChildMethods
+    all_src_services = set()
+    all_lc_services = set()
+    all_lc_methods = set()
 
     for p in sorted_policies:
         per_rps = policy_early_returns_breakdown.get(p, [])
         for d in per_rps:
-            for key in (d or {}).keys():
-                if "::" in key:
-                    svc, mth = key.split("::", 1)
-                    all_services.add(svc)
-                    all_methods.add(mth)
+            for full_key in (d or {}).keys():
+                # full_key is "SrcSvc||LcSvc::LcMethod"
+                if "||" in full_key:
+                    src, rest = full_key.split("||", 1)
+                    if "::" in rest:
+                        lc_svc, lc_mth = rest.split("::", 1)
+                        all_src_services.add(src)
+                        all_lc_services.add(lc_svc)
+                        all_lc_methods.add(lc_mth)
 
-    sorted_services = sorted(all_services)
-    sorted_methods = sorted(all_methods)
+    sorted_src_services = sorted(all_src_services)
+    sorted_lc_services = sorted(all_lc_services)
+    sorted_lc_methods = sorted(all_lc_methods)
 
-    # Color mapping for services
-    svc_cmap = plt.get_cmap("tab10" if len(sorted_services) <= 10 else "tab20")
-    service_colors = {
-        svc: svc_cmap(i % svc_cmap.N) for i, svc in enumerate(sorted_services)
+    # Color mapping for LastChild services
+    svc_cmap = plt.get_cmap("tab10" if len(sorted_lc_services) <= 10 else "tab20")
+    lc_service_colors = {
+        svc: svc_cmap(i % svc_cmap.N) for i, svc in enumerate(sorted_lc_services)
     }
 
-    # Hatch mapping for methods
+    # Hatch mapping for LastChild methods
     hatches = ["", "///", "\\\\", "|||", "---", "+++", "xxx", "ooo", "...", "***"]
     method_hatches = {
-        mth: hatches[i % len(hatches)] for i, mth in enumerate(sorted_methods)
+        mth: hatches[i % len(hatches)] for i, mth in enumerate(sorted_lc_methods)
     }
 
     # Generate output path
     breakdown_path = output_path.replace(".png", "_breakdown.png")
 
-    # ===== Plot: Breakdown by Service::Method =====
+    # Layout
     n = len(sorted_policies)
     ncols = min(3, max(1, n))
     nrows = int(np.ceil(n / ncols))
     fig, axes = plt.subplots(
         nrows, ncols, figsize=(15, 4 + 2.8 * nrows), sharex=True, sharey=True
     )
-
     if n == 1:
         axes = [axes]
     elif nrows == 1:
@@ -342,7 +361,7 @@ def _plot_early_return_breakdown(
     else:
         axes = axes.flatten()
 
-    # Global y-limit
+    # Calculate y-limit
     global_max = 0.0
     for p in sorted_policies:
         vals = policy_total_early_returns.get(p, [])
@@ -352,48 +371,81 @@ def _plot_early_return_breakdown(
         global_max = 1.0
     ymax = global_max * 1.08
 
+    # Bar layout parameters
+    # We want one bar per SrcService at each RPS tick
+    num_src = len(sorted_src_services)
+    if num_src == 0:
+        num_src = 1  # avoid division by zero
+    total_width = 0.8
+    bar_width = total_width / num_src
+    # Centers of the groups are at x = 0, 1, 2...
+    # Offsets
+    offsets = np.linspace(
+        -total_width / 2 + bar_width / 2, total_width / 2 - bar_width / 2, num_src
+    )
+
     for idx, policy in enumerate(sorted_policies):
         ax = axes[idx]
         _style_axes(ax)
-
-        bottom = np.zeros(len(rps_values))
         per_rps = policy_early_returns_breakdown.get(policy, [])
 
-        # Iterate over all possible (Service, Method) pairs to maintain stack order?
-        # Or just iterate over present keys?
-        # To be safe and consistent, let's iterate over sorted keys present in this policy
-        # Actually, let's sort by Service then Method
-        present_keys = set()
-        for d in per_rps:
-            present_keys.update((d or {}).keys())
+        # We will iterate by SrcService to draw its bar
+        for src_idx, src_svc in enumerate(sorted_src_services):
+            bar_x = x + offsets[src_idx]
+            bottom = np.zeros(len(rps_values))
 
-        sorted_keys = sorted(present_keys)
+            # Filter keys for this src_svc and sort
+            relevant_lc_keys = set()
+            for d in per_rps:
+                for full_key in (d or {}).keys():
+                    if full_key.startswith(src_svc + "||"):
+                        relevant_lc_keys.add(full_key)
 
-        for key in sorted_keys:
-            svc, mth = key.split("::", 1)
-            values = []
-            for i in range(len(rps_values)):
-                if i < len(per_rps) and per_rps[i] is not None:
-                    values.append(float(per_rps[i].get(key, 0.0) or 0.0))
-                else:
-                    values.append(0.0)
+            sorted_lc_keys = sorted(relevant_lc_keys)
 
-            ax.bar(
-                x,
-                values,
-                bottom=bottom,
-                width=0.78,
-                color=service_colors.get(svc, "grey"),
-                hatch=method_hatches.get(mth, ""),
-                edgecolor="white",
-                linewidth=0.4,
-                label=key,  # Label will be used for legend later if we wanted per-item legend
-            )
-            bottom += np.array(values)
+            for full_key in sorted_lc_keys:
+                # full_key is "Src||LcSvc::LcMethod"
+                _, rest = full_key.split("||", 1)
+                lc_svc, lc_mth = rest.split("::", 1)
+
+                values = []
+                for i in range(len(rps_values)):
+                    val = 0.0
+                    if i < len(per_rps) and per_rps[i] is not None:
+                        val = float(per_rps[i].get(full_key, 0.0) or 0.0)
+                    values.append(val)
+                values = np.array(values)
+
+                ax.bar(
+                    bar_x,
+                    values,
+                    bottom=bottom,
+                    width=bar_width,
+                    color=lc_service_colors.get(lc_svc, "grey"),
+                    hatch=method_hatches.get(lc_mth, ""),
+                    edgecolor="white",
+                    linewidth=0.4,
+                )
+                bottom += values
+
+            # Label the subbar (Src Service)
+            for bx in bar_x:
+                ax.text(
+                    bx,
+                    0,
+                    src_svc,
+                    rotation=45,
+                    ha="right",
+                    va="top",
+                    fontsize=9,
+                    rotation_mode="anchor",
+                )
 
         ax.set_title(get_policy_display_name(policy), fontsize=11)
         ax.set_ylim(0, ymax)
         ax.set_xticks(x)
+        # Move RPS labels down to make room for subbar labels
+        ax.tick_params(axis="x", which="major", pad=40)
         ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
         ax.set_xlabel("RPS")
         ax.set_ylabel("Early-return rate (req/s)")
@@ -402,14 +454,18 @@ def _plot_early_return_breakdown(
     for idx in range(n, len(axes)):
         axes[idx].set_visible(False)
 
-    # Double Legend: One for Services (Colors), One for Methods (Hatches)
-    # Create proxy artists
-    service_handles = [
+    # Legends
+    # 1. LastChild Service (Colors)
+    lc_service_handles = [
         matplotlib.patches.Patch(
-            facecolor=service_colors[svc], label=svc, edgecolor="black", linewidth=0.5
+            facecolor=lc_service_colors[svc],
+            label=svc,
+            edgecolor="black",
+            linewidth=0.5,
         )
-        for svc in sorted_services
+        for svc in sorted_lc_services
     ]
+    # 2. LastChild Method (Hatches)
     method_handles = [
         matplotlib.patches.Patch(
             facecolor="white",
@@ -418,38 +474,37 @@ def _plot_early_return_breakdown(
             edgecolor="black",
             linewidth=0.5,
         )
-        for mth in sorted_methods
+        for mth in sorted_lc_methods
     ]
 
-    # Legend 1: Services
-    if service_handles:
-        legend1 = fig.legend(
-            service_handles,
-            sorted_services,
-            title="Service (Color)",
+    # Place legends
+    # Row 2: Last Child Service & Method
+    # Split width between them
+    if lc_service_handles:
+        l2 = fig.legend(
+            lc_service_handles,
+            sorted_lc_services,
+            title="Last Child Service (Color)",
             frameon=False,
             loc="upper center",
             bbox_to_anchor=(0.3, 1.02),
-            ncols=min(4, len(sorted_services)),
+            ncols=min(4, len(lc_service_handles)),
         )
-        fig.add_artist(legend1)
+        fig.add_artist(l2)
 
-    # Legend 2: Methods
     if method_handles:
         fig.legend(
             method_handles,
-            sorted_methods,
-            title="Method (Hatch)",
+            sorted_lc_methods,
+            title="Last Child Method (Hatch)",
             frameon=False,
             loc="upper center",
             bbox_to_anchor=(0.7, 1.02),
-            ncols=min(4, len(sorted_methods)),
+            ncols=min(4, len(method_handles)),
         )
 
-    fig.suptitle(
-        title, fontsize=14, y=1.05
-    )  # Moved up slightly to make room for legends
-    fig.tight_layout(rect=[0, 0, 1, 0.90])
+    fig.suptitle(title, fontsize=14, y=1.13)  # Moved up to make room for legends
+    fig.tight_layout(rect=[0, 0, 1, 0.88])
     fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -460,17 +515,20 @@ def _plot_early_return_breakdown(
         per_rps = policy_early_returns_breakdown.get(policy, [])
         for i, rps in enumerate(rps_values):
             if i < len(per_rps) and per_rps[i] is not None:
-                for key, val in per_rps[i].items():
-                    svc, mth = key.split("::", 1)
-                    csv_data.append(
-                        {
-                            "RPS": rps,
-                            "Policy": policy,
-                            "Service": svc,
-                            "Method": mth,
-                            "Rate": float(val or 0.0),
-                        }
-                    )
+                for full_key, val in per_rps[i].items():
+                    if "||" in full_key and "::" in full_key:
+                        src, rest = full_key.split("||", 1)
+                        lc_svc, lc_mth = rest.split("::", 1)
+                        csv_data.append(
+                            {
+                                "RPS": rps,
+                                "Policy": policy,
+                                "SrcService": src,
+                                "LastChildService": lc_svc,
+                                "LastChildMethod": lc_mth,
+                                "Rate": float(val or 0.0),
+                            }
+                        )
 
     if csv_data:
         pd.DataFrame(csv_data).to_csv(csv_path, index=False)
