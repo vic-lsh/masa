@@ -31,7 +31,10 @@ pub struct ServiceDefinition {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallGraphConfig {
-    pub entry_point: String,
+    #[serde(default)]
+    pub entry_points: HashMap<String, Vec<HashMap<String, f64>>>,
+    #[serde(skip)]
+    pub parsed_entry_points: HashMap<String, Vec<Vec<(CallTarget, f64)>>>,
     pub services: Vec<ServiceDefinition>,
 }
 
@@ -76,12 +79,30 @@ pub fn validate_call_graph(config: &CallGraphConfig) -> Result<(), String> {
         }
     }
 
-    // Validate entry_point
-    if !valid_targets.contains_key(&config.entry_point) {
-        return Err(format!(
-            "Entry point '{}' does not exist in call graph",
-            config.entry_point
-        ));
+    // Validate entry_points
+    if config.entry_points.is_empty() {
+        return Err(
+            "Call graph must define at least one entry point in 'entry_points'".to_string(),
+        );
+    }
+
+    for (key, sequence) in &config.entry_points {
+        if key != "a" && key != "b" {
+            return Err(format!(
+                "Invalid entry point key '{}'. Only 'a' and 'b' are allowed.",
+                key
+            ));
+        }
+        for step in sequence {
+            for (target_str, _prob) in step {
+                if !valid_targets.contains_key(target_str) {
+                    return Err(format!(
+                        "Entry point '{}' references non-existent target '{}'",
+                        key, target_str
+                    ));
+                }
+            }
+        }
     }
 
     // Validate all call sequences
@@ -107,6 +128,22 @@ pub fn validate_call_graph(config: &CallGraphConfig) -> Result<(), String> {
 pub fn parse_call_sequences(config: &mut CallGraphConfig) -> Result<(), String> {
     // First validate the graph structure
     validate_call_graph(config)?;
+
+    // Parse entry points
+    let mut parsed_entry_points = HashMap::new();
+    for (key, sequence) in &config.entry_points {
+        let mut parsed_sequence = Vec::new();
+        for step in sequence {
+            let mut parsed_step = Vec::new();
+            for (target_str, prob) in step {
+                let target = parse_service_method(target_str)?;
+                parsed_step.push((target, *prob));
+            }
+            parsed_sequence.push(parsed_step);
+        }
+        parsed_entry_points.insert(key.clone(), parsed_sequence);
+    }
+    config.parsed_entry_points = parsed_entry_points;
 
     // Parse all call sequences
     for service in &mut config.services {

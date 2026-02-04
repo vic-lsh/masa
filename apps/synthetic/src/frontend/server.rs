@@ -1,23 +1,18 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::RwLock;
 
 use crate::bootstrap::ConnectionBootstrap;
-use crate::config::{parse_call_sequences, parse_service_method, SyntheticConfig};
-use app_utils::timing::time_now;
-use tracing::warn;
+use crate::config::{parse_call_sequences, CallTarget, SyntheticConfig};
+use crate::service_registry::ServiceRegistry;
+use crate::util::execute_call_sequence;
 
-use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{Request, Response, Status};
 
-use crate::tonic::{
-    child, child::child_client::ChildClient, frontend, frontend::frontend_server::Frontend,
-};
+use crate::tonic::{frontend, frontend::frontend_server::Frontend};
 
 pub struct FrontendImpl {
-    call_graph_entry_point: (String, String), // (service_id, method_name)
-    call_graph_clients: Arc<RwLock<HashMap<String, ChildClient<LoadBalancedChannel>>>>,
+    parsed_entry_points: HashMap<String, Vec<Vec<(CallTarget, f64)>>>,
+    service_registry: ServiceRegistry,
 }
 
 impl FrontendImpl {
@@ -33,14 +28,6 @@ impl FrontendImpl {
         if let Err(e) = parse_call_sequences(&mut call_graph) {
             panic!("Failed to parse call graph: {}", e);
         }
-
-        // Parse entry point
-        let entry_target =
-            parse_service_method(&call_graph.entry_point).expect("Failed to parse entry point");
-        let entry_point = (
-            entry_target.service_id.clone(),
-            entry_target.method_name.clone(),
-        );
 
         // Build connection info for all services in call graph
         // Docker Compose creates containers with names like: {project}-{service}-{replica_number}
@@ -62,53 +49,19 @@ impl FrontendImpl {
             services_to_connect.push((service.id.clone(), hostname_base, service.replicas));
         }
 
-        // Create empty clients map - will be populated by bootstrap task
-        let clients = Arc::new(RwLock::new(HashMap::new()));
+        // Use ServiceRegistry
+        let registry = ServiceRegistry::new();
 
         // Spawn bootstrap task to connect asynchronously
         if !services_to_connect.is_empty() {
-            let bootstrap = ConnectionBootstrap::new(services_to_connect, Arc::clone(&clients));
+            let bootstrap = ConnectionBootstrap::new(services_to_connect, registry.clients());
             bootstrap.spawn();
         }
 
         FrontendImpl {
-            call_graph_entry_point: entry_point,
-            call_graph_clients: clients,
+            parsed_entry_points: call_graph.parsed_entry_points,
+            service_registry: registry,
         }
-    }
-
-    async fn call_entry_point(&self) -> Result<(), Status> {
-        let (service_id, method_name) = &self.call_graph_entry_point;
-
-        let client = self
-            .call_graph_clients
-            .read()
-            .await
-            .get(service_id)
-            .cloned();
-
-        let client = match client {
-            Some(client) => client,
-            None => {
-                warn!("Service '{}' not yet connected, skipping call", service_id);
-                return Err(Status::unavailable(format!(
-                    "Service '{}' not yet connected",
-                    service_id
-                )));
-            }
-        };
-
-        let sent_at = time_now();
-        client
-            .clone()
-            .handle_method(child::MethodRequest {
-                service_id: service_id.clone(),
-                method_name: method_name.clone(),
-                sent_at,
-            })
-            .await?;
-
-        Ok(())
     }
 }
 
@@ -131,8 +84,12 @@ impl Frontend for FrontendImpl {
     ) -> Result<Response<frontend::AResponse>, Status> {
         let start = Instant::now();
 
-        // Call the entry point method
-        self.call_entry_point().await?;
+        // Call the entry point sequence for "a"
+        if let Some(sequence) = self.parsed_entry_points.get("a") {
+            execute_call_sequence(&self.service_registry, sequence).await?;
+        } else {
+            // warn!("No entry point defined for 'a'");
+        }
 
         Ok(Response::new(frontend::AResponse {
             handler_latency: Instant::now().duration_since(start).as_micros() as u64,
@@ -143,8 +100,12 @@ impl Frontend for FrontendImpl {
         &self,
         _request: Request<frontend::BRequest>,
     ) -> Result<Response<frontend::BResponse>, Status> {
-        // Call the entry point method
-        self.call_entry_point().await?;
+        // Call the entry point sequence for "b"
+        if let Some(sequence) = self.parsed_entry_points.get("b") {
+            execute_call_sequence(&self.service_registry, sequence).await?;
+        } else {
+            // warn!("No entry point defined for 'b'");
+        }
 
         Ok(Response::new(frontend::BResponse {}))
     }
