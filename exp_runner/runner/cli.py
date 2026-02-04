@@ -100,9 +100,9 @@ def cmd_run_experiment(args: argparse.Namespace) -> None:
 
     try:
         experiment.run()
-        logger.info("Experiment completed successfully!")
+        logger.info("✅ Experiment completed successfully!")
     except Exception as e:
-        logger.error(f"Experiment failed: {e}", exc_info=True)
+        logger.error(f"⚠️ Experiment failed: {e}", exc_info=True)
         # Print log tails if we have a current output directory and are in CI
         if experiment.current_output_dir and os.environ.get("CI") == "true":
             experiment._print_log_tails(experiment.current_output_dir)
