@@ -13,10 +13,20 @@ use tonic::Request;
 #[tokio::test]
 async fn test_override_headers() {
     // 1. Setup a minimal ChildImpl server
+    let mut entry_points = std::collections::HashMap::new();
+    entry_points.insert(
+        "a".to_string(),
+        vec![[("TestService::test_method".to_string(), 1.0)]
+            .iter()
+            .cloned()
+            .collect()],
+    );
+
     let config = SyntheticConfig {
         child_cpus_per_replica: 1.0,
         call_graph: CallGraphConfig {
-            entry_point: "TestService::test_method".to_string(),
+            entry_points,
+            parsed_entry_points: Default::default(),
             services: vec![ServiceDefinition {
                 id: "TestService".to_string(),
                 replicas: 1,
