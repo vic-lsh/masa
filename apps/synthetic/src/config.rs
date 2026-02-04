@@ -173,6 +173,7 @@ mod tests {
     use crate::distribution::LatencyDistribution;
     use rand_distr::Exp;
     use serde_json::json;
+    use std::collections::HashMap;
 
     fn exponential(lambda: f64) -> LatencyDistribution {
         LatencyDistribution::Exponential {
@@ -186,7 +187,9 @@ mod tests {
     fn parses_exponential_with_mean() {
         let config = json!({
             "call_graph": {
-                "entry_point": "MS_1::method1",
+                "entry_points": {
+                    "a": [{"MS_1::method1": 1.0}]
+                },
                 "services": [
                     {
                         "id": "MS_1",
@@ -220,7 +223,9 @@ mod tests {
     fn parses_exponential_with_both_mean_and_lambda_prefers_mean() {
         let config = json!({
             "call_graph": {
-                "entry_point": "MS_1::method1",
+                "entry_points": {
+                    "a": [{"MS_1::method1": 1.0}]
+                },
                 "services": [
                     {
                         "id": "MS_1",
@@ -254,7 +259,9 @@ mod tests {
     fn parses_call_graph_config() {
         let config = json!({
             "call_graph": {
-                "entry_point": "MS_56394::GqI6UW1mU4",
+                "entry_points": {
+                    "a": [{"MS_56394::GqI6UW1mU4": 1.0}]
+                },
                 "services": [
                     {
                         "id": "MS_56394",
@@ -298,7 +305,8 @@ mod tests {
         let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
 
         let call_graph = &parsed.call_graph;
-        assert_eq!(call_graph.entry_point, "MS_56394::GqI6UW1mU4");
+        assert_eq!(call_graph.entry_points.len(), 1);
+        assert!(call_graph.entry_points.contains_key("a"));
         assert_eq!(call_graph.services.len(), 2);
         assert_eq!(call_graph.services[0].id, "MS_56394");
         assert_eq!(call_graph.services[0].methods.len(), 2);
@@ -319,8 +327,18 @@ mod tests {
 
     #[test]
     fn test_validate_call_graph() {
+        let mut entry_points = HashMap::new();
+        entry_points.insert(
+            "a".to_string(),
+            vec![[("MS_56394::GqI6UW1mU4".to_string(), 1.0)]
+                .iter()
+                .cloned()
+                .collect()],
+        );
+
         let mut config = CallGraphConfig {
-            entry_point: "MS_56394::GqI6UW1mU4".to_string(),
+            entry_points,
+            parsed_entry_points: HashMap::new(),
             services: vec![
                 ServiceDefinition {
                     id: "MS_56394".to_string(),
@@ -353,12 +371,17 @@ mod tests {
         // Should validate successfully
         assert!(validate_call_graph(&config).is_ok());
 
-        // Test invalid entry point
-        config.entry_point = "INVALID::method".to_string();
+        // Test invalid entry point key
+        config.entry_points.insert("INVALID".to_string(), vec![]);
         assert!(validate_call_graph(&config).is_err());
+        config.entry_points.remove("INVALID");
 
-        // Test invalid target reference
-        config.entry_point = "MS_56394::GqI6UW1mU4".to_string();
+        // Test invalid target reference in entry point
+        config.entry_points.get_mut("a").unwrap()[0].insert("INVALID::method".to_string(), 1.0);
+        assert!(validate_call_graph(&config).is_err());
+        config.entry_points.get_mut("a").unwrap()[0].remove("INVALID::method");
+
+        // Test invalid target reference in service call sequence
         config.services[0].methods[0].call_sequence_raw[0]
             .insert("INVALID::method".to_string(), 1.0);
         assert!(validate_call_graph(&config).is_err());
@@ -366,8 +389,18 @@ mod tests {
 
     #[test]
     fn test_parse_call_sequences() {
+        let mut entry_points = HashMap::new();
+        entry_points.insert(
+            "a".to_string(),
+            vec![[("MS_56394::GqI6UW1mU4".to_string(), 1.0)]
+                .iter()
+                .cloned()
+                .collect()],
+        );
+
         let mut config = CallGraphConfig {
-            entry_point: "MS_56394::GqI6UW1mU4".to_string(),
+            entry_points,
+            parsed_entry_points: HashMap::new(),
             services: vec![
                 ServiceDefinition {
                     id: "MS_56394".to_string(),
@@ -456,3 +489,4 @@ mod tests {
         assert_eq!(method.parsed_call_sequence[1][0].1, 1.0);
     }
 }
+
