@@ -6,8 +6,10 @@ test_synthetic_experiment:
     variables:
         CI: "true"
         EXP_NAME: "ci"
+        CARGO_BUILD_JOBS: "16"
 
     before_script:
+        - ulimit -n 4096 || true
         - mkdir -p $HOME/.local/bin
         - export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
         - |
