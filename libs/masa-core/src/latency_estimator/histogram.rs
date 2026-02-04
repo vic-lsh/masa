@@ -1,6 +1,9 @@
 use super::LatencyEstimator;
 use serde::{Deserialize, Serialize};
 
+// TODO: tweak this value. should it be configurable?
+const PERCENTILE: usize = 50;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LatencyDistribution {
     name: String,
@@ -62,11 +65,11 @@ impl LatencyDistribution {
         self.percentiles.len() > 0
     }
 
-    pub fn estimate(&self, percentile: usize) -> u64 {
+    pub fn estimate(&self) -> u64 {
         if self.percentiles.len() == 0 {
             self.mean
         } else {
-            self.percentile(percentile)
+            self.percentile(PERCENTILE)
         }
     }
 }
@@ -87,12 +90,12 @@ impl LatencyEstimator for LatencyDistribution {
         self.percentiles.len() > 0
     }
 
-    fn estimate(&self, percentile: usize) -> u64 {
+    fn estimate(&self) -> u64 {
         // Forward to the struct's estimate method
         if self.percentiles.len() == 0 {
             self.mean
         } else {
-            self.percentile(percentile)
+            self.percentile(PERCENTILE)
         }
     }
 }
@@ -227,7 +230,7 @@ mod tests {
         let dist = LatencyDistribution::new("test".to_string(), 200);
 
         // Should return mean (0) when no percentiles available
-        assert_eq!(dist.estimate(50), 0);
+        assert_eq!(dist.estimate(), 0);
     }
 
     #[test]
@@ -239,7 +242,7 @@ mod tests {
         }
 
         // Should return percentile value
-        assert_eq!(dist.estimate(50), 100);
+        assert_eq!(dist.estimate(), 100);
     }
 
     #[test]
@@ -271,14 +274,14 @@ mod tests {
         let mut dist = LatencyDistribution::new("test".to_string(), 200);
 
         // Without data, should return mean
-        assert_eq!(LatencyEstimator::estimate(&dist, 50), 0);
+        assert_eq!(LatencyEstimator::estimate(&dist), 0);
 
         // With data, should return percentile
         for i in 0..200 {
             LatencyEstimator::track(&mut dist, i);
         }
 
-        assert_eq!(LatencyEstimator::estimate(&dist, 50), 100);
+        assert_eq!(LatencyEstimator::estimate(&dist), 100);
     }
 
     #[test]
