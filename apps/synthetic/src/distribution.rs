@@ -347,3 +347,95 @@ impl<'de> Deserialize<'de> for LatencyDistribution {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_lognormal_from_mean_std_direct() {
+        // Test valid input
+        let res = lognormal_from_mean_std(100.0, 10.0);
+        assert!(res.is_ok());
+
+        // Test invalid inputs
+        assert!(lognormal_from_mean_std(-10.0, 10.0).is_err());
+        assert!(lognormal_from_mean_std(100.0, -10.0).is_err());
+    }
+
+    #[test]
+    fn test_lognormal_from_p50_p95_direct() {
+        // Test valid input
+        let res = lognormal_from_p50_p95(100.0, 200.0);
+        assert!(res.is_ok());
+        let (mean, std, _dist) = res.unwrap();
+        // Check that mean > median
+        assert!(mean > 100.0);
+        assert!(std > 0.0);
+
+        // Test invalid inputs
+        assert!(lognormal_from_p50_p95(-10.0, 200.0).is_err());
+        assert!(lognormal_from_p50_p95(100.0, -200.0).is_err());
+        assert!(lognormal_from_p50_p95(100.0, 90.0).is_err()); // p95 < p50
+    }
+
+    #[test]
+    fn test_serde_lognormal_config() {
+        // Test configuring via mean/std
+        let config_mean_std = json!({
+            "LogNormal": {
+                "mean": 100.0,
+                "std": 10.0
+            }
+        });
+        let dist: LatencyDistribution =
+            serde_json::from_value(config_mean_std).expect("parse lognormal mean/std");
+        if let LatencyDistribution::LogNormal { mean, std, .. } = dist {
+            assert_eq!(mean, 100.0);
+            assert_eq!(std, 10.0);
+        } else {
+            panic!("Expected LogNormal");
+        }
+
+        // Test configuring via p50/p95
+        let config_p50_p95 = json!({
+            "LogNormal": {
+                "p50": 100.0,
+                "p95": 200.0
+            }
+        });
+        let dist: LatencyDistribution =
+            serde_json::from_value(config_p50_p95).expect("parse lognormal p50/p95");
+        if let LatencyDistribution::LogNormal { mean, .. } = dist {
+            assert!(mean > 100.0);
+        } else {
+            panic!("Expected LogNormal");
+        }
+    }
+
+    #[test]
+    fn test_lognormal_sampling() {
+        // Create a distribution with known parameters
+        let dist = LatencyDistribution::LogNormal {
+            mean: 1000.0,
+            std: 100.0,
+            dist: lognormal_from_mean_std(1000.0, 100.0).unwrap(),
+        };
+
+        // Sample many times
+        let mut sum = 0.0;
+        let n = 10000;
+        for _ in 0..n {
+            sum += dist.sample() as f64;
+        }
+        let computed_mean = sum / n as f64;
+
+        // The sample mean should be reasonably close to the configured mean
+        assert!(
+            (computed_mean - 1000.0).abs() < 50.0,
+            "Sample mean {} should be close to 1000.0",
+            computed_mean
+        );
+    }
+}
