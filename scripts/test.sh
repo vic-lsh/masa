@@ -26,6 +26,7 @@ packages=(
     # our evaluation apps test suite
     "hotel"
     "socialnet"
+    "synthetic"
 
     # simulator
     "generic-service"
