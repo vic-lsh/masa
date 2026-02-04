@@ -2,28 +2,29 @@ image: "rustlang/rust:nightly"
 
 # Run on default branch as well as on merge requests
 workflow:
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    rules:
+        - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+        - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 variables:
-  CI: "true"
+    CI: "true"
 
 # Define stages
 stages:
-  - quick-checks
-  - test
+    - quick-checks
+    - test
 
 before_script:
-  - apt-get update -yqq
-  - apt-get install -y protobuf-compiler
+    - apt-get update -yqq
+    - apt-get install -y protobuf-compiler
 
 include:
-  - local: /.gitlab/fmt-cargo.yml
-  - local: /.gitlab/check-cargo.yml
-  - local: /.gitlab/test-cargo.yml
-  - local: /.gitlab/test-e2e-hotel.yml
-  - local: /.gitlab/test-mssim-experiment.yml
-  - local: /.gitlab/test-socialnet.yml
-  - local: /.gitlab/test-synthetic-experiment.yml
-  - local: /.gitlab/test-pytest.yml
+    - local: /.gitlab/fmt-cargo.yml
+    - local: /.gitlab/check-cargo.yml
+    - local: /.gitlab/test-cargo.yml
+    - local: /.gitlab/test-e2e-hotel.yml
+    - local: /.gitlab/test-mssim-experiment.yml
+    - local: /.gitlab/test-socialnet.yml
+    - local: /.gitlab/test-synthetic-experiment.yml
+    - local: /.gitlab/test-pytest.yml
+    - local: /.gitlab/lint-python.yml
