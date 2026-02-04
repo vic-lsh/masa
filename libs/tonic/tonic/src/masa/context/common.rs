@@ -10,7 +10,7 @@ use std::sync::Mutex;
 #[derive(Debug)]
 pub(crate) struct EarlyReturnHandler {
     will_early_return: AtomicBool,
-    service: &'static str,
+    service: String,
     method: String,
     last_child: Mutex<Option<String>>,
 }
@@ -19,7 +19,7 @@ impl Default for EarlyReturnHandler {
     fn default() -> Self {
         Self {
             will_early_return: AtomicBool::new(false),
-            service: "",
+            service: String::new(),
             method: String::new(),
             last_child: Mutex::new(None),
         }
@@ -27,7 +27,7 @@ impl Default for EarlyReturnHandler {
 }
 
 impl EarlyReturnHandler {
-    pub(crate) fn new(service: &'static str, method: String) -> Self {
+    pub(crate) fn new(service: String, method: String) -> Self {
         Self {
             will_early_return: AtomicBool::new(false),
             service,

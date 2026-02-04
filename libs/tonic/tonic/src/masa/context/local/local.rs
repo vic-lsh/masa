@@ -11,7 +11,8 @@ use std::{
 
 use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::super::{
-    resolve_method_name, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks,
+    resolve_method_name, resolve_service_name, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks,
+    ServerHooks,
 };
 use super::{get_estimate, track_method_latency, PERCENTILE};
 use masa_core::{time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint, EARLY_RETURN};
@@ -175,7 +176,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             server: server_ctx,
             q_lat_tracker: QueueLatencyTracker::new(),
             early_return: EarlyReturnHandler::new(
-                method.service(),
+                resolve_service_name(method, req),
                 resolve_method_name(method, req),
             ),
             child_end_times: Mutex::new(Vec::new()),
