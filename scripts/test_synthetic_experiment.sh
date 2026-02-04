@@ -38,6 +38,29 @@ fi
 
 if [[ "$deploy_mode" == "kind" ]]; then
     deploy_args="--kind"
+    # Use a unique cluster name to avoid conflicts in CI
+    # If CI_JOB_ID is set (GitLab CI), use it; otherwise use a random suffix
+    if [ -n "${CI_JOB_ID:-}" ]; then
+        CLUSTER_NAME="kind-${CI_JOB_ID}"
+    else
+        CLUSTER_NAME="kind-$(date +%s)"
+    fi
+    echo "Using Kind cluster name: $CLUSTER_NAME"
+
+    # Export KUBECONFIG to a dedicated path to avoid overwriting default config
+    export KUBECONFIG="$HOME/.kube/config-$CLUSTER_NAME"
+    # Export CLUSTER_NAME for the python runner to use
+    export KIND_CLUSTER_NAME="$CLUSTER_NAME"
+
+    if ! kind get clusters | grep -q "^$CLUSTER_NAME$"; then
+        echo "Creating kind cluster: $CLUSTER_NAME..."
+        kind create cluster --name "$CLUSTER_NAME"
+    else
+        echo "Kind cluster $CLUSTER_NAME already exists."
+    fi
+
+    # Ensure we tear down the cluster on exit
+    trap 'echo "Deleting kind cluster: $CLUSTER_NAME..."; kind delete cluster --name "$CLUSTER_NAME"; rm -f "$KUBECONFIG"' EXIT
 elif [[ "$deploy_mode" == "docker" ]]; then
     deploy_args=""
 else

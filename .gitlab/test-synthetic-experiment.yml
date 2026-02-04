@@ -35,10 +35,6 @@ test_synthetic_experiment:
                 HELM_INSTALL_DIR=$HOME/.local/bin ./get_helm.sh --no-sudo
                 rm get_helm.sh
               fi
-              if ! kind get clusters | grep -q "^kind$"; then
-                 echo "Creating kind cluster..."
-                 kind create cluster
-              fi
             fi
         - uv sync
         - source .venv/bin/activate
@@ -49,8 +45,3 @@ test_synthetic_experiment:
         - ./scripts/test_synthetic_experiment.sh $EXP_NAME --deploy-mode $DEPLOY_MODE
     after_script:
         - export PATH="$HOME/.local/bin:$PATH"
-        - |
-            if [[ "$DEPLOY_MODE" == "kind" ]]; then
-                echo "Deleting kind cluster..."
-                kind delete cluster
-            fi
