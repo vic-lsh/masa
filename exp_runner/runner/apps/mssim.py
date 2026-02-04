@@ -363,36 +363,66 @@ class MssimApp(AppPlugin):
                     all_passed = False
 
                 for rps in rps_list:
-                    latency_file = policy_run_dir / f"root_latencies_{int(rps)}rps.csv"
-                    if not latency_file.exists():
-                        logger.error(f"MSSIM latency file missing: {latency_file}")
+                    # Look for standard format files first: r{rps}_{api}.csv
+                    # Note: RPS in filename might be formatted (e.g. 100 or 100_5)
+                    # We use glob to find matching files
+                    latency_files = list(policy_run_dir.glob(f"r{int(rps)}_*.csv"))
+
+                    # Fallback to legacy format
+                    if not latency_files:
+                        legacy_file = (
+                            policy_run_dir / f"root_latencies_{int(rps)}rps.csv"
+                        )
+                        if legacy_file.exists():
+                            latency_files = [legacy_file]
+
+                    if not latency_files:
+                        logger.error(
+                            f"MSSIM latency files missing for {rps} RPS in {policy_run_dir}"
+                        )
                         all_passed = False
                         continue
 
-                    # Calculate goodput
-                    goodput = 0
-                    try:
-                        with open(latency_file, "r") as f:
-                            reader = csv.reader(f)
-                            # New format: error is at index 6. Success is "/None".
-                            for row in reader:
-                                if len(row) > 6 and row[6].strip() == "/None":
-                                    goodput += 1
-                    except Exception as e:
-                        logger.error(f"Failed to read MSSIM CSV {latency_file}: {e}")
-                        all_passed = False
-                        continue
+                    # Calculate goodput across all files for this RPS
+                    current_rps_goodput = 0
+                    for latency_file in latency_files:
+                        try:
+                            with open(latency_file, "r") as f:
+                                reader = csv.reader(f)
+                                header = next(reader, None)
+                                if not header:
+                                    continue
+
+                                # Find error column index
+                                try:
+                                    error_idx = header.index("error")
+                                except ValueError:
+                                    # Fallback for legacy files without header or different names
+                                    # Legacy format: error is at index 6
+                                    error_idx = 6
+
+                                for row in reader:
+                                    if len(row) > error_idx:
+                                        error = row[error_idx].strip()
+                                        if error == "/None":
+                                            current_rps_goodput += 1
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to read MSSIM CSV {latency_file}: {e}"
+                            )
+                            all_passed = False
+                            continue
 
                     expected_total = rps * duration
                     lower = expected_total * 0.8
                     upper = expected_total * 1.2
 
-                    if not (lower <= goodput <= upper):
-                        observed_rps = goodput / duration
+                    if not (lower <= current_rps_goodput <= upper):
+                        observed_rps = current_rps_goodput / duration
                         logger.error(
-                            f"Goodput mismatch in {latency_file.name} (Policy: {policy}, Iteration: {i})\n"
+                            f"Goodput mismatch for {rps} RPS (Policy: {policy}, Iteration: {i})\n"
                             f"  Expected: ~{expected_total:.0f} (+/- 20%)\n"
-                            f"  Got: {goodput}\n"
+                            f"  Got: {current_rps_goodput}\n"
                             f"  Observed RPS: {observed_rps:.2f} (Target: {rps:.2f})"
                         )
                         all_passed = False

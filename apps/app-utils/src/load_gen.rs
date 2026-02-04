@@ -233,12 +233,23 @@ where
     response: Option<(MetadataMap, R::ResponseType)>,
 }
 
-impl<R, C> RequestStats<R, C>
-where
-    R: RequestType<C>,
-    C: Client,
-{
-    const HEADERS: [&'static str; 9] = [
+/// A standardized record for a single request trace.
+/// This struct ensures that all applications export traces in a consistent format.
+pub struct TraceRecord {
+    pub api: String,
+    pub request_id: u64,
+    pub slo_us: u64,
+    pub start_at: u64,
+    pub deadline: u64,
+    pub latency: u64,
+    pub error: String,
+    pub q_lat_init: u64,
+    pub q_lat_resume: u64,
+    pub additional_metrics: Vec<String>,
+}
+
+impl TraceRecord {
+    pub const HEADERS: [&'static str; 9] = [
         "api",
         "request_id",
         "slo",
@@ -249,6 +260,47 @@ where
         "q_lat_init",
         "q_lat_resume",
     ];
+
+    pub fn to_csv_header() -> String {
+        Self::HEADERS.join(",")
+    }
+
+    pub fn to_csv_row(&self) -> String {
+        let generic = format!(
+            "{},{},{},{},{},{},{},{},{}",
+            self.api,
+            self.request_id,
+            self.slo_us,
+            self.start_at,
+            self.deadline,
+            self.latency,
+            Self::escape_error(&self.error),
+            self.q_lat_init,
+            self.q_lat_resume
+        );
+
+        if self.additional_metrics.is_empty() {
+            generic
+        } else {
+            format!("{},{}", generic, self.additional_metrics.join(","))
+        }
+    }
+
+    fn escape_error(error: &str) -> String {
+        if error.contains(',') || error.contains('"') || error.contains('\n') {
+            format!("\"{}\"", error.replace('"', "\"\""))
+        } else {
+            error.to_string()
+        }
+    }
+}
+
+impl<R, C> RequestStats<R, C>
+where
+    R: RequestType<C>,
+    C: Client,
+{
+    const HEADERS: [&'static str; 9] = TraceRecord::HEADERS;
 
     fn new(
         ctx: Context,
@@ -264,7 +316,7 @@ where
         }
     }
 
-    fn to_row(&self) -> String {
+    fn to_trace_record(&self) -> TraceRecord {
         let (init_lat, resume_lat) = match &self.response {
             Some((metadata, _)) => {
                 if let Some(ctx_str) = metadata.get("ctx").and_then(|v| v.to_str().ok()) {
@@ -281,25 +333,27 @@ where
             None => (0, 0),
         };
 
-        let generic = format!(
-            "{},{},{},{},{},{},{},{},{}",
-            self.ctx.api(),
-            self.ctx.request_id(),
-            self.ctx.slo(),
-            self.ctx.gateway_entry(),
-            self.ctx.deadline(),
-            self.latency,
-            self.error,
-            init_lat,
-            resume_lat
-        );
-
-        let specific = match &self.response {
-            Some((m, r)) => R::response_to_row(&m, &r).join(","),
-            None => "".to_string(),
+        let additional = match &self.response {
+            Some((m, r)) => R::response_to_row(&m, &r),
+            None => Vec::new(),
         };
 
-        format!("{},{}", generic, specific)
+        TraceRecord {
+            api: self.ctx.api().to_string(),
+            request_id: self.ctx.request_id(),
+            slo_us: self.ctx.slo(),
+            start_at: self.ctx.gateway_entry(),
+            deadline: self.ctx.deadline(),
+            latency: self.latency,
+            error: self.error.clone(),
+            q_lat_init: init_lat,
+            q_lat_resume: resume_lat,
+            additional_metrics: additional,
+        }
+    }
+
+    fn to_row(&self) -> String {
+        self.to_trace_record().to_csv_row()
     }
 }
 
