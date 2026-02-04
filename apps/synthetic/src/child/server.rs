@@ -14,7 +14,7 @@ use crate::service_registry::ServiceRegistry;
 use crate::tonic::{child, child::child_server::Child};
 use crate::util::{should_make_call, simulate_work};
 use app_utils::timing::time_now;
-use tonic::masa::{MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
+use tonic::masa::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
 use tracing::warn;
 
 pub struct ChildImpl {
