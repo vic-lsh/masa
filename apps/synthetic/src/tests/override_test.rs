@@ -14,11 +14,8 @@ use tonic::Request;
 async fn test_override_headers() {
     // 1. Setup a minimal ChildImpl server
     let config = SyntheticConfig {
-        child_services: vec![],
-        request_a_hops: vec![],
-        request_b_hops: vec![],
         child_cpus_per_replica: 1.0,
-        call_graph: Some(CallGraphConfig {
+        call_graph: CallGraphConfig {
             entry_point: "TestService::test_method".to_string(),
             services: vec![ServiceDefinition {
                 id: "TestService".to_string(),
@@ -35,7 +32,7 @@ async fn test_override_headers() {
                     busy_spin_ratio: None,
                 }],
             }],
-        }),
+        },
     };
 
     // We need to set the environment variable for SERVICE_ID as ChildImpl expects it
