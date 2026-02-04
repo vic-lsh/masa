@@ -180,3 +180,82 @@ impl QueueLatencyTracker {
     ) {
     }
 }
+
+#[cfg(test)]
+#[macro_export]
+macro_rules! generate_early_return_test {
+    ($ParentContext:ident, $ServerContext:ident, $ChildContext:ident) => {
+        #[test]
+        #[cfg(feature = "early")]
+        fn test_early_return_tracking() {
+            use super::{$ChildContext, $ParentContext, $ServerContext};
+            use crate::masa::context::MASA_CONTEXT_HEADER;
+            use crate::masa::context::{ClientHooks, ParentHooks, ServerHooks};
+            use crate::{GrpcMethod, Request, Response, Status};
+            use masa_core::{time_now, ContextBuilder};
+            use std::sync::Arc;
+
+            // Create a context with a deadline in the past
+            let deadline = time_now().saturating_sub(1_000_000); // 1s ago
+            let ctx = ContextBuilder::new("test-service", 123)
+                .deadline(deadline)
+                .build();
+
+            let req = http::Request::builder()
+                .header(MASA_CONTEXT_HEADER, ctx.to_header_string())
+                .body(())
+                .unwrap();
+
+            let method = GrpcMethod::new("test.Service", "Method");
+            let server_ctx = Arc::new($ServerContext::new("test-service"));
+
+            // Initialize ParentContext
+            let parent_ctx = $ParentContext::begin(method, &req, server_ctx);
+
+            // Check before_poll (should trigger early return)
+            let result = parent_ctx.before_poll::<()>();
+            assert!(result.is_err(), "Expected early return error");
+
+            let err = match result {
+                Err(Err(status)) => status,
+                _ => panic!("Expected Err(Err(Status))"),
+            };
+
+            assert_eq!(err.code(), crate::Code::DeadlineExceeded);
+            // Verify error message format: /EarlyReturn?src=test.Service::Method
+            let msg = err.message();
+            assert!(
+                msg.contains("/EarlyReturn"),
+                "Message should contain /EarlyReturn: {}",
+                msg
+            );
+            assert!(
+                msg.contains("src=test.Service::Method"),
+                "Message should contain src: {}",
+                msg
+            );
+
+            // Update last child info manually (simulating a completed child call)
+            let mut child_ctx = $ChildContext::new(method, &Request::new(()));
+            child_ctx.set_method_name("ChildMethod".to_string());
+
+            // This simulates a child RPC finishing
+            let mut resp_result: Result<Response<()>, Status> = Ok(Response::new(()));
+            let _ = parent_ctx.after_child_rpc(method, &mut resp_result, child_ctx);
+
+            // Check before_poll again - should now include last_rpc info
+            let result = parent_ctx.before_poll::<()>();
+            let err = match result {
+                Err(Err(status)) => status,
+                _ => panic!("Expected Err(Err(Status))"),
+            };
+
+            let msg = err.message();
+            assert!(
+                msg.contains("last_rpc=ChildMethod"),
+                "Message should contain last_rpc: {}",
+                msg
+            );
+        }
+    };
+}
