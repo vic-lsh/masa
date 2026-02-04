@@ -17,7 +17,7 @@ from .util import parse_args, read_policies
 def generate_all_plots(args):
     """
     Generate all plots for an experiment.
-    
+
     Args:
         args: Parsed arguments with config_dir, data_dir, and output_dir
     """
@@ -34,7 +34,7 @@ def generate_all_plots(args):
                 os.remove(png_file)
             except OSError as e:
                 print(f"Warning: Could not remove {png_file}: {e}")
-    
+
     policies = read_policies(config_dir)
 
     # Generate goodput, latency, and CPU plots in parallel
@@ -57,7 +57,6 @@ def generate_all_plots(args):
                 future.result()
             except Exception as e:
                 raise RuntimeError(f"Failed to generate {plot_type} plots: {e}") from e
-
 
 
 if __name__ == "__main__":
