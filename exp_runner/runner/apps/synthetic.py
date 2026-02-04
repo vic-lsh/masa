@@ -648,6 +648,39 @@ class SyntheticApp(AppPlugin):
         """
         return normalize_features_to_tag(features)
 
+    def _validate_config(self, repo_root: Path, config_path: Path) -> None:
+        """
+        Validate the experiment configuration using the rust validation tool.
+        """
+        logger.info(f"Validating config: {config_path}")
+
+        cmd = [
+            "cargo",
+            "run",
+            "-q",
+            "--release",
+            "-p",
+            "synthetic",
+            "--bin",
+            "validate_config",
+            "--",
+            "--config",
+            str(config_path),
+        ]
+
+        try:
+            subprocess.run(
+                cmd,
+                cwd=repo_root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            logger.info("Config validation passed")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Config validation failed:\n{e.stderr}")
+            raise RuntimeError(f"Config validation failed for {config_path}")
+
     def run_workload(
         self,
         *,
@@ -695,6 +728,10 @@ class SyntheticApp(AppPlugin):
             app_config_path = candidate
             # Pass app config path to docker compose as env var for volume mounting
             env_vars["APP_CONFIG_PATH"] = str(app_config_path.resolve())
+
+            # Validate config
+            if not dry_run:
+                self._validate_config(repo_root, app_config_path)
 
         # Use a safe docker-compose project name.
         # Policy strings may contain commas (e.g., "fifo,early") which Docker Compose
