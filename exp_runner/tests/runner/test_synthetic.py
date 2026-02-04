@@ -20,7 +20,6 @@ from exp_runner.runner.apps.synthetic import (
     SyntheticLoadGenerator,
     _safe_project_name,
 )
-from exp_runner.runner.apps.utils import normalize_features_to_tag
 
 
 class TestSyntheticLoadGenerator:

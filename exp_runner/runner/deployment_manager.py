@@ -7,7 +7,7 @@ import subprocess
 import threading
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 

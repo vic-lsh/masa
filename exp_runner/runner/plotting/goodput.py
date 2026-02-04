@@ -1,18 +1,10 @@
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-import matplotlib
-import pandas as pd
-
-matplotlib.use("Agg")  # Use non-interactive backend for thread safety
 from typing import Optional
 
-import matplotlib.pyplot as plt
+import matplotlib
 import numpy as np
-
-# Suppress warning about too many open figures when running in parallel
-# We properly close all figures, but many may be open simultaneously during parallel execution
-plt.rcParams["figure.max_open_warning"] = 0
+import pandas as pd
 
 from .util import (
     filter_excluded_errors,
@@ -22,6 +14,13 @@ from .util import (
     prepare_output_dir,
     read_data,
 )
+
+matplotlib.use("Agg")  # Use non-interactive backend for thread safety
+import matplotlib.pyplot as plt
+
+# Suppress warning about too many open figures when running in parallel
+# We properly close all figures, but many may be open simultaneously during parallel execution
+plt.rcParams["figure.max_open_warning"] = 0
 
 
 def get_request_type_hatch(request_type: str):
@@ -1205,7 +1204,7 @@ def _plot_averaged_goodput(
             rps_values=rps_values,
             policy_total_goodputs=avg_totals,
             policy_goodputs_by_type=avg_breakdown,
-            title=f"Average goodput vs load (ALL) and breakdown by request type",
+            title="Average goodput vs load (ALL) and breakdown by request type",
             subtitle=f"Averaged over {repeats} run(s). Panel A: total; Panel B: per-policy stacked bars.",
             request_type_color_mapping=request_type_color_mapping,
         )

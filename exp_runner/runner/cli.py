@@ -311,7 +311,7 @@ def cmd_build_dryrun(args: argparse.Namespace) -> None:
     print("BUILD COMMANDS (DRY-RUN)")
     print("=" * 80 + "\n")
     print(f"# Working directory: {repo_root}")
-    print(f"# All commands should be run from the repository root\n")
+    print("# All commands should be run from the repository root\n")
 
     for policy, cmd in all_commands:
         print(f"# Policy: {policy}")

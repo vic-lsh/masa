@@ -60,7 +60,6 @@ def _normalize_bool_series(series: pd.Series) -> pd.Series:
 def _filter_errors(df: pd.DataFrame) -> pd.DataFrame:
     if "is_err" not in df.columns:
         return df
-    err_mask = _normalize_bool_series(df["is_err"])
     # We don't filter errors here anymore, because we want to analyze early returns.
     # The caller functions (like goodput calculation) should filter errors if needed.
     return df

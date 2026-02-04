@@ -1,5 +1,4 @@
 import pandas as pd
-import pytest
 
 from exp_runner.runner.plotting.util import _parse_error_columns
 
