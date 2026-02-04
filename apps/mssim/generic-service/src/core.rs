@@ -451,6 +451,11 @@ impl ServiceCore {
         )
         .await
     }
+
+    #[cfg(test)]
+    pub(crate) async fn inject_client_for_test(&self, svc: ServiceName, client: RpcClient) {
+        self.clients.write().await.insert(svc, client);
+    }
 }
 
 fn compute_child_probabilities(
@@ -477,4 +482,208 @@ fn compute_child_probabilities(
             (svc.clone(), probability)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::service_stubs::{self, InvokeRequest, InvokeResponse};
+    use masa::MethodId;
+    use sim_config::svc::{
+        call_sequence::CallSequenceEntry, CallGraphConfig, GraphId, ServiceName,
+    };
+    use std::collections::HashMap;
+    use tonic::async_trait;
+    use tonic::masa::{MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
+    use tonic::transport::masa_channel::LoadBalancedChannel;
+    use tonic::transport::Server;
+    use tonic::Request;
+
+    #[test]
+    fn test_masa_overrides_available() {
+        // This test confirms that MasaRequestExt is correctly imported and usable
+        // within the generic-service crate, and that the header setting logic works.
+        let mut req = Request::new(());
+
+        req.set_service_name_override("test-service")
+            .expect("failed to set service override");
+        req.set_method_name_override("test-method")
+            .expect("failed to set method override");
+
+        let metadata = req.metadata();
+        assert_eq!(
+            metadata.get(SERVICE_NAME_OVERRIDE_HEADER).unwrap(),
+            "test-service"
+        );
+        assert_eq!(
+            metadata.get(METHOD_NAME_OVERRIDE_HEADER).unwrap(),
+            "test-method"
+        );
+    }
+
+    // --- Helpers ---
+
+    struct MockSvc {
+        tx: tokio::sync::mpsc::Sender<(String, String)>,
+    }
+
+    #[async_trait]
+    impl service_stubs::service_server::Service for MockSvc {
+        async fn invoke(
+            &self,
+            request: tonic::Request<InvokeRequest>,
+        ) -> Result<tonic::Response<InvokeResponse>, tonic::Status> {
+            let meta = request.metadata();
+            let svc_override = meta
+                .get(SERVICE_NAME_OVERRIDE_HEADER)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .to_string();
+            let method_override = meta
+                .get(METHOD_NAME_OVERRIDE_HEADER)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .to_string();
+
+            let _ = self.tx.send((svc_override, method_override)).await;
+            Ok(tonic::Response::new(InvokeResponse::default()))
+        }
+        async fn ping(
+            &self,
+            _: tonic::Request<service_stubs::PingRequest>,
+        ) -> Result<tonic::Response<service_stubs::PingResponse>, tonic::Status> {
+            Ok(tonic::Response::new(service_stubs::PingResponse::default()))
+        }
+        async fn replay(
+            &self,
+            _: tonic::Request<service_stubs::ReplayRequest>,
+        ) -> Result<tonic::Response<service_stubs::ReplayResponse>, tonic::Status> {
+            Ok(tonic::Response::new(
+                service_stubs::ReplayResponse::default(),
+            ))
+        }
+        async fn root(
+            &self,
+            _: tonic::Request<service_stubs::RootRequest>,
+        ) -> Result<tonic::Response<service_stubs::RootResponse>, tonic::Status> {
+            Ok(tonic::Response::new(service_stubs::RootResponse::default()))
+        }
+    }
+
+    async fn spawn_mock_server() -> (u16, tokio::sync::mpsc::Receiver<(String, String)>) {
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let incoming =
+            tonic::transport::server::TcpIncoming::from_listener(listener, true, None).unwrap();
+
+        tokio::spawn(async move {
+            Server::builder()
+                .add_service(service_stubs::service_server::ServiceServer::new(MockSvc {
+                    tx,
+                }))
+                .serve_with_incoming(incoming)
+                .await
+                .unwrap();
+        });
+        (port, rx)
+    }
+
+    async fn setup_core_with_config(
+        config: CallGraphConfig,
+        mock_port: u16,
+        self_name: &str,
+        target_name: &str,
+    ) -> Arc<ServiceCore> {
+        let self_svc = ServiceName::from_string(self_name.to_string());
+        let child_svc = ServiceName::from_string(target_name.to_string());
+
+        let client_channel =
+            LoadBalancedChannel::new_from_service_name("127.0.0.1".to_string(), mock_port, 1).await;
+        let client = crate::RpcClient::new(client_channel);
+
+        let deployment = sim_config::deployment::Deployment::new();
+        let (core, _) = ServiceCore::initialize(self_svc.clone(), config, deployment).unwrap();
+
+        // Inject client
+        core.inject_client_for_test(child_svc.clone(), client).await;
+        core
+    }
+
+    // --- Tests ---
+
+    #[tokio::test]
+    async fn test_overrides_integration() {
+        // 1. Setup Mock Server
+        let (port, mut rx) = spawn_mock_server().await;
+
+        // 2. Setup Config & Core
+        let graph_id = GraphId::from_string("test-graph".to_string());
+        let child_svc = ServiceName::from_string("receiver".to_string());
+
+        let call_seq = vec![vec![CallSequenceEntry {
+            service_name: child_svc.clone(),
+            method_name: MethodId::from("test-method"),
+            probability: 1.0,
+        }]];
+
+        let mut call_sequences = HashMap::new();
+        call_sequences.insert(graph_id.clone(), Some(call_seq));
+
+        let config = CallGraphConfig {
+            call_sequences,
+            method_latency: None,
+            method_freq_map: None,
+            call_graph: sim_config::svc::call_graph::CallGraph::default(),
+        };
+
+        let core = setup_core_with_config(config, port, "sender", "receiver").await;
+
+        // 3. Execute
+        core.fanout(1, 0, vec![], &graph_id).await.unwrap();
+
+        // 4. Assert
+        let (svc_over, meth_over) = rx.recv().await.unwrap();
+        assert_eq!(svc_over, "receiver");
+        assert_eq!(meth_over, "test-method");
+    }
+
+    #[tokio::test]
+    async fn test_fanout_probability() {
+        // 1. Setup Mock Server
+        let (port, mut rx) = spawn_mock_server().await;
+
+        // 2. Setup Config with 0.0 probability
+        let graph_id = GraphId::from_string("prob-graph".to_string());
+        let child_svc = ServiceName::from_string("receiver".to_string());
+
+        let call_seq = vec![vec![CallSequenceEntry {
+            service_name: child_svc.clone(),
+            method_name: MethodId::from("prob-method"),
+            probability: 0.0,
+        }]];
+
+        let mut call_sequences = HashMap::new();
+        call_sequences.insert(graph_id.clone(), Some(call_seq));
+
+        let config = CallGraphConfig {
+            call_sequences,
+            method_latency: None,
+            method_freq_map: None,
+            call_graph: sim_config::svc::call_graph::CallGraph::default(),
+        };
+
+        let core = setup_core_with_config(config, port, "sender", "receiver").await;
+
+        // 3. Execute
+        core.fanout(1, 0, vec![], &graph_id).await.unwrap();
+
+        // 4. Assert - Should timeout because probability is 0
+        let result = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
+        assert!(
+            result.is_err(),
+            "Should not have received a call with probability 0.0"
+        );
+    }
 }
