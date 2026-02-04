@@ -1,7 +1,95 @@
 #!/bin/bash
 
+# Parse arguments
+PARALLEL_JOBS=1
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --parallel)
+            PARALLEL_JOBS="$2"
+            shift # past argument
+            shift # past value
+            ;;
+        *)
+            # unknown option
+            shift
+            ;;
+    esac
+done
+
+# Setup for parallel execution
+if [ "$PARALLEL_JOBS" -gt 1 ]; then
+    RESULTS_DIR=$(mktemp -d)
+    trap "rm -rf $RESULTS_DIR" EXIT
+    TEST_NAMES=()
+fi
+
+# Initialize a variable to track the overall test status
+overall_status=0
+failed_packages=()
+
+execute_test() {
+    local name="$1"
+    shift
+    local cmd=("$@")
+
+    if [ "$PARALLEL_JOBS" -gt 1 ]; then
+        # Limit concurrency
+        while [ $(jobs -r | wc -l) -ge $PARALLEL_JOBS ]; do
+            wait -n 2>/dev/null || sleep 0.1
+        done
+
+        local passed=0
+        local failed=0
+        for f in "$RESULTS_DIR"/*.status; do
+            [ -f "$f" ] || continue
+            read -r status < "$f"
+            if [ "$status" -eq 0 ]; then
+                passed=$((passed+1))
+            else
+                failed=$((failed+1))
+            fi
+        done
+        local total=$(( ${#packages[@]} + 2 + 1 + ${#policy_flags[@]} ))
+        echo "Starting $name (Passed: $passed, Failed: $failed, Total: $total)..."
+
+        (
+            outfile="$RESULTS_DIR/$name.log"
+            echo "======== Testing $name ========" > "$outfile"
+            # execute command
+            "${cmd[@]}" >> "$outfile" 2>&1
+            echo $? > "$RESULTS_DIR/$name.status"
+        ) &
+        TEST_NAMES+=("$name")
+    else
+        echo "======== Testing $name ========"
+        "${cmd[@]}"
+        local status=$?
+        if [ $status -ne 0 ]; then
+            overall_status=1
+            failed_packages+=("$name")
+        fi
+    fi
+}
+
 # First, run tests from scripts for specialized purposes.
-./scripts/test_sched_policy.sh
+# We keep this sequential as it might set up things or be independent.
+# ./scripts/test_sched_policy.sh
+
+policy_flags=(
+    "fifo"
+    "prio_global"
+    "prio_oldest"
+    "prio_local"
+    "prio_local,est_rms"
+    "prio_local,est_hist"
+)
+
+# Run scheduling policy tests
+execute_test "hotel (sched_policy no-op)" cargo test -p hotel --test sched_policy
+for policy in "${policy_flags[@]}"; do
+    execute_test "hotel (sched_policy $policy)" cargo test -p hotel --test sched_policy --features "$policy"
+done
 
 # because not all tests build right now, we only test the modules we know to build successfully.
 
@@ -48,15 +136,8 @@ declare -A package_manifest_paths=(
     #["async-task"]="./libs/async-task/Cargo.toml"
 )
 
-failed_packages=()
-
-# Initialize a variable to track the overall test status
-overall_status=0
-
 # Loop through each package and run tests
 for package in "${packages[@]}"; do
-    echo "======== Testing $package ========"
-
     # Check if the package has defined feature flags
     if [ -n "${package_features[$package]}" ]; then
         features="${package_features[$package]}"
@@ -66,35 +147,49 @@ for package in "${packages[@]}"; do
 
     if [ -n "${package_manifest_paths[$package]}" ]; then
         # for packages with manifest path, test directly using manifest path
-        manifest_path="--manifest-path ${package_manifest_paths[$package]}"
-        cargo test $manifest_path
+        execute_test "$package" cargo test --manifest-path "${package_manifest_paths[$package]}"
     else
         # otherwise, test with package name and optionally with feature flags
-        cargo test -p "$package" $features
-    fi
-
-
-    test_status=$?
-
-    # If the test failed, update the overall status to nonzero
-    if [ $test_status -ne 0 ]; then
-        overall_status=1
-        failed_packages+=("$package")
+        # Need to be careful with word splitting for features if it contains multiple flags
+        # but here it is passed as a string to cargo test...
+        # If features is empty, we shouldn't pass an empty arg if it causes issues,
+        # but cargo test -p pkg "" might be weird.
+        # Let's construct the command array properly.
+        cmd=("cargo" "test" "-p" "$package")
+        if [ -n "$features" ]; then
+             # split features string into args if needed, or just pass as is?
+             # existing script did: cargo test -p "$package" $features
+             # allowing shell expansion on $features.
+             execute_test "$package" cargo test -p "$package" $features
+        else
+             execute_test "$package" cargo test -p "$package"
+        fi
     fi
 done
 
-echo "======== Testing tonic (masa features: prio_local + est_rms) ========"
-cargo test -p tonic --features "masa,prio_local,est_rms"
-if [ $? -ne 0 ]; then
-    overall_status=1
-    failed_packages+=("tonic (prio_local,est_rms)")
-fi
+execute_test "tonic (prio_local,est_rms)" cargo test -p tonic --features "masa,prio_local,est_rms"
+execute_test "tonic (prio_local,est_hist)" cargo test -p tonic --features "masa,prio_local,est_hist"
 
-echo "======== Testing tonic (masa features: prio_local + est_hist) ========"
-cargo test -p tonic --features "masa,prio_local,est_hist"
-if [ $? -ne 0 ]; then
-    overall_status=1
-    failed_packages+=("tonic (prio_local,est_hist)")
+# Collect results if parallel
+if [ "$PARALLEL_JOBS" -gt 1 ]; then
+    wait
+    for name in "${TEST_NAMES[@]}"; do
+        if [ -f "$RESULTS_DIR/$name.log" ]; then
+            cat "$RESULTS_DIR/$name.log"
+        fi
+
+        if [ -f "$RESULTS_DIR/$name.status" ]; then
+            st=$(cat "$RESULTS_DIR/$name.status")
+            if [ "$st" -ne 0 ]; then
+                overall_status=1
+                failed_packages+=("$name")
+            fi
+        else
+            echo "Error: Status file not found for $name"
+            overall_status=1
+            failed_packages+=("$name - system error")
+        fi
+    done
 fi
 
 if [ ${#failed_packages[@]} -ne 0 ]; then
