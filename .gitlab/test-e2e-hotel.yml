@@ -2,8 +2,10 @@ test_e2e_hotel:
     stage: test
     variables:
         CI: "true"
+        CARGO_BUILD_JOBS: "16"
 
     before_script:
+        - ulimit -n 4096 || true
         - |
             if ! command -v uv &> /dev/null; then
               curl -LsSf https://astral.sh/uv/install.sh | sh

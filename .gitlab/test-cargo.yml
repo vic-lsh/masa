@@ -2,6 +2,9 @@ cargo_test:
     stage: test
     variables:
         CI: "true"
+        CARGO_BUILD_JOBS: "4"
+    before_script:
+        - ulimit -n 4096 || true
     script:
         - rustc --version && cargo --version # Print version info for debugging
         - ./scripts/test.sh --parallel 8
