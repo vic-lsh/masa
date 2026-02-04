@@ -303,44 +303,39 @@ def _plot_early_return_breakdown(
     """
     Generate breakdown plot for early-return requests.
     - Grouped by Src Service (where the early return happened).
-    - Stacked by Last Child (Service::Method).
+    - Stacked by Method.
     """
     sorted_policies = sort_policies_by_type(policies)
     rps_values = list(rps_values)
     x = np.arange(len(rps_values))
 
-    # 1. Collect all unique SrcServices, LastChildServices, LastChildMethods
+    # 1. Collect all unique SrcServices and Methods
     all_src_services = set()
-    all_lc_services = set()
-    all_lc_methods = set()
+    all_methods = set()
 
     for p in sorted_policies:
         per_rps = policy_early_returns_breakdown.get(p, [])
         for d in per_rps:
             for full_key in (d or {}).keys():
-                # full_key is "SrcSvc||LcSvc::LcMethod"
-                if "||" in full_key:
-                    src, rest = full_key.split("||", 1)
-                    if "::" in rest:
-                        lc_svc, lc_mth = rest.split("::", 1)
-                        all_src_services.add(src)
-                        all_lc_services.add(lc_svc)
-                        all_lc_methods.add(lc_mth)
+                # Format is "SrcSvc::Method"
+                if "::" in full_key:
+                    src, mth = full_key.split("::", 1)
+                    all_src_services.add(src)
+                    all_methods.add(mth)
 
     sorted_src_services = sorted(all_src_services)
-    sorted_lc_services = sorted(all_lc_services)
-    sorted_lc_methods = sorted(all_lc_methods)
+    sorted_methods = sorted(all_methods)
 
-    # Color mapping for LastChild services
-    svc_cmap = plt.get_cmap("tab10" if len(sorted_lc_services) <= 10 else "tab20")
-    lc_service_colors = {
-        svc: svc_cmap(i % svc_cmap.N) for i, svc in enumerate(sorted_lc_services)
+    # Color mapping for Src services
+    svc_cmap = plt.get_cmap("tab10" if len(sorted_src_services) <= 10 else "tab20")
+    svc_colors = {
+        svc: svc_cmap(i % svc_cmap.N) for i, svc in enumerate(sorted_src_services)
     }
 
-    # Hatch mapping for LastChild methods
+    # Hatch mapping for Methods
     hatches = ["", "///", "\\\\", "|||", "---", "+++", "xxx", "ooo", "...", "***"]
     method_hatches = {
-        mth: hatches[i % len(hatches)] for i, mth in enumerate(sorted_lc_methods)
+        mth: hatches[i % len(hatches)] for i, mth in enumerate(sorted_methods)
     }
 
     # Generate output path
@@ -394,18 +389,17 @@ def _plot_early_return_breakdown(
             bottom = np.zeros(len(rps_values))
 
             # Filter keys for this src_svc and sort
-            relevant_lc_keys = set()
+            relevant_keys = set()
             for d in per_rps:
                 for full_key in (d or {}).keys():
-                    if full_key.startswith(src_svc + "||"):
-                        relevant_lc_keys.add(full_key)
+                    if full_key.startswith(src_svc + "::"):
+                        relevant_keys.add(full_key)
 
-            sorted_lc_keys = sorted(relevant_lc_keys)
+            sorted_keys = sorted(relevant_keys)
 
-            for full_key in sorted_lc_keys:
-                # full_key is "Src||LcSvc::LcMethod"
-                _, rest = full_key.split("||", 1)
-                lc_svc, lc_mth = rest.split("::", 1)
+            for full_key in sorted_keys:
+                # full_key is "Src::Method"
+                src, mth = full_key.split("::", 1)
 
                 values = []
                 for i in range(len(rps_values)):
@@ -420,8 +414,8 @@ def _plot_early_return_breakdown(
                     values,
                     bottom=bottom,
                     width=bar_width,
-                    color=lc_service_colors.get(lc_svc, "grey"),
-                    hatch=method_hatches.get(lc_mth, ""),
+                    color=svc_colors.get(src, "grey"),
+                    hatch=method_hatches.get(mth, ""),
                     edgecolor="white",
                     linewidth=0.4,
                 )
@@ -454,17 +448,17 @@ def _plot_early_return_breakdown(
         axes[idx].set_visible(False)
 
     # Legends
-    # 1. LastChild Service (Colors)
-    lc_service_handles = [
+    # 1. Service (Colors)
+    svc_handles = [
         matplotlib.patches.Patch(
-            facecolor=lc_service_colors[svc],
+            facecolor=svc_colors[svc],
             label=svc,
             edgecolor="black",
             linewidth=0.5,
         )
-        for svc in sorted_lc_services
+        for svc in sorted_src_services
     ]
-    # 2. LastChild Method (Hatches)
+    # 2. Method (Hatches)
     method_handles = [
         matplotlib.patches.Patch(
             facecolor="white",
@@ -473,29 +467,29 @@ def _plot_early_return_breakdown(
             edgecolor="black",
             linewidth=0.5,
         )
-        for mth in sorted_lc_methods
+        for mth in sorted_methods
     ]
 
     # Place legends
-    # Row 2: Last Child Service & Method
+    # Row 2: Service & Method
     # Split width between them
-    if lc_service_handles:
+    if svc_handles:
         l2 = fig.legend(
-            lc_service_handles,
-            sorted_lc_services,
-            title="Last Child Service (Color)",
+            svc_handles,
+            sorted_src_services,
+            title="Service (Color)",
             frameon=False,
             loc="upper center",
             bbox_to_anchor=(0.3, 1.02),
-            ncols=min(4, len(lc_service_handles)),
+            ncols=min(4, len(svc_handles)),
         )
         fig.add_artist(l2)
 
     if method_handles:
         fig.legend(
             method_handles,
-            sorted_lc_methods,
-            title="Last Child Method (Hatch)",
+            sorted_methods,
+            title="Method (Hatch)",
             frameon=False,
             loc="upper center",
             bbox_to_anchor=(0.7, 1.02),
@@ -515,16 +509,15 @@ def _plot_early_return_breakdown(
         for i, rps in enumerate(rps_values):
             if i < len(per_rps) and per_rps[i] is not None:
                 for full_key, val in per_rps[i].items():
-                    if "||" in full_key and "::" in full_key:
-                        src, rest = full_key.split("||", 1)
-                        lc_svc, lc_mth = rest.split("::", 1)
+                    if "::" in full_key:
+                        src, mth = full_key.split("::", 1)
+                        # Treat Src as Service and Method as Method
                         csv_data.append(
                             {
                                 "RPS": rps,
                                 "Policy": policy,
-                                "SrcService": src,
-                                "LastChildService": lc_svc,
-                                "LastChildMethod": lc_mth,
+                                "Service": src,
+                                "Method": mth,
                                 "Rate": float(val or 0.0),
                             }
                         )
@@ -1355,56 +1348,7 @@ def generate_plots(args) -> None:
                     for rps_dict in policy_goodputs_by_type[i][api][policy]:
                         all_request_types.update(rps_dict.keys())
 
-                # Compute early-return breakdown by request type
-                policy_early_returns_by_type[i][api] = {
-                    policy: [
-                        compute_early_return_breakdown(data[policy][rps])
-                        for rps in rps_values
-                    ]
-                    for policy in policies
-                }
-                # Collect request types from early returns as well (these are now Service::Method keys)
-                for policy in policies:
-                    for rps_dict in policy_early_returns_by_type[i][api][policy]:
-                        all_request_types.update(rps_dict.keys())
-
-                # Compute total early-return rate per policy
-                policy_total_early_returns[i][api] = {
-                    policy: [
-                        sum(d.values())
-                        for d in policy_early_returns_by_type[i][api][policy]
-                    ]
-                    for policy in policies
-                }
-
-                # Compute early-return breakdown by LAST CHILD
-                policy_early_returns_last_child_by_type.append({})
-                policy_total_early_returns_last_child.append({})
-                policy_early_returns_last_child_by_type[i][api] = {
-                    policy: [
-                        compute_early_return_last_child_breakdown(data[policy][rps])
-                        for rps in rps_values
-                    ]
-                    for policy in policies
-                }
-                # Collect keys
-                for policy in policies:
-                    for rps_dict in policy_early_returns_last_child_by_type[i][api][
-                        policy
-                    ]:
-                        all_request_types.update(rps_dict.keys())
-
-                # Compute total
-                policy_total_early_returns_last_child[i][api] = {
-                    policy: [
-                        sum(d.values())
-                        for d in policy_early_returns_last_child_by_type[i][api][policy]
-                    ]
-                    for policy in policies
-                }
-
                 # Compute SLO miss breakdown by request type
-
                 policy_slo_misses_by_type[i][api] = {
                     policy: [
                         compute_slo_miss_by_request_type(data[policy][rps])
@@ -1428,6 +1372,46 @@ def generate_plots(args) -> None:
                     for policy in policies
                 }
 
+            # Compute early-return breakdown by request type
+            policy_early_returns_by_type[i][api] = {
+                policy: [
+                    compute_early_return_breakdown(data[policy][rps])
+                    for rps in rps_values
+                ]
+                for policy in policies
+            }
+            # Collect request types from early returns as well (these are now Service::Method keys)
+            # Only strictly necessary if we wanted to color them consistently with request types,
+            # but early returns keys are Service::Method, not API types.
+            # So we don't update all_request_types here.
+
+            # Compute total early-return rate per policy
+            policy_total_early_returns[i][api] = {
+                policy: [
+                    sum(d.values())
+                    for d in policy_early_returns_by_type[i][api][policy]
+                ]
+                for policy in policies
+            }
+
+            # Compute early-return breakdown by LAST CHILD
+            policy_early_returns_last_child_by_type[i][api] = {
+                policy: [
+                    compute_early_return_last_child_breakdown(data[policy][rps])
+                    for rps in rps_values
+                ]
+                for policy in policies
+            }
+
+            # Compute total
+            policy_total_early_returns_last_child[i][api] = {
+                policy: [
+                    sum(d.values())
+                    for d in policy_early_returns_last_child_by_type[i][api][policy]
+                ]
+                for policy in policies
+            }
+
     # Create stable color mapping for all request types
     request_type_color_mapping = {}
     if all_request_types:
@@ -1445,97 +1429,99 @@ def generate_plots(args) -> None:
         for i in range(repeats):
             output_dir = os.path.join(args.output_dir, str(i))
             for api in apis:
+                goodputs_by_type = None
                 if api == "ALL":
-                    goodputs_by_type = None
                     if i < len(policy_goodputs_by_type):
                         goodputs_by_type = policy_goodputs_by_type[i].get(api)
-                    futures.append(
-                        executor.submit(
-                            _plot_policy_goodput_comparison,
-                            output_dir,
-                            api,
-                            policies,
-                            rps_values,
-                            policy_goodputs[i][api],
-                            goodputs_by_type,
-                            request_type_color_mapping,
-                        )
-                    )
 
-        # Submit averaged goodput plots for each api
-        # Only generate plots for "ALL" API, skip individual APIs
-        output_dir = args.output_dir
-        for api in apis:
-            if api == "ALL":
-                goodputs_by_type = None
-                # Extract the "ALL" data from each repeat
-                goodputs_by_type = [
-                    policy_goodputs_by_type[i].get("ALL", {}) for i in range(repeats)
-                ]
+                # We still only do the detailed goodput breakdown for ALL,
+                # but we plot the basic goodput for everyone.
+                # The _plot_policy_goodput_comparison function handles api="ALL" specially.
+                # For other APIs, it just plots the bar chart.
                 futures.append(
                     executor.submit(
-                        _plot_averaged_goodput,
+                        _plot_policy_goodput_comparison,
                         output_dir,
                         api,
                         policies,
                         rps_values,
-                        policy_goodputs,
-                        repeats,
+                        policy_goodputs[i][api],
                         goodputs_by_type,
                         request_type_color_mapping,
                     )
                 )
 
+        # Submit averaged goodput plots for each api
+        output_dir = args.output_dir
+        for api in apis:
+            goodputs_by_type = None
+            if api == "ALL":
+                # Extract the "ALL" data from each repeat
+                goodputs_by_type = [
+                    policy_goodputs_by_type[i].get("ALL", {}) for i in range(repeats)
+                ]
+
+            futures.append(
+                executor.submit(
+                    _plot_averaged_goodput,
+                    output_dir,
+                    api,
+                    policies,
+                    rps_values,
+                    policy_goodputs,
+                    repeats,
+                    goodputs_by_type,
+                    request_type_color_mapping,
+                )
+            )
+
         # Submit early-return breakdown plots for each repeat
         for i in range(repeats):
             output_dir = os.path.join(args.output_dir, str(i))
             for api in apis:
-                if api == "ALL":
-                    early_returns_by_type = policy_early_returns_by_type[i].get(api)
-                    total_early_returns = policy_total_early_returns[i].get(api)
-                    if (
-                        early_returns_by_type is not None
-                        and total_early_returns is not None
-                    ):
-                        output_path = os.path.join(
-                            output_dir, f"early_return_{api}.png"
+                early_returns_by_type = policy_early_returns_by_type[i].get(api)
+                total_early_returns = policy_total_early_returns[i].get(api)
+                if (
+                    early_returns_by_type is not None
+                    and total_early_returns is not None
+                ):
+                    output_path = os.path.join(output_dir, f"early_return_{api}.png")
+                    futures.append(
+                        executor.submit(
+                            _plot_early_return_breakdown,
+                            output_path,
+                            policies=policies,
+                            rps_values=rps_values,
+                            policy_total_early_returns=total_early_returns,
+                            policy_early_returns_breakdown=early_returns_by_type,
+                            title=f"Early-return requests breakdown by Service::Method ({api})",
                         )
-                        futures.append(
-                            executor.submit(
-                                _plot_early_return_breakdown,
-                                output_path,
-                                policies=policies,
-                                rps_values=rps_values,
-                                policy_total_early_returns=total_early_returns,
-                                policy_early_returns_breakdown=early_returns_by_type,
-                                title="Early-return requests breakdown by Service::Method",
-                            )
-                        )
+                    )
 
-                    early_returns_last_child_by_type = (
-                        policy_early_returns_last_child_by_type[i].get(api)
+                early_returns_last_child_by_type = (
+                    policy_early_returns_last_child_by_type[i].get(api)
+                )
+                total_early_returns_last_child = policy_total_early_returns_last_child[
+                    i
+                ].get(api)
+                if (
+                    early_returns_last_child_by_type is not None
+                    and total_early_returns_last_child is not None
+                ):
+                    output_path = os.path.join(
+                        output_dir, f"early_return_last_child_{api}.png"
                     )
-                    total_early_returns_last_child = (
-                        policy_total_early_returns_last_child[i].get(api)
+                    futures.append(
+                        executor.submit(
+                            _plot_early_return_breakdown,
+                            output_path,
+                            policies=policies,
+                            rps_values=rps_values,
+                            policy_total_early_returns=total_early_returns_last_child,
+                            policy_early_returns_breakdown=early_returns_last_child_by_type,
+                            title=f"Early-return requests breakdown by Last Child Service::Method ({api})",
+                        )
                     )
-                    if (
-                        early_returns_last_child_by_type is not None
-                        and total_early_returns_last_child is not None
-                    ):
-                        output_path = os.path.join(
-                            output_dir, f"early_return_last_child_{api}.png"
-                        )
-                        futures.append(
-                            executor.submit(
-                                _plot_early_return_breakdown,
-                                output_path,
-                                policies=policies,
-                                rps_values=rps_values,
-                                policy_total_early_returns=total_early_returns_last_child,
-                                policy_early_returns_breakdown=early_returns_last_child_by_type,
-                                title="Early-return requests breakdown by Last Child Service::Method",
-                            )
-                        )
 
         # Submit SLO miss breakdown plots for each repeat
         for i in range(repeats):
@@ -1562,159 +1548,150 @@ def generate_plots(args) -> None:
         # Submit averaged early-return breakdown plot
         output_dir = args.output_dir
         for api in apis:
-            if api == "ALL":
-                # Average breakdown per (policy, rps, request_type)
-                avg_total_early_returns = {}
-                avg_breakdown = {
-                    policy: [dict() for _ in range(len(rps_values))]
-                    for policy in policies
-                }
+            # Average breakdown per (policy, rps, request_type)
+            avg_total_early_returns = {}
+            avg_breakdown = {
+                policy: [dict() for _ in range(len(rps_values))] for policy in policies
+            }
 
-                # Collect all request types present anywhere
-                all_types = set()
-                for i in range(repeats):
-                    if i < len(policy_early_returns_by_type):
-                        for policy in policies:
+            # Collect all request types present anywhere
+            all_types = set()
+            for i in range(repeats):
+                if i < len(policy_early_returns_by_type):
+                    for policy in policies:
+                        per_rps = (
+                            policy_early_returns_by_type[i].get(api, {}).get(policy, [])
+                        )
+                        for d in per_rps:
+                            all_types.update((d or {}).keys())
+
+            # Average totals
+            for policy in policies:
+                totals = []
+                for rps_idx in range(len(rps_values)):
+                    vals = []
+                    for i in range(repeats):
+                        if i < len(policy_total_early_returns):
+                            per_rps = (
+                                policy_total_early_returns[i]
+                                .get(api, {})
+                                .get(policy, [])
+                            )
+                            if rps_idx < len(per_rps):
+                                vals.append(float(per_rps[rps_idx] or 0.0))
+                    if vals:
+                        totals.append(sum(vals) / len(vals))
+                    else:
+                        totals.append(0.0)
+                avg_total_early_returns[policy] = totals
+
+            # Average breakdown
+            for policy in policies:
+                for rps_idx in range(len(rps_values)):
+                    for rt in all_types:
+                        vals = []
+                        for i in range(repeats):
+                            if i >= len(policy_early_returns_by_type):
+                                continue
                             per_rps = (
                                 policy_early_returns_by_type[i]
                                 .get(api, {})
                                 .get(policy, [])
                             )
-                            for d in per_rps:
-                                all_types.update((d or {}).keys())
+                            if (
+                                rps_idx < len(per_rps)
+                                and per_rps[rps_idx] is not None
+                                and rt in per_rps[rps_idx]
+                            ):
+                                vals.append(float(per_rps[rps_idx][rt]))
+                        if vals:
+                            avg_breakdown[policy][rps_idx][rt] = sum(vals) / len(vals)
 
-                # Average totals
-                for policy in policies:
-                    totals = []
-                    for rps_idx in range(len(rps_values)):
+            output_path = os.path.join(output_dir, f"early_return_{api}.png")
+            futures.append(
+                executor.submit(
+                    _plot_early_return_breakdown,
+                    output_path,
+                    policies=policies,
+                    rps_values=rps_values,
+                    policy_total_early_returns=avg_total_early_returns,
+                    policy_early_returns_breakdown=avg_breakdown,
+                    title=f"Average early-return requests breakdown by Service::Method ({api}) (averaged over {repeats} run(s))",
+                )
+            )
+
+            # Average breakdown for LAST CHILD
+            avg_total_early_returns_lc = {}
+            avg_breakdown_lc = {
+                policy: [dict() for _ in range(len(rps_values))] for policy in policies
+            }
+
+            all_types_lc = set()
+            for i in range(repeats):
+                if i < len(policy_early_returns_last_child_by_type):
+                    for policy in policies:
+                        per_rps = (
+                            policy_early_returns_last_child_by_type[i]
+                            .get(api, {})
+                            .get(policy, [])
+                        )
+                        for d in per_rps:
+                            all_types_lc.update((d or {}).keys())
+
+            for policy in policies:
+                totals = []
+                for rps_idx in range(len(rps_values)):
+                    vals = []
+                    for i in range(repeats):
+                        if i < len(policy_total_early_returns_last_child):
+                            per_rps = (
+                                policy_total_early_returns_last_child[i]
+                                .get(api, {})
+                                .get(policy, [])
+                            )
+                            if rps_idx < len(per_rps):
+                                vals.append(float(per_rps[rps_idx] or 0.0))
+                    if vals:
+                        totals.append(sum(vals) / len(vals))
+                    else:
+                        totals.append(0.0)
+                avg_total_early_returns_lc[policy] = totals
+
+            for policy in policies:
+                for rps_idx in range(len(rps_values)):
+                    for rt in all_types_lc:
                         vals = []
                         for i in range(repeats):
-                            if i < len(policy_total_early_returns):
-                                per_rps = (
-                                    policy_total_early_returns[i]
-                                    .get(api, {})
-                                    .get(policy, [])
-                                )
-                                if rps_idx < len(per_rps):
-                                    vals.append(float(per_rps[rps_idx] or 0.0))
-                        if vals:
-                            totals.append(sum(vals) / len(vals))
-                        else:
-                            totals.append(0.0)
-                    avg_total_early_returns[policy] = totals
-
-                # Average breakdown
-                for policy in policies:
-                    for rps_idx in range(len(rps_values)):
-                        for rt in all_types:
-                            vals = []
-                            for i in range(repeats):
-                                if i >= len(policy_early_returns_by_type):
-                                    continue
-                                per_rps = (
-                                    policy_early_returns_by_type[i]
-                                    .get(api, {})
-                                    .get(policy, [])
-                                )
-                                if (
-                                    rps_idx < len(per_rps)
-                                    and per_rps[rps_idx] is not None
-                                    and rt in per_rps[rps_idx]
-                                ):
-                                    vals.append(float(per_rps[rps_idx][rt]))
-                            if vals:
-                                avg_breakdown[policy][rps_idx][rt] = sum(vals) / len(
-                                    vals
-                                )
-
-                output_path = os.path.join(output_dir, f"early_return_{api}.png")
-                futures.append(
-                    executor.submit(
-                        _plot_early_return_breakdown,
-                        output_path,
-                        policies=policies,
-                        rps_values=rps_values,
-                        policy_total_early_returns=avg_total_early_returns,
-                        policy_early_returns_breakdown=avg_breakdown,
-                        title=f"Average early-return requests breakdown by Service::Method (averaged over {repeats} run(s))",
-                    )
-                )
-
-                # Average breakdown for LAST CHILD
-                avg_total_early_returns_lc = {}
-                avg_breakdown_lc = {
-                    policy: [dict() for _ in range(len(rps_values))]
-                    for policy in policies
-                }
-
-                all_types_lc = set()
-                for i in range(repeats):
-                    if i < len(policy_early_returns_last_child_by_type):
-                        for policy in policies:
+                            if i >= len(policy_early_returns_last_child_by_type):
+                                continue
                             per_rps = (
                                 policy_early_returns_last_child_by_type[i]
                                 .get(api, {})
                                 .get(policy, [])
                             )
-                            for d in per_rps:
-                                all_types_lc.update((d or {}).keys())
-
-                for policy in policies:
-                    totals = []
-                    for rps_idx in range(len(rps_values)):
-                        vals = []
-                        for i in range(repeats):
-                            if i < len(policy_total_early_returns_last_child):
-                                per_rps = (
-                                    policy_total_early_returns_last_child[i]
-                                    .get(api, {})
-                                    .get(policy, [])
-                                )
-                                if rps_idx < len(per_rps):
-                                    vals.append(float(per_rps[rps_idx] or 0.0))
+                            if (
+                                rps_idx < len(per_rps)
+                                and per_rps[rps_idx] is not None
+                                and rt in per_rps[rps_idx]
+                            ):
+                                vals.append(float(per_rps[rps_idx][rt]))
                         if vals:
-                            totals.append(sum(vals) / len(vals))
-                        else:
-                            totals.append(0.0)
-                    avg_total_early_returns_lc[policy] = totals
+                            avg_breakdown_lc[policy][rps_idx][rt] = sum(vals) / len(
+                                vals
+                            )
 
-                for policy in policies:
-                    for rps_idx in range(len(rps_values)):
-                        for rt in all_types_lc:
-                            vals = []
-                            for i in range(repeats):
-                                if i >= len(policy_early_returns_last_child_by_type):
-                                    continue
-                                per_rps = (
-                                    policy_early_returns_last_child_by_type[i]
-                                    .get(api, {})
-                                    .get(policy, [])
-                                )
-                                if (
-                                    rps_idx < len(per_rps)
-                                    and per_rps[rps_idx] is not None
-                                    and rt in per_rps[rps_idx]
-                                ):
-                                    vals.append(float(per_rps[rps_idx][rt]))
-                            if vals:
-                                avg_breakdown_lc[policy][rps_idx][rt] = sum(vals) / len(
-                                    vals
-                                )
-
-                output_path = os.path.join(
-                    output_dir, f"early_return_last_child_{api}.png"
+            output_path = os.path.join(output_dir, f"early_return_last_child_{api}.png")
+            futures.append(
+                executor.submit(
+                    _plot_early_return_breakdown,
+                    output_path,
+                    policies=policies,
+                    rps_values=rps_values,
+                    policy_total_early_returns=avg_total_early_returns_lc,
+                    policy_early_returns_breakdown=avg_breakdown_lc,
+                    title=f"Average early-return requests breakdown by Last Child Service::Method ({api}) (averaged over {repeats} run(s))",
                 )
-                futures.append(
-                    executor.submit(
-                        _plot_early_return_breakdown,
-                        output_path,
-                        policies=policies,
-                        rps_values=rps_values,
-                        policy_total_early_returns=avg_total_early_returns_lc,
-                        policy_early_returns_breakdown=avg_breakdown_lc,
-                        title=f"Average early-return requests breakdown by Last Child Service::Method (averaged over {repeats} run(s))",
-                    )
-                )
+            )
 
         # Submit averaged SLO miss breakdown plot
         output_dir = args.output_dir
