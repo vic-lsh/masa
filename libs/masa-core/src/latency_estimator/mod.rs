@@ -10,10 +10,10 @@ pub trait LatencyEstimator: Send + Sync {
     /// Check if the estimator has enough data to provide an estimate.
     fn can_estimate(&self) -> bool;
 
-    /// Get an estimate for the given percentile.
-    /// The percentile parameter is used by some estimators (e.g., histogram-based) to select
-    /// a specific percentile value. Other estimators may ignore this parameter.
-    fn estimate(&self, percentile: usize) -> u64;
+    /// Get an estimate.
+    /// The specific estimation strategy (e.g. which percentile to pick) is internal
+    /// to the implementation.
+    fn estimate(&self) -> u64;
 }
 
 pub use histogram::LatencyDistribution;
