@@ -17,7 +17,17 @@ import numpy as np
 import pandas as pd
 
 from . import cpu
-from .util import get_policy_color, get_policy_display_name, read_policies
+from .goodput import (
+    _plot_early_return_breakdown,
+    compute_early_return_breakdown,
+    compute_early_return_last_child_breakdown,
+)
+from .util import (
+    _parse_error_columns,
+    get_policy_color,
+    get_policy_display_name,
+    read_policies,
+)
 
 plt.rcParams["figure.max_open_warning"] = 0
 
@@ -114,10 +124,23 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
                 df = pd.read_csv(csv_path)
                 df.columns = [col.strip() for col in df.columns]
 
+                # Map columns from new CSV format if needed
+                if "e2e_latency_us" not in df.columns and "latency" in df.columns:
+                    df.rename(columns={"latency": "e2e_latency_us"}, inplace=True)
+
+                if "queue_latency_us" not in df.columns:
+                    # Sum q_lat_init and q_lat_resume if they exist
+                    q_cols = [
+                        c for c in ["q_lat_init", "q_lat_resume"] if c in df.columns
+                    ]
+                    if q_cols:
+                        df["queue_latency_us"] = df[q_cols].sum(axis=1)
+
                 if "e2e_latency_us" not in df.columns:
                     print(f"Warning: missing e2e_latency_us in {csv_path}")
                     continue
 
+                df = _parse_error_columns(df)
                 df = _filter_errors(df)
                 df = _filter_after_warmup(df, warmup_sec, csv_path)
                 if df.empty:
@@ -155,10 +178,23 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
                 df = pd.read_csv(csv_path)
                 df.columns = [col.strip() for col in df.columns]
 
+                # Map columns from new CSV format if needed
+                if "e2e_latency_us" not in df.columns and "latency" in df.columns:
+                    df.rename(columns={"latency": "e2e_latency_us"}, inplace=True)
+
+                if "queue_latency_us" not in df.columns:
+                    # Sum q_lat_init and q_lat_resume if they exist
+                    q_cols = [
+                        c for c in ["q_lat_init", "q_lat_resume"] if c in df.columns
+                    ]
+                    if q_cols:
+                        df["queue_latency_us"] = df[q_cols].sum(axis=1)
+
                 if "e2e_latency_us" not in df.columns:
                     print(f"Warning: missing e2e_latency_us in {csv_path}")
                     continue
 
+                df = _parse_error_columns(df)
                 df = _filter_errors(df)
                 df = _filter_after_warmup(df, warmup_sec, csv_path)
                 if df.empty:
@@ -495,10 +531,19 @@ def generate_plots(args) -> None:
 
         goodput_by_policy: Dict[str, List[float]] = {}
         percentiles_by_policy: Dict[str, Dict[float, List[float]]] = {}
+        early_returns_breakdown_by_policy: Dict[str, List[Dict]] = {}
+        total_early_returns_by_policy: Dict[str, List[float]] = {}
+        early_returns_lc_breakdown_by_policy: Dict[str, List[Dict]] = {}
+        total_early_returns_lc_by_policy: Dict[str, List[float]] = {}
 
         for policy in policies:
             goodput_values = []
             percentile_values: Dict[float, List[float]] = {p: [] for p in percentiles}
+            early_returns_breakdown = []
+            total_early_returns = []
+            early_returns_lc_breakdown = []
+            total_early_returns_lc = []
+
             for rps in rps_values:
                 df = policy_data.get(policy, {}).get(rps, pd.DataFrame())
                 goodput_values.append(
@@ -507,8 +552,27 @@ def generate_plots(args) -> None:
                 pct = _compute_latency_percentiles(df, percentiles)
                 for p in percentiles:
                     percentile_values[p].append(pct[p])
+
+                # Calculate early return stats
+                # Prepare DF for goodput functions (needs "latency" column)
+                df_gp = df.copy()
+                if "e2e_latency_us" in df_gp.columns:
+                    df_gp["latency"] = df_gp["e2e_latency_us"]
+
+                brk = compute_early_return_breakdown(df_gp)
+                early_returns_breakdown.append(brk)
+                total_early_returns.append(sum(brk.values()))
+
+                brk_lc = compute_early_return_last_child_breakdown(df_gp)
+                early_returns_lc_breakdown.append(brk_lc)
+                total_early_returns_lc.append(sum(brk_lc.values()))
+
             goodput_by_policy[policy] = goodput_values
             percentiles_by_policy[policy] = percentile_values
+            early_returns_breakdown_by_policy[policy] = early_returns_breakdown
+            total_early_returns_by_policy[policy] = total_early_returns
+            early_returns_lc_breakdown_by_policy[policy] = early_returns_lc_breakdown
+            total_early_returns_lc_by_policy[policy] = total_early_returns_lc
 
         per_iteration_goodput.append(goodput_by_policy)
         per_iteration_percentiles.append(percentiles_by_policy)
@@ -536,6 +600,25 @@ def generate_plots(args) -> None:
             percentiles=percentiles,
             slo_ms=slo_ms,
         )
+
+        # Plot early return breakdowns
+        _plot_early_return_breakdown(
+            str(iteration_output / "early_return.png"),
+            policies=policies,
+            rps_values=rps_values,
+            policy_total_early_returns=total_early_returns_by_policy,
+            policy_early_returns_breakdown=early_returns_breakdown_by_policy,
+            title="Early-return requests breakdown by Service::Method",
+        )
+        _plot_early_return_breakdown(
+            str(iteration_output / "early_return_last_child.png"),
+            policies=policies,
+            rps_values=rps_values,
+            policy_total_early_returns=total_early_returns_lc_by_policy,
+            policy_early_returns_breakdown=early_returns_lc_breakdown_by_policy,
+            title="Early-return requests breakdown by Last Child Service::Method",
+        )
+
         # Generate CDF plots for each RPS value
         for rps in rps_values:
             rps_policy_data = {

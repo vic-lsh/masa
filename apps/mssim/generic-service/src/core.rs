@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Once};
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tonic::{masa::context::MasaRequestExt, Request, Status};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 pub(crate) struct ServiceCore {
     config: CallGraphConfig,
@@ -248,11 +248,7 @@ impl ServiceCore {
 
                 // Spawn task for this child
                 let child = child_svc_name.clone();
-                let handle = tokio::spawn(async move {
-                    client_clone.invoke(request).await.map_err(|e| {
-                        Status::internal(format!("RPC to child service failed: {:?}", e))
-                    })
-                });
+                let handle = tokio::spawn(async move { client_clone.invoke(request).await });
                 tasks.push((child, handle));
             }
 
@@ -349,28 +345,16 @@ impl ServiceCore {
             }
 
             let child = child_svc_name.clone();
-            let handle = tokio::spawn(async move {
-                client
-                    .invoke(request)
-                    .await
-                    .map_err(|e| Status::internal(format!("RPC to child service failed: {:?}", e)))
-            });
+            let handle = tokio::spawn(async move { client.invoke(request).await });
             tasks.push((child, handle));
         }
         drop(clients_guard);
 
-        for (child_svc, handle) in tasks {
+        for (_child_svc, handle) in tasks {
             let rpc_result = handle
                 .await
                 .map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
-            rpc_result.map_err(|err| {
-                error!(
-                    "RPC to child service {} failed: {:?}",
-                    child_svc.as_str(),
-                    err
-                );
-                err
-            })?;
+            rpc_result?;
         }
         Ok(())
     }
