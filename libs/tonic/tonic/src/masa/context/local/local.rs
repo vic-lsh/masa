@@ -150,8 +150,6 @@ pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyE
     q_lat_tracker: QueueLatencyTracker,
     early_return: EarlyReturnHandler,
     child_end_times: Mutex<Vec<(ParentToChildId, Instant)>>,
-    // Map from child_method.id() to resolved child method name
-    // resolved_child_methods: Mutex<HashMap<MethodId, String>>,
 }
 
 /// Resolve the method name from HTTP request headers, checking for override header.
@@ -287,8 +285,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         if let Some(parent_to_child_id) = &child_ctx.parent_to_child_id {
             let child = &parent_to_child_id.child;
-            self.early_return
-                .set_last_child(format!("/{}/{}", child.service(), child.method()));
+            self.early_return.set_last_child(child.clone());
         }
 
         if let Err(status) = response {

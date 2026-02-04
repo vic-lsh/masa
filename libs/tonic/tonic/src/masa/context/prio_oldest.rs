@@ -1,4 +1,4 @@
-use crate::{masa::context::read_context, GrpcMethod, Request, Status};
+use crate::{masa::context::read_context, CowGrpcMethod, GrpcMethod, Request, Status};
 use std::sync::Arc;
 use std::task::Poll;
 
@@ -76,11 +76,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         }
 
         let child_method_name = resolve_method_name_from_request(child_method, request);
-        child_ctx.set_method_name(format!(
-            "/{}/{}",
-            child_method_name.service(),
-            child_method_name.method()
-        ));
+        child_ctx.set_method_name(child_method_name);
 
         let deadline = self.ctx.deadline();
         let prio_hint = self.ctx.prio_hint();
@@ -133,7 +129,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 #[derive(Debug, Clone)]
 #[allow(unreachable_pub)]
 pub struct ChildContext {
-    pub child_method_name: Option<String>,
+    pub child_method_name: Option<CowGrpcMethod>,
 }
 
 impl ClientHooks for ChildContext {
@@ -145,7 +141,7 @@ impl ClientHooks for ChildContext {
 }
 
 impl ChildContext {
-    pub(super) fn set_method_name(&mut self, name: String) {
+    pub(super) fn set_method_name(&mut self, name: CowGrpcMethod) {
         self.child_method_name = Some(name);
     }
 }
