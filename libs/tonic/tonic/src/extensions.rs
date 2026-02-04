@@ -100,7 +100,7 @@ impl GrpcMethod {
 }
 
 /// A gRPC Method info extension.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct CowGrpcMethod {
     service: Cow<'static, str>,
     method: Cow<'static, str>,
