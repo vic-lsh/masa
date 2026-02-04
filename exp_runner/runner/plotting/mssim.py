@@ -609,6 +609,7 @@ def generate_plots(args) -> None:
             policy_total_early_returns=total_early_returns_by_policy,
             policy_early_returns_breakdown=early_returns_breakdown_by_policy,
             title="Early-return requests breakdown by Service::Method",
+            stacked_services=True,
         )
         _plot_early_return_breakdown(
             str(iteration_output / "early_return_last_child.png"),
