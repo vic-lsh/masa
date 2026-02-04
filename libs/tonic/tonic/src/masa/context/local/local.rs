@@ -11,7 +11,7 @@ use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::super::{
     resolve_method_name_from_http, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks,
 };
-use super::{LatencyMap, PERCENTILE};
+use super::LatencyMap;
 use masa_core::{time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint, EARLY_RETURN};
 
 #[cfg(feature = "est_hist")]
@@ -95,7 +95,7 @@ fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
                 let mut parts = Vec::new();
                 distributions.for_each(|endpoint, distribution| {
                     if distribution.can_estimate() {
-                        let estimate = distribution.estimate(PERCENTILE);
+                        let estimate = distribution.estimate();
                         parts.push(format!("{}: {} us", endpoint, estimate));
                     } else {
                         parts.push(format!("{}: (no estimate)", endpoint));
