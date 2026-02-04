@@ -7,9 +7,9 @@ use masa_core::LatencyEstimator;
 // TODO: tweak these values. should they be specific to each local priority selector?
 pub(crate) const PERCENTILE: usize = 50;
 
-fn get_estimate<E: LatencyEstimator + Default + 'static>(
-    map: &RwLock<HashMap<String, E>>,
-    key: String,
+fn get_estimate<E: LatencyEstimator + Default + 'static, K: std::hash::Hash + Eq + Clone>(
+    map: &RwLock<HashMap<K, E>>,
+    key: K,
 ) -> Option<u64> {
     let has_method = {
         let m = map.read().unwrap();
@@ -29,9 +29,9 @@ fn get_estimate<E: LatencyEstimator + Default + 'static>(
     None
 }
 
-fn track_method_latency<E: LatencyEstimator + Default>(
-    map: &RwLock<HashMap<String, E>>,
-    key: String,
+fn track_method_latency<E: LatencyEstimator + Default, K: std::hash::Hash + Eq + Clone>(
+    map: &RwLock<HashMap<K, E>>,
+    key: K,
     duration: u64,
 ) {
     map.write()

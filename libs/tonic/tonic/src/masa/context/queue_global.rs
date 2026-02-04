@@ -1,12 +1,10 @@
-use crate::{masa::context::read_context, GrpcMethod, Request, Status};
+use crate::{masa::context::read_context, CowGrpcMethod, GrpcMethod, Request, Status};
 use std::sync::Arc;
 use std::task::Poll;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::common::{EarlyReturnHandler, QueueLatencyTracker};
-use super::{
-    resolve_method_name, resolve_service_name, MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER,
-};
+use super::{resolve_method_name_from_http, resolve_method_name_from_request, MasaRequestExt};
 use crate::Response;
 use masa_core::{Context, ContextBuilder};
 
@@ -42,16 +40,6 @@ pub struct ParentContext {
     early_return: EarlyReturnHandler,
 }
 
-/// Resolve the method name from Request metadata, checking for override header.
-fn resolve_method_name_from_request<T>(method: GrpcMethod, request: &Request<T>) -> String {
-    if let Some(header_value) = request.metadata().get(METHOD_NAME_OVERRIDE_HEADER) {
-        if let Ok(method_name) = header_value.to_str() {
-            return method_name.to_string();
-        }
-    }
-    method.id().to_string()
-}
-
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn begin<B>(
         method: GrpcMethod,
@@ -61,10 +49,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         Self {
             ctx: read_context(req),
             q_lat_tracker: QueueLatencyTracker::new(),
-            early_return: EarlyReturnHandler::new(
-                resolve_service_name(method, req),
-                resolve_method_name(method, req),
-            ),
+            early_return: EarlyReturnHandler::new(resolve_method_name_from_http(method, req)),
         }
     }
 
@@ -141,7 +126,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 #[derive(Debug, Clone)]
 #[allow(unreachable_pub)]
 pub struct ChildContext {
-    pub child_method_name: Option<String>,
+    pub child_method_name: Option<CowGrpcMethod>,
 }
 
 impl ClientHooks for ChildContext {
@@ -153,7 +138,7 @@ impl ClientHooks for ChildContext {
 }
 
 impl ChildContext {
-    pub(super) fn set_method_name(&mut self, name: String) {
+    pub(super) fn set_method_name(&mut self, name: CowGrpcMethod) {
         self.child_method_name = Some(name);
     }
 }

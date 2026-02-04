@@ -1,4 +1,4 @@
-use crate::{Code, Response, Status};
+use crate::{Code, CowGrpcMethod, Response, Status};
 #[cfg(feature = "trace-queue")]
 use masa_core::QueueLatencies;
 use masa_core::{time_now, Context, EARLY_RETURN};
@@ -10,33 +10,30 @@ use std::sync::Mutex;
 #[derive(Debug)]
 pub(crate) struct EarlyReturnHandler {
     will_early_return: AtomicBool,
-    service: String,
-    method: String,
-    last_child: Mutex<Option<String>>,
+    rpc: CowGrpcMethod,
+    last_child: Mutex<Option<CowGrpcMethod>>,
 }
 
 impl Default for EarlyReturnHandler {
     fn default() -> Self {
         Self {
             will_early_return: AtomicBool::new(false),
-            service: String::new(),
-            method: String::new(),
+            rpc: CowGrpcMethod::new("", ""),
             last_child: Mutex::new(None),
         }
     }
 }
 
 impl EarlyReturnHandler {
-    pub(crate) fn new(service: String, method: String) -> Self {
+    pub(crate) fn new(rpc: CowGrpcMethod) -> Self {
         Self {
             will_early_return: AtomicBool::new(false),
-            service,
-            method,
+            rpc,
             last_child: Mutex::new(None),
         }
     }
 
-    pub(crate) fn set_last_child(&self, child: String) {
+    pub(crate) fn set_last_child(&self, child: CowGrpcMethod) {
         if let Ok(mut last) = self.last_child.lock() {
             *last = Some(child);
         }
@@ -75,15 +72,18 @@ impl EarlyReturnHandler {
             .unwrap_or_else(|e| e.into_inner())
             .clone();
 
-        let mut msg = format!("/EarlyReturn?src={}::{}", self.service, self.method);
+        let mut msg = format!(
+            "/EarlyReturn?src={}::{}",
+            self.rpc.service(),
+            self.rpc.method()
+        );
 
         if let Some(child) = last_child {
-            let formatted_child = if child.starts_with('/') {
-                child[1..].replace('/', "::")
-            } else {
-                child
-            };
-            msg.push_str(&format!("?last_rpc={}", formatted_child));
+            msg.push_str(&format!(
+                "?last_rpc={}::{}",
+                child.service(),
+                child.method()
+            ));
         }
 
         Status::new(Code::DeadlineExceeded, msg)
