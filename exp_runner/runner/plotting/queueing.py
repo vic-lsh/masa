@@ -2,12 +2,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-
-matplotlib.use("Agg")  # Use non-interactive backend for thread safety
-plt.rcParams["figure.max_open_warning"] = 0
 
 from .util import (
     filter_excluded_errors,
@@ -17,6 +12,13 @@ from .util import (
     prepare_output_dir,
     read_data,
 )
+
+matplotlib.use("Agg")  # Use non-interactive backend for thread safety
+import matplotlib.pyplot as plt
+
+# Suppress warning about too many open figures when running in parallel
+# We properly close all figures, but many may be open simultaneously during parallel execution
+plt.rcParams["figure.max_open_warning"] = 0
 
 
 def _convert_to_milliseconds(df, cols):
@@ -255,8 +257,6 @@ def generate_plots(args) -> None:
     repeats, apis, policies, rps_values, results = read_data(
         args.config_dir, args.data_dir
     )
-
-    MS_TO_US = 10**3
 
     # Pre-process: convert queueing columns to ms
     for i in range(repeats):

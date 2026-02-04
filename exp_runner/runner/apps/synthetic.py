@@ -8,10 +8,9 @@ import logging
 import re
 import shlex
 import subprocess
-import tempfile
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import yaml
 
@@ -1038,7 +1037,7 @@ class SyntheticBuilder(AppBuilder):
                         check=True,
                         capture_output=False,
                     )
-                except subprocess.CalledProcessError as e:
+                except subprocess.CalledProcessError:
                     logger.error(
                         f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}"
                     )
@@ -1091,7 +1090,7 @@ class SyntheticBuilder(AppBuilder):
                         check=True,
                         capture_output=False,
                     )
-                except subprocess.CalledProcessError as e:
+                except subprocess.CalledProcessError:
                     logger.error(
                         f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}"
                     )
@@ -1150,7 +1149,7 @@ class SyntheticBuilder(AppBuilder):
                             check=True,
                             capture_output=False,
                         )
-                    except subprocess.CalledProcessError as e:
+                    except subprocess.CalledProcessError:
                         logger.error(
                             f"Failed to build runtime image for {binary_name}. Command: {shlex.join(runtime_cmd)}"
                         )

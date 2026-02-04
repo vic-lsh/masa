@@ -1,4 +1,3 @@
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -40,7 +39,7 @@ class TestSmokeTest:
         repo_root = tmp_path
 
         # Mock DockerManager to avoid actual docker calls
-        with patch("exp_runner.runner.experiment.DockerManager") as MockDocker:
+        with patch("exp_runner.runner.experiment.DockerManager"):
             exp = Experiment(
                 app=mock_app,
                 config=mock_config,
@@ -64,7 +63,7 @@ class TestSmokeTest:
         repo_root = tmp_path
         mock_app.verify_results.return_value = False
 
-        with patch("exp_runner.runner.experiment.DockerManager") as MockDocker:
+        with patch("exp_runner.runner.experiment.DockerManager"):
             exp = Experiment(
                 app=mock_app,
                 config=mock_config,

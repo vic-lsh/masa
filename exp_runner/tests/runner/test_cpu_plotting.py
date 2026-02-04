@@ -12,7 +12,7 @@ import csv
 import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd

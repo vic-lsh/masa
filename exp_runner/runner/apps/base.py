@@ -198,7 +198,7 @@ class LoadGenerator(ABC):
                     stderr=subprocess.STDOUT,
                     check=True,
                 )
-            except subprocess.CalledProcessError as e:
+            except subprocess.CalledProcessError:
                 logger.error(f"Load generator failed. Command: {shlex.join(cmd)}")
                 raise
 
@@ -236,7 +236,7 @@ class LoadGenerator(ABC):
                     check=True,
                     capture_output=True,
                 )
-            except subprocess.CalledProcessError as e:
+            except subprocess.CalledProcessError:
                 logger.error(
                     f"Failed to copy traces from container. Command: {shlex.join(copy_cmd)}"
                 )

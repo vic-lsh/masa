@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from ..container_utils import extract_service_name, group_containers_by_service
+from ..container_utils import extract_service_name
 from .util import get_policy_color, get_policy_display_name
 
 logger = logging.getLogger(__name__)
