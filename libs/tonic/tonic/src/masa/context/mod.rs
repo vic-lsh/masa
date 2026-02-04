@@ -361,28 +361,21 @@ fn read_context<B>(req: &http::Request<B>) -> Context {
 }
 
 /// Resolve the method name from HTTP request headers, checking for override header.
-pub(crate) fn resolve_method_name<B>(method: GrpcMethod, req: &http::Request<B>) -> String {
+pub(crate) fn resolve_method_name_from_http<B>(
+    method: GrpcMethod,
+    req: &http::Request<B>,
+) -> CowGrpcMethod {
     if let Some(header_value) = req.headers().get(METHOD_NAME_OVERRIDE_HEADER) {
         if let Ok(method_name) = header_value.to_str() {
             if let Some(service_header) = req.headers().get(SERVICE_NAME_OVERRIDE_HEADER) {
                 if let Ok(service_name) = service_header.to_str() {
-                    return format!("/{}/{}", service_name, method_name);
+                    return CowGrpcMethod::new(service_name.to_string(), method_name.to_string());
                 }
             }
-            return method_name.to_string();
+            return CowGrpcMethod::new(method.service(), method_name.to_string());
         }
     }
-    method.method().to_string()
-}
-
-/// Resolve the service name from HTTP request headers, checking for override header.
-pub(crate) fn resolve_service_name<B>(method: GrpcMethod, req: &http::Request<B>) -> String {
-    if let Some(header_value) = req.headers().get(SERVICE_NAME_OVERRIDE_HEADER) {
-        if let Ok(service_name) = header_value.to_str() {
-            return service_name.to_string();
-        }
-    }
-    method.service().to_string()
+    CowGrpcMethod::new(method.service(), method.method())
 }
 
 /// Resolve the method name from Request metadata, checking for override header.

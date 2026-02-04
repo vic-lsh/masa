@@ -1,6 +1,5 @@
 use crate::{
-    masa::context::{read_context, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER},
-    Code, CowGrpcMethod, GrpcMethod, Request, Response, Status,
+    masa::context::read_context, Code, CowGrpcMethod, GrpcMethod, Request, Response, Status,
 };
 use std::{
     collections::HashMap,
@@ -11,8 +10,7 @@ use std::{
 
 use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::super::{
-    resolve_method_name, resolve_service_name, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks,
-    ServerHooks,
+    resolve_method_name_from_http, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks,
 };
 use super::{get_estimate, track_method_latency, PERCENTILE};
 use masa_core::{time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint, EARLY_RETURN};
@@ -152,21 +150,6 @@ pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyE
     child_end_times: Mutex<Vec<(ParentToChildId, Instant)>>,
 }
 
-/// Resolve the method name from HTTP request headers, checking for override header.
-fn resolve_method_name_from_http<B>(method: GrpcMethod, req: &http::Request<B>) -> CowGrpcMethod {
-    if let Some(header_value) = req.headers().get(METHOD_NAME_OVERRIDE_HEADER) {
-        if let Ok(method_name) = header_value.to_str() {
-            if let Some(service_header) = req.headers().get(SERVICE_NAME_OVERRIDE_HEADER) {
-                if let Ok(service_name) = service_header.to_str() {
-                    return CowGrpcMethod::new(service_name.to_string(), method_name.to_string());
-                }
-            }
-            return CowGrpcMethod::new(method.service(), method_name.to_string());
-        }
-    }
-    CowGrpcMethod::new(method.service(), method.method())
-}
-
 impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, ServerContext<E>>
     for ParentContext<E>
 {
@@ -182,10 +165,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             ctx: read_context(req),
             server: server_ctx,
             q_lat_tracker: QueueLatencyTracker::new(),
-            early_return: EarlyReturnHandler::new(
-                resolve_service_name(method, req),
-                resolve_method_name(method, req),
-            ),
+            early_return: EarlyReturnHandler::new(resolve_method_name_from_http(method, req)),
             child_end_times: Mutex::new(Vec::new()),
         }
     }
@@ -431,6 +411,7 @@ mod tests {
 
     #[test]
     fn test_resolve_method_name_from_http_with_overrides() {
+        use crate::masa::context::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
         use http::HeaderValue;
 
         let method = GrpcMethod::new("TestService", "TestMethod");
@@ -463,6 +444,7 @@ mod tests {
     #[test]
     fn test_resolve_method_name_from_request_with_overrides() {
         use crate::masa::context::resolve_method_name_from_request;
+        use crate::masa::context::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
         use crate::metadata::MetadataValue;
 
         let method = GrpcMethod::new("TestService", "TestMethod");

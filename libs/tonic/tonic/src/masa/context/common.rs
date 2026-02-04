@@ -10,8 +10,7 @@ use std::sync::Mutex;
 #[derive(Debug)]
 pub(crate) struct EarlyReturnHandler {
     will_early_return: AtomicBool,
-    service: String,
-    method: String,
+    rpc: CowGrpcMethod,
     last_child: Mutex<Option<CowGrpcMethod>>,
 }
 
@@ -19,19 +18,17 @@ impl Default for EarlyReturnHandler {
     fn default() -> Self {
         Self {
             will_early_return: AtomicBool::new(false),
-            service: String::new(),
-            method: String::new(),
+            rpc: CowGrpcMethod::new("", ""),
             last_child: Mutex::new(None),
         }
     }
 }
 
 impl EarlyReturnHandler {
-    pub(crate) fn new(service: String, method: String) -> Self {
+    pub(crate) fn new(rpc: CowGrpcMethod) -> Self {
         Self {
             will_early_return: AtomicBool::new(false),
-            service,
-            method,
+            rpc,
             last_child: Mutex::new(None),
         }
     }
@@ -75,7 +72,11 @@ impl EarlyReturnHandler {
             .unwrap_or_else(|e| e.into_inner())
             .clone();
 
-        let mut msg = format!("/EarlyReturn?src={}::{}", self.service, self.method);
+        let mut msg = format!(
+            "/EarlyReturn?src={}::{}",
+            self.rpc.service(),
+            self.rpc.method()
+        );
 
         if let Some(child) = last_child {
             msg.push_str(&format!(
