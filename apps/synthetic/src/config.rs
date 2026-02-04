@@ -10,22 +10,6 @@ pub struct CallTarget {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChildService {
-    pub id: String,
-    #[serde(default = "one_u8")]
-    pub replicas: u8,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RequestHop {
-    pub service_id: String,
-    #[serde(default)]
-    pub duration_us: Option<u64>,
-    #[serde(default)]
-    pub busy_spin_dur_us: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceMethod {
     pub name: String,
     pub latency_distribution: LatencyDistribution,
@@ -53,16 +37,9 @@ pub struct CallGraphConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyntheticConfig {
-    #[serde(default)]
-    pub child_services: Vec<ChildService>,
-    #[serde(default)]
-    pub request_a_hops: Vec<RequestHop>,
-    #[serde(default)]
-    pub request_b_hops: Vec<RequestHop>,
     #[serde(default = "onef64")]
     pub child_cpus_per_replica: f64,
-    #[serde(default)]
-    pub call_graph: Option<CallGraphConfig>,
+    pub call_graph: CallGraphConfig,
 }
 
 fn one_u8() -> u8 {
@@ -169,34 +146,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_request_hops_config() {
-        let config = json!({
-            "child_services": [
-                { "id": "S1" },
-                { "id": "C6", "replicas": 2 }
-            ],
-            "request_a_hops": [
-                {
-                    "service_id": "S1",
-                    "duration_us": 12000,
-                    "busy_spin_dur_us": 3000
-                },
-                {
-                    "service_id": "C6",
-                    "busy_spin_dur_us": 1000
-                }
-            ]
-        });
-
-        let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
-        assert_eq!(parsed.child_services.len(), 2);
-        assert_eq!(parsed.child_services[1].replicas, 2);
-        assert_eq!(parsed.request_a_hops.len(), 2);
-        assert_eq!(parsed.request_a_hops[0].duration_us, Some(12000));
-        assert_eq!(parsed.request_a_hops[0].busy_spin_dur_us, Some(3000));
-    }
-
-    #[test]
     fn parses_exponential_with_mean() {
         let config = json!({
             "call_graph": {
@@ -218,7 +167,7 @@ mod tests {
         });
 
         let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
-        let call_graph = parsed.call_graph.as_ref().unwrap();
+        let call_graph = &parsed.call_graph;
         let method = &call_graph.services[0].methods[0];
         match &method.latency_distribution {
             LatencyDistribution::Exponential { lambda, mean, .. } => {
@@ -252,7 +201,7 @@ mod tests {
         });
 
         let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
-        let call_graph = parsed.call_graph.as_ref().unwrap();
+        let call_graph = &parsed.call_graph;
         let method = &call_graph.services[0].methods[0];
         match &method.latency_distribution {
             LatencyDistribution::Exponential { lambda, mean, .. } => {
@@ -310,8 +259,8 @@ mod tests {
         });
 
         let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
-        assert!(parsed.call_graph.is_some());
-        let call_graph = parsed.call_graph.as_ref().unwrap();
+
+        let call_graph = &parsed.call_graph;
         assert_eq!(call_graph.entry_point, "MS_56394::GqI6UW1mU4");
         assert_eq!(call_graph.services.len(), 2);
         assert_eq!(call_graph.services[0].id, "MS_56394");
