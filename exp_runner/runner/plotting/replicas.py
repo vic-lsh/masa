@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")  # Non-interactive backend for file output
 import matplotlib.pyplot as plt
 import numpy as np
@@ -45,7 +46,9 @@ def _extract_replicas(hotel_config: dict) -> dict[str, int]:
     return replicas
 
 
-def _collect_replica_data(in_dir: Path) -> tuple[dict[str, dict[int, dict[str, int]]], list[str]]:
+def _collect_replica_data(
+    in_dir: Path,
+) -> tuple[dict[str, dict[int, dict[str, int]]], list[str]]:
     data: dict[str, dict[int, dict[str, int]]] = {}
     services: set[str] = set()
 
@@ -140,8 +143,7 @@ def _plot_policy_replica_lines(
     for policy in sorted(data.keys()):
         rps_values = sorted(data[policy].keys())
         totals = [
-            sum(int(v or 0) for v in data[policy][rps].values())
-            for rps in rps_values
+            sum(int(v or 0) for v in data[policy][rps].values()) for rps in rps_values
         ]
         ax.plot(rps_values, totals, marker="o", label=get_policy_display_name(policy))
 
