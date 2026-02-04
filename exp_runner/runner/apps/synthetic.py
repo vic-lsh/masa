@@ -5,6 +5,7 @@ Synthetic application plugin.
 import hashlib
 import json
 import logging
+import os
 import re
 import shlex
 import subprocess
@@ -856,9 +857,10 @@ class SyntheticApp(AppPlugin):
             bench_img = f"synthetic_client_bench:{image_tag}"
             images = [frontend_img, child_img, bench_img]
 
+            cluster_name = os.environ.get("KIND_CLUSTER_NAME", "kind")
+
             try:
-                # TODO: make cluster name configurable
-                docker.load_image_to_cluster("kind", images)
+                docker.load_image_to_cluster(cluster_name, images)
             except Exception as e:
                 logger.warning(f"Failed to load images to kind: {e}")
 
