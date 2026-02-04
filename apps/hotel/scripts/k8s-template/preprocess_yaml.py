@@ -1,7 +1,7 @@
 import argparse
 import json
 import os
-from typing import *
+from typing import Dict
 
 
 def parse_args() -> argparse.Namespace:

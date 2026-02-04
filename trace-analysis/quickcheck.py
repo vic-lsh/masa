@@ -2,33 +2,36 @@
 # coding: utf-8
 from __future__ import annotations
 
-from pathlib import Path
-import pandas as pd
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from functools import partial
-import sys
-import logging
 import argparse
-from tqdm import tqdm
-import networkx as nx
+import logging
+import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
+
 import matplotlib
+import networkx as nx
+import pandas as pd
+from tqdm import tqdm
+
 matplotlib.use("Agg")  # Headless/parallel-safe plotting
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
+import copy
+import json
+import re
+from collections import Counter, defaultdict
+
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
-from matplotlib.collections import LineCollection
-import copy
-import re
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
 import numpy as np
-import json
-from collections import defaultdict, Counter
 
 # Set up logger
 logger = logging.getLogger(__name__)
 
+
 class TqdmLoggingHandler(logging.Handler):
     """Logging handler that uses tqdm.write() to avoid interfering with progress bars."""
+
     def emit(self, record):
         try:
             msg = self.format(record)
@@ -36,9 +39,11 @@ class TqdmLoggingHandler(logging.Handler):
         except Exception:
             self.handleError(record)
 
+
 # ----------------------------
 # Parallel CSV loading (processes)
 # ----------------------------
+
 
 def _sample_traces_from_df(
     df: pd.DataFrame,
@@ -49,60 +54,61 @@ def _sample_traces_from_df(
     """
     Sample a fraction of traces from a single dataframe.
     Helper function for use during parallel CSV loading.
-    
+
     Args:
         df: Input dataframe with trace data
         fraction: Fraction of traces to sample (0.0 to 1.0)
         trace_col: Column name containing trace IDs (default: "traceid")
         random_state: Random seed for reproducibility (default: None)
-    
+
     Returns:
         DataFrame containing all rows for the sampled traces
     """
     if fraction >= 1.0:
         return df
-    
+
     if trace_col not in df.columns:
         return df
-    
+
     # Get unique trace IDs
     unique_traces = df[trace_col].dropna().unique()
-    
+
     if len(unique_traces) == 0:
         return pd.DataFrame()
-    
+
     # Sample trace IDs
     n_samples = max(1, int(len(unique_traces) * fraction))
-    sampled_trace_ids = pd.Series(unique_traces).sample(
-        n=n_samples, 
-        random_state=random_state
-    ).values
-    
+    sampled_trace_ids = (
+        pd.Series(unique_traces).sample(n=n_samples, random_state=random_state).values
+    )
+
     # Filter dataframe to keep all rows for sampled traces
     sampled_df = df[df[trace_col].isin(sampled_trace_ids)].copy()
-    
+
     return sampled_df
+
 
 def _read_and_sample_one(args: tuple) -> pd.DataFrame:
     """
     Read a CSV file and optionally sample traces from it.
-    
+
     Args:
         args: Tuple of (path, sample_fraction, trace_col, random_state, read_csv_kwargs)
-    
+
     Returns:
         Loaded and optionally sampled DataFrame
     """
     path, sample_fraction, trace_col, random_state, read_csv_kwargs = args
-    
+
     # Read CSV
     df = pd.read_csv(path, **read_csv_kwargs)
-    
+
     # Sample traces if requested
     if sample_fraction < 1.0:
         df = _sample_traces_from_df(df, sample_fraction, trace_col, random_state)
-    
+
     return df
+
 
 def read_csvs_parallel(
     paths: list[str | Path],
@@ -115,7 +121,7 @@ def read_csvs_parallel(
 ) -> pd.DataFrame:
     """
     Read multiple CSV files in parallel and optionally sample traces from each.
-    
+
     Args:
         paths: List of CSV file paths to read
         n_workers: Number of parallel workers (default: None, uses CPU count)
@@ -124,23 +130,32 @@ def read_csvs_parallel(
         trace_col: Column name containing trace IDs (default: "traceid")
         random_state: Random seed for reproducibility (default: None)
         **read_csv_kwargs: Additional arguments to pass to pd.read_csv
-    
+
     Returns:
         Concatenated DataFrame from all CSVs (after sampling if requested)
     """
     paths = list(paths)
-    
+
     # Prepare arguments for parallel processing
     process_args = [
         (path, sample_fraction, trace_col, random_state, read_csv_kwargs)
         for path in paths
     ]
-    
+
     dfs = []
 
     with ProcessPoolExecutor(max_workers=n_workers) as ex:
-        futures = {ex.submit(_read_and_sample_one, args): path for args, path in zip(process_args, paths)}
-        for fut in tqdm(as_completed(futures), total=len(futures), desc="Reading CSVs", file=sys.stderr, dynamic_ncols=True):
+        futures = {
+            ex.submit(_read_and_sample_one, args): path
+            for args, path in zip(process_args, paths)
+        }
+        for fut in tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc="Reading CSVs",
+            file=sys.stderr,
+            dynamic_ncols=True,
+        ):
             path = futures[fut]
             try:
                 df = fut.result()
@@ -153,9 +168,11 @@ def read_csvs_parallel(
         return pd.DataFrame()
     return pd.concat(dfs, ignore_index=True, sort=False)
 
+
 # ----------------------------
 # Paths & utilities
 # ----------------------------
+
 
 def _get_project_home() -> Path:
     """
@@ -166,20 +183,22 @@ def _get_project_home() -> Path:
     cwd = Path.cwd()
     if (cwd / "traces").exists():
         return cwd
-    
+
     # Otherwise, derive from script location
     # Script is at trace-analysis/analyze.py, so project root is parent
     script_dir = Path(__file__).parent.resolve()
     project_root = script_dir.parent
-    
+
     # Verify traces/ exists
     if (project_root / "traces").exists():
         return project_root
-    
+
     # Fallback: return parent anyway (will fail later with clear error)
     return project_root
 
+
 PROJECT_HOME = _get_project_home()
+
 
 def get_csv_path(dataset_number: int) -> Path:
     return (
@@ -192,9 +211,11 @@ def get_csv_path(dataset_number: int) -> Path:
         / f"CallGraph_{dataset_number}.csv"
     )
 
+
 # ----------------------------
 # Data loading & filtering
 # ----------------------------
+
 
 def load_concat_datasets(
     max_dataset: int,
@@ -206,7 +227,7 @@ def load_concat_datasets(
 ) -> pd.DataFrame:
     """
     Load and concatenate multiple CSV datasets in parallel, optionally sampling traces from each.
-    
+
     Args:
         max_dataset: Maximum dataset number (0-indexed, loads datasets 0 through max_dataset)
         max_rows: Maximum number of rows to load from each CSV file (default: None, loads all)
@@ -214,7 +235,7 @@ def load_concat_datasets(
         trace_col: Column name containing trace IDs (default: "traceid")
         random_state: Random seed for reproducibility (default: None)
         n_workers: Number of parallel workers (default: None, uses CPU count)
-    
+
     Returns:
         Concatenated DataFrame from all datasets (after sampling if requested)
     """
@@ -230,34 +251,36 @@ def load_concat_datasets(
         **read_kwargs,
     )
 
+
 def _filter_chunk(args: tuple) -> pd.DataFrame:
     """
     Helper function to filter a chunk of dataframe in parallel.
-    
+
     Args:
         args: Tuple of (chunk_df, sampled_trace_ids_set, trace_col)
-    
+
     Returns:
         Filtered chunk dataframe
     """
     chunk_df, sampled_trace_ids_set, trace_col = args
     return chunk_df[chunk_df[trace_col].isin(sampled_trace_ids_set)].copy()
 
+
 def sample_traces(
-    df: pd.DataFrame, 
-    fraction: float, 
-    trace_col: str = "traceid", 
+    df: pd.DataFrame,
+    fraction: float,
+    trace_col: str = "traceid",
     random_state: int | None = None,
     n_workers: int | None = None,
     use_parallel: bool = True,
-    chunk_size: int = 10000000
+    chunk_size: int = 10000000,
 ) -> pd.DataFrame:
     """
     Sample a fraction of traces from the dataframe.
-    
+
     For rows belonging to the same trace, either keep them all or drop them all
     (maintains trace integrity).
-    
+
     Args:
         df: Input dataframe with trace data
         fraction: Fraction of traces to sample (0.0 to 1.0)
@@ -266,89 +289,107 @@ def sample_traces(
         n_workers: Number of parallel workers for filtering (default: None, uses CPU count)
         use_parallel: Whether to use parallel filtering (default: True)
         chunk_size: Number of rows per chunk for parallel processing (default: 100000)
-    
+
     Returns:
         DataFrame containing all rows for the sampled traces
     """
     if fraction <= 0.0 or fraction > 1.0:
         raise ValueError(f"fraction must be in (0.0, 1.0], got {fraction}")
-    
+
     if trace_col not in df.columns:
         raise ValueError(f"Column '{trace_col}' not found in dataframe")
-    
+
     # Get unique trace IDs
     unique_traces = df[trace_col].dropna().unique()
-    
+
     if len(unique_traces) == 0:
         logger.warning("No valid trace IDs found")
         return pd.DataFrame()
-    
+
     # Sample trace IDs
     n_samples = max(1, int(len(unique_traces) * fraction))
-    sampled_trace_ids = pd.Series(unique_traces).sample(
-        n=n_samples, 
-        random_state=random_state
-    ).values
-    
+    sampled_trace_ids = (
+        pd.Series(unique_traces).sample(n=n_samples, random_state=random_state).values
+    )
+
     # Convert to set for faster lookup
     sampled_trace_ids_set = set(sampled_trace_ids)
-    
+
     # Filter dataframe to keep all rows for sampled traces
     # Use parallel filtering for large dataframes
     if use_parallel and len(df) > chunk_size:
         # Split dataframe into chunks
         n_chunks = (len(df) + chunk_size - 1) // chunk_size
-        chunks = [df.iloc[i*chunk_size:(i+1)*chunk_size].copy() for i in range(n_chunks)]
-        
-        logger.info(f"Filtering {len(df):,} rows in {n_chunks} chunk(s) using {n_workers or 'auto'} worker(s)")
-        
+        chunks = [
+            df.iloc[i * chunk_size : (i + 1) * chunk_size].copy()
+            for i in range(n_chunks)
+        ]
+
+        logger.info(
+            f"Filtering {len(df):,} rows in {n_chunks} chunk(s) using {n_workers or 'auto'} worker(s)"
+        )
+
         # Filter chunks in parallel
         process_args = [(chunk, sampled_trace_ids_set, trace_col) for chunk in chunks]
-        
+
         with ProcessPoolExecutor(max_workers=n_workers) as ex:
-            futures = {ex.submit(_filter_chunk, args): i for i, args in enumerate(process_args)}
+            futures = {
+                ex.submit(_filter_chunk, args): i for i, args in enumerate(process_args)
+            }
             filtered_chunks = [None] * len(chunks)
-            
-            for fut in tqdm(as_completed(futures), total=len(futures), desc="Filtering chunks", file=sys.stderr, dynamic_ncols=True):
+
+            for fut in tqdm(
+                as_completed(futures),
+                total=len(futures),
+                desc="Filtering chunks",
+                file=sys.stderr,
+                dynamic_ncols=True,
+            ):
                 chunk_idx = futures[fut]
                 try:
                     filtered_chunks[chunk_idx] = fut.result()
                 except Exception as e:
                     logger.error(f"Failed to filter chunk {chunk_idx}: {e!r}")
                     raise
-        
+
         # Concatenate filtered chunks
         sampled_df = pd.concat(filtered_chunks, ignore_index=True, sort=False)
     else:
         # Use sequential filtering for small dataframes or when parallel is disabled
         sampled_df = df[df[trace_col].isin(sampled_trace_ids_set)].copy()
-    
-    logger.info(f"Sampled {len(sampled_trace_ids):,} traces ({fraction*100:.1f}%) from {len(unique_traces):,} unique traces")
+
+    logger.info(
+        f"Sampled {len(sampled_trace_ids):,} traces ({fraction * 100:.1f}%) from {len(unique_traces):,} unique traces"
+    )
     logger.info(f"Result: {len(sampled_df):,} rows from {len(df):,} original rows")
-    
+
     return sampled_df
+
 
 # ----------------------------
 # Data cleaning
 # ----------------------------
 
+
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Clean the dataframe by removing rows where 'um' or 'dm' equals 'UNKNOWN' or 'UNAVAILABLE'.
-    
+
     Args:
         df: Input dataframe with trace data
-    
+
     Returns:
         Cleaned dataframe
     """
     original_len = len(df)
-    
+
     # Remove rows where um or dm equals UNKNOWN or UNAVAILABLE
     if "um" in df.columns and "dm" in df.columns:
         cleaned_df = df[
-            (df["um"] != "UNKNOWN") & (df["um"] != "UNAVAILABLE") &
-            (df["dm"] != "UNKNOWN") & (df["dm"] != "UNAVAILABLE")
+            (df["um"] != "UNKNOWN")
+            & (df["um"] != "UNAVAILABLE")
+            & (df["dm"] != "UNKNOWN")
+            & (df["dm"] != "UNAVAILABLE")
         ].copy()
     elif "um" in df.columns:
         cleaned_df = df[(df["um"] != "UNKNOWN") & (df["um"] != "UNAVAILABLE")].copy()
@@ -357,18 +398,22 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     else:
         logger.warning("Columns 'um' or 'dm' not found, skipping cleaning")
         return df
-    
+
     removed = original_len - len(cleaned_df)
     if removed > 0:
-        logger.info(f"Cleaned data: removed {removed:,} rows where 'um' or 'dm' equals UNKNOWN or UNAVAILABLE (from {original_len:,} to {len(cleaned_df):,} rows)")
+        logger.info(
+            f"Cleaned data: removed {removed:,} rows where 'um' or 'dm' equals UNKNOWN or UNAVAILABLE (from {original_len:,} to {len(cleaned_df):,} rows)"
+        )
     else:
         logger.info("No rows found with 'um' or 'dm' equal to UNKNOWN or UNAVAILABLE")
-    
+
     return cleaned_df
+
 
 # ----------------------------
 # Analysis functions
 # ----------------------------
+
 
 def _parent_rpc_id(rpc_id: str | float | int | None) -> str | None:
     """
@@ -382,43 +427,44 @@ def _parent_rpc_id(rpc_id: str | float | int | None) -> str | None:
             return None
     except (TypeError, ValueError):
         pass
-    
+
     rpc_str = str(rpc_id).strip()
     if not rpc_str or "." not in rpc_str:
         return None
     return rpc_str.rsplit(".", 1)[0]
 
+
 def _extract_edges_from_trace(trace_df: pd.DataFrame) -> list[tuple[str, str]]:
     """
     Extract edges (um -> dm) from a single trace based on rpc_id hierarchy.
-    
+
     Args:
         trace_df: DataFrame containing rows for a single trace
-    
+
     Returns:
         List of (source, target) edge tuples
     """
     if "rpc_id" not in trace_df.columns or "dm" not in trace_df.columns:
         return []
-    
+
     trace_df = trace_df.copy()
     trace_df["rpc_id_str"] = trace_df["rpc_id"].astype(str).str.strip()
-    
+
     # Create mapping from rpc_id to dm
     rpc_to_dm = {}
     rpc_groups = trace_df.groupby("rpc_id_str")
-    
+
     for rpc_id, group in rpc_groups:
         if rpc_id and rpc_id != "" and rpc_id != "nan":
             dm_values = group["dm"].dropna().unique()
             if len(dm_values) > 0:
                 rpc_to_dm[rpc_id] = dm_values[0]
-    
+
     # Build edge list
     edges = []
     for rpc_id, dm in rpc_to_dm.items():
         parent_rpc_id = _parent_rpc_id(rpc_id)
-        
+
         if parent_rpc_id is None:
             # Root call - edge from USER to dm
             source = "USER"
@@ -431,28 +477,31 @@ def _extract_edges_from_trace(trace_df: pd.DataFrame) -> list[tuple[str, str]]:
             else:
                 # Parent not found, skip this edge
                 continue
-        
+
         edges.append((source, target))
-    
+
     return edges
 
-def _hierarchical_layout(G: nx.DiGraph, ranksep: float = 2.0, nodesep: float = 0.8) -> dict:
+
+def _hierarchical_layout(
+    G: nx.DiGraph, ranksep: float = 2.0, nodesep: float = 0.8
+) -> dict:
     """
     Create a hierarchical layout for a directed graph with roots at the top.
     Uses Graphviz's 'dot' layout if available (same as analyze.py), otherwise falls back
     to a custom hierarchical layout.
-    
+
     Args:
         G: NetworkX directed graph
         ranksep: Minimum distance between ranks/layers (for Graphviz)
         nodesep: Minimum distance between nodes in the same rank (for Graphviz)
-    
+
     Returns:
         Dictionary mapping nodes to (x, y) positions
     """
     if G.number_of_nodes() == 0:
         return {}
-    
+
     # Try to use Graphviz layout (same as analyze.py)
     try:
         pos = nx.nx_agraph.graphviz_layout(
@@ -462,72 +511,73 @@ def _hierarchical_layout(G: nx.DiGraph, ranksep: float = 2.0, nodesep: float = 0
     except (ImportError, AttributeError, Exception):
         # Fall back to custom hierarchical layout if Graphviz is not available
         pass
-    
+
     # Custom hierarchical layout (fallback)
     # Find root nodes (nodes with in_degree == 0)
     roots = [n for n in G.nodes() if G.in_degree(n) == 0]
-    
+
     if not roots:
         # If no roots found, use nodes with minimum in_degree
         min_in_degree = min(G.in_degree(n) for n in G.nodes())
         roots = [n for n in G.nodes() if G.in_degree(n) == min_in_degree]
-    
+
     # Compute depth/layer for each node using BFS
     node_depth = {}
     visited = set()
     queue = [(root, 0) for root in roots]
-    
+
     while queue:
         node, depth = queue.pop(0)
         if node in visited:
             continue
         visited.add(node)
         node_depth[node] = depth
-        
+
         # Add children to queue
         for successor in G.successors(node):
             if successor not in visited:
                 queue.append((successor, depth + 1))
-    
+
     # Handle any unvisited nodes (disconnected components)
     for node in G.nodes():
         if node not in node_depth:
             # Find shortest path to any root
-            min_depth = float('inf')
+            min_depth = float("inf")
             for root in roots:
                 try:
                     path_length = nx.shortest_path_length(G, root, node)
                     min_depth = min(min_depth, path_length)
                 except nx.NetworkXNoPath:
                     continue
-            node_depth[node] = min_depth if min_depth != float('inf') else 0
-    
+            node_depth[node] = min_depth if min_depth != float("inf") else 0
+
     # Group nodes by depth
     depth_groups = {}
     for node, depth in node_depth.items():
         if depth not in depth_groups:
             depth_groups[depth] = []
         depth_groups[depth].append(node)
-    
+
     max_depth = max(depth_groups.keys()) if depth_groups else 0
-    
+
     # Position nodes: roots at top (y=0), children below (y increases downward)
     pos = {}
     for depth, nodes in depth_groups.items():
         # Y position: top is 0, bottom is max_depth (inverted for matplotlib)
         y = max_depth - depth
-        
+
         # X positions: distribute nodes evenly across width
         n_nodes = len(nodes)
         if n_nodes == 1:
             x_positions = [0.0]
         else:
             x_positions = [i / (n_nodes - 1) * 2 - 1 for i in range(n_nodes)]
-        
+
         for node, x in zip(sorted(nodes), x_positions):
             pos[node] = (x, y)
-    
+
     return pos
+
 
 def _compute_dynamic_figsize(
     G: nx.DiGraph,
@@ -542,50 +592,52 @@ def _compute_dynamic_figsize(
 ) -> tuple[float, float]:
     """
     Compute dynamic figure size based on graph complexity.
-    
+
     Args:
         G: NetworkX graph
         base_width, base_height: Base dimensions
         width_per_node, height_per_node: Scaling factors per node
         min_width, min_height: Minimum dimensions
         max_width, max_height: Maximum dimensions
-    
+
     Returns:
         (width, height) tuple for matplotlib figsize
     """
     num_nodes = G.number_of_nodes()
     num_edges = G.number_of_edges()
-    
+
     # Base calculation on number of nodes
     width = base_width + (num_nodes * width_per_node)
     height = base_height + (num_nodes * height_per_node)
-    
+
     # Add extra space for highly connected graphs
     if num_nodes > 0:
         edge_density = num_edges / num_nodes
         if edge_density > 5:
             width *= 1.1
             height *= 1.05
-    
+
     # Clamp to min/max bounds
     width = max(min_width, min(width, max_width))
     height = max(min_height, min(height, max_height))
-    
+
     return (width, height)
+
 
 def _slugify(name: str) -> str:
     """
     Convert a service name to a filesystem-safe slug.
-    
+
     Args:
         name: Service name string
-    
+
     Returns:
         Filesystem-safe slug
     """
     s = re.sub(r"[^\w\-]+", "_", name.strip())
     s = re.sub(r"_+", "_", s).strip("_")
     return s or "service"
+
 
 def _normalize_interface(value: object) -> str:
     """
@@ -598,6 +650,7 @@ def _normalize_interface(value: object) -> str:
         return "<none>"
     return text
 
+
 def _format_dm_interface(dm: str, interface: str | None) -> str:
     """
     Format dm/interface into a call label.
@@ -605,11 +658,13 @@ def _format_dm_interface(dm: str, interface: str | None) -> str:
     iface = _normalize_interface(interface)
     return f"{dm}::{iface}"
 
+
 def _strip_interface_label(label: str) -> str:
     """
     Return the dm portion of a dm::interface label.
     """
     return label.split("::", 1)[0]
+
 
 def _extract_timing_from_trace(
     trace_df: pd.DataFrame,
@@ -617,33 +672,33 @@ def _extract_timing_from_trace(
 ) -> dict[tuple[str, str], list[dict]]:
     """
     Extract timing information for parent-child relationships from a trace.
-    
+
     Args:
         trace_df: DataFrame containing rows for a single trace
         G: NetworkX graph with the service's call structure
-    
+
     Returns:
         Dictionary mapping (parent_dm, child_dm) -> list of timing dicts
         Each timing dict has: start_time, end_time, parent_start, parent_end, rpc_id
     """
     if "rpc_id" not in trace_df.columns or "dm" not in trace_df.columns:
         return {}
-    
+
     if "timestamp" not in trace_df.columns or "rt" not in trace_df.columns:
         return {}
-    
+
     trace_df = trace_df.copy()
     trace_df["rpc_id_str"] = trace_df["rpc_id"].astype(str).str.strip()
-    
+
     # Convert timestamps and runtime
     trace_df["timestamp"] = pd.to_numeric(trace_df["timestamp"], errors="coerce")
     trace_df["rt"] = pd.to_numeric(trace_df["rt"], errors="coerce")
     trace_df["end_time"] = trace_df["timestamp"] + trace_df["rt"]
-    
+
     # Create mapping from rpc_id to (dm, start_time, end_time)
     rpc_info = {}
     rpc_groups = trace_df.groupby("rpc_id_str")
-    
+
     for rpc_id, group in rpc_groups:
         if rpc_id and rpc_id != "" and rpc_id != "nan":
             dm_values = group["dm"].dropna().unique()
@@ -658,22 +713,26 @@ def _extract_timing_from_trace(
                 # Try to get valid timestamps - use median if min/max are invalid
                 valid_timestamps = group["timestamp"].dropna()
                 valid_end_times = group["end_time"].dropna()
-                
+
                 if len(valid_timestamps) > 0 and len(valid_end_times) > 0:
                     start_time = valid_timestamps.min()
                     end_time = valid_end_times.max()
                     # Only include if we have reasonable timing data
-                    if pd.notna(start_time) and pd.notna(end_time) and end_time >= start_time:
+                    if (
+                        pd.notna(start_time)
+                        and pd.notna(end_time)
+                        and end_time >= start_time
+                    ):
                         rpc_info[rpc_id] = {
                             "dm": dm,
                             "interface": interface,
                             "start_time": start_time,
                             "end_time": end_time,
                         }
-    
+
     # Build parent-child timing relationships
     timing_data = defaultdict(list)
-    
+
     # Also create a mapping from rpc_id to dm for edges without timing
     rpc_to_dm_no_timing = {}
     for rpc_id, group in trace_df.groupby("rpc_id_str"):
@@ -682,24 +741,28 @@ def _extract_timing_from_trace(
             if len(dm_values) > 0 and rpc_id not in rpc_info:
                 # This rpc_id exists but has no valid timing data
                 rpc_to_dm_no_timing[rpc_id] = dm_values[0]
-    
+
     for rpc_id, info in rpc_info.items():
         parent_rpc_id = _parent_rpc_id(rpc_id)
-        
+
         if parent_rpc_id is None:
             # Root call - parent is USER
             if "USER" in G.nodes():
                 parent_dm = "USER"
                 child_dm = info["dm"]
                 if (parent_dm, child_dm) in G.edges():
-                    timing_data[(parent_dm, child_dm)].append({
-                        "start_time": info["start_time"],
-                        "end_time": info["end_time"],
-                        "parent_start": info["start_time"],  # USER call starts when child starts
-                        "parent_end": info["end_time"],
-                        "rpc_id": rpc_id,
-                        "interface": info.get("interface"),
-                    })
+                    timing_data[(parent_dm, child_dm)].append(
+                        {
+                            "start_time": info["start_time"],
+                            "end_time": info["end_time"],
+                            "parent_start": info[
+                                "start_time"
+                            ],  # USER call starts when child starts
+                            "parent_end": info["end_time"],
+                            "rpc_id": rpc_id,
+                            "interface": info.get("interface"),
+                        }
+                    )
         else:
             # Child call - find parent's timing
             if parent_rpc_id in rpc_info:
@@ -707,13 +770,13 @@ def _extract_timing_from_trace(
                 parent_info = rpc_info[parent_rpc_id]
                 parent_dm = parent_info["dm"]
                 child_dm = info["dm"]
-                
+
                 # Validate that child span is within parent span (or at most equal)
                 child_start = info["start_time"]
                 child_end = info["end_time"]
                 parent_start = parent_info["start_time"]
                 parent_end = parent_info["end_time"]
-                
+
                 # Check if child span is strictly shorter than or equal to parent span
                 # Child must start at or after parent and end at or before parent
                 if child_start < parent_start or child_end > parent_end:
@@ -723,35 +786,44 @@ def _extract_timing_from_trace(
                     # Ensure child end is still after start
                     if child_end <= child_start:
                         child_end = child_start + 1  # Minimal duration
-                
+
                 # Only include if this edge exists in the graph
                 if (parent_dm, child_dm) in G.edges():
-                    timing_data[(parent_dm, child_dm)].append({
-                        "start_time": child_start,
-                        "end_time": child_end,
-                        "parent_start": parent_start,
-                        "parent_end": parent_end,
-                        "rpc_id": rpc_id,
-                        "interface": info.get("interface"),
-                    })
+                    timing_data[(parent_dm, child_dm)].append(
+                        {
+                            "start_time": child_start,
+                            "end_time": child_end,
+                            "parent_start": parent_start,
+                            "parent_end": parent_end,
+                            "rpc_id": rpc_id,
+                            "interface": info.get("interface"),
+                        }
+                    )
             elif parent_rpc_id in rpc_to_dm_no_timing:
                 # Child has timing but parent doesn't - still try to include child timing
                 # Use child's timing as a fallback for parent timing
                 parent_dm = rpc_to_dm_no_timing[parent_rpc_id]
                 child_dm = info["dm"]
-                
+
                 if (parent_dm, child_dm) in G.edges():
                     # Use child's start as parent start estimate
-                    timing_data[(parent_dm, child_dm)].append({
-                        "start_time": info["start_time"],
-                        "end_time": info["end_time"],
-                        "parent_start": info["start_time"],  # Estimate: parent starts when child starts
-                        "parent_end": info["end_time"],  # Estimate: parent ends when child ends
-                        "rpc_id": rpc_id,
-                        "interface": info.get("interface"),
-                    })
-    
+                    timing_data[(parent_dm, child_dm)].append(
+                        {
+                            "start_time": info["start_time"],
+                            "end_time": info["end_time"],
+                            "parent_start": info[
+                                "start_time"
+                            ],  # Estimate: parent starts when child starts
+                            "parent_end": info[
+                                "end_time"
+                            ],  # Estimate: parent ends when child ends
+                            "rpc_id": rpc_id,
+                            "interface": info.get("interface"),
+                        }
+                    )
+
     return dict(timing_data)
+
 
 def _extract_call_sequence_from_trace(
     trace_timing: dict[tuple[str, str], list[dict]],
@@ -777,17 +849,19 @@ def _extract_call_sequence_from_trace(
     for (p, c), timings in trace_timing.items():
         if p == parent:
             for timing in timings:
-                children_calls.append({
-                    'child': _format_dm_interface(c, timing.get("interface")),
-                    'start': timing.get('start_time', timing.get('start', 0)),
-                    'end': timing.get('end_time', timing.get('end', 0)),
-                })
+                children_calls.append(
+                    {
+                        "child": _format_dm_interface(c, timing.get("interface")),
+                        "start": timing.get("start_time", timing.get("start", 0)),
+                        "end": timing.get("end_time", timing.get("end", 0)),
+                    }
+                )
 
     if not children_calls:
         return []
 
     # Sort all calls by start time
-    children_calls.sort(key=lambda e: e['start'])
+    children_calls.sort(key=lambda e: e["start"])
 
     # Group into sequential stages based on temporal ordering
     # Calls that overlap significantly are in the same stage (parallel)
@@ -800,13 +874,15 @@ def _extract_call_sequence_from_trace(
         overlaps_with_stage = False
 
         for stage_call in current_stage_calls:
-            overlap_start = max(call['start'], stage_call['start'])
-            overlap_end = min(call['end'], stage_call['end'])
+            overlap_start = max(call["start"], stage_call["start"])
+            overlap_end = min(call["end"], stage_call["end"])
 
             if overlap_start < overlap_end:
                 # Calculate overlap ratio
                 overlap_duration = overlap_end - overlap_start
-                min_duration = min(call['end'] - call['start'], stage_call['end'] - stage_call['start'])
+                min_duration = min(
+                    call["end"] - call["start"], stage_call["end"] - stage_call["start"]
+                )
                 if min_duration > 0:
                     overlap_ratio = overlap_duration / min_duration
                     if overlap_ratio >= overlap_threshold:
@@ -819,14 +895,15 @@ def _extract_call_sequence_from_trace(
         else:
             # Start new stage (sequential)
             if current_stage_calls:
-                stages.append(set(c['child'] for c in current_stage_calls))
+                stages.append(set(c["child"] for c in current_stage_calls))
             current_stage_calls = [call]
 
     # Add final stage
     if current_stage_calls:
-        stages.append(set(c['child'] for c in current_stage_calls))
+        stages.append(set(c["child"] for c in current_stage_calls))
 
     return stages
+
 
 def _compute_sequence_similarity(seq1: list[set[str]], seq2: list[set[str]]) -> float:
     """
@@ -869,9 +946,9 @@ def _compute_sequence_similarity(seq1: list[set[str]], seq2: list[set[str]]) -> 
     # Weighted combination: 70% Jaccard (what is called), 30% length (how many stages)
     return 0.7 * jaccard + 0.3 * len_similarity
 
+
 def _align_sequence_pair(
-    seq1: list[set[str]],
-    seq2: list[set[str]]
+    seq1: list[set[str]], seq2: list[set[str]]
 ) -> tuple[list[set[str] | None], list[set[str] | None]]:
     """
     Align two sequences using dynamic programming to find optimal alignment.
@@ -897,11 +974,11 @@ def _align_sequence_pair(
     # Fill DP table
     for i in range(1, n + 1):
         dp[i][0] = i * gap_penalty
-        traceback[i][0] = 'up'
+        traceback[i][0] = "up"
 
     for j in range(1, m + 1):
         dp[0][j] = j * gap_penalty
-        traceback[0][j] = 'left'
+        traceback[0][j] = "left"
 
     for i in range(1, n + 1):
         for j in range(1, m + 1):
@@ -920,13 +997,13 @@ def _align_sequence_pair(
 
             if match >= delete and match >= insert:
                 dp[i][j] = match
-                traceback[i][j] = 'diag'
+                traceback[i][j] = "diag"
             elif delete >= insert:
                 dp[i][j] = delete
-                traceback[i][j] = 'up'
+                traceback[i][j] = "up"
             else:
                 dp[i][j] = insert
-                traceback[i][j] = 'left'
+                traceback[i][j] = "left"
 
     # Reconstruct alignment
     aligned1 = []
@@ -936,12 +1013,12 @@ def _align_sequence_pair(
     while i > 0 or j > 0:
         direction = traceback[i][j]
 
-        if direction == 'diag':
+        if direction == "diag":
             aligned1.append(seq1[i - 1])
             aligned2.append(seq2[j - 1])
             i -= 1
             j -= 1
-        elif direction == 'up':
+        elif direction == "up":
             aligned1.append(seq1[i - 1])
             aligned2.append(None)
             i -= 1
@@ -956,8 +1033,9 @@ def _align_sequence_pair(
 
     return aligned1, aligned2
 
+
 def _build_consensus_from_aligned(
-    aligned_sequences: list[list[set[str] | None]]
+    aligned_sequences: list[list[set[str] | None]],
 ) -> list[set[str]]:
     """
     Build a consensus sequence from multiple aligned sequences.
@@ -1002,6 +1080,7 @@ def _build_consensus_from_aligned(
             consensus.append(consensus_stage)
 
     return consensus
+
 
 def _aggregate_call_sequences(
     sequences: list[list[set[str]]],
@@ -1091,7 +1170,11 @@ def _aggregate_call_sequences(
         zero_indegree = [node for node in remaining if indegree[node] == 0]
         if not zero_indegree:
             weakest_edge = min(
-                (edge for edge in edge_weights if edge[0] in remaining and edge[1] in remaining),
+                (
+                    edge
+                    for edge in edge_weights
+                    if edge[0] in remaining and edge[1] in remaining
+                ),
                 key=lambda edge: edge_weights[edge],
                 default=None,
             )
@@ -1125,6 +1208,7 @@ def _aggregate_call_sequences(
             prob_stages.append(stage_probs)
 
     return prob_stages
+
 
 def _classify_call_pattern(
     child_timings_dict: dict[str, list[dict]],
@@ -1213,6 +1297,7 @@ def _classify_call_pattern(
     else:
         return ("mixed", parallel_ratio)
 
+
 def _draw_timeline_graph(
     G: nx.DiGraph,
     timing_data: dict[tuple[str, str], list[dict]],
@@ -1224,7 +1309,7 @@ def _draw_timeline_graph(
     Draw a timeline graph showing parent-child call patterns over time.
     Parent's time is inclusive of children. Sequential children are left/right,
     parallel children are vertically aligned. This is done recursively for all layers.
-    
+
     Args:
         G: NetworkX directed graph (USER subgraph)
         timing_data: Dictionary mapping (parent, child) -> list of timing dicts
@@ -1234,12 +1319,12 @@ def _draw_timeline_graph(
     """
     if G.number_of_nodes() == 0:
         return
-    
+
     # Get hierarchical layout positions
     pos = _hierarchical_layout(G)
     if not pos:
         return
-    
+
     # Compute dynamic figure size
     if num_nodes < 50:
         figsize = (20.0, max(12.0, num_nodes * 0.3))
@@ -1247,26 +1332,29 @@ def _draw_timeline_graph(
         figsize = (24.0, max(14.0, num_nodes * 0.2))
     else:
         figsize = (28.0, max(16.0, num_nodes * 0.15))
-    
-    fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=figsize, 
-                                           gridspec_kw={'width_ratios': [1, 2]})
-    
+
+    fig, (ax_left, ax_right) = plt.subplots(
+        1, 2, figsize=figsize, gridspec_kw={"width_ratios": [1, 2]}
+    )
+
     # Left panel: DAG structure (mirror of user graph)
     # Draw nodes and edges
     for node, (x, y) in pos.items():
-        ax_left.scatter(x, y, s=500, c='lightblue', edgecolors='black', zorder=3)
-        ax_left.text(x, y, node, fontsize=7, ha='center', va='center', fontweight='bold')
-    
+        ax_left.scatter(x, y, s=500, c="lightblue", edgecolors="black", zorder=3)
+        ax_left.text(
+            x, y, node, fontsize=7, ha="center", va="center", fontweight="bold"
+        )
+
     # Draw edges
     for u, v in G.edges():
         if u in pos and v in pos:
             x1, y1 = pos[u]
             x2, y2 = pos[v]
-            ax_left.plot([x1, x2], [y1, y2], 'k-', linewidth=1, alpha=0.3, zorder=1)
-    
-    ax_left.set_title('Call Graph Structure', fontsize=10, fontweight='bold')
-    ax_left.axis('off')
-    
+            ax_left.plot([x1, x2], [y1, y2], "k-", linewidth=1, alpha=0.3, zorder=1)
+
+    ax_left.set_title("Call Graph Structure", fontsize=10, fontweight="bold")
+    ax_left.axis("off")
+
     # Right panel: Timeline visualization
     # First, normalize all timings relative to root (USER) start
     # Find the earliest parent_start across all timing data (this is the root start)
@@ -1275,104 +1363,120 @@ def _draw_timeline_graph(
         for timing in timings:
             if root_start is None or timing["parent_start"] < root_start:
                 root_start = timing["parent_start"]
-    
+
     if root_start is None:
         plt.close()
         return
-    
+
     # Normalize all timings relative to root start
     edge_timelines = {}
     for (parent, child), timings in timing_data.items():
         if not timings or (parent, child) not in G.edges():
             continue
-        
+
         normalized_timings = []
         for timing in timings:
             relative_start = timing["start_time"] - root_start
             relative_end = timing["end_time"] - root_start
-            normalized_timings.append({
-                "start": relative_start,
-                "end": relative_end,
-                "start_time": timing["start_time"],  # Keep original for classification
-                "end_time": timing["end_time"],  # Keep original for classification
-                "parent_start": timing["parent_start"] - root_start,  # Normalized
-                "parent_end": timing["parent_end"] - root_start,  # Normalized
-            })
-        
+            normalized_timings.append(
+                {
+                    "start": relative_start,
+                    "end": relative_end,
+                    "start_time": timing[
+                        "start_time"
+                    ],  # Keep original for classification
+                    "end_time": timing["end_time"],  # Keep original for classification
+                    "parent_start": timing["parent_start"] - root_start,  # Normalized
+                    "parent_end": timing["parent_end"] - root_start,  # Normalized
+                }
+            )
+
         edge_timelines[(parent, child)] = normalized_timings
-    
+
     if not edge_timelines:
         plt.close()
         return
-    
+
     # Determine time range for x-axis (use 95th percentile to avoid outliers)
     all_times = []
     for timings in edge_timelines.values():
         for timing in timings:
             all_times.append(timing["end"])
             all_times.append(timing["parent_end"])
-    
+
     if not all_times:
         plt.close()
         return
-    
+
     max_time = np.percentile(all_times, 95) if len(all_times) > 0 else max(all_times)
     if max_time == 0:
         max_time = 1.0
-    
+
     # Map nodes to y-positions based on hierarchy (for vertical layout)
     node_y_positions = {}
     y_positions = sorted(set(y for x, y in pos.values()), reverse=True)
     y_to_level = {y: i for i, y in enumerate(y_positions)}
-    
+
     for node, (x, y) in pos.items():
         level = y_to_level[y]
         node_y_positions[node] = level
-    
+
     max_level = len(y_to_level) - 1
-    
+
     # Colors for different patterns
-    colors = {'sequential': '#2E86AB', 'parallel': '#A23B72', 'mixed': '#F18F01'}
-    
+    colors = {"sequential": "#2E86AB", "parallel": "#A23B72", "mixed": "#F18F01"}
+
     # Build node timing information recursively
     # For each node, calculate its inclusive time span (from earliest child to latest child)
     node_timings = {}  # node -> {"start": float, "end": float, "has_children": bool}
     calculating = set()  # Track nodes currently being calculated to detect cycles
     max_recursion_depth = 1000  # Safety limit
-    
+
     def calculate_node_timing(node: str, depth: int = 0) -> dict:
         """Recursively calculate inclusive timing for a node.
-        
+
         Args:
             node: Node to calculate timing for
             depth: Current recursion depth (for cycle detection)
-        
+
         Returns:
             Dictionary with start, end, and has_children keys
         """
         # Check if already calculated
         if node in node_timings:
             return node_timings[node]
-        
+
         # Check for cycles or excessive recursion
         if node in calculating:
             # Cycle detected - return placeholder to break recursion
-            logger.warning(f"Cycle detected in graph at node '{node}', using placeholder timing")
-            node_timings[node] = {"start": 0.0, "end": 0.1 * max_time, "has_children": False}
+            logger.warning(
+                f"Cycle detected in graph at node '{node}', using placeholder timing"
+            )
+            node_timings[node] = {
+                "start": 0.0,
+                "end": 0.1 * max_time,
+                "has_children": False,
+            }
             return node_timings[node]
-        
+
         if depth > max_recursion_depth:
             # Excessive recursion - likely a very deep graph or cycle
-            logger.warning(f"Maximum recursion depth exceeded for node '{node}', using placeholder timing")
-            node_timings[node] = {"start": 0.0, "end": 0.1 * max_time, "has_children": False}
+            logger.warning(
+                f"Maximum recursion depth exceeded for node '{node}', using placeholder timing"
+            )
+            node_timings[node] = {
+                "start": 0.0,
+                "end": 0.1 * max_time,
+                "has_children": False,
+            }
             return node_timings[node]
-        
+
         # Mark as currently calculating
         calculating.add(node)
-        
+
         try:
             children = list(G.successors(node))
-            
+
             if not children:
                 # Leaf node - use its own timing if available
                 # Find timing from any edge where this node is a child
@@ -1385,23 +1489,31 @@ def _draw_timeline_graph(
                                 min_start = timing["start"]
                             if max_end is None or timing["end"] > max_end:
                                 max_end = timing["end"]
-                
+
                 if min_start is not None and max_end is not None:
-                    node_timings[node] = {"start": min_start, "end": max_end, "has_children": False}
+                    node_timings[node] = {
+                        "start": min_start,
+                        "end": max_end,
+                        "has_children": False,
+                    }
                 else:
                     # No timing data - use placeholder
-                    node_timings[node] = {"start": 0.0, "end": 0.1 * max_time, "has_children": False}
+                    node_timings[node] = {
+                        "start": 0.0,
+                        "end": 0.1 * max_time,
+                        "has_children": False,
+                    }
                 return node_timings[node]
-            
+
             # Parent node - calculate from children
             child_starts = []
             child_ends = []
-            
+
             for child in children:
                 child_timing = calculate_node_timing(child, depth + 1)
                 child_starts.append(child_timing["start"])
                 child_ends.append(child_timing["end"])
-            
+
             if child_starts and child_ends:
                 node_start = min(child_starts)
                 node_end = max(child_ends)
@@ -1413,14 +1525,18 @@ def _draw_timeline_graph(
                 # No child timing data - use placeholder
                 node_start = 0.0
                 node_end = 0.1 * max_time
-            
-            node_timings[node] = {"start": node_start, "end": node_end, "has_children": True}
+
+            node_timings[node] = {
+                "start": node_start,
+                "end": node_end,
+                "has_children": True,
+            }
             return node_timings[node]
-        
+
         finally:
             # Always remove from calculating set when done
             calculating.discard(node)
-    
+
     # Calculate timings for all nodes (starting from root)
     if "USER" in G.nodes():
         calculate_node_timing("USER")
@@ -1433,39 +1549,44 @@ def _draw_timeline_graph(
         for node in G.nodes():
             if node not in node_timings:
                 calculate_node_timing(node)
-    
+
     # Determine if children are sequential or parallel
-    def are_children_sequential(parent: str, children: list[str], overlap_threshold: float = 0.1) -> dict[str, bool]:
+    def are_children_sequential(
+        parent: str, children: list[str], overlap_threshold: float = 0.1
+    ) -> dict[str, bool]:
         """Determine which children are sequential vs parallel."""
         if len(children) < 2:
             return {child: True for child in children}
-        
+
         result = {}
         child_ranges = {}
-        
+
         # Get timing ranges for each child
         for child in children:
             if child in node_timings:
-                child_ranges[child] = (node_timings[child]["start"], node_timings[child]["end"])
+                child_ranges[child] = (
+                    node_timings[child]["start"],
+                    node_timings[child]["end"],
+                )
             else:
                 child_ranges[child] = (0.0, 0.1 * max_time)
-        
+
         # Sort children by start time
         sorted_children = sorted(children, key=lambda c: child_ranges[c][0])
-        
+
         # Check each child against previous ones
         for i, child in enumerate(sorted_children):
             is_sequential = True
             child_start, child_end = child_ranges[child]
-            
+
             # Check if this child overlaps significantly with any previous child
             for prev_child in sorted_children[:i]:
                 prev_start, prev_end = child_ranges[prev_child]
-                
+
                 # Check overlap
                 overlap_start = max(prev_start, child_start)
                 overlap_end = min(prev_end, child_end)
-                
+
                 if overlap_start < overlap_end:
                     overlap_duration = overlap_end - overlap_start
                     min_duration = min(prev_end - prev_start, child_end - child_start)
@@ -1474,19 +1595,24 @@ def _draw_timeline_graph(
                         if overlap_ratio >= overlap_threshold:
                             is_sequential = False
                             break
-            
+
             result[child] = is_sequential
-        
+
         return result
-    
+
     # Position nodes on timeline with proper spacing to prevent overlaps
     node_x_positions = {}  # node -> x position (start time)
     node_y_timeline_positions = {}  # node -> y position on timeline
     node_visual_timings = {}  # node -> visual timing for display
     layout_in_progress = set()  # Track nodes currently being laid out (cycle detection)
 
-    def layout_subtree(node: str, parent_x_start: float, parent_x_end: float,
-                       base_y: float, depth: int = 0) -> float:
+    def layout_subtree(
+        node: str,
+        parent_x_start: float,
+        parent_x_end: float,
+        base_y: float,
+        depth: int = 0,
+    ) -> float:
         """
         Recursively layout a subtree, returning the minimum y position used.
 
@@ -1506,14 +1632,16 @@ def _draw_timeline_graph(
 
         # Check for cycles
         if node in layout_in_progress:
-            logger.warning(f"Cycle detected in graph at node '{node}', skipping to prevent infinite recursion")
+            logger.warning(
+                f"Cycle detected in graph at node '{node}', skipping to prevent infinite recursion"
+            )
             # Position node with placeholder to break cycle
             node_x_positions[node] = parent_x_start
             node_y_timeline_positions[node] = base_y
             node_visual_timings[node] = {
                 "start": parent_x_start,
                 "end": min(parent_x_start + 0.01 * max_time, parent_x_end),
-                "has_children": False
+                "has_children": False,
             }
             return base_y
 
@@ -1543,7 +1671,7 @@ def _draw_timeline_graph(
             node_visual_timings[node] = {
                 "start": node_start,
                 "end": node_end,
-                "has_children": timing.get("has_children", False)
+                "has_children": timing.get("has_children", False),
             }
 
             # Get children
@@ -1555,7 +1683,9 @@ def _draw_timeline_graph(
             seq_parallel = are_children_sequential(node, children)
 
             # Sort children by their original start time
-            children_sorted = sorted(children, key=lambda c: node_timings.get(c, {}).get("start", 0.0))
+            children_sorted = sorted(
+                children, key=lambda c: node_timings.get(c, {}).get("start", 0.0)
+            )
 
             # Group into sequential segments and parallel groups
             groups = []  # List of (is_parallel, [children])
@@ -1592,7 +1722,10 @@ def _draw_timeline_graph(
             for is_parallel, group in groups:
                 if is_parallel:
                     # Parallel group: needs time for the longest child
-                    group_timings = [node_timings.get(c, {"start": 0.0, "end": 0.1 * max_time}) for c in group]
+                    group_timings = [
+                        node_timings.get(c, {"start": 0.0, "end": 0.1 * max_time})
+                        for c in group
+                    ]
                     max_duration = max(t["end"] - t["start"] for t in group_timings)
                     group_time_needs.append(max_duration)
                     total_time_needed += max_duration
@@ -1600,7 +1733,9 @@ def _draw_timeline_graph(
                     # Sequential group: needs sum of all children's durations
                     group_duration = 0
                     for child in group:
-                        child_timing = node_timings.get(child, {"start": 0.0, "end": 0.1 * max_time})
+                        child_timing = node_timings.get(
+                            child, {"start": 0.0, "end": 0.1 * max_time}
+                        )
                         child_duration = child_timing["end"] - child_timing["start"]
                         group_duration += child_duration
                     group_time_needs.append(group_duration)
@@ -1613,7 +1748,9 @@ def _draw_timeline_graph(
             # Calculate scaling factor if children don't fit
             if total_time_needed > available_time:
                 # Need to compress children to fit within parent
-                scale_factor = (available_time - inter_child_gap * max(0, len(groups) - 1)) / (total_time_needed - inter_child_gap * max(0, len(groups) - 1))
+                scale_factor = (
+                    available_time - inter_child_gap * max(0, len(groups) - 1)
+                ) / (total_time_needed - inter_child_gap * max(0, len(groups) - 1))
                 scale_factor = max(0.05, scale_factor)  # Minimum 5% of original size
             else:
                 scale_factor = 1.0
@@ -1638,7 +1775,9 @@ def _draw_timeline_graph(
                     # Parallel children: stack vertically, same x range
                     current_y = child_base_y
                     for child in group:
-                        child_min_y = layout_subtree(child, current_x, group_end, current_y, depth + 1)
+                        child_min_y = layout_subtree(
+                            child, current_x, group_end, current_y, depth + 1
+                        )
                         # Move down for next parallel sibling
                         current_y = child_min_y - (bar_height + gap)
                         min_y_used = min(min_y_used, child_min_y)
@@ -1652,7 +1791,9 @@ def _draw_timeline_graph(
                     group_timings = []
                     total_group_duration = 0
                     for child in group:
-                        child_timing = node_timings.get(child, {"start": 0.0, "end": 0.1 * max_time})
+                        child_timing = node_timings.get(
+                            child, {"start": 0.0, "end": 0.1 * max_time}
+                        )
                         child_duration = child_timing["end"] - child_timing["start"]
                         group_timings.append(child_duration)
                         total_group_duration += child_duration
@@ -1662,7 +1803,9 @@ def _draw_timeline_graph(
                     for i, child in enumerate(group):
                         if total_group_duration > 0:
                             # Proportional allocation
-                            child_allocated = allocated_time * (group_timings[i] / total_group_duration)
+                            child_allocated = allocated_time * (
+                                group_timings[i] / total_group_duration
+                            )
                         else:
                             # Equal allocation if no timing info
                             child_allocated = allocated_time / len(group)
@@ -1675,7 +1818,9 @@ def _draw_timeline_graph(
                         if child_end <= child_x:
                             child_end = child_x + 0.01 * max_time
 
-                        child_min_y = layout_subtree(child, child_x, child_end, child_base_y, depth + 1)
+                        child_min_y = layout_subtree(
+                            child, child_x, child_end, child_base_y, depth + 1
+                        )
                         min_y_used = min(min_y_used, child_min_y)
 
                         # Move to next sequential child (with small gap)
@@ -1708,20 +1853,21 @@ def _draw_timeline_graph(
             node_x_positions[node] = timing["start"]
             node_y_timeline_positions[node] = 0.0
             node_visual_timings[node] = timing.copy()
-    
+
     # Draw timeline bars
     # Sort nodes by y position (lowest first = bottom first)
     nodes_by_y = sorted(G.nodes(), key=lambda n: node_y_timeline_positions.get(n, 0))
-    
+
     bar_height = 0.1
-    gap = 0.05
-    
+
     # Track label positions to prevent overlaps
     label_positions = []  # List of (x_start, x_end, y, text) tuples
-    
-    def check_label_overlap(x_start: float, x_end: float, y: float, text: str, fontsize: int = 7) -> tuple[float, float]:
+
+    def check_label_overlap(
+        x_start: float, x_end: float, y: float, text: str, fontsize: int = 7
+    ) -> tuple[float, float]:
         """Check if label would overlap with existing labels, adjust if needed.
-        
+
         Returns:
             (label_x, label_y) position for the label
         """
@@ -1729,17 +1875,19 @@ def _draw_timeline_graph(
         char_width = 0.008 * max_time
         text_width = char_width * len(text)
         text_height = bar_height
-        
+
         # Try to place label in the middle of the bar
         bar_center_x = x_start + (x_end - x_start) / 2
         label_x = bar_center_x - text_width / 2
-        
+
         # Check for overlaps with existing labels at similar y positions
         for existing_x_start, existing_x_end, existing_y, _ in label_positions:
             # Check if y positions are close (within bar height)
             if abs(y - existing_y) < text_height * 1.2:
                 # Check if x positions overlap
-                if not (label_x + text_width < existing_x_start or label_x > existing_x_end):
+                if not (
+                    label_x + text_width < existing_x_start or label_x > existing_x_end
+                ):
                     # Overlap detected - try to shift left or right
                     if existing_x_end < bar_center_x:
                         # Existing label is to the left, shift right
@@ -1747,7 +1895,7 @@ def _draw_timeline_graph(
                     else:
                         # Existing label is to the right, shift left
                         label_x = existing_x_start - text_width - 0.01 * max_time
-        
+
         # Clamp to bar bounds (with small padding)
         padding = 0.01 * max_time
         if label_x < x_start + padding:
@@ -1757,25 +1905,27 @@ def _draw_timeline_graph(
             # If still doesn't fit, just center it
             if label_x < x_start + padding:
                 label_x = bar_center_x - text_width / 2
-        
+
         # Record this label position
         label_positions.append((label_x, label_x + text_width, y, text))
-        
+
         return label_x, y
-    
+
     # Draw all nodes
     for node in nodes_by_y:
         if node not in node_y_timeline_positions:
             continue
-        
-        visual_timing = node_visual_timings.get(node, node_timings.get(node, {"start": 0.0, "end": 0.1 * max_time}))
+
+        visual_timing = node_visual_timings.get(
+            node, node_timings.get(node, {"start": 0.0, "end": 0.1 * max_time})
+        )
         x_pos = node_x_positions.get(node, visual_timing["start"])
         y_pos = node_y_timeline_positions[node]
-        
+
         # Draw node bar using visual timing
         min_width = 0.01 * max_time
         width = max(min_width, visual_timing["end"] - visual_timing["start"])
-        
+
         # Determine color based on children pattern
         children = list(G.successors(node))
         if children:
@@ -1784,58 +1934,92 @@ def _draw_timeline_graph(
                 edge = (node, child)
                 if edge in edge_timelines:
                     child_timings_dict[child] = edge_timelines[edge]
-            
+
             if child_timings_dict:
                 pattern_type, _ = _classify_call_pattern(child_timings_dict)
-                color = colors.get(pattern_type, 'gray')
+                color = colors.get(pattern_type, "gray")
             else:
-                color = 'gray'
+                color = "gray"
         else:
             # Leaf node - use light gray
-            color = 'lightgray'
-        
+            color = "lightgray"
+
         # Draw bar
-        ax_right.barh(y_pos, width, left=x_pos, height=bar_height, 
-                     color=color, alpha=0.7, edgecolor='black', linewidth=1.0, zorder=2)
-        
+        ax_right.barh(
+            y_pos,
+            width,
+            left=x_pos,
+            height=bar_height,
+            color=color,
+            alpha=0.7,
+            edgecolor="black",
+            linewidth=1.0,
+            zorder=2,
+        )
+
         # Draw node label INSIDE the bar (centered, with overlap checking)
-        label_x, label_y = check_label_overlap(x_pos, x_pos + width, y_pos, node, fontsize=7)
-        
+        label_x, label_y = check_label_overlap(
+            x_pos, x_pos + width, y_pos, node, fontsize=7
+        )
+
         # Use white text with semi-transparent background for better visibility
-        ax_right.text(label_x, label_y, node, 
-                     fontsize=7, ha='left', va='center', fontweight='bold',
-                     color='white', zorder=3,
-                     bbox=dict(boxstyle='round,pad=0.1', facecolor='black', alpha=0.4, edgecolor='white', linewidth=0.5))
-    
+        ax_right.text(
+            label_x,
+            label_y,
+            node,
+            fontsize=7,
+            ha="left",
+            va="center",
+            fontweight="bold",
+            color="white",
+            zorder=3,
+            bbox=dict(
+                boxstyle="round,pad=0.1",
+                facecolor="black",
+                alpha=0.4,
+                edgecolor="white",
+                linewidth=0.5,
+            ),
+        )
+
     # Draw arrows from parents to children (straight arrows pointing down)
     for node in G.nodes():
         if node not in node_y_timeline_positions or node not in node_x_positions:
             continue
-        
-        node_visual_timing = node_visual_timings.get(node, node_timings.get(node, {"start": 0.0, "end": 0.1 * max_time}))
+
         node_x = node_x_positions[node]
         node_y = node_y_timeline_positions[node]
-        
+
         # Draw arrows to all children
         for child in G.successors(node):
             if child not in node_y_timeline_positions or child not in node_x_positions:
                 continue
-            
-            child_visual_timing = node_visual_timings.get(child, node_timings.get(child, {"start": 0.0, "end": 0.1 * max_time}))
+
+            child_visual_timing = node_visual_timings.get(
+                child, node_timings.get(child, {"start": 0.0, "end": 0.1 * max_time})
+            )
             child_x = node_x_positions[child]
             child_y = node_y_timeline_positions[child]
-            
+
             # Arrow starts from left side of parent span
             parent_left_x = node_x
             # Arrow points to center of child span
-            child_center_x = child_x + (child_visual_timing["end"] - child_visual_timing["start"]) / 2
-            
+            child_center_x = (
+                child_x
+                + (child_visual_timing["end"] - child_visual_timing["start"]) / 2
+            )
+
             # Draw straight arrow from parent bottom-left to child top-center
-            ax_right.annotate('', xy=(child_center_x, child_y + bar_height / 2), 
-                            xytext=(parent_left_x, node_y - bar_height / 2),
-                            arrowprops=dict(arrowstyle='->', color='black', lw=1.5, alpha=0.5, mutation_scale=15),
-                            zorder=1)
-    
+            ax_right.annotate(
+                "",
+                xy=(child_center_x, child_y + bar_height / 2),
+                xytext=(parent_left_x, node_y - bar_height / 2),
+                arrowprops=dict(
+                    arrowstyle="->", color="black", lw=1.5, alpha=0.5, mutation_scale=15
+                ),
+                zorder=1,
+            )
+
     # Set axis properties
     # Calculate y limits based on node positions
     if node_y_timeline_positions:
@@ -1845,55 +2029,61 @@ def _draw_timeline_graph(
     else:
         min_y = -0.5
         max_y = max_level + 0.5
-    
+
     ax_right.set_xlim(-0.05 * max_time, max_time * 1.1)
     ax_right.set_ylim(min_y, max_y)
-    ax_right.set_xlabel('Time (normalized to root start)', fontsize=10)
-    ax_right.set_ylabel('Hierarchy Level (from USER)', fontsize=10)
-    ax_right.set_title('Call Pattern Timeline (Parent time is inclusive of children)', 
-                     fontsize=10, fontweight='bold')
-    ax_right.grid(True, alpha=0.3, axis='both')
-    
+    ax_right.set_xlabel("Time (normalized to root start)", fontsize=10)
+    ax_right.set_ylabel("Hierarchy Level (from USER)", fontsize=10)
+    ax_right.set_title(
+        "Call Pattern Timeline (Parent time is inclusive of children)",
+        fontsize=10,
+        fontweight="bold",
+    )
+    ax_right.grid(True, alpha=0.3, axis="both")
+
     # Add legend
     legend_elements = [
-        mpatches.Patch(facecolor=colors['sequential'], label='Sequential', alpha=0.7),
-        mpatches.Patch(facecolor=colors['parallel'], label='Parallel', alpha=0.7),
-        mpatches.Patch(facecolor=colors['mixed'], label='Mixed', alpha=0.7),
+        mpatches.Patch(facecolor=colors["sequential"], label="Sequential", alpha=0.7),
+        mpatches.Patch(facecolor=colors["parallel"], label="Parallel", alpha=0.7),
+        mpatches.Patch(facecolor=colors["mixed"], label="Mixed", alpha=0.7),
     ]
-    ax_right.legend(handles=legend_elements, loc='upper right', fontsize=8)
-    
-    plt.suptitle(title, fontsize=12, fontweight='bold', y=0.98)
+    ax_right.legend(handles=legend_elements, loc="upper right", fontsize=8)
+
+    plt.suptitle(title, fontsize=12, fontweight="bold", y=0.98)
     plt.tight_layout(rect=[0, 0, 1, 0.96])
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close()
 
-def _extract_edges_with_interface_from_trace(trace_df: pd.DataFrame) -> list[tuple[str, str, str]]:
+
+def _extract_edges_with_interface_from_trace(
+    trace_df: pd.DataFrame,
+) -> list[tuple[str, str, str]]:
     """
     Extract edges (um -> dm) with interface information from a single trace based on rpc_id hierarchy.
-    
+
     Args:
         trace_df: DataFrame containing rows for a single trace
-    
+
     Returns:
         List of (source, target, interface) tuples
     """
     if "rpc_id" not in trace_df.columns or "dm" not in trace_df.columns:
         return []
-    
+
     trace_df = trace_df.copy()
     trace_df["rpc_id_str"] = trace_df["rpc_id"].astype(str).str.strip()
-    
+
     # Create mapping from rpc_id to dm
     rpc_to_dm = {}
     rpc_groups = trace_df.groupby("rpc_id_str")
-    
+
     for rpc_id, group in rpc_groups:
         if rpc_id and rpc_id != "" and rpc_id != "nan":
             dm_values = group["dm"].dropna().unique()
             if len(dm_values) > 0:
                 rpc_to_dm[rpc_id] = dm_values[0]
-    
+
     # Create mapping from rpc_id to list of interfaces (one per row with that rpc_id)
     rpc_to_interfaces: dict[str, list[str]] = defaultdict(list)
     for _, row in trace_df.iterrows():
@@ -1904,12 +2094,12 @@ def _extract_edges_with_interface_from_trace(trace_df: pd.DataFrame) -> list[tup
             else:
                 interface = "<none>"
             rpc_to_interfaces[rpc_id_str].append(interface)
-    
+
     # Build edge list with interface (one edge per (rpc_id, interface) combination)
     edges = []
     for rpc_id, dm in rpc_to_dm.items():
         parent_rpc_id = _parent_rpc_id(rpc_id)
-        
+
         if parent_rpc_id is None:
             # Root call - edge from USER to dm
             source = "USER"
@@ -1922,55 +2112,56 @@ def _extract_edges_with_interface_from_trace(trace_df: pd.DataFrame) -> list[tup
             else:
                 # Parent not found, skip this edge
                 continue
-        
+
         # Add one edge per interface for this rpc_id
         interfaces = rpc_to_interfaces.get(rpc_id, ["<none>"])
         for interface in interfaces:
             edges.append((source, target, interface))
-    
+
     return edges
+
 
 def compute_latency_distributions(df: pd.DataFrame) -> dict:
     """
     Compute latency distributions grouped by (dm, interface).
-    
+
     Args:
         df: DataFrame with columns "dm", "interface", and "rt"
-    
+
     Returns:
         Dictionary mapping (dm, interface) tuples to lists of latency values
     """
     if "rt" not in df.columns or "dm" not in df.columns:
         return {}
-    
+
     # Normalize interface column
     df = df.copy()
     if "interface" in df.columns:
         df["interface"] = df["interface"].apply(_normalize_interface)
     else:
         df["interface"] = "<none>"
-    
+
     # Group by dm and interface, aggregate rt values
-    result = (
-        df.groupby(["dm", "interface"])["rt"]
-        .agg(list)
-        .to_dict()
-    )
+    result = df.groupby(["dm", "interface"])["rt"].agg(list).to_dict()
     return result
 
-def query_latency_distribution(latency_dict: dict, dm_name: str, iface_name: str) -> list:
+
+def query_latency_distribution(
+    latency_dict: dict, dm_name: str, iface_name: str
+) -> list:
     """
     Query latency distribution for a given (dm, interface) pair.
-    
+
     Args:
         latency_dict: Dictionary from compute_latency_distributions
         dm_name: Destination microservice name
         iface_name: Interface name (normalized)
-    
+
     Returns:
         List of latency values, or empty list if not found
     """
     return latency_dict.get((dm_name, iface_name), [])
+
 
 def _export_graph_reports(
     service_name: str,
@@ -1981,7 +2172,7 @@ def _export_graph_reports(
     """
     Export edges.csv, interface_distribution.json, and latency_percentiles.json
     for a service's graph_user subgraph.
-    
+
     Args:
         service_name: Name of the service
         G_user: USER-reachable subgraph with interface_counts in edge data
@@ -1989,29 +2180,29 @@ def _export_graph_reports(
         output_dir: Directory to save the reports
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Percentiles to compute
     base = list(range(1, 101))
     tails = [99.5, 99.9, 99.95, 99.99]
     percentiles = sorted(set(base + tails))
-    
+
     # Collect edge data
     edges_rows: list[tuple[str, str, str, float]] = []
     iface_counts_by_callee: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
     seen_callee_ifaces: set[tuple[str, str]] = set()
-    
+
     for caller, callee, data in G_user.edges(data=True):
         raw_weight = data.get("weight")
         weight = float(raw_weight) if raw_weight is not None else 0.0
         edges_rows.append((service_name, caller, callee, weight))
-        
+
         # Extract interface_counts from edge data
         iface_counts = data.get("interface_counts", {}) or {}
         if iface_counts:
             iface_counts_by_callee[(service_name, callee)].update(iface_counts)
             for iface in iface_counts.keys():
                 seen_callee_ifaces.add((callee, iface))
-    
+
     # (1) Export edges.csv
     if edges_rows:
         df_edges = pd.DataFrame(
@@ -2019,7 +2210,7 @@ def _export_graph_reports(
             columns=pd.Index(["service", "caller", "callee", "weight"]),
         ).drop_duplicates()
         df_edges.to_csv(output_dir / "edges.csv", index=False)
-    
+
     # (2) Export interface_distribution.json
     iface_json: dict[str, dict[str, int]] = {}
     for (_service, callee), ctr in iface_counts_by_callee.items():
@@ -2028,47 +2219,50 @@ def _export_graph_reports(
         callee_map = iface_json.setdefault(callee, {})
         for iface, cnt in ctr.items():
             callee_map[iface] = int(cnt)
-    
+
     if iface_json:
         with open(output_dir / "interface_distribution.json", "w") as f:
             json.dump(iface_json, f, indent=2)
-    
+
     # (3) Export latency_percentiles.json
     lat_json: dict[str, dict[str, dict[str, float]]] = {}
-    for (callee, iface) in sorted(seen_callee_ifaces):
+    for callee, iface in sorted(seen_callee_ifaces):
         latencies = query_latency_distribution(latency_dists, callee, iface)
         if not latencies:
             continue
         arr = np.asarray(latencies, dtype=float)
         vals = np.percentile(arr, percentiles)
-        lat_json.setdefault(callee, {})[iface] = {str(p): float(v) for p, v in zip(percentiles, vals)}
-    
+        lat_json.setdefault(callee, {})[iface] = {
+            str(p): float(v) for p, v in zip(percentiles, vals)
+        }
+
     if lat_json:
         with open(output_dir / "latency_percentiles.json", "w") as f:
             json.dump(lat_json, f, indent=2)
 
+
 def reachable_subgraph(G: nx.DiGraph, source: str = "USER") -> nx.DiGraph:
     """
     Extract the subgraph reachable from a source node.
-    
+
     Args:
         G: NetworkX directed graph
         source: Source node name (default: "USER")
-    
+
     Returns:
         Subgraph containing source and all nodes reachable from it
     """
     if source not in G:
         # Return empty graph if source not found
         return G.__class__()
-    
+
     reachable = {source} | nx.descendants(G, source)
     view = G.subgraph(reachable)
-    
+
     H = G.__class__()
     H.graph.update(copy.deepcopy(G.graph))
     H.add_nodes_from((n, copy.deepcopy(view.nodes[n])) for n in view.nodes)
-    
+
     if G.is_multigraph():
         H.add_edges_from(
             (u, v, k, copy.deepcopy(view.get_edge_data(u, v, k)))
@@ -2076,10 +2270,10 @@ def reachable_subgraph(G: nx.DiGraph, source: str = "USER") -> nx.DiGraph:
         )
     else:
         H.add_edges_from(
-            (u, v, copy.deepcopy(view.get_edge_data(u, v)))
-            for u, v in view.edges()
+            (u, v, copy.deepcopy(view.get_edge_data(u, v))) for u, v in view.edges()
         )
     return H
+
 
 def _draw_graph(
     G: nx.DiGraph,
@@ -2089,7 +2283,7 @@ def _draw_graph(
 ) -> None:
     """
     Draw a graph with dynamic sizing and save to file.
-    
+
     Args:
         G: NetworkX directed graph to draw
         title: Title for the graph
@@ -2098,7 +2292,7 @@ def _draw_graph(
     """
     if G.number_of_nodes() == 0:
         return
-    
+
     # Compute dynamic figure size based on graph complexity
     if num_nodes < 50:
         figsize = _compute_dynamic_figsize(
@@ -2136,7 +2330,7 @@ def _draw_graph(
             max_width=60.0,
             max_height=40.0,
         )
-    
+
     # Auto-compute node_size, font_size, and spacing based on graph complexity
     if num_nodes < 20:
         node_size = 3000
@@ -2163,48 +2357,56 @@ def _draw_graph(
         font_size = 7
         ranksep = 1.0
         nodesep = 0.4
-    
+
     plt.figure(figsize=figsize)
     pos = _hierarchical_layout(G, ranksep=ranksep, nodesep=nodesep)
-    
+
     # Get edge weights for visualization
-    edge_weights = [G[u][v].get('weight', 1) for u, v in G.edges()]
+    edge_weights = [G[u][v].get("weight", 1) for u, v in G.edges()]
     max_weight = max(edge_weights) if edge_weights else 1
     min_weight = min(edge_weights) if edge_weights else 1
-    
+
     # Normalize edge widths (min 1, max 5)
-    edge_widths = [1 + 4 * (w - min_weight) / (max_weight - min_weight) if max_weight > min_weight else 3 
-                   for w in edge_weights]
-    
+    edge_widths = [
+        1 + 4 * (w - min_weight) / (max_weight - min_weight)
+        if max_weight > min_weight
+        else 3
+        for w in edge_weights
+    ]
+
     # Draw nodes
-    nx.draw_networkx_nodes(G, pos, node_color='lightblue', node_size=node_size, alpha=0.9)
-    
+    nx.draw_networkx_nodes(
+        G, pos, node_color="lightblue", node_size=node_size, alpha=0.9
+    )
+
     # Draw edges with varying widths based on frequency
     nx.draw_networkx_edges(
-        G, pos, 
-        edge_color='gray', 
-        arrows=True, 
-        arrowsize=20, 
+        G,
+        pos,
+        edge_color="gray",
+        arrows=True,
+        arrowsize=20,
         alpha=0.6,
-        width=edge_widths
+        width=edge_widths,
     )
-    
+
     # Draw labels
-    nx.draw_networkx_labels(G, pos, font_size=font_size, font_weight='bold')
-    
+    nx.draw_networkx_labels(G, pos, font_size=font_size, font_weight="bold")
+
     # Add edge labels with frequencies
-    edge_labels = {(u, v): str(G[u][v].get('weight', 1)) for u, v in G.edges()}
+    edge_labels = {(u, v): str(G[u][v].get("weight", 1)) for u, v in G.edges()}
     edge_label_font_size = max(6, font_size - 2)
     nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=edge_label_font_size)
-    
-    plt.title(title, fontsize=16, fontweight='bold')
-    plt.axis('off')
+
+    plt.title(title, fontsize=16, fontweight="bold")
+    plt.axis("off")
     plt.tight_layout()
-    
+
     # Save graph
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close()
+
 
 def _build_call_sequence_graph(
     call_sequences: dict[str, list[dict[str, float]]],
@@ -2232,6 +2434,7 @@ def _build_call_sequence_graph(
         node_probs["USER"] = 1.0
 
     return G, node_probs
+
 
 def _draw_call_sequence_timeline(
     call_sequences: dict[str, list[dict[str, float]]],
@@ -2280,7 +2483,9 @@ def _draw_call_sequence_timeline(
     instance_counter = 0
     max_depth = 50
 
-    def make_instance(name: str, parent_key: str | None, depth: int, path: set[str]) -> str:
+    def make_instance(
+        name: str, parent_key: str | None, depth: int, path: set[str]
+    ) -> str:
         nonlocal instance_counter
         key = f"{name}__{instance_counter}"
         instance_counter += 1
@@ -2461,25 +2666,47 @@ def _draw_call_sequence_timeline(
     for key, display_start, display_end, y, prob, name in draw_items:
         width = max(0.05, display_end - display_start)
         color = cmap(norm(prob))
-        ax.barh(y, width, left=display_start, height=bar_height, color=color,
-                edgecolor="black", linewidth=0.6, alpha=0.85, zorder=2)
+        ax.barh(
+            y,
+            width,
+            left=display_start,
+            height=bar_height,
+            color=color,
+            edgecolor="black",
+            linewidth=0.6,
+            alpha=0.85,
+            zorder=2,
+        )
 
         label_x = display_start + 0.02 * max_time
-        ax.text(label_x, y, name, fontsize=7, va="center", ha="left",
-                color="black", zorder=3)
+        ax.text(
+            label_x,
+            y,
+            name,
+            fontsize=7,
+            va="center",
+            ha="left",
+            color="black",
+            zorder=3,
+        )
 
     # Draw dependency arrows from parent left edge to child left edge.
     for parent_key, stage_list in children_by_key.items():
         for stage in stage_list:
             for child_key in stage:
-                if parent_key not in display_intervals or child_key not in display_intervals:
+                if (
+                    parent_key not in display_intervals
+                    or child_key not in display_intervals
+                ):
                     continue
                 parent_start, parent_end = display_intervals[parent_key]
                 child_start, child_end = display_intervals[child_key]
                 y_parent = node_y.get(parent_key, 0.0)
                 y_child = node_y.get(child_key, 0.0)
                 x_offset = 0.01 * max_time
-                arrow_start_x = max(child_start - x_offset, parent_start + 0.002 * max_time)
+                arrow_start_x = max(
+                    child_start - x_offset, parent_start + 0.002 * max_time
+                )
                 arrow_start_x = min(arrow_start_x, parent_end - 0.002 * max_time)
                 ax.annotate(
                     "",
@@ -2517,13 +2744,14 @@ def _draw_call_sequence_timeline(
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close()
 
+
 def _compute_graph_statistics(G: nx.DiGraph) -> dict:
     """
     Compute statistics for a directed graph.
-    
+
     Args:
         G: NetworkX directed graph
-    
+
     Returns:
         Dictionary with statistics: num_nodes, out_degree_avg, out_degree_min, out_degree_max,
         in_degree_avg, in_degree_min, in_degree_max
@@ -2538,10 +2766,10 @@ def _compute_graph_statistics(G: nx.DiGraph) -> dict:
             "in_degree_min": 0,
             "in_degree_max": 0,
         }
-    
+
     out_degrees = [d for n, d in G.out_degree()]
     in_degrees = [d for n, d in G.in_degree()]
-    
+
     return {
         "num_nodes": G.number_of_nodes(),
         "out_degree_avg": sum(out_degrees) / len(out_degrees) if out_degrees else 0.0,
@@ -2561,13 +2789,13 @@ def _process_service(
 ) -> tuple[str, nx.DiGraph, dict, bool, bool]:
     """
     Process a single service: extract edges, create graph, and save visualization.
-    
+
     Args:
         service_name: Name of the service
         service_df: DataFrame containing rows for this service
         trace_col: Column name containing trace IDs
         graphs_dir: Directory to save graph visualizations
-    
+
     Returns:
         Tuple of (service_name, graph, statistics_dict, has_user_root, user_subgraph_sufficient)
         where has_user_root is True if the graph has 'USER' as a root node,
@@ -2575,62 +2803,62 @@ def _process_service(
     """
     # Get unique traces for this service
     unique_traces = service_df[trace_col].dropna().unique()
-    
+
     if len(unique_traces) == 0:
         logger.warning(f"No valid traces found for service {service_name}")
         G = nx.DiGraph()
         stats = _compute_graph_statistics(G)
         stats["num_traces"] = 0
         return (service_name, G, stats, False, False)
-    
+
     # Aggregate edges across all traces with interface information
     edge_counter: dict[tuple[str, str], int] = {}
     edge_interface_counts: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
-    
+
     for trace_id in unique_traces:
         trace_df = service_df[service_df[trace_col] == trace_id]
         # Extract edges with interface information
         edges_with_iface = _extract_edges_with_interface_from_trace(trace_df)
-        
+
         # Count edge frequencies and track interface counts
         for source, target, interface in edges_with_iface:
             edge = (source, target)
             edge_counter[edge] = edge_counter.get(edge, 0) + 1
             edge_interface_counts[edge][interface] += 1
-    
+
     # Create graph with edge weights and interface_counts
     G = nx.DiGraph()
     for (source, target), frequency in edge_counter.items():
         interface_counts = dict(edge_interface_counts[(source, target)])
         G.add_edge(source, target, weight=frequency, interface_counts=interface_counts)
-    
+
     # Check if graph has 'USER' as a root node (in_degree == 0)
     has_user_root = "USER" in G.nodes() and G.in_degree("USER") == 0
-    
+
     # Check if USER subgraph has at least 5 nodes
     user_subgraph_sufficient = False
     if has_user_root:
         G_user = reachable_subgraph(G, source="USER")
         user_subgraph_sufficient = G_user.number_of_nodes() >= 5
-    
+
     # Compute statistics
     stats = _compute_graph_statistics(G)
     # Add trace count to statistics
     stats["num_traces"] = len(unique_traces)
-    
+
     # Only create visualizations if graph has USER as a root node and USER subgraph has >= 5 nodes
     if G.number_of_nodes() > 0 and has_user_root and user_subgraph_sufficient:
         # Create service-specific directory
         service_slug = _slugify(service_name)
         service_dir = graphs_dir / service_slug
         service_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Draw full graph (all nodes)
         num_nodes = G.number_of_nodes()
         output_path = service_dir / "graph_all_nodes.png"
         title = f"Aggregated Call Graph for Service '{service_name}' (All Nodes: {num_nodes})\n(Edge thickness and labels indicate frequency)"
         _draw_graph(G, title, output_path, num_nodes)
-        
+
         # Draw USER-reachable subgraph
         G_user = reachable_subgraph(G, source="USER")
         if G_user.number_of_nodes() > 0:
@@ -2638,30 +2866,34 @@ def _process_service(
             output_path = service_dir / "graph_user.png"
             title = f"Aggregated Call Graph for Service '{service_name}' (USER-Reachable Subgraph: {num_nodes_user} nodes)\n(Edge thickness and labels indicate frequency)"
             _draw_graph(G_user, title, output_path, num_nodes_user)
-            
+
             # Export edges.csv, interface_distribution.json, and latency_percentiles.json
             # Compute latency distributions from service_df
             latency_dists = compute_latency_distributions(service_df)
             _export_graph_reports(service_name, G_user, latency_dists, service_dir)
-            
+
             # Extract and aggregate timing data for timeline visualization
             if "timestamp" in service_df.columns and "rt" in service_df.columns:
                 # Aggregate timing data across all traces
                 aggregated_timing: dict[tuple[str, str], list[dict]] = defaultdict(list)
-                
+
                 for trace_id in unique_traces:
                     trace_df = service_df[service_df[trace_col] == trace_id]
                     trace_timing = _extract_timing_from_trace(trace_df, G_user)
-                    
+
                     # Merge into aggregated timing
                     for edge, timings in trace_timing.items():
-                        if edge in G_user.edges():  # Only include edges in USER subgraph
+                        if (
+                            edge in G_user.edges()
+                        ):  # Only include edges in USER subgraph
                             aggregated_timing[edge].extend(timings)
-                
+
                 # Draw timeline graph (even if no timing data, to show structure)
                 output_path = service_dir / "pattern_timeline.png"
                 title = f"Call Pattern Timeline for Service '{service_name}'\n(Shows sequential vs parallel call patterns)"
-                _draw_timeline_graph(G_user, aggregated_timing, title, output_path, num_nodes_user)
+                _draw_timeline_graph(
+                    G_user, aggregated_timing, title, output_path, num_nodes_user
+                )
 
                 # Extract call sequences for each parent node (used for unified visualization)
                 parent_nodes = [n for n in G_user.nodes() if G_user.out_degree(n) >= 1]
@@ -2677,21 +2909,29 @@ def _process_service(
                             trace_timing = _extract_timing_from_trace(trace_df, G_user)
 
                             # Only process if this parent appears in this trace
-                            parent_appears = any(p == parent for (p, c) in trace_timing.keys())
+                            parent_appears = any(
+                                p == parent for (p, c) in trace_timing.keys()
+                            )
                             if parent_appears:
-                                sequence = _extract_call_sequence_from_trace(trace_timing, parent)
+                                sequence = _extract_call_sequence_from_trace(
+                                    trace_timing, parent
+                                )
                                 if sequence:
                                     sequences.append(sequence)
 
                         # Aggregate sequences across traces
                         if sequences:
-                            call_sequence = _aggregate_call_sequences(sequences, len(sequences))
+                            call_sequence = _aggregate_call_sequences(
+                                sequences, len(sequences)
+                            )
 
                             if call_sequence:
                                 # Add to collection for unified diagram
                                 all_parent_sequences[parent] = call_sequence
 
-                missing_sequence_nodes = sorted(set(parent_nodes) - set(all_parent_sequences.keys()))
+                missing_sequence_nodes = sorted(
+                    set(parent_nodes) - set(all_parent_sequences.keys())
+                )
                 if missing_sequence_nodes:
                     logger.warning(
                         f"Service {service_name}: {len(missing_sequence_nodes)} of {len(parent_nodes)} "
@@ -2721,15 +2961,16 @@ def _process_service(
     # Return both flags separately so we can track rejection reasons
     return (service_name, G, stats, has_user_root, user_subgraph_sufficient)
 
+
 def _process_service_wrapper(args: tuple) -> tuple[str, nx.DiGraph, dict, bool, bool]:
     """
     Wrapper function for parallel processing of services.
     Extracts arguments from tuple for ProcessPoolExecutor compatibility.
-    
+
     Args:
         args: Tuple of (service_name, service_df, trace_col, graphs_dir_str)
               where graphs_dir_str is a string path that will be converted to Path
-    
+
     Returns:
         Tuple of (service_name, graph, statistics_dict, has_user_root, user_subgraph_sufficient)
     """
@@ -2737,13 +2978,19 @@ def _process_service_wrapper(args: tuple) -> tuple[str, nx.DiGraph, dict, bool, 
     graphs_dir = Path(graphs_dir_str)
     return _process_service(service_name, service_df, trace_col, graphs_dir)
 
-def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int = 100, n_workers: int | None = None) -> None:
+
+def analyze_call_graphs(
+    df: pd.DataFrame,
+    trace_col: str = "traceid",
+    top_n: int = 100,
+    n_workers: int | None = None,
+) -> None:
     """
     Analyze call graphs by grouping by service and aggregating edges across all traces.
     For each service, compute the union of all edges and their frequencies, then plot.
     Only processes the top N services by trace count.
     Print statistics sorted by number of nodes (descending).
-    
+
     Args:
         df: Input dataframe with trace data
         trace_col: Column name containing trace IDs (default: "traceid")
@@ -2753,46 +3000,54 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
     required_cols = ["service", trace_col, "rpc_id", "um", "dm"]
     missing_cols = [col for col in required_cols if col not in df.columns]
     if missing_cols:
-        logger.warning(f"Missing required columns: {missing_cols}. Available columns: {list(df.columns)}")
+        logger.warning(
+            f"Missing required columns: {missing_cols}. Available columns: {list(df.columns)}"
+        )
         return
-    
+
     # Create graphs directory
     graphs_dir = Path(__file__).parent / "graphs"
     graphs_dir.mkdir(exist_ok=True)
     logger.info(f"Graphs will be saved to: {graphs_dir}")
-    
+
     # Group by service
-    logger.info(f"{'='*80}")
+    logger.info(f"{'=' * 80}")
     logger.info("Grouping dataset by service")
-    logger.info(f"{'='*80}")
-    
+    logger.info(f"{'=' * 80}")
+
     service_groups = df.groupby("service")
     service_names = list(service_groups.groups.keys())
-    
+
     if len(service_names) == 0:
         logger.warning("No services found in dataset")
         return
-    
+
     logger.info(f"Found {len(service_names)} service(s)")
-    
+
     # Count traces per service and select top N
-    logger.info(f"Counting traces per service...")
+    logger.info("Counting traces per service...")
     service_trace_counts = []
     for service_name in service_names:
         service_df = service_groups.get_group(service_name)
         unique_traces = service_df[trace_col].dropna().unique()
         trace_count = len(unique_traces)
         service_trace_counts.append((service_name, trace_count))
-    
+
     # Sort by trace count (descending) and take top N
     service_trace_counts.sort(key=lambda x: x[1], reverse=True)
     top_services = [name for name, _ in service_trace_counts[:top_n]]
-    
-    logger.info(f"Selecting top {min(top_n, len(service_names))} service(s) by trace count")
-    logger.info(f"Top service: {top_services[0]} with {service_trace_counts[0][1]:,} traces")
+
+    logger.info(
+        f"Selecting top {min(top_n, len(service_names))} service(s) by trace count"
+    )
+    logger.info(
+        f"Top service: {top_services[0]} with {service_trace_counts[0][1]:,} traces"
+    )
     if len(top_services) > 1:
-        logger.info(f"Bottom selected service: {top_services[-1]} with {service_trace_counts[min(top_n, len(service_names))-1][1]:,} traces")
-    
+        logger.info(
+            f"Bottom selected service: {top_services[-1]} with {service_trace_counts[min(top_n, len(service_names)) - 1][1]:,} traces"
+        )
+
     # Process each selected service in parallel
     all_stats = []
     filtered_no_user_root = 0
@@ -2801,17 +3056,30 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
     missing_sequence_nodes_possible = 0
     services_missing_sequences = 0
     logger.info(f"\nProcessing {len(top_services)} service(s) in parallel...")
-    
+
     # Prepare arguments for parallel processing (convert Path to string for pickling)
     process_args = [
-        (service_name, service_groups.get_group(service_name).copy(), trace_col, str(graphs_dir))
+        (
+            service_name,
+            service_groups.get_group(service_name).copy(),
+            trace_col,
+            str(graphs_dir),
+        )
         for service_name in top_services
     ]
-    
+
     # Process services in parallel
     with ProcessPoolExecutor(max_workers=n_workers) as ex:
-        futures = {ex.submit(_process_service_wrapper, args): args[0] for args in process_args}
-        for fut in tqdm(as_completed(futures), total=len(futures), desc="Processing services", file=sys.stderr, dynamic_ncols=True):
+        futures = {
+            ex.submit(_process_service_wrapper, args): args[0] for args in process_args
+        }
+        for fut in tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc="Processing services",
+            file=sys.stderr,
+            dynamic_ncols=True,
+        ):
             service_name = futures[fut]
             try:
                 _, G, stats, has_user_root, user_subgraph_sufficient = fut.result()
@@ -2827,19 +3095,23 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
             except Exception as e:
                 logger.error(f"Failed to process service {service_name}: {e!r}")
                 raise
-    
+
     # Sort statistics by number of nodes (descending)
     all_stats.sort(key=lambda x: x["num_nodes"], reverse=True)
-    
+
     # Print statistics
-    logger.info(f"{'='*80}")
+    logger.info(f"{'=' * 80}")
     logger.info("Graph Statistics (sorted by number of nodes, descending)")
-    logger.info(f"{'='*80}")
-    logger.info(f"{'Service':<20} {'Traces':<10} {'Nodes':<8} {'Out-Degree':<30} {'In-Degree':<30}")
+    logger.info(f"{'=' * 80}")
+    logger.info(
+        f"{'Service':<20} {'Traces':<10} {'Nodes':<8} {'Out-Degree':<30} {'In-Degree':<30}"
+    )
     logger.info(f"{'':-<20} {'':-<10} {'':-<8} {'':-<30} {'':-<30}")
-    logger.info(f"{'':<20} {'':<10} {'':<8} {'Avg':<10} {'Min':<10} {'Max':<10} {'Avg':<10} {'Min':<10} {'Max':<10}")
+    logger.info(
+        f"{'':<20} {'':<10} {'':<8} {'Avg':<10} {'Min':<10} {'Max':<10} {'Avg':<10} {'Min':<10} {'Max':<10}"
+    )
     logger.info(f"{'':-<20} {'':-<10} {'':-<8} {'':-<30} {'':-<30}")
-    
+
     for stats in all_stats:
         service_name = stats["service_name"]
         num_traces = stats["num_traces"]
@@ -2850,7 +3122,7 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
         in_avg = stats["in_degree_avg"]
         in_min = stats["in_degree_min"]
         in_max = stats["in_degree_max"]
-        
+
         logger.info(
             f"{service_name:<20} {num_traces:<10,} {num_nodes:<8} "
             f"{out_avg:<10.2f} {out_min:<10} {out_max:<10} "
@@ -2863,10 +3135,12 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
             services_missing_sequences += 1
             missing_sequence_nodes_total += missing_nodes
             missing_sequence_nodes_possible += parent_nodes
-    
-    logger.info(f"{'='*80}")
+
+    logger.info(f"{'=' * 80}")
     logger.info(f"Generated graphs for {len(all_stats)} service(s) in {graphs_dir}")
-    logger.info(f"Each service has its own directory with graph_all_nodes.png and graph_user.png")
+    logger.info(
+        "Each service has its own directory with graph_all_nodes.png and graph_user.png"
+    )
 
     if services_missing_sequences > 0:
         logger.info(
@@ -2874,66 +3148,77 @@ def analyze_call_graphs(df: pd.DataFrame, trace_col: str = "traceid", top_n: int
             f"{missing_sequence_nodes_total} of {missing_sequence_nodes_possible} nodes "
             f"missing call sequences across {services_missing_sequences} service(s)"
         )
-    
+
     total_filtered = filtered_no_user_root + filtered_small_user_subgraph
     if total_filtered > 0:
-        logger.info(f"\nFiltered out {total_filtered} service(s) (no graphs generated):")
-        logger.info(f"  - {filtered_no_user_root} service(s) do not have 'USER' as a root node")
-        logger.info(f"  - {filtered_small_user_subgraph} service(s) have a USER-reachable subgraph with fewer than 5 nodes")
+        logger.info(
+            f"\nFiltered out {total_filtered} service(s) (no graphs generated):"
+        )
+        logger.info(
+            f"  - {filtered_no_user_root} service(s) do not have 'USER' as a root node"
+        )
+        logger.info(
+            f"  - {filtered_small_user_subgraph} service(s) have a USER-reachable subgraph with fewer than 5 nodes"
+        )
     else:
-        logger.info("\nAll processed services have 'USER' as a root node and USER subgraph with >= 5 nodes")
+        logger.info(
+            "\nAll processed services have 'USER' as a root node and USER subgraph with >= 5 nodes"
+        )
+
 
 # ----------------------------
 # main()
 # ----------------------------
 
+
 def main() -> None:
     # Configure logging to use tqdm.write() to avoid interfering with progress bars
     handler = TqdmLoggingHandler()
-    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-    logging.basicConfig(
-        level=logging.INFO,
-        handlers=[handler]
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     )
-    
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
+
     parser = argparse.ArgumentParser(
         description="Quick check script for loading CSV datasets"
     )
     parser.add_argument(
-        "-n", "--num-datasets",
+        "-n",
+        "--num-datasets",
         type=int,
         default=10,
-        help="Number of datasets to load (default: 10). Loads datasets 0 through (n-1)."
+        help="Number of datasets to load (default: 10). Loads datasets 0 through (n-1).",
     )
     parser.add_argument(
-        "-s", "--sample-fraction",
+        "-s",
+        "--sample-fraction",
         type=float,
         default=1.0,
-        help="Fraction of traces to sample from each CSV during loading (0.0 to 1.0, default: 1.0). Set to 1.0 to use all traces."
+        help="Fraction of traces to sample from each CSV during loading (0.0 to 1.0, default: 1.0). Set to 1.0 to use all traces.",
     )
     parser.add_argument(
         "--random-state",
         type=int,
         default=42,
-        help="Random seed for trace sampling reproducibility (default: 42)"
+        help="Random seed for trace sampling reproducibility (default: 42)",
     )
     parser.add_argument(
         "--max-rows",
         type=int,
         default=None,
-        help="Maximum number of rows to load from each CSV file (default: None, loads all rows)"
+        help="Maximum number of rows to load from each CSV file (default: None, loads all rows)",
     )
     parser.add_argument(
         "--top-services",
         type=int,
         default=100,
-        help="Number of top services by trace count to process (default: 100)"
+        help="Number of top services by trace count to process (default: 100)",
     )
     parser.add_argument(
         "--workers",
         type=int,
         default=None,
-        help="Number of parallel workers for processing services (default: None, uses CPU count)"
+        help="Number of parallel workers for processing services (default: None, uses CPU count)",
     )
     args = parser.parse_args()
     num_datasets = args.num_datasets
@@ -2941,19 +3226,19 @@ def main() -> None:
     random_state = args.random_state
     max_rows = args.max_rows
     top_services = args.top_services
-    
+
     if num_datasets < 1:
         parser.error("Number of datasets must be at least 1")
-    
+
     if sample_fraction <= 0.0 or sample_fraction > 1.0:
         parser.error("Sample fraction must be in (0.0, 1.0]")
-    
+
     if max_rows is not None and max_rows < 1:
         parser.error("Max rows must be at least 1")
-    
+
     if top_services < 1:
         parser.error("Top services must be at least 1")
-    
+
     # Convert number of datasets to max dataset ID (0-indexed)
     max_dataset = num_datasets - 1
 
@@ -2962,10 +3247,12 @@ def main() -> None:
     if max_rows is not None:
         logger.info(f"Limiting to {max_rows:,} rows per CSV file")
     if sample_fraction < 1.0:
-        logger.info(f"Sampling {sample_fraction*100:.1f}% of traces from each CSV (random_state={random_state})")
+        logger.info(
+            f"Sampling {sample_fraction * 100:.1f}% of traces from each CSV (random_state={random_state})"
+        )
     else:
         logger.info("Using all traces (no sampling)")
-    
+
     df = load_concat_datasets(
         max_dataset,
         max_rows=max_rows,
@@ -2973,13 +3260,16 @@ def main() -> None:
         random_state=random_state,
         n_workers=args.workers,
     )
-    logger.info(f"Loaded {len(df):,} rows from {num_datasets} dataset(s) (after sampling)")
+    logger.info(
+        f"Loaded {len(df):,} rows from {num_datasets} dataset(s) (after sampling)"
+    )
 
     # Clean data before analysis
     df = clean_data(df)
 
     # Analyze call graphs
     analyze_call_graphs(df, top_n=top_services, n_workers=args.workers)
+
 
 if __name__ == "__main__":
     main()

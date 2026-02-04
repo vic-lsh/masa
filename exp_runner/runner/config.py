@@ -6,7 +6,10 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from .apps.base import AppPlugin
 
 logger = logging.getLogger(__name__)
 

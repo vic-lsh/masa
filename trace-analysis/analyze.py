@@ -2,11 +2,12 @@
 # coding: utf-8
 from __future__ import annotations
 
-from networkx.classes.digraph import DiGraph
-
-
 # Headless/parallel-safe plotting
 import matplotlib
+from networkx.classes.digraph import DiGraph
+
+matplotlib.use("Agg")
+
 matplotlib.use("Agg")
 
 from pathlib import Path
@@ -29,8 +30,10 @@ from tqdm import tqdm
 # Set up logger
 logger = logging.getLogger(__name__)
 
+
 class TqdmLoggingHandler(logging.Handler):
     """Logging handler that uses tqdm.write() to avoid interfering with progress bars."""
+
     def emit(self, record):
         try:
             msg = self.format(record)
@@ -38,12 +41,15 @@ class TqdmLoggingHandler(logging.Handler):
         except Exception:
             self.handleError(record)
 
+
 # ----------------------------
 # Parallel CSV loading (processes)
 # ----------------------------
 
+
 def _read_one(path: str | Path, **read_csv_kwargs) -> pd.DataFrame:
     return pd.read_csv(path, **read_csv_kwargs)
+
 
 def read_csvs_parallel(
     paths: list[str | Path],
@@ -57,7 +63,13 @@ def read_csvs_parallel(
 
     with ProcessPoolExecutor(max_workers=n_workers) as ex:
         futures = {ex.submit(read_fn, p): p for p in paths}
-        for fut in tqdm(as_completed(futures), total=len(futures), desc="Reading CSVs", file=sys.stderr, dynamic_ncols=True):
+        for fut in tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc="Reading CSVs",
+            file=sys.stderr,
+            dynamic_ncols=True,
+        ):
             path = futures[fut]
             try:
                 df = fut.result()
@@ -70,9 +82,11 @@ def read_csvs_parallel(
         return pd.DataFrame()
     return pd.concat(dfs, ignore_index=True, sort=False)
 
+
 # ----------------------------
 # Paths & utilities
 # ----------------------------
+
 
 def _get_project_home() -> Path:
     """
@@ -83,20 +97,22 @@ def _get_project_home() -> Path:
     cwd = Path.cwd()
     if (cwd / "traces").exists():
         return cwd
-    
+
     # Otherwise, derive from script location
     # Script is at trace-analysis/analyze.py, so project root is parent
     script_dir = Path(__file__).parent.resolve()
     project_root = script_dir.parent
-    
+
     # Verify traces/ exists
     if (project_root / "traces").exists():
         return project_root
-    
+
     # Fallback: return parent anyway (will fail later with clear error)
     return project_root
 
+
 PROJECT_HOME = _get_project_home()
+
 
 def get_csv_path(dataset_number: int) -> Path:
     return (
@@ -109,14 +125,17 @@ def get_csv_path(dataset_number: int) -> Path:
         / f"CallGraph_{dataset_number}.csv"
     )
 
+
 def _slugify(name: str) -> str:
     s = re.sub(r"[^\w\-]+", "_", name.strip())
     s = re.sub(r"_+", "_", s).strip("_")
     return s or "service"
 
+
 # ----------------------------
 # Data loading & filtering
 # ----------------------------
+
 
 def load_concat_datasets(max_dataset: int) -> pd.DataFrame:
     return read_csvs_parallel(
@@ -124,17 +143,21 @@ def load_concat_datasets(max_dataset: int) -> pd.DataFrame:
         on_bad_lines="skip",
     )
 
+
 def filter_unknowns(df: pd.DataFrame) -> pd.DataFrame:
-    df = df[df["um"].isin(["UNKNOWN", "UNAVAILABLE"]) == False]
-    df = df[df["dm"].isin(["UNKNOWN", "UNAVAILABLE"]) == False]
+    df = df[~df["um"].isin(["UNKNOWN", "UNAVAILABLE"])]
+    df = df[~df["dm"].isin(["UNKNOWN", "UNAVAILABLE"])]
     return df
+
 
 def select_rpc_rows(df: pd.DataFrame) -> pd.DataFrame:
     return df[~df["rpctype"].isin(["UNKNOWN", "mq"])]
 
+
 # ----------------------------
 # Metrics
 # ----------------------------
+
 
 def print_rpc_stats(rpc_df: pd.DataFrame, df: pd.DataFrame) -> None:
     logger.info(f"Number of RPC calls: {len(rpc_df)}")
@@ -147,11 +170,14 @@ def print_rpc_stats(rpc_df: pd.DataFrame, df: pd.DataFrame) -> None:
     num_services = pd.concat([rpc_df["um"], rpc_df["dm"]]).nunique()
     logger.info(f"Number of unique microservices (not instances): {num_services}")
 
-    num_instances = pd.concat([rpc_df["uminstanceid"], rpc_df["dminstanceid"]]).nunique()
+    num_instances = pd.concat(
+        [rpc_df["uminstanceid"], rpc_df["dminstanceid"]]
+    ).nunique()
     logger.info(f"Number of unique microservice instances: {num_instances}")
 
     avg_replica_count = num_instances / num_services
     logger.info(f"Average replica count per microservice: {avg_replica_count}")
+
 
 def get_top_services(rpc_df: pd.DataFrame, n: int = 10) -> pd.Series:
     top_services = rpc_df["service"].value_counts().head(n)
@@ -159,11 +185,15 @@ def get_top_services(rpc_df: pd.DataFrame, n: int = 10) -> pd.Series:
     logger.info(f"\n{top_services}")
     return top_services
 
+
 # ----------------------------
 # Graph building & plotting
 # ----------------------------
 
-def get_service_graphs(df: pd.DataFrame, service_name: str, interface_col: str = "interface") -> tuple[DiGraph, DiGraph]:
+
+def get_service_graphs(
+    df: pd.DataFrame, service_name: str, interface_col: str = "interface"
+) -> tuple[DiGraph, DiGraph]:
     svc_df = df[df["service"] == service_name]
     iface_series = svc_df[interface_col].fillna("<none>")
 
@@ -194,6 +224,7 @@ def get_service_graphs(df: pd.DataFrame, service_name: str, interface_col: str =
 
     return G_pair, G_iface
 
+
 def plot_dag_plot(
     G: nx.DiGraph,
     mode: str = "thickness",
@@ -223,7 +254,7 @@ def plot_dag_plot(
             node_size = 2200
         else:
             node_size = 2000
-    
+
     if font_size is None:
         # Keep fonts readable
         if num_nodes < 20:
@@ -236,7 +267,7 @@ def plot_dag_plot(
             font_size = 7
         else:
             font_size = 6
-    
+
     pos = nx.nx_agraph.graphviz_layout(
         G, prog="dot", args=f"-Granksep={ranksep} -Gnodesep={nodesep}"
     )
@@ -258,10 +289,14 @@ def plot_dag_plot(
 
         plt.figure(figsize=figsize)
         nx.draw(
-            G, pos,
-            with_labels=True, arrows=True,
-            node_size=node_size, font_size=font_size,
-            node_color=node_color, arrowsize=arrowsize,
+            G,
+            pos,
+            with_labels=True,
+            arrows=True,
+            node_size=node_size,
+            font_size=font_size,
+            node_color=node_color,
+            arrowsize=arrowsize,
             width=widths,
         )
 
@@ -271,10 +306,14 @@ def plot_dag_plot(
 
         plt.figure(figsize=figsize)
         nx.draw(
-            G, pos,
-            with_labels=True, arrows=True,
-            node_size=node_size, font_size=font_size,
-            node_color=node_color, arrowsize=arrowsize,
+            G,
+            pos,
+            with_labels=True,
+            arrows=True,
+            node_size=node_size,
+            font_size=font_size,
+            node_color=node_color,
+            arrowsize=arrowsize,
             width=widths,
         )
         if edge_labels:
@@ -284,11 +323,12 @@ def plot_dag_plot(
 
     if outfile:
         outfile.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(outfile, bbox_inches='tight')
+        plt.savefig(outfile, bbox_inches="tight")
         plt.close()
     else:
         plt.tight_layout()
         plt.show()
+
 
 def reachable_subgraph(G: nx.DiGraph, source: str = "USER") -> nx.DiGraph:
     if source not in G:
@@ -308,21 +348,24 @@ def reachable_subgraph(G: nx.DiGraph, source: str = "USER") -> nx.DiGraph:
         )
     else:
         H.add_edges_from(
-            (u, v, copy.deepcopy(view.get_edge_data(u, v)))
-            for u, v in view.edges()
+            (u, v, copy.deepcopy(view.get_edge_data(u, v))) for u, v in view.edges()
         )
     return H
+
 
 # ----------------------------
 # CallGraph wrapper
 # ----------------------------
+
 
 class CallGraph:
     service_name: str
     G_pair: nx.DiGraph
     G_iface: nx.DiGraph
 
-    def __init__(self, service_name: str, G_pair: nx.DiGraph, G_iface: nx.DiGraph) -> None:
+    def __init__(
+        self, service_name: str, G_pair: nx.DiGraph, G_iface: nx.DiGraph
+    ) -> None:
         self.service_name = service_name
         self.G_pair = G_pair
         self.G_iface = G_iface
@@ -331,25 +374,28 @@ class CallGraph:
         plot_dag_plot(self.G_pair, outfile=outfile, **kwargs)
 
     def draw_dag(self, outfile: Path | None = None, **kwargs) -> None:
-        plot_dag_plot(reachable_subgraph(self.G_pair, source="USER"), outfile=outfile, **kwargs)
+        plot_dag_plot(
+            reachable_subgraph(self.G_pair, source="USER"), outfile=outfile, **kwargs
+        )
+
 
 # ----------------------------
 # Latency distributions
 # ----------------------------
 
+
 def compute_latency_distributions(df: pd.DataFrame):
-    return (
-        df.groupby(["dm", "interface"])["rt"]
-        .agg(list)
-        .to_dict()
-    )
+    return df.groupby(["dm", "interface"])["rt"].agg(list).to_dict()
+
 
 def query_latency_distribution(latency_dict, dm_name: str, iface_name: str):
     return latency_dict.get((dm_name, iface_name), [])
 
+
 # ----------------------------
 # Reporting (per-graph)
 # ----------------------------
+
 
 def report_latency_by_edge_for_graph(
     graph: CallGraph,
@@ -367,7 +413,9 @@ def report_latency_by_edge_for_graph(
     iface_counts_by_callee: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
     seen_callee_ifaces: set[tuple[str, str]] = set()
 
-    for caller, callee, data in reachable_subgraph(graph.G_pair, source="USER").edges(data=True):
+    for caller, callee, data in reachable_subgraph(graph.G_pair, source="USER").edges(
+        data=True
+    ):
         raw_weight = data.get("weight")
         weight = float(raw_weight) if raw_weight is not None else 0.0
         edges_rows.append((graph.service_name, caller, callee, weight))
@@ -403,22 +451,29 @@ def report_latency_by_edge_for_graph(
 
     # (3) latency_percentiles.json
     lat_json: dict[str, dict[str, dict[str, float]]] = {}
-    for (callee, iface) in sorted(seen_callee_ifaces):
+    for callee, iface in sorted(seen_callee_ifaces):
         latencies = query_latency_distribution(latency_dists, callee, iface)
         if not latencies:
             continue
         arr = np.asarray(latencies, dtype=float)
         vals = np.percentile(arr, percentiles)
-        lat_json.setdefault(callee, {})[iface] = {str(p): float(v) for p, v in zip(percentiles, vals)}
+        lat_json.setdefault(callee, {})[iface] = {
+            str(p): float(v) for p, v in zip(percentiles, vals)
+        }
 
     if lat_json:
         with open(svc_dir / "latency_percentiles.json", "w") as f:
             json.dump(lat_json, f, indent=2)
+
+
 # ----------------------------
 # Per-service worker (PROCESS)
 # ----------------------------
 
-ServiceResult = namedtuple("ServiceResult", ["service_name", "num_nodes", "num_edges", "dag_nodes"])
+ServiceResult = namedtuple(
+    "ServiceResult", ["service_name", "num_nodes", "num_edges", "dag_nodes"]
+)
+
 
 def _compute_dynamic_figsize(
     G: nx.DiGraph,
@@ -433,36 +488,37 @@ def _compute_dynamic_figsize(
 ) -> tuple[float, float]:
     """
     Compute dynamic figure size based on graph complexity.
-    
+
     Args:
         G: NetworkX graph
         base_width, base_height: Base dimensions
         width_per_node, height_per_node: Scaling factors per node
         min_width, min_height: Minimum dimensions
         max_width, max_height: Maximum dimensions
-    
+
     Returns:
         (width, height) tuple for matplotlib figsize
     """
     num_nodes = G.number_of_nodes()
     num_edges = G.number_of_edges()
-    
+
     # Base calculation on number of nodes (more conservative scaling)
     width = base_width + (num_nodes * width_per_node)
     height = base_height + (num_nodes * height_per_node)
-    
+
     # Add extra space for highly connected graphs (reduced multiplier)
     if num_nodes > 0:
         edge_density = num_edges / num_nodes
         if edge_density > 5:
             width *= 1.1
             height *= 1.05
-    
+
     # Clamp to min/max bounds
     width = max(min_width, min(width, max_width))
     height = max(min_height, min(height, max_height))
-    
+
     return (width, height)
+
 
 def _process_one_service_proc(
     service_name: str,
@@ -482,7 +538,7 @@ def _process_one_service_proc(
     # Create service-specific directory in graph_reports
     svc_dir = reports_root / _slugify(service_name)
     svc_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Compute dynamic figure sizes based on graph complexity
     svc_figsize = _compute_dynamic_figsize(
         cg.G_pair,
@@ -495,7 +551,7 @@ def _process_one_service_proc(
         max_width=80.0,
         max_height=50.0,
     )
-    
+
     dag_subgraph = reachable_subgraph(cg.G_pair, source="USER")
     dag_figsize = _compute_dynamic_figsize(
         dag_subgraph,
@@ -508,20 +564,26 @@ def _process_one_service_proc(
         max_width=60.0,
         max_height=45.0,
     )
-    
+
     cg.draw_svc_plot(
-        mode="labels", figsize=svc_figsize,
-        ranksep=1.0, nodesep=0.5,
+        mode="labels",
+        figsize=svc_figsize,
+        ranksep=1.0,
+        nodesep=0.5,
         outfile=svc_dir / f"{_slugify(service_name)}_svc.png",
     )
     cg.draw_dag(
-        mode="thickness", figsize=dag_figsize,
-        ranksep=1.2, nodesep=0.5,
+        mode="thickness",
+        figsize=dag_figsize,
+        ranksep=1.2,
+        nodesep=0.5,
         outfile=svc_dir / f"{_slugify(service_name)}_dag.png",
     )
 
     # Reports
-    report_latency_by_edge_for_graph(cg, latency_dists_filtered, output_root=reports_root)
+    report_latency_by_edge_for_graph(
+        cg, latency_dists_filtered, output_root=reports_root
+    )
 
     return ServiceResult(
         service_name=service_name,
@@ -530,9 +592,11 @@ def _process_one_service_proc(
         dag_nodes=len(dag_subgraph.nodes),
     )
 
+
 # ----------------------------
 # Orchestration (process pool)
 # ----------------------------
+
 
 def run_for_services_process_pool(
     rpc_df: pd.DataFrame,
@@ -565,7 +629,9 @@ def run_for_services_process_pool(
 
     # Precompute (dm, interface) pairs per service to trim latency dict size
     svc_keys: dict[str, set[tuple[str, str]]] = {
-        svc: set(zip(svc_frames[svc]["dm"], svc_frames[svc]["interface"].fillna("<none>")))
+        svc: set(
+            zip(svc_frames[svc]["dm"], svc_frames[svc]["interface"].fillna("<none>"))
+        )
         for svc in services
     }
 
@@ -581,15 +647,23 @@ def run_for_services_process_pool(
         for svc in services:
             lat_sub = _filter_latency(latency_dists_all, svc_keys[svc])
             # Submit minimal payload to the process
-            futures[ex.submit(
-                _process_one_service_proc,
-                svc,
-                svc_frames[svc],
-                lat_sub,
-                reports_root,
-            )] = svc
+            futures[
+                ex.submit(
+                    _process_one_service_proc,
+                    svc,
+                    svc_frames[svc],
+                    lat_sub,
+                    reports_root,
+                )
+            ] = svc
 
-        for fut in tqdm(as_completed(futures), total=len(futures), desc="Per-service (proc)", file=sys.stderr, dynamic_ncols=True):
+        for fut in tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc="Per-service (proc)",
+            file=sys.stderr,
+            dynamic_ncols=True,
+        ):
             svc = futures[fut]
             try:
                 results.append(fut.result())
@@ -599,34 +673,36 @@ def run_for_services_process_pool(
     results.sort(key=lambda x: x.service_name)
     return results
 
+
 # ----------------------------
 # main()
 # ----------------------------
 
+
 def main() -> None:
     # Configure logging to use tqdm.write() to avoid interfering with progress bars
     handler = TqdmLoggingHandler()
-    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-    logging.basicConfig(
-        level=logging.INFO,
-        handlers=[handler]
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     )
-    
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
+
     parser = argparse.ArgumentParser(
         description="Analyze microservice call graph traces from Alibaba cluster data"
     )
     parser.add_argument(
-        "-n", "--num-datasets",
+        "-n",
+        "--num-datasets",
         type=int,
         default=10,
-        help="Number of datasets to load (default: 10). Loads datasets 0 through (n-1)."
+        help="Number of datasets to load (default: 10). Loads datasets 0 through (n-1).",
     )
     args = parser.parse_args()
     num_datasets = args.num_datasets
-    
+
     if num_datasets < 1:
         parser.error("Number of datasets must be at least 1")
-    
+
     # Convert number of datasets to max dataset ID (0-indexed)
     max_dataset = num_datasets - 1
 
@@ -644,30 +720,33 @@ def main() -> None:
     # Set output directories relative to trace-analysis directory
     trace_analysis_dir = Path(__file__).parent.resolve()
     reports_root = trace_analysis_dir / "graph_reports"
-    
+
     start = time.perf_counter()
     results = run_for_services_process_pool(
         rpc_df,
         top_services,
-        n_workers=32,               # set an int to cap processes
+        n_workers=32,  # set an int to cap processes
         reports_root=reports_root,
     )
     elapsed = time.perf_counter() - start
     logger.info(f"Elapsed: {elapsed:.6f} s")
 
     for result in results:
-        logger.info(f"{result.service_name}: nodes={result.num_nodes}, edges={result.num_edges}, dag_nodes={result.dag_nodes}")
+        logger.info(
+            f"{result.service_name}: nodes={result.num_nodes}, edges={result.num_edges}, dag_nodes={result.dag_nodes}"
+        )
 
     # Print graphs with DAG nodes > 10, sorted in descending order
     large_dags = [result for result in results if result.dag_nodes > 10]
     large_dags.sort(key=lambda r: r.dag_nodes, reverse=True)
-    
+
     if large_dags:
         logger.info("\nGraphs with DAG nodes > 10 (descending by size):")
         for result in large_dags:
             logger.info(f"  {result.service_name}: {result.dag_nodes} nodes")
     else:
         logger.info("\nNo graphs found with DAG nodes > 10")
+
 
 if __name__ == "__main__":
     main()
