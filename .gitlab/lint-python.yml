@@ -1,0 +1,16 @@
+lint_python:
+    image: python:3.11
+    stage: quick-checks
+    variables:
+        CI: "true"
+    before_script:
+        - curl -LsSf https://astral.sh/uv/install.sh | sh
+        - export PATH="$HOME/.local/bin:$PATH"
+    script:
+        - ./scripts/lint_python.sh
+    rules:
+        - changes:
+              - "**/*.py"
+              - "pyproject.toml"
+              - "uv.lock"
+              - "scripts/**/*"
