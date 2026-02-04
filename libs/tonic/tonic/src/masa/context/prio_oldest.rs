@@ -155,3 +155,8 @@ impl ChildContext {
         self.child_method_name = Some(name);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    crate::generate_early_return_test!(ParentContext, ServerContext, ChildContext);
+}
