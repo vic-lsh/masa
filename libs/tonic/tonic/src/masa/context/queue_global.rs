@@ -4,7 +4,9 @@ use std::task::Poll;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::common::{EarlyReturnHandler, QueueLatencyTracker};
-use super::{resolve_method_name, MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER};
+use super::{
+    resolve_method_name, resolve_service_name, MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER,
+};
 use crate::Response;
 use masa_core::{Context, ContextBuilder};
 
@@ -60,7 +62,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             ctx: read_context(req),
             q_lat_tracker: QueueLatencyTracker::new(),
             early_return: EarlyReturnHandler::new(
-                method.service(),
+                resolve_service_name(method, req),
                 resolve_method_name(method, req),
             ),
         }

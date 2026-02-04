@@ -199,6 +199,12 @@ where
 /// per-method latency estimates to be maintained accurately.
 pub const METHOD_NAME_OVERRIDE_HEADER: &str = "x-masa-method-name";
 
+/// Header key for overriding the gRPC service name in latency tracking.
+///
+/// When a service uses a generic gRPC service to simulate multiple services,
+/// this header can be set to specify the actual service name being simulated.
+pub const SERVICE_NAME_OVERRIDE_HEADER: &str = "x-masa-service-name";
+
 /// Internal header key for MASA context.
 pub(crate) const MASA_CONTEXT_HEADER: &str = masa_core::MASA_CONTEXT_HEADER;
 
@@ -232,6 +238,19 @@ pub trait MasaRequestExt<T> {
     /// Returns an error if the method name cannot be converted to a valid metadata value.
     fn set_method_name_override(&mut self, method_name: &str) -> Result<(), Status>;
 
+    /// Set the service name override header on this request.
+    ///
+    /// This is useful when using a generic gRPC service to simulate multiple services.
+    ///
+    /// # Arguments
+    ///
+    /// * `service_name` - The actual service name being simulated
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the service name cannot be converted to a valid metadata value.
+    fn set_service_name_override(&mut self, service_name: &str) -> Result<(), Status>;
+
     /// Set the MASA context for this request.
     fn set_masa_context(&mut self, ctx: &Context);
 
@@ -252,6 +271,18 @@ impl<T> MasaRequestExt<T> for Request<T> {
         })?;
         self.metadata_mut()
             .insert(METHOD_NAME_OVERRIDE_HEADER, value);
+        Ok(())
+    }
+
+    fn set_service_name_override(&mut self, service_name: &str) -> Result<(), Status> {
+        let value = MetadataValue::<Ascii>::try_from(service_name).map_err(|e| {
+            Status::internal(format!(
+                "Failed to create metadata value for service name override: {:?}",
+                e
+            ))
+        })?;
+        self.metadata_mut()
+            .insert(SERVICE_NAME_OVERRIDE_HEADER, value);
         Ok(())
     }
 
@@ -337,4 +368,14 @@ pub(crate) fn resolve_method_name<B>(method: GrpcMethod, req: &http::Request<B>)
         }
     }
     method.method().to_string()
+}
+
+/// Resolve the service name from HTTP request headers, checking for override header.
+pub(crate) fn resolve_service_name<B>(method: GrpcMethod, req: &http::Request<B>) -> String {
+    if let Some(header_value) = req.headers().get(SERVICE_NAME_OVERRIDE_HEADER) {
+        if let Ok(service_name) = header_value.to_str() {
+            return service_name.to_string();
+        }
+    }
+    method.service().to_string()
 }
