@@ -1,23 +1,18 @@
 test_e2e_hotel:
-  stage: test
-  variables:
-    CI: "true"
-  cache:
-    key:
-      files:
-        - uv.lock
-    paths:
-      - .venv
-  before_script:
-    - |
-      if ! command -v uv &> /dev/null; then
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-      fi
-    - uv sync
-    - source .venv/bin/activate
-  tags:
-    - on-host
-  script:
-    - groups $(whoami) # make sure that gitlab runner is in the 'docker' group
-    - ./scripts/test_e2e_hotel.sh
+    stage: test
+    variables:
+        CI: "true"
+
+    before_script:
+        - |
+            if ! command -v uv &> /dev/null; then
+              curl -LsSf https://astral.sh/uv/install.sh | sh
+              export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+            fi
+        - uv sync
+        - source .venv/bin/activate
+    tags:
+        - on-host
+    script:
+        - groups $(whoami) # make sure that gitlab runner is in the 'docker' group
+        - ./scripts/test_e2e_hotel.sh
