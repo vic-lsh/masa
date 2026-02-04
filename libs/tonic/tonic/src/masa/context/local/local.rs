@@ -218,8 +218,14 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         let resolved_child_method =
             super::super::resolve_method_name_from_request(child_method, request);
 
+        let resolved_child_method_str = format!(
+            "/{}/{}",
+            resolved_child_method.service(),
+            resolved_child_method.method()
+        );
+
         let parent_to_child_id =
-            parent_to_child_identifier(&self.resolved_method, &resolved_child_method);
+            parent_to_child_identifier(&self.resolved_method, &resolved_child_method_str);
 
         // Setup child context to track client runtime
         child_ctx.setup(parent_to_child_id.clone(), self.server.clone());
@@ -455,29 +461,26 @@ mod tests {
         let mut req = Request::new(());
 
         // 1. No overrides
-        assert_eq!(
-            resolve_method_name_from_request(method, &req),
-            "/TestService/TestMethod"
-        );
+        let resolved = resolve_method_name_from_request(method, &req);
+        assert_eq!(resolved.service(), "TestService");
+        assert_eq!(resolved.method(), "TestMethod");
 
         // 2. Method override only
         req.metadata_mut().insert(
             METHOD_NAME_OVERRIDE_HEADER,
             MetadataValue::from_static("OverriddenMethod"),
         );
-        assert_eq!(
-            resolve_method_name_from_request(method, &req),
-            "OverriddenMethod"
-        );
+        let resolved = resolve_method_name_from_request(method, &req);
+        assert_eq!(resolved.service(), "TestService");
+        assert_eq!(resolved.method(), "OverriddenMethod");
 
         // 3. Method and Service override
         req.metadata_mut().insert(
             SERVICE_NAME_OVERRIDE_HEADER,
             MetadataValue::from_static("OverriddenService"),
         );
-        assert_eq!(
-            resolve_method_name_from_request(method, &req),
-            "/OverriddenService/OverriddenMethod"
-        );
+        let resolved = resolve_method_name_from_request(method, &req);
+        assert_eq!(resolved.service(), "OverriddenService");
+        assert_eq!(resolved.method(), "OverriddenMethod");
     }
 }

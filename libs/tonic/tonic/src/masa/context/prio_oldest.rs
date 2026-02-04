@@ -76,7 +76,11 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         }
 
         let child_method_name = resolve_method_name_from_request(child_method, request);
-        child_ctx.set_method_name(child_method_name);
+        child_ctx.set_method_name(format!(
+            "/{}/{}",
+            child_method_name.service(),
+            child_method_name.method()
+        ));
 
         let deadline = self.ctx.deadline();
         let prio_hint = self.ctx.prio_hint();
