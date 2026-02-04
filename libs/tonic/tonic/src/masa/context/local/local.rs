@@ -1,5 +1,5 @@
 use crate::{
-    masa::context::{read_context, METHOD_NAME_OVERRIDE_HEADER},
+    masa::context::{read_context, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER},
     Code, GrpcMethod, Request, Response, Status,
 };
 use std::{
@@ -139,6 +139,11 @@ pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyE
 fn resolve_method_name_from_http<B>(method: GrpcMethod, req: &http::Request<B>) -> String {
     if let Some(header_value) = req.headers().get(METHOD_NAME_OVERRIDE_HEADER) {
         if let Ok(method_name) = header_value.to_str() {
+            if let Some(service_header) = req.headers().get(SERVICE_NAME_OVERRIDE_HEADER) {
+                if let Ok(service_name) = service_header.to_str() {
+                    return format!("/{}/{}", service_name, method_name);
+                }
+            }
             return method_name.to_string();
         }
     }
@@ -149,6 +154,11 @@ fn resolve_method_name_from_http<B>(method: GrpcMethod, req: &http::Request<B>) 
 fn resolve_method_name_from_request<T>(method: GrpcMethod, request: &Request<T>) -> String {
     if let Some(header_value) = request.metadata().get(METHOD_NAME_OVERRIDE_HEADER) {
         if let Ok(method_name) = header_value.to_str() {
+            if let Some(service_header) = request.metadata().get(SERVICE_NAME_OVERRIDE_HEADER) {
+                if let Ok(service_name) = service_header.to_str() {
+                    return format!("/{}/{}", service_name, method_name);
+                }
+            }
             return method_name.to_string();
         }
     }
@@ -414,5 +424,73 @@ mod tests {
         let est = get_estimate(&*ctx.est_child_latency, method.clone());
         // integer_sqrt(250) is 15 (15*15=225, 16*16=256)
         assert_eq!(est, Some(15));
+    }
+
+    #[test]
+    fn test_resolve_method_name_from_http_with_overrides() {
+        use http::HeaderValue;
+
+        let method = GrpcMethod::new("TestService", "TestMethod");
+        let mut req = http::Request::new(());
+
+        // 1. No overrides
+        assert_eq!(
+            resolve_method_name_from_http(method, &req),
+            "/TestService/TestMethod"
+        );
+
+        // 2. Method override only
+        req.headers_mut().insert(
+            METHOD_NAME_OVERRIDE_HEADER,
+            HeaderValue::from_static("OverriddenMethod"),
+        );
+        assert_eq!(
+            resolve_method_name_from_http(method, &req),
+            "OverriddenMethod"
+        );
+
+        // 3. Method and Service override
+        req.headers_mut().insert(
+            SERVICE_NAME_OVERRIDE_HEADER,
+            HeaderValue::from_static("OverriddenService"),
+        );
+        assert_eq!(
+            resolve_method_name_from_http(method, &req),
+            "/OverriddenService/OverriddenMethod"
+        );
+    }
+
+    #[test]
+    fn test_resolve_method_name_from_request_with_overrides() {
+        use crate::metadata::MetadataValue;
+
+        let method = GrpcMethod::new("TestService", "TestMethod");
+        let mut req = Request::new(());
+
+        // 1. No overrides
+        assert_eq!(
+            resolve_method_name_from_request(method, &req),
+            "/TestService/TestMethod"
+        );
+
+        // 2. Method override only
+        req.metadata_mut().insert(
+            METHOD_NAME_OVERRIDE_HEADER,
+            MetadataValue::from_static("OverriddenMethod"),
+        );
+        assert_eq!(
+            resolve_method_name_from_request(method, &req),
+            "OverriddenMethod"
+        );
+
+        // 3. Method and Service override
+        req.metadata_mut().insert(
+            SERVICE_NAME_OVERRIDE_HEADER,
+            MetadataValue::from_static("OverriddenService"),
+        );
+        assert_eq!(
+            resolve_method_name_from_request(method, &req),
+            "/OverriddenService/OverriddenMethod"
+        );
     }
 }
