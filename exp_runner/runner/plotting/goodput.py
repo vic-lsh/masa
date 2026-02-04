@@ -1409,6 +1409,8 @@ def generate_plots(args) -> None:
         policy_total_early_returns.append({})
         policy_slo_misses_by_type.append({})
         policy_total_slo_misses.append({})
+        policy_early_returns_last_child_by_type.append({})
+        policy_total_early_returns_last_child.append({})
         for api in apis:
             data = results[i][api]
             policy_goodputs[i][api] = {
