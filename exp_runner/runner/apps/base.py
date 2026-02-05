@@ -10,9 +10,10 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Tuple
 
 from ..cpu_monitor import CPUMonitor
+from ..deployment_manager import TaskSpec
 from .utils import verify_standard_workload
 
 logger = logging.getLogger(__name__)
@@ -390,6 +391,73 @@ class AppPlugin(ABC):
 
         Returns:
             AppBuilder instance configured for this application
+        """
+        pass
+
+    @abstractmethod
+    def prepare_workload(
+        self,
+        config: "ExperimentConfig",
+        policy: str,
+        iteration: int,
+        output_dir: Path,
+        repo_root: Path,
+        use_k8s: bool = False,
+    ) -> dict:
+        """
+        Prepare workload configuration and environment variables.
+
+        Args:
+            config: Experiment configuration
+            policy: Scheduling policy
+            iteration: Iteration number
+            output_dir: Directory for output artifacts
+            repo_root: Repository root
+            use_k8s: Whether targeting Kubernetes
+
+        Returns:
+            Dictionary of environment variables
+        """
+        pass
+
+    @abstractmethod
+    def get_deployment_location(
+        self, output_dir: Path, use_k8s: bool, repo_root: Path
+    ) -> Tuple[Path, str]:
+        """
+        Get deployment configuration location.
+
+        Args:
+            output_dir: Output directory (where generated configs might reside)
+            use_k8s: Whether targeting Kubernetes
+            repo_root: Repository root
+
+        Returns:
+            Tuple of (deploy_root, deploy_file)
+            deploy_root: Base directory for deployment command
+            deploy_file: Config filename (compose file or chart directory) relative to deploy_root
+        """
+        pass
+
+    @abstractmethod
+    def get_loadgen_spec(
+        self,
+        output_dir: Path,
+        features: Optional[str],
+        env_vars: dict,
+        use_k8s: bool,
+    ) -> TaskSpec:
+        """
+        Get specification for the load generator task.
+
+        Args:
+            output_dir: Output directory
+            features: Cargo features (policy)
+            env_vars: Environment variables
+            use_k8s: Whether targeting Kubernetes
+
+        Returns:
+            TaskSpec for the load generator
         """
         pass
 
