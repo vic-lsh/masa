@@ -1,3 +1,5 @@
+#![cfg(any(feature = "prio_global_trace", feature = "prio_global_early"))]
+
 use std::time::Duration;
 
 #[cfg(feature = "prio_global_early")]
