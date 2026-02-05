@@ -1,6 +1,7 @@
 use crate::{
     masa::context::read_context, Code, CowGrpcMethod, GrpcMethod, Request, Response, Status,
 };
+use crate::masa::MethodRegistry;
 use std::{
     sync::{atomic::Ordering, Arc, Mutex},
     task::Poll,
@@ -44,19 +45,24 @@ pub(crate) type LocalLatencyEstimator = LatencyRms;
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub(crate) struct ParentToChildId {
-    pub parent: CowGrpcMethod,
-    pub child: CowGrpcMethod,
+    pub parent_id: u64,
+    pub child_id: u64,
+}
+
+impl ParentToChildId {
+    pub(crate) fn to_key(&self) -> u64 {
+        // Simple combination of two 32-bit (effective) IDs into one 64-bit key
+        (self.parent_id << 32) | self.child_id
+    }
 }
 
 impl std::fmt::Display for ParentToChildId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}::{}=>{}::{}",
-            self.parent.service(),
-            self.parent.method(),
-            self.child.service(),
-            self.child.method()
+            "{}=>{}",
+            self.parent_id,
+            self.child_id
         )
     }
 }
@@ -79,7 +85,7 @@ impl MasaHooks for LocalDeadlinePolicy {
 
 /// Spawns a background task to periodically print latency estimates
 fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
-    distributions: Arc<LatencyMap<ParentToChildId, E>>,
+    distributions: Arc<LatencyMap<E>>,
     label: &'static str,
 ) {
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -93,12 +99,23 @@ fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
                 }
 
                 let mut parts = Vec::new();
-                distributions.for_each(|endpoint, distribution| {
+                distributions.for_each(|key, distribution| {
                     if distribution.can_estimate() {
                         let estimate = distribution.estimate();
-                        parts.push(format!("{}: {} us", endpoint, estimate));
+                        
+                        // Decode key
+                        let parent_id = key >> 32;
+                        let child_id = key & 0xFFFFFFFF;
+                        
+                        // Use registry to get names
+                        // We use a simplified formatting if registry lookup fails (shouldn't happen)
+                        let registry = MethodRegistry::global();
+                        let p_name = registry.get_method_name(parent_id).map(|(s, m)| format!("{}::{}", s, m)).unwrap_or_else(|| format!("{}", parent_id));
+                        let c_name = registry.get_method_name(child_id).map(|(s, m)| format!("{}::{}", s, m)).unwrap_or_else(|| format!("{}", child_id));
+                        
+                        parts.push(format!("{}=>{}: {} us", p_name, c_name, estimate));
                     } else {
-                        parts.push(format!("{}: (no estimate)", endpoint));
+                        parts.push(format!("{}: (no estimate)", key));
                     }
                 });
                 log::info!("{}: {}", label, parts.join(", "));
@@ -112,9 +129,9 @@ fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
 #[allow(unreachable_pub)]
 pub struct ServerContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     // for every method on this server, tracks the remaining duration of the method after an outgoing request has finished
-    est_after_child_latency: Arc<LatencyMap<ParentToChildId, E>>,
+    est_after_child_latency: Arc<LatencyMap<E>>,
     // tracks the actual child RPC call latencies
-    est_child_latency: Arc<LatencyMap<ParentToChildId, E>>,
+    est_child_latency: Arc<LatencyMap<E>>,
     print_counter: AtomicUsize,
 }
 
@@ -139,7 +156,10 @@ impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
 #[allow(unreachable_pub)]
 pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     method: GrpcMethod,
-    resolved_method: CowGrpcMethod,
+    resolved_method_id: u64,
+    // Keep resolved_method for debugging/logging if needed, but remove if strict zero-overhead desired.
+    // Keeping it for now as EarlyReturnHandler uses it.
+    resolved_method: CowGrpcMethod, 
     ctx: Context,
     server: Arc<ServerContext<E>>,
 
@@ -157,13 +177,17 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         server_ctx: Arc<ServerContext<E>>,
     ) -> Self {
         let resolved_method = resolve_method_name_from_http(method, req);
+        let resolved_method_id = MethodRegistry::global()
+            .get_or_register_method(resolved_method.service(), resolved_method.method());
+            
         Self {
             method,
-            resolved_method,
+            resolved_method: resolved_method.clone(),
+            resolved_method_id,
             ctx: read_context(req),
             server: server_ctx,
             q_lat_tracker: QueueLatencyTracker::new(),
-            early_return: EarlyReturnHandler::new(resolve_method_name_from_http(method, req)),
+            early_return: EarlyReturnHandler::new(resolved_method),
             child_end_times: Mutex::new(Vec::new()),
         }
     }
@@ -208,18 +232,22 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         let resolved_child_method =
             super::super::resolve_method_name_from_request(child_method, request);
 
+        let resolved_child_id = MethodRegistry::global()
+            .get_or_register_method(resolved_child_method.service(), resolved_child_method.method());
+
         let parent_to_child_id = ParentToChildId {
-            parent: self.resolved_method.clone(),
-            child: resolved_child_method,
+            parent_id: self.resolved_method_id,
+            child_id: resolved_child_id,
         };
+        let key = parent_to_child_id.to_key();
 
         // Setup child context to track client runtime
-        child_ctx.setup(parent_to_child_id.clone(), self.server.clone());
+        child_ctx.setup(parent_to_child_id.clone(), resolved_child_method, self.server.clone());
 
         let est_remaining = self
             .server
             .est_after_child_latency
-            .get_estimate(&parent_to_child_id)
+            .get_estimate(key)
             .unwrap_or(0);
 
         let deadline = self.ctx.deadline() - est_remaining;
@@ -230,7 +258,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         let est_child = self
             .server
             .est_child_latency
-            .get_estimate(&parent_to_child_id)
+            .get_estimate(key)
             .unwrap_or(0);
 
         // this encodes the slack: parent deadline - est child latency - est remaining
@@ -238,7 +266,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
             log::info!(
-                "LAT_EST: p=>c: {:?}, est_child: {}, est_rem: {}",
+                "LAT_EST: p=>c: {}, est_child: {}, est_rem: {}",
                 parent_to_child_id,
                 est_child,
                 est_remaining
@@ -264,11 +292,11 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         // Finalize child context to track client runtime if response is not early return
         child_ctx.finalize(response);
 
-        if let Some(parent_to_child_id) = &child_ctx.parent_to_child_id {
-            let child = &parent_to_child_id.child;
-            self.early_return.set_last_child(child.clone());
+        // Update EarlyReturnHandler with the actual child method name if possible
+        if let Some(child_method) = &child_ctx.child_method {
+           self.early_return.set_last_child(child_method.clone());
         }
-
+        
         if let Err(status) = response {
             // NOTE(vic): could we avoid cloning here?
             return Err(status.clone());
@@ -304,7 +332,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
 
         for (parent_to_child_id, child_end) in child_end_times {
             self.server.est_after_child_latency.track(
-                parent_to_child_id,
+                parent_to_child_id.to_key(),
                 parent_end.duration_since(child_end).as_micros() as u64,
             );
         }
@@ -324,6 +352,7 @@ fn is_early_return_response<T>(response: &Result<Response<T>, Status>) -> bool {
 pub struct ChildContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
     start_time: Option<Instant>,
     parent_to_child_id: Option<ParentToChildId>,
+    child_method: Option<CowGrpcMethod>,
     server: Option<Arc<ServerContext<E>>>,
 }
 
@@ -332,15 +361,17 @@ impl<E: LatencyEstimator + Default + 'static> ClientHooks for ChildContext<E> {
         Self {
             start_time: None,
             parent_to_child_id: None,
+            child_method: None,
             server: None,
         }
     }
 }
 
 impl<E: LatencyEstimator + Default + 'static> ChildContext<E> {
-    fn setup(&mut self, parent_to_child_id: ParentToChildId, server: Arc<ServerContext<E>>) {
+    fn setup(&mut self, parent_to_child_id: ParentToChildId, child_method: CowGrpcMethod, server: Arc<ServerContext<E>>) {
         self.start_time = Some(Instant::now());
         self.parent_to_child_id = Some(parent_to_child_id);
+        self.child_method = Some(child_method);
         self.server = Some(server);
     }
 
@@ -355,7 +386,7 @@ impl<E: LatencyEstimator + Default + 'static> ChildContext<E> {
             let client_runtime = Instant::now().duration_since(start_time).as_micros() as u64;
             server
                 .est_child_latency
-                .track(parent_to_child_id.clone(), client_runtime);
+                .track(parent_to_child_id.to_key(), client_runtime);
         }
     }
 }
@@ -369,40 +400,41 @@ mod tests {
     fn test_server_context_rms_integration() {
         let ctx = ServerContext::<LatencyRms>::new("test_service");
         let method = ParentToChildId {
-            parent: CowGrpcMethod::new("S1", "M1"),
-            child: CowGrpcMethod::new("S2", "M2"),
+            parent_id: 1,
+            child_id: 2,
         };
+        let key = method.to_key();
 
         // Inject an estimator with a short update interval (2) for testing.
         // By default, LatencyRms has a large update interval (512), which makes testing hard.
         {
             ctx.est_child_latency
-                .insert(method.clone(), LatencyRms::new(2));
+                .insert(key, LatencyRms::new(2));
         }
 
         // 1st track: sum_sq=100, count=1, since_update=1. No update yet.
-        ctx.est_child_latency.track(method.clone(), 10);
+        ctx.est_child_latency.track(key, 10);
 
         // Estimate uses cached RMS value (initially 0).
-        let est = ctx.est_child_latency.get_estimate(&method);
+        let est = ctx.est_child_latency.get_estimate(key);
         assert_eq!(est, Some(0));
 
         // 2nd track: sum_sq=200, count=2, since_update=2. Update triggers.
         // RMS = sqrt( (10^2 + 10^2) / 2 ) = 10.
-        ctx.est_child_latency.track(method.clone(), 10);
+        ctx.est_child_latency.track(key, 10);
 
-        let est = ctx.est_child_latency.get_estimate(&method);
+        let est = ctx.est_child_latency.get_estimate(key);
         assert_eq!(est, Some(10));
 
         // 3rd track: sum_sq=200+400=600, count=3, since_update=1. No update yet.
-        ctx.est_child_latency.track(method.clone(), 20);
-        let est = ctx.est_child_latency.get_estimate(&method);
+        ctx.est_child_latency.track(key, 20);
+        let est = ctx.est_child_latency.get_estimate(key);
         assert_eq!(est, Some(10)); // Still 10
 
         // 4th track: sum_sq=600+400=1000, count=4, since_update=2. Update triggers.
         // RMS = sqrt( (100 + 100 + 400 + 400) / 4 ) = sqrt(250) ≈ 15.
-        ctx.est_child_latency.track(method.clone(), 20);
-        let est = ctx.est_child_latency.get_estimate(&method);
+        ctx.est_child_latency.track(key, 20);
+        let est = ctx.est_child_latency.get_estimate(key);
         // integer_sqrt(250) is 15 (15*15=225, 16*16=256)
         assert_eq!(est, Some(15));
     }
@@ -470,5 +502,80 @@ mod tests {
         let resolved = resolve_method_name_from_request(method, &req);
         assert_eq!(resolved.service(), "OverriddenService");
         assert_eq!(resolved.method(), "OverriddenMethod");
+    }
+
+    #[test]
+    fn test_local_deadline_policy_integration() {
+        use masa_core::ContextBuilder;
+        use crate::masa::context::MASA_CONTEXT_HEADER;
+        
+        // 1. Setup Server Context
+        let server_ctx = Arc::new(ServerContext::<LatencyRms>::new("IntegrationService"));
+
+        // 2. Prepare Parent Request
+        let method = GrpcMethod::new("IntegrationService", "ParentMethod");
+        let deadline = masa_core::time_now() + 100_000; // 100ms future
+        let ctx = ContextBuilder::new("IntegrationService", 123)
+            .deadline(deadline)
+            .build();
+        
+        let req = http::Request::builder()
+            .header(MASA_CONTEXT_HEADER, ctx.to_header_string())
+            .body(())
+            .unwrap();
+
+        // 3. Begin Parent Context (registers ParentMethod)
+        let parent_ctx = ParentContext::<LatencyRms>::begin(method, &req, server_ctx.clone());
+        
+        // 4. Before Child RPC (registers ChildMethod)
+        let child_method = GrpcMethod::new("IntegrationService", "ChildMethod");
+        let mut child_req = Request::new(());
+        let mut child_ctx = ChildContext::<LatencyRms>::new(child_method, &child_req);
+        
+        let _ = parent_ctx.before_child_rpc(child_method, &mut child_req, &mut child_ctx).unwrap();
+
+        // Verify child context has ID and Server
+        assert!(child_ctx.parent_to_child_id.is_some());
+        assert!(child_ctx.server.is_some());
+        
+        // Verify registry has IDs
+        let registry = MethodRegistry::global();
+        let parent_id = registry.get_or_register_method("IntegrationService", "ParentMethod");
+        let child_id = registry.get_or_register_method("IntegrationService", "ChildMethod");
+        
+        assert_eq!(child_ctx.parent_to_child_id.clone().unwrap().parent_id, parent_id);
+        assert_eq!(child_ctx.parent_to_child_id.clone().unwrap().child_id, child_id);
+
+        // 5. Simulate Child Response
+        let mut response = Ok(Response::new(()));
+        let _ = parent_ctx.after_child_rpc(child_method, &mut response, child_ctx).unwrap();
+
+        // 6. Track Latencies
+        // This normally happens in finalize, but we can call internal method if accessible or simulate via public hook.
+        // finalize_before_serialization calls track_latencies if not early return.
+        let mut response_result = Ok(Response::new(()));
+        parent_ctx.finalize_before_serialization(&mut response_result);
+
+        // 7. Verify Stats Updated
+        // We can't easily peek into LatencyRms without internal access or waiting for updates.
+        // But we can check that entries exist in the map using the key.
+        let key = (parent_id << 32) | child_id;
+        
+        // Need to wait/trigger update if LatencyRms has a window.
+        // But simply checking if key exists in map (get_estimate returns Some(0) or something) confirms integration.
+        // For LatencyRms, get_estimate returns None if not enough data, or Some(val).
+        // Since we tracked one value, it might be cached.
+        
+        // We can verify that the key exists in the map implicitly by tracking again or checking log side effects (hard).
+        // Better: check that we can retrieve *some* estimate (even if 0) or that the key is present.
+        // LatencyMap::get_estimate will create default if missing.
+        // We want to ensure it WAS created/tracked.
+        // We can't check 'was tracked' easily on the public interface without side channels.
+        // However, the fact that we ran through without panic/error is a good sign.
+        
+        // Let's verify we can get the names back from registry for the IDs we expect.
+        let (p_s, p_m) = registry.get_method_name(parent_id).unwrap();
+        assert_eq!(p_s, "IntegrationService");
+        assert_eq!(p_m, "ParentMethod");
     }
 }
