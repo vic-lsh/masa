@@ -34,6 +34,19 @@ else
     echo "Docker client is already installed."
 fi
 
+# Install Docker Buildx plugin
+# Check if buildx is working (it might be installed but not in PATH or not as plugin)
+if ! docker buildx version &> /dev/null; then
+    echo "Installing Docker Buildx..."
+    BUILDX_VERSION="v0.31.1"
+    # Create the cli-plugins directory for the current user (likely root in CI)
+    mkdir -p "$HOME/.docker/cli-plugins"
+    curl -fsSL "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-amd64" -o "$HOME/.docker/cli-plugins/docker-buildx"
+    chmod +x "$HOME/.docker/cli-plugins/docker-buildx"
+else
+    echo "Docker Buildx is already installed."
+fi
+
 # Install uv (Python package manager) if not present
 if ! command -v uv &> /dev/null; then
     echo "Installing uv..."
