@@ -7,9 +7,7 @@ import json
 import logging
 import re
 import shlex
-import shutil
 import subprocess
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -19,7 +17,6 @@ if TYPE_CHECKING:
     from ..config import ExperimentConfig
     from ..deployment_manager import DeploymentManager as DockerManager
 
-from ..cpu_monitor import CPUMonitor
 from ..deployment_manager import TaskSpec
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import get_docker_progress_flag, normalize_features_to_tag
@@ -689,7 +686,7 @@ class HotelApp(AppPlugin):
 
         # Add image tag based on policy/features
         tag = self.get_image_tag(features=policy)
-        env_vars[f"HOTEL_IMAGE_TAG"] = tag if tag else "latest"
+        env_vars["HOTEL_IMAGE_TAG"] = tag if tag else "latest"
         env_vars["DOCKER_COMPOSE_PROJECT_NAME"] = project_name
         env_vars["PROJECT_CONFIG_PATH"] = str(project_config_path.resolve())
 
@@ -706,28 +703,9 @@ class HotelApp(AppPlugin):
         if use_k8s:
             raise NotImplementedError("Hotel app does not support Kubernetes yet")
 
-        docker_config = self.get_docker_config()
         # Default app dir is config.app_dir which is passed to ExpDriver -> deployment.start
         # But here we return (deploy_root, deploy_file).
         # We need to return the directory containing the compose file.
-        # docker_config.compose_file is relative to app_dir.
-
-        # We don't have access to config.app_dir directly here easily unless we infer it
-        # or it's standard.
-        # Actually ExpDriver calls:
-        # deploy_root, deploy_file = self.app.get_deployment_location(output_dir, use_k8s, repo_root)
-        # It doesn't pass config.app_dir.
-        # However, for Hotel, the compose file is in `exp/hotel/scripts/local/containers+svcs.yaml`
-        # which is usually `repo_root / "exp/hotel"`.
-
-        # Let's assume standard path: exp/hotel
-        app_dir = repo_root / "apps/hotel"
-        # Wait, the compose file is "scripts/local/containers+svcs.yaml" relative to... where?
-        # In run_workload it was `config.app_dir / deployment_config`.
-        # config.app_dir usually points to `apps/hotel` or `exp/hotel`?
-        # Let's check where it points. `exp_runner/runner/config.py` would tell us,
-        # but typically it's the app directory.
-
         # DockerConfig says: compose_file="scripts/local/containers+svcs.yaml"
         # So it expects to be run from `apps/hotel`.
         return repo_root / "apps/hotel", "scripts/local/containers+svcs.yaml"
