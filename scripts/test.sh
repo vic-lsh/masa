@@ -172,8 +172,8 @@ execute_test "tonic (prio_local,est_rms)" cargo test -p tonic --features "masa,p
 execute_test "tonic (prio_local,est_hist)" cargo test -p tonic --features "masa,prio_local,est_hist"
 execute_test "tokio (masa priority suite)" cargo test -p tokio --features full --test masa_priority
 execute_test "masa-integration-tests (prio_global)" cargo test -p masa-integration-tests --features prio_global
-execute_test "masa-integration-tests (prio_global_trace)" cargo test -p masa-integration-tests --features prio_global_trace
-execute_test "masa-integration-tests (prio_global_early)" cargo test -p masa-integration-tests --features prio_global_early
+execute_test "masa-integration-tests (prio_global+trace-queue)" cargo test -p masa-integration-tests --features "prio_global,trace-queue"
+execute_test "masa-integration-tests (prio_global+early)" cargo test -p masa-integration-tests --features "prio_global,early"
 
 # Collect results if parallel
 if [ "$PARALLEL_JOBS" -gt 1 ]; then
