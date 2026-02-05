@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from exp_runner.runner.config import ExperimentConfig
+    from exp_runner.runner.deployment_manager import DeploymentManager
     from exp_runner.runner.docker_manager import DockerManager
 
 
@@ -421,7 +422,7 @@ class AppPlugin(ABC):
         *,
         repo_root: Path,
         config: "ExperimentConfig",
-        docker: "DockerManager",
+        deployment: "DeploymentManager",
         policy: str,
         iteration: int,
         output_dir: Path,
@@ -520,7 +521,7 @@ class AppPlugin(ABC):
             container_names=container_names,
         )
         try:
-            docker.start(
+            deployment.start(
                 app_dir=config.app_dir,
                 compose_file=docker_config.compose_file,
                 env_vars=env_vars,
@@ -530,7 +531,7 @@ class AppPlugin(ABC):
             cpu_monitor.start()
 
             # Start streaming logs in background
-            docker.stream_logs(
+            deployment.stream_logs(
                 container_names=container_names,
                 output_dir=output_dir,
                 follow=True,
@@ -556,7 +557,7 @@ class AppPlugin(ABC):
                 logger.warning(f"Error stopping CPU monitor: {e}")
 
             # Stop Docker services
-            docker.stop(
+            deployment.stop(
                 app_dir=config.app_dir,
                 compose_file=docker_config.compose_file,
                 env_vars=env_vars,
