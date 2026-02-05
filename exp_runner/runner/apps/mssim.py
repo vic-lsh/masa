@@ -312,6 +312,51 @@ class MssimApp(AppPlugin):
         # MSSIM logs are captured via orchestrator.log rather than docker logs streaming.
         return []
 
+    def prepare_workload(
+        self,
+        config: "ExperimentConfig",
+        policy: str,
+        iteration: int,
+        output_dir: Path,
+        repo_root: Path,
+        use_k8s: bool = False,
+    ) -> dict:
+        """
+        Prepare workload configuration.
+        For MSSIM, this is handled inside run_workload currently.
+        """
+        # This is a stub to satisfy ABC.
+        return {}
+
+    def get_deployment_location(
+        self, output_dir: Path, use_k8s: bool, repo_root: Path
+    ) -> tuple[Path, str]:
+        """
+        Get deployment location.
+        """
+        # This is a stub to satisfy ABC.
+        # MSSIM generates docker-compose.yml in the run directory.
+        return output_dir, "docker-compose.yml"
+
+    def get_loadgen_spec(
+        self,
+        output_dir: Path,
+        features: Optional[str],
+        env_vars: dict,
+        use_k8s: bool,
+    ) -> TaskSpec:
+        """
+        Get load generator spec.
+        """
+        # This is a stub. MSSIM runs loadgen as part of the compose stack.
+        from ..deployment_manager import TaskSpec
+
+        return TaskSpec(
+            name="mssim-loadgen-stub",
+            image="mssim_load_generator",
+            env_vars={},
+        )
+
     def create_load_generator(self, features: Optional[str] = None) -> LoadGenerator:
         return MssimLoadGenerator()
 
