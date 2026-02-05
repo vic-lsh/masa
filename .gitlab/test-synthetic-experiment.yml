@@ -14,8 +14,8 @@ test_synthetic_experiment:
             if ! command -v uv &> /dev/null; then
               curl -LsSf https://astral.sh/uv/install.sh | sh
             fi
-        - export RUSTUP_HOME="$HOME/.rustup"
-        - export CARGO_HOME="$HOME/.cargo"
+        - export RUSTUP_HOME="$CI_PROJECT_DIR/.rustup"
+        - export CARGO_HOME="$CI_PROJECT_DIR/.cargo"
         - export PATH="$HOME/.local/bin:$CARGO_HOME/bin:$PATH"
         - |
             if [[ "$DEPLOY_MODE" == "kind" ]]; then
@@ -44,9 +44,8 @@ test_synthetic_experiment:
         - if ! command -v cargo &>/dev/null; then
           echo "Installing Rust...";
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y;
-          source $HOME/.cargo/env;
+          source $CARGO_HOME/env;
           fi
-        - rustup toolchain uninstall nightly || true
         - rustup toolchain install nightly
         # - rustc --version
         - cargo --version
