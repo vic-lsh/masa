@@ -1,5 +1,7 @@
 test_synthetic_experiment:
     stage: test
+    services:
+        - docker:dind
     parallel:
         matrix:
             - DEPLOY_MODE: [docker, kind]
@@ -7,9 +9,13 @@ test_synthetic_experiment:
         CI: "true"
         EXP_NAME: "ci"
         CARGO_BUILD_JOBS: "16"
+        DOCKER_HOST: tcp://docker:2375
+        DOCKER_TLS_CERTDIR: ""
 
     before_script:
         - ulimit -n 4096 || true
+        - apt-get update -yqq
+        - apt-get install -y protobuf-compiler docker.io
         - mkdir -p $HOME/.local/bin
         - export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
         - |
@@ -48,8 +54,6 @@ test_synthetic_experiment:
         - rustup toolchain install nightly
         - rustc --version
         - cargo --version
-    tags:
-        - on-host
     script:
         - groups $(whoami) # make sure that gitlab runner is in the 'docker' group
         - ./scripts/test_synthetic_experiment.sh $EXP_NAME --deploy-mode $DEPLOY_MODE
