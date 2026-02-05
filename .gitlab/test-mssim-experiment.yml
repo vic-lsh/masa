@@ -1,11 +1,17 @@
 test_mssim_experiment:
     stage: test
+    services:
+        - docker:dind
     variables:
         CI: "true"
         CARGO_BUILD_JOBS: "16"
+        DOCKER_HOST: tcp://docker:2375
+        DOCKER_TLS_CERTDIR: ""
 
     before_script:
         - ulimit -n 4096 || true
+        - apt-get update -yqq
+        - apt-get install -y protobuf-compiler docker.io
         - |
             if ! command -v uv &> /dev/null; then
               curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -21,7 +27,5 @@ test_mssim_experiment:
         - rustup toolchain install nightly
         - rustc --version
         - cargo --version
-    tags:
-        - on-host
     script:
         - ./scripts/test_mssim_experiment.sh

@@ -1,11 +1,17 @@
 test_e2e_hotel:
     stage: test
+    services:
+        - docker:dind
     variables:
         CI: "true"
         CARGO_BUILD_JOBS: "16"
+        DOCKER_HOST: tcp://docker:2375
+        DOCKER_TLS_CERTDIR: ""
 
     before_script:
         - ulimit -n 4096 || true
+        - apt-get update -yqq
+        - apt-get install -y protobuf-compiler docker.io
         - |
             if ! command -v uv &> /dev/null; then
               curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -21,8 +27,6 @@ test_e2e_hotel:
         - rustup toolchain install nightly
         - rustc --version
         - cargo --version
-    tags:
-        - on-host
     script:
         - groups $(whoami) # make sure that gitlab runner is in the 'docker' group
         - ./scripts/test_e2e_hotel.sh
