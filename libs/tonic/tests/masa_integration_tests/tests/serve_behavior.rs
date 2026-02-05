@@ -1,3 +1,5 @@
+#![cfg(feature = "prio_global")]
+
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -13,7 +15,6 @@ use tonic::metadata::MetadataValue;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-#[cfg(feature = "prio_global")]
 #[tokio::test(flavor = "current_thread")]
 async fn high_priority_request_preempts_under_masa() {
     #[derive(Clone)]
