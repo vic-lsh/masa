@@ -1,12 +1,12 @@
 test_socialnet:
     stage: test
-    services:
-        - docker:dind
+    services: []
     variables:
         CI: "true"
         CARGO_BUILD_JOBS: "16"
-        DOCKER_HOST: tcp://docker:2375
-        DOCKER_TLS_CERTDIR: ""
+        # Using Docker-on-Docker (socket binding) instead of DIND
+        # DOCKER_HOST: tcp://docker:2375
+        # DOCKER_TLS_CERTDIR: ""
     before_script:
         - ulimit -n 4096 || true
         - source ./scripts/ci_setup_env.sh
