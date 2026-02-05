@@ -11,7 +11,7 @@ test_mssim_experiment:
     before_script:
         - ulimit -n 4096 || true
         - apt-get update -yqq
-        - apt-get install -y protobuf-compiler docker.io
+        - apt-get install -y protobuf-compiler docker.io libgraphviz-dev pkg-config
         - |
             if ! command -v uv &> /dev/null; then
               curl -LsSf https://astral.sh/uv/install.sh | sh
