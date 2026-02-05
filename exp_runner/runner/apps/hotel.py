@@ -7,19 +7,17 @@ import json
 import logging
 import re
 import shlex
-import shutil
 import subprocess
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Tuple
 
 if TYPE_CHECKING:
     from ..config import ExperimentConfig
     from ..deployment_manager import DeploymentManager as DockerManager
 
-from ..cpu_monitor import CPUMonitor
+from ..deployment_manager import TaskSpec
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import get_docker_progress_flag, normalize_features_to_tag
 
@@ -623,13 +621,8 @@ class HotelApp(AppPlugin):
     def create_load_generator(
         self, features: Optional[str] = None, project_name: Optional[str] = None
     ) -> LoadGenerator:
-        """
-        Create a load generator instance for hotel application.
-
-        Args:
-            features: Optional cargo features used to build the image
-            project_name: Optional docker compose project name for namespace isolation
-        """
+        """Deprecated: ExpDriver uses get_loadgen_spec."""
+        # raise NotImplementedError("create_load_generator is deprecated. Use ExpDriver.")
         return HotelLoadGenerator(features=features, project_name=project_name)
 
     def create_builder(self) -> AppBuilder:
@@ -648,26 +641,20 @@ class HotelApp(AppPlugin):
         """
         return normalize_features_to_tag(features)
 
-    def run_workload(
+    def prepare_workload(
         self,
-        *,
-        repo_root: Path,
         config: "ExperimentConfig",
-        docker: "DockerManager",
         policy: str,
         iteration: int,
         output_dir: Path,
-        app_local_dir: Path,
-        no_cache: bool,
-        dry_run: bool = False,
-        **kwargs,
-    ) -> None:
-        """Run hotel experiment with namespace isolation."""
-
-        if type(docker).__name__ == "K8sManager":
-            raise NotImplementedError(
-                "Hotel app does not support Kubernetes execution yet"
-            )
+        repo_root: Path,
+        use_k8s: bool = False,
+    ) -> dict:
+        """
+        Prepare workload configuration and environment variables.
+        """
+        if use_k8s:
+            raise NotImplementedError("Hotel app does not support Kubernetes yet")
 
         # Generate project name for namespace isolation
         project_name = _safe_project_name(
@@ -675,9 +662,6 @@ class HotelApp(AppPlugin):
             iteration=iteration,
             policy=policy,
         )
-
-        # Setup paths - write directly to output_dir (no run_* subdirectory)
-        output_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate project-specific hotel.json
         project_config_path = output_dir / "hotel.json"
@@ -703,189 +687,108 @@ class HotelApp(AppPlugin):
         # Add image tag based on policy/features
         tag = self.get_image_tag(features=policy)
         env_vars["HOTEL_IMAGE_TAG"] = tag if tag else "latest"
-
-        # Clean up old build logs before building
-        build_logs_dir = (
-            repo_root
-            / "exp"
-            / "hotel"
-            / "data"
-            / "out"
-            / config.experiment_name
-            / str(iteration)
-            / policy
-            / "build_logs"
-        )
-        if build_logs_dir.exists():
-            logger.info(f"Cleaning build logs directory: {build_logs_dir}")
-            shutil.rmtree(build_logs_dir, ignore_errors=True)
-
-        # Build docker images (use ORIGINAL config for build, not project-specific)
-        builder = self.create_builder()
-        build_cmds = builder.build(
-            repo_root=repo_root,
-            app_dir=config.app_dir,
-            features=policy,
-            rust_log=env_vars.get("LOG_LEVEL", "info"),
-            no_cache=no_cache,
-            gen_config_path=(config.in_dir / "gen_config.json"),
-            dry_run=dry_run,
-            build_logs_dir=build_logs_dir,
-        )
-        if dry_run and build_cmds:
-            print("\n".join(" ".join(cmd) for cmd in build_cmds))
-
-        deployment_config = "scripts/local/containers+svcs.yaml"
-        config_path = config.app_dir / deployment_config
-
-        # Path to mount project-specific config
+        env_vars["DOCKER_COMPOSE_PROJECT_NAME"] = project_name
         env_vars["PROJECT_CONFIG_PATH"] = str(project_config_path.resolve())
 
-        if dry_run:
-            print(f"[dry-run] would run hotel policy={policy} iteration={iteration}")
-            print(f"[dry-run] project name: {project_name}")
-            print(f"[dry-run] generated config: {project_config_path}")
-            print(f"[dry-run] would write outputs under: {output_dir}")
-            print(f"[dry-run] would start services from {config_path}")
-            return
+        # Clean up old build logs - handled by ExpDriver now (it uses output_dir/build_logs)
+        # But we might want to ensure we don't have stale ones if output_dir is reused?
+        # ExpDriver doesn't explicitly clean output_dir/build_logs before build,
+        # but builder might overwrite.
 
-        # Save metadata
-        metadata = {
-            "app": "hotel",
-            "experiment": config.experiment_name,
-            "iteration": iteration,
-            "policy": policy,
-            "docker_project": project_name,
-        }
-        with (output_dir / "metadata.json").open("w", encoding="utf-8") as fh:
-            json.dump(metadata, fh, indent=2, sort_keys=True)
+        return env_vars
 
-        # Initialize CPU monitor with project name filter
-        cpu_stats_file = output_dir / "cpu_stats.csv"
-        cpu_monitor = CPUMonitor(
-            output_path=cpu_stats_file, poll_interval=2.0, container_prefix=project_name
+    def get_deployment_location(
+        self, output_dir: Path, use_k8s: bool, repo_root: Path
+    ) -> Tuple[Path, str]:
+        if use_k8s:
+            raise NotImplementedError("Hotel app does not support Kubernetes yet")
+
+        # Default app dir is config.app_dir which is passed to ExpDriver -> deployment.start
+        # But here we return (deploy_root, deploy_file).
+        # We need to return the directory containing the compose file.
+        # DockerConfig says: compose_file="scripts/local/containers+svcs.yaml"
+        # So it expects to be run from `apps/hotel`.
+        return repo_root / "apps/hotel", "scripts/local/containers+svcs.yaml"
+
+    def get_loadgen_spec(
+        self,
+        output_dir: Path,
+        features: Optional[str],
+        env_vars: dict,
+        use_k8s: bool,
+    ) -> TaskSpec:
+
+        project_name = env_vars.get("DOCKER_COMPOSE_PROJECT_NAME")
+
+        # Image
+        tag = self.get_image_tag(features)
+        image = f"hotel_client_bench:{tag}" if tag else "hotel_client_bench:latest"
+        binary = "hotel_client_bench"
+
+        # Network
+        network = (
+            f"{project_name}_hotel_network" if project_name else "local_hotel_network"
         )
 
-        log_threads = []
-        try:
-            # Start services
-            print(
-                f"Starting hotel services for policy={policy} iteration={iteration} project={project_name}"
-            )
-            docker.start(
-                app_dir=config.app_dir,
-                deployment_config=deployment_config,
-                env_vars=env_vars,
-                project_name=project_name,
-            )
+        # Env Vars
+        task_env = {
+            "BINARY_NAME": binary,
+            "LOG_LEVEL": env_vars.get("LOG_LEVEL", "info"),
+        }
+        task_env.update(env_vars)
 
-            # Wait for services to be ready
-            time.sleep(3)
+        # Config mounting
+        # Hotel needs gen_config.json mounted as well?
+        # HotelLoadGenerator didn't mount gen_config.json explicitly in the old code?
+        # Let's check `HotelLoadGenerator.run` -> `LoadGenerator.run` which DOES mount it
+        # if `gen_config_path` is passed.
+        # And `HotelApp.run_workload` passed `project_gen_config_path`.
 
-            # Start CPU monitoring after services are up
-            cpu_monitor.start()
+        gen_config_path = output_dir / "gen_config.json"
+        volumes = {}
+        if gen_config_path.exists():
+            volumes[str(gen_config_path)] = "/usr/gen_config.json"
 
-            # Get container names for log streaming
-            container_names = docker.get_container_names(
-                config_path=config_path,
-                project_name=project_name,
-                env_vars=env_vars,
-            )
+        return TaskSpec(
+            name=f"{project_name}-loadgen" if project_name else "hotel-loadgen",
+            image=image,
+            env_vars=task_env,
+            network=network,
+            volumes=volumes,
+            cleanup=True,
+            artifacts=[("/tmp/masa-load-gen/.", ".")],
+        )
 
-            # Stream logs
-            if container_names:
-                logs_dir = output_dir / "logs"
-                print(
-                    f"Streaming logs for {len(container_names)} containers to {logs_dir}"
-                )
-                log_threads = docker.stream_logs(
-                    container_names=container_names,
-                    output_dir=logs_dir,
-                    follow=True,
-                )
-            else:
-                print("Warning: No containers found for log streaming")
+    def run_workload(
+        self,
+        *,
+        repo_root: Path,
+        config: "ExperimentConfig",
+        deployment: "DockerManager",
+        policy: str,
+        iteration: int,
+        output_dir: Path,
+        app_local_dir: Path,
+        no_cache: bool,
+        dry_run: bool = False,
+        **kwargs,
+    ) -> None:
+        """Run hotel experiment with namespace isolation using ExpDriver."""
 
-            # Run load generator with project-specific gen_config
-            load_gen = self.create_load_generator(
-                features=policy, project_name=project_name
-            )
+        from ..experiment_driver import ExpDriver
 
-            # Run load generator in a separate thread to allow monitoring
-            load_gen_error = None
+        # Ensure we are using DockerManager (K8s not supported)
+        if hasattr(deployment, "kube_context") and deployment.kube_context:
+            # This check is a bit loose, but ExpDriver will handle platform detection via deployment object
+            pass
 
-            def run_load_gen():
-                nonlocal load_gen_error
-                try:
-                    load_gen.run(
-                        output_dir=output_dir,
-                        env_vars=env_vars,
-                        gen_config_path=project_gen_config_path,
-                    )
-                except Exception as e:
-                    load_gen_error = e
-
-            load_gen_thread = threading.Thread(target=run_load_gen)
-            load_gen_thread.start()
-
-            # Monitor loop
-            while load_gen_thread.is_alive():
-                # Check container health
-                failed_containers = docker.check_project_health(
-                    config_path=config_path,
-                    project_name=project_name,
-                    env_vars=env_vars,
-                )
-
-                if failed_containers:
-                    error_msg = f"Experiment failed: The following containers crashed: {failed_containers}"
-                    logger.error(error_msg)
-
-                    # Kill load generator container to stop the thread
-                    try:
-                        subprocess.run(
-                            ["docker", "rm", "-f", load_gen.get_container_name()],
-                            check=False,
-                            capture_output=True,
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to kill load generator container: {e}")
-
-                    # Raise error to stop experiment
-                    raise RuntimeError(error_msg)
-
-                load_gen_thread.join(timeout=2.0)
-
-            # If thread finished, check for errors
-            if load_gen_error:
-                # Check project health one last time to see if a container crash caused the load gen failure
-                failed_containers = docker.check_project_health(
-                    config_path=config_path,
-                    project_name=project_name,
-                    env_vars=env_vars,
-                )
-                if failed_containers:
-                    error_msg = f"Experiment failed: The following containers crashed: {failed_containers}. Load generator also failed: {load_gen_error}"
-                    logger.error(error_msg)
-                    raise RuntimeError(error_msg)
-
-                raise load_gen_error
-
-        finally:
-            # Stop CPU monitoring before stopping services
-            try:
-                cpu_monitor.stop()
-            except Exception as e:
-                logger.warning(f"Error stopping CPU monitor: {e}")
-
-            # Cleanup
-            docker.stop(
-                app_dir=config.app_dir,
-                deployment_config=deployment_config,
-                env_vars=env_vars,
-                project_name=project_name,
-            )
-
-            # Wait for log threads to finish
-            for thread in log_threads:
-                thread.join(timeout=5)
+        driver = ExpDriver(self, deployment)
+        driver.run_workload(
+            config=config,
+            policy=policy,
+            iteration=iteration,
+            output_dir=output_dir,
+            repo_root=repo_root,
+            no_cache=no_cache,
+            dry_run=dry_run,
+        )

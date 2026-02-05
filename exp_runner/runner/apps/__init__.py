@@ -6,7 +6,7 @@ from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .hotel import HotelApp, HotelLoadGenerator
 from .mssim import MssimApp
 from .socialnet import SocialnetApp, SocialnetLoadGenerator
-from .synthetic import SyntheticApp, SyntheticLoadGenerator
+from .synthetic import SyntheticApp
 
 __all__ = [
     "AppBuilder",
@@ -19,7 +19,6 @@ __all__ = [
     "SocialnetApp",
     "SocialnetLoadGenerator",
     "SyntheticApp",
-    "SyntheticLoadGenerator",
 ]
 
 

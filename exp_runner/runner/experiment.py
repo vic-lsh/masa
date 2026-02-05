@@ -64,11 +64,11 @@ class Experiment:
         self.smoke_test = smoke_test
         self.use_k8s = use_k8s
 
-        self.docker: DeploymentManager
+        self.deployment: DeploymentManager
         if use_k8s:
-            self.docker = K8sManager(repo_root)
+            self.deployment = K8sManager(repo_root)
         else:
-            self.docker = DockerManager(repo_root)
+            self.deployment = DockerManager(repo_root)
 
         # Setup working directories
         self.app_scripts_dir = config.app_dir / "scripts"
@@ -197,7 +197,7 @@ class Experiment:
                     self.app.run_workload(
                         repo_root=self.repo_root,
                         config=self.config,
-                        docker=self.docker,
+                        deployment=self.deployment,
                         policy=policy,
                         iteration=iteration,
                         output_dir=output_dir,

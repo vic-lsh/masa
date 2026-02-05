@@ -1,11 +1,13 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{
+    collections::HashMap,
     env,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
 
+use app_utils::load_gen::TraceRecord;
 use masa::{time_now, ContextBuilder as MasaContextBuilder, PriorityHint};
 use rand_distr::{Distribution, Exp};
 use serde::Deserialize;
@@ -43,19 +45,97 @@ struct Stats {
     throttled: AtomicUsize,
 }
 
-fn root_latency_file_name_for_rps(rps: f64) -> String {
+async fn flush_root_samples(
+    samples: Arc<Mutex<Vec<RootLatencySample>>>,
+    rps: f64,
+) -> anyhow::Result<()> {
+    flush_root_samples_internal(samples, rps, true)
+        .await
+        .map(|_| ())
+}
+
+async fn flush_root_samples_internal(
+    samples: Arc<Mutex<Vec<RootLatencySample>>>,
+    rps: f64,
+    log_when_empty: bool,
+) -> anyhow::Result<Option<usize>> {
+    let output_dir = PathBuf::from(OUTPUT_DIR);
+
+    let snapshot = {
+        let guard = samples.lock().await;
+        if guard.is_empty() {
+            if log_when_empty {
+                tracing::info!(
+                    "No root() latency samples recorded; skipping CSV write to {}",
+                    output_dir.display()
+                );
+            }
+            return Ok(None);
+        }
+        guard.clone()
+    };
+
+    fs::create_dir_all(&output_dir).await?;
+
+    // Group by graph (API)
+    let mut samples_by_api: HashMap<String, Vec<&RootLatencySample>> = HashMap::new();
+    for sample in &snapshot {
+        samples_by_api
+            .entry(sample.graph.as_str().to_string())
+            .or_default()
+            .push(sample);
+    }
+
+    // Format RPS string
     let mut rps_str = if (rps.fract()).abs() < f64::EPSILON {
         format!("{rps:.0}")
     } else {
         format!("{rps:.2}")
     };
     if rps_str.contains('.') {
-        rps_str = rps_str
-            .trim_end_matches('0')
-            .trim_end_matches('.')
-            .to_string();
+        rps_str = rps_str.replace('.', "_");
     }
-    format!("root_latencies_{}rps.csv", rps_str.replace('.', "_"))
+
+    for (api, samples) in samples_by_api {
+        let file_name = format!("r{}_{}.csv", rps_str, api);
+        let file_path = output_dir.join(&file_name);
+
+        let mut csv_data = format!("{}\n", TraceRecord::to_csv_header());
+
+        for sample in samples {
+            let record = TraceRecord {
+                api: sample.graph.as_str().to_string(),
+                request_id: sample.req_id,
+                slo_us: sample.slo_us,
+                start_at: sample.start_at,
+                deadline: sample.start_at + sample.slo_us,
+                latency: sample.e2e_latency_us,
+                error: if !sample.error.is_empty() {
+                    sample.error.clone()
+                } else if sample.missed_slo {
+                    "/ClientMiss".to_string()
+                } else {
+                    "/None".to_string()
+                },
+                q_lat_init: sample.queue_latency_init_us,
+                q_lat_resume: sample.queue_latency_resume_us,
+                additional_metrics: Vec::new(),
+            };
+            csv_data.push_str(&record.to_csv_row());
+            csv_data.push('\n');
+        }
+
+        fs::write(&file_path, csv_data).await?;
+        if log_when_empty {
+            tracing::info!(
+                "Wrote root() latency samples for {} requests to {}",
+                snapshot.len(),
+                file_path.display()
+            );
+        }
+    }
+
+    Ok(Some(snapshot.len()))
 }
 
 #[derive(Clone)]
@@ -302,145 +382,6 @@ struct RootLatencySample {
     missed_slo: bool,
 }
 
-async fn flush_root_samples(
-    samples: Arc<Mutex<Vec<RootLatencySample>>>,
-    file_name: &str,
-) -> anyhow::Result<()> {
-    flush_root_samples_internal(samples, file_name, true)
-        .await
-        .map(|_| ())
-}
-
-async fn flush_root_samples_internal(
-    samples: Arc<Mutex<Vec<RootLatencySample>>>,
-    file_name: &str,
-    log_when_empty: bool,
-) -> anyhow::Result<Option<usize>> {
-    let output_dir = PathBuf::from(OUTPUT_DIR);
-
-    let snapshot = {
-        let guard = samples.lock().await;
-        if guard.is_empty() {
-            if log_when_empty {
-                tracing::info!(
-                    "No root() latency samples recorded; skipping CSV write to {}",
-                    output_dir.display()
-                );
-            }
-            return Ok(None);
-        }
-        // guard.sort_by_key(|sample| sample.req_id);
-        guard.clone()
-    };
-
-    fs::create_dir_all(&output_dir).await?;
-    let file_path = output_dir.join(file_name);
-
-    let mut csv_data = String::from(
-        "api,request_id,slo,start_at,deadline,latency,error,q_lat_init,q_lat_resume\n",
-    );
-    for sample in &snapshot {
-        let deadline = sample.start_at + sample.slo_us;
-
-        // Escape error string if needed (simple CSV escaping)
-        // Also map to synthetic error codes if possible
-        let error_str = if !sample.error.is_empty() {
-            sample.error.clone()
-        } else if sample.missed_slo {
-            "/ClientMiss".to_string()
-        } else {
-            "/None".to_string()
-        };
-
-        let error_escaped =
-            if error_str.contains(',') || error_str.contains('"') || error_str.contains('\n') {
-                format!("\"{}\"", error_str.replace('"', "\"\""))
-            } else {
-                error_str
-            };
-
-        csv_data.push_str(&format!(
-            "{},{},{},{},{},{},{},{},{}\n",
-            sample.graph.as_str(),
-            sample.req_id,
-            sample.slo_us,
-            sample.start_at,
-            deadline,
-            sample.e2e_latency_us,
-            error_escaped,
-            sample.queue_latency_init_us,
-            sample.queue_latency_resume_us
-        ));
-    }
-
-    tracing::info!(
-        "Writing root() latency samples for {} requests to {}",
-        snapshot.len(),
-        file_path.display()
-    );
-
-    fs::write(&file_path, csv_data).await?;
-    if log_when_empty {
-        tracing::info!(
-            "Wrote root() latency samples for {} requests to {}",
-            snapshot.len(),
-            file_path.display()
-        );
-    }
-
-    Ok(Some(snapshot.len()))
-}
-
-fn compute_latency_percentiles_us(mut samples: Vec<u64>) -> Option<(u64, u64, u64, u64)> {
-    if samples.is_empty() {
-        return None;
-    }
-
-    samples.sort_unstable();
-    let p50 = percentile_from_sorted(&samples, 50.0);
-    let p90 = percentile_from_sorted(&samples, 90.0);
-    let p95 = percentile_from_sorted(&samples, 95.0);
-    let p99 = percentile_from_sorted(&samples, 99.0);
-    Some((p50, p90, p95, p99))
-}
-
-fn percentile_from_sorted(sorted: &[u64], percentile: f64) -> u64 {
-    let n = sorted.len();
-    if n == 0 {
-        return 0;
-    }
-
-    let mut rank = (percentile / 100.0 * n as f64).ceil() as usize;
-    if rank == 0 {
-        rank = 1;
-    }
-    if rank > n {
-        rank = n;
-    }
-
-    sorted[rank - 1]
-}
-
-async fn flush_rpc_samples_task(samples: Arc<Mutex<Vec<RootLatencySample>>>, file_name: String) {
-    let mut ticker = tokio::time::interval(Duration::from_secs(PERIODIC_FLUSH_INTERVAL_SECS));
-    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    loop {
-        ticker.tick().await;
-        let should_flush = {
-            let guard = samples.lock().await;
-            !guard.is_empty()
-        };
-        if !should_flush {
-            continue;
-        }
-        if let Err(err) =
-            flush_root_samples_internal(samples.clone(), file_name.as_ref(), false).await
-        {
-            tracing::error!("Failed to periodically flush root() latency samples: {err:?}");
-        }
-    }
-}
-
 async fn print_stats_task(
     mut latency_rx: UnboundedReceiver<u64>,
     stats_interval: Duration,
@@ -499,6 +440,54 @@ async fn print_stats_task(
                     None => break,
                 }
             }
+        }
+    }
+}
+
+fn compute_latency_percentiles_us(mut samples: Vec<u64>) -> Option<(u64, u64, u64, u64)> {
+    if samples.is_empty() {
+        return None;
+    }
+
+    samples.sort_unstable();
+    let p50 = percentile_from_sorted(&samples, 50.0);
+    let p90 = percentile_from_sorted(&samples, 90.0);
+    let p95 = percentile_from_sorted(&samples, 95.0);
+    let p99 = percentile_from_sorted(&samples, 99.0);
+    Some((p50, p90, p95, p99))
+}
+
+fn percentile_from_sorted(sorted: &[u64], percentile: f64) -> u64 {
+    let n = sorted.len();
+    if n == 0 {
+        return 0;
+    }
+
+    let mut rank = (percentile / 100.0 * n as f64).ceil() as usize;
+    if rank == 0 {
+        rank = 1;
+    }
+    if rank > n {
+        rank = n;
+    }
+
+    sorted[rank - 1]
+}
+
+async fn flush_rpc_samples_task(samples: Arc<Mutex<Vec<RootLatencySample>>>, rps: f64) {
+    let mut ticker = tokio::time::interval(Duration::from_secs(PERIODIC_FLUSH_INTERVAL_SECS));
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        ticker.tick().await;
+        let should_flush = {
+            let guard = samples.lock().await;
+            !guard.is_empty()
+        };
+        if !should_flush {
+            continue;
+        }
+        if let Err(err) = flush_root_samples_internal(samples.clone(), rps, false).await {
+            tracing::error!("Failed to periodically flush root() latency samples: {err:?}");
         }
     }
 }
@@ -714,13 +703,12 @@ async fn main() -> anyhow::Result<()> {
         let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
 
         let root_samples = Arc::new(Mutex::new(Vec::<RootLatencySample>::new()));
-        let root_latency_file_name = root_latency_file_name_for_rps(*rps);
 
         // Spawn periodic flush task for this RPS level
         {
             let samples = root_samples.clone();
-            let file_name = root_latency_file_name.clone();
-            tokio::spawn(async move { flush_rpc_samples_task(samples, file_name).await });
+            let current_rps = *rps;
+            tokio::spawn(async move { flush_rpc_samples_task(samples, current_rps).await });
         }
 
         // Spawn stats printing task
@@ -746,7 +734,7 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
         // Flush samples for this RPS level
-        flush_root_samples(root_samples, &root_latency_file_name).await?;
+        flush_root_samples(root_samples, *rps).await?;
 
         let sent = stats.sent.load(Ordering::Relaxed);
         let ok = stats.ok.load(Ordering::Relaxed);
