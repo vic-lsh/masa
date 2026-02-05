@@ -389,7 +389,7 @@ class SocialnetApp(AppPlugin):
         *,
         repo_root: Path,
         config: "ExperimentConfig",
-        docker: "DockerManager",
+        deployment: "DockerManager",
         policy: str,
         iteration: int,
         output_dir: Path,
@@ -400,7 +400,7 @@ class SocialnetApp(AppPlugin):
     ) -> None:
         """Run socialnet experiment with namespace isolation."""
 
-        if type(docker).__name__ == "K8sManager":
+        if type(deployment).__name__ == "K8sManager":
             raise NotImplementedError(
                 "Socialnet app does not support Kubernetes execution yet"
             )
@@ -497,7 +497,7 @@ class SocialnetApp(AppPlugin):
             logger.info(
                 f"Starting socialnet services for policy={policy} iteration={iteration} project={project_name}"
             )
-            docker.start(
+            deployment.start(
                 app_dir=config.app_dir,
                 deployment_config=deployment_config,
                 env_vars=env_vars,
@@ -511,7 +511,7 @@ class SocialnetApp(AppPlugin):
             cpu_monitor.start()
 
             # Get container names for log streaming
-            container_names = docker.get_container_names(
+            container_names = deployment.get_container_names(
                 config_path=config_path,
                 project_name=project_name,
                 env_vars=env_vars,
@@ -523,7 +523,7 @@ class SocialnetApp(AppPlugin):
                 logger.info(
                     f"Streaming logs for {len(container_names)} containers to {logs_dir}"
                 )
-                log_threads = docker.stream_logs(
+                log_threads = deployment.stream_logs(
                     container_names=container_names,
                     output_dir=logs_dir,
                     follow=True,
@@ -550,7 +550,7 @@ class SocialnetApp(AppPlugin):
                 logger.warning(f"Error stopping CPU monitor: {e}")
 
             # Cleanup
-            docker.stop(
+            deployment.stop(
                 app_dir=config.app_dir,
                 deployment_config=deployment_config,
                 env_vars=env_vars,

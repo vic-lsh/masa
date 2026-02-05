@@ -653,7 +653,7 @@ class HotelApp(AppPlugin):
         *,
         repo_root: Path,
         config: "ExperimentConfig",
-        docker: "DockerManager",
+        deployment: "DockerManager",
         policy: str,
         iteration: int,
         output_dir: Path,
@@ -664,7 +664,7 @@ class HotelApp(AppPlugin):
     ) -> None:
         """Run hotel experiment with namespace isolation."""
 
-        if type(docker).__name__ == "K8sManager":
+        if type(deployment).__name__ == "K8sManager":
             raise NotImplementedError(
                 "Hotel app does not support Kubernetes execution yet"
             )
@@ -772,7 +772,7 @@ class HotelApp(AppPlugin):
             print(
                 f"Starting hotel services for policy={policy} iteration={iteration} project={project_name}"
             )
-            docker.start(
+            deployment.start(
                 app_dir=config.app_dir,
                 deployment_config=deployment_config,
                 env_vars=env_vars,
@@ -786,7 +786,7 @@ class HotelApp(AppPlugin):
             cpu_monitor.start()
 
             # Get container names for log streaming
-            container_names = docker.get_container_names(
+            container_names = deployment.get_container_names(
                 config_path=config_path,
                 project_name=project_name,
                 env_vars=env_vars,
@@ -798,7 +798,7 @@ class HotelApp(AppPlugin):
                 print(
                     f"Streaming logs for {len(container_names)} containers to {logs_dir}"
                 )
-                log_threads = docker.stream_logs(
+                log_threads = deployment.stream_logs(
                     container_names=container_names,
                     output_dir=logs_dir,
                     follow=True,
@@ -831,7 +831,7 @@ class HotelApp(AppPlugin):
             # Monitor loop
             while load_gen_thread.is_alive():
                 # Check container health
-                failed_containers = docker.check_project_health(
+                failed_containers = deployment.check_project_health(
                     config_path=config_path,
                     project_name=project_name,
                     env_vars=env_vars,
@@ -859,7 +859,7 @@ class HotelApp(AppPlugin):
             # If thread finished, check for errors
             if load_gen_error:
                 # Check project health one last time to see if a container crash caused the load gen failure
-                failed_containers = docker.check_project_health(
+                failed_containers = deployment.check_project_health(
                     config_path=config_path,
                     project_name=project_name,
                     env_vars=env_vars,
@@ -879,7 +879,7 @@ class HotelApp(AppPlugin):
                 logger.warning(f"Error stopping CPU monitor: {e}")
 
             # Cleanup
-            docker.stop(
+            deployment.stop(
                 app_dir=config.app_dir,
                 deployment_config=deployment_config,
                 env_vars=env_vars,

@@ -1030,7 +1030,7 @@ class SyntheticApp(AppPlugin):
         *,
         repo_root: Path,
         config,
-        docker,
+        deployment,
         policy: str,
         iteration: int,
         output_dir: Path,
@@ -1047,16 +1047,16 @@ class SyntheticApp(AppPlugin):
         from ..k8s_manager import K8sManager
 
         runner: SyntheticWorkloadRunner
-        if isinstance(docker, K8sManager):
-            runner = K8sSyntheticRunner(self, docker)
-        elif isinstance(docker, DockerManager):
-            runner = DockerSyntheticRunner(self, docker)
+        if isinstance(deployment, K8sManager):
+            runner = K8sSyntheticRunner(self, deployment)
+        elif isinstance(deployment, DockerManager):
+            runner = DockerSyntheticRunner(self, deployment)
         else:
             # Fallback
-            if hasattr(docker, "kube_context"):
-                runner = K8sSyntheticRunner(self, docker)
+            if hasattr(deployment, "kube_context"):
+                runner = K8sSyntheticRunner(self, deployment)
             else:
-                runner = DockerSyntheticRunner(self, docker)
+                runner = DockerSyntheticRunner(self, deployment)
 
         runner.run(
             repo_root=repo_root,
