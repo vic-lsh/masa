@@ -460,6 +460,20 @@ class AppPlugin(ABC):
         """
         pass
 
+    def get_required_images(self, features: Optional[str] = None) -> list[str]:
+        """
+        Get list of docker images required for this application.
+
+        These images need to be available (or loaded into Kind) for the application to run.
+
+        Args:
+            features: Optional cargo features used to build the image
+
+        Returns:
+            List of image names (including tags)
+        """
+        return []
+
     def get_required_gen_config_fields(self) -> list[str]:
         """
         Return the list of required fields in gen_config.json for this application.

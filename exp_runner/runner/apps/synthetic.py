@@ -287,6 +287,15 @@ class SyntheticApp(AppPlugin):
             app_config_filename="config.docker.json",
         )
 
+    def get_required_images(self, features: Optional[str] = None) -> list[str]:
+        tag = self.get_image_tag(features)
+        suffix = f":{tag}" if tag else ":latest"
+        return [
+            f"synthetic_frontend{suffix}",
+            f"synthetic_child{suffix}",
+            f"synthetic_client_bench{suffix}",
+        ]
+
     def get_container_names(
         self, env_vars: dict, app_config: Optional[dict] = None
     ) -> list[str]:
