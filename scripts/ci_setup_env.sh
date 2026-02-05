@@ -11,16 +11,28 @@ apt-get update -yqq
 
 # Install system dependencies
 # - protobuf-compiler: Required for Rust tonic_build (gRPC)
-# - docker.io: Required for Docker-in-Docker (dind) interactions
 # - libgraphviz-dev, pkg-config: Required for pygraphviz (Python dependency for plotting)
 # - curl, ca-certificates: Required for downloading tools (uv, rustup, etc.)
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     protobuf-compiler \
-    docker.io \
     libgraphviz-dev \
     pkg-config \
     curl \
     ca-certificates
+
+# Install Docker client if not present (required for dind interaction)
+if ! command -v docker &> /dev/null; then
+    echo "Installing Docker client..."
+    DOCKER_VERSION="27.3.1"
+    curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz" -o docker.tgz
+    # Extract only the client binary
+    tar xzf docker.tgz docker/docker
+    mv docker/docker /usr/local/bin/docker
+    rm -rf docker docker.tgz
+    chmod +x /usr/local/bin/docker
+else
+    echo "Docker client is already installed."
+fi
 
 # Install uv (Python package manager) if not present
 if ! command -v uv &> /dev/null; then
@@ -35,3 +47,4 @@ fi
 echo "CI environment setup complete."
 if command -v protoc &> /dev/null; then echo "protoc: $(protoc --version)"; fi
 if command -v uv &> /dev/null; then echo "uv: $(uv --version)"; fi
+if command -v docker &> /dev/null; then echo "docker: $(docker --version)"; fi
