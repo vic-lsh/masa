@@ -10,13 +10,8 @@ test_e2e_hotel:
 
     before_script:
         - ulimit -n 4096 || true
-        - apt-get update -yqq
-        - apt-get install -y protobuf-compiler docker.io libgraphviz-dev pkg-config
-        - |
-            if ! command -v uv &> /dev/null; then
-              curl -LsSf https://astral.sh/uv/install.sh | sh
-              export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-            fi
+        - source ./scripts/ci_setup_env.sh
+        - export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
         - uv sync
         - source .venv/bin/activate
         - if ! command -v cargo &>/dev/null; then
