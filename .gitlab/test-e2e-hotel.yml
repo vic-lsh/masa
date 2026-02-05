@@ -21,7 +21,7 @@ test_e2e_hotel:
           source $HOME/.cargo/env;
           fi
         - rustup toolchain install nightly
-        - rustc --version
+        # - rustc --version
         - cargo --version
     tags:
         - on-host
