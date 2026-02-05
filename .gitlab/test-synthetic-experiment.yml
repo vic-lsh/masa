@@ -46,7 +46,8 @@ test_synthetic_experiment:
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y;
           source $HOME/.cargo/env;
           fi
-        - rustup toolchain install nightly --force
+        - rustup toolchain uninstall nightly || true
+        - rustup toolchain install nightly
         # - rustc --version
         - cargo --version
     tags:
