@@ -30,7 +30,10 @@ fn header_round_trip_preserves_all_fields() {
     assert_eq!(decoded.deadline(), ctx.deadline());
     assert_eq!(decoded.prio_hint(), ctx.prio_hint());
     assert_eq!(decoded.frontend_elapse(), ctx.frontend_elapse());
-    assert_eq!(decoded.queue_latencies.as_ref(), ctx.queue_latencies.as_ref());
+    assert_eq!(
+        decoded.queue_latencies.as_ref(),
+        ctx.queue_latencies.as_ref()
+    );
 }
 
 #[test]
