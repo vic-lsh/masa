@@ -15,7 +15,9 @@ test_synthetic_experiment:
     before_script:
         - ulimit -n 4096 || true
         - source ./scripts/ci_setup_env.sh
-        - export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+        - export RUSTUP_HOME="$HOME/.rustup"
+        - export CARGO_HOME="$HOME/.cargo"
+        - export PATH="$HOME/.local/bin:$CARGO_HOME/bin:$PATH"
         - |
             if [[ "$DEPLOY_MODE" == "kind" ]]; then
               if ! command -v kind &> /dev/null; then
