@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 /// Global registry for mapping (Service, Method) pairs to unique IDs.
 /// This allows us to use u64 IDs in the hot path instead of hashing strings.
@@ -51,7 +51,7 @@ impl MethodRegistry {
         // Since we are single-threaded mostly, contention is low.
         // To be safe against deadlocks (though unlikely here with simple hierarchy),
         // we can just re-acquire map lock then id_map lock.
-        
+
         let mut map = self.map.lock().unwrap();
         // Double check
         let key_ref = (Cow::Borrowed(service), Cow::Borrowed(method));
@@ -63,14 +63,14 @@ impl MethodRegistry {
         // Create owned copies for storage
         let s_owned: Cow<'static, str> = Cow::Owned(service.to_string());
         let m_owned: Cow<'static, str> = Cow::Owned(method.to_string());
-        
+
         let key = (s_owned.clone(), m_owned.clone());
         map.insert(key, id);
-        
+
         // Insert into reverse map
         let mut id_map = self.id_map.lock().unwrap();
         id_map.insert(id, (s_owned, m_owned));
-        
+
         id
     }
 

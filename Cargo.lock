@@ -5726,6 +5726,7 @@ dependencies = [
  "base64 0.21.7",
  "bencher",
  "bytes",
+ "criterion",
  "flate2",
  "h2",
  "http",
