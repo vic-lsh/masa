@@ -10,7 +10,7 @@ import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from .deployment_manager import DeploymentManager
+from .deployment_manager import DeploymentManager, TaskSpec
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,87 @@ class DockerManager(DeploymentManager):
         """
         self.repo_root = repo_root
         self.common_scripts_dir = repo_root / "exp" / "common" / "scripts"
+
+    def run_task(self, task_spec: TaskSpec, log_file: Optional[Path] = None) -> None:
+        """
+        Run a one-off task using 'docker run'.
+        """
+        import shlex
+
+        logger.info(f"Running task: {task_spec.name}")
+
+        # Remove existing container
+        subprocess.run(
+            ["docker", "rm", "-f", task_spec.name],
+            capture_output=True,
+            check=False,
+        )
+
+        # Check/Create network if needed
+        if task_spec.network:
+            check_network = subprocess.run(
+                ["docker", "network", "inspect", task_spec.network],
+                capture_output=True,
+                check=False,
+            )
+            if check_network.returncode != 0:
+                # Check if this looks like a Docker Compose project network
+                # Pattern: {project_name}_{network_key} (e.g., "fifo_synthetic_network")
+                if "_" in task_spec.network and not task_spec.network.startswith(
+                    "local_"
+                ):
+                    logger.info(
+                        f"Using Docker Compose project network: {task_spec.network}"
+                    )
+                else:
+                    logger.warning(
+                        f"Network {task_spec.network} not found, creating it..."
+                    )
+                    subprocess.run(
+                        ["docker", "network", "create", task_spec.network],
+                        check=True,
+                    )
+
+        cmd = ["docker", "run", "--name", task_spec.name]
+
+        if task_spec.network:
+            cmd.extend(["--network", task_spec.network])
+
+        for host_path, container_path in task_spec.volumes.items():
+            cmd.extend(["-v", f"{host_path}:{container_path}"])
+
+        for k, v in task_spec.env_vars.items():
+            cmd.extend(["-e", f"{k}={v}"])
+
+        cmd.append(task_spec.image)
+
+        if task_spec.command:
+            cmd.extend(task_spec.command)
+
+        logger.info(f"Task command: {shlex.join(cmd)}")
+
+        try:
+            if log_file:
+                with open(log_file, "w") as f:
+                    subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, check=True)
+            else:
+                subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError:
+            logger.error(f"Task {task_spec.name} failed.")
+            raise
+        finally:
+            if task_spec.cleanup:
+                self.cleanup_task(task_spec)
+
+    def cleanup_task(self, task_spec: TaskSpec) -> None:
+        """
+        Cleanup docker container for the task.
+        """
+        subprocess.run(
+            ["docker", "rm", "-f", task_spec.name],
+            check=False,
+            capture_output=True,
+        )
 
     def start(
         self,

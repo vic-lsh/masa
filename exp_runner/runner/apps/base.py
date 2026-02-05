@@ -10,16 +10,17 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Tuple
 
 from ..cpu_monitor import CPUMonitor
+from ..deployment_manager import TaskSpec
 from .utils import verify_standard_workload
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from exp_runner.runner.config import ExperimentConfig
-    from exp_runner.runner.docker_manager import DockerManager
+    from exp_runner.runner.deployment_manager import DeploymentManager
 
 
 @dataclass
@@ -392,6 +393,87 @@ class AppPlugin(ABC):
         """
         pass
 
+    @abstractmethod
+    def prepare_workload(
+        self,
+        config: "ExperimentConfig",
+        policy: str,
+        iteration: int,
+        output_dir: Path,
+        repo_root: Path,
+        use_k8s: bool = False,
+    ) -> dict:
+        """
+        Prepare workload configuration and environment variables.
+
+        Args:
+            config: Experiment configuration
+            policy: Scheduling policy
+            iteration: Iteration number
+            output_dir: Directory for output artifacts
+            repo_root: Repository root
+            use_k8s: Whether targeting Kubernetes
+
+        Returns:
+            Dictionary of environment variables
+        """
+        pass
+
+    @abstractmethod
+    def get_deployment_location(
+        self, output_dir: Path, use_k8s: bool, repo_root: Path
+    ) -> Tuple[Path, str]:
+        """
+        Get deployment configuration location.
+
+        Args:
+            output_dir: Output directory (where generated configs might reside)
+            use_k8s: Whether targeting Kubernetes
+            repo_root: Repository root
+
+        Returns:
+            Tuple of (deploy_root, deploy_file)
+            deploy_root: Base directory for deployment command
+            deploy_file: Config filename (compose file or chart directory) relative to deploy_root
+        """
+        pass
+
+    @abstractmethod
+    def get_loadgen_spec(
+        self,
+        output_dir: Path,
+        features: Optional[str],
+        env_vars: dict,
+        use_k8s: bool,
+    ) -> TaskSpec:
+        """
+        Get specification for the load generator task.
+
+        Args:
+            output_dir: Output directory
+            features: Cargo features (policy)
+            env_vars: Environment variables
+            use_k8s: Whether targeting Kubernetes
+
+        Returns:
+            TaskSpec for the load generator
+        """
+        pass
+
+    def get_required_images(self, features: Optional[str] = None) -> list[str]:
+        """
+        Get list of docker images required for this application.
+
+        These images need to be available (or loaded into Kind) for the application to run.
+
+        Args:
+            features: Optional cargo features used to build the image
+
+        Returns:
+            List of image names (including tags)
+        """
+        return []
+
     def get_required_gen_config_fields(self) -> list[str]:
         """
         Return the list of required fields in gen_config.json for this application.
@@ -421,7 +503,7 @@ class AppPlugin(ABC):
         *,
         repo_root: Path,
         config: "ExperimentConfig",
-        docker: "DockerManager",
+        deployment: "DeploymentManager",
         policy: str,
         iteration: int,
         output_dir: Path,
@@ -520,7 +602,7 @@ class AppPlugin(ABC):
             container_names=container_names,
         )
         try:
-            docker.start(
+            deployment.start(
                 app_dir=config.app_dir,
                 compose_file=docker_config.compose_file,
                 env_vars=env_vars,
@@ -530,7 +612,7 @@ class AppPlugin(ABC):
             cpu_monitor.start()
 
             # Start streaming logs in background
-            docker.stream_logs(
+            deployment.stream_logs(
                 container_names=container_names,
                 output_dir=output_dir,
                 follow=True,
@@ -556,7 +638,7 @@ class AppPlugin(ABC):
                 logger.warning(f"Error stopping CPU monitor: {e}")
 
             # Stop Docker services
-            docker.stop(
+            deployment.stop(
                 app_dir=config.app_dir,
                 compose_file=docker_config.compose_file,
                 env_vars=env_vars,

@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from ..cpu_monitor import CPUMonitor
+from ..deployment_manager import TaskSpec
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import get_docker_progress_flag, normalize_features_to_tag
 
@@ -119,6 +119,7 @@ class SocialnetBuilder(AppBuilder):
         no_cache: bool = False,
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
+        build_logs_dir: Optional[Path] = None,
     ) -> Optional[list[list[str]]]:
         app = "socialnet"
         # List of binaries to build (each gets its own image)
@@ -265,6 +266,7 @@ class SocialnetBuilder(AppBuilder):
                 "-t",
                 binary_tag,
                 get_docker_progress_flag(),
+                "--load",
             ]
 
             if no_cache:
@@ -335,7 +337,7 @@ class SocialnetApp(AppPlugin):
     def get_docker_config(self) -> DockerConfig:
         """Return Docker configuration for socialnet application."""
         return DockerConfig(
-            compose_file="apps/socialnet/docker-compose.yaml",
+            compose_file="docker-compose.yaml",
             network_name="socialnet-network",
             loadgen_image_name="socialnet_client_bench:<features>",
             loadgen_binary_name="socialnet_client_bench",
@@ -357,13 +359,7 @@ class SocialnetApp(AppPlugin):
     def create_load_generator(
         self, features: Optional[str] = None, project_name: Optional[str] = None
     ) -> LoadGenerator:
-        """
-        Create a load generator instance for socialnet application.
-
-        Args:
-            features: Optional cargo features used to build the image
-            project_name: Optional docker compose project name
-        """
+        """Deprecated: ExpDriver uses get_loadgen_spec."""
         return SocialnetLoadGenerator(features=features, project_name=project_name)
 
     def create_builder(self) -> AppBuilder:
@@ -384,36 +380,27 @@ class SocialnetApp(AppPlugin):
         """
         return normalize_features_to_tag(features)
 
-    def run_workload(
+    def prepare_workload(
         self,
-        *,
-        repo_root: Path,
         config: "ExperimentConfig",
-        docker: "DockerManager",
         policy: str,
         iteration: int,
         output_dir: Path,
-        app_local_dir: Path,
-        no_cache: bool,
-        dry_run: bool = False,
-        **kwargs,
-    ) -> None:
-        """Run socialnet experiment with namespace isolation."""
+        repo_root: Path,
+        use_k8s: bool = False,
+    ) -> dict:
+        """
+        Prepare workload configuration and environment variables.
+        """
+        if use_k8s:
+            raise NotImplementedError("Socialnet app does not support Kubernetes yet")
 
-        if type(docker).__name__ == "K8sManager":
-            raise NotImplementedError(
-                "Socialnet app does not support Kubernetes execution yet"
-            )
-
-        # Generate project name for namespace isolation
+        # Generate project name
         project_name = _safe_project_name(
             experiment_name=config.experiment_name,
             iteration=iteration,
             policy=policy,
         )
-
-        # Setup paths - write directly to output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate project-specific gen_config.json
         project_gen_config_path = output_dir / "gen_config.json"
@@ -428,135 +415,96 @@ class SocialnetApp(AppPlugin):
             config.gen_config, config.app_config, config.app_dir
         )
         env_vars["PROJECT_NAME"] = project_name
+        env_vars["DOCKER_COMPOSE_PROJECT_NAME"] = project_name
 
-        # Add image tag based on policy/features
+        # Add image tag
         tag = self.get_image_tag(features=policy)
         env_vars["SOCIALNET_IMAGE_TAG"] = tag if tag else "latest"
 
-        # Compute config paths
+        # Handle app config path
         docker_config = self.get_docker_config()
-        app_config_path = None
         if docker_config.app_config_filename:
             candidate = config.in_dir / docker_config.app_config_filename
-            if not candidate.exists():
-                raise FileNotFoundError(f"App config not found at: {candidate}")
-            app_config_path = candidate
-            # Pass app config path to docker compose as env var for volume mounting
-            env_vars["APP_CONFIG_PATH"] = str(app_config_path.resolve())
+            if candidate.exists():
+                env_vars["APP_CONFIG_PATH"] = str(candidate.resolve())
 
-        gen_config_path = config.in_dir / "gen_config.json"
-        if not gen_config_path.exists():
-            raise FileNotFoundError(f"gen_config.json not found at: {gen_config_path}")
+        return env_vars
 
-        # Build docker images (use ORIGINAL config for build)
-        builder = self.create_builder()
-        build_cmds = builder.build(
+    def get_deployment_location(
+        self, output_dir: Path, use_k8s: bool, repo_root: Path
+    ) -> tuple[Path, str]:
+        if use_k8s:
+            raise NotImplementedError("Socialnet app does not support Kubernetes yet")
+
+        # Assume standard location
+        return repo_root / "apps/socialnet", "docker-compose.yaml"
+
+    def get_loadgen_spec(
+        self,
+        output_dir: Path,
+        features: Optional[str],
+        env_vars: dict,
+        use_k8s: bool,
+    ) -> TaskSpec:
+        project_name = env_vars.get("DOCKER_COMPOSE_PROJECT_NAME")
+
+        tag = self.get_image_tag(features)
+        image = (
+            f"socialnet_client_bench:{tag}" if tag else "socialnet_client_bench:latest"
+        )
+        binary = "socialnet_client_bench"
+
+        network = (
+            f"{project_name}_socialnet-network" if project_name else "socialnet-network"
+        )
+
+        task_env = {
+            "BINARY_NAME": binary,
+            "LOG_LEVEL": env_vars.get("LOG_LEVEL", "info"),
+        }
+        task_env.update(env_vars)
+
+        gen_config_path = output_dir / "gen_config.json"
+        volumes = {}
+        if gen_config_path.exists():
+            volumes[str(gen_config_path)] = "/usr/gen_config.json"
+
+        return TaskSpec(
+            name=f"{project_name}-loadgen" if project_name else "socialnet-loadgen",
+            image=image,
+            env_vars=task_env,
+            network=network,
+            volumes=volumes,
+            cleanup=True,
+            artifacts=[("/tmp/masa-load-gen/.", ".")],
+        )
+
+    def run_workload(
+        self,
+        *,
+        repo_root: Path,
+        config: "ExperimentConfig",
+        deployment: "DockerManager",
+        policy: str,
+        iteration: int,
+        output_dir: Path,
+        app_local_dir: Path,
+        no_cache: bool,
+        dry_run: bool = False,
+        **kwargs,
+    ) -> None:
+        """Run socialnet experiment with namespace isolation using ExpDriver."""
+
+        from ..experiment_driver import ExpDriver
+
+        # Allow deployment to be anything compatible
+        driver = ExpDriver(self, deployment)
+        driver.run_workload(
+            config=config,
+            policy=policy,
+            iteration=iteration,
+            output_dir=output_dir,
             repo_root=repo_root,
-            app_dir=config.app_dir,
-            features=policy,
-            rust_log=env_vars.get("LOG_LEVEL", "info"),
             no_cache=no_cache,
-            gen_config_path=gen_config_path,
             dry_run=dry_run,
         )
-
-        if dry_run and build_cmds:
-            print("\n".join(" ".join(cmd) for cmd in build_cmds))
-
-        deployment_config = "docker-compose.yaml"
-        config_path = config.app_dir / deployment_config
-
-        if dry_run:
-            print(
-                f"[dry-run] would run socialnet policy={policy} iteration={iteration}"
-            )
-            print(f"[dry-run] project name: {project_name}")
-            print(f"[dry-run] would start services from {config_path}")
-            return
-
-        # Save metadata
-        metadata = {
-            "app": "socialnet",
-            "experiment": config.experiment_name,
-            "iteration": iteration,
-            "policy": policy,
-            "docker_project": project_name,
-        }
-        with (output_dir / "metadata.json").open("w", encoding="utf-8") as fh:
-            json.dump(metadata, fh, indent=2, sort_keys=True)
-
-        # Initialize CPU monitor with project name filter
-        cpu_stats_file = output_dir / "cpu_stats.csv"
-        cpu_monitor = CPUMonitor(
-            output_path=cpu_stats_file, poll_interval=2.0, container_prefix=project_name
-        )
-
-        log_threads = []
-        try:
-            # Start services
-            logger.info(
-                f"Starting socialnet services for policy={policy} iteration={iteration} project={project_name}"
-            )
-            docker.start(
-                app_dir=config.app_dir,
-                deployment_config=deployment_config,
-                env_vars=env_vars,
-                project_name=project_name,
-            )
-
-            # Wait for services to be ready
-            time.sleep(30)
-
-            # Start CPU monitoring after services are up
-            cpu_monitor.start()
-
-            # Get container names for log streaming
-            container_names = docker.get_container_names(
-                config_path=config_path,
-                project_name=project_name,
-                env_vars=env_vars,
-            )
-
-            # Stream logs
-            if container_names:
-                logs_dir = output_dir / "logs"
-                logger.info(
-                    f"Streaming logs for {len(container_names)} containers to {logs_dir}"
-                )
-                log_threads = docker.stream_logs(
-                    container_names=container_names,
-                    output_dir=logs_dir,
-                    follow=True,
-                )
-            else:
-                logger.warning("No containers found for log streaming")
-
-            # Run load generator
-            # We pass the project-specific gen_config so the client connects to the correct service
-            load_gen = self.create_load_generator(
-                features=policy, project_name=project_name
-            )
-            load_gen.run(
-                output_dir=output_dir,
-                env_vars=env_vars,
-                gen_config_path=project_gen_config_path,
-            )
-
-        finally:
-            # Stop CPU monitor
-            try:
-                cpu_monitor.stop()
-            except Exception as e:
-                logger.warning(f"Error stopping CPU monitor: {e}")
-
-            # Cleanup
-            docker.stop(
-                app_dir=config.app_dir,
-                deployment_config=deployment_config,
-                env_vars=env_vars,
-                project_name=project_name,
-            )
-
-            # Wait for log threads
-            for thread in log_threads:
-                thread.join(timeout=5)
