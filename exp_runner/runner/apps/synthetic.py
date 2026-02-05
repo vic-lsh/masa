@@ -387,7 +387,6 @@ class SyntheticApp(AppPlugin):
         """
         Prepare workload configuration and environment variables.
         """
-        from .base import CPUMonitor
 
         docker_config = self.get_docker_config()
 
