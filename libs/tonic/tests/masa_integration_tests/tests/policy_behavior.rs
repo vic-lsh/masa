@@ -1,8 +1,11 @@
-#![cfg(any(feature = "prio_global_trace", feature = "prio_global_early"))]
+#![cfg(any(
+    all(feature = "prio_global", feature = "trace-queue"),
+    all(feature = "prio_global", feature = "early")
+))]
 
 use std::time::Duration;
 
-#[cfg(feature = "prio_global_early")]
+#[cfg(feature = "early")]
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -15,15 +18,15 @@ use masa_integration_tests::pb::{
     Input1, Input2, Output1, Output2,
 };
 use tonic::masa::context::MasaRequestExt;
-#[cfg(feature = "prio_global_trace")]
+#[cfg(feature = "trace-queue")]
 use tonic::masa::context::MasaResponseExt;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-#[cfg(feature = "prio_global_early")]
+#[cfg(feature = "early")]
 use tonic::Code;
 
-#[cfg(feature = "prio_global_trace")]
+#[cfg(all(feature = "prio_global", feature = "trace-queue"))]
 #[tokio::test(flavor = "current_thread")]
 async fn queue_latency_metadata_is_attached() {
     struct QueueSvc;
@@ -81,7 +84,7 @@ async fn queue_latency_metadata_is_attached() {
     server.abort();
 }
 
-#[cfg(feature = "prio_global_early")]
+#[cfg(all(feature = "prio_global", feature = "early"))]
 #[tokio::test(flavor = "current_thread")]
 async fn expired_context_triggers_early_return() {
     #[derive(Clone)]
