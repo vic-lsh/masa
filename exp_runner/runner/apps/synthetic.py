@@ -648,6 +648,123 @@ class SyntheticApp(AppPlugin):
         """
         return normalize_features_to_tag(features)
 
+    def _prepare_docker_deployment(
+        self,
+        repo_root: Path,
+        config,
+        env_vars: dict,
+        image_tag: str,
+        app_config_path: Optional[Path],
+        output_dir: Path,
+        docker_config: DockerConfig,
+    ) -> tuple[Path, str]:
+        """
+        Prepare Docker Compose execution environment.
+
+        Handles static compose files and dynamic call graph generation.
+        """
+        # Default to experiment scripts dir for static compose
+        app_dir = repo_root / "exp/synthetic/scripts"
+        deployment_config = docker_config.compose_file
+
+        # Check for call_graph configuration
+        has_call_graph = (
+            config.app_config is not None
+            and "call_graph" in config.app_config
+            and config.app_config.get("call_graph") is not None
+        )
+
+        if config.app_config is not None and "call_graph" not in config.app_config:
+            logger.warning(
+                f"config.docker.json exists but does not contain 'call_graph' key. "
+                f"Available keys: {list(config.app_config.keys())}"
+            )
+
+        if has_call_graph:
+            if config.app_config is None:
+                raise ValueError("app_config is required for call_graph mode")
+
+            logger.info("Call graph detected, generating docker compose file")
+            generated_compose = self._generate_call_graph_compose(
+                app_dir=config.app_dir,
+                app_config=config.app_config,
+                image_tag=image_tag,
+                app_config_path=app_config_path,
+                output_dir=output_dir,
+            )
+            # Use output_dir as app_dir and just the filename for compose_file
+            deployment_config = generated_compose.name
+            app_dir = output_dir
+            self._generated_compose_path = generated_compose
+
+        # Write .env file
+        env_file = output_dir / ".env"
+        env_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(env_file, "w", encoding="utf-8") as f:
+            for key, value in env_vars.items():
+                f.write(f"{key}={value}\n")
+        logger.debug(f"Wrote environment variables to {env_file}")
+
+        return app_dir, deployment_config
+
+    def _prepare_k8s_deployment(
+        self,
+        repo_root: Path,
+        env_vars: dict,
+        project_name: str,
+        output_dir: Path,
+    ) -> tuple[Path, str]:
+        """
+        Prepare Kubernetes execution environment.
+
+        Generates Helm values file and sets up chart path.
+        """
+        app_dir = repo_root / "charts/synthetic"
+        deployment_config = "."
+
+        # Generate Helm values file
+        values = {}
+        values["fullnameOverride"] = project_name
+
+        # Map APP_CONFIG_PATH to appConfig
+        if "APP_CONFIG_PATH" in env_vars:
+            try:
+                with open(env_vars["APP_CONFIG_PATH"]) as f:
+                    app_config_json = json.load(f)
+                values["appConfig"] = app_config_json
+            except Exception as e:
+                logger.warning(
+                    f"Failed to load app config from {env_vars['APP_CONFIG_PATH']}: {e}"
+                )
+
+        # Map LOG_LEVEL
+        if "LOG_LEVEL" in env_vars:
+            values["logLevel"] = env_vars["LOG_LEVEL"]
+
+        # Map *_IMAGE_TAG to image.tag
+        for k, v in env_vars.items():
+            if k.endswith("_IMAGE_TAG"):
+                if "image" not in values:
+                    values["image"] = {}
+                values["image"]["tag"] = v
+                break
+
+        # Write values file
+        values_file = output_dir / "values.yaml"
+        with open(values_file, "w", encoding="utf-8") as f:
+            yaml.dump(values, f)
+        env_vars["HELM_VALUES_FILE"] = str(values_file.resolve())
+
+        # Write .env file (optional but good for debugging/consistency)
+        env_file = output_dir / ".env"
+        env_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(env_file, "w", encoding="utf-8") as f:
+            for key, value in env_vars.items():
+                f.write(f"{key}={value}\n")
+        logger.debug(f"Wrote environment variables to {env_file}")
+
+        return app_dir, deployment_config
+
     def run_workload(
         self,
         *,
@@ -733,52 +850,6 @@ class SyntheticApp(AppPlugin):
             service_name_override=service_name_override,
         )
 
-        # Generate call graph compose file if needed
-        deployment_config = docker_config.compose_file
-        # Default to experiment scripts dir for static compose
-        compose_app_dir = repo_root / "exp/synthetic/scripts"
-
-        # Check if call_graph is configured
-        has_call_graph = (
-            config.app_config is not None
-            and "call_graph" in config.app_config
-            and config.app_config.get("call_graph") is not None
-        )
-
-        if config.app_config is not None and "call_graph" not in config.app_config:
-            logger.warning(
-                f"config.docker.json exists but does not contain 'call_graph' key. "
-                f"Available keys: {list(config.app_config.keys())}"
-            )
-
-        if has_call_graph:
-            if config.app_config is None:
-                raise ValueError("app_config is required for call_graph mode")
-
-            if not is_k8s:
-                logger.info("Call graph detected, generating docker compose file")
-                generated_compose = self._generate_call_graph_compose(
-                    app_dir=config.app_dir,
-                    app_config=config.app_config,
-                    image_tag=image_tag,
-                    app_config_path=app_config_path,
-                    output_dir=output_dir,
-                )
-                # Use output_dir as app_dir and just the filename for compose_file
-                deployment_config = generated_compose.name
-                compose_app_dir = output_dir
-                self._generated_compose_path = generated_compose
-            else:
-                # For K8s, we use the chart directory
-                compose_app_dir = repo_root / "charts/synthetic"
-                deployment_config = "."
-
-        # Choose the network name for the load generator.
-        # - Static compose (docker-compose.yaml) defines network key "synthetic_network".
-        # - Generated call-graph compose also defines network key "synthetic_network".
-        # In both cases, Docker Compose creates "{project_name}_synthetic_network".
-        loadgen_network_name = f"{project_name}_synthetic_network"
-
         # Build images (use template gen_config.json for build, not project-specific one)
         # The project-specific gen_config.json is only used by the load generator at runtime
         builder = self.create_builder()
@@ -799,56 +870,30 @@ class SyntheticApp(AppPlugin):
             )
             return
 
-        # Write .env file expected by compose setups (only when actually running)
-        env_file = output_dir / ".env"
-        env_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(env_file, "w", encoding="utf-8") as f:
-            for key, value in env_vars.items():
-                f.write(f"{key}={value}\n")
-        logger.debug(f"Wrote environment variables to {env_file}")
-
+        # Prepare deployment configuration (Compose or Helm)
         if is_k8s:
-            # Generate Helm values file
-            values = {}
-            values["fullnameOverride"] = project_name
-            # Map APP_CONFIG_PATH to appConfig
-            if "APP_CONFIG_PATH" in env_vars:
-                try:
-                    with open(env_vars["APP_CONFIG_PATH"]) as f:
-                        app_config_json = json.load(f)
-                    values["appConfig"] = app_config_json
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to load app config from {env_vars['APP_CONFIG_PATH']}: {e}"
-                    )
+            compose_app_dir, deployment_config = self._prepare_k8s_deployment(
+                repo_root=repo_root,
+                env_vars=env_vars,
+                project_name=project_name,
+                output_dir=output_dir,
+            )
+        else:
+            compose_app_dir, deployment_config = self._prepare_docker_deployment(
+                repo_root=repo_root,
+                config=config,
+                env_vars=env_vars,
+                image_tag=image_tag,
+                app_config_path=app_config_path,
+                output_dir=output_dir,
+                docker_config=docker_config,
+            )
 
-            # Map LOG_LEVEL
-            if "LOG_LEVEL" in env_vars:
-                values["logLevel"] = env_vars["LOG_LEVEL"]
-
-            # Map *_IMAGE_TAG to image.tag
-            for k, v in env_vars.items():
-                if k.endswith("_IMAGE_TAG"):
-                    if "image" not in values:
-                        values["image"] = {}
-                    values["image"]["tag"] = v
-                    break
-
-            # Write values file
-            values_file = output_dir / "values.yaml"
-            with open(values_file, "w", encoding="utf-8") as f:
-                yaml.dump(values, f)
-            env_vars["HELM_VALUES_FILE"] = str(values_file.resolve())
-
-        builder.build(
-            repo_root=repo_root,
-            app_dir=config.app_dir,
-            features=policy,
-            rust_log="info",
-            no_cache=no_cache,
-            gen_config_path=template_gen_config_path,
-            dry_run=False,
-        )
+        # Choose the network name for the load generator.
+        # - Static compose (docker-compose.yaml) defines network key "synthetic_network".
+        # - Generated call-graph compose also defines network key "synthetic_network".
+        # In both cases, Docker Compose creates "{project_name}_synthetic_network".
+        loadgen_network_name = f"{project_name}_synthetic_network"
 
         if kwargs.get("use_kind"):
             # Load images to kind
