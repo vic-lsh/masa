@@ -1,8 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock, OnceLock};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 // ============================================================================
 // OLD IMPLEMENTATION SIMULATION
@@ -88,7 +88,10 @@ impl MethodRegistry {
         }
 
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let key_owned = (Cow::Owned(service.to_string()), Cow::Owned(method.to_string()));
+        let key_owned = (
+            Cow::Owned(service.to_string()),
+            Cow::Owned(method.to_string()),
+        );
         map.insert(key_owned, id);
         id
     }
@@ -122,7 +125,7 @@ struct Estimator;
 
 fn bench_hot_path_old(c: &mut Criterion) {
     let map = Arc::new(OldLatencyMap::<Estimator>::new());
-    
+
     // Simulate resolving method names (which involves allocation if overrides exist)
     let s_p = "ServiceParent";
     let m_p = "MethodParent";
@@ -132,10 +135,10 @@ fn bench_hot_path_old(c: &mut Criterion) {
     c.bench_function("old_hot_path_track", |b| {
         b.iter(|| {
             // In the old path, every child RPC setup involved creating ParentToChildId
-            // If overrides are used, strings are allocated. 
+            // If overrides are used, strings are allocated.
             // We simulate the "common case" where they might be Cows but cloned.
             // Even if borrowed, hashing is done every time.
-            
+
             let parent = OldCowGrpcMethod {
                 service: Cow::Borrowed(black_box(s_p)),
                 method: Cow::Borrowed(black_box(m_p)),
@@ -145,7 +148,7 @@ fn bench_hot_path_old(c: &mut Criterion) {
                 method: Cow::Borrowed(black_box(m_c)),
             };
             let key = OldParentToChildId { parent, child };
-            
+
             map.track(key, 100);
         })
     });
@@ -154,28 +157,29 @@ fn bench_hot_path_old(c: &mut Criterion) {
 fn bench_hot_path_new(c: &mut Criterion) {
     let map = Arc::new(NewLatencyMap::<Estimator>::new());
     let registry = MethodRegistry::global();
-    
+
     // Pre-register (startup time)
     let p_id = registry.get_or_register_method("ServiceParent", "MethodParent");
     let c_id = registry.get_or_register_method("ServiceChild", "MethodChild");
-    
+
     // In the new path, ParentID is resolved once per parent request (cached in struct).
     // ChildID is resolved once per child RPC call (cached in registry lookup).
     // But Registry lookup is also optimized.
     // However, the *LatencyMap* access itself uses the u64 key.
-    
+
     c.bench_function("new_hot_path_track", |b| {
         b.iter(|| {
-            // 1. Resolve Child (simulating registry lookup if not cached locally, 
+            // 1. Resolve Child (simulating registry lookup if not cached locally,
             // but in reality we do lookup every time in before_child_rpc)
             // But wait, my implementation of `before_child_rpc` calls `MethodRegistry::get_or_register_method` every time!
             // So we MUST include that in the bench to be fair.
-            
-            let resolved_child_id = registry.get_or_register_method(black_box("ServiceChild"), black_box("MethodChild"));
-            
+
+            let resolved_child_id = registry
+                .get_or_register_method(black_box("ServiceChild"), black_box("MethodChild"));
+
             // 2. Combine keys
             let key = (p_id << 32) | resolved_child_id;
-            
+
             // 3. Track
             map.track(key, 100);
         })
@@ -198,5 +202,10 @@ fn bench_hot_path_new_optimized_cached(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_hot_path_old, bench_hot_path_new, bench_hot_path_new_optimized_cached);
+criterion_group!(
+    benches,
+    bench_hot_path_old,
+    bench_hot_path_new,
+    bench_hot_path_new_optimized_cached
+);
 criterion_main!(benches);

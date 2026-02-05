@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::Mutex,
-};
+use std::{collections::HashMap, sync::Mutex};
 
 use masa_core::LatencyEstimator;
 
