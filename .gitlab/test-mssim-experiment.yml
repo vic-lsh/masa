@@ -1,16 +1,15 @@
 test_mssim_experiment:
     stage: test
-    services: []
     variables:
         CI: "true"
         CARGO_BUILD_JOBS: "16"
-        # Using Docker-on-Docker (socket binding) instead of DIND
-        # DOCKER_HOST: tcp://docker:2375
-        # DOCKER_TLS_CERTDIR: ""
 
     before_script:
         - ulimit -n 4096 || true
-        - source ./scripts/ci_setup_env.sh
+        - |
+            if ! command -v uv &> /dev/null; then
+              curl -LsSf https://astral.sh/uv/install.sh | sh
+            fi
         - export RUSTUP_HOME="$HOME/.rustup"
         - export CARGO_HOME="$HOME/.cargo"
         - export PATH="$HOME/.local/bin:$CARGO_HOME/bin:$PATH"
@@ -24,5 +23,7 @@ test_mssim_experiment:
         - rustup toolchain install nightly
         - rustc --version
         - cargo --version
+    tags:
+        - on-host
     script:
         - ./scripts/test_mssim_experiment.sh
