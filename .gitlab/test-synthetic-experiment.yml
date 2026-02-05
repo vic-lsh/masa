@@ -15,7 +15,7 @@ test_synthetic_experiment:
     before_script:
         - ulimit -n 4096 || true
         - apt-get update -yqq
-        - apt-get install -y protobuf-compiler docker.io
+        - apt-get install -y protobuf-compiler docker.io libgraphviz-dev pkg-config
         - mkdir -p $HOME/.local/bin
         - export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
         - |
