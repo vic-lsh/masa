@@ -2,14 +2,16 @@
 Kubernetes operations manager for deploying and managing experiments on K8s.
 """
 
+import json
 import logging
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from .deployment_manager import DeploymentManager
+from .deployment_manager import DeploymentManager, TaskSpec
 
 # Attempt to import strip_ansi_codes from docker_manager if available
 try:
@@ -61,6 +63,201 @@ class K8sManager(DeploymentManager):
                 logger.error(f"Stderr: {e.stderr}")
                 raise
             return e
+
+    def _get_pod_phase(self, pod_name: str) -> str:
+        cmd = [
+            "kubectl",
+            "get",
+            "pod",
+            pod_name,
+            "-n",
+            self.namespace,
+            "-o",
+            "jsonpath={.status.phase}",
+        ]
+        if self.kube_context:
+            cmd.extend(["--context", self.kube_context])
+
+        try:
+            res = self._run_cmd(cmd, capture_output=True)
+            return res.stdout.strip()
+        except subprocess.CalledProcessError:
+            return "Unknown"
+
+    def run_task(self, task_spec: TaskSpec, log_file: Optional[Path] = None) -> None:
+        """
+        Run a one-off task using a K8s Pod.
+        """
+        logger.info(f"Running task {task_spec.name} on K8s")
+
+        # Clean up existing pod
+        del_cmd = [
+            "kubectl",
+            "delete",
+            "pod",
+            task_spec.name,
+            "--namespace",
+            self.namespace,
+            "--ignore-not-found",
+        ]
+        if self.kube_context:
+            del_cmd.extend(["--context", self.kube_context])
+        self._run_cmd(del_cmd)
+
+        # Handle volumes (create ConfigMaps)
+        volume_mounts = []
+        volumes = []
+        created_configmaps = []
+
+        for host_path, container_path in task_spec.volumes.items():
+            path_obj = Path(host_path)
+            if path_obj.is_file():
+                # Sanitize name
+                safe_name = path_obj.stem.lower().replace("_", "-")
+                cm_name = f"{task_spec.name}-{safe_name}-cm"[:63]  # Limit length
+
+                # Create CM
+                create_cm_cmd = [
+                    "kubectl",
+                    "create",
+                    "cm",
+                    cm_name,
+                    "--namespace",
+                    self.namespace,
+                    f"--from-file={path_obj.name}={host_path}",
+                ]
+                if self.kube_context:
+                    create_cm_cmd.extend(["--context", self.kube_context])
+
+                # Delete existing CM if any
+                del_cm_cmd = [
+                    "kubectl",
+                    "delete",
+                    "cm",
+                    cm_name,
+                    "--namespace",
+                    self.namespace,
+                    "--ignore-not-found",
+                ]
+                if self.kube_context:
+                    del_cm_cmd.extend(["--context", self.kube_context])
+                self._run_cmd(del_cm_cmd)
+
+                self._run_cmd(create_cm_cmd)
+                created_configmaps.append(cm_name)
+
+                vol_name = f"vol-{len(volumes)}"
+                volumes.append({"name": vol_name, "configMap": {"name": cm_name}})
+                volume_mounts.append(
+                    {
+                        "name": vol_name,
+                        "mountPath": container_path,
+                        "subPath": path_obj.name,
+                    }
+                )
+            else:
+                logger.warning(
+                    f"Skipping volume {host_path}: only single file mounts supported in K8sManager currently."
+                )
+
+        # Construct Pod Manifest
+        pod_manifest = {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "name": task_spec.name,
+                "namespace": self.namespace,
+                "labels": {"app": task_spec.name},
+            },
+            "spec": {
+                "restartPolicy": "Never",
+                "containers": [
+                    {
+                        "name": task_spec.name,
+                        "image": task_spec.image,
+                        "env": [
+                            {"name": k, "value": str(v)}
+                            for k, v in task_spec.env_vars.items()
+                        ],
+                        "volumeMounts": volume_mounts,
+                    }
+                ],
+                "volumes": volumes,
+            },
+        }
+
+        if task_spec.command:
+            pod_manifest["spec"]["containers"][0]["command"] = task_spec.command
+
+        # Apply manifest
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml") as f:
+            json.dump(pod_manifest, f)
+            f.flush()
+            apply_cmd = ["kubectl", "apply", "-f", f.name]
+            if self.kube_context:
+                apply_cmd.extend(["--context", self.kube_context])
+            self._run_cmd(apply_cmd)
+
+        # Wait for completion
+        logger.info(f"Waiting for task {task_spec.name} to complete...")
+
+        try:
+            # Poll for status
+            while True:
+                phase = self._get_pod_phase(task_spec.name)
+                if phase in ["Succeeded", "Failed"]:
+                    break
+                # if phase == "Unknown":
+                #      pass
+                time.sleep(2)
+
+            if log_file:
+                self._stream_pod_log(task_spec.name, log_file, follow=False)
+
+            if phase != "Succeeded":
+                raise RuntimeError(f"Task {task_spec.name} failed with phase {phase}")
+
+        finally:
+            if task_spec.cleanup:
+                self.cleanup_task(task_spec)
+
+    def cleanup_task(self, task_spec: TaskSpec) -> None:
+        """
+        Cleanup task resources (Pod and ConfigMaps).
+        """
+        del_pod = [
+            "kubectl",
+            "delete",
+            "pod",
+            task_spec.name,
+            "--namespace",
+            self.namespace,
+            "--ignore-not-found",
+        ]
+        if self.kube_context:
+            del_pod.extend(["--context", self.kube_context])
+        self._run_cmd(del_pod, check=False)
+
+        # Cleanup ConfigMaps derived from volumes
+        for host_path, _ in task_spec.volumes.items():
+            path_obj = Path(host_path)
+            if path_obj.is_file():
+                # Reconstruct CM name
+                safe_name = path_obj.stem.lower().replace("_", "-")
+                cm_name = f"{task_spec.name}-{safe_name}-cm"[:63]
+
+                del_cm = [
+                    "kubectl",
+                    "delete",
+                    "cm",
+                    cm_name,
+                    "--namespace",
+                    self.namespace,
+                    "--ignore-not-found",
+                ]
+                if self.kube_context:
+                    del_cm.extend(["--context", self.kube_context])
+                self._run_cmd(del_cm, check=False)
 
     def start(
         self,
