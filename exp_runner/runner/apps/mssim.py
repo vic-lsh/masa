@@ -31,6 +31,7 @@ from typing import Optional
 from apps.mssim.simulator.orchestrator import LOADGEN_SERVICE_NAME
 
 from ..cpu_monitor import CPUMonitor
+from ..deployment_manager import TaskSpec
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import normalize_features_to_tag
 
@@ -349,7 +350,6 @@ class MssimApp(AppPlugin):
         Get load generator spec.
         """
         # This is a stub. MSSIM runs loadgen as part of the compose stack.
-        from ..deployment_manager import TaskSpec
 
         return TaskSpec(
             name="mssim-loadgen-stub",

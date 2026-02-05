@@ -1,7 +1,6 @@
 import logging
 import time
 from pathlib import Path
-from typing import Optional, Tuple
 
 from .apps.base import AppPlugin
 from .config import ExperimentConfig
@@ -95,7 +94,6 @@ class ExpDriver:
             return
 
         cpu_monitor = None
-        log_threads = []
 
         try:
             # Start services
@@ -130,9 +128,7 @@ class ExpDriver:
 
             # Log Streaming
             logs_dir = output_dir / "logs"
-            log_threads = self.deployment.stream_logs(
-                container_names, logs_dir, follow=True
-            )
+            self.deployment.stream_logs(container_names, logs_dir, follow=True)
 
             # 4. Execute Task (Load Generator)
             loadgen_spec = self.app.get_loadgen_spec(
