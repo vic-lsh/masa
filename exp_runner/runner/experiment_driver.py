@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -93,6 +94,16 @@ class ExpDriver:
             )
             return
 
+        # Load images into Kind if needed (K8s mode)
+        if use_k8s and hasattr(self.deployment, "load_image_to_cluster"):
+            kind_cluster_name = os.environ.get("KIND_CLUSTER_NAME")
+            if kind_cluster_name:
+                images = self.app.get_required_images(policy)
+                if images:
+                    self.deployment.load_image_to_cluster(kind_cluster_name, images)
+            else:
+                logger.debug("KIND_CLUSTER_NAME not set, skipping kind load")
+
         cpu_monitor = None
 
         try:
@@ -154,6 +165,13 @@ class ExpDriver:
                         )
                     except Exception as e:
                         logger.warning(f"Failed to copy artifact {src} -> {dst}: {e}")
+                        # Fallback: try to extract from logs if use_k8s
+                        if use_k8s and loadgen_log.exists():
+                            logger.info("Attempting to extract artifacts from logs...")
+                            self._extract_artifacts_from_log(
+                                loadgen_log, output_dir / dst
+                            )
+
             finally:
                 if original_cleanup:
                     self.deployment.cleanup_task(loadgen_spec)
@@ -183,3 +201,59 @@ class ExpDriver:
                 )
             except Exception as e:
                 logger.warning(f"Failed to stop deployment: {e}")
+
+    def _extract_artifacts_from_log(self, log_file: Path, output_dir: Path) -> None:
+        """
+        Extract artifacts from log file.
+
+        The log file is expected to contain output in the format:
+        ---BEGIN TRACES---
+        FILE: filename
+        content
+        ---END FILE---
+        ...
+        ---END TRACES---
+        """
+        if not log_file.exists():
+            logger.warning(
+                f"Log file {log_file} does not exist, cannot extract artifacts."
+            )
+            return
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+
+            if "---BEGIN TRACES---" not in content:
+                logger.warning("No traces found in log file.")
+                return
+
+            traces_block = content.split("---BEGIN TRACES---")[1].split(
+                "---END TRACES---"
+            )[0]
+
+            import re
+
+            # Pattern: FILE: (.*)\n(.*?)---END FILE---
+            # Use DOTALL to match newlines
+            pattern = re.compile(r"FILE: (.*?)\n(.*?)---END FILE---", re.DOTALL)
+
+            count = 0
+            for match in pattern.finditer(traces_block):
+                filename = match.group(1).strip()
+                file_content = match.group(2)
+
+                # Check if filename is just a name or path
+                filename = os.path.basename(filename)
+
+                out_path = output_dir / filename
+                with open(out_path, "w", encoding="utf-8") as out_f:
+                    out_f.write(file_content)
+                count += 1
+
+            logger.info(f"Extracted {count} artifacts from log to {output_dir}.")
+
+        except Exception as e:
+            logger.warning(f"Failed to extract artifacts from log: {e}")
