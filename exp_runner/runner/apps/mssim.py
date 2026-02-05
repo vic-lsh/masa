@@ -31,6 +31,7 @@ from typing import Optional
 from apps.mssim.simulator.orchestrator import LOADGEN_SERVICE_NAME
 
 from ..cpu_monitor import CPUMonitor
+from ..deployment_manager import TaskSpec
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import normalize_features_to_tag
 
@@ -312,6 +313,50 @@ class MssimApp(AppPlugin):
         # MSSIM logs are captured via orchestrator.log rather than docker logs streaming.
         return []
 
+    def prepare_workload(
+        self,
+        config: "ExperimentConfig",
+        policy: str,
+        iteration: int,
+        output_dir: Path,
+        repo_root: Path,
+        use_k8s: bool = False,
+    ) -> dict:
+        """
+        Prepare workload configuration.
+        For MSSIM, this is handled inside run_workload currently.
+        """
+        # This is a stub to satisfy ABC.
+        return {}
+
+    def get_deployment_location(
+        self, output_dir: Path, use_k8s: bool, repo_root: Path
+    ) -> tuple[Path, str]:
+        """
+        Get deployment location.
+        """
+        # This is a stub to satisfy ABC.
+        # MSSIM generates docker-compose.yml in the run directory.
+        return output_dir, "docker-compose.yml"
+
+    def get_loadgen_spec(
+        self,
+        output_dir: Path,
+        features: Optional[str],
+        env_vars: dict,
+        use_k8s: bool,
+    ) -> TaskSpec:
+        """
+        Get load generator spec.
+        """
+        # This is a stub. MSSIM runs loadgen as part of the compose stack.
+
+        return TaskSpec(
+            name="mssim-loadgen-stub",
+            image="mssim_load_generator",
+            env_vars={},
+        )
+
     def create_load_generator(self, features: Optional[str] = None) -> LoadGenerator:
         return MssimLoadGenerator()
 
@@ -434,7 +479,7 @@ class MssimApp(AppPlugin):
         *,
         repo_root: Path,
         config: "ExperimentConfig",
-        docker: "DockerManager",
+        deployment: "DockerManager",
         policy: str,
         iteration: int,
         output_dir: Path,
@@ -444,7 +489,7 @@ class MssimApp(AppPlugin):
         **kwargs,
     ) -> None:
         """Run mssim experiment."""
-        if type(docker).__name__ == "K8sManager":
+        if type(deployment).__name__ == "K8sManager":
             raise NotImplementedError(
                 "Mssim app does not support Kubernetes execution yet"
             )
@@ -625,7 +670,7 @@ class MssimApp(AppPlugin):
             print(
                 f"Starting services for policy={policy} rps_values={rps_values} iteration={iteration}"
             )
-            docker.start(
+            deployment.start(
                 app_dir=run_dir,
                 deployment_config="docker-compose.yml",
                 env_vars=env,
@@ -641,7 +686,7 @@ class MssimApp(AppPlugin):
             # Get container names and stream logs to individual files
             logs_dir = run_dir / "logs"
             # Get container names for log streaming
-            container_names = docker.get_container_names(
+            container_names = deployment.get_container_names(
                 config_path=docker_compose_path,
                 project_name=project_name,
                 env_vars=env,
@@ -651,7 +696,7 @@ class MssimApp(AppPlugin):
                 print(
                     f"Streaming logs for {len(container_names)} containers to {logs_dir}"
                 )
-                log_threads = docker.stream_logs(
+                log_threads = deployment.stream_logs(
                     container_names=container_names,
                     output_dir=logs_dir,
                     follow=True,
@@ -726,7 +771,7 @@ class MssimApp(AppPlugin):
             except Exception as e:
                 logger.warning(f"Error stopping CPU monitor: {e}")
 
-            docker.stop(
+            deployment.stop(
                 app_dir=run_dir,
                 deployment_config="docker-compose.yml",
                 env_vars=env,

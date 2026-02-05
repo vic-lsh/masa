@@ -6,10 +6,27 @@ import logging
 import subprocess
 import threading
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TaskSpec:
+    """Specification for a one-off task (e.g., load generator)."""
+
+    name: str
+    image: str
+    env_vars: Dict[str, str] = field(default_factory=dict)
+    network: Optional[str] = None
+    command: Optional[List[str]] = None
+    volumes: Dict[str, str] = field(default_factory=dict)  # host_path -> container_path
+    cleanup: bool = False  # Whether to remove container after run
+    artifacts: List[Tuple[str, str]] = field(
+        default_factory=list
+    )  # (src_in_container, dst_filename)
 
 
 class DeploymentManager(ABC):
@@ -21,6 +38,27 @@ class DeploymentManager(ABC):
 
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
+
+    @abstractmethod
+    def run_task(self, task_spec: TaskSpec, log_file: Optional[Path] = None) -> None:
+        """
+        Run a one-off task (blocking).
+
+        Args:
+            task_spec: Specification of the task to run
+            log_file: Optional path to save task logs/output
+        """
+        pass
+
+    @abstractmethod
+    def cleanup_task(self, task_spec: TaskSpec) -> None:
+        """
+        Cleanup resources associated with a task.
+
+        Args:
+            task_spec: Specification of the task to cleanup
+        """
+        pass
 
     @abstractmethod
     def start(
