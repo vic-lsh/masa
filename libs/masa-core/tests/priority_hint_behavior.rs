@@ -24,7 +24,7 @@ fn larger_deadline_means_lower_priority() {
 
     let mut previous = PriorityHint::infra();
     while let Some(next) = heap.pop() {
-        assert!(previous >= next, "heap returned out-of-order priority" );
+        assert!(previous >= next, "heap returned out-of-order priority");
         previous = next;
     }
 }

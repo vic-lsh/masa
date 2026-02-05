@@ -8,8 +8,8 @@ use masa_integration_tests::pb::{
     Input1, Input2, Output1, Output2,
 };
 use tokio::sync::Barrier;
-use tonic::metadata::MetadataValue;
 use tonic::masa::context::MasaRequestExt;
+use tonic::metadata::MetadataValue;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
