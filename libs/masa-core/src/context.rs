@@ -16,7 +16,7 @@ pub enum FutureSpan {
     Queueing(u64),
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
 pub struct QueueLatencies {
     pub initial: u64,
     pub resume: u64,
