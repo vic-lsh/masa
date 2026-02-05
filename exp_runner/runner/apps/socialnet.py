@@ -11,9 +11,8 @@ import shlex
 import subprocess
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Optional
 
-from ..cpu_monitor import CPUMonitor
 from ..deployment_manager import TaskSpec
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import get_docker_progress_flag, normalize_features_to_tag

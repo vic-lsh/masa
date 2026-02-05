@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:  # pragma: no cover
     from exp_runner.runner.config import ExperimentConfig
     from exp_runner.runner.deployment_manager import DeploymentManager
-    from exp_runner.runner.docker_manager import DockerManager
 
 
 @dataclass

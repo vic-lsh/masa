@@ -5,22 +5,19 @@ Synthetic application plugin.
 import hashlib
 import json
 import logging
-import os
 import re
 import shlex
 import subprocess
 import time
-from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Tuple
 
 import yaml
 
-from ..deployment_manager import DeploymentManager, TaskSpec
+from ..deployment_manager import TaskSpec
 
 if TYPE_CHECKING:
-    from ..docker_manager import DockerManager
-    from ..k8s_manager import K8sManager
+    pass
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import get_docker_progress_flag, normalize_features_to_tag
 
