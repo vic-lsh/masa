@@ -23,7 +23,7 @@ from .goodput import (
     compute_early_return_last_child_breakdown,
 )
 from .util import (
-    _parse_error_columns,
+    _read_request_csv,
     get_policy_color,
     get_policy_display_name,
     read_policies,
@@ -43,11 +43,11 @@ def _parse_rps_dir(path: Path) -> float:
     return float(token)
 
 
-_RPS_FILE_RE = re.compile(r"root_latencies_(?P<rps>[0-9_]+(?:\.[0-9_]+)?)rps\.csv$")
+_RPS_FILE_RE = re.compile(r"r(?P<rps>[0-9_]+(?:\.[0-9_]+)?)_(?P<api>.+)\.csv$")
 
 
 def _parse_rps_from_filename(path: Path) -> float:
-    """Parse RPS value from CSV filename like 'root_latencies_200rps.csv'."""
+    """Parse RPS value from CSV filename like 'r200_search.csv'."""
     match = _RPS_FILE_RE.match(path.name)
     if not match:
         raise ValueError(f"Unexpected RPS filename: {path}")
@@ -111,16 +111,21 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
     # Look for run_* directories with CSV files directly
     run_dirs = sorted(policy_dir.glob("run_*"))
     for run_dir in run_dirs:
-        csv_paths = sorted(run_dir.glob("root_latencies_*rps.csv"))
+        # Match standard trace files r{rps}_{api}.csv
+        csv_paths = sorted(run_dir.glob("r*_*_*.csv"))
+        # Also try to match r{rps}_{api}.csv where api might not have underscores
+        if not csv_paths:
+            csv_paths = sorted(run_dir.glob("r*.csv"))
+
         for csv_path in csv_paths:
             try:
                 rps = _parse_rps_from_filename(csv_path)
             except ValueError:
-                print(f"Warning: skipping unexpected CSV filename {csv_path}")
+                # print(f"Warning: skipping unexpected CSV filename {csv_path}")
                 continue
 
-            df = pd.read_csv(csv_path)
-            df.columns = [col.strip() for col in df.columns]
+            df = _read_request_csv(str(csv_path))
+            # df.columns = [col.strip() for col in df.columns] # _read_request_csv handles this
 
             # Map columns from new CSV format if needed
             if "e2e_latency_us" not in df.columns and "latency" in df.columns:
@@ -136,7 +141,7 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
                 print(f"Warning: missing e2e_latency_us in {csv_path}")
                 continue
 
-            df = _parse_error_columns(df)
+            # df = _parse_error_columns(df) # _read_request_csv already does this
             df = _filter_errors(df)
             df = _filter_after_warmup(df, warmup_sec, csv_path)
             if df.empty:

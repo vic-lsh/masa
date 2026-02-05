@@ -132,6 +132,7 @@ zstd = { version = "0.12.3", optional = true }
 
 [dev-dependencies]
 bencher = "0.1.5"
+criterion = "0.5"
 quickcheck = "1.0"
 quickcheck_macros = "1.0"
 rand = "0.8"
@@ -146,3 +147,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [[bench]]
 harness = false
 name = "decode"
+
+[[bench]]
+name = "masa_context_benchmark"
+harness = false

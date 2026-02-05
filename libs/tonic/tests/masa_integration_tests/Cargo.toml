@@ -18,3 +18,9 @@ http = { version = "0.2" }
 [build-dependencies]
 prost-build = "0.12"
 tonic-build = { path = "../../tonic-build" }
+
+[features]
+default = []
+prio_global = ["tonic/prio_global", "tokio/prio_global", "masa-core/prio_global"]
+early = ["tonic/early", "masa-core/early"]
+trace-queue = ["tonic/trace-queue"]

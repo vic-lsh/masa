@@ -94,6 +94,7 @@ done
 # because not all tests build right now, we only test the modules we know to build successfully.
 
 packages=(
+    "masa-core"
     "masa-integration-tests"
     "tonic"
     "tonic-build"
@@ -169,6 +170,10 @@ done
 
 execute_test "tonic (prio_local,est_rms)" cargo test -p tonic --features "masa,prio_local,est_rms"
 execute_test "tonic (prio_local,est_hist)" cargo test -p tonic --features "masa,prio_local,est_hist"
+execute_test "tokio (masa priority suite)" cargo test -p tokio --features full --test masa_priority
+execute_test "masa-integration-tests (prio_global)" cargo test -p masa-integration-tests --features prio_global
+execute_test "masa-integration-tests (prio_global+trace-queue)" cargo test -p masa-integration-tests --features "prio_global,trace-queue"
+execute_test "masa-integration-tests (prio_global+early)" cargo test -p masa-integration-tests --features "prio_global,early"
 
 # Collect results if parallel
 if [ "$PARALLEL_JOBS" -gt 1 ]; then
