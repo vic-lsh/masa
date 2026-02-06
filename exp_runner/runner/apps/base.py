@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Optional, Tuple
 
 from ..cpu_monitor import CPUMonitor
 from ..deployment_manager import TaskSpec
+from ..executor import CommandExecutor, SubprocessExecutor
 from .utils import verify_standard_workload
 
 logger = logging.getLogger(__name__)
@@ -103,24 +104,21 @@ class LoadGenerator(ABC):
         output_dir: Path,
         env_vars: Optional[dict] = None,
         gen_config_path: Optional[Path] = None,
+        executor: Optional[CommandExecutor] = None,
     ) -> None:
         """
         Run the load generator and collect results.
-
-        This method implements the core logic from loadgen-run.sh:
-        1. Remove existing container if present
-        2. Create output directory
-        3. Run docker container with proper configuration
-        4. Copy traces from container to output directory
 
         Args:
             output_dir: Directory to save output and traces
             env_vars: Additional environment variables for the container
             gen_config_path: Path to gen_config.json file to mount in container
+            executor: Command executor to use
 
         Raises:
             subprocess.CalledProcessError: If load generator execution fails
         """
+        executor = executor or SubprocessExecutor()
         container_name = self.get_container_name()
         network_name = self.get_network_name()
         image_name = self.get_image_name()
@@ -128,35 +126,28 @@ class LoadGenerator(ABC):
         logger.info(f"Running load generator: {container_name}")
 
         # Remove existing container if present
-        subprocess.run(
+        executor.run(
             ["docker", "rm", "-f", container_name],
             capture_output=True,
             check=False,
         )
 
         # Ensure network exists (create if it doesn't)
-        # Note: Docker Compose project networks (matching pattern {project}_{network_key})
-        # are created automatically by docker compose, so we don't create them here
-        check_network = subprocess.run(
+        check_network = executor.run(
             ["docker", "network", "inspect", network_name],
             capture_output=True,
             check=False,
         )
         if check_network.returncode != 0:
             # Check if this looks like a Docker Compose project network
-            # Pattern: {project_name}_{network_key} (e.g., "fifo_synthetic_network")
-            # We detect this by checking if network_name contains an underscore and
-            # if a network with a similar pattern might exist
             if "_" in network_name and not network_name.startswith("local_"):
-                # Likely a Docker Compose project network - should already exist from docker compose
                 logger.info(f"Using Docker Compose project network: {network_name}")
                 logger.warning(
                     f"Network {network_name} not found yet - ensure docker compose has started services"
                 )
             else:
-                # Non-compose network - create it if it doesn't exist
                 logger.warning(f"Network {network_name} not found, creating it...")
-                subprocess.run(
+                executor.run(
                     ["docker", "network", "create", network_name],
                     check=True,
                 )
@@ -175,12 +166,10 @@ class LoadGenerator(ABC):
             network_name,
         ]
 
-        # Mount gen_config.json if provided (required for client bench binaries)
         if gen_config_path and gen_config_path.exists():
             cmd.extend(["-v", f"{gen_config_path}:/usr/gen_config.json:ro"])
             logger.debug(f"Mounting gen_config.json from {gen_config_path}")
 
-        # Add environment variables
         load_env_vars = self.get_env_vars(env_vars)
         for key, value in load_env_vars.items():
             cmd.extend(["-e", f"{key}={value}"])
@@ -193,7 +182,7 @@ class LoadGenerator(ABC):
 
         with open(loadgen_log, "w") as f:
             try:
-                subprocess.run(
+                executor.run(
                     cmd,
                     stdout=f,
                     stderr=subprocess.STDOUT,
@@ -206,19 +195,18 @@ class LoadGenerator(ABC):
         logger.info("Load generator container finished")
 
         # Copy traces from container
-        self._copy_traces(container_name, output_dir)
+        self._copy_traces(container_name, output_dir, executor)
 
         logger.info("Load generator completed successfully")
 
-    def _copy_traces(self, container_name: str, output_dir: Path) -> None:
+    def _copy_traces(
+        self,
+        container_name: str,
+        output_dir: Path,
+        executor: CommandExecutor,
+    ) -> None:
         """
         Copy traces from container to output directory.
-
-        Implements the trace copying and flattening logic from loadgen-run.sh.
-
-        Args:
-            container_name: Name of the container to copy from
-            output_dir: Directory to copy traces to
         """
         container_trace_path = self.get_container_trace_path()
         temp_subdir = output_dir / "masa-load-gen"
@@ -232,7 +220,7 @@ class LoadGenerator(ABC):
                 str(output_dir),
             ]
             try:
-                subprocess.run(
+                executor.run(
                     copy_cmd,
                     check=True,
                     capture_output=True,
@@ -251,7 +239,6 @@ class LoadGenerator(ABC):
                     trace_file.rename(dest)
                     logger.debug(f"Moved {trace_file.name} to {output_dir}")
 
-                # Remove the now-empty subdirectory
                 temp_subdir.rmdir()
 
             logger.info(f"Copied traces from container to {output_dir}")
@@ -280,6 +267,7 @@ class AppBuilder(ABC):
         no_cache: bool = False,
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
+        executor: Optional[CommandExecutor] = None,
     ) -> Optional[list[list[str]]]:
         """
         Build the app's docker images.
@@ -292,6 +280,7 @@ class AppBuilder(ABC):
             no_cache: Whether to disable Docker cache
             gen_config_path: Path to gen_config.json file (relative to repo_root) to include in image
             dry_run: If True, return list of commands instead of executing them
+            executor: Command executor to use (defaults to SubprocessExecutor)
 
         Returns:
             If dry_run is True, returns a list of commands (each command is a list of strings).
@@ -510,21 +499,13 @@ class AppPlugin(ABC):
         app_local_dir: Path,
         no_cache: bool,
         dry_run: bool = False,
+        executor: Optional[CommandExecutor] = None,
         **kwargs,
     ) -> None:
         """
         Run a single (iteration, policy) workload.
-
-        Default implementation matches the existing runner behavior:
-        - generate env vars
-        - build images
-        - start docker compose services
-        - stream logs
-        - run load generator
-        - stop docker compose services
-
-        Apps with non-standard orchestration can override this method.
         """
+        executor = executor or SubprocessExecutor()
         docker_config = self.get_docker_config()
 
         # Generate environment variables
@@ -565,6 +546,7 @@ class AppPlugin(ABC):
                 no_cache=no_cache,
                 gen_config_path=gen_config_path,
                 dry_run=True,
+                executor=executor,
             )
             if commands:
                 print("\n".join(shlex.join(cmd) for cmd in commands))
@@ -589,6 +571,7 @@ class AppPlugin(ABC):
             no_cache=no_cache,
             gen_config_path=gen_config_path,
             dry_run=False,
+            executor=executor,
         )
 
         # Get container names for monitoring and logging
@@ -604,8 +587,9 @@ class AppPlugin(ABC):
         try:
             deployment.start(
                 app_dir=config.app_dir,
-                compose_file=docker_config.compose_file,
+                deployment_config=docker_config.compose_file,
                 env_vars=env_vars,
+                project_name="",  # TODO: Should be passed or generated
             )
 
             # Start CPU monitoring after services are up
@@ -624,6 +608,7 @@ class AppPlugin(ABC):
                 output_dir=output_dir,
                 env_vars=env_vars,
                 gen_config_path=gen_config_path,
+                executor=executor,
             )
 
             logger.info(f"Load generator completed for policy {policy}")
@@ -640,8 +625,9 @@ class AppPlugin(ABC):
             # Stop Docker services
             deployment.stop(
                 app_dir=config.app_dir,
-                compose_file=docker_config.compose_file,
+                deployment_config=docker_config.compose_file,
                 env_vars=env_vars,
+                project_name="",
             )
 
             # Clean up .env file

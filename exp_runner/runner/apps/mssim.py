@@ -35,6 +35,7 @@ from apps.mssim.simulator.orchestrator import LOADGEN_SERVICE_NAME
 
 from ..cpu_monitor import CPUMonitor
 from ..deployment_manager import TaskSpec
+from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import normalize_features_to_tag
 
@@ -154,9 +155,10 @@ class MssimBuilder(AppBuilder):
         no_cache: bool = False,
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
+        executor: Optional[CommandExecutor] = None,
     ) -> Optional[list[list[str]]]:
         # NOTE: rust_log/app_config_path/gen_config_path are unused for MSSIM builds today.
-        commands: list[list[str]] = []
+        executor = executor or SubprocessExecutor()
 
         # Start timing the docker build
         build_start_time = time.time()
@@ -188,11 +190,7 @@ class MssimBuilder(AppBuilder):
             if no_cache:
                 loadgen_cmd.insert(-1, "--no-cache")
 
-            if dry_run:
-                commands.append(loadgen_cmd)
-            else:
-                subprocess.run(loadgen_cmd, cwd=repo_root, check=True)
-
+            executor.run(loadgen_cmd, cwd=repo_root, check=True)
             self._loadgen_built = True
 
         # Build generic service image for policy/features
@@ -230,12 +228,8 @@ class MssimBuilder(AppBuilder):
 
             tag_cmd = ["docker", "tag", feature_image, GENERIC_SERVICE_IMAGE]
 
-            if dry_run:
-                commands.append(generic_cmd)
-                commands.append(tag_cmd)
-            else:
-                subprocess.run(generic_cmd, cwd=repo_root, check=True)
-                subprocess.run(tag_cmd, cwd=repo_root, check=True)
+            executor.run(generic_cmd, cwd=repo_root, check=True)
+            executor.run(tag_cmd, cwd=repo_root, check=True)
 
             self._built_feature_keys.add(tag)
 
@@ -246,7 +240,9 @@ class MssimBuilder(AppBuilder):
                 f"Docker image building took {build_duration:.2f} seconds ({build_duration / 60:.2f} minutes)"
             )
 
-        return commands if dry_run else None
+        if dry_run and isinstance(executor, MockCommandExecutor):
+            return [cmd.args for cmd in executor.history]
+        return None
 
 
 class MssimApp(AppPlugin):
@@ -489,9 +485,11 @@ class MssimApp(AppPlugin):
         app_local_dir: Path,
         no_cache: bool,
         dry_run: bool = False,
+        executor: Optional[CommandExecutor] = None,
         **kwargs,
     ) -> None:
         """Run mssim experiment."""
+        executor = executor or SubprocessExecutor()
         if type(deployment).__name__ == "K8sManager":
             return self._run_k8s_workload(
                 repo_root=repo_root,
@@ -502,6 +500,7 @@ class MssimApp(AppPlugin):
                 output_dir=output_dir,
                 no_cache=no_cache,
                 dry_run=dry_run,
+                executor=executor,
             )
 
         # MSSIM-specific orchestration:
@@ -552,6 +551,7 @@ class MssimApp(AppPlugin):
             no_cache=no_cache,
             gen_config_path=(config.in_dir / "gen_config.json"),
             dry_run=dry_run,
+            executor=executor,
         )
         if dry_run and build_cmds:
             print("\n".join(" ".join(cmd) for cmd in build_cmds))
@@ -665,7 +665,7 @@ class MssimApp(AppPlugin):
         try:
             # Generate compose/deployment once
             with log_path.open("wb") as log_file:
-                gen_proc = subprocess.run(
+                gen_proc = executor.run(
                     trace_cmd,
                     cwd=config.app_dir,
                     env=env,
@@ -740,7 +740,7 @@ class MssimApp(AppPlugin):
                         loadgen_container,
                     ]
                     try:
-                        result = subprocess.run(
+                        result = executor.run(
                             check_cmd,
                             capture_output=True,
                             text=True,
@@ -804,8 +804,10 @@ class MssimApp(AppPlugin):
         output_dir: Path,
         no_cache: bool,
         dry_run: bool,
+        executor: Optional[CommandExecutor] = None,
     ) -> None:
         """Run MSSIM experiment on Kubernetes."""
+        executor = executor or SubprocessExecutor()
         mssim_cfg = config.app_config or {}
 
         # Handle callgraph_dirs
@@ -841,6 +843,7 @@ class MssimApp(AppPlugin):
             no_cache=no_cache,
             gen_config_path=(config.in_dir / "gen_config.json"),
             dry_run=dry_run,
+            executor=executor,
         )
 
         feature_image = _generic_service_image_for_policy(policy)
@@ -920,7 +923,7 @@ class MssimApp(AppPlugin):
             )
 
         with log_path.open("wb") as log_file:
-            gen_proc = subprocess.run(
+            gen_proc = executor.run(
                 trace_cmd,
                 cwd=config.app_dir,
                 env=env,

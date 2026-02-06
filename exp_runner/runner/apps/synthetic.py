@@ -15,9 +15,7 @@ from typing import TYPE_CHECKING, Optional, Tuple
 import yaml
 
 from ..deployment_manager import TaskSpec
-
-if TYPE_CHECKING:
-    pass
+from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import get_docker_progress_flag, normalize_features_to_tag
 
@@ -340,7 +338,9 @@ class SyntheticApp(AppPlugin):
 
         return container_names
 
-    def _validate_config(self, repo_root: Path, config_path: Path) -> None:
+    def _validate_config(
+        self, repo_root: Path, config_path: Path, executor: CommandExecutor
+    ) -> None:
         """
         Validate the experiment configuration using the rust validation tool.
         """
@@ -361,7 +361,7 @@ class SyntheticApp(AppPlugin):
         ]
 
         try:
-            subprocess.run(
+            executor.run(
                 cmd,
                 cwd=repo_root,
                 check=True,
@@ -382,12 +382,13 @@ class SyntheticApp(AppPlugin):
         output_dir: Path,
         repo_root: Path,
         use_k8s: bool = False,
+        executor: Optional[CommandExecutor] = None,
         **kwargs,
     ) -> dict:
         """
         Prepare workload configuration and environment variables.
         """
-
+        executor = executor or SubprocessExecutor()
         docker_config = self.get_docker_config()
 
         # Generate project name
@@ -425,7 +426,7 @@ class SyntheticApp(AppPlugin):
                 env_vars["APP_CONFIG_PATH"] = str(app_config_path.resolve())
 
                 # Validate config
-                self._validate_config(repo_root, app_config_path)
+                self._validate_config(repo_root, app_config_path, executor)
 
         if use_k8s:
             # K8s Preparation
@@ -567,6 +568,7 @@ class SyntheticApp(AppPlugin):
         app_local_dir: Path,  # unused
         no_cache: bool,
         dry_run: bool = False,
+        executor: Optional[CommandExecutor] = None,
         **kwargs,
     ) -> None:
         """
@@ -574,7 +576,7 @@ class SyntheticApp(AppPlugin):
         """
         from ..experiment_driver import ExpDriver
 
-        driver = ExpDriver(self, deployment)
+        driver = ExpDriver(self, deployment, executor=executor)
         driver.run_workload(
             config=config,
             policy=policy,
@@ -612,7 +614,9 @@ class SyntheticBuilder(AppBuilder):
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
         build_logs_dir: Optional[Path] = None,
+        executor: Optional[CommandExecutor] = None,
     ) -> Optional[list[list[str]]]:
+        executor = executor or SubprocessExecutor()
         app = "synthetic"
 
         # Services to build (each gets its own image)
@@ -630,9 +634,6 @@ class SyntheticBuilder(AppBuilder):
         )
         if features:
             logger.info(f"Using features: {features}")
-
-        # Collect commands if dry_run
-        commands: list[list[str]] = []
 
         # Start timing the docker build
         build_start_time = time.time()
@@ -680,21 +681,18 @@ class SyntheticBuilder(AppBuilder):
             # The stage is still available for COPY --from=builder in subsequent stages.
             builder_cmd.append(".")
 
-            if dry_run:
-                commands.append(builder_cmd.copy())
-            else:
-                try:
-                    subprocess.run(
-                        builder_cmd,
-                        cwd=repo_root,
-                        check=True,
-                        capture_output=False,
-                    )
-                except subprocess.CalledProcessError:
-                    logger.error(
-                        f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}"
-                    )
-                    raise
+            try:
+                executor.run(
+                    builder_cmd,
+                    cwd=repo_root,
+                    check=True,
+                    capture_output=False,
+                )
+            except subprocess.CalledProcessError:
+                logger.error(
+                    f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}"
+                )
+                raise
             logger.info("Stage 1 complete: All binaries built")
 
             # Stage 2: Build runtime-base (shared across all images)
@@ -733,21 +731,18 @@ class SyntheticBuilder(AppBuilder):
             # Tag runtime-base for potential inspection/debugging, but don't load it
             runtime_base_cmd.extend(["-t", f"{app}_runtime-base:{tag}", "."])
 
-            if dry_run:
-                commands.append(runtime_base_cmd.copy())
-            else:
-                try:
-                    subprocess.run(
-                        runtime_base_cmd,
-                        cwd=repo_root,
-                        check=True,
-                        capture_output=False,
-                    )
-                except subprocess.CalledProcessError:
-                    logger.error(
-                        f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}"
-                    )
-                    raise
+            try:
+                executor.run(
+                    runtime_base_cmd,
+                    cwd=repo_root,
+                    check=True,
+                    capture_output=False,
+                )
+            except subprocess.CalledProcessError:
+                logger.error(
+                    f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}"
+                )
+                raise
             logger.info("Stage 2 complete: Runtime-base image built")
 
             # Stage 3: Build per-binary runtime images
@@ -792,29 +787,26 @@ class SyntheticBuilder(AppBuilder):
 
                 runtime_cmd.extend(["-t", image_name, "."])
 
-                if dry_run:
-                    commands.append(runtime_cmd.copy())
-                else:
-                    try:
-                        subprocess.run(
-                            runtime_cmd,
-                            cwd=repo_root,
-                            check=True,
-                            capture_output=False,
-                        )
-                    except subprocess.CalledProcessError:
-                        logger.error(
-                            f"Failed to build runtime image for {binary_name}. Command: {shlex.join(runtime_cmd)}"
-                        )
-                        raise
+                try:
+                    executor.run(
+                        runtime_cmd,
+                        cwd=repo_root,
+                        check=True,
+                        capture_output=False,
+                    )
+                except subprocess.CalledProcessError:
+                    logger.error(
+                        f"Failed to build runtime image for {binary_name}. Command: {shlex.join(runtime_cmd)}"
+                    )
+                    raise
 
                 logger.info(f"Successfully built docker image: {image_name}")
 
         finally:
             pass
 
-        if dry_run:
-            return commands
+        if dry_run and isinstance(executor, MockCommandExecutor):
+            return [cmd.args for cmd in executor.history]
 
         # Calculate and print build duration
         build_duration = time.time() - build_start_time

@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from ..deployment_manager import DeploymentManager as DockerManager
 
 from ..deployment_manager import TaskSpec
+from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
 from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
 from .utils import get_docker_progress_flag, normalize_features_to_tag
 
@@ -223,7 +224,9 @@ class HotelBuilder(AppBuilder):
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
         build_logs_dir: Optional[Path] = None,
+        executor: Optional[CommandExecutor] = None,
     ) -> Optional[list[list[str]]]:
+        executor = executor or SubprocessExecutor()
         app = "hotel"
         # List of binaries to build (each gets its own image)
         # Note: All binary names already include the hotel_ prefix
@@ -254,9 +257,6 @@ class HotelBuilder(AppBuilder):
         )
         if features:
             logger.info(f"Using features: {features}")
-
-        # Collect commands if dry_run
-        commands: list[list[str]] = []
 
         # Start timing the docker build
         build_start_time = time.time()
@@ -291,21 +291,18 @@ class HotelBuilder(AppBuilder):
 
         builder_cmd.extend(["-t", f"{app}_builder:{tag}", "."])
 
-        if dry_run:
-            commands.append(builder_cmd.copy())
-        else:
-            try:
-                subprocess.run(
-                    builder_cmd,
-                    cwd=repo_root,
-                    check=True,
-                    capture_output=False,
-                )
-            except subprocess.CalledProcessError:
-                logger.error(
-                    f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}"
-                )
-                raise
+        try:
+            executor.run(
+                builder_cmd,
+                cwd=repo_root,
+                check=True,
+                capture_output=False,
+            )
+        except subprocess.CalledProcessError:
+            logger.error(
+                f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}"
+            )
+            raise
         stage1_duration = time.time() - stage1_start_time
         logger.info(f"Stage 1 complete: All binaries built ({stage1_duration:.2f}s)")
 
@@ -342,21 +339,18 @@ class HotelBuilder(AppBuilder):
 
         runtime_base_cmd.extend(["-t", f"{app}_runtime-base:{tag}", "."])
 
-        if dry_run:
-            commands.append(runtime_base_cmd.copy())
-        else:
-            try:
-                subprocess.run(
-                    runtime_base_cmd,
-                    cwd=repo_root,
-                    check=True,
-                    capture_output=False,
-                )
-            except subprocess.CalledProcessError:
-                logger.error(
-                    f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}"
-                )
-                raise
+        try:
+            executor.run(
+                runtime_base_cmd,
+                cwd=repo_root,
+                check=True,
+                capture_output=False,
+            )
+        except subprocess.CalledProcessError:
+            logger.error(
+                f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}"
+            )
+            raise
         stage2_duration = time.time() - stage2_start_time
         logger.info(
             f"Stage 2 complete: Runtime-base image built ({stage2_duration:.2f}s)"
@@ -406,10 +400,10 @@ class HotelBuilder(AppBuilder):
 
                 runtime_cmd.extend(["-t", image_name, "."])
 
-                if dry_run:
+                if dry_run and isinstance(executor, MockCommandExecutor):
                     # Add progress flag for dry-run display
                     runtime_cmd.insert(-1, get_docker_progress_flag())
-                    commands.append(runtime_cmd.copy())
+                    executor.run(runtime_cmd)
                     return (binary_name, True, None, None)
 
                 # Write output to log file instead of terminal (for parallel builds)
@@ -423,7 +417,7 @@ class HotelBuilder(AppBuilder):
                     build_cmd_with_progress.insert(-1, "--progress=plain")
 
                     with open(log_file, "w") as f:
-                        subprocess.run(
+                        executor.run(
                             build_cmd_with_progress,
                             cwd=repo_root,
                             check=True,
@@ -436,7 +430,7 @@ class HotelBuilder(AppBuilder):
                     # Use tty progress for terminal output
                     build_cmd_with_progress = runtime_cmd.copy()
                     build_cmd_with_progress.insert(-1, get_docker_progress_flag())
-                    subprocess.run(
+                    executor.run(
                         build_cmd_with_progress,
                         cwd=repo_root,
                         check=True,
@@ -451,16 +445,23 @@ class HotelBuilder(AppBuilder):
                 return (binary_name, False, error_msg, log_file)
 
         # Build all runtime images in parallel
-        if not dry_run:
+        # Note: If executor is MockCommandExecutor, we probably don't want parallel execution
+        # as it might race on history. But since it's just appending to a list, it might be ok?
+        # Actually MockExecutor is not thread safe by default for list append, but in Python GIL helps.
+        # However, for Dry Run, we can just run them sequentially.
+        if dry_run:
+            for binary_name in binaries_list:
+                build_runtime_image(binary_name)
+        else:
             logger.info("Stage 3: Building all runtime images in parallel")
             stage3_start_time = time.time()
             build_errors = []
             completed_binaries = []
 
-            with ThreadPoolExecutor(max_workers=10) as executor:
+            with ThreadPoolExecutor(max_workers=10) as pool:
                 # Submit all build tasks
                 futures = {
-                    executor.submit(build_runtime_image, binary): binary
+                    pool.submit(build_runtime_image, binary): binary
                     for binary in binaries_list
                 }
 
@@ -490,13 +491,9 @@ class HotelBuilder(AppBuilder):
             )
             if build_logs_dir:
                 logger.info(f"Build logs written to: {build_logs_dir}")
-        else:
-            # In dry-run mode, still call build_runtime_image to collect commands
-            for binary_name in binaries_list:
-                build_runtime_image(binary_name)
 
-        if dry_run:
-            return commands
+        if dry_run and isinstance(executor, MockCommandExecutor):
+            return [cmd.args for cmd in executor.history]
 
         # Calculate and print build duration
         build_duration = time.time() - build_start_time
@@ -771,6 +768,7 @@ class HotelApp(AppPlugin):
         app_local_dir: Path,
         no_cache: bool,
         dry_run: bool = False,
+        executor: Optional[CommandExecutor] = None,
         **kwargs,
     ) -> None:
         """Run hotel experiment with namespace isolation using ExpDriver."""
@@ -782,7 +780,7 @@ class HotelApp(AppPlugin):
             # This check is a bit loose, but ExpDriver will handle platform detection via deployment object
             pass
 
-        driver = ExpDriver(self, deployment)
+        driver = ExpDriver(self, deployment, executor=executor)
         driver.run_workload(
             config=config,
             policy=policy,

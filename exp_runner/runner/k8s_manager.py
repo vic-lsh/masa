@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .deployment_manager import DeploymentManager, TaskSpec
+from .executor import CommandExecutor
 
 # Attempt to import strip_ansi_codes from docker_manager if available
 try:
@@ -37,8 +38,9 @@ class K8sManager(DeploymentManager):
         repo_root: Path,
         kube_context: Optional[str] = None,
         namespace: str = "default",
+        executor: Optional[CommandExecutor] = None,
     ):
-        self.repo_root = repo_root
+        super().__init__(repo_root, executor)
         self.kube_context = kube_context
         self.namespace = namespace
 
@@ -52,7 +54,7 @@ class K8sManager(DeploymentManager):
         # Most kubectl/helm commands accept --context.
 
         try:
-            result = subprocess.run(
+            result = self.executor.run(
                 final_cmd, check=check, capture_output=capture_output, text=True
             )
             return result
@@ -345,14 +347,14 @@ class K8sManager(DeploymentManager):
             cmd_pods = ["kubectl", "get", "pods", "-n", self.namespace]
             if self.kube_context:
                 cmd_pods.extend(["--context", self.kube_context])
-            subprocess.run(cmd_pods, check=False)
+            self.executor.run(cmd_pods, check=False)
 
             # List deployments
             logger.error("--- Deployments ---")
             cmd_deploy = ["kubectl", "get", "deployments", "-n", self.namespace]
             if self.kube_context:
                 cmd_deploy.extend(["--context", self.kube_context])
-            subprocess.run(cmd_deploy, check=False)
+            self.executor.run(cmd_deploy, check=False)
 
             # Describe deployments
             logger.error("--- Describe Deployments ---")
@@ -365,7 +367,7 @@ class K8sManager(DeploymentManager):
             ]
             if self.kube_context:
                 cmd_desc_deploy.extend(["--context", self.kube_context])
-            subprocess.run(cmd_desc_deploy, check=False)
+            self.executor.run(cmd_desc_deploy, check=False)
 
             # Events
             logger.error("--- Events ---")
@@ -379,14 +381,14 @@ class K8sManager(DeploymentManager):
             ]
             if self.kube_context:
                 cmd_events.extend(["--context", self.kube_context])
-            subprocess.run(cmd_events, check=False)
+            self.executor.run(cmd_events, check=False)
 
             # Describe pods
             logger.error("--- Describe Pods ---")
             cmd_desc = ["kubectl", "describe", "pods", "-n", self.namespace]
             if self.kube_context:
                 cmd_desc.extend(["--context", self.kube_context])
-            subprocess.run(cmd_desc, check=False)
+            self.executor.run(cmd_desc, check=False)
 
             # Logs
             label_selector = f"app.kubernetes.io/instance={project_name}"
@@ -404,7 +406,7 @@ class K8sManager(DeploymentManager):
                     ]
                     if self.kube_context:
                         cmd_logs.extend(["--context", self.kube_context])
-                    subprocess.run(cmd_logs, check=False)
+                    self.executor.run(cmd_logs, check=False)
             except Exception as e:
                 logger.error(f"Failed to get pod logs: {e}")
 
@@ -509,7 +511,7 @@ class K8sManager(DeploymentManager):
         try:
             if follow:
                 with open(log_file, "w", encoding="utf-8") as f:
-                    process = subprocess.Popen(
+                    process = self.executor.popen(
                         cmd,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
@@ -606,7 +608,7 @@ class K8sManager(DeploymentManager):
         logger.info(
             f"Starting port-forward: {local_port}:{remote_port} -> {service_name}"
         )
-        process = subprocess.Popen(
+        process = self.executor.popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
 
