@@ -17,6 +17,10 @@ path = "src/frontend/main.rs"
 name = "synthetic_child"
 path = "src/child/main.rs"
 
+[[bin]]
+name = "validate_config"
+path = "src/bin/validate_config.rs"
+
 [features]
 prio_global = ["masa/prio_global"]
 prio_local = ["masa/prio_local"]
