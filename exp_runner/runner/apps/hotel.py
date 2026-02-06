@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
-from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
+from .base import AppBuilder, AppPlugin, DockerConfig
 from .utils import get_docker_progress_flag, normalize_features_to_tag
 
 logger = logging.getLogger(__name__)
@@ -149,43 +149,6 @@ def _generate_hotel_config(
     # Write to file
     with output_path.open("w") as f:
         json.dump(config, f, indent=2)
-
-
-class HotelLoadGenerator(LoadGenerator):
-    """Load generator for the hotel reservation application."""
-
-    def __init__(
-        self, features: Optional[str] = None, project_name: Optional[str] = None
-    ):
-        """
-        Initialize load generator with optional features for image tagging.
-
-        Args:
-            features: Cargo features used to build the image
-            project_name: Docker compose project name for namespace isolation
-        """
-        self.features = features
-        self.project_name = project_name
-
-    def get_container_name(self) -> str:
-        if self.project_name:
-            return f"{self.project_name}_hotel_client_bench"
-        return "hotel_client_bench"
-
-    def get_network_name(self) -> str:
-        if self.project_name:
-            return f"{self.project_name}_hotel_network"
-        return "local_hotel_network"
-
-    def get_image_name(self) -> str:
-        tag = normalize_features_to_tag(self.features)
-        if tag and tag != "latest":
-            return f"hotel_client_bench:{tag}"
-        else:
-            return "hotel_client_bench:latest"
-
-    def get_binary_name(self) -> str:
-        return "hotel_client_bench"
 
 
 class HotelBuilder(AppBuilder):
@@ -615,13 +578,6 @@ class HotelApp(AppPlugin):
 
         return container_names
 
-    def create_load_generator(
-        self, features: Optional[str] = None, project_name: Optional[str] = None
-    ) -> LoadGenerator:
-        """Deprecated: ExpDriver uses get_loadgen_spec."""
-        # raise NotImplementedError("create_load_generator is deprecated. Use ExpDriver.")
-        return HotelLoadGenerator(features=features, project_name=project_name)
-
     def create_builder(self) -> AppBuilder:
         """Create a builder instance for hotel application."""
         return HotelBuilder()
@@ -646,6 +602,7 @@ class HotelApp(AppPlugin):
         output_dir: Path,
         repo_root: Path,
         use_k8s: bool = False,
+        executor: Optional[CommandExecutor] = None,
     ) -> dict:
         """
         Prepare workload configuration and environment variables.
@@ -754,39 +711,4 @@ class HotelApp(AppPlugin):
             volumes=volumes,
             cleanup=True,
             artifacts=[("/tmp/masa-load-gen/.", ".")],
-        )
-
-    def run_workload(
-        self,
-        *,
-        repo_root: Path,
-        config: "ExperimentConfig",
-        deployment: "DockerManager",
-        policy: str,
-        iteration: int,
-        output_dir: Path,
-        app_local_dir: Path,
-        no_cache: bool,
-        dry_run: bool = False,
-        executor: Optional[CommandExecutor] = None,
-        **kwargs,
-    ) -> None:
-        """Run hotel experiment with namespace isolation using ExpDriver."""
-
-        from ..experiment_driver import ExpDriver
-
-        # Ensure we are using DockerManager (K8s not supported)
-        if hasattr(deployment, "kube_context") and deployment.kube_context:
-            # This check is a bit loose, but ExpDriver will handle platform detection via deployment object
-            pass
-
-        driver = ExpDriver(self, deployment, executor=executor)
-        driver.run_workload(
-            config=config,
-            policy=policy,
-            iteration=iteration,
-            output_dir=output_dir,
-            repo_root=repo_root,
-            no_cache=no_cache,
-            dry_run=dry_run,
         )

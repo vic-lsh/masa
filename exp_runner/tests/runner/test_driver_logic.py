@@ -131,6 +131,7 @@ class MockAppPlugin(AppPlugin):
         output_dir: Path,
         repo_root: Path,
         use_k8s: bool = False,
+        executor=None,
     ) -> dict:
         return {
             "DOCKER_COMPOSE_PROJECT_NAME": "test_project",

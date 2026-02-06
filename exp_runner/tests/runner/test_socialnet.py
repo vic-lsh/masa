@@ -6,22 +6,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from exp_runner.runner.apps.socialnet import SocialnetBuilder, SocialnetLoadGenerator
+from exp_runner.runner.apps.socialnet import SocialnetBuilder
 from exp_runner.runner.cli import create_parser
-
-
-class TestSocialnetLoadGenerator:
-    def test_image_name_with_features(self):
-        loadgen = SocialnetLoadGenerator(features="policy-a,policy-b")
-        assert loadgen.get_image_name() == "socialnet_client_bench:policy-a-policy-b"
-
-    def test_image_name_without_features(self):
-        loadgen = SocialnetLoadGenerator(features=None)
-        assert loadgen.get_image_name() == "socialnet_client_bench:latest"
-
-    def test_container_name(self):
-        loadgen = SocialnetLoadGenerator(features="test")
-        assert loadgen.get_container_name() == "socialnet_client_bench"
 
 
 class TestSocialnetBuilder:

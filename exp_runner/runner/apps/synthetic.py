@@ -16,7 +16,7 @@ import yaml
 
 from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
-from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
+from .base import AppBuilder, AppPlugin, DockerConfig
 from .utils import get_docker_progress_flag, normalize_features_to_tag
 
 logger = logging.getLogger(__name__)
@@ -59,10 +59,6 @@ class SyntheticApp(AppPlugin):
 
     def get_image_tag(self, features: Optional[str] = None) -> str:
         return normalize_features_to_tag(features)
-
-    def create_load_generator(self, features: Optional[str] = None) -> LoadGenerator:
-        """Deprecated: ExpDriver uses get_loadgen_spec instead."""
-        raise NotImplementedError("create_load_generator is deprecated. Use ExpDriver.")
 
     def load_app_config(self, config_path: Path) -> dict:
         """Load config.docker.json configuration file."""
@@ -375,15 +371,13 @@ class SyntheticApp(AppPlugin):
 
     def prepare_workload(
         self,
-        *,
-        config,
+        config: "ExperimentConfig",
         policy: str,
         iteration: int,
         output_dir: Path,
         repo_root: Path,
         use_k8s: bool = False,
         executor: Optional[CommandExecutor] = None,
-        **kwargs,
     ) -> dict:
         """
         Prepare workload configuration and environment variables.
@@ -554,37 +548,6 @@ class SyntheticApp(AppPlugin):
             artifacts=[
                 ("/tmp/masa-load-gen/.", ".")
             ],  # Source in container, dest dir in host
-        )
-
-    def run_workload(
-        self,
-        *,
-        repo_root: Path,
-        config,
-        deployment,
-        policy: str,
-        iteration: int,
-        output_dir: Path,
-        app_local_dir: Path,  # unused
-        no_cache: bool,
-        dry_run: bool = False,
-        executor: Optional[CommandExecutor] = None,
-        **kwargs,
-    ) -> None:
-        """
-        Run a single (iteration, policy) workload using ExpDriver.
-        """
-        from ..experiment_driver import ExpDriver
-
-        driver = ExpDriver(self, deployment, executor=executor)
-        driver.run_workload(
-            config=config,
-            policy=policy,
-            iteration=iteration,
-            output_dir=output_dir,
-            repo_root=repo_root,
-            no_cache=no_cache,
-            dry_run=dry_run,
         )
 
 

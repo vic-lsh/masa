@@ -42,212 +42,6 @@ class DockerConfig:
     )
 
 
-class LoadGenerator(ABC):
-    """
-    Abstract base class for application-specific load generator execution.
-
-    Each application implements this interface to define how its load generator
-    should be run, including container configuration, environment variables,
-    and trace collection.
-    """
-
-    @abstractmethod
-    def get_container_name(self) -> str:
-        """Return the container name for the load generator."""
-        pass
-
-    @abstractmethod
-    def get_network_name(self) -> str:
-        """Return the Docker network name to connect to."""
-        pass
-
-    @abstractmethod
-    def get_image_name(self) -> str:
-        """Return the Docker image name to use for the load generator."""
-        pass
-
-    @abstractmethod
-    def get_binary_name(self) -> str:
-        """Return the binary name to execute inside the container."""
-        pass
-
-    def get_container_trace_path(self) -> str:
-        """
-        Return the path inside the container where traces are saved.
-
-        Default is /tmp/masa-load-gen, can be overridden by subclasses.
-        """
-        return "/tmp/masa-load-gen"
-
-    def get_env_vars(self, env_vars: Optional[dict] = None) -> dict:
-        """
-        Get environment variables to pass to the load generator container.
-
-        Args:
-            env_vars: Additional environment variables from experiment config
-
-        Returns:
-            Dictionary of environment variables
-        """
-        base_env = {
-            "BINARY_NAME": self.get_binary_name(),
-            "LOG_LEVEL": os.environ.get("LOG_LEVEL", "info"),
-        }
-
-        if env_vars:
-            base_env.update(env_vars)
-
-        return base_env
-
-    def run(
-        self,
-        output_dir: Path,
-        env_vars: Optional[dict] = None,
-        gen_config_path: Optional[Path] = None,
-        executor: Optional[CommandExecutor] = None,
-    ) -> None:
-        """
-        Run the load generator and collect results.
-
-        Args:
-            output_dir: Directory to save output and traces
-            env_vars: Additional environment variables for the container
-            gen_config_path: Path to gen_config.json file to mount in container
-            executor: Command executor to use
-
-        Raises:
-            subprocess.CalledProcessError: If load generator execution fails
-        """
-        executor = executor or SubprocessExecutor()
-        container_name = self.get_container_name()
-        network_name = self.get_network_name()
-        image_name = self.get_image_name()
-
-        logger.info(f"Running load generator: {container_name}")
-
-        # Remove existing container if present
-        executor.run(
-            ["docker", "rm", "-f", container_name],
-            capture_output=True,
-            check=False,
-        )
-
-        # Ensure network exists (create if it doesn't)
-        check_network = executor.run(
-            ["docker", "network", "inspect", network_name],
-            capture_output=True,
-            check=False,
-        )
-        if check_network.returncode != 0:
-            # Check if this looks like a Docker Compose project network
-            if "_" in network_name and not network_name.startswith("local_"):
-                logger.info(f"Using Docker Compose project network: {network_name}")
-                logger.warning(
-                    f"Network {network_name} not found yet - ensure docker compose has started services"
-                )
-            else:
-                logger.warning(f"Network {network_name} not found, creating it...")
-                executor.run(
-                    ["docker", "network", "create", network_name],
-                    check=True,
-                )
-                logger.info(f"Network {network_name} created")
-
-        # Ensure output directory exists
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Build docker run command
-        cmd = [
-            "docker",
-            "run",
-            "--name",
-            container_name,
-            "--network",
-            network_name,
-        ]
-
-        if gen_config_path and gen_config_path.exists():
-            cmd.extend(["-v", f"{gen_config_path}:/usr/gen_config.json:ro"])
-            logger.debug(f"Mounting gen_config.json from {gen_config_path}")
-
-        load_env_vars = self.get_env_vars(env_vars)
-        for key, value in load_env_vars.items():
-            cmd.extend(["-e", f"{key}={value}"])
-
-        cmd.append(image_name)
-
-        # Run load generator and save logs
-        loadgen_log = output_dir / "loadgen.log"
-        logger.info(f"Load generator output will be saved to {loadgen_log}")
-
-        with open(loadgen_log, "w") as f:
-            try:
-                executor.run(
-                    cmd,
-                    stdout=f,
-                    stderr=subprocess.STDOUT,
-                    check=True,
-                )
-            except subprocess.CalledProcessError:
-                logger.error(f"Load generator failed. Command: {shlex.join(cmd)}")
-                raise
-
-        logger.info("Load generator container finished")
-
-        # Copy traces from container
-        self._copy_traces(container_name, output_dir, executor)
-
-        logger.info("Load generator completed successfully")
-
-    def _copy_traces(
-        self,
-        container_name: str,
-        output_dir: Path,
-        executor: CommandExecutor,
-    ) -> None:
-        """
-        Copy traces from container to output directory.
-        """
-        container_trace_path = self.get_container_trace_path()
-        temp_subdir = output_dir / "masa-load-gen"
-
-        try:
-            # Copy traces from container
-            copy_cmd = [
-                "docker",
-                "cp",
-                f"{container_name}:{container_trace_path}",
-                str(output_dir),
-            ]
-            try:
-                executor.run(
-                    copy_cmd,
-                    check=True,
-                    capture_output=True,
-                )
-            except subprocess.CalledProcessError:
-                logger.error(
-                    f"Failed to copy traces from container. Command: {shlex.join(copy_cmd)}"
-                )
-                raise
-
-            # Flatten the directory structure if needed
-            if temp_subdir.exists() and temp_subdir.is_dir():
-                logger.debug(f"Flattening traces from {temp_subdir}")
-                for trace_file in temp_subdir.iterdir():
-                    dest = output_dir / trace_file.name
-                    trace_file.rename(dest)
-                    logger.debug(f"Moved {trace_file.name} to {output_dir}")
-
-                temp_subdir.rmdir()
-
-            logger.info(f"Copied traces from container to {output_dir}")
-
-        except subprocess.CalledProcessError as e:
-            logger.warning(f"Failed to copy traces from container: {e}")
-            logger.warning("Traces may not have been generated")
-
-
 class AppBuilder(ABC):
     """
     Abstract base class for application-specific build logic.
@@ -360,19 +154,6 @@ class AppPlugin(ABC):
         pass
 
     @abstractmethod
-    def create_load_generator(self, features: Optional[str] = None) -> LoadGenerator:
-        """
-        Create a load generator instance for this application.
-
-        Args:
-            features: Optional cargo features used to build the image
-
-        Returns:
-            LoadGenerator instance configured for this application
-        """
-        pass
-
-    @abstractmethod
     def create_builder(self) -> AppBuilder:
         """
         Create an app builder for this application.
@@ -391,6 +172,7 @@ class AppPlugin(ABC):
         output_dir: Path,
         repo_root: Path,
         use_k8s: bool = False,
+        executor: Optional[CommandExecutor] = None,
     ) -> dict:
         """
         Prepare workload configuration and environment variables.
@@ -402,9 +184,7 @@ class AppPlugin(ABC):
             output_dir: Directory for output artifacts
             repo_root: Repository root
             use_k8s: Whether targeting Kubernetes
-
-        Returns:
-            Dictionary of environment variables
+            executor: Command executor for any subprocesses
         """
         pass
 
@@ -505,11 +285,21 @@ class AppPlugin(ABC):
         """
         Run a single (iteration, policy) workload.
 
-        This method is deprecated. New applications should use ExpDriver.
-        However, Experiment class still calls this.
-        Applications should override this method and delegate to ExpDriver.
+        Delegates to ExpDriver to orchestrate the experiment.
         """
-        raise NotImplementedError(
-            "AppPlugin.run_workload is deprecated. "
-            "Subclasses must implement it and delegate to ExpDriver."
+        # Local import to avoid circular dependency
+        from ..experiment_driver import ExpDriver
+
+        # Allow deployment to be anything compatible
+        driver = ExpDriver(
+            self, deployment, executor=executor or getattr(self, "executor", None)
+        )
+        driver.run_workload(
+            config=config,
+            policy=policy,
+            iteration=iteration,
+            output_dir=output_dir,
+            repo_root=repo_root,
+            no_cache=no_cache,
+            dry_run=dry_run,
         )

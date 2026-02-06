@@ -2,22 +2,19 @@
 Application plugins for the experiment runner.
 """
 
-from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
-from .hotel import HotelApp, HotelLoadGenerator
+from .base import AppBuilder, AppPlugin, DockerConfig
+from .hotel import HotelApp
 from .mssim import MssimApp
-from .socialnet import SocialnetApp, SocialnetLoadGenerator
+from .socialnet import SocialnetApp
 from .synthetic import SyntheticApp
 
 __all__ = [
     "AppBuilder",
     "AppPlugin",
     "DockerConfig",
-    "LoadGenerator",
     "HotelApp",
-    "HotelLoadGenerator",
     "MssimApp",
     "SocialnetApp",
-    "SocialnetLoadGenerator",
     "SyntheticApp",
 ]
 
