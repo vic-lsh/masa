@@ -2,11 +2,13 @@ import logging
 import os
 import time
 from pathlib import Path
+from typing import Optional
 
 from .apps.base import AppPlugin
 from .config import ExperimentConfig
 from .cpu_monitor import CPUMonitor
 from .deployment_manager import DeploymentManager
+from .executor import CommandExecutor, SubprocessExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +19,15 @@ class ExpDriver:
     Platform-agnostic (works for Docker and K8s).
     """
 
-    def __init__(self, app: AppPlugin, deployment: DeploymentManager):
+    def __init__(
+        self,
+        app: AppPlugin,
+        deployment: DeploymentManager,
+        executor: Optional[CommandExecutor] = None,
+    ):
         self.app = app
         self.deployment = deployment
+        self.executor = executor or SubprocessExecutor()
 
     def run_workload(
         self,
@@ -62,6 +70,9 @@ class ExpDriver:
         build_logs_dir = output_dir / "build_logs"
 
         if dry_run:
+            # For dry-run, we rely on the executor (MockCommandExecutor) to record commands
+            # We still pass dry_run=True for compatibility with builders that might use it
+            # to skip side effects not captured by executor (like file I/O).
             builder.build(
                 repo_root=repo_root,
                 app_dir=config.app_dir,
@@ -70,6 +81,7 @@ class ExpDriver:
                 no_cache=no_cache,
                 gen_config_path=template_gen_config,
                 dry_run=True,
+                executor=self.executor,
             )
         else:
             builder.build(
@@ -81,6 +93,7 @@ class ExpDriver:
                 gen_config_path=template_gen_config,
                 dry_run=False,
                 build_logs_dir=build_logs_dir,
+                executor=self.executor,
             )
 
         # 3. Deploy
