@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import shlex
+import subprocess
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -156,7 +157,14 @@ class SocialnetBuilder(AppBuilder):
             logger.info(f"[DRY RUN] Would run: {shlex.join(builder_cmd)}")
         else:
             logger.info(f"Running: {shlex.join(builder_cmd)}")
-            executor.run(builder_cmd, cwd=repo_root, check=True)
+            try:
+                executor.run(builder_cmd, cwd=repo_root, check=True)
+            except subprocess.CalledProcessError:
+                logger.error(
+                    "Failed to build builder stage. Command: %s",
+                    shlex.join(builder_cmd),
+                )
+                raise
             logger.info("Stage 1 complete")
 
         # Stage 2: Build runtime-base image (shared dependencies)
@@ -195,7 +203,14 @@ class SocialnetBuilder(AppBuilder):
             logger.info(f"[DRY RUN] Would run: {shlex.join(runtime_base_cmd)}")
         else:
             logger.info(f"Running: {shlex.join(runtime_base_cmd)}")
-            executor.run(runtime_base_cmd, cwd=repo_root, check=True)
+            try:
+                executor.run(runtime_base_cmd, cwd=repo_root, check=True)
+            except subprocess.CalledProcessError:
+                logger.error(
+                    "Failed to build runtime-base stage. Command: %s",
+                    shlex.join(runtime_base_cmd),
+                )
+                raise
             logger.info("Stage 2 complete")
 
         # Stage 3: Build individual runtime images for each binary
@@ -241,7 +256,15 @@ class SocialnetBuilder(AppBuilder):
                 logger.info(f"[DRY RUN] Would run: {shlex.join(runtime_cmd)}")
             else:
                 logger.info(f"Building {binary_tag}...")
-                executor.run(runtime_cmd, cwd=repo_root, check=True)
+                try:
+                    executor.run(runtime_cmd, cwd=repo_root, check=True)
+                except subprocess.CalledProcessError:
+                    logger.error(
+                        "Failed to build runtime image %s. Command: %s",
+                        binary_tag,
+                        shlex.join(runtime_cmd),
+                    )
+                    raise
                 logger.info(f"Built {binary_tag}")
 
         build_duration = time.time() - build_start_time
