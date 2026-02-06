@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:  # pragma: no cover
     from exp_runner.runner.config import ExperimentConfig
     from exp_runner.runner.deployment_manager import DeploymentManager
+    from exp_runner.runner.topology import TopologySpec
+    from exp_runner.runner.experiment_config_v2 import ExperimentConfigV2
 
 
 @dataclass
@@ -90,7 +92,18 @@ class AppPlugin(ABC):
     Each application (hotel, synthetic) implements this interface to provide
     custom configuration parsing, environment variable generation, and
     container management.
+
+    NEW SIMPLIFIED INTERFACE (Phase 4):
+    - Essential methods: get_app_name(), get_binaries(), get_frontend_name()
+    - New hooks: get_default_topology_path(), customize_topology(), customize_env_vars()
+    - Build integration: get_cargo_package(), get_build_parallelism()
+
+    OLD INTERFACE (deprecated but maintained for backward compatibility):
+    - prepare_workload(), get_deployment_location(), get_loadgen_spec()
+    - load_app_config(), generate_env_vars(), get_docker_config(), get_container_names()
     """
+
+    # ===== NEW SIMPLIFIED INTERFACE (Phase 4) =====
 
     @abstractmethod
     def get_app_name(self) -> str:
@@ -98,9 +111,146 @@ class AppPlugin(ABC):
         pass
 
     @abstractmethod
+    def get_binaries(self) -> list[str]:
+        """
+        Return list of binary names needed for this application.
+
+        Used by BuildOrchestrator to build per-binary Docker images.
+
+        Returns:
+            List of binary names (e.g., ['frontend', 'geo_service', 'rate_service'])
+        """
+        pass
+
+    @abstractmethod
+    def get_frontend_name(self) -> str:
+        """
+        Return the name of the frontend service.
+
+        This is the service that receives load from the load generator.
+
+        Returns:
+            Frontend service name (e.g., 'frontend', 'compose-post-service')
+        """
+        pass
+
+    def get_cargo_package(self) -> str:
+        """
+        Return the cargo package name for this application.
+
+        Defaults to the app name, override if different.
+
+        Returns:
+            Cargo package name (e.g., 'hotel', 'synthetic')
+        """
+        return self.get_app_name()
+
+    def get_build_parallelism(self) -> int:
+        """
+        Return the degree of parallelism for building images.
+
+        Defaults to 4 for parallel builds. Override for apps with few binaries.
+
+        Returns:
+            Number of parallel builds (1 = sequential, >1 = parallel)
+        """
+        return 4
+
+    def get_default_topology_path(self, repo_root: Path) -> Optional[Path]:
+        """
+        Return path to default topology file, or None if topology is implicit.
+
+        For real apps (hotel, socialnet): Usually None (topology is implicit in app code)
+        For synthetic/mssim: Returns path to default topology YAML
+
+        Args:
+            repo_root: Repository root path
+
+        Returns:
+            Path to topology file, or None if implicit
+        """
+        # Default: check for apps/<app>/topology.yaml
+        topology_path = repo_root / "apps" / self.get_app_name() / "topology.yaml"
+        if topology_path.exists():
+            return topology_path
+        return None
+
+    def customize_topology(self, topology: "TopologySpec") -> "TopologySpec":
+        """
+        Hook for app-specific topology transformations.
+
+        Override this to modify topology before deployment generation.
+        Default implementation returns topology unchanged.
+
+        Args:
+            topology: Loaded topology specification
+
+        Returns:
+            Modified topology specification
+        """
+        # Import here to avoid circular dependency
+        if TYPE_CHECKING:
+            from ..topology import TopologySpec
+        return topology
+
+    def customize_env_vars(
+        self,
+        topology: "TopologySpec",
+        experiment: "ExperimentConfigV2",
+        base_env: dict[str, str],
+    ) -> dict[str, str]:
+        """
+        Hook for app-specific environment variable customization.
+
+        Override this to add or modify environment variables beyond what
+        the generators provide by default.
+
+        Args:
+            topology: Topology specification
+            experiment: Experiment configuration
+            base_env: Base environment variables from generator
+
+        Returns:
+            Modified environment variables dictionary
+        """
+        # Import here to avoid circular dependency
+        if TYPE_CHECKING:
+            from ..topology import TopologySpec
+            from ..experiment_config_v2 import ExperimentConfigV2
+        return base_env
+
+    def validate_experiment(
+        self,
+        topology: "TopologySpec",
+        experiment: "ExperimentConfigV2",
+    ) -> None:
+        """
+        Validate experiment configuration against topology.
+
+        Override to add app-specific validation logic.
+        Default implementation does nothing.
+
+        Args:
+            topology: Topology specification
+            experiment: Experiment configuration
+
+        Raises:
+            ValueError: If validation fails
+        """
+        # Import here to avoid circular dependency
+        if TYPE_CHECKING:
+            from ..topology import TopologySpec
+            from ..experiment_config_v2 import ExperimentConfigV2
+        pass
+
+    # ===== LEGACY INTERFACE (backward compatibility) =====
+
+    @abstractmethod
     def load_app_config(self, config_path: Path) -> dict:
         """
         Load application-specific configuration file.
+
+        DEPRECATED: This method is part of the old interface and maintained for backward compatibility.
 
         Args:
             config_path: Path to the app config file
@@ -120,6 +270,9 @@ class AppPlugin(ABC):
         """
         Generate environment variables needed for docker-compose.
 
+        DEPRECATED: This method is part of the old interface and maintained for backward compatibility.
+        New code should use customize_env_vars() hook with generators.
+
         Args:
             gen_config: Load generator configuration from gen_config.json
             app_config: Application-specific config (or None if not present)
@@ -135,6 +288,8 @@ class AppPlugin(ABC):
         """
         Return Docker configuration for this application.
 
+        DEPRECATED: This method is part of the old interface and maintained for backward compatibility.
+
         Returns:
             DockerConfig with paths and names for Docker operations
         """
@@ -144,6 +299,8 @@ class AppPlugin(ABC):
     def get_container_names(self, env_vars: dict) -> list[str]:
         """
         Get list of container names to collect logs from.
+
+        DEPRECATED: This method is part of the old interface and maintained for backward compatibility.
 
         Args:
             env_vars: Environment variables generated for this run
@@ -157,6 +314,9 @@ class AppPlugin(ABC):
     def create_builder(self) -> AppBuilder:
         """
         Create an app builder for this application.
+
+        DEPRECATED: This method is part of the old interface and maintained for backward compatibility.
+        New code should use BuildOrchestrator directly with get_cargo_package() and get_binaries().
 
         Returns:
             AppBuilder instance configured for this application
@@ -209,6 +369,9 @@ class AppPlugin(ABC):
         """
         Prepare workload configuration and environment variables.
 
+        DEPRECATED: This method is part of the old interface and will be removed in the future.
+        New code should use the generator-based approach with customize_env_vars() hook.
+
         This method should:
         1. Calculate configuration values (pure logic)
         2. Generate configuration files (I/O)
@@ -232,6 +395,9 @@ class AppPlugin(ABC):
         """
         Get deployment configuration location.
 
+        DEPRECATED: This method is part of the old interface and will be removed in the future.
+        New code should use generators which return GeneratedDeployment with these paths.
+
         Args:
             output_dir: Output directory (where generated configs might reside)
             use_k8s: Whether targeting Kubernetes
@@ -254,6 +420,9 @@ class AppPlugin(ABC):
     ) -> TaskSpec:
         """
         Get specification for the load generator task.
+
+        DEPRECATED: This method is part of the old interface and will be removed in the future.
+        New code should use DeploymentManager's built-in load generator task creation.
 
         Args:
             output_dir: Output directory

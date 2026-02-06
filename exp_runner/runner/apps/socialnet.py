@@ -263,6 +263,84 @@ class SocialnetApp(AppPlugin):
     def get_app_name(self) -> str:
         return "socialnet"
 
+    # ===== NEW SIMPLIFIED INTERFACE (Phase 4) =====
+
+    def get_binaries(self) -> list[str]:
+        """Return list of binary names for socialnet app."""
+        return [
+            "textservice_server",
+            "usermention_server",
+            "url_shorten_server",
+            "user_service",
+            "user_timeline_server",
+            "post_storage_server",
+            "compose_post_server",
+            "home_timeline_server",
+            "social_graph_server",
+            "write_home_timeline_server",
+            "media_service",
+            "unique_id_service",
+            "socialnet_client_bench",
+        ]
+
+    def get_frontend_name(self) -> str:
+        """Return the frontend service name."""
+        return "compose-post-service"
+
+    def get_cargo_package(self) -> str:
+        """Return cargo package name."""
+        return "socialnet"
+
+    def get_build_parallelism(self) -> int:
+        """Socialnet has 13 binaries - use parallelism of 4."""
+        return 4
+
+    def get_default_topology_path(self, repo_root: Path) -> Optional[Path]:
+        """
+        Socialnet topology is implicit in the application code.
+        Return None to indicate no explicit topology file.
+        """
+        return None
+
+    def customize_topology(self, topology):
+        """
+        Hook for socialnet-specific topology transformations.
+        Currently no transformations needed.
+        """
+        return topology
+
+    def customize_env_vars(self, topology, experiment, base_env):
+        """
+        Add socialnet-specific environment variables.
+
+        Args:
+            topology: Topology specification
+            experiment: Experiment configuration
+            base_env: Base environment variables from generator
+
+        Returns:
+            Updated environment variables
+        """
+        import os
+
+        # Add JWT secret for authentication
+        if "JWT_SECRET" not in base_env:
+            base_env["JWT_SECRET"] = os.environ.get(
+                "JWT_SECRET", "test-secret-key-for-ci"
+            )
+
+        # Add any socialnet-specific env vars if needed
+        if "LOG_LEVEL" not in base_env:
+            base_env["LOG_LEVEL"] = "info"
+
+        # Compose post port
+        if "COMPOSE_POST_PORT" not in base_env:
+            base_env["COMPOSE_POST_PORT"] = "8080"
+
+        return base_env
+
+    # ===== LEGACY INTERFACE (backward compatibility) =====
+
     def load_app_config(self, config_path: Path) -> dict:
         """Load socialnet config file if provided."""
         if config_path.exists():

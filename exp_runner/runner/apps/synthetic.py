@@ -54,6 +54,66 @@ class SyntheticApp(AppPlugin):
     def get_app_name(self) -> str:
         return "synthetic"
 
+    # ===== NEW SIMPLIFIED INTERFACE (Phase 4) =====
+
+    def get_binaries(self) -> list[str]:
+        """Return list of binary names for synthetic app."""
+        return [
+            "synthetic_frontend",
+            "synthetic_child",
+            "synthetic_client_bench",
+        ]
+
+    def get_frontend_name(self) -> str:
+        """Return the frontend service name."""
+        return "synthetic-frontend-service"
+
+    def get_cargo_package(self) -> str:
+        """Return cargo package name."""
+        return "synthetic"
+
+    def get_build_parallelism(self) -> int:
+        """Synthetic has 3 binaries - use parallelism of 3."""
+        return 3
+
+    def get_default_topology_path(self, repo_root: Path) -> Optional[Path]:
+        """
+        Synthetic uses explicit topologies in exp/synthetic/topologies/.
+        Return None to indicate topology must be specified per experiment.
+        """
+        return None
+
+    def customize_topology(self, topology):
+        """
+        Hook for synthetic-specific topology transformations.
+        Currently no transformations needed.
+        """
+        return topology
+
+    def customize_env_vars(self, topology, experiment, base_env):
+        """
+        Add synthetic-specific environment variables.
+
+        Args:
+            topology: Topology specification
+            experiment: Experiment configuration
+            base_env: Base environment variables from generator
+
+        Returns:
+            Updated environment variables
+        """
+        # Add any synthetic-specific env vars if needed
+        if "LOG_LEVEL" not in base_env:
+            base_env["LOG_LEVEL"] = "info"
+
+        # Add CPUS_PER_REPLICA if not set (used for resource limits)
+        if "CPUS_PER_REPLICA" not in base_env:
+            base_env["CPUS_PER_REPLICA"] = "1"
+
+        return base_env
+
+    # ===== LEGACY INTERFACE (backward compatibility) =====
+
     @property
     def supports_k8s(self) -> bool:
         return True

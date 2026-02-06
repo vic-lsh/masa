@@ -473,6 +473,69 @@ class HotelApp(AppPlugin):
     def get_app_name(self) -> str:
         return "hotel"
 
+    # ===== NEW SIMPLIFIED INTERFACE (Phase 4) =====
+
+    def get_binaries(self) -> list[str]:
+        """Return list of binary names for hotel app."""
+        return [
+            "hotel_frontend",
+            "hotel_geo",
+            "hotel_rate",
+            "hotel_review",
+            "hotel_search",
+            "hotel_profile",
+            "hotel_reservation",
+            "hotel_user",
+            "hotel_recommendation",
+            "hotel_client_bench",
+        ]
+
+    def get_frontend_name(self) -> str:
+        """Return the frontend service name."""
+        return "hotel-frontend-service"
+
+    def get_cargo_package(self) -> str:
+        """Return cargo package name."""
+        return "hotel"
+
+    def get_build_parallelism(self) -> int:
+        """Hotel has 10 binaries - use parallelism of 4."""
+        return 4
+
+    def get_default_topology_path(self, repo_root: Path) -> Optional[Path]:
+        """
+        Hotel topology is implicit in the application code.
+        Return None to indicate no explicit topology file.
+        """
+        return None
+
+    def customize_topology(self, topology):
+        """
+        Hook for hotel-specific topology transformations.
+        Currently no transformations needed.
+        """
+        return topology
+
+    def customize_env_vars(self, topology, experiment, base_env):
+        """
+        Add hotel-specific environment variables.
+
+        Args:
+            topology: Topology specification
+            experiment: Experiment configuration
+            base_env: Base environment variables from generator
+
+        Returns:
+            Updated environment variables
+        """
+        # Add any hotel-specific env vars if needed
+        if "LOG_LEVEL" not in base_env:
+            base_env["LOG_LEVEL"] = "info"
+
+        return base_env
+
+    # ===== LEGACY INTERFACE (backward compatibility) =====
+
     @property
     def supports_k8s(self) -> bool:
         return False

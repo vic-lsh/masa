@@ -195,6 +195,63 @@ class MssimApp(AppPlugin):
     def get_app_name(self) -> str:
         return "mssim"
 
+    # ===== NEW SIMPLIFIED INTERFACE (Phase 4) =====
+
+    def get_binaries(self) -> list[str]:
+        """Return list of binary names for MSSIM."""
+        # MSSIM uses generic-service as main binary and mssim-loadgen for load generation
+        return [
+            "generic-service",  # Default binary (main.rs)
+            "mssim-loadgen",     # Load generator binary
+        ]
+
+    def get_frontend_name(self) -> str:
+        """
+        Return the frontend service name.
+        For MSSIM, this is the orchestrator service.
+        """
+        return "orchestrator"
+
+    def get_cargo_package(self) -> str:
+        """Return cargo package name."""
+        return "generic-service"
+
+    def get_build_parallelism(self) -> int:
+        """MSSIM has 2 binaries - use parallelism of 2."""
+        return 2
+
+    def get_default_topology_path(self, repo_root: Path) -> Optional[Path]:
+        """
+        MSSIM uses trace-based topologies in exp/mssim/topologies/.
+        Return None to indicate topology must be specified per experiment.
+        """
+        return None
+
+    def customize_topology(self, topology):
+        """
+        Hook for MSSIM-specific topology transformations.
+        Currently no transformations needed.
+        """
+        return topology
+
+    def customize_env_vars(self, topology, experiment, base_env):
+        """
+        Add MSSIM-specific environment variables.
+
+        Args:
+            topology: Topology specification
+            experiment: Experiment configuration
+            base_env: Base environment variables from generator
+
+        Returns:
+            Updated environment variables
+        """
+        # MSSIM-specific env vars are handled in generate_env_vars
+        # for backward compatibility
+        return base_env
+
+    # ===== LEGACY INTERFACE (backward compatibility) =====
+
     def get_required_gen_config_fields(self) -> list[str]:
         # MSSIM needs repeats and RPS sweep values.
         return ["Repeats", "Rps"]

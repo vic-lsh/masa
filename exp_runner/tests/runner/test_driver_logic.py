@@ -98,6 +98,12 @@ class MockAppPlugin(AppPlugin):
     def get_app_name(self) -> str:
         return "mockapp"
 
+    def get_binaries(self) -> list[str]:
+        return ["mockapp_frontend", "mockapp_service"]
+
+    def get_frontend_name(self) -> str:
+        return "mockapp-frontend"
+
     def load_app_config(self, config_path: Path) -> dict:
         return {}
 
