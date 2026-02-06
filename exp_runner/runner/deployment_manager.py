@@ -24,7 +24,9 @@ class TaskSpec:
     command: Optional[List[str]] = None
     volumes: Dict[str, str] = field(default_factory=dict)  # host_path -> container_path
     cleanup: bool = False  # Whether to remove container after run
-    wait_for_log_pattern: Optional[str] = None  # If set, wait for this regex in logs instead of pod exit
+    wait_for_log_pattern: Optional[str] = (
+        None  # If set, wait for this regex in logs instead of pod exit
+    )
     artifacts: List[Tuple[str, str]] = field(
         default_factory=list
     )  # (src_in_container, dst_filename)
