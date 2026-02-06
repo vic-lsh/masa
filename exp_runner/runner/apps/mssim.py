@@ -15,22 +15,15 @@ import json
 import logging
 import os
 import re
-import shutil
-import subprocess
-import sys
-import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from ..config import ExperimentConfig
-    from ..deployment_manager import DeploymentManager as DockerManager
-    from ..k8s_manager import K8sManager
 
 import time
 import yaml
 
-from ..cpu_monitor import CPUMonitor
 from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
 from .base import AppBuilder, AppPlugin, DockerConfig
@@ -416,14 +409,11 @@ class MssimApp(AppPlugin):
                 json.dump(frontend_data, f, indent=2)
 
         # Prepare Inline ConfigMaps
-        callgraphs_config = []
         callgraph_dirs = [
             Path(d).expanduser().resolve() for d in mssim_cfg.get("callgraph_dirs", [])
         ]
 
         for cg_dir in callgraph_dirs:
-            safe_name = cg_dir.name.lower().replace("_", "-")
-
             # Read all relevant files in callgraph dir and bundle them?
             # Or just bundle what simulator needs?
             # Simulator mounts the dir.
@@ -510,9 +500,6 @@ class MssimApp(AppPlugin):
         # And reference it in `values["callgraphs"]`.
 
         for cg_dir in callgraph_dirs:
-            safe_name = cg_dir.name.lower().replace("_", "-")
-            cm_name = f"{project_name}-callgraph-{safe_name}"
-
             # Since my template is limited (one file per CM entry), I'll improve the template first?
             # Or just hack it:
             # I will iterate over files in cg_dir.
@@ -608,7 +595,6 @@ class MssimApp(AppPlugin):
             return False
 
         policies = config.policies
-        run_id = "run_0"
 
         # Check done marker
         done_file = config.out_dir / "done"

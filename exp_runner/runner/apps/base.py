@@ -3,18 +3,13 @@ Base classes and interfaces for application plugins.
 """
 
 import logging
-import os
-import shlex
-import subprocess
-import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Tuple
 
-from ..cpu_monitor import CPUMonitor
 from ..deployment_manager import TaskSpec
-from ..executor import CommandExecutor, SubprocessExecutor
+from ..executor import CommandExecutor
 from .utils import verify_standard_workload
 
 logger = logging.getLogger(__name__)
