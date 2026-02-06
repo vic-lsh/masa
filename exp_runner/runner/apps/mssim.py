@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 import time
 import yaml
 
+from ..cpu_monitor import CPUMonitor  # noqa: F401
 from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
 from .base import AppBuilder, AppPlugin, DockerConfig
