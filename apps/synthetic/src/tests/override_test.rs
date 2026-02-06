@@ -13,13 +13,20 @@ use tonic::Request;
 #[tokio::test]
 async fn test_override_headers() {
     // 1. Setup a minimal ChildImpl server
+    let mut entry_points = std::collections::HashMap::new();
+    entry_points.insert(
+        "a".to_string(),
+        vec![[("TestService::test_method".to_string(), 1.0)]
+            .iter()
+            .cloned()
+            .collect()],
+    );
+
     let config = SyntheticConfig {
-        child_services: vec![],
-        request_a_hops: vec![],
-        request_b_hops: vec![],
         child_cpus_per_replica: 1.0,
-        call_graph: Some(CallGraphConfig {
-            entry_point: "TestService::test_method".to_string(),
+        call_graph: CallGraphConfig {
+            entry_points,
+            parsed_entry_points: Default::default(),
             services: vec![ServiceDefinition {
                 id: "TestService".to_string(),
                 replicas: 1,
@@ -35,7 +42,7 @@ async fn test_override_headers() {
                     busy_spin_ratio: None,
                 }],
             }],
-        }),
+        },
     };
 
     // We need to set the environment variable for SERVICE_ID as ChildImpl expects it
