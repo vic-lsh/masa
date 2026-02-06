@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
     from ..config import ExperimentConfig
     from ..deployment_manager import DeploymentManager as DockerManager
 import time
+import yaml
 from pathlib import Path
 from typing import Optional
 
@@ -490,9 +492,17 @@ class MssimApp(AppPlugin):
     ) -> None:
         """Run mssim experiment."""
         if type(deployment).__name__ == "K8sManager":
-            raise NotImplementedError(
-                "Mssim app does not support Kubernetes execution yet"
+            return self._run_k8s_workload(
+                repo_root=repo_root,
+                config=config,
+                deployment=deployment,
+                policy=policy,
+                iteration=iteration,
+                output_dir=output_dir,
+                no_cache=no_cache,
+                dry_run=dry_run,
             )
+
         # MSSIM-specific orchestration:
         # - build images (cached across calls)
         # - generate compose once and run all RPS levels in a single docker-compose session
@@ -781,3 +791,329 @@ class MssimApp(AppPlugin):
             # Wait for log threads to finish (they should stop when containers stop)
             for thread in log_threads:
                 thread.join(timeout=5)
+
+    def _run_k8s_workload(
+        self,
+        *,
+        repo_root: Path,
+        config: "ExperimentConfig",
+        deployment: "K8sManager",
+        policy: str,
+        iteration: int,
+        output_dir: Path,
+        no_cache: bool,
+        dry_run: bool,
+    ) -> None:
+        """Run MSSIM experiment on Kubernetes."""
+        mssim_cfg = config.app_config or {}
+
+        # Handle callgraph_dirs
+        callgraph_dirs_raw = mssim_cfg.get("callgraph_dirs")
+        if not callgraph_dirs_raw or not isinstance(callgraph_dirs_raw, list):
+            raise ValueError(
+                "mssim.json must include 'callgraph_dirs' (list of call graph directory paths)"
+            )
+        callgraph_dirs = [Path(d).expanduser().resolve() for d in callgraph_dirs_raw]
+        for callgraph_dir in callgraph_dirs:
+            if not callgraph_dir.exists():
+                raise FileNotFoundError(
+                    f"MSSIM callgraph_dir does not exist: {callgraph_dir}"
+                )
+
+        replicas_path = config.in_dir / "replicas.json"
+        if not replicas_path.exists():
+            replicas_path = None
+
+        rps_values = [float(v) for v in (config.gen_config.get("Rps") or [])]
+        if not rps_values:
+            raise ValueError("gen_config.json must include non-empty 'Rps' for MSSIM")
+
+        duration_sec = int(config.gen_config.get("DurationSecs", 0) or 0)
+
+        # Build images
+        builder = self.create_builder()
+        builder.build(
+            repo_root=repo_root,
+            app_dir=config.app_dir,
+            features=policy,
+            rust_log="info",
+            no_cache=no_cache,
+            gen_config_path=(config.in_dir / "gen_config.json"),
+            dry_run=dry_run,
+        )
+
+        feature_image = _generic_service_image_for_policy(policy)
+
+        # Load images into Cluster (if using Kind)
+        cluster_name = os.environ.get("KIND_CLUSTER_NAME")
+        if cluster_name:
+            deployment.load_image_to_cluster(
+                cluster_name, [MSSIM_LOADGEN_IMAGE, feature_image]
+            )
+
+        # Prepare Run Directory
+        run_dir = output_dir / f"run_{iteration:01d}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        deployment_json_path = run_dir / "deployment.json"
+        docker_compose_path = run_dir / "docker-compose.yml"  # Ignored but generated
+        log_path = run_dir / "orchestrator.log"
+
+        base_env_vars = self.generate_env_vars(
+            config.gen_config, config.app_config, config.app_dir
+        )
+        env = os.environ.copy()
+        env.update({k: str(v) for k, v in base_env_vars.items()})
+        env["FEATURE"] = str(policy)
+        env["RPS_VALUES"] = json.dumps(rps_values)
+        env["SLO_MS"] = str(int(mssim_cfg["slo_ms"]))
+        env["GENERIC_SERVICE_IMAGE"] = feature_image
+        env["HOST_TRACE_DIR"] = str(run_dir.resolve())
+
+        # Project name for K8s release
+        project_name = _safe_project_name(
+            experiment_name=config.experiment_name,
+            iteration=iteration,
+            policy=policy,
+            rps=0.0,
+        )
+        env["DOCKER_COMPOSE_PROJECT_NAME"] = project_name
+
+        # Write metadata.json (Required for verification)
+        metadata = {
+            "app": "mssim",
+            "experiment": config.experiment_name,
+            "iteration": iteration,
+            "policy": policy,
+            "rps_values": rps_values,
+            "duration_sec": duration_sec,
+            "callgraph_dirs": [str(d) for d in callgraph_dirs],
+            "replicas_path": str(replicas_path) if replicas_path is not None else None,
+            "generic_service_image": feature_image,
+            "docker_project": project_name,
+            "mode": "k8s",
+        }
+        with (run_dir / "metadata.json").open("w", encoding="utf-8") as fh:
+            json.dump(metadata, fh, indent=2, sort_keys=True)
+
+        # Generate Configs
+        trace_cmd = [
+            sys.executable,
+            "-m",
+            "simulator.main",
+            "--docker-compose-output-path",
+            str(docker_compose_path),
+            "--deployment-output-path",
+            str(deployment_json_path),
+        ]
+        for callgraph_dir in callgraph_dirs:
+            trace_cmd.extend(["-a", str(callgraph_dir)])
+        if replicas_path is not None:
+            trace_cmd.extend(["--replicas-path", str(replicas_path)])
+        if mssim_cfg.get("replay_path"):
+            trace_cmd.extend(
+                [
+                    "--replay-path",
+                    str(Path(mssim_cfg["replay_path"]).expanduser().resolve()),
+                ]
+            )
+
+        with log_path.open("wb") as log_file:
+            gen_proc = subprocess.run(
+                trace_cmd,
+                cwd=config.app_dir,
+                env=env,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+            )
+        if gen_proc.returncode != 0:
+            raise RuntimeError(
+                f"MSSIM config generation failed ({gen_proc.returncode}). See log at {log_path}"
+            )
+
+        # Create ConfigMaps
+        created_cms = []
+
+        def _create_cm_from_file(name: str, path: Path):
+            deployment._run_cmd(
+                [
+                    "kubectl",
+                    "create",
+                    "cm",
+                    name,
+                    "--namespace",
+                    deployment.namespace,
+                    f"--from-file={path.name}={path}",
+                ]
+            )
+            created_cms.append(name)
+
+        def _create_cm_from_dir(name: str, path: Path):
+            deployment._run_cmd(
+                [
+                    "kubectl",
+                    "create",
+                    "cm",
+                    name,
+                    "--namespace",
+                    deployment.namespace,
+                    f"--from-file={path}",
+                ]
+            )
+            created_cms.append(name)
+
+        try:
+            # Parse deployment.json to create services values
+            with open(deployment_json_path) as f:
+                deploy_data = json.load(f)
+
+            services_values = []
+            for svc_name, svc_info in deploy_data.get("services", {}).items():
+                if svc_name == "USER" or svc_name.startswith("USER-"):
+                    env_svc_name = "USER"
+                else:
+                    env_svc_name = svc_name
+
+                svc_env = {
+                    "SERVICE_NAME": env_svc_name,
+                    "SERVICE_PORT": str(svc_info["port"]),
+                    "DEPLOYMENT_CONFIG_PATH": "/app/config/deployment.json",
+                    "FEATURE": str(policy),
+                }
+
+                services_values.append(
+                    {
+                        "name": svc_name,
+                        "replicas": svc_info["replicas"],
+                        "env": svc_env,
+                    }
+                )
+
+            # Modify deployment.json and frontend.json to set replicas=0
+            # This forces the client (LoadBalancedChannel) to use the hostname as-is (K8s Service)
+            # without appending replica indices (e.g. -1, -2), since K8s handles load balancing.
+            
+            # Update deployment.json
+            for svc_name in deploy_data.get("services", {}):
+                deploy_data["services"][svc_name]["replicas"] = 1
+            
+            with open(deployment_json_path, "w") as f:
+                json.dump(deploy_data, f, indent=2)
+
+            # Update frontend.json
+            frontend_json_path = run_dir / "frontend.json"
+            if frontend_json_path.exists():
+                with open(frontend_json_path) as f:
+                    frontend_data = json.load(f)
+                
+                for target in frontend_data:
+                    target["replicas"] = 1
+                
+                with open(frontend_json_path, "w") as f:
+                    json.dump(frontend_data, f, indent=2)
+
+            # Deployment ConfigMap
+            deployment_cm_name = f"{project_name}-deployment-config"
+            _create_cm_from_file(deployment_cm_name, deployment_json_path)
+
+            # Callgraph ConfigMaps
+            callgraph_cm_info = []
+            for cg_dir in callgraph_dirs:
+                safe_name = cg_dir.name.lower().replace("_", "-")
+                cm_name = f"{project_name}-callgraph-{safe_name}"
+                _create_cm_from_dir(cm_name, cg_dir)
+                callgraph_cm_info.append(
+                    {
+                        "name": safe_name,
+                        "mountPath": cg_dir.name,
+                        "configMapName": cm_name,
+                    }
+                )
+
+            # Values for Helm
+            values = {
+                "fullnameOverride": project_name,
+                "image": {
+                    "repository": "",
+                    "genericServiceName": "generic_service",
+                    "tag": normalize_features_to_tag(policy),
+                    "pullPolicy": "Never",
+                },
+                "deploymentConfigMap": deployment_cm_name,
+                "callgraphs": callgraph_cm_info,
+                "services": services_values,
+                "logLevel": "info",
+            }
+
+            values_path = run_dir / "values.yaml"
+            with open(values_path, "w") as f:
+                yaml.dump(values, f)
+
+            # Install Chart
+            chart_path = repo_root / "charts/mssim"
+            deployment.start(
+                app_dir=chart_path,
+                deployment_config=".",
+                project_name=project_name,
+                env_vars={"HELM_VALUES_FILE": str(values_path)},
+            )
+
+            # Run Load Generator Task
+            loadgen_env = {
+                "DURATION": env["DURATION"],
+                "RPS_VALUES": env["RPS_VALUES"],
+                "STATS_INTERVAL_SEC": env.get("STATS_INTERVAL_SEC", "1"),
+                "HOST_TRACE_DIR": "/app/loadgen_output",
+            }
+            if "MAX_IN_FLIGHT" in env:
+                loadgen_env["MAX_IN_FLIGHT"] = env["MAX_IN_FLIGHT"]
+
+            frontend_json_path = run_dir / "frontend.json"
+            
+            task_spec = TaskSpec(
+                name=f"{project_name}-loadgen",
+                image=MSSIM_LOADGEN_IMAGE,
+                env_vars=loadgen_env,
+                volumes={
+                    str(frontend_json_path): "/app/frontend.json"
+                },
+                artifacts=[("/app/loadgen_output", str(run_dir))],
+                command=["/bin/sh", "-c", "mssim-loadgen && echo 'MSSIM_LOADGEN_DONE' && sleep 3600"],
+                wait_for_log_pattern="MSSIM_LOADGEN_DONE",
+            )
+            
+            # Run task
+            log_file = run_dir / "loadgen.log"
+            deployment.run_task(task_spec, log_file=log_file)
+
+            # Move artifacts if they are in a subdirectory (kubectl cp behavior)
+            loadgen_output_subdir = run_dir / "loadgen_output"
+            if loadgen_output_subdir.exists():
+                for item in loadgen_output_subdir.iterdir():
+                    shutil.move(str(item), str(run_dir))
+                shutil.rmtree(loadgen_output_subdir)
+
+        except Exception as e:
+            logger.error(f"K8s workload failed: {e}")
+            raise
+        finally:
+            # Cleanup
+            deployment.stop(
+                app_dir=run_dir,
+                deployment_config="values.yaml",
+                project_name=project_name,
+            )
+            # Cleanup ConfigMaps
+            for cm in created_cms:
+                deployment._run_cmd(
+                    [
+                        "kubectl",
+                        "delete",
+                        "cm",
+                        cm,
+                        "--namespace",
+                        deployment.namespace,
+                        "--ignore-not-found",
+                    ],
+                    check=False,
+                )
