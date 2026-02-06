@@ -1,0 +1,16 @@
+# MSSIM Topology: Alibaba Trace S_32048416
+# Generated from trace analysis, occasionally tweaked for experiments
+# Source: trace-analysis/golden/S_32048416/
+
+kind: Topology
+metadata:
+  app: mssim
+  trace: "alibaba-2022/S_32048416"
+  description: "Microservice topology extracted from Alibaba cluster trace S_32048416"
+
+call_graph:
+  # The actual call graph is loaded from trace-analysis/golden/S_32048416/call_sequence.json
+  trace_source: "trace-analysis/golden/S_32048416"
+
+# Service list is minimal - actual topology loaded from trace data at runtime
+# services: {}

@@ -1,0 +1,168 @@
+# Social Network Microservices Topology
+# This topology is fixed by the application code and rarely changes.
+# Extracted from apps/socialnet/docker-compose.yaml
+
+kind: Topology
+metadata:
+  app: socialnet
+  description: "Social network microservices benchmark"
+
+services:
+  compose-post-service:
+    port: 8080
+    default_replicas: 1
+    depends_on:
+      - post-storage-service
+      - user-timeline-service
+      - home-timeline-service
+      - user-service
+      - unique-id-service
+      - media-service
+      - text-service
+      - user-mention-service
+      - url-shorten-service
+
+  post-storage-service:
+    port: 8080
+    default_replicas: 1
+    depends_on:
+      - post-storage-mongo
+      - post-storage-memcached
+
+  user-timeline-service:
+    port: 8080
+    default_replicas: 4
+    depends_on:
+      - user-timeline-mongo
+      - user-timeline-redis
+      - post-storage-service
+
+  home-timeline-service:
+    port: 8080
+    default_replicas: 1
+    depends_on:
+      - home-timeline-redis
+      - post-storage-service
+      - social-graph-service
+
+  write-home-timeline-service:
+    port: 8080
+    default_replicas: 1
+    depends_on:
+      - rabbitmq
+      - write-home-timeline-redis
+      - social-graph-service
+
+  user-service:
+    port: 8080
+    default_replicas: 1
+    depends_on:
+      - user-mongo
+      - user-redis
+
+  social-graph-service:
+    port: 8080
+    default_replicas: 1
+    depends_on:
+      - social-graph-mongo
+      - social-graph-redis
+      - user-service
+
+  unique-id-service:
+    port: 8080
+    default_replicas: 1
+
+  media-service:
+    port: 8080
+    default_replicas: 1
+
+  text-service:
+    port: 8080
+    default_replicas: 1
+    depends_on:
+      - user-mention-service
+      - url-shorten-service
+
+  user-mention-service:
+    port: 8080
+    default_replicas: 1
+    depends_on:
+      - user-mention-mongo
+      - user-mention-memcached
+
+  url-shorten-service:
+    port: 8080
+    default_replicas: 1
+    depends_on:
+      - url-shorten-mongo
+
+infrastructure:
+  post-storage-mongo:
+    image: mongo:7.0
+    port: 27017
+    default_replicas: 1
+
+  post-storage-memcached:
+    image: memcached:1.6
+    port: 11211
+    default_replicas: 1
+
+  user-timeline-mongo:
+    image: mongo:7.0
+    port: 27017
+    default_replicas: 1
+
+  user-timeline-redis:
+    image: redis:7.2
+    port: 6379
+    default_replicas: 1
+
+  home-timeline-redis:
+    image: redis:7.2
+    port: 6379
+    default_replicas: 1
+
+  write-home-timeline-redis:
+    image: redis:7.2
+    port: 6379
+    default_replicas: 1
+
+  user-mongo:
+    image: mongo:7.0
+    port: 27017
+    default_replicas: 1
+
+  user-redis:
+    image: redis:7.2
+    port: 6379
+    default_replicas: 1
+
+  social-graph-mongo:
+    image: mongo:7.0
+    port: 27017
+    default_replicas: 1
+
+  social-graph-redis:
+    image: redis:7.2
+    port: 6379
+    default_replicas: 1
+
+  user-mention-mongo:
+    image: mongo:7.0
+    port: 27017
+    default_replicas: 1
+
+  user-mention-memcached:
+    image: memcached:1.6
+    port: 11211
+    default_replicas: 1
+
+  url-shorten-mongo:
+    image: mongo:7.0
+    port: 27017
+    default_replicas: 1
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    port: 5672
+    default_replicas: 1

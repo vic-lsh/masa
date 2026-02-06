@@ -1,0 +1,67 @@
+# Synthetic Topology: 5-way Fanout
+# A fanout topology with one root service calling 5 child services
+
+kind: Topology
+metadata:
+  app: synthetic
+  description: "5-level fanout topology for high concurrency testing"
+
+call_graph:
+  entry_points:
+    api_a:
+      - MS_root::handle: 1.0
+
+  services:
+    - id: MS_root
+      default_replicas: 1
+      methods:
+        - name: handle
+          latency_distribution:
+            Exponential:
+              mean: 1000
+          call_sequence:
+            - MS_child1::process: 1.0
+            - MS_child2::process: 1.0
+            - MS_child3::process: 1.0
+            - MS_child4::process: 1.0
+            - MS_child5::process: 1.0
+
+    - id: MS_child1
+      default_replicas: 1
+      methods:
+        - name: process
+          latency_distribution:
+            Exponential:
+              mean: 5000
+
+    - id: MS_child2
+      default_replicas: 1
+      methods:
+        - name: process
+          latency_distribution:
+            Exponential:
+              mean: 5000
+
+    - id: MS_child3
+      default_replicas: 1
+      methods:
+        - name: process
+          latency_distribution:
+            Exponential:
+              mean: 5000
+
+    - id: MS_child4
+      default_replicas: 1
+      methods:
+        - name: process
+          latency_distribution:
+            Exponential:
+              mean: 5000
+
+    - id: MS_child5
+      default_replicas: 1
+      methods:
+        - name: process
+          latency_distribution:
+            Exponential:
+              mean: 5000

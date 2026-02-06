@@ -1,0 +1,38 @@
+# MSSIM Topology: Alibaba Trace S_14677443
+# Generated from trace analysis, occasionally tweaked for experiments
+# Source: trace-analysis/golden/S_14677443/
+
+kind: Topology
+metadata:
+  app: mssim
+  trace: "alibaba-2022/S_14677443"
+  description: "Microservice topology extracted from Alibaba cluster trace S_14677443"
+
+# Note: For mssim, the detailed call graph and service specifications are loaded
+# from the trace-analysis directory at runtime. This file serves as a reference
+# and can specify replica overrides or customizations.
+
+call_graph:
+  # The actual call graph is loaded from trace-analysis/golden/S_14677443/call_sequence.json
+  # Entry points are defined there as "USER" -> service methods
+  trace_source: "trace-analysis/golden/S_14677443"
+
+services:
+  MS_56394:
+    default_replicas: 1
+    # Methods and latency distributions loaded from trace data
+
+  MS_52612:
+    default_replicas: 1
+
+  MS_73106:
+    default_replicas: 1
+
+  MS_37691:
+    default_replicas: 1
+
+  MS_11639:
+    default_replicas: 1
+
+  MS_6190:
+    default_replicas: 1

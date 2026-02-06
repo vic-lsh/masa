@@ -1,0 +1,102 @@
+# Hotel Reservation Microservices Topology
+# This topology is fixed by the application code and rarely changes.
+# Extracted from apps/hotel/scripts/local/containers+svcs.yaml
+
+kind: Topology
+metadata:
+  app: hotel
+  description: "Hotel reservation microservices application"
+
+services:
+  frontend:
+    port: 8660
+    default_replicas: 1
+    depends_on:
+      - user-service
+      - reservation-service
+      - profile-service
+      - rate-service
+      - geo-service
+      - search-service
+
+  rate-service:
+    port: 8080
+    default_replicas: 1
+    depends_on:
+      - rate-mongo
+      - rate-redis
+
+  profile-service:
+    port: 8080
+    default_replicas: 1
+    depends_on:
+      - profile-mongo
+      - profile-redis
+
+  reservation-service:
+    port: 8080
+    default_replicas: 1
+    depends_on:
+      - reservation-mongo
+      - reservation-redis
+
+  user-service:
+    port: 8080
+    default_replicas: 1
+    depends_on:
+      - user-mongo
+
+  geo-service:
+    port: 8080
+    default_replicas: 1
+
+  search-service:
+    port: 8080
+    default_replicas: 1
+    depends_on:
+      - geo-service
+      - rate-service
+
+  recommendation-service:
+    port: 8080
+    default_replicas: 1
+
+  review-service:
+    port: 8080
+    default_replicas: 1
+
+infrastructure:
+  rate-mongo:
+    image: mongo:7.0
+    port: 27003
+    default_replicas: 1
+
+  rate-redis:
+    image: redis:7.2
+    port: 11003
+    default_replicas: 1
+
+  profile-mongo:
+    image: mongo:7.0
+    port: 27004
+    default_replicas: 1
+
+  profile-redis:
+    image: redis:7.2
+    port: 11004
+    default_replicas: 1
+
+  reservation-mongo:
+    image: mongo:7.0
+    port: 27005
+    default_replicas: 1
+
+  reservation-redis:
+    image: redis:7.2
+    port: 11005
+    default_replicas: 1
+
+  user-mongo:
+    image: mongo:7.0
+    port: 27006
+    default_replicas: 1

@@ -1,0 +1,31 @@
+# Synthetic Topology: 2-hop Chain
+# A linear chain topology with sequential service calls
+
+kind: Topology
+metadata:
+  app: synthetic
+  description: "2-hop sequential chain topology"
+
+call_graph:
+  entry_points:
+    api_a:
+      - MS_hop1::handle: 1.0
+
+  services:
+    - id: MS_hop1
+      default_replicas: 1
+      methods:
+        - name: handle
+          latency_distribution:
+            Exponential:
+              mean: 2000
+          call_sequence:
+            - MS_hop2::process: 1.0
+
+    - id: MS_hop2
+      default_replicas: 1
+      methods:
+        - name: process
+          latency_distribution:
+            Exponential:
+              mean: 3000
