@@ -2,7 +2,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional, Type
 
 from .apps.base import AppPlugin
 from .config import ExperimentConfig
@@ -24,10 +24,12 @@ class ExpDriver:
         app: AppPlugin,
         deployment: DeploymentManager,
         executor: Optional[CommandExecutor] = None,
+        cpu_monitor_factory: Optional[Type[CPUMonitor]] = None,
     ):
         self.app = app
         self.deployment = deployment
         self.executor = executor or SubprocessExecutor()
+        self.cpu_monitor_factory = cpu_monitor_factory or CPUMonitor
 
     def run_workload(
         self,
@@ -143,7 +145,7 @@ class ExpDriver:
 
             # CPU Monitor
             cpu_stats_file = output_dir / "cpu_stats.csv"
-            cpu_monitor = CPUMonitor(
+            cpu_monitor = self.cpu_monitor_factory(
                 output_path=cpu_stats_file,
                 poll_interval=2.0,
                 container_names=container_names,
