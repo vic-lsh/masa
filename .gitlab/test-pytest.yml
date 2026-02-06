@@ -3,12 +3,6 @@ pytest:
     stage: quick-checks
     variables:
         CI: "true"
-    cache:
-        key:
-            files:
-                - uv.lock
-        paths:
-            - .venv
     before_script:
         - apt-get update -yqq
         - apt-get install -y libgraphviz-dev pkg-config

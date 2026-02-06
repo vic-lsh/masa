@@ -5,10 +5,14 @@ test_mssim_experiment:
             - DEPLOY_MODE: [docker, kind]
     variables:
         CI: "true"
+        CARGO_BUILD_JOBS: "16"
 
     before_script:
+        - ulimit -n 4096 || true
         - mkdir -p $HOME/.local/bin
-        - export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+        - export RUSTUP_HOME="$CI_PROJECT_DIR/.rustup"
+        - export CARGO_HOME="$CI_PROJECT_DIR/.cargo"
+        - export PATH="$HOME/.local/bin:$CARGO_HOME/bin:$PATH"
         - |
             if ! command -v uv &> /dev/null; then
               curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -41,9 +45,9 @@ test_mssim_experiment:
             if ! command -v cargo &>/dev/null; then
               echo "Installing Rust...";
               curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y;
-              source $HOME/.cargo/env;
+              source $CARGO_HOME/env;
             fi
-        - rustc --version
+        - rustup toolchain install nightly
         - cargo --version
     tags:
         - on-host

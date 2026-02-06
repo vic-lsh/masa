@@ -1,10 +1,28 @@
 test_socialnet:
-  stage: test
-  variables:
-    CI: "true"
-  before_script: []
-  tags:
-    - on-host
-  script:
-    - groups $(whoami) # make sure that gitlab runner is in the 'docker' group
-    - ./scripts/test_socialnet.sh
+    stage: test
+    variables:
+        CI: "true"
+        CARGO_BUILD_JOBS: "16"
+
+    before_script:
+        - ulimit -n 4096 || true
+        - |
+            if ! command -v uv &> /dev/null; then
+              curl -LsSf https://astral.sh/uv/install.sh | sh
+            fi
+        - export RUSTUP_HOME="$CI_PROJECT_DIR/.rustup"
+        - export CARGO_HOME="$CI_PROJECT_DIR/.cargo"
+        - export PATH="$HOME/.local/bin:$CARGO_HOME/bin:$PATH"
+        - if ! command -v cargo &>/dev/null; then
+          echo "Installing Rust...";
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y;
+          source $CARGO_HOME/env;
+          fi
+        - rustup toolchain install nightly
+        # - rustc --version
+        - cargo --version
+    tags:
+        - on-host
+    script:
+        - groups $(whoami) # make sure that gitlab runner is in the 'docker' group
+        - ./scripts/test_socialnet.sh
