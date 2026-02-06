@@ -250,7 +250,8 @@ class TestExpDriverLogic(unittest.TestCase):
         self.assertTrue(cpu_monitor.stop_called)
 
         # Verify failure checks
-        self.assertEqual(len(self.deployment.check_project_health_calls), 1)
+        # check_project_health is called once during wait_until (stabilization) and once in exception handler
+        self.assertEqual(len(self.deployment.check_project_health_calls), 2)
 
 
 if __name__ == "__main__":

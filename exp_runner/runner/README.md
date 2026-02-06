@@ -379,16 +379,34 @@ The runner is organized into several modules:
 - **`cli.py`** - Command-line interface using argparse
 - **`config.py`** - Configuration loading and validation
 - **`experiment.py`** - Main orchestration logic
-- **`docker_manager.py`** - Docker operations (build, run, stop, logs)
+- **`experiment_driver.py`** - Single workload orchestrator (`ExpDriver`)
+- **`deployment_manager.py`** - Abstract base for deployment backends
+- **`docker_manager.py`** - Docker operations
+- **`k8s_manager.py`** - Kubernetes operations
+- **`utils.py`** - Common utilities (polling, etc.)
+- **`exceptions.py`** - Custom exception types
 - **`apps/`** - Application plugins
   - `base.py` - Abstract base class for app plugins
   - `hotel.py` - Hotel application implementation
   - `synthetic.py` - Synthetic application implementation
+  - `mssim.py` - MSSIM application implementation (Unified in Phase 2)
 - **`plotting/`** - Result visualization
   - `goodput.py` - Goodput plot generation
   - `latency.py` - Latency plot generation
   - `replicas.py` - Hotel replica plot generation
   - `util.py` - Plotting utilities
+
+## Unified Architecture (Phase 2 & 3)
+
+The runner now uses a unified architecture for all applications, including MSSIM which was previously separate.
+- **`ExpDriver`**: Central orchestrator for all workloads.
+- **`DeploymentManager`**: Abstract base class for Docker and Kubernetes backends.
+- **`AppPlugin`**: Interface for application-specific logic.
+
+Key improvements in Phase 3:
+- **Robustness**: Replaced fixed sleeps with smart polling (`wait_until`).
+- **Error Handling**: Specific exceptions (`DeploymentError`, `LoadGenError`) for better failure reporting.
+- **K8s Support**: Unified K8s deployment logic via `K8sManager`.
 
 ## Troubleshooting
 

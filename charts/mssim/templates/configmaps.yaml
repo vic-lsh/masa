@@ -1,0 +1,26 @@
+{{- if .Values.configMaps.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mssim.fullname" . }}-deployment-config
+  labels:
+    {{- include "mssim.labels" . | nindent 4 }}
+data:
+  deployment.json: |-
+{{ .Values.configMaps.deploymentJson | indent 4 }}
+---
+{{- range $graph := .Values.configMaps.callgraphs }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mssim.fullname" $ }}-callgraph-{{ $graph.name }}
+  labels:
+    {{- include "mssim.labels" $ | nindent 4 }}
+data:
+{{- range $filename, $content := $graph.files }}
+  {{ $filename }}: |-
+{{ $content | indent 4 }}
+{{- end }}
+---
+{{- end }}
+{{- end -}}
