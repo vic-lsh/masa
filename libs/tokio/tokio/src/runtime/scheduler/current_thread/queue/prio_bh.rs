@@ -1,5 +1,5 @@
 use std::{
-    collections::BinaryHeap,
+    collections::{BinaryHeap, VecDeque},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -26,6 +26,7 @@ fn ms_since_init(value: u64) -> u64 {
 
 pub(crate) struct BinaryHeapQueue<T> {
     q: BinaryHeap<T>,
+    infra_q: VecDeque<T>,
     push_count: u64,
     // reorder_count: u64,
 }
@@ -36,6 +37,7 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable + Traceable> Queue for Bina
     fn with_capacity(cap: usize) -> Self {
         Self {
             q: BinaryHeap::with_capacity(cap),
+            infra_q: VecDeque::new(),
             push_count: 0,
         }
     }
@@ -43,7 +45,13 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable + Traceable> Queue for Bina
     fn push(&mut self, mut item: Self::Item) -> Result<(), PushError<Self::Item>> {
         item.timer().set_enqueue_time();
         // let id = item.id();
-        self.q.push(item);
+        
+        if item.priority().value() == 0 {
+            self.infra_q.push_back(item);
+        } else {
+            self.q.push(item);
+        }
+        
         self.push_count += 1;
 
         // Get slice of binary heap and find the index of the newly added element
@@ -61,6 +69,11 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable + Traceable> Queue for Bina
 
     fn pop(&mut self) -> Result<Self::Item, PopError> {
         // [TODO] Do something with a task if it is already expired.
+        if let Some(mut e) = self.infra_q.pop_front() {
+            e.timer().record_queue_lat();
+            return Ok(e);
+        }
+        
         self.q.pop().ok_or(PopError::Empty).map(|mut e| {
             e.timer().record_queue_lat();
             // for debugging
@@ -76,7 +89,7 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable + Traceable> Queue for Bina
     }
 
     fn len(&self) -> usize {
-        self.q.len()
+        self.q.len() + self.infra_q.len()
     }
 
     fn is_full(&self) -> bool {
@@ -84,7 +97,7 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable + Traceable> Queue for Bina
     }
 
     fn capacity(&self) -> Option<usize> {
-        Some(self.q.capacity())
+        Some(self.q.capacity() + self.infra_q.capacity())
     }
 }
 
@@ -92,6 +105,7 @@ impl<T: Ord> Default for BinaryHeapQueue<T> {
     fn default() -> Self {
         Self {
             q: BinaryHeap::new(),
+            infra_q: VecDeque::new(),
             push_count: 0,
         }
     }
