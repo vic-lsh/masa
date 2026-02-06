@@ -1,8 +1,5 @@
 import json
-import os
 import subprocess
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -200,15 +197,7 @@ def test_mssim_orchestration_k8s(tmp_path, mock_executor):
     in_dir = repo_root / "exp" / "mssim" / "in" / "test_exp_k8s"
     in_dir.mkdir(parents=True)
 
-    # K8s manager mock
-    mock_k8s = MagicMock(spec=K8sManager)
-    # mock_k8s is-a K8sManager (via spec) but we also need to ensure isinstance checks work if used
-    # But since we use spec=K8sManager, it should suffice for most checks,
-    # except `type(deployment).__name__ == "K8sManager"` usage in mssim.py.
-    # The code uses `type(deployment).__name__ == "K8sManager"`.
-    # Mock objects have type `MagicMock`. We need to handle this.
-    # Alternatively, we pass a real K8sManager with a mock executor.
-
+    # Use a real manager because the app checks type name ("K8sManager").
     real_k8s_manager = K8sManager(repo_root=repo_root, executor=mock_executor)
     # We need to mock methods that do real work
     real_k8s_manager.start = MagicMock()

@@ -19,6 +19,9 @@ from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
 from .base import AppBuilder, AppPlugin, DockerConfig
 from .utils import get_docker_progress_flag, normalize_features_to_tag
 
+if TYPE_CHECKING:
+    from ..config import ExperimentConfig
+
 logger = logging.getLogger(__name__)
 
 
