@@ -215,6 +215,7 @@ class Experiment:
                         no_cache=self.no_cache,
                         dry_run=self.dry_run,
                         executor=self.executor,
+                        use_new_generator=self.use_new_generator,
                     )
                 except Exception as e:
                     logger.error(

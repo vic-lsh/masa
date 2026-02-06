@@ -16,7 +16,11 @@ from exp_runner.runner.experiment_config_v2 import (
 )
 from exp_runner.runner.generators.compose import ComposeGenerator
 from exp_runner.runner.generators.helm import HelmValuesGenerator
-from exp_runner.runner.topology import ServiceSpec, TopologySpec
+from exp_runner.runner.topology import (
+    ServiceSpec,
+    TopologySpec,
+    format_call_graph_service_name,
+)
 
 
 @pytest.fixture
@@ -140,6 +144,23 @@ def experiment_with_overrides() -> ExperimentConfigV2:
     )
 
 
+@pytest.fixture
+def synthetic_call_graph_topology() -> TopologySpec:
+    """Create a synthetic topology with a call graph."""
+    return TopologySpec(
+        app="synthetic",
+        description="call graph topology",
+        call_graph={
+            "entry_points": {"api_a": [{"MS_root::handle": 1.0}]},
+            "services": [
+                {"id": "MS_root", "default_replicas": 1},
+                {"id": "MS_child1", "default_replicas": 2},
+            ],
+            "child_cpus_per_replica": 0.5,
+        },
+    )
+
+
 class TestComposeGenerator:
     """Tests for ComposeGenerator."""
 
@@ -195,9 +216,55 @@ class TestComposeGenerator:
             assert child["scale"] == 2
 
             # Check infrastructure service
-            redis = compose_dict["services"]["redis"]
-            assert redis["image"] == "redis:7.2"
-            assert "volumes" in compose_dict  # Should have redis-data volume
+        redis = compose_dict["services"]["redis"]
+        assert redis["image"] == "redis:7.2"
+        assert "volumes" in compose_dict  # Should have redis-data volume
+
+    def test_generate_call_graph_compose(
+        self,
+        synthetic_call_graph_topology: TopologySpec,
+        simple_experiment: ExperimentConfigV2,
+    ):
+        """Ensure call-graph topologies produce frontend + child services."""
+        generator = ComposeGenerator()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+
+            result = generator.generate(
+                topology=synthetic_call_graph_topology,
+                experiment=simple_experiment,
+                output_dir=output_dir,
+                project_name="test-project",
+                policy="fifo",
+                image_tag="latest",
+            )
+            assert result.deploy_file == "docker-compose.yaml"
+
+            compose_path = output_dir / "docker-compose.yaml"
+            with open(compose_path) as f:
+                compose_dict = yaml.safe_load(f)
+
+            services = compose_dict["services"]
+            frontend_name = "synthetic-frontend-service"
+            root_name = format_call_graph_service_name("MS_root")
+            child_name = format_call_graph_service_name("MS_child1")
+
+            assert frontend_name in services
+            assert root_name in services
+            assert child_name in services
+
+            child_service = services[child_name]
+            assert child_service["scale"] == 2
+            env_list = child_service["environment"]
+            assert any(entry == "SERVICE_ID=MS_child1" for entry in env_list)
+
+            frontend = services[frontend_name]
+            assert "depends_on" in frontend
+            assert set(frontend["depends_on"]) == {
+                root_name,
+                child_name,
+            }
 
     def test_generate_with_replica_overrides(
         self, simple_topology: TopologySpec, experiment_with_overrides: ExperimentConfigV2

@@ -5,10 +5,12 @@ Separates topology (service structure) from experiment config (RPS, SLO, policie
 """
 
 import logging
-import yaml
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -173,13 +175,32 @@ class TopologySpec:
                 # Keep original
                 new_services[name] = svc
 
+        new_call_graph = deepcopy(self.call_graph)
+        if new_call_graph:
+            for service in new_call_graph.get("services", []):
+                service_id = service.get("id")
+                override = None
+                if service_id and service_id in overrides:
+                    override = overrides[service_id]
+                else:
+                    cg_name = (
+                        format_call_graph_service_name(service_id)
+                        if service_id
+                        else None
+                    )
+                    if cg_name and cg_name in overrides:
+                        override = overrides[cg_name]
+                if override is not None:
+                    service["default_replicas"] = override
+                    service["replicas"] = override
+
         return TopologySpec(
             kind=self.kind,
             app=self.app,
             description=self.description,
             services=new_services,
             infrastructure=self.infrastructure.copy(),
-            call_graph=self.call_graph,
+            call_graph=new_call_graph,
             metadata=self.metadata.copy(),
         )
 
@@ -259,3 +280,17 @@ class TopologyResolver:
 
         logger.info(f"Applying replica overrides: {replica_overrides}")
         return topology.apply_replica_overrides(replica_overrides)
+
+
+def format_call_graph_service_name(service_id: str) -> str:
+    """
+    Convert a call-graph service identifier to the docker-compose service name.
+
+    Example:
+        MS_root -> local-ms_root-service -> local-ms-root-service
+    """
+    if not service_id:
+        return "local-service"
+
+    slug = service_id.lower().replace("_", "-")
+    return f"local-{slug}-service"

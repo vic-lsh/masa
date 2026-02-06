@@ -10,14 +10,25 @@ import shlex
 import subprocess
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Optional, Tuple
 
 import yaml
 
+from ..build_orchestrator import BuildOrchestrator
 from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
+from ..generators import ComposeGenerator
+from ..generators.base import GeneratedDeployment
+from ..legacy import convert_legacy_to_experiment_config
+from ..naming import generate_project_name
+from ..topology import TopologyResolver, TopologySpec
 from .base import AppBuilder, AppPlugin, DockerConfig
 from .utils import get_docker_progress_flag, normalize_features_to_tag
+
+if TYPE_CHECKING:  # pragma: no cover
+    from ..config import ExperimentConfig
+    from ..deployment_manager import DeploymentManager
+    from ..experiment_config_v2 import ExperimentConfigV2
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +61,14 @@ class SyntheticApp(AppPlugin):
     def __init__(self):
         """Initialize synthetic app plugin."""
         self._generated_compose_path: Optional[Path] = None
+        self._generated_deployment: Optional[GeneratedDeployment] = None
+        self._experiment_config_v2 = None
 
     def get_app_name(self) -> str:
         return "synthetic"
+
+    def _is_new_generator_enabled(self) -> bool:
+        return getattr(self, "_using_new_generator", False)
 
     # ===== NEW SIMPLIFIED INTERFACE (Phase 4) =====
 
@@ -82,6 +98,44 @@ class SyntheticApp(AppPlugin):
         Return None to indicate topology must be specified per experiment.
         """
         return None
+
+    def run_workload(
+        self,
+        *,
+        repo_root: Path,
+        config: "ExperimentConfig",
+        deployment: "DeploymentManager",
+        policy: str,
+        iteration: int,
+        output_dir: Path,
+        app_local_dir: Path,
+        no_cache: bool,
+        dry_run: bool = False,
+        executor: Optional[CommandExecutor] = None,
+        use_new_generator: bool = False,
+        **kwargs,
+    ) -> None:
+        """
+        Override run_workload to reset generator state after each iteration.
+        """
+        try:
+            super().run_workload(
+                repo_root=repo_root,
+                config=config,
+                deployment=deployment,
+                policy=policy,
+                iteration=iteration,
+                output_dir=output_dir,
+                app_local_dir=app_local_dir,
+                no_cache=no_cache,
+                dry_run=dry_run,
+                executor=executor,
+                use_new_generator=use_new_generator,
+                **kwargs,
+            )
+        finally:
+            if use_new_generator:
+                self._generated_deployment = None
 
     def customize_topology(self, topology):
         """
@@ -118,7 +172,41 @@ class SyntheticApp(AppPlugin):
     def supports_k8s(self) -> bool:
         return True
 
-    def create_builder(self) -> "SyntheticBuilder":
+    def create_builder(self) -> AppBuilder:
+        if self._is_new_generator_enabled():
+            app = self
+
+            class _Adapter(AppBuilder):
+                def build(
+                    self,
+                    *,
+                    repo_root: Path,
+                    app_dir: Path,
+                    features: Optional[str] = None,
+                    rust_log: str = "info",
+                    no_cache: bool = False,
+                    gen_config_path: Optional[Path] = None,
+                    dry_run: bool = False,
+                    executor: Optional[CommandExecutor] = None,
+                ) -> Optional[list[list[str]]]:
+                    if gen_config_path is None:
+                        raise ValueError(
+                            "gen_config_path is required when using BuildOrchestrator"
+                        )
+
+                    orchestrator = BuildOrchestrator(repo_root, executor=executor)
+                    orchestrator.build(
+                        app=app,
+                        features=features,
+                        gen_config_path=gen_config_path,
+                        rust_log=rust_log,
+                        no_cache=no_cache,
+                        dry_run=dry_run,
+                    )
+                    return None
+
+            return _Adapter()
+
         return SyntheticBuilder()
 
     def get_image_tag(self, features: Optional[str] = None) -> str:
@@ -448,6 +536,40 @@ class SyntheticApp(AppPlugin):
         """
         Prepare workload configuration and environment variables.
         """
+        if self._is_new_generator_enabled():
+            return self._prepare_workload_new(
+                config=config,
+                policy=policy,
+                iteration=iteration,
+                output_dir=output_dir,
+                repo_root=repo_root,
+                use_k8s=use_k8s,
+                executor=executor,
+            )
+
+        return self._prepare_workload_legacy(
+            config=config,
+            policy=policy,
+            iteration=iteration,
+            output_dir=output_dir,
+            repo_root=repo_root,
+            use_k8s=use_k8s,
+            executor=executor,
+        )
+
+    def _prepare_workload_legacy(
+        self,
+        config: "ExperimentConfig",
+        policy: str,
+        iteration: int,
+        output_dir: Path,
+        repo_root: Path,
+        use_k8s: bool = False,
+        executor: Optional[CommandExecutor] = None,
+    ) -> dict:
+        """
+        Legacy workload preparation path (pre-generator).
+        """
         executor = executor or SubprocessExecutor()
         docker_config = self.get_docker_config()
 
@@ -550,11 +672,145 @@ class SyntheticApp(AppPlugin):
 
         return env_vars
 
+    def _prepare_workload_new(
+        self,
+        config: "ExperimentConfig",
+        policy: str,
+        iteration: int,
+        output_dir: Path,
+        repo_root: Path,
+        use_k8s: bool = False,
+        executor: Optional[CommandExecutor] = None,
+    ) -> dict:
+        """
+        New generator-based workload preparation.
+        """
+        if use_k8s:
+            raise NotImplementedError(
+                "New generator pipeline does not support Kubernetes yet"
+            )
+
+        executor = executor or SubprocessExecutor()
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        project_name = generate_project_name(
+            app=self.get_app_name(),
+            experiment_name=config.experiment_name,
+            iteration=iteration,
+            policy=policy,
+        )
+        image_tag = self.get_image_tag(policy)
+
+        experiment_v2 = convert_legacy_to_experiment_config(
+            config.gen_config,
+            config.policies,
+            config.experiment_name,
+            config.app_name,
+        )
+        self._experiment_config_v2 = experiment_v2
+
+        topology = self._resolve_topology_for_new_stack(
+            repo_root=repo_root,
+            experiment=experiment_v2,
+            config=config,
+        )
+        topology = self.customize_topology(topology)
+
+        compose_generator = ComposeGenerator()
+        generated = compose_generator.generate(
+            topology=topology,
+            experiment=experiment_v2,
+            output_dir=output_dir,
+            project_name=project_name,
+            policy=policy,
+            image_tag=image_tag,
+        )
+        self._generated_deployment = generated
+        self._generated_compose_path = None
+
+        env_vars = generated.env_vars.copy()
+        env_vars["DOCKER_COMPOSE_PROJECT_NAME"] = project_name
+        env_vars[f"{self.get_app_name().upper()}_IMAGE_TAG"] = image_tag
+
+        app_config_payload = self._build_app_config_payload(config, topology)
+        app_config_path = output_dir / "config.generated.json"
+        with open(app_config_path, "w", encoding="utf-8") as f:
+            json.dump(app_config_payload, f, indent=2)
+        self._validate_config(repo_root, app_config_path, executor)
+        env_vars["APP_CONFIG_PATH"] = str(app_config_path)
+
+        template_gen_config_path = config.in_dir / "gen_config.json"
+        gen_config_path = output_dir / "gen_config.json"
+        gen_config_content = self.create_gen_config_dict(
+            template_config_path=template_gen_config_path,
+            project_name=project_name,
+            service_name_override=None,
+        )
+        with open(gen_config_path, "w", encoding="utf-8") as f:
+            json.dump(gen_config_content, f, indent=2)
+
+        env_vars = self.customize_env_vars(topology, experiment_v2, env_vars)
+        logger.info(
+            "Prepared synthetic workload via new generator "
+            f"(project={project_name}, policy={policy})"
+        )
+
+        return env_vars
+
+    def _resolve_topology_for_new_stack(
+        self,
+        repo_root: Path,
+        experiment: "ExperimentConfigV2",
+        config: "ExperimentConfig",
+    ) -> TopologySpec:
+        resolver = TopologyResolver(repo_root)
+
+        if experiment.topology_ref:
+            base_topology = resolver.resolve(
+                app_name=self.get_app_name(),
+                topology_ref=experiment.topology_ref,
+            )
+        elif config.app_config and config.app_config.get("call_graph"):
+            base_topology = TopologySpec(
+                app=self.get_app_name(),
+                description="Generated from legacy synthetic config",
+                call_graph=json.loads(json.dumps(config.app_config["call_graph"])),
+            )
+        else:
+            base_topology = resolver.resolve(
+                app_name=self.get_app_name(),
+                topology_ref="default",
+            )
+
+        return resolver.apply_overrides(
+            base_topology,
+            experiment.replica_overrides,
+        )
+
+    def _build_app_config_payload(
+        self,
+        config: "ExperimentConfig",
+        topology: TopologySpec,
+    ) -> dict[str, Any]:
+        if config.app_config:
+            return config.app_config
+
+        if topology.call_graph:
+            return {"call_graph": topology.call_graph}
+
+        raise ValueError("Synthetic app requires either app_config or call_graph topology")
+
     def get_deployment_location(
         self, output_dir: Path, use_k8s: bool, repo_root: Path
     ) -> Tuple[Path, str]:
         if use_k8s:
             return repo_root / "charts/synthetic", "."
+
+        if self._is_new_generator_enabled() and self._generated_deployment:
+            return (
+                self._generated_deployment.deploy_root,
+                self._generated_deployment.deploy_file,
+            )
 
         # Docker
         if self._generated_compose_path:
@@ -841,6 +1097,7 @@ class SyntheticBuilder(AppBuilder):
 
         finally:
             pass
+
 
         if dry_run and isinstance(executor, MockCommandExecutor):
             return [cmd.args for cmd in executor.history]

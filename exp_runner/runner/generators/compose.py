@@ -11,6 +11,7 @@ from typing import Any
 import yaml
 
 from .base import DeploymentGenerator, GeneratedDeployment
+from ..topology import format_call_graph_service_name
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +68,21 @@ class ComposeGenerator(DeploymentGenerator):
         logger.info(f"Generating docker-compose.yaml for {topology.app}")
 
         # Build compose dictionary
-        compose_dict = self._build_compose_dict(
-            topology=topology,
-            experiment=experiment,
-            project_name=project_name,
-            policy=policy,
-            image_tag=image_tag,
-        )
+        if topology.call_graph:
+            compose_dict = self._build_call_graph_compose(
+                topology=topology,
+                experiment=experiment,
+                project_name=project_name,
+                image_tag=image_tag,
+            )
+        else:
+            compose_dict = self._build_compose_dict(
+                topology=topology,
+                experiment=experiment,
+                project_name=project_name,
+                policy=policy,
+                image_tag=image_tag,
+            )
 
         # Write compose file
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -397,8 +406,123 @@ class ComposeGenerator(DeploymentGenerator):
         if not topology.app:
             raise ValueError("Topology must specify an app name")
 
-        if not topology.services and not topology.infrastructure:
+        if not topology.services and not topology.infrastructure and not topology.call_graph:
             raise ValueError("Topology must have at least one service or infrastructure")
+
+    def _build_call_graph_compose(
+        self,
+        topology: "TopologySpec",
+        experiment: "ExperimentConfigV2",
+        project_name: str,
+        image_tag: str,
+    ) -> dict[str, Any]:
+        """
+        Build docker-compose file for call-graph-driven apps (synthetic/mssim).
+
+        Args:
+            topology: Topology specification with call_graph defined
+            experiment: Experiment configuration
+            project_name: Docker Compose project name
+            image_tag: Docker image tag
+
+        Returns:
+            Compose dictionary
+        """
+        if topology.app != "synthetic":
+            raise ValueError(
+                "Call-graph compose generation currently supports the synthetic app only"
+            )
+
+        call_graph = topology.call_graph or {}
+        services: dict[str, Any] = {}
+        network_name = f"{topology.app}-network"
+
+        child_cpu_limit = call_graph.get("child_cpus_per_replica")
+        child_cpu_value = (
+            str(child_cpu_limit)
+            if child_cpu_limit is not None
+            else "${CPUS_PER_REPLICA:-1}"
+        )
+
+        child_service_names: list[str] = []
+        replica_overrides = experiment.replica_overrides or {}
+
+        for service_def in call_graph.get("services", []):
+            service_id = service_def.get("id")
+            if not service_id:
+                continue
+
+            service_name = format_call_graph_service_name(service_id)
+            replicas = self._resolve_call_graph_replicas(
+                service_def, replica_overrides, service_name
+            )
+
+            env_list = [
+                "BINARY_NAME=synthetic_child",
+                "LOG_LEVEL=${LOG_LEVEL:-info}",
+                f"SERVICE_ID={service_id}",
+                "DOCKER_COMPOSE_PROJECT_NAME=${DOCKER_COMPOSE_PROJECT_NAME:-}",
+            ]
+
+            services[service_name] = {
+                "image": f"synthetic_child:{image_tag}",
+                "scale": replicas,
+                "networks": [network_name],
+                "environment": env_list,
+                "volumes": ["${APP_CONFIG_PATH}:/usr/config.json:ro"],
+                "deploy": {
+                    "resources": {
+                        "limits": {
+                            "cpus": child_cpu_value,
+                        }
+                    }
+                },
+            }
+            child_service_names.append(service_name)
+
+        frontend_env = [
+            "BINARY_NAME=synthetic_frontend",
+            "LOG_LEVEL=${LOG_LEVEL:-info}",
+            "DOCKER_COMPOSE_PROJECT_NAME=${DOCKER_COMPOSE_PROJECT_NAME:-}",
+        ]
+
+        services["synthetic-frontend-service"] = {
+            "image": f"synthetic_frontend:{image_tag}",
+            "restart": "always",
+            "depends_on": child_service_names,
+            "networks": [network_name],
+            "environment": frontend_env,
+            "volumes": ["${APP_CONFIG_PATH}:/usr/config.json:ro"],
+            "deploy": {"resources": {"limits": {"cpus": "4"}}},
+        }
+
+        compose_dict: dict[str, Any] = {
+            "services": services,
+            "networks": {network_name: {"driver": "bridge"}},
+        }
+
+        return compose_dict
+
+    def _resolve_call_graph_replicas(
+        self,
+        service_def: dict[str, Any],
+        overrides: dict[str, int],
+        service_name: str,
+    ) -> int:
+        base = (
+            service_def.get("default_replicas")
+            or service_def.get("replicas")
+            or 1
+        )
+        service_id = service_def.get("id")
+
+        if service_id and service_id in overrides:
+            return overrides[service_id]
+
+        if service_name in overrides:
+            return overrides[service_name]
+
+        return base
 
     def validate_experiment(
         self,

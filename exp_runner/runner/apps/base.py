@@ -486,6 +486,7 @@ class AppPlugin(ABC):
         no_cache: bool,
         dry_run: bool = False,
         executor: Optional[CommandExecutor] = None,
+        use_new_generator: bool = False,
         **kwargs,
     ) -> None:
         """
@@ -495,6 +496,9 @@ class AppPlugin(ABC):
         """
         # Local import to avoid circular dependency
         from ..experiment_driver import ExpDriver
+
+        # Track whether this run should use the new topology/generator pathway.
+        self._using_new_generator = use_new_generator
 
         # Allow deployment to be anything compatible
         driver = ExpDriver(
@@ -508,4 +512,8 @@ class AppPlugin(ABC):
             repo_root=repo_root,
             no_cache=no_cache,
             dry_run=dry_run,
+            use_new_generator=use_new_generator,
         )
+
+        # Clear flag after run to avoid leaking state across iterations.
+        self._using_new_generator = False

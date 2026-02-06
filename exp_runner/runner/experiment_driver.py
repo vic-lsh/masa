@@ -42,6 +42,7 @@ class ExpDriver:
         repo_root: Path,
         no_cache: bool = False,
         dry_run: bool = False,
+        use_new_generator: bool = False,
     ) -> None:
         """
         Execute a single workload (setup -> build -> deploy -> run -> teardown).
