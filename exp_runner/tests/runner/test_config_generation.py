@@ -1,6 +1,4 @@
 import json
-from pathlib import Path
-import pytest
 from exp_runner.runner.apps.hotel import (
     create_gen_config_dict as hotel_create_gen,
     create_hotel_config_dict,
