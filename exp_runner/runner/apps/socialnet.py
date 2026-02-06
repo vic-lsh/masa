@@ -81,6 +81,7 @@ class SocialnetBuilder(AppBuilder):
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
         build_logs_dir: Optional[Path] = None,
+        executor: Optional[CommandExecutor] = None,
     ) -> Optional[list[list[str]]]:
         app = "socialnet"
         # List of binaries to build (each gets its own image)
