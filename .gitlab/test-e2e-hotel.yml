@@ -5,6 +5,7 @@ test_e2e_hotel:
         CARGO_BUILD_JOBS: "16"
 
     before_script:
+        - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
         - ulimit -n 4096 || true
         - |
             if ! command -v uv &> /dev/null; then
