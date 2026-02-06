@@ -175,6 +175,7 @@ class K8sManager(DeploymentManager):
                     {
                         "name": task_spec.name,
                         "image": task_spec.image,
+                        "imagePullPolicy": "IfNotPresent",
                         "env": [
                             {"name": k, "value": str(v)}
                             for k, v in task_spec.env_vars.items()
@@ -203,19 +204,62 @@ class K8sManager(DeploymentManager):
 
         try:
             # Poll for status
+            found_pattern = False
+            phase = "Unknown"
+
             while True:
                 phase = self._get_pod_phase(task_spec.name)
+
+                if task_spec.wait_for_log_pattern:
+                    # Check logs for pattern
+                    cmd_logs = ["kubectl", "logs", task_spec.name, "-n", self.namespace]
+                    if self.kube_context:
+                        cmd_logs.extend(["--context", self.kube_context])
+
+                    try:
+                        res = self._run_cmd(cmd_logs, check=False, capture_output=True)
+                        if task_spec.wait_for_log_pattern in res.stdout:
+                            found_pattern = True
+                            break
+                    except Exception:
+                        pass
+
                 if phase in ["Succeeded", "Failed"]:
                     break
-                # if phase == "Unknown":
-                #      pass
+
                 time.sleep(2)
 
             if log_file:
                 self._stream_pod_log(task_spec.name, log_file, follow=False)
 
-            if phase != "Succeeded":
+            if task_spec.wait_for_log_pattern:
+                if not found_pattern:
+                    # Check one last time in case it finished right after last check
+                    cmd_logs = ["kubectl", "logs", task_spec.name, "-n", self.namespace]
+                    if self.kube_context:
+                        cmd_logs.extend(["--context", self.kube_context])
+                    res = self._run_cmd(cmd_logs, check=False, capture_output=True)
+                    if task_spec.wait_for_log_pattern in res.stdout:
+                        found_pattern = True
+
+                if not found_pattern:
+                    raise RuntimeError(
+                        f"Task {task_spec.name} finished with phase {phase} but pattern '{task_spec.wait_for_log_pattern}' not found"
+                    )
+            elif phase != "Succeeded":
                 raise RuntimeError(f"Task {task_spec.name} failed with phase {phase}")
+
+            # Copy artifacts if succeeded or pattern found
+            should_copy = (phase == "Succeeded") or (
+                task_spec.wait_for_log_pattern and found_pattern
+            )
+
+            if should_copy and task_spec.artifacts:
+                for src, dest in task_spec.artifacts:
+                    try:
+                        self.copy_from_container(task_spec.name, src, Path(dest))
+                    except Exception as e:
+                        logger.warning(f"Failed to copy artifact {src} -> {dest}: {e}")
 
         finally:
             if task_spec.cleanup:
