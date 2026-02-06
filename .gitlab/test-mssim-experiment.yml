@@ -1,24 +1,54 @@
 test_mssim_experiment:
     stage: test
+    parallel:
+        matrix:
+            - DEPLOY_MODE: [docker, kind]
     variables:
         CI: "true"
 
     before_script:
+        - mkdir -p $HOME/.local/bin
+        - export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
         - |
             if ! command -v uv &> /dev/null; then
               curl -LsSf https://astral.sh/uv/install.sh | sh
-              export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+            fi
+        - |
+            if [[ "$DEPLOY_MODE" == "kind" ]]; then
+              if ! command -v kind &> /dev/null; then
+                echo "Installing kind..."
+                curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+                chmod +x ./kind
+                mv ./kind $HOME/.local/bin/kind
+              fi
+              if ! command -v kubectl &> /dev/null; then
+                echo "Installing kubectl..."
+                curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                chmod +x kubectl
+                mv kubectl $HOME/.local/bin/kubectl
+              fi
+              if ! command -v helm &> /dev/null; then
+                echo "Installing helm..."
+                curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+                chmod 700 get_helm.sh
+                HELM_INSTALL_DIR=$HOME/.local/bin ./get_helm.sh --no-sudo
+                rm get_helm.sh
+              fi
             fi
         - uv sync
         - source .venv/bin/activate
-        - if ! command -v cargo &>/dev/null; then
-          echo "Installing Rust...";
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y;
-          source $HOME/.cargo/env;
-          fi
+        - |
+            if ! command -v cargo &>/dev/null; then
+              echo "Installing Rust...";
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y;
+              source $HOME/.cargo/env;
+            fi
         - rustc --version
         - cargo --version
     tags:
         - on-host
     script:
-        - ./scripts/test_mssim_experiment.sh
+        - groups $(whoami)
+        - ./scripts/test_mssim_experiment.sh --deploy-mode $DEPLOY_MODE
+    after_script:
+        - export PATH="$HOME/.local/bin:$PATH"
