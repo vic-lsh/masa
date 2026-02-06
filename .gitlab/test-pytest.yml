@@ -10,7 +10,7 @@ pytest:
         paths:
             - .venv
     before_script:
-        - source ./scripts/ci_setup_env.sh
+        # - source ./scripts/ci_setup_env.sh
         - export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
         - uv sync --dev
         - source .venv/bin/activate
