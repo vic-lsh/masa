@@ -1,5 +1,5 @@
+#![cfg(all(feature = "rt", feature = "sync", feature = "time", feature = "prio_global"))]
 #![allow(unknown_lints, unexpected_cfgs)]
-#![cfg(feature = "full")]
 
 use masa_core::PriorityHint;
 use std::sync::{

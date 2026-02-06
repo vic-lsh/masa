@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
 
+#[allow(dead_code)]
 pub(crate) struct FifoQueue<T> {
     inner: VecDeque<T>,
     push_count: u64,
