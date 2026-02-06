@@ -8,7 +8,6 @@ import logging
 import os
 import re
 import shlex
-import subprocess
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
