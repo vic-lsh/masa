@@ -16,7 +16,6 @@ from unittest.mock import Mock, patch
 from exp_runner.runner.apps.hotel import (
     HotelApp,
     HotelBuilder,
-    HotelLoadGenerator,
 )
 from exp_runner.runner.apps.utils import normalize_features_to_tag
 
@@ -113,44 +112,6 @@ class TestNormalizeFeaturesToTag:
 
         assert tag1 == tag2 == tag3
         assert tag1 == "a-b-c"
-
-
-class TestHotelLoadGenerator:
-    """Tests for HotelLoadGenerator with feature-based tags."""
-
-    def test_image_name_with_features(self):
-        """Test that load generator creates correct image name with features."""
-        loadgen = HotelLoadGenerator(features="policy-a,policy-b")
-        assert loadgen.get_image_name() == "hotel_client_bench:policy-a-policy-b"
-
-    def test_image_name_without_features(self):
-        """Test that load generator uses 'latest' without features."""
-        loadgen = HotelLoadGenerator(features=None)
-        assert loadgen.get_image_name() == "hotel_client_bench:latest"
-
-        loadgen2 = HotelLoadGenerator(features="")
-        assert loadgen2.get_image_name() == "hotel_client_bench:latest"
-
-    def test_container_name(self):
-        """Test that container name is constant."""
-        loadgen = HotelLoadGenerator(features="test")
-        assert loadgen.get_container_name() == "hotel_client_bench"
-
-    def test_network_name(self):
-        """Test that network name is constant."""
-        loadgen = HotelLoadGenerator(features="test")
-        assert loadgen.get_network_name() == "local_hotel_network"
-
-    def test_binary_name(self):
-        """Test that binary name is constant."""
-        loadgen = HotelLoadGenerator(features="test")
-        assert loadgen.get_binary_name() == "hotel_client_bench"
-
-    def test_features_preserved(self):
-        """Test that features are stored correctly."""
-        features = "policy-x,policy-y"
-        loadgen = HotelLoadGenerator(features=features)
-        assert loadgen.features == features
 
 
 class TestHotelBuilder:
@@ -327,49 +288,12 @@ class TestHotelApp:
         assert app.get_image_tag(None) == "latest"
         assert app.get_image_tag("") == "latest"
 
-    def test_create_load_generator_with_features(self):
-        """Test that app creates load generator with features."""
-        app = HotelApp()
-        features = "policy-x,policy-y"
-
-        loadgen = app.create_load_generator(features=features)
-
-        assert isinstance(loadgen, HotelLoadGenerator)
-        assert loadgen.features == features
-        assert loadgen.get_image_name() == "hotel_client_bench:policy-x-policy-y"
-
-    def test_create_load_generator_without_features(self):
-        """Test that app creates load generator without features."""
-        app = HotelApp()
-
-        loadgen = app.create_load_generator(features=None)
-
-        assert isinstance(loadgen, HotelLoadGenerator)
-        assert loadgen.features is None
-        assert loadgen.get_image_name() == "hotel_client_bench:latest"
-
     def test_create_builder(self):
         """Test that app creates correct builder."""
         app = HotelApp()
         builder = app.create_builder()
 
         assert isinstance(builder, HotelBuilder)
-
-    def test_consistency_between_components(self):
-        """Test that all components use consistent image tags."""
-        app = HotelApp()
-        features = "policy-a,policy-b,policy-c"
-
-        # Get tag from app
-        app_tag = app.get_image_tag(features)
-
-        # Get image name from load generator
-        loadgen = app.create_load_generator(features=features)
-        loadgen_image = loadgen.get_image_name()
-
-        # They should match - loadgen uses hotel_client_bench as the image name
-        assert loadgen_image == f"hotel_client_bench:{app_tag}"
-        assert app_tag == "policy-a-policy-b-policy-c"
 
 
 class TestEdgeCases:

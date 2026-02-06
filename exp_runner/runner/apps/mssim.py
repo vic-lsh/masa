@@ -33,7 +33,7 @@ import yaml
 from ..cpu_monitor import CPUMonitor
 from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
-from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
+from .base import AppBuilder, AppPlugin, DockerConfig
 from .mssim_config import MssimConfigGenerator
 from .utils import normalize_features_to_tag
 
@@ -71,27 +71,6 @@ def _safe_project_name(
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
     slug = re.sub(r"[^a-z0-9]+", "-", experiment_name.lower()).strip("-")[:24] or "exp"
     return f"mssim-{slug}-{digest}"
-
-
-class MssimLoadGenerator(LoadGenerator):
-    """
-    Placeholder load generator.
-
-    This class is primarily used for satisfying the ABC, but ExpDriver uses
-    get_loadgen_spec instead.
-    """
-
-    def get_container_name(self) -> str:
-        raise NotImplementedError("MssimLoadGenerator should not be used directly")
-
-    def get_network_name(self) -> str:
-        return "mssim_network"
-
-    def get_image_name(self) -> str:
-        return MSSIM_LOADGEN_IMAGE
-
-    def get_binary_name(self) -> str:
-        return "mssim_load_generator"
 
 
 class MssimBuilder(AppBuilder):
@@ -287,6 +266,7 @@ class MssimApp(AppPlugin):
         output_dir: Path,
         repo_root: Path,
         use_k8s: bool = False,
+        executor: Optional[CommandExecutor] = None,
     ) -> dict:
         """
         Prepare workload configuration using MssimConfigGenerator.
@@ -329,7 +309,7 @@ class MssimApp(AppPlugin):
         env["DOCKER_COMPOSE_PROJECT_NAME"] = project_name
 
         # Generate Configs
-        config_gen = MssimConfigGenerator(executor=self.executor)
+        config_gen = MssimConfigGenerator(executor=executor or self.executor)
 
         # We need output_dir for run-specific artifacts
         # ExpDriver passes a run-specific output_dir (e.g. out/0/policy/run_0)
@@ -608,44 +588,8 @@ class MssimApp(AppPlugin):
             cleanup=True,
         )
 
-    def create_load_generator(self, features: Optional[str] = None) -> LoadGenerator:
-        return MssimLoadGenerator()
-
     def create_builder(self) -> AppBuilder:
         return self._builder
-
-    def run_workload(
-        self,
-        *,
-        repo_root: Path,
-        config: "ExperimentConfig",
-        deployment: "DockerManager",
-        policy: str,
-        iteration: int,
-        output_dir: Path,
-        app_local_dir: Path,
-        no_cache: bool,
-        dry_run: bool = False,
-        executor: Optional[CommandExecutor] = None,
-        **kwargs,
-    ) -> None:
-        """Run mssim experiment using ExpDriver."""
-        from ..experiment_driver import ExpDriver
-
-        # Inject executor if provided (mostly for testing)
-        if executor:
-            self.executor = executor
-
-        driver = ExpDriver(self, deployment, executor=executor or self.executor)
-        driver.run_workload(
-            config=config,
-            policy=policy,
-            iteration=iteration,
-            output_dir=output_dir,
-            repo_root=repo_root,
-            no_cache=no_cache,
-            dry_run=dry_run,
-        )
 
     def verify_results(self, config: "ExperimentConfig") -> bool:
         """
