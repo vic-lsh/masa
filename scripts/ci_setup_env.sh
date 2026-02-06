@@ -14,11 +14,17 @@ apt-get update -yqq
 # - libgraphviz-dev, pkg-config: Required for pygraphviz (Python dependency for plotting)
 # - curl, ca-certificates: Required for downloading tools (uv, rustup, etc.)
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    protobuf-compiler \
     libgraphviz-dev \
     pkg-config \
     curl \
+    unzip \
     ca-certificates
+
+# Install protoc (using script since apt version is too old)
+chmod +x "$(dirname "$0")/install_protoc.sh"
+"$(dirname "$0")/install_protoc.sh"
+export PATH="$HOME/.local/bin:$PATH"
+export PROTOC="$HOME/.local/bin/protoc"
 
 # Install Docker client if not present (required for dind interaction)
 if ! command -v docker &> /dev/null; then
