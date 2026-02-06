@@ -38,14 +38,12 @@ def _safe_project_name(*, experiment_name: str, iteration: int, policy: str) -> 
     return f"hotel-{slug}-{digest}"
 
 
-def _generate_gen_config(
+def create_gen_config_dict(
     *,
     template_config: dict,
-    project_name: str,
-    output_path: Path,
-) -> None:
+) -> dict:
     """
-    Generate project-specific gen_config.json with namespaced frontend address.
+    Generate project-specific gen_config.json content with namespaced frontend address.
 
     Updates the "Addr" field to point to the project-prefixed frontend service.
     """
@@ -70,17 +68,14 @@ def _generate_gen_config(
     # Use the service alias on the compose network so DNS returns all replicas.
     config["Addr"] = f"{protocol}://hotel_frontend:{port}"
 
-    # Write to file
-    with output_path.open("w") as f:
-        json.dump(config, f, indent=2)
+    return config
 
 
-def _generate_hotel_config(
+def create_hotel_config_dict(
     *,
     template_config: dict,
     project_name: str,
-    output_path: Path,
-) -> None:
+) -> dict:
     """
     Generate project-specific hotel.json with namespaced service names.
 
@@ -145,10 +140,7 @@ def _generate_hotel_config(
                         else:
                             new_addr = f"{protocol}://{new_hostname}"
                         config[service][addr_key] = new_addr
-
-    # Write to file
-    with output_path.open("w") as f:
-        json.dump(config, f, indent=2)
+    return config
 
 
 class HotelBuilder(AppBuilder):
@@ -481,6 +473,10 @@ class HotelApp(AppPlugin):
     def get_app_name(self) -> str:
         return "hotel"
 
+    @property
+    def supports_k8s(self) -> bool:
+        return False
+
     def load_app_config(self, config_path: Path) -> dict:
         """Load hotel.json configuration file."""
         with open(config_path) as f:
@@ -617,23 +613,28 @@ class HotelApp(AppPlugin):
             policy=policy,
         )
 
-        # Generate project-specific hotel.json
-        project_config_path = output_dir / "hotel.json"
-        _generate_hotel_config(
+        # 1. Calculate configuration (Pure Logic)
+        hotel_config_dict = create_hotel_config_dict(
             template_config=config.app_config,
             project_name=project_name,
-            output_path=project_config_path,
         )
 
-        # Generate project-specific gen_config.json
-        project_gen_config_path = output_dir / "gen_config.json"
-        _generate_gen_config(
+        gen_config_dict = create_gen_config_dict(
             template_config=config.gen_config,
-            project_name=project_name,
-            output_path=project_gen_config_path,
         )
 
-        # Generate environment variables
+        # 2. Generate config files (Effects)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        project_config_path = output_dir / "hotel.json"
+        with project_config_path.open("w") as f:
+            json.dump(hotel_config_dict, f, indent=2)
+
+        project_gen_config_path = output_dir / "gen_config.json"
+        with project_gen_config_path.open("w") as f:
+            json.dump(gen_config_dict, f, indent=2)
+
+        # 3. Generate environment variables
         env_vars = self.generate_env_vars(
             config.gen_config, config.app_config, config.app_dir
         )

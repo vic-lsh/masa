@@ -163,6 +163,38 @@ class AppPlugin(ABC):
         """
         pass
 
+    @property
+    def supports_k8s(self) -> bool:
+        """
+        Whether this application supports Kubernetes deployment.
+        """
+        return False
+
+    def generate_k8s_values(
+        self,
+        config: "ExperimentConfig",
+        policy: str,
+        iteration: int,
+        image_tag: str,
+        app_config_path: Optional[Path],
+        env_vars: dict,
+    ) -> dict:
+        """
+        Generate Helm chart values for Kubernetes deployment.
+
+        Args:
+            config: Experiment configuration
+            policy: Scheduling policy
+            iteration: Iteration number
+            image_tag: Docker image tag
+            app_config_path: Path to app config file (optional)
+            env_vars: Environment variables
+
+        Returns:
+            Dictionary of Helm values
+        """
+        return {}
+
     @abstractmethod
     def prepare_workload(
         self,
@@ -176,6 +208,11 @@ class AppPlugin(ABC):
     ) -> dict:
         """
         Prepare workload configuration and environment variables.
+
+        This method should:
+        1. Calculate configuration values (pure logic)
+        2. Generate configuration files (I/O)
+        3. Return environment variables
 
         Args:
             config: Experiment configuration
