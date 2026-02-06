@@ -1,0 +1,49 @@
+{{- range $name, $infra := .Values.infrastructure }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "socialnet.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "socialnet.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  replicas: {{ $infra.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "socialnet.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "socialnet.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $name }}
+    spec:
+      containers:
+        - name: {{ $name }}
+          image: "{{ $infra.image }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: {{ $infra.port }}
+              name: service
+          resources:
+            {{- toYaml $.Values.resources.infrastructure | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "socialnet.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "socialnet.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ $infra.port }}
+      targetPort: service
+      protocol: TCP
+      name: service
+  selector:
+    {{- include "socialnet.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+{{- end }}

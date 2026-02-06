@@ -532,6 +532,7 @@ class SyntheticApp(AppPlugin):
         repo_root: Path,
         use_k8s: bool = False,
         executor: Optional[CommandExecutor] = None,
+        use_new_generator: bool = False,
     ) -> dict:
         """
         Prepare workload configuration and environment variables.
@@ -798,7 +799,9 @@ class SyntheticApp(AppPlugin):
         if topology.call_graph:
             return {"call_graph": topology.call_graph}
 
-        raise ValueError("Synthetic app requires either app_config or call_graph topology")
+        raise ValueError(
+            "Synthetic app requires either app_config or call_graph topology"
+        )
 
     def get_deployment_location(
         self, output_dir: Path, use_k8s: bool, repo_root: Path
@@ -1097,7 +1100,6 @@ class SyntheticBuilder(AppBuilder):
 
         finally:
             pass
-
 
         if dry_run and isinstance(executor, MockCommandExecutor):
             return [cmd.args for cmd in executor.history]

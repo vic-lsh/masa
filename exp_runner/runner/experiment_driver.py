@@ -70,6 +70,7 @@ class ExpDriver:
             repo_root=repo_root,
             use_k8s=use_k8s,
             executor=self.executor,
+            use_new_generator=use_new_generator,
         )
 
         project_name = env_vars.get("DOCKER_COMPOSE_PROJECT_NAME", "")

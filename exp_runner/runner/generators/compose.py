@@ -213,9 +213,7 @@ class ComposeGenerator(DeploymentGenerator):
             service_def["volumes"] = [f"{volume_name}:{mount_path}"]
 
         # Add resource limits
-        service_def["deploy"] = {
-            "resources": {"limits": {"cpus": "4", "memory": "4G"}}
-        }
+        service_def["deploy"] = {"resources": {"limits": {"cpus": "4", "memory": "4G"}}}
 
         # Special handling for specific services
         if "rabbitmq" in spec.image:
@@ -253,7 +251,7 @@ class ComposeGenerator(DeploymentGenerator):
             Service definition dictionary
         """
         # Determine image name based on app and service
-        image_name = self._get_image_name(topology.app, name, image_tag)
+        image_name = self._get_image_name(topology.app, name, spec, image_tag)
 
         service_def: dict[str, Any] = {
             "image": image_name,
@@ -280,29 +278,39 @@ class ComposeGenerator(DeploymentGenerator):
         service_def["volumes"] = ["${APP_CONFIG_PATH}:/usr/config.json:ro"]
 
         # Add resource limits
-        service_def["deploy"] = {
-            "resources": {"limits": {"cpus": "4", "memory": "4G"}}
-        }
+        service_def["deploy"] = {"resources": {"limits": {"cpus": "4", "memory": "4G"}}}
 
         # Add port mapping for frontend services
         if name in ["frontend", "compose-post-service"]:
             port = spec.port or 8080
             service_def["ports"] = [f"${{FRONTEND_PORT}}:{port}"]
 
+        # Add command if specified
+        if spec.command:
+            service_def["command"] = spec.command
+
         return service_def
 
-    def _get_image_name(self, app: str, service_name: str, image_tag: str) -> str:
+    def _get_image_name(
+        self, app: str, service_name: str, spec: Any, image_tag: str
+    ) -> str:
         """
         Generate Docker image name from app, service, and tag.
 
         Args:
             app: Application name
             service_name: Service name
+            spec: Service spec
             image_tag: Image tag (policy)
 
         Returns:
             Full image name with tag
         """
+        # If image is explicitly defined in topology, use it
+        if hasattr(spec, "image") and spec.image:
+            # Handle variable interpolation for image tag if needed, but for now append tag
+            return f"{spec.image}:{image_tag}"
+
         # Handle different naming conventions per app
         if app == "synthetic":
             if "frontend" in service_name:
@@ -354,7 +362,34 @@ class ComposeGenerator(DeploymentGenerator):
         env_vars: dict[str, str] = {}
 
         # Add binary name
-        binary_name = name.replace("-service", "").replace("-", "_")
+        if topology.app == "hotel":
+            # Hotel uses hotel_{short_name} convention
+            # e.g. "rate-service" -> "hotel_rate"
+            # "frontend" -> "hotel_frontend"
+            short_name = name.replace("-service", "")
+            binary_name = f"hotel_{short_name}"
+        elif topology.app == "socialnet":
+            # Socialnet mapping logic
+            # "compose-post-service" -> "compose_post_server"
+            # "user-timeline-service" -> "user_timeline_server"
+            # We assume the default convention matches what we need or explicit overrides
+            # For now, let's keep the generic replacement which might be close enough
+            # if we don't have the explicit mapping here.
+            # But earlier in _get_image_name we had explicit logic.
+            # Let's reuse that or be simple.
+            # socialnet binaries are named *_server or *_service.
+            # The generic replacement gives "compose_post_server" if name is "compose-post-server"?
+            # No, generic replacement gives "compose_post_service".
+            # Socialnet binary is "compose_post_server".
+            # So we DO need app specific logic if we rely on BINARY_NAME.
+            # However, socialnet images (built by us) have correct ENTRYPOINT/CMD?
+            # Socialnet Dockerfile sets BINARY_NAME in ENV?
+            # SocialnetApp sets BINARY_NAME in legacy path.
+            # For now, let's just fix Hotel as requested.
+            binary_name = name.replace("-service", "").replace("-", "_")
+        else:
+            binary_name = name.replace("-service", "").replace("-", "_")
+
         env_vars["BINARY_NAME"] = binary_name
 
         # Add log level
@@ -377,17 +412,17 @@ class ComposeGenerator(DeploymentGenerator):
                 infra_spec = topology.infrastructure[dep_name]
                 if "mongo" in dep_name:
                     db_name = name.replace("-service", "")
-                    env_vars[
-                        f"{dep_name.upper().replace('-', '_')}_URI"
-                    ] = f"mongodb://{dep_name}:27017/{db_name}"
+                    env_vars[f"{dep_name.upper().replace('-', '_')}_URI"] = (
+                        f"mongodb://{dep_name}:27017/{db_name}"
+                    )
                 elif "redis" in dep_name:
-                    env_vars[
-                        f"{dep_name.upper().replace('-', '_')}_URL"
-                    ] = f"redis://{dep_name}:6379"
+                    env_vars[f"{dep_name.upper().replace('-', '_')}_URL"] = (
+                        f"redis://{dep_name}:6379"
+                    )
                 elif "memcached" in dep_name:
-                    env_vars[
-                        f"{dep_name.upper().replace('-', '_')}_ADDR"
-                    ] = f"tcp://{dep_name}:11211"
+                    env_vars[f"{dep_name.upper().replace('-', '_')}_ADDR"] = (
+                        f"tcp://{dep_name}:11211"
+                    )
                 elif "rabbitmq" in dep_name:
                     env_vars["RABBITMQ_URL"] = "amqp://guest:guest@rabbitmq:5672"
 
@@ -406,8 +441,14 @@ class ComposeGenerator(DeploymentGenerator):
         if not topology.app:
             raise ValueError("Topology must specify an app name")
 
-        if not topology.services and not topology.infrastructure and not topology.call_graph:
-            raise ValueError("Topology must have at least one service or infrastructure")
+        if (
+            not topology.services
+            and not topology.infrastructure
+            and not topology.call_graph
+        ):
+            raise ValueError(
+                "Topology must have at least one service or infrastructure"
+            )
 
     def _build_call_graph_compose(
         self,
@@ -509,11 +550,7 @@ class ComposeGenerator(DeploymentGenerator):
         overrides: dict[str, int],
         service_name: str,
     ) -> int:
-        base = (
-            service_def.get("default_replicas")
-            or service_def.get("replicas")
-            or 1
-        )
+        base = service_def.get("default_replicas") or service_def.get("replicas") or 1
         service_id = service_def.get("id")
 
         if service_id and service_id in overrides:

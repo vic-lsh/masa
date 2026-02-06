@@ -509,13 +509,6 @@ class HotelApp(AppPlugin):
         """
         return None
 
-    def customize_topology(self, topology):
-        """
-        Hook for hotel-specific topology transformations.
-        Currently no transformations needed.
-        """
-        return topology
-
     def customize_env_vars(self, topology, experiment, base_env):
         """
         Add hotel-specific environment variables.
@@ -662,12 +655,189 @@ class HotelApp(AppPlugin):
         repo_root: Path,
         use_k8s: bool = False,
         executor: Optional[CommandExecutor] = None,
+        use_new_generator: bool = False,
     ) -> dict:
         """
         Prepare workload configuration and environment variables.
         """
+        # Store state for get_deployment_location
+        self._last_use_k8s = use_k8s
+        self._last_use_new_generator = use_new_generator
+
+        if use_new_generator:
+            # New path: Use generators
+            from ..topology import TopologyResolver
+            from ..generators.compose import ComposeGenerator
+            from ..generators.helm import HelmValuesGenerator
+            from ..experiment_config_v2 import (
+                ExperimentConfigV2,
+                ExecutionSpec,
+                LoadGenSpec,
+            )
+
+            # 1. Resolve Topology
+            resolver = TopologyResolver(repo_root)
+            topology = resolver.resolve("hotel", "default")
+
+            # 2. Create ExperimentConfigV2 adapter from legacy config
+            exp_v2 = ExperimentConfigV2(
+                name=config.experiment_name,
+                app="hotel",
+                execution=ExecutionSpec(
+                    repeats=1,
+                    policies=[policy],
+                ),
+                replica_overrides={},
+                loadgen=LoadGenSpec(rps=[]),
+            )
+
+            # Extract replica overrides from config.app_config if present
+            if config.app_config:
+                overrides = {}
+                for svc, data in config.app_config.items():
+                    if isinstance(data, dict) and "replicas" in data:
+                        topo_name = (
+                            f"{svc}-service" if svc != "frontend" else "frontend"
+                        )
+                        overrides[topo_name] = int(data["replicas"])
+                exp_v2.replica_overrides = overrides
+
+            # 3. Generate Deployment
+            project_name = _safe_project_name(
+                experiment_name=config.experiment_name,
+                iteration=iteration,
+                policy=policy,
+            )
+
+            tag = self.get_image_tag(features=policy)
+            image_tag = tag if tag else "latest"
+
+            if use_k8s:
+                generator = HelmValuesGenerator()
+                deploy = generator.generate(
+                    topology=topology,
+                    experiment=exp_v2,
+                    output_dir=output_dir,
+                    project_name=project_name,
+                    policy=policy,
+                    image_tag=image_tag,
+                )
+            else:
+                generator = ComposeGenerator()
+                deploy = generator.generate(
+                    topology=topology,
+                    experiment=exp_v2,
+                    output_dir=output_dir,
+                    project_name=project_name,
+                    policy=policy,
+                    image_tag=image_tag,
+                )
+
+            # 4. Generate gen_config.json
+            gen_config_dict = create_gen_config_dict(
+                template_config=config.gen_config,
+            )
+
+            # Update Addr
+            if use_k8s:
+                gen_config_dict["Addr"] = f"http://{project_name}-frontend:8660"
+            else:
+                gen_config_dict["Addr"] = "http://frontend:8660"
+
+            project_gen_config_path = output_dir / "gen_config.json"
+            with project_gen_config_path.open("w") as f:
+                json.dump(gen_config_dict, f, indent=2)
+
+            # 5. Generate app config (config.json)
+            import copy
+
+            app_config = copy.deepcopy(config.app_config)
+
+            svc_map = {
+                "geo": "geo-service",
+                "profile": "profile-service",
+                "rate": "rate-service",
+                "recommendation": "recommendation-service",
+                "reservation": "reservation-service",
+                "review": "review-service",
+                "search": "search-service",
+                "user": "user-service",
+                "frontend": "frontend",
+            }
+
+            def update_addr(addr, hostname, port=None):
+                if "://" in addr:
+                    protocol, rest = addr.split("://", 1)
+                    if ":" in rest and not port:
+                        _, port = rest.rsplit(":", 1)
+                    elif not port:
+                        port = "8080"
+                    return f"{protocol}://{hostname}:{port}"
+                return addr
+
+            if use_k8s:
+                # K8s: {project}-{name}
+                prefix = f"{project_name}-"
+                infra_prefix = f"{project_name}-"
+            else:
+                # Docker:
+                # Services: {project}-{name} (app appends -1)
+                prefix = f"{project_name}-"
+                # Infra: {name} (resolves to service alias)
+                infra_prefix = ""
+
+            for key, hostname in svc_map.items():
+                full_hostname = f"{prefix}{hostname}"
+                if key in app_config:
+                    if "ip" in app_config[key]:
+                        app_config[key]["ip"] = full_hostname
+                    # Update port to 8080 for backend services (frontend stays 8660)
+                    if key != "frontend" and "port" in app_config[key]:
+                        app_config[key]["port"] = 8080
+
+            infra_map = {
+                "profile": {
+                    "mongodbAddr": "profile-mongo",
+                    "redisAddr": "profile-redis",
+                },
+                "rate": {"mongodbAddr": "rate-mongo", "redisAddr": "rate-redis"},
+                "reservation": {
+                    "mongodbAddr": "reservation-mongo",
+                    "redisAddr": "reservation-redis",
+                },
+                "user": {"mongodbAddr": "user-mongo"},
+                "review": {"mongodbAddr": "rate-mongo", "redisAddr": "rate-redis"},
+            }
+
+            for key, infra_items in infra_map.items():
+                if key in app_config:
+                    for addr_key, infra_name in infra_items.items():
+                        if addr_key in app_config[key]:
+                            full_infra_name = f"{infra_prefix}{infra_name}"
+                            # Use standard ports since ComposeGenerator doesn't override infra command
+                            if "mongo" in addr_key:
+                                app_config[key][addr_key] = (
+                                    f"mongodb://{full_infra_name}:27017"
+                                )
+                            elif "redis" in addr_key:
+                                app_config[key][addr_key] = (
+                                    f"redis://{full_infra_name}:6379"
+                                )
+                            elif "memcached" in addr_key:
+                                app_config[key][addr_key] = (
+                                    f"tcp://{full_infra_name}:11211"
+                                )
+
+            with (output_dir / "config.json").open("w") as f:
+                json.dump(app_config, f, indent=2)
+
+            # Return env vars from generator
+            return deploy.env_vars
+
         if use_k8s:
-            raise NotImplementedError("Hotel app does not support Kubernetes yet")
+            raise NotImplementedError(
+                "Hotel app does not support Kubernetes yet (legacy path)"
+            )
 
         # Generate project name for namespace isolation
         project_name = _safe_project_name(
@@ -718,6 +888,17 @@ class HotelApp(AppPlugin):
     def get_deployment_location(
         self, output_dir: Path, use_k8s: bool, repo_root: Path
     ) -> Tuple[Path, str]:
+        # Check if we generated new files
+        if getattr(self, "_last_use_new_generator", False):
+            if use_k8s:
+                # Helm: return directory containing values.yaml and chart name
+                # But DeploymentManager.start expects (app_dir, deployment_config)
+                # For Helm: app_dir is chart dir, deployment_config is values file path
+                return repo_root / "charts/hotel", str(output_dir / "values.yaml")
+            else:
+                # Compose: return output_dir and docker-compose.yaml
+                return output_dir, "docker-compose.yaml"
+
         if use_k8s:
             raise NotImplementedError("Hotel app does not support Kubernetes yet")
 
@@ -744,9 +925,13 @@ class HotelApp(AppPlugin):
         binary = "hotel_client_bench"
 
         # Network
-        network = (
-            f"{project_name}_hotel_network" if project_name else "local_hotel_network"
-        )
+        # Legacy uses hotel_network, New generator uses hotel-network
+        if getattr(self, "_last_use_new_generator", False):
+            suffix = "hotel-network"
+        else:
+            suffix = "hotel_network"
+
+        network = f"{project_name}_{suffix}" if project_name else f"local_{suffix}"
 
         # Env Vars
         task_env = {

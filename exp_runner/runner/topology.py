@@ -25,6 +25,7 @@ class ServiceSpec:
     depends_on: list[str] = field(default_factory=list)
     methods: list[dict[str, Any]] = field(default_factory=list)
     image: Optional[str] = None  # For infrastructure services
+    command: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -70,6 +71,7 @@ class TopologySpec:
                     depends_on=svc_data.get("depends_on", []),
                     methods=svc_data.get("methods", []),
                     image=svc_data.get("image"),
+                    command=svc_data.get("command", []),
                 )
             else:
                 # Allow simple list format
@@ -147,9 +149,7 @@ class TopologySpec:
 
         return result
 
-    def apply_replica_overrides(
-        self, overrides: dict[str, int]
-    ) -> "TopologySpec":
+    def apply_replica_overrides(self, overrides: dict[str, int]) -> "TopologySpec":
         """
         Apply replica overrides to create a new topology spec.
 

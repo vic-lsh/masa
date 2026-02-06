@@ -1,0 +1,6 @@
+apiVersion: v2
+name: socialnet
+description: A Helm chart for the Social Network benchmark
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -212,5 +212,10 @@ def test_roundtrip_conversion():
     assert roundtrip_gen_config["Warmup"] == original_gen_config["Warmup"]
     assert roundtrip_gen_config["Duration"] == original_gen_config["Duration"]
     assert len(roundtrip_gen_config["APIs"]) == len(original_gen_config["APIs"])
-    assert roundtrip_gen_config["APIs"][0]["Name"] == original_gen_config["APIs"][0]["Name"]
-    assert roundtrip_gen_config["APIs"][0]["SLO"] == original_gen_config["APIs"][0]["SLO"]
+    assert (
+        roundtrip_gen_config["APIs"][0]["Name"]
+        == original_gen_config["APIs"][0]["Name"]
+    )
+    assert (
+        roundtrip_gen_config["APIs"][0]["SLO"] == original_gen_config["APIs"][0]["SLO"]
+    )

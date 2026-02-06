@@ -195,9 +195,14 @@ class HelmValuesGenerator(DeploymentGenerator):
             replicas = replica_overrides.get(svc_name, svc_spec.default_replicas)
 
             service_config: dict[str, Any] = {
+                "name": svc_name,
                 "replicas": replicas,
                 "port": svc_spec.port or 8080,
             }
+
+            # Add image if defined (for app services)
+            if svc_spec.image:
+                service_config["image"] = svc_spec.image
 
             # Add dependencies
             if svc_spec.depends_on:
@@ -268,9 +273,7 @@ class HelmValuesGenerator(DeploymentGenerator):
 
             # Add default timeout
             if experiment.loadgen.default_timeout_ms:
-                app_config["default_timeout_ms"] = (
-                    experiment.loadgen.default_timeout_ms
-                )
+                app_config["default_timeout_ms"] = experiment.loadgen.default_timeout_ms
 
         return app_config
 

@@ -267,7 +267,9 @@ class TestComposeGenerator:
             }
 
     def test_generate_with_replica_overrides(
-        self, simple_topology: TopologySpec, experiment_with_overrides: ExperimentConfigV2
+        self,
+        simple_topology: TopologySpec,
+        experiment_with_overrides: ExperimentConfigV2,
     ):
         """Test that replica overrides are applied correctly."""
         generator = ComposeGenerator()
@@ -427,7 +429,9 @@ class TestHelmValuesGenerator:
             assert redis["port"] == 6379
 
     def test_generate_with_replica_overrides(
-        self, simple_topology: TopologySpec, experiment_with_overrides: ExperimentConfigV2
+        self,
+        simple_topology: TopologySpec,
+        experiment_with_overrides: ExperimentConfigV2,
     ):
         """Test that replica overrides are applied in Helm values."""
         generator = HelmValuesGenerator()
@@ -517,9 +521,7 @@ class TestHelmValuesGenerator:
         with pytest.raises(ValueError, match="at least one service"):
             generator.validate_topology(topology)
 
-    def test_validate_experiment_no_execution(
-        self, simple_topology: TopologySpec
-    ):
+    def test_validate_experiment_no_execution(self, simple_topology: TopologySpec):
         """Test that validation fails for experiment without execution spec."""
         generator = HelmValuesGenerator()
 
@@ -570,12 +572,52 @@ class TestHelmValuesGenerator:
             assert "cpu" in default["limits"]
             assert "memory" in default["limits"]
 
+    def test_generate_service_with_image_field(
+        self, simple_experiment: ExperimentConfigV2
+    ):
+        """Test that services with explicit image field propagate to values."""
+        generator = HelmValuesGenerator()
+
+        topology = TopologySpec(
+            app="test-app",
+            services={
+                "myservice": ServiceSpec(
+                    id="myservice",
+                    port=8080,
+                    image="my_binary_name",
+                )
+            },
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+
+            result = generator.generate(
+                topology=topology,
+                experiment=simple_experiment,
+                output_dir=output_dir,
+                project_name="test",
+                policy="fifo",
+                image_tag="latest",
+            )
+
+            with open(output_dir / "values.yaml") as f:
+                values = yaml.safe_load(f)
+
+            service = values["services"]["myservice"]
+            assert "image" in service
+            assert service["image"] == "my_binary_name"
+            assert "name" in service
+            assert service["name"] == "myservice"
+
 
 class TestGeneratorIntegration:
     """Integration tests comparing compose and helm outputs."""
 
     def test_both_generators_use_same_replicas(
-        self, simple_topology: TopologySpec, experiment_with_overrides: ExperimentConfigV2
+        self,
+        simple_topology: TopologySpec,
+        experiment_with_overrides: ExperimentConfigV2,
     ):
         """Test that both generators apply replica overrides consistently."""
         compose_gen = ComposeGenerator()

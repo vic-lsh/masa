@@ -1,0 +1,66 @@
+{{- range $name, $service := .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "socialnet.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "socialnet.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  replicas: {{ $service.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "socialnet.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "socialnet.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $name }}
+    spec:
+      serviceAccountName: {{ include "socialnet.serviceAccountName" $ }}
+      containers:
+        - name: {{ $name }}
+          image: "{{ $service.image }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          env:
+            - name: LOG_LEVEL
+              value: {{ $.Values.logLevel | quote }}
+            - name: GEN_CONFIG_PATH
+              value: "/config/gen_config.json"
+          ports:
+            - containerPort: {{ $service.port | default $.Values.service.port }}
+              name: http
+          resources:
+            {{- if contains "frontend" $name }}
+            {{- toYaml $.Values.resources.frontend | nindent 12 }}
+            {{- else }}
+            {{- toYaml $.Values.resources.default | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "socialnet.fullname" $ }}-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "socialnet.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "socialnet.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  type: {{ $.Values.service.type }}
+  ports:
+    - port: {{ $service.port | default $.Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "socialnet.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+{{- end }}

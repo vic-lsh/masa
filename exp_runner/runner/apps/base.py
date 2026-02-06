@@ -365,6 +365,7 @@ class AppPlugin(ABC):
         repo_root: Path,
         use_k8s: bool = False,
         executor: Optional[CommandExecutor] = None,
+        use_new_generator: bool = False,
     ) -> dict:
         """
         Prepare workload configuration and environment variables.
@@ -385,6 +386,7 @@ class AppPlugin(ABC):
             repo_root: Repository root
             use_k8s: Whether targeting Kubernetes
             executor: Command executor for any subprocesses
+            use_new_generator: Whether to use new topology-based generators
         """
         pass
 

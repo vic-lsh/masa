@@ -202,7 +202,7 @@ class MssimApp(AppPlugin):
         # MSSIM uses generic-service as main binary and mssim-loadgen for load generation
         return [
             "generic-service",  # Default binary (main.rs)
-            "mssim-loadgen",     # Load generator binary
+            "mssim-loadgen",  # Load generator binary
         ]
 
     def get_frontend_name(self) -> str:
@@ -324,6 +324,7 @@ class MssimApp(AppPlugin):
         repo_root: Path,
         use_k8s: bool = False,
         executor: Optional[CommandExecutor] = None,
+        use_new_generator: bool = False,
     ) -> dict:
         """
         Prepare workload configuration using MssimConfigGenerator.

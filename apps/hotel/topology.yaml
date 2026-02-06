@@ -11,6 +11,7 @@ services:
   frontend:
     port: 8660
     default_replicas: 1
+    image: hotel_frontend
     depends_on:
       - user-service
       - reservation-service
@@ -22,6 +23,7 @@ services:
   rate-service:
     port: 8080
     default_replicas: 1
+    image: hotel_rate
     depends_on:
       - rate-mongo
       - rate-redis
@@ -29,6 +31,7 @@ services:
   profile-service:
     port: 8080
     default_replicas: 1
+    image: hotel_profile
     depends_on:
       - profile-mongo
       - profile-redis
@@ -36,6 +39,7 @@ services:
   reservation-service:
     port: 8080
     default_replicas: 1
+    image: hotel_reservation
     depends_on:
       - reservation-mongo
       - reservation-redis
@@ -43,16 +47,19 @@ services:
   user-service:
     port: 8080
     default_replicas: 1
+    image: hotel_user
     depends_on:
       - user-mongo
 
   geo-service:
     port: 8080
     default_replicas: 1
+    image: hotel_geo
 
   search-service:
     port: 8080
     default_replicas: 1
+    image: hotel_search
     depends_on:
       - geo-service
       - rate-service
@@ -60,10 +67,12 @@ services:
   recommendation-service:
     port: 8080
     default_replicas: 1
+    image: hotel_recommendation
 
   review-service:
     port: 8080
     default_replicas: 1
+    image: hotel_review
 
 infrastructure:
   rate-mongo:

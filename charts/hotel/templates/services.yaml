@@ -1,0 +1,66 @@
+{{- range $name, $service := .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hotel.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "hotel.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  replicas: {{ $service.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "hotel.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "hotel.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $name }}
+    spec:
+      serviceAccountName: {{ include "hotel.serviceAccountName" $ }}
+      containers:
+        - name: {{ $name }}
+          image: "{{ $service.image }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          env:
+            - name: LOG_LEVEL
+              value: {{ $.Values.logLevel | quote }}
+            - name: GEN_CONFIG_PATH
+              value: "/config/gen_config.json"
+          ports:
+            - containerPort: {{ $service.port | default $.Values.service.port }}
+              name: grpc
+          resources:
+            {{- if eq $name "frontend" }}
+            {{- toYaml $.Values.resources.frontend | nindent 12 }}
+            {{- else }}
+            {{- toYaml $.Values.resources.default | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "hotel.fullname" $ }}-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hotel.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "hotel.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  type: {{ $.Values.service.type }}
+  ports:
+    - port: {{ $service.port | default $.Values.service.port }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+  selector:
+    {{- include "hotel.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+{{- end }}

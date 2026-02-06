@@ -11,6 +11,7 @@ services:
   compose-post-service:
     port: 8080
     default_replicas: 1
+    image: compose_post_server
     depends_on:
       - post-storage-service
       - user-timeline-service
@@ -25,6 +26,7 @@ services:
   post-storage-service:
     port: 8080
     default_replicas: 1
+    image: post_storage_server
     depends_on:
       - post-storage-mongo
       - post-storage-memcached
@@ -32,6 +34,7 @@ services:
   user-timeline-service:
     port: 8080
     default_replicas: 4
+    image: user_timeline_server
     depends_on:
       - user-timeline-mongo
       - user-timeline-redis
@@ -40,6 +43,7 @@ services:
   home-timeline-service:
     port: 8080
     default_replicas: 1
+    image: home_timeline_server
     depends_on:
       - home-timeline-redis
       - post-storage-service
@@ -48,6 +52,7 @@ services:
   write-home-timeline-service:
     port: 8080
     default_replicas: 1
+    image: write_home_timeline_server
     depends_on:
       - rabbitmq
       - write-home-timeline-redis
@@ -56,6 +61,7 @@ services:
   user-service:
     port: 8080
     default_replicas: 1
+    image: user_service
     depends_on:
       - user-mongo
       - user-redis
@@ -63,6 +69,7 @@ services:
   social-graph-service:
     port: 8080
     default_replicas: 1
+    image: social_graph_server
     depends_on:
       - social-graph-mongo
       - social-graph-redis
@@ -71,14 +78,17 @@ services:
   unique-id-service:
     port: 8080
     default_replicas: 1
+    image: unique_id_service
 
   media-service:
     port: 8080
     default_replicas: 1
+    image: media_service
 
   text-service:
     port: 8080
     default_replicas: 1
+    image: textservice_server
     depends_on:
       - user-mention-service
       - url-shorten-service
@@ -86,6 +96,7 @@ services:
   user-mention-service:
     port: 8080
     default_replicas: 1
+    image: usermention_server
     depends_on:
       - user-mention-mongo
       - user-mention-memcached
@@ -93,6 +104,7 @@ services:
   url-shorten-service:
     port: 8080
     default_replicas: 1
+    image: url_shorten_server
     depends_on:
       - url-shorten-mongo
 

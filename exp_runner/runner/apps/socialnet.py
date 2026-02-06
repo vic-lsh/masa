@@ -430,12 +430,110 @@ class SocialnetApp(AppPlugin):
         repo_root: Path,
         use_k8s: bool = False,
         executor: Optional[CommandExecutor] = None,
+        use_new_generator: bool = False,
     ) -> dict:
         """
         Prepare workload configuration and environment variables.
         """
+        # Store state for get_deployment_location
+        self._last_use_k8s = use_k8s
+        self._last_use_new_generator = use_new_generator
+
+        if use_new_generator:
+            from ..topology import TopologyResolver
+            from ..generators.compose import ComposeGenerator
+            from ..generators.helm import HelmValuesGenerator
+            from ..experiment_config_v2 import (
+                ExperimentConfigV2,
+                ExecutionSpec,
+                LoadGenSpec,
+            )
+
+            # 1. Resolve Topology
+            resolver = TopologyResolver(repo_root)
+            topology = resolver.resolve("socialnet", "default")
+
+            # 2. Create ExperimentConfigV2 adapter
+            exp_v2 = ExperimentConfigV2(
+                name=config.experiment_name,
+                app="socialnet",
+                execution=ExecutionSpec(
+                    repeats=1,
+                    policies=[policy],
+                ),
+                replica_overrides={},
+                loadgen=LoadGenSpec(rps=[]),
+            )
+
+            # Extract overrides
+            if config.app_config:
+                overrides = {}
+                for svc, data in config.app_config.items():
+                    if isinstance(data, dict) and "replicas" in data:
+                        # Map legacy to topology names
+                        # e.g. "user-timeline" -> "user-timeline-service"
+                        # In legacy socialnet.json, keys match service names mostly
+                        # But let's look at get_container_names in legacy:
+                        # "user-timeline-service" is scaled.
+                        # The legacy config key is "user-timeline" or "user-timeline-service"?
+                        # socialnet.json usually has keys matching docker-compose service names.
+                        overrides[svc] = int(data["replicas"])
+                exp_v2.replica_overrides = overrides
+
+            # 3. Generate Deployment
+            project_name = _safe_project_name(
+                experiment_name=config.experiment_name,
+                iteration=iteration,
+                policy=policy,
+            )
+
+            tag = self.get_image_tag(features=policy)
+            image_tag = tag if tag else "latest"
+
+            if use_k8s:
+                generator = HelmValuesGenerator()
+                deploy = generator.generate(
+                    topology=topology,
+                    experiment=exp_v2,
+                    output_dir=output_dir,
+                    project_name=project_name,
+                    policy=policy,
+                    image_tag=image_tag,
+                )
+
+                # Update gen_config Address for K8s
+                # Service name is {project_name}-compose-post-service
+                frontend_addr = f"http://{project_name}-compose-post-service:8080"
+
+            else:
+                generator = ComposeGenerator()
+                deploy = generator.generate(
+                    topology=topology,
+                    experiment=exp_v2,
+                    output_dir=output_dir,
+                    project_name=project_name,
+                    policy=policy,
+                    image_tag=image_tag,
+                )
+                # Docker Compose uses service name aliases
+                frontend_addr = "http://compose-post-service:8080"
+
+            # 4. Generate gen_config.json
+            import copy
+
+            gen_config = copy.deepcopy(config.gen_config)
+            gen_config["Addr"] = frontend_addr
+
+            project_gen_config_path = output_dir / "gen_config.json"
+            with project_gen_config_path.open("w") as f:
+                json.dump(gen_config, f, indent=2)
+
+            return deploy.env_vars
+
         if use_k8s:
-            raise NotImplementedError("Socialnet app does not support Kubernetes yet")
+            raise NotImplementedError(
+                "Socialnet app does not support Kubernetes yet (legacy path)"
+            )
 
         # Generate project name
         project_name = _safe_project_name(
@@ -475,6 +573,13 @@ class SocialnetApp(AppPlugin):
     def get_deployment_location(
         self, output_dir: Path, use_k8s: bool, repo_root: Path
     ) -> tuple[Path, str]:
+        # Check if we generated new files
+        if getattr(self, "_last_use_new_generator", False):
+            if use_k8s:
+                return repo_root / "charts/socialnet", str(output_dir / "values.yaml")
+            else:
+                return output_dir, "docker-compose.yaml"
+
         if use_k8s:
             raise NotImplementedError("Socialnet app does not support Kubernetes yet")
 
