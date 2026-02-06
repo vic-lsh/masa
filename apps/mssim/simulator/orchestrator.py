@@ -292,10 +292,12 @@ def generate_docker_compose(
     frontend_output_path = deployment_output_path.parent / "frontend.json"
     generate_frontend_config(deployment, frontend_output_path, callgraph_dirs)
 
-    services_section[LOADGEN_SERVICE_NAME] = _make_load_generator_config_yaml(
-        deployment_output_path.parent,
-        deployment,
-    ).as_dict()
+    # Add load generator unless skipped
+    if not os.environ.get("MSSIM_SKIP_LOADGEN"):
+        services_section[LOADGEN_SERVICE_NAME] = _make_load_generator_config_yaml(
+            deployment_output_path.parent,
+            deployment,
+        ).as_dict()
 
     compose_doc = {
         "services": services_section,

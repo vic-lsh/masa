@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .deployment_manager import DeploymentManager, TaskSpec
 from .executor import CommandExecutor
+from .exceptions import DeploymentError
 
 logger = logging.getLogger(__name__)
 
@@ -121,9 +122,9 @@ class DockerManager(DeploymentManager):
                     )
             else:
                 self.executor.run(cmd, check=True)
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as e:
             logger.error(f"Task {task_spec.name} failed.")
-            raise
+            raise DeploymentError(f"Task {task_spec.name} failed: {e}") from e
         finally:
             if task_spec.cleanup:
                 self.cleanup_task(task_spec)
@@ -185,12 +186,15 @@ class DockerManager(DeploymentManager):
         )
 
         # Start services
-        self.executor.run(
-            [*base_cmd, "up", "-d"],
-            cwd=app_dir,
-            check=True,
-            env=env,
-        )
+        try:
+            self.executor.run(
+                [*base_cmd, "up", "-d"],
+                cwd=app_dir,
+                check=True,
+                env=env,
+            )
+        except subprocess.CalledProcessError as e:
+            raise DeploymentError(f"Failed to start docker services: {e}") from e
 
         logger.info("Docker services started successfully")
 

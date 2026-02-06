@@ -142,8 +142,8 @@ class TestMssimSmoke:
         app = MssimApp()
 
         # Setup directory structure for MSSIM
-        # {out_dir}/{iteration}/{policy}/run_0/
-        run_dir = mock_config.out_dir / "0" / "policy1" / "run_0"
+        # {out_dir}/{iteration}/{policy}/
+        run_dir = mock_config.out_dir / "0" / "policy1"
         run_dir.mkdir(parents=True)
         (mock_config.out_dir / "done").touch()
         (run_dir / "metadata.json").touch()
@@ -164,7 +164,7 @@ class TestMssimSmoke:
 
         app = MssimApp()
 
-        run_dir = mock_config.out_dir / "0" / "policy1" / "run_0"
+        run_dir = mock_config.out_dir / "0" / "policy1"
         run_dir.mkdir(parents=True)
         (mock_config.out_dir / "done").touch()
         # Missing metadata.json
@@ -176,7 +176,7 @@ class TestMssimSmoke:
 
         app = MssimApp()
 
-        run_dir = mock_config.out_dir / "0" / "policy1" / "run_0"
+        run_dir = mock_config.out_dir / "0" / "policy1"
         run_dir.mkdir(parents=True)
         (mock_config.out_dir / "done").touch()
         (run_dir / "metadata.json").touch()

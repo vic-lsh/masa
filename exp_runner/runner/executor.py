@@ -180,7 +180,18 @@ class MockCommandExecutor(CommandExecutor):
         mock_popen = subprocess.Popen.__new__(subprocess.Popen)
         mock_popen.args = cmd_list
         mock_popen.returncode = 0
-        mock_popen.stdout = None  # TODO: Mock stdout stream if needed
+
+        # Mock stdout stream
+        if stdout == subprocess.PIPE:
+            from io import BytesIO, StringIO
+
+            if text:
+                mock_popen.stdout = StringIO("Mock stdout line 1\nMock stdout line 2\n")
+            else:
+                mock_popen.stdout = BytesIO(b"Mock stdout line 1\nMock stdout line 2\n")
+        else:
+            mock_popen.stdout = None
+
         mock_popen.stderr = None
         mock_popen.wait = lambda timeout=None: 0
         mock_popen.communicate = lambda input=None, timeout=None: (b"", b"")
