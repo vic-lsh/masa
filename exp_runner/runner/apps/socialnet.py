@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from ..deployment_manager import TaskSpec
-from ..executor import CommandExecutor
+from ..executor import CommandExecutor, SubprocessExecutor
 from .base import AppBuilder, AppPlugin, DockerConfig
 from .utils import get_docker_progress_flag, normalize_features_to_tag
 
@@ -82,7 +82,9 @@ class SocialnetBuilder(AppBuilder):
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
         build_logs_dir: Optional[Path] = None,
+        executor: Optional[CommandExecutor] = None,
     ) -> Optional[list[list[str]]]:
+        executor = executor or SubprocessExecutor()
         app = "socialnet"
         # List of binaries to build (each gets its own image)
         binaries_list = [
@@ -116,9 +118,6 @@ class SocialnetBuilder(AppBuilder):
         if features:
             logger.info(f"Using features: {features}")
 
-        # Collect commands if dry_run
-        commands: list[list[str]] = []
-
         # Start timing the docker build
         build_start_time = time.time()
 
@@ -151,13 +150,8 @@ class SocialnetBuilder(AppBuilder):
 
         builder_cmd.extend(["-t", f"{app}_builder:{tag}", "."])
 
-        if dry_run:
-            commands.append(builder_cmd)
-            logger.info(f"[DRY RUN] Would run: {shlex.join(builder_cmd)}")
-        else:
-            logger.info(f"Running: {shlex.join(builder_cmd)}")
-            subprocess.run(builder_cmd, cwd=repo_root, check=True)
-            logger.info("Stage 1 complete")
+        executor.run(builder_cmd, cwd=repo_root, check=True)
+        logger.info("Stage 1 complete")
 
         # Stage 2: Build runtime-base image (shared dependencies)
         logger.info("Stage 2: Building runtime-base image")
@@ -190,13 +184,8 @@ class SocialnetBuilder(AppBuilder):
 
         runtime_base_cmd.extend(["-t", f"{app}_runtime-base:{tag}", "."])
 
-        if dry_run:
-            commands.append(runtime_base_cmd)
-            logger.info(f"[DRY RUN] Would run: {shlex.join(runtime_base_cmd)}")
-        else:
-            logger.info(f"Running: {shlex.join(runtime_base_cmd)}")
-            subprocess.run(runtime_base_cmd, cwd=repo_root, check=True)
-            logger.info("Stage 2 complete")
+        executor.run(runtime_base_cmd, cwd=repo_root, check=True)
+        logger.info("Stage 2 complete")
 
         # Stage 3: Build individual runtime images for each binary
         logger.info("Stage 3: Building individual runtime images")
@@ -236,19 +225,15 @@ class SocialnetBuilder(AppBuilder):
 
             runtime_cmd.append(".")
 
-            if dry_run:
-                commands.append(runtime_cmd)
-                logger.info(f"[DRY RUN] Would run: {shlex.join(runtime_cmd)}")
-            else:
-                logger.info(f"Building {binary_tag}...")
-                subprocess.run(runtime_cmd, cwd=repo_root, check=True)
-                logger.info(f"Built {binary_tag}")
+            logger.info(f"Building {binary_tag}...")
+            executor.run(runtime_cmd, cwd=repo_root, check=True)
+            logger.info(f"Built {binary_tag}")
 
         build_duration = time.time() - build_start_time
         logger.info(f"All docker images built in {build_duration:.2f} seconds")
 
-        if dry_run:
-            return commands
+        if dry_run and hasattr(executor, "history"):
+            return [cmd.args for cmd in executor.history]
         return None
 
 
