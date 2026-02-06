@@ -8,7 +8,7 @@ test_mssim_experiment:
         CARGO_BUILD_JOBS: "16"
 
     before_script:
-        - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+        - echo "$DOCKERHUB_TOKEN" | docker login docker.io -u "$DOCKERHUB_USERNAME" --password-stdin
         - ulimit -n 4096 || true
         - mkdir -p $HOME/.local/bin
         - export RUSTUP_HOME="$CI_PROJECT_DIR/.rustup"
