@@ -10,22 +10,6 @@ pub struct CallTarget {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChildService {
-    pub id: String,
-    #[serde(default = "one_u8")]
-    pub replicas: u8,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RequestHop {
-    pub service_id: String,
-    #[serde(default)]
-    pub duration_us: Option<u64>,
-    #[serde(default)]
-    pub busy_spin_dur_us: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceMethod {
     pub name: String,
     pub latency_distribution: LatencyDistribution,
@@ -47,22 +31,18 @@ pub struct ServiceDefinition {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallGraphConfig {
-    pub entry_point: String,
+    #[serde(default)]
+    pub entry_points: HashMap<String, Vec<HashMap<String, f64>>>,
+    #[serde(skip)]
+    pub parsed_entry_points: HashMap<String, Vec<Vec<(CallTarget, f64)>>>,
     pub services: Vec<ServiceDefinition>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyntheticConfig {
-    #[serde(default)]
-    pub child_services: Vec<ChildService>,
-    #[serde(default)]
-    pub request_a_hops: Vec<RequestHop>,
-    #[serde(default)]
-    pub request_b_hops: Vec<RequestHop>,
     #[serde(default = "onef64")]
     pub child_cpus_per_replica: f64,
-    #[serde(default)]
-    pub call_graph: Option<CallGraphConfig>,
+    pub call_graph: CallGraphConfig,
 }
 
 fn one_u8() -> u8 {
@@ -99,12 +79,30 @@ pub fn validate_call_graph(config: &CallGraphConfig) -> Result<(), String> {
         }
     }
 
-    // Validate entry_point
-    if !valid_targets.contains_key(&config.entry_point) {
-        return Err(format!(
-            "Entry point '{}' does not exist in call graph",
-            config.entry_point
-        ));
+    // Validate entry_points
+    if config.entry_points.is_empty() {
+        return Err(
+            "Call graph must define at least one entry point in 'entry_points'".to_string(),
+        );
+    }
+
+    for (key, sequence) in &config.entry_points {
+        if key != "a" && key != "b" {
+            return Err(format!(
+                "Invalid entry point key '{}'. Only 'a' and 'b' are allowed.",
+                key
+            ));
+        }
+        for step in sequence {
+            for (target_str, _prob) in step {
+                if !valid_targets.contains_key(target_str) {
+                    return Err(format!(
+                        "Entry point '{}' references non-existent target '{}'",
+                        key, target_str
+                    ));
+                }
+            }
+        }
     }
 
     // Validate all call sequences
@@ -130,6 +128,22 @@ pub fn validate_call_graph(config: &CallGraphConfig) -> Result<(), String> {
 pub fn parse_call_sequences(config: &mut CallGraphConfig) -> Result<(), String> {
     // First validate the graph structure
     validate_call_graph(config)?;
+
+    // Parse entry points
+    let mut parsed_entry_points = HashMap::new();
+    for (key, sequence) in &config.entry_points {
+        let mut parsed_sequence = Vec::new();
+        for step in sequence {
+            let mut parsed_step = Vec::new();
+            for (target_str, prob) in step {
+                let target = parse_service_method(target_str)?;
+                parsed_step.push((target, *prob));
+            }
+            parsed_sequence.push(parsed_step);
+        }
+        parsed_entry_points.insert(key.clone(), parsed_sequence);
+    }
+    config.parsed_entry_points = parsed_entry_points;
 
     // Parse all call sequences
     for service in &mut config.services {
@@ -159,6 +173,7 @@ mod tests {
     use crate::distribution::LatencyDistribution;
     use rand_distr::Exp;
     use serde_json::json;
+    use std::collections::HashMap;
 
     fn exponential(lambda: f64) -> LatencyDistribution {
         LatencyDistribution::Exponential {
@@ -169,38 +184,12 @@ mod tests {
     }
 
     #[test]
-    fn parses_request_hops_config() {
-        let config = json!({
-            "child_services": [
-                { "id": "S1" },
-                { "id": "C6", "replicas": 2 }
-            ],
-            "request_a_hops": [
-                {
-                    "service_id": "S1",
-                    "duration_us": 12000,
-                    "busy_spin_dur_us": 3000
-                },
-                {
-                    "service_id": "C6",
-                    "busy_spin_dur_us": 1000
-                }
-            ]
-        });
-
-        let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
-        assert_eq!(parsed.child_services.len(), 2);
-        assert_eq!(parsed.child_services[1].replicas, 2);
-        assert_eq!(parsed.request_a_hops.len(), 2);
-        assert_eq!(parsed.request_a_hops[0].duration_us, Some(12000));
-        assert_eq!(parsed.request_a_hops[0].busy_spin_dur_us, Some(3000));
-    }
-
-    #[test]
     fn parses_exponential_with_mean() {
         let config = json!({
             "call_graph": {
-                "entry_point": "MS_1::method1",
+                "entry_points": {
+                    "a": [{"MS_1::method1": 1.0}]
+                },
                 "services": [
                     {
                         "id": "MS_1",
@@ -218,7 +207,7 @@ mod tests {
         });
 
         let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
-        let call_graph = parsed.call_graph.as_ref().unwrap();
+        let call_graph = &parsed.call_graph;
         let method = &call_graph.services[0].methods[0];
         match &method.latency_distribution {
             LatencyDistribution::Exponential { lambda, mean, .. } => {
@@ -234,7 +223,9 @@ mod tests {
     fn parses_exponential_with_both_mean_and_lambda_prefers_mean() {
         let config = json!({
             "call_graph": {
-                "entry_point": "MS_1::method1",
+                "entry_points": {
+                    "a": [{"MS_1::method1": 1.0}]
+                },
                 "services": [
                     {
                         "id": "MS_1",
@@ -252,7 +243,7 @@ mod tests {
         });
 
         let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
-        let call_graph = parsed.call_graph.as_ref().unwrap();
+        let call_graph = &parsed.call_graph;
         let method = &call_graph.services[0].methods[0];
         match &method.latency_distribution {
             LatencyDistribution::Exponential { lambda, mean, .. } => {
@@ -268,7 +259,9 @@ mod tests {
     fn parses_call_graph_config() {
         let config = json!({
             "call_graph": {
-                "entry_point": "MS_56394::GqI6UW1mU4",
+                "entry_points": {
+                    "a": [{"MS_56394::GqI6UW1mU4": 1.0}]
+                },
                 "services": [
                     {
                         "id": "MS_56394",
@@ -310,9 +303,10 @@ mod tests {
         });
 
         let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
-        assert!(parsed.call_graph.is_some());
-        let call_graph = parsed.call_graph.as_ref().unwrap();
-        assert_eq!(call_graph.entry_point, "MS_56394::GqI6UW1mU4");
+
+        let call_graph = &parsed.call_graph;
+        assert_eq!(call_graph.entry_points.len(), 1);
+        assert!(call_graph.entry_points.contains_key("a"));
         assert_eq!(call_graph.services.len(), 2);
         assert_eq!(call_graph.services[0].id, "MS_56394");
         assert_eq!(call_graph.services[0].methods.len(), 2);
@@ -333,8 +327,18 @@ mod tests {
 
     #[test]
     fn test_validate_call_graph() {
+        let mut entry_points = HashMap::new();
+        entry_points.insert(
+            "a".to_string(),
+            vec![[("MS_56394::GqI6UW1mU4".to_string(), 1.0)]
+                .iter()
+                .cloned()
+                .collect()],
+        );
+
         let mut config = CallGraphConfig {
-            entry_point: "MS_56394::GqI6UW1mU4".to_string(),
+            entry_points,
+            parsed_entry_points: HashMap::new(),
             services: vec![
                 ServiceDefinition {
                     id: "MS_56394".to_string(),
@@ -367,12 +371,17 @@ mod tests {
         // Should validate successfully
         assert!(validate_call_graph(&config).is_ok());
 
-        // Test invalid entry point
-        config.entry_point = "INVALID::method".to_string();
+        // Test invalid entry point key
+        config.entry_points.insert("INVALID".to_string(), vec![]);
         assert!(validate_call_graph(&config).is_err());
+        config.entry_points.remove("INVALID");
 
-        // Test invalid target reference
-        config.entry_point = "MS_56394::GqI6UW1mU4".to_string();
+        // Test invalid target reference in entry point
+        config.entry_points.get_mut("a").unwrap()[0].insert("INVALID::method".to_string(), 1.0);
+        assert!(validate_call_graph(&config).is_err());
+        config.entry_points.get_mut("a").unwrap()[0].remove("INVALID::method");
+
+        // Test invalid target reference in service call sequence
         config.services[0].methods[0].call_sequence_raw[0]
             .insert("INVALID::method".to_string(), 1.0);
         assert!(validate_call_graph(&config).is_err());
@@ -380,8 +389,18 @@ mod tests {
 
     #[test]
     fn test_parse_call_sequences() {
+        let mut entry_points = HashMap::new();
+        entry_points.insert(
+            "a".to_string(),
+            vec![[("MS_56394::GqI6UW1mU4".to_string(), 1.0)]
+                .iter()
+                .cloned()
+                .collect()],
+        );
+
         let mut config = CallGraphConfig {
-            entry_point: "MS_56394::GqI6UW1mU4".to_string(),
+            entry_points,
+            parsed_entry_points: HashMap::new(),
             services: vec![
                 ServiceDefinition {
                     id: "MS_56394".to_string(),

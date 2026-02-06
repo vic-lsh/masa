@@ -340,18 +340,56 @@ class SyntheticApp(AppPlugin):
 
         return container_names
 
+    def _validate_config(self, repo_root: Path, config_path: Path) -> None:
+        """
+        Validate the experiment configuration using the rust validation tool.
+        """
+        logger.info(f"Validating config: {config_path}")
+
+        cmd = [
+            "cargo",
+            "run",
+            "-q",
+            "--release",
+            "-p",
+            "synthetic",
+            "--bin",
+            "validate_config",
+            "--",
+            "--config",
+            str(config_path),
+        ]
+
+        try:
+            subprocess.run(
+                cmd,
+                cwd=repo_root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            logger.info("Config validation passed")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Config validation failed:\n{e.stderr}")
+            raise RuntimeError(f"Config validation failed for {config_path}")
+
     def prepare_workload(
         self,
+        *,
         config,
         policy: str,
         iteration: int,
         output_dir: Path,
         repo_root: Path,
         use_k8s: bool = False,
+        **kwargs,
     ) -> dict:
         """
         Prepare workload configuration and environment variables.
         """
+
+        docker_config = self.get_docker_config()
+
         # Generate project name
         project_name = _safe_project_name(
             experiment_name=config.experiment_name,
@@ -370,6 +408,7 @@ class SyntheticApp(AppPlugin):
         image_tag = self.get_image_tag(policy)
         env_vars[f"{self.get_app_name().upper()}_IMAGE_TAG"] = image_tag
         env_vars["DOCKER_COMPOSE_PROJECT_NAME"] = project_name
+        logger.debug(f"Set {self.get_app_name().upper()}_IMAGE_TAG={image_tag}")
 
         # Prepare config files
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -378,13 +417,15 @@ class SyntheticApp(AppPlugin):
 
         # Check for app config (hotel.json / config.docker.json)
         app_config_path = None
-        docker_config = self.get_docker_config()
         if docker_config.app_config_filename:
             candidate = config.in_dir / docker_config.app_config_filename
             if candidate.exists():
                 app_config_path = candidate
                 # Pass app config path to docker compose as env var for volume mounting
                 env_vars["APP_CONFIG_PATH"] = str(app_config_path.resolve())
+
+                # Validate config
+                self._validate_config(repo_root, app_config_path)
 
         if use_k8s:
             # K8s Preparation
@@ -605,6 +646,7 @@ class SyntheticBuilder(AppBuilder):
             # Note: We don't use --load for intermediate stages (builder, runtime-base)
             # to avoid slow layer export. BuildKit handles COPY --from and FROM internally.
             # Only final runtime images use --load since they're used by docker-compose.
+            # logger.info("Stage 1: Building all binaries for synthetic app")
             logger.info("Stage 1: Building all binaries for synthetic app")
             builder_build_args: list[str] = []
             if features:
