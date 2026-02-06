@@ -41,6 +41,7 @@ class Experiment:
         dry_run: bool = False,
         smoke_test: bool = False,
         use_k8s: bool = False,
+        use_new_generator: bool = False,
     ):
         """
         Initialize experiment runner.
@@ -54,6 +55,7 @@ class Experiment:
             rm_data: Whether to remove existing data from output directory before running
             smoke_test: Whether to verify results after execution (e.g. check goodput)
             use_k8s: Whether to use Kubernetes instead of Docker Compose
+            use_new_generator: Whether to use new topology-based generators (Phase 3)
         """
         self.app = app
         self.config = config
@@ -64,6 +66,7 @@ class Experiment:
         self.dry_run = dry_run
         self.smoke_test = smoke_test
         self.use_k8s = use_k8s
+        self.use_new_generator = use_new_generator
 
         self.executor: CommandExecutor
         if self.dry_run:

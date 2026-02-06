@@ -96,6 +96,7 @@ def cmd_run_experiment(args: argparse.Namespace) -> None:
         dry_run=args.dry_run,
         smoke_test=args.smoke_test,
         use_k8s=args.k8s,
+        use_new_generator=getattr(args, "use_new_generator", False),
     )
 
     try:
@@ -136,6 +137,7 @@ def cmd_queue_experiments(args: argparse.Namespace) -> None:
             smoke_test=args.smoke_test,
             k8s=args.k8s,
             kind=args.kind,
+            use_new_generator=getattr(args, "use_new_generator", False),
         )
 
         try:
@@ -497,6 +499,11 @@ Examples:
         "--kind",
         action="store_true",
         help="Run on Kind (implies --k8s) and auto-load images",
+    )
+    run_parser.add_argument(
+        "--use-new-generator",
+        action="store_true",
+        help="Use new topology-based deployment generators (Phase 3 feature, opt-in)",
     )
     run_parser.set_defaults(func=cmd_run_experiment)
 
