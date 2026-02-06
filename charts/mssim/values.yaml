@@ -37,3 +37,12 @@ services: []
 # - name: "frontend-s1"
 #   replicas: 1
 #   env: {}
+
+# Inline ConfigMaps generation
+configMaps:
+  enabled: false
+  deploymentJson: ""
+  callgraphs: []
+  # - name: "graph1"
+  #   filename: "S_1..."
+  #   content: "{...}"

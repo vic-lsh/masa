@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .deployment_manager import DeploymentManager, TaskSpec
 from .executor import CommandExecutor
+from .exceptions import DeploymentError
 
 # Attempt to import strip_ansi_codes from docker_manager if available
 try:
@@ -245,11 +246,13 @@ class K8sManager(DeploymentManager):
                         found_pattern = True
 
                 if not found_pattern:
-                    raise RuntimeError(
+                    raise DeploymentError(
                         f"Task {task_spec.name} finished with phase {phase} but pattern '{task_spec.wait_for_log_pattern}' not found"
                     )
             elif phase != "Succeeded":
-                raise RuntimeError(f"Task {task_spec.name} failed with phase {phase}")
+                raise DeploymentError(
+                    f"Task {task_spec.name} failed with phase {phase}"
+                )
 
             # Copy artifacts if succeeded or pattern found
             should_copy = (phase == "Succeeded") or (
@@ -410,7 +413,7 @@ class K8sManager(DeploymentManager):
             except Exception as e:
                 logger.error(f"Failed to get pod logs: {e}")
 
-            raise
+            raise DeploymentError(f"Helm install failed for {project_name}") from None
 
     def stop(
         self,
@@ -616,7 +619,7 @@ class K8sManager(DeploymentManager):
         time.sleep(1)
         if process.poll() is not None:
             out, err = process.communicate()
-            raise RuntimeError(f"Port forward failed immediately: {err}")
+            raise DeploymentError(f"Port forward failed immediately: {err}")
 
         return process
 
