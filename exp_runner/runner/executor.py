@@ -10,9 +10,9 @@ import logging
 import shlex
 import subprocess
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Any, Dict, List, Optional, Sequence, Union
+from typing import IO, Dict, List, Optional, Sequence, Union
 
 logger = logging.getLogger(__name__)
 
