@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..config import ExperimentConfig
     from ..deployment_manager import DeploymentManager as DockerManager
+    from ..k8s_manager import K8sManager
 import time
 import yaml
 from pathlib import Path
@@ -992,11 +993,11 @@ class MssimApp(AppPlugin):
             # Modify deployment.json and frontend.json to set replicas=0
             # This forces the client (LoadBalancedChannel) to use the hostname as-is (K8s Service)
             # without appending replica indices (e.g. -1, -2), since K8s handles load balancing.
-            
+
             # Update deployment.json
             for svc_name in deploy_data.get("services", {}):
                 deploy_data["services"][svc_name]["replicas"] = 1
-            
+
             with open(deployment_json_path, "w") as f:
                 json.dump(deploy_data, f, indent=2)
 
@@ -1005,10 +1006,10 @@ class MssimApp(AppPlugin):
             if frontend_json_path.exists():
                 with open(frontend_json_path) as f:
                     frontend_data = json.load(f)
-                
+
                 for target in frontend_data:
                     target["replicas"] = 1
-                
+
                 with open(frontend_json_path, "w") as f:
                     json.dump(frontend_data, f, indent=2)
 
@@ -1069,19 +1070,21 @@ class MssimApp(AppPlugin):
                 loadgen_env["MAX_IN_FLIGHT"] = env["MAX_IN_FLIGHT"]
 
             frontend_json_path = run_dir / "frontend.json"
-            
+
             task_spec = TaskSpec(
                 name=f"{project_name}-loadgen",
                 image=MSSIM_LOADGEN_IMAGE,
                 env_vars=loadgen_env,
-                volumes={
-                    str(frontend_json_path): "/app/frontend.json"
-                },
+                volumes={str(frontend_json_path): "/app/frontend.json"},
                 artifacts=[("/app/loadgen_output", str(run_dir))],
-                command=["/bin/sh", "-c", "mssim-loadgen && echo 'MSSIM_LOADGEN_DONE' && sleep 3600"],
+                command=[
+                    "/bin/sh",
+                    "-c",
+                    "mssim-loadgen && echo 'MSSIM_LOADGEN_DONE' && sleep 3600",
+                ],
                 wait_for_log_pattern="MSSIM_LOADGEN_DONE",
             )
-            
+
             # Run task
             log_file = run_dir / "loadgen.log"
             deployment.run_task(task_spec, log_file=log_file)
