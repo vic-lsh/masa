@@ -181,21 +181,24 @@ cfg_rt! {
         let parent_task_hdr = crate::runtime::task::current_task_header();
         let poll_hook = parent_task_hdr.and_then(|h| h.maybe_clone_poll_hook());
 
-        let future = async move {
+        if let Some(hook) = poll_hook {
             use crate::runtime::task::poll_hook::WithPollHook;
-            match poll_hook {
-                Some(hook) => future.with_poll_hook(hook).await,
-                None => future.await
+            let future = future.with_poll_hook(hook);
+            // preventing stack overflows on debug mode, by quickly sending the
+            // task to the heap.
+            if cfg!(debug_assertions) && std::mem::size_of::<F>() > 2048 {
+                spawn_inner(Box::pin(future), None, priority)
+            } else {
+                spawn_inner(future, None, priority)
             }
-        };
-
-
-        // preventing stack overflows on debug mode, by quickly sending the
-        // task to the heap.
-        if cfg!(debug_assertions) && std::mem::size_of::<F>() > 2048 {
-            spawn_inner(Box::pin(future), None, priority)
         } else {
-            spawn_inner(future, None, priority)
+            // preventing stack overflows on debug mode, by quickly sending the
+            // task to the heap.
+            if cfg!(debug_assertions) && std::mem::size_of::<F>() > 2048 {
+                spawn_inner(Box::pin(future), None, priority)
+            } else {
+                spawn_inner(future, None, priority)
+            }
         }
     }
 
