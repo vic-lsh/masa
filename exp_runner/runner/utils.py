@@ -1,6 +1,6 @@
 import time
 import logging
-from typing import Callable, TypeVar, Optional, Type
+from typing import Callable, TypeVar, Type
 
 T = TypeVar("T")
 logger = logging.getLogger(__name__)
