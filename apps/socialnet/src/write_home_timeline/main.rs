@@ -1,13 +1,13 @@
 //! Async Rust port of the C++ Write-Home-Timeline Service.
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use std::env;
-use tokio::{task::JoinHandle, time::Duration};
-use tracing::{Level, error, info, warn};
+use tokio::task::JoinHandle;
+use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
-use deadpool_redis::Pool as DeadpoolRedisPool;
 use deadpool_redis::redis;
+use deadpool_redis::Pool as DeadpoolRedisPool;
 
 // NEW IMPORT
 use tonic::transport::masa_channel::LoadBalancedChannel;
@@ -18,8 +18,8 @@ pub mod social_graph {
     tonic::include_proto!("social_graph");
 }
 
-use crate::social_graph::GetFollowersRequest;
 use crate::social_graph::social_graph_service_client::SocialGraphServiceClient;
+use crate::social_graph::GetFollowersRequest;
 
 pub type RedisPool = DeadpoolRedisPool;
 // CHANGED: We don't need bb8 anymore. The Client itself is cheap to clone.
@@ -51,16 +51,16 @@ impl Args {
 mod worker {
     use super::redis;
     use super::{GetFollowersRequest, RedisPool, SocialGraphClient};
-    use anyhow::{Context, Result, anyhow};
+    use anyhow::{anyhow, Context, Result};
     use futures_lite::stream::StreamExt;
     use lapin::{
-        Connection, ConnectionProperties,
         options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions, QueueDeclareOptions},
         types::FieldTable,
+        Connection, ConnectionProperties,
     };
     use serde::Deserialize;
     use std::{collections::HashSet, env};
-    use tokio::time::sleep;
+    use tokio::time::{sleep, Duration};
     use tracing::{debug, error, info, warn};
 
     const QUEUE_NAME: &str = "write-home-timeline";
