@@ -367,6 +367,7 @@ class MssimApp(AppPlugin):
         """
         Prepare K8s-specific configuration (values.yaml with inline ConfigMaps).
         """
+
         def _sanitize_callgraph_name(raw: str, existing: set[str]) -> str:
             base = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-")
             if not base:
@@ -458,10 +459,10 @@ class MssimApp(AppPlugin):
 
             files: dict[str, str] = {}
             for file_path in sorted(cg_dir.iterdir()):
-                if (
-                    file_path.is_file()
-                    and file_path.suffix.lower() in {".json", ".csv"}
-                ):
+                if file_path.is_file() and file_path.suffix.lower() in {
+                    ".json",
+                    ".csv",
+                }:
                     files[file_path.name] = file_path.read_text(encoding="utf-8")
 
             if not files:
