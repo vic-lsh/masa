@@ -95,6 +95,7 @@ class HelmValuesGenerator(DeploymentGenerator):
         # Build environment variables
         env_vars = {
             "HELM_VALUES_FILE": str(values_path.resolve()),
+            "DOCKER_COMPOSE_PROJECT_NAME": project_name,
         }
 
         return GeneratedDeployment(

@@ -888,12 +888,16 @@ class HotelApp(AppPlugin):
         self, output_dir: Path, use_k8s: bool, repo_root: Path
     ) -> Tuple[Path, str]:
         # Check if we generated new files
+        logger.info(
+            f"get_deployment_location: use_k8s={use_k8s}, new_gen={getattr(self, '_last_use_new_generator', False)}"
+        )
         if getattr(self, "_last_use_new_generator", False):
             if use_k8s:
-                # Helm: return directory containing values.yaml and chart name
-                # But DeploymentManager.start expects (app_dir, deployment_config)
-                # For Helm: app_dir is chart dir, deployment_config is values file path
-                return repo_root / "charts/hotel", str(output_dir / "values.yaml")
+                # Helm: app_dir is the chart directory, deploy_file is "."
+                # The values file is passed via env_vars["HELM_VALUES_FILE"]
+                ret = (repo_root / "charts/hotel", ".")
+                logger.info(f"get_deployment_location returning: {ret}")
+                return ret
             else:
                 # Compose: return output_dir and docker-compose.yaml
                 return output_dir, "docker-compose.yaml"

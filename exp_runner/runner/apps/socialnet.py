@@ -573,7 +573,7 @@ class SocialnetApp(AppPlugin):
         # Check if we generated new files
         if getattr(self, "_last_use_new_generator", False):
             if use_k8s:
-                return repo_root / "charts/socialnet", str(output_dir / "values.yaml")
+                return repo_root / "charts/socialnet", "."
             else:
                 return output_dir, "docker-compose.yaml"
 

@@ -11,7 +11,7 @@ from exp_runner.runner.cli import create_parser
 
 
 class TestSocialnetBuilder:
-    @patch("exp_runner.runner.apps.socialnet.subprocess.run")
+    @patch("exp_runner.runner.executor.subprocess.run")
     def test_build_with_features(self, mock_subprocess):
         builder = SocialnetBuilder()
         mock_subprocess.return_value = Mock(returncode=0)
