@@ -409,7 +409,6 @@ class ComposeGenerator(DeploymentGenerator):
                 env_vars[f"{dep_var_name}_REPLICAS"] = str(dep_spec.default_replicas)
             elif dep_name in topology.infrastructure:
                 # Infrastructure dependency - add connection string
-                infra_spec = topology.infrastructure[dep_name]
                 if "mongo" in dep_name:
                     db_name = name.replace("-service", "")
                     env_vars[f"{dep_name.upper().replace('-', '_')}_URI"] = (

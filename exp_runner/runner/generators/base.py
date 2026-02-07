@@ -8,7 +8,6 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 

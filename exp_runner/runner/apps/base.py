@@ -3,18 +3,13 @@ Base classes and interfaces for application plugins.
 """
 
 import logging
-import os
-import shlex
-import subprocess
-import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Tuple
 
-from ..cpu_monitor import CPUMonitor
 from ..deployment_manager import TaskSpec
-from ..executor import CommandExecutor, SubprocessExecutor
+from ..executor import CommandExecutor
 from .utils import verify_standard_workload
 
 logger = logging.getLogger(__name__)
@@ -190,7 +185,7 @@ class AppPlugin(ABC):
         """
         # Import here to avoid circular dependency
         if TYPE_CHECKING:
-            from ..topology import TopologySpec
+            pass
         return topology
 
     def customize_env_vars(
@@ -215,8 +210,7 @@ class AppPlugin(ABC):
         """
         # Import here to avoid circular dependency
         if TYPE_CHECKING:
-            from ..topology import TopologySpec
-            from ..experiment_config_v2 import ExperimentConfigV2
+            pass
         return base_env
 
     def validate_experiment(
@@ -239,8 +233,7 @@ class AppPlugin(ABC):
         """
         # Import here to avoid circular dependency
         if TYPE_CHECKING:
-            from ..topology import TopologySpec
-            from ..experiment_config_v2 import ExperimentConfigV2
+            pass
         pass
 
     # ===== LEGACY INTERFACE (backward compatibility) =====

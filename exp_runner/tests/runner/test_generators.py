@@ -277,7 +277,7 @@ class TestComposeGenerator:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
 
-            result = generator.generate(
+            generator.generate(
                 topology=simple_topology,
                 experiment=experiment_with_overrides,
                 output_dir=output_dir,
@@ -303,7 +303,7 @@ class TestComposeGenerator:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
 
-            result = generator.generate(
+            generator.generate(
                 topology=hotel_topology,
                 experiment=simple_experiment,
                 output_dir=output_dir,
@@ -439,7 +439,7 @@ class TestHelmValuesGenerator:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
 
-            result = generator.generate(
+            generator.generate(
                 topology=simple_topology,
                 experiment=experiment_with_overrides,
                 output_dir=output_dir,
@@ -465,7 +465,7 @@ class TestHelmValuesGenerator:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
 
-            result = generator.generate(
+            generator.generate(
                 topology=simple_topology,
                 experiment=simple_experiment,
                 output_dir=output_dir,
@@ -495,7 +495,7 @@ class TestHelmValuesGenerator:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
 
-            result = generator.generate(
+            generator.generate(
                 topology=simple_topology,
                 experiment=simple_experiment,
                 output_dir=output_dir,
@@ -545,7 +545,7 @@ class TestHelmValuesGenerator:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
 
-            result = generator.generate(
+            generator.generate(
                 topology=simple_topology,
                 experiment=simple_experiment,
                 output_dir=output_dir,
@@ -592,7 +592,7 @@ class TestHelmValuesGenerator:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
 
-            result = generator.generate(
+            generator.generate(
                 topology=topology,
                 experiment=simple_experiment,
                 output_dir=output_dir,
@@ -627,7 +627,7 @@ class TestGeneratorIntegration:
             output_dir = Path(tmpdir)
 
             # Generate compose
-            compose_result = compose_gen.generate(
+            compose_gen.generate(
                 topology=simple_topology,
                 experiment=experiment_with_overrides,
                 output_dir=output_dir / "compose",
@@ -637,7 +637,7 @@ class TestGeneratorIntegration:
             )
 
             # Generate helm
-            helm_result = helm_gen.generate(
+            helm_gen.generate(
                 topology=simple_topology,
                 experiment=experiment_with_overrides,
                 output_dir=output_dir / "helm",
@@ -670,7 +670,7 @@ class TestGeneratorIntegration:
             output_dir = Path(tmpdir)
 
             # Generate both
-            compose_result = compose_gen.generate(
+            compose_gen.generate(
                 topology=hotel_topology,
                 experiment=simple_experiment,
                 output_dir=output_dir / "compose",
@@ -679,7 +679,7 @@ class TestGeneratorIntegration:
                 image_tag="latest",
             )
 
-            helm_result = helm_gen.generate(
+            helm_gen.generate(
                 topology=hotel_topology,
                 experiment=simple_experiment,
                 output_dir=output_dir / "helm",

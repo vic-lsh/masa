@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Optional, Tuple
 
 if TYPE_CHECKING:
     from ..config import ExperimentConfig
-    from ..deployment_manager import DeploymentManager as DockerManager
 
 from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor

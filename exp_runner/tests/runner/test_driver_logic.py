@@ -2,7 +2,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 from exp_runner.runner.apps.base import AppBuilder, AppPlugin, DockerConfig
 from exp_runner.runner.config import ExperimentConfig

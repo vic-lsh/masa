@@ -7,8 +7,6 @@ import json
 import logging
 import os
 import re
-import shlex
-import subprocess
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -20,7 +18,6 @@ from .utils import get_docker_progress_flag, normalize_features_to_tag
 
 if TYPE_CHECKING:
     from exp_runner.runner.config import ExperimentConfig
-    from exp_runner.runner.docker_manager import DockerManager
 
 logger = logging.getLogger(__name__)
 

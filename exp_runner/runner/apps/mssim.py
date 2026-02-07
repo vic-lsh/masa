@@ -15,22 +15,15 @@ import json
 import logging
 import os
 import re
-import shutil
-import subprocess
-import sys
-import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from ..config import ExperimentConfig
-    from ..deployment_manager import DeploymentManager as DockerManager
-    from ..k8s_manager import K8sManager
 
 import time
 import yaml
 
-from ..cpu_monitor import CPUMonitor
 from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
 from .base import AppBuilder, AppPlugin, DockerConfig
@@ -474,55 +467,7 @@ class MssimApp(AppPlugin):
                 json.dump(frontend_data, f, indent=2)
 
         # Prepare Inline ConfigMaps
-        callgraphs_config = []
-        callgraph_dirs = [
-            Path(d).expanduser().resolve() for d in mssim_cfg.get("callgraph_dirs", [])
-        ]
-
-        for cg_dir in callgraph_dirs:
-            safe_name = cg_dir.name.lower().replace("_", "-")
-
-            # Read all relevant files in callgraph dir and bundle them?
-            # Or just bundle what simulator needs?
-            # Simulator mounts the dir.
-            # charts/mssim expects: { name: "...", filename: "...", content: "..." }
-            # Wait, simulator mounts directory. K8s ConfigMap can represent a directory if populated with multiple keys,
-            # but mounting it as a volume works best if keys are filenames.
-
-            # For simplicity, we assume we need to bundle all JSON/CSV files in the directory.
-            # But the chart template I wrote iterates over `configMaps.callgraphs`.
-            # Each entry there creates ONE ConfigMap.
-            # `data: {{ $graph.filename }}: |- {{ $graph.content }}`
-            # This creates a ConfigMap with ONE file.
-            # If the simulator expects a directory with multiple files, we need multiple keys in 'data'.
-
-            # My chart template was:
-            # {{- range $graph := .Values.configMaps.callgraphs }}
-            # ...
-            # data:
-            #   {{ $graph.filename }}: ...
-
-            # If I want to mount a directory, I should probably just zip it? No.
-            # I can't easily change the template now without another write.
-            # The simulator mounts `/app/callgraphs/{graph_name}`.
-            # If I have multiple files, I need the ConfigMap to contain all of them.
-
-            # Let's check orchestrator.py:
-            # volumes.append(f"{callgraph_dir}:{container_path}:ro")
-
-            # If I mount a ConfigMap to a directory, all keys become files.
-            # So I need one ConfigMap per callgraph directory, containing all files.
-
-            # My template supports ONE file per ConfigMap entry in the list.
-            # I should update the template to support multiple files or loop.
-
-            # Actually, `orchestrator.py` logic implies it needs the directory content.
-            # The files are `call_sequence.json`, `interface_distribution.json`, `latency_percentiles.json`, `edges.csv`.
-
-            # I'll stick to a simpler approach for Phase 2:
-            # Update my template to iterate over a dictionary of files?
-
-            pass  # Placeholder thought
+        # (Simplified/Removed for now)
 
         # Re-evaluating K8s ConfigMap Inline strategy.
         # It's getting complicated to implement perfect directory mirroring inline.
@@ -563,22 +508,6 @@ class MssimApp(AppPlugin):
                 "callgraphs": [],
             },
         }
-
-        # For each callgraph dir, we need to create a ConfigMap.
-        # And reference it in `values["callgraphs"]`.
-
-        for cg_dir in callgraph_dirs:
-            safe_name = cg_dir.name.lower().replace("_", "-")
-            cm_name = f"{project_name}-callgraph-{safe_name}"
-
-            # Since my template is limited (one file per CM entry), I'll improve the template first?
-            # Or just hack it:
-            # I will iterate over files in cg_dir.
-            # But I need ONE ConfigMap mounted at ONE directory.
-            # If I create multiple CMs, I can't mount them all to the same dir easily without subpaths.
-
-            # OK, I need to fix the template to support multiple files per CM.
-            pass
 
         values_path = output_dir / "values.yaml"
         with open(values_path, "w") as f:
@@ -666,7 +595,6 @@ class MssimApp(AppPlugin):
             return False
 
         policies = config.policies
-        run_id = "run_0"
 
         # Check done marker
         done_file = config.out_dir / "done"
