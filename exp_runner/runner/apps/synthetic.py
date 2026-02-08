@@ -15,11 +15,12 @@ from typing import TYPE_CHECKING, Optional, Tuple
 import yaml
 
 from ..deployment_manager import TaskSpec
+from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
+from .base import AppBuilder, AppPlugin, DockerConfig
+from .utils import get_docker_progress_flag, normalize_features_to_tag
 
 if TYPE_CHECKING:
-    pass
-from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
-from .utils import get_docker_progress_flag, normalize_features_to_tag
+    from ..config import ExperimentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -56,30 +57,29 @@ class SyntheticApp(AppPlugin):
     def get_app_name(self) -> str:
         return "synthetic"
 
+    @property
+    def supports_k8s(self) -> bool:
+        return True
+
     def create_builder(self) -> "SyntheticBuilder":
         return SyntheticBuilder()
 
     def get_image_tag(self, features: Optional[str] = None) -> str:
         return normalize_features_to_tag(features)
 
-    def create_load_generator(self, features: Optional[str] = None) -> LoadGenerator:
-        """Deprecated: ExpDriver uses get_loadgen_spec instead."""
-        raise NotImplementedError("create_load_generator is deprecated. Use ExpDriver.")
-
     def load_app_config(self, config_path: Path) -> dict:
         """Load config.docker.json configuration file."""
         with open(config_path) as f:
             return json.load(f)
 
-    def _generate_gen_config(
+    def create_gen_config_dict(
         self,
         template_config_path: Path,
-        output_path: Path,
         project_name: str,
         service_name_override: Optional[str] = None,
-    ) -> None:
+    ) -> dict:
         """
-        Generate project-specific gen_config.json with correct frontend service name.
+        Generate project-specific gen_config.json content with correct frontend service name.
 
         Updates the "Addr" field to point to the Docker Compose service name
         (synthetic-frontend-service). Docker Compose DNS resolution uses service names,
@@ -111,39 +111,26 @@ class SyntheticApp(AppPlugin):
             service_name = service_name_override or "synthetic-frontend-service"
             config["Addr"] = f"{protocol}://{service_name}:{port}"
 
-        # Write to file
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, "w") as f:
-            json.dump(config, f, indent=2)
+        return config
 
-        logger.debug(
-            f"Generated gen_config.json at {output_path} with address {config.get('Addr', 'N/A')} for project {project_name}"
-        )
-
-    def _generate_call_graph_compose(
+    def create_call_graph_compose_dict(
         self,
-        app_dir: Path,
         app_config: dict,
         image_tag: str,
-        app_config_path: Optional[Path],
-        output_dir: Path,
-    ) -> Path:
+    ) -> dict:
         """
-        Generate a docker compose file for call graph configuration.
+        Generate a docker compose dictionary for call graph configuration.
 
-        Creates a compose file with:
+        Creates a compose file content with:
         - Frontend service
         - One service per call graph service, each with its own SERVICE_ID
 
         Args:
-            app_dir: Application directory
             app_config: Application configuration dict
             image_tag: Docker image tag
-            app_config_path: Path to app config file
-            output_dir: Output directory for generated compose file
 
         Returns:
-            Path to generated compose file
+            Dictionary representing docker-compose file content
         """
         call_graph = app_config.get("call_graph")
         if not call_graph:
@@ -198,20 +185,7 @@ class SyntheticApp(AppPlugin):
             "services": services,
             "networks": {"synthetic_network": {"driver": "bridge"}},
         }
-
-        # Write compose file to output directory
-        output_dir.mkdir(parents=True, exist_ok=True)
-        compose_path = output_dir / "docker-compose-callgraph.yaml"
-
-        with open(compose_path, "w") as f:
-            yaml.dump(compose_content, f, default_flow_style=False, sort_keys=False)
-
-        logger.info(f"Generated call graph docker compose file: {compose_path}")
-        logger.info(
-            f"Services in call graph: {[s['id'] for s in call_graph['services']]}"
-        )
-
-        return compose_path
+        return compose_content
 
     def generate_env_vars(
         self, gen_config: dict, app_config: Optional[dict], app_dir: Path
@@ -340,7 +314,9 @@ class SyntheticApp(AppPlugin):
 
         return container_names
 
-    def _validate_config(self, repo_root: Path, config_path: Path) -> None:
+    def _validate_config(
+        self, repo_root: Path, config_path: Path, executor: CommandExecutor
+    ) -> None:
         """
         Validate the experiment configuration using the rust validation tool.
         """
@@ -361,7 +337,7 @@ class SyntheticApp(AppPlugin):
         ]
 
         try:
-            subprocess.run(
+            executor.run(
                 cmd,
                 cwd=repo_root,
                 check=True,
@@ -373,21 +349,49 @@ class SyntheticApp(AppPlugin):
             logger.error(f"Config validation failed:\n{e.stderr}")
             raise RuntimeError(f"Config validation failed for {config_path}")
 
+    def generate_k8s_values(
+        self,
+        project_name: str,
+        image_tag: str,
+        app_config_path: Optional[Path],
+        env_vars: dict,
+    ) -> dict:
+        """
+        Generate Helm chart values for Kubernetes deployment.
+        """
+        values = {}
+        values["fullnameOverride"] = project_name
+
+        if app_config_path:
+            try:
+                with open(app_config_path) as f:
+                    values["appConfig"] = json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed to load app config: {e}")
+
+        if "LOG_LEVEL" in env_vars:
+            values["logLevel"] = env_vars["LOG_LEVEL"]
+
+        # Image tag
+        if "image" not in values:
+            values["image"] = {}
+        values["image"]["tag"] = image_tag
+        return values
+
     def prepare_workload(
         self,
-        *,
-        config,
+        config: "ExperimentConfig",
         policy: str,
         iteration: int,
         output_dir: Path,
         repo_root: Path,
         use_k8s: bool = False,
-        **kwargs,
+        executor: Optional[CommandExecutor] = None,
     ) -> dict:
         """
         Prepare workload configuration and environment variables.
         """
-
+        executor = executor or SubprocessExecutor()
         docker_config = self.get_docker_config()
 
         # Generate project name
@@ -425,32 +429,22 @@ class SyntheticApp(AppPlugin):
                 env_vars["APP_CONFIG_PATH"] = str(app_config_path.resolve())
 
                 # Validate config
-                self._validate_config(repo_root, app_config_path)
+                self._validate_config(repo_root, app_config_path, executor)
 
         if use_k8s:
             # K8s Preparation
             # Service name override for K8s (typically {project}-frontend)
             service_name = f"{project_name}-frontend"
 
-            # Generate Helm values
-            values = {}
-            values["fullnameOverride"] = project_name
+            # 1. Calculate values (Pure)
+            values = self.generate_k8s_values(
+                project_name=project_name,
+                image_tag=image_tag,
+                app_config_path=app_config_path,
+                env_vars=env_vars,
+            )
 
-            if app_config_path:
-                try:
-                    with open(app_config_path) as f:
-                        values["appConfig"] = json.load(f)
-                except Exception as e:
-                    logger.warning(f"Failed to load app config: {e}")
-
-            if "LOG_LEVEL" in env_vars:
-                values["logLevel"] = env_vars["LOG_LEVEL"]
-
-            # Image tag
-            if "image" not in values:
-                values["image"] = {}
-            values["image"]["tag"] = image_tag
-
+            # 2. Write values (Effects)
             values_file = output_dir / "values.yaml"
             with open(values_file, "w", encoding="utf-8") as f:
                 yaml.dump(values, f)
@@ -462,21 +456,39 @@ class SyntheticApp(AppPlugin):
 
             # Handle call_graph mode which generates a dynamic compose file
             if config.app_config and config.app_config.get("call_graph"):
-                generated_compose = self._generate_call_graph_compose(
-                    app_dir=config.app_dir,
+                # 1. Calculate compose content (Pure)
+                compose_content = self.create_call_graph_compose_dict(
                     app_config=config.app_config,
                     image_tag=image_tag,
-                    app_config_path=app_config_path,
-                    output_dir=output_dir,
                 )
-                self._generated_compose_path = generated_compose
+
+                # 2. Write compose file (Effects)
+                compose_path = output_dir / "docker-compose-callgraph.yaml"
+                with open(compose_path, "w") as f:
+                    yaml.dump(
+                        compose_content, f, default_flow_style=False, sort_keys=False
+                    )
+
+                self._generated_compose_path = compose_path
+                logger.info(f"Generated call graph docker compose file: {compose_path}")
+                logger.info(
+                    f"Services in call graph: {[s['id'] for s in config.app_config['call_graph']['services']]}"
+                )
 
         # Generate gen_config.json
-        self._generate_gen_config(
+        # 1. Calculate content (Pure)
+        gen_config_content = self.create_gen_config_dict(
             template_config_path=template_gen_config_path,
-            output_path=gen_config_path,
             project_name=project_name,
             service_name_override=service_name,
+        )
+
+        # 2. Write file (Effects)
+        with open(gen_config_path, "w") as f:
+            json.dump(gen_config_content, f, indent=2)
+
+        logger.debug(
+            f"Generated gen_config.json at {gen_config_path} with address {gen_config_content.get('Addr', 'N/A')} for project {project_name}"
         )
 
         return env_vars
@@ -555,36 +567,6 @@ class SyntheticApp(AppPlugin):
             ],  # Source in container, dest dir in host
         )
 
-    def run_workload(
-        self,
-        *,
-        repo_root: Path,
-        config,
-        deployment,
-        policy: str,
-        iteration: int,
-        output_dir: Path,
-        app_local_dir: Path,  # unused
-        no_cache: bool,
-        dry_run: bool = False,
-        **kwargs,
-    ) -> None:
-        """
-        Run a single (iteration, policy) workload using ExpDriver.
-        """
-        from ..experiment_driver import ExpDriver
-
-        driver = ExpDriver(self, deployment)
-        driver.run_workload(
-            config=config,
-            policy=policy,
-            iteration=iteration,
-            output_dir=output_dir,
-            repo_root=repo_root,
-            no_cache=no_cache,
-            dry_run=dry_run,
-        )
-
 
 class SyntheticBuilder(AppBuilder):
     """
@@ -612,7 +594,9 @@ class SyntheticBuilder(AppBuilder):
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
         build_logs_dir: Optional[Path] = None,
+        executor: Optional[CommandExecutor] = None,
     ) -> Optional[list[list[str]]]:
+        executor = executor or SubprocessExecutor()
         app = "synthetic"
 
         # Services to build (each gets its own image)
@@ -630,9 +614,6 @@ class SyntheticBuilder(AppBuilder):
         )
         if features:
             logger.info(f"Using features: {features}")
-
-        # Collect commands if dry_run
-        commands: list[list[str]] = []
 
         # Start timing the docker build
         build_start_time = time.time()
@@ -680,21 +661,18 @@ class SyntheticBuilder(AppBuilder):
             # The stage is still available for COPY --from=builder in subsequent stages.
             builder_cmd.append(".")
 
-            if dry_run:
-                commands.append(builder_cmd.copy())
-            else:
-                try:
-                    subprocess.run(
-                        builder_cmd,
-                        cwd=repo_root,
-                        check=True,
-                        capture_output=False,
-                    )
-                except subprocess.CalledProcessError:
-                    logger.error(
-                        f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}"
-                    )
-                    raise
+            try:
+                executor.run(
+                    builder_cmd,
+                    cwd=repo_root,
+                    check=True,
+                    capture_output=False,
+                )
+            except subprocess.CalledProcessError:
+                logger.error(
+                    f"Failed to build builder stage. Command: {shlex.join(builder_cmd)}"
+                )
+                raise
             logger.info("Stage 1 complete: All binaries built")
 
             # Stage 2: Build runtime-base (shared across all images)
@@ -733,21 +711,18 @@ class SyntheticBuilder(AppBuilder):
             # Tag runtime-base for potential inspection/debugging, but don't load it
             runtime_base_cmd.extend(["-t", f"{app}_runtime-base:{tag}", "."])
 
-            if dry_run:
-                commands.append(runtime_base_cmd.copy())
-            else:
-                try:
-                    subprocess.run(
-                        runtime_base_cmd,
-                        cwd=repo_root,
-                        check=True,
-                        capture_output=False,
-                    )
-                except subprocess.CalledProcessError:
-                    logger.error(
-                        f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}"
-                    )
-                    raise
+            try:
+                executor.run(
+                    runtime_base_cmd,
+                    cwd=repo_root,
+                    check=True,
+                    capture_output=False,
+                )
+            except subprocess.CalledProcessError:
+                logger.error(
+                    f"Failed to build runtime-base stage. Command: {shlex.join(runtime_base_cmd)}"
+                )
+                raise
             logger.info("Stage 2 complete: Runtime-base image built")
 
             # Stage 3: Build per-binary runtime images
@@ -792,29 +767,26 @@ class SyntheticBuilder(AppBuilder):
 
                 runtime_cmd.extend(["-t", image_name, "."])
 
-                if dry_run:
-                    commands.append(runtime_cmd.copy())
-                else:
-                    try:
-                        subprocess.run(
-                            runtime_cmd,
-                            cwd=repo_root,
-                            check=True,
-                            capture_output=False,
-                        )
-                    except subprocess.CalledProcessError:
-                        logger.error(
-                            f"Failed to build runtime image for {binary_name}. Command: {shlex.join(runtime_cmd)}"
-                        )
-                        raise
+                try:
+                    executor.run(
+                        runtime_cmd,
+                        cwd=repo_root,
+                        check=True,
+                        capture_output=False,
+                    )
+                except subprocess.CalledProcessError:
+                    logger.error(
+                        f"Failed to build runtime image for {binary_name}. Command: {shlex.join(runtime_cmd)}"
+                    )
+                    raise
 
                 logger.info(f"Successfully built docker image: {image_name}")
 
         finally:
             pass
 
-        if dry_run:
-            return commands
+        if dry_run and isinstance(executor, MockCommandExecutor):
+            return [cmd.args for cmd in executor.history]
 
         # Calculate and print build duration
         build_duration = time.time() - build_start_time

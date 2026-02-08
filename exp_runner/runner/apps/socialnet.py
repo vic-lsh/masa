@@ -14,12 +14,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from ..deployment_manager import TaskSpec
-from .base import AppBuilder, AppPlugin, DockerConfig, LoadGenerator
+from ..executor import CommandExecutor, SubprocessExecutor
+from .base import AppBuilder, AppPlugin, DockerConfig
 from .utils import get_docker_progress_flag, normalize_features_to_tag
 
 if TYPE_CHECKING:
     from exp_runner.runner.config import ExperimentConfig
-    from exp_runner.runner.docker_manager import DockerManager
 
 logger = logging.getLogger(__name__)
 
@@ -62,45 +62,6 @@ def _generate_gen_config(
         json.dump(config, f, indent=2)
 
 
-class SocialnetLoadGenerator(LoadGenerator):
-    """Load generator for the socialnet application."""
-
-    def __init__(
-        self, features: Optional[str] = None, project_name: Optional[str] = None
-    ):
-        """
-        Initialize load generator with optional features for image tagging.
-
-        Args:
-            features: Cargo features used to build the image
-            project_name: Docker compose project name for namespace isolation
-        """
-        self.features = features
-        self.project_name = project_name
-
-    def get_container_name(self) -> str:
-        if self.project_name:
-            return f"{self.project_name}_socialnet_client_bench"
-        return "socialnet_client_bench"
-
-    def get_network_name(self) -> str:
-        if self.project_name:
-            # Docker Compose creates network named {project_name}_{network_key}
-            # Our network key in docker-compose.yaml is "socialnet-network"
-            return f"{self.project_name}_socialnet-network"
-        return "socialnet-network"
-
-    def get_image_name(self) -> str:
-        tag = normalize_features_to_tag(self.features)
-        if tag and tag != "latest":
-            return f"socialnet_client_bench:{tag}"
-        else:
-            return "socialnet_client_bench:latest"
-
-    def get_binary_name(self) -> str:
-        return "socialnet_client_bench"
-
-
 class SocialnetBuilder(AppBuilder):
     """
     Build logic for the socialnet app docker images.
@@ -120,7 +81,9 @@ class SocialnetBuilder(AppBuilder):
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
         build_logs_dir: Optional[Path] = None,
+        executor: Optional[CommandExecutor] = None,
     ) -> Optional[list[list[str]]]:
+        executor = executor or SubprocessExecutor()
         app = "socialnet"
         # List of binaries to build (each gets its own image)
         binaries_list = [
@@ -194,7 +157,14 @@ class SocialnetBuilder(AppBuilder):
             logger.info(f"[DRY RUN] Would run: {shlex.join(builder_cmd)}")
         else:
             logger.info(f"Running: {shlex.join(builder_cmd)}")
-            subprocess.run(builder_cmd, cwd=repo_root, check=True)
+            try:
+                executor.run(builder_cmd, cwd=repo_root, check=True)
+            except subprocess.CalledProcessError:
+                logger.error(
+                    "Failed to build builder stage. Command: %s",
+                    shlex.join(builder_cmd),
+                )
+                raise
             logger.info("Stage 1 complete")
 
         # Stage 2: Build runtime-base image (shared dependencies)
@@ -233,7 +203,14 @@ class SocialnetBuilder(AppBuilder):
             logger.info(f"[DRY RUN] Would run: {shlex.join(runtime_base_cmd)}")
         else:
             logger.info(f"Running: {shlex.join(runtime_base_cmd)}")
-            subprocess.run(runtime_base_cmd, cwd=repo_root, check=True)
+            try:
+                executor.run(runtime_base_cmd, cwd=repo_root, check=True)
+            except subprocess.CalledProcessError:
+                logger.error(
+                    "Failed to build runtime-base stage. Command: %s",
+                    shlex.join(runtime_base_cmd),
+                )
+                raise
             logger.info("Stage 2 complete")
 
         # Stage 3: Build individual runtime images for each binary
@@ -279,7 +256,15 @@ class SocialnetBuilder(AppBuilder):
                 logger.info(f"[DRY RUN] Would run: {shlex.join(runtime_cmd)}")
             else:
                 logger.info(f"Building {binary_tag}...")
-                subprocess.run(runtime_cmd, cwd=repo_root, check=True)
+                try:
+                    executor.run(runtime_cmd, cwd=repo_root, check=True)
+                except subprocess.CalledProcessError:
+                    logger.error(
+                        "Failed to build runtime image %s. Command: %s",
+                        binary_tag,
+                        shlex.join(runtime_cmd),
+                    )
+                    raise
                 logger.info(f"Built {binary_tag}")
 
         build_duration = time.time() - build_start_time
@@ -348,19 +333,35 @@ class SocialnetApp(AppPlugin):
         """
         Get list of container names for socialnet application.
         """
-        # This method is primarily used if run_workload is NOT overridden,
-        # or if we need to predict names without docker client.
-        # Since we override run_workload and use docker.get_container_names,
-        # this might not be strictly needed, but good to keep consistent.
-        # However, with project names, we can't easily predict names here without project name argument.
-        # So we return empty or basic names.
-        return []
+        project_name = env_vars.get("DOCKER_COMPOSE_PROJECT_NAME")
+        if not project_name:
+            return []
 
-    def create_load_generator(
-        self, features: Optional[str] = None, project_name: Optional[str] = None
-    ) -> LoadGenerator:
-        """Deprecated: ExpDriver uses get_loadgen_spec."""
-        return SocialnetLoadGenerator(features=features, project_name=project_name)
+        # Single replica services
+        services = [
+            "compose-post-service",
+            "home-timeline-service",
+            "post-storage-service",
+            "social-graph-service",
+            "write-home-timeline-service",
+            "user-service",
+            "media-service",
+            "unique-id-service",
+            "text-service",
+            "user-mention-service",
+            "url-shorten-service",
+        ]
+
+        container_names = []
+        for service in services:
+            container_names.append(f"{project_name}-{service}-1")
+
+        # Scaled services
+        # user-timeline-service is hardcoded to scale: 4 in docker-compose.yaml
+        for i in range(1, 5):
+            container_names.append(f"{project_name}-user-timeline-service-{i}")
+
+        return container_names
 
     def create_builder(self) -> AppBuilder:
         """
@@ -388,6 +389,7 @@ class SocialnetApp(AppPlugin):
         output_dir: Path,
         repo_root: Path,
         use_k8s: bool = False,
+        executor: Optional[CommandExecutor] = None,
     ) -> dict:
         """
         Prepare workload configuration and environment variables.
@@ -477,34 +479,4 @@ class SocialnetApp(AppPlugin):
             volumes=volumes,
             cleanup=True,
             artifacts=[("/tmp/masa-load-gen/.", ".")],
-        )
-
-    def run_workload(
-        self,
-        *,
-        repo_root: Path,
-        config: "ExperimentConfig",
-        deployment: "DockerManager",
-        policy: str,
-        iteration: int,
-        output_dir: Path,
-        app_local_dir: Path,
-        no_cache: bool,
-        dry_run: bool = False,
-        **kwargs,
-    ) -> None:
-        """Run socialnet experiment with namespace isolation using ExpDriver."""
-
-        from ..experiment_driver import ExpDriver
-
-        # Allow deployment to be anything compatible
-        driver = ExpDriver(self, deployment)
-        driver.run_workload(
-            config=config,
-            policy=policy,
-            iteration=iteration,
-            output_dir=output_dir,
-            repo_root=repo_root,
-            no_cache=no_cache,
-            dry_run=dry_run,
         )
