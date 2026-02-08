@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .deployment_manager import DeploymentManager, TaskSpec
+from .executor import CommandExecutor
+from .exceptions import DeploymentError
 
 logger = logging.getLogger(__name__)
 
@@ -43,14 +45,15 @@ class DockerManager(DeploymentManager):
     Note: Load generator execution is now handled by app-specific LoadGenerator classes.
     """
 
-    def __init__(self, repo_root: Path):
+    def __init__(self, repo_root: Path, executor: Optional[CommandExecutor] = None):
         """
         Initialize DockerManager.
 
         Args:
             repo_root: Path to repository root
+            executor: Command executor to use
         """
-        self.repo_root = repo_root
+        super().__init__(repo_root, executor)
         self.common_scripts_dir = repo_root / "exp" / "common" / "scripts"
 
     def run_task(self, task_spec: TaskSpec, log_file: Optional[Path] = None) -> None:
@@ -62,7 +65,7 @@ class DockerManager(DeploymentManager):
         logger.info(f"Running task: {task_spec.name}")
 
         # Remove existing container
-        subprocess.run(
+        self.executor.run(
             ["docker", "rm", "-f", task_spec.name],
             capture_output=True,
             check=False,
@@ -70,7 +73,7 @@ class DockerManager(DeploymentManager):
 
         # Check/Create network if needed
         if task_spec.network:
-            check_network = subprocess.run(
+            check_network = self.executor.run(
                 ["docker", "network", "inspect", task_spec.network],
                 capture_output=True,
                 check=False,
@@ -88,7 +91,7 @@ class DockerManager(DeploymentManager):
                     logger.warning(
                         f"Network {task_spec.network} not found, creating it..."
                     )
-                    subprocess.run(
+                    self.executor.run(
                         ["docker", "network", "create", task_spec.network],
                         check=True,
                     )
@@ -114,12 +117,14 @@ class DockerManager(DeploymentManager):
         try:
             if log_file:
                 with open(log_file, "w") as f:
-                    subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, check=True)
+                    self.executor.run(
+                        cmd, stdout=f, stderr=subprocess.STDOUT, check=True
+                    )
             else:
-                subprocess.run(cmd, check=True)
-        except subprocess.CalledProcessError:
+                self.executor.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
             logger.error(f"Task {task_spec.name} failed.")
-            raise
+            raise DeploymentError(f"Task {task_spec.name} failed: {e}") from e
         finally:
             if task_spec.cleanup:
                 self.cleanup_task(task_spec)
@@ -128,7 +133,7 @@ class DockerManager(DeploymentManager):
         """
         Cleanup docker container for the task.
         """
-        subprocess.run(
+        self.executor.run(
             ["docker", "rm", "-f", task_spec.name],
             check=False,
             capture_output=True,
@@ -165,7 +170,7 @@ class DockerManager(DeploymentManager):
         if project_name:
             base_cmd.extend(["-p", project_name])
 
-        subprocess.run(
+        self.executor.run(
             [*base_cmd, "down"],
             cwd=app_dir,
             check=False,  # Don't fail if nothing to stop
@@ -174,19 +179,22 @@ class DockerManager(DeploymentManager):
         )
 
         # Prune volumes
-        subprocess.run(
+        self.executor.run(
             ["docker", "volume", "prune", "-a", "-f"],
             check=False,
             capture_output=True,
         )
 
         # Start services
-        subprocess.run(
-            [*base_cmd, "up", "-d"],
-            cwd=app_dir,
-            check=True,
-            env=env,
-        )
+        try:
+            self.executor.run(
+                [*base_cmd, "up", "-d"],
+                cwd=app_dir,
+                check=True,
+                env=env,
+            )
+        except subprocess.CalledProcessError as e:
+            raise DeploymentError(f"Failed to start docker services: {e}") from e
 
         logger.info("Docker services started successfully")
 
@@ -218,7 +226,7 @@ class DockerManager(DeploymentManager):
         if project_name:
             base_cmd.extend(["-p", project_name])
 
-        subprocess.run(
+        self.executor.run(
             [*base_cmd, "down"],
             cwd=app_dir,
             check=False,  # Don't fail if already stopped
@@ -303,7 +311,7 @@ class DockerManager(DeploymentManager):
         ]
 
         try:
-            result = subprocess.run(
+            result = self.executor.run(
                 cmd,
                 cwd=compose_path.parent,
                 env=env,
@@ -358,7 +366,7 @@ class DockerManager(DeploymentManager):
         ]
 
         try:
-            result = subprocess.run(
+            result = self.executor.run(
                 cmd,
                 cwd=compose_path.parent,
                 env=env,
@@ -435,7 +443,7 @@ class DockerManager(DeploymentManager):
             if follow:
                 # For following logs, read line by line and strip ANSI codes
                 with open(log_file, "w", encoding="utf-8") as f:
-                    process = subprocess.Popen(
+                    process = self.executor.popen(
                         cmd,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
@@ -455,7 +463,7 @@ class DockerManager(DeploymentManager):
                         process.wait()
             else:
                 # For non-following logs, capture all output then strip ANSI codes
-                result = subprocess.run(
+                result = self.executor.run(
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
@@ -477,4 +485,4 @@ class DockerManager(DeploymentManager):
         Copy file from container to local path.
         """
         cmd = ["docker", "cp", f"{container_name}:{src_path}", str(dest_path)]
-        subprocess.run(cmd, check=True, capture_output=True)
+        self.executor.run(cmd, check=True, capture_output=True)

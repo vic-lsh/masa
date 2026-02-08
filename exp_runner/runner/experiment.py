@@ -14,6 +14,7 @@ from .apps.base import AppPlugin
 from .config import ExperimentConfig
 from .deployment_manager import DeploymentManager
 from .docker_manager import DockerManager
+from .executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
 from .k8s_manager import K8sManager
 from .plotting import generate_all_plots
 
@@ -64,11 +65,17 @@ class Experiment:
         self.smoke_test = smoke_test
         self.use_k8s = use_k8s
 
+        self.executor: CommandExecutor
+        if self.dry_run:
+            self.executor = MockCommandExecutor()
+        else:
+            self.executor = SubprocessExecutor()
+
         self.deployment: DeploymentManager
         if use_k8s:
-            self.deployment = K8sManager(repo_root)
+            self.deployment = K8sManager(repo_root, executor=self.executor)
         else:
-            self.deployment = DockerManager(repo_root)
+            self.deployment = DockerManager(repo_root, executor=self.executor)
 
         # Setup working directories
         self.app_scripts_dir = config.app_dir / "scripts"
@@ -204,6 +211,7 @@ class Experiment:
                         app_local_dir=self.app_local_dir,
                         no_cache=self.no_cache,
                         dry_run=self.dry_run,
+                        executor=self.executor,
                     )
                 except Exception as e:
                     logger.error(

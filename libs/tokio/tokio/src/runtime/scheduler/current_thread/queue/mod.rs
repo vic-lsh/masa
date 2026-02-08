@@ -1,3 +1,8 @@
+#[cfg(not(any(
+    feature = "prio_global",
+    feature = "prio_local",
+    feature = "prio_oldest",
+)))]
 mod fifo;
 
 #[cfg(any(
