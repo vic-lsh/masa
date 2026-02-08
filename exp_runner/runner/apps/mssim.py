@@ -535,6 +535,11 @@ class MssimApp(AppPlugin):
         # Artifacts
         artifacts = [("/app/loadgen_output/.", "")]  # Copy to output_dir
 
+        cmd_str = "mssim-loadgen && echo 'MSSIM_LOADGEN_DONE'"
+        if use_k8s:
+            # In K8s, we need to keep the pod running to copy artifacts via exec
+            cmd_str += " && sleep infinity"
+
         return TaskSpec(
             name="mssim-loadgen",
             image=MSSIM_LOADGEN_IMAGE,
@@ -545,7 +550,7 @@ class MssimApp(AppPlugin):
             command=[
                 "/bin/sh",
                 "-c",
-                "mssim-loadgen && echo 'MSSIM_LOADGEN_DONE'",
+                cmd_str,
             ],
             wait_for_log_pattern="MSSIM_LOADGEN_DONE",
             cleanup=True,
