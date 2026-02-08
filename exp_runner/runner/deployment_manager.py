@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from .executor import CommandExecutor, SubprocessExecutor
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,8 +41,9 @@ class DeploymentManager(ABC):
     Standardizes operations across Docker Compose and Kubernetes.
     """
 
-    def __init__(self, repo_root: Path):
+    def __init__(self, repo_root: Path, executor: Optional[CommandExecutor] = None):
         self.repo_root = repo_root
+        self.executor = executor or SubprocessExecutor()
 
     @abstractmethod
     def run_task(self, task_spec: TaskSpec, log_file: Optional[Path] = None) -> None:

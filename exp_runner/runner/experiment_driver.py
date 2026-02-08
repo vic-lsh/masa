@@ -1,12 +1,15 @@
 import logging
 import os
-import time
 from pathlib import Path
+from typing import Optional, Type
 
 from .apps.base import AppPlugin
 from .config import ExperimentConfig
 from .cpu_monitor import CPUMonitor
 from .deployment_manager import DeploymentManager
+from .executor import CommandExecutor, SubprocessExecutor
+from .exceptions import DeploymentError, LoadGenError
+from .utils import wait_until
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +20,17 @@ class ExpDriver:
     Platform-agnostic (works for Docker and K8s).
     """
 
-    def __init__(self, app: AppPlugin, deployment: DeploymentManager):
+    def __init__(
+        self,
+        app: AppPlugin,
+        deployment: DeploymentManager,
+        executor: Optional[CommandExecutor] = None,
+        cpu_monitor_factory: Optional[Type[CPUMonitor]] = None,
+    ):
         self.app = app
         self.deployment = deployment
+        self.executor = executor or SubprocessExecutor()
+        self.cpu_monitor_factory = cpu_monitor_factory or CPUMonitor
 
     def run_workload(
         self,
@@ -33,6 +44,13 @@ class ExpDriver:
     ) -> None:
         """
         Execute a single workload (setup -> build -> deploy -> run -> teardown).
+
+        Flow:
+        1. Prepare Workload: Generate configs and environment variables.
+        2. Build Images: Build required docker images.
+        3. Deploy: Start services (Docker Compose or Helm).
+        4. Run Task: Execute load generator or task.
+        5. Teardown: Cleanup resources.
         """
 
         # Determine platform
@@ -49,6 +67,7 @@ class ExpDriver:
             output_dir=output_dir,
             repo_root=repo_root,
             use_k8s=use_k8s,
+            executor=self.executor,
         )
 
         project_name = env_vars.get("DOCKER_COMPOSE_PROJECT_NAME", "")
@@ -62,6 +81,9 @@ class ExpDriver:
         build_logs_dir = output_dir / "build_logs"
 
         if dry_run:
+            # For dry-run, we rely on the executor (MockCommandExecutor) to record commands
+            # We still pass dry_run=True for compatibility with builders that might use it
+            # to skip side effects not captured by executor (like file I/O).
             builder.build(
                 repo_root=repo_root,
                 app_dir=config.app_dir,
@@ -70,6 +92,7 @@ class ExpDriver:
                 no_cache=no_cache,
                 gen_config_path=template_gen_config,
                 dry_run=True,
+                executor=self.executor,
             )
         else:
             builder.build(
@@ -81,6 +104,7 @@ class ExpDriver:
                 gen_config_path=template_gen_config,
                 dry_run=False,
                 build_logs_dir=build_logs_dir,
+                executor=self.executor,
             )
 
         # 3. Deploy
@@ -115,8 +139,8 @@ class ExpDriver:
                 project_name=project_name,
             )
 
-            # Allow stabilization
-            time.sleep(5)
+            # Wait for deployment to stabilize
+            self._wait_for_deployment(deploy_root, deploy_file, project_name, env_vars)
 
             # Start Monitoring
             container_names = self.deployment.get_container_names(
@@ -130,7 +154,7 @@ class ExpDriver:
 
             # CPU Monitor
             cpu_stats_file = output_dir / "cpu_stats.csv"
-            cpu_monitor = CPUMonitor(
+            cpu_monitor = self.cpu_monitor_factory(
                 output_path=cpu_stats_file,
                 poll_interval=2.0,
                 container_names=container_names,
@@ -176,8 +200,16 @@ class ExpDriver:
                 if original_cleanup:
                     self.deployment.cleanup_task(loadgen_spec)
 
-        except Exception as e:
+        except (DeploymentError, LoadGenError) as e:
             logger.error(f"Workload execution failed: {e}")
+            failed = self.deployment.check_project_health(
+                deploy_root / deploy_file, project_name, env_vars
+            )
+            if failed:
+                logger.error(f"Failed containers: {failed}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error during workload execution: {e}")
             failed = self.deployment.check_project_health(
                 deploy_root / deploy_file, project_name, env_vars
             )
@@ -201,6 +233,66 @@ class ExpDriver:
                 )
             except Exception as e:
                 logger.warning(f"Failed to stop deployment: {e}")
+
+    def _wait_for_deployment(
+        self, deploy_root: Path, deploy_file: str, project_name: str, env_vars: dict
+    ) -> None:
+        """Wait for deployment to be healthy and running."""
+
+        def check_status() -> bool:
+            # Check for failures first
+            failed = self.deployment.check_project_health(
+                deploy_root / deploy_file, project_name, env_vars
+            )
+            if failed:
+                # Raise DeploymentError to abort wait_until
+                msg = f"Deployment failed during stabilization: {failed}"
+                logger.error(msg)
+                raise DeploymentError(msg)
+
+            # Check if containers exist (are listed)
+            names = self.deployment.get_container_names(
+                deploy_root / deploy_file, project_name, env_vars
+            )
+            if not names:
+                return False
+
+            return True
+
+        # Wait up to 60 seconds for services to appear and remain healthy
+        # We catch exceptions internally in check_status to abort if needed,
+        # but wait_until handles timeouts.
+        # Note: We pass retry_on_exceptions=(Exception,) by default, so if check_status raises
+        # DeploymentError (which inherits Exception), it would retry.
+        # We want to ABORT on DeploymentError.
+        # So we must instruct wait_until NOT to retry on DeploymentError.
+        # Since DeploymentError inherits from Exception, and wait_until retries Exception by default...
+        # We need to tell wait_until to retry only on other exceptions?
+        # Or simpler: allow wait_until to propagate DeploymentError by NOT catching it.
+        # But wait_until catches retry_on_exceptions.
+        # So we need retry_on_exceptions NOT to include DeploymentError.
+        # But DeploymentError IS an Exception.
+        # So we should set retry_on_exceptions to empty or specific transient errors if we knew them.
+        # For now, let's just make check_status return False for transient issues, and raise DeploymentError for fatal ones.
+        # And tell wait_until to ONLY retry on known transient errors, or change default.
+        #
+        # Let's change wait_until usage here:
+        # We want it to retry on "not ready yet" (returns False).
+        # We want it to fail on "DeploymentError".
+        # We want it to fail on "Timeout".
+        # We probably want to retry on transient networking errors?
+        # Let's just catch Exception in check_status and return False if it's transient?
+        # DeploymentError is raised explicitly.
+        # So I will set retry_on_exceptions=() so it propagates everything raised.
+        # But wait_until loop only continues if returns False (and no exception raised).
+        # So if I raise DeploymentError, it propagates. Perfect.
+
+        wait_until(
+            check_status,
+            timeout=60.0,
+            description="deployment stabilization",
+            retry_on_exceptions=(),
+        )
 
     def _extract_artifacts_from_log(self, log_file: Path, output_dir: Path) -> None:
         """

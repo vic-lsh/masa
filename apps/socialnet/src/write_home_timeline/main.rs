@@ -1,6 +1,6 @@
 //! Async Rust port of the C++ Write-Home-Timeline Service.
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use std::env;
 use tokio::task::JoinHandle;
 use tracing::{error, info, Level};
@@ -60,9 +60,12 @@ mod worker {
     };
     use serde::Deserialize;
     use std::{collections::HashSet, env};
+    use tokio::time::{sleep, Duration};
     use tracing::{debug, error, info, warn};
 
     const QUEUE_NAME: &str = "write-home-timeline";
+    const INITIAL_BACKOFF_SECS: u64 = 1;
+    const MAX_BACKOFF_SECS: u64 = 15;
 
     #[derive(Debug, Deserialize)]
     struct PostMessage {
@@ -80,85 +83,139 @@ mod worker {
     ) -> Result<()> {
         let rabbit_addr = env::var("RABBITMQ_URL").expect("RABBITMQ_URL must be set");
 
-        info!(worker_id, "Connecting to RabbitMQ at {}", rabbit_addr);
-        let conn = Connection::connect(&rabbit_addr, ConnectionProperties::default())
-            .await
-            .context("Failed to connect to RabbitMQ")?;
+        let mut backoff_secs = INITIAL_BACKOFF_SECS;
 
-        let channel = conn
-            .create_channel()
-            .await
-            .context("Failed to create channel")?;
+        loop {
+            info!(worker_id, "Connecting to RabbitMQ at {}", rabbit_addr);
+            let conn =
+                match Connection::connect(&rabbit_addr, ConnectionProperties::default()).await {
+                    Ok(conn) => {
+                        backoff_secs = INITIAL_BACKOFF_SECS;
+                        conn
+                    }
+                    Err(e) => {
+                        warn!(
+                            worker_id,
+                            "Failed to connect to RabbitMQ: {}. Retrying in {}s", e, backoff_secs
+                        );
+                        sleep(Duration::from_secs(backoff_secs)).await;
+                        backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
+                        continue;
+                    }
+                };
 
-        channel
-            .queue_declare(
-                QUEUE_NAME,
-                QueueDeclareOptions {
-                    durable: true,
-                    ..Default::default()
-                },
-                FieldTable::default(),
-            )
-            .await
-            .context("Failed to declare queue")?;
-
-        info!(
-            worker_id,
-            "Queue '{}' declared. Starting consumption.", QUEUE_NAME
-        );
-
-        let mut consumer = channel
-            .basic_consume(
-                QUEUE_NAME,
-                &format!("worker-{}", worker_id),
-                BasicConsumeOptions::default(),
-                FieldTable::default(),
-            )
-            .await?;
-
-        while let Some(delivery_result) = consumer.next().await {
-            let delivery = match delivery_result {
-                Ok(d) => d,
+            let channel = match conn.create_channel().await {
+                Ok(channel) => channel,
                 Err(e) => {
-                    error!(worker_id, "Error in message delivery: {}", e);
+                    warn!(
+                        worker_id,
+                        "Failed to create RabbitMQ channel: {}. Retrying in {}s", e, backoff_secs
+                    );
+                    sleep(Duration::from_secs(backoff_secs)).await;
+                    backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
                     continue;
                 }
             };
 
-            let redis_clone = redis_pool.clone();
-            let social_graph_clone = social_graph_client.clone();
-            let channel_clone = channel.clone();
+            if let Err(e) = channel
+                .queue_declare(
+                    QUEUE_NAME,
+                    QueueDeclareOptions {
+                        durable: true,
+                        ..Default::default()
+                    },
+                    FieldTable::default(),
+                )
+                .await
+            {
+                warn!(
+                    worker_id,
+                    "Failed to declare queue '{}': {}. Retrying in {}s",
+                    QUEUE_NAME,
+                    e,
+                    backoff_secs
+                );
+                sleep(Duration::from_secs(backoff_secs)).await;
+                backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
+                continue;
+            }
 
-            tokio::spawn(async move {
-                let delivery_tag = delivery.delivery_tag;
-                match process_message(&delivery.data, redis_clone, social_graph_clone).await {
-                    Ok(_) => {
-                        if let Err(e) = channel_clone
-                            .basic_ack(delivery_tag, BasicAckOptions::default())
-                            .await
-                        {
-                            error!("Failed to ACK message {}: {}", delivery_tag, e);
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to process message {}: {:?}", delivery_tag, e);
-                        if let Err(e) = channel_clone
-                            .basic_nack(
-                                delivery_tag,
-                                BasicNackOptions {
-                                    requeue: true,
-                                    ..Default::default()
-                                },
-                            )
-                            .await
-                        {
-                            error!("Failed to NACK message {}: {}", delivery_tag, e);
-                        }
-                    }
+            info!(
+                worker_id,
+                "Queue '{}' declared. Starting consumption.", QUEUE_NAME
+            );
+
+            let mut consumer = match channel
+                .basic_consume(
+                    QUEUE_NAME,
+                    &format!("worker-{}", worker_id),
+                    BasicConsumeOptions::default(),
+                    FieldTable::default(),
+                )
+                .await
+            {
+                Ok(consumer) => consumer,
+                Err(e) => {
+                    warn!(
+                        worker_id,
+                        "Failed to start consumer: {}. Retrying in {}s", e, backoff_secs
+                    );
+                    sleep(Duration::from_secs(backoff_secs)).await;
+                    backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
+                    continue;
                 }
-            });
+            };
+
+            backoff_secs = INITIAL_BACKOFF_SECS;
+
+            while let Some(delivery_result) = consumer.next().await {
+                let delivery = match delivery_result {
+                    Ok(d) => d,
+                    Err(e) => {
+                        error!(worker_id, "Error in message delivery: {}", e);
+                        continue;
+                    }
+                };
+
+                let redis_clone = redis_pool.clone();
+                let social_graph_clone = social_graph_client.clone();
+                let channel_clone = channel.clone();
+
+                tokio::spawn(async move {
+                    let delivery_tag = delivery.delivery_tag;
+                    match process_message(&delivery.data, redis_clone, social_graph_clone).await {
+                        Ok(_) => {
+                            if let Err(e) = channel_clone
+                                .basic_ack(delivery_tag, BasicAckOptions::default())
+                                .await
+                            {
+                                error!("Failed to ACK message {}: {}", delivery_tag, e);
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to process message {}: {:?}", delivery_tag, e);
+                            if let Err(e) = channel_clone
+                                .basic_nack(
+                                    delivery_tag,
+                                    BasicNackOptions {
+                                        requeue: true,
+                                        ..Default::default()
+                                    },
+                                )
+                                .await
+                            {
+                                error!("Failed to NACK message {}: {}", delivery_tag, e);
+                            }
+                        }
+                    }
+                });
+            }
+
+            warn!(
+                worker_id,
+                "Consumer stream ended. Reconnecting to RabbitMQ..."
+            );
         }
-        Ok(())
     }
 
     async fn process_message(
@@ -271,16 +328,19 @@ async fn main() -> Result<()> {
     let num_workers: usize = env::var("WORKERS")
         .unwrap_or_else(|_| "4".to_string())
         .parse()?;
-    let mut worker_handles: Vec<JoinHandle<Result<()>>> = Vec::new();
+    let mut worker_handles: Vec<(usize, JoinHandle<Result<()>>)> = Vec::new();
 
     for i in 0..num_workers {
         let worker_redis_pool = redis_pool.clone();
         // Just clone the client, it's cheap and thread-safe
         let worker_sg_client = social_graph_client.clone();
 
-        let handle =
-            tokio::spawn(async move { run_worker(i, worker_redis_pool, worker_sg_client).await });
-        worker_handles.push(handle);
+        let handle = tokio::spawn(async move {
+            run_worker(i, worker_redis_pool, worker_sg_client)
+                .await
+                .map_err(|e| anyhow!("worker {} failed: {}", i, e))
+        });
+        worker_handles.push((i, handle));
     }
     info!("Spawned {} worker tasks.", num_workers);
 
@@ -290,15 +350,18 @@ async fn main() -> Result<()> {
             info!("Ctrl-C received, shutting down.");
         }
         res = async {
-            for handle in worker_handles {
-                if let Err(e) = handle.await {
-                    return Some(e)
+            for (worker_id, handle) in worker_handles {
+                match handle.await {
+                    Ok(Ok(())) => continue,
+                    Ok(Err(e)) => return Some(e),
+                    Err(e) => return Some(anyhow!("worker {} panicked: {}", worker_id, e)),
                 }
             }
             None
         } => {
             if let Some(e) = res {
-                 error!("A worker task panicked or was cancelled: {:?}", e);
+                 error!("Worker task terminated unexpectedly: {:?}", e);
+                 return Err(e);
             }
         }
     }
