@@ -533,7 +533,7 @@ class MssimApp(AppPlugin):
         frontend_json_path = output_dir / "frontend.json"
 
         # Artifacts
-        artifacts = [("/app/loadgen_output", "")]  # Copy to output_dir
+        artifacts = [("/app/loadgen_output/.", "")]  # Copy to output_dir
 
         return TaskSpec(
             name="mssim-loadgen",
