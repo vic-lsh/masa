@@ -93,7 +93,7 @@ echo "Running MSSIM experiment using exp_runner.runner with mode: $deploy_mode"
 python -m exp_runner.runner run mssim "$experiment_name" --rm-data --smoke-test $deploy_args
 
 echo "Verifying MSSIM outputs and metadata mode ($expected_mode)..."
-python <<'PY' "$repo_root" "$experiment_name" "$expected_mode"
+python - <<'PY' "$repo_root" "$experiment_name" "$expected_mode"
 import json
 import sys
 from pathlib import Path
