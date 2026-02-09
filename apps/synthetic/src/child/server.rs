@@ -3,9 +3,10 @@ use std::time::{Duration, Instant};
 
 use tokio;
 use tokio::runtime::current_thread_queue_len;
+use tokio::task::JoinHandle;
 use tonic::{Request, Response, Status};
 
-use crate::bootstrap::ConnectionBootstrap;
+use crate::bootstrap::{ConnectionBootstrap, ConnectionBootstrapTask};
 use crate::config::{parse_call_sequences, ServiceMethod, SyntheticConfig};
 use crate::service_registry::ServiceRegistry;
 use crate::tonic::{child, child::child_server::Child};
@@ -16,12 +17,17 @@ pub struct ChildImpl {
     _service_id: String,
     service_registry: ServiceRegistry,
     method_lookup: HashMap<(String, String), ServiceMethod>,
+    _bootstrap_task: Option<ConnectionBootstrapTask>,
+    _queue_monitor_task: QueueMonitorTask,
 }
 
-impl ChildImpl {
-    pub async fn new(config: SyntheticConfig) -> Self {
-        // Spawn a task that prints the queue length every 500ms
-        tokio::spawn(async {
+struct QueueMonitorTask {
+    handle: JoinHandle<()>,
+}
+
+impl QueueMonitorTask {
+    fn spawn() -> Self {
+        let handle = tokio::spawn(async {
             let mut interval = tokio::time::interval(Duration::from_millis(500));
             let start_time = Instant::now();
             loop {
@@ -34,6 +40,20 @@ impl ChildImpl {
                 );
             }
         });
+
+        Self { handle }
+    }
+}
+
+impl Drop for QueueMonitorTask {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
+}
+
+impl ChildImpl {
+    pub async fn new(config: SyntheticConfig) -> Self {
+        let queue_monitor_task = QueueMonitorTask::spawn();
 
         // Handle call graph configuration
         let mut call_graph = config.call_graph;
@@ -69,10 +89,12 @@ impl ChildImpl {
         }
 
         // Spawn bootstrap task to connect asynchronously
-        if !services_to_connect.is_empty() {
+        let bootstrap_task = if services_to_connect.is_empty() {
+            None
+        } else {
             let bootstrap = ConnectionBootstrap::new(services_to_connect, registry.clients());
-            bootstrap.spawn();
-        }
+            Some(bootstrap.spawn())
+        };
 
         // Determine current service ID from environment variable
         // This should be set when deploying the service
@@ -98,6 +120,8 @@ impl ChildImpl {
             _service_id: current_service_id,
             service_registry: registry,
             method_lookup,
+            _bootstrap_task: bootstrap_task,
+            _queue_monitor_task: queue_monitor_task,
         }
     }
 
