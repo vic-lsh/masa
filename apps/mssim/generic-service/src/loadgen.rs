@@ -15,6 +15,7 @@ use serde_json;
 use sim_config::svc::GraphId;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{mpsc, Mutex, Semaphore};
+use tokio::task::JoinSet;
 use tokio::time::{Instant, MissedTickBehavior};
 use tokio::{fs, time};
 use tonic::masa::MasaRequestExt;
@@ -240,6 +241,7 @@ async fn run_root_load(
 
     let shutdown_signal = tokio::signal::ctrl_c();
     tokio::pin!(shutdown_signal);
+    let mut inflight_tasks = JoinSet::new();
 
     loop {
         tokio::select! {
@@ -279,7 +281,7 @@ async fn run_root_load(
                 next_req_id += 1;
 
                 let stats = Arc::clone(&stats);
-                tokio::spawn(async move {
+                inflight_tasks.spawn(async move {
                     let _permit = permit;
                     let start_at = time_now();
                     let request = Request::new(RootRequest {
@@ -351,7 +353,13 @@ async fn run_root_load(
         }
     }
 
-    // Drain in-flight requests before exit
+    while let Some(task_result) = inflight_tasks.join_next().await {
+        if let Err(join_err) = task_result {
+            tracing::warn!("root load task join failed: {join_err}");
+        }
+    }
+
+    // Ensure no in-flight permits remain before exit.
     let _ = inflight_guard.acquire_many(max_in_flight as u32).await;
 
     let s = stats.sent.load(Ordering::Relaxed);
@@ -653,11 +661,12 @@ async fn main() -> anyhow::Result<()> {
         let stats = Arc::new(Stats::default());
         let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
         let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
+        let mut bg_tasks = JoinSet::new();
 
         {
             let stats_interval = Duration::from_secs(stats_interval_sec);
             let stats = Arc::clone(&stats);
-            tokio::spawn(async move {
+            bg_tasks.spawn(async move {
                 print_stats_task(latency_sample_rx, stats_interval, stats).await;
             });
         }
@@ -671,6 +680,12 @@ async fn main() -> anyhow::Result<()> {
                 latency_sample_tx.clone(),
             )
             .await?;
+        }
+        drop(latency_sample_tx);
+        while let Some(task_result) = bg_tasks.join_next().await {
+            if let Err(join_err) = task_result {
+                tracing::warn!("background task join failed: {join_err}");
+            }
         }
 
         let s = stats.sent.load(Ordering::Relaxed);
@@ -703,19 +718,20 @@ async fn main() -> anyhow::Result<()> {
         let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
 
         let root_samples = Arc::new(Mutex::new(Vec::<RootLatencySample>::new()));
+        let mut bg_tasks = JoinSet::new();
 
         // Spawn periodic flush task for this RPS level
         {
             let samples = root_samples.clone();
             let current_rps = *rps;
-            tokio::spawn(async move { flush_rpc_samples_task(samples, current_rps).await });
+            bg_tasks.spawn(async move { flush_rpc_samples_task(samples, current_rps).await });
         }
 
         // Spawn stats printing task
         {
             let stats_interval = Duration::from_secs(stats_interval_sec);
             let stats = Arc::clone(&stats);
-            tokio::spawn(async move {
+            bg_tasks.spawn(async move {
                 print_stats_task(latency_sample_rx, stats_interval, stats).await;
             });
         }
@@ -732,6 +748,14 @@ async fn main() -> anyhow::Result<()> {
             latency_sample_tx.clone(),
         )
         .await?;
+
+        drop(latency_sample_tx);
+        bg_tasks.abort_all();
+        while let Some(task_result) = bg_tasks.join_next().await {
+            if let Err(join_err) = task_result {
+                tracing::debug!("background task ended: {join_err}");
+            }
+        }
 
         // Flush samples for this RPS level
         flush_root_samples(root_samples, *rps).await?;

@@ -6,6 +6,7 @@ use sim_config::svc::ServiceName;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tracing::info;
 
@@ -14,6 +15,16 @@ pub(crate) struct ConnectionBootstrap {
     children_for_log: Vec<(ServiceName, u64)>,
     deployment: Deployment,
     clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
+}
+
+pub(crate) struct ConnectionBootstrapTask {
+    handle: JoinHandle<()>,
+}
+
+impl Drop for ConnectionBootstrapTask {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
 }
 
 impl ConnectionBootstrap {
@@ -31,8 +42,8 @@ impl ConnectionBootstrap {
         }
     }
 
-    pub(crate) fn spawn(self) {
-        tokio::spawn(async move {
+    pub(crate) fn spawn(self) -> ConnectionBootstrapTask {
+        let handle = tokio::spawn(async move {
             let ConnectionBootstrap {
                 children,
                 children_for_log,
@@ -50,6 +61,7 @@ impl ConnectionBootstrap {
             let mut guard = clients.write().await;
             let _ = std::mem::replace(&mut *guard, connected_clients);
         });
+        ConnectionBootstrapTask { handle }
     }
 
     async fn connect_to_children(

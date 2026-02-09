@@ -35,6 +35,7 @@ pub(crate) type RpcClient = ServiceClient<LoadBalancedChannel>;
 
 struct AlibabaService {
     state: Arc<ServiceCore>,
+    _connection_task: Option<bootstrap::ConnectionBootstrapTask>,
 }
 
 impl AlibabaService {
@@ -44,11 +45,12 @@ impl AlibabaService {
         deployment: Deployment,
     ) -> Result<Self> {
         let (state, bootstrap) = ServiceCore::initialize(self_svc_name, config, deployment)?;
-        if let Some(connection_task) = bootstrap {
-            connection_task.spawn();
-        }
+        let connection_task = bootstrap.map(|task| task.spawn());
 
-        Ok(Self { state })
+        Ok(Self {
+            state,
+            _connection_task: connection_task,
+        })
     }
 
     fn state(&self) -> &ServiceCore {
@@ -172,7 +174,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let svc = AlibabaService::new(svc_name.clone(), config, deployment).await?;
 
     // Spawn a task that prints the queue length every second
-    tokio::spawn(async {
+    let queue_monitor_task = tokio::spawn(async {
         let mut interval = tokio::time::interval(Duration::from_secs(1));
         let start_time = Instant::now();
         loop {
@@ -193,6 +195,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(ServiceServer::new(svc))
         .serve(addr)
         .await?;
+    queue_monitor_task.abort();
+    let _ = queue_monitor_task.await;
 
     Ok(())
 }
