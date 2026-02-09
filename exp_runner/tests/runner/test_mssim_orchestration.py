@@ -124,16 +124,15 @@ def test_mssim_run_workload_orchestration(tmp_path, mock_executor, mock_deployme
         cpu_monitor_factory=mock_cpu_monitor_cls,
     )
 
-    with patch("exp_runner.runner.apps.mssim.CPUMonitor", mock_cpu_monitor_cls):
-        driver.run_workload(
-            repo_root=repo_root,
-            config=config,
-            policy="prio_global",
-            iteration=0,
-            output_dir=output_dir,
-            no_cache=False,
-            dry_run=False,
-        )
+    driver.run_workload(
+        repo_root=repo_root,
+        config=config,
+        policy="prio_global",
+        iteration=0,
+        output_dir=output_dir,
+        no_cache=False,
+        dry_run=False,
+    )
 
     # Verify command history
     history = mock_executor.history
@@ -197,6 +196,7 @@ def test_mssim_orchestration_k8s(tmp_path, mock_executor):
     in_dir = repo_root / "exp" / "mssim" / "in" / "test_exp_k8s"
     in_dir.mkdir(parents=True)
 
+    # Use a real manager because the app checks type name ("K8sManager").
     real_k8s_manager = K8sManager(repo_root=repo_root, executor=mock_executor)
     # We need to mock methods that do real work
     real_k8s_manager.start = MagicMock()
