@@ -4,7 +4,6 @@ Tests for the socialnet application module.
 
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 from exp_runner.runner.apps.socialnet import SocialnetBuilder
 from exp_runner.runner.cli import create_parser
