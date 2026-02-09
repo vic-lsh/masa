@@ -10,6 +10,7 @@ use futures::StreamExt;
 #[cfg(not(feature = "synthetic"))]
 use std::collections::HashSet;
 use tokio::sync::Mutex;
+use tokio::task::JoinSet;
 #[cfg(feature = "synthetic")]
 use {
     rand::rngs::StdRng,
@@ -52,6 +53,8 @@ pub struct RateImpl {
     latency_tracker: SyncLatencyTracker,
     #[cfg(feature = "workload_stats")]
     fanout_tracker: Arc<AvgTracker>,
+    #[cfg(feature = "workload_stats")]
+    _fanout_task: tokio::task::JoinHandle<()>,
     #[cfg(feature = "synthetic")]
     synth: SyntheticRate,
 }
@@ -66,16 +69,16 @@ impl RateImpl {
         spawn_latency_logger(latency_consumer, Duration::from_secs(30));
 
         #[cfg(feature = "workload_stats")]
-        let fanout_tracker = {
+        let (fanout_tracker, fanout_task) = {
             let fanout_tracker = Arc::new(AvgTracker::default());
             let fanout = fanout_tracker.clone();
-            tokio::spawn(async move {
+            let fanout_task = tokio::spawn(async move {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     log::warn!("Avg fanout {}", fanout.get_average_fanout());
                 }
             });
-            fanout_tracker
+            (fanout_tracker, fanout_task)
         };
 
         #[cfg(feature = "synthetic")]
@@ -103,6 +106,8 @@ impl RateImpl {
             latency_tracker,
             #[cfg(feature = "workload_stats")]
             fanout_tracker,
+            #[cfg(feature = "workload_stats")]
+            _fanout_task: fanout_task,
             #[cfg(feature = "synthetic")]
             synth: SyntheticRate {
                 rng,
@@ -166,59 +171,57 @@ impl Rate for RateImpl {
 
         // Handle cache misses
         let missing_ids: Vec<String> = rate_set.into_iter().collect();
-        let handles: Vec<_> = missing_ids
-            .into_iter()
-            .map(|hotel_id| {
-                let rate_plans_clone = Arc::clone(&rate_plans);
-                let mongo_client = Arc::clone(&self.mongo_client);
-                let redis_conn = self.redis_conn.clone();
+        let mut tasks = JoinSet::new();
+        for hotel_id in missing_ids {
+            let rate_plans_clone = Arc::clone(&rate_plans);
+            let mongo_client = Arc::clone(&self.mongo_client);
+            let redis_conn = self.redis_conn.clone();
 
-                tokio::spawn(async move {
-                    let collection = mongo_client
-                        .database("rate-db")
-                        .collection::<db::RatePlan>("inventory");
+            tasks.spawn(async move {
+                let collection = mongo_client
+                    .database("rate-db")
+                    .collection::<db::RatePlan>("inventory");
 
-                    let mut cursor = collection
-                        .find(doc! {}, None)
+                let mut cursor = collection
+                    .find(doc! {}, None)
+                    .await
+                    .expect("failed to find rate");
+                let mut tmp_rate_plans = Vec::new();
+                let mut memc_str = String::new();
+
+                while let Some(Ok(rate_plan)) = cursor.next().await {
+                    if let Ok(rate_json) = serde_json::to_string(&rate_plan) {
+                        memc_str.push_str(&rate_json);
+                        memc_str.push('\n');
+                    }
+                    tmp_rate_plans.push(rate_plan);
+                }
+
+                // Update rate plans
+                {
+                    let mut rate_plans = rate_plans_clone.lock().await;
+                    rate_plans.extend(tmp_rate_plans);
+                }
+
+                // Update redis asynchronously
+                if !memc_str.is_empty() {
+                    let mut redis_conn = redis_conn.clone();
+                    if let Err(e) = redis_conn
+                        .set_ex::<&std::string::String, std::string::String, ()>(
+                            &hotel_id,
+                            memc_str,
+                            CACHE_TTL_SECS as u64,
+                        )
                         .await
-                        .expect("failed to find rate");
-                    let mut tmp_rate_plans = Vec::new();
-                    let mut memc_str = String::new();
-
-                    while let Some(Ok(rate_plan)) = cursor.next().await {
-                        if let Ok(rate_json) = serde_json::to_string(&rate_plan) {
-                            memc_str.push_str(&rate_json);
-                            memc_str.push('\n');
-                        }
-                        tmp_rate_plans.push(rate_plan);
-                    }
-
-                    // Update rate plans
                     {
-                        let mut rate_plans = rate_plans_clone.lock().await;
-                        rate_plans.extend(tmp_rate_plans);
+                        log::error!("Failed to set redis cache: {}", e);
                     }
+                }
+            });
+        }
 
-                    // Update redis asynchronously
-                    if !memc_str.is_empty() {
-                        let mut redis_conn = redis_conn.clone();
-                        if let Err(e) = redis_conn
-                            .set_ex::<&std::string::String, std::string::String, ()>(
-                                &hotel_id,
-                                memc_str,
-                                CACHE_TTL_SECS as u64,
-                            )
-                            .await
-                        {
-                            log::error!("Failed to set redis cache: {}", e);
-                        }
-                    }
-                })
-            })
-            .collect();
-
-        for h in handles {
-            h.await.unwrap();
+        while let Some(task_result) = tasks.join_next().await {
+            task_result.map_err(|e| Status::internal(format!("rate task join failed: {e}")))?;
         }
 
         // Sort rate plans
@@ -290,55 +293,53 @@ impl Rate for RateImpl {
         let rate_plans = Arc::new(Mutex::new(rate_plans));
 
         // Handle cache misses
-        let handles: Vec<_> = missing_ids
-            .into_iter()
-            .map(|hotel_id| {
-                let rate_plans_clone = Arc::clone(&rate_plans);
-                let mongo_client = Arc::clone(&self.mongo_client);
-                let redis_conn = self.redis_conn.clone();
+        let mut tasks = JoinSet::new();
+        for hotel_id in missing_ids {
+            let rate_plans_clone = Arc::clone(&rate_plans);
+            let mongo_client = Arc::clone(&self.mongo_client);
+            let redis_conn = self.redis_conn.clone();
 
-                tokio::spawn(async move {
-                    let collection = mongo_client
-                        .database("rate-db")
-                        .collection::<db::RatePlan>("inventory");
+            tasks.spawn(async move {
+                let collection = mongo_client
+                    .database("rate-db")
+                    .collection::<db::RatePlan>("inventory");
 
-                    let mut cursor = collection
-                        .find(doc! {}, None)
+                let mut cursor = collection
+                    .find(doc! {}, None)
+                    .await
+                    .expect("failed to find rate");
+                let mut tmp_rate_plans = Vec::new();
+                let mut memc_str = String::new();
+
+                while let Some(Ok(rate_plan)) = cursor.next().await {
+                    if let Ok(rate_json) = serde_json::to_string(&rate_plan) {
+                        memc_str.push_str(&rate_json);
+                        memc_str.push('\n');
+                    }
+                    tmp_rate_plans.push(rate_plan);
+                }
+
+                // Update rate plans
+                {
+                    let mut rate_plans = rate_plans_clone.lock().await;
+                    rate_plans.extend(tmp_rate_plans);
+                }
+
+                // Update redis asynchronously
+                if !memc_str.is_empty() {
+                    let mut redis_conn = redis_conn.clone();
+                    if let Err(e) = redis_conn
+                        .set_ex(&hotel_id, memc_str, CACHE_TTL_SECS as u64)
                         .await
-                        .expect("failed to find rate");
-                    let mut tmp_rate_plans = Vec::new();
-                    let mut memc_str = String::new();
-
-                    while let Some(Ok(rate_plan)) = cursor.next().await {
-                        if let Ok(rate_json) = serde_json::to_string(&rate_plan) {
-                            memc_str.push_str(&rate_json);
-                            memc_str.push('\n');
-                        }
-                        tmp_rate_plans.push(rate_plan);
-                    }
-
-                    // Update rate plans
                     {
-                        let mut rate_plans = rate_plans_clone.lock().await;
-                        rate_plans.extend(tmp_rate_plans);
+                        log::error!("Failed to set redis cache: {}", e);
                     }
+                }
+            });
+        }
 
-                    // Update redis asynchronously
-                    if !memc_str.is_empty() {
-                        let mut redis_conn = redis_conn.clone();
-                        if let Err(e) = redis_conn
-                            .set_ex(&hotel_id, memc_str, CACHE_TTL_SECS as u64)
-                            .await
-                        {
-                            log::error!("Failed to set redis cache: {}", e);
-                        }
-                    }
-                })
-            })
-            .collect();
-
-        for h in handles {
-            h.await.unwrap();
+        while let Some(task_result) = tasks.join_next().await {
+            task_result.map_err(|e| Status::internal(format!("rate task join failed: {e}")))?;
         }
 
         // Sort rate plans
