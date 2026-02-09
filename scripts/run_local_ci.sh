@@ -1,4 +1,22 @@
 #!/bin/bash
+# Local CI Runner Script
+# 
+# This script executes the CI pipeline locally, including formatting, linting, 
+# and various testing stages (unit, E2E, experiments).
+#
+# Usage:
+#   ./scripts/run_local_ci.sh [FILTER]
+#
+# Arguments:
+#   FILTER (Optional): A string to filter which steps to run. It can be:
+#     - A Job ID (e.g., 'cargo_check', 'pytest', 'test_socialnet')
+#     - A tag (e.g., 'quick' to run only fast checks)
+#     - A partial step name (e.g., 'fifo' to run only the FIFO matrix variant)
+#     - 'all' (default) to run the entire pipeline.
+#
+# Environment Variables:
+#   RUN_KIND: Set to 'false' to skip Kubernetes (kind) based tests. Defaults to 'true'.
+#
 set -u
 
 # Colors for output
