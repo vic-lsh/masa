@@ -20,6 +20,8 @@ use mongodb::{bson::doc, Client as MongoClient};
 use redis::{aio::ConnectionManager as RedisConnectionManager, AsyncCommands};
 #[cfg(feature = "synthetic")]
 use tokio::sync::Mutex;
+#[cfg(not(feature = "synthetic"))]
+use tokio::task::JoinSet;
 use tonic::{Request, Response, Status};
 
 #[cfg(feature = "workload_stats")]
@@ -49,6 +51,8 @@ pub struct ProfileImpl {
     latency_tracker: SyncLatencyTracker,
     #[cfg(feature = "workload_stats")]
     fanout_tracker: Arc<AvgTracker>,
+    #[cfg(feature = "workload_stats")]
+    _fanout_task: tokio::task::JoinHandle<()>,
     #[cfg(feature = "synthetic")]
     synth: SyntheticProfile,
 }
@@ -66,16 +70,16 @@ impl ProfileImpl {
         spawn_latency_logger(latency_consumer, Duration::from_secs(30));
 
         #[cfg(feature = "workload_stats")]
-        let fanout_tracker = {
+        let (fanout_tracker, fanout_task) = {
             let fanout_tracker = Arc::new(AvgTracker::default());
             let fanout = fanout_tracker.clone();
-            tokio::spawn(async move {
+            let fanout_task = tokio::spawn(async move {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     log::warn!("Avg fanout {}", fanout.get_average_fanout());
                 }
             });
-            fanout_tracker
+            (fanout_tracker, fanout_task)
         };
 
         #[cfg(feature = "synthetic")]
@@ -103,6 +107,8 @@ impl ProfileImpl {
             latency_tracker,
             #[cfg(feature = "workload_stats")]
             fanout_tracker,
+            #[cfg(feature = "workload_stats")]
+            _fanout_task: fanout_task,
             #[cfg(feature = "synthetic")]
             synth: SyntheticProfile {
                 rng,
@@ -160,14 +166,14 @@ impl Profile for ProfileImpl {
         // Handle cache misses with MongoDB
         let missing_ids: Vec<String> = profile_map.iter().cloned().collect();
 
-        let mut handles = Vec::new();
+        let mut tasks = JoinSet::new();
 
         for hotel_id in missing_ids {
             let mongo_client = Arc::clone(&self.mongo_client);
             let redis_conn = self.redis_conn.clone();
 
             // Spawn a task for each missing hotel
-            let handle = tokio::spawn(async move {
+            tasks.spawn(async move {
                 let collection = mongo_client
                     .database("profile-db")
                     .collection::<db::Hotel>("hotels");
@@ -196,13 +202,12 @@ impl Profile for ProfileImpl {
                 }
                 hotels
             });
-
-            handles.push(handle);
         }
 
         // Wait for all MongoDB queries to complete
-        for h in handles {
-            let new_hotels = h.await.unwrap();
+        while let Some(task_result) = tasks.join_next().await {
+            let new_hotels = task_result
+                .map_err(|e| Status::internal(format!("profile task join failed: {e}")))?;
             hotels.extend(new_hotels);
         }
 
