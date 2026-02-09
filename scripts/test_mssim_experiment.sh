@@ -4,9 +4,10 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 experiment_name="e2e_test"
-out_dir="$repo_root/exp/mssim/data/out/$experiment_name"
+out_dir="$repo_root/exp/mssim/out/$experiment_name"
 deploy_mode="docker"
 deploy_args=""
+expected_mode="docker"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -35,6 +36,7 @@ fi
 
 if [[ "$deploy_mode" == "kind" ]]; then
     deploy_args="--kind"
+    expected_mode="k8s"
     # Use a unique cluster name to avoid conflicts in CI
     # If CI_JOB_ID is set (GitLab CI), use it; otherwise use a random suffix
     if [ -n "${CI_JOB_ID:-}" ]; then
@@ -89,5 +91,52 @@ rm -rf "$out_dir"
 echo "Running MSSIM experiment using exp_runner.runner with mode: $deploy_mode"
 # shellcheck disable=SC2086
 python -m exp_runner.runner run mssim "$experiment_name" --rm-data --smoke-test $deploy_args
+
+echo "Verifying MSSIM outputs and metadata mode ($expected_mode)..."
+python - <<'PY' "$repo_root" "$experiment_name" "$expected_mode"
+import json
+import sys
+from pathlib import Path
+
+from exp_runner.runner.apps import get_app_plugin
+from exp_runner.runner.config import ExperimentConfig
+
+repo_root = Path(sys.argv[1])
+experiment = sys.argv[2]
+expected_mode = sys.argv[3]
+
+app = get_app_plugin("mssim")
+config = ExperimentConfig.load(experiment, "mssim", repo_root, app)
+
+if not app.verify_results(config):
+    raise SystemExit("MSSIM smoke test verification failed")
+
+errors: list[str] = []
+for iteration in range(config.get_repeats()):
+    for policy in config.policies:
+        metadata_path = config.out_dir / str(iteration) / policy / "metadata.json"
+        if not metadata_path.exists():
+            errors.append(f"Missing metadata: {metadata_path}")
+            continue
+        try:
+            with metadata_path.open(encoding="utf-8") as fh:
+                metadata = json.load(fh)
+        except json.JSONDecodeError as exc:
+            errors.append(f"Invalid metadata JSON at {metadata_path}: {exc}")
+            continue
+
+        actual_mode = metadata.get("mode")
+        if actual_mode != expected_mode:
+            errors.append(
+                f"{metadata_path} expected mode '{expected_mode}' but found '{actual_mode}'"
+            )
+
+if errors:
+    for err in errors:
+        print(err, file=sys.stderr)
+    raise SystemExit("MSSIM metadata mode validation failed")
+
+print("MSSIM metadata mode validated for", expected_mode)
+PY
 
 echo "MSSIM experiment smoke test passed."

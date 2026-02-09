@@ -5542,6 +5542,7 @@ dependencies = [
  "async-stream",
  "backtrace",
  "bytes",
+ "criterion",
  "futures",
  "libc",
  "loom",
