@@ -83,12 +83,15 @@ async fn benchmark_e2e() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- E2E Benchmark: Ping Latency ---");
     let addr = "[::1]:50051".parse()?;
     let frontend = MyFrontend::default();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
-    // Start server in background
-    tokio::spawn(async move {
+    // Start server and keep an owned handle for lifecycle management.
+    let server_task = tokio::spawn(async move {
         Server::builder()
             .add_service(FrontendServer::new(frontend))
-            .serve(addr)
+            .serve_with_shutdown(addr, async {
+                let _ = shutdown_rx.await;
+            })
             .await
             .unwrap();
     });
@@ -123,6 +126,9 @@ async fn benchmark_e2e() -> Result<(), Box<dyn std::error::Error>> {
     println!("  P95: {}", hist.value_at_quantile(0.95));
     println!("  P99: {}", hist.value_at_quantile(0.99));
     println!("  Max: {}", hist.max());
+
+    let _ = shutdown_tx.send(());
+    let _ = server_task.await;
 
     Ok(())
 }
