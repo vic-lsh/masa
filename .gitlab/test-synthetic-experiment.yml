@@ -9,6 +9,7 @@ test_synthetic_experiment:
         CARGO_BUILD_JOBS: "16"
 
     before_script:
+        - echo "$DOCKERHUB_TOKEN" | docker login docker.io -u "$DOCKERHUB_USERNAME" --password-stdin
         - ulimit -n 4096 || true
         - |
             if ! command -v uv &> /dev/null; then
