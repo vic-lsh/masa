@@ -129,86 +129,61 @@ impl TextService for TextSvcImpl {
         info!("URLs found: {:?}", url_links);
         info!("URLs found: {:?}", url_links);
 
-        // async func to get shortened url
-        let shortened_url_task = {
+        let shortened_url_fut = async {
             let mut url_client_pool = self.url_shorten_client.clone();
             let url_links = url_links.clone();
-            tokio::spawn(async move {
-                // FIX: Check if empty before making the network call
-                if url_links.is_empty() {
-                    return Ok(vec![]);
-                }
+            if url_links.is_empty() {
+                return Ok(vec![]);
+            }
 
-                let url_shorten_request = ComposeUrlsRequest {
-                    req_id: 12345,
-                    urls: url_links,
-                };
-                let response = url_client_pool
-                    .compose_urls(Request::new(url_shorten_request))
-                    .await;
-                match response {
-                    Ok(res) => {
-                        let inner = res.into_inner();
-                        if let Some(exception) = inner.exception {
-                            return Err(Status::internal(exception.message));
-                        }
-                        return Ok(inner.urls);
+            let url_shorten_request = ComposeUrlsRequest {
+                req_id: 12345,
+                urls: url_links,
+            };
+            let response = url_client_pool
+                .compose_urls(Request::new(url_shorten_request))
+                .await;
+            match response {
+                Ok(res) => {
+                    let inner = res.into_inner();
+                    if let Some(exception) = inner.exception {
+                        return Err(Status::internal(exception.message));
                     }
-                    Err(status) => {
-                        // Use println! because your logger might not be initialized to stdout
-                        println!("Error calling url_shorten service: {:?}", status);
-                        return Err(status);
-                    }
+                    Ok(inner.urls)
                 }
-            })
+                Err(status) => {
+                    println!("Error calling url_shorten service: {:?}", status);
+                    Err(status)
+                }
+            }
         };
 
-        // async func to get user mention、
-        let user_mention_task = {
+        let user_mention_fut = async {
             let mut user_mention_client = self.user_mention_client.clone();
             let mention_usernames = mention_usernames.clone();
-            tokio::spawn(async move {
-                let user_mention_request = ComposeUserMentionRequest {
-                    req_id: 12345,
-                    usernames: mention_usernames,
-                };
-                let response = user_mention_client
-                    .compose_user_mentions(Request::new(user_mention_request))
-                    .await;
-                match response {
-                    Ok(res) => {
-                        let inner = res.into_inner();
-                        if let Some(exception) = inner.exception {
-                            return Err(Status::internal(exception.message));
-                        }
-                        return Ok(inner.user_mentions);
+            let user_mention_request = ComposeUserMentionRequest {
+                req_id: 12345,
+                usernames: mention_usernames,
+            };
+            let response = user_mention_client
+                .compose_user_mentions(Request::new(user_mention_request))
+                .await;
+            match response {
+                Ok(res) => {
+                    let inner = res.into_inner();
+                    if let Some(exception) = inner.exception {
+                        return Err(Status::internal(exception.message));
                     }
-                    Err(status) => {
-                        error!("Error calling user_mention service: {}", status);
-                        return Err(status);
-                    }
+                    Ok(inner.user_mentions)
                 }
-            })
+                Err(status) => {
+                    error!("Error calling user_mention service: {}", status);
+                    Err(status)
+                }
+            }
         };
 
-        // process the text with url
-        let Ok(result_urls) = shortened_url_task
-            .await
-            .expect("shortened url task shouldn't fail")
-        else {
-            return Err(Status::internal(
-                "Text Service: Failed to get shortened urls",
-            ));
-        };
-
-        let Ok(user_mentions) = user_mention_task
-            .await
-            .expect("user mention task shoudln't fail")
-        else {
-            return Err(Status::internal(
-                "Text Service: Failed to get user mentions",
-            ));
-        };
+        let (result_urls, user_mentions) = tokio::try_join!(shortened_url_fut, user_mention_fut)?;
 
         println!("Shortened URLs: {:?}", result_urls);
 
