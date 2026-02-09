@@ -198,7 +198,6 @@ def test_mssim_orchestration_k8s(tmp_path, mock_executor):
 
     # K8s manager mock
     # We pass a real K8sManager with a mock executor because the code uses type(deployment).__name__ == "K8sManager".
-
     real_k8s_manager = K8sManager(repo_root=repo_root, executor=mock_executor)
     # We need to mock methods that do real work
     real_k8s_manager.start = MagicMock()
@@ -214,8 +213,11 @@ def test_mssim_orchestration_k8s(tmp_path, mock_executor):
     config.app_dir = app_dir
     config.in_dir = in_dir
     config.gen_config = {"Rps": [100], "DurationSecs": 10}
-    config.app_config = {"callgraph_dirs": [str(tmp_path / "graphs")], "slo_ms": 50}
-    (tmp_path / "graphs").mkdir()
+    graphs_dir = tmp_path / "graphs"
+    graphs_dir.mkdir()
+    (graphs_dir / "edges.csv").write_text("caller,callee,weight\nsvc_a,svc_b,1\n")
+    (graphs_dir / "latency_percentiles.json").write_text("{}\n")
+    config.app_config = {"callgraph_dirs": [str(graphs_dir)], "slo_ms": 50}
 
     # Run
     output_dir = tmp_path / "out_k8s"

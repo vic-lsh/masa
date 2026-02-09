@@ -4,17 +4,17 @@ Tests for the socialnet application module.
 
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch
 
 from exp_runner.runner.apps.socialnet import SocialnetBuilder
 from exp_runner.runner.cli import create_parser
+from exp_runner.runner.executor import MockCommandExecutor
 
 
 class TestSocialnetBuilder:
     @patch("exp_runner.runner.executor.subprocess.run")
     def test_build_with_features(self, mock_subprocess):
         builder = SocialnetBuilder()
-        mock_subprocess.return_value = Mock(returncode=0)
+        executor = MockCommandExecutor()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             repo_root = Path(tmpdir) / "repo"
@@ -36,9 +36,10 @@ class TestSocialnetBuilder:
                 rust_log="info",
                 no_cache=False,
                 gen_config_path=gen_config_path,
+                executor=executor,
             )
 
-            all_cmds = [call[0][0] for call in mock_subprocess.call_args_list]
+            all_cmds = [record.args for record in executor.history]
             assert all_cmds
 
             builder_cmd = all_cmds[0]

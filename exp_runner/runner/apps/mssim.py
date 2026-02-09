@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 import time
 import yaml
 
+
 from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
 from .base import AppBuilder, AppPlugin, DockerConfig
@@ -424,6 +425,20 @@ class MssimApp(AppPlugin):
         """
         Prepare K8s-specific configuration (values.yaml with inline ConfigMaps).
         """
+
+        def _sanitize_callgraph_name(raw: str, existing: set[str]) -> str:
+            base = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-")
+            if not base:
+                base = "graph"
+            base = base[:40]  # leave room for suffixes
+            candidate = base
+            idx = 1
+            while candidate in existing:
+                candidate = f"{base}-{idx}"
+                idx += 1
+            existing.add(candidate)
+            return candidate
+
         # Modify deployment.json and frontend.json to set replicas=0 (K8s mode)
         with open(deployment_json_path) as f:
             deploy_data = json.load(f)
@@ -509,6 +524,7 @@ class MssimApp(AppPlugin):
             },
         }
 
+
         values_path = output_dir / "values.yaml"
         with open(values_path, "w") as f:
             yaml.dump(values, f)
@@ -559,6 +575,11 @@ class MssimApp(AppPlugin):
         # Artifacts
         artifacts = [("/app/loadgen_output/.", "")]  # Copy to output_dir
 
+        cmd_str = "mssim-loadgen && echo 'MSSIM_LOADGEN_DONE'"
+        if use_k8s:
+            # In K8s, we need to keep the pod running to copy artifacts via exec
+            cmd_str += " && sleep infinity"
+
         return TaskSpec(
             name="mssim-loadgen",
             image=MSSIM_LOADGEN_IMAGE,
@@ -569,11 +590,20 @@ class MssimApp(AppPlugin):
             command=[
                 "/bin/sh",
                 "-c",
-                "mssim-loadgen && echo 'MSSIM_LOADGEN_DONE'",
+                cmd_str,
             ],
             wait_for_log_pattern="MSSIM_LOADGEN_DONE",
             cleanup=True,
         )
+
+    def get_required_images(self, features: Optional[str] = None) -> list[str]:
+        policy = (features or "").strip() or "default"
+        feature_image = _generic_service_image_for_policy(policy)
+        images: list[str] = []
+        for img in (MSSIM_LOADGEN_IMAGE, feature_image, GENERIC_SERVICE_IMAGE):
+            if img and img not in images:
+                images.append(img)
+        return images
 
     def create_builder(self) -> AppBuilder:
         return self._builder
