@@ -139,6 +139,7 @@ features = [
 ]
 
 [dev-dependencies]
+criterion = "0.5"
 tokio-test = { version = "0.4.0", path = "../tokio-test" }
 tokio-stream = { version = "0.1", path = "../tokio-stream" }
 futures = { version = "0.3.0", features = ["async-await"] }
@@ -160,6 +161,10 @@ mio-aio = { version = "0.8.0", features = ["tokio"] }
 
 [target.'cfg(loom)'.dev-dependencies]
 loom = { version = "0.7", features = ["futures", "checkpoint"] }
+
+[[bench]]
+name = "prio_bh_bench"
+harness = false
 
 [package.metadata.docs.rs]
 all-features = true

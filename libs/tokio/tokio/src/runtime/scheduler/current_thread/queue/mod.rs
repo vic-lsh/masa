@@ -8,7 +8,6 @@ mod fifo;
 #[cfg(any(
     feature = "prio_global",
     feature = "prio_local",
-    feature = "prio_oldest",
 ))]
 mod prio_bh;
 
