@@ -59,6 +59,16 @@ uv run -m exp_runner run-multiple hotel "exp1 exp2 exp3" --plot
 uv run -m exp_runner run-multiple synthetic "quick_test template-presampled" --plot
 ```
 
+### Legacy Compatibility Mode
+
+```bash
+# Explicitly use legacy input files (gen_config.json + policies)
+uv run -m exp_runner run hotel exp1 --compat
+
+# Migrate a legacy config directory to the new format
+uv run -m exp_runner migrate-config hotel exp1 exp1_v2
+```
+
 ### Generate Plots Only
 
 ```bash
@@ -72,9 +82,21 @@ uv run -m exp_runner plot-replicas hotel
 
 ## Experiment Configuration
 
-Experiments are configured using files in `exp/<app>/data/in/<experiment_name>/`:
+Experiments are configured using files in `exp/<app>/in/<experiment_name>/`.
+
+Default format (v2) uses `experiment.yaml`.
+Legacy `gen_config.json` + `policies` is still available only via `--compat` and is deprecated.
 
 ### Required Files
+
+1. **`experiment.yaml`** - Experiment configuration (default)
+2. **Application-specific config** (varies by app):
+   - Hotel: `hotel.json` - Service replica counts and configuration
+   - Socialnet: `socialnet.json` - Placeholder config for Docker builds (can be empty)
+   - Synthetic: `config.docker.json` - Child service configuration (optional)
+   - MSSIM: `mssim.json` - Trace/config inputs and MSSIM-specific parameters
+
+### Legacy Required Files (`--compat`)
 
 1. **`gen_config.json`** - Load generator configuration
    ```json
@@ -98,12 +120,6 @@ Experiments are configured using files in `exp/<app>/data/in/<experiment_name>/`
    ```
    fifo prio_global prio_local
    ```
-
-3. **Application-specific config** (varies by app):
-   - Hotel: `hotel.json` - Service replica counts and configuration
-   - Socialnet: `socialnet.json` - Placeholder config for Docker builds (can be empty)
-   - Synthetic: `config.docker.json` - Child service configuration (optional)
-   - MSSIM: `mssim.json` - Trace/config inputs and MSSIM-specific parameters
 
 ### MSSIM Configuration
 
@@ -231,11 +247,12 @@ uv run -m exp_runner run <app> <experiment> [options]
 
 **Arguments:**
 - `<app>`: Application name (`hotel`, `mssim`, or `synthetic`)
-- `<experiment>`: Experiment name (must exist in `exp/<app>/data/in/`)
+- `<experiment>`: Experiment name (must exist in `exp/<app>/in/`)
 
 **Options:**
 - `--plot`: Generate plots after experiment completion
 - `--no-cache`: Disable Docker cache during build
+- `--compat`: Use deprecated legacy input format (`gen_config.json` + `policies`)
 - `--verbose, -v`: Enable verbose (DEBUG) logging
 - `--dry-run`: Print what would be executed without running containers
 
@@ -259,6 +276,7 @@ uv run -m exp_runner run-multiple <app> "<exp1> <exp2> ..." [options]
 **Options:**
 - `--plot`: Generate plots after each experiment
 - `--no-cache`: Disable Docker cache during builds
+- `--compat`: Use deprecated legacy input format (`gen_config.json` + `policies`)
 - `--verbose, -v`: Enable verbose (DEBUG) logging
 - `--dry-run`: Print what would be executed without running containers
 
@@ -283,6 +301,14 @@ uv run -m exp_runner plot <app> <experiment>
 ```bash
 uv run -m exp_runner plot hotel exp1
 uv run -m exp_runner plot mssim e2e_test
+```
+
+### migrate-config
+
+Migrate legacy experiment input into v2 `experiment.yaml` format.
+
+```bash
+uv run -m exp_runner migrate-config <app> <source_experiment> <target_experiment> [--force]
 ```
 
 ### plot-replicas

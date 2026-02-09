@@ -102,7 +102,7 @@ run_test() {
     cd "$repo_root"
     # We use unquoted variables for flags to allow empty strings to disappear
     # shellcheck disable=SC2086
-    python -m exp_runner.runner run synthetic "$exp_name" $no_cache $deploy_args --smoke-test --plot
+    python -m exp_runner.runner run synthetic "$exp_name" $no_cache $deploy_args --compat --smoke-test --plot
 
     echo "Test for $exp_name passed."
 }

@@ -219,8 +219,9 @@ class SyntheticApp(AppPlugin):
 
     def create_gen_config_dict(
         self,
-        template_config_path: Path,
         project_name: str,
+        template_config: Optional[dict] = None,
+        template_config_path: Optional[Path] = None,
         service_name_override: Optional[str] = None,
     ) -> dict:
         """
@@ -231,8 +232,15 @@ class SyntheticApp(AppPlugin):
         not container names. The container name will be automatically prefixed with
         the project name by Docker Compose.
         """
-        with open(template_config_path) as f:
-            config = json.load(f)
+        if template_config is not None:
+            config = json.loads(json.dumps(template_config))
+        elif template_config_path is not None:
+            with open(template_config_path) as f:
+                config = json.load(f)
+        else:
+            raise ValueError(
+                "Either template_config or template_config_path must be provided"
+            )
 
         # Parse the original address
         if "Addr" in config:
@@ -597,7 +605,6 @@ class SyntheticApp(AppPlugin):
         # Prepare config files
         output_dir.mkdir(parents=True, exist_ok=True)
         gen_config_path = output_dir / "gen_config.json"
-        template_gen_config_path = config.in_dir / "gen_config.json"
 
         # Check for app config (hotel.json / config.docker.json)
         app_config_path = None
@@ -658,7 +665,7 @@ class SyntheticApp(AppPlugin):
         # Generate gen_config.json
         # 1. Calculate content (Pure)
         gen_config_content = self.create_gen_config_dict(
-            template_config_path=template_gen_config_path,
+            template_config=config.gen_config,
             project_name=project_name,
             service_name_override=service_name,
         )
@@ -740,10 +747,9 @@ class SyntheticApp(AppPlugin):
         self._validate_config(repo_root, app_config_path, executor)
         env_vars["APP_CONFIG_PATH"] = str(app_config_path)
 
-        template_gen_config_path = config.in_dir / "gen_config.json"
         gen_config_path = output_dir / "gen_config.json"
         gen_config_content = self.create_gen_config_dict(
-            template_config_path=template_gen_config_path,
+            template_config=config.gen_config,
             project_name=project_name,
             service_name_override=None,
         )

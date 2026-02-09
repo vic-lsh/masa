@@ -5,6 +5,7 @@ Main experiment orchestration logic.
 import logging
 import os
 import shutil
+import tempfile
 import time
 from argparse import Namespace
 from pathlib import Path
@@ -284,15 +285,24 @@ class Experiment:
         self.config.plot_dir.mkdir(parents=True, exist_ok=True)
         logger.debug(f"Cleared plot directory: {self.config.plot_dir}")
 
-        # Create args-like object for plotting functions
-        args = Namespace(
-            config_dir=self.config.in_dir,
-            data_dir=self.config.out_dir,
-            output_dir=self.config.plot_dir,
-        )
-
         try:
-            generate_all_plots(args)
+            if self.config.config_format == "legacy":
+                args = Namespace(
+                    config_dir=self.config.in_dir,
+                    data_dir=self.config.out_dir,
+                    output_dir=self.config.plot_dir,
+                )
+                generate_all_plots(args)
+            else:
+                with tempfile.TemporaryDirectory(prefix="masa-plot-config-") as tmp:
+                    compat_config_dir = Path(tmp)
+                    self.config.write_plot_compat_inputs(compat_config_dir)
+                    args = Namespace(
+                        config_dir=compat_config_dir,
+                        data_dir=self.config.out_dir,
+                        output_dir=self.config.plot_dir,
+                    )
+                    generate_all_plots(args)
             logger.info("Plots generated successfully")
         except Exception as e:
             logger.error(f"Failed to generate plots: {e}")

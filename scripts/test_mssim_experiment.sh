@@ -90,7 +90,7 @@ rm -rf "$out_dir"
 
 echo "Running MSSIM experiment using exp_runner.runner with mode: $deploy_mode"
 # shellcheck disable=SC2086
-python -m exp_runner.runner run mssim "$experiment_name" --rm-data --smoke-test $deploy_args
+python -m exp_runner.runner run mssim "$experiment_name" --compat --rm-data --smoke-test $deploy_args
 
 echo "Verifying MSSIM outputs and metadata mode ($expected_mode)..."
 python - <<'PY' "$repo_root" "$experiment_name" "$expected_mode"
@@ -106,7 +106,7 @@ experiment = sys.argv[2]
 expected_mode = sys.argv[3]
 
 app = get_app_plugin("mssim")
-config = ExperimentConfig.load(experiment, "mssim", repo_root, app)
+config = ExperimentConfig.load(experiment, "mssim", repo_root, app, compat=True)
 
 if not app.verify_results(config):
     raise SystemExit("MSSIM smoke test verification failed")

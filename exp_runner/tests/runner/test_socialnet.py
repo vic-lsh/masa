@@ -11,8 +11,7 @@ from exp_runner.runner.executor import MockCommandExecutor
 
 
 class TestSocialnetBuilder:
-    @patch("exp_runner.runner.executor.subprocess.run")
-    def test_build_with_features(self, mock_subprocess):
+    def test_build_with_features(self):
         builder = SocialnetBuilder()
         executor = MockCommandExecutor()
 

@@ -33,7 +33,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$deploy_mode" == "kind" ]]; then
-    deploy_args="--kind --use-new-generator"
+    deploy_args="--kind"
     # Use a unique cluster name to avoid conflicts in CI
     if [ -n "${CI_JOB_ID:-}" ]; then
         CLUSTER_NAME="kind-${CI_JOB_ID}"
@@ -116,6 +116,6 @@ rm -rf "$out_dir"
 
 echo "Running socialnet experiment: $exp_name"
 cd "$repo_root"
-python -m exp_runner.runner run socialnet "$exp_name" $no_cache $deploy_args --smoke-test --plot
+python -m exp_runner.runner run socialnet "$exp_name" $no_cache $deploy_args --compat --smoke-test --plot
 
 echo "Socialnet experiment test passed."

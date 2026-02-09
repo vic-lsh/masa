@@ -78,7 +78,7 @@ class ExpDriver:
             logger.warning("No DOCKER_COMPOSE_PROJECT_NAME in env_vars")
 
         # 2. Build Images
-        template_gen_config = config.in_dir / "gen_config.json"
+        template_gen_config = config.get_gen_config_path()
         builder = self.app.create_builder()
         build_logs_dir = output_dir / "build_logs"
 

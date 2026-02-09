@@ -122,33 +122,37 @@ packages=(
     "sim-config"
 )
 
-# If testing your crate requires special feature flags, set them here
-declare -A package_features=(
-    ["tokio"]="--features full"
-    ["tokio-util"]="--features full"
-    ["tower"]="--all-features"
-)
+get_package_features() {
+    local package="$1"
+    case "$package" in
+        tokio) echo "--features full" ;;
+        tokio-util) echo "--features full" ;;
+        tower) echo "--all-features" ;;
+        *) echo "" ;;
+    esac
+}
 
 # Testing by package name can be ambiguous (e.g., we have a local crate X and
 # cargo also downloads another version from crates.io). In this case, we can
 # be precise about our package under test by specifying its Cargo.toml path.
-declare -A package_manifest_paths=(
-    # This is an example; async-task has been removed
-    #["async-task"]="./libs/async-task/Cargo.toml"
-)
+get_package_manifest_path() {
+    local package="$1"
+    case "$package" in
+        # This is an example; async-task has been removed
+        # async-task) echo "./libs/async-task/Cargo.toml" ;;
+        *) echo "" ;;
+    esac
+}
 
 # Loop through each package and run tests
 for package in "${packages[@]}"; do
     # Check if the package has defined feature flags
-    if [ -n "${package_features[$package]}" ]; then
-        features="${package_features[$package]}"
-    else
-        features=""
-    fi
+    features="$(get_package_features "$package")"
 
-    if [ -n "${package_manifest_paths[$package]}" ]; then
+    manifest_path="$(get_package_manifest_path "$package")"
+    if [ -n "$manifest_path" ]; then
         # for packages with manifest path, test directly using manifest path
-        execute_test "$package" cargo test --manifest-path "${package_manifest_paths[$package]}"
+        execute_test "$package" cargo test --manifest-path "$manifest_path"
     else
         # otherwise, test with package name and optionally with feature flags
         # Need to be careful with word splitting for features if it contains multiple flags

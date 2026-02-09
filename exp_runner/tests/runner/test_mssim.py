@@ -51,6 +51,7 @@ def test_experiment_config_load_mssim_minimal() -> None:
             app_name="mssim",
             repo_root=repo_root,
             app_plugin=app,
+            compat=True,
         )
 
         assert cfg.app_name == "mssim"

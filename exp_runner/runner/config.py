@@ -8,6 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+import yaml
+
+from .experiment_config_v2 import ExperimentConfigV2
+from .legacy import convert_experiment_config_to_gen_config
+
 if TYPE_CHECKING:
     from .apps.base import AppPlugin
 
@@ -37,6 +42,10 @@ class ExperimentConfig:
     gen_config: dict
     policies: list[str]
     app_config: Optional[dict]
+    app_config_filename: Optional[str] = None
+    config_format: str = "legacy"
+    experiment_v2: Optional[ExperimentConfigV2] = None
+    _generated_gen_config_path: Optional[Path] = None
 
     @classmethod
     def load(
@@ -45,6 +54,7 @@ class ExperimentConfig:
         app_name: str,
         repo_root: Path,
         app_plugin: "AppPlugin",  # type: ignore
+        compat: bool = False,
     ) -> "ExperimentConfig":
         """
         Load experiment configuration from disk.
@@ -81,32 +91,62 @@ class ExperimentConfig:
                 f"Expected configuration for experiment at: {in_dir}"
             )
 
-        # Load gen_config.json
-        gen_config_path = in_dir / "gen_config.json"
-        if not gen_config_path.exists():
-            raise FileNotFoundError(f"Missing gen_config.json at: {gen_config_path}")
+        config_format = "legacy" if compat else "v2"
+        experiment_v2: Optional[ExperimentConfigV2] = None
 
-        with open(gen_config_path) as f:
-            gen_config = json.load(f)
+        if compat:
+            gen_config_path = in_dir / "gen_config.json"
+            if not gen_config_path.exists():
+                raise FileNotFoundError(
+                    f"Missing gen_config.json at: {gen_config_path}"
+                )
 
-        logger.info(f"Loaded gen_config.json from {gen_config_path}")
+            with open(gen_config_path) as f:
+                gen_config = json.load(f)
+
+            policies_path = in_dir / "policies"
+            if not policies_path.exists():
+                raise FileNotFoundError(f"Missing policies file at: {policies_path}")
+
+            with open(policies_path) as f:
+                policies = [line.strip() for line in f if line.strip()]
+        else:
+            experiment_yaml = in_dir / "experiment.yaml"
+            if not experiment_yaml.exists():
+                raise FileNotFoundError(
+                    f"Missing experiment.yaml at: {experiment_yaml}. "
+                    "Use --compat for legacy gen_config.json/policies input or run "
+                    "'uv run -m exp_runner migrate-config ...' to migrate."
+                )
+
+            experiment_v2 = ExperimentConfigV2.from_yaml(experiment_yaml)
+            if experiment_v2.app and experiment_v2.app != app_name:
+                raise ValueError(
+                    f"experiment.yaml app='{experiment_v2.app}' does not match '{app_name}'"
+                )
+
+            frontend_defaults = {
+                "hotel": "http://frontend:8660",
+                "socialnet": "http://compose-post-service:8080",
+                "synthetic": "http://synthetic-frontend-service:8000",
+                "mssim": "http://orchestrator:50051",
+            }
+            gen_config = convert_experiment_config_to_gen_config(
+                experiment_v2,
+                frontend_addr=frontend_defaults.get(app_name, "http://frontend:8080"),
+            )
+            policies = experiment_v2.execution.policies
+
+        logger.info(f"Loaded {config_format} experiment config for {experiment_name}")
 
         # Validate required fields in gen_config (app-specific)
         required_fields = app_plugin.get_required_gen_config_fields()
         for field in required_fields:
             if field not in gen_config:
-                raise ValueError(f"gen_config.json missing required field: {field}")
-
-        # Load policies file
-        policies_path = in_dir / "policies"
-        if not policies_path.exists():
-            raise FileNotFoundError(f"Missing policies file at: {policies_path}")
-
-        with open(policies_path) as f:
-            policies = [line.strip() for line in f if line.strip()]
+                raise ValueError(f"config missing required field: {field}")
 
         if not policies:
-            raise ValueError("policies file is empty or contains no policies")
+            raise ValueError("No policies configured")
 
         logger.info(f"Loaded policies: {', '.join(policies)}")
 
@@ -135,8 +175,53 @@ class ExperimentConfig:
             gen_config=gen_config,
             policies=policies,
             app_config=app_config,
+            app_config_filename=docker_config.app_config_filename,
+            config_format=config_format,
+            experiment_v2=experiment_v2,
         )
 
     def get_repeats(self) -> int:
         """Get number of experiment repetitions."""
         return self.gen_config["Repeats"]
+
+    def get_gen_config_path(self) -> Path:
+        """
+        Return a filesystem path to gen_config.json for build tooling.
+        """
+        legacy_path = self.in_dir / "gen_config.json"
+        if legacy_path.exists():
+            return legacy_path
+
+        if self._generated_gen_config_path is None:
+            gen_config_path = self.in_dir / ".generated.gen_config.json"
+            gen_config_path.write_text(
+                json.dumps(self.gen_config, indent=2),
+                encoding="utf-8",
+            )
+            self._generated_gen_config_path = gen_config_path
+        return self._generated_gen_config_path
+
+    def write_plot_compat_inputs(self, target_dir: Path) -> None:
+        """
+        Materialize legacy plotting inputs in target_dir.
+        """
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / "gen_config.json").write_text(
+            json.dumps(self.gen_config, indent=2),
+            encoding="utf-8",
+        )
+        (target_dir / "policies").write_text(
+            "\n".join(self.policies) + "\n",
+            encoding="utf-8",
+        )
+        if self.experiment_v2 is not None:
+            (target_dir / "experiment.yaml").write_text(
+                yaml.safe_dump(self.experiment_v2.to_dict(), sort_keys=False),
+                encoding="utf-8",
+            )
+
+        if self.app_config_filename and self.app_config is not None:
+            (target_dir / self.app_config_filename).write_text(
+                json.dumps(self.app_config, indent=2),
+                encoding="utf-8",
+            )

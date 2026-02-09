@@ -142,16 +142,13 @@ def test_convert_experiment_config_to_gen_config():
     gen_config = convert_experiment_config_to_gen_config(config, "frontend:8660")
 
     assert gen_config["Repeats"] == 3
-    assert gen_config["RPSList"] == [100, 200, 300]
+    assert gen_config["Rps"] == [100, 200, 300]
     assert gen_config["Addr"] == "frontend:8660"
-    assert gen_config["Warmup"] == 10
-    assert gen_config["Duration"] == 60
-    assert len(gen_config["APIs"]) == 2
-    assert gen_config["APIs"][0]["Name"] == "Search"
-    assert gen_config["APIs"][0]["SLO"] == 200000
-    assert gen_config["APIs"][0]["ReqWeight"] == 0.6
-    assert gen_config["APIs"][0]["Timeout"] == 1000  # Default timeout
-    assert gen_config["APIs"][1]["Timeout"] == 2000  # Custom timeout
+    assert gen_config["WarmupSecs"] == 10
+    assert gen_config["DurationSecs"] == 60
+    assert gen_config["Apis"] == ["Search", "Reservation"]
+    assert gen_config["Slos"] == [200000, 300000]
+    assert gen_config["Timeouts_ms"] == [1000, 2000]
 
 
 def test_convert_legacy_with_defaults():
@@ -175,6 +172,31 @@ def test_convert_legacy_with_defaults():
     assert config.execution.warmup_secs == 10  # Default
     assert config.execution.duration_secs == 60  # Default
     assert config.loadgen.apis[0].weight == 1.0  # Default
+
+
+def test_convert_current_runner_format():
+    """Test converting current runner gen_config.json shape to v2 format."""
+    gen_config = {
+        "Repeats": 1,
+        "Rps": [100, 200],
+        "WarmupSecs": 2,
+        "DurationSecs": 5,
+        "Apis": ["Search", "Reserve"],
+        "Slos": [200000, 300000],
+        "Timeouts_ms": [1000, 2500],
+        "Addr": "http://frontend:8660",
+    }
+
+    config = convert_legacy_to_experiment_config(gen_config, ["fifo"], "ci", "hotel")
+
+    assert config.execution.repeats == 1
+    assert config.execution.warmup_secs == 2
+    assert config.execution.duration_secs == 5
+    assert config.loadgen.rps == [100, 200]
+    assert [api.name for api in config.loadgen.apis] == ["Search", "Reserve"]
+    assert [api.slo_us for api in config.loadgen.apis] == [200000, 300000]
+    assert config.loadgen.apis[0].timeout_ms is None
+    assert config.loadgen.apis[1].timeout_ms == 2500
 
 
 def test_roundtrip_conversion():
@@ -208,14 +230,8 @@ def test_roundtrip_conversion():
 
     # Compare (excluding Addr which is passed separately)
     assert roundtrip_gen_config["Repeats"] == original_gen_config["Repeats"]
-    assert roundtrip_gen_config["RPSList"] == original_gen_config["RPSList"]
-    assert roundtrip_gen_config["Warmup"] == original_gen_config["Warmup"]
-    assert roundtrip_gen_config["Duration"] == original_gen_config["Duration"]
-    assert len(roundtrip_gen_config["APIs"]) == len(original_gen_config["APIs"])
-    assert (
-        roundtrip_gen_config["APIs"][0]["Name"]
-        == original_gen_config["APIs"][0]["Name"]
-    )
-    assert (
-        roundtrip_gen_config["APIs"][0]["SLO"] == original_gen_config["APIs"][0]["SLO"]
-    )
+    assert roundtrip_gen_config["Rps"] == original_gen_config["RPSList"]
+    assert roundtrip_gen_config["WarmupSecs"] == original_gen_config["Warmup"]
+    assert roundtrip_gen_config["DurationSecs"] == original_gen_config["Duration"]
+    assert roundtrip_gen_config["Apis"] == [original_gen_config["APIs"][0]["Name"]]
+    assert roundtrip_gen_config["Slos"] == [original_gen_config["APIs"][0]["SLO"]]

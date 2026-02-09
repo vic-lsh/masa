@@ -1,8 +1,5 @@
 """
-Legacy configuration converters.
-
-Provides compatibility layer between old gen_config.json format and new
-topology + experiment config format.
+Configuration converters between legacy and v2 experiment formats.
 """
 
 import json
@@ -34,7 +31,7 @@ def convert_legacy_to_experiment_config(
     app_name: str,
 ) -> ExperimentConfigV2:
     """
-    Convert legacy gen_config.json + policies to new ExperimentConfigV2 format.
+    Convert legacy gen_config.json + policies to ExperimentConfigV2.
 
     Args:
         gen_config: Loaded gen_config.json data
@@ -45,37 +42,14 @@ def convert_legacy_to_experiment_config(
     Returns:
         ExperimentConfigV2 with equivalent configuration
 
-    Example gen_config.json formats:
-
-    Hotel/Socialnet:
-    {
-      "Repeats": 3,
-      "RPSList": [100, 200, 300],
-      "Addr": "frontend:8080",
-      "Warmup": 10,
-      "Duration": 60,
-      "APIs": [
-        {"Name": "Search", "ReqWeight": 0.6, "SLO": 200000, "Timeout": 1000},
-        {"Name": "Reservation", "ReqWeight": 0.4, "SLO": 300000, "Timeout": 2000}
-      ]
-    }
-
-    Synthetic:
-    {
-      "Repeats": 1,
-      "RPSList": [50, 100, 150],
-      "Addr": "frontend:8080",
-      "Warmup": 5,
-      "Duration": 30,
-      "APIs": [
-        {"Name": "api_a", "ReqWeight": 1.0, "SLO": 100000, "Timeout": 500}
-      ]
-    }
+    Supports both historical key styles:
+    - Repeats/RPSList/Warmup/Duration/APIs (list of dicts)
+    - Repeats/Rps/WarmupSecs/DurationSecs/Apis+Slos+Timeouts_ms
     """
     # Parse execution parameters
     repeats = gen_config.get("Repeats", 1)
-    warmup_secs = gen_config.get("Warmup", 10)
-    duration_secs = gen_config.get("Duration", 60)
+    warmup_secs = int(gen_config.get("WarmupSecs", gen_config.get("Warmup", 10)))
+    duration_secs = int(gen_config.get("DurationSecs", gen_config.get("Duration", 60)))
 
     execution = ExecutionSpec(
         repeats=repeats,
@@ -85,34 +59,50 @@ def convert_legacy_to_experiment_config(
     )
 
     # Parse load generation parameters
-    rps = gen_config.get("RPSList", [])
+    rps = gen_config.get("Rps", gen_config.get("RPSList", []))
 
     # Find default timeout (use first API's timeout, or 1000 if not specified)
     default_timeout_ms = 1000
-    apis_data = gen_config.get("APIs", [])
-    if apis_data and "Timeout" in apis_data[0]:
-        default_timeout_ms = apis_data[0]["Timeout"]
-
-    # Parse APIs
+    apis_data = gen_config.get("APIs")
     apis = []
-    for api_data in apis_data:
-        api_name = api_data.get("Name", "")
-        slo_us = api_data.get("SLO", 0)
-        weight = api_data.get("ReqWeight", 1.0)
-        timeout_ms = api_data.get("Timeout")
+    if isinstance(apis_data, list) and apis_data:
+        if isinstance(apis_data[0], dict):
+            if "Timeout" in apis_data[0]:
+                default_timeout_ms = int(apis_data[0]["Timeout"])
+            for api_data in apis_data:
+                timeout_ms = api_data.get("Timeout")
+                if timeout_ms == default_timeout_ms:
+                    timeout_ms = None
+                apis.append(
+                    ApiSpec(
+                        name=api_data.get("Name", ""),
+                        slo_us=int(api_data.get("SLO", 0)),
+                        weight=float(api_data.get("ReqWeight", 1.0)),
+                        timeout_ms=int(timeout_ms) if timeout_ms is not None else None,
+                    )
+                )
+    else:
+        names = gen_config.get("Apis", [])
+        slos = gen_config.get("Slos", [])
+        timeouts = gen_config.get("Timeouts_ms", [])
+        if timeouts:
+            default_timeout_ms = int(timeouts[0])
 
-        # Only include timeout if it differs from default
-        if timeout_ms == default_timeout_ms:
-            timeout_ms = None
-
-        apis.append(
-            ApiSpec(
-                name=api_name,
-                slo_us=slo_us,
-                weight=weight,
-                timeout_ms=timeout_ms,
+        for idx, api_name in enumerate(names):
+            slo_us = int(slos[idx]) if idx < len(slos) else 0
+            timeout_ms: Optional[int] = None
+            if idx < len(timeouts):
+                timeout = int(timeouts[idx])
+                if timeout != default_timeout_ms:
+                    timeout_ms = timeout
+            apis.append(
+                ApiSpec(
+                    name=str(api_name),
+                    slo_us=slo_us,
+                    weight=1.0,
+                    timeout_ms=timeout_ms,
+                )
             )
-        )
 
     loadgen = LoadGenSpec(
         rps=rps,
@@ -137,7 +127,7 @@ def convert_experiment_config_to_gen_config(
     frontend_addr: str = "frontend:8080",
 ) -> dict[str, Any]:
     """
-    Convert new ExperimentConfigV2 to legacy gen_config.json format.
+    Convert ExperimentConfigV2 to runner-compatible gen_config.json format.
 
     Useful for gradual migration - allows new config to drive old code paths.
 
@@ -160,11 +150,14 @@ def convert_experiment_config_to_gen_config(
 
     return {
         "Repeats": exp_config.execution.repeats,
-        "RPSList": exp_config.loadgen.rps,
+        "Rps": exp_config.loadgen.rps,
         "Addr": frontend_addr,
-        "Warmup": exp_config.execution.warmup_secs,
-        "Duration": exp_config.execution.duration_secs,
-        "APIs": apis_data,
+        "WarmupSecs": exp_config.execution.warmup_secs,
+        "DurationSecs": exp_config.execution.duration_secs,
+        "Apis": [api["Name"] for api in apis_data],
+        "Slos": [api["SLO"] for api in apis_data],
+        "Timeouts_ms": [api["Timeout"] for api in apis_data],
+        "Gap": "const",
     }
 
 

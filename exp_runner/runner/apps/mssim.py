@@ -524,7 +524,6 @@ class MssimApp(AppPlugin):
             },
         }
 
-
         values_path = output_dir / "values.yaml"
         with open(values_path, "w") as f:
             yaml.dump(values, f)
