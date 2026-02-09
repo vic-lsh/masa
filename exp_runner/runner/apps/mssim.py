@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 import time
 import yaml
 
+from ..cpu_monitor import CPUMonitor  # noqa: F401
 from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
 from .base import AppBuilder, AppPlugin, DockerConfig
@@ -366,6 +367,20 @@ class MssimApp(AppPlugin):
         """
         Prepare K8s-specific configuration (values.yaml with inline ConfigMaps).
         """
+
+        def _sanitize_callgraph_name(raw: str, existing: set[str]) -> str:
+            base = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-")
+            if not base:
+                base = "graph"
+            base = base[:40]  # leave room for suffixes
+            candidate = base
+            idx = 1
+            while candidate in existing:
+                candidate = f"{base}-{idx}"
+                idx += 1
+            existing.add(candidate)
+            return candidate
+
         # Modify deployment.json and frontend.json to set replicas=0 (K8s mode)
         with open(deployment_json_path) as f:
             deploy_data = json.load(f)
@@ -413,67 +428,8 @@ class MssimApp(AppPlugin):
             Path(d).expanduser().resolve() for d in mssim_cfg.get("callgraph_dirs", [])
         ]
 
-        for cg_dir in callgraph_dirs:
-            # Read all relevant files in callgraph dir and bundle them?
-            # Or just bundle what simulator needs?
-            # Simulator mounts the dir.
-            # charts/mssim expects: { name: "...", filename: "...", content: "..." }
-            # Wait, simulator mounts directory. K8s ConfigMap can represent a directory if populated with multiple keys,
-            # but mounting it as a volume works best if keys are filenames.
-
-            # For simplicity, we assume we need to bundle all JSON/CSV files in the directory.
-            # But the chart template I wrote iterates over `configMaps.callgraphs`.
-            # Each entry there creates ONE ConfigMap.
-            # `data: {{ $graph.filename }}: |- {{ $graph.content }}`
-            # This creates a ConfigMap with ONE file.
-            # If the simulator expects a directory with multiple files, we need multiple keys in 'data'.
-
-            # My chart template was:
-            # {{- range $graph := .Values.configMaps.callgraphs }}
-            # ...
-            # data:
-            #   {{ $graph.filename }}: ...
-
-            # If I want to mount a directory, I should probably just zip it? No.
-            # I can't easily change the template now without another write.
-            # The simulator mounts `/app/callgraphs/{graph_name}`.
-            # If I have multiple files, I need the ConfigMap to contain all of them.
-
-            # Let's check orchestrator.py:
-            # volumes.append(f"{callgraph_dir}:{container_path}:ro")
-
-            # If I mount a ConfigMap to a directory, all keys become files.
-            # So I need one ConfigMap per callgraph directory, containing all files.
-
-            # My template supports ONE file per ConfigMap entry in the list.
-            # I should update the template to support multiple files or loop.
-
-            # Actually, `orchestrator.py` logic implies it needs the directory content.
-            # The files are `call_sequence.json`, `interface_distribution.json`, `latency_percentiles.json`, `edges.csv`.
-
-            # I'll stick to a simpler approach for Phase 2:
-            # Update my template to iterate over a dictionary of files?
-
-            pass  # Placeholder thought
-
-        # Re-evaluating K8s ConfigMap Inline strategy.
-        # It's getting complicated to implement perfect directory mirroring inline.
-        # However, I must return something.
-
-        # Let's generate values.yaml with placeholders for now or basic implementation.
-        # The chart modification I made allows:
-        # data:
-        #   {{ $graph.filename }}: ...
-
-        # If I want multiple files, I need to output multiple entries in `callgraphs` list,
-        # but all mapped to the SAME ConfigMap? No, my template creates a CM per entry.
-
-        # If I want to mount a full directory from a ConfigMap, the ConfigMap must contain all files.
-        # My template loop structure:
-        # range over .Values.configMaps.callgraphs -> create CM.
-        # I can change the structure of `callgraphs` item to be `files: {name: content}`.
-
-        pass
+        if not callgraph_dirs:
+            raise ValueError("mssim.json must provide at least one callgraph directory")
 
         values = {
             "fullnameOverride": project_name,
@@ -496,18 +452,38 @@ class MssimApp(AppPlugin):
             },
         }
 
-        # For each callgraph dir, we need to create a ConfigMap.
-        # And reference it in `values["callgraphs"]`.
+        sanitized_names: set[str] = set()
+        for cg_dir in callgraph_dirs:
+            if not cg_dir.exists() or not cg_dir.is_dir():
+                raise FileNotFoundError(f"MSSIM call graph directory missing: {cg_dir}")
 
-        for _cg_dir in callgraph_dirs:
-            # Since my template is limited (one file per CM entry), I'll improve the template first?
-            # Or just hack it:
-            # I will iterate over files in cg_dir.
-            # But I need ONE ConfigMap mounted at ONE directory.
-            # If I create multiple CMs, I can't mount them all to the same dir easily without subpaths.
+            files: dict[str, str] = {}
+            for file_path in sorted(cg_dir.iterdir()):
+                if file_path.is_file() and file_path.suffix.lower() in {
+                    ".json",
+                    ".csv",
+                }:
+                    files[file_path.name] = file_path.read_text(encoding="utf-8")
 
-            # OK, I need to fix the template to support multiple files per CM.
-            pass
+            if not files:
+                raise ValueError(
+                    f"No JSON/CSV files found in call graph directory {cg_dir}"
+                )
+
+            cg_name = _sanitize_callgraph_name(cg_dir.name, sanitized_names)
+            values["configMaps"]["callgraphs"].append(
+                {
+                    "name": cg_name,
+                    "files": files,
+                }
+            )
+            values["callgraphs"].append(
+                {
+                    "name": cg_name,
+                    "mountPath": cg_dir.name,
+                    "configMapName": f"{project_name}-callgraph-{cg_name}",
+                }
+            )
 
         values_path = output_dir / "values.yaml"
         with open(values_path, "w") as f:
@@ -557,7 +533,12 @@ class MssimApp(AppPlugin):
         frontend_json_path = output_dir / "frontend.json"
 
         # Artifacts
-        artifacts = [("/app/loadgen_output", "")]  # Copy to output_dir
+        artifacts = [("/app/loadgen_output/.", "")]  # Copy to output_dir
+
+        cmd_str = "mssim-loadgen && echo 'MSSIM_LOADGEN_DONE'"
+        if use_k8s:
+            # In K8s, we need to keep the pod running to copy artifacts via exec
+            cmd_str += " && sleep infinity"
 
         return TaskSpec(
             name="mssim-loadgen",
@@ -569,11 +550,20 @@ class MssimApp(AppPlugin):
             command=[
                 "/bin/sh",
                 "-c",
-                "mssim-loadgen && echo 'MSSIM_LOADGEN_DONE'",
+                cmd_str,
             ],
             wait_for_log_pattern="MSSIM_LOADGEN_DONE",
             cleanup=True,
         )
+
+    def get_required_images(self, features: Optional[str] = None) -> list[str]:
+        policy = (features or "").strip() or "default"
+        feature_image = _generic_service_image_for_policy(policy)
+        images: list[str] = []
+        for img in (MSSIM_LOADGEN_IMAGE, feature_image, GENERIC_SERVICE_IMAGE):
+            if img and img not in images:
+                images.append(img)
+        return images
 
     def create_builder(self) -> AppBuilder:
         return self._builder
