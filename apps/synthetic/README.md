@@ -36,7 +36,7 @@ The `call_sequence` field is a vector of maps (JSON objects):
 - Each map represents a **sequential step**
 - Map keys are `"service_name::method_name"` strings
 - Map values are probabilities (0.0 to 1.0)
-- Calls within a map execute **in parallel** using `tokio::spawn` and `join`
+- Calls within a map execute **in parallel** using a structured `tokio::task::JoinSet`
 - Steps execute **sequentially** (wait for all calls in step N before starting step N+1)
 
 ### Example Configuration

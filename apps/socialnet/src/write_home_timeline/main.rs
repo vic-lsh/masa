@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use std::env;
-use tokio::task::JoinHandle;
+use tokio::task::JoinSet;
 use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
@@ -60,6 +60,7 @@ mod worker {
     };
     use serde::Deserialize;
     use std::{collections::HashSet, env};
+    use tokio::task::JoinSet;
     use tokio::time::{sleep, Duration};
     use tracing::{debug, error, info, warn};
 
@@ -167,6 +168,7 @@ mod worker {
             };
 
             backoff_secs = INITIAL_BACKOFF_SECS;
+            let mut in_flight = JoinSet::new();
 
             while let Some(delivery_result) = consumer.next().await {
                 let delivery = match delivery_result {
@@ -181,7 +183,7 @@ mod worker {
                 let social_graph_clone = social_graph_client.clone();
                 let channel_clone = channel.clone();
 
-                tokio::spawn(async move {
+                in_flight.spawn(async move {
                     let delivery_tag = delivery.delivery_tag;
                     match process_message(&delivery.data, redis_clone, social_graph_clone).await {
                         Ok(_) => {
@@ -209,6 +211,20 @@ mod worker {
                         }
                     }
                 });
+
+                while let Ok(Some(task_result)) =
+                    tokio::time::timeout(Duration::from_millis(0), in_flight.join_next()).await
+                {
+                    if let Err(join_err) = task_result {
+                        error!(worker_id, "message task panicked: {}", join_err);
+                    }
+                }
+            }
+
+            while let Some(task_result) = in_flight.join_next().await {
+                if let Err(join_err) = task_result {
+                    error!(worker_id, "message task panicked: {}", join_err);
+                }
             }
 
             warn!(
@@ -328,19 +344,18 @@ async fn main() -> Result<()> {
     let num_workers: usize = env::var("WORKERS")
         .unwrap_or_else(|_| "4".to_string())
         .parse()?;
-    let mut worker_handles: Vec<(usize, JoinHandle<Result<()>>)> = Vec::new();
+    let mut worker_tasks = JoinSet::new();
 
     for i in 0..num_workers {
         let worker_redis_pool = redis_pool.clone();
         // Just clone the client, it's cheap and thread-safe
         let worker_sg_client = social_graph_client.clone();
 
-        let handle = tokio::spawn(async move {
+        worker_tasks.spawn(async move {
             run_worker(i, worker_redis_pool, worker_sg_client)
                 .await
                 .map_err(|e| anyhow!("worker {} failed: {}", i, e))
         });
-        worker_handles.push((i, handle));
     }
     info!("Spawned {} worker tasks.", num_workers);
 
@@ -349,19 +364,21 @@ async fn main() -> Result<()> {
         _ = tokio::signal::ctrl_c() => {
             info!("Ctrl-C received, shutting down.");
         }
-        res = async {
-            for (worker_id, handle) in worker_handles {
-                match handle.await {
-                    Ok(Ok(())) => continue,
-                    Ok(Err(e)) => return Some(e),
-                    Err(e) => return Some(anyhow!("worker {} panicked: {}", worker_id, e)),
+        res = worker_tasks.join_next() => {
+            match res {
+                Some(Ok(Ok(()))) => {}
+                Some(Ok(Err(e))) => {
+                    error!("Worker task terminated unexpectedly: {:?}", e);
+                    return Err(e);
                 }
-            }
-            None
-        } => {
-            if let Some(e) = res {
-                 error!("Worker task terminated unexpectedly: {:?}", e);
-                 return Err(e);
+                Some(Err(e)) => {
+                    let err = anyhow!("worker task panicked: {}", e);
+                    error!("Worker task terminated unexpectedly: {:?}", err);
+                    return Err(err);
+                }
+                None => {
+                    return Err(anyhow!("all workers exited unexpectedly"));
+                }
             }
         }
     }
