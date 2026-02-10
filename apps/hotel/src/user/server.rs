@@ -54,16 +54,9 @@ impl HotelManager {
             collection,
             prob_check_user,
         };
-        let manager_clone = manager.clone();
-        let db = tokio::spawn(async move {
-            log::warn!("Populating Mongodb...");
-            manager_clone
-                .populate_mongodb()
-                .await
-                .expect("Failed to populate mongodb");
-            log::warn!("Populated Mongodb");
-        });
-        db.await?;
+        log::warn!("Populating Mongodb...");
+        manager.populate_mongodb().await?;
+        log::warn!("Populated Mongodb");
         Ok(manager)
     }
 

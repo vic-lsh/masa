@@ -7,7 +7,6 @@ use text_service::text_service_client::TextServiceClient;
 use text_service::TextRequest;
 
 use csv::WriterBuilder;
-use futures::future;
 use rand::prelude::*;
 use rand::SeedableRng;
 use rand_distr::{Distribution, Zipf};
@@ -61,7 +60,7 @@ async fn run_load_test(
     seed: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Request with pace
-    let mut handles = Vec::with_capacity((rps * duration) as usize);
+    let mut tasks = tokio::task::JoinSet::new();
     let start_time = TokioInstant::now();
     for i in 0..rps * duration {
         let mut txtsvc_client = (*client).clone();
@@ -69,7 +68,7 @@ async fn run_load_test(
         let delay_ns = (1_000_000_000f64 / rps as f64) * i as f64;
         let scheduled_time = start_time + Duration::from_nanos(delay_ns as u64);
 
-        let handle = tokio::spawn(async move {
+        tasks.spawn(async move {
             sleep_until(scheduled_time).await;
             let mut rng = StdRng::seed_from_u64(seed + i);
             let zipf = Zipf::new(2000, 1.03).unwrap(); // moderate skew to simulate hot spots
@@ -98,11 +97,14 @@ async fn run_load_test(
                 }
             }
         });
-        handles.push(handle);
     }
 
     // Wait for all tasks to complete
-    future::join_all(handles).await;
+    while let Some(task_result) = tasks.join_next().await {
+        if let Err(join_err) = task_result {
+            eprintln!("load task failed: {join_err}");
+        }
+    }
     Ok(())
 }
 

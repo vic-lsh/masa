@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::bootstrap::ConnectionBootstrap;
+use crate::bootstrap::{ConnectionBootstrap, ConnectionBootstrapTask};
 use crate::config::{parse_call_sequences, CallTarget, SyntheticConfig};
 use crate::service_registry::ServiceRegistry;
 use crate::util::execute_call_sequence;
@@ -13,6 +13,7 @@ use crate::tonic::{frontend, frontend::frontend_server::Frontend};
 pub struct FrontendImpl {
     parsed_entry_points: HashMap<String, Vec<Vec<(CallTarget, f64)>>>,
     service_registry: ServiceRegistry,
+    _bootstrap_task: Option<ConnectionBootstrapTask>,
 }
 
 impl FrontendImpl {
@@ -53,14 +54,17 @@ impl FrontendImpl {
         let registry = ServiceRegistry::new();
 
         // Spawn bootstrap task to connect asynchronously
-        if !services_to_connect.is_empty() {
+        let bootstrap_task = if services_to_connect.is_empty() {
+            None
+        } else {
             let bootstrap = ConnectionBootstrap::new(services_to_connect, registry.clients());
-            bootstrap.spawn();
-        }
+            Some(bootstrap.spawn())
+        };
 
         FrontendImpl {
             parsed_entry_points: call_graph.parsed_entry_points,
             service_registry: registry,
+            _bootstrap_task: bootstrap_task,
         }
     }
 }

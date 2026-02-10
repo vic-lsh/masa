@@ -18,6 +18,7 @@ use crate::db;
 use app_utils::stats::latency::{new_latency_tracker, spawn_latency_logger, SyncLatencyTracker};
 use mongodb::{bson::doc, Client as MongoClient, Collection};
 use redis::{aio::ConnectionManager as RedisConnectionManager, AsyncCommands};
+use tokio::task::JoinSet;
 use tonic::{Request, Response, Status};
 
 pub struct ReservationImpl {
@@ -217,7 +218,7 @@ impl Reservation for ReservationImpl {
         }
 
         // Check reservations in parallel
-        let mut tasks = Vec::new();
+        let mut tasks = JoinSet::new();
 
         // let query_lim = 1;
         // self.check_avail_reserve
@@ -234,7 +235,7 @@ impl Reservation for ReservationImpl {
             let cache_cap = cache_cap.clone();
             let room_number = req.room_number;
             let redis_err = self.redis_err_count.clone();
-            tasks.push(tokio::spawn(async move {
+            tasks.spawn(async move {
                 let collection = mongo_client
                     .database("reservation-db")
                     .collection::<db::Reservation>("reservation");
@@ -273,12 +274,13 @@ impl Reservation for ReservationImpl {
                     }
                 }
                 (hotel_id, true)
-            }));
+            });
         }
 
         // Wait for all tasks to complete
-        for task in tasks {
-            let (hotel_id, is_available) = task.await.unwrap();
+        while let Some(task_result) = tasks.join_next().await {
+            let (hotel_id, is_available) = task_result
+                .map_err(|e| Status::internal(format!("reservation task join failed: {e}")))?;
             res_map.insert(hotel_id, is_available);
         }
 

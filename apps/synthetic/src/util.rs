@@ -3,6 +3,7 @@ use crate::service_registry::ServiceRegistry;
 use app_utils::timing::time_now;
 use rand::{thread_rng, Rng};
 use std::time::{Duration, Instant};
+use tokio::task::JoinSet;
 use tonic::masa::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
 use tonic::metadata::MetadataValue;
 use tonic::{Request, Status};
@@ -61,8 +62,8 @@ pub async fn execute_call_sequence(
 ) -> Result<(), Status> {
     // Execute steps sequentially
     for step in call_sequence {
-        // Collect tasks for parallel calls in this step
-        let mut tasks = Vec::new();
+        // Structured fanout: each step owns its task set and joins it before proceeding.
+        let mut tasks = JoinSet::new();
 
         for (target, probability) in step {
             if should_make_call(*probability) {
@@ -84,7 +85,7 @@ pub async fn execute_call_sequence(
                 // Spawn task to make the call
                 let target_service_id = target.service_id.clone();
                 let target_method_name = target.method_name.clone();
-                let task = tokio::spawn(async move {
+                tasks.spawn(async move {
                     // Create metadata values first to avoid cloning strings
                     let method_meta = MetadataValue::try_from(target_method_name.as_str())
                         .map_err(|e| {
@@ -116,15 +117,14 @@ pub async fn execute_call_sequence(
 
                     client.clone().handle_method(request).await
                 });
-
-                tasks.push(task);
             }
         }
 
-        // Wait for all parallel calls in this step to complete
-        for task in tasks {
-            task.await
-                .map_err(|e| Status::internal(format!("Task join error: {}", e)))??;
+        // Wait for all calls in this step; dropping the set aborts unfinished tasks on error.
+        while let Some(task_result) = tasks.join_next().await {
+            let rpc_result =
+                task_result.map_err(|e| Status::internal(format!("Task join error: {}", e)))?;
+            rpc_result?;
         }
     }
 
