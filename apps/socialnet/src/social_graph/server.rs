@@ -304,20 +304,17 @@ impl GrpcService for SocialGraphService {
         };
 
         if !redis_zset.is_empty() {
-            let pool = self.redis_pool.clone();
-            tokio::spawn(async move {
-                if let Ok(mut conn) = pool.get().await {
-                    match conn
-                        .zadd_multiple::<&str, i64, i64, ()>(&key, &redis_zset)
-                        .await
-                    {
-                        Ok(_) => info!("Updated Redis cache for followers of {}", user_id),
-                        Err(e) => warn!("Failed to update Redis cache for {}: {}", user_id, e),
-                    }
-                } else {
-                    warn!("Failed to get Redis conn for cache update for {}", user_id);
+            if let Ok(mut conn) = self.redis_pool.get().await {
+                match conn
+                    .zadd_multiple::<&str, i64, i64, ()>(&key, &redis_zset)
+                    .await
+                {
+                    Ok(_) => info!("Updated Redis cache for followers of {}", user_id),
+                    Err(e) => warn!("Failed to update Redis cache for {}: {}", user_id, e),
                 }
-            });
+            } else {
+                warn!("Failed to get Redis conn for cache update for {}", user_id);
+            }
         }
 
         Ok(Response::new(GetFollowersResponse {
@@ -378,20 +375,17 @@ impl GrpcService for SocialGraphService {
         };
 
         if !redis_zset.is_empty() {
-            let pool = self.redis_pool.clone();
-            tokio::spawn(async move {
-                if let Ok(mut conn) = pool.get().await {
-                    match conn
-                        .zadd_multiple::<&str, i64, i64, ()>(&key, &redis_zset)
-                        .await
-                    {
-                        Ok(_) => info!("Updated Redis cache for followees of {}", user_id),
-                        Err(e) => warn!("Failed to update Redis cache for {}: {}", user_id, e),
-                    }
-                } else {
-                    warn!("Failed to get Redis conn for cache update for {}", user_id);
+            if let Ok(mut conn) = self.redis_pool.get().await {
+                match conn
+                    .zadd_multiple::<&str, i64, i64, ()>(&key, &redis_zset)
+                    .await
+                {
+                    Ok(_) => info!("Updated Redis cache for followees of {}", user_id),
+                    Err(e) => warn!("Failed to update Redis cache for {}: {}", user_id, e),
                 }
-            });
+            } else {
+                warn!("Failed to get Redis conn for cache update for {}", user_id);
+            }
         }
 
         Ok(Response::new(GetFolloweesResponse {

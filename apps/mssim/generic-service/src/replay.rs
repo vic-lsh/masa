@@ -245,7 +245,7 @@ pub async fn run_replay_load(
     latency_sample_tx: mpsc::UnboundedSender<u64>,
 ) -> anyhow::Result<()> {
     let start_instant = Instant::now();
-    let mut handles = Vec::with_capacity(work_items.len());
+    let mut tasks = tokio::task::JoinSet::new();
 
     for item in work_items.iter().cloned() {
         let ReplayWorkItem { offset_us, payload } = item;
@@ -257,7 +257,7 @@ pub async fn run_replay_load(
         let mut rpc_client = entry.client.clone();
         let stats = Arc::clone(&stats);
 
-        let handle = tokio::spawn(async move {
+        tasks.spawn(async move {
             tokio::time::sleep_until(schedule_time).await;
             let permit = match permit_pool.acquire_owned().await {
                 Ok(p) => p,
@@ -285,12 +285,10 @@ pub async fn run_replay_load(
                 Err(_) => stats.err.fetch_add(1, Ordering::Relaxed),
             };
         });
-
-        handles.push(handle);
     }
 
-    for handle in handles {
-        let _ = handle.await;
+    while let Some(task_result) = tasks.join_next().await {
+        let _ = task_result;
     }
 
     Ok(())

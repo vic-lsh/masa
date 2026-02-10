@@ -108,17 +108,13 @@ impl Review for ReviewImpl {
             if !db_reviews.is_empty() {
                 match serde_json::to_vec(&db_reviews) {
                     Ok(json_bytes) => {
-                        let hotel_id_clone = hotel_id.clone();
                         let mut redis_conn = self.redis_conn.clone();
-                        tokio::spawn(async move {
-                            let res: redis::RedisResult<()> = redis_conn
-                                .set_ex(&hotel_id_clone, json_bytes, CACHE_TTL_SECS as u64)
-                                .await;
-
-                            if let Err(e) = res {
-                                log::error!("Failed to set redis cache: {}", e);
-                            }
-                        });
+                        let res: redis::RedisResult<()> = redis_conn
+                            .set_ex(&hotel_id, json_bytes, CACHE_TTL_SECS as u64)
+                            .await;
+                        if let Err(e) = res {
+                            log::error!("Failed to set redis cache: {}", e);
+                        }
                     }
                     Err(e) => {
                         log::error!("Failed to serialize reviews for caching: {}", e);

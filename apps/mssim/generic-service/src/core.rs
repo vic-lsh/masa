@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Once};
 use tokio::sync::{RwLock, RwLockReadGuard};
+use tokio::task::JoinSet;
 use tonic::{masa::context::MasaRequestExt, Request, Status};
 use tracing::{info, warn};
 
@@ -183,7 +184,7 @@ impl ServiceCore {
 
         // Execute each step sequentially
         for step in call_sequence {
-            let mut tasks = Vec::new();
+            let mut tasks = JoinSet::new();
 
             // Process each child in this step
             for entry in step {
@@ -247,15 +248,12 @@ impl ServiceCore {
                 }
 
                 // Spawn task for this child
-                let child = child_svc_name.clone();
-                let handle = tokio::spawn(async move { client_clone.invoke(request).await });
-                tasks.push((child, handle));
+                tasks.spawn(async move { client_clone.invoke(request).await });
             }
 
             // Wait for all tasks in this step to complete before proceeding to next step
-            for (_child_svc, handle) in tasks {
-                let rpc_result = handle
-                    .await
+            while let Some(task_result) = tasks.join_next().await {
+                let rpc_result = task_result
                     .map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
                 rpc_result.map_err(|err| {
                     // error!(
@@ -278,7 +276,7 @@ impl ServiceCore {
         parent_chain: Vec<ServiceName>,
         graph_name: &GraphId,
     ) -> Result<(), Status> {
-        let mut tasks = Vec::new();
+        let mut tasks = JoinSet::new();
         let mut parent_chain_for_children = parent_chain.clone();
         parent_chain_for_children.push(self.self_svc_name.clone());
 
@@ -344,16 +342,13 @@ impl ServiceCore {
                     .insert(PARENT_CHAIN_METADATA_KEY, metadata_value.clone());
             }
 
-            let child = child_svc_name.clone();
-            let handle = tokio::spawn(async move { client.invoke(request).await });
-            tasks.push((child, handle));
+            tasks.spawn(async move { client.invoke(request).await });
         }
         drop(clients_guard);
 
-        for (_child_svc, handle) in tasks {
-            let rpc_result = handle
-                .await
-                .map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
+        while let Some(task_result) = tasks.join_next().await {
+            let rpc_result =
+                task_result.map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
             rpc_result?;
         }
         Ok(())

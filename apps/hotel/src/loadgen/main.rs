@@ -3,6 +3,7 @@ use rand::Rng;
 use std::{sync::Arc, time::Instant};
 use tokio::{
     sync::Mutex,
+    task::JoinSet,
     time::{self, Duration},
 };
 use tonic::transport::Channel;
@@ -46,11 +47,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.duration_secs, args.rps
     );
 
+    let mut tasks = JoinSet::new();
     while Instant::now().duration_since(start) < duration {
         let client = Arc::clone(&client);
         let request_type = args.request_type.clone();
 
-        tokio::spawn(async move {
+        tasks.spawn(async move {
             match request_type.as_str() {
                 "search" => {
                     let _ = send_search(client).await;
@@ -72,6 +74,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
 
         time::sleep(interval).await;
+    }
+
+    while let Some(task_result) = tasks.join_next().await {
+        if let Err(join_err) = task_result {
+            eprintln!("loadgen request task failed: {join_err}");
+        }
     }
 
     Ok(())
