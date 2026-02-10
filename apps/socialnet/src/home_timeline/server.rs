@@ -81,7 +81,7 @@ impl HomeTimelineService {
         args: &Args, // CHANGED: Accept Args struct
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Initialize Post Storage Client
-        let post_storage_channel = LoadBalancedChannel::new(
+        let post_storage_channel = LoadBalancedChannel::new_from_service_name(
             args.post_storage_ip.clone(),
             args.post_storage_port,
             args.post_storage_replicas,
@@ -90,7 +90,7 @@ impl HomeTimelineService {
         let post_storage_client = PostStorageServiceClient::new(post_storage_channel);
 
         // Initialize Social Graph Client
-        let social_graph_channel = LoadBalancedChannel::new(
+        let social_graph_channel = LoadBalancedChannel::new_from_service_name(
             args.social_graph_ip.clone(),
             args.social_graph_port,
             args.social_graph_replicas,

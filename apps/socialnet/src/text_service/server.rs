@@ -71,7 +71,7 @@ impl Args {
 
 impl TextSvcImpl {
     pub async fn new(args: &Args) -> Result<Self, Box<dyn std::error::Error>> {
-        let url_shorten_channel = LoadBalancedChannel::new(
+        let url_shorten_channel = LoadBalancedChannel::new_from_service_name(
             args.url_shorten_service_ip.clone(),
             args.url_shorten_service_port,
             args.url_shorten_service_replicas,
@@ -79,7 +79,7 @@ impl TextSvcImpl {
         .await;
         let url_shorten_client = UrlShortenServiceClient::new(url_shorten_channel);
 
-        let user_mention_channel = LoadBalancedChannel::new(
+        let user_mention_channel = LoadBalancedChannel::new_from_service_name(
             args.user_mention_service_ip.clone(),
             args.user_mention_service_port,
             args.user_mention_service_replicas,

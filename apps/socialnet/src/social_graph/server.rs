@@ -87,7 +87,7 @@ impl SocialGraphService {
         let mongo_collection = db.collection("social-graph");
 
         // Initialize User Service Client
-        let user_service_channel = LoadBalancedChannel::new(
+        let user_service_channel = LoadBalancedChannel::new_from_service_name(
             args.user_service_ip.clone(),
             args.user_service_port,
             args.user_service_replicas,

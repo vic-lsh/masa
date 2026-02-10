@@ -399,8 +399,12 @@ class DockerManager(DeploymentManager):
             failed_containers = []
             if isinstance(containers, list):
                 for c in containers:
-                    # Check for non-zero exit code
-                    exit_code = c.get("ExitCode", 0)
+                    # Check for non-zero exit code (normalize string values)
+                    exit_code_raw = c.get("ExitCode", 0)
+                    try:
+                        exit_code = int(exit_code_raw)
+                    except (TypeError, ValueError):
+                        exit_code = 0
                     state = c.get("State", "").lower()
                     name = c.get("Name", "unknown")
 
@@ -453,12 +457,18 @@ class DockerManager(DeploymentManager):
 
                     try:
                         # Read line by line until process exits
-                        for line in iter(process.stdout.readline, ""):
-                            if line:
+                        while True:
+                            try:
+                                line = process.stdout.readline()
+                                if not line:
+                                    break
                                 # Strip ANSI codes before writing to file
                                 cleaned_line = strip_ansi_codes(line)
                                 f.write(cleaned_line)
                                 f.flush()  # Ensure immediate write
+                            except Exception as e:
+                                logger.debug(f"Error reading log line from {container_name}: {e}")
+                                break
                     finally:
                         process.wait()
             else:

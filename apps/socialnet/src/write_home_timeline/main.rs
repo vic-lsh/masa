@@ -314,7 +314,7 @@ async fn main() -> Result<()> {
     }
 
     // 2. Initialize Social Graph Client (Load Balanced)
-    let sg_channel = LoadBalancedChannel::new(
+    let sg_channel = LoadBalancedChannel::new_from_service_name(
         args.social_graph_ip,
         args.social_graph_port,
         args.social_graph_replicas,

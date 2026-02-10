@@ -525,6 +525,9 @@ class SocialnetApp(AppPlugin):
             with project_gen_config_path.open("w") as f:
                 json.dump(gen_config, f, indent=2)
 
+            if "FRONTEND_PORT" not in deploy.env_vars:
+                deploy.env_vars["FRONTEND_PORT"] = "8080"
+
             return deploy.env_vars
 
         if use_k8s:

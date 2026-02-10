@@ -317,7 +317,7 @@ impl UserTimelineServiceImpl {
         let redis = RedisBackend::from_args(&args)?;
 
         // --- CHANGE 5: Initialize using LoadBalancedChannel ---
-        let channel = LoadBalancedChannel::new(
+        let channel = LoadBalancedChannel::new_from_service_name(
             args.post_storage_ip.clone(),
             args.post_storage_port,
             args.post_storage_replicas as u8,

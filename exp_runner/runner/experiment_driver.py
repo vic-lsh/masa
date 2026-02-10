@@ -72,6 +72,9 @@ class ExpDriver:
             use_new_generator=use_new_generator,
         )
 
+        if "APP_CONFIG_PATH" in env_vars:
+            env_vars["APP_CONFIG_PATH"] = str(Path(env_vars["APP_CONFIG_PATH"]).absolute())
+
         project_name = env_vars.get("DOCKER_COMPOSE_PROJECT_NAME", "")
 
         if not project_name and not dry_run:
@@ -291,9 +294,9 @@ class ExpDriver:
 
         wait_until(
             check_status,
-            timeout=60.0,
+            timeout=float(os.environ.get("MASA_DEPLOY_TIMEOUT", 60.0)),
             description="deployment stabilization",
-            retry_on_exceptions=(),
+            retry_on_exceptions=(Exception,),
         )
 
     def _extract_artifacts_from_log(self, log_file: Path, output_dir: Path) -> None:

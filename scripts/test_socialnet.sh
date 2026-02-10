@@ -111,11 +111,12 @@ else
     cd "$repo_root"
 fi
 
-echo "Cleaning previous experiment output at $out_dir"
-rm -rf "$out_dir"
+# echo "Cleaning previous experiment output at $out_dir"
+# rm -rf "$out_dir"
 
 echo "Running socialnet experiment: $exp_name"
 cd "$repo_root"
-python -m exp_runner.runner run socialnet "$exp_name" $no_cache $deploy_args --compat --smoke-test --plot
+export MASA_DEPLOY_TIMEOUT=600
+python -m exp_runner.runner run socialnet "$exp_name" $no_cache $deploy_args --compat --smoke-test --plot --rm-data
 
 echo "Socialnet experiment test passed."

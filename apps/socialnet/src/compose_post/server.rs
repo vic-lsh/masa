@@ -585,9 +585,9 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 async fn create_channel_for_service(
     ip: String,
     port: u16,
-    replicas: u8, // We rename 'replicas' to '_replicas' to ignore the value
+    replicas: u8,
 ) -> Result<LoadBalancedChannel, Box<dyn std::error::Error>> {
-    Ok(LoadBalancedChannel::new(ip, port, replicas).await)
+    Ok(LoadBalancedChannel::new_from_service_name(ip, port, replicas).await)
 }
 
 fn extract_usernames(text: &str) -> Vec<String> {

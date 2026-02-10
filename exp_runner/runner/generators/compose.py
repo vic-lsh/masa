@@ -152,7 +152,8 @@ class ComposeGenerator(DeploymentGenerator):
 
             # Add volume if needed
             if infra_spec.image and any(
-                db in infra_spec.image for db in ["mongo", "redis", "postgres"]
+                db in infra_spec.image
+                for db in ["mongo", "redis", "postgres", "rabbitmq"]
             ):
                 volume_name = f"{infra_name.replace('-', '_')}-data"
                 volumes[volume_name] = {}
@@ -362,33 +363,25 @@ class ComposeGenerator(DeploymentGenerator):
         env_vars: dict[str, str] = {}
 
         # Add binary name
-        if topology.app == "hotel":
-            # Hotel uses hotel_{short_name} convention
-            # e.g. "rate-service" -> "hotel_rate"
-            # "frontend" -> "hotel_frontend"
-            short_name = name.replace("-service", "")
-            binary_name = f"hotel_{short_name}"
-        elif topology.app == "socialnet":
-            # Socialnet mapping logic
-            # "compose-post-service" -> "compose_post_server"
-            # "user-timeline-service" -> "user_timeline_server"
-            # We assume the default convention matches what we need or explicit overrides
-            # For now, let's keep the generic replacement which might be close enough
-            # if we don't have the explicit mapping here.
-            # But earlier in _get_image_name we had explicit logic.
-            # Let's reuse that or be simple.
-            # socialnet binaries are named *_server or *_service.
-            # The generic replacement gives "compose_post_server" if name is "compose-post-server"?
-            # No, generic replacement gives "compose_post_service".
-            # Socialnet binary is "compose_post_server".
-            # So we DO need app specific logic if we rely on BINARY_NAME.
-            # However, socialnet images (built by us) have correct ENTRYPOINT/CMD?
-            # Socialnet Dockerfile sets BINARY_NAME in ENV?
-            # SocialnetApp sets BINARY_NAME in legacy path.
-            # For now, let's just fix Hotel as requested.
-            binary_name = name.replace("-service", "").replace("-", "_")
-        else:
-            binary_name = name.replace("-service", "").replace("-", "_")
+        binary_name = None
+        # If the topology spec defines an image name (which matches binary name in our convention), use it.
+        # This is especially critical for socialnet where binary names (e.g. compose_post_server)
+        # don't exactly match service names (e.g. compose-post-service).
+        if hasattr(spec, "image") and spec.image and topology.app == "socialnet":
+            binary_name = spec.image
+
+        if not binary_name:
+            if topology.app == "hotel":
+                # Hotel uses hotel_{short_name} convention
+                # e.g. "rate-service" -> "hotel_rate"
+                # "frontend" -> "hotel_frontend"
+                short_name = name.replace("-service", "")
+                binary_name = f"hotel_{short_name}"
+            elif topology.app == "socialnet":
+                # Fallback if image not specified (should not happen with valid topology)
+                binary_name = name.replace("-service", "").replace("-", "_")
+            else:
+                binary_name = name.replace("-service", "").replace("-", "_")
 
         env_vars["BINARY_NAME"] = binary_name
 
@@ -398,30 +391,61 @@ class ComposeGenerator(DeploymentGenerator):
         # Add project name for service discovery
         env_vars["DOCKER_COMPOSE_PROJECT_NAME"] = "${DOCKER_COMPOSE_PROJECT_NAME:-}"
 
+        if topology.app == "socialnet":
+            env_vars["JWT_SECRET"] = "${JWT_SECRET:-test-secret-key-for-ci}"
+
         # Add service discovery variables for dependencies
         for dep_name in spec.depends_on:
             if dep_name in topology.services:
                 dep_spec = topology.services[dep_name]
                 # Add variables in the format: DEPENDENCY_IP, DEPENDENCY_PORT, DEPENDENCY_REPLICAS
                 dep_var_name = dep_name.upper().replace("-", "_")
-                env_vars[f"{dep_var_name}_IP"] = f"${{PROJECT_NAME}}-{dep_name}"
+                env_vars[f"{dep_var_name}_IP"] = dep_name
                 env_vars[f"{dep_var_name}_PORT"] = str(dep_spec.port or 8080)
                 env_vars[f"{dep_var_name}_REPLICAS"] = str(dep_spec.default_replicas)
+
+                if topology.app == "socialnet" and dep_var_name.endswith("_SERVICE"):
+                    # Socialnet expects some env vars without _SERVICE suffix
+                    # e.g. POST_STORAGE_IP instead of POST_STORAGE_SERVICE_IP
+                    short_var_name = dep_var_name[:-8]  # remove _SERVICE
+                    env_vars[f"{short_var_name}_IP"] = env_vars[f"{dep_var_name}_IP"]
+                    env_vars[f"{short_var_name}_PORT"] = env_vars[
+                        f"{dep_var_name}_PORT"
+                    ]
+                    env_vars[f"{short_var_name}_REPLICAS"] = env_vars[
+                        f"{dep_var_name}_REPLICAS"
+                    ]
+
             elif dep_name in topology.infrastructure:
                 # Infrastructure dependency - add connection string
                 if "mongo" in dep_name:
                     db_name = name.replace("-service", "")
-                    env_vars[f"{dep_name.upper().replace('-', '_')}_URI"] = (
-                        f"mongodb://{dep_name}:27017/{db_name}"
-                    )
+                    uri = f"mongodb://{dep_name}:27017/{db_name}"
+                    env_var_base = dep_name.upper().replace("-", "_")
+                    env_vars[f"{env_var_base}_URI"] = uri
+
+                    if topology.app == "socialnet":
+                        # Add alias with MONGODB_URI suffix for some socialnet services
+                        env_vars[f"{env_var_base}DB_URI"] = uri
+
+                        # Also set generic MONGO_URL as many services expect it
+                        env_vars["MONGO_URL"] = uri
+
                 elif "redis" in dep_name:
-                    env_vars[f"{dep_name.upper().replace('-', '_')}_URL"] = (
-                        f"redis://{dep_name}:6379"
-                    )
+                    redis_url = f"redis://{dep_name}:6379"
+                    env_var_base = dep_name.upper().replace("-", "_")
+                    env_vars[f"{env_var_base}_URL"] = redis_url
+
+                    if topology.app == "socialnet":
+                        # Also set generic REDIS_URL as many services expect it
+                        env_vars["REDIS_URL"] = redis_url
+
                 elif "memcached" in dep_name:
                     env_vars[f"{dep_name.upper().replace('-', '_')}_ADDR"] = (
                         f"tcp://{dep_name}:11211"
                     )
+                    if topology.app == "socialnet":
+                        env_vars["MEMCACHED_URL"] = f"tcp://{dep_name}:11211"
                 elif "rabbitmq" in dep_name:
                     env_vars["RABBITMQ_URL"] = "amqp://guest:guest@rabbitmq:5672"
 
