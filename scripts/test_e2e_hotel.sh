@@ -103,6 +103,6 @@ rm -rf "$out_dir"
 
 echo "Running hotel experiment: $exp_name"
 cd "$repo_root"
-python -m exp_runner.runner run hotel "$exp_name" $no_cache $deploy_args $extra_args --compat --smoke-test --plot
+python -m exp_runner.runner run hotel "$exp_name" $no_cache $deploy_args $extra_args --smoke-test --plot
 
 echo "Hotel CI experiment test passed."

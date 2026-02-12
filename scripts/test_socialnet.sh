@@ -6,8 +6,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 exp_dir="$repo_root/exp/socialnet"
 exp_name="ci"
 config_dir="$exp_dir/in/$exp_name"
-gen_config="$config_dir/gen_config.json"
-policies_file="$config_dir/policies"
+exp_yaml="$config_dir/experiment.yaml"
 out_dir="$exp_dir/out/$exp_name"
 no_cache=""
 deploy_mode="docker"
@@ -73,13 +72,8 @@ if [ ! -d "$config_dir" ]; then
     exit 1
 fi
 
-if [ ! -f "$gen_config" ]; then
-    echo "gen_config.json not found at $gen_config" >&2
-    exit 1
-fi
-
-if [ ! -f "$policies_file" ]; then
-    echo "policies not found at $policies_file" >&2
+if [ ! -f "$exp_yaml" ]; then
+    echo "experiment.yaml not found at $exp_yaml" >&2
     exit 1
 fi
 
@@ -117,6 +111,6 @@ fi
 echo "Running socialnet experiment: $exp_name"
 cd "$repo_root"
 export MASA_DEPLOY_TIMEOUT=600
-python -m exp_runner.runner run socialnet "$exp_name" $no_cache $deploy_args --compat --smoke-test --plot --rm-data
+python -m exp_runner.runner run socialnet "$exp_name" $no_cache $deploy_args --smoke-test --plot --rm-data
 
 echo "Socialnet experiment test passed."

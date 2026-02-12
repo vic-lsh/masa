@@ -110,9 +110,17 @@ class BuildOrchestrator:
         )
 
         # Stage 2: Runtime base (shared, cached)
+        try:
+            gen_config_path_rel = gen_config_path.relative_to(self.repo_root)
+        except ValueError:
+            logger.warning(
+                f"gen_config_path {gen_config_path} is not relative to repo_root {self.repo_root}"
+            )
+            gen_config_path_rel = gen_config_path
+
         runtime_base_args = {
             **common_build_args,
-            "GEN_CONFIG_PATH": str(gen_config_path),
+            "GEN_CONFIG_PATH": str(gen_config_path_rel),
         }
         self._build_stage(
             "runtime-base",
@@ -169,7 +177,7 @@ class BuildOrchestrator:
         logger.debug(f"Building stage '{target}': {' '.join(cmd)}")
 
         if not dry_run:
-            self.executor.execute(cmd)
+            self.executor.run(cmd, check=True)
 
     def _build_binary_image(
         self,
@@ -209,4 +217,4 @@ class BuildOrchestrator:
         logger.debug(f"Command: {' '.join(cmd)}")
 
         if not dry_run:
-            self.executor.execute(cmd)
+            self.executor.run(cmd, check=True)

@@ -187,6 +187,7 @@ class SyntheticApp(AppPlugin):
                     no_cache: bool = False,
                     gen_config_path: Optional[Path] = None,
                     dry_run: bool = False,
+                    build_logs_dir: Optional[Path] = None,
                     executor: Optional[CommandExecutor] = None,
                 ) -> Optional[list[list[str]]]:
                     if gen_config_path is None:
@@ -836,7 +837,6 @@ class SyntheticApp(AppPlugin):
         env_vars: dict,
         use_k8s: bool,
     ) -> TaskSpec:
-
         project_name = env_vars.get("DOCKER_COMPOSE_PROJECT_NAME")
 
         # Create the legacy load generator helper to reuse logic if possible,
@@ -851,10 +851,15 @@ class SyntheticApp(AppPlugin):
         binary = "synthetic_client_bench"
 
         # Network
+        if self._is_new_generator_enabled():
+            network_suffix = "synthetic-network"
+        else:
+            network_suffix = "synthetic_network"
+
         network = (
-            f"{project_name}_synthetic_network"
+            f"{project_name}_{network_suffix}"
             if project_name
-            else "local_synthetic_network"
+            else f"local_{network_suffix}"
         )
         if use_k8s:
             network = None  # Not used in K8s TaskSpec usually

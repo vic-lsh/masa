@@ -1,9 +1,0 @@
-{
-  "Repeats": 1,
-  "Rps": [
-    200
-  ],
-  "DurationSecs": 20,
-  "WarmupSecs": 0,
-  "MaxInFlight": 100
-}
