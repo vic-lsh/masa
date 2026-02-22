@@ -11,8 +11,11 @@ import subprocess
 import sys
 from argparse import Namespace
 from pathlib import Path
+from typing import Any
+from dataclasses import dataclass
 
 from .apps import get_app_plugin
+from .apps.base import AppBuilder
 from .config import ExperimentConfig
 from .experiment import Experiment
 from .plotting import generate_all_plots
@@ -28,6 +31,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class BuildContext:
+    """Context object returned by _get_build_context."""
+
+    config: "ExperimentConfig"
+    policies_to_build: list[str]
+    gen_config_path: Path
+    builder: AppBuilder
+
+
 def find_repo_root() -> Path:
     """Find the repository root directory."""
     try:
@@ -41,6 +54,51 @@ def find_repo_root() -> Path:
     except subprocess.CalledProcessError:
         logger.error("Not in a git repository")
         sys.exit(1)
+
+
+def _get_build_context(args: argparse.Namespace, repo_root: Path) -> BuildContext:
+    """Helper function to load config, validate files, and create a builder for build commands."""
+
+    # Get application plugin
+    try:
+        app_plugin = get_app_plugin(args.app)
+    except ValueError as e:
+        logger.error(str(e))
+        sys.exit(1)
+
+    # Load experiment configuration
+    try:
+        config = ExperimentConfig.load(
+            experiment_name=args.experiment,
+            app_name=args.app,
+            repo_root=repo_root,
+            app_plugin=app_plugin,
+        )
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Failed to load experiment configuration: {e}")
+        sys.exit(1)
+
+    # Determine which policies to build
+    policies_to_build = [args.policy] if args.policy else config.policies
+
+    # Get app config path if it exists
+    docker_config = app_plugin.get_docker_config()
+    if docker_config.app_config_filename:
+        app_config_path = config.in_dir / docker_config.app_config_filename
+        if not app_config_path.exists():
+            logger.error(f"App config not found at: {app_config_path}")
+            sys.exit(1)
+
+    # Get gen_config.json path
+    gen_config_path = config.in_dir / "gen_config.json"
+    if not gen_config_path.exists():
+        logger.error(f"gen_config.json not found at: {gen_config_path}")
+        sys.exit(1)
+
+    # Create builder
+    builder = app_plugin.create_builder()
+
+    return BuildContext(config, policies_to_build, gen_config_path, builder)
 
 
 def cmd_run_experiment(args: argparse.Namespace) -> None:
@@ -157,62 +215,28 @@ def cmd_build(args: argparse.Namespace) -> None:
     """
     repo_root = find_repo_root()
 
-    # Get application plugin
-    try:
-        app_plugin = get_app_plugin(args.app)
-    except ValueError as e:
-        logger.error(str(e))
-        sys.exit(1)
+    context = _get_build_context(args, repo_root)
 
-    # Load experiment configuration
-    try:
-        config = ExperimentConfig.load(
-            experiment_name=args.experiment,
-            app_name=args.app,
-            repo_root=repo_root,
-            app_plugin=app_plugin,
-        )
-    except (FileNotFoundError, ValueError) as e:
-        logger.error(f"Failed to load experiment configuration: {e}")
-        sys.exit(1)
-
-    # Determine which policies to build
-    policies_to_build = [args.policy] if args.policy else config.policies
-
-    logger.info(f"Building Docker images for experiment: {config.experiment_name}")
-    logger.info(f"Application: {config.app_name}")
-    logger.info(f"Policies to build: {', '.join(policies_to_build)}")
-
-    # Get app config path if it exists
-    app_config_path = None
-    docker_config = app_plugin.get_docker_config()
-    if docker_config.app_config_filename:
-        app_config_path = config.in_dir / docker_config.app_config_filename
-        if not app_config_path.exists():
-            logger.error(f"App config not found at: {app_config_path}")
-            sys.exit(1)
-
-    # Get gen_config.json path
-    gen_config_path = config.in_dir / "gen_config.json"
-    if not gen_config_path.exists():
-        logger.error(f"gen_config.json not found at: {gen_config_path}")
-        sys.exit(1)
+    logger.info(
+        f"Building Docker images for experiment: {context.config.experiment_name}"
+    )
+    logger.info(f"Application: {context.config.app_name}")
+    logger.info(f"Policies to build: {', '.join(context.policies_to_build)}")
 
     # Build images for each policy
-    builder = app_plugin.create_builder()
-    for policy in policies_to_build:
+    for policy in context.policies_to_build:
         logger.info(f"{'=' * 60}")
         logger.info(f"Building images for policy: {policy}")
         logger.info(f"{'=' * 60}")
 
         try:
-            builder.build(
+            context.builder.build(
                 repo_root=repo_root,
-                app_dir=config.app_dir,
+                app_dir=context.config.app_dir,
                 features=policy,
                 rust_log="info",
                 no_cache=args.no_cache,
-                gen_config_path=gen_config_path,
+                gen_config_path=context.gen_config_path,
                 dry_run=False,
             )
             logger.info(f"Successfully built images for policy: {policy}")
@@ -234,67 +258,31 @@ def cmd_build_dryrun(args: argparse.Namespace) -> None:
     """
     repo_root = find_repo_root()
 
-    # Get application plugin
-    try:
-        app_plugin = get_app_plugin(args.app)
-    except ValueError as e:
-        logger.error(str(e))
-        sys.exit(1)
-
-    # Load experiment configuration
-    try:
-        config = ExperimentConfig.load(
-            experiment_name=args.experiment,
-            app_name=args.app,
-            repo_root=repo_root,
-            app_plugin=app_plugin,
-        )
-    except (FileNotFoundError, ValueError) as e:
-        logger.error(f"Failed to load experiment configuration: {e}")
-        sys.exit(1)
-
-    # Determine which policies to build
-    policies_to_build = [args.policy] if args.policy else config.policies
+    context = _get_build_context(args, repo_root)
 
     logger.info(
-        f"Dry-run: Would build Docker images for experiment: {config.experiment_name}"
+        f"Dry-run: Would build Docker images for experiment: {context.config.experiment_name}"
     )
-    logger.info(f"Application: {config.app_name}")
-    logger.info(f"Policies to build: {', '.join(policies_to_build)}")
-
-    # Get app config path if it exists
-    app_config_path = None
-    docker_config = app_plugin.get_docker_config()
-    if docker_config.app_config_filename:
-        app_config_path = config.in_dir / docker_config.app_config_filename
-        if not app_config_path.exists():
-            logger.error(f"App config not found at: {app_config_path}")
-            sys.exit(1)
-
-    # Get gen_config.json path
-    gen_config_path = config.in_dir / "gen_config.json"
-    if not gen_config_path.exists():
-        logger.error(f"gen_config.json not found at: {gen_config_path}")
-        sys.exit(1)
+    logger.info(f"Application: {context.config.app_name}")
+    logger.info(f"Policies to build: {', '.join(context.policies_to_build)}")
 
     # Collect all commands
     all_commands: list[tuple[str, list[str]]] = []  # (policy, command)
 
     # Build images for each policy
-    builder = app_plugin.create_builder()
-    for policy in policies_to_build:
+    for policy in context.policies_to_build:
         logger.info(f"{'=' * 60}")
         logger.info(f"Dry-run: Would build images for policy: {policy}")
         logger.info(f"{'=' * 60}")
 
         try:
-            commands = builder.build(
+            commands = context.builder.build(
                 repo_root=repo_root,
-                app_dir=config.app_dir,
+                app_dir=context.config.app_dir,
                 features=policy,
                 rust_log="info",
                 no_cache=args.no_cache,
-                gen_config_path=gen_config_path,
+                gen_config_path=context.gen_config_path,
                 dry_run=True,
             )
             if commands:
