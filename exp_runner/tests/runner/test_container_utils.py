@@ -13,6 +13,7 @@ from exp_runner.runner.container_utils import (
     parse_container_name,
     group_containers_by_service,
 )
+from exp_runner.runner.naming import generate_project_name
 
 
 class TestExtractServiceName:
@@ -123,6 +124,52 @@ class TestExtractServiceName:
         assert (
             extract_service_name("hotel-exp-abc123def456-rate-service-123")
             == "rate-service"
+        )
+
+    def test_naming_round_trip(self):
+        """Test that generated project names are correctly parsed."""
+        # Test Hotel
+        hotel_proj = generate_project_name(
+            prefix="hotel",
+            experiment_name="test-exp",
+            iteration=0,
+            policy="fifo",
+        )
+        assert hotel_proj.startswith("hotel-")
+        assert extract_service_name(f"{hotel_proj}-rate-service-1") == "rate-service"
+
+        # Test MSSIM (with extra suffix)
+        mssim_proj = generate_project_name(
+            prefix="mssim",
+            experiment_name="test-mssim",
+            iteration=1,
+            policy="prio_global",
+            extra_suffix="100.0",
+        )
+        assert mssim_proj.startswith("mssim-")
+        assert extract_service_name(f"{mssim_proj}-frontend-1") == "frontend"
+
+        # Test Synthetic
+        syn_proj = generate_project_name(
+            prefix="syn",
+            experiment_name="test-syn",
+            iteration=2,
+            policy="fifo,early",
+        )
+        assert syn_proj.startswith("syn-")
+        assert extract_service_name(f"{syn_proj}-child-service-1") == "child-service"
+
+        # Test Socialnet
+        social_proj = generate_project_name(
+            prefix="socialnet",
+            experiment_name="test-social",
+            iteration=3,
+            policy="fifo",
+        )
+        assert social_proj.startswith("socialnet-")
+        assert (
+            extract_service_name(f"{social_proj}-compose-post-service-1")
+            == "compose-post-service"
         )
 
 

@@ -2,7 +2,6 @@
 Hotel application plugin.
 """
 
-import hashlib
 import json
 import logging
 import re
@@ -18,23 +17,11 @@ if TYPE_CHECKING:
 
 from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
+from ..naming import generate_project_name
 from .base import AppBuilder, AppPlugin, DockerConfig
 from .utils import get_docker_progress_flag, normalize_features_to_tag
 
 logger = logging.getLogger(__name__)
-
-
-def _safe_project_name(*, experiment_name: str, iteration: int, policy: str) -> str:
-    """Generate safe docker-compose project name for hotel experiments.
-
-    Format: hotel-{slug}-{digest}
-    - slug: sanitized experiment name (max 12 chars to keep total name under 63 char docker limit)
-    - digest: 12-char hash for uniqueness
-    """
-    raw = f"{experiment_name}|{iteration}|{policy}"
-    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
-    slug = re.sub(r"[^a-z0-9]+", "-", experiment_name.lower()).strip("-")[:12] or "exp"
-    return f"hotel-{slug}-{digest}"
 
 
 def create_gen_config_dict(
@@ -606,7 +593,8 @@ class HotelApp(AppPlugin):
             raise NotImplementedError("Hotel app does not support Kubernetes yet")
 
         # Generate project name for namespace isolation
-        project_name = _safe_project_name(
+        project_name = generate_project_name(
+            prefix="hotel",
             experiment_name=config.experiment_name,
             iteration=iteration,
             policy=policy,
@@ -671,7 +659,6 @@ class HotelApp(AppPlugin):
         env_vars: dict,
         use_k8s: bool,
     ) -> TaskSpec:
-
         project_name = env_vars.get("DOCKER_COMPOSE_PROJECT_NAME")
 
         # Image
