@@ -165,25 +165,28 @@ class DockerManager(DeploymentManager):
         env = os.environ.copy()
         env.update({k: str(v) for k, v in env_vars.items()})
 
-        # First, ensure any existing services are stopped
+        # First, ensure any existing services are stopped and volumes are removed
         base_cmd = ["docker", "compose", "-f", str(compose_path)]
         if project_name:
             base_cmd.extend(["-p", project_name])
 
+        logger.info(
+            f"Stopping and cleaning up existing services for {project_name or 'default'}"
+        )
         self.executor.run(
-            [*base_cmd, "down"],
+            [*base_cmd, "down", "-v"],
             cwd=app_dir,
             check=False,  # Don't fail if nothing to stop
             env=env,
-            capture_output=True,
+            capture_output=False,  # Show output to debug hangs
         )
 
-        # Prune volumes
-        self.executor.run(
-            ["docker", "volume", "prune", "-a", "-f"],
-            check=False,
-            capture_output=True,
-        )
+        # Prune volumes - REMOVED because it hangs and is too aggressive
+        # self.executor.run(
+        #     ["docker", "volume", "prune", "-a", "-f"],
+        #     check=False,
+        #     capture_output=True,
+        # )
 
         # Start services
         try:
