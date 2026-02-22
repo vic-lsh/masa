@@ -33,7 +33,7 @@ impl LocalArgs {
     }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Use tracing for consistent logging
     let subscriber = FmtSubscriber::builder()
@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(SocialGraphServiceServer::new(service))
-        .serve(addr)
+        .serve_with_masa(addr)
         .await?;
 
     Ok(())
