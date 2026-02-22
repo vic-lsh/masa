@@ -10,7 +10,7 @@ use tracing_subscriber::FmtSubscriber;
 
 use deadpool_redis::{Config, Runtime};
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Use tracing for consistent logging
     let subscriber = FmtSubscriber::builder()
@@ -61,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(HomeTimelineServiceServer::new(service))
-        .serve(addr)
+        .serve_with_masa(addr)
         .await?;
 
     Ok(())
