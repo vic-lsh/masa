@@ -100,8 +100,6 @@ class Experiment:
         if not self.dry_run:
             # Prepare directories and backup old configs
             self._prepare_experiment()
-            # Copy configs from input to working directories
-            self._copy_configs()
 
         # Run experiment iterations
         self._run_iterations()
@@ -169,13 +167,6 @@ class Experiment:
         # (see _generate_plots method)
 
         logger.info(f"Backed up old configs to {backup_dir}")
-
-    def _copy_configs(self) -> None:
-        """Copy configuration files from input to working directories."""
-        logger.info("Copying configuration files")
-
-        # Note: gen_config.json and app config files are no longer copied to working directories.
-        # They are passed directly to Docker build via GEN_CONFIG_PATH.
 
     def _run_iterations(self) -> None:
         """Run all experiment iterations."""
