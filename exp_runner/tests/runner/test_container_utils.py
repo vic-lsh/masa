@@ -61,6 +61,12 @@ class TestExtractServiceName:
             == "frontend-service"
         )
 
+        # Test syn- prefix (used in synthetic.py)
+        assert (
+            extract_service_name("syn-exp1-abc123def456-child-service-1")
+            == "child-service"
+        )
+
     def test_socialnet_container_names(self):
         """Test extraction from socialnet container names."""
         # Socialnet patterns
@@ -73,6 +79,16 @@ class TestExtractServiceName:
             == "network_frontend_service"
         )
         assert extract_service_name("socialnet-compose-service-2") == "compose-service"
+
+        # Real experiment pattern with slug and digest
+        assert (
+            extract_service_name("socialnet-ci2-9d93f9cef14a-compose-post-service-1")
+            == "compose-post-service"
+        )
+        assert (
+            extract_service_name("socialnet-exp1-abc123def456-user-timeline-service-4")
+            == "user-timeline-service"
+        )
 
     def test_loadgen_containers(self):
         """Test that load generator containers keep their full name."""
