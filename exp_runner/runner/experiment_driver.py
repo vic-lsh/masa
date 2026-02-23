@@ -229,6 +229,9 @@ class ExpDriver:
             output_path=cpu_stats_file,
             poll_interval=2.0,
             container_names=container_names,
+            use_k8s=ctx.use_k8s,
+            namespace=getattr(self.deployment, "namespace", "default"),
+            executor=self.executor,
         )
         ctx.cpu_monitor.start()
 
