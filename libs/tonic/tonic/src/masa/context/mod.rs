@@ -10,6 +10,7 @@ mod local;
 mod noop;
 mod prio_oldest;
 mod queue_global;
+mod rajomon;
 
 pub mod runtime;
 mod tls;
@@ -207,6 +208,9 @@ pub const SERVICE_NAME_OVERRIDE_HEADER: &str = "x-masa-service-name";
 
 /// Internal header key for MASA context.
 pub(crate) const MASA_CONTEXT_HEADER: &str = masa_core::MASA_CONTEXT_HEADER;
+
+#[cfg(feature = "rajomon")]
+pub use rajomon::RAJOMON_STATE;
 
 /// Get the MASA context from metadata.
 pub fn get_masa_context_from_metadata(metadata: &crate::metadata::MetadataMap) -> Option<Context> {
