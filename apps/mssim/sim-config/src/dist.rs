@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use ordered_float::OrderedFloat;
 use rand::Rng;
 use std::cmp::Ordering;
@@ -143,8 +143,8 @@ impl Distribution {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::SeedableRng;
     use rand::rngs::StdRng;
+    use rand::SeedableRng;
 
     fn toy() -> Distribution {
         // 1% -> 10 ms, 50% -> 100 ms, 99% -> 1000 ms
