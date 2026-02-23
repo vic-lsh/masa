@@ -202,9 +202,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         if self.rajomon.should_drop() {
-            return Err(Err(Status::resource_exhausted(
-                "Insufficient Rajomon Tokens",
-            )));
+            return Err(Err(self.rajomon.issue_error(None)));
         }
 
         if self.early_return.check(&self.ctx) {
@@ -222,9 +220,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
     ) -> Result<(), Result<Response<Ret>, Status>> {
         if let Poll::Pending = poll {
             if self.rajomon.should_drop() {
-                return Err(Err(Status::resource_exhausted(
-                    "Insufficient Rajomon Tokens",
-                )));
+                return Err(Err(self.rajomon.issue_error(None)));
             }
             if self.early_return.check(&self.ctx) {
                 return Err(Err(self.early_return.issue_error()));
@@ -241,7 +237,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         child_ctx: &mut ChildContext<E>,
     ) -> Result<(), Status> {
         if self.rajomon.should_drop() {
-            return Err(Status::resource_exhausted("Insufficient Rajomon Tokens"));
+            return Err(self.rajomon.issue_error(None));
         }
 
         if self.early_return.check(&self.ctx) {
