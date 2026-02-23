@@ -1,5 +1,5 @@
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import matplotlib
 import numpy as np
@@ -254,7 +254,7 @@ def generate_plots(args) -> None:
             _convert_to_milliseconds(data, policies, rps_values)
 
     # Generate plots in parallel
-    with ThreadPoolExecutor() as executor:
+    with ProcessPoolExecutor() as executor:
         futures = []
 
         # Submit CDF plots for each (repeat, api, rps)
