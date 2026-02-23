@@ -439,7 +439,11 @@ where
     pub fn header_row(&self) -> String {
         let generic = RequestStats::<R, C>::HEADERS.join(",");
         let specific = self.inner.response_output_headers().join(",");
-        format!("{},{}", generic, specific)
+        if specific.is_empty() {
+            generic
+        } else {
+            format!("{},{}", generic, specific)
+        }
     }
 }
 
