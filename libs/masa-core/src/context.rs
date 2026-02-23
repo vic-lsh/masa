@@ -23,7 +23,7 @@ pub struct QueueLatencies {
 }
 
 /// Represent a Masa context.
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Context {
     api: Api,
     request_id: RequestId,
@@ -34,6 +34,18 @@ pub struct Context {
     frontend_elapse: Option<u64>,
     #[serde(default)]
     pub queue_latencies: Option<QueueLatencies>,
+    #[serde(default = "default_tokens")]
+    pub tokens: u64,
+}
+
+fn default_tokens() -> u64 {
+    1_000_000
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        ContextBuilder::new(Api::default(), 0).build()
+    }
 }
 
 pub struct ContextBuilder {
@@ -45,6 +57,7 @@ pub struct ContextBuilder {
     prio_hint: Option<PriorityHint>,
     frontend_elapse: Option<u64>,
     queue_latencies: Option<QueueLatencies>,
+    tokens: u64,
 }
 
 impl ContextBuilder {
@@ -58,6 +71,7 @@ impl ContextBuilder {
             prio_hint: None,
             frontend_elapse: None,
             queue_latencies: None,
+            tokens: default_tokens(),
         }
     }
 
@@ -71,6 +85,7 @@ impl ContextBuilder {
             prio_hint: Some(ctx.prio_hint),
             frontend_elapse: ctx.frontend_elapse,
             queue_latencies: ctx.queue_latencies.clone(),
+            tokens: ctx.tokens,
         }
     }
 
@@ -104,6 +119,11 @@ impl ContextBuilder {
         self
     }
 
+    pub fn tokens(mut self, tokens: u64) -> Self {
+        self.tokens = tokens;
+        self
+    }
+
     pub fn build(self) -> Context {
         Context {
             api: self.api,
@@ -114,6 +134,7 @@ impl ContextBuilder {
             prio_hint: self.prio_hint.unwrap_or(PriorityHint::new(self.deadline)),
             frontend_elapse: self.frontend_elapse,
             queue_latencies: self.queue_latencies,
+            tokens: self.tokens,
         }
     }
 }
@@ -147,6 +168,21 @@ impl Context {
     /// Get the e2e deadline.
     pub fn e2e_deadline(&self) -> Timestamp {
         self.gateway_entry + self.slo
+    }
+
+    /// Get the tokens budget.
+    pub fn tokens(&self) -> u64 {
+        self.tokens
+    }
+
+    /// Consume tokens from the budget. Returns false if budget is insufficient.
+    pub fn consume_tokens(&mut self, amount: u64) -> bool {
+        if self.tokens >= amount {
+            self.tokens -= amount;
+            true
+        } else {
+            false
+        }
     }
 
     pub fn prio_hint(&self) -> PriorityHint {

@@ -1,11 +1,12 @@
 #![cfg(any(
     all(feature = "prio_global", feature = "trace-queue"),
-    all(feature = "prio_global", feature = "early")
+    all(feature = "prio_global", feature = "early"),
+    all(feature = "prio_global", feature = "rajomon")
 ))]
 
 use std::time::Duration;
 
-#[cfg(feature = "early")]
+#[cfg(any(feature = "early", feature = "rajomon"))]
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -23,7 +24,7 @@ use tonic::masa::context::MasaResponseExt;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-#[cfg(feature = "early")]
+#[cfg(any(feature = "early", feature = "rajomon"))]
 use tonic::Code;
 
 #[cfg(all(feature = "prio_global", feature = "trace-queue"))]
@@ -145,6 +146,138 @@ async fn expired_context_triggers_early_return() {
     assert!(
         !executed.load(Ordering::SeqCst),
         "handler should not have executed when early return fires"
+    );
+
+    server.abort();
+}
+
+#[cfg(all(feature = "prio_global", feature = "rajomon"))]
+#[tokio::test(flavor = "current_thread")]
+async fn sufficient_tokens_executes_and_piggybacks_price() {
+    #[derive(Clone)]
+    struct FastSvc;
+
+    #[tonic::async_trait]
+    impl ChildService for FastSvc {
+        async fn rpc1(&self, _req: Request<Input1>) -> Result<Response<Output1>, Status> {
+            Ok(Response::new(Output1 {}))
+        }
+
+        async fn rpc2(&self, _req: Request<Input2>) -> Result<Response<Output2>, Status> {
+            Ok(Response::new(Output2 {}))
+        }
+    }
+
+    let addr = "127.0.0.1:60073".parse().unwrap();
+    let svc = FastSvc;
+
+    let server = tokio::spawn(async move {
+        Server::builder()
+            .add_service(
+                ChildServiceServer::<_, tonic::masa::DefaultMasaHooks>::with_custom_context(svc),
+            )
+            .serve_with_masa(addr)
+            .await
+            .unwrap();
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let mut client = ChildServiceClient::connect(format!("http://{}", addr))
+        .await
+        .unwrap();
+
+    let now = time_now();
+    let rajomon_ctx = ContextBuilder::new("test.ChildService/Rpc1", 99)
+        .gateway_entry(now)
+        .slo(1_000_000)
+        .deadline(now + 1_000_000)
+        .tokens(1_000_000) // Plenty of tokens
+        .build();
+
+    let mut request = Request::new(Input1 {});
+    request.set_masa_context(&rajomon_ctx);
+
+    let response = client
+        .rpc1(request)
+        .await
+        .expect("request should have succeeded");
+
+    // Check that piggybacked price is 1
+    let price_header = response
+        .metadata()
+        .get("x-masa-rajomon-price")
+        .expect("missing piggybacked price");
+    assert_eq!(price_header.to_str().unwrap(), "1");
+
+    server.abort();
+}
+
+#[cfg(all(feature = "prio_global", feature = "rajomon"))]
+#[tokio::test(flavor = "current_thread")]
+async fn insufficient_tokens_triggers_early_return() {
+    #[derive(Clone)]
+    struct SlowSvc {
+        executed: Arc<AtomicBool>,
+    }
+
+    #[tonic::async_trait]
+    impl ChildService for SlowSvc {
+        async fn rpc1(&self, _req: Request<Input1>) -> Result<Response<Output1>, Status> {
+            self.executed.store(true, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            Ok(Response::new(Output1 {}))
+        }
+
+        async fn rpc2(&self, _req: Request<Input2>) -> Result<Response<Output2>, Status> {
+            Ok(Response::new(Output2 {}))
+        }
+    }
+
+    let addr = "127.0.0.1:60072".parse().unwrap();
+    let executed = Arc::new(AtomicBool::new(false));
+    let svc = SlowSvc {
+        executed: executed.clone(),
+    };
+
+    let server = tokio::spawn(async move {
+        Server::builder()
+            .add_service(
+                ChildServiceServer::<_, tonic::masa::DefaultMasaHooks>::with_custom_context(svc),
+            )
+            .serve_with_masa(addr)
+            .await
+            .unwrap();
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let mut client = ChildServiceClient::connect(format!("http://{}", addr))
+        .await
+        .unwrap();
+
+    let now = time_now();
+    // Start with very few tokens
+    let rajomon_ctx = ContextBuilder::new("test.ChildService/Rpc1", 99)
+        .gateway_entry(now)
+        .slo(1_000_000)
+        .deadline(now + 1_000_000)
+        .tokens(0) // Not enough tokens to even afford baseline cost of 1
+        .build();
+
+    let mut request = Request::new(Input1 {});
+    request.set_masa_context(&rajomon_ctx);
+
+    let error = client
+        .rpc1(request)
+        .await
+        .expect_err("request should have failed due to insufficient rajomon budget");
+
+    assert_eq!(error.code(), Code::ResourceExhausted);
+    assert!(error.message().contains("Insufficient Rajomon Tokens"));
+    assert!(
+        !executed.load(Ordering::SeqCst),
+        "handler should not have executed when token budget is exhausted"
     );
 
     server.abort();

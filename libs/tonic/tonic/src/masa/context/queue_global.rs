@@ -4,6 +4,7 @@ use std::task::Poll;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::common::{EarlyReturnHandler, QueueLatencyTracker};
+use super::rajomon::RajomonHandler;
 use super::{resolve_method_name_from_http, resolve_method_name_from_request, MasaRequestExt};
 use crate::Response;
 use masa_core::{Context, ContextBuilder};
@@ -38,6 +39,7 @@ pub struct ParentContext {
     ctx: Context,
     q_lat_tracker: QueueLatencyTracker,
     early_return: EarlyReturnHandler,
+    rajomon: RajomonHandler,
 }
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
@@ -46,18 +48,31 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         req: &http::Request<B>,
         _server_ctx: Arc<ServerContext>,
     ) -> Self {
+        let mut ctx = read_context(req);
+        let resolved_method = resolve_method_name_from_http(method, req);
+        let mut rajomon = RajomonHandler::new(resolved_method.clone());
+        rajomon.check_inbound(&mut ctx);
+
         Self {
-            ctx: read_context(req),
+            ctx,
             q_lat_tracker: QueueLatencyTracker::new(),
-            early_return: EarlyReturnHandler::new(resolve_method_name_from_http(method, req)),
+            early_return: EarlyReturnHandler::new(resolved_method),
+            rajomon,
         }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
+        if self.rajomon.should_drop() {
+            return Err(Err(Status::resource_exhausted(
+                "Insufficient Rajomon Tokens",
+            )));
+        }
+
         if self.early_return.check(&self.ctx) {
             return Err(Err(self.early_return.issue_error()));
         }
 
+        self.rajomon.track_queue_delay();
         self.q_lat_tracker.track_poll();
         Ok(())
     }
@@ -68,11 +83,18 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         request: &mut Request<T>,
         child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
+        if self.rajomon.should_drop() {
+            return Err(Status::resource_exhausted("Insufficient Rajomon Tokens"));
+        }
+
         if self.early_return.check(&self.ctx) {
             return Err(self.early_return.issue_error());
         }
 
         let child_method_name = resolve_method_name_from_request(child_method, request);
+
+        self.rajomon.check_outbound(&child_method_name, &self.ctx)?;
+
         child_ctx.set_method_name(child_method_name);
 
         let deadline = self.ctx.deadline();
@@ -95,6 +117,13 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Result<(), Status> {
         self.q_lat_tracker.track_child_response(response);
         if let Some(child) = child_ctx.child_method_name {
+            if let Ok(resp) = response {
+                self.rajomon
+                    .update_cache_from_response(&child, resp.metadata());
+            } else if let Err(status) = response {
+                self.rajomon
+                    .update_cache_from_response(&child, status.metadata());
+            }
             self.early_return.set_last_child(child);
         }
         Ok(())
@@ -106,6 +135,11 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Result<(), Result<Response<Ret>, Status>> {
         match poll {
             Poll::Pending => {
+                if self.rajomon.should_drop() {
+                    return Err(Err(Status::resource_exhausted(
+                        "Insufficient Rajomon Tokens",
+                    )));
+                }
                 if self.early_return.check(&self.ctx) {
                     return Err(Err(self.early_return.issue_error()));
                 }
@@ -120,6 +154,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
         self.q_lat_tracker
             .inject_context_metadata(&self.ctx, result);
+        self.rajomon.inject_price_to_response(result);
     }
 }
 
