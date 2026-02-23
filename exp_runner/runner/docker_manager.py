@@ -55,6 +55,8 @@ class DockerManager(DeploymentManager):
         """
         super().__init__(repo_root, executor)
         self.common_scripts_dir = repo_root / "exp" / "common" / "scripts"
+        self._log_processes: List[subprocess.Popen] = []
+        self._log_threads: List[threading.Thread] = []
 
     def run_task(self, task_spec: TaskSpec, log_file: Optional[Path] = None) -> None:
         """
@@ -214,6 +216,20 @@ class DockerManager(DeploymentManager):
             env_vars: Environment variables
             project_name: Unique name for this deployment
         """
+        for process in self._log_processes:
+            try:
+                process.terminate()
+            except Exception as e:
+                logger.warning(f"Error terminating log process: {e}")
+        self._log_processes.clear()
+
+        for thread in self._log_threads:
+            try:
+                thread.join(timeout=2.0)
+            except Exception as e:
+                logger.warning(f"Error joining log thread: {e}")
+        self._log_threads.clear()
+
         compose_file = deployment_config
         compose_path = app_dir / compose_file
         logger.info(f"Stopping Docker services from {compose_path}")
@@ -265,6 +281,7 @@ class DockerManager(DeploymentManager):
                 )
                 thread.start()
                 threads.append(thread)
+                self._log_threads.append(thread)
                 logger.debug(f"Started log streaming for {container_name}")
             else:
                 # Capture logs synchronously
@@ -450,16 +467,20 @@ class DockerManager(DeploymentManager):
                         text=True,
                         bufsize=1,  # Line buffered
                     )
+                    self._log_processes.append(process)
 
                     try:
                         # Read line by line until process exits
-                        for line in iter(process.stdout.readline, ""):
-                            if line:
-                                # Strip ANSI codes before writing to file
-                                cleaned_line = strip_ansi_codes(line)
-                                f.write(cleaned_line)
-                                f.flush()  # Ensure immediate write
+                        if process.stdout is not None:
+                            stdout = process.stdout
+                            for line in iter(stdout.readline, ""):
+                                if line:
+                                    # Strip ANSI codes before writing to file
+                                    cleaned_line = strip_ansi_codes(line)
+                                    f.write(cleaned_line)
+                                    f.flush()  # Ensure immediate write
                     finally:
+                        process.terminate()
                         process.wait()
             else:
                 # For non-following logs, capture all output then strip ANSI codes
