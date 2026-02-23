@@ -1,5 +1,5 @@
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Optional
 
 import matplotlib
@@ -1504,7 +1504,7 @@ def generate_plots(args) -> None:
         )
 
     # Generate plots in parallel
-    with ThreadPoolExecutor() as executor:
+    with ProcessPoolExecutor() as executor:
         futures = []
 
         # Submit policy goodput comparison plots for each (repeat, api)
