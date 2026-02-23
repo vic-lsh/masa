@@ -3,7 +3,7 @@ Generate all plots for an experiment.
 """
 
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 from . import goodput
@@ -41,7 +41,7 @@ def generate_all_plots(args):
     data_dir = Path(args.data_dir)
     output_dir = Path(args.output_dir)
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ProcessPoolExecutor(max_workers=4) as executor:
         futures = {
             executor.submit(goodput.generate_plots, args): "goodput",
             executor.submit(latency.generate_plots, args): "latency",
