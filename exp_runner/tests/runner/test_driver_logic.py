@@ -150,7 +150,7 @@ class MockAppPlugin(AppPlugin):
 
 
 class MockCPUMonitor(CPUMonitor):
-    def __init__(self, output_path, poll_interval, container_names):
+    def __init__(self, output_path, poll_interval, container_names, **kwargs):
         self.start_called = False
         self.stop_called = False
 
