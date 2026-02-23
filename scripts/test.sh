@@ -174,6 +174,7 @@ execute_test "tokio (masa priority suite)" cargo test -p tokio --features full -
 execute_test "masa-integration-tests (prio_global)" cargo test -p masa-integration-tests --features prio_global
 execute_test "masa-integration-tests (prio_global+trace-queue)" cargo test -p masa-integration-tests --features "prio_global,trace-queue"
 execute_test "masa-integration-tests (prio_global+early)" cargo test -p masa-integration-tests --features "prio_global,early"
+execute_test "masa-integration-tests (prio_global+rajomon)" cargo test -p masa-integration-tests --features "prio_global,rajomon"
 
 # Collect results if parallel
 if [ "$PARALLEL_JOBS" -gt 1 ]; then
