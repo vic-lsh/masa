@@ -121,15 +121,9 @@ def cmd_run_experiment(args: argparse.Namespace) -> None:
         logger.error(str(e))
         sys.exit(1)
 
-    # If running with --kind, wrap run_workload to inject use_kind=True
+    # If running with --kind, set the KIND_CLUSTER_NAME environment variable
     if getattr(args, "kind", False):
-        original_run_workload = app_plugin.run_workload
-
-        def run_workload_with_kind(*a, **kw):
-            kw["use_kind"] = True
-            return original_run_workload(*a, **kw)
-
-        app_plugin.run_workload = run_workload_with_kind
+        os.environ["KIND_CLUSTER_NAME"] = "kind"
 
     # Load experiment configuration
     try:
