@@ -8,6 +8,7 @@ pub const FIFO: bool = cfg!(feature = "fifo");
 
 pub const EARLY_RETURN: bool = cfg!(feature = "early");
 
+#[allow(dead_code)]
 pub const RAJOMON: bool = cfg!(feature = "rajomon");
 
 #[cfg(any(

@@ -61,9 +61,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         if self.rajomon.should_drop() {
-            return Err(Err(Status::resource_exhausted(
-                "Insufficient Rajomon Tokens",
-            )));
+            return Err(Err(self.rajomon.issue_error(None)));
         }
 
         if self.early_return.check(&self.ctx) {
@@ -82,7 +80,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
         if self.rajomon.should_drop() {
-            return Err(Status::resource_exhausted("Insufficient Rajomon Tokens"));
+            return Err(self.rajomon.issue_error(None));
         }
 
         if self.early_return.check(&self.ctx) {
@@ -134,9 +132,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         match poll {
             Poll::Pending => {
                 if self.rajomon.should_drop() {
-                    return Err(Err(Status::resource_exhausted(
-                        "Insufficient Rajomon Tokens",
-                    )));
+                    return Err(Err(self.rajomon.issue_error(None)));
                 }
                 if self.early_return.check(&self.ctx) {
                     return Err(Err(self.early_return.issue_error()));

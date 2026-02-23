@@ -1,10 +1,19 @@
 use crate::{CowGrpcMethod, Status};
+#[cfg(feature = "rajomon")]
 use dashmap::DashMap;
+#[cfg(not(feature = "rajomon"))]
+use masa_core::Context;
+#[cfg(feature = "rajomon")]
 use masa_core::LatencyRms;
+#[cfg(feature = "rajomon")]
 use masa_core::{Context, LatencyEstimator};
+#[cfg(feature = "rajomon")]
 use once_cell::sync::Lazy;
+#[cfg(feature = "rajomon")]
 use std::cmp::max;
+#[cfg(feature = "rajomon")]
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "rajomon")]
 use std::time::Duration;
 
 #[cfg(feature = "rajomon")]
@@ -106,7 +115,10 @@ impl RajomonHandler {
             }
         }
         #[cfg(not(feature = "rajomon"))]
-        Self {}
+        {
+            let _ = rpc;
+            Self {}
+        }
     }
 
     #[cfg(feature = "rajomon")]
@@ -151,10 +163,7 @@ impl RajomonHandler {
             .map(|v| *v)
             .unwrap_or(1);
         if ctx.tokens() < price {
-            Err(Status::resource_exhausted(format!(
-                "Insufficient Rajomon Tokens for {:?}",
-                child_method
-            )))
+            Err(self.issue_error(Some(child_method)))
         } else {
             Ok(())
         }
@@ -167,6 +176,33 @@ impl RajomonHandler {
         _ctx: &Context,
     ) -> Result<(), Status> {
         Ok(())
+    }
+
+    #[cfg(feature = "rajomon")]
+    pub(crate) fn issue_error(&self, child_method: Option<&CowGrpcMethod>) -> Status {
+        let mut msg = format!(
+            "/EarlyReturn?src={}::{}",
+            self.rpc.service(),
+            self.rpc.method()
+        );
+
+        if let Some(child) = child_method {
+            msg.push_str(&format!(
+                "?last_rpc={}::{}",
+                child.service(),
+                child.method()
+            ));
+        }
+
+        // Keep "Insufficient Rajomon Tokens" for backward compatibility in assertions
+        msg.push_str(" Insufficient Rajomon Tokens");
+
+        Status::resource_exhausted(msg)
+    }
+
+    #[cfg(not(feature = "rajomon"))]
+    pub(crate) fn issue_error(&self, _child_method: Option<&CowGrpcMethod>) -> Status {
+        Status::resource_exhausted("Rajomon disabled")
     }
 
     #[cfg(feature = "rajomon")]
