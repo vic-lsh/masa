@@ -4,8 +4,8 @@ FROM rustlang/rust:nightly-slim AS builder
 ARG APP
 ARG FEATURES
 
-RUN apt-get update
-RUN apt-get install -y\
+# Combine update+install to avoid stale package indexes from cached layers.
+RUN apt-get update && apt-get install -y\
   curl\
   unzip\
   protobuf-compiler\
@@ -43,10 +43,8 @@ ARG LOG_LEVEL=info
 ARG GEN_CONFIG_PATH
 ARG CACHE_ID=${APP}
 
-RUN apt-get update
-
-# Install runtime dependencies
-RUN apt-get install -y\
+# Combine update+install to avoid stale package indexes from cached layers.
+RUN apt-get update && apt-get install -y\
   libssl-dev
 
 # Copy entrypoint script
