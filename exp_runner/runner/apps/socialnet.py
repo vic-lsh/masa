@@ -38,10 +38,8 @@ def _generate_gen_config(
 
     config = copy.deepcopy(template_config)
 
-    # Use the service alias on the compose network so DNS returns all replicas.
-    # The service name in docker-compose is "compose-post-service" and port is 8080.
-    # Note: Inside the project network, "compose-post-service" resolves correctly.
-    config["Addr"] = "http://compose-post-service:8080"
+    # Use the unified frontend service as the benchmark entrypoint.
+    config["Addr"] = "http://frontend-service:8080"
 
     # Write to file
     with output_path.open("w") as f:
@@ -74,6 +72,8 @@ class SocialnetBuilder(AppBuilder):
         # List of binaries to build (each gets its own image)
         binaries_list = [
             "socialnet_client_bench",
+            "frontend_server",
+            "register_user_server",
             "compose_post_server",
             "home_timeline_server",
             "user_timeline_server",
@@ -325,6 +325,8 @@ class SocialnetApp(AppPlugin):
 
         # Single replica services
         services = [
+            "frontend-service",
+            "register-user-service",
             "compose-post-service",
             "home-timeline-service",
             "post-storage-service",

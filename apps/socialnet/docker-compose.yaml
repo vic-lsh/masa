@@ -219,6 +219,9 @@ services:
       - REDIS_URL=redis://user-redis:6379
       - JWT_SECRET=${JWT_SECRET}
       - MACHINE_ID=02
+      - SOCIAL_GRAPH_SERVICE_IP=${PROJECT_NAME}-social-graph-service
+      - SOCIAL_GRAPH_SERVICE_PORT=8080
+      - SOCIAL_GRAPH_SERVICE_REPLICAS=1
     depends_on:
       - user-mongo
       - user-redis
@@ -443,6 +446,56 @@ services:
       - rabbitmq-data:/var/lib/rabbitmq
     networks:
       - socialnet-network
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
+  # -------------------------------------------
+  # Register User / Frontend
+  # -------------------------------------------
+  register-user-service:
+    image: register_user_server:${SOCIALNET_IMAGE_TAG:-latest}
+    scale: 1
+    restart: always
+    networks:
+      - socialnet-network
+    environment:
+      - BINARY_NAME=register_user_server
+      - USER_SERVICE_IP=${PROJECT_NAME}-user-service
+      - USER_SERVICE_PORT=8080
+      - USER_SERVICE_REPLICAS=1
+    depends_on:
+      - user-service
+    volumes:
+      - ${APP_CONFIG_PATH}:/usr/config.json:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+
+  # -------------------------------------------
+  # Unified Frontend
+  # -------------------------------------------
+  frontend-service:
+    image: frontend_server:${SOCIALNET_IMAGE_TAG:-latest}
+    scale: 1
+    restart: always
+    networks:
+      - socialnet-network
+    environment:
+      - BINARY_NAME=frontend_server
+      - COMPOSE_POST_SERVICE_IP=${PROJECT_NAME}-compose-post-service
+      - COMPOSE_POST_SERVICE_PORT=8080
+      - COMPOSE_POST_SERVICE_REPLICAS=1
+      - REGISTER_USER_SERVICE_IP=${PROJECT_NAME}-register-user-service
+      - REGISTER_USER_SERVICE_PORT=8080
+      - REGISTER_USER_SERVICE_REPLICAS=1
+    depends_on:
+      - compose-post-service
+      - register-user-service
+    volumes:
+      - ${APP_CONFIG_PATH}:/usr/config.json:ro
     deploy:
       resources:
         limits:
