@@ -4,19 +4,23 @@ use std::time::{Duration, Instant};
 use tokio;
 use tokio::runtime::current_thread_queue_len;
 use tokio::task::JoinHandle;
+use tonic::masa::ORACLE_SELF_WORK_US_HEADER;
 use tonic::{Request, Response, Status};
 
 use crate::bootstrap::{ConnectionBootstrap, ConnectionBootstrapTask};
-use crate::config::{parse_call_sequences, ServiceMethod, SyntheticConfig};
+use crate::config::{parse_call_sequences, EstimationMode, ServiceMethod, SyntheticConfig};
 use crate::service_registry::ServiceRegistry;
 use crate::tonic::{child, child::child_server::Child};
-use crate::util::{execute_call_sequence, simulate_work};
+use crate::util::{
+    build_oracle_call_plan, execute_call_sequence, execute_oracle_call_plan, simulate_work,
+};
 use app_utils::timing::time_now;
 
 pub struct ChildImpl {
     _service_id: String,
     service_registry: ServiceRegistry,
     method_lookup: HashMap<(String, String), ServiceMethod>,
+    estimation_mode: EstimationMode,
     _bootstrap_task: Option<ConnectionBootstrapTask>,
     _queue_monitor_task: QueueMonitorTask,
 }
@@ -54,6 +58,7 @@ impl Drop for QueueMonitorTask {
 impl ChildImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
         let queue_monitor_task = QueueMonitorTask::spawn();
+        let estimation_mode = config.estimation_mode;
 
         // Handle call graph configuration
         let mut call_graph = config.call_graph;
@@ -120,6 +125,7 @@ impl ChildImpl {
             _service_id: current_service_id,
             service_registry: registry,
             method_lookup,
+            estimation_mode,
             _bootstrap_task: bootstrap_task,
             _queue_monitor_task: queue_monitor_task,
         }
@@ -134,6 +140,14 @@ impl ChildImpl {
                     method_name, service_id
                 ))
             })
+    }
+
+    fn parse_u64_metadata<T>(request: &Request<T>, key: &str) -> Option<u64> {
+        request
+            .metadata()
+            .get(key)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok())
     }
 }
 
@@ -150,6 +164,7 @@ impl Child for ChildImpl {
         &self,
         request: Request<child::MethodRequest>,
     ) -> Result<Response<child::MethodResponse>, Status> {
+        let oracle_self_work_us = Self::parse_u64_metadata(&request, ORACLE_SELF_WORK_US_HEADER);
         let request = request.into_inner();
         let queueing_latency = time_now() - request.sent_at;
         let start = Instant::now();
@@ -157,12 +172,29 @@ impl Child for ChildImpl {
         // Get the method definition
         let method = self.get_method(&request.service_id, &request.method_name)?;
 
-        // Sample latency from method's distribution
-        let duration_us = method.latency_distribution.sample();
+        let duration_us = match self.estimation_mode {
+            EstimationMode::Normal => method.latency_distribution.sample(),
+            EstimationMode::PerfectSampled => {
+                oracle_self_work_us.unwrap_or_else(|| method.latency_distribution.sample())
+            }
+        };
 
         // Execute call sequence
         if !method.parsed_call_sequence.is_empty() {
-            execute_call_sequence(&self.service_registry, &method.parsed_call_sequence).await?;
+            match self.estimation_mode {
+                EstimationMode::Normal => {
+                    execute_call_sequence(&self.service_registry, &method.parsed_call_sequence)
+                        .await?;
+                }
+                EstimationMode::PerfectSampled => {
+                    let plan = build_oracle_call_plan(
+                        &method.parsed_call_sequence,
+                        &self.method_lookup,
+                        duration_us,
+                    )?;
+                    execute_oracle_call_plan(&self.service_registry, &plan).await?;
+                }
+            }
         }
 
         let busy_spin_ratio = method.busy_spin_ratio.unwrap_or(0.1);

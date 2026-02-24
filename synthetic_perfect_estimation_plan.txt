@@ -1,0 +1,236 @@
+Synthetic Perfect-Estimation Experiment Plan
+Date: 2026-02-24
+
+Goal
+- Compare current "normal" estimator behavior with a per-request sampled oracle in synthetic call-graph mode.
+- Keep Tokio scheduler behavior unchanged (libs/tokio/tokio/src/task/local.rs): it should continue consuming PriorityHint as-is.
+- Change only how PriorityHint/deadline are computed in tonic local policy for synthetic requests.
+
+Baseline Clarification
+- libs/tokio/tokio/src/task/local.rs is the execution engine; it does not estimate RPC latencies.
+- Current estimation logic is in libs/tonic/tonic/src/masa/context/local/local.rs:
+  - child deadline = parent deadline - est_remaining_after_child
+  - child priority hint = child deadline - est_child_latency
+- Therefore, the A/B experiment is:
+  - A (normal estimate): existing estimator path in tonic local policy
+  - B (perfect estimate): oracle values attached by synthetic and consumed by tonic local policy
+
+Skills Needed
+
+Skill 1: Policy Path Mapping
+- Objective: precisely map the latency/deadline path from synthetic RPC call site to Tokio scheduler queue order.
+- Files:
+  - libs/tonic/tonic/src/masa/context/local/local.rs
+  - libs/tonic/tonic/src/masa/context/mod.rs
+  - libs/hyper/src/proto/h2/server.rs
+  - libs/tokio/tokio/src/runtime/scheduler/current_thread/queue/prio_bh_rr.rs
+  - libs/tokio/tokio/src/task/local.rs
+- Deliverable:
+  - Trace document showing: synthetic metadata -> tonic local policy -> ctx.prio_hint -> hyper execute -> tokio queue ordering.
+
+Skill 2: Oracle Metadata Contract Design
+- Objective: define robust request metadata keys and parsing/validation rules.
+- Proposed keys:
+  - x-masa-oracle-child-latency-us
+  - x-masa-oracle-remaining-after-child-us
+- Rules:
+  - unsigned u64 microseconds
+  - ignore malformed values and fallback to estimator path
+  - no behavior change for non-synthetic apps
+- Deliverable:
+  - Header constants in tonic context module + parser helpers + unit tests.
+
+Skill 3: Per-Request Sampling Plan Builder (Synthetic)
+- Objective: sample all needed latencies before dispatching child calls so remaining work is known ahead of time.
+- Scope:
+  - Build per-invocation execution plan for each method call.
+  - Sequential steps: sum future critical-path durations.
+  - Parallel step: step critical path = max(child_total_latency among selected calls).
+  - Include local method work after child calls in remaining calculation.
+- Deliverable:
+  - Internal planner utility in apps/synthetic/src/util.rs (or new planner module).
+
+Skill 4: Oracle Propagation in Fanout Execution
+- Objective: attach precomputed oracle fields to each outgoing child RPC.
+- Scope:
+  - Update execute_call_sequence to accept per-child oracle numbers.
+  - Preserve existing method/service override headers.
+- Deliverable:
+  - Each outgoing child request carries method/service override + oracle metadata.
+
+Skill 5: Tonic Local Policy Oracle Override
+- Objective: use oracle values in before_child_rpc when present.
+- Logic:
+  - est_remaining = oracle_remaining_after_child_us if present else estimator value
+  - est_child = oracle_child_latency_us if present else estimator value
+  - then existing formula unchanged:
+    - deadline = parent_deadline - est_remaining
+    - prio_hint = deadline - est_child
+- Deliverable:
+  - Minimal diff in libs/tonic/tonic/src/masa/context/local/local.rs
+  - unit tests for oracle path, fallback path, malformed metadata path.
+
+Skill 6: Mode Gating (A/B switch)
+- Objective: enable controlled experiment runs without code edits between runs.
+- Preferred mechanism:
+  - synthetic config knob: estimation_mode = "normal" | "perfect_sampled"
+- Alternative:
+  - feature flag in apps/synthetic only
+- Deliverable:
+  - config parsing + default to normal
+  - logs at startup showing active mode.
+
+Skill 7: Deterministic Validation and Regression Tests
+- Objective: verify correctness and keep non-synthetic behavior unchanged.
+- Tests:
+  - unit: remaining-work math on mixed sequential/parallel steps
+  - unit: metadata parse/format edge cases
+  - integration: with oracle metadata, child ctx deadline/prio changes as expected
+  - integration: without metadata, behavior equals existing estimator flow
+- Deliverable:
+  - test coverage in synthetic + tonic local policy.
+
+Skill 8: Experiment Harness and Analysis
+- Objective: produce apples-to-apples comparison of normal vs perfect_sampled.
+- Metrics:
+  - goodput under SLO
+  - deadline-exceeded/early-return rates
+  - wasted work (work done on doomed requests)
+  - queueing and handler latency distributions
+- Deliverable:
+  - run matrix and plotting instructions.
+
+Implementation Steps (Concrete)
+
+1. Add oracle header constants and helpers in tonic context
+- File: libs/tonic/tonic/src/masa/context/mod.rs
+- Add constants for oracle child and remaining latency headers.
+- Add parse helper(s): read u64 from request metadata.
+- Add unit tests:
+  - valid integer parse
+  - non-integer -> None
+  - missing header -> None
+
+2. Add oracle override in local deadline policy
+- File: libs/tonic/tonic/src/masa/context/local/local.rs
+- In before_child_rpc:
+  - parse oracle headers from outgoing child request metadata.
+  - est_remaining = oracle_remaining.unwrap_or(est_after_child_latency.get_estimate(key).unwrap_or(0))
+  - est_child = oracle_child.unwrap_or(est_child_latency.get_estimate(key).unwrap_or(0))
+- Keep early-return and ctx-building logic unchanged.
+- Add tests for:
+  - oracle used when present
+  - estimator used when absent
+  - malformed oracle ignored.
+
+3. Introduce synthetic estimation mode config
+- File: apps/synthetic/src/config.rs
+- Add enum:
+  - EstimationMode { Normal, PerfectSampled }
+- Add field in SyntheticConfig with default Normal.
+- Update README with examples.
+
+4. Build per-request sampled call plan
+- Files:
+  - apps/synthetic/src/util.rs (or new module apps/synthetic/src/planner.rs)
+  - apps/synthetic/src/child/server.rs
+- Create planner structs (example):
+  - PlannedChildCall { target, oracle_child_latency_us, oracle_remaining_after_child_us }
+  - PlannedStep { calls: Vec<PlannedChildCall> }
+  - PlannedMethodExecution { sampled_local_work_us, steps }
+- Planner behavior:
+  - sample which probabilistic calls are taken in each step
+  - recursively/iteratively sample child total latencies for selected calls
+  - compute step critical paths and per-child remaining-after-child
+  - include sampled local work in remaining.
+
+5. Pass oracle metadata on outgoing child requests
+- File: apps/synthetic/src/util.rs
+- Extend execute_call_sequence API to consume planned steps.
+- For each planned call, attach:
+  - x-masa-oracle-child-latency-us
+  - x-masa-oracle-remaining-after-child-us
+- Keep existing method/service override headers.
+
+6. Wire planning into child handler path
+- File: apps/synthetic/src/child/server.rs
+- In handle_method:
+  - if mode == PerfectSampled:
+    - build plan first
+    - execute calls using plan and oracle headers
+    - run sampled local work
+  - else Normal:
+    - keep current behavior (existing execute_call_sequence + local sample)
+
+7. Add tests for planner and metadata propagation
+- Files:
+  - apps/synthetic/src/tests/... (new planner tests)
+  - libs/tonic/tonic/src/masa/context/local/local.rs tests
+- Cases:
+  - pure sequential
+  - parallel fanout + sequential tail
+  - probability 0/1 calls
+  - mode fallback.
+
+8. Formatting and checks
+- Run:
+  - ./scripts/format.sh
+  - cargo test -p synthetic
+  - cargo test -p tonic
+  - ./scripts/check.sh
+
+Experiment Steps (Concrete)
+
+1. Build baseline (normal estimator)
+- Example:
+  - cargo build -p synthetic --features "prio_local,early" --release
+- Config:
+  - estimation_mode: "normal"
+
+2. Build oracle mode (same policy/features)
+- Same build command; only config differs.
+- Config:
+  - estimation_mode: "perfect_sampled"
+
+3. Use identical workload/call graph
+- Same seeds, RPS schedule, SLO, replicas, CPU limits.
+- Keep only estimation_mode changed.
+
+4. Execute runs
+- For each mode, run N repeated trials (recommended N>=5) per workload point.
+- Collect per-request outputs and service logs.
+
+5. Compare outcomes
+- Primary:
+  - goodput under SLO
+  - p95/p99 end-to-end latency
+- Secondary:
+  - early-return rate
+  - wasted work proxy (handler time spent on deadline-exceeded responses)
+  - queue length and queueing latency.
+
+6. Sanity checks
+- Verify oracle mode logs show oracle headers consumed.
+- Confirm non-synthetic apps unaffected by running one smoke test outside synthetic.
+
+Suggested Experiment Matrix
+- Call graph depth: shallow / medium / deep.
+- Fanout: low / high.
+- Tail heaviness: light / heavy (e.g., Discrete or LogNormal).
+- Load: below knee / near knee / overloaded.
+- For each point: compare normal vs perfect_sampled.
+
+Risks and Mitigations
+- Risk: recursion/planner overhead distorts latency.
+  - Mitigation: keep planner O(num_selected_edges) and benchmark planner overhead separately.
+- Risk: malformed metadata causes unintended behavior.
+  - Mitigation: strict parse with fallback to estimator + tests.
+- Risk: fairness changes due to aggressive early return.
+  - Mitigation: report both goodput and failure distribution by request class.
+
+Definition of Done
+- Config switch exists and defaults to normal.
+- Perfect_sampled mode sends/uses oracle child and remaining metadata.
+- Local policy oracle override is tested and backward compatible.
+- A/B experiment scripts/configs can reproduce both modes with a single config change.
+- Results include goodput and latency comparisons across the matrix.
