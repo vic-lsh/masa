@@ -8,6 +8,7 @@ out_dir="$repo_root/exp/mssim/out/$experiment_name"
 deploy_mode="docker"
 deploy_args=""
 expected_mode="docker"
+source "$repo_root/scripts/kind_utils.sh"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -52,8 +53,9 @@ if [[ "$deploy_mode" == "kind" ]]; then
     export KIND_CLUSTER_NAME="$CLUSTER_NAME"
 
     if ! kind get clusters | grep -q "^$CLUSTER_NAME$"; then
+        kind_node_image="$(kind_node_image_ulimit "$repo_root")"
         echo "Creating kind cluster: $CLUSTER_NAME..."
-        kind create cluster --name "$CLUSTER_NAME"
+        kind create cluster --name "$CLUSTER_NAME" --image "$kind_node_image"
     else
         echo "Kind cluster $CLUSTER_NAME already exists."
     fi
