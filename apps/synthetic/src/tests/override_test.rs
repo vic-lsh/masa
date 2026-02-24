@@ -1,5 +1,7 @@
 use crate::child::server::ChildImpl;
-use crate::config::{CallGraphConfig, ServiceDefinition, ServiceMethod, SyntheticConfig};
+use crate::config::{
+    CallGraphConfig, EstimationMode, ServiceDefinition, ServiceMethod, SyntheticConfig,
+};
 use crate::distribution::LatencyDistribution;
 use crate::tonic::{child, child::child_client::ChildClient, child::child_server::ChildServer};
 use app_utils::timing::time_now;
@@ -24,6 +26,7 @@ async fn test_override_headers() {
 
     let config = SyntheticConfig {
         child_cpus_per_replica: 1.0,
+        estimation_mode: EstimationMode::Normal,
         call_graph: CallGraphConfig {
             entry_points,
             parsed_entry_points: Default::default(),
