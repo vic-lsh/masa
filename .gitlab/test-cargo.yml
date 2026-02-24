@@ -14,4 +14,4 @@ cargo_test:
         - export PROTOC="$HOME/.local/bin/protoc"
     script:
         - rustc --version && cargo --version # Print version info for debugging
-        - ./scripts/test.sh --parallel 8 --feature "$POLICY_FEATURE"
+        - ./scripts/test.sh --feature "$POLICY_FEATURE"

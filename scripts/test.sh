@@ -3,6 +3,7 @@
 # Parse arguments
 PARALLEL_JOBS=1
 FEATURE_FLAG=""
+IS_MATRIX=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -13,6 +14,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --feature)
             FEATURE_FLAG="$2"
+            IS_MATRIX=true
             shift
             shift
             ;;
@@ -92,34 +94,17 @@ policy_flags=(
 )
 
 # Run scheduling policy tests
-if [ -z "$FEATURE_FLAG" ]; then
+if [ "$IS_MATRIX" = false ] || [ -z "$FEATURE_FLAG" ]; then
     execute_test "hotel (sched_policy no-op)" cargo test -p hotel --test sched_policy
-else
-    # Only test if feature applies to sched_policy
-    if [[ " fifo prio_global prio_oldest prio_local prio_local,est_rms prio_local,est_hist " =~ " $FEATURE_FLAG " ]]; then
-        execute_test "hotel (sched_policy $FEATURE_FLAG)" cargo test -p hotel --test sched_policy --features "$FEATURE_FLAG"
-    fi
 fi
 
-# Fetch cargo metadata once to check for features efficiently
-CARGO_METADATA=$(cargo metadata --format-version 1 --no-deps)
-
-has_feature() {
-    local package=$1
-    local feature=$2
-    if [ -z "$feature" ]; then
-        return 0
-    fi
-    # If it's a list like "masa,prio_local,est_rms", pick the first one, or check if any feature is missing
-    # To be safe, just check the first part of a comma separated list, or check each part.
-    IFS=',' read -ra ADDR <<< "$feature"
-    for feat in "${ADDR[@]}"; do
-        if ! echo "$CARGO_METADATA" | jq -e -r ".packages[] | select(.name==\"$package\") | .features | has(\"$feat\")" > /dev/null; then
-            return 1 # missing feature
-        fi
+if [ "$IS_MATRIX" = false ]; then
+    for policy in "${policy_flags[@]}"; do
+        execute_test "hotel (sched_policy $policy)" cargo test -p hotel --test sched_policy --features "$policy"
     done
-    return 0 # has all features
-}
+elif [[ " ${policy_flags[*]} " =~ " $FEATURE_FLAG " ]]; then
+    execute_test "hotel (sched_policy $FEATURE_FLAG)" cargo test -p hotel --test sched_policy --features "$FEATURE_FLAG"
+fi
 
 # because not all tests build right now, we only test the modules we know to build successfully.
 
@@ -168,57 +153,48 @@ declare -A package_manifest_paths=(
 )
 
 # Loop through each package and run tests
-for package in "${packages[@]}"; do
-    # Check if the package has defined feature flags
-    if [ -n "${package_features[$package]}" ]; then
-        features="${package_features[$package]}"
-    else
-        features=""
-    fi
+if [ "$IS_MATRIX" = false ] || [ -z "$FEATURE_FLAG" ]; then
+    for package in "${packages[@]}"; do
+        # Check if the package has defined feature flags
+        if [ -n "${package_features[$package]}" ]; then
+            features="${package_features[$package]}"
+        else
+            features=""
+        fi
 
-    # Append our matrix FEATURE_FLAG if the package actually supports it
-if [ -n "$FEATURE_FLAG" ]; then
-        if has_feature "$package" "$FEATURE_FLAG"; then
-            if [ -z "$features" ]; then
-                features="--features $FEATURE_FLAG"
+        if [ -n "${package_manifest_paths[$package]}" ]; then
+            # for packages with manifest path, test directly using manifest path
+            execute_test "$package" cargo test --manifest-path "${package_manifest_paths[$package]}"
+        else
+            # otherwise, test with package name and optionally with feature flags
+            cmd=("cargo" "test" "-p" "$package")
+            if [ -n "$features" ]; then
+                 execute_test "$package" cargo test -p "$package" $features
             else
-                features="$features --features $FEATURE_FLAG"
+                 execute_test "$package" cargo test -p "$package"
             fi
         fi
-    fi
+    done
+fi
 
-    if [ -n "${package_manifest_paths[$package]}" ]; then
-        # for packages with manifest path, test directly using manifest path
-        execute_test "$package" cargo test --manifest-path "${package_manifest_paths[$package]}"
-    else
-        # otherwise, test with package name and optionally with feature flags
-        # Need to be careful with word splitting for features if it contains multiple flags
-        # but here it is passed as a string to cargo test...
-        # If features is empty, we shouldn't pass an empty arg if it causes issues,
-        # but cargo test -p pkg "" might be weird.
-        # Let's construct the command array properly.
-        cmd=("cargo" "test" "-p" "$package")
-        if [ -n "$features" ]; then
-             # split features string into args if needed, or just pass as is?
-             # existing script did: cargo test -p "$package" $features
-             # allowing shell expansion on $features.
-             execute_test "$package" cargo test -p "$package" $features
-        else
-             execute_test "$package" cargo test -p "$package"
-        fi
+if [ "$IS_MATRIX" = false ] || [ -z "$FEATURE_FLAG" ]; then
+    execute_test "tokio (masa priority suite)" cargo test -p tokio --features full --test masa_priority
+fi
+
+declare -A specific_feature_tests=(
+    ["prio_local,est_rms"]="tonic (prio_local,est_rms):cargo test -p tonic --features masa,prio_local,est_rms"
+    ["prio_local,est_hist"]="tonic (prio_local,est_hist):cargo test -p tonic --features masa,prio_local,est_hist"
+    ["prio_global"]="masa-integration-tests (prio_global):cargo test -p masa-integration-tests --features prio_global"
+    ["prio_global,trace-queue"]="masa-integration-tests (prio_global+trace-queue):cargo test -p masa-integration-tests --features prio_global,trace-queue"
+    ["prio_global,early"]="masa-integration-tests (prio_global+early):cargo test -p masa-integration-tests --features prio_global,early"
+)
+
+for feat in "${!specific_feature_tests[@]}"; do
+    if [ "$IS_MATRIX" = false ] || [ "$FEATURE_FLAG" = "$feat" ]; then
+        IFS=":" read -r name cmd <<< "${specific_feature_tests[$feat]}"
+        execute_test "$name" $cmd
     fi
 done
-
-if [ -n "$FEATURE_FLAG" ]; then
-    echo "Skipping specialized standalone tonic/tokio tests for matrix parameter..."
-else
-    execute_test "tonic (prio_local,est_rms)" cargo test -p tonic --features "masa,prio_local,est_rms"
-    execute_test "tonic (prio_local,est_hist)" cargo test -p tonic --features "masa,prio_local,est_hist"
-    execute_test "tokio (masa priority suite)" cargo test -p tokio --features full --test masa_priority
-    execute_test "masa-integration-tests (prio_global)" cargo test -p masa-integration-tests --features prio_global
-    execute_test "masa-integration-tests (prio_global+trace-queue)" cargo test -p masa-integration-tests --features "prio_global,trace-queue"
-    execute_test "masa-integration-tests (prio_global+early)" cargo test -p masa-integration-tests --features "prio_global,early"
-fi
 
 # Collect results if parallel
 if [ "$PARALLEL_JOBS" -gt 1 ]; then
