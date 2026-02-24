@@ -1,8 +1,6 @@
 //! Parsing simulation configuration.
 
 #![allow(dead_code)]
-#![feature(str_as_str)]
-
 pub mod deployment;
 pub mod dist;
 pub mod replica;
