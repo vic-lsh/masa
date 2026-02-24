@@ -108,6 +108,38 @@ On startup, the application validates that:
 
 Validation fails fast with clear error messages if any issues are found.
 
+## Estimation Mode
+
+Synthetic supports two estimation modes via config field `estimation_mode`:
+
+- `normal` (default): uses runtime-learned estimators in local policy.
+- `perfect_sampled`: synthetic pre-samples per-request child method latency and remaining work, attaches oracle metadata on child RPCs, and local policy consumes these oracle values.
+
+Example:
+
+```json
+{
+  "estimation_mode": "perfect_sampled",
+  "call_graph": {
+    "entry_points": {
+      "a": [{"MS_1::method1": 1.0}]
+    },
+    "services": [
+      {
+        "id": "MS_1",
+        "methods": [
+          {
+            "name": "method1",
+            "latency_distribution": {"Exponential": {"mean": 10000.0}},
+            "call_sequence": []
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
 ### Deployment
 
 When using call graphs:

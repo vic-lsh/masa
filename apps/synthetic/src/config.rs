@@ -3,6 +3,19 @@ use std::collections::HashMap;
 use crate::distribution::LatencyDistribution;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EstimationMode {
+    Normal,
+    PerfectSampled,
+}
+
+impl Default for EstimationMode {
+    fn default() -> Self {
+        Self::Normal
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CallTarget {
     pub service_id: String,
@@ -42,6 +55,8 @@ pub struct CallGraphConfig {
 pub struct SyntheticConfig {
     #[serde(default = "onef64")]
     pub child_cpus_per_replica: f64,
+    #[serde(default)]
+    pub estimation_mode: EstimationMode,
     pub call_graph: CallGraphConfig,
 }
 
@@ -168,7 +183,7 @@ pub fn parse_call_sequences(config: &mut CallGraphConfig) -> Result<(), String> 
 mod tests {
     use super::{
         parse_call_sequences, parse_service_method, validate_call_graph, CallGraphConfig,
-        ServiceDefinition, ServiceMethod, SyntheticConfig,
+        EstimationMode, ServiceDefinition, ServiceMethod, SyntheticConfig,
     };
     use crate::distribution::LatencyDistribution;
     use rand_distr::Exp;
@@ -181,6 +196,59 @@ mod tests {
             mean: None,
             dist: Exp::new(lambda).unwrap(),
         }
+    }
+
+    #[test]
+    fn synthetic_config_estimation_mode_defaults_to_normal() {
+        let config = json!({
+            "call_graph": {
+                "entry_points": {
+                    "a": [{"MS_1::method1": 1.0}]
+                },
+                "services": [
+                    {
+                        "id": "MS_1",
+                        "methods": [
+                            {
+                                "name": "method1",
+                                "latency_distribution": {"Exponential": {"mean": 10000.0}},
+                                "call_sequence": []
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
+        assert_eq!(parsed.estimation_mode, EstimationMode::Normal);
+    }
+
+    #[test]
+    fn synthetic_config_parses_perfect_sampled_mode() {
+        let config = json!({
+            "estimation_mode": "perfect_sampled",
+            "call_graph": {
+                "entry_points": {
+                    "a": [{"MS_1::method1": 1.0}]
+                },
+                "services": [
+                    {
+                        "id": "MS_1",
+                        "methods": [
+                            {
+                                "name": "method1",
+                                "latency_distribution": {"Exponential": {"mean": 10000.0}},
+                                "call_sequence": []
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
+        assert_eq!(parsed.estimation_mode, EstimationMode::PerfectSampled);
     }
 
     #[test]

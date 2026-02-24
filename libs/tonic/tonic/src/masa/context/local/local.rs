@@ -10,7 +10,8 @@ use std::{
 
 use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::super::{
-    resolve_method_name_from_http, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks,
+    resolve_method_name_from_http, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks,
+    ServerHooks, ORACLE_CHILD_LATENCY_US_HEADER, ORACLE_REMAINING_AFTER_CHILD_US_HEADER,
 };
 use super::LatencyMap;
 use masa_core::{time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint, EARLY_RETURN};
@@ -251,18 +252,22 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             self.server.clone(),
         );
 
-        let est_remaining = self
-            .server
-            .est_after_child_latency
-            .get_estimate(key)
-            .unwrap_or(0);
+        let est_remaining =
+            parse_u64_from_metadata(request, ORACLE_REMAINING_AFTER_CHILD_US_HEADER)
+                .unwrap_or_else(|| {
+                    self.server
+                        .est_after_child_latency
+                        .get_estimate(key)
+                        .unwrap_or(0)
+                });
 
         let deadline = self.ctx.deadline() - est_remaining;
         if EARLY_RETURN && time_now() > deadline {
             return Err(self.early_return.issue_error());
         }
 
-        let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
+        let est_child = parse_u64_from_metadata(request, ORACLE_CHILD_LATENCY_US_HEADER)
+            .unwrap_or_else(|| self.server.est_child_latency.get_estimate(key).unwrap_or(0));
 
         // this encodes the slack: parent deadline - est child latency - est remaining
         let prio_hint = deadline - est_child;
@@ -347,6 +352,14 @@ fn is_early_return_response<T>(response: &Result<Response<T>, Status>) -> bool {
         Ok(_) => false,
         Err(status) => status.code() == Code::DeadlineExceeded,
     }
+}
+
+fn parse_u64_from_metadata<T>(request: &Request<T>, key: &str) -> Option<u64> {
+    request
+        .metadata()
+        .get(key)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
 }
 
 #[derive(Debug, Clone)]
@@ -594,5 +607,52 @@ mod tests {
         let (p_s, p_m) = registry.get_method_name(parent_id).unwrap();
         assert_eq!(p_s, "IntegrationService");
         assert_eq!(p_m, "ParentMethod");
+    }
+
+    #[test]
+    fn test_local_deadline_policy_uses_oracle_headers_when_present() {
+        use crate::masa::context::{
+            MASA_CONTEXT_HEADER, ORACLE_CHILD_LATENCY_US_HEADER,
+            ORACLE_REMAINING_AFTER_CHILD_US_HEADER,
+        };
+        use crate::metadata::MetadataValue;
+        use masa_core::ContextBuilder;
+
+        let server_ctx = Arc::new(ServerContext::<LatencyRms>::new("IntegrationService"));
+        let method = GrpcMethod::new("IntegrationService", "ParentMethod");
+
+        let deadline = masa_core::time_now() + 100_000;
+        let ctx = ContextBuilder::new("IntegrationService", 123)
+            .deadline(deadline)
+            .build();
+        let req = http::Request::builder()
+            .header(MASA_CONTEXT_HEADER, ctx.to_header_string())
+            .body(())
+            .unwrap();
+
+        let parent_ctx = ParentContext::<LatencyRms>::begin(method, &req, server_ctx);
+
+        let child_method = GrpcMethod::new("IntegrationService", "ChildMethod");
+        let mut child_req = Request::new(());
+        child_req.metadata_mut().insert(
+            ORACLE_REMAINING_AFTER_CHILD_US_HEADER,
+            MetadataValue::from_static("400"),
+        );
+        child_req.metadata_mut().insert(
+            ORACLE_CHILD_LATENCY_US_HEADER,
+            MetadataValue::from_static("250"),
+        );
+        let mut child_ctx = ChildContext::<LatencyRms>::new(child_method, &child_req);
+
+        parent_ctx
+            .before_child_rpc(child_method, &mut child_req, &mut child_ctx)
+            .unwrap();
+
+        let child_recv_ctx = child_req.get_masa_context().unwrap();
+        assert_eq!(child_recv_ctx.deadline(), deadline - 400);
+        assert_eq!(
+            child_recv_ctx.prio_hint(),
+            PriorityHint::new(deadline - 650)
+        );
     }
 }
