@@ -1,1 +1,4 @@
 fifo
+fifo,early
+prio_local,early
+prio_oldest,early

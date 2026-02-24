@@ -48,6 +48,14 @@ name = "compose_post_server"
 path = "src/compose_post/main.rs"
 
 [[bin]]
+name = "register_user_server"
+path = "src/register_user/main.rs"
+
+[[bin]]
+name = "frontend_server"
+path = "src/frontend/main.rs"
+
+[[bin]]
 name = "home_timeline_server"
 path = "src/home_timeline/main.rs"
 

@@ -57,3 +57,15 @@ pub mod compose_post {
 
     pub mod server;
 }
+
+pub mod register_user {
+    tonic::include_proto!("register_user");
+
+    pub mod server;
+}
+
+pub mod frontend {
+    tonic::include_proto!("frontend");
+
+    pub mod server;
+}
