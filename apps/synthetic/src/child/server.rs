@@ -8,7 +8,9 @@ use tonic::masa::ORACLE_SELF_WORK_US_HEADER;
 use tonic::{Request, Response, Status};
 
 use crate::bootstrap::{ConnectionBootstrap, ConnectionBootstrapTask};
-use crate::config::{parse_call_sequences, EstimationMode, ServiceMethod, SyntheticConfig};
+use crate::config::{
+    effective_estimation_mode, parse_call_sequences, EstimationMode, ServiceMethod, SyntheticConfig,
+};
 use crate::service_registry::ServiceRegistry;
 use crate::tonic::{child, child::child_server::Child};
 use crate::util::{
@@ -58,7 +60,7 @@ impl Drop for QueueMonitorTask {
 impl ChildImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
         let queue_monitor_task = QueueMonitorTask::spawn();
-        let estimation_mode = config.estimation_mode;
+        let estimation_mode = effective_estimation_mode(config.estimation_mode);
 
         // Handle call graph configuration
         let mut call_graph = config.call_graph;

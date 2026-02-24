@@ -115,6 +115,11 @@ Synthetic supports two estimation modes via config field `estimation_mode`:
 - `normal` (default): uses runtime-learned estimators in local policy.
 - `perfect_sampled`: synthetic pre-samples per-request child method latency and remaining work, attaches oracle metadata on child RPCs, and local policy consumes these oracle values.
 
+Compile-time override for experiments:
+
+- Build with feature `prio_local_perfect` to force `perfect_sampled` mode regardless of the JSON `estimation_mode` value.
+- `prio_local_perfect` is synthetic-only and aliases local-deadline policy (`prio_local`) so it can be listed as a separate policy in experiment `policies` files.
+
 Example:
 
 ```json

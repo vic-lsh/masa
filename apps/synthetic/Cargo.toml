@@ -24,6 +24,7 @@ path = "src/bin/validate_config.rs"
 [features]
 prio_global = ["masa/prio_global"]
 prio_local = ["masa/prio_local"]
+prio_local_perfect = ["masa/prio_local"]
 prio_oldest = ["masa/prio_oldest"]
 
 est_rms = ["masa/est_rms"]

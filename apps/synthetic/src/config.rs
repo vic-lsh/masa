@@ -16,6 +16,14 @@ impl Default for EstimationMode {
     }
 }
 
+pub fn effective_estimation_mode(config_mode: EstimationMode) -> EstimationMode {
+    if cfg!(feature = "prio_local_perfect") {
+        EstimationMode::PerfectSampled
+    } else {
+        config_mode
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CallTarget {
     pub service_id: String,
@@ -182,8 +190,8 @@ pub fn parse_call_sequences(config: &mut CallGraphConfig) -> Result<(), String> 
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_call_sequences, parse_service_method, validate_call_graph, CallGraphConfig,
-        EstimationMode, ServiceDefinition, ServiceMethod, SyntheticConfig,
+        effective_estimation_mode, parse_call_sequences, parse_service_method, validate_call_graph,
+        CallGraphConfig, EstimationMode, ServiceDefinition, ServiceMethod, SyntheticConfig,
     };
     use crate::distribution::LatencyDistribution;
     use rand_distr::Exp;
@@ -249,6 +257,30 @@ mod tests {
 
         let parsed: SyntheticConfig = serde_json::from_value(config).expect("parse config");
         assert_eq!(parsed.estimation_mode, EstimationMode::PerfectSampled);
+    }
+
+    #[test]
+    fn effective_estimation_mode_uses_runtime_value_without_feature() {
+        if !cfg!(feature = "prio_local_perfect") {
+            assert_eq!(
+                effective_estimation_mode(EstimationMode::Normal),
+                EstimationMode::Normal
+            );
+            assert_eq!(
+                effective_estimation_mode(EstimationMode::PerfectSampled),
+                EstimationMode::PerfectSampled
+            );
+        }
+    }
+
+    #[test]
+    fn effective_estimation_mode_forces_perfect_with_feature() {
+        if cfg!(feature = "prio_local_perfect") {
+            assert_eq!(
+                effective_estimation_mode(EstimationMode::Normal),
+                EstimationMode::PerfectSampled
+            );
+        }
     }
 
     #[test]

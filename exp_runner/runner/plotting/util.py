@@ -330,6 +330,7 @@ def get_policy_display_name(policy: str) -> str:
         "fifo": "FIFO",
         "prio_global": "Masa (global ddl)",
         "prio_local": "Masa (local ddl)",
+        "prio_local_perfect": "Masa (local ddl, perfect est)",
         "prio_oldest": "Tailclipper",
     }
     display = display_name_map.get(base_lower, base_policy)

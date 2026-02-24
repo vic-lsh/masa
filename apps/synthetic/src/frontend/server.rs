@@ -3,7 +3,8 @@ use std::time::Instant;
 
 use crate::bootstrap::{ConnectionBootstrap, ConnectionBootstrapTask};
 use crate::config::{
-    parse_call_sequences, CallTarget, EstimationMode, ServiceMethod, SyntheticConfig,
+    effective_estimation_mode, parse_call_sequences, CallTarget, EstimationMode, ServiceMethod,
+    SyntheticConfig,
 };
 use crate::service_registry::ServiceRegistry;
 use crate::util::{build_oracle_call_plan, execute_call_sequence, execute_oracle_call_plan};
@@ -22,7 +23,7 @@ pub struct FrontendImpl {
 
 impl FrontendImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
-        let estimation_mode = config.estimation_mode;
+        let estimation_mode = effective_estimation_mode(config.estimation_mode);
         let SyntheticConfig { mut call_graph, .. } = config;
 
         // Read project name from environment variable (set by exp_runner.runner)
