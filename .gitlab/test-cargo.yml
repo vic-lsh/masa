@@ -1,5 +1,8 @@
 cargo_test:
     stage: test
+    parallel:
+        matrix:
+            - POLICY_FEATURE: ["", "fifo", "prio_global", "prio_oldest", "prio_local", "prio_local,est_rms", "prio_local,est_hist", "prio_global,early", "prio_global,trace-queue"]
     variables:
         CI: "true"
         CARGO_BUILD_JOBS: "4"
@@ -11,4 +14,4 @@ cargo_test:
         - export PROTOC="$HOME/.local/bin/protoc"
     script:
         - rustc --version && cargo --version # Print version info for debugging
-        - ./scripts/test.sh --parallel 8
+        - ./scripts/test.sh --feature "$POLICY_FEATURE"
