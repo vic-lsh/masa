@@ -15,7 +15,9 @@ def extract_service_name(container_name: str) -> str:
     - MSSIM: mssim-{slug}-{digest}-{service}-{replica}
              e.g., "mssim-exp1-abc123-frontend-1" -> "frontend"
     - Socialnet: {prefix}-{service}-{replica} or {prefix}_{service}
-                 e.g., "socialnet-user-timeline-service-1" -> "user-timeline-service"
+                 e.g., "socialnet-ci2-9d93f9cef14a-compose-post-service-1" -> "compose-post-service"
+    - Generic: {prefix}-{slug}-{digest}-{service}-{replica} (digest is 12 hex chars)
+                 e.g., "syn-exp1-abc123def456-child-service-1" -> "child-service"
 
     Args:
         container_name: Full container name
@@ -42,8 +44,13 @@ def extract_service_name(container_name: str) -> str:
 
     # Handle socialnet prefix patterns
     elif name.startswith("socialnet-") or name.startswith("socialnet_"):
-        # Remove socialnet prefix
-        name = re.sub(r"^socialnet[-_]", "", name)
+        # Match pattern: socialnet-{slug}-{hexdigest}-{service}-{replica}
+        match = re.match(r"socialnet-[a-z0-9-]+-[a-f0-9]{12}-(.*)", name)
+        if match:
+            name = match.group(1)
+        else:
+            # Fallback: Remove socialnet prefix
+            name = re.sub(r"^socialnet[-_]", "", name)
 
     # Handle synthetic local prefix
     elif name.startswith("local-"):
@@ -60,6 +67,17 @@ def extract_service_name(container_name: str) -> str:
 
     elif name.startswith("synthetic_"):
         name = name[10:]  # Remove "synthetic_"
+
+    # Generic fallback: Match pattern with 12-char hex digest
+    # e.g., {prefix}-{slug}-{digest}-{service}-{replica}
+    # This handles any app using the _safe_project_name convention (e.g., syn-, mssim-, etc.)
+    # if it wasn't caught by specific prefixes above.
+    else:
+        # Look for -{digest}- where digest is exactly 12 hex chars
+        # We use search instead of match to find it anywhere in the string
+        match = re.search(r"-[a-f0-9]{12}-(.*)", name)
+        if match:
+            name = match.group(1)
 
     # Remove trailing replica number (e.g., "-1", "-2")
     # Match pattern: {service}-{number} at the end

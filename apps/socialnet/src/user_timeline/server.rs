@@ -513,7 +513,7 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(UserTimelineServiceServer::new(service))
-        .serve(listen_addr)
+        .serve_with_masa(listen_addr)
         .await?;
 
     Ok(())

@@ -577,7 +577,7 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(ComposePostServiceServer::new(service_impl))
-        .serve(addr)
+        .serve_with_masa(addr)
         .await?;
     Ok(())
 }
