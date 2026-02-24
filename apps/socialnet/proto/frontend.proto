@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package frontend;
+
+import "compose_post.proto";
+import "register_user.proto";
+
+message PingRequest {
+  string message = 1;
+}
+
+message PingResponse {
+  string message = 1;
+}
+
+service FrontendService {
+  rpc Ping(PingRequest) returns (PingResponse);
+  rpc ComposePost(compose_post.ComposePostRequest) returns (compose_post.ComposePostResponse);
+  rpc RegisterUser(register_user.RegisterUserRequest) returns (register_user.RegisterUserResponse);
+}

@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package register_user;
+
+message RegisterUserRequest {
+  int64 req_id = 1;
+  string first_name = 2;
+  string last_name = 3;
+  string username = 4;
+  string password = 5;
+  map<string, string> carrier = 6;
+}
+
+message RegisterUserResponse {}
+
+service RegisterUserService {
+  rpc RegisterUser(RegisterUserRequest) returns (RegisterUserResponse);
+}

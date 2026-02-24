@@ -31,6 +31,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let redis_url = env::var("REDIS_URL").expect("REDIS_URL environment variable must be set");
     let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET environment variable must be set");
     let machine_id = env::var("MACHINE_ID").unwrap_or_else(|_| "01".to_string());
+    let social_graph_service_ip =
+        env::var("SOCIAL_GRAPH_SERVICE_IP").unwrap_or_else(|_| "social-graph-service".to_string());
+    let social_graph_service_port: u16 = env::var("SOCIAL_GRAPH_SERVICE_PORT")
+        .unwrap_or_else(|_| "8080".to_string())
+        .parse()
+        .expect("SOCIAL_GRAPH_SERVICE_PORT must be a valid number");
+    let social_graph_service_replicas: u8 = env::var("SOCIAL_GRAPH_SERVICE_REPLICAS")
+        .unwrap_or_else(|_| "1".to_string())
+        .parse()
+        .expect("SOCIAL_GRAPH_SERVICE_REPLICAS must be a valid number");
 
     // 3. Initialize MongoDB client
     let mongo_client = MongoClient::with_uri_str(&mongo_url).await?;
@@ -61,6 +71,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let user_service = UserServer::new(
         mongo_client.database("user").collection("user"),
         pool, // Pass the pool, not a single connection
+        social_graph_service_ip,
+        social_graph_service_port,
+        social_graph_service_replicas,
         jwt_secret,
         machine_id,
     );
