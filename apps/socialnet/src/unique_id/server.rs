@@ -194,7 +194,7 @@ fn hash_mac_address_pid(mac: &str) -> u16 {
     hash
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // env_logger::init();
     // let addr = "[::1]:50051".parse()?;
@@ -228,7 +228,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(UniqueIdServiceServer::new(service))
-        .serve(addr)
+        .serve_with_masa(addr)
         .await?;
 
     Ok(())
