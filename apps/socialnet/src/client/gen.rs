@@ -4,6 +4,7 @@ use rand::{rngs::StdRng, Rng};
 
 // Import ComposePostRequest from the socialnet crate.
 use socialnet::compose_post::ComposePostRequest;
+use socialnet::register_user::RegisterUserRequest;
 
 pub fn get_compose_post_request(rng: &mut StdRng) -> ComposePostRequest {
     // Generate random user ID (similar to hotel's user range)
@@ -48,6 +49,30 @@ pub fn get_compose_post_request(rng: &mut StdRng) -> ComposePostRequest {
         media_ids,
         media_types,
         post_type,
+        carrier: std::collections::HashMap::new(),
+    }
+}
+
+pub fn get_register_user_request(rng: &mut StdRng) -> RegisterUserRequest {
+    let req_id = rng.gen_range(1..=1_000_000_000);
+    let first_name_options = [
+        "Alice", "Bob", "Carol", "David", "Eve", "Frank", "Grace", "Heidi",
+    ];
+    let last_name_options = [
+        "Smith", "Johnson", "Lee", "Patel", "Kim", "Garcia", "Brown", "Davis",
+    ];
+
+    let first_name = first_name_options[rng.gen_range(0..first_name_options.len())].to_string();
+    let last_name = last_name_options[rng.gen_range(0..last_name_options.len())].to_string();
+    let username = format!("bench_user_{}_{}", req_id, rng.gen_range(1..=1_000_000));
+    let password = format!("pw_{}_{}", req_id, rng.gen_range(1..=1_000_000));
+
+    RegisterUserRequest {
+        req_id,
+        first_name,
+        last_name,
+        username,
+        password,
         carrier: std::collections::HashMap::new(),
     }
 }

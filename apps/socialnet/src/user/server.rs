@@ -5,9 +5,11 @@ use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 // No longer need tokio::sync::Mutex for Redis
+use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{Request, Response, Status};
 use tracing::{error, info, warn};
 
@@ -28,6 +30,12 @@ pub mod social_network {
     tonic::include_proto!("user");
 }
 
+pub mod social_graph {
+    tonic::include_proto!("social_graph");
+}
+
+use social_graph::social_graph_service_client::SocialGraphServiceClient;
+use social_graph::InsertUserRequest;
 use social_network::{
     user_service_server::UserService, ComposeCreatorResponse, ComposeCreatorWithUserIdRequest,
     ComposeCreatorWithUsernameRequest, Creator, GetUserIdRequest, GetUserIdResponse, LoginRequest,
@@ -118,6 +126,9 @@ pub struct UserServer {
     // --- UPDATED ---
     // Store the pool, not a single connection
     redis_pool: Pool,
+    social_graph_service_ip: String,
+    social_graph_service_port: u16,
+    social_graph_service_replicas: u8,
     jwt_secret: String,
     machine_id: String,
 }
@@ -128,12 +139,18 @@ impl UserServer {
         mongo_user_collection: Collection<Document>,
         // --- UPDATED ---
         redis_pool: Pool,
+        social_graph_service_ip: String,
+        social_graph_service_port: u16,
+        social_graph_service_replicas: u8,
         jwt_secret: String,
         machine_id: String,
     ) -> Self {
         Self {
             mongo_user_collection,
             redis_pool,
+            social_graph_service_ip,
+            social_graph_service_port,
+            social_graph_service_replicas,
             jwt_secret,
             machine_id,
         }
@@ -156,6 +173,16 @@ impl UserServer {
         // Don't expose specific DB errors to the client.
         Status::internal("An internal cache error occurred")
     }
+
+    async fn social_graph_client(&self) -> SocialGraphServiceClient<LoadBalancedChannel> {
+        let channel = LoadBalancedChannel::new(
+            self.social_graph_service_ip.clone(),
+            self.social_graph_service_port,
+            self.social_graph_service_replicas,
+        )
+        .await;
+        SocialGraphServiceClient::new(channel)
+    }
 }
 
 #[tonic::async_trait]
@@ -171,11 +198,13 @@ impl UserService for UserServer {
         let user_id = generate_user_id(&self.machine_id)?;
 
         self.register_user_internal(
+            req.req_id,
             req.first_name,
             req.last_name,
             req.username,
             req.password,
             user_id,
+            req.carrier,
         )
         .await?;
 
@@ -190,11 +219,13 @@ impl UserService for UserServer {
         info!("RegisterUserWithId for username: {}", req.username);
 
         self.register_user_internal(
+            req.req_id,
             req.first_name,
             req.last_name,
             req.username,
             req.password,
             req.user_id,
+            req.carrier,
         )
         .await?;
 
@@ -363,11 +394,13 @@ impl UserServer {
     // --- register_user_internal (Unchanged) ---
     async fn register_user_internal(
         &self,
+        req_id: i64,
         first_name: String,
         last_name: String,
         username: String,
         password: String,
         user_id: i64,
+        carrier: HashMap<String, String>,
     ) -> Result<(), Status> {
         // 1. Check if username already exists
         let filter = doc! { "username": &username };
@@ -414,11 +447,19 @@ impl UserServer {
             &username, user_id
         );
 
-        // 4. Call SocialGraphService to insert user
-        info!(
-            "(Mock) Calling SocialGraphService to insert user_id: {}",
-            user_id
-        );
+        // 4. Register the user in social graph storage.
+        let mut social_graph_client = self.social_graph_client().await;
+        social_graph_client
+            .insert_user(Request::new(InsertUserRequest {
+                req_id,
+                user_id,
+                carrier,
+            }))
+            .await
+            .map_err(|e| {
+                error!("Failed to insert user {} into social graph: {}", user_id, e);
+                Status::internal("Failed to register user in social graph")
+            })?;
 
         Ok(())
     }

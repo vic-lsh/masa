@@ -1,6 +1,5 @@
 mod gen;
 
-use std::collections::HashMap;
 use std::path::Path;
 
 use rand::rngs::StdRng;
@@ -15,33 +14,22 @@ use app_utils::{
     load_gen::{load_gen_main, Client, Handler, HandlerOuter, LoadGenArgs, RequestType},
     timing::time_now,
 };
-use gen::get_compose_post_request;
+use gen::{get_compose_post_request, get_register_user_request};
 use masa::{Context, ContextBuilder};
-use socialnet::compose_post;
-use socialnet::compose_post::compose_post_service_client::ComposePostServiceClient;
+use socialnet::frontend;
+use socialnet::frontend::frontend_service_client::FrontendServiceClient;
 use tonic::masa::MasaRequestExt;
 
 struct SocialnetClient;
 
 impl Client for SocialnetClient {
-    type FrontendClient = ComposePostServiceClient<Channel>;
+    type FrontendClient = FrontendServiceClient<Channel>;
 
     async fn connect(dst: String) -> Result<Self::FrontendClient, tonic::transport::Error> {
-        ComposePostServiceClient::connect(dst).await
+        FrontendServiceClient::connect(dst).await
     }
 
     async fn ping(client: &mut Self::FrontendClient) -> Result<(), tonic::Status> {
-        // Option B: Use minimal ComposePost request as ping
-        let request = tonic::Request::new(compose_post::ComposePostRequest {
-            req_id: 0,
-            username: "ping_user".to_string(),
-            user_id: 0,
-            text: "ping".to_string(),
-            media_ids: vec![],
-            media_types: vec![],
-            post_type: 0, // POST = 0
-            carrier: HashMap::new(),
-        });
         let ctx = {
             let slo = 1_000_000;
             let start_at = time_now();
@@ -53,16 +41,17 @@ impl Client for SocialnetClient {
                 .deadline(deadline)
                 .build()
         };
-        let request = request.with_masa_context(&ctx);
-        client.compose_post(request).await.map(|_| ())
+        let request = tonic::Request::new(frontend::PingRequest {
+            message: "ping".to_string(),
+        })
+        .with_masa_context(&ctx);
+        client.ping(request).await.map(|_| ())
     }
 }
 
 enum RequestHandler {
     ComposePostRequest(Handler<ComposePostRequestType, SocialnetClient>),
-    // Extensible: Add more request types here in the future
-    // HomeTimelineRequest(Handler<HomeTimelineRequestType, SocialnetClient>),
-    // UserTimelineRequest(Handler<UserTimelineRequestType, SocialnetClient>),
+    RegisterUserRequest(Handler<RegisterUserRequestType, SocialnetClient>),
 }
 
 impl HandlerOuter<SocialnetClient> for RequestHandler {
@@ -71,9 +60,9 @@ impl HandlerOuter<SocialnetClient> for RequestHandler {
             "ComposePost" => {
                 RequestHandler::ComposePostRequest(Handler::new(api, rps, timeout, slo))
             }
-            // Extensible: Add more API handlers here
-            // "HomeTimeline" => RequestHandler::HomeTimelineRequest(Handler::new(api, rps, timeout, slo)),
-            // "UserTimeline" => RequestHandler::UserTimelineRequest(Handler::new(api, rps, timeout, slo)),
+            "RegisterUser" => {
+                RequestHandler::RegisterUserRequest(Handler::new(api, rps, timeout, slo))
+            }
             _ => panic!("unknown API {}", api),
         }
     }
@@ -81,34 +70,34 @@ impl HandlerOuter<SocialnetClient> for RequestHandler {
     async fn send_request(
         &self,
         rng: StdRng,
-        client: ComposePostServiceClient<Channel>,
+        client: FrontendServiceClient<Channel>,
         ctx: Context,
         trace: bool,
     ) -> String {
         match self {
             Self::ComposePostRequest(h) => h.send_request(rng, client, ctx, trace).await,
-            // Extensible: Add more match arms here
+            Self::RegisterUserRequest(h) => h.send_request(rng, client, ctx, trace).await,
         }
     }
 
     async fn fetch_traces(&mut self, output_path: &Path) {
         match self {
             Self::ComposePostRequest(h) => h.fetch_traces(output_path).await,
-            // Extensible: Add more match arms here
+            Self::RegisterUserRequest(h) => h.fetch_traces(output_path).await,
         }
     }
 
     fn api(&self) -> &str {
         match self {
             Self::ComposePostRequest(h) => h.api.as_str(),
-            // Extensible: Add more match arms here
+            Self::RegisterUserRequest(h) => h.api.as_str(),
         }
     }
 
     fn slo(&self) -> u64 {
         match self {
             Self::ComposePostRequest(h) => h.slo,
-            // Extensible: Add more match arms here
+            Self::RegisterUserRequest(h) => h.slo,
         }
     }
 }
@@ -116,7 +105,7 @@ impl HandlerOuter<SocialnetClient> for RequestHandler {
 struct ComposePostRequestType {}
 
 impl RequestType<SocialnetClient> for ComposePostRequestType {
-    type ResponseType = compose_post::ComposePostResponse;
+    type ResponseType = socialnet::compose_post::ComposePostResponse;
 
     fn new(_api: &str) -> Self {
         Self {}
@@ -125,11 +114,39 @@ impl RequestType<SocialnetClient> for ComposePostRequestType {
     async fn create_request(
         &self,
         rng: &mut StdRng,
-        mut client: ComposePostServiceClient<Channel>,
+        mut client: FrontendServiceClient<Channel>,
         ctx: &Context,
     ) -> Result<Response<Self::ResponseType>, Status> {
         let r = tonic::Request::new(get_compose_post_request(rng)).with_masa_context(ctx);
         client.compose_post(r).await
+    }
+
+    fn response_output_headers(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn response_to_row(_metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+struct RegisterUserRequestType {}
+
+impl RequestType<SocialnetClient> for RegisterUserRequestType {
+    type ResponseType = socialnet::register_user::RegisterUserResponse;
+
+    fn new(_api: &str) -> Self {
+        Self {}
+    }
+
+    async fn create_request(
+        &self,
+        rng: &mut StdRng,
+        mut client: FrontendServiceClient<Channel>,
+        ctx: &Context,
+    ) -> Result<Response<Self::ResponseType>, Status> {
+        let r = tonic::Request::new(get_register_user_request(rng)).with_masa_context(ctx);
+        client.register_user(r).await
     }
 
     fn response_output_headers(&self) -> Vec<String> {
