@@ -8,6 +8,7 @@ exp_names=()
 no_cache=""
 deploy_mode="docker"
 deploy_args=""
+source "$repo_root/scripts/kind_utils.sh"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -36,6 +37,11 @@ if [ ${#exp_names[@]} -eq 0 ]; then
     exp_names=("ci")
 fi
 
+if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker is required to run the synthetic experiment test." >&2
+    exit 1
+fi
+
 if [[ "$deploy_mode" == "kind" ]]; then
     deploy_args="--kind"
     # Use a unique cluster name to avoid conflicts in CI
@@ -53,8 +59,9 @@ if [[ "$deploy_mode" == "kind" ]]; then
     export KIND_CLUSTER_NAME="$CLUSTER_NAME"
 
     if ! kind get clusters | grep -q "^$CLUSTER_NAME$"; then
+        kind_node_image="$(kind_node_image_ulimit "$repo_root")"
         echo "Creating kind cluster: $CLUSTER_NAME..."
-        kind create cluster --name "$CLUSTER_NAME"
+        kind create cluster --name "$CLUSTER_NAME" --image "$kind_node_image"
     else
         echo "Kind cluster $CLUSTER_NAME already exists."
     fi
@@ -70,11 +77,6 @@ fi
 
 if [ ! -d "$exp_dir" ]; then
     echo "Synthetic experiment directory not found at $exp_dir" >&2
-    exit 1
-fi
-
-if ! command -v docker >/dev/null 2>&1; then
-    echo "Docker is required to run the synthetic experiment test." >&2
     exit 1
 fi
 
