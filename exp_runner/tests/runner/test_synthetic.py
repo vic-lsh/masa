@@ -17,8 +17,8 @@ import pytest
 from exp_runner.runner.apps.synthetic import (
     SyntheticApp,
     SyntheticBuilder,
-    _safe_project_name,
 )
+from exp_runner.runner.naming import generate_project_name
 from exp_runner.runner.deployment_manager import TaskSpec
 
 
@@ -103,8 +103,8 @@ class TestSyntheticApp:
             assert task_spec.env_vars["LOG_LEVEL"] == "debug"
 
     def test_safe_project_name(self):
-        name = _safe_project_name(
-            experiment_name="exp 1", iteration=0, policy="fifo,early"
+        name = generate_project_name(
+            prefix="syn", experiment_name="exp 1", iteration=0, policy="fifo,early"
         )
         # docker compose project name allowed chars: [a-z0-9_-]
         assert "," not in name

@@ -10,7 +10,6 @@ MSSIM differs from the default runner flow:
 from __future__ import annotations
 
 import csv
-import hashlib
 import json
 import logging
 import os
@@ -27,6 +26,7 @@ import yaml
 from ..cpu_monitor import CPUMonitor  # noqa: F401
 from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
+from ..naming import generate_project_name
 from .base import AppBuilder, AppPlugin, DockerConfig
 from .mssim_config import MssimConfigGenerator
 from .utils import normalize_features_to_tag
@@ -55,16 +55,6 @@ def _generic_service_image_for_policy(policy: str) -> str:
     """
     tag = normalize_features_to_tag(policy)
     return f"{GENERIC_SERVICE_IMAGE}:{tag}"
-
-
-def _safe_project_name(
-    *, experiment_name: str, iteration: int, policy: str, rps: float
-) -> str:
-    # docker compose project names should be simple; use a digest for uniqueness.
-    raw = f"{experiment_name}|{iteration}|{policy}|{rps}"
-    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
-    slug = re.sub(r"[^a-z0-9]+", "-", experiment_name.lower()).strip("-")[:24] or "exp"
-    return f"mssim-{slug}-{digest}"
 
 
 class MssimBuilder(AppBuilder):
@@ -294,11 +284,12 @@ class MssimApp(AppPlugin):
         # SKIP LOADGEN in compose generation, ExpDriver will run it as a task
         env["MSSIM_SKIP_LOADGEN"] = "1"
 
-        project_name = _safe_project_name(
+        project_name = generate_project_name(
+            prefix="mssim",
             experiment_name=config.experiment_name,
             iteration=iteration,
             policy=policy,
-            rps=0.0,
+            extra_suffix=str(0.0),  # rps placeholder for compatibility
         )
         env["DOCKER_COMPOSE_PROJECT_NAME"] = project_name
 
@@ -506,7 +497,6 @@ class MssimApp(AppPlugin):
         env_vars: dict,
         use_k8s: bool,
     ) -> TaskSpec:
-
         # Construct network name if Docker
         network = None
         if not use_k8s:

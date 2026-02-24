@@ -24,7 +24,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("URL Shortening Service listening on {}", addr);
 
-    Server::builder().add_service(service).serve(addr).await?;
+    Server::builder()
+        .add_service(service)
+        .serve_with_masa(addr)
+        .await?;
 
     Ok(())
 }

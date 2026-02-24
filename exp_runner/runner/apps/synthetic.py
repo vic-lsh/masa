@@ -2,7 +2,6 @@
 Synthetic application plugin.
 """
 
-import hashlib
 import json
 import logging
 import re
@@ -16,6 +15,7 @@ import yaml
 
 from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
+from ..naming import generate_project_name
 from .base import AppBuilder, AppPlugin, DockerConfig
 from .utils import get_docker_progress_flag, normalize_features_to_tag
 
@@ -23,20 +23,6 @@ if TYPE_CHECKING:
     from ..config import ExperimentConfig
 
 logger = logging.getLogger(__name__)
-
-
-def _safe_project_name(*, experiment_name: str, iteration: int, policy: str) -> str:
-    """
-    Generate a docker-compose project name that is safe and deterministic.
-
-    Policy strings may contain characters like commas (e.g., "fifo,early") that
-    Docker Compose will normalize. We avoid any mismatch by using a digest-based
-    project name that contains only safe characters.
-    """
-    raw = f"{experiment_name}|{iteration}|{policy}"
-    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
-    slug = re.sub(r"[^a-z0-9]+", "-", experiment_name.lower()).strip("-")[:12] or "exp"
-    return f"syn-{slug}-{digest}"
 
 
 class SyntheticApp(AppPlugin):
@@ -395,7 +381,8 @@ class SyntheticApp(AppPlugin):
         docker_config = self.get_docker_config()
 
         # Generate project name
-        project_name = _safe_project_name(
+        project_name = generate_project_name(
+            prefix="syn",
             experiment_name=config.experiment_name,
             iteration=iteration,
             policy=policy,
@@ -514,7 +501,6 @@ class SyntheticApp(AppPlugin):
         env_vars: dict,
         use_k8s: bool,
     ) -> TaskSpec:
-
         project_name = env_vars.get("DOCKER_COMPOSE_PROJECT_NAME")
 
         # Create the legacy load generator helper to reuse logic if possible,

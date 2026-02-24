@@ -14,7 +14,7 @@ use deadpool_redis::{Config, Runtime};
 // Import the AsyncCommands trait from deadpool's re-exported redis crate
 // use deadpool_redis::redis::AsyncCommands;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Initialize centralized logging
     // This will collect logs from your app, tonic, mongodb, and redis.
@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(UserServiceServer::new(user_service))
-        .serve(addr)
+        .serve_with_masa(addr)
         .await?;
 
     Ok(())
