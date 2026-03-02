@@ -113,7 +113,7 @@ Validation fails fast with clear error messages if any issues are found.
 Synthetic supports two estimation modes via config field `estimation_mode`:
 
 - `normal` (default): uses runtime-learned estimators in local policy.
-- `perfect_sampled`: synthetic pre-samples per-request child method latency and remaining work, attaches oracle metadata on child RPCs, and local policy consumes these oracle values.
+- `perfect_sampled`: synthetic pre-samples per-request child RPC critical-path latency (recursive), per-callee local work, and remaining work after each child call; it attaches these oracle metadata values on child RPCs, and local policy consumes them.
 
 Compile-time override for experiments:
 
