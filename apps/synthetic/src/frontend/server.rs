@@ -2,11 +2,9 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::bootstrap::{ConnectionBootstrap, ConnectionBootstrapTask};
-use crate::config::{
-    parse_call_sequences, CallTarget, EstimationMode, ServiceMethod, SyntheticConfig,
-};
+use crate::config::{parse_call_sequences, CallTarget, SyntheticConfig};
 use crate::service_registry::ServiceRegistry;
-use crate::util::{build_oracle_call_plan, execute_call_sequence, execute_oracle_call_plan};
+use crate::util::execute_call_sequence;
 
 use tonic::{Request, Response, Status};
 
@@ -15,14 +13,11 @@ use crate::tonic::{frontend, frontend::frontend_server::Frontend};
 pub struct FrontendImpl {
     parsed_entry_points: HashMap<String, Vec<Vec<(CallTarget, f64)>>>,
     service_registry: ServiceRegistry,
-    method_lookup: HashMap<(String, String), ServiceMethod>,
-    estimation_mode: EstimationMode,
     _bootstrap_task: Option<ConnectionBootstrapTask>,
 }
 
 impl FrontendImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
-        let estimation_mode = config.estimation_mode;
         let SyntheticConfig { mut call_graph, .. } = config;
 
         // Read project name from environment variable (set by exp_runner.runner)
@@ -66,18 +61,9 @@ impl FrontendImpl {
             Some(bootstrap.spawn())
         };
 
-        let mut method_lookup = HashMap::new();
-        for service in &call_graph.services {
-            for method in &service.methods {
-                method_lookup.insert((service.id.clone(), method.name.clone()), method.clone());
-            }
-        }
-
         FrontendImpl {
             parsed_entry_points: call_graph.parsed_entry_points,
             service_registry: registry,
-            method_lookup,
-            estimation_mode,
             _bootstrap_task: bootstrap_task,
         }
     }
@@ -104,15 +90,7 @@ impl Frontend for FrontendImpl {
 
         // Call the entry point sequence for "a"
         if let Some(sequence) = self.parsed_entry_points.get("a") {
-            match self.estimation_mode {
-                EstimationMode::Normal => {
-                    execute_call_sequence(&self.service_registry, sequence).await?;
-                }
-                EstimationMode::PerfectSampled => {
-                    let plan = build_oracle_call_plan(sequence, &self.method_lookup, 0)?;
-                    execute_oracle_call_plan(&self.service_registry, &plan).await?;
-                }
-            }
+            execute_call_sequence(&self.service_registry, sequence).await?;
         } else {
             // warn!("No entry point defined for 'a'");
         }
@@ -128,15 +106,7 @@ impl Frontend for FrontendImpl {
     ) -> Result<Response<frontend::BResponse>, Status> {
         // Call the entry point sequence for "b"
         if let Some(sequence) = self.parsed_entry_points.get("b") {
-            match self.estimation_mode {
-                EstimationMode::Normal => {
-                    execute_call_sequence(&self.service_registry, sequence).await?;
-                }
-                EstimationMode::PerfectSampled => {
-                    let plan = build_oracle_call_plan(sequence, &self.method_lookup, 0)?;
-                    execute_oracle_call_plan(&self.service_registry, &plan).await?;
-                }
-            }
+            execute_call_sequence(&self.service_registry, sequence).await?;
         } else {
             // warn!("No entry point defined for 'b'");
         }

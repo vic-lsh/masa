@@ -205,20 +205,6 @@ pub const METHOD_NAME_OVERRIDE_HEADER: &str = "x-masa-method-name";
 /// this header can be set to specify the actual service name being simulated.
 pub const SERVICE_NAME_OVERRIDE_HEADER: &str = "x-masa-service-name";
 
-/// Header key for oracle child-call latency in microseconds.
-///
-/// Synthetic workloads can attach pre-sampled per-request method latency so the
-/// local policy can skip estimator warmup and schedule with oracle values.
-pub const ORACLE_CHILD_LATENCY_US_HEADER: &str = "x-masa-oracle-child-latency-us";
-
-/// Header key for oracle remaining-work-after-child latency in microseconds.
-pub const ORACLE_REMAINING_AFTER_CHILD_US_HEADER: &str = "x-masa-oracle-remaining-after-child-us";
-
-/// Header key for oracle local-work latency of the callee in microseconds.
-///
-/// Synthetic child handlers can use this value to avoid re-sampling local work.
-pub const ORACLE_SELF_WORK_US_HEADER: &str = "x-masa-oracle-self-work-us";
-
 /// Internal header key for MASA context.
 pub(crate) const MASA_CONTEXT_HEADER: &str = masa_core::MASA_CONTEXT_HEADER;
 
