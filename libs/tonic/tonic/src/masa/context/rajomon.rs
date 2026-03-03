@@ -42,6 +42,59 @@ impl RajomonSharedState {
         state
     }
 
+    fn update_prices(&self) {
+        let updates: Vec<(CowGrpcMethod, u64)> = self
+            .queue_latencies
+            .iter()
+            .map(|e| (e.key().clone(), e.value().lock().unwrap().estimate()))
+            .collect();
+
+        for (method, estimate) in updates {
+            let current_price = self.local_prices.get(&method).map(|v| *v).unwrap_or(1);
+            let new_price = if estimate > 5000 {
+                // > 5ms
+                current_price + 1
+            } else {
+                max(1, current_price.saturating_sub(1))
+            };
+            self.local_prices.insert(method, new_price);
+        }
+    }
+
+    fn log_pricing_tables(&self) {
+        if !self.local_prices.is_empty() {
+            let parts: Vec<String> = self
+                .local_prices
+                .iter()
+                .map(|e| format!("{}::{}: {}", e.key().service(), e.key().method(), *e.value()))
+                .collect();
+            log::info!("Rajomon local_prices: {}", parts.join(", "));
+        }
+        if !self.downstream_prices.is_empty() {
+            let parts: Vec<String> = self
+                .downstream_prices
+                .iter()
+                .map(|e| format!("{}::{}: {}", e.key().service(), e.key().method(), *e.value()))
+                .collect();
+            log::info!("Rajomon downstream_prices: {}", parts.join(", "));
+        }
+        if !self.queue_latencies.is_empty() {
+            let parts: Vec<String> = self
+                .queue_latencies
+                .iter()
+                .map(|e| {
+                    format!(
+                        "{}::{}: {} us",
+                        e.key().service(),
+                        e.key().method(),
+                        e.value().lock().unwrap().estimate()
+                    )
+                })
+                .collect();
+            log::info!("Rajomon queue_latencies: {}", parts.join(", "));
+        }
+    }
+
     // Helper to start the background worker once
     pub(super) fn ensure_worker_started() {
         use std::sync::atomic::{AtomicBool, Ordering};
@@ -56,28 +109,14 @@ impl RajomonSharedState {
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async {
                 let mut interval = tokio::time::interval(Duration::from_millis(100));
+                let mut log_tick: u32 = 0;
                 loop {
                     interval.tick().await;
-                    let mut updates: Vec<(CowGrpcMethod, u64)> = Vec::new();
-                    for entry in RAJOMON_STATE.queue_latencies.iter() {
-                        let method = entry.key().clone();
-                        let est = entry.value().lock().unwrap().estimate();
-                        updates.push((method, est));
-                    }
-
-                    for (method, estimate) in updates {
-                        let mut current_price = RAJOMON_STATE
-                            .local_prices
-                            .get(&method)
-                            .map(|v| *v)
-                            .unwrap_or(1);
-                        if estimate > 5000 {
-                            // > 5ms
-                            current_price += 1;
-                        } else {
-                            current_price = max(1, current_price.saturating_sub(1));
-                        }
-                        RAJOMON_STATE.local_prices.insert(method, current_price);
+                    RAJOMON_STATE.update_prices();
+                    log_tick += 1;
+                    if log_tick >= 50 {
+                        log_tick = 0;
+                        RAJOMON_STATE.log_pricing_tables();
                     }
                 }
             });
