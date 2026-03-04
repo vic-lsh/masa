@@ -5,6 +5,7 @@ export RUSTFLAGS="-D warnings"
 
 flag_combos=(
     "fifo"
+    "fifo,rajomon"
     "prio_global"
     "prio_global,early"
     "prio_local,early"

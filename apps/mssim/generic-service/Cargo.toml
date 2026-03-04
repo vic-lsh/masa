@@ -41,3 +41,4 @@ fifo = ["masa/fifo"]
 prio_oldest = ["masa/prio_oldest"]
 
 prio_global = ["masa/prio_global"]
+rajomon = ["tonic/rajomon"]
