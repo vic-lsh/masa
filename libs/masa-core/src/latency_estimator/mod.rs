@@ -1,3 +1,4 @@
+pub mod ewma;
 pub mod histogram;
 pub mod rms;
 
@@ -16,5 +17,6 @@ pub trait LatencyEstimator: Send + Sync {
     fn estimate(&self) -> u64;
 }
 
+pub use ewma::LatencyEwma;
 pub use histogram::LatencyDistribution;
 pub use rms::LatencyRms;

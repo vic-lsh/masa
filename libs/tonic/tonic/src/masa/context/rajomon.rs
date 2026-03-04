@@ -4,60 +4,100 @@ use dashmap::DashMap;
 #[cfg(not(feature = "rajomon"))]
 use masa_core::Context;
 #[cfg(feature = "rajomon")]
-use masa_core::LatencyRms;
-#[cfg(feature = "rajomon")]
-use masa_core::{Context, LatencyEstimator};
+use masa_core::Context;
 #[cfg(feature = "rajomon")]
 use once_cell::sync::Lazy;
 #[cfg(feature = "rajomon")]
 use std::cmp::max;
 #[cfg(feature = "rajomon")]
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(feature = "rajomon")]
 use std::time::Duration;
 
+/// Global Rajomon state shared across all request handlers.
 #[cfg(feature = "rajomon")]
 pub static RAJOMON_STATE: Lazy<RajomonSharedState> = Lazy::new(|| RajomonSharedState::new());
+
+/// Per-method queue statistics for the current time window and the running EWMA.
+///
+/// All fields are atomics so they can be updated from request handlers without holding any lock
+/// beyond the DashMap shard lock used for the initial entry lookup.
+#[cfg(feature = "rajomon")]
+pub struct MethodQueueStats {
+    /// Sum of per-request accumulated queue latencies (μs) collected since the last tick.
+    window_sum: AtomicU64,
+    /// Number of requests that completed since the last tick.
+    window_count: AtomicU64,
+    /// Time-based EWMA of the per-window average queue latency (μs).
+    /// Updated once per tick by the background worker, independent of RPS.
+    pub ewma_us: AtomicU64,
+}
+
+#[cfg(feature = "rajomon")]
+impl MethodQueueStats {
+    fn new() -> Self {
+        Self {
+            window_sum: AtomicU64::new(0),
+            window_count: AtomicU64::new(0),
+            ewma_us: AtomicU64::new(0),
+        }
+    }
+}
+
+#[cfg(feature = "rajomon")]
+impl std::fmt::Debug for MethodQueueStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MethodQueueStats")
+            .field("window_sum", &self.window_sum.load(Ordering::Relaxed))
+            .field("window_count", &self.window_count.load(Ordering::Relaxed))
+            .field("ewma_us", &self.ewma_us.load(Ordering::Relaxed))
+            .finish()
+    }
+}
 
 #[cfg(feature = "rajomon")]
 #[derive(Debug)]
 pub struct RajomonSharedState {
     pub local_prices: DashMap<CowGrpcMethod, u64>,
     pub downstream_prices: DashMap<CowGrpcMethod, u64>,
-    pub queue_latencies: DashMap<CowGrpcMethod, Arc<Mutex<LatencyRms>>>,
+    pub queue_stats: DashMap<CowGrpcMethod, MethodQueueStats>,
 }
 
 #[cfg(feature = "rajomon")]
 impl RajomonSharedState {
     fn new() -> Self {
-        let state = Self {
+        Self {
             local_prices: DashMap::new(),
             downstream_prices: DashMap::new(),
-            queue_latencies: DashMap::new(),
-        };
-
-        // We can't spawn a tokio task inside Lazy::new() unless we are inside a tokio runtime.
-        // It's safer to spawn it during the first `check_inbound` or expose an `init` method.
-        // Wait, Lazy::new() is just allocating the struct. We can't spawn here.
-        state
+            queue_stats: DashMap::new(),
+        }
     }
 
     fn update_prices(&self) {
-        let updates: Vec<(CowGrpcMethod, u64)> = self
-            .queue_latencies
-            .iter()
-            .map(|e| (e.key().clone(), e.value().lock().unwrap().estimate()))
-            .collect();
+        for entry in self.queue_stats.iter() {
+            // Atomically drain the current window's accumulated data and reset for the next tick.
+            let sum = entry.window_sum.swap(0, Ordering::Relaxed);
+            let count = entry.window_count.swap(0, Ordering::Relaxed);
+            // If no requests arrived this window, window_avg = 0 and the EWMA decays toward 0,
+            // correctly reflecting the absence of observed queueing pressure.
+            let window_avg = if count > 0 { sum / count } else { 0 };
 
-        for (method, estimate) in updates {
-            let current_price = self.local_prices.get(&method).map(|v| *v).unwrap_or(1);
-            let new_price = if estimate > 5000 {
-                // > 5ms
+            // Time-based EWMA step: α = 1/4, half-life ≈ 2.4 ticks (240ms).
+            // Decay is per-tick, not per-sample, so it is independent of RPS.
+            // new_ewma = (1/4) * window_avg + (3/4) * old_ewma
+            let old_ewma = entry.ewma_us.load(Ordering::Relaxed);
+            let new_ewma = (window_avg + 3 * old_ewma) / 4;
+            entry.ewma_us.store(new_ewma, Ordering::Relaxed);
+
+            let method = entry.key();
+            let current_price = self.local_prices.get(method).map(|v| *v).unwrap_or(1);
+            let new_price = if new_ewma > 5000 {
+                // > 5ms average queue latency: scheduler is overloaded, raise price.
                 current_price + 1
             } else {
                 max(1, current_price.saturating_sub(1))
             };
-            self.local_prices.insert(method, new_price);
+            self.local_prices.insert(method.clone(), new_price);
         }
     }
 
@@ -78,20 +118,20 @@ impl RajomonSharedState {
                 .collect();
             log::info!("Rajomon downstream_prices: {}", parts.join(", "));
         }
-        if !self.queue_latencies.is_empty() {
+        if !self.queue_stats.is_empty() {
             let parts: Vec<String> = self
-                .queue_latencies
+                .queue_stats
                 .iter()
                 .map(|e| {
                     format!(
                         "{}::{}: {} us",
                         e.key().service(),
                         e.key().method(),
-                        e.value().lock().unwrap().estimate()
+                        e.value().ewma_us.load(Ordering::Relaxed)
                     )
                 })
                 .collect();
-            log::info!("Rajomon queue_latencies: {}", parts.join(", "));
+            log::info!("Rajomon queue_latencies (ewma): {}", parts.join(", "));
         }
     }
 
@@ -130,6 +170,9 @@ pub(crate) struct RajomonHandler {
     rpc: CowGrpcMethod,
     #[cfg(feature = "rajomon")]
     should_drop: bool,
+    /// Accumulated scheduler queue latency across all polls for this request (microseconds).
+    #[cfg(feature = "rajomon")]
+    accumulated_q_lat_us: AtomicU64,
 }
 
 impl Default for RajomonHandler {
@@ -139,6 +182,8 @@ impl Default for RajomonHandler {
             rpc: CowGrpcMethod::new("", ""),
             #[cfg(feature = "rajomon")]
             should_drop: false,
+            #[cfg(feature = "rajomon")]
+            accumulated_q_lat_us: AtomicU64::new(0),
         }
     }
 }
@@ -151,6 +196,7 @@ impl RajomonHandler {
             Self {
                 rpc,
                 should_drop: false,
+                accumulated_q_lat_us: AtomicU64::new(0),
             }
         }
         #[cfg(not(feature = "rajomon"))]
@@ -244,18 +290,34 @@ impl RajomonHandler {
         Status::resource_exhausted("Rajomon disabled")
     }
 
+    /// Accumulate the scheduler queue latency for this poll. The window stats are updated once
+    /// per request via `finalize_queue_delay`, so each request contributes one data point
+    /// (its total accumulated scheduler queue wait time across all polls).
     #[cfg(feature = "rajomon")]
     pub(crate) fn track_queue_delay(&self) {
-        let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
-        let entry = RAJOMON_STATE
-            .queue_latencies
-            .entry(self.rpc.clone())
-            .or_insert_with(|| Arc::new(Mutex::new(LatencyRms::new(50))));
-        entry.lock().unwrap().track(queue_latency);
+        let q_lat_us = tokio::task::obtain_task_queue_latency().as_micros() as u64;
+        self.accumulated_q_lat_us.fetch_add(q_lat_us, Ordering::Relaxed);
     }
 
     #[cfg(not(feature = "rajomon"))]
     pub(crate) fn track_queue_delay(&self) {}
+
+    /// Commit this request's total accumulated queue latency to the current time window.
+    /// The background worker drains the window every 100ms and applies a time-based EWMA step,
+    /// so the decay rate is independent of RPS. Call this exactly once per request.
+    #[cfg(feature = "rajomon")]
+    pub(crate) fn finalize_queue_delay(&self) {
+        let total_us = self.accumulated_q_lat_us.load(Ordering::Relaxed);
+        let entry = RAJOMON_STATE
+            .queue_stats
+            .entry(self.rpc.clone())
+            .or_insert_with(MethodQueueStats::new);
+        entry.window_sum.fetch_add(total_us, Ordering::Relaxed);
+        entry.window_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[cfg(not(feature = "rajomon"))]
+    pub(crate) fn finalize_queue_delay(&self) {}
 
     #[cfg(feature = "rajomon")]
     pub(crate) fn update_cache_from_response(

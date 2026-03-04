@@ -149,6 +149,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
     // expect frontend method, all other method are going send back their latency trace
     fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
+        self.rajomon.finalize_queue_delay();
         self.q_lat_tracker
             .inject_context_metadata(&self.ctx, result);
         self.rajomon.inject_price_to_response(result);
