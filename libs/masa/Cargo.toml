@@ -18,4 +18,5 @@ est_rms = ["tonic/est_rms"]
 est_hist = ["tonic/est_hist"]
 
 early = ["masa-core/early", "tonic/early"]
+rajomon = ["masa-core/rajomon", "tonic/rajomon"]
 trace-queue = ["tonic/trace-queue"]

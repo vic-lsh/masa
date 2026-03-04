@@ -48,8 +48,13 @@ impl EarlyReturnHandler {
             return true;
         }
 
+        let deadline = ctx.deadline();
+        if deadline == 0 {
+            return false;
+        }
+
         let now = time_now();
-        let should_early_return = now >= ctx.deadline();
+        let should_early_return = now >= deadline;
 
         if should_early_return {
             // We use compare_exchange_weak to ensure we only log or trigger side effects once if needed,
