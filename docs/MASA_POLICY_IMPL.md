@@ -146,6 +146,7 @@ Different modules implement `MasaHooks` based on the active feature flag:
 *   **`QueueGlobal`** (for `prio_global`): In `before_child_rpc`, it calculates the deadline and priority for the child request and injects a `ctx` header. Tracks queue latency via `QueueLatencyTracker`.
 *   **`PrioOldest`** (for `prio_oldest`): Like `QueueGlobal`, but the priority hint is the request creation time (older requests = higher priority), implementing the TailClipper approach.
 *   **`LocalDeadlinePolicy`** (for `prio_local`): Computes local deadlines by subtracting estimated remaining processing time from the parent deadline. Maintains per-method-pair `LatencyRms` estimators. Only works for applications with a known call graph (currently `hotel`).
+    *   Optional modifier: enabling `prio_local_transform` applies a monotone transform to the remaining estimate (`w' = a * w^b`) before deadline/priority computation. The constants are defined in `libs/tonic/tonic/src/masa/context/local/local.rs`.
 *   **Fifo**: Passes through deadline/priority. Handles `early` return checks if the `early` feature is also enabled.
 *   **Global**: Simplified global deadline policy without queue latency tracking (no early return support).
 *   **Noop**: No-op hooks. Selected when `fifo` is enabled without `early`, or when no policy feature is active.

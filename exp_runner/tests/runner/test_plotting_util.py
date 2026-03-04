@@ -16,6 +16,14 @@ def test_get_policy_display_name_known_policies():
     assert get_policy_display_name("prio_global,early") == "Masa (global ddl)"
     assert get_policy_display_name("prio_local") == "Masa (local ddl) (no-drop)"
     assert get_policy_display_name("prio_local,early") == "Masa (local ddl)"
+    assert (
+        get_policy_display_name("prio_local,early,prio_local_transform")
+        == "Masa (local ddl, transformed)"
+    )
+    assert (
+        get_policy_display_name("prio_local,prio_local_transform")
+        == "Masa (local ddl, transformed) (no-drop)"
+    )
     assert get_policy_display_name("prio_oldest") == "Tailclipper (no-drop)"
     assert get_policy_display_name("prio_oldest,early") == "Tailclipper"
 

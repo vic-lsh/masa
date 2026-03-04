@@ -291,20 +291,28 @@ def get_policy_color(policy: str) -> str | None:
         Color string, or None to use matplotlib default color cycle
     """
     policy_lower = policy.lower()
+    features = [feature.strip().lower() for feature in policy.split(",") if feature.strip()]
+    has_early = "early" in features
+    has_local_transform = "prio_local_transform" in features
+
     if policy_lower.startswith("fifo"):
-        if ",early" in policy_lower:
+        if has_early:
             return "darkgrey"
         return "grey"
     elif policy_lower.startswith("prio_global"):
-        if ",early" in policy_lower:
+        if has_early:
             return "cornflowerblue"
         return "steelblue"
     elif policy_lower.startswith("prio_local"):
-        if ",early" in policy_lower:
+        if has_local_transform:
+            if has_early:
+                return "lightsalmon"
+            return "orangered"
+        if has_early:
             return "lightpink"
         return "hotpink"
     elif policy_lower.startswith("prio_oldest"):
-        if ",early" in policy_lower:
+        if has_early:
             return "mediumpurple"
         return "purple"
     return None  # Use matplotlib default color cycle
@@ -319,11 +327,19 @@ def get_policy_display_name(policy: str) -> str:
     - Add "(no-drop)" when the policy does not have the ",early" suffix.
     - Map known base policy names to display names.
     """
+    features = [feature.strip() for feature in policy.split(",") if feature.strip()]
+    has_early = "early" in features
+    has_local_transform = "prio_local_transform" in features
+
     base_policy = policy
-    has_early = False
-    if base_policy.endswith(",early"):
-        base_policy = base_policy[: -len(",early")]
-        has_early = True
+    for known_base in ("fifo", "prio_global", "prio_local", "prio_oldest"):
+        if known_base in features:
+            base_policy = known_base
+            break
+    else:
+        non_early_features = [feature for feature in features if feature != "early"]
+        if non_early_features:
+            base_policy = ",".join(non_early_features)
 
     base_lower = base_policy.lower()
     display_name_map = {
@@ -333,6 +349,9 @@ def get_policy_display_name(policy: str) -> str:
         "prio_oldest": "Tailclipper",
     }
     display = display_name_map.get(base_lower, base_policy)
+
+    if base_lower == "prio_local" and has_local_transform:
+        display = "Masa (local ddl, transformed)"
 
     if not has_early:
         display = f"{display} (no-drop)"

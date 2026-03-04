@@ -8,6 +8,7 @@ flag_combos=(
     "prio_global"
     "prio_global,early"
     "prio_local,early"
+    "prio_local,early,prio_local_transform"
 )
 
 CONTINUE_ON_ERROR=false

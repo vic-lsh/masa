@@ -83,6 +83,7 @@ path = "src/client/client_bench.rs"
 [features]
 prio_global = ["masa/prio_global"]
 prio_local = ["masa/prio_local"]
+prio_local_transform = ["masa/prio_local_transform"]
 fifo = ["masa/fifo"]
 
 est_rms = ["masa/est_rms"]

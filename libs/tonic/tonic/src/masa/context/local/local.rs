@@ -12,6 +12,7 @@ use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::super::{
     resolve_method_name_from_http, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks,
 };
+use super::transform::transform_remaining_estimate;
 use super::LatencyMap;
 use masa_core::{time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint, EARLY_RETURN};
 
@@ -251,11 +252,12 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             self.server.clone(),
         );
 
-        let est_remaining = self
+        let est_remaining_raw = self
             .server
             .est_after_child_latency
             .get_estimate(key)
             .unwrap_or(0);
+        let est_remaining = transform_remaining_estimate(est_remaining_raw);
 
         let deadline = self.ctx.deadline() - est_remaining;
         if EARLY_RETURN && time_now() > deadline {
@@ -269,9 +271,10 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
             log::info!(
-                "LAT_EST: p=>c: {}, est_child: {}, est_rem: {}",
+                "LAT_EST: p=>c: {}, est_child: {}, est_rem_raw: {}, est_rem_transformed: {}",
                 parent_to_child_id,
                 est_child,
+                est_remaining_raw,
                 est_remaining
             );
         }
@@ -403,6 +406,26 @@ impl<E: LatencyEstimator + Default + 'static> ChildContext<E> {
 mod tests {
     use super::*;
     use masa_core::LatencyRms;
+
+    #[test]
+    fn test_transform_remaining_estimate_is_monotone() {
+        let inputs = [0, 1, 10, 100, 1_000, 10_000];
+        let mut last = 0;
+        for input in inputs {
+            let output = transform_remaining_estimate(input);
+            assert!(output >= last);
+            last = output;
+        }
+    }
+
+    #[cfg(not(feature = "prio_local_transform"))]
+    #[test]
+    fn test_transform_remaining_estimate_is_identity_when_disabled() {
+        let inputs = [0, 1, 10, 123_456, u32::MAX as u64, u64::MAX];
+        for input in inputs {
+            assert_eq!(transform_remaining_estimate(input), input);
+        }
+    }
 
     #[test]
     fn test_server_context_rms_integration() {

@@ -123,6 +123,19 @@ class TestGetPolicyColors:
         assert colors["prio_global,early"] == "cornflowerblue"
         assert colors["prio_local,early"] == "lightpink"
 
+    def test_local_transform_policies(self):
+        """Test distinct colors for transformed local-deadline policy."""
+        policies = [
+            "prio_local",
+            "prio_local,prio_local_transform",
+            "prio_local,early,prio_local_transform",
+        ]
+        colors = _get_policy_colors(policies)
+
+        assert colors["prio_local"] == "hotpink"
+        assert colors["prio_local,prio_local_transform"] == "orangered"
+        assert colors["prio_local,early,prio_local_transform"] == "lightsalmon"
+
     def test_mixed_policies(self):
         """Test color assignment for mixed standard and early policies."""
         policies = ["fifo", "fifo,early", "prio_global", "custom_policy"]

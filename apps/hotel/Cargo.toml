@@ -60,6 +60,7 @@ scheduler_trace = [
 prio_global = ["masa/prio_global"]
 prio_oldest = ["masa/prio_oldest"]
 prio_local = ["masa/prio_local"]
+prio_local_transform = ["masa/prio_local_transform"]
 fifo = ["masa/fifo"]
 
 est_rms = ["masa/est_rms"]
