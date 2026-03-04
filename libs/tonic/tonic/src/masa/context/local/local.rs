@@ -346,6 +346,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
     }
 
     fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
+        self.rajomon.finalize_queue_delay();
         if !is_early_return_response(result) {
             self.track_latencies();
         }
