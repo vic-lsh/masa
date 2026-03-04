@@ -250,13 +250,7 @@ impl RajomonHandler {
         let entry = RAJOMON_STATE
             .queue_latencies
             .entry(self.rpc.clone())
-            .or_insert_with(|| {
-                Arc::new(Mutex::new(LatencyRms::new(
-                    (Duration::from_millis(100).as_micros() as u64)
-                        .try_into()
-                        .unwrap(),
-                )))
-            });
+            .or_insert_with(|| Arc::new(Mutex::new(LatencyRms::new(50))));
         entry.lock().unwrap().track(queue_latency);
     }
 

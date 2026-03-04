@@ -29,26 +29,12 @@ pub type DefaultMasaHooks = noop::NoopMasaHooks;
 
 #[cfg(all(
     feature = "fifo",
-    feature = "early",
     not(feature = "prio_global"),
     not(feature = "prio_oldest"),
     not(feature = "prio_local")
 ))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = fifo::Fifo;
-
-#[cfg(all(
-    feature = "fifo",
-    not(feature = "early"),
-    not(feature = "prio_global"),
-    not(feature = "prio_oldest"),
-    not(feature = "prio_local")
-))]
-#[allow(missing_docs)]
-// TODO: revert back to noop for Fifo. Add another feature flag for tracing.
-// pub type DefaultMasaHooks = noop::NoopMasaHooks;
-// pub type DefaultMasaHooks = tracing::Tracing;
-pub type DefaultMasaHooks = noop::NoopMasaHooks;
 
 #[cfg(any(feature = "prio_global"))]
 #[allow(missing_docs)]
