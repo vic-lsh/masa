@@ -4,7 +4,7 @@ compile_error!("Feature 'prio_local_transform' requires 'prio_local' to be enabl
 #[cfg(feature = "prio_local_transform")]
 // Edit these constants between experiment runs to test different monotone transforms:
 // w' = a * w^b
-const REMAINING_ESTIMATE_TRANSFORM_A: f64 = 1.5;
+const REMAINING_ESTIMATE_TRANSFORM_A: f64 = 0.5;
 #[cfg(feature = "prio_local_transform")]
 const REMAINING_ESTIMATE_TRANSFORM_B: f64 = 1.0;
 
