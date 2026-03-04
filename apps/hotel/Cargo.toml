@@ -66,6 +66,7 @@ est_rms = ["masa/est_rms"]
 est_hist = ["masa/est_hist"]
 
 early = ["masa/early"]
+rajomon = ["masa/rajomon"]
 trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
 
 synthetic = []

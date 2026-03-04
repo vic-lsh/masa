@@ -32,6 +32,7 @@ est_hist = ["masa/est_hist"]
 fifo = ["masa/fifo"]
 
 early = ["masa/early"]
+rajomon = ["masa/rajomon"]
 trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
 
 gcp = ["dep:prost-types", "tonic/tls"]
