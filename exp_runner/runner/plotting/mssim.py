@@ -24,6 +24,7 @@ from .goodput import (
 )
 from .util import (
     _read_request_csv,
+    filter_excluded_errors,
     get_policy_color,
     get_policy_display_name,
     read_policies,
@@ -60,21 +61,6 @@ def _load_json(path: Path) -> dict:
         return json.load(fh)
 
 
-def _normalize_bool_series(series: pd.Series) -> pd.Series:
-    if pd.api.types.is_bool_dtype(series):
-        return series.fillna(False)
-    normalized = series.astype(str).str.strip().str.lower()
-    return normalized.isin(["true", "1", "yes", "y", "t"])
-
-
-def _filter_errors(df: pd.DataFrame) -> pd.DataFrame:
-    if "is_err" not in df.columns:
-        return df
-    # We don't filter errors here anymore, because we want to analyze early returns.
-    # The caller functions (like goodput calculation) should filter errors if needed.
-    return df
-
-
 def _filter_after_warmup(
     df: pd.DataFrame, warmup_sec: float, source: Path
 ) -> pd.DataFrame:
@@ -108,9 +94,10 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
 
     data_by_rps: Dict[float, List[pd.DataFrame]] = {}
 
-    # Look for run_* directories with CSV files directly
+    # Look for run_* directories with CSV files, or fall back to flat layout
     run_dirs = sorted(policy_dir.glob("run_*"))
-    for run_dir in run_dirs:
+    search_dirs = run_dirs if run_dirs else [policy_dir]
+    for run_dir in search_dirs:
         # Match standard trace files r{rps}_{api}.csv
         csv_paths = sorted(run_dir.glob("r*_*_*.csv"))
         # Also try to match r{rps}_{api}.csv where api might not have underscores
@@ -141,8 +128,6 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
                 print(f"Warning: missing e2e_latency_us in {csv_path}")
                 continue
 
-            # df = _parse_error_columns(df) # _read_request_csv already does this
-            df = _filter_errors(df)
             df = _filter_after_warmup(df, warmup_sec, csv_path)
             if df.empty:
                 continue
@@ -197,10 +182,7 @@ def _compute_goodput(
     if df.empty:
         return 0.0
 
-    # Filter out errors for goodput calculation
-    if "is_err" in df.columns:
-        err_mask = _normalize_bool_series(df["is_err"])
-        df = df.loc[~err_mask]
+    df = filter_excluded_errors(df)
 
     if df.empty:
         return 0.0
@@ -216,10 +198,7 @@ def _compute_latency_percentiles(
     if df.empty:
         return {p: float("nan") for p in percentiles}
 
-    # Filter out errors for latency calculation
-    if "is_err" in df.columns:
-        err_mask = _normalize_bool_series(df["is_err"])
-        df = df.loc[~err_mask]
+    df = filter_excluded_errors(df)
 
     if df.empty:
         return {p: float("nan") for p in percentiles}
@@ -338,10 +317,7 @@ def _plot_latency_cdf(
         if df.empty:
             continue
 
-        # Filter out errors for CDF
-        if "is_err" in df.columns:
-            err_mask = _normalize_bool_series(df["is_err"])
-            df = df.loc[~err_mask]
+        df = filter_excluded_errors(df)
 
         latencies = df["e2e_latency_ms"].dropna()
         if latencies.empty:
