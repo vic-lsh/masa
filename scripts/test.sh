@@ -83,6 +83,7 @@ policy_flags=(
     "prio_local"
     "prio_local,est_rms"
     "prio_local,est_hist"
+    "prio_local,est_mean_var"
 )
 
 # Run scheduling policy tests
@@ -170,6 +171,7 @@ done
 
 execute_test "tonic (prio_local,est_rms)" cargo test -p tonic --features "masa,prio_local,est_rms"
 execute_test "tonic (prio_local,est_hist)" cargo test -p tonic --features "masa,prio_local,est_hist"
+execute_test "tonic (prio_local,est_mean_var)" cargo test -p tonic --features "masa,prio_local,est_mean_var"
 execute_test "tokio (masa priority suite)" cargo test -p tokio --features full --test masa_priority
 execute_test "masa-integration-tests (prio_global)" cargo test -p masa-integration-tests --features prio_global
 execute_test "masa-integration-tests (prio_global+trace-queue)" cargo test -p masa-integration-tests --features "prio_global,trace-queue"
