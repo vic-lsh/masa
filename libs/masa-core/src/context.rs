@@ -39,7 +39,7 @@ pub struct Context {
 }
 
 fn default_tokens() -> u64 {
-    100
+    1000
 }
 
 impl Default for Context {

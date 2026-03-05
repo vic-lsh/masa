@@ -14,6 +14,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(feature = "rajomon")]
 use std::time::Duration;
 
+/// Queuing delay threshold (μs) for the proportional price controller.
+/// When EWMA queue latency exceeds this, price increases proportionally to the excess.
+/// When below half this value, price decreases by 1. In between, price is unchanged.
+#[cfg(feature = "rajomon")]
+const QUEUE_THRESHOLD_US: u64 = 5_000; // 5ms
+
 /// Global Rajomon state shared across all request handlers.
 #[cfg(feature = "rajomon")]
 pub static RAJOMON_STATE: Lazy<RajomonSharedState> = Lazy::new(|| RajomonSharedState::new());
@@ -91,11 +97,20 @@ impl RajomonSharedState {
 
             let method = entry.key();
             let current_price = self.local_prices.get(method).map(|v| *v).unwrap_or(1);
-            let new_price = if new_ewma > 5000 {
-                // > 5ms average queue latency: scheduler is overloaded, raise price.
-                current_price + 1
-            } else {
+            // Proportional price update (Rajomon policy):
+            // - Above threshold: increase proportional to excess queuing delay.
+            //   ~3-13 tokens per 1ms of excess delay.
+            // - Below half threshold: decrease by 1 (gentle recovery).
+            // - Between half and full threshold: hold price steady.
+            let new_price = if new_ewma > QUEUE_THRESHOLD_US {
+                let excess_us = new_ewma - QUEUE_THRESHOLD_US;
+                // ~8 tokens per 1000μs of excess (midpoint of 3-13 range).
+                let increment = max(1, excess_us * 8 / 1000);
+                current_price.saturating_add(increment).min(500)
+            } else if new_ewma < QUEUE_THRESHOLD_US / 2 {
                 max(1, current_price.saturating_sub(1))
+            } else {
+                current_price
             };
             self.local_prices.insert(method.clone(), new_price);
         }
