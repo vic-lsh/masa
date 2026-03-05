@@ -1,4 +1,5 @@
 pub mod histogram;
+pub mod mean_var;
 pub mod rms;
 
 /// Trait for latency estimators that can track latency values and provide estimates.
@@ -17,4 +18,5 @@ pub trait LatencyEstimator: Send + Sync {
 }
 
 pub use histogram::LatencyDistribution;
+pub use mean_var::LatencyMeanVar;
 pub use rms::LatencyRms;
