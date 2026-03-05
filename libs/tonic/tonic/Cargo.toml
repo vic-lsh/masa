@@ -64,6 +64,7 @@ fifo = ["masa-core/fifo", "tokio/fifo"]
 early = ["masa", "masa-core/early"]
 est_rms = []
 est_hist = []
+est_mean_var = []
 
 
 # [[bench]]
