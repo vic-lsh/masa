@@ -658,3 +658,84 @@ With this decoupling:
 
 Expected: ~17.73/s fewer y_DKOh-Gts false-positive sheds at 800 RPS → +18 RPS goodput.
 Priority ordering unchanged from s1467_4, so high-load behavior should match or exceed s1467_4.
+
+### Actual Outcomes (s1467_9)
+
+**CATASTROPHIC FAILURE.** The decoupling fixed y_DKOh-Gts sheds but tripled root early-returns:
+
+| RPS  | s1467_7 (mean ER) | s1467_9 (decoupled) | prio_oldest |
+|------|-------------------|---------------------|-------------|
+| 800  | 672.7             | **571.8**           | 797.5       |
+| 1000 | 741.6             | **509.0**           | 820.4       |
+| 1200 | 760.2             | **514.0**           | 790.0       |
+| 1400 | 780.1             | **535.5**           | 771.0       |
+| 1800 | 845.9             | **542.6**           | 815.9       |
+
+Early-return changes at 800 RPS:
+- y_DKOh-Gts: 17.73/s → **0.37/s** ✓ (fixed as intended)
+- Root early-returns: 64.65/s → **200.56/s** ✗ (tripled — catastrophic)
+
+Root cause: by giving y_DKOh-Gts a looser deadline (T+87ms mean vs T+77ms mean+σ), the requests
+that previously shed at MS_37691 at T+82ms (before the child was called) now proceed to full
+completion at T+93-99ms. With variance, many exceed T+100ms → root SLO violation. The early shed
+at T+82ms was actually BENEFICIAL — it freed USER capacity faster than the full 95ms execution.
+
+**Key lesson**: Early shedding at y_DKOh-Gts (T+82ms) is not a false positive at 800 RPS — it is
+the correct load-shedding behavior. The request takes 95ms total; if shed at T+82ms, the USER slot
+frees at T+82ms, allowing another request. If not shed, it finishes at T+95ms (or fails at T+100ms+
+with variance). Eliminating these sheds at 800 RPS makes performance WORSE.
+
+**800 RPS gap is structural**: MS_56394 intrinsically takes 93-95ms with only 5ms SLO slack. Any
+priority-induced queuing causes failures. The gap appears irreducible via deadline/early-return
+tuning. s1467_4 (k=1.0) remains the best result overall.
+
+---
+
+## Iteration 7: Remove est_child from prio_hint (experiment s1467_10)
+
+**Status:** Implemented, experiment pending
+
+### Change
+
+In `local.rs`, compute `prio_hint = deadline` instead of `prio_hint = deadline - est_child`:
+
+```rust
+// BEFORE (s1467_7): prio_hint uses mean+σ child estimate
+let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
+let prio_hint = deadline.saturating_sub(est_child);
+
+// AFTER (Iteration 7): prio_hint = deadline only (no est_child subtraction)
+let prio_hint = deadline;
+```
+
+Keep tracking `est_child_latency` (for logging/debugging only). Continue to use `deadline` (parent_deadline - est_remaining) as-is for deadline propagation and early-return checks.
+
+### Hypothesis
+
+**Root cause of 800 RPS gap**: Priority inversion from load-dependent `est_child`. When load
+transitions (e.g., low→800 RPS), `est_child` for ykccIz2fkK grows from ~5ms to ~45ms as
+queuing accumulates. Requests computed with old est_child=5ms get prio_hint = T+72ms (low
+priority), while newer requests with est_child=45ms get prio_hint = T+32ms (high priority).
+Newer requests are scheduled first at MS_37691; old requests wait longer → exceed 100ms SLO.
+
+**With prio_hint = deadline (no est_child)**:
+- All y_DKOh-Gts calls get prio_hint = T + 77ms (parent_deadline - est_remaining, same for all)
+- Since all root requests have deadline = T+100ms and same est_remaining ≈ 23ms, this is
+  approximately FIFO order at MS_37691 (prio_hint = T + 77ms increases monotonically with T)
+- Priority inversions from est_child changes are eliminated
+- Path-aware early returns (via tightened deadline) are fully preserved
+
+At high load (1400-1800 RPS) where prio_local currently beats prio_oldest:
+- The advantage comes from early shedding at inner services (preserved: deadline propagation unchanged)
+- Priority ordering at MS_37691 was already approximately FIFO (all requests similar est_child)
+- Net effect on high-load goodput: neutral to slight improvement
+
+**Expected outcomes:**
+1. 800 RPS: goodput approaches prio_oldest's 793 RPS (from 672.7) — priority inversions eliminated
+2. ykccIz2fkK ERs (37.68/s): should drop significantly — requests no longer wait behind inverted-priority peers
+3. Root ERs (64.65/s): should drop proportionally
+4. 1400-1800 RPS: neutral; early-return advantages preserved
+5. Net: first meaningful improvement at the 800 RPS load point
+
+**Risk:** Without est_child in prio_hint, the child server can no longer distinguish expensive vs cheap children from the same parent. In this workload this doesn't matter (all MS_56394→MS_37691 calls are same type), but may matter for more heterogeneous workloads.
+
