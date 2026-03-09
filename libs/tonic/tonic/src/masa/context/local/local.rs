@@ -279,15 +279,22 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             .unwrap_or(0)
             .min(time_left);
 
-        let deadline = self.ctx.deadline().saturating_sub(est_remaining);
-        if EARLY_RETURN && time_now() > deadline {
+        // adjusted_deadline is used for the early-return check and priority hint only.
+        // We deliberately do NOT propagate it as the child's context deadline to avoid
+        // compounding tightening across hops: each hop subtracting its est_remaining would
+        // cumulatively shrink the deadline to near-zero even on underloaded systems.
+        // The child's actual deadline stays at the parent's full deadline; the priority hint
+        // still encodes path-aware slack so downstream servers prioritize correctly.
+        let adjusted_deadline = self.ctx.deadline().saturating_sub(est_remaining);
+        if EARLY_RETURN && time_now() > adjusted_deadline {
             return Err(self.early_return.issue_error());
         }
 
         let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
 
-        // this encodes the slack: parent deadline - est child latency - est remaining
-        let prio_hint = deadline.saturating_sub(est_child);
+        // prio_hint encodes the slack: parent deadline - est remaining after child - est child duration.
+        // Smaller value = higher priority (request is time-constrained).
+        let prio_hint = adjusted_deadline.saturating_sub(est_child);
 
         if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
             log::info!(
@@ -298,8 +305,9 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             );
         }
 
+        // Pass original parent deadline to child (not the tightened adjusted_deadline).
         let child_recv_ctx = ContextBuilder::from(&self.ctx)
-            .deadline(deadline)
+            .deadline(self.ctx.deadline())
             .prio_hint(PriorityHint::new(prio_hint))
             .build();
         request.set_masa_context(&child_recv_ctx);

@@ -384,3 +384,96 @@ With k=0.5, the estimate is `mean + 0.5*σ` ≈ 69th percentile. This:
 **Risk:** Less conservative estimates may let some doomed requests pass, wasting capacity. If
 ms-73106's variance is very high (as the PRIO_LOCAL_IMPROVEMENTS.md analysis suggests: σ≈20,000µs),
 then k=0.5 estimates ≈ 75,000+10,000=85,000µs which is still a reasonable budget within 100ms SLO.
+
+### Actual Outcomes (s1467_5)
+
+**k=0.5 is WORSE than k=1.0 across the board:**
+
+Absolute goodput (RPS within SLO):
+| RPS | k=1.0 (s1467_4) | k=0.5 (s1467_5) | prio_oldest |
+|-----|-----------------|-----------------|-------------|
+| 800 | **670** | 626 | 785 |
+| 1000 | **714** | 649 | 783 |
+| 1200 | **758** | 670 | 761 |
+| 1400 | **785** | 714 | 757 |
+| 1800 | **849** | 749 | 787 |
+
+k=0.5 reduces inner-service early-returns (expected) but INCREASES root-level early-returns.
+This is because with less aggressive inner shedding, more requests flow through deep chains,
+take long, and finally miss the SLO at the root level. Net effect is worse.
+
+**s1467_4 (k=1.0) already beats prio_oldest at 1400+ RPS!**
+- r1400: 785 vs 757 (+28 abs RPS, +3.7%)
+- r1800: 849 vs 787 (+62 abs RPS, +7.9%)
+
+**Remaining gap at lower loads:**
+- r800: 670 vs 785 (-115, -14%)
+- r1000: 714 vs 783 (-69, -8.8%)
+
+**Root cause of 800 RPS gap — compounding deadline tightening:**
+
+Each hop subtracts its `est_remaining` from the parent deadline before passing it to the child:
+```
+ms-37691_deadline = root_deadline - est_remaining_root ≈ T + 100ms - 5ms = T + 95ms
+grandchild_deadline = ms37691_deadline - est_remaining_ms37691 ≈ T + 95ms - 80ms = T + 15ms
+```
+With est_remaining values correctly capturing subsequent-child work (e.g., ms-37691 calls
+ms-73106 next so est_remaining includes ~75ms for ms-73106), the grandchild sees a 15ms deadline
+even on an underloaded system. This cascades, causing excessive early-returns deep in the graph.
+
+**Fix for iteration 3:** Do NOT propagate the tightened deadline to children. The child still
+receives the original parent deadline; the adjusted_deadline is only used locally for:
+1. The single-hop early-return check at the current service
+2. The priority hint computation (encodes path-aware slack)
+
+---
+
+## Iteration 3: Don't propagate tightened deadline to children (experiment s1467_6)
+
+**Status:** Implemented, experiment pending
+
+### Change
+
+In `local.rs`, pass `self.ctx.deadline()` (original parent deadline) to the child instead of the
+tightened `adjusted_deadline`:
+
+```rust
+// Before: child got tightened deadline (compounding problem)
+let child_recv_ctx = ContextBuilder::from(&self.ctx)
+    .deadline(deadline)  // tightened: parent_deadline - est_remaining
+    ...
+
+// After: child gets original parent deadline (no compounding)
+let adjusted_deadline = self.ctx.deadline().saturating_sub(est_remaining);
+// ... use adjusted_deadline for early-return check and prio_hint ...
+let child_recv_ctx = ContextBuilder::from(&self.ctx)
+    .deadline(self.ctx.deadline())  // original parent deadline
+    ...
+```
+
+Also reverted k from 0.5 back to 1.0 (s1467_5 proved k=1.0 is strictly better).
+
+### Hypothesis
+
+By stopping the compounding, each service's early-return check is independent:
+- Root sheds when `time_now() > root_deadline - est_remaining_root` (single-hop check)
+- ms-37691 sheds when `time_now() > ms37691_deadline - est_remaining_ms37691`, but now
+  ms37691_deadline = root_deadline (not root_deadline - est_remaining_root)
+
+Since ms37691_deadline = root_deadline (no prior tightening), the total budget consumed across
+all hops' early-return checks is NOT compounded. Each service sees the full parent SLO minus its
+own est_remaining, which should be much less aggressive.
+
+**Expected outcomes:**
+1. Inner-service early-returns (ms-37691/y_DKOh-Gts) should drop dramatically at all RPS levels
+2. Root early-returns at 800 RPS should drop significantly (toward prio_oldest's 6.8/s)
+3. Absolute goodput at 800 RPS should approach prio_oldest's 785 RPS
+4. High-load goodput (1400-1800 RPS) should remain higher than prio_oldest's 757-787 RPS
+   because priority hints still encode path-aware slack correctly
+5. Total goodput sum across all loads should beat prio_oldest
+
+**Risk:** Forwarding the full parent deadline means child servers see less tight deadlines, so
+the `before_poll` / `after_poll` early-return at child servers will be less aggressive. This
+could allow more requests to attempt expensive downstream work and then fail the SLO. However,
+the PRIORITY ORDERING should still be correct (prio_hint is unchanged), so the right requests
+get served first and the waste should be minimal.
