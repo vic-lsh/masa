@@ -538,3 +538,72 @@ Priority ordering and deadline propagation are fully preserved (both still use m
 conditions (1800 RPS), these extra requests consume capacity that could serve requests within SLO,
 potentially reducing high-load goodput below prio_oldest's 787. However, priority ordering is
 intact so capacity is still allocated to best candidates.
+
+### Actual Outcomes (s1467_7)
+
+**Marginal improvement overall; does not close the 800 RPS gap:**
+
+| RPS  | s1467_4 (k=1.0) | s1467_7 (mean ER) | prio_oldest (s7) |
+|------|-----------------|-------------------|------------------|
+| 800  | 671.6           | 672.7             | 793.0            |
+| 1000 | 715.2           | **741.6**         | 820.9            |
+| 1200 | 759.7           | 760.2             | 789.2            |
+| 1400 | 787.0           | 780.1             | 792.7            |
+| 1800 | 850.6           | 845.9             | **809.7**        |
+
+s1467_7 improves 1000 RPS by +26 RPS but loses slightly at 1400-1800 RPS. **800 RPS gap is
+unchanged** (120 RPS below prio_oldest). The mean-only early-return threshold had essentially
+zero effect at 800 RPS because:
+
+1. Root early-returns (64.65/s) come from `EarlyReturnHandler::check` (time_now ≥ T+100ms),
+   not from the est_after threshold check. These are requests where total latency exceeds SLO.
+2. MS_37691 y_DKOh-Gts early-returns (17.73/s) come from EarlyReturnHandler at MS_37691 with
+   ctx.deadline ALREADY PAST: deadline=T+77ms is set by MS_56394's deadline propagation (using
+   mean+σ=23ms for est_after), but MS_56394 calls y_DKOh-Gts at T+82ms (after ~80ms own CPU).
+   Changing early-return threshold (mean vs mean+σ) doesn't help — the DEADLINE is what's wrong.
+3. MS_37691 ykccIz2fkK early-returns (37.68/s) come from tight timing at T+93ms call with
+   T+98ms deadline — only 5ms slack with busy MS_37691 serving 1600 calls/s.
+
+**Key finding from trace data:** MS_56394 takes 93-95ms total (p50=95ms from trace). MS_37691
+calls take only 2ms each. MS_56394 has ~80ms of intrinsic CPU before calling y_DKOh-Gts. So:
+- est_after[MS_56394→y_DKOh-Gts] = ~13ms (mean), σ≈10ms
+- With mean+σ=23ms: deadline = T+77ms
+- MS_56394 calls y_DKOh-Gts at T+82ms → immediate early-return at MS_37691 ✗
+- With mean=13ms: deadline = T+87ms > T+82ms → no immediate early-return ✓
+
+---
+
+## Iteration 5: Use mean-only for est_remaining in deadline propagation (experiment s1467_8)
+
+**Status:** Planned
+
+### Change
+
+In `local.rs`, change the deadline propagation to use `get_mean_estimate()` (mean, k=0) instead
+of `get_estimate()` (mean+k*σ) for `est_remaining`:
+
+```rust
+// BEFORE (s1467_7): deadline uses mean+σ, early-return uses mean
+let est_remaining = self.server.est_after_child_latency.get_estimate(key).unwrap_or(0).min(time_left);
+let est_remaining_threshold = self.server.est_after_child_latency.get_mean_estimate(key).unwrap_or(0).min(time_left);
+
+// AFTER (Iteration 5): both use mean only
+let est_remaining = self.server.est_after_child_latency.get_mean_estimate(key).unwrap_or(0).min(time_left);
+// est_remaining_threshold is now identical to est_remaining (simplify to one variable)
+```
+
+### Hypothesis
+
+The y_DKOh-Gts deadline is set to T+77ms (mean+σ=23ms), but MS_56394 calls y_DKOh-Gts at
+T+82ms — already 5ms past the deadline. This causes immediate early-return at MS_37691 for every
+request. Using mean=13ms instead gives deadline=T+87ms, which is after T+82ms, eliminating the
+false positive.
+
+For doomed requests at high load (where time_now >> T+82ms anyway), the early-return at
+MS_37691 still fires correctly because time_now ≥ ctx.deadline = T+87ms.
+
+**Expected outcomes:**
+1. y_DKOh-Gts sheds at MS_37691 should drop from 17.73/s to ~0/s at 800 RPS
+2. ~18 RPS goodput improvement at 800 RPS (672 → ~690)
+3. ykccIz2fkK and root sheds unchanged (different causes)
+4. High-load performance unchanged or slightly better (doomed requests still shed)
