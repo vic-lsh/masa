@@ -272,19 +272,29 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         );
 
         let time_left = self.ctx.deadline().saturating_sub(time_now());
-        // Use the mean estimate (k=0) for est_remaining so the deadline propagated to children
-        // is not over-tightened by the σ term. With mean+σ the deadline can be set before
-        // the child is even called (e.g. MS_56394 has ~80ms pre-child CPU, but mean+σ=23ms
-        // gives deadline=T+77ms while the call happens at T+82ms → immediate false-positive
-        // early-return). Using mean=13ms gives deadline=T+87ms which allows the call to proceed.
-        let est_remaining = self
+
+        // Use mean+k*σ for priority ordering: encodes urgency correctly.
+        let est_remaining_full = self
+            .server
+            .est_after_child_latency
+            .get_estimate(key)
+            .unwrap_or(0)
+            .min(time_left);
+
+        // Use mean-only for the child deadline and early-return check.
+        // With mean+σ the deadline can be set before the child is even called
+        // (e.g. MS_56394 has ~80ms pre-child CPU, mean+σ=23ms gives deadline=T+77ms
+        // while the call happens at T+82ms → immediate false-positive early-return at child).
+        // Using mean keeps the deadline achievable while the full estimate drives priority.
+        let est_remaining_mean = self
             .server
             .est_after_child_latency
             .get_mean_estimate(key)
             .unwrap_or(0)
             .min(time_left);
 
-        let deadline = self.ctx.deadline().saturating_sub(est_remaining);
+        // Deadline sent to child uses mean (achievable); prio_hint uses mean+σ (urgent).
+        let deadline = self.ctx.deadline().saturating_sub(est_remaining_mean);
         let early_return_deadline = deadline;
         if EARLY_RETURN && time_now() > early_return_deadline {
             return Err(self.early_return.issue_error());
@@ -292,15 +302,18 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
 
-        // this encodes the slack: parent deadline - est child latency - est remaining (mean+k*σ)
-        let prio_hint = deadline.saturating_sub(est_child);
+        // prio_hint uses tight_deadline (mean+σ) so priority ordering correctly accounts
+        // for variance; child still receives the looser mean-based deadline.
+        let tight_deadline = self.ctx.deadline().saturating_sub(est_remaining_full);
+        let prio_hint = tight_deadline.saturating_sub(est_child);
 
         if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
             log::info!(
-                "LAT_EST: p=>c: {}, est_child: {}, est_rem: {}",
+                "LAT_EST: p=>c: {}, est_child: {}, est_rem_mean: {}, est_rem_full: {}",
                 parent_to_child_id,
                 est_child,
-                est_remaining
+                est_remaining_mean,
+                est_remaining_full,
             );
         }
 
