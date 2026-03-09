@@ -271,13 +271,15 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             self.server.clone(),
         );
 
+        let time_left = self.ctx.deadline().saturating_sub(time_now());
         let est_remaining = self
             .server
             .est_after_child_latency
             .get_estimate(key)
-            .unwrap_or(0);
+            .unwrap_or(0)
+            .min(time_left);
 
-        let deadline = self.ctx.deadline() - est_remaining;
+        let deadline = self.ctx.deadline().saturating_sub(est_remaining);
         if EARLY_RETURN && time_now() > deadline {
             return Err(self.early_return.issue_error());
         }
@@ -285,7 +287,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
 
         // this encodes the slack: parent deadline - est child latency - est remaining
-        let prio_hint = deadline - est_child;
+        let prio_hint = deadline.saturating_sub(est_child);
 
         if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
             log::info!(
