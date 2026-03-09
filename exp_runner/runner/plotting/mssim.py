@@ -201,8 +201,13 @@ def _compute_goodput(
     if df.empty:
         return 0.0
 
-    # Filter out errors for goodput calculation
-    if "is_err" in df.columns:
+    # Filter out EarlyReturn and ClientTimeout — they should not count as goodput.
+    # Prefer the parsed error_type column (set by _read_request_csv) over the legacy is_err flag.
+    if "error_type" in df.columns:
+        is_early_return = df["error_type"] == "EarlyReturn"
+        is_timeout = df["error"].astype(str) == "/ClientTimeout" if "error" in df.columns else pd.Series(False, index=df.index)
+        df = df.loc[~(is_early_return | is_timeout)]
+    elif "is_err" in df.columns:
         err_mask = _normalize_bool_series(df["is_err"])
         df = df.loc[~err_mask]
 
