@@ -272,18 +272,12 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         );
 
         let time_left = self.ctx.deadline().saturating_sub(time_now());
+        // Use the mean estimate (k=0) for est_remaining so the deadline propagated to children
+        // is not over-tightened by the σ term. With mean+σ the deadline can be set before
+        // the child is even called (e.g. MS_56394 has ~80ms pre-child CPU, but mean+σ=23ms
+        // gives deadline=T+77ms while the call happens at T+82ms → immediate false-positive
+        // early-return). Using mean=13ms gives deadline=T+87ms which allows the call to proceed.
         let est_remaining = self
-            .server
-            .est_after_child_latency
-            .get_estimate(key)
-            .unwrap_or(0)
-            .min(time_left);
-
-        // For the early-return threshold use the mean estimate (k=0) rather than mean+k*σ.
-        // This avoids shedding requests at underloaded conditions where the σ term causes
-        // the threshold to fire unnecessarily. The full mean+k*σ estimate is still used for
-        // the tightened deadline forwarded to children (for priority ordering).
-        let est_remaining_threshold = self
             .server
             .est_after_child_latency
             .get_mean_estimate(key)
@@ -291,7 +285,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             .min(time_left);
 
         let deadline = self.ctx.deadline().saturating_sub(est_remaining);
-        let early_return_deadline = self.ctx.deadline().saturating_sub(est_remaining_threshold);
+        let early_return_deadline = deadline;
         if EARLY_RETURN && time_now() > early_return_deadline {
             return Err(self.early_return.issue_error());
         }
