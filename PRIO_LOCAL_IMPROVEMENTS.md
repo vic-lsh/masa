@@ -876,3 +876,123 @@ early shedding matters most). The 800-1000 RPS gap is structural:
 The crossover point (~1300 RPS) is where prio_local's early shedding benefit exceeds its
 ordering overhead. Below this point, prio_oldest's simple FIFO with root-level SLO is better.
 
+---
+
+## Iteration 9: Dynamic EDF priority via poll hooks (experiment s1467_12)
+
+**Status:** Running
+
+### Changes
+
+Three changes across tokio, hyper, and tonic:
+
+1. **`tokio::task::reprioritize(PriorityHint)` API** (`libs/tokio/tokio/src/task/spawn.rs`,
+   `core.rs`, `mod.rs`): New public function that updates the current running task's priority
+   in-place using `current_task_header()`. Safe because the `RUNNING` bit guarantees exclusive
+   header access in the single-threaded runtime.
+
+2. **Hyper spawn priority** (`libs/hyper/src/proto/h2/server.rs`): Changed spawn priority from
+   `ctx.prio_hint()` (static absolute timestamp set by parent) to
+   `ctx.deadline().saturating_sub(masa_core::time_now())` (remaining slack at spawn time).
+
+3. **`before_poll` reprioritization** (`libs/tonic/tonic/src/masa/context/local/local.rs`):
+   After the early-return check, call `tokio::task::reprioritize(PriorityHint::new(deadline - now))`
+   to refresh the task's priority on every poll.
+
+### Analysis
+
+**What EDF ordering gives us at spawn time (the critical window):**
+
+In s1467_10, hyper used `ctx.prio_hint()` as spawn priority — an absolute timestamp like
+`T+60ms epoch` or `T+99ms epoch`. Lower value = higher priority (reversed Ord). All
+y_DKOh-Gts tasks (deadline T+60ms) have lower priority values than all ykccIz2fkK tasks
+(deadline T+99ms) → permanent starvation.
+
+In s1467_12, spawn priority = `ctx.deadline() - time_now()` at arrival:
+- y_DKOh-Gts arrives at MS_37691 at T+1ms, ctx.deadline()=T+60ms → spawn priority = **59ms**
+- ykccIz2fkK arrives at MS_37691 at T+42ms, ctx.deadline()=T+99ms → spawn priority = **57ms**
+
+ALL concurrent y_DKOh-Gts tasks (from different root requests) also have spawn priority ≈ 59ms
+(deadline 60ms ahead of their arrival, which is ~1ms after root start). ykccIz2fkK (57ms)
+beats ALL concurrent y_DKOh-Gts (59ms) at the moment it is spawned.
+
+**What happens after the first poll:**
+
+After reprioritization in `before_poll` at time t:
+- y_DKOh-Gts R+k: priority = T_{R+k} + 60ms - t = T_R + k*1.25ms + 60ms - t
+- ykccIz2fkK R: priority = T_R + 99ms - t
+
+ykccIz2fkK R beats y_DKOh-Gts R+k only if k > 31.2. For k ≤ 31 (the ~25 concurrent requests
+at 800 RPS), y_DKOh-Gts retains priority via EDF ordering. This is the SAME relative ordering
+as s1467_10's static deadline ordering (EDF = absolute deadline ordering, invariant of clock).
+
+**Key question: does ykccIz2fkK yield?**
+
+The improvement depends entirely on whether ykccIz2fkK completes its first poll without
+yielding (await-ing async I/O):
+
+- **No yield (completes in one poll)**: ykccIz2fkK runs immediately at spawn (priority 57ms <
+  y_DKOh-Gts 59ms), completes in a single poll, returns. No starvation. 800 RPS gap closes.
+- **Yields (makes async I/O calls)**: After first poll, reprioritization restores EDF ordering.
+  y_DKOh-Gts from ~25 concurrent requests re-starves ykccIz2fkK. Same gap as s1467_10.
+
+ykccIz2fkK is described as "busy_spin" with est_remaining=1ms (parent takes ~1ms after it
+returns). If it's truly a CPU-only busy wait with no async awaits, it completes in one poll.
+
+**Interaction with stale stored priorities:**
+
+Tasks that yielded and are waiting for I/O have stored priorities from their last `before_poll`.
+When their waker fires, they re-enqueue with that stale priority (which is smaller/more urgent
+than their current true remaining slack, since time has passed). This creates a second-order
+effect where high-I/O tasks appear more urgent than they are, potentially benefiting ykccIz2fkK
+if y_DKOh-Gts tasks accumulate poll-based priority updates.
+
+### Hypothesis
+
+**Optimistic (if ykccIz2fkK is one-poll):** 800 RPS goodput closes significantly toward
+prio_oldest's ~794. ykccIz2fkK completes in its first poll before any y_DKOh-Gts can
+overtake, eliminating the 39.6/s ERs. Improvement: +80-110 goodput at 800 RPS.
+
+**Pessimistic (if ykccIz2fkK yields):** Essentially same as s1467_10. The EDF ordering after
+reprioritization is equivalent to the static absolute deadline ordering in s1467_10. The 800
+RPS gap remains. Improvement: ≤5 goodput at 800 RPS.
+
+**High load (1400–1800 RPS):** Both scenarios: unchanged or slight improvement. The early-return
+mechanism (deadline propagation) is unmodified. Priority ordering at MS_37691 shifts slightly
+(EDF vs static) but the dominant effect at overload is shedding, not ordering.
+
+### Actual Outcomes (s1467_12)
+
+**MASSIVE improvement across all RPS levels. Hypothesis confirmed: optimistic scenario.**
+
+| RPS  | prio_local,est_mean_var (s12) | prio_oldest (s12) | diff (s12) | diff (s10) |
+|------|-------------------------------|-------------------|------------|------------|
+| 200  | 199.5                         | 202.8             | -3.3       | +0.5       |
+| 400  | 401.9                         | 396.9             | **+5.0**   | +3.4       |
+| 800  | **799.8**                     | 790.8             | **+9.0**   | -112.9 ✗   |
+| 1000 | **867.4**                     | 803.4             | **+64.0**  | -77.3 ✗    |
+| 1200 | **890.8**                     | 798.6             | **+92.2**  | -15.8 ✗    |
+| 1400 | **910.4**                     | 762.3             | **+148.1** | +31.3      |
+| 1800 | **963.5**                     | 796.7             | **+166.8** | +46.5      |
+
+The 800 RPS gap (-112.9 in s1467_10) is **completely eliminated** (+9.0). prio_local now beats
+prio_oldest at every load point except 200 RPS (within noise).
+
+**Early return counts at 800 RPS for est_mean_var:**
+- ykccIz2fkK ERs: **0.1/s** (was 39.6/s in s1467_10) — starvation eliminated
+- Total ER rate: 1.6/s (was ~100+/s in s1467_10)
+
+The optimistic hypothesis was correct: ykccIz2fkK ("busy_spin") completes in a single poll
+without yielding. At spawn, ykccIz2fkK (57ms remaining) beats all concurrent y_DKOh-Gts
+(59ms remaining) → ykccIz2fkK runs immediately → completes → no starvation.
+
+**High-load gains also amplified** — dynamic EDF reprioritization enables more effective early
+shedding at 1000–1800 RPS because tasks that have been waiting longer correctly get higher
+priority, leading to better identification and rejection of doomed requests before wasting capacity.
+
+**Why the pessimistic scenario did not apply:**
+ykccIz2fkK's "busy_spin" implementation does not `await` any async I/O inside its handler —
+it is a purely CPU-bound operation that completes within a single tokio poll. Therefore, the
+57ms spawn priority advantage at hyper is sufficient: ykccIz2fkK runs to completion in its
+first poll before any y_DKOh-Gts task can re-enqueue and overtake it.
+
