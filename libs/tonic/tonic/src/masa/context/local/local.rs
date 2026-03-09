@@ -293,14 +293,14 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             return Err(self.early_return.issue_error());
         }
 
-        // prio_hint = deadline (parent_deadline - est_remaining), not deadline - est_child.
-        // Subtracting est_child caused priority inversions: when load increased, est_child grew,
-        // making new requests' prio_hints smaller (higher priority) than old requests that were
-        // computed with a lower est_child. Old requests ended up waiting behind newer ones and
-        // failing the SLO. Using deadline alone gives approximately FIFO ordering at child servers
-        // (since all requests share the same e2e SLO deadline), while preserving path-aware early
-        // returns from the tightened deadline.
-        let prio_hint = deadline;
+        // Inherit parent's prio_hint unchanged. The loadgen sets prio_hint = start_at + SLO for
+        // every root request, so all sibling calls from the same root request share the same
+        // priority at inner servers (= EDF/FIFO). This avoids priority starvation between
+        // sibling calls: previously, early steps (y_DKOh-Gts, est_remaining=40ms → tight deadline)
+        // were always prioritized over later steps (ykccIz2fkK, est_remaining=1ms → loose deadline)
+        // causing systematic starvation of ykccIz2fkK at MS_37691. Path-aware early returns
+        // (from the tightened deadline propagated to children) are fully preserved.
+        let prio_hint = self.ctx.prio_hint().value();
 
         if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
             let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
