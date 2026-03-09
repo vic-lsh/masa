@@ -607,3 +607,54 @@ MS_37691 still fires correctly because time_now ≥ ctx.deadline = T+87ms.
 2. ~18 RPS goodput improvement at 800 RPS (672 → ~690)
 3. ykccIz2fkK and root sheds unchanged (different causes)
 4. High-load performance unchanged or slightly better (doomed requests still shed)
+
+### Actual Outcomes (s1467_8)
+
+**CATASTROPHIC FAILURE.** Goodput collapsed at all RPS levels:
+
+| RPS  | s1467_7 | s1467_8 | prio_oldest |
+|------|---------|---------|-------------|
+| 800  | 672.7   | 569.3   | 798.0       |
+| 1000 | 741.6   | 540.0   | 828.1       |
+| 1200 | 760.2   | 502.5   | 776.1       |
+| 1800 | 845.9   | 557.5   | 787.9       |
+
+Root cause: using mean for deadline ALSO reduces the prio_hint for y_DKOh-Gts from T+75ms to
+T+85ms (since prio_hint = deadline - est_child). The 10ms lower priority at MS_37691 causes
+y_DKOh-Gts calls to wait longer in MS_37691's queue, creating cascading failures at all loads.
+The prio_hint must use mean+σ to correctly encode urgency.
+
+**Key lesson**: Deadline propagation and priority hint must be decoupled. Need to use mean for
+the DEADLINE (so child doesn't see expired deadline) but mean+σ for PRIO_HINT (for urgency).
+
+---
+
+## Iteration 6: Decouple child deadline (mean) from prio_hint (mean+σ) (experiment s1467_9)
+
+**Status:** Planned
+
+### Change
+
+In `local.rs`, compute two separate estimates from `est_after_child_latency`:
+- `est_remaining_mean` (mean, k=0): used for child deadline and early-return threshold
+- `est_remaining_full` (mean+k*σ): used ONLY for prio_hint computation
+
+```rust
+// Child receives looser deadline (mean) — achievable when called late
+let deadline = ctx_deadline - est_remaining_mean;
+let early_return_deadline = deadline;  // consistent with child's deadline
+
+// Priority hint uses tight estimate (mean+σ) — encodes correct urgency
+let tight_deadline = ctx_deadline - est_remaining_full;
+let prio_hint = tight_deadline - est_child;  // same as s1467_4
+```
+
+### Hypothesis
+
+With this decoupling:
+- y_DKOh-Gts deadline = T+87ms (mean=13ms): MS_56394 calls at T+82ms < T+87ms → no shed ✓
+- y_DKOh-Gts prio_hint = T+75ms (same as s1467_4) → same urgency ordering at MS_37691 ✓
+- Early-return at parent (MS_56394): fires if time_now > T+87ms (consistent) ✓
+
+Expected: ~17.73/s fewer y_DKOh-Gts false-positive sheds at 800 RPS → +18 RPS goodput.
+Priority ordering unchanged from s1467_4, so high-load behavior should match or exceed s1467_4.
