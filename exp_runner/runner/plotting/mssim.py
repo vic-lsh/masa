@@ -108,8 +108,12 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
 
     data_by_rps: Dict[float, List[pd.DataFrame]] = {}
 
-    # Look for run_* directories with CSV files directly
+    # Look for run_* directories with CSV files, or fall back to CSV files
+    # directly in the policy directory (older experiment format).
     run_dirs = sorted(policy_dir.glob("run_*"))
+    if not run_dirs:
+        # No run_* subdirectories — treat the policy dir itself as a single run
+        run_dirs = [policy_dir]
     for run_dir in run_dirs:
         # Match standard trace files r{rps}_{api}.csv
         csv_paths = sorted(run_dir.glob("r*_*_*.csv"))
@@ -525,6 +529,13 @@ def generate_plots(args) -> None:
         }
 
         iteration_output = output_dir / str(iteration)
+        _plot_goodput_lines(
+            iteration_output / "goodput_absolute.png",
+            rps_values,
+            goodput_by_policy,
+            title=f"Goodput vs RPS (SLO={slo_ms:g} ms)",
+            ylabel="Goodput (RPS)",
+        )
         _plot_goodput_lines(
             iteration_output / "goodput_fraction.png",
             rps_values,
