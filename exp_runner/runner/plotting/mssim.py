@@ -426,7 +426,7 @@ def _resolve_rps_values(
     policies: Sequence[str],
 ) -> List[float]:
     if gen_config.get("Rps"):
-        return [float(v) for v in gen_config["Rps"]]
+        return sorted(set(float(v) for v in gen_config["Rps"]))
 
     # Try to find RPS values from output files.
     for iteration in iteration_ids:
