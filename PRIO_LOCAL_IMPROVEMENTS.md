@@ -1380,16 +1380,21 @@ expected gain is small given the strong performance of k=1.0. The ykccIz2fkK bim
 inflation (21%) is the main candidate for improvement. A single experiment with k=0.5
 would resolve this with low cost.
 
-### Experiment plan (s1467_19)
+### s1467_19 Results (k=0.5)
 
-Run the `[200, 1800, 800]` sequence with k=0.5 (approx. 69th percentile).
-Requires temporarily changing `LatencyMeanVar::default()` to use k=0.5.
+**Status: Closed ✅ — k=1.0 is optimal.**
 
-Compare goodput timeline against s1467_17 (k=1.0). Focus on:
-- ykccIz2fkK ER rate (should decrease with lower k)
-- Goodput at 1800 RPS (higher if over-shedding was the bottleneck, lower if not)
-- Recovery at 800 RPS
+| RPS  | k=1.0 (s1467_17) | k=0.5 (s1467_19) | delta |
+|------|-----------------|-----------------|-------|
+| 200  | 196.4           | 198.3           | +1.9  |
+| 800  | 793.9           | 790.1           | **-3.8** |
+| 1800 | 976.1           | 977.2           | +1.1  |
 
-**Success criterion:** k=0.5 goodput ≥ k=1.0 at 1800 RPS and 800 RPS.
-If not met, k=1.0 is optimal and Iteration 15 is closed.
+k=0.5 reduces ykccIz2fkK ER rate from 264.5 → 214.7/s (-19%) as predicted, but
+achieves essentially the same goodput at 1800 RPS (+1.1, within noise) and slightly
+worse at 800 RPS (-3.8). The extra shedding at ykccIz2fkK with k=1.0 is productive —
+those requests would have timed out anyway. Lower k lets more through, they then timeout.
+
+**k=1.0 remains the default.** k=0.5 does not meet the success criterion (goodput
+must be ≥ k=1.0 at both RPS levels). Iteration 15 is closed, no further k-tuning needed.
 
