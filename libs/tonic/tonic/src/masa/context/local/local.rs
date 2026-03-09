@@ -339,6 +339,19 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         }
 
         if let Err(status) = response {
+            // When the child early-returns, track 0 into est_after_child_latency to create
+            // negative feedback. Without this, ERs prevent all tracking updates, freezing the
+            // estimate at a high value and creating a self-reinforcing failure loop:
+            //   high estimate → tight deadline → ERs → no updates → estimate stays high → ...
+            // With this: more ERs → more 0 observations → estimate decreases → looser deadlines
+            // → fewer ERs. The equilibrium stabilizes at a lower estimate.
+            if status.code() == Code::DeadlineExceeded {
+                if let Some(parent_to_child_id) = &child_ctx.parent_to_child_id {
+                    self.server
+                        .est_after_child_latency
+                        .track(parent_to_child_id.to_key(), 0);
+                }
+            }
             // NOTE(vic): could we avoid cloning here?
             return Err(status.clone());
         }
