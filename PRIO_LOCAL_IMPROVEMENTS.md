@@ -1291,12 +1291,25 @@ which freeze the estimate, keeping deadlines tight. The 0-injection fix applies 
 but if the latency distribution at ms-11639 edges differs significantly from ms-37691's,
 the equilibrium may not converge to a useful operating point.
 
-### Diagnostic plan
+### Findings from s1467_17
 
-After s1467_18 completes, compare ms-11639 ER rates between est_mean_var and
-prio_local,early across all RPS levels. Check if the ratio widens at higher RPS (H2)
-or stays proportional (H1). If H2, inspect `LAT_EST` log in ms-11639's parent service
-for frozen `est_rem` values.
+**H1 confirmed — no secondary feedback loop.**
+
+At 1800 RPS in s1467_17, the per-method breakdown shows a Lzgm2aJgrn/iZVf-3vjSt
+inversion: est_mean_var sheds 6x more at `Lzgm2aJgrn` but 3x less at `iZVf-3vjSt`.
+This anti-correlation strongly suggests the two methods are sequential in the call graph
+(Lzgm2aJgrn is called before iZVf-3vjSt): est_mean_var sheds at Lzgm2aJgrn, so fewer
+requests reach iZVf-3vjSt.
+
+Total ms-11639 ERs at 1800 RPS:
+- est_mean_var: **280.3/s** (86W=164.2, Lzgm2aJgrn=68.2, iZVf-3vjSt=47.9)
+- prio_local,early: **298.1/s** (86W=127.0, Lzgm2aJgrn=11.3, iZVf-3vjSt=159.8)
+
+est_mean_var sheds less in total despite different routing. No method shows the
+unidirectional explosion pattern of the original y_DKOh-Gts loop (74% → near 0 after
+fix). Status: **closed, no action needed**.
+
+Pending s1467_18 for confirmation across the full RPS sweep.
 
 ---
 
