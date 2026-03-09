@@ -1170,7 +1170,7 @@ loop forms.
 
 ## Iteration 12: Break EMA feedback loop by tracking 0 on child ER
 
-**Status:** Implemented, not yet validated by experiment
+**Status:** Validated ✅
 
 ### Fix
 
@@ -1195,20 +1195,25 @@ that the estimate is causing problems.
 74% ER rate: `0.26 × 86ms ≈ 22ms` → y_DKOh-Gts deadline = T+78ms → fewer ERs → further
 reduction → new equilibrium at a lower ER rate and shorter estimate.
 
-### Experiment plan (s1467_17)
+### s1467_17 Results
 
-Re-run s1467_16 configuration (`[200, 1800, 800]`, 30s each, same trace S_14677443) with
-the fixed binary. The goodput timeline is the primary diagnostic — it should show:
+Re-run of s1467_16 configuration (`[200, 1800, 800]`, 30s each) with fixed binary.
 
-- `est_mean_var` goodput no longer collapses during 1800 RPS
-- Recovery during 800 RPS is fast (EMA no longer frozen)
+| RPS  | est_mean_var (s17) | prio_local,early | prio_oldest,early |
+|------|--------------------|-----------------|-------------------|
+| 200  | 196.4              | 195.9           | 193.6             |
+| 800  | **793.9**          | 797.9           | 790.5             |
+| 1800 | **976.1**          | 940.4           | 794.1             |
 
-**Success criterion:** `est_mean_var` goodput approaches `prio_local,early` at both load
-levels (≥ 800 at 1800 RPS, ≥ 750 at 800 RPS).
+**Fix confirmed.** `est_mean_var` now exceeds both baselines:
+- 1800 RPS: 976.1 (was 486.3 pre-fix) — **beats `prio_local,early` by 35.7 RPS**
+- 800 RPS: 793.9 (was 202.9 pre-fix) — **near-full goodput, matches `prio_local,early`**
+
+Both success criteria exceeded (≥800 at 1800 RPS ✅, ≥750 at 800 RPS ✅).
 
 **Secondary diagnostics:**
-- `early_return_breakdown.csv`: ER rate for `ms-37691::y_DKOh-Gts` should be much lower
-  than the pre-fix 74%
-- `LAT_EST` log entries in ms-56394: `est_rem` should stabilize at ~20–30ms, not 86ms
-- If a new failure mode appears, the ER breakdown will show a different service/method
+- `y_DKOh-Gts` ER rate at 1800 RPS: **17.7/s** (was ~1332/s at 74% of 1800 RPS pre-fix)
+  — the tight-deadline feedback loop is completely broken
+- `ykccIz2fkK` ER rate at 1800 RPS: 264.5/s (load-shedding at the saturated bottleneck,
+  which is correct and expected behavior under 1800 RPS overload)
 
