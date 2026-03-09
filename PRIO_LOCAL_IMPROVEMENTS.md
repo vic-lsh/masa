@@ -880,7 +880,7 @@ ordering overhead. Below this point, prio_oldest's simple FIFO with root-level S
 
 ## Iteration 9: Dynamic EDF priority via poll hooks (experiment s1467_12)
 
-**Status:** Running
+**Status:** Complete
 
 ### Changes
 
@@ -995,4 +995,85 @@ ykccIz2fkK's "busy_spin" implementation does not `await` any async I/O inside it
 it is a purely CPU-bound operation that completes within a single tokio poll. Therefore, the
 57ms spawn priority advantage at hyper is sufficient: ykccIz2fkK runs to completion in its
 first poll before any y_DKOh-Gts task can re-enqueue and overtake it.
+
+---
+
+## Iteration 10: EMA estimator — baseline and fix (experiments s1467_13, s1467_14)
+
+**Status:** Complete
+
+### Motivation
+
+The s1467_12 experiment used a monotonically increasing load schedule (200→1800 RPS). This
+never exercises the estimator's adaptation to *falling* load. Since containers are not
+restarted between RPS steps, the LatencyMeanVar accumulator carries all-time history across
+steps. After 30s at 1800 RPS (~54k observations), the Welford running mean barely shifts
+when load drops to 800 RPS — stale high-load estimates cause over-tight deadlines and
+excessive early returns at the lower load.
+
+### Design: stress-test schedule
+
+Non-monotonic schedule: **[1800, 800, 1800, 800]** (both RPS values repeated twice).
+- 1800 RPS first: calibrates estimator to high-load statistics cold
+- 800 RPS after: Welford carries stale 1800 RPS observations → over-shedding at 800
+- Repeated: both steps write to the same file; data is combined across repetitions
+
+### s1467_13: Welford baseline (non-monotonic schedule)
+
+| RPS  | prio_local,est_mean_var (Welford) | prio_oldest | diff     |
+|------|-----------------------------------|-------------|----------|
+| 1800 | 457.2                             | 789.1       | -331.9   |
+| 800  | 198.1                             | 792.7       | **-594.6** |
+
+Reference (s1467_12 warm monotonic): 1800→963.5, 800→799.8.
+
+**Two distinct failure modes identified:**
+
+1. **Cold start at high load** (1800 RPS from scratch): est_remaining=0 initially → parent
+   forwards all 1800 req/s to MS_37691 without inner shedding → queue floods → 1348/s
+   y_DKOh-Gts ERs from deadline violations in before_poll. Goodput 457 vs 963 warm.
+   Root cause: no pre-dispatch parent-level shedding during cold estimator phase.
+
+2. **Stale high-load estimates on load drop** (800 RPS after 1800): Welford accumulator
+   retains ~54k high-load observations → estimates remain inflated → deadlines too tight
+   at 800 RPS → 594/s y_DKOh-Gts ERs → goodput 198 vs 800 target. Root cause:
+   all-time accumulator has no decay for changing load conditions.
+
+### Change: Welford → EMA (experiment s1467_14)
+
+Replaced `LatencyMeanVar` Welford algorithm with EMA (α=0.05, effective window ~20 obs).
+EMA decays old observations exponentially; after a load transition, estimates shift within
+~20 observations (~1-2 seconds at typical edge observation rates).
+
+API change: `new(k, alpha: f64)` replaces `new(k, update_interval: usize)`.
+
+### s1467_14: EMA results (same non-monotonic schedule)
+
+| RPS  | Welford (s13) | EMA (s14) | EMA improvement | prio_oldest |
+|------|---------------|-----------|-----------------|-------------|
+| 1800 | 457.2         | 856.7     | **+399.5**      | 789.1       |
+| 800  | 198.1         | 385.8     | **+187.7**      | 792.7       |
+
+EMA dramatically improves both load levels. At 1800 RPS, EMA **beats prio_oldest (+67.6)**
+despite the cold start — Welford was -331.9 behind.
+
+**What EMA fixes:** The stale-estimates problem (Problem 2) is directly addressed. EMA also
+partially fixes cold start (Problem 1) because it updates on every observation without the
+Welford doubling schedule's stalled updates after count>512 — the estimate quickly rises to
+reflect actual load within the first ~20 completions.
+
+**What EMA does not fully fix:** The y_DKOh-Gts ER pattern persists at both load levels
+(932/s at 1800, 417/s at 800), indicating MS_37691 is still being flooded during cold start.
+At 800 RPS (385.8 vs 800 target), the estimate needs more observations to decay the 1800 RPS
+history — combined data from both 800 RPS steps includes the early (contaminated) period.
+
+**Remaining gap root cause:** At cold 1800 RPS start, est_remaining initializes to 0 →
+parent dispatches all requests to MS_37691 → queue buildup occurs before estimates calibrate.
+A non-zero initial prior (e.g., SLO/2 = 50ms) or a higher α (e.g., 0.1-0.2) could close
+this gap by reducing the cold-start flood period.
+
+**Comparison to warm reference (s1467_12 monotonic):** EMA at 1800 RPS (856.7) vs warm
+(963.5) shows a remaining gap — cold start still costs ~107 goodput. The 800 RPS gap
+(385.8 vs 799.8) reflects both cold-start contamination and Welford lag from the combined data.
+With a higher α or non-zero prior, the cold-start penalty would shrink.
 
