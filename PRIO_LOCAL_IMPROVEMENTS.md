@@ -1217,3 +1217,120 @@ Both success criteria exceeded (≥800 at 1800 RPS ✅, ≥750 at 800 RPS ✅).
 - `ykccIz2fkK` ER rate at 1800 RPS: 264.5/s (load-shedding at the saturated bottleneck,
   which is correct and expected behavior under 1800 RPS overload)
 
+---
+
+## Open questions after Iteration 12
+
+Three questions must be answered before claiming `est_mean_var` is fully optimized.
+They are ordered by priority.
+
+---
+
+## Iteration 13: Broad sweep with fully fixed binary (s1467_18)
+
+**Status:** Pending
+
+### Motivation
+
+The only broad RPS sweep in the valid data is **s1467_12**, which used the old **Welford
+accumulator** (before commit `55b1d97c` switched to EMA). The EMA + 0-injection fix has
+only been validated on the narrow `[200, 1800, 800]` sequence (s1467_17).
+
+We do not know how EMA+fix performs across the monotonic ramp [200 to 1800 RPS]. In the
+monotonic ramp the EMA has more calibration time between steps (the feedback loop is less
+likely to form), but the EMA's faster adaptation is also more useful than Welford when
+the load jumps from one RPS level to the next.
+
+**s1467_12 baseline (Welford, for reference):**
+
+| RPS  | est_mean_var | prio_local,early | prio_oldest,early |
+|------|-------------|-----------------|-------------------|
+| 200  | 199.6       | 200.3           | 202.8             |
+| 400  | 402.1       | 395.5           | 397.1             |
+| 800  | 801.1       | 791.8           | 792.8             |
+| 1000 | 869.1       | 863.0           | 805.5             |
+| 1200 | 892.4       | 883.6           | 801.2             |
+| 1400 | 912.4       | 891.9           | 764.8             |
+| 1800 | 965.4       | 959.3           | 799.3             |
+
+### Experiment plan (s1467_18)
+
+Config: identical to s1467_12 but run with current binary.
+
+```json
+{ "Rps": [200, 400, 800, 1000, 1200, 1400, 1800], "DurationSecs": 30, "WarmupSecs": 0, "MaxInFlight": 500 }
+```
+
+**Success criterion:** est_mean_var meets or exceeds s1467_12 at every RPS level,
+and meets or exceeds prio_local,early at 1400 and 1800 RPS.
+
+---
+
+## Iteration 14: Investigate ms-11639 early-return rate
+
+**Status:** Pending
+
+### Motivation
+
+In s1467_17 at 1800 RPS, `ms-11639` shows **280 ERs/s** across three methods:
+
+| Method      | ER rate (s17) | ER rate prio_local,early (s17) |
+|-------------|--------------|-------------------------------|
+| 86W_zoVB43  | 164.2/s      | 127.0/s                       |
+| Lzgm2aJgrn  | 68.2/s       | 11.3/s                        |
+| iZVf-3vjSt  | 47.9/s       | 159.8/s                       |
+
+`Lzgm2aJgrn` stands out: est_mean_var sheds 68/s while prio_local,early sheds only 11/s.
+This 6x difference warrants investigation — it may indicate a secondary feedback loop.
+
+**H1 — Legitimate load shedding:** ms-11639 is also saturating at 1800 RPS; the ERs are
+correct. Comparable ER rates across policies would confirm this.
+
+**H2 — Secondary feedback loop:** Tight deadlines at ms-11639's callers are causing ERs
+which freeze the estimate, keeping deadlines tight. The 0-injection fix applies globally,
+but if the latency distribution at ms-11639 edges differs significantly from ms-37691's,
+the equilibrium may not converge to a useful operating point.
+
+### Diagnostic plan
+
+After s1467_18 completes, compare ms-11639 ER rates between est_mean_var and
+prio_local,early across all RPS levels. Check if the ratio widens at higher RPS (H2)
+or stays proportional (H1). If H2, inspect `LAT_EST` log in ms-11639's parent service
+for frozen `est_rem` values.
+
+---
+
+## Iteration 15: k parameter calibration
+
+**Status:** Pending (depends on Iteration 13 and 14 results)
+
+### Motivation
+
+`LatencyMeanVar` uses `estimate = mean + k * stddev` with **k=1.0** (approx. 84th
+percentile of a normal distribution). The 0-injection fix creates a **bimodal EMA
+input**: the estimator sees a mix of 0ms observations (ER injections) and real latency
+values (successful completions). The mean+k*stddev formula may behave differently on
+this bimodal distribution.
+
+At equilibrium with ER fraction `f` and real latency `L`:
+- EMA mean ≈ `(1-f) * L`
+- EMA stddev ≈ `sqrt(f*(1-f)) * L` (peaks at f=0.5)
+- estimate = `L * [(1-f) + k * sqrt(f*(1-f))]`
+
+For k=1.0 and f=0.26 (s17 y_DKOh-Gts ER fraction): estimate ≈ 1.18 * L.
+If L = 86ms, estimate ≈ 101ms — just over the 100ms SLO. Child deadline would be
+T + (100ms - 101ms) = T - 1ms: immediately ER. This arithmetic suggests k=1.0 may
+be slightly over-conservative when there is any residual ER rate feeding back into
+the estimate. A lower k would loosen the child deadline and reduce over-shedding.
+
+### Experiment plan (s1467_19, s1467_20)
+
+Run the `[200, 1800, 800]` sequence with:
+- s1467_19: k=0.5 (approx. 69th percentile)
+- s1467_20: k=0.0 (mean-only)
+
+Compare goodput timelines against s1467_17 (k=1.0) to identify the best k.
+
+**Success criterion:** k-tuned variant matches or beats k=1.0 at both 1800 and 800 RPS
+without increasing the client-timeout rate.
+
