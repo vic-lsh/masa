@@ -7,6 +7,11 @@ use serde::{Deserialize, Serialize};
 ///   mean + k * stddev
 /// where mean and variance are maintained online using Welford's algorithm,
 /// and stddev = sqrt(variance). This is a standard sigma-bound estimator.
+///
+/// Updates use a doubling schedule during warmup: the estimate is recomputed
+/// after observations 1, 2, 4, 8, ..., stabilizing to `update_interval` once
+/// sufficient data exists. This avoids the step-function jump from 0 to the
+/// full estimate after `update_interval` cold observations.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LatencyMeanVar {
     count: usize,
@@ -15,7 +20,8 @@ pub struct LatencyMeanVar {
     k: f64,
     estimate: u64,
     update_interval: usize,
-    since_last_update: usize,
+    /// Absolute count at which the next estimate update will occur.
+    next_update: usize,
 }
 
 impl LatencyMeanVar {
@@ -29,7 +35,7 @@ impl LatencyMeanVar {
             k,
             estimate: 0,
             update_interval,
-            since_last_update: 0,
+            next_update: 1,
         }
     }
 
@@ -65,7 +71,6 @@ impl LatencyEstimator for LatencyMeanVar {
     fn track(&mut self, value: u64) {
         let x = value as f64;
         self.count += 1;
-        self.since_last_update += 1;
 
         // Welford online update for stable running mean/variance.
         let delta = x - self.mean;
@@ -73,9 +78,14 @@ impl LatencyEstimator for LatencyMeanVar {
         let delta2 = x - self.mean;
         self.m2 += delta * delta2;
 
-        if self.since_last_update >= self.update_interval {
+        if self.count >= self.next_update {
             self.update_estimate();
-            self.since_last_update = 0;
+            // Doubling schedule during warmup; then fixed interval thereafter.
+            if self.next_update < self.update_interval {
+                self.next_update = (self.next_update * 2).min(self.update_interval);
+            } else {
+                self.next_update = self.count + self.update_interval;
+            }
         }
     }
 
@@ -108,7 +118,7 @@ mod tests {
         assert_eq!(est.k, 2.0);
         assert_eq!(est.estimate, 0);
         assert_eq!(est.update_interval, 16);
-        assert_eq!(est.since_last_update, 0);
+        assert_eq!(est.next_update, 1);
     }
 
     #[test]
@@ -128,6 +138,7 @@ mod tests {
         let est = LatencyMeanVar::default();
         assert_eq!(est.k, 1.0);
         assert_eq!(est.update_interval, 512);
+        assert_eq!(est.next_update, 1);
     }
 
     #[test]
@@ -156,15 +167,65 @@ mod tests {
     }
 
     #[test]
-    fn test_update_interval() {
-        let mut est = LatencyMeanVar::new(1.0, 3);
-        est.track(10);
-        est.track(20);
+    fn test_doubling_warmup_schedule() {
+        // With update_interval=16, updates at count: 1, 2, 4, 8, 16, 32, 48, ...
+        let mut est = LatencyMeanVar::new(0.0, 16);
+
+        // Before any tracks, estimate is 0
         assert_eq!(est.estimate(), 0);
 
-        est.track(30);
-        assert!(est.estimate() > 0);
-        assert_eq!(est.since_last_update, 0);
+        // After first observation, estimate updates immediately (count >= next_update=1)
+        est.track(100);
+        assert_eq!(est.estimate(), 100); // mean=100, k=0 so estimate=mean=100
+
+        // After second observation, estimate updates (next_update was set to 2)
+        est.track(200);
+        assert_eq!(est.estimate(), 150); // mean=150
+
+        // After 4th observation, estimate updates (next_update was set to 4)
+        est.track(300);
+        // count=3, next_update=4, no update yet
+        assert_eq!(est.estimate(), 150);
+
+        est.track(400);
+        // count=4, next_update=4 → update. mean = (100+200+300+400)/4 = 250
+        assert_eq!(est.estimate(), 250);
+
+        // After 8th observation
+        est.track(500);
+        est.track(600);
+        est.track(700);
+        // count=7, next_update=8, no update
+        assert_eq!(est.estimate(), 250);
+
+        est.track(800);
+        // count=8, next_update=8 → update. mean = (100..800)/8 = 450
+        assert_eq!(est.estimate(), 450);
+    }
+
+    #[test]
+    fn test_steady_state_interval() {
+        // After warmup completes, should update every update_interval observations
+        let mut est = LatencyMeanVar::new(0.0, 4);
+
+        // Drive through warmup (updates at 1, 2, 4)
+        for i in 1..=4 {
+            est.track(i * 100);
+        }
+        // count=4, warmup done (next_update was set to count + update_interval = 4+4=8)
+        let est_after_warmup = est.estimate(); // mean of [100,200,300,400] = 250
+        assert_eq!(est_after_warmup, 250);
+
+        // Track 3 more - no update
+        est.track(100);
+        est.track(100);
+        est.track(100);
+        assert_eq!(est.estimate(), 250);
+
+        // Track 4th more (count=8) - update happens
+        est.track(100);
+        // new mean = (100+200+300+400+100+100+100+100)/8 = 1500/8 = 187.5 → 187
+        assert!(est.estimate() < 250);
     }
 
     #[test]
@@ -186,5 +247,6 @@ mod tests {
         assert_eq!(est.count, deserialized.count);
         assert_eq!(est.k, deserialized.k);
         assert_eq!(est.update_interval, deserialized.update_interval);
+        assert_eq!(est.next_update, deserialized.next_update);
     }
 }
