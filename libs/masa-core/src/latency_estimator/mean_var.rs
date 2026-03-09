@@ -1,11 +1,12 @@
 use super::LatencyEstimator;
 use serde::{Deserialize, Serialize};
 
-/// Running mean + variance latency estimator.
+/// Running mean + k*stddev latency estimator.
 ///
 /// The estimate is computed as:
-///   mean + k * variance
-/// where mean/variance are maintained online using Welford's algorithm.
+///   mean + k * stddev
+/// where mean and variance are maintained online using Welford's algorithm,
+/// and stddev = sqrt(variance). This is a standard sigma-bound estimator.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LatencyMeanVar {
     count: usize,
@@ -39,7 +40,7 @@ impl LatencyMeanVar {
         }
 
         let variance = self.m2 / self.count as f64;
-        let raw_estimate = self.mean + self.k * variance;
+        let raw_estimate = self.mean + self.k * variance.sqrt();
         self.estimate = if raw_estimate.is_finite() && raw_estimate > 0.0 {
             raw_estimate.min(u64::MAX as f64) as u64
         } else {
@@ -142,15 +143,16 @@ mod tests {
     }
 
     #[test]
-    fn test_estimate_mean_plus_k_var() {
+    fn test_estimate_mean_plus_k_stddev() {
         let mut est = LatencyMeanVar::new(1.0, 1);
         est.track(10);
         est.track(20);
         est.track(30);
 
-        // mean=20, variance=66.66..., estimate ~= 86
+        // Values: [10, 20, 30], mean=20, population variance=200/3≈66.67, stddev≈8.165
+        // estimate = mean + k * stddev = 20 + 8.165 ≈ 28
         let v = est.estimate();
-        assert!(v >= 86 && v <= 87);
+        assert!(v >= 28 && v <= 29);
     }
 
     #[test]
