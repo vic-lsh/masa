@@ -1125,21 +1125,90 @@ enough estimator calibration to handle the jump to 1800 RPS?
 
 ### s1467_16 Actual Outcomes
 
-| RPS  | EMA+warmup (s16) | EMA cold (s14) | prio_oldest | diff vs s14 |
-|------|-----------------|----------------|-------------|-------------|
-| 1800 | **1787.7**      | 856.7          | 800.2       | +931.0      |
-| 800  | **798.5**       | 385.8          | 791.9       | +412.7      |
+| RPS  | est_mean_var (s16) | prio_local,early | prio_oldest |
+|------|--------------------|-----------------|-------------|
+| 1800 | **486.3**          | 961.2           | 800.1       |
+| 800  | **202.9**          | 793.5           | 791.9       |
 
-**Hypothesis confirmed emphatically.** After 30s at 200 RPS, the estimator is sufficiently
-calibrated to handle 1800 RPS at near-perfect goodput (1787.7 / 1800 = 99.3% within SLO).
-The 800 RPS step is also essentially perfect (798.5 / 800 = 99.8%), confirming EMA adapts
-quickly after the 1800→800 load drop.
+**Hypothesis refuted.** Despite 30s of warm-up at 200 RPS, `est_mean_var` collapses at
+both load levels — far below `prio_local,early` and even `prio_oldest`. The goodput
+timeline (`plots/s1467_16/0/goodput_timeline.png`) makes the failure mode visible:
+`est_mean_var` drops to ~430 RPS within the first few seconds at 1800 RPS, then stays
+stuck at ~200 RPS throughout the entire 800 RPS period even after load decreases.
 
-Both load levels decisively beat prio_oldest (+987.5 at 1800, +6.6 at 800).
+The warm-up does provide a non-zero baseline estimate, so it avoids the cold-start flood.
+But a new failure mode takes over — a self-reinforcing EMA feedback loop.
 
-**Key insight:** 30s at 200 RPS is sufficient warm-up. The low-load calibration gives the
-estimator a non-zero est_remaining baseline, preventing the MS_37691 flood at cold 1800 RPS
-start. This matches the warm reference (s1467_12: 963.5; s1467_15 fully-calibrated: 1791.2)
-— showing that even partial calibration at a different load level is enough to prevent
-the cold-start failure mode.
+---
+
+## Root cause: self-reinforcing EMA feedback loop (discovered from s1467_16)
+
+The EMA (α=0.05) adapts correctly in isolation but creates a stable failure fixed point
+under overload:
+
+1. At 200 RPS warm-up: `est_after[MS_56394::GqI6UW1mU4 → MS_37691::y_DKOh-Gts]` builds
+   to ~16ms (ykccIz2fkK queue time at 200 RPS)
+2. At 1800 RPS: MS_37691 becomes near-saturated; ykccIz2fkK queues for ~86ms. EMA adapts
+   within ~20 successful completions (α=0.05 ≈ 20-observation window) → `est_after ≈ 86ms`
+3. y_DKOh-Gts gets deadline = T+100ms − 86ms = **T+14ms**
+4. ~74% of y_DKOh-Gts calls early-return at MS_37691 (can't complete within 14ms under load)
+5. **Critical:** `track_latencies()` only runs for non-ER responses. ERs produce zero EMA
+   updates → estimate stays frozen at 86ms
+6. With 26% y_DKOh-Gts success rate, MS_37691 remains near-saturated → ykccIz2fkK still
+   takes ~86ms → EMA stays at 86ms
+
+**Stable fixed point:** the estimate is self-consistently "correct" given the ER load it
+creates, so there is no corrective signal. The loop persists through the 800 RPS period
+too — the EMA is frozen from the 1800 RPS phase and doesn't see observations to update.
+
+**Why `prio_local,early` (LatencyRms) avoids this:** LatencyRms is an all-time accumulator
+with `update_interval=512`. Thousands of ~2ms observations from the 200 RPS warm-up dilute
+any increase → estimate stays ~4–5ms → y_DKOh-Gts gets deadline T+95ms → no tight-deadline
+loop forms.
+
+---
+
+## Iteration 12: Break EMA feedback loop by tracking 0 on child ER
+
+**Status:** Implemented, not yet validated by experiment
+
+### Fix
+
+In `after_child_rpc` (`libs/tonic/tonic/src/masa/context/local/local.rs`): when a child
+RPC returns `DeadlineExceeded`, inject a `0` observation into `est_after_child_latency`
+for that edge before propagating the error.
+
+**Rationale:** When a child early-returns, the parent immediately propagates the ER and
+does no further work — the "remaining time after this child" is genuinely 0. By recording
+this, ERs create negative feedback:
+
+```
+more ERs → more 0 observations → estimate decreases
+→ looser child deadline → fewer ERs → less MS_37691 load
+→ ykccIz2fkK faster → stable equilibrium at lower estimate
+```
+
+Without the fix, ERs are informationally inert: they neither update the estimate nor signal
+that the estimate is causing problems.
+
+**Expected equilibrium:** `est_after ≈ (1 − ER_rate) × actual_after_time`. At the previous
+74% ER rate: `0.26 × 86ms ≈ 22ms` → y_DKOh-Gts deadline = T+78ms → fewer ERs → further
+reduction → new equilibrium at a lower ER rate and shorter estimate.
+
+### Experiment plan (s1467_17)
+
+Re-run s1467_16 configuration (`[200, 1800, 800]`, 30s each, same trace S_14677443) with
+the fixed binary. The goodput timeline is the primary diagnostic — it should show:
+
+- `est_mean_var` goodput no longer collapses during 1800 RPS
+- Recovery during 800 RPS is fast (EMA no longer frozen)
+
+**Success criterion:** `est_mean_var` goodput approaches `prio_local,early` at both load
+levels (≥ 800 at 1800 RPS, ≥ 750 at 800 RPS).
+
+**Secondary diagnostics:**
+- `early_return_breakdown.csv`: ER rate for `ms-37691::y_DKOh-Gts` should be much lower
+  than the pre-fix 74%
+- `LAT_EST` log entries in ms-56394: `est_rem` should stabilize at ~20–30ms, not 86ms
+- If a new failure mode appears, the ER breakdown will show a different service/method
 
