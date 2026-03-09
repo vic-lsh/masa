@@ -218,6 +218,9 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             return Err(Err(self.early_return.issue_error()));
         }
 
+        let remaining = self.ctx.deadline().saturating_sub(time_now());
+        tokio::task::reprioritize(masa_core::PriorityHint::new(remaining));
+
         self.q_lat_tracker.track_poll();
         Ok(())
     }
