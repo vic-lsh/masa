@@ -477,3 +477,64 @@ the `before_poll` / `after_poll` early-return at child servers will be less aggr
 could allow more requests to attempt expensive downstream work and then fail the SLO. However,
 the PRIORITY ORDERING should still be correct (prio_hint is unchanged), so the right requests
 get served first and the waste should be minimal.
+
+### Actual Outcomes (s1467_6)
+
+**CATASTROPHIC FAILURE.** prio_local,early also uses local.rs; passing the original deadline
+broke BOTH policies:
+
+| RPS | s4 est_mean_var k=1.0 | s6 no-compound | s4 prio_oldest |
+|-----|-----------------------|----------------|----------------|
+| 800 | 670 | 553 | 785 |
+| 1000 | 714 | **317** | 783 |
+| 1200 | 758 | 327 | 761 |
+| 1800 | 849 | 458 | 787 |
+
+Root cause: without tightened deadlines, inner services no longer shed at all. At 1000+ RPS
+(overloaded), every service attempts every request until the full 100ms elapses, causing
+massive queuing and SLO violations across the board. The deadline propagation is not optional —
+it is the mechanism that enables inner-service load shedding.
+
+**Key learnings:**
+1. The 800 RPS gap (670 vs 785) is STEADY-STATE, not warmup (verified by 5s time-bucket analysis)
+2. The issue is that `est_after_child_latency` correctly estimates ~75ms for paths that include
+   ms-73106, causing the early-return check to fire at T+5ms even at low load
+3. Deadline propagation is fundamental; cannot be removed or modified without breaking the system
+
+---
+
+## Iteration 4: Mean-only threshold for early-return (experiment s1467_7)
+
+**Status:** Implemented, experiment pending
+
+### Change
+
+Add `mean_estimate()` to the `LatencyEstimator` trait (default = `estimate()`). Override in
+`LatencyMeanVar` to return just the Welford mean (k=0 effective). Add `get_mean_estimate()` to
+`LatencyMap`. Use the mean estimate for the early-return threshold in `local.rs`, while keeping
+`get_estimate()` (mean+k*σ) for the tightened deadline forwarded to children and for `prio_hint`.
+
+Key distinction:
+- **Early-return check**: `time_now() > parent_deadline - mean_remaining` (mean, no σ term)
+- **Deadline for child**: `parent_deadline - estimate_remaining` (mean+k*σ, unchanged)
+- **Priority hint**: `deadline - est_child` (unchanged)
+
+### Hypothesis
+
+The σ term in `est_remaining` is responsible for the conservative early-return at underloaded
+conditions. With mean=75ms and σ=20ms, k=1.0 estimate=95ms fires the check at T+5ms. Using
+mean=75ms fires at T+25ms — allowing 20ms more processing time before shedding.
+
+Priority ordering and deadline propagation are fully preserved (both still use mean+k*σ).
+
+**Expected outcomes:**
+1. 800 RPS: early-return threshold shifts from T+5ms to T+25ms — fewer root early-returns
+   (~20–40/s instead of 60/s), improving goodput toward prio_oldest's 785
+2. 1800 RPS: threshold also shifts (mean=75ms not 95ms), so slightly less proactive shedding.
+   High-load goodput may drop slightly from 849 but should remain above prio_oldest's 787
+3. Net: improved 800–1000 RPS performance with modest high-load reduction → better total goodput
+
+**Risk:** Using mean for early-return allows more σ-range requests through. At overloaded
+conditions (1800 RPS), these extra requests consume capacity that could serve requests within SLO,
+potentially reducing high-load goodput below prio_oldest's 787. However, priority ordering is
+intact so capacity is still allocated to best candidates.
