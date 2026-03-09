@@ -71,7 +71,7 @@ mod tests {
             let sampled_method = method_freq
                 .sample_method(&svc_name, &graph_id, &mut rng)
                 .expect("service must exist");
-            assert!(["method_a", "method_b"].contains(&sampled_method.method.as_str()));
+            assert!(["method_a", "method_b"].contains(&sampled_method.method.as_ref()));
         }
     }
 }
