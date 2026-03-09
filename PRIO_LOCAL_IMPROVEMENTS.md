@@ -305,3 +305,82 @@ early-load experiment points, falling back to `deadline = parent_deadline - 0` (
    path-aware deadline propagation allows smarter early shedding of doomed requests.
 5. The fix to `prio_hint` underflow means downstream servers receive correct priority ordering
    even when `est_child` estimates are large, improving cross-server scheduling.
+
+### Actual Outcomes (s1467_4)
+
+**✓ Fixes worked — no longer catastrophically broken:**
+- Zero early-returns at 200 and 400 RPS (hypothesis 1 confirmed)
+- CPU on ms-73106: 69.96ms mean (vs 22.65ms broken, vs 82.11ms `prio_oldest,early`)
+- CPU on ms-11639: 16.50ms mean (vs 0.126ms broken, vs 24.05ms `prio_oldest,early`)
+
+**Early return comparison (root-level only):**
+| RPS | prio_local,est_mean_var,early | prio_oldest,early | prio_local,early |
+|-----|-------------------------------|-------------------|-----------------|
+| 200 | 0 | 0 | 0 |
+| 400 | 0 | 0 | 0 |
+| 800 | **60.3/s** | **6.8/s** | 132.3/s |
+| 1000 | **54.5/s** | **211.8/s** | 172.7/s |
+| 1200 | **59.6/s** | **445.1/s** | 203.3/s |
+| 1400 | **78.4/s** | **627.5/s** | 252.7/s |
+| 1800 | **106.6/s** | **989.8/s** | 387.4/s |
+
+At ≥1000 RPS, `est_mean_var` sheds far fewer requests at root (54 vs 212 at 1000) = **better
+goodput potential**. At 800 RPS, `est_mean_var` sheds 60/s unnecessarily while `prio_oldest`
+has only 6.8/s — system is not overloaded, so shedding is wasteful.
+
+**Remaining problem — k=1.0 too conservative:**
+Large inner-service early-returns at ms-37691/y_DKOh-Gts:
+- 800 RPS: 17.6/s inner + 37/s at ykccIz2fkK = 54/s from ms-37691 alone
+- 1800 RPS: 470/s (y_DKOh-Gts) + 113/s (ykccIz2fkK) = 583/s inner sheds at ms-37691
+
+These inner sheds are triggered because ms-37691 computes `est_remaining = mean + 1.0*stddev`,
+which at σ≈high-variance levels overestimates the remaining budget needed. With k=1.0 the estimate
+is the 84th percentile — too conservative when there's capacity to serve most requests.
+
+**Conclusion:** The policy is now basically working. The k=1.0 default is the next thing to tune.
+
+---
+
+## Iteration 2: Reduce k from 1.0 to 0.5 (experiment s1467_5)
+
+**Status:** Implemented, experiment pending
+
+### Change
+
+In `libs/masa-core/src/latency_estimator/mean_var.rs`, change the default k from 1.0 to 0.5:
+
+```rust
+impl Default for LatencyMeanVar {
+    fn default() -> Self {
+        Self::new(0.5, 512)  // was 1.0
+    }
+}
+```
+
+### Rationale
+
+With k=1.0, the estimate is `mean + 1.0*σ` ≈ 84th percentile of observed latency. The
+`est_remaining` budget allocated per edge is therefore quite large, causing the adjusted deadline
+`d = parent_deadline - est_remaining` to be tight. Requests that arrive anywhere past that tight
+deadline get shed — even at 800 RPS where the system has capacity.
+
+With k=0.5, the estimate is `mean + 0.5*σ` ≈ 69th percentile. This:
+- Reduces the deadline budget per edge by ~0.5*σ per hop
+- Allows more requests to pass the early-return check at moderate load
+- Still provides enough margin to shed requests that are clearly over budget
+
+### Hypothesis
+
+**Expected outcomes if hypothesis is correct:**
+1. At 800 RPS: root early-returns should drop significantly (from 60/s toward 0–15/s), matching
+   or approaching `prio_oldest,early`'s 6.8/s.
+2. Inner-service early returns at ms-37691/y_DKOh-Gts should drop substantially at all RPS levels.
+3. At high RPS (1400–1800): root early-returns should remain low (< `prio_oldest,early`'s 990/s),
+   preserving the goodput advantage at high loads seen in s1467_4.
+4. CPU on ms-73106 should remain in the 70–80ms range (vs `prio_oldest,early`'s 82ms), indicating
+   actual work is being done rather than bulk shedding.
+5. Overall goodput (fraction of requests meeting SLO) should beat `prio_oldest,early` at ≥800 RPS.
+
+**Risk:** Less conservative estimates may let some doomed requests pass, wasting capacity. If
+ms-73106's variance is very high (as the PRIO_LOCAL_IMPROVEMENTS.md analysis suggests: σ≈20,000µs),
+then k=0.5 estimates ≈ 75,000+10,000=85,000µs which is still a reasonable budget within 100ms SLO.
