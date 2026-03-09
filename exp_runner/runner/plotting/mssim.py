@@ -240,6 +240,20 @@ def _compute_latency_percentiles(
     return {p: float(df["e2e_latency_ms"].quantile(p / 100.0)) for p in percentiles}
 
 
+def _write_goodput_csv(
+    output_path: Path,
+    rps_values: Sequence[float],
+    policy_series: Dict[str, Sequence[float]],
+) -> None:
+    rows = []
+    for rps, *values in zip(rps_values, *policy_series.values()):
+        row = {"rps": rps}
+        for policy, val in zip(policy_series.keys(), values):
+            row[policy] = round(val, 3)
+        rows.append(row)
+    pd.DataFrame(rows).to_csv(output_path, index=False)
+
+
 def _plot_goodput_lines(
     output_path: Path,
     rps_values: Sequence[float],
@@ -542,12 +556,22 @@ def generate_plots(args) -> None:
             title=f"Goodput vs RPS (SLO={slo_ms:g} ms)",
             ylabel="Goodput (RPS)",
         )
+        _write_goodput_csv(
+            iteration_output / "goodput_absolute.csv",
+            rps_values,
+            goodput_by_policy,
+        )
         _plot_goodput_lines(
             iteration_output / "goodput_fraction.png",
             rps_values,
             fraction_by_policy,
             title=f"Goodput fraction vs RPS (SLO={slo_ms:g} ms)",
             ylabel="Goodput / Offered load",
+        )
+        _write_goodput_csv(
+            iteration_output / "goodput_fraction.csv",
+            rps_values,
+            fraction_by_policy,
         )
         _plot_latency_percentiles(
             iteration_output / "latency_percentiles.png",
@@ -620,6 +644,11 @@ def generate_plots(args) -> None:
             title=f"Average goodput vs RPS (SLO={slo_ms:g} ms)",
             ylabel="Goodput (RPS)",
         )
+        _write_goodput_csv(
+            output_dir / "goodput_absolute_avg.csv",
+            rps_values,
+            avg_goodput,
+        )
         fraction_by_policy = {
             policy: [
                 (val / rps) if rps else float("nan")
@@ -633,6 +662,11 @@ def generate_plots(args) -> None:
             fraction_by_policy,
             title=f"Average goodput fraction vs RPS (SLO={slo_ms:g} ms)",
             ylabel="Goodput / Offered load",
+        )
+        _write_goodput_csv(
+            output_dir / "goodput_fraction_avg.csv",
+            rps_values,
+            fraction_by_policy,
         )
         _plot_latency_percentiles(
             output_dir / "latency_percentiles_avg.png",
