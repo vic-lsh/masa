@@ -100,8 +100,9 @@ impl LatencyEstimator for LatencyMeanVar {
 
 impl Default for LatencyMeanVar {
     fn default() -> Self {
-        // k=1.0 and periodic updates to match the behavior of other estimators.
-        Self::new(1.0, 512)
+        // k=0.5: estimate at ~69th percentile. k=1.0 (84th pct) proved too conservative
+        // in practice — it caused unnecessary early-returns at moderate load (s1467_4).
+        Self::new(0.5, 512)
     }
 }
 
@@ -136,7 +137,7 @@ mod tests {
     #[test]
     fn test_default() {
         let est = LatencyMeanVar::default();
-        assert_eq!(est.k, 1.0);
+        assert_eq!(est.k, 0.5);
         assert_eq!(est.update_interval, 512);
         assert_eq!(est.next_update, 1);
     }
