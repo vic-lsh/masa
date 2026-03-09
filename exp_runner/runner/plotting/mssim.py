@@ -491,8 +491,7 @@ def _plot_goodput_timeline(
             linewidth=1.5,
         )
 
-    # Secondary axis: offered RPS as a step function
-    ax2 = ax.twinx()
+    # Offered RPS as a filled step area on the same axis (same unit: RPS)
     step_t = [0.0]
     step_rps = [rps_sequence[0]]
     for i, rps in enumerate(rps_sequence):
@@ -500,27 +499,20 @@ def _plot_goodput_timeline(
         if i > 0:
             step_t.append(t_start)
             step_rps.append(rps)
+            ax.axvline(t_start, linestyle="--", color="grey", alpha=0.4, linewidth=1)
         step_t.append(t_start + duration_sec)
         step_rps.append(rps)
-        if i > 0:
-            ax.axvline(t_start, linestyle="--", color="grey", alpha=0.4, linewidth=1)
-    ax2.fill_between(step_t, step_rps, step=None, color="grey", alpha=0.12, label="Offered RPS")
-    ax2.step(step_t, step_rps, where="post", color="grey", linewidth=1.5,
-             linestyle="-", alpha=0.5)
-    ax2.set_ylabel("Offered RPS", color="grey")
-    ax2.tick_params(axis="y", labelcolor="grey")
-    ax2.set_ylim(bottom=0)
+    ax.fill_between(step_t, step_rps, step=None, color="grey", alpha=0.12, label="Offered RPS")
+    ax.step(step_t, step_rps, where="post", color="grey", linewidth=1.5,
+            linestyle="-", alpha=0.5)
 
     ax.set_xlabel("Time (s)")
-    ax.set_ylabel(f"Goodput (RPS, {window_sec:g}s window)")
-    ax.set_title(f"Goodput timeline (SLO={slo_ms:g} ms)")
+    ax.set_ylabel("RPS")
+    ax.set_title(f"Goodput timeline (SLO={slo_ms:g} ms, {window_sec:g}s window)")
     ax.set_xlim(left=0, right=len(rps_sequence) * duration_sec)
+    ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
-
-    # Merge legends from both axes
-    handles, labels = ax.get_legend_handles_labels()
-    handles2, labels2 = ax2.get_legend_handles_labels()
-    ax.legend(handles + handles2, labels + labels2)
+    ax.legend()
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=300)
