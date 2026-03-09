@@ -96,6 +96,14 @@ impl LatencyEstimator for LatencyMeanVar {
     fn estimate(&self) -> u64 {
         self.estimate
     }
+
+    fn mean_estimate(&self) -> u64 {
+        if self.mean > 0.0 && self.mean.is_finite() {
+            self.mean.min(u64::MAX as f64) as u64
+        } else {
+            0
+        }
+    }
 }
 
 impl Default for LatencyMeanVar {

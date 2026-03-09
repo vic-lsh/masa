@@ -15,6 +15,13 @@ pub trait LatencyEstimator: Send + Sync {
     /// The specific estimation strategy (e.g. which percentile to pick) is internal
     /// to the implementation.
     fn estimate(&self) -> u64;
+
+    /// Get a conservative (mean-only, k=0) estimate, used for early-return thresholds.
+    /// Using mean rather than mean+k*σ prevents over-aggressive shedding at low load.
+    /// Default implementation returns estimate() for backwards compatibility.
+    fn mean_estimate(&self) -> u64 {
+        self.estimate()
+    }
 }
 
 pub use histogram::LatencyDistribution;
