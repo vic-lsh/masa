@@ -273,19 +273,14 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         let time_left = self.ctx.deadline().saturating_sub(time_now());
 
-        // Use mean+k*σ for priority ordering: encodes urgency correctly.
-        let est_remaining_full = self
+        let est_remaining = self
             .server
             .est_after_child_latency
             .get_estimate(key)
             .unwrap_or(0)
             .min(time_left);
 
-        // Use mean-only for the child deadline and early-return check.
-        // With mean+σ the deadline can be set before the child is even called
-        // (e.g. MS_56394 has ~80ms pre-child CPU, mean+σ=23ms gives deadline=T+77ms
-        // while the call happens at T+82ms → immediate false-positive early-return at child).
-        // Using mean keeps the deadline achievable while the full estimate drives priority.
+        // Mean-only for early-return check: avoids false-positive sheds from σ over-estimation.
         let est_remaining_mean = self
             .server
             .est_after_child_latency
@@ -293,27 +288,28 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             .unwrap_or(0)
             .min(time_left);
 
-        // Deadline sent to child uses mean (achievable); prio_hint uses mean+σ (urgent).
-        let deadline = self.ctx.deadline().saturating_sub(est_remaining_mean);
-        let early_return_deadline = deadline;
-        if EARLY_RETURN && time_now() > early_return_deadline {
+        let deadline = self.ctx.deadline().saturating_sub(est_remaining);
+        if EARLY_RETURN && time_now() > self.ctx.deadline().saturating_sub(est_remaining_mean) {
             return Err(self.early_return.issue_error());
         }
 
-        let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
-
-        // prio_hint uses tight_deadline (mean+σ) so priority ordering correctly accounts
-        // for variance; child still receives the looser mean-based deadline.
-        let tight_deadline = self.ctx.deadline().saturating_sub(est_remaining_full);
-        let prio_hint = tight_deadline.saturating_sub(est_child);
+        // prio_hint = deadline (parent_deadline - est_remaining), not deadline - est_child.
+        // Subtracting est_child caused priority inversions: when load increased, est_child grew,
+        // making new requests' prio_hints smaller (higher priority) than old requests that were
+        // computed with a lower est_child. Old requests ended up waiting behind newer ones and
+        // failing the SLO. Using deadline alone gives approximately FIFO ordering at child servers
+        // (since all requests share the same e2e SLO deadline), while preserving path-aware early
+        // returns from the tightened deadline.
+        let prio_hint = deadline;
 
         if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
+            let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
             log::info!(
-                "LAT_EST: p=>c: {}, est_child: {}, est_rem_mean: {}, est_rem_full: {}",
+                "LAT_EST: p=>c: {}, est_child: {} (not used for prio_hint), est_rem: {}, est_rem_mean: {}",
                 parent_to_child_id,
                 est_child,
+                est_remaining,
                 est_remaining_mean,
-                est_remaining_full,
             );
         }
 
