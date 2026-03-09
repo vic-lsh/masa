@@ -739,3 +739,81 @@ At high load (1400-1800 RPS) where prio_local currently beats prio_oldest:
 
 **Risk:** Without est_child in prio_hint, the child server can no longer distinguish expensive vs cheap children from the same parent. In this workload this doesn't matter (all MS_56394→MS_37691 calls are same type), but may matter for more heterogeneous workloads.
 
+### Actual Outcomes (s1467_10)
+
+**Mixed: small improvement at 800/1400 RPS, regression at 1000 RPS:**
+
+| RPS  | s1467_7 (mean ER) | s1467_10 (no est_child) | prio_oldest | diff vs s7 |
+|------|-------------------|-------------------------|-------------|------------|
+| 800  | 672.7             | 681.1                   | 794.0       | +8.4       |
+| 1000 | 741.6             | 719.5                   | 796.8       | **-22.1**  |
+| 1200 | 760.2             | 760.1                   | 775.9       | ≈0         |
+| 1400 | 780.1             | **797.9**               | 766.6       | +17.8      |
+| 1800 | 845.9             | 838.6                   | 792.1       | -7.3       |
+
+At 800 RPS: ykccIz2fkK ERs barely changed (39.6/s vs 37.68/s); priority starvation persists.
+
+**Root cause — priority starvation of ykccIz2fkK by y_DKOh-Gts at MS_37691:**
+
+Both calls are sequential steps in MS_56394's chain. They get different priorities at MS_37691:
+- y_DKOh-Gts: `prio_hint = deadline = T+60ms` (tight — est_remaining=40ms from y_DKOh-Gts)
+- ykccIz2fkK: `prio_hint = deadline = T+99ms` (loose — est_remaining=1ms, just busy_spin)
+
+At MS_37691, y_DKOh-Gts from ANY request within the last 39ms takes priority over ykccIz2fkK.
+At 800 RPS (1.25ms/request), that's ~31 pending y_DKOh-Gts ahead of any ykccIz2fkK. This
+creates systematic ~62ms extra wait for ykccIz2fkK, causing 39.6/s ERs.
+
+prio_oldest avoids this: both calls inherit start_at as prio_hint → same priority at MS_37691 →
+no starvation. The 1000 RPS regression in s1467_10 (vs s1467_7) shows that removing est_child's
+urgency signal WITHOUT fixing sibling starvation hurts overall.
+
+---
+
+## Iteration 8: Inherit parent prio_hint instead of computing from est_remaining (experiment s1467_11)
+
+**Status:** Planned
+
+### Change
+
+In `local.rs`, use `self.ctx.prio_hint().value()` as prio_hint for all children instead of
+computing from `deadline - est_child` or just `deadline`:
+
+```rust
+// BEFORE (s1467_10): prio_hint = deadline = parent_deadline - est_remaining
+let prio_hint = deadline;
+
+// AFTER (Iteration 8): inherit parent's prio_hint unchanged
+let prio_hint = self.ctx.prio_hint().value();
+```
+
+Keep computing `deadline` (parent_deadline - est_remaining) for the early-return check and for
+passing to the child. Only the prio_hint changes.
+
+### Hypothesis
+
+The loadgen sets prio_hint = start_at + 100ms (= absolute SLO deadline) for all root requests.
+This value propagates as-is through before_child_rpc. At every inner service, all sibling calls
+from the same root request share the same prio_hint = start_at + 100ms. At MS_37691:
+- y_DKOh-Gts priority = T+100ms (same as root request SLO deadline)
+- ykccIz2fkK priority = T+100ms (same — no starvation!)
+
+Between different root requests: request at T_i has prio T_i+100ms, request at T_j has prio
+T_j+100ms. This is EDF ordering (= FIFO since all have same 100ms SLO). Matches prio_oldest.
+
+Path-aware early returns are fully preserved (deadline propagation unchanged). At 1200+ RPS where
+prio_local beats prio_oldest, the advantage comes from these early returns. Ordering at child
+servers becomes EDF/FIFO but doesn't affect early return correctness.
+
+**Expected outcomes:**
+1. 800 RPS: ykccIz2fkK starvation eliminated → goodput approaches prio_oldest's 794.0 RPS
+2. 1000 RPS: EDF ordering at inner services → likely >= prio_oldest's 796.8 RPS
+   (early returns shed doomed requests faster than prio_oldest's root-level shedding)
+3. 1200+ RPS: same or better than s1467_7/s1467_10 (early returns unchanged)
+4. Net: closes the 800-1000 RPS gap while maintaining high-load advantage
+
+**Risk:** Inherited prio_hint doesn't reflect path-aware urgency (est_remaining). Two requests
+calling different children with different costs get the same priority at child servers. However,
+the EARLY RETURN mechanism already handles this correctly: expensive-path requests with tight
+tightened deadlines are shed before wasting capacity. The priority ordering only matters when
+the system is not fully shed — in which case FIFO/EDF is reasonable.
+
