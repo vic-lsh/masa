@@ -16,6 +16,7 @@ fifo        = ["masa-core/fifo",        "tokio/fifo",        "tonic/fifo"]
 
 est_rms = ["tonic/est_rms"]
 est_hist = ["tonic/est_hist"]
+est_mean_var = ["tonic/est_mean_var"]
 
 early = ["masa-core/early", "tonic/early"]
 trace-queue = ["tonic/trace-queue"]

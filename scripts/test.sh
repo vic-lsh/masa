@@ -91,6 +91,7 @@ policy_flags=(
     "prio_local"
     "prio_local,est_rms"
     "prio_local,est_hist"
+    "prio_local,est_mean_var"
 )
 
 # Run scheduling policy tests
@@ -184,6 +185,7 @@ fi
 declare -A specific_feature_tests=(
     ["prio_local,est_rms"]="tonic (prio_local,est_rms):cargo test -p tonic --features masa,prio_local,est_rms"
     ["prio_local,est_hist"]="tonic (prio_local,est_hist):cargo test -p tonic --features masa,prio_local,est_hist"
+    ["prio_local,est_mean_var"]="tonic (prio_local,est_mean_var):cargo test -p tonic --features masa,prio_local,est_mean_var"
     ["prio_global"]="masa-integration-tests (prio_global):cargo test -p masa-integration-tests --features prio_global"
     ["prio_global,trace-queue"]="masa-integration-tests (prio_global+trace-queue):cargo test -p masa-integration-tests --features prio_global,trace-queue"
     ["prio_global,early"]="masa-integration-tests (prio_global+early):cargo test -p masa-integration-tests --features prio_global,early"
@@ -195,6 +197,7 @@ for feat in "${!specific_feature_tests[@]}"; do
         execute_test "$name" $cmd
     fi
 done
+
 
 # Collect results if parallel
 if [ "$PARALLEL_JOBS" -gt 1 ]; then

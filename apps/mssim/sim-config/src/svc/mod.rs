@@ -120,10 +120,18 @@ impl GraphId {
     }
 
     fn normalize_graph_id(s: String) -> String {
+        // Some traces can accidentally carry trailing CSV columns in the graph field
+        // (e.g., "S_86516878,0,0"). Keep only the graph id prefix.
+        let mut normalized = s
+            .split(',')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .trim_matches('"')
+            .to_string();
+
         // Normalize to canonical format: "S_XXXXX" (uppercase S, underscore)
         // Handle input formats: "s-XXXXX", "S_XXXXX", "s_XXXXX", etc.
-        let mut normalized = s;
-
         // Convert "s-" prefix to "S_"
         if normalized.starts_with("s-") {
             normalized = normalized.replacen("s-", "S_", 1);
@@ -399,5 +407,17 @@ mod tests {
             .sample_method(&svc_name, &graph_id, &mut rng)
             .expect("service must have methods");
         assert!(["method_x", "method_y", "method_z"].contains(&sampled.method.as_ref()));
+    }
+
+    #[test]
+    fn test_graph_id_normalize_csv_suffix() {
+        let g = GraphId::from_string("S_86516878,0,0".to_string());
+        assert_eq!(g.as_str(), "S_86516878");
+    }
+
+    #[test]
+    fn test_graph_id_normalize_prefix_and_separator() {
+        let g = GraphId::from_string("s-86516878,0,0".to_string());
+        assert_eq!(g.as_str(), "S_86516878");
     }
 }
