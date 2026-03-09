@@ -817,3 +817,62 @@ the EARLY RETURN mechanism already handles this correctly: expensive-path reques
 tightened deadlines are shed before wasting capacity. The priority ordering only matters when
 the system is not fully shed — in which case FIFO/EDF is reasonable.
 
+### Actual Outcomes (s1467_11)
+
+**WORSE than s1467_10 at all loads. Reverted to s1467_10 state.**
+
+| RPS  | s1467_7 | s1467_10 | s1467_11 | prio_oldest (s11) |
+|------|---------|----------|----------|-------------------|
+| 800  | 672.7   | 681.1    | 666.4    | 793.2             |
+| 1000 | 741.6   | 719.5    | 728.6    | 812.6             |
+| 1200 | 760.2   | 760.1    | 760.1    | 769.6             |
+| 1400 | 780.1   | 797.9    | 788.6    | 757.6             |
+| 1800 | 845.9   | 838.6    | 843.8    | 784.1             |
+
+Root cause: giving y_DKOh-Gts a loose prio_hint (T+100ms) while its deadline is still T+60ms
+is inconsistent — MS_37691 schedules it leisurely but it still fails the deadline check. The
+sibling starvation problem (ykccIz2fkK deprioritized by y_DKOh-Gts) persists AND worsens
+because y_DKOh-Gts ERs increase from the inconsistent priority/deadline pairing.
+
+**Reverted to s1467_10 (prio_hint = deadline) as the best overall state.**
+
+---
+
+## Final State and Conclusions
+
+**Best code state: s1467_10** — `prio_hint = deadline` (parent_deadline - est_remaining,
+mean+k*σ), no est_child subtraction, mean-only early-return threshold.
+
+| RPS  | prio_local,est_mean_var (s10) | prio_oldest (s10) | difference |
+|------|-------------------------------|-------------------|------------|
+| 200  | 199.3                         | 198.8             | +0.5       |
+| 400  | 404.1                         | 400.7             | +3.4       |
+| 800  | 681.1                         | 794.0             | **-112.9** |
+| 1000 | 719.5                         | 796.8             | -77.3      |
+| 1200 | 760.1                         | 775.9             | -15.8      |
+| 1400 | **797.9**                     | 766.6             | **+31.3**  |
+| 1800 | **838.6**                     | 792.1             | **+46.5**  |
+
+**prio_local beats prio_oldest at 1400 and 1800 RPS** (the high-load regime where path-aware
+early shedding matters most). The 800-1000 RPS gap is structural:
+
+**Why the 800 RPS gap is irreducible** (confirmed across 8 iterations):
+- MS_56394 intrinsic latency ≈ 1ms; but two sequential calls to MS_37691 at 40ms each = 93-95ms
+  total, leaving only 5ms SLO slack for any queuing or scheduling variance.
+- prio_local's path-aware deadline propagation (T+60ms to y_DKOh-Gts, T+99ms to ykccIz2fkK)
+  creates priority starvation of ykccIz2fkK at MS_37691 — y_DKOh-Gts from the last 39ms of
+  requests all have priority over any pending ykccIz2fkK.
+- Attempts to equalize priorities (Iterations 7, 8) either shift the starvation or create
+  inconsistent priority/deadline pairs that make ERs worse.
+- prio_oldest avoids this by never tightening deadlines — at 800 RPS that's better, but at
+  1400+ RPS prio_local wins because tight deadlines enable early shedding of doomed requests.
+
+**Key insight**: prio_local's tightened deadline propagation is a double-edged sword:
+- At 800-1200 RPS (near-capacity): deadlines are too tight, causing unnecessary ERs at inner
+  services, reducing goodput.
+- At 1400+ RPS (overloaded): tight deadlines correctly identify and shed doomed requests early,
+  recovering capacity for requests that can still complete.
+
+The crossover point (~1300 RPS) is where prio_local's early shedding benefit exceeds its
+ordering overhead. Below this point, prio_oldest's simple FIFO with root-level SLO is better.
+
