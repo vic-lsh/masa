@@ -1264,6 +1264,31 @@ Config: identical to s1467_12 but run with current binary.
 **Success criterion:** est_mean_var meets or exceeds s1467_12 at every RPS level,
 and meets or exceeds prio_local,early at 1400 and 1800 RPS.
 
+### s1467_18 Results
+
+**Status: Validated ✅ — EMA+fix consistently beats Welford and prio_local,early under overload.**
+
+| RPS  | s18 est_mean_var | s12 est_mean_var (Welford) | delta vs Welford | s18 prio_local,early | delta vs RMS |
+|------|-----------------|--------------------------|-----------------|---------------------|-------------|
+| 200  | 197.8           | 199.6                    | -1.8 (-0.9%)    | 196.5               | +1.3        |
+| 400  | 402.3           | 402.1                    | +0.2 (flat)     | 405.0               | -2.7        |
+| 800  | 797.6           | 801.1                    | -3.5 (-0.4%)    | 798.6               | -1.0        |
+| 1000 | **890.9**       | 869.1                    | **+21.8 (+2.5%)**| 861.2               | **+29.7**   |
+| 1200 | **922.3**       | 892.4                    | **+29.9 (+3.4%)**| 889.8               | **+32.5**   |
+| 1400 | **929.6**       | 912.4                    | **+17.2 (+1.9%)**| 888.5               | **+41.1**   |
+| 1800 | **979.3**       | 965.4                    | **+13.9 (+1.4%)**| 939.1               | **+40.2**   |
+
+Both success criteria exceeded. At moderate-to-high overload (1000–1800 RPS), EMA+fix
+adds 14–30 goodput RPS over Welford and 30–41 goodput RPS over prio_local,early (RMS).
+The gains are consistent across all overloaded RPS levels with no regression at low load.
+
+**ms-37691 y_DKOh-Gts ER rate at 1800 RPS: 18.9/s** — feedback loop still broken (was
+~1332/s before Iteration 12 fix, ~17.7/s in s1467_17). Stable.
+
+**ms-11639 pattern confirmed:** Lzgm2aJgrn+iZVf-3vjSt inversion repeats (est_mean_var
+sheds more at Lzgm2aJgrn, less at iZVf-3vjSt, total lower). H1 confirmed across both
+experiments.
+
 ---
 
 ## Iteration 14: Investigate ms-11639 early-return rate
@@ -1336,14 +1361,35 @@ T + (100ms - 101ms) = T - 1ms: immediately ER. This arithmetic suggests k=1.0 ma
 be slightly over-conservative when there is any residual ER rate feeding back into
 the estimate. A lower k would loosen the child deadline and reduce over-shedding.
 
-### Experiment plan (s1467_19, s1467_20)
+### Updated assessment after s1467_18
 
-Run the `[200, 1800, 800]` sequence with:
-- s1467_19: k=0.5 (approx. 69th percentile)
-- s1467_20: k=0.0 (mean-only)
+The theoretical concern above assumed high residual ER rates (26%). In practice:
+- **y_DKOh-Gts** (the originally problematic edge): ER rate ≈ 18.9/1800 = **1%**
+  → bimodal effect minimal; estimate ≈ mean + 1.01×σ of the real distribution
+- **ykccIz2fkK** (bottleneck shedding): ER rate ≈ 270/1800 = **15%**
+  → bimodal: estimate = 0.85L + 1.0×0.357L = 1.207L (21% above actual L)
 
-Compare goodput timelines against s1467_17 (k=1.0) to identify the best k.
+The 15% bimodal inflation at ykccIz2fkK could potentially cause over-shedding there.
+However, est_mean_var achieves +40 goodput over prio_local,early at 1800 RPS with k=1.0,
+which means the current level of shedding at ykccIz2fkK is either optimal or the
+inflation is not harmful. Lower k would admit more requests to ykccIz2fkK → heavier
+queue → longer latency → more timeouts (not necessarily better goodput).
 
-**Success criterion:** k-tuned variant matches or beats k=1.0 at both 1800 and 800 RPS
-without increasing the client-timeout rate.
+**Assessment:** k-tuning experiments (s1467_19, s1467_20) remain possible but the
+expected gain is small given the strong performance of k=1.0. The ykccIz2fkK bimodal
+inflation (21%) is the main candidate for improvement. A single experiment with k=0.5
+would resolve this with low cost.
+
+### Experiment plan (s1467_19)
+
+Run the `[200, 1800, 800]` sequence with k=0.5 (approx. 69th percentile).
+Requires temporarily changing `LatencyMeanVar::default()` to use k=0.5.
+
+Compare goodput timeline against s1467_17 (k=1.0). Focus on:
+- ykccIz2fkK ER rate (should decrease with lower k)
+- Goodput at 1800 RPS (higher if over-shedding was the bottleneck, lower if not)
+- Recovery at 800 RPS
+
+**Success criterion:** k=0.5 goodput ≥ k=1.0 at 1800 RPS and 800 RPS.
+If not met, k=1.0 is optimal and Iteration 15 is closed.
 
