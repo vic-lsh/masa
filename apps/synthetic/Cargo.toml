@@ -28,6 +28,7 @@ prio_oldest = ["masa/prio_oldest"]
 
 est_rms = ["masa/est_rms"]
 est_hist = ["masa/est_hist"]
+est_mean_var = ["masa/est_mean_var"]
 
 fifo = ["masa/fifo"]
 

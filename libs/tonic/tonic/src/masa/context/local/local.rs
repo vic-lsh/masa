@@ -18,9 +18,16 @@ use masa_core::{time_now, Context, ContextBuilder, LatencyEstimator, PriorityHin
 #[cfg(feature = "est_hist")]
 use masa_core::LatencyDistribution as LatencyHistogram;
 
+#[cfg(feature = "est_mean_var")]
+use masa_core::LatencyMeanVar;
+
 #[cfg(any(
     feature = "est_rms",
-    all(not(feature = "est_rms"), not(feature = "est_hist"))
+    all(
+        not(feature = "est_rms"),
+        not(feature = "est_hist"),
+        not(feature = "est_mean_var")
+    )
 ))]
 use masa_core::LatencyRms;
 
@@ -29,17 +36,30 @@ use std::sync::atomic::AtomicUsize;
 #[cfg(all(feature = "est_rms", feature = "est_hist"))]
 compile_error!("Features 'est_rms' and 'est_hist' cannot be enabled simultaneously");
 
-#[cfg(any(feature = "est_rms", feature = "est_hist"))]
+#[cfg(all(feature = "est_rms", feature = "est_mean_var"))]
+compile_error!("Features 'est_rms' and 'est_mean_var' cannot be enabled simultaneously");
+
+#[cfg(all(feature = "est_hist", feature = "est_mean_var"))]
+compile_error!("Features 'est_hist' and 'est_mean_var' cannot be enabled simultaneously");
+
+#[cfg(any(feature = "est_rms", feature = "est_hist", feature = "est_mean_var"))]
 #[cfg(not(feature = "prio_local"))]
-compile_error!("Features 'est_rms' or 'est_hist' require 'prio_local' to be enabled");
+compile_error!("Features 'est_rms', 'est_hist', or 'est_mean_var' require 'prio_local' to be enabled");
 
 /// Type alias for the latency estimator used in the local deadline policy.
 #[cfg(feature = "est_hist")]
 pub(crate) type LocalLatencyEstimator = LatencyHistogram;
 
+#[cfg(feature = "est_mean_var")]
+pub(crate) type LocalLatencyEstimator = LatencyMeanVar;
+
 #[cfg(any(
     feature = "est_rms",
-    all(not(feature = "est_rms"), not(feature = "est_hist"))
+    all(
+        not(feature = "est_rms"),
+        not(feature = "est_hist"),
+        not(feature = "est_mean_var")
+    )
 ))]
 pub(crate) type LocalLatencyEstimator = LatencyRms;
 
