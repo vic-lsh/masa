@@ -459,7 +459,7 @@ impl Header {
     }
 
     // SAFETY: caller must guarantee exclusive access to the field.
-    pub(super) unsafe fn set_priority(&self, priority: PriorityHint) {
+    pub(crate) unsafe fn set_priority(&self, priority: PriorityHint) {
         self.priority.with_mut(|ptr| *ptr = priority);
     }
 
