@@ -350,7 +350,8 @@ where
                             // [NOTE] Get priority from context.
                             let ctx_str = ctx.to_str().unwrap();
                             let ctx = MasaContext::from_header_string(ctx_str);
-                            let prio = ctx.prio_hint();
+                            let remaining = ctx.deadline().saturating_sub(masa_core::time_now());
+                            let prio = masa_core::PriorityHint::new(remaining);
                             // [NOTE] Into executor.
                             let fut = H2Stream::new(service.call(req), connect_parts, respond);
                             // [TODO:Weixin] Skip if the deadline is already passed.
