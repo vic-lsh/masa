@@ -3,11 +3,11 @@ use serde::{Deserialize, Serialize};
 
 /// Exponential Moving Average (EMA) latency estimator: mean + k*stddev.
 ///
-/// Uses EMA with decay factor `alpha` (weight of each new observation).
-/// Effective window ≈ 1/alpha observations. With alpha=0.05, the estimator
-/// adapts to load changes within ~20 observations, discarding stale history
-/// from prior load levels. This avoids the Welford all-time accumulator's
-/// lag when load drops significantly.
+/// Uses asymmetric EMA: alpha_up=0.05 when a new observation exceeds the current
+/// mean (slow to inflate), alpha_down=0.2 when at or below (fast to deflate).
+/// This prevents transient spikes from inflating estimates while ensuring rapid
+/// adaptation when load drops, avoiding stale over-estimates that cause unnecessary
+/// early returns.
 ///
 /// The estimate is: mean + k * stddev, where stddev = sqrt(EMA variance).
 /// Updated on every tracked observation (no batching).
@@ -52,9 +52,14 @@ impl LatencyEstimator for LatencyMeanVar {
             self.variance = 0.0;
             self.initialized = true;
         } else {
+            // Asymmetric alpha: slow to inflate (observations above mean), fast to deflate.
+            // alpha_up=0.05 prevents latency spikes from inflating estimates too quickly.
+            // alpha_down=0.2 ensures rapid adaptation when load drops, avoiding stale
+            // over-estimates that cause unnecessary early returns.
+            let alpha = if x > self.mean { 0.05 } else { 0.2 };
             let delta = x - self.mean;
-            self.mean += self.alpha * delta;
-            self.variance = (1.0 - self.alpha) * (self.variance + self.alpha * delta * delta);
+            self.mean += alpha * delta;
+            self.variance = (1.0 - alpha) * (self.variance + alpha * delta * delta);
         }
         let raw = self.mean + self.k * self.variance.sqrt();
         self.estimate = if raw.is_finite() && raw > 0.0 {
@@ -84,11 +89,9 @@ impl LatencyEstimator for LatencyMeanVar {
 impl Default for LatencyMeanVar {
     fn default() -> Self {
         // k=0.0: pure mean estimator — variance term removed (PINE Iteration 2).
-        // alpha=0.1: effective window ~10 observations.
-        // alpha=0.05 was tested (PINE Iteration 7) but hurt Socialnet near-saturation:
-        // slower adaptation delays accurate est_remaining → worse deadline estimates at
-        // critical 1200-2000 RPS. alpha=0.1 performs better for Socialnet where the wins
-        // are most pronounced.
+        // alpha field is kept for API compatibility but the EMA update uses hardcoded
+        // asymmetric values: alpha_up=0.05 (slow inflation) and alpha_down=0.2 (fast
+        // deflation). See track() for rationale.
         Self::new(0.0, 0.1)
     }
 }
