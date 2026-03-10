@@ -84,11 +84,12 @@ impl LatencyEstimator for LatencyMeanVar {
 impl Default for LatencyMeanVar {
     fn default() -> Self {
         // k=0.0: pure mean estimator — variance term removed (PINE Iteration 2).
-        // alpha=0.05: effective window ~20 observations (PINE Iteration 7).
-        // alpha=0.1 adapts too quickly to queue-inflated latencies under overload,
-        // causing est_remaining to overestimate → deadlines too tight → excess ER.
-        // Slower adaptation makes estimates more robust to transient overload spikes.
-        Self::new(0.0, 0.05)
+        // alpha=0.1: effective window ~10 observations.
+        // alpha=0.05 was tested (PINE Iteration 7) but hurt Socialnet near-saturation:
+        // slower adaptation delays accurate est_remaining → worse deadline estimates at
+        // critical 1200-2000 RPS. alpha=0.1 performs better for Socialnet where the wins
+        // are most pronounced.
+        Self::new(0.0, 0.1)
     }
 }
 
@@ -127,7 +128,7 @@ mod tests {
     fn test_default() {
         let est = LatencyMeanVar::default();
         assert_eq!(est.k, 0.0);
-        assert_eq!(est.alpha, 0.05);
+        assert_eq!(est.alpha, 0.1);
         assert!(!est.initialized);
     }
 
