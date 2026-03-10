@@ -83,10 +83,12 @@ impl LatencyEstimator for LatencyMeanVar {
 
 impl Default for LatencyMeanVar {
     fn default() -> Self {
-        // k=0.75: binary search between k=0.5 and k=1.0 (CEDAR Iteration 3).
+        // k=0.25: tuned for real applications (Hotel, Socialnet) where call paths
+        // are fast relative to the SLO, and the variance buffer in k*sqrt(var) was
+        // causing over-aggressive early-returns (PINE Iteration 1).
         // alpha=0.1: effective window ~10 observations; adapts to load changes
         // faster than alpha=0.05 (20 obs), helping at RPS step transitions.
-        Self::new(0.75, 0.1)
+        Self::new(0.25, 0.1)
     }
 }
 
