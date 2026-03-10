@@ -44,6 +44,11 @@ impl EarlyReturnHandler {
             return false;
         }
 
+        // deadline=0 means no deadline was set (e.g. health-check pings); never early-return.
+        if ctx.deadline() == 0 {
+            return false;
+        }
+
         if self.will_early_return.load(Ordering::Relaxed) {
             return true;
         }
