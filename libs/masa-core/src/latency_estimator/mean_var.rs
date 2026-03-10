@@ -83,12 +83,11 @@ impl LatencyEstimator for LatencyMeanVar {
 
 impl Default for LatencyMeanVar {
     fn default() -> Self {
-        // k=0.25: tuned for real applications (Hotel, Socialnet) where call paths
-        // are fast relative to the SLO, and the variance buffer in k*sqrt(var) was
-        // causing over-aggressive early-returns (PINE Iteration 1).
-        // alpha=0.1: effective window ~10 observations; adapts to load changes
-        // faster than alpha=0.05 (20 obs), helping at RPS step transitions.
-        Self::new(0.25, 0.1)
+        // k=0.0: pure mean estimator — variance term removed (PINE Iteration 2).
+        // k=0.25 still caused 59.8% Reservation ER vs prio_oldest's 38.7% on Hotel;
+        // removing the variance buffer entirely to test if mean-only closes the gap.
+        // alpha=0.1: effective window ~10 observations.
+        Self::new(0.0, 0.1)
     }
 }
 
