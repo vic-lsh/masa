@@ -44,8 +44,12 @@ impl EarlyReturnHandler {
             return false;
         }
 
-        // deadline=0 means no deadline was set (e.g. health-check pings); never early-return.
-        if ctx.deadline() == 0 {
+        // e2e_deadline=0 means no SLO was set (e.g. health-check pings); never early-return.
+        // Use e2e_deadline (gateway_entry + slo) rather than ctx.deadline() so that policies
+        // like prio_local that tighten the per-hop deadline for scheduling purposes do not
+        // cause premature early-returns — ER fires only at the actual end-to-end SLO boundary.
+        let e2e_deadline = ctx.e2e_deadline();
+        if e2e_deadline == 0 {
             return false;
         }
 
@@ -54,7 +58,7 @@ impl EarlyReturnHandler {
         }
 
         let now = time_now();
-        let should_early_return = now >= ctx.deadline();
+        let should_early_return = now >= e2e_deadline;
 
         if should_early_return {
             // We use compare_exchange_weak to ensure we only log or trigger side effects once if needed,
@@ -200,10 +204,15 @@ macro_rules! generate_early_return_test {
             use masa_core::{time_now, ContextBuilder};
             use std::sync::Arc;
 
-            // Create a context with a deadline in the past
-            let deadline = time_now().saturating_sub(1_000_000); // 1s ago
+            // Create a context with an e2e SLO deadline in the past.
+            // EarlyReturnHandler now uses e2e_deadline (gateway_entry + slo) for the ER check,
+            // so we must set both gateway_entry and slo such that their sum is in the past.
+            let slo = 1_000_u64; // 1ms SLO
+            let gateway_entry = time_now().saturating_sub(1_000_000); // entered 1s ago
             let ctx = ContextBuilder::new("test-service", 123)
-                .deadline(deadline)
+                .slo(slo)
+                .gateway_entry(gateway_entry)
+                .deadline(gateway_entry + slo) // already expired
                 .build();
 
             let req = http::Request::builder()
