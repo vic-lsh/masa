@@ -124,6 +124,41 @@ A pure execution-time estimate (without queue delay) would be needed for safe us
 
 ---
 
+## Iteration 3: Alpha=0.1 (faster EMA adaptation) (experiment s1467_23)
+
+**Status:** Pending
+
+### Change
+
+In `libs/masa-core/src/latency_estimator/mean_var.rs`, change the default α from 0.05 to 0.1:
+
+```rust
+// Before: alpha=0.05, effective window ~20 observations
+// After:  alpha=0.1,  effective window ~10 observations
+Self::new(1.0, 0.1)
+```
+
+### Hypothesis
+
+α=0.05 (20-obs window) was chosen to balance adaptation speed vs noise. Faster α=0.1 (10-obs
+window) adapts more quickly when load increases between RPS steps in the sweep. At 1000 RPS, each
+edge sees ~1000 obs/s, so the window is ~10ms real time with α=0.05, ~5ms with α=0.1. At 200 RPS,
+it's 100ms vs 50ms. The question is whether faster adaptation at the transition points improves
+goodput before the estimate settles to the right value.
+
+Also, α=0.1 reduces the impact of stale estimates when load changes. With 0-injections creating a
+bimodal distribution, faster adaptation means the EMA recovers more quickly if the ER rate changes.
+
+### Expected outcomes
+
+1. High loads (1400–1800 RPS): neutral to slight improvement — faster adaptation at each new step
+2. Moderate loads (1000–1200 RPS): neutral to slight improvement
+3. Low loads (800 RPS): no change
+4. Risk: more noise in estimate at steady state → slightly higher ER variance → ±2-5 RPS difference
+5. Net: within ±10 RPS of s1467_21 at all points if hypothesis is wrong; +5–15 if right
+
+---
+
 ## Open hypotheses (remaining)
 
 **H2 — Alpha tuning (α=0.1):** Faster EMA adaptation (window ≈ 10 obs vs 20) could
