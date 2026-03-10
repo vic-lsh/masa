@@ -54,8 +54,7 @@ impl LatencyEstimator for LatencyMeanVar {
         } else {
             let delta = x - self.mean;
             self.mean += self.alpha * delta;
-            self.variance =
-                (1.0 - self.alpha) * (self.variance + self.alpha * delta * delta);
+            self.variance = (1.0 - self.alpha) * (self.variance + self.alpha * delta * delta);
         }
         let raw = self.mean + self.k * self.variance.sqrt();
         self.estimate = if raw.is_finite() && raw > 0.0 {
@@ -85,9 +84,9 @@ impl LatencyEstimator for LatencyMeanVar {
 impl Default for LatencyMeanVar {
     fn default() -> Self {
         // k=1.0: estimate at ~84th percentile.
-        // alpha=0.05: effective window ~20 observations; adapts to load changes
-        // within seconds rather than carrying all-time Welford history.
-        Self::new(1.0, 0.05)
+        // alpha=0.1: effective window ~10 observations; adapts to load changes
+        // faster than alpha=0.05 (20 obs), helping at RPS step transitions.
+        Self::new(1.0, 0.1)
     }
 }
 
@@ -173,7 +172,11 @@ mod tests {
             est.track(1000);
         }
         // After 30 more obs at 1000 with alpha=0.2, mean should be well above 500
-        assert!(est.mean() > 800.0, "mean should have shifted toward 1000, got {}", est.mean());
+        assert!(
+            est.mean() > 800.0,
+            "mean should have shifted toward 1000, got {}",
+            est.mean()
+        );
     }
 
     #[test]
