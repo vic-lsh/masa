@@ -84,9 +84,9 @@ impl LatencyEstimator for LatencyMeanVar {
 impl Default for LatencyMeanVar {
     fn default() -> Self {
         // k=1.0: estimate at ~84th percentile.
-        // alpha=0.1: effective window ~10 observations; adapts to load changes
-        // faster than alpha=0.05 (20 obs), helping at RPS step transitions.
-        Self::new(1.0, 0.1)
+        // alpha=0.2: effective window ~5 observations; adapts to load changes
+        // faster than alpha=0.1 (10 obs). Under test in FLINT Iteration 5.
+        Self::new(1.0, 0.2)
     }
 }
 
@@ -125,7 +125,7 @@ mod tests {
     fn test_default() {
         let est = LatencyMeanVar::default();
         assert_eq!(est.k, 1.0);
-        assert_eq!(est.alpha, 0.05);
+        assert_eq!(est.alpha, 0.2);
         assert!(!est.initialized);
     }
 
