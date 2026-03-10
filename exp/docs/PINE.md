@@ -366,4 +366,68 @@ pine_4 socialnet (k=0 + e2e ER, but before_poll still used ctx.deadline()) alrea
 ### Experiment design
 Run pine_5 for Socialnet (identical config to pine_3/pine_4: Rps=[500,800,1200,1600,2000,2500]).
 
+### Actual Outcomes (pine_5 — Socialnet, priority inversion fix)
+
+**Status:** Complete ❌ — **CATASTROPHIC REGRESSION**
+
+| RPS  | prio_oldest | prio_local,early | prio_local,est_mean_var | emv vs oldest |
+|------|-------------|-----------------|-------------------------|---------------|
+| 500  | 500.0       | 500.0            | 500.0                   | 0             |
+| 800  | 800.0       | 800.0            | 800.0                   | 0             |
+| 1200 | 1189.7      | 1187.8           | 1197.4                  | +7.7          |
+| 1600 | 977.4       | 960.7            | 978.7                   | +1.4          |
+| 2000 | 1403.4      | 1432.1           | **900.7**               | **−502.7**    |
+| 2500 | 870.3       | 941.5            | 895.5                   | +25.2         |
+
+### Delta vs pine_4 (before priority fix)
+
+| RPS  | emv pine_4 | emv pine_5 | Δ        |
+|------|-----------|-----------|----------|
+| 1200 | +29.2     | +7.7      | −21.5    |
+| 1600 | +24.9     | +1.4      | −23.5    |
+| 2000 | **+133.2**| **−502.7**| **−635.9** |
+| 2500 | +86.2     | +25.2     | −60.9    |
+
+### Root cause
+
+The priority inversion fix (before_poll using e2e_deadline) causes zombie-request cascade on Socialnet's parallel fanout:
+
+**Hotel (serial call graph):** When tightened deadline expires, the request is borderline-completable (serial steps remaining are low-variance). Priority=0 was wrongly starving completable requests. Fix: use e2e_deadline → correct.
+
+**Socialnet (parallel fanout):** When tightened deadline expires on a parent waiting for 6 parallel children, the `est_remaining` (sequential post-child work) has been "used up." With e2e_deadline in before_poll, these doomed requests retain high priority and compete for CPU at the same level as fresh requests. Queue fills with high-priority zombies → cascading ER for fresh requests → goodput collapse at 2000 RPS.
+
+**ER rate at 2000 RPS:**
+- pine_4 est_mean_var: 637+37 = 674/s ER → 1292.9 goodput
+- pine_5 est_mean_var: 1084+15 = 1099/s ER → 900.7 goodput (63% more ER, 30% less goodput)
+
+The 63% ER increase is driven by zombie requests blocking fresh requests, causing them to miss their e2e_deadlines.
+
+### Decision
+
+**Revert** the before_poll e2e_deadline change (commit 964684ac). The fix is architecturally correct for serial call graphs (Hotel) but harmful for parallel fanout (Socialnet). Since we cannot have per-application before_poll policy without significant architectural changes, and Socialnet shows the larger goodput benefit (+133 at 2000 RPS in pine_4), we must preserve the original `ctx.deadline()` for before_poll reprioritization.
+
+**Final policy state (after revert):** k=0, e2e_deadline for EarlyReturnHandler::check() and before_child_rpc ER, before_poll uses ctx.deadline() (original).
+
+Code: git revert 964684ac → commit dbcb127b. Hotel regresses back to ~−19.4 (pine_6 result). Socialnet recovers to pine_4 level (+29 to +133 vs prio_oldest).
+
+---
+
+## Iteration 6: Fine-grained validation sweep — Socialnet (pine_6 — Socialnet)
+
+**Status:** Pending
+
+### Change
+No code change. Validation run with finer RPS granularity around the saturation point to obtain reliable goodput curves.
+
+### Hypothesis
+pine_4 socialnet showed prio_local,est_mean_var beating prio_oldest by +7 to +133 at overloaded RPS, but socialnet has high run-to-run variance. The pine_4 RPS steps (500, 800, 1200, 1600, 2000, 2500) are coarse. A finer sweep from 1000 to 2500 with 200 RPS steps will confirm the win, narrow the confidence interval, and reveal whether the advantage is consistent or concentrated at specific load points.
+
+### Expected outcomes
+1. emv beats prio_oldest across 1200–2500 RPS range
+2. Saturation onset confirmed at ~1400–1500 RPS
+3. Goodput curve shows consistent advantage, not single-run spike
+
+### Experiment design
+Run pine_6 for Socialnet with Rps=[1000,1200,1400,1600,1800,2000,2200,2500], WarmupSecs=20, DurationSecs=60. This provides 8 data points at ~200 RPS spacing across the saturation region.
+
 ---
