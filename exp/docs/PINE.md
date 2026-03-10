@@ -500,6 +500,59 @@ Risk: if α is too slow, the estimator won't track load changes across RPS steps
 3. Socialnet 2000 RPS: reduced variance; emv win probability increases
 
 ### Experiment design
-Run pine_8 for Hotel (identical config to prior Hotel runs). After Hotel results, run pine_7 for Socialnet (fine-grained config from pine_6).
+Run pine_8 for Hotel (identical config to prior Hotel runs). After Hotel results, run pine_7 for Socialnet (fine-grained config from pine_6, extended to 3500 RPS).
+
+### Actual Outcomes (pine_8 — Hotel, α=0.05)
+
+**Status:** Complete ✅ — improvement but still losing
+
+| RPS  | fifo   | prio_oldest | prio_local,early | prio_local,est_mean_var | emv vs oldest |
+|------|--------|-------------|-----------------|-------------------------|---------------|
+| 1400 | 265.4  | **1339.4**  | 1314.7           | **1326.3**              | **−13.1**     |
+
+### Hotel PINE Track Progression (1400 RPS delta, emv vs prio_oldest)
+
+| Experiment | Change | emv | oldest | Delta |
+|-----------|--------|-----|--------|-------|
+| pine_1 | k=0.75, α=0.1 | 1280.9 | 1334.9 | −53.9 |
+| pine_4 | k=0.25, α=0.1 | 1311.4 | 1335.5 | −24.1 |
+| pine_5 | k=0.0, α=0.1 | 1324.3 | 1340.3 | −16.0 |
+| pine_6 | k=0, α=0.1, e2e ER | 1321.2 | 1340.6 | −19.4 |
+| pine_7 | + before_poll e2e (reverted) | 1339.5 | 1342.2 | −2.7 |
+| **pine_8** | **k=0, α=0.05, e2e ER** | **1326.3** | **1339.4** | **−13.1** |
+
+α=0.05 gives +6.3 vs α=0.1 (pine_6). Reservation ER improved slightly but remains 50.9/s vs prio_oldest 35.0/s. Gap continues to narrow monotonically (except for pine_7 which had priority fix).
+
+### ER at 1400 RPS (pine_8)
+| Policy | Reservation ER/s | Search ER/s |
+|--------|-----------------|-------------|
+| prio_oldest | 35.0 | 20.1 |
+| prio_local,early | 57.0 | 10.4 |
+| prio_local,est_mean_var | 50.9 | 11.1 |
+
+emv still over-sheds Reservation (50.9 vs 35.0 for prio_oldest). prio_local,early is even worse (57.0). The mean remains inflated by queue delays despite slower α.
+
+### Decision
+α tuning continues to help (+6.3 RPS), suggesting further reduction (α=0.02) may close the remaining gap. However, the main impact is expected at higher overload (>1400 RPS). Running pine_9 (Hotel, RPS 1000–2000) and pine_7 (Socialnet, RPS 1000–3500) to test behavior at deeper overload with α=0.05.
+
+---
+
+## Iteration 8: Extended RPS sweep — Hotel pine_9 + Socialnet pine_7
+
+**Status:** Running (Hotel pine_9 first)
+
+### Change
+No code change (same α=0.05 as pine_8). Extended RPS range to expose behavior at deeper overload.
+
+### Hypothesis
+The goodput differentiation between policies increases at deeper overload. Hotel has only been tested up to 1400 RPS where all smart policies still achieve ~93–96% goodput. At 1600–2000 RPS, the policies may diverge more, potentially showing emv overtaking prio_oldest. Similarly, Socialnet at 3000–3500 RPS may show more consistent emv advantage beyond the bistable 2000 RPS zone.
+
+### Expected outcomes
+1. Hotel 1600–2000 RPS: emv shows goodput advantage over prio_oldest (deeper overload favors EDF scheduling)
+2. Socialnet 3000–3500 RPS: emv maintains or extends advantage at deep overload
+
+### Experiment design
+- pine_9 Hotel: Rps=[1000,1200,1400,1600,1800,2000], WarmupSecs=20, DurationSecs=60
+- pine_7 Socialnet: Rps=[1000,1200,1400,1600,1800,2000,2200,2500,3000,3500], same settings
 
 ---
