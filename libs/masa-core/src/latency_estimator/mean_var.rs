@@ -83,11 +83,10 @@ impl LatencyEstimator for LatencyMeanVar {
 
 impl Default for LatencyMeanVar {
     fn default() -> Self {
-        // k=1.0: estimate at ~84th percentile (mean + 1 stddev).
-        // Reduced from k=1.2 for two-trace robustness evaluation (CEDAR Iteration 1).
+        // k=0.75: binary search between k=0.5 and k=1.0 (CEDAR Iteration 3).
         // alpha=0.1: effective window ~10 observations; adapts to load changes
         // faster than alpha=0.05 (20 obs), helping at RPS step transitions.
-        Self::new(1.0, 0.1)
+        Self::new(0.75, 0.1)
     }
 }
 
@@ -125,7 +124,7 @@ mod tests {
     #[test]
     fn test_default() {
         let est = LatencyMeanVar::default();
-        assert_eq!(est.k, 1.0);
+        assert_eq!(est.k, 0.75);
         assert_eq!(est.alpha, 0.1);
         assert!(!est.initialized);
     }
