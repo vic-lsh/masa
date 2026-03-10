@@ -126,7 +126,7 @@ A pure execution-time estimate (without queue delay) would be needed for safe us
 
 ## Iteration 3: Alpha=0.1 (faster EMA adaptation) (experiment s1467_23)
 
-**Status:** Pending
+**Status:** Complete ✅ — kept
 
 ### Change
 
@@ -156,6 +156,33 @@ bimodal distribution, faster adaptation means the EMA recovers more quickly if t
 3. Low loads (800 RPS): no change
 4. Risk: more noise in estimate at steady state → slightly higher ER variance → ±2-5 RPS difference
 5. Net: within ±10 RPS of s1467_21 at all points if hypothesis is wrong; +5–15 if right
+
+### Actual Outcomes (s1467_23)
+
+**Status: Complete ✅ — kept. Significant improvement at 1800 RPS.**
+
+| RPS  | s23 (α=0.1) | s21 (α=0.05) | delta abs | s23 ple | advantage s23 | advantage s21 |
+|------|------------|-------------|-----------|---------|---------------|---------------|
+| 200  | 197.0      | 195.0       | +2.0      | 198.6   | -1.7          | -3.6          |
+| 400  | 401.9      | 397.5       | +4.4      | 398.1   | +3.8          | +0.3          |
+| 800  | 794.6      | 799.8       | -5.2      | 795.7   | -1.1          | -1.7          |
+| 1000 | 894.6      | 897.4       | -2.8      | 869.3   | +25.3         | +36.9         |
+| 1200 | 919.6      | 925.5       | -5.9      | 879.1   | **+40.5**     | +40.3         |
+| 1400 | 929.3      | 921.2       | +8.1      | 891.0   | **+38.3**     | +20.4         |
+| 1800 | **993.9**  | 957.4       | **+36.5** | 938.4   | **+55.6**     | +24.0         |
+
+**Key finding:** 1800 RPS goodput = 993.9 — new historical best (vs 979.3 in s1467_18, 957.4 in s21).
+Advantage over prio_local,early at 1800 RPS: **+55.6 RPS** (vs +24.0 baseline). Advantage over
+prio_oldest,early: **+195.1 RPS**.
+
+All moderate-load changes (-2.8 to -5.9 RPS) are within the ±20 RPS noise band. prio_local,early
+itself varied by +8.8 RPS at 1000 between runs (unchanged policy), confirming the noise floor.
+
+**Mechanism:** α=0.1 (10-obs window) adapts twice as fast as α=0.05 (20-obs window). At 1800 RPS
+with ~1800 obs/s per edge, the estimate converges in ~5.5ms real time instead of ~11ms. The faster
+feedback cycle between ER-induced 0-injections and estimate reduction finds a better equilibrium
+for load shedding at near-saturation — shedding earlier and more precisely, freeing child capacity
+for requests that can complete.
 
 ---
 
