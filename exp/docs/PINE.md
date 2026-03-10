@@ -150,4 +150,113 @@ For socialnet: at 2000 RPS the problem is scheduling order (not k), so no improv
 ### Experiment design
 Run pine_4 for Hotel (identical config to pine_1). After Hotel results confirm/deny, run Socialnet pine_4 (same as pine_3 config).
 
+### Actual Outcomes (pine_4 — Hotel)
+
+**Status:** Complete ✅
+
+| Policy | pine_1 (k=0.75) | pine_4 (k=0.25) | Δ(4−1) |
+|---|---|---|---|
+| fifo | 167.0 | 350.5 | (run variance) |
+| prio_oldest,early | 1334.9 | 1335.5 | +0.6 |
+| prio_local,early | 1276.7 | 1354.8 | +78.1 |
+| **prio_local,est_mean_var,early** | **1280.9** | **1311.4** | **+30.4** |
+
+Delta vs prio_oldest at 1400 RPS: **−53.9 → −24.1** (gap halved).
+Reservation ER: 71.7% → 59.8% (still >> prio_oldest 38.7%).
+Decision: gap is closing monotonically; proceed to k=0.
+
+---
+
+## Iteration 2: k=0 (pure mean, no variance term) (pine_5 — Hotel)
+
+**Status:** Pending
+
+### Change
+Set `k=0.0` in `LatencyMeanVar::default()`.
+
+### Hypothesis
+Variance term `k*sqrt(var)` is the source of over-estimation — under overload, variance inflates as service times become erratic. Removing it entirely (k=0, pure mean) will minimize deadline tightening, reduce false-positive Reservation ERs, and close the remaining −24 RPS gap.
+
+Risk: if mean itself is queue-inflated, k=0 still over-sheds. If too relaxed, wasted resources on incompletable requests would show as Search goodput drop.
+
+### Expected outcomes
+1. Hotel 1400 RPS: Reservation ER further reduced (from 59.8% toward 38.7%)
+2. Total goodput improved from 1311 toward 1335+
+3. prio_local,est_mean_var,early approaches or exceeds prio_oldest,early
+
+### Experiment design
+Run pine_5 (Hotel, same config as pine_1/pine_4).
+
+---
+
+### Actual Outcomes (pine_5 — Hotel, k=0)
+
+**Status:** Complete ✅
+
+k=0 trend: pine_1(−53.9) → pine_4(−24.1) → pine_5(**−16.0**). Reservation ER: 71.7% → 59.8% → **47.4%** (vs prio_oldest 27.5%).
+
+Gap is closing but converging non-zero: even at k=0, mean inflation from queuing still over-sheds Reservation. Pure k-tuning has hit diminishing returns; different approach needed.
+
+Decision: implement Iteration 3 (separate ER from priority via e2e_deadline).
+
+---
+
+## Iteration 3: Use e2e_deadline for ER, preserve local deadline for priority (pine_6 — Hotel)
+
+**Status:** Pending
+
+### Change
+`EarlyReturnHandler::check()` and local policy's `before_child_rpc` ER check now use `ctx.e2e_deadline()` (gateway_entry + slo = actual SLO boundary) instead of `ctx.deadline()` (tightened local deadline). The tightened local deadline is preserved for reprioritization (before_poll) and scheduling priority (prio_hint).
+
+### Hypothesis
+Root cause of over-shedding: ER fires at the per-hop tightened deadline rather than the actual SLO. The local policy sets child deadline = parent_deadline - est_remaining for scheduling purposes, but this tightened deadline should not trigger ER (which should only fire when the request will definitely miss the SLO). By anchoring ER to e2e_deadline while keeping tightened deadline for EDF scheduling, we eliminate false-positive ERs entirely. prio_local's ER behavior becomes identical to prio_oldest (fire only at actual SLO), while retaining EDF priority ordering as a differentiating advantage.
+
+### Expected outcomes
+1. Hotel 1400 RPS: Reservation ER drops to ~27.5% (matching prio_oldest)
+2. prio_local,est_mean_var achieves ≥ prio_oldest goodput (EDF ordering benefit appears)
+3. Socialnet: similar improvement — fewer false-positive ERs at 2000 RPS
+
+### Actual Outcomes (pine_6 — Hotel, k=0, e2e_deadline ER)
+
+**Status:** Complete ✅ (slight regression vs pine_5)
+
+| Policy | pine_5 (k=0) | pine_6 (k=0, e2e ER) | Δ(6−5) |
+|---|---|---|---|
+| prio_oldest,early | 1340.3 | 1340.6 | +0.3 |
+| **prio_local,est_mean_var,early** | **1324.3** | **1321.2** | **−3.1** |
+
+Delta vs prio_oldest: pine_5 = **−16.0** → pine_6 = **−19.4** (slight regression).
+
+### Root cause
+
+The e2e_deadline ER fix was not sufficient. Reservation ER remains high (~46.8/s vs prio_oldest ~22.4/s). The ER fix moved the threshold to the actual SLO boundary, but `before_poll` still reprioritizes using `ctx.deadline()` (the *tightened* local deadline). When the tightened deadline expires before the actual SLO:
+- `remaining = ctx.deadline() - now = saturating_sub = 0`
+- `PriorityHint::new(0)` = lowest possible priority
+- Task gets stuck at the bottom of the queue
+- Request eventually misses the actual SLO even though it could have completed in time
+
+This is a **priority inversion bug**: the local deadline tightening, intended to improve scheduling order, causes the opposite effect once the tightened deadline passes. Fixing ER is not enough — `before_poll` must also use `e2e_deadline` for reprioritization.
+
+---
+
+## Iteration 4: Use e2e_deadline for reprioritization in before_poll (pine_7 — Hotel)
+
+**Status:** Pending
+
+### Change
+`before_poll` in `local/local.rs` now reprioritizes using `ctx.e2e_deadline()` instead of `ctx.deadline()`. The tightened local deadline is still used for child RPC priority propagation (`before_child_rpc` prio_hint), but the task's own scheduling priority is anchored to the actual SLO.
+
+### Hypothesis
+The priority inversion bug: when the tightened local deadline expires (before actual SLO), `ctx.deadline() - now = 0`, demoting the task to the lowest priority. This causes Reservation requests to be starved in the queue and eventually miss the SLO even though they could complete. By using `e2e_deadline` for reprioritization, the task retains urgency relative to the actual SLO deadline, avoiding false starvation.
+
+Combined with the Iteration 3 fix (ER uses e2e_deadline), this should eliminate both false-positive early-returns *and* priority inversions. prio_local's behavior should approach prio_oldest's ER rate while retaining EDF priority ordering as a differentiated advantage.
+
+### Expected outcomes
+1. Hotel 1400 RPS: Reservation ER drops to ~22–28/s (toward prio_oldest's 22.4/s)
+2. prio_local,est_mean_var goodput ≥ prio_oldest (1340+)
+3. The prio_local benefit emerges: EDF ordering should improve throughput *above* prio_oldest
+
+### Experiment design
+Run pine_7 for Hotel (identical config to pine_1/pine_4/pine_5/pine_6). This directly tests whether the priority inversion fix eliminates the remaining gap.
+
 ---
