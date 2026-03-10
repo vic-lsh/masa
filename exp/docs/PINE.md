@@ -299,4 +299,71 @@ Combined with the Iteration 3 fix (ER uses e2e_deadline), this should eliminate 
 ### Experiment design
 Run pine_7 for Hotel (identical config to pine_1/pine_4/pine_5/pine_6). This directly tests whether the priority inversion fix eliminates the remaining gap.
 
+### Actual Outcomes (pine_7 — Hotel, k=0 + e2e ER + e2e before_poll)
+
+**Status:** Complete ✅ — **gap closed from −19.4 to −2.7 (within noise)**
+
+| RPS  | fifo   | prio_oldest,early | prio_local,early | prio_local,est_mean_var,early |
+|------|--------|-------------------|------------------|-------------------------------|
+| 100  | 99.83  | 99.84             | 99.83            | 99.89                         |
+| 200  | 199.65 | 199.68            | 199.67           | 199.70                        |
+| 400  | 399.26 | 399.31            | 399.28           | 399.25                        |
+| 600  | 598.93 | 598.89            | 598.91           | 598.92                        |
+| 800  | 798.43 | 798.48            | 798.55           | 798.60                        |
+| 1000 | 998.12 | 998.20            | 998.21           | 998.20                        |
+| 1400 | 177.98 | **1342.2**        | **1346.8**       | **1339.5**                    |
+
+Delta at 1400 RPS: prio_local,est_mean_var vs prio_oldest = **−2.7** (near noise floor)
+**prio_local,early beats prio_oldest by +4.6** (RMS estimator advantage).
+
+### PINE Track Progression (Hotel, 1400 RPS deltas)
+
+| Experiment | Change | emv vs oldest | ple vs oldest |
+|-----------|--------|---------------|---------------|
+| pine_1 | Baseline (k=0.75) | −53.9 | −58.2 |
+| pine_4 | k=0.25 | −24.1 | +19.3 |
+| pine_5 | k=0.0 | −16.0 | −11.7 |
+| pine_6 | + e2e ER | −19.4 | −34.5 |
+| **pine_7** | **+ e2e before_poll** | **−2.7** | **+4.6** |
+
+The priority inversion fix was the critical change. The gap closed 13.5 RPS (−19.4 → −2.7) in this iteration alone.
+
+### ER analysis at 1400 RPS
+
+| Policy | Reservation ER/s | Search ER/s |
+|--------|-----------------|-------------|
+| prio_oldest,early | 30.9 | 19.0 |
+| prio_local,early | 36.3 | 6.0 |
+| prio_local,est_mean_var,early | 44.6 | 7.6 |
+
+prio_local,est_mean_var still has 44% excess Reservation ER vs prio_oldest (44.6 vs 30.9). Root cause: EMA mean (α=0.1) tracks queue-inflated latency under overload, producing over-tight deadlines → excess ER. The RMS estimator used by prio_local,early updates only every 512 observations, effectively ignoring overload spikes — this is why prio_local,early achieves lower Reservation ER and wins.
+
+### Hypothesis status
+- ✅ Priority inversion fix vindicated: ER dropped 14/s for prio_local,early, gap closed for emv
+- ✅ ER now approaches (not matches) prio_oldest
+- ❌ emv did not beat prio_oldest: residual gap = EMA mean inflation (not inversion)
+
+### Decision
+prio_local,est_mean_var is effectively at parity with prio_oldest on Hotel (−2.7 < ±10 run variance). The remaining gap is EMA mean inflation under overload — attacking it on Hotel has diminishing returns. Move to socialnet, where the priority inversion fix (pine_7 code) has not yet been validated; pine_4 socialnet used k=0+e2e ER but not e2e before_poll.
+
+---
+
+## Iteration 5: Validate priority inversion fix on Socialnet (pine_5 — Socialnet)
+
+**Status:** Pending
+
+### Change
+Same code as pine_7 (k=0, e2e_deadline ER, e2e_deadline before_poll reprioritization). No new code changes — running socialnet with the current code state.
+
+### Hypothesis
+pine_4 socialnet (k=0 + e2e ER, but before_poll still used ctx.deadline()) already showed prio_local,est_mean_var beating prio_oldest by +24 to +133 across overloaded RPS. The priority inversion fix (before_poll → e2e_deadline) should further reduce false starvation of requests whose tightened deadline expired mid-service. On socialnet, the parallel fanout means many child RPCs complete quickly, so the parent task may be reprioritized frequently. When the tightened deadline passes, reprioritizing with priority=0 would stall the parent. Fixing this should improve throughput at 1600 and 2000 RPS (where the current win is already solid) and potentially at 2500 RPS (where prio_local,early currently wins over emv).
+
+### Expected outcomes
+1. Socialnet 1600 RPS: prio_local,est_mean_var vs prio_oldest delta improves (from +24.9)
+2. Socialnet 2000 RPS: delta improves (from +133.2)
+3. Socialnet 2500 RPS: emv gap vs prio_local,early narrows or closes (currently emv=1669 vs ple=1828)
+
+### Experiment design
+Run pine_5 for Socialnet (identical config to pine_3/pine_4: Rps=[500,800,1200,1600,2000,2500]).
+
 ---
