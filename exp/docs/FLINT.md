@@ -462,6 +462,73 @@ improvement via more conservative estimates.
 2. 200–800 RPS: no change (no overload, priority rarely matters for completion)
 3. Risk: k=1.5 causes priority inversions → regression at 1200 RPS (similar to asymmetric α)
 
+### Actual Outcomes (s1467_27)
+
+**Status: Reverted ❌ — regression at 1000 RPS, but notable gain at 1400 RPS.**
+
+| RPS  | s27 (k=1.5) | s23 (k=1.0) | delta  | diff vs ple (s27) |
+|------|------------|------------|--------|-------------------|
+| 200  | 201.6      | 197.0      | +4.6   | -0.9              |
+| 400  | 396.6      | 401.9      | -5.3   | +5.6              |
+| 800  | 792.6      | 794.6      | -2.0   | -6.5              |
+| 1000 | **876.7**  | 894.6      | **-17.9** | -18.5          |
+| 1200 | 915.4      | 919.6      | -4.1   | +26.8             |
+| 1400 | **946.9**  | 929.3      | **+17.7** | +19.5           |
+| 1800 | 996.5      | 993.9      | +2.6   | +19.7             |
+
+**Key finding:** k=1.5 produces a clear split. At 1000 RPS (near saturation), the more
+conservative estimate over-priorities many calls simultaneously, causing contention and a
+net loss (-17.9). At 1400 RPS (deep overload), the tighter deadlines correctly rank calls,
+enabling better resource allocation (+17.7). The 1800 RPS gain (+2.6) is within noise.
+
+**Root cause:** k determines how aggressively we propagate urgency to child calls. At
+deep overload (1400+ RPS), k=1.5 correctly creates tight deadlines for the right calls.
+At near-saturation (1000 RPS), the same aggressiveness applies to calls that don't need it,
+causing priority inversions. The optimal k likely lies between 1.0 and 1.5.
+
+**Action:** Reverted via `git revert 37e73c05`. Testing k=1.2 in Iteration 8 to find
+a potential sweet spot that captures the 1400 gain without the 1000 regression.
+
+---
+
+## Iteration 8: k=1.2 — narrowing the priority conservatism range (experiment s1467_28)
+
+**Status:** Pending
+
+### Change
+
+In `libs/masa-core/src/latency_estimator/mean_var.rs`, change default k from 1.0 to 1.2:
+
+```rust
+// k=1.2: estimate at ~88th percentile (between k=1.0 at ~84th and k=1.5 at ~93rd)
+Self::new(1.2, 0.1)
+```
+
+### Hypothesis
+
+Iteration 7 revealed a load-dependent split: k=1.5 helps at 1400 RPS (+17.7) but hurts at
+1000 RPS (-17.9). Both deltas are near the ±20 RPS noise floor, but the pattern is
+suggestive. k=1.2 is the midpoint — it applies more conservative priority deadlines than
+k=1.0 (more urgency propagated to children) but less than k=1.5 (avoids over-prioritization
+at near-saturation load).
+
+If the 1400 RPS gain was real and the mechanism (tighter deadlines improve resource ordering
+at deep overload), k=1.2 should capture some of it. If the 1000 RPS regression was also
+real, k=1.2 should avoid it (less aggressive than k=1.5).
+
+If both were noise, k=1.2 results will cluster near k=1.0 baseline.
+
+### Experiment design
+
+Same monotonic sweep as s1467_23/s1467_27. This gives a clean three-point comparison:
+k=0.5 (old, worse), k=1.0 (current best), k=1.2 (this test), k=1.5 (mixed).
+
+### Expected outcomes
+
+1. 1000 RPS: ≥ 880 (better than k=1.5's 876.7), ideally ≈ s23's 894.6
+2. 1400 RPS: ≥ 929.3 (s23 baseline), ideally ≥ 940 (capturing some of k=1.5's gain)
+3. 1800 RPS: ≥ 993.9 (s23 baseline)
+
 ---
 
 ## Open hypotheses (remaining)
