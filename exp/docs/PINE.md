@@ -129,6 +129,46 @@ Root cause: prio_local has no call graph for socialnet. Despite learning estimat
 
 ---
 
+## Observed Symptoms (pine_4) — Socialnet with k=0 + e2e_deadline ER (Iterations 2+3 combined)
+
+**Status:** Complete ✅ — **prio_local,est_mean_var now beats prio_oldest at all overloaded RPS**
+
+### Goodput table
+
+| RPS  | fifo   | prio_oldest,early | prio_local,early | prio_local,est_mean_var,early |
+|------|--------|-------------------|------------------|-------------------------------|
+| 500  | 500.0  | 500.0             | 500.0            | 500.0                         |
+| 800  | 800.0  | 800.0             | 800.0            | 800.0                         |
+| 1200 | 1197.8 | 1149.5            | 1147.3           | **1178.7** (+29.2)            |
+| 1600 | 997.9  | 1522.2            | 1485.6           | **1547.1** (+24.9)            |
+| 2000 | 1373.3 | 1159.7            | 1211.3           | **1292.9** (+133.2)           |
+| 2500 | 332.3  | 1583.3            | **1828.0**       | 1669.5 (+86.2)                |
+
+### Delta (prio_local,est_mean_var,early − prio_oldest,early)
+
+| RPS  | pine_3 (k=0.75) | pine_4 (k=0, e2e ER) | Change |
+|------|-----------------|----------------------|--------|
+| 1600 | −70.1           | **+24.9**            | +95    |
+| 2000 | **−318.3**      | **+133.2**           | +451   |
+| 2500 | +68.9           | +86.2                | +17    |
+
+**prio_local,est_mean_var beats prio_oldest at every overloaded RPS in this run.** The massive flip at 2000 RPS (−318 → +133) is the key result.
+
+### ER rates at 2000 RPS
+- prio_oldest: 838/s ER → 1159.7 goodput
+- prio_local,est_mean_var: 637 (frontend) + 37 (compose_post) = 674/s ER → 1292.9 goodput
+- prio_local,early: 787/s ER → 1211.3 goodput
+
+est_mean_var achieves higher goodput with *fewer* early-returns — it's shedding more selectively.
+
+### Note on prio_local,early
+prio_local,early wins at 2500 RPS (1828 vs 1669 for est_mean_var). The RMS estimator (used by prio_local,early) apparently outperforms the EMA mean-only (k=0) at deep overload on socialnet. This warrants further investigation in a future iteration (est_mean_var with k>0 or a different adaptive estimator).
+
+### Caveat
+High run variance on socialnet — prio_oldest at 2000 dropped from 1672 (pine_3) to 1160 (pine_4). Within-run deltas are more reliable than cross-run absolute values. The sign flip from negative to positive for est_mean_var vs oldest is a real improvement but may need re-verification with repeated runs.
+
+---
+
 ## Iteration 1: Reduce k from 0.75 to 0.25 (pine_4 — Hotel)
 
 **Status:** Pending
