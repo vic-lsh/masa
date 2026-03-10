@@ -220,10 +220,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             return Err(Err(self.early_return.issue_error()));
         }
 
-        // Use e2e_deadline for reprioritization to prevent priority inversion: when the
-        // tightened local deadline expires (before actual SLO), ctx.deadline() - now = 0
-        // demotes the task to lowest priority, starving it in the queue until SLO expires.
-        let remaining = self.ctx.e2e_deadline().saturating_sub(time_now());
+        let remaining = self.ctx.deadline().saturating_sub(time_now());
         tokio::task::reprioritize(masa_core::PriorityHint::new(remaining));
 
         self.q_lat_tracker.track_poll();
