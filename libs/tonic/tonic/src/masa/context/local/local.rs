@@ -44,7 +44,9 @@ compile_error!("Features 'est_hist' and 'est_mean_var' cannot be enabled simulta
 
 #[cfg(any(feature = "est_rms", feature = "est_hist", feature = "est_mean_var"))]
 #[cfg(not(feature = "prio_local"))]
-compile_error!("Features 'est_rms', 'est_hist', or 'est_mean_var' require 'prio_local' to be enabled");
+compile_error!(
+    "Features 'est_rms', 'est_hist', or 'est_mean_var' require 'prio_local' to be enabled"
+);
 
 /// Type alias for the latency estimator used in the local deadline policy.
 #[cfg(feature = "est_hist")]
