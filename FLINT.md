@@ -222,6 +222,61 @@ values to low-load values twice as fast.
 2. 800 RPS (after 1800 RPS): significantly better than s1467_14's 385.8; ideally ≥ 700
 3. Both policies (prio_local,early, prio_oldest,early) serve as internal controls
 
+### Actual Outcomes (s1467_24)
+
+**Status: Complete ✅ — decisive validation. α=0.1 eliminates non-monotonic load penalty.**
+
+| RPS  | α=0.1 est_mv (s24) | α=0.05 est_mv (s14, ref) | improvement | prio_local,early | prio_oldest,early |
+|------|-------------------|------------------------|-------------|-----------------|-------------------|
+| 800  | **802.9**         | 385.8                  | **+417.1**  | 798.5           | 796.0             |
+| 1800 | **997.0**         | 856.7                  | **+140.3**  | 933.2           | 778.7             |
+
+At 800 RPS (after 1800 RPS load): α=0.1 achieves **near-perfect goodput** (802.9), matching
+prio_local,early (798.5) and prio_oldest (796.0). The stale-estimate over-shedding problem that
+produced 385.8 with α=0.05 is completely eliminated. With α=0.1, the estimate decays from
+high-load values within ~10 obs (~12.5ms at 800 RPS per edge) — effectively instantaneous.
+
+At 1800 RPS: 997.0 — new all-time best (vs s23's 993.9, s18's 979.3). Advantage over
+prio_local,early: **+63.7 RPS**. Advantage over prio_oldest: **+218.3 RPS**.
+
+Compare also to s1467_17 (α=0.05, [200, 1800, 800] WITH 200 RPS warm-up prefix):
+- s17: 800 RPS = 793.9, 1800 RPS = 976.1
+- s24: 800 RPS = 802.9 (+9), 1800 RPS = 997.0 (+20.9)
+α=0.1 matches or exceeds the warm-up-prefix approach, WITHOUT needing the 200 RPS calibration
+step. The faster adaptation makes warm-up prefixes unnecessary.
+
+**Summary of α=0.1 gains across all experiment types:**
+- Monotonic sweep (s1467_23): +36.5 RPS at 1800, no regression elsewhere
+- Non-monotonic [1800,800,1800,800] (s1467_24): +417 at 800, +140 at 1800 (vs α=0.05 same schedule)
+- Non-monotonic vs warm-prefix (vs s1467_17): +9 at 800, +20.9 at 1800 (without warm-up step)
+
+---
+
+## Final State and Conclusions
+
+**Best code state: α=0.1 (k=1.0)** — commit 8b715bba
+
+| Scenario | RPS  | est_mean_var (α=0.1) | prio_local,early | prio_oldest,early |
+|----------|------|---------------------|-----------------|-------------------|
+| Monotonic sweep (s23)        | 1000 | 894.6 | 869.3 | 796.6 |
+| Monotonic sweep (s23)        | 1200 | 919.6 | 879.1 | 750.1 |
+| Monotonic sweep (s23)        | 1400 | 929.3 | 891.0 | 761.7 |
+| Monotonic sweep (s23)        | 1800 | 993.9 | 938.4 | 798.8 |
+| Non-monotonic [1800,800] (s24) | 800 | 802.9 | 798.5 | 796.0 |
+| Non-monotonic [1800,800] (s24) | 1800 | 997.0 | 933.2 | 778.7 |
+
+**α=0.1 beats prio_local,early at every overloaded load point and every load schedule tested.**
+**α=0.1 beats prio_oldest,early by +140–218 RPS at high loads.**
+
+**Why α=0.1 works:** The EMA with 10-observation window (vs 20 with α=0.05) adapts twice as fast
+to load changes. This matters in two ways:
+1. **Non-monotonic load**: stale high-load estimates decay 2x faster → estimate tracks current
+   conditions within ~12ms vs ~25ms at 800 RPS. Virtually eliminates the stale-estimate penalty.
+2. **High load steady-state**: faster feedback cycle between ER-injected zeros and estimate
+   reduction finds a better equilibrium for load shedding at 1800 RPS saturation.
+
+**Key code change:** `LatencyMeanVar::default()` → `Self::new(1.0, 0.1)` in `mean_var.rs`.
+
 ---
 
 ## Open hypotheses (remaining)
