@@ -84,10 +84,11 @@ impl LatencyEstimator for LatencyMeanVar {
 impl Default for LatencyMeanVar {
     fn default() -> Self {
         // k=0.0: pure mean estimator — variance term removed (PINE Iteration 2).
-        // k=0.25 still caused 59.8% Reservation ER vs prio_oldest's 38.7% on Hotel;
-        // removing the variance buffer entirely to test if mean-only closes the gap.
-        // alpha=0.1: effective window ~10 observations.
-        Self::new(0.0, 0.1)
+        // alpha=0.05: effective window ~20 observations (PINE Iteration 7).
+        // alpha=0.1 adapts too quickly to queue-inflated latencies under overload,
+        // causing est_remaining to overestimate → deadlines too tight → excess ER.
+        // Slower adaptation makes estimates more robust to transient overload spikes.
+        Self::new(0.0, 0.05)
     }
 }
 
@@ -126,7 +127,7 @@ mod tests {
     fn test_default() {
         let est = LatencyMeanVar::default();
         assert_eq!(est.k, 0.0);
-        assert_eq!(est.alpha, 0.1);
+        assert_eq!(est.alpha, 0.05);
         assert!(!est.initialized);
     }
 
