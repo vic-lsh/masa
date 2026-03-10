@@ -389,6 +389,79 @@ ordering matters most.
 2. 1000–1200 RPS: neutral to slight improvement; no regression (0-injection path unchanged)
 3. 800 RPS: no change (no overload, α_up rarely triggered)
 
+### Actual Outcomes (s1467_26)
+
+**Status: Reverted ❌ — notable regression at 1200 RPS, marginal improvement at 1800.**
+
+| RPS  | s26 (asym α) | s23 (α=0.1 sym) | delta  | diff vs ple (s26) |
+|------|-------------|----------------|--------|-------------------|
+| 200  | 199.8       | 197.0          | +2.9   | -4.4              |
+| 400  | 398.2       | 401.9          | -3.7   | -2.1              |
+| 800  | 791.7       | 794.6          | -2.9   | -12.4             |
+| 1000 | **902.1**   | 894.6          | +7.5   | +10.1             |
+| 1200 | **901.5**   | 919.6          | **-18.1** | +2.5           |
+| 1400 | 925.5       | 929.3          | -3.8   | +18.2             |
+| 1800 | **999.9**   | 993.9          | +5.9   | +38.4             |
+
+**Key finding:** The asymmetric α creates upward bias in latency estimates at bursty moderate
+load. At 1200 RPS (transition from moderate to heavy overload), short bursts of high latency
+cause the estimate to spike fast (α_up=0.2) while recovery is slow (α_down=0.1). This
+inflated estimate triggers over-aggressive early returns during burst recovery, shedding
+requests that could have completed.
+
+At 1800 RPS (steady heavy overload), the asymmetric α shows a marginal +5.9 gain — but this
+is within run-to-run variance (±20 RPS) and not reliable. The 1200 RPS regression of -18
+makes this change unacceptable.
+
+**Root cause:** Asymmetric α creates a ratchet effect — estimates increase fast, decrease
+slow. This is helpful in pure steady-state overload but harmful during the bursty overload
+transition. Symmetric α=0.1 remains optimal.
+
+**Action:** Reverted via `git revert f1676b30`.
+
+---
+
+## Iteration 7: k=1.5 — more conservative priority deadline (experiment s1467_27)
+
+**Status:** Pending
+
+### Change
+
+In `libs/masa-core/src/latency_estimator/mean_var.rs`, change default k from 1.0 to 1.5:
+
+```rust
+// Before: Self::new(1.0, 0.1)  → estimate at ~84th percentile
+// After:  Self::new(1.5, 0.1)  → estimate at ~93rd percentile
+```
+
+### Hypothesis
+
+The k parameter controls how conservatively we estimate `est_remaining = mean + k*stddev`.
+This estimate is used for priority ordering (`priority_hint = parent_deadline - est_remaining`),
+NOT for early-return decisions (which use mean-only). Larger k → more conservative estimate
+→ tighter child deadline → higher priority for time-critical child calls.
+
+Prior result: k=1.0 beat k=0.5 significantly (PRIO_LOCAL_IMPROVEMENTS). The mechanism: with
+k=0.5, the child deadline is too optimistic — child calls don't get priority soon enough.
+With k=1.0, more conservative → earlier priority boost → child completes faster.
+
+Does k=1.5 extend this trend? At k=1.5, the estimate uses the 93rd percentile instead of
+84th. The risk: overestimates for most calls, giving them unnecessarily tight deadlines and
+potentially causing priority inversions (high-k estimates for easy calls crowd out calls
+that need priority more). But k=1.5 vs 1.0 is smaller relative to the tested 0.5→1.0 jump.
+
+### Experiment design
+
+Same monotonic sweep as s1467_23. Direct comparison to quantify the k effect isolated from
+any α changes. If k=1.5 shows gains, it validates that the priority ordering has room for
+improvement via more conservative estimates.
+
+### Expected outcomes if hypothesis is correct
+
+1. 1000–1800 RPS: small improvement (+5–15 RPS) from more precise priority ordering
+2. 200–800 RPS: no change (no overload, priority rarely matters for completion)
+3. Risk: k=1.5 causes priority inversions → regression at 1200 RPS (similar to asymmetric α)
+
 ---
 
 ## Open hypotheses (remaining)
