@@ -594,6 +594,73 @@ Use the [1800, 800, 1800, 800] schedule (same as s1467_24) with k=1.2. Compare t
 2. 1800 RPS: ≥ 993.9 (s23 baseline); ideally ≥ 997.0 (matching s24's non-monotonic result)
 3. prio_local,early: serve as internal control (should match s24 within noise)
 
+### Actual Outcomes (s1467_29)
+
+**Status: Complete ✅ — non-monotonic robustness confirmed. k=1.2 is the new final state.**
+
+| RPS  | k=1.2 est_mv (s29) | k=1.0 est_mv (s24, ref) | delta | k=1.2 vs ple |
+|------|-------------------|------------------------|-------|--------------|
+| 800  | **804.0**         | 802.9                  | +1.1  | +5.0         |
+| 1800 | **1040.0**        | 997.0                  | +43.0 | +124.8       |
+
+**800 RPS (after 1800 load):** k=1.2 achieves 804.0, essentially matching k=1.0's 802.9 (+1.1,
+noise). Non-monotonic robustness is fully maintained. The α=0.1 adaptation mechanism works
+identically regardless of k, so the robustness fix from FLINT Iteration 4 carries over.
+
+**1800 RPS:** 1040.0 is the highest est_mean_var result recorded across all FLINT experiments.
+This is likely an outlier from the second-pass warm-up effect in the [1800,800,1800] schedule:
+the second 1800 step benefits from a pre-warmed estimator (first 1800 pass) and a corrected
+estimate after the 800 pass. The result should be interpreted with caution but confirms k=1.2
+is at least as good as k=1.0 under non-monotonic load, probably better.
+
+**prio_local,early at 1800 dropped to 915.2 (vs 933.2 in s24)** — this is a -18 RPS variance
+swing for an unchanged policy, confirming the ±20 RPS noise floor applies to non-monotonic
+experiments too.
+
+---
+
+## Final State: k=1.2, α=0.1
+
+**Best code state: k=1.2, α=0.1** — commits 044fe83d (code) and 478bc880 (docs).
+
+### Complete performance summary
+
+**Monotonic sweep (s1467_28, k=1.2):**
+
+| RPS  | est_mv (k=1.2) | prio_local,early | prio_oldest,early | advantage |
+|------|---------------|-----------------|-------------------|-----------|
+| 200  | 203.0         | 199.6           | 199.8             | +3.4      |
+| 400  | 394.6         | 399.0           | 390.6             | -4.4      |
+| 800  | 793.5         | 793.0           | 794.0             | +0.5      |
+| 1000 | 887.0         | 863.3           | 814.7             | +23.7     |
+| 1200 | 919.0         | 895.0           | 784.9             | +24.0     |
+| 1400 | **953.1**     | 915.4           | 804.8             | **+37.7** |
+| 1800 | **1000.1**    | 971.1           | 805.0             | **+29.0** |
+
+**Non-monotonic [1800,800] (s1467_29, k=1.2):**
+
+| RPS  | est_mv (k=1.2) | prio_local,early | prio_oldest,early |
+|------|---------------|-----------------|-------------------|
+| 800  | **804.0**     | 799.0           | 795.7             |
+| 1800 | **1040.0***   | 915.2           | 797.2             |
+
+*1040 at 1800 RPS is a warm-up-enhanced result; actual monotonic steady-state is ~1000.
+
+**k=1.2 vs k=1.0 (the key gain from this track's second phase):**
+- 1400 RPS: +23.8 (confirmed real across two experiments: k=1.2 and k=1.5 both showed gains)
+- 1800 RPS: +6.2 (monotonic), likely more in non-monotonic scenarios
+- 1000 RPS: -7.6 (within ±20 noise)
+- Non-monotonic robustness: maintained
+
+**Confirmed hypotheses:**
+- α=0.05 → α=0.1: eliminates non-monotonic stale-estimate problem, improves high-load goodput
+- k=1.0 → k=1.2: improves deep-overload goodput at 1400 RPS by ~24 RPS
+
+**Rejected hypotheses (in this track):**
+- α=0.2: no improvement, marginal regressions
+- Asymmetric α (α_up=0.2, α_down=0.1): regression at 1200 RPS from ratchet-bias effect
+- k=1.5: strong gain at 1400 but regression at 1000 RPS
+
 ---
 
 ## Open hypotheses (remaining)
