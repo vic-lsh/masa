@@ -294,7 +294,9 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             .min(time_left);
 
         let deadline = self.ctx.deadline().saturating_sub(est_remaining);
-        if EARLY_RETURN && time_now() > self.ctx.deadline().saturating_sub(est_remaining_mean) {
+        // Use e2e_deadline for ER threshold: the tightened ctx.deadline() is for scheduling
+        // priority only; early-return should only fire at the actual SLO boundary.
+        if EARLY_RETURN && time_now() > self.ctx.e2e_deadline().saturating_sub(est_remaining_mean) {
             return Err(self.early_return.issue_error());
         }
 
