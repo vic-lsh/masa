@@ -555,4 +555,52 @@ The goodput differentiation between policies increases at deeper overload. Hotel
 - pine_9 Hotel: Rps=[1000,1200,1400,1600,1800,2000], WarmupSecs=20, DurationSecs=60
 - pine_7 Socialnet: Rps=[1000,1200,1400,1600,1800,2000,2200,2500,3000,3500], same settings
 
+### Actual Outcomes (pine_9 — Hotel, α=0.05, cold-start at 1000 RPS)
+
+**Status:** Complete ❌ — artifact: EMA cold-start at elevated load
+
+| RPS  | fifo   | prio_oldest | prio_local,early | prio_local,est_mean_var | emv vs oldest |
+|------|--------|-------------|-----------------|-------------------------|---------------|
+| 1000 | 998.2  | 998.2       | 998.0           | 998.1                   | −0.1          |
+| 1200 | 1197.7 | 1193.1      | 1197.1          | **1197.8**              | +4.7          |
+| 1400 | 1270.6 | 1289.2      | 1256.9          | **1021.7**              | **−267.5**    |
+| 1600 | 176.4  | **1283.2**  | 911.7           | 722.4                   | **−560.8**    |
+| 1800 | 178.5  | 978.0       | 741.9           | 550.8                   | −427.2        |
+| 2000 | 201.0  | 824.9       | 809.8           | 742.1                   | −82.8         |
+
+### Root cause: EMA cold-start at elevated load
+
+Pine_8 started RPS at 100 → estimator initialized to sub-millisecond service times → low est_remaining → loose deadlines → emv achieves 1326 at 1400. Pine_9 started RPS at 1000 → estimator initialized to elevated-latency data (system already at ~70% saturation) → high est_remaining → tight deadlines → Search ER explodes at 1400+ RPS.
+
+**ER at 1400 RPS (pine_9):**
+- emv: Reservation 66/s, Search **43/s** (vs pine_8: 51/s Reservation, 11/s Search)
+- prio_oldest: Reservation 69/s, Search 27/s
+
+prio_oldest is unaffected by cold-start (it doesn't use est_remaining). prio_local policies all fail: prio_local,early 1257, emv 1022 at 1400 RPS.
+
+**Prio_oldest at 1600 RPS gets 1283** — nearly same as 1400 (1289). The system has capacity up to ~1600 RPS under prio_oldest. At 1800+, all policies degrade sharply.
+
+### Decision
+Run pine_10 Hotel with full range starting from 100 RPS: [100,400,800,1000,1200,1400,1600,1800,2000]. This gives the EMA estimator a proper low-load warmup before seeing saturation-region loads, allowing fair comparison across the extended RPS range.
+
+---
+
+## Iteration 9: Hotel full-range sweep with proper EMA warmup (pine_10)
+
+**Status:** Running
+
+### Change
+No code change (α=0.05). Extended RPS range with low starting point for EMA initialization.
+
+### Hypothesis
+Pine_9's collapse was an artifact: EMA initializing at elevated load inflates est_remaining, causing over-aggressive ER at 1400+ RPS. Starting from 100 RPS gives the estimator baseline latency data, anchoring the mean to true low-load values. As load ramps, the mean adapts slowly (α=0.05) — crucially, lagging behind the queue-inflated spike at saturation, which is the desired behavior. The extended range [100,400,800,1000,1200,1400,1600,1800,2000] will show whether emv matches or beats prio_oldest at 1400 (expected ~−13 from pine_8) and whether the advantage holds or inverts at 1600–2000.
+
+### Expected outcomes
+1. Hotel 1400 RPS: emv delta = ~−13 (matching pine_8)
+2. Hotel 1600 RPS: prio_oldest remains strong (~1283); emv and prio_local,early much better than pine_9 (not cold-started)
+3. Hotel 1800–2000 RPS: emv may approach or match prio_oldest at deep overload (both converge)
+
+### Experiment design
+pine_10 Hotel: Rps=[100,400,800,1000,1200,1400,1600,1800,2000], WarmupSecs=20, DurationSecs=60.
+
 ---
