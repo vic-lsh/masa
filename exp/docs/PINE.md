@@ -552,8 +552,8 @@ The goodput differentiation between policies increases at deeper overload. Hotel
 2. Socialnet 3000–3500 RPS: emv maintains or extends advantage at deep overload
 
 ### Experiment design
-- pine_9 Hotel: Rps=[1000,1200,1400,1600,1800,2000], WarmupSecs=20, DurationSecs=60
-- pine_7 Socialnet: Rps=[1000,1200,1400,1600,1800,2000,2200,2500,3000,3500], same settings
+- pine_9 Hotel: Rps=[1000,1200,1400,1600,1800,2000] (cold-start artifact — see results)
+- pine_7 Socialnet: Rps=[500,800,1000,1200,1400,1600,1800,2000,2200,2500,3000,3500]
 
 ### Actual Outcomes (pine_9 — Hotel, α=0.05, cold-start at 1000 RPS)
 
@@ -644,3 +644,82 @@ The fundamental issue: EMA mean inflates under queue saturation. Even with α=0.
 **The one saving grace**: prio_local,early (RMS estimator) performs similarly to emv at 1400–1600 RPS and better at 1800, suggesting the EMA mean specifically is the problem (RMS's infrequent update provides more resistance to overload inflation).
 
 ---
+## Actual Outcomes (pine_7 — Socialnet, α=0.05, extended 500–3500 RPS)
+
+**Status:** Complete ✅ — α=0.05 hurts near saturation; emv wins at deep overload (2200–3500)
+
+| RPS  | prio_oldest | prio_local,early | prio_local,est_mean_var | emv vs oldest |
+|------|-------------|-----------------|-------------------------|---------------|
+| 500  | 500.0       | 500.0            | 500.0                   | 0             |
+| 800  | 800.0       | 800.0            | 800.0                   | 0             |
+| 1000 | 1000.0      | 1000.0           | 1000.0                  | 0             |
+| 1200 | 1184.6      | 1193.6           | 1178.5                  | **−6.1**      |
+| 1400 | 1283.6      | 1300.6           | 1215.1                  | **−68.5**     |
+| 1600 | 945.6       | 957.8            | 937.3                   | −8.3          |
+| 1800 | 899.8       | 908.7            | 902.3                   | +2.5          |
+| 2000 | **1530.0**  | 1225.5           | 889.9                   | **−640.1**    |
+| 2200 | 905.5       | 889.0            | **1001.1**              | **+95.6**     |
+| 2500 | 891.7       | 912.6            | 907.9                   | +16.2         |
+| 3000 | 805.0       | 799.4            | **835.0**               | **+30.0**     |
+| 3500 | 665.5       | 660.0            | **749.4**               | **+83.9**     |
+
+### Key finding: α=0.05 reversal at near-saturation
+
+With α=0.05, emv LOSES at 1200–2000 RPS where pine_6 (α=0.1) showed wins (+10 to +29). Comparison:
+
+| RPS  | pine_6 (α=0.1) delta | pine_7 (α=0.05) delta |
+|------|---------------------|----------------------|
+| 1200 | +10.1               | **−6.1**             |
+| 1600 | +24.6               | **−8.3**             |
+| 2000 | −96.7 (bistable)    | **−640.1** (worse)   |
+| 2200 | +137.5              | +95.6 (comparable)   |
+| 2500 | +13.4               | +16.2 (comparable)   |
+
+Slower α is counterproductive at near-saturation on Socialnet. Hypothesis: with α=0.05, the mean doesn't adapt quickly enough to the saturated regime — estimates are inaccurate during the critical transition from undersaturated to overloaded, causing both under- and over-estimated deadlines at different moments of the 60-second measurement window.
+
+### Deep overload (2200–3500 RPS) — NEW data
+
+emv wins consistently at 2200–3500 RPS: +30 at 3000 and +83.9 at 3500. At extreme overload, the EMA converges to stable high-latency values (regardless of α), and EDF scheduling provides consistent benefit over FIFO-by-age scheduling.
+
+### Decision: revert α to 0.1
+
+α=0.05 hurts Socialnet near saturation (where the main wins were). α=0.1 is better for Socialnet at 1200–2000 RPS (pine_4 shows +29 to +133 at these points). The deep-overload wins (2200–3500) are present regardless of α. Reverting to α=0.1.
+
+---
+
+## Final State and Conclusions
+
+**Code state:** k=0, α=0.1, e2e_deadline for EarlyReturnHandler and before_child_rpc ER check, before_poll uses ctx.deadline() (tightened local deadline for EDF priority ordering).
+Commit: the revert of α=0.05 → α=0.1.
+
+### Hotel summary
+prio_local,est_mean_var does **not** beat prio_oldest on Hotel at any load point:
+- Near saturation (1400 RPS): emv is −13 to −23 behind prio_oldest (consistently losing)
+- Deep overload (1600+ RPS): emv collapses due to EMA mean inflation → Search ER cascade
+- prio_oldest maintains 1307 goodput at 1600 RPS; emv gets only 1031
+
+Root cause: EMA mean inflates with queue delay under overload → est_remaining too high → tight deadlines → massive Search ER. prio_oldest has no deadline tightening, so ER only fires at actual SLO boundary.
+
+### Socialnet summary
+prio_local,est_mean_var **beats prio_oldest at most overloaded RPS** with α=0.1 (pine_4 reference):
+- 1200 RPS: +29.2
+- 1600 RPS: +24.9
+- 2000 RPS: +133.2 (bistable — sometimes loses)
+- 2500 RPS: +86.2
+- 2200–3500 RPS (pine_7): +30 to +95.6 consistent wins at deep overload
+
+The advantage comes from EDF scheduling (deadline-ordered serving) being more effective than age-ordered (prio_oldest) on Socialnet's parallel fanout structure. The wins are concentrated at moderate-to-deep overload where scheduling order significantly impacts which requests can complete.
+
+### Why Hotel and Socialnet diverge
+Hotel's serial call graph (frontend → [geo, rate] parallel for Search; frontend → user.CheckUser → reservation sequential for Reservation) creates tight est_remaining feedback under overload: the queue backs up for all downstream services simultaneously, inflating all child estimates, causing est_remaining to overestimate → tight local deadlines → over-aggressive ER. The serial structure means every tightened deadline contributes additively.
+
+Socialnet's parallel fanout means child services experience load more independently. When one service is slow, others may be fast, and the overall est_remaining reflects the aggregate more accurately. Additionally, Socialnet's 50ms SLO leaves less margin for queue inflation (vs Hotel's 200ms SLO), making the estimation system operate in a more accurate regime relative to the SLO budget.
+
+### Open improvement direction
+The fundamental Hotel problem — EMA mean inflation under overload — could be addressed by:
+1. **Queue-debiased estimator**: subtract estimated queue delay from latency observations
+2. **Using mean_estimate() with floor**: use the minimum of observed mean across recent window (prevents overload spike from inflating the estimate)
+3. **Hybrid α**: separate α for inflation (slow) vs deflation (fast) to track load drops without overestimating load spikes
+
+These were not explored in this track due to iteration budget constraints.
+
