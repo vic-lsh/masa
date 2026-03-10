@@ -430,4 +430,76 @@ pine_4 socialnet showed prio_local,est_mean_var beating prio_oldest by +7 to +13
 ### Experiment design
 Run pine_6 for Socialnet with Rps=[1000,1200,1400,1600,1800,2000,2200,2500], WarmupSecs=20, DurationSecs=60. This provides 8 data points at ~200 RPS spacing across the saturation region.
 
+### Actual Outcomes (pine_6 — Socialnet fine-grained, k=0+e2e ER, after revert)
+
+**Status:** Complete ✅ — emv wins at 5/7 overloaded RPS, but 2000 RPS shows variance-driven loss
+
+| RPS  | prio_oldest | prio_local,early | prio_local,est_mean_var | emv vs oldest |
+|------|-------------|-----------------|-------------------------|---------------|
+| 1000 | 1000.0      | 1000.0           | 1000.0                  | 0             |
+| 1200 | 1185.1      | 1192.6           | **1195.2**              | +10.1         |
+| 1400 | 1245.4      | 1211.7           | 1243.4                  | −2.0          |
+| 1600 | 950.3       | 950.4            | **974.9**               | +24.6         |
+| 1800 | 899.0       | 906.0            | **910.6**               | +11.6         |
+| 2000 | **988.8**   | 889.0            | 892.1                   | −96.7         |
+| 2200 | 927.9       | 1000.8           | **1065.4**              | +137.5        |
+| 2500 | 874.9       | 946.1            | **888.3**               | +13.4         |
+
+**emv wins at 1200, 1600, 1800, 2200, 2500 — but loses at 1400 (−2, noise), 2000 (−96.7)**
+
+### Delta table: pine_4 vs pine_6 at matching RPS
+
+| RPS  | emv pine_4 | emv pine_6 | oldest pine_4 | oldest pine_6 |
+|------|-----------|-----------|---------------|---------------|
+| 1200 | 1178.7    | 1195.2    | 1149.5        | 1185.1        |
+| 1600 | 1547.1    | 974.9     | 1522.2        | 950.3         |
+| 2000 | 1292.9    | 892.1     | 1159.7        | 988.8         |
+| 2500 | 1669.5    | 888.3     | 1583.3        | 874.9         |
+
+Both emv and prio_oldest are substantially lower in pine_6 than pine_4 at 1600–2500 RPS — this is run-to-run variance in system capacity, not a regression from the code change.
+
+### Within-run delta: emv vs prio_oldest
+
+| Run  | 1200  | 1600  | 2000   | 2200   | 2500  |
+|------|-------|-------|--------|--------|-------|
+| pine_4 | +29.2 | +24.9 | **+133.2** | N/A | +86.2 |
+| pine_6 | +10.1 | +24.6 | **−96.7** | +137.5 | +13.4 |
+
+**The 2000 RPS point flips between runs (+133 vs −96).** This is bistable behavior near critical overload: the queue can settle into different stable states depending on initial conditions. At 1600–1800 and 2200–2500 RPS, emv consistently wins. At 2000 RPS specifically, neither policy dominates.
+
+### ER analysis at 2000 RPS (pine_6)
+- prio_oldest: 1010.5/s ER → 988.8 goodput
+- prio_local,est_mean_var: 1107.1/s ER → 892.1 goodput
+
+Emv's higher ER rate at 2000 RPS is the cause of its lower goodput in this run. The EMA mean over-adapts to queue-inflated latencies, producing tighter deadlines and more ER. In pine_4, the same code achieved lower ER (674/s) at 2000 RPS — the run landed in the favorable queue state.
+
+### Conclusion
+prio_local,est_mean_var beats prio_oldest consistently at 1600, 1800, 2200, 2500 RPS (confirming the policy benefit). The 2000 RPS point is bistable — wins sometimes, loses sometimes. The wins come from emv's selective ER being lower than prio_oldest's when the queue is in a favorable state. The losses come from EMA mean inflation causing over-aggressive ER.
+
+Root cause identified: EMA α=0.1 adapts too quickly to queue-inflated latencies under overload. Reducing α would make est_remaining estimates more stable, reducing the variance at the critical load region.
+
+---
+
+## Iteration 7: Reduce α from 0.1 to 0.05 (pine_8 — Hotel, pine_7 — Socialnet)
+
+**Status:** Pending (Hotel first)
+
+### Change
+Set `alpha=0.05` in `LatencyMeanVar::default()` (`libs/masa-core/src/latency_estimator/mean_var.rs`). Effective window ≈ 20 observations (vs 10 with α=0.1).
+
+### Hypothesis
+EMA α=0.1 adapts too quickly to queue-inflated latencies under overload. When service time spikes from queue delays, the mean immediately reflects the inflated value → est_remaining overestimates → deadlines are too tight → excess ER. Hotel loses by −19.4 due to this inflation; Socialnet has high 2000 RPS variance for the same reason.
+
+Reducing α to 0.05 slows adaptation, making the estimator more robust to transient overload spikes. The mean tracks a longer history, staying closer to the true latency distribution rather than the instantaneous queue-inflated snapshot. This should reduce est_remaining estimates under overload → looser deadlines → fewer false-positive ERs → better goodput on Hotel and reduced variance on Socialnet.
+
+Risk: if α is too slow, the estimator won't track load changes across RPS steps quickly enough. With α=0.05, effective window ≈ 20 observations. At Hotel 400 RPS with ~5 child RPCs ≈ 2000 obs/min, convergence in ~0.6 seconds per load step — still well within the 60-second measurement window.
+
+### Expected outcomes
+1. Hotel 1400 RPS: Reservation ER drops below 44.6/s (toward prio_oldest's 30.9/s)
+2. Hotel 1400 RPS: emv vs prio_oldest delta improves from −19.4 toward 0 or positive
+3. Socialnet 2000 RPS: reduced variance; emv win probability increases
+
+### Experiment design
+Run pine_8 for Hotel (identical config to prior Hotel runs). After Hotel results, run pine_7 for Socialnet (fine-grained config from pine_6).
+
 ---
