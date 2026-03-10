@@ -125,7 +125,7 @@ mod tests {
     #[test]
     fn test_default() {
         let est = LatencyMeanVar::default();
-        assert_eq!(est.k, 0.75);
+        assert_eq!(est.k, 0.0);
         assert_eq!(est.alpha, 0.1);
         assert!(!est.initialized);
     }
