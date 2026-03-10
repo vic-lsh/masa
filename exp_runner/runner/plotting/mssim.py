@@ -24,7 +24,6 @@ from .goodput import (
 )
 from .util import (
     _read_request_csv,
-    filter_excluded_errors,
     get_policy_color,
     get_policy_display_name,
     read_policies,
@@ -45,7 +44,9 @@ def _parse_rps_dir(path: Path) -> float:
 
 
 _RPS_FILE_RE = re.compile(r"r(?P<rps>[0-9_]+(?:\.[0-9_]+)?)_(?P<api>.+)\.csv$")
-_ROOT_LAT_FILE_RE = re.compile(r"^root_latencies_(?P<rps>[0-9_]+(?:\.[0-9_]+)?)rps\.csv$")
+_ROOT_LAT_FILE_RE = re.compile(
+    r"^root_latencies_(?P<rps>[0-9_]+(?:\.[0-9_]+)?)rps\.csv$"
+)
 
 
 def _parse_rps_from_filename(path: Path) -> float:
@@ -160,9 +161,13 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
             continue
 
         df = df.copy()
-        df["e2e_latency_ms"] = pd.to_numeric(df["e2e_latency_us"], errors="coerce") / 1_000.0
+        df["e2e_latency_ms"] = (
+            pd.to_numeric(df["e2e_latency_us"], errors="coerce") / 1_000.0
+        )
         if "queue_latency_us" in df.columns:
-            queue_us = pd.to_numeric(df["queue_latency_us"], errors="coerce").fillna(0.0)
+            queue_us = pd.to_numeric(df["queue_latency_us"], errors="coerce").fillna(
+                0.0
+            )
         else:
             queue_us = 0.0
         df["queue_latency_ms"] = queue_us / 1_000.0
@@ -209,7 +214,11 @@ def _compute_goodput(
     # Prefer the parsed error_type column (set by _read_request_csv) over the legacy is_err flag.
     if "error_type" in df.columns:
         is_early_return = df["error_type"] == "EarlyReturn"
-        is_timeout = df["error"].astype(str) == "/ClientTimeout" if "error" in df.columns else pd.Series(False, index=df.index)
+        is_timeout = (
+            df["error"].astype(str) == "/ClientTimeout"
+            if "error" in df.columns
+            else pd.Series(False, index=df.index)
+        )
         df = df.loc[~(is_early_return | is_timeout)]
     elif "is_err" in df.columns:
         err_mask = _normalize_bool_series(df["is_err"])
@@ -502,9 +511,18 @@ def _plot_goodput_timeline(
             ax.axvline(t_start, linestyle="--", color="grey", alpha=0.4, linewidth=1)
         step_t.append(t_start + duration_sec)
         step_rps.append(rps)
-    ax.fill_between(step_t, step_rps, step=None, color="grey", alpha=0.12, label="Offered RPS")
-    ax.step(step_t, step_rps, where="post", color="grey", linewidth=1.5,
-            linestyle="-", alpha=0.5)
+    ax.fill_between(
+        step_t, step_rps, step=None, color="grey", alpha=0.12, label="Offered RPS"
+    )
+    ax.step(
+        step_t,
+        step_rps,
+        where="post",
+        color="grey",
+        linewidth=1.5,
+        linestyle="-",
+        alpha=0.5,
+    )
 
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("RPS")
@@ -590,7 +608,9 @@ def generate_plots(args) -> None:
     policies = _resolve_policies(config_dir, data_dir, iteration_ids)
     rps_values = _resolve_rps_values(gen_config, data_dir, iteration_ids, policies)
     # Original run order for timeline (gen_config["Rps"] preserves sequence)
-    rps_sequence: List[float] = [float(v) for v in gen_config.get("Rps", [])] or rps_values
+    rps_sequence: List[float] = [
+        float(v) for v in gen_config.get("Rps", [])
+    ] or rps_values
 
     percentiles = (50.0, 90.0, 99.0)
 
