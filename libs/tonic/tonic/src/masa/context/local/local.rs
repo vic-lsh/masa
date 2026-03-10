@@ -44,7 +44,9 @@ compile_error!("Features 'est_hist' and 'est_mean_var' cannot be enabled simulta
 
 #[cfg(any(feature = "est_rms", feature = "est_hist", feature = "est_mean_var"))]
 #[cfg(not(feature = "prio_local"))]
-compile_error!("Features 'est_rms', 'est_hist', or 'est_mean_var' require 'prio_local' to be enabled");
+compile_error!(
+    "Features 'est_rms', 'est_hist', or 'est_mean_var' require 'prio_local' to be enabled"
+);
 
 /// Type alias for the latency estimator used in the local deadline policy.
 #[cfg(feature = "est_hist")]
@@ -292,7 +294,18 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             .min(time_left);
 
         let deadline = self.ctx.deadline().saturating_sub(est_remaining);
-        if EARLY_RETURN && time_now() > self.ctx.deadline().saturating_sub(est_remaining_mean) {
+
+        // Early-return if total predicted time (child call + remaining work after) exceeds budget.
+        // est_child_mean: mean duration of the child call itself (queue wait + execution).
+        // This catches calls where even dispatching to the child is pointless — the child will
+        // occupy server capacity for est_child_mean µs before the deadline is exceeded.
+        let est_child_mean = self
+            .server
+            .est_child_latency
+            .get_mean_estimate(key)
+            .unwrap_or(0);
+        let time_needed = est_remaining_mean.saturating_add(est_child_mean);
+        if EARLY_RETURN && time_needed > time_left {
             return Err(self.early_return.issue_error());
         }
 
@@ -306,11 +319,12 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
             let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
             log::info!(
-                "LAT_EST: p=>c: {}, est_child: {} (not used for prio_hint), est_rem: {}, est_rem_mean: {}",
+                "LAT_EST: p=>c: {}, est_child: {} (not used for prio_hint), est_rem: {}, est_rem_mean: {}, time_needed: {}",
                 parent_to_child_id,
                 est_child,
                 est_remaining,
                 est_remaining_mean,
+                time_needed,
             );
         }
 
