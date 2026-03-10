@@ -1398,3 +1398,24 @@ those requests would have timed out anyway. Lower k lets more through, they then
 **k=1.0 remains the default.** k=0.5 does not meet the success criterion (goodput
 must be ≥ k=1.0 at both RPS levels). Iteration 15 is closed, no further k-tuning needed.
 
+### s1467_20 Results (k=0.5, broad sweep)
+
+The narrow sweep result (s1467_19) showed k=0.5 ≈ k=1.0 at 1800 RPS because the 200 RPS
+warm-up gave special calibration before the 1800 RPS jump. The broad monotonic ramp reveals
+the true picture:
+
+| RPS  | k=1.0 (s1467_18) | k=0.5 (s1467_20) | delta    |
+|------|-----------------|-----------------|----------|
+| 200  | 197.8           | 198.9           | +1.1     |
+| 400  | 402.3           | 395.6           | -6.7     |
+| 800  | 797.6           | 798.3           | +0.7     |
+| 1000 | **890.9**       | 871.1           | **-19.8**|
+| 1200 | **922.3**       | 894.2           | **-28.1**|
+| 1400 | **929.6**       | 920.9           | **-8.7** |
+| 1800 | **979.3**       | 961.0           | **-18.3**|
+
+k=0.5 is strictly worse at every overloaded RPS level. The looser estimate admits more
+marginal requests that pile up in queues, increasing latency and timeouts. k=1.0's more
+conservative estimate sheds these requests early, keeping queues shorter for requests that
+can complete. **Iteration 15 closed — k=1.0 is definitively optimal.**
+
