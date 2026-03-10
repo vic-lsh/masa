@@ -322,6 +322,73 @@ If it regresses at moderate loads, that's evidence we've found the noise floor.
 2. 1000–1200 RPS: neutral to slight improvement; regression ≤ 5 RPS (within noise)
 3. Non-monotonic robustness: maintained (already solved by 0-injection mechanism)
 
+### Actual Outcomes (s1467_25)
+
+**Status: Reverted ❌ — no improvement. α=0.1 remains optimal.**
+
+| RPS  | s25 (α=0.2) | s23 (α=0.1) | delta | diff vs ple (s25) |
+|------|------------|------------|-------|-------------------|
+| 200  | 201.9      | 197.0      | +4.9  | +5.7              |
+| 400  | 402.9      | 401.9      | +1.0  | +0.1              |
+| 800  | 794.4      | 794.6      | -0.2  | -1.9              |
+| 1000 | **887.9**  | 894.6      | **-6.7** | +10.4          |
+| 1200 | 917.4      | 919.6      | -2.2  | +30.8             |
+| 1400 | 930.1      | 929.3      | +0.8  | +23.7             |
+| 1800 | **992.1**  | 993.9      | **-1.8** | +51.4          |
+
+**Key finding:** α=0.2 (5-obs window) shows no improvement over α=0.1 (10-obs window). The
+-6.7 RPS at 1000 and -1.8 at 1800 are within the ±20 RPS noise band but consistently
+negative. Early return rates at 1800 RPS were slightly lower with α=0.2 (221 vs 254 for
+the main edge), suggesting noisier estimates are producing slightly less precise shedding.
+
+**Root cause:** α=0.1 is already near-optimal for the estimate stability/adaptation trade-off.
+At 5-observation window (α=0.2), the EMA is too noisy for stable priority decisions. The
+gains from α=0.05→0.1 don't continue at α=0.2. The sweet spot is α=0.1.
+
+**Action:** Reverted via `git revert 7e231b67`. Test bug (alpha=0.05 in test_default) fixed separately.
+
+---
+
+## Iteration 6: Asymmetric α — faster reaction to latency increases (experiment s1467_26)
+
+**Status:** Pending
+
+### Change
+
+Modify `LatencyMeanVar` to use different α values for latency increases (obs > mean) vs
+decreases (obs ≤ mean, including 0-injections from ER):
+
+```rust
+// α_up = 0.2 for latency increases (faster reaction to overload)
+// α_down = 0.1 for latency decreases (current speed; maintains 0-injection effectiveness)
+let alpha = if delta > 0.0 { self.alpha_up } else { self.alpha };
+```
+
+The struct gains an `alpha_up` field. `Default` uses `alpha=0.1, alpha_up=0.2`.
+
+### Hypothesis
+
+The key insight from Iteration 5: α=0.2 overall didn't help, likely because faster
+adaptation for *decreases* adds noise to the 0-injection mechanism. But faster adaptation
+for *increases* might still be beneficial: when overload kicks in and real latencies spike,
+responding faster (within 5 obs instead of 10) could sharpen priority ordering at the
+critical transition point.
+
+The asymmetric design preserves the 0-injection mechanism's effectiveness (α_down=0.1, same
+as current) while making the estimator more aggressive about tracking latency increases.
+
+### Experiment design
+
+Use the same monotonic sweep as s1467_23/s1467_25. This tests whether asymmetric adaptation
+improves performance in steady-state overload (1000–1800 RPS), which is where the priority
+ordering matters most.
+
+### Expected outcomes if hypothesis is correct
+
+1. 1800 RPS: ≥ 993.9 (s23 baseline) — faster reaction to overload = better shedding
+2. 1000–1200 RPS: neutral to slight improvement; no regression (0-injection path unchanged)
+3. 800 RPS: no change (no overload, α_up rarely triggered)
+
 ---
 
 ## Open hypotheses (remaining)
