@@ -603,4 +603,44 @@ Pine_9's collapse was an artifact: EMA initializing at elevated load inflates es
 ### Experiment design
 pine_10 Hotel: Rps=[100,400,800,1000,1200,1400,1600,1800,2000], WarmupSecs=20, DurationSecs=60.
 
+### Actual Outcomes (pine_10 — Hotel, α=0.05, full range 100–2000)
+
+**Status:** Complete ✅
+
+| RPS  | fifo   | prio_oldest | prio_local,early | prio_local,est_mean_var | emv vs oldest |
+|------|--------|-------------|-----------------|-------------------------|---------------|
+| 100  | 99.84  | 99.84       | 99.85           | 99.90                   | +0.1          |
+| 400  | 399.28 | 399.27      | 399.30          | 399.26                  | 0             |
+| 800  | 798.57 | 798.60      | 798.56          | 798.57                  | 0             |
+| 1000 | 998.29 | 998.16      | 998.22          | 998.17                  | 0             |
+| 1200 | 1197.6 | 1197.4      | 1197.8          | 1197.4                  | 0             |
+| 1400 | 1388.5 | **1362.5**  | 1348.1          | **1339.0**              | **−23.5**     |
+| 1600 | 208.7  | **1307.6**  | 991.1           | **1031.1**              | **−276.5**    |
+| 1800 | 207.2  | 732.1       | 711.1           | 611.3                   | −120.8        |
+| 2000 | 271.6  | 885.8       | 869.9           | 657.3                   | −228.5        |
+
+### Key findings
+
+**At 1400 RPS:** emv = 1339.0, prio_oldest = 1362.5, delta = **−23.5**. Slightly worse than pine_8 (−13.1) — run variance (both start from 100 RPS with α=0.05, different random realizations).
+
+**At 1600 RPS: prio_oldest achieves 1307.6** — Hotel's capacity extends well beyond 1400 RPS under prio_oldest. fifo collapses to 208.7 while prio_oldest holds 1307.6. This is a 6.3× multiplier — prio_oldest's early-return mechanism is very effective at 1600 RPS.
+
+**prio_local policies collapse at 1600 RPS** (emv: 1031, ple: 991 vs prio_oldest: 1307). ER breakdown at 1600:
+- emv: Reservation 54.5/s, **Search 208.8/s**
+- prio_oldest: Reservation 74.3/s, Search 88.5/s
+
+emv over-sheds Search at 2.4× prio_oldest's rate. Root cause: at 1600 RPS the queue backs up sharply for geo/rate/profile/recommendation services, inflating their observed latencies → est_remaining for Search inflates → Search deadlines become very tight → massive false Search ER.
+
+**At 1800–2000 RPS:** all policies converge toward low goodput. prio_oldest leads at 1800 (732 vs 711/611) but the ordering is complex.
+
+### Hotel conclusion
+
+prio_local,est_mean_var **does not beat prio_oldest on Hotel** at any load point in this run:
+- Near saturation (1400): −23.5 (within noise of −13.1 from pine_8; consistently behind)
+- Deep overload (1600+): significant regression due to est_remaining inflation causing Search ER cascade
+
+The fundamental issue: EMA mean inflates under queue saturation. Even with α=0.05, the mean reflects queue-inflated service times at deep overload, making est_remaining too high → deadlines too tight → prio_local policies over-shed. prio_oldest doesn't have this problem (no deadline tightening).
+
+**The one saving grace**: prio_local,early (RMS estimator) performs similarly to emv at 1400–1600 RPS and better at 1800, suggesting the EMA mean specifically is the problem (RMS's infrequent update provides more resistance to overload inflation).
+
 ---
