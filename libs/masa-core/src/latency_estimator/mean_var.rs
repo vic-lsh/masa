@@ -83,13 +83,11 @@ impl LatencyEstimator for LatencyMeanVar {
 
 impl Default for LatencyMeanVar {
     fn default() -> Self {
-        // k=1.2: estimate at ~88th percentile (between k=1.0 at ~84th and k=1.5 at ~93rd).
-        // k=1.5 showed +17.7 at 1400 RPS but -17.9 at 1000 RPS (FLINT Iteration 7).
-        // k=1.2 tests whether a more moderate increase captures the 1400 gain without the
-        // 1000 regression.
+        // k=1.0: estimate at ~84th percentile (mean + 1 stddev).
+        // Reduced from k=1.2 for two-trace robustness evaluation (CEDAR Iteration 1).
         // alpha=0.1: effective window ~10 observations; adapts to load changes
         // faster than alpha=0.05 (20 obs), helping at RPS step transitions.
-        Self::new(1.2, 0.1)
+        Self::new(1.0, 0.1)
     }
 }
 
@@ -127,7 +125,7 @@ mod tests {
     #[test]
     fn test_default() {
         let est = LatencyMeanVar::default();
-        assert_eq!(est.k, 1.2);
+        assert_eq!(est.k, 1.0);
         assert_eq!(est.alpha, 0.1);
         assert!(!est.initialized);
     }
