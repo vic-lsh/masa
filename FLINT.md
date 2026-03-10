@@ -186,6 +186,44 @@ for requests that can complete.
 
 ---
 
+## Iteration 4: Non-monotonic load stress test (experiment s1467_24)
+
+**Status:** Pending
+
+### Change
+
+No code change (α=0.1 from Iteration 3). New experiment config with alternating high/low load:
+`[1800, 800, 1800, 800]` — starts cold at 1800 RPS, drops to 800, then repeats the cycle.
+The exp_runner saves the last occurrence, so:
+- `r1800`: captures t=60–90s (2nd 1800 step, after seeing 1800+800 history)
+- `r800`: captures t=90–120s (2nd 800 step, fully adapted to load swings)
+
+### Reference
+
+s1467_14 (same schedule, α=0.05, pre-Iteration 3):
+- 1800 RPS: 856.7 goodput
+- 800 RPS: 385.8 goodput (stale 1800 estimates caused mass over-shedding)
+
+s1467_17 (schedule [200, 1800, 800], α=0.05, fully fixed EMA):
+- 1800 RPS: 976.1 goodput
+- 800 RPS: 793.9 goodput
+
+### Hypothesis
+
+α=0.1 adapts to load changes in ~10 observations vs ~20 for α=0.05. At 800 RPS per edge,
+10 observations = ~12.5ms real time. The estimate should update within seconds of a load
+drop from 1800→800 RPS. The `stale estimates` problem that produced 385.8 at 800 RPS with
+α=0.05 in s1467_14 should be significantly reduced — the estimate decays from high-load
+values to low-load values twice as fast.
+
+### Expected outcomes
+
+1. 1800 RPS (cold start): ≥ 856.7 (s1467_14 reference); ideally ≥ 950 (close to s23's 993.9)
+2. 800 RPS (after 1800 RPS): significantly better than s1467_14's 385.8; ideally ≥ 700
+3. Both policies (prio_local,early, prio_oldest,early) serve as internal controls
+
+---
+
 ## Open hypotheses (remaining)
 
 **H2 — Alpha tuning (α=0.1):** Faster EMA adaptation (window ≈ 10 obs vs 20) could
