@@ -80,6 +80,15 @@ impl LatencyEstimator for LatencyMeanVar {
             0
         }
     }
+
+    fn estimate_with_k(&self, k_override: f64) -> u64 {
+        let raw = self.mean + k_override * self.variance.sqrt();
+        if raw.is_finite() && raw > 0.0 {
+            raw.min(u64::MAX as f64) as u64
+        } else {
+            0
+        }
+    }
 }
 
 impl Default for LatencyMeanVar {

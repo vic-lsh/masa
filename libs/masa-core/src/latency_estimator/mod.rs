@@ -22,6 +22,13 @@ pub trait LatencyEstimator: Send + Sync {
     fn mean_estimate(&self) -> u64 {
         self.estimate()
     }
+
+    /// Get an estimate using a dynamically supplied k value instead of the stored k.
+    /// Returns mean + k_override * stddev. Default implementation ignores k_override
+    /// and returns the standard estimate, for backwards compatibility.
+    fn estimate_with_k(&self, _k_override: f64) -> u64 {
+        self.estimate()
+    }
 }
 
 pub use histogram::LatencyDistribution;

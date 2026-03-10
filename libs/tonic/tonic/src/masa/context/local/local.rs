@@ -276,10 +276,16 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         let time_left = self.ctx.deadline().saturating_sub(time_now());
 
+        // Dynamic k: boost priority via queue-scaled k (ln formula)
+        let queue_len = tokio::runtime::current_thread_queue_len();
+        let k_base = 1.0_f64;
+        let k_scale = 0.5_f64;
+        let dynamic_k = k_base + k_scale * (1.0 + queue_len as f64).ln();
+
         let est_remaining = self
             .server
             .est_after_child_latency
-            .get_estimate(key)
+            .get_estimate_with_k(key, dynamic_k)
             .unwrap_or(0)
             .min(time_left);
 
