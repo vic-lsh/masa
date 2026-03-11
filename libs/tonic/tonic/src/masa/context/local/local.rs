@@ -12,9 +12,9 @@ use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::super::{
     resolve_method_name_from_http, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks,
 };
+use super::LatencyMap;
 #[cfg(feature = "emp_admission")]
 use super::completion_rate_map;
-use super::LatencyMap;
 use masa_core::{time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint, EARLY_RETURN};
 
 #[cfg(feature = "est_hist")]
@@ -208,8 +208,6 @@ pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyE
     // record the outcome in finalize_before_serialization.
     #[cfg(feature = "emp_admission")]
     first_er_decision: std::sync::OnceLock<(String, usize)>,
-    #[cfg(feature = "emp_admission")]
-    probe_admitted: std::sync::atomic::AtomicBool,
 }
 
 impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, ServerContext<E>>
@@ -235,8 +233,6 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             child_end_times: Mutex::new(Vec::new()),
             #[cfg(feature = "emp_admission")]
             first_er_decision: std::sync::OnceLock::new(),
-            #[cfg(feature = "emp_admission")]
-            probe_admitted: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -357,18 +353,9 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             );
         }
 
-        #[cfg(feature = "emp_admission")]
-        let child_forced_probe = self.ctx.forced_probe()
-            || self
-                .probe_admitted
-                .load(std::sync::atomic::Ordering::Relaxed);
-        #[cfg(not(feature = "emp_admission"))]
-        let child_forced_probe = self.ctx.forced_probe();
-
         let child_recv_ctx = ContextBuilder::from(&self.ctx)
             .deadline(deadline)
             .prio_hint(PriorityHint::new(prio_hint))
-            .forced_probe(child_forced_probe)
             .build();
         request.set_masa_context(&child_recv_ctx);
 
@@ -457,35 +444,31 @@ impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
             let time_left = self.ctx.e2e_deadline().saturating_sub(time_now());
             let slo = self.ctx.slo();
             if slo > 0 {
-                let bucket = completion_rate_map::time_left_to_bucket(time_left, slo);
+                let bucket =
+                    completion_rate_map::time_left_to_bucket(time_left, slo);
                 if bucket < 5 {
                     let p = self
                         .server
                         .completion_rate_map
                         .get_p(self.ctx.api(), bucket);
-                    let rand = completion_rate_map::deterministic_rand(self.ctx.request_id(), key);
-                    // If already a forced probe from upstream, always admit
-                    let admitted = if self.ctx.forced_probe() {
-                        true
-                    } else {
-                        let admitted = rand <= p.max(completion_rate_map::PROBE_FLOOR);
-                        // Track if admitted via floor probe (rand > p means normal p didn't admit it)
-                        if admitted && rand > p {
-                            self.probe_admitted
-                                .store(true, std::sync::atomic::Ordering::Relaxed);
-                        }
-                        admitted
-                    };
+                    let rand = completion_rate_map::deterministic_rand(
+                        self.ctx.request_id(),
+                        key,
+                    );
+                    let admitted = rand <= p.max(completion_rate_map::PROBE_FLOOR);
                     if admitted {
                         // OnceLock: only the first admitted hop is recorded.
-                        let _ = self.first_er_decision.set((self.ctx.api().clone(), bucket));
+                        let _ = self
+                            .first_er_decision
+                            .set((self.ctx.api().clone(), bucket));
                     }
                     return !admitted;
                 }
             }
         }
         // Default: floor estimate check (also used when emp_admission disabled, or bucket == 5).
-        EARLY_RETURN && time_now() > self.ctx.e2e_deadline().saturating_sub(est_remaining_floor)
+        EARLY_RETURN
+            && time_now() > self.ctx.e2e_deadline().saturating_sub(est_remaining_floor)
     }
 
     /// Records the outcome of the first admitted empirical-admission decision.
