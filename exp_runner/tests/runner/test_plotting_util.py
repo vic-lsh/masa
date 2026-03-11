@@ -230,7 +230,9 @@ def test_generate_all_plots_loads_request_data_once(tmp_path, monkeypatch):
     monkeypatch.setattr(plotting_all, "load_plot_data", fake_load_plot_data)
     monkeypatch.setattr(plotting_all.goodput, "generate_plots", fake_plotter("goodput"))
     monkeypatch.setattr(plotting_all.latency, "generate_plots", fake_plotter("latency"))
-    monkeypatch.setattr(plotting_all.queueing, "generate_plots", fake_plotter("queueing"))
+    monkeypatch.setattr(
+        plotting_all.queueing, "generate_plots", fake_plotter("queueing")
+    )
     monkeypatch.setattr(plotting_all.cpu, "plot_cpu_utilization", fake_cpu_plot)
 
     plotting_all.generate_all_plots(args)
