@@ -331,3 +331,143 @@ admits all Reservation while blocking all Search.
 
 **Success criteria: MET. Further optimization on Hotel/SLO=50ms would require a different
 workload (e.g., varying SLO, request mix, Socialnet).**
+
+---
+
+## Extension: coral_ext_2 robustness under mixed SLOs
+
+User change in `coral_ext_2`:
+- `Search` SLO relaxed from `50ms` to `200ms`
+- `Reservation` stayed at `50ms`
+- RPS sweep: `[100, 400, 800, 1200, 1400, 1600, 1800, 2000]`
+
+### Observed symptoms (coral_ext_2 baseline)
+
+`prio_local,est_mean_var,emp_admission,early` regressed catastrophically once Search became
+feasible:
+
+| RPS  | prio_local,early | emv+emp (baseline) | prio_oldest,early |
+|------|------------------|--------------------|-------------------|
+| 100  | 99.8             | 99.8               | 99.8              |
+| 400  | 399.2            | 399.3              | 399.3             |
+| 800  | 798.5            | **402.8**          | 798.5             |
+| 1200 | 1188.6           | **607.6**          | 1176.5            |
+| 1400 | 1267.4           | **659.5**          | 1201.4            |
+| 1600 | 1411.2           | **15.3**           | 1313.5            |
+| 1800 | 963.6            | **16.3**           | 1068.4            |
+| 2000 | 214.8            | **19.6**           | 549.8             |
+
+Breakdown:
+- At 800 RPS baseline emv+emp delivered `Search=396.0`, `Reservation=6.8`
+- At 1400 RPS baseline emv+emp delivered `Search=646.7`, `Reservation=12.8`
+- Frontend ERs were overwhelmingly `HandleReservation`; many were `None/None`, meaning ingress
+  shedding before any child RPC
+
+### Root-cause hypothesis
+
+The empirical admission map is keyed only by `(api, bucket)` and updates on the first admitted
+decision for the whole request. That works when one API is globally feasible and the other is
+globally infeasible (`coral_4`, both 50ms SLOs). It fails when Search becomes feasible under a
+looser 200ms SLO:
+
+1. Search requests now complete frequently, so `P(Search complete | bucket)` stays high.
+2. Reservation requests lose contention early, so `P(Reservation complete | bucket)` collapses.
+3. Once Reservation `p` collapses, ingress admission sheds almost all Reservation traffic.
+4. That self-reinforces the bad state: Search keeps succeeding, Reservation rarely gets enough
+   admissions to recover.
+
+This is a positive-feedback problem, not just a threshold-tuning problem.
+
+## Iteration 5: Remove bucket-5 bypass (experiment coral_5)
+
+**Status:** Regression ❌
+
+### Change
+Use empirical admission for bucket 5 as well, instead of always admitting full-budget requests.
+
+### Result
+Partial run was enough to reject the change:
+- Live 800 RPS signal stayed around `~400` goodput with `~400 ER/s`
+- This did not materially improve on the broken `coral_ext_2` baseline
+
+### Takeaway
+Bucket-5 bypass contributes to the asymmetry, but removing it alone does not break the
+Search-wins / Reservation-dies feedback loop.
+
+## Iteration 6: Floor-first hybrid admission (experiments coral_6, coral_6_b)
+
+**Status:** Mixed ❌
+
+### Change
+Keep floor-based local admission as the primary rule; use empirical admission only for requests
+that the floor would otherwise shed.
+
+### Result on mixed-SLO case (coral_6)
+
+| RPS  | emv+emp after change |
+|------|----------------------|
+| 800  | **798.5**            |
+| 1400 | **1235.4**           |
+
+Breakdown:
+- 800: `Search=397.5`, `Reservation=401.0`
+- 1400: `Search=647.3`, `Reservation=588.1`
+
+This nearly matched `prio_local,early` on `coral_ext_2` and removed the Reservation collapse.
+
+### Regression on old win case (coral_6_b)
+
+| RPS  | coral_4 original emv+emp | floor-first hybrid |
+|------|---------------------------|--------------------|
+| 1400 | 700.2                     | **476.4**          |
+| 2000 | 1002.3                    | **272.0**          |
+
+Breakdown:
+- Both points collapsed back toward “admit impossible Search, starve Reservation”
+- Only Reservation completed; Search shedding returned to being too weak
+
+### Takeaway
+The floor estimate protects feasible work in `coral_ext_2`, but it also destroys the original
+`coral_4` advantage by re-admitting Search under the 50ms workload where Search is intrinsically
+hopeless.
+
+## Iteration 7: Decaying cold-start exploration floor (experiment coral_7)
+
+**Status:** Regression ❌
+
+### Change
+Return to empirical-first admission, but add a large cold-start exploration floor that decays
+with sample count so a class cannot get stuck at 5% admission after a few early failures.
+
+### Result
+
+| RPS  | emv+emp after change |
+|------|----------------------|
+| 800  | 414.1                |
+| 1400 | 12.3                 |
+
+Breakdown:
+- 800: `Search=403.3`, `Reservation=10.7`
+- 1400: `Reservation=12.3`, `Search=0`
+
+### Takeaway
+Simple exploration shaping does not solve the feedback loop. The policy still converges to a
+one-class monopoly, just more erratically.
+
+## Final assessment
+
+No threshold-only tweak produced a robust improvement in 3 iterations:
+- Pure empirical admission: excellent on `coral_4`, catastrophic on `coral_ext_2`
+- Floor-first hybrid: excellent on `coral_ext_2`, catastrophic on `coral_4`
+- Cold-start exploration: catastrophic on `coral_ext_2`
+
+The strongest conclusion is architectural:
+- A single scalar completion rate per `(api, bucket)` is too coarse once SLOs diverge
+- The policy needs more state to be robust, likely something like:
+  - per-method or per-hop empirical maps instead of one API-wide scalar
+  - separate ingress admission state from downstream admission state
+  - admission conditioning on local queue/overload regime, not just API + time-left bucket
+
+I am not keeping any of the attempted code changes. The best documented result remains:
+- `coral_4`: original empirical admission is best
+- `coral_ext_2`: `prio_local,early` is currently the robust winner
