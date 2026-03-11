@@ -1,12 +1,18 @@
+from argparse import Namespace
+import importlib
 import json
 
 import pandas as pd
 
 from exp_runner.runner.plotting.util import (
     get_policy_display_name,
+    load_plot_data,
+    PlotData,
     read_data,
     read_policies,
 )
+
+plotting_all = importlib.import_module("exp_runner.runner.plotting.all")
 
 
 def test_get_policy_display_name_known_policies():
@@ -61,6 +67,39 @@ def test_read_data_uses_policies_file(tmp_path):
     assert policies == ["fifo", "prio_global"]
     assert rps_values == [10]
     assert "extra_policy" not in results[0]["Login"]
+
+
+def test_load_plot_data_matches_read_data(tmp_path):
+    config_dir = tmp_path / "config"
+    data_dir = tmp_path / "data"
+    config_dir.mkdir()
+    data_dir.mkdir()
+
+    (config_dir / "gen_config.json").write_text(
+        json.dumps({"Repeats": 1, "Rps": [10], "Apis": ["Login"], "Slos": [1000]}),
+        encoding="utf-8",
+    )
+    (config_dir / "policies").write_text("fifo\n", encoding="utf-8")
+
+    policy_dir = data_dir / "0" / "fifo"
+    policy_dir.mkdir(parents=True, exist_ok=True)
+    (policy_dir / "r10_Login.csv").write_text(
+        "api,start_at,latency,slo,error\nLogin,0,100,1000,\n",
+        encoding="utf-8",
+    )
+
+    plot_data = load_plot_data(config_dir, data_dir)
+    repeats, apis, policies, rps_values, results = read_data(config_dir, data_dir)
+
+    assert plot_data.repeats == repeats
+    assert plot_data.apis == apis
+    assert plot_data.policies == policies
+    assert plot_data.rps_values == rps_values
+    assert len(plot_data.results) == len(results)
+    assert plot_data.results[0]["Login"]["fifo"][10].equals(
+        results[0]["Login"]["fifo"][10]
+    )
+    assert plot_data.results[0]["ALL"]["fifo"][10].equals(results[0]["ALL"]["fifo"][10])
 
 
 def test_read_data_repairs_malformed_request_csv_rows(tmp_path):
@@ -140,3 +179,66 @@ def test_read_data_repairs_malformed_request_csv_rows(tmp_path):
     # Missing trailing latency fields should become NaN after numeric conversion.
     assert df.loc[df["request_id"] == 2, "error"].iloc[0] == "/EarlyReturn"
     assert pd.isna(df.loc[df["request_id"] == 2, "frontend_latency"].iloc[0])
+
+
+def test_generate_all_plots_loads_request_data_once(tmp_path, monkeypatch):
+    args = Namespace(
+        config_dir=tmp_path / "config",
+        data_dir=tmp_path / "data",
+        output_dir=tmp_path / "plots",
+    )
+    args.config_dir.mkdir()
+    args.data_dir.mkdir()
+
+    (args.config_dir / "gen_config.json").write_text(
+        json.dumps({"Repeats": 1, "Rps": [10], "Apis": ["Login"], "Slos": [1000]}),
+        encoding="utf-8",
+    )
+    (args.config_dir / "policies").write_text("fifo\n", encoding="utf-8")
+
+    plot_data = PlotData(
+        repeats=1,
+        apis=["Login", "ALL"],
+        policies=["fifo"],
+        rps_values=[10],
+        results=[],
+    )
+    calls = {"load": 0, "goodput": 0, "latency": 0, "queueing": 0, "cpu": 0}
+
+    def fake_load_plot_data(config_dir, data_dir):
+        calls["load"] += 1
+        assert config_dir == args.config_dir
+        assert data_dir == args.data_dir
+        return plot_data
+
+    def fake_plotter(name):
+        def _run(passed_args, plot_data=None):
+            calls[name] += 1
+            assert passed_args is args
+            assert plot_data is plot_data_ref
+
+        return _run
+
+    plot_data_ref = plot_data
+
+    def fake_cpu_plot(data_dir, output_dir, policies=None):
+        calls["cpu"] += 1
+        assert data_dir == args.data_dir
+        assert output_dir == args.output_dir
+        assert policies == ["fifo"]
+
+    monkeypatch.setattr(plotting_all, "load_plot_data", fake_load_plot_data)
+    monkeypatch.setattr(plotting_all.goodput, "generate_plots", fake_plotter("goodput"))
+    monkeypatch.setattr(plotting_all.latency, "generate_plots", fake_plotter("latency"))
+    monkeypatch.setattr(plotting_all.queueing, "generate_plots", fake_plotter("queueing"))
+    monkeypatch.setattr(plotting_all.cpu, "plot_cpu_utilization", fake_cpu_plot)
+
+    plotting_all.generate_all_plots(args)
+
+    assert calls == {
+        "load": 1,
+        "goodput": 1,
+        "latency": 1,
+        "queueing": 1,
+        "cpu": 1,
+    }
