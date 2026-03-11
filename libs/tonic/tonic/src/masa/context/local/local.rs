@@ -293,10 +293,24 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             .unwrap_or(0)
             .min(time_left);
 
+        // Floor estimate for ER threshold: decouples the threshold from mean inflation.
+        // During load spikes, the EMA mean inflates (slow α_up=0.05), but the floor
+        // deflates quickly (α_down=0.3) while inflating very slowly (α_up=0.01).
+        // This prevents the feedback loop where mean inflation → tighter ER threshold
+        // → more ERs → less useful work being done.
+        let est_remaining_floor = self
+            .server
+            .est_after_child_latency
+            .get_mean_floor_estimate(key)
+            .unwrap_or(0)
+            .min(time_left);
+
         let deadline = self.ctx.deadline().saturating_sub(est_remaining);
-        // Use e2e_deadline for ER threshold: the tightened ctx.deadline() is for scheduling
-        // priority only; early-return should only fire at the actual SLO boundary.
-        if EARLY_RETURN && time_now() >= self.ctx.e2e_deadline() {
+        // Use floor estimate for ER threshold: the mean can inflate under load, causing
+        // over-aggressive shedding. The floor tracks the lower envelope and is resistant
+        // to transient spikes, avoiding wasteful sheds when work could still complete.
+        if EARLY_RETURN && time_now() > self.ctx.e2e_deadline().saturating_sub(est_remaining_floor)
+        {
             return Err(self.early_return.issue_error());
         }
 
@@ -310,11 +324,12 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
             let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
             log::info!(
-                "LAT_EST: p=>c: {}, est_child: {} (not used for prio_hint), est_rem: {}, est_rem_mean: {}",
+                "LAT_EST: p=>c: {}, est_child: {} (not used for prio_hint), est_rem: {}, est_rem_mean: {}, est_rem_floor: {}",
                 parent_to_child_id,
                 est_child,
                 est_remaining,
                 est_remaining_mean,
+                est_remaining_floor,
             );
         }
 
