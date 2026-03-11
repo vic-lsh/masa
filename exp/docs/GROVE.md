@@ -283,3 +283,68 @@ ple's advantage comes from its RMS estimate being near-zero (anchored to low-loa
 
 ### Experiment design
 Same grove_1 config. Named grove_4.
+
+### Actual Outcomes (grove_4)
+
+**Status:** Revert ❌ — catastrophic across all RPS levels
+
+**Goodput table:**
+
+| RPS  | emv grove_4 | emv grove_1 | ple grove_4 | oldest grove_4 | emv−ple (g4) | Δemv (g4−g1) |
+|------|-------------|-------------|-------------|----------------|--------------|--------------|
+| 100  | 48.0        | 49.0        | 49.3        | 49.1           | −1.3         | −1.0         |
+| 400  | 199.0       | 199.6       | 198.5       | 197.8          | +0.5         | −0.6         |
+| 800  | 397.2       | 398.4       | 399.0       | 400.2          | −1.8         | −1.2         |
+| 1200 | 565.9       | 585.0       | 596.6       | 539.8          | −30.7        | −19.1        |
+| 1400 | **432.7**   | **471.6**   | **547.1**   | **392.1**      | **−114.4**   | **−38.9**    |
+| 1600 | 346.0       | 415.5       | 463.1       | 325.1          | −117.1       | **−69.5**    |
+| 1800 | 371.8       | 388.8       | 445.6       | 323.3          | −73.8        | −17.0        |
+| 2000 | 414.7       | 449.1       | 489.2       | 367.5          | −74.5        | −34.4        |
+
+**Reservation ER/s:**
+
+| RPS  | emv grove_4 | emv grove_1 | ple grove_4 |
+|------|-------------|-------------|-------------|
+| 1200 | 30.8        | 11.8        | 5.3         |
+| 1400 | **263.4**   | **223.4**   | **152.4**   |
+| 1600 | 327.5       | 276.8       | 289.2       |
+| 1800 | 314.6       | 278.5       | 263.7       |
+| 2000 | 351.9       | 291.6       | 266.6       |
+
+**Key findings:**
+- Removing est_remaining from ER check increased ER rate at 1400 from 223 → 263/s (wrong direction)
+- Goodput dropped at every RPS: −38.9 at 1400, −69.5 at 1600
+- Root cause: without preemptive ER, more requests queue up → system gets more overloaded → more expire at actual deadline → ER fires anyway but after wasting CPU
+- The preemptive ER check in grove_1 WAS helping; the problem is the inflated signal driving it
+
+**Decision: REVERT grove_4. Restore grove_1 state (asymmetric α + est_remaining ER check).**
+
+---
+
+## Iteration 5 (final): Floor-EMA for ER threshold — decouple inflation from ER (grove_5)
+
+**Status:** Pending
+
+### Change
+Add a `mean_floor` field to `LatencyMeanVar` that tracks a floor estimate using asymmetric α (α_floor_up=0.01, α_floor_down=0.3). Use `mean_floor` for the ER threshold in `before_child_rpc`, while keeping `mean` for child deadline computation.
+
+Under overload:
+- `mean` inflates (correctly tightens child deadlines, urgency propagation works)
+- `mean_floor` resists inflation (α_up=0.01 → ~100-obs window for rising estimates)
+- ER threshold uses `mean_floor` → fires conservatively, near actual deadline (like ple's RMS)
+
+After load drops or 0-injection:
+- `mean_floor` deflates quickly (α_down=0.3 → ~3-obs window) → ER threshold recovers fast
+
+### Hypothesis
+The root cause of emv's inferiority to ple is that `mean` inflates under load and is used as the ER threshold signal — firing ER preemptively on requests that could complete. ple's RMS estimate stays near-zero (batch-update anchoring), so its ER fires conservatively. By tracking a separate floor estimate (`mean_floor`) resistant to inflation, we get ple-like ER behavior while retaining emv's benefits (adaptive child deadline tightening for urgency propagation, EDF reprioritization via before_poll).
+
+grove_4 proved that removing est_remaining entirely is wrong (late ER wastes CPU). grove_5 replaces it with a better signal.
+
+### Expected outcomes:
+1. Reservation ER at 1400 drops from grove_1's 223/s toward ple's ~150–183/s
+2. Goodput at 1400 rises from grove_1's 471.6 toward ple's ~510–547
+3. No regression at 1600–2000 (mean_floor deflates quickly when load rises, so the floor stays appropriate)
+
+### Experiment design
+Same grove_1 config. Named grove_5.
