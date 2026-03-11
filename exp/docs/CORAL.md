@@ -108,32 +108,114 @@ completion probability without conflating compute time and queue delay.
 4. What is the actual system capacity for Reservation? The flat 50% fraction suggests we're
    still within Reservation capacity at 1800 RPS (900 Reservation/s completable).
 
+### Actual Outcomes (coral_2)
+
+**Status:** Complete ✅ — CONFIRMS AND EXTENDS coral_1 WIN
+
+#### Goodput table (all 8 RPS points)
+
+| RPS  | prio_local,early | emv+emp    | prio_oldest,early | emv+emp vs ple  | emv+emp vs oldest |
+|------|------------------|------------|-------------------|-----------------|-------------------|
+| 100  | 49.9             | 49.6       | 51.0              | −0.3            | −1.4              |
+| 400  | 198.7            | 200.5      | 197.9             | +1.7            | +2.5              |
+| 800  | 399.2            | 399.3      | 400.2             | +0.1            | −0.9              |
+| 1200 | 583.2            | **595.1**  | 583.9             | **+11.9**       | **+11.2**         |
+| 1400 | 564.3            | **702.2**  | 474.2             | **+137.9**      | **+228.0**        |
+| 1600 | 484.6            | **798.9**  | 403.5             | **+314.3**      | **+395.4**        |
+| 1800 | 456.9            | **901.0**  | 399.2             | **+444.1**      | **+501.8**        |
+| 2000 | 491.3            | **1002.5** | 403.6             | **+511.2**      | **+598.9**        |
+
+#### emv+emp goodput fraction (goodput / RPS)
+
+| RPS  | 100  | 400  | 800  | 1200 | 1400 | 1600 | 1800 | 2000 |
+|------|------|------|------|------|------|------|------|------|
+| Frac | 49.6%| 50.1%| 49.9%| 49.6%| 50.2%| 49.9%| 50.1%| 50.1%|
+
+The fraction is exactly ~50.0% at every single RPS point across the entire sweep. **Linear scaling
+from 100 to 2000 RPS with no collapse.**
+
+#### Early return breakdown
+
+| RPS  | ple Resv ER | emv+emp Resv ER | prio_oldest Resv ER |
+|------|-------------|-----------------|---------------------|
+| 800  | 0.017       | **0**           | 0.017               |
+| 1200 | 13.3        | **0**           | 13.5                |
+| 1400 | 135.7       | **0**           | 223.3               |
+| 1600 | 265.2       | **0**           | 371.7               |
+| 1800 | 253.1       | **0**           | 361.8               |
+| 2000 | 283.0       | **0**           | 375.5               |
+
+emv+emp maintains zero Reservation ERs across all 8 RPS levels.
+
+Search ERs for emv+emp scale linearly with RPS (nearly all Search shed at overload — correct).
+
+#### Key findings
+
+1. **~50% goodput fraction held linearly from 100 to 2000 RPS.** No saturation or collapse
+   detected. The Reservation backend handles 1002 accepted reservations/s at 2000 RPS without
+   hitting capacity limits.
+
+2. **Underloaded points (100, 400, 800) show no regression** — emv+emp behaves identically to
+   ple at under-loaded conditions (within noise).
+
+3. **The 50% ceiling is the theoretical maximum** for this workload: Hotel has a 50/50
+   Search/Reservation mix and Search never completes within 50ms SLO even at 100 RPS.
+   emv+emp correctly identifies P(Search complete | any bucket) ≈ 0 and sheds all Search.
+   Admitting all Reservation (which always complete) at 50% of total RPS is optimal.
+
+4. **ple and prio_oldest still collapse.** At 2000 RPS, ple manages 491.3 (24.6% fraction),
+   oldest manages 403.6 (20.2%). Both well below emv+emp's 1002.5 (50.1%).
+
+#### Implication
+
+The emp_admission mechanism achieves near-theoretical-maximum goodput on Hotel/SLO=50ms by
+correctly learning:
+- P(Reservation complete | bucket) ≈ 1.0 → admit all Reservation
+- P(Search complete | bucket) ≈ 0.0 → shed all Search
+
+This is the best possible outcome: admit exactly the request types that can complete.
+
 ---
 
 ## Iteration 2: Full RPS sweep to characterize capacity limits (coral_2)
 
+**Status:** Complete ✅ — see results embedded above
+
+### Change
+No code change. Full 8-RPS sweep [100, 400, 800, 1200, 1400, 1600, 1800, 2000].
+
+---
+
+## Iteration 3: Non-monotonic sweep to validate adaptation (coral_3)
+
 **Status:** Pending
 
 ### Change
-No code change. Run the full 8-RPS-level sweep from pine_10_lowslo config to understand:
-1. Does emv+emp hold 50% fraction at 2000 RPS (1000 Reservation/s)?
-2. Does Search get properly admitted at 100/400 RPS where system is not overloaded?
-3. Absolute goodput numbers match pine_10_lowslo reference at under-loaded RPS points?
+No code change. Modify the RPS schedule to include a high→low→high transition.
+Schedule: [400, 800, 1400, 1800, 400, 1400, 2000]
+This tests whether the emp_admission feedback loop adapts correctly when load drops.
 
 ### Hypothesis
-At 100 and 400 RPS (under-loaded), emv+emp should behave like ple/oldest (no meaningful
-shedding). At 800+ RPS, Search starts being shed but Reservation stays fully admitted.
-At some RPS beyond 1800, Reservation itself saturates and goodput fraction drops.
-The inflection point is probably around 2000+ RPS.
+After seeing heavy overload at 1800 RPS (where P(Search complete) ≈ 0, P(Reservation) ≈ 1),
+the CompletionRateMap's estimates should be: Search bucket 0-4 → p≈0, Reservation bucket 0-4 → p≈1.
+When load drops back to 400 RPS, these estimates should recover properly (the probe floor of 5%
+ensures observations continue even when p→0). After recovery, returning to 1400 should again
+achieve near-50% fraction.
+
+The critical failure mode would be: Search p gets stuck near 0 after the 1800 phase, and even at
+400 RPS (where Search can actually complete) the system over-sheds Search. Or the α_rise=0.05
+is too slow to recover in 60s at 400 RPS after a period of heavy shedding.
 
 ### Expected outcomes if hypothesis is correct:
-1. 100 RPS: ~49-50 goodput (similar to all policies)
-2. 400 RPS: ~199-200 goodput (similar to all policies)
-3. 800-1800: emv+emp dominates as seen in coral_1
-4. 2000: either holds at ~50% or starts declining (test will reveal)
+1. 400 RPS (first time): ~200 goodput (50%)
+2. 800 RPS: ~400 goodput (50%)
+3. 1400 RPS: ~700 goodput (50%)
+4. 1800 RPS: ~900 goodput (50%)
+5. 400 RPS (second time): ~200 goodput — recovery validated
+6. 1400 RPS (second time): ~700 goodput
+7. 2000 RPS: ~1000 goodput
 
 ### Experiment design
-Full 8-RPS sweep: [100, 400, 800, 1200, 1400, 1600, 1800, 2000].
-Same config as pine_10_lowslo but with updated policies (no fifo, no bare emv).
-Policies: prio_local,early; prio_oldest,early; prio_local,est_mean_var,emp_admission,early.
-Duration: 60s/step, warmup 20s. Will run ~25 minutes.
+Non-monotonic schedule: [400, 800, 1400, 1800, 400, 1400, 2000]. 7 steps.
+Duration: 60s/step, warmup 20s. Will run ~15 minutes.
+This tests whether p estimates recover after high-load phase.
