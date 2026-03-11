@@ -53,9 +53,15 @@ def generate_all_plots(args):
         max_workers=get_plot_worker_count(task_count, max_workers=4)
     ) as executor:
         futures = {
-            executor.submit(goodput.generate_plots, args, plot_data=plot_data): "goodput",
-            executor.submit(latency.generate_plots, args, plot_data=plot_data): "latency",
-            executor.submit(queueing.generate_plots, args, plot_data=plot_data): "queueing",
+            executor.submit(
+                goodput.generate_plots, args, plot_data=plot_data
+            ): "goodput",
+            executor.submit(
+                latency.generate_plots, args, plot_data=plot_data
+            ): "latency",
+            executor.submit(
+                queueing.generate_plots, args, plot_data=plot_data
+            ): "queueing",
             executor.submit(
                 cpu.plot_cpu_utilization,
                 data_dir,

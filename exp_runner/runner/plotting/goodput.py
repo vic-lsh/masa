@@ -1584,12 +1584,12 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                     )
                 )
 
-            early_returns_last_child_by_type = (
-                policy_early_returns_last_child_by_type[i].get(api)
-            )
-            total_early_returns_last_child = policy_total_early_returns_last_child[i].get(
-                api
-            )
+            early_returns_last_child_by_type = policy_early_returns_last_child_by_type[
+                i
+            ].get(api)
+            total_early_returns_last_child = policy_total_early_returns_last_child[
+                i
+            ].get(api)
             if (
                 early_returns_last_child_by_type is not None
                 and total_early_returns_last_child is not None
@@ -1647,7 +1647,9 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
         for i in range(repeats):
             if i < len(policy_early_returns_by_type):
                 for policy in policies:
-                    per_rps = policy_early_returns_by_type[i].get(api, {}).get(policy, [])
+                    per_rps = (
+                        policy_early_returns_by_type[i].get(api, {}).get(policy, [])
+                    )
                     for breakdown in per_rps:
                         all_types.update((breakdown or {}).keys())
 
@@ -1657,7 +1659,9 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 vals = []
                 for i in range(repeats):
                     if i < len(policy_total_early_returns):
-                        per_rps = policy_total_early_returns[i].get(api, {}).get(policy, [])
+                        per_rps = (
+                            policy_total_early_returns[i].get(api, {}).get(policy, [])
+                        )
                         if rps_idx < len(per_rps):
                             vals.append(float(per_rps[rps_idx] or 0.0))
                 totals.append(sum(vals) / len(vals) if vals else 0.0)
@@ -1751,9 +1755,9 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                         ):
                             vals.append(float(per_rps[rps_idx][request_type]))
                     if vals:
-                        avg_breakdown_lc[policy][rps_idx][request_type] = sum(vals) / len(
+                        avg_breakdown_lc[policy][rps_idx][request_type] = sum(
                             vals
-                        )
+                        ) / len(vals)
 
         output_path = os.path.join(output_dir, f"early_return_last_child_{api}.png")
         future_specs.append(
@@ -1793,7 +1797,9 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 vals = []
                 for i in range(repeats):
                     if i < len(policy_total_slo_misses):
-                        per_rps = policy_total_slo_misses[i].get(api, {}).get(policy, [])
+                        per_rps = (
+                            policy_total_slo_misses[i].get(api, {}).get(policy, [])
+                        )
                         if rps_idx < len(per_rps):
                             vals.append(float(per_rps[rps_idx] or 0.0))
                 totals.append(sum(vals) / len(vals) if vals else 0.0)
@@ -1806,7 +1812,9 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                     for i in range(repeats):
                         if i >= len(policy_slo_misses_by_type):
                             continue
-                        per_rps = policy_slo_misses_by_type[i].get(api, {}).get(policy, [])
+                        per_rps = (
+                            policy_slo_misses_by_type[i].get(api, {}).get(policy, [])
+                        )
                         if (
                             rps_idx < len(per_rps)
                             and per_rps[rps_idx] is not None
