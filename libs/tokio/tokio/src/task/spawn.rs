@@ -202,6 +202,22 @@ cfg_rt! {
         }
     }
 
+    /// Re-prioritize the currently executing task.
+    ///
+    /// This must be called from within a running task. The new priority is
+    /// picked up the next time the task is woken and re-enqueued. Has no
+    /// effect if called outside a Masa runtime context (i.e., when
+    /// `current_task_header()` returns `None`).
+    pub fn reprioritize(priority: PriorityHint) {
+        if let Some(header) = crate::runtime::task::current_task_header() {
+            // SAFETY: The task is currently running (RUNNING bit is set by the
+            // scheduler before calling poll), so we hold exclusive access to the
+            // header fields that are guarded by the RUNNING lock. No other thread
+            // is concurrently writing `priority`.
+            unsafe { header.set_priority(priority) };
+        }
+    }
+
     #[track_caller]
     pub(super) fn spawn_inner<T>(future: T, name: Option<&str>, priority: PriorityHint) -> JoinHandle<T::Output>
     where

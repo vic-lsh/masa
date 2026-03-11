@@ -331,6 +331,7 @@ cfg_rt! {
     mod spawn;
     pub use spawn::spawn;
     pub use spawn::spawn_with_prio;
+    pub use spawn::reprioritize;
 
     mod poll_hook;
     pub use poll_hook::{configure_child_task_poll_hook, reset_child_task_poll_hook};

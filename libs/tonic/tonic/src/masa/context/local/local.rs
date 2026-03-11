@@ -18,9 +18,16 @@ use masa_core::{time_now, Context, ContextBuilder, LatencyEstimator, PriorityHin
 #[cfg(feature = "est_hist")]
 use masa_core::LatencyDistribution as LatencyHistogram;
 
+#[cfg(feature = "est_mean_var")]
+use masa_core::LatencyMeanVar;
+
 #[cfg(any(
     feature = "est_rms",
-    all(not(feature = "est_rms"), not(feature = "est_hist"))
+    all(
+        not(feature = "est_rms"),
+        not(feature = "est_hist"),
+        not(feature = "est_mean_var")
+    )
 ))]
 use masa_core::LatencyRms;
 
@@ -29,17 +36,32 @@ use std::sync::atomic::AtomicUsize;
 #[cfg(all(feature = "est_rms", feature = "est_hist"))]
 compile_error!("Features 'est_rms' and 'est_hist' cannot be enabled simultaneously");
 
-#[cfg(any(feature = "est_rms", feature = "est_hist"))]
+#[cfg(all(feature = "est_rms", feature = "est_mean_var"))]
+compile_error!("Features 'est_rms' and 'est_mean_var' cannot be enabled simultaneously");
+
+#[cfg(all(feature = "est_hist", feature = "est_mean_var"))]
+compile_error!("Features 'est_hist' and 'est_mean_var' cannot be enabled simultaneously");
+
+#[cfg(any(feature = "est_rms", feature = "est_hist", feature = "est_mean_var"))]
 #[cfg(not(feature = "prio_local"))]
-compile_error!("Features 'est_rms' or 'est_hist' require 'prio_local' to be enabled");
+compile_error!(
+    "Features 'est_rms', 'est_hist', or 'est_mean_var' require 'prio_local' to be enabled"
+);
 
 /// Type alias for the latency estimator used in the local deadline policy.
 #[cfg(feature = "est_hist")]
 pub(crate) type LocalLatencyEstimator = LatencyHistogram;
 
+#[cfg(feature = "est_mean_var")]
+pub(crate) type LocalLatencyEstimator = LatencyMeanVar;
+
 #[cfg(any(
     feature = "est_rms",
-    all(not(feature = "est_rms"), not(feature = "est_hist"))
+    all(
+        not(feature = "est_rms"),
+        not(feature = "est_hist"),
+        not(feature = "est_mean_var")
+    )
 ))]
 pub(crate) type LocalLatencyEstimator = LatencyRms;
 
@@ -198,6 +220,9 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             return Err(Err(self.early_return.issue_error()));
         }
 
+        let remaining = self.ctx.deadline().saturating_sub(time_now());
+        tokio::task::reprioritize(masa_core::PriorityHint::new(remaining));
+
         self.q_lat_tracker.track_poll();
         Ok(())
     }
@@ -251,28 +276,43 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             self.server.clone(),
         );
 
+        let time_left = self.ctx.deadline().saturating_sub(time_now());
+
         let est_remaining = self
             .server
             .est_after_child_latency
             .get_estimate(key)
-            .unwrap_or(0);
+            .unwrap_or(0)
+            .min(time_left);
 
-        let deadline = self.ctx.deadline() - est_remaining;
-        if EARLY_RETURN && time_now() > deadline {
+        // Mean-only for early-return check: avoids false-positive sheds from σ over-estimation.
+        let est_remaining_mean = self
+            .server
+            .est_after_child_latency
+            .get_mean_estimate(key)
+            .unwrap_or(0)
+            .min(time_left);
+
+        let deadline = self.ctx.deadline().saturating_sub(est_remaining);
+        if EARLY_RETURN && time_now() > self.ctx.deadline().saturating_sub(est_remaining_mean) {
             return Err(self.early_return.issue_error());
         }
 
-        let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
-
-        // this encodes the slack: parent deadline - est child latency - est remaining
-        let prio_hint = deadline - est_child;
+        // prio_hint = deadline (parent_deadline - est_remaining). Subtracting est_child caused
+        // priority inversions under load: as est_child grew with queuing, newer requests got
+        // tighter prio_hints than older ones computed with lower estimates, inverting FIFO order.
+        // Using deadline alone gives FIFO-like ordering (since all requests share the same e2e
+        // SLO deadline), while preserving path-aware early returns from the tightened deadline.
+        let prio_hint = deadline;
 
         if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
+            let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
             log::info!(
-                "LAT_EST: p=>c: {}, est_child: {}, est_rem: {}",
+                "LAT_EST: p=>c: {}, est_child: {} (not used for prio_hint), est_rem: {}, est_rem_mean: {}",
                 parent_to_child_id,
                 est_child,
-                est_remaining
+                est_remaining,
+                est_remaining_mean,
             );
         }
 
@@ -301,6 +341,19 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         }
 
         if let Err(status) = response {
+            // When the child early-returns, track 0 into est_after_child_latency to create
+            // negative feedback. Without this, ERs prevent all tracking updates, freezing the
+            // estimate at a high value and creating a self-reinforcing failure loop:
+            //   high estimate → tight deadline → ERs → no updates → estimate stays high → ...
+            // With this: more ERs → more 0 observations → estimate decreases → looser deadlines
+            // → fewer ERs. The equilibrium stabilizes at a lower estimate.
+            if status.code() == Code::DeadlineExceeded {
+                if let Some(parent_to_child_id) = &child_ctx.parent_to_child_id {
+                    self.server
+                        .est_after_child_latency
+                        .track(parent_to_child_id.to_key(), 0);
+                }
+            }
             // NOTE(vic): could we avoid cloning here?
             return Err(status.clone());
         }
