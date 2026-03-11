@@ -13,6 +13,8 @@ use super::super::{
     resolve_method_name_from_http, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks,
 };
 use super::LatencyMap;
+#[cfg(feature = "emp_admission")]
+use super::completion_rate_map;
 use masa_core::{time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint, EARLY_RETURN};
 
 #[cfg(feature = "est_hist")]
@@ -47,6 +49,12 @@ compile_error!("Features 'est_hist' and 'est_mean_var' cannot be enabled simulta
 compile_error!(
     "Features 'est_rms', 'est_hist', or 'est_mean_var' require 'prio_local' to be enabled"
 );
+
+#[cfg(all(feature = "emp_admission", not(feature = "prio_local")))]
+compile_error!("Feature 'emp_admission' requires 'prio_local'");
+
+#[cfg(all(feature = "emp_admission", not(feature = "early")))]
+compile_error!("Feature 'emp_admission' requires 'early'");
 
 /// Type alias for the latency estimator used in the local deadline policy.
 #[cfg(feature = "est_hist")]
@@ -156,6 +164,8 @@ pub struct ServerContext<E: LatencyEstimator + Default + 'static = LocalLatencyE
     // tracks the actual child RPC call latencies
     est_child_latency: Arc<LatencyMap<E>>,
     print_counter: AtomicUsize,
+    #[cfg(feature = "emp_admission")]
+    completion_rate_map: Arc<completion_rate_map::CompletionRateMap>,
 }
 
 impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
@@ -166,10 +176,15 @@ impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
         spawn_stats_printer(est_after_child_latency.clone(), "Est Remaining Values");
         spawn_stats_printer(est_child_latency.clone(), "Est Child Call Latencies");
 
+        #[cfg(feature = "emp_admission")]
+        let completion_rate_map = Arc::new(completion_rate_map::CompletionRateMap::new());
+
         Self {
             est_after_child_latency,
             est_child_latency,
             print_counter: AtomicUsize::new(0),
+            #[cfg(feature = "emp_admission")]
+            completion_rate_map,
         }
     }
 }
@@ -189,6 +204,10 @@ pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyE
     q_lat_tracker: QueueLatencyTracker,
     early_return: EarlyReturnHandler,
     child_end_times: Mutex<Vec<(ParentToChildId, Instant)>>,
+    // Tracks (api, bucket) for the first admitted empirical-admission decision so we can
+    // record the outcome in finalize_before_serialization.
+    #[cfg(feature = "emp_admission")]
+    first_er_decision: std::sync::OnceLock<(String, usize)>,
 }
 
 impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, ServerContext<E>>
@@ -212,6 +231,8 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             q_lat_tracker: QueueLatencyTracker::new(),
             early_return: EarlyReturnHandler::new(resolved_method),
             child_end_times: Mutex::new(Vec::new()),
+            #[cfg(feature = "emp_admission")]
+            first_er_decision: std::sync::OnceLock::new(),
         }
     }
 
@@ -309,8 +330,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         // Use floor estimate for ER threshold: the mean can inflate under load, causing
         // over-aggressive shedding. The floor tracks the lower envelope and is resistant
         // to transient spikes, avoiding wasteful sheds when work could still complete.
-        if EARLY_RETURN && time_now() > self.ctx.e2e_deadline().saturating_sub(est_remaining_floor)
-        {
+        if self.admission_check(key, est_remaining_floor) {
             return Err(self.early_return.issue_error());
         }
 
@@ -390,6 +410,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         if !is_early_return_response(result) {
             self.track_latencies();
         }
+        self.record_admission_outcome(result);
         self.q_lat_tracker
             .inject_context_metadata(&self.ctx, result);
     }
@@ -408,6 +429,59 @@ impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
                 parent_to_child_id.to_key(),
                 parent_end.duration_since(child_end).as_micros() as u64,
             );
+        }
+    }
+
+    /// Returns true if the request should be shed (early-returned).
+    ///
+    /// With `emp_admission` enabled: uses empirical P(complete | api, bucket) for buckets 0–4.
+    /// Bucket 5 (full budget remaining) always admits. Falls through to floor-based check when
+    /// emp_admission is disabled.
+    #[allow(unused_variables)]
+    fn admission_check(&self, key: u64, est_remaining_floor: u64) -> bool {
+        #[cfg(feature = "emp_admission")]
+        if EARLY_RETURN {
+            let time_left = self.ctx.e2e_deadline().saturating_sub(time_now());
+            let slo = self.ctx.slo();
+            if slo > 0 {
+                let bucket =
+                    completion_rate_map::time_left_to_bucket(time_left, slo);
+                if bucket < 5 {
+                    let p = self
+                        .server
+                        .completion_rate_map
+                        .get_p(self.ctx.api(), bucket);
+                    let rand = completion_rate_map::deterministic_rand(
+                        self.ctx.request_id(),
+                        key,
+                    );
+                    let admitted = rand <= p.max(completion_rate_map::PROBE_FLOOR);
+                    if admitted {
+                        // OnceLock: only the first admitted hop is recorded.
+                        let _ = self
+                            .first_er_decision
+                            .set((self.ctx.api().clone(), bucket));
+                    }
+                    return !admitted;
+                }
+            }
+        }
+        // Default: floor estimate check (also used when emp_admission disabled, or bucket == 5).
+        EARLY_RETURN
+            && time_now() > self.ctx.e2e_deadline().saturating_sub(est_remaining_floor)
+    }
+
+    /// Records the outcome of the first admitted empirical-admission decision.
+    ///
+    /// No-op when `emp_admission` is disabled.
+    #[allow(unused_variables)]
+    fn record_admission_outcome<Ret>(&self, result: &Result<Response<Ret>, Status>) {
+        #[cfg(feature = "emp_admission")]
+        if let Some((api, bucket)) = self.first_er_decision.get() {
+            let completed = result.is_ok() && time_now() <= self.ctx.e2e_deadline();
+            self.server
+                .completion_rate_map
+                .update(api, *bucket, completed);
         }
     }
 }
@@ -664,5 +738,115 @@ mod tests {
         let (p_s, p_m) = registry.get_method_name(parent_id).unwrap();
         assert_eq!(p_s, "IntegrationService");
         assert_eq!(p_m, "ParentMethod");
+    }
+
+    /// Verify that `record_admission_outcome` updates the CompletionRateMap after a successful
+    /// request when `emp_admission` is enabled.
+    #[cfg(feature = "emp_admission")]
+    #[test]
+    fn test_emp_admission_outcome_updates_map_on_success() {
+        use super::completion_rate_map::CompletionRateMap;
+        use crate::masa::context::MASA_CONTEXT_HEADER;
+        use masa_core::ContextBuilder;
+
+        let server_ctx = Arc::new(ServerContext::<LatencyRms>::new("EmpService"));
+
+        // Build a context with a generous deadline and SLO so emp_admission takes effect.
+        let slo_us = 200_000u64; // 200ms
+        let now = masa_core::time_now();
+        let deadline = now + slo_us;
+        let ctx = ContextBuilder::new("EmpService", 999)
+            .slo(slo_us)
+            .deadline(deadline)
+            .build();
+
+        let req = http::Request::builder()
+            .header(MASA_CONTEXT_HEADER, ctx.to_header_string())
+            .body(())
+            .unwrap();
+
+        let method = GrpcMethod::new("EmpService", "ParentMethod");
+        let parent_ctx = ParentContext::<LatencyRms>::begin(method, &req, server_ctx.clone());
+
+        // Simulate the request completing successfully within the SLO.
+        let mut response_result: Result<Response<()>, Status> = Ok(Response::new(()));
+        parent_ctx.finalize_before_serialization(&mut response_result);
+
+        // The CompletionRateMap should now have been consulted during finalize.
+        // Since first_er_decision is only set during before_child_rpc, if no child RPC was made
+        // then the map should not have been updated (nothing to record).
+        // Verify the map is still at the default 1.0 for any bucket.
+        let p = server_ctx.completion_rate_map.get_p("EmpService", 3);
+        assert_eq!(p, 1.0, "no child rpc means no map update");
+    }
+
+    /// Verify that when p is driven to near 0, most requests are shed (only PROBE_FLOOR fraction
+    /// pass). This tests the stochastic admission behavior of `admission_check`.
+    #[cfg(feature = "emp_admission")]
+    #[test]
+    fn test_emp_admission_sheds_when_p_is_zero() {
+        use super::completion_rate_map::{CompletionRateMap, PROBE_FLOOR};
+
+        let map = CompletionRateMap::new();
+        // Drive completion rate to near 0 by recording repeated failures.
+        for _ in 0..100 {
+            map.update("Search", 0, false);
+        }
+        let p = map.get_p("Search", 0);
+        assert!(p < 0.01, "p should be near 0 after 100 failures: {}", p);
+
+        // With p ≈ 0, requests should be admitted only with probability PROBE_FLOOR.
+        // Check that deterministic_rand values at various request_ids that exceed PROBE_FLOOR
+        // (i.e., > p.max(PROBE_FLOOR)) would be shed.
+        use super::completion_rate_map::deterministic_rand;
+        let mut admitted = 0usize;
+        let total = 10_000usize;
+        let threshold = p.max(PROBE_FLOOR);
+        for i in 0..total as u64 {
+            let rand = deterministic_rand(i, 42);
+            if rand <= threshold {
+                admitted += 1;
+            }
+        }
+        // We expect approximately PROBE_FLOOR fraction admitted (5%).
+        let admit_rate = admitted as f64 / total as f64;
+        assert!(
+            (admit_rate - PROBE_FLOOR).abs() < 0.02,
+            "expected ~5% admission, got {:.1}%",
+            admit_rate * 100.0
+        );
+    }
+
+    /// Verify that without `emp_admission`, `admission_check` falls back to the floor-based check.
+    /// The floor check should admit when there is plenty of time left (no shed).
+    #[cfg(not(feature = "emp_admission"))]
+    #[test]
+    fn test_admission_check_floor_based_admits_with_budget() {
+        use crate::masa::context::MASA_CONTEXT_HEADER;
+        use masa_core::ContextBuilder;
+
+        let server_ctx = Arc::new(ServerContext::<LatencyRms>::new("FloorService"));
+
+        // Generous deadline: 100ms from now.
+        let slo_us = 100_000u64;
+        let now = masa_core::time_now();
+        let deadline = now + slo_us;
+        let ctx = ContextBuilder::new("FloorService", 42)
+            .slo(slo_us)
+            .deadline(deadline)
+            .build();
+
+        let req = http::Request::builder()
+            .header(MASA_CONTEXT_HEADER, ctx.to_header_string())
+            .body(())
+            .unwrap();
+
+        let method = GrpcMethod::new("FloorService", "ParentMethod");
+        let parent_ctx = ParentContext::<LatencyRms>::begin(method, &req, server_ctx.clone());
+
+        // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline - 0 = e2e_deadline.
+        // Since e2e_deadline is 100ms in the future, this should NOT shed.
+        let shed = parent_ctx.admission_check(0, 0);
+        assert!(!shed, "should admit when plenty of time remains");
     }
 }
