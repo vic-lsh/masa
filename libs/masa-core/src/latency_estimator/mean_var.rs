@@ -19,6 +19,10 @@ pub struct LatencyMeanVar {
     alpha: f64,
     estimate: u64,
     initialized: bool,
+    /// Floor estimate: slow-to-inflate (α=0.01), fast-to-deflate (α=0.3) EMA.
+    /// Tracks the lower envelope of latency observations to provide a conservative
+    /// lower bound that is resistant to mean inflation during load spikes.
+    mean_floor: f64,
 }
 
 impl LatencyMeanVar {
@@ -32,6 +36,7 @@ impl LatencyMeanVar {
             alpha,
             estimate: 0,
             initialized: false,
+            mean_floor: 0.0,
         }
     }
 
@@ -50,6 +55,7 @@ impl LatencyEstimator for LatencyMeanVar {
         if !self.initialized {
             self.mean = x;
             self.variance = 0.0;
+            self.mean_floor = x;
             self.initialized = true;
         } else {
             // Asymmetric alpha: slow to inflate (observations above mean), fast to deflate.
@@ -60,6 +66,12 @@ impl LatencyEstimator for LatencyMeanVar {
             let delta = x - self.mean;
             self.mean += alpha * delta;
             self.variance = (1.0 - alpha) * (self.variance + alpha * delta * delta);
+
+            // Floor EMA: fast deflation (α=0.3) when observation is below floor,
+            // very slow inflation (α=0.01) when above. Tracks the lower envelope of
+            // latency to provide a conservative ER threshold resistant to mean inflation.
+            let alpha_floor = if x < self.mean_floor { 0.3 } else { 0.01 };
+            self.mean_floor += alpha_floor * (x - self.mean_floor);
         }
         let raw = self.mean + self.k * self.variance.sqrt();
         self.estimate = if raw.is_finite() && raw > 0.0 {
@@ -80,6 +92,14 @@ impl LatencyEstimator for LatencyMeanVar {
     fn mean_estimate(&self) -> u64 {
         if self.mean > 0.0 && self.mean.is_finite() {
             self.mean.min(u64::MAX as f64) as u64
+        } else {
+            0
+        }
+    }
+
+    fn mean_floor_estimate(&self) -> u64 {
+        if self.mean_floor > 0.0 && self.mean_floor.is_finite() {
+            self.mean_floor.min(u64::MAX as f64) as u64
         } else {
             0
         }

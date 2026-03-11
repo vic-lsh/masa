@@ -53,6 +53,19 @@ where
         None
     }
 
+    /// Returns the floor estimate, used for ER thresholds that are robust to mean inflation.
+    pub(crate) fn get_mean_floor_estimate(&self, key: u64) -> Option<u64> {
+        let mut m = self.inner.lock().unwrap();
+        if let Some(estimator) = m.get(&key) {
+            if estimator.can_estimate() {
+                return Some(estimator.mean_floor_estimate());
+            }
+        } else {
+            m.insert(key, E::default());
+        }
+        None
+    }
+
     pub(crate) fn track(&self, key: u64, duration: u64) {
         let mut m = self.inner.lock().unwrap();
         let estimator = m.entry(key).or_insert_with(E::default);
