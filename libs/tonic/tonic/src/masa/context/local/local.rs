@@ -296,8 +296,30 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         let deadline = self.ctx.deadline().saturating_sub(est_remaining);
         // Use e2e_deadline for ER threshold: the tightened ctx.deadline() is for scheduling
         // priority only; early-return should only fire at the actual SLO boundary.
-        if EARLY_RETURN && time_now() > self.ctx.e2e_deadline().saturating_sub(est_remaining_mean) {
-            return Err(self.early_return.issue_error());
+        // Probabilistic admission: scale shedding probability from 0 (plenty of time) to
+        // ~95% (no time left), with a 5% probe floor that always admits to avoid starvation.
+        if EARLY_RETURN {
+            let time_left_us = self.ctx.e2e_deadline().saturating_sub(time_now()) as f64;
+            let est_remaining_us = est_remaining_mean as f64;
+            let p_complete = if est_remaining_us > 0.0 {
+                (time_left_us / est_remaining_us).clamp(0.05, 1.0)
+            } else {
+                1.0
+            };
+            if p_complete < 1.0 {
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                let mut hasher = DefaultHasher::new();
+                self.ctx.request_id().hash(&mut hasher);
+                // Mix in resolved_method_id so different child calls on the same request
+                // get independent decisions rather than all being correlated.
+                self.resolved_method_id.hash(&mut hasher);
+                let hash_val = hasher.finish();
+                let rand_val = (hash_val & 0xFFFF) as f64 / 65536.0; // uniform in [0, 1)
+                if rand_val >= p_complete {
+                    return Err(self.early_return.issue_error());
+                }
+            }
         }
 
         // prio_hint = deadline (parent_deadline - est_remaining). Subtracting est_child caused
