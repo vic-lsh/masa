@@ -454,7 +454,7 @@ Breakdown:
 Simple exploration shaping does not solve the feedback loop. The policy still converges to a
 one-class monopoly, just more erratically.
 
-## Final assessment
+## Final assessment (after iterations 5–7)
 
 No threshold-only tweak produced a robust improvement in 3 iterations:
 - Pure empirical admission: excellent on `coral_4`, catastrophic on `coral_ext_2`
@@ -471,3 +471,59 @@ The strongest conclusion is architectural:
 I am not keeping any of the attempted code changes. The best documented result remains:
 - `coral_4`: original empirical admission is best
 - `coral_ext_2`: `prio_local,early` is currently the robust winner
+
+---
+
+## Iteration 8: Break multi-hop probe compounding with forced-probe flag (coral_8, coral_8_b)
+
+**Status:** Pending
+
+### Change
+
+Add `forced_probe: bool` field to `Context`. When a request is admitted via the probe floor
+(`rand > p` but `rand <= PROBE_FLOOR`), set `forced_probe=true` in the child context.
+Downstream hops that see `forced_probe=true` bypass emp_admission and always admit the request.
+The existing outcome tracking (`first_er_decision`) still fires at each hop so P(api, bucket)
+updates correctly.
+
+### Hypothesis
+
+**Root cause of coral_ext_2 failure**: emp_admission fires at every hop independently. With
+`PROBE_FLOOR=0.05` and N≈3 hops for Hotel's Reservation path, the compound probability that a
+probe actually reaches completion is `0.05^3 ≈ 0.0125%`. At 700 Reservation/s offered, only
+~0.09 successful probe completions per second reach the `update()` call — far too few to update
+P(Reservation) and break the positive feedback loop. The mechanism designed to allow recovery
+(the probe floor) is neutralized by multi-hop shedding.
+
+With forced-probe propagation:
+- Probe admissions at the frontend (5% of Reservation when p≈0) generate `forced_probe=true`
+  in the child Context serialized to the HTTP header.
+- All downstream hops see `forced_probe=true` and admit unconditionally.
+- Reservation probes survive all hops, get priority (prio_local: Reservation deadline tighter
+  than Search), complete within 50ms SLO, and update P(Reservation) at each hop.
+- After ~14 successful updates (< 0.5 seconds at 35 probes/s), P(Reservation) rises to 50%.
+  Positive feedback takes over: more Reservation admitted → more complete → P recovers fully.
+
+**coral_4 safety**: In coral_4 (50ms SLO for both APIs), fresh Search arrives at bucket 5 and
+is shed by the FLOOR check (`est_remaining=110ms > time_left=50ms`) — emp_admission never fires
+and `forced_probe` is never set for these requests. Only Search that has already waited in the
+queue (now at bucket <5) gets empirical-checked; 5% probe floor applies, generating a small
+number of forced Search probes. Each is shed at an early hop by the floor ER check or by
+running into a missed deadline. Overhead is bounded: ~5-10 Search forced probes/s × 0.11s =
+<1 CPU-second/s of wasted backend work — negligible relative to the 700 Reservation goodput.
+
+### Expected outcomes if hypothesis is correct:
+1. coral_8 (coral_ext_2 config): Reservation goodput rises from ~13/s at 1400 RPS to
+   significantly higher (ideally >400), while Search goodput remains similar or slightly lower
+   as prio_local correctly prioritizes Reservation.
+2. coral_8_b (coral_4 config): Reservation goodput at 1400 RPS remains close to 700
+   (±50 regression acceptable). emv+emp still beats ple by a large margin.
+3. No system instability or goodput collapse at any tested RPS.
+
+### Experiment design
+Two experiments:
+- `coral_8`: coral_ext_2 config (Search=200ms SLO, Reservation=50ms SLO, RPS=[100,400,800,1200,1400,1600,1800,2000]).
+  Tests whether forced-probe fixes the Reservation starvation in mixed-SLO workload.
+- `coral_8_b`: coral_4 config (both SLOs=50ms, RPS=[400,800,1400,2000,2500,3000,4000]).
+  Regression check — verifies coral_4 win is preserved.
+Policies: prio_local,early and prio_local,est_mean_var,emp_admission,early. 60s/step, 20s warmup.
