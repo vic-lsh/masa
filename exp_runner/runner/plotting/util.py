@@ -2,12 +2,22 @@ import argparse
 import json
 import logging
 import os
+from dataclasses import dataclass
 from argparse import Namespace
 from pathlib import Path
 
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PlotData:
+    repeats: int
+    apis: list[str]
+    policies: list[str]
+    rps_values: list[int]
+    results: list[dict]
 
 
 def _repair_row_parts(parts: list[str], *, expected_fields: int) -> list[str]:
@@ -200,7 +210,7 @@ def read_policies(config_dir: Path) -> list[str]:
     return policies
 
 
-def read_data(config_dir, data_dir):
+def load_plot_data(config_dir: Path | str, data_dir: Path | str) -> PlotData:
     with open(os.path.join(config_dir, "gen_config.json")) as f:
         config = json.load(f)
     repeats = config["Repeats"]
@@ -250,7 +260,24 @@ def read_data(config_dir, data_dir):
 
     apis.append("ALL")
 
-    return repeats, apis, policies, rps_values, results
+    return PlotData(
+        repeats=repeats,
+        apis=apis,
+        policies=policies,
+        rps_values=rps_values,
+        results=results,
+    )
+
+
+def read_data(config_dir, data_dir):
+    plot_data = load_plot_data(config_dir, data_dir)
+    return (
+        plot_data.repeats,
+        plot_data.apis,
+        plot_data.policies,
+        plot_data.rps_values,
+        plot_data.results,
+    )
 
 
 def prepare_output_dir(args) -> None:
@@ -262,6 +289,13 @@ def prepare_output_dir(args) -> None:
 
     for i in range(repeats):
         os.makedirs(os.path.join(args.output_dir, str(i)), exist_ok=True)
+
+
+def get_plot_worker_count(task_count: int, *, max_workers: int = 8) -> int:
+    if task_count <= 0:
+        return 1
+
+    return max(1, min(task_count, max_workers))
 
 
 def parse_args() -> Namespace:
