@@ -313,6 +313,93 @@ If goodput at 1600 regresses while 1400 improves (similar to grove_2 pattern):
 
 ---
 
+## Early ER vs late ER: the core tradeoff
+
+### Sunk cost principle
+
+When deciding whether to ER at hop N, the compute spent on hops 1 through N-1 is
+irrelevant — it is gone regardless. The ER decision at hop N should only compare:
+
+- **Expected benefit of admitting**: P(complete | current state) × 1 goodput unit
+- **Expected marginal cost of admitting**: compute for hops N through end, weighted
+  by P(fails), which is wasted if the request doesn't complete
+
+This means the threshold should be the same at every hop in principle. The plan's
+per-hop `before_child_rpc` check is already correct in this sense — each hop's
+decision is independent and only considers forward costs.
+
+### The practical tension
+
+Certainty and cheapness are inversely correlated:
+
+- **`begin()` (before any compute)**: cheapest ER point, worst information (time_left
+  is large, bucket estimates are noisiest, many requests at this bucket complete fine)
+- **Last hop before failure**: most compute already spent, best information, but
+  shedding here saves only one hop's worth of work
+
+The plan should explicitly use multiple ER points with appropriate thresholds at each:
+
+### ER at `begin()` — the earliest possible point
+
+Before any computation or downstream RPC, check P at the current time_left bucket.
+ER immediately if P is below a hard threshold (e.g., 0.03), regardless of probe floor.
+
+This catches requests that burned most of their SLO budget in transit or queuing
+before even reaching the frontend — they are clearly doomed and cheap to shed.
+`time_elapsed = time_now() - ctx.gateway_entry()` is available here and is the
+primary driver of time_left at this stage.
+
+The EarlyReturnHandler in `common.rs` already checks at this stage; the empirical P
+check slots in there.
+
+### time_elapsed_fraction as the primary parameterization
+
+At `begin()`, `time_left ≈ slo - time_elapsed` (minimal computation so far).
+Parameterizing on `time_elapsed_fraction = time_elapsed / slo` rather than raw
+`time_left` makes the "budget consumed" semantics explicit and generalizes across
+APIs with different SLOs:
+
+- `time_elapsed_fraction = 0.0–0.1`: just arrived, almost certainly fine
+- `time_elapsed_fraction = 0.5–0.7`: half the budget burned in transit, marginal
+- `time_elapsed_fraction = 0.9+`: clearly doomed, ER at `begin()` is a large win
+
+The empirical map can use `time_elapsed_fraction` buckets rather than raw `time_left`
+buckets. Both carry the same information at `begin()` but `time_elapsed_fraction` is
+SLO-normalized.
+
+### Tiered probe floor by certainty
+
+Probes maintain the feedback loop in zones where shedding is aggressive. But the
+right probe rate varies by bucket:
+
+- **Small time_left buckets** (high certainty, aggressive shedding): higher probe
+  floor (~10%) — these are the buckets where shedding is heaviest and feedback would
+  go dark without probing. Accuracy here matters most.
+- **Large time_left buckets** (low certainty, light shedding): lower probe floor
+  (~2%) — most requests here complete fine anyway, so probes are rarely "testing" a
+  doomed zone. Saving the compute cost of failed probes is more valuable here.
+
+This avoids wasting compute on probe admissions at the cheap early stage where
+estimates are noisy and requests mostly complete anyway.
+
+### Hop-indexed fallback under sample starvation
+
+When a bucket has too few samples (e.g., after a step increase in RPS), P is stale.
+A fallback that doesn't depend on empirical estimates: track the budget consumption
+rate from the per-request context.
+
+`budget_consumption_rate = time_elapsed / hop_index` (average time burned per hop
+so far). If `budget_consumption_rate × hops_remaining > time_left`, the request
+will likely miss SLO even under optimistic remaining-hop latency assumptions. This
+is derivable purely from the request's own history without the empirical map and
+serves as the early ER decision when buckets are sparse.
+
+Example: a Reservation request on hop 2 with time_elapsed=35ms, SLO=50ms,
+typically ~5 hops total → estimated remaining budget needed = 3 hops × 17.5ms/hop
+= 52.5ms > 15ms remaining. ER.
+
+---
+
 ## Open questions
 
 1. **Bucket boundaries:** Should they be fixed (absolute ms) or SLO-relative
