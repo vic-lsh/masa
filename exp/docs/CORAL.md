@@ -527,3 +527,110 @@ Two experiments:
 - `coral_8_b`: coral_4 config (both SLOs=50ms, RPS=[400,800,1400,2000,2500,3000,4000]).
   Regression check — verifies coral_4 win is preserved.
 Policies: prio_local,early and prio_local,est_mean_var,emp_admission,early. 60s/step, 20s warmup.
+
+### Actual Outcomes (coral_8) — code commit: 9a060e9b
+
+**Status:** Regression ❌ — CATASTROPHIC FAILURE, strictly worse than coral_ext_2 baseline
+
+#### Goodput table
+
+| RPS  | prio_oldest,early | prio_local,early | emv+emp (coral_8) | emv+emp baseline (coral_ext_2) |
+|------|-------------------|------------------|-------------------|-------------------------------|
+| 100  | 99.9              | 99.9             | 99.8              | 99.8                          |
+| 400  | 399.2             | 399.3            | 399.2             | 399.3                         |
+| 800  | 798.6             | 798.5            | **406.6**         | 402.8                         |
+| 1200 | 1184.4            | 1186.1           | **608.1**         | 607.6                         |
+| 1400 | 1196.0            | **1279.5**       | **12.2**          | 659.5                         |
+| 1600 | 1277.8            | 1409.3           | **15.3**          | 15.3                          |
+| 1800 | 1078.4            | 984.9            | **16.0**          | 16.3                          |
+| 2000 | 251.1             | 475.5            | **19.4**          | 19.6                          |
+
+#### Per-API breakdown at key RPS
+
+| RPS  | Policy       | Search | Reservation |
+|------|--------------|--------|-------------|
+| 800  | emv+emp      | 399.6  | **7.1**     |
+| 1200 | emv+emp      | 596.2  | **12.0**    |
+| 1400 | emv+emp      | 0      | **12.2**    |
+| 1400 | prio_local   | 670.3  | 609.1       |
+
+#### ER breakdown
+
+- Reservation ERs (emv+emp): 392/s at 800, 690/s at 1400 — Reservation almost entirely shed
+- Search ERs (emv+emp): 0 at 800, 698/s at 1400 — Search also wholesale shed at overload
+- None/None ERs (ingress shed before any child): 362/s at 800, **1302/s at 1400** — far exceeds offered load
+- The 1302/s None category at 1400 RPS offered = emp_admission blocking essentially everything
+
+#### Key findings
+
+1. **Forced-probe made things dramatically worse at 1400+ RPS.** Total goodput collapsed from
+   659 (coral_ext_2 baseline) to 12.2 — a 98% regression at the critical overload point.
+
+2. **Root cause: forced probes increase backend load beyond sustainability.** When probe requests
+   bypass all intermediate shedding and run to completion, they consume full backend resources.
+   This pushed already-overloaded backends past their limit, causing p estimates to collapse for
+   BOTH classes, not just Reservation. At 1400 RPS both Search (0 goodput) and Reservation (12)
+   effectively ceased — the system became completely overwhelmed.
+
+3. **Reservation starvation not fixed.** At 800 and 1200 RPS, Reservation goodput remained at
+   ~7-12/s, unchanged from the coral_ext_2 baseline. The forced probe only made high-load worse.
+
+4. **The admission mechanism poisoned its own estimates.** The `None/None` ER rate of 1302/s at
+   1400 offered load suggests the admission controller learned to reject almost everything. The
+   forced probes — by running to failure — drove p down for all classes, triggering a
+   cascading collapse.
+
+### Decision: Revert code change (commit 9a060e9b)
+
+The forced-probe approach is fundamentally wrong. Forcing probes through all hops increases backend
+load and poisons empirical estimates, converting Reservation starvation into system-wide collapse.
+
+---
+
+## Iteration 9: Fix feedback loop at the update step (coral_9)
+
+**Status:** Pending
+
+### Change
+
+Change `record_admission_outcome` to compute `completed = result.is_ok()` instead of
+`completed = result.is_ok() && time_now() <= ctx.e2e_deadline()`.
+
+Currently, a request that runs to completion but misses its SLO deadline (deadline miss due to
+queue delay) generates `update(api, bucket, false)` — the same signal as an ER. This is wrong:
+a deadline miss from queue delay is a *congestion signal*, not a request infeasibility signal.
+Only early-return errors (`result.is_err()`) should drive p down — they indicate the request
+was deemed infeasible by the system.
+
+### Hypothesis
+
+In coral_ext_2, Reservation fails with `result.is_ok()` (it ran to completion, but too late
+due to queue delay). This generates spurious `completed = false` updates, driving p(Reservation)
+down exactly as if Reservation were intrinsically infeasible. The feedback loop is triggered
+entirely by deadline-miss updates masquerading as infeasibility signals.
+
+With the fix:
+- Reservation in coral_ext_2: completes (`result.is_ok()`) → `completed = true` regardless of
+  deadline → p(Reservation) stays high → Reservation keeps getting admitted → gets priority
+  over Search → queue delay for Reservation reduces → positive feedback in right direction
+- Search in coral_4: is early-returned at every hop (`result.is_err()`) → `completed = false`
+  → p(Search) drops → shed. The coral_4 win is preserved because Search always hits ER
+  somewhere in its call chain
+
+**Risk for coral_4**: Search probe requests that run all the way through without hitting ER
+(unlikely but possible) would generate `completed = true` updates → p(Search) might recover.
+However, in coral_4, Search is consistently ER'd at downstream hops (prio_local,early floor
+check: est_remaining=110ms > time_left << 50ms → shed). These ER updates dominate → p(Search)
+stays low.
+
+### Expected outcomes if hypothesis is correct:
+1. coral_9 (coral_ext_2 config): Reservation goodput recovers substantially at 800-1400 RPS,
+   approaching or matching prio_local,early (~1186 at 1200, ~1279 at 1400)
+2. coral_9_b (coral_4 config): Reservation goodput remains close to coral_4 original (~700 at
+   1400 RPS). emv+emp still beats ple by a large margin.
+3. No system instability — p(Search) in coral_4 stays low because Search is consistently ER'd
+
+### Experiment design
+- `coral_9`: coral_ext_2 config (Search=200ms, Reservation=50ms). Tests Reservation recovery.
+- `coral_9_b`: coral_4 config (both SLOs=50ms). Regression check.
+Policies: prio_local,early and prio_local,est_mean_var,emp_admission,early. 60s/step, 20s warmup.
