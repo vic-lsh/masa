@@ -1,0 +1,987 @@
+{
+  "S_100293104": {
+    "MS_10484": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_32678::wmOpvr4wah:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_10673": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_40043::SvEjTW7loU:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_15930::gOtd8BhqGE": 1.0
+      },
+      {
+        "MS_40043::SvEjTW7loU:TDDL_UPDATE": 1.0
+      },
+      {
+        "MS_37691::dcFnCLN08g": 1.0
+      },
+      {
+        "MS_37691::f7c6GtElwL": 1.0
+      },
+      {
+        "MS_37691::Vl55m_pWRM": 1.0
+      },
+      {
+        "MS_40043::iSEHgGo7kY:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_20627::x7M3aT985J": 1.0
+      },
+      {
+        "MS_14728::Bzo8MUkvQ5": 1.0
+      },
+      {
+        "MS_71911::zDddf2zzdA": 1.0
+      },
+      {
+        "MS_31430::O60z08v66p": 1.0
+      },
+      {
+        "MS_37691::5ZoOI9SqMK": 1.0
+      }
+    ],
+    "MS_10783": [
+      {
+        "MS_10783::A2rEL230qM": 1.0
+      },
+      {
+        "MS_10783::ufL0MOHqem": 0.3333333333333333
+      }
+    ],
+    "MS_11070": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_8052::xWMIHwIyes:TDDL_QUERY": 0.2,
+        "MS_8052::zkKZVpzSqy:TDDL_QUERY": 0.8
+      }
+    ],
+    "MS_11825": [
+      {
+        "MS_6142::CtNeGEyQVP": 1.0
+      },
+      {
+        "MS_36950::nEnlqpaNrK": 1.0
+      },
+      {
+        "MS_36950::u8GhvLqn_9": 1.0
+      }
+    ],
+    "MS_11827": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_41249::VthNmqCDkb:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_41249::KT_R53CME-:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_1278": [
+      {
+        "MS_1278::JHQ7SG0ZvT": 1.0
+      }
+    ],
+    "MS_12928": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_41309::-2PT0GxiuF:TDDL_QUERY": 0.047619047619047616,
+        "MS_41309::WypI882eYT:TDDL_QUERY": 0.09523809523809523,
+        "MS_41309::n5cZzynsvV:TDDL_QUERY": 0.7619047619047619
+      },
+      {
+        "MS_41309::Nzy6tT7pNf:TDDL_QUERY": 0.7142857142857143,
+        "MS_41309::a9R_0vlz5b:TDDL_QUERY": 0.09523809523809523
+      },
+      {
+        "MS_41309::iQOUfluHAB:TDDL_QUERY": 0.8095238095238095,
+        "MS_4171::PEMW5YaKuN": 0.09523809523809523
+      },
+      {
+        "MS_30118::YWVH2dkjGz": 0.09523809523809523,
+        "MS_41309::7gF-qlp5Ff:TDDL_QUERY": 0.09523809523809523,
+        "MS_41309::n5cZzynsvV:TDDL_UPDATE": 0.7142857142857143
+      },
+      {
+        "MS_41309::iQOUfluHAB:TDDL_UPDATE": 0.09523809523809523,
+        "MS_64565::Ux11NmKVZL": 0.09523809523809523
+      },
+      {
+        "MS_24506::kw_0AvKxA_": 0.09523809523809523
+      },
+      {
+        "MS_67397::1zZHpk7ktp": 0.09523809523809523
+      },
+      {
+        "MS_41309::ukwquVJ1R4:TDDL_INSERT": 0.09523809523809523
+      },
+      {
+        "MS_41309::WypI882eYT:TDDL_UPDATE": 0.09523809523809523
+      },
+      {
+        "MS_41309::N3Ol0hEqFN:TDDL_COMMIT": 0.09523809523809523
+      }
+    ],
+    "MS_12967": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_11325::Fe7lLBlNrM:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_11325::Fe7lLBlNrM:TDDL_UPDATE": 1.0
+      }
+    ],
+    "MS_13873": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      }
+    ],
+    "MS_16041": [
+      {
+        "MS_10783::A2rEL230qM": 1.0
+      }
+    ],
+    "MS_1745": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_69807::1fU6ZCuND2:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_17703": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_6966::b-Ob8LiSzZ:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_17790": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_53839::pC6zCodaNe:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_21952::818tjZAs_v:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_18043": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_10154::Nl6guguH_s:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_10154::WuvAq9qJAQ:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_10154::WuvAq9qJAQ:TDDL_INSERT": 1.0
+      },
+      {
+        "MS_10154::kM8VNT0Xkq:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_10154::kM8VNT0Xkq:TDDL_UPDATE": 1.0
+      },
+      {
+        "MS_10154::GMbUjCOiKU:TDDL_COMMIT": 1.0
+      }
+    ],
+    "MS_18642": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_68381::Ays1dCRCr8:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_68381::rjqxEKd0k4:TDDL_QUERY": 0.5
+      },
+      {
+        "MS_68381::Ays1dCRCr8:TDDL_DELETE": 0.5
+      }
+    ],
+    "MS_19585": [
+      {
+        "MS_19585::8zqQwHeCA8": 1.0
+      }
+    ],
+    "MS_20618": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_10154::Nl6guguH_s:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_10154::WuvAq9qJAQ:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_10154::WuvAq9qJAQ:TDDL_INSERT": 1.0
+      },
+      {
+        "MS_10154::kM8VNT0Xkq:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_10154::kM8VNT0Xkq:TDDL_UPDATE": 1.0
+      },
+      {
+        "MS_10154::GMbUjCOiKU:TDDL_COMMIT": 1.0
+      }
+    ],
+    "MS_20627": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_33582::9z0H76LNxX:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_33582::9NikXzUnWv:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_11363::LkDpw_0Ixt": 1.0
+      },
+      {
+        "MS_2725::CSdADGx6Lj:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_21872": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_17120::tp9bgwM1Lj:TDDL_UPDATE": 1.0
+      }
+    ],
+    "MS_24120": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_34874::ta1c64zyXf:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_24506": [
+      {
+        "MS_10783::ufL0MOHqem": 1.0
+      }
+    ],
+    "MS_27421": [
+      {
+        "MS_19585::Idedn6j-wq": 0.5,
+        "MS_19585::fZNWR7NvFD": 0.25,
+        "MS_19585::hGkH-ikj-B": 0.25,
+        "MS_33709::CGS3qFJpi8": 0.25,
+        "MS_33709::HI3KP3GIBC": 0.25
+      }
+    ],
+    "MS_29535": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_25131::bn6pg-8jC8:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_25131::dtgRjMArxF:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_25131::9nAjsJR0c5:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_25131::iCT6Wv1gte:TDDL_COMMIT": 1.0
+      },
+      {
+        "MS_25131::2o2tAuYtHH:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_25131::_SAh89YSiN:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_60125::G1pa6mbmhg": 1.0
+      },
+      {
+        "MS_58242::7PBQD-oinz": 1.0
+      },
+      {
+        "MS_60125::T18jTEtocu": 1.0
+      },
+      {
+        "MS_25131::2o2tAuYtHH:TDDL_UPDATE": 1.0
+      }
+    ],
+    "MS_30118": [
+      {
+        "MS_41516::J7bU570wmd": 1.0
+      },
+      {
+        "MS_41516::VIyoV27Bti": 1.0
+      },
+      {
+        "MS_7766::VIyoV27Bti": 0.5
+      }
+    ],
+    "MS_30759": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_39943::12HXDNKK2v:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_33709": [
+      {
+        "MS_19585::pTSo6FzcRA": 1.0
+      }
+    ],
+    "MS_35050": [
+      {
+        "MS_41516::SuEMX7CaSI": 1.0
+      },
+      {
+        "MS_41516::ffVzuP6I-L": 1.0
+      },
+      {
+        "MS_46825::2ctK0GifON": 1.0
+      },
+      {
+        "MS_46825::44k5XkoOxP": 1.0
+      },
+      {
+        "MS_46825::0REcWWf5yJ": 1.0
+      }
+    ],
+    "MS_36950": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_66923::G1OIpKMomd:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_66923::gPt05Tgf_0:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_66923::Sy1VcizJrO:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_22012::M75PPtvODD": 1.0
+      },
+      {
+        "MS_66923::_D6YGlQND7:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_66923::_D6YGlQND7:TDDL_INSERT": 1.0
+      },
+      {
+        "MS_66923::_D6YGlQND7:TDDL_UPDATE": 1.0
+      },
+      {
+        "MS_11825::jx00dWPz22": 1.0
+      },
+      {
+        "MS_66923::ASiGIzAhdg:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_66923::ASiGIzAhdg:TDDL_INSERT": 1.0
+      },
+      {
+        "MS_66923::nOF-J87JZw:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_66923::nOF-J87JZw:TDDL_INSERT": 1.0
+      },
+      {
+        "MS_66923::B4usqzLfSd:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_66923::B4usqzLfSd:TDDL_INSERT": 1.0
+      },
+      {
+        "MS_66923::B4usqzLfSd:TDDL_UPDATE": 1.0
+      },
+      {
+        "MS_66923::ASiGIzAhdg:TDDL_UPDATE": 1.0
+      },
+      {
+        "MS_66923::nOF-J87JZw:TDDL_UPDATE": 1.0
+      },
+      {
+        "MS_66923::_ycfLTnaoZ:TDDL_COMMIT": 1.0
+      },
+      {
+        "MS_66923::8kzDWvV02q:TDDL_INSERT": 1.0
+      },
+      {
+        "MS_66923::8kzDWvV02q:TDDL_UPDATE": 1.0
+      },
+      {
+        "MS_21908::x5LqA1ywuC": 1.0
+      },
+      {
+        "MS_66923::8kzDWvV02q:TDDL_DELETE": 1.0
+      },
+      {
+        "MS_66923::Ns3R6WuuMw:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_36953": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_53839::pC6zCodaNe:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_21952::818tjZAs_v:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_37183": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_50108::DHkt8zxHMJ:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_28758::dx3YLTZi9v": 1.0
+      },
+      {
+        "MS_50108::DHkt8zxHMJ:TDDL_UPDATE": 1.0
+      },
+      {
+        "MS_28758::kBt2pRoTYk": 1.0
+      },
+      {
+        "MS_28758::NzSYdPqzwp": 0.5
+      }
+    ],
+    "MS_37372": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_10154::VO62qSZjkV:TDDL_QUERY": 0.9534883720930233
+      },
+      {
+        "MS_42150::xwsC5V7uRO": 0.9534883720930233
+      },
+      {
+        "MS_33424::owlzU5kLu1": 0.3023255813953488
+      },
+      {
+        "MS_40123::Q1g4PrAtIv": 1.0
+      },
+      {
+        "MS_10154::tE52ZQbCW7:TDDL_QUERY": 0.5581395348837209
+      },
+      {
+        "MS_10154::c9ba5GzXD5:TDDL_QUERY": 0.5581395348837209
+      }
+    ],
+    "MS_38298": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_53904::8iAhbYDaHX:TDDL_QUERY": 0.8,
+        "MS_53904::pXltT8vJJT:TDDL_QUERY": 0.2
+      }
+    ],
+    "MS_38469": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_11325::3W6BifoRJw:TDDL_UPDATE": 1.0
+      },
+      {
+        "MS_3974::7dyoB60goO": 1.0
+      },
+      {
+        "MS_12967::ZAW9yoNgDr": 1.0
+      }
+    ],
+    "MS_39521": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_11581::c6KQ0Ao08u:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_40123": [
+      {
+        "MS_27342::nvNJhVp5rU": 1.0
+      }
+    ],
+    "MS_40518": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_10154::Nl6guguH_s:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_10154::WuvAq9qJAQ:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_10154::WuvAq9qJAQ:TDDL_INSERT": 1.0
+      },
+      {
+        "MS_10154::kM8VNT0Xkq:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_10154::kM8VNT0Xkq:TDDL_UPDATE": 1.0
+      },
+      {
+        "MS_10154::GMbUjCOiKU:TDDL_COMMIT": 1.0
+      }
+    ],
+    "MS_41019": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_37786::Pa0kcx-I_v:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_37691::4Wn8ZAsjhS": 0.1111111111111111
+      },
+      {
+        "MS_35050::njKVUUapMO": 0.1111111111111111
+      },
+      {
+        "MS_37691::XPjNawkDWH": 0.1111111111111111
+      },
+      {
+        "MS_37691::Xdnql_BZIr": 0.1111111111111111
+      },
+      {
+        "MS_37691::50JLClZzxF": 0.1111111111111111
+      },
+      {
+        "MS_37786::Pa0kcx-I_v:TDDL_UPDATE": 0.1111111111111111
+      },
+      {
+        "MS_37786::OwCxvSszVr:TDDL_QUERY": 0.1111111111111111
+      },
+      {
+        "MS_37786::jZIDJ8WHGr:TDDL_QUERY": 0.1111111111111111
+      },
+      {
+        "MS_60386::pcy_MxDQLF": 0.1111111111111111
+      },
+      {
+        "MS_37691::PddPNyxbBp": 0.1111111111111111
+      },
+      {
+        "MS_37691::4pTDBg-5rm": 0.1111111111111111
+      }
+    ],
+    "MS_41516": [
+      {
+        "MS_27421::mJxUT-THwr": 0.8
+      },
+      {
+        "MS_13647::2y6q9X6qB6:TDDL_QUERY": 0.6
+      },
+      {
+        "MS_13647::IYoAxPz-dk:TDDL_QUERY": 0.6,
+        "MS_13647::fhKHNirBik:TDDL_QUERY": 0.6,
+        "MS_13647::iZM3Hp7PwN:TDDL_QUERY": 0.4
+      },
+      {
+        "MS_59536::OebGQZvvZB": 0.6
+      }
+    ],
+    "MS_4171": [
+      {
+        "MS_49843::xmR_dwgZQ0": 1.0
+      }
+    ],
+    "MS_41983": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_34874::ta1c64zyXf:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_44252": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_64754::R5wFvLgdKM:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_45682": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_25707::Dr0J3mzcK4:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_54353": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_1030::-QHFeNKAAH:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_54407": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_67699::tFyMJUPuIi:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_67699::kCOfJt7cnJ:TDDL_QUERY": 0.9
+      },
+      {
+        "MS_1177::TlDfouV0hB:TDDL_QUERY": 0.9
+      }
+    ],
+    "MS_58242": [
+      {
+        "MS_30659::4SrgwwDPoS": 1.0
+      },
+      {
+        "MS_47465::MVgrwPl2z-:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_59099": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_26568::CyF30mZ2uq:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_59937": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_11581::c6KQ0Ao08u:TDDL_QUERY": 1.0
+      }
+    ],
+    "MS_6034": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_17120::tp9bgwM1Lj:TDDL_UPDATE": 1.0
+      }
+    ],
+    "MS_6142": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_1566::gvS2J0dMQt:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_19585::YgXf20unHo": 1.0
+      }
+    ],
+    "MS_6307": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_37691::Vdk4bxUZke": 0.3333333333333333
+      },
+      {
+        "MS_11070::k7VhYhWn2T": 0.3333333333333333
+      },
+      {
+        "MS_37691::jJgzuSvDt5": 0.3333333333333333
+      },
+      {
+        "MS_11285::iJcwabRM_A:TDDL_COMMIT": 0.3333333333333333
+      },
+      {
+        "MS_71771::jGZxr1Yq4A": 0.3333333333333333
+      }
+    ],
+    "MS_64329": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_5688::Drc4P746Az:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_8234::J2UWonVJpQ": 0.75
+      },
+      {
+        "MS_8234::Mf_FuiBe_N": 0.75
+      },
+      {
+        "MS_5688::KfGWTxJK3H:TDDL_QUERY": 0.75
+      },
+      {
+        "MS_5688::R5M-t_ye9x:TDDL_QUERY": 0.75
+      },
+      {
+        "MS_8234::QPilIhtlED": 0.75
+      }
+    ],
+    "MS_64565": [
+      {
+        "MS_66614::HUsQWTphfB": 1.0
+      },
+      {
+        "MS_16041::X0OGyu1w8y": 0.6666666666666666
+      },
+      {
+        "MS_16041::WdMF9223vA": 0.6666666666666666
+      },
+      {
+        "MS_16041::11c3pFw9-W": 0.6666666666666666
+      },
+      {
+        "MS_16041::wK0fD_UCbU": 1.0
+      }
+    ],
+    "MS_67165": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_42826::l6afSWrVHu:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_5913::TXPch4HDvv": 1.0
+      },
+      {
+        "MS_5913::vb_8GcBgf7": 1.0
+      },
+      {
+        "MS_42826::l6afSWrVHu:TDDL_UPDATE": 1.0
+      },
+      {
+        "MS_11827::wH-xtC5Mb1": 1.0
+      },
+      {
+        "MS_42826::NsMz3YDV8p:TDDL_INSERT": 1.0
+      },
+      {
+        "MS_42826::Z693imukeE:TDDL_COMMIT": 1.0
+      },
+      {
+        "MS_5913::ff9dgZWK2F": 1.0
+      }
+    ],
+    "MS_67397": [
+      {
+        "MS_10783::_r8pnkbNve": 1.0
+      }
+    ],
+    "MS_68937": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_66490::bhrjZmnAxI:TDDL_QUERY": 0.6666666666666666
+      },
+      {
+        "MS_10783::YoOwbx24Ar": 0.6666666666666666
+      },
+      {
+        "MS_66490::Y3tLOuD4Z5:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_66490::Y3tLOuD4Z5:TDDL_INSERT": 0.6666666666666666
+      },
+      {
+        "MS_66490::m9evF-9T-I:TDDL_QUERY": 0.6666666666666666
+      },
+      {
+        "MS_66490::Hqo901_g_a:TDDL_QUERY": 0.6666666666666666
+      },
+      {
+        "MS_66490::TaN_Cd8J5S:TDDL_ROLLBACK": 0.6666666666666666
+      },
+      {
+        "MS_10783::wc2tmlNIZC": 0.6666666666666666
+      }
+    ],
+    "MS_69813": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_10154::zGe5Voq_fm:TDDL_QUERY": 0.42424242424242425
+      },
+      {
+        "MS_37372::-88oz4eQHe": 1.0
+      },
+      {
+        "MS_10154::VO62qSZjkV:TDDL_QUERY": 0.42424242424242425
+      },
+      {
+        "MS_37372::66CM1ghbM6": 0.42424242424242425,
+        "MS_37372::E-ZrAnh7x5": 0.42424242424242425,
+        "MS_37372::jOrbdcKWiR": 0.42424242424242425
+      },
+      {
+        "MS_10154::L7a_0gTJta:TDDL_QUERY": 0.5151515151515151
+      },
+      {
+        "MS_10154::7SVs_DrVGO:TDDL_QUERY": 0.2727272727272727
+      },
+      {
+        "MS_10154::oF57XQKw3D:TDDL_QUERY": 0.06060606060606061
+      },
+      {
+        "MS_10154::kM8VNT0Xkq:TDDL_QUERY": 1.0,
+        "MS_10154::tzpxJOpU_g:TDDL_QUERY": 0.5454545454545454
+      },
+      {
+        "MS_10154::ng7_mDK8y0:TDDL_QUERY": 0.30303030303030304,
+        "MS_10154::q3iPrGSMsZ:TDDL_QUERY": 0.42424242424242425
+      },
+      {
+        "MS_10154::CPVf4_bBzI:TDDL_QUERY": 0.30303030303030304,
+        "MS_10154::js84X-Br7W:TDDL_QUERY": 0.42424242424242425
+      },
+      {
+        "MS_10154::PV797jesro:TDDL_QUERY": 0.5151515151515151,
+        "MS_10154::ZrYPJC9arQ:TDDL_QUERY": 0.06060606060606061,
+        "MS_10154::js84X-Br7W:TDDL_UPDATE": 0.42424242424242425
+      },
+      {
+        "MS_10154::ZrYPJC9arQ:TDDL_UPDATE": 0.06060606060606061,
+        "MS_10154::uU6Xsix704:TDDL_QUERY": 0.5151515151515151
+      },
+      {
+        "MS_10154::uU6Xsix704:TDDL_UPDATE": 0.5151515151515151
+      }
+    ],
+    "MS_71771": [
+      {
+        "MS_1278::JHQ7SG0ZvT": 1.0
+      },
+      {
+        "MS_11512::JJNfHCiMnR:TDDL_INSERT": 1.0
+      },
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_11512::JJNfHCiMnR:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_11512::jh5srP4N_8:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_11512::jh5srP4N_8:TDDL_UPDATE": 1.0
+      },
+      {
+        "MS_11512::fVbIGmr29x:TDDL_INSERT": 1.0
+      },
+      {
+        "MS_11512::JJNfHCiMnR:TDDL_UPDATE": 1.0
+      },
+      {
+        "MS_11512::5HkPm9ftlP:TDDL_COMMIT": 1.0
+      },
+      {
+        "MS_1278::Hff276fF04": 1.0
+      }
+    ],
+    "MS_7766": [
+      {
+        "MS_27421::mJxUT-THwr": 1.0
+      },
+      {
+        "MS_13647::IYoAxPz-dk:TDDL_QUERY": 1.0
+      },
+      {
+        "MS_59536::OebGQZvvZB": 1.0
+      }
+    ],
+    "USER": [
+      {
+        "MS_10484::7PHg2ix02j": 0.0044444444444444444,
+        "MS_10673::2Uf7E4b3pe": 0.0044444444444444444,
+        "MS_11070::B4KBqerbNL": 0.017777777777777778,
+        "MS_12928::lxLZiPZkmq": 0.09333333333333334,
+        "MS_13873::4T7NBQaiv_": 0.03111111111111111,
+        "MS_13873::B4KBqerbNL": 0.0044444444444444444,
+        "MS_1745::HPbxj7HH4Q": 0.013333333333333334,
+        "MS_1745::JIaDsHGG8B": 0.0044444444444444444,
+        "MS_1745::SBBgtOhLvx": 0.0044444444444444444,
+        "MS_1745::_unPUf47w-": 0.008888888888888889,
+        "MS_17703::VAtD_Dc7p8": 0.03111111111111111,
+        "MS_17790::Y19wLL-6GA": 0.0044444444444444444,
+        "MS_18043::ANW2ZGWfMM": 0.022222222222222223,
+        "MS_18642::iTWFbyRvwH": 0.008888888888888889,
+        "MS_20618::ANW2ZGWfMM": 0.0044444444444444444,
+        "MS_21872::JJidjuQcFX": 0.017777777777777778,
+        "MS_24120::3dSKGe-KEc": 0.057777777777777775,
+        "MS_29535::lNQbY7IqKH": 0.0044444444444444444,
+        "MS_30759::JjnkVYvYni": 0.0044444444444444444,
+        "MS_36950::YcahnzN35I": 0.0044444444444444444,
+        "MS_36953::Y19wLL-6GA": 0.0044444444444444444,
+        "MS_37183::9Umdww73FR": 0.008888888888888889,
+        "MS_38298::6NjenhAs-c": 0.017777777777777778,
+        "MS_38298::O1tiuZ7-eM": 0.0044444444444444444,
+        "MS_38469::9q-J0ZgIQy": 0.0044444444444444444,
+        "MS_39521::gkxw70jbfm": 0.013333333333333334,
+        "MS_40518::ANW2ZGWfMM": 0.022222222222222223,
+        "MS_41019::9jV6RQKkdC": 0.0044444444444444444,
+        "MS_41019::LtBfuBfwxS": 0.008888888888888889,
+        "MS_41019::QyKI6kQXHk": 0.0044444444444444444,
+        "MS_41019::dlJl_CT2kS": 0.0044444444444444444,
+        "MS_41019::gpMbsXbEzN": 0.008888888888888889,
+        "MS_41019::z3hTzGTMWv": 0.008888888888888889,
+        "MS_41983::3dSKGe-KEc": 0.008888888888888889,
+        "MS_44252::0ZMbsC5YuZ": 0.008888888888888889,
+        "MS_45682::B4KBqerbNL": 0.02666666666666667,
+        "MS_54353::B4KBqerbNL": 0.008888888888888889,
+        "MS_54407::6mRbSAXB15": 0.044444444444444446,
+        "MS_59099::5RR3uN16oA": 0.013333333333333334,
+        "MS_59099::Viy4F5gJNd": 0.008888888888888889,
+        "MS_59099::fyNTaUfmQ9": 0.0044444444444444444,
+        "MS_59099::l1zaSUI9ph": 0.0044444444444444444,
+        "MS_59099::x3BEb99rhQ": 0.0044444444444444444,
+        "MS_59937::gkxw70jbfm": 0.19111111111111112,
+        "MS_6034::JJidjuQcFX": 0.008888888888888889,
+        "MS_6307::hBCJhHHnYt": 0.013333333333333334,
+        "MS_64329::Y4F0XR-Uf0": 0.008888888888888889,
+        "MS_64329::oz81Y5-XKX": 0.017777777777777778,
+        "MS_67165::kGPhiZnOny": 0.0044444444444444444,
+        "MS_68937::6mRbSAXB15": 0.013333333333333334,
+        "MS_69813::Mx6EH5XYGj": 0.06222222222222222,
+        "MS_69813::kHceDQ3MB7": 0.08444444444444445
+      }
+    ]
+  }
+}
