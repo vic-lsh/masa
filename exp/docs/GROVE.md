@@ -81,3 +81,61 @@ FLINT Iteration 6 tried the *opposite* asymmetry (α_up=0.2, α_down=0.1) and sa
 
 ### Experiment design
 Copy pine_10_lowslo → grove_1 (same RPS sweep, same SLO=50ms). The saturation knee at 1400 RPS is the critical test point. The full sweep [100, 400, 800, 1200, 1400, 1600, 1800, 2000] provides regression coverage across all load levels.
+
+### Actual Outcomes (grove_1)
+
+**Status:** Keep ✅ — large improvement, no regressions
+
+**Goodput table:**
+
+| RPS  | emv grove_1 | emv pine10 | ple grove_1 | oldest grove_1 | emv−ple  | Δemv (grove1−pine10) |
+|------|-------------|------------|-------------|----------------|----------|----------------------|
+| 100  | 49.0        | 48.5       | 49.4        | 50.2           | −0.3     | +0.6                 |
+| 400  | 199.6       | 199.6      | 199.3       | 198.3          | +0.3     | −0.0                 |
+| 800  | 398.4       | 400.0      | 402.0       | 395.3          | −3.6     | −1.6                 |
+| 1200 | **585.0**   | 559.5      | 583.3       | 562.9          | **+1.7** | **+25.5**            |
+| 1400 | **471.6**   | 400.9      | 511.3       | 456.4          | **−39.7**| **+70.8**            |
+| 1600 | 415.5       | 399.2      | 414.5       | 403.1          | +0.9     | +16.3                |
+| 1800 | 388.8       | 383.8      | 416.8       | 372.8          | −27.9    | +5.1                 |
+| 2000 | 449.1       | 418.0      | 467.6       | 392.4          | −18.5    | +31.1                |
+
+**Early return rates (Reservation ER/s):**
+
+| RPS  | emv grove_1 | emv pine10 | ple grove_1 | prio_oldest |
+|------|-------------|------------|-------------|-------------|
+| 1200 | 11.8        | 38.6       | 17.7        | 38.4        |
+| 1400 | **223.4**   | 295.1      | 183.9       | 243.5       |
+| 1600 | 276.8       | 327.3      | 308.4       | 375.5       |
+| 1800 | 278.5       | 305.4      | 292.7       | 350.5       |
+| 2000 | 291.9       | 354.2      | 316.1       | 371.3       |
+
+**Key findings:**
+1. At 1400 RPS: Reservation ER dropped from 295/s → 223/s (−72/s); goodput improved from 400.9 → 471.6 (+70.8). Recovered ~57% of the 124-point gap to prio_local,early. Remaining gap: −39.7.
+2. At 1200 RPS: large surprise win (+25.5) — ER dropped from 38.6 → 11.8/s. emv now ties ple (585 vs 583).
+3. emv now beats prio_oldest at ALL overloaded RPS (1400–2000). This is a qualitative fix of the Hotel failure mode.
+4. No regressions anywhere. The asymmetric α direction is clearly correct.
+
+**Remaining gap:** At 1400 RPS, emv ER is still 223/s vs ple's 184/s — over-shedding Reservation by ~39/s. This explains the remaining −39.7 goodput gap. Need to further slow inflation.
+
+**Decision: KEEP. Proceed to Iteration 2: lower α_up further (0.02) to close the remaining ER gap at 1400 RPS.**
+
+---
+
+## Iteration 2: Lower α_up to 0.02 (grove_2)
+
+**Status:** Pending
+
+### Change
+In `LatencyMeanVar`, lower `α_up` from 0.05 → 0.02 (half-step down). Keep `α_down = 0.2`.
+
+### Hypothesis
+At 1400 RPS, emv still over-sheds Reservation (223/s vs ple's 184/s). The estimate still inflates too fast when queue delays spike. By halving α_up from 0.05 to 0.02 (effective window ~50 obs for upward moves), we further slow the inflation of `est_remaining_mean`, pushing the ER threshold closer to the true saturation point. α_down=0.2 ensures rapid deflation from 0-injections and load drops, so there's no risk of stale over-estimates.
+
+### Expected outcomes if hypothesis is correct:
+1. Reservation ER at 1400 RPS drops from 223/s toward ple's 184/s (target ~190/s)
+2. Goodput at 1400 RPS improves from 471.6 toward ple's 511.3 — target: within 20 of ple
+3. No regression at 1600–2000 RPS (emv should maintain its advantage over prio_oldest)
+4. Minimal change at ≤1200 RPS (already improved by Iteration 1)
+
+### Experiment design
+Same grove_1 config (RPS sweep [100, 400, 800, 1200, 1400, 1600, 1800, 2000], SLO=50ms). Named grove_2.
