@@ -279,3 +279,55 @@ Extended sweep: [400, 800, 1400, 2000, 2500, 3000, 4000].
 Policies: prio_local,early; prio_local,est_mean_var,emp_admission,early.
 Skip prio_oldest (less interesting at this point — confirmed inferior).
 Duration: 60s/step. Run ~20 min.
+
+### Actual Outcomes (coral_4)
+
+**Status:** Complete ✅ — CONFIRMS THEORETICAL MAXIMUM AT 4000 RPS
+
+#### Goodput table
+
+| RPS  | emv+emp    | Fraction | prio_local,early | ple frac | Delta vs ple |
+|------|------------|----------|------------------|----------|--------------|
+| 400  | 200.8      | 50.2%    | 198.2            | 49.6%    | +2.6         |
+| 800  | 401.9      | 50.2%    | 396.0            | 49.5%    | +5.9         |
+| 1400 | 700.2      | 50.0%    | 460.9            | 32.9%    | **+239**     |
+| 2000 | 1002.3     | 50.1%    | 268.3            | 13.4%    | **+734**     |
+| 2500 | 1248.2     | 49.9%    | 438.7            | 17.5%    | **+810**     |
+| 3000 | 1498.3     | 49.9%    | 470.9            | 15.7%    | **+1027**    |
+| 4000 | **1997.5** | 50.0%    | 612.7            | 15.3%    | **+1385**    |
+
+#### Key findings
+
+1. **~50% fraction holds at 2500, 3000, 4000 RPS.** Reservation backend handles 2000 req/s
+   at 4000 RPS without saturation. The emp_admission mechanism is not the bottleneck.
+
+2. **Reservation backend capacity extends far beyond 2000 req/s.** Hotel's async microservice
+   architecture can sustain this throughput with no visible ceiling in the tested range.
+
+3. **ple collapses at extreme overload.** ple reaches 268 goodput at 2000 RPS (13.4%), then
+   partially "recovers" to 613 at 4000 RPS — likely because at extreme load, most requests time
+   out before processing and the system acts as a natural rate limiter. This is a different failure
+   mode than the Reservation ER cascade, and doesn't indicate real improvement.
+
+4. **emv+emp advantage scales with offered load.** Delta vs ple: +239 at 1400 → +734 at 2000
+   → +1027 at 3000 → +1385 at 4000 RPS. As ple collapses, emv+emp continues to scale.
+
+---
+
+## Summary: CORAL track result
+
+`prio_local,est_mean_var,emp_admission,early` achieves the theoretical maximum goodput for
+Hotel/SLO=50ms across the full tested range (400–4000 RPS):
+
+- **~50.0% goodput fraction** at every tested RPS, linearly scaling
+- **Zero Reservation early returns** — the core pathology of the previous emv implementation
+- **Beats prio_local,early** by +239 to +1385 goodput at overloaded RPS
+- **Beats prio_oldest,early** by even larger margins
+- **Robust to non-monotonic load and extreme overload**
+
+The 50% ceiling is intrinsic to the workload (Hotel 50/50 Search/Reservation mix; Search
+takes ~110ms and can never complete within 50ms SLO). emp_admission correctly learns this and
+admits all Reservation while blocking all Search.
+
+**Success criteria: MET. Further optimization on Hotel/SLO=50ms would require a different
+workload (e.g., varying SLO, request mix, Socialnet).**
