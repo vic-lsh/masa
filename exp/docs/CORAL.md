@@ -52,3 +52,88 @@ Run coral_1 with simplified RPS sweep [800, 1200, 1400, 1600, 1800] — 5 steps 
 short (~6 min). Policies: prio_local,early; prio_oldest,early; prio_local,est_mean_var,emp_admission,early.
 Omit fifo and emv-without-emp (we have reference data from pine_10_lowslo).
 Duration: 60s/step (same as pine_10_lowslo), warmup 20s.
+
+### Actual Outcomes (coral_1)
+
+**Status:** Complete ✅ — MASSIVE WIN
+
+**Note:** Discovered bug before experiment: `emp_admission` feature was missing from `libs/masa/Cargo.toml`
+and `apps/hotel/Cargo.toml`. Fixed in commit `fd7a4bad`. The actual experiment ran after the fix.
+
+#### Goodput table
+
+| RPS  | prio_local,early | emv+emp  | prio_oldest,early | emv+emp vs ple | emv+emp vs oldest |
+|------|------------------|----------|-------------------|----------------|-------------------|
+| 800  | 399.8            | 400.8    | 397.9             | +1.0 (+0.2%)   | +2.9 (+0.7%)      |
+| 1200 | 581.8            | 601.8    | 569.8             | +20.1 (+3.5%)  | +32.0 (+5.6%)     |
+| 1400 | 474.1            | **701.5**| 416.7             | +227.5 (+48%)  | +284.8 (+68%)     |
+| 1600 | 352.7            | **797.8**| 314.6             | +445.2 (+126%) | +483.3 (+154%)    |
+| 1800 | 338.7            | **895.3**| 288.1             | +556.7 (+164%) | +607.2 (+211%)    |
+
+#### Early return breakdown
+
+- emv+emp: **ZERO Reservation ERs at every RPS point** (not present in ER file at all)
+- emv+emp Search ER: ~400-900/s (shed aggressively — correct behavior)
+- ple Reservation ER: 0.017 at 800 → 18.3 → 223 → 334 → 341 per second
+- prio_oldest Reservation ER: 0.55 at 800 → 29 → 282 → 453 → 407 per second
+
+#### Key findings
+
+1. **emp_admission eliminates Reservation ERs entirely.** The probabilistic admission mechanism
+   correctly learns P(complete | Reservation, bucket) ≈ 1.0 for feasible requests and 0.0 for
+   infeasible ones, without triggering mid-pipeline early returns.
+
+2. **~50% goodput fraction sustained linearly across all loads.** At every RPS:
+   - 800: 50.1%, 1200: 50.2%, 1400: 50.1%, 1600: 49.9%, 1800: 49.7%
+   This is consistent with: shed all Search (infeasible under overload), admit all Reservation
+   (feasible). Hotel sends 50/50 Search/Reservation, so ~50% is the theoretical maximum when
+   Reservation is the only serviceable request type.
+
+3. **ple and prio_oldest collapse past 1200 RPS** due to Reservation ER cascade — the exact
+   failure mode the empirical admission was designed to prevent.
+
+4. **The feedback loop is stable.** No oscillations or collapse detected across the tested range.
+
+#### Root cause
+emp_admission replaces the est_remaining-based threshold with empirical P(complete | api, bucket).
+Under overload, the RMS/mean_var estimator inflated est_remaining (queue delay contamination),
+triggering preemptive Reservation ERs. emp_admission directly observes outcomes and learns
+completion probability without conflating compute time and queue delay.
+
+#### Open questions
+1. What happens at 2000+ RPS? Does goodput continue to hold at ~50% or does Reservation also saturate?
+2. Can Search be admitted at lower RPS levels to push goodput above 50%? At 800-1200 RPS,
+   some Search should be completable — but current data shows ~400 Search ERs even at 800 RPS.
+3. Non-monotonic RPS: does emv+emp recover correctly after a high-load period?
+4. What is the actual system capacity for Reservation? The flat 50% fraction suggests we're
+   still within Reservation capacity at 1800 RPS (900 Reservation/s completable).
+
+---
+
+## Iteration 2: Full RPS sweep to characterize capacity limits (coral_2)
+
+**Status:** Pending
+
+### Change
+No code change. Run the full 8-RPS-level sweep from pine_10_lowslo config to understand:
+1. Does emv+emp hold 50% fraction at 2000 RPS (1000 Reservation/s)?
+2. Does Search get properly admitted at 100/400 RPS where system is not overloaded?
+3. Absolute goodput numbers match pine_10_lowslo reference at under-loaded RPS points?
+
+### Hypothesis
+At 100 and 400 RPS (under-loaded), emv+emp should behave like ple/oldest (no meaningful
+shedding). At 800+ RPS, Search starts being shed but Reservation stays fully admitted.
+At some RPS beyond 1800, Reservation itself saturates and goodput fraction drops.
+The inflection point is probably around 2000+ RPS.
+
+### Expected outcomes if hypothesis is correct:
+1. 100 RPS: ~49-50 goodput (similar to all policies)
+2. 400 RPS: ~199-200 goodput (similar to all policies)
+3. 800-1800: emv+emp dominates as seen in coral_1
+4. 2000: either holds at ~50% or starts declining (test will reveal)
+
+### Experiment design
+Full 8-RPS sweep: [100, 400, 800, 1200, 1400, 1600, 1800, 2000].
+Same config as pine_10_lowslo but with updated policies (no fifo, no bare emv).
+Policies: prio_local,early; prio_oldest,early; prio_local,est_mean_var,emp_admission,early.
+Duration: 60s/step, warmup 20s. Will run ~25 minutes.
