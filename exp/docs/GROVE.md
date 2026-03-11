@@ -348,3 +348,58 @@ grove_4 proved that removing est_remaining entirely is wrong (late ER wastes CPU
 
 ### Experiment design
 Same grove_1 config. Named grove_5.
+
+### Actual Outcomes (grove_5)
+
+**Status:** Keep ✅ — large wins at 1400/1800/2000, acceptable regression at 1600
+
+**Goodput table:**
+
+| RPS  | emv grove_5 | emv grove_1 | emv pine10 | ple grove_5 | oldest grove_5 | emv−ple (g5) | Δemv (g5−g1) |
+|------|-------------|-------------|------------|-------------|----------------|--------------|--------------|
+| 100  | 49.9        | 49.0        | 48.5       | 49.8        | 50.7           | +0.1         | +0.9         |
+| 400  | 200.0       | 199.6       | 199.6      | 200.1       | 200.1          | −0.0         | +0.4         |
+| 800  | 398.0       | 398.4       | 400.0      | 401.0       | 399.5          | −3.0         | −0.4         |
+| 1200 | 589.5       | 585.0       | 559.5      | 589.1       | 578.0          | +0.4         | +4.5         |
+| 1400 | **523.8**   | **471.6**   | **400.9**  | **567.8**   | **506.7**      | **−44.0**    | **+52.2**    |
+| 1600 | 396.2       | 415.5       | 399.2      | 439.9       | 333.8          | −43.7        | −19.2        |
+| 1800 | **458.8**   | **388.8**   | **383.8**  | **470.0**   | **353.9**      | **−11.2**    | **+70.0**    |
+| 2000 | **496.4**   | **449.1**   | **418.0**  | **504.6**   | **391.1**      | **−8.2**     | **+47.4**    |
+
+**Reservation ER/s:**
+
+| RPS  | emv grove_5 | emv grove_1 | ple grove_5 |
+|------|-------------|-------------|-------------|
+| 1200 | 7.9         | 11.9        | 15.5        |
+| 1400 | **173.3**   | **223.4**   | **129.6**   |
+| 1600 | 272.4       | 276.8       | 264.2       |
+| 1800 | 265.5       | 278.5       | 237.6       |
+| 2000 | 296.7       | 291.6       | 277.5       |
+
+**Key findings:**
+1. mean_floor worked: Reservation ER at 1400 dropped from 223 → 173/s (−50/s). Still above ple's 129.6/s (−43.7 gap).
+2. Goodput at 1400: +52.2 over grove_1. Remaining gap to ple: −44.0.
+3. At 1800 and 2000: emv nearly ties ple (−11.2 and −8.2) — within run-to-run variance. Big wins over grove_1 (+70, +47).
+4. emv beats prio_oldest at ALL overloaded RPS: +17 at 1400, +62 at 1600, +105 at 1800/2000.
+5. Regression at 1600: −19.2 vs grove_1. Likely caused by mean_floor deflating quickly during the 1600 step (fast α_down=0.3), causing floor to track below actual need.
+
+**Decision: KEEP grove_5.** 3 wins (1400/1800/2000) outweigh 1 regression (1600) in magnitude. emv now uniformly beats prio_oldest.
+
+---
+
+## GROVE Track Conclusions
+
+### What we learned
+- **Root cause confirmed:** emv EMA mean inflates under overload → premature Reservation ER → goodput loss at saturation knee. With SLO=50ms, even 20–30µs est_remaining inflation is proportionally large.
+- **Asymmetric α (grove_1):** Slowing upward α from symmetric 0.1 → α_up=0.05, α_down=0.2 reduced ER by 72/s at 1400, goodput +70.8. Best single change.
+- **Floor EMA (grove_5):** Separate mean_floor with α_up=0.01, α_down=0.3 for ER threshold reduced ER by another 50/s at 1400, goodput +52.2 on top of grove_1.
+- **Dead ends:** Lower α_up=0.02 (grove_2) regressions at 1600. Probabilistic ER (grove_3) increased ER. Deadline-only ER (grove_4) catastrophic everywhere.
+
+### Best code state: grove_5
+Code: `mean_floor` field in `LatencyMeanVar` (α_up=0.01, α_down=0.3) + asymmetric `mean` α (α_up=0.05, α_down=0.2). ER threshold uses `mean_floor_estimate()`. Code commits: d75b5fd6 (grove_1), 11562cae (grove_5).
+
+### Remaining gap to ple
+emv lags ple by ~44 goodput at 1400–1600 RPS. Root barrier: ple's RMS estimator is inherently near-zero (batch-update anchoring to low-load baseline), firing ER at only 129/s vs emv's 173/s at 1400. Any EMA-based mean will leak upward under sustained overload faster than a floor trick can suppress. Full elimination of the gap would require a non-mean estimator for the ER threshold (e.g., running minimum window, quantile estimator) — fundamentally different from EMA.
+
+### emv vs prio_oldest
+Grove_5 emv beats prio_oldest at ALL overloaded RPS by +17 to +105. This is the main practical win from the GROVE track.
