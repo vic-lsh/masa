@@ -12,9 +12,9 @@ use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::super::{
     resolve_method_name_from_http, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks,
 };
-use super::LatencyMap;
 #[cfg(feature = "emp_admission")]
 use super::completion_rate_map;
+use super::LatencyMap;
 use masa_core::{time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint, EARLY_RETURN};
 
 #[cfg(feature = "est_hist")]
@@ -444,31 +444,24 @@ impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
             let time_left = self.ctx.e2e_deadline().saturating_sub(time_now());
             let slo = self.ctx.slo();
             if slo > 0 {
-                let bucket =
-                    completion_rate_map::time_left_to_bucket(time_left, slo);
+                let bucket = completion_rate_map::time_left_to_bucket(time_left, slo);
                 if bucket < 5 {
                     let p = self
                         .server
                         .completion_rate_map
                         .get_p(self.ctx.api(), bucket);
-                    let rand = completion_rate_map::deterministic_rand(
-                        self.ctx.request_id(),
-                        key,
-                    );
+                    let rand = completion_rate_map::deterministic_rand(self.ctx.request_id(), key);
                     let admitted = rand <= p.max(completion_rate_map::PROBE_FLOOR);
                     if admitted {
                         // OnceLock: only the first admitted hop is recorded.
-                        let _ = self
-                            .first_er_decision
-                            .set((self.ctx.api().clone(), bucket));
+                        let _ = self.first_er_decision.set((self.ctx.api().clone(), bucket));
                     }
                     return !admitted;
                 }
             }
         }
         // Default: floor estimate check (also used when emp_admission disabled, or bucket == 5).
-        EARLY_RETURN
-            && time_now() > self.ctx.e2e_deadline().saturating_sub(est_remaining_floor)
+        EARLY_RETURN && time_now() > self.ctx.e2e_deadline().saturating_sub(est_remaining_floor)
     }
 
     /// Records the outcome of the first admitted empirical-admission decision.
@@ -478,7 +471,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
     fn record_admission_outcome<Ret>(&self, result: &Result<Response<Ret>, Status>) {
         #[cfg(feature = "emp_admission")]
         if let Some((api, bucket)) = self.first_er_decision.get() {
-            let completed = result.is_ok() && time_now() <= self.ctx.e2e_deadline();
+            let completed = result.is_ok();
             self.server
                 .completion_rate_map
                 .update(api, *bucket, completed);
