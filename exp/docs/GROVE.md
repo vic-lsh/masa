@@ -214,3 +214,72 @@ This also naturally handles the API-type differentiation the user identified: Se
 
 ### Experiment design
 Same grove_1 config. Named grove_3.
+
+### Actual Outcomes (grove_3)
+
+**Status:** Revert ❌ — probabilistic ER made things worse
+
+**Goodput table:**
+
+| RPS  | emv grove_3 | emv grove_1 | ple grove_3 | oldest grove_3 | emv−ple (g3) | Δemv (g3−g1) |
+|------|-------------|-------------|-------------|----------------|--------------|--------------|
+| 100  | 50.2        | 49.0        | 48.9        | 50.3           | +1.3         | +1.2         |
+| 400  | 200.9       | 199.6       | 199.5       | 198.9          | +1.4         | +1.3         |
+| 800  | 396.6       | 398.4       | 396.1       | 400.1          | +0.5         | −1.7         |
+| 1200 | 584.3       | 585.0       | 595.6       | 580.9          | −11.3        | −0.7         |
+| 1400 | **461.5**   | **471.6**   | **567.0**   | **564.0**      | **−105.5**   | **−10.1**    |
+| 1600 | 374.0       | 415.5       | 438.8       | 376.0          | −64.8        | **−41.5**    |
+| 1800 | 400.5       | 388.8       | 436.2       | 374.9          | −35.7        | +11.7        |
+| 2000 | 475.4       | 449.1       | 28.5 (!)    | 391.3          | +83.9        | +26.3        |
+
+**Reservation ER/s:**
+
+| RPS  | emv grove_3 | emv grove_1 | ple grove_3 |
+|------|-------------|-------------|-------------|
+| 1200 | 19.4        | 11.8        | 5.2         |
+| 1400 | **231.2**   | **223.4**   | **129.7**   |
+| 1600 | 282.7       | 276.8       | 277.1       |
+| 1800 | 290.0       | 278.5       | 260.7       |
+| 2000 | 302.5       | 291.6       | 16.8        |
+
+**Key findings:**
+- Probabilistic ER did NOT reduce ER rate — it increased from 223 → 231/s at 1400
+- Goodput at 1400 dropped −10.1 vs grove_1; emv trails ple by −105.5 (massive gap)
+- Regression at 1600: −41.5 (identical to grove_2's regression)
+- ple collapse at 2000 RPS (28.5) is anomalous run artifact, ignore
+
+**Root cause:** Probabilistic gate randomly admits some requests that can't complete (since est_remaining is inflated because the system IS overloaded). These requests add downstream pressure, increasing ER rates rather than decreasing them. The inflation is real — fixing the ER decision mechanism doesn't fix the root signal.
+
+**Correct diagnosis:** The EMA est_remaining being used in the ER check is the wrong signal. ple's RMS estimate is near-zero (anchored to low-load baseline), so it only ERs at actual deadline expiry. emv should do the same.
+
+**Decision: REVERT grove_3. Implement grove_4: deadline-only ER check — remove est_remaining from ER decision entirely. Reverted + grove_4 implemented in commit 7238f31e.**
+
+---
+
+## Iteration 4: Deadline-only ER — decouple est_remaining from ER check (grove_4)
+
+**Status:** Pending
+
+### Change
+In `before_child_rpc`, replace:
+```rust
+if EARLY_RETURN && time_now() > self.ctx.e2e_deadline().saturating_sub(est_remaining_mean) {
+```
+with:
+```rust
+if EARLY_RETURN && time_now() >= self.ctx.e2e_deadline() {
+```
+
+est_remaining_mean is still used for child deadline computation and periodic logging, but NOT for the ER decision. ER fires only when the actual e2e deadline has been exceeded.
+
+### Hypothesis
+ple's advantage comes from its RMS estimate being near-zero (anchored to low-load baseline via batch updates), making its ER threshold effectively "ER at actual deadline." emv's inflated EMA causes it to ER too early. By removing est_remaining from the ER check, emv matches ple's conservative ER behavior while retaining emv's advantages: EMA for child deadline propagation (urgency tightening) and EDF reprioritization via before_poll.
+
+### Expected outcomes:
+1. Reservation ER at 1400 drops from grove_1's 223/s toward ple's ~130/s
+2. Goodput at 1400 rises from grove_1's 471.6 toward ple's ~540–567
+3. If EDF reprioritization (before_poll) provides scheduling benefit over ple, emv may exceed ple
+4. No regression at 1600–2000 (deadline-only ER should generalize well — fires at the right time)
+
+### Experiment design
+Same grove_1 config. Named grove_4.
