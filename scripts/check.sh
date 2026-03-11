@@ -8,6 +8,7 @@ flag_combos=(
     "prio_global"
     "prio_global,early"
     "prio_local,early"
+    "prio_local,early,emp_admission,est_mean_var"
 )
 
 CONTINUE_ON_ERROR=false
