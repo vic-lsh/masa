@@ -40,6 +40,19 @@ where
         None
     }
 
+    /// Returns the mean-only estimate (k=0), used for conservative early-return thresholds.
+    pub(crate) fn get_mean_estimate(&self, key: u64) -> Option<u64> {
+        let mut m = self.inner.lock().unwrap();
+        if let Some(estimator) = m.get(&key) {
+            if estimator.can_estimate() {
+                return Some(estimator.mean_estimate());
+            }
+        } else {
+            m.insert(key, E::default());
+        }
+        None
+    }
+
     pub(crate) fn track(&self, key: u64, duration: u64) {
         let mut m = self.inner.lock().unwrap();
         let estimator = m.entry(key).or_insert_with(E::default);
