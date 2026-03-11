@@ -44,15 +44,41 @@ def _parse_rps_dir(path: Path) -> float:
 
 
 _RPS_FILE_RE = re.compile(r"r(?P<rps>[0-9_]+(?:\.[0-9_]+)?)_(?P<api>.+)\.csv$")
+_ROOT_LAT_FILE_RE = re.compile(
+    r"^root_latencies_(?P<rps>[0-9_]+(?:\.[0-9_]+)?)rps\.csv$"
+)
 
 
 def _parse_rps_from_filename(path: Path) -> float:
-    """Parse RPS value from CSV filename like 'r200_search.csv'."""
+    """Parse RPS value from known MSSIM CSV filename patterns."""
     match = _RPS_FILE_RE.match(path.name)
-    if not match:
-        raise ValueError(f"Unexpected RPS filename: {path}")
-    token = match.group("rps").replace("_", ".")
-    return float(token)
+    if match:
+        token = match.group("rps").replace("_", ".")
+        return float(token)
+
+    match = _ROOT_LAT_FILE_RE.match(path.name)
+    if match:
+        token = match.group("rps").replace("_", ".")
+        return float(token)
+
+    raise ValueError(f"Unexpected RPS filename: {path}")
+
+
+def _iter_policy_latency_csvs(policy_dir: Path) -> List[Path]:
+    """Return latency CSVs for a policy from both legacy and run_* layouts."""
+    csv_paths: List[Path] = []
+
+    run_dirs = sorted(p for p in policy_dir.glob("run_*") if p.is_dir())
+    if run_dirs:
+        for run_dir in run_dirs:
+            csv_paths.extend(sorted(run_dir.glob("r*.csv")))
+            csv_paths.extend(sorted(run_dir.glob("root_latencies_*rps.csv")))
+        return csv_paths
+
+    # Legacy layout: CSVs directly under policy directory
+    csv_paths.extend(sorted(policy_dir.glob("r*.csv")))
+    csv_paths.extend(sorted(policy_dir.glob("root_latencies_*rps.csv")))
+    return csv_paths
 
 
 def _load_json(path: Path) -> dict:
@@ -108,63 +134,46 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
 
     data_by_rps: Dict[float, List[pd.DataFrame]] = {}
 
-    # Look for run_* directories with CSV files, or fall back to CSV files
-    # directly in the policy directory (older experiment format).
-    run_dirs = sorted(policy_dir.glob("run_*"))
-    if not run_dirs:
-        # No run_* subdirectories — treat the policy dir itself as a single run
-        run_dirs = [policy_dir]
-    for run_dir in run_dirs:
-        # Match standard trace files r{rps}_{api}.csv
-        csv_paths = sorted(run_dir.glob("r*_*_*.csv"))
-        # Also try to match r{rps}_{api}.csv where api might not have underscores
-        if not csv_paths:
-            csv_paths = sorted(run_dir.glob("r*.csv"))
+    for csv_path in _iter_policy_latency_csvs(policy_dir):
+        try:
+            rps = _parse_rps_from_filename(csv_path)
+        except ValueError:
+            continue
 
-        for csv_path in csv_paths:
-            try:
-                rps = _parse_rps_from_filename(csv_path)
-            except ValueError:
-                # print(f"Warning: skipping unexpected CSV filename {csv_path}")
-                continue
+        df = _read_request_csv(str(csv_path))
 
-            df = _read_request_csv(str(csv_path))
-            # df.columns = [col.strip() for col in df.columns] # _read_request_csv handles this
+        # Map columns from request CSV format if needed.
+        if "e2e_latency_us" not in df.columns and "latency" in df.columns:
+            df.rename(columns={"latency": "e2e_latency_us"}, inplace=True)
 
-            # Map columns from new CSV format if needed
-            if "e2e_latency_us" not in df.columns and "latency" in df.columns:
-                df.rename(columns={"latency": "e2e_latency_us"}, inplace=True)
+        if "queue_latency_us" not in df.columns:
+            q_cols = [c for c in ["q_lat_init", "q_lat_resume"] if c in df.columns]
+            if q_cols:
+                df["queue_latency_us"] = df[q_cols].sum(axis=1)
 
-            if "queue_latency_us" not in df.columns:
-                # Sum q_lat_init and q_lat_resume if they exist
-                q_cols = [c for c in ["q_lat_init", "q_lat_resume"] if c in df.columns]
-                if q_cols:
-                    df["queue_latency_us"] = df[q_cols].sum(axis=1)
+        if "e2e_latency_us" not in df.columns:
+            print(f"Warning: missing e2e_latency_us in {csv_path}")
+            continue
 
-            if "e2e_latency_us" not in df.columns:
-                print(f"Warning: missing e2e_latency_us in {csv_path}")
-                continue
+        df = _filter_errors(df)
+        df = _filter_after_warmup(df, warmup_sec, csv_path)
+        if df.empty:
+            continue
 
-            # df = _parse_error_columns(df) # _read_request_csv already does this
-            df = _filter_errors(df)
-            df = _filter_after_warmup(df, warmup_sec, csv_path)
-            if df.empty:
-                continue
-
-            df = df.copy()
-            df["e2e_latency_ms"] = (
-                pd.to_numeric(df["e2e_latency_us"], errors="coerce") / 1_000.0
+        df = df.copy()
+        df["e2e_latency_ms"] = (
+            pd.to_numeric(df["e2e_latency_us"], errors="coerce") / 1_000.0
+        )
+        if "queue_latency_us" in df.columns:
+            queue_us = pd.to_numeric(df["queue_latency_us"], errors="coerce").fillna(
+                0.0
             )
-            if "queue_latency_us" in df.columns:
-                queue_us = pd.to_numeric(
-                    df["queue_latency_us"], errors="coerce"
-                ).fillna(0.0)
-            else:
-                queue_us = 0.0
-            df["queue_latency_ms"] = queue_us / 1_000.0
-            df["start_at"] = pd.to_numeric(df.get("start_at"), errors="coerce")
+        else:
+            queue_us = 0.0
+        df["queue_latency_ms"] = queue_us / 1_000.0
+        df["start_at"] = pd.to_numeric(df.get("start_at"), errors="coerce")
 
-            data_by_rps.setdefault(rps, []).append(df)
+        data_by_rps.setdefault(rps, []).append(df)
 
     combined: Dict[float, pd.DataFrame] = {}
     for rps, frames in data_by_rps.items():
@@ -201,8 +210,17 @@ def _compute_goodput(
     if df.empty:
         return 0.0
 
-    # Filter out errors for goodput calculation
-    if "is_err" in df.columns:
+    # Filter out EarlyReturn and ClientTimeout — they should not count as goodput.
+    # Prefer the parsed error_type column (set by _read_request_csv) over the legacy is_err flag.
+    if "error_type" in df.columns:
+        is_early_return = df["error_type"] == "EarlyReturn"
+        is_timeout = (
+            df["error"].astype(str) == "/ClientTimeout"
+            if "error" in df.columns
+            else pd.Series(False, index=df.index)
+        )
+        df = df.loc[~(is_early_return | is_timeout)]
+    elif "is_err" in df.columns:
         err_mask = _normalize_bool_series(df["is_err"])
         df = df.loc[~err_mask]
 
@@ -229,6 +247,20 @@ def _compute_latency_percentiles(
         return {p: float("nan") for p in percentiles}
 
     return {p: float(df["e2e_latency_ms"].quantile(p / 100.0)) for p in percentiles}
+
+
+def _write_goodput_csv(
+    output_path: Path,
+    rps_values: Sequence[float],
+    policy_series: Dict[str, Sequence[float]],
+) -> None:
+    rows = []
+    for rps, *values in zip(rps_values, *policy_series.values()):
+        row = {"rps": rps}
+        for policy, val in zip(policy_series.keys(), values):
+            row[policy] = round(val, 3)
+        rows.append(row)
+    pd.DataFrame(rows).to_csv(output_path, index=False)
 
 
 def _plot_goodput_lines(
@@ -386,6 +418,125 @@ def _plot_latency_cdf(
     plt.close(fig)
 
 
+def _plot_goodput_timeline(
+    output_path: Path,
+    rps_sequence: List[float],
+    policy_data_by_rps: Dict[str, Dict[float, pd.DataFrame]],
+    *,
+    duration_sec: float,
+    slo_ms: float,
+    window_sec: float = 2.0,
+) -> None:
+    """Plot goodput over time, stitching RPS periods in their original run order.
+
+    Each RPS period occupies [i*duration_sec, (i+1)*duration_sec] on the x-axis.
+    Goodput is computed using a sliding window so disruptions and recovery are visible.
+    """
+    fig, ax = plt.subplots(figsize=(14, 6))
+    cmap = plt.get_cmap("tab10")
+
+    for idx, (policy, rps_data) in enumerate(policy_data_by_rps.items()):
+        all_times: List[float] = []
+        all_goodput: List[float] = []
+
+        for period_idx, rps in enumerate(rps_sequence):
+            df = rps_data.get(rps, pd.DataFrame())
+            if df.empty:
+                continue
+
+            start_at = pd.to_numeric(df["start_at"], errors="coerce")
+            if start_at.dropna().empty:
+                continue
+
+            t_min = start_at.min()
+            # Time relative to this period's nominal start (seconds)
+            rel_sec = (start_at - t_min) / 1_000_000.0
+            abs_sec = rel_sec + period_idx * duration_sec
+
+            # Build goodput mask: exclude ER and ClientTimeout, require SLO
+            e2e_ms = pd.to_numeric(df.get("e2e_latency_ms"), errors="coerce")
+            if "error_type" in df.columns:
+                is_er = df["error_type"] == "EarlyReturn"
+            elif "error" in df.columns:
+                is_er = df["error"].astype(str).str.startswith("/EarlyReturn")
+            else:
+                is_er = pd.Series(False, index=df.index)
+            is_timeout = (
+                df["error"].astype(str) == "/ClientTimeout"
+                if "error" in df.columns
+                else pd.Series(False, index=df.index)
+            )
+            good = (~is_er) & (~is_timeout) & (e2e_ms <= slo_ms)
+
+            # Sort by time for efficient windowing
+            order = np.argsort(abs_sec.values)
+            t_arr = abs_sec.values[order]
+            g_arr = good.values[order]
+
+            # Sliding window: step=0.5s, window=window_sec
+            step = 0.5
+            t_centers = np.arange(
+                period_idx * duration_sec + window_sec / 2,
+                (period_idx + 1) * duration_sec - window_sec / 2 + step,
+                step,
+            )
+            for tc in t_centers:
+                lo, hi = tc - window_sec / 2, tc + window_sec / 2
+                mask = (t_arr >= lo) & (t_arr < hi)
+                all_times.append(tc)
+                all_goodput.append(float(g_arr[mask].sum()) / window_sec)
+
+        if not all_times:
+            continue
+
+        color = get_policy_color(policy)
+        if color is None:
+            color = cmap(idx % cmap.N)
+        ax.plot(
+            all_times,
+            all_goodput,
+            label=get_policy_display_name(policy),
+            color=color,
+            linewidth=1.5,
+        )
+
+    # Offered RPS as a filled step area on the same axis (same unit: RPS)
+    step_t = [0.0]
+    step_rps = [rps_sequence[0]]
+    for i, rps in enumerate(rps_sequence):
+        t_start = i * duration_sec
+        if i > 0:
+            step_t.append(t_start)
+            step_rps.append(rps)
+            ax.axvline(t_start, linestyle="--", color="grey", alpha=0.4, linewidth=1)
+        step_t.append(t_start + duration_sec)
+        step_rps.append(rps)
+    ax.fill_between(
+        step_t, step_rps, step=None, color="grey", alpha=0.12, label="Offered RPS"
+    )
+    ax.step(
+        step_t,
+        step_rps,
+        where="post",
+        color="grey",
+        linewidth=1.5,
+        linestyle="-",
+        alpha=0.5,
+    )
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("RPS")
+    ax.set_title(f"Goodput timeline (SLO={slo_ms:g} ms, {window_sec:g}s window)")
+    ax.set_xlim(left=0, right=len(rps_sequence) * duration_sec)
+    ax.set_ylim(bottom=0)
+    ax.grid(True, which="both", linestyle="--", alpha=0.4)
+    ax.legend()
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+
 def _resolve_iteration_ids(data_dir: Path, repeats: int) -> List[int]:
     iteration_dirs = [p for p in data_dir.iterdir() if p.is_dir() and p.name.isdigit()]
     iteration_ids = sorted([int(p.name) for p in iteration_dirs])
@@ -417,23 +568,20 @@ def _resolve_rps_values(
     policies: Sequence[str],
 ) -> List[float]:
     if gen_config.get("Rps"):
-        return [float(v) for v in gen_config["Rps"]]
+        return sorted(set(float(v) for v in gen_config["Rps"]))
 
-    # Try to find RPS values from output files
+    # Try to find RPS values from output files.
     for iteration in iteration_ids:
         for policy in policies:
             policy_dir = data_dir / str(iteration) / policy
             if not policy_dir.is_dir():
                 continue
             rps_values = []
-
-            # Try new structure: run_* directories with CSV files
-            for run_dir in sorted(policy_dir.glob("run_*")):
-                for csv_path in run_dir.glob("root_latencies_*rps.csv"):
-                    try:
-                        rps_values.append(_parse_rps_from_filename(csv_path))
-                    except ValueError:
-                        continue
+            for csv_path in _iter_policy_latency_csvs(policy_dir):
+                try:
+                    rps_values.append(_parse_rps_from_filename(csv_path))
+                except ValueError:
+                    continue
 
             if rps_values:
                 return sorted(set(rps_values))  # Remove duplicates and sort
@@ -459,6 +607,10 @@ def generate_plots(args) -> None:
 
     policies = _resolve_policies(config_dir, data_dir, iteration_ids)
     rps_values = _resolve_rps_values(gen_config, data_dir, iteration_ids, policies)
+    # Original run order for timeline (gen_config["Rps"] preserves sequence)
+    rps_sequence: List[float] = [
+        float(v) for v in gen_config.get("Rps", [])
+    ] or rps_values
 
     percentiles = (50.0, 90.0, 99.0)
 
@@ -536,6 +688,11 @@ def generate_plots(args) -> None:
             title=f"Goodput vs RPS (SLO={slo_ms:g} ms)",
             ylabel="Goodput (RPS)",
         )
+        _write_goodput_csv(
+            iteration_output / "goodput_absolute.csv",
+            rps_values,
+            goodput_by_policy,
+        )
         _plot_goodput_lines(
             iteration_output / "goodput_fraction.png",
             rps_values,
@@ -543,11 +700,23 @@ def generate_plots(args) -> None:
             title=f"Goodput fraction vs RPS (SLO={slo_ms:g} ms)",
             ylabel="Goodput / Offered load",
         )
+        _write_goodput_csv(
+            iteration_output / "goodput_fraction.csv",
+            rps_values,
+            fraction_by_policy,
+        )
         _plot_latency_percentiles(
             iteration_output / "latency_percentiles.png",
             rps_values,
             percentiles_by_policy,
             percentiles=percentiles,
+            slo_ms=slo_ms,
+        )
+        _plot_goodput_timeline(
+            iteration_output / "goodput_timeline.png",
+            rps_sequence,
+            policy_data,
+            duration_sec=duration_sec,
             slo_ms=slo_ms,
         )
 
@@ -614,6 +783,11 @@ def generate_plots(args) -> None:
             title=f"Average goodput vs RPS (SLO={slo_ms:g} ms)",
             ylabel="Goodput (RPS)",
         )
+        _write_goodput_csv(
+            output_dir / "goodput_absolute_avg.csv",
+            rps_values,
+            avg_goodput,
+        )
         fraction_by_policy = {
             policy: [
                 (val / rps) if rps else float("nan")
@@ -627,6 +801,11 @@ def generate_plots(args) -> None:
             fraction_by_policy,
             title=f"Average goodput fraction vs RPS (SLO={slo_ms:g} ms)",
             ylabel="Goodput / Offered load",
+        )
+        _write_goodput_csv(
+            output_dir / "goodput_fraction_avg.csv",
+            rps_values,
+            fraction_by_policy,
         )
         _plot_latency_percentiles(
             output_dir / "latency_percentiles_avg.png",
