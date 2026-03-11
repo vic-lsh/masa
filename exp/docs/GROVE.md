@@ -139,3 +139,78 @@ At 1400 RPS, emv still over-sheds Reservation (223/s vs ple's 184/s). The estima
 
 ### Experiment design
 Same grove_1 config (RPS sweep [100, 400, 800, 1200, 1400, 1600, 1800, 2000], SLO=50ms). Named grove_2.
+
+### Actual Outcomes (grove_2)
+
+**Status:** Revert ❌ — 1600 regression outweighs 1400 gain
+
+**Goodput table:**
+
+| RPS  | emv grove_2 | emv grove_1 | ple grove_2 | oldest grove_2 | emv−ple  | Δemv (g2−g1) |
+|------|-------------|-------------|-------------|----------------|----------|--------------|
+| 100  | 50.3        | 49.0        | 49.6        | 50.1           | +0.7     | +1.3         |
+| 400  | 200.4       | 199.6       | 200.5       | 199.2          | −0.1     | +0.8         |
+| 800  | 401.0       | 398.4       | 397.8       | 399.0          | +3.2     | +2.6         |
+| 1200 | 588.2       | 585.0       | 579.6       | 566.1          | +8.6     | +3.2         |
+| 1400 | **504.1**   | **471.6**   | **540.4**   | **473.2**      | **−36.3**| **+32.5**    |
+| 1600 | **373.1**   | **415.5**   | **386.2**   | **367.7**      | **−13.1**| **−42.4**    |
+| 1800 | 389.4       | 388.8       | 439.1       | 343.7          | −49.7    | +0.6         |
+| 2000 | 436.7       | 449.1       | 459.9       | 387.2          | −23.2    | −12.4        |
+
+**Reservation ER/s:**
+
+| RPS  | emv grove_2 | emv grove_1 | ple grove_2 |
+|------|-------------|-------------|-------------|
+| 1200 | 12.7        | 11.9        | 15.7        |
+| 1400 | **194.9**   | **223.8**   | **156.4**   |
+| 1600 | **298.0**   | **276.8**   | **284.0**   |
+| 1800 | 309.6       | 278.5       | 268.5       |
+| 2000 | 288.6       | 291.9       | 287.2       |
+
+**Per-API breakdown (confirmed):** Search goodput = 0 at ALL RPS for ALL policies. All goodput is Reservation only. Search ER rates are nearly identical across all policies (~99–100% shed at ≥1200 RPS). The entire policy differentiation is in Reservation handling.
+
+**Key findings:**
+- α_up=0.02 helped at 1400 (ER: 223→195, goodput: 471→504) but hurt at 1600 (ER: 277→298, goodput: 415→373)
+- At 1600, the mean lags behind reality → over-optimistic est_remaining → delayed ER decisions → worse goodput
+- Net effect: trades under-inflation regime (1400) for under-adaptation regime (1600)
+- α_up tuning has a narrow operating range — a structural fix is needed
+
+**Root cause:** Binary ER threshold (fire when `time_now() > e2e_deadline - est_remaining_mean`) creates cliff behavior. When est_remaining inflates even slightly, many marginal requests get shed. When est_remaining is too low, not enough requests get shed. A continuous (probabilistic) threshold would smooth this cliff.
+
+**Decision: REVERT grove_2. Restore α_up=0.05 (grove_1 state). Reverted in commit 44f1481c.**
+
+---
+
+## Iteration 3: Probabilistic ER — smooth the binary shedding threshold (grove_3)
+
+**Status:** Pending
+
+### Change
+Replace the binary ER threshold in `before_child_rpc` with a probabilistic admission check:
+
+```
+let time_left = ctx.e2e_deadline() - time_now()
+let p_complete = (time_left / est_remaining_mean).clamp(0.05, 1.0)
+shed with probability (1 - p_complete)
+```
+
+When `time_left > est_remaining_mean` (plenty of time): P≈1, no shedding.
+When `time_left = est_remaining_mean` (tight): P=1.0 → current binary threshold (same behavior as before at the exact cliff).
+When `time_left = 0.5 * est_remaining_mean`: P=0.5 → shed 50%.
+When `time_left → 0`: P→0.05 (probe floor, never shed 100%).
+
+The 5% floor ensures we always let some requests through to maintain the feedback loop — addressing the user's concern about re-evaluating capacity after load drops.
+
+### Hypothesis
+The binary threshold creates excessive cliff behavior: a small est_remaining inflation causes a large jump in ER rate (all marginal requests get shed). Probabilistic admission smooths this into a continuous function: requests are shed proportionally to how unlikely they are to complete. Near the threshold, only the most doomed requests get shed rather than all of them.
+
+This also naturally handles the API-type differentiation the user identified: Search requests have smaller time_left relative to est_remaining (longer call chain) → lower P → shed more aggressively. Reservation has larger P → fewer false-positive ERs.
+
+### Expected outcomes if hypothesis is correct:
+1. At 1400 RPS: Reservation ER drops further (below grove_1's 223/s) as marginal requests are admitted instead of deterministically shed
+2. Goodput at 1400 improves beyond grove_1's 471.6 (target: close to grove_2's 504 gain without the 1600 regression)
+3. At 1600 RPS: no regression — probabilistic approach adapts naturally (more shedding when more requests are over-budget) unlike α_up=0.02 which was globally too slow
+4. Recovery signal maintained: the 5% probe floor provides ongoing feedback even under heavy shedding
+
+### Experiment design
+Same grove_1 config. Named grove_3.
