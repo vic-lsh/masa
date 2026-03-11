@@ -34,6 +34,9 @@ pub struct Context {
     frontend_elapse: Option<u64>,
     #[serde(default)]
     pub queue_latencies: Option<QueueLatencies>,
+    #[cfg(feature = "emp_admission")]
+    #[serde(default)]
+    emp_admitted: bool,
 }
 
 pub struct ContextBuilder {
@@ -45,6 +48,8 @@ pub struct ContextBuilder {
     prio_hint: Option<PriorityHint>,
     frontend_elapse: Option<u64>,
     queue_latencies: Option<QueueLatencies>,
+    #[cfg(feature = "emp_admission")]
+    emp_admitted: bool,
 }
 
 impl ContextBuilder {
@@ -58,6 +63,8 @@ impl ContextBuilder {
             prio_hint: None,
             frontend_elapse: None,
             queue_latencies: None,
+            #[cfg(feature = "emp_admission")]
+            emp_admitted: false,
         }
     }
 
@@ -71,6 +78,8 @@ impl ContextBuilder {
             prio_hint: Some(ctx.prio_hint),
             frontend_elapse: ctx.frontend_elapse,
             queue_latencies: ctx.queue_latencies.clone(),
+            #[cfg(feature = "emp_admission")]
+            emp_admitted: ctx.emp_admitted,
         }
     }
 
@@ -104,6 +113,12 @@ impl ContextBuilder {
         self
     }
 
+    #[cfg(feature = "emp_admission")]
+    pub fn emp_admitted(mut self, v: bool) -> Self {
+        self.emp_admitted = v;
+        self
+    }
+
     pub fn build(self) -> Context {
         Context {
             api: self.api,
@@ -114,6 +129,8 @@ impl ContextBuilder {
             prio_hint: self.prio_hint.unwrap_or(PriorityHint::new(self.deadline)),
             frontend_elapse: self.frontend_elapse,
             queue_latencies: self.queue_latencies,
+            #[cfg(feature = "emp_admission")]
+            emp_admitted: self.emp_admitted,
         }
     }
 }
@@ -156,6 +173,12 @@ impl Context {
     /// Get the frontend elapse time.
     pub fn frontend_elapse(&self) -> Option<u64> {
         self.frontend_elapse
+    }
+
+    /// Returns true if this request was already admitted via emp_admission at an upstream hop.
+    #[cfg(feature = "emp_admission")]
+    pub fn emp_admitted(&self) -> bool {
+        self.emp_admitted
     }
 
     /// Set the frontend elapse time.
