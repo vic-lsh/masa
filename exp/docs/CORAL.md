@@ -723,3 +723,83 @@ Both additional iterations failed to fix the coral_ext_2 robustness problem:
 The best known state for each configuration remains:
 - `coral_4` (Hotel, 50ms SLO): original emp_admission is excellent (~50% fraction to 4000 RPS)
 - `coral_ext_2` (Hotel, mixed SLO): `prio_local,early` remains the robust winner
+
+---
+
+## Iteration 10: Single-tier admission via `emp_admitted` flag (coral_10, coral_10_b)
+
+**Status:** Pending
+
+### Change
+
+Add `emp_admitted: bool` to `Context` (gated behind `#[cfg(feature = "emp_admission")]`).
+The flag is serialized into the HTTP/2 `ctx` header alongside the existing fields.
+
+**`admission_check` in `local.rs`**: the probabilistic emp_admission block is now wrapped with
+`if !self.ctx.emp_admitted()`. If the flag is set, the check is skipped entirely and falls
+through to the floor-based ER check (same as when `emp_admission` is disabled).
+
+**`before_child_rpc` in `local.rs`**: the child context is built with
+```rust
+emp_admitted = self.ctx.emp_admitted() || self.first_er_decision.get().is_some()
+```
+That is: `emp_admitted=true` propagates if (a) the parent already carried it, or (b) this hop
+just admitted via emp_admission (set `first_er_decision`). Downstream hops inherit the flag and
+bypass the probabilistic check.
+
+**`record_admission_outcome`**: unchanged. `first_er_decision` is a `OnceLock` set only at the
+hop that ran emp_admission (the ingress after this fix). Downstream hops produce no updates
+because they never set `first_er_decision`.
+
+Relevant files: `libs/masa-core/src/context.rs`, `libs/tonic/tonic/src/masa/context/local/local.rs`.
+Commit: `90a42656`.
+
+### Hypothesis
+
+The definitive root cause from Iteration 9's analysis: emp_admission fires independently at every
+hop. With `PROBE_FLOOR=0.05` and N≈3 hops for Hotel's Reservation path, compound probe survival
+is `0.05^3 ≈ 0.012%`. At 400 Reservation/s offered with p≈0, only ~0.05 probes/s survive all
+hops — too few to pull p back up.
+
+With `emp_admitted=true` propagation, once a request passes the ingress emp_admission check, all
+downstream hops admit it unconditionally (subject only to the floor-based ER, which only sheds
+requests already past their e2e deadline). End-to-end probe survival rises from `0.05^N` to `0.05`
+(5% at ingress × 100% downstream). At 400 Reservation/s offered, ~20 probes/s reach completion,
+generating enough positive updates to pull p(Reservation) back toward 1.0.
+
+**coral_4 safety**: This change does not affect the coral_4 case. When p(Search) is near 0, the
+ingress sheds Search at 95%—the 5% that pass get `emp_admitted=true` in their child contexts, but
+prio_local's floor-based ER check still sheds them at downstream hops (est_remaining=110ms > any
+remaining time_left within the 50ms SLO). Reservation probes that survive ingress also get
+`emp_admitted=true` but Reservation already has p≈1 so this is a no-op.
+
+### Expected outcomes if hypothesis is correct:
+
+1. **coral_10** (coral_ext_2 config, Search=200ms SLO, Reservation=50ms SLO):
+   - At 800–1400 RPS: Reservation goodput rises substantially above baseline (~7–13/s), approaching
+     or matching prio_local,early's performance (~798/1188/1279 respectively)
+   - Search goodput may decrease as Reservation probes now compete effectively
+   - No collapse at 1600+ RPS (no new forced load beyond what the probe floor already allows)
+
+2. **coral_10_b** (coral_4 config, both SLOs=50ms): goodput at 1400 RPS remains near 700 (±50).
+   emv+emp still beats prio_local,early by a large margin.
+
+3. No system instability. `emp_admitted=true` requests at downstream hops are still subject to the
+   floor-based ER (`time_now() > e2e_deadline - est_remaining_floor`), preventing zombie requests
+   from consuming resources past their e2e deadline.
+
+### Key differences from Iteration 8 (forced-probe)
+
+Iteration 8 forced probes through all hops unconditionally, bypassing even the floor-based ER.
+This increased backend load for infeasible requests (Search in coral_4) and drove all p estimates
+down. The `emp_admitted` approach instead:
+- Bypasses only the *probabilistic* emp_admission check at downstream hops
+- Retains the floor-based ER, so requests past their e2e deadline are still shed downstream
+- Applies to ALL admitted traffic (not just probe traffic), so is O(5% of offered load at ingress
+  when p≈0), not a new additive load
+
+### Experiment design
+
+- `coral_10`: coral_ext_2 config (Search=200ms, Reservation=50ms, RPS=[100,400,800,1200,1400,1600,1800,2000]).
+- `coral_10_b`: coral_4 config (both SLOs=50ms, RPS=[400,800,1400,2000,2500,3000,4000]).
+Policies: `prio_local,early` and `prio_local,est_mean_var,emp_admission,early`. 60s/step, 20s warmup.
