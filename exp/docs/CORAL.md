@@ -634,3 +634,92 @@ stays low.
 - `coral_9`: coral_ext_2 config (Search=200ms, Reservation=50ms). Tests Reservation recovery.
 - `coral_9_b`: coral_4 config (both SLOs=50ms). Regression check.
 Policies: prio_local,early and prio_local,est_mean_var,emp_admission,early. 60s/step, 20s warmup.
+
+### Actual Outcomes (coral_9) — code commit: dc65133e
+
+**Status:** Regression ❌ — hypothesis refuted; 1400 RPS worsened, 800–1200 unchanged
+
+#### Goodput table
+
+| RPS  | prio_oldest | prio_local (ple) | emv+emp (coral_9) | emv+emp baseline (coral_ext_2) | Delta |
+|------|-------------|------------------|-------------------|-------------------------------|-------|
+| 100  | 99.8        | 99.8             | 99.8              | 99.8                          | 0     |
+| 400  | 399.3       | 399.3            | 399.3             | 399.3                         | 0     |
+| 800  | 798.5       | 798.5            | **403.7**         | 402.8                         | +0.9  |
+| 1200 | 1183.7      | 1188.8           | **607.0**         | 607.6                         | −0.6  |
+| 1400 | 1228.0      | 1289.4           | **76.1**          | 659.5                         | **−583** |
+| 1600 | 1302.2      | 1409.3           | **15.8**          | 15.3                          | ~same |
+| 1800 | 1144.7      | 1035.6           | **16.3**          | 16.3                          | ~same |
+| 2000 | 599.4       | 306.6            | **19.9**          | 19.6                          | ~same |
+
+#### Per-API breakdown at key RPS
+
+| RPS  | Policy  | Search | Reservation |
+|------|---------|--------|-------------|
+| 800  | emv+emp | 396.7  | **7.0**     |
+| 1200 | emv+emp | 595.0  | **12.0**    |
+| 1400 | emv+emp | 63.2   | **12.8**    |
+
+#### Key findings
+
+1. **Hypothesis refuted.** The `completed = result.is_ok()` fix had zero effect at 800–1200 RPS.
+   The per-API breakdown is identical to the baseline (Reservation ~7/s at 800, ~12/s at 1200).
+   The failure mode is unchanged.
+
+2. **The fix introduced a new regression at 1400 RPS.** Goodput dropped from 659 to 76 — an 88%
+   additional regression. The cause: removing the `time_now() <= ctx.e2e_deadline()` check means
+   Search requests that complete within their looser 200ms SLO but would previously generate
+   `completed = false` (because they miss the propagated e2e deadline) now generate `completed = true`.
+   At 1400 RPS, this inflates p(Search) under overload → more Search gets admitted → worse queue
+   congestion → Reservation goodput stays near 12, Search goodput collapses from 646 to 63 as the
+   system oscillates into a new worse equilibrium.
+
+3. **Root cause analysis — why the update step is not the bottleneck.**
+   At 800 RPS, the ER breakdown shows `None/None` ERs at ~365/s against 400 Reservation/s offered.
+   Reservation is being shed at ingress before any child RPC fires — before `record_admission_outcome`
+   is ever called. The p(Reservation) signal never gets to the update step because the requests are
+   blocked at admission check. The fundamental issue is: once p(Reservation) drops to near zero,
+   only 5% probe floor admits any Reservation. Each probe must then survive N≈3 independent
+   emp_admission checks at downstream hops. With p≈0 at each hop, compound admission probability
+   is 0.05³ ≈ 0.012%. At 400 Reservation/s offered, ≈0.05 Reservation/s reaches completion — far
+   too few positive updates to pull p back up. This multi-hop compounding problem is structural
+   and cannot be fixed by changing what signal each successful completion generates.
+
+4. **The `completed = result.is_ok()` semantics is also arguably wrong.**
+   A request that ran to completion but missed its SLO consumed backend resources (CPU, memory,
+   downstream calls) without contributing to goodput. It is not semantically a "success" from an
+   admission control perspective. Marking it as completed=true risks inflating p for a request
+   class that is adding load without producing goodput — exactly what happened with Search at 1400 RPS.
+
+### Decision: Revert code change (commit dc65133e)
+
+The change made things worse at 1400 RPS and helped nothing. Reverted via `git revert dc65133e`.
+
+---
+
+## Final assessment (after iterations 8–9)
+
+Both additional iterations failed to fix the coral_ext_2 robustness problem:
+
+- **Iteration 8 (forced-probe flag):** Correct diagnosis (multi-hop compounding) but wrong fix
+  (forcing probes through increased load, poisoned all estimates, system-wide collapse)
+- **Iteration 9 (update step semantics):** Wrong diagnosis (deadline-miss updates were not the issue;
+  Reservation shed at ingress before update step is reached). Fix also introduced new regression.
+
+**Definitive root cause:** emp_admission as currently designed fails in mixed-SLO workloads because:
+1. Per-hop independent admission creates compound probe-failure probability of 0.05^N ≈ 0 end-to-end
+2. Once p(Reservation) drops to near-zero, no update signal can reach the recovery path
+3. The mechanism is self-reinforcing in both directions: collapse is fast (ALPHA_FALL=0.1),
+   recovery is impossible (compound probe survival rate < 0.1/s)
+
+**What would be needed to fix this (not attempted due to iteration limit):**
+1. **Single-tier admission**: fire emp_admission only at the ingress frontend; downstream hops use
+   simple floor-based ER only. Breaks the compound probability trap entirely.
+2. **Admission tagging**: mark admitted requests so downstream hops bypass emp_admission entirely
+   (similar to forced-probe idea but applied to ALL admitted traffic, not just probe traffic).
+3. **Per-class reservation quotas**: instead of a shared admission map, maintain separate CPU/queue
+   budgets per API class with explicit minimum guaranteed admission rates.
+
+The best known state for each configuration remains:
+- `coral_4` (Hotel, 50ms SLO): original emp_admission is excellent (~50% fraction to 4000 RPS)
+- `coral_ext_2` (Hotel, mixed SLO): `prio_local,early` remains the robust winner
