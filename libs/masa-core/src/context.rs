@@ -34,6 +34,8 @@ pub struct Context {
     frontend_elapse: Option<u64>,
     #[serde(default)]
     pub queue_latencies: Option<QueueLatencies>,
+    #[serde(default)]
+    forced_probe: bool,
 }
 
 pub struct ContextBuilder {
@@ -45,6 +47,7 @@ pub struct ContextBuilder {
     prio_hint: Option<PriorityHint>,
     frontend_elapse: Option<u64>,
     queue_latencies: Option<QueueLatencies>,
+    forced_probe: bool,
 }
 
 impl ContextBuilder {
@@ -58,6 +61,7 @@ impl ContextBuilder {
             prio_hint: None,
             frontend_elapse: None,
             queue_latencies: None,
+            forced_probe: false,
         }
     }
 
@@ -71,6 +75,7 @@ impl ContextBuilder {
             prio_hint: Some(ctx.prio_hint),
             frontend_elapse: ctx.frontend_elapse,
             queue_latencies: ctx.queue_latencies.clone(),
+            forced_probe: ctx.forced_probe,
         }
     }
 
@@ -104,6 +109,11 @@ impl ContextBuilder {
         self
     }
 
+    pub fn forced_probe(mut self, v: bool) -> Self {
+        self.forced_probe = v;
+        self
+    }
+
     pub fn build(self) -> Context {
         Context {
             api: self.api,
@@ -114,6 +124,7 @@ impl ContextBuilder {
             prio_hint: self.prio_hint.unwrap_or(PriorityHint::new(self.deadline)),
             frontend_elapse: self.frontend_elapse,
             queue_latencies: self.queue_latencies,
+            forced_probe: self.forced_probe,
         }
     }
 }
@@ -161,6 +172,11 @@ impl Context {
     /// Set the frontend elapse time.
     pub fn set_frontend_elapse(&mut self, elapse: u64) {
         self.frontend_elapse = Some(elapse);
+    }
+
+    /// Get the forced probe flag.
+    pub fn forced_probe(&self) -> bool {
+        self.forced_probe
     }
 
     /// Create a new Masa context from JSON.
