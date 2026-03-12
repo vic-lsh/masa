@@ -439,38 +439,37 @@ impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
 
     /// Returns true if the request should be shed (early-returned).
     ///
-    /// With `emp_admission` enabled: uses empirical P(complete | api, bucket) for buckets 0–4.
-    /// Bucket 5 (full budget remaining) always admits. Falls through to floor-based check when
-    /// emp_admission is disabled.
+    /// With `emp_admission` enabled: requests carrying `emp_admitted=true` are admitted
+    /// unconditionally (bypass all checks). Others use empirical P(complete | api, bucket) for
+    /// buckets 0–4. Bucket 5 (full budget remaining) always admits. Falls through to floor-based
+    /// check when emp_admission is disabled.
     #[allow(unused_variables)]
     fn admission_check(&self, key: u64, est_remaining_floor: u64) -> bool {
         #[cfg(feature = "emp_admission")]
         if EARLY_RETURN {
+            // Requests already admitted at ingress bypass all checks — admit unconditionally.
+            if self.ctx.emp_admitted() {
+                return false;
+            }
             // Only run the probabilistic emp_admission check at the ingress hop.
-            // Downstream hops that carry emp_admitted=true skip here and fall through to
-            // the floor-based check, raising end-to-end probe survival from 0.05^N to 0.05.
-            if !self.ctx.emp_admitted() {
-                let time_left = self.ctx.e2e_deadline().saturating_sub(time_now());
-                let slo = self.ctx.slo();
-                if slo > 0 {
-                    let bucket = completion_rate_map::time_left_to_bucket(time_left, slo);
-                    if bucket < 5 {
-                        let p = self
-                            .server
-                            .completion_rate_map
-                            .get_p(self.ctx.api(), bucket);
-                        let rand =
-                            completion_rate_map::deterministic_rand(self.ctx.request_id(), key);
-                        let admitted = rand <= p.max(completion_rate_map::PROBE_FLOOR);
-                        if admitted {
-                            // OnceLock: only the first admitted hop is recorded.
-                            let _ = self.first_er_decision.set((self.ctx.api().clone(), bucket));
-                        }
-                        return !admitted;
+            let time_left = self.ctx.e2e_deadline().saturating_sub(time_now());
+            let slo = self.ctx.slo();
+            if slo > 0 {
+                let bucket = completion_rate_map::time_left_to_bucket(time_left, slo);
+                if bucket < 5 {
+                    let p = self
+                        .server
+                        .completion_rate_map
+                        .get_p(self.ctx.api(), bucket);
+                    let rand = completion_rate_map::deterministic_rand(self.ctx.request_id(), key);
+                    let admitted = rand <= p.max(completion_rate_map::PROBE_FLOOR);
+                    if admitted {
+                        // OnceLock: only the first admitted hop is recorded.
+                        let _ = self.first_er_decision.set((self.ctx.api().clone(), bucket));
                     }
+                    return !admitted;
                 }
             }
-            // emp_admitted=true: fall through to floor-based check below.
         }
         // Default: floor estimate check (also used when emp_admission disabled, or bucket == 5).
         EARLY_RETURN && time_now() > self.ctx.e2e_deadline().saturating_sub(est_remaining_floor)
