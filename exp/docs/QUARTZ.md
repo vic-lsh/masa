@@ -1091,6 +1091,49 @@ The oscillation at 2000 RPS is caused by the threshold controller's inability to
 ### Experiment design
 Same config as quartz_1 (coral_ext_2 based). Two policies: prio_oldest,early + adctl.
 
+### Actual Outcomes (quartz_12)
+
+**Status:** Regression ❌ at 2000 RPS — implementation bug identified
+
+| RPS | adctl q12 | adctl q1 | q12 vs q1 | prio_oldest q12 | adctl vs oldest |
+|-----|------:|------:|------:|------:|------:|
+| 100 | 99.8 | 99.8 | 0.0 | 99.8 | 0.0 |
+| 400 | 399.3 | 399.2 | +0.1 | 399.3 | 0.0 |
+| 800 | 798.5 | 798.6 | -0.1 | 798.6 | -0.1 |
+| 1200 | 1186.9 | 1179.9 | +7.0 | 1176.2 | +10.7 |
+| 1400 | 1276.4 | 1276.9 | -0.5 | 1165.2 | **+111.2** |
+| 1600 | 1430.8 | 1461.9 | -31.1 | 1271.7 | **+159.1** |
+| 1800 | 1076.2 | 1073.2 | +3.0 | 971.7 | **+104.5** |
+| 2000 | 549.8 | 1005.8 | **-456.0** | 810.5 | **-260.7** |
+
+**Key findings:**
+
+1. **Catastrophic regression at 2000 RPS** (-456 vs q1, -261 vs prio_oldest). Good at 1200-1800.
+2. **Root cause: wrong cost metric.** The token bucket uses `est_compute_rem` = local frontend compute (~1-5ms poll time), NOT total downstream compute (~110ms Search, ~20ms Reservation). This means the budget can't differentiate expensive from cheap requests and must shrink ~10,000x before it starts rate-limiting.
+3. ER breakdown: adctl sheds 1340/s at 2000 (Search 719 + Reservation 621), yet goodput only 550 — the budget responds too slowly to overload because each request deducts only ~1ms from a budget calibrated in µs/sec.
+4. **Fix: use est_child_latency (total downstream call time) as cost.** At the ingress, est_child captures the full downstream resource cost (~110ms Search, ~20ms Reservation), giving 5.5x cost differentiation.
+
+## Iteration 12: Fix token bucket cost — use child latency not local compute (experiment quartz_13)
+
+**Status:** Pending
+
+**Code commit:** 9629ec46
+
+### Change
+In `admission_check()`, replace `est_compute_rem` (local frontend poll time, ~1-5ms) with `est_child_latency` (total downstream call time, ~110ms Search / ~20ms Reservation) as the cost passed to `should_admit()`.
+
+### Hypothesis
+The token bucket works at 1200-1800 RPS (rate limiting alone is sufficient at moderate overload) but fails at 2000 RPS because it can't differentiate expensive from cheap requests. Using est_child as the cost gives the budget the right magnitude (budget_rate in µs/sec, cost in µs → meaningful rate limiting) and correct cost differentiation (Search 5.5x more expensive than Reservation).
+
+### Expected outcomes if hypothesis is correct:
+1. At 2000 RPS: significant improvement over quartz_12's 550. Should approach or exceed q1's 1006.
+2. At 1400-1600 RPS: no regression vs q12 (budget still works for rate limiting).
+3. Cost-aware shedding: Search shed preferentially when budget is tight.
+4. No regression at ≤1200 RPS.
+
+### Experiment design
+Same config as quartz_1. Two policies: prio_oldest,early + adctl.
+
 ## Open questions
 
 1. **Asymmetric adjustment.** Should the rate shrink faster than it grows? TCP uses additive increase / multiplicative decrease (AIMD). Our design uses multiplicative both ways. AIMD might be more stable — grow linearly, shrink multiplicatively — but the multiplicative approach is simpler and may be sufficient given the relatively stable capacity of the system.
