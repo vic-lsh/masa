@@ -953,6 +953,24 @@ The oscillation collapse is driven by Layer 1's `est_compute_rem > time_left` ch
 ### Experiment design
 Same config as quartz_1 (coral_ext_2 based). Two policies: prio_oldest,early + adctl.
 
+### Actual Outcomes (quartz_11)
+
+**Status:** Regression ❌ — reverted (git revert 8cb2166e → 4612c26d)
+
+| RPS | adctl q11 | adctl q1 | delta |
+|-----|------:|------:|------:|
+| 1200 | 1189.8 | 1179.9 | +9.9 |
+| 1400 | 1266.7 | 1276.9 | -10.2 |
+| 1600 | 1438.6 | 1461.9 | -23.3 |
+| 1800 | 490.8 | 1073.2 | **-582.4** |
+| 2000 | 614.7 | 1005.8 | **-391.1** |
+
+**Root cause:** Floor estimate (α_floor=0.01 inflate) is too loose — under-estimates compute cost, so Layer 1 admits requests that will miss their deadline. These requests consume compute then get early-returned (ER rates: 1243/s at 1800, 1260/s at 2000). Wasted work causes worse performance than the original's periodic over-shedding.
+
+**Key insight:** Layer 1 with `get_estimate()` is doing important, correct work. The regular mean estimate is the right reference — it accurately reflects compute cost. The problem is NOT that the estimate is too high (loosening it makes things worse). The oscillation must be driven by something other than Layer 1 inflation.
+
+**Decision: REVERT.**
+
 ## Open questions
 
 1. **Threshold controller tuning.** The feedback controller for Layer 2's `threshold` needs tuning (proportional gain, update rate). Too aggressive → oscillation. Too conservative → slow adaptation.
