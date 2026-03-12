@@ -5,8 +5,7 @@ use std::time::Instant;
 const STALENESS_SECS: f64 = 2.0;
 const STALENESS_DEFAULT: f32 = 0.5;
 const UTIL_TARGET: f64 = 0.85;
-const THRESHOLD_DECAY: f64 = 0.99;
-const THRESHOLD_RAISE: f64 = 0.01;
+const THRESHOLD_RAISE: f64 = 0.1;
 
 /// Tracks max_downstream_util per API with staleness decay.
 #[derive(Debug)]
@@ -47,7 +46,7 @@ fn efficiency_score(p_feasible: f64, est_compute: u64) -> f64 {
     if est_compute == 0 {
         return p_feasible;
     }
-    p_feasible / est_compute as f64
+    p_feasible / (est_compute as f64 / 1000.0)
 }
 
 /// Admission controller using efficiency-based threshold feedback.
@@ -91,7 +90,9 @@ impl AdmissionController {
         if bottleneck_util > UTIL_TARGET {
             *threshold += THRESHOLD_RAISE;
         } else {
-            *threshold *= THRESHOLD_DECAY;
+            let headroom = ((UTIL_TARGET - bottleneck_util) / UTIL_TARGET).clamp(0.0, 1.0);
+            let decay = 1.0 - headroom * 0.01;
+            *threshold *= decay;
         }
         // Clamp threshold to [0, 1]
         *threshold = threshold.clamp(0.0, 1.0);
@@ -121,7 +122,7 @@ mod tests {
 
     #[test]
     fn test_efficiency_score() {
-        assert!((efficiency_score(0.5, 100) - 0.005).abs() < 1e-6);
+        assert!((efficiency_score(0.5, 100) - 5.0).abs() < 1e-6);
         assert!((efficiency_score(1.0, 0) - 1.0).abs() < 1e-6);
         assert!((efficiency_score(0.0, 100) - 0.0).abs() < 1e-6);
     }
