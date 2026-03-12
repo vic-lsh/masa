@@ -866,6 +866,43 @@ Same config as quartz_1 (coral_ext_2 based). Two policies: prio_oldest,early + a
 
 **Decision:** Revert. The net effect is roughly neutral with tradeoffs at different load points. The original q1 behavior (fast decay) is better at 1600 while worse at 1800; this version is the reverse. Neither is strictly dominant.
 
+## Iteration 9: Adaptive decay — decay rate proportional to utilization headroom (experiment quartz_10)
+
+**Status:** Pending
+
+**Code commit:** TBD
+
+### Change
+Three changes to `adctl.rs`:
+1. Score: `p_feasible / (est_compute as f64 / 1000.0)` — ms-based scores (0.009–0.05)
+2. `THRESHOLD_RAISE = 0.1` — fast reaction (same as iteration 8)
+3. Adaptive decay replacing fixed `THRESHOLD_DECAY`:
+   ```rust
+   let headroom = ((UTIL_TARGET - bottleneck_util) / UTIL_TARGET).clamp(0.0, 1.0);
+   let decay = 1.0 - headroom * 0.01;  // ranges from 0.99 (idle) to 1.0 (at target)
+   threshold *= decay;
+   ```
+
+When util=0 (idle): headroom=1.0, decay=0.99 → fast recovery (same as original)
+When util=0.80 (near target): headroom=0.059, decay=0.99941 → very slow recovery
+When util=0.85 (at target): headroom=0, decay=1.0 → no decay (threshold holds)
+
+This means:
+- At 1600 RPS (util well below 0.85 after shedding): fast decay → quick re-admission (fixes iteration 8's regression)
+- At 1800-2000 RPS (util near 0.85 even after shedding): slow decay → graduated recovery (keeps iteration 8's gain)
+
+### Hypothesis
+Iteration 8 showed that slow decay helps at 1800 (+87) but hurts at 1600 (-50) — the optimal decay rate is load-dependent. Adaptive decay solves this: decay speed is proportional to available headroom. When there's lots of spare capacity (1600 after shedding), recover fast. When capacity is tight (1800-2000), recover slowly. The system naturally finds the right recovery rate for each load level.
+
+### Expected outcomes if hypothesis is correct:
+1. At 1800 RPS: preserve or improve q8's +87 gain over q1
+2. At 1600 RPS: no regression vs q1 (fast decay when util << 0.85)
+3. At 2000 RPS: improve over q1's 1006 (graduated recovery at high util)
+4. At ≤1200 RPS: no change
+
+### Experiment design
+Same config as quartz_1 (coral_ext_2 based). Two policies: prio_oldest,early + adctl.
+
 ## Open questions
 
 1. **Threshold controller tuning.** The feedback controller for Layer 2's `threshold` needs tuning (proportional gain, update rate). Too aggressive → oscillation. Too conservative → slow adaptation.
