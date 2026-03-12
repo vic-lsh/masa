@@ -65,7 +65,7 @@ early = ["masa", "masa-core/early"]
 est_rms = []
 est_hist = []
 est_mean_var = []
-emp_admission = ["masa-core/emp_admission"]
+emp_admission = []
 
 
 # [[bench]]

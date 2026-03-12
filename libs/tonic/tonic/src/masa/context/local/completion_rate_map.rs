@@ -130,12 +130,7 @@ mod tests {
         map.update("Search", 2, false);
         let p = map.get_p("Search", 2);
         let expected = 1.0 + ALPHA_FALL * (0.0 - 1.0);
-        assert!(
-            (p - expected).abs() < 1e-10,
-            "p={} expected={}",
-            p,
-            expected
-        );
+        assert!((p - expected).abs() < 1e-10, "p={} expected={}", p, expected);
     }
 
     #[test]
