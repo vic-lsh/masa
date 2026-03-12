@@ -5,8 +5,8 @@ use std::time::Instant;
 const STALENESS_SECS: f64 = 2.0;
 const STALENESS_DEFAULT: f32 = 0.5;
 const UTIL_TARGET: f64 = 0.85;
-const THRESHOLD_DECAY: f64 = 0.99;
-const THRESHOLD_RAISE: f64 = 0.01;
+const RAISE_RATE: f64 = 1.0; // threshold units per second when overloaded
+const HALF_LIFE_SECS: f64 = 1.0; // threshold half-life during decay
 
 /// Tracks max_downstream_util per API with staleness decay.
 #[derive(Debug)]
@@ -43,11 +43,10 @@ impl BottleneckTracker {
     }
 }
 
+const REFERENCE_COMPUTE: f64 = 50_000.0; // 50ms in microseconds
+
 fn efficiency_score(p_feasible: f64, est_compute: u64) -> f64 {
-    if est_compute == 0 {
-        return p_feasible;
-    }
-    p_feasible / est_compute as f64
+    p_feasible / (1.0 + est_compute as f64 / REFERENCE_COMPUTE)
 }
 
 /// Admission controller using efficiency-based threshold feedback.
@@ -55,6 +54,7 @@ fn efficiency_score(p_feasible: f64, est_compute: u64) -> f64 {
 pub(crate) struct AdmissionController {
     bottleneck: BottleneckTracker,
     threshold: Mutex<f64>,
+    last_update: Mutex<Instant>,
 }
 
 impl AdmissionController {
@@ -62,6 +62,7 @@ impl AdmissionController {
         Self {
             bottleneck: BottleneckTracker::new(),
             threshold: Mutex::new(0.0),
+            last_update: Mutex::new(Instant::now()),
         }
     }
 
@@ -85,17 +86,20 @@ impl AdmissionController {
 
         let score = efficiency_score(p_feasible, est_compute);
 
-        let bottleneck_util = self.bottleneck.get(api) as f64;
+        let now = std::time::Instant::now();
+        let mut last = self.last_update.lock().unwrap();
+        let elapsed_secs = now.duration_since(*last).as_secs_f64();
+        *last = now;
+        drop(last);
 
+        let bottleneck_util = self.bottleneck.get(api) as f64;
         let mut threshold = self.threshold.lock().unwrap();
         if bottleneck_util > UTIL_TARGET {
-            *threshold += THRESHOLD_RAISE;
+            *threshold += RAISE_RATE * elapsed_secs;
         } else {
-            *threshold *= THRESHOLD_DECAY;
+            *threshold *= 0.5_f64.powf(elapsed_secs / HALF_LIFE_SECS);
         }
-        // Clamp threshold to [0, 1]
         *threshold = threshold.clamp(0.0, 1.0);
-
         score >= *threshold
     }
 }
@@ -121,7 +125,9 @@ mod tests {
 
     #[test]
     fn test_efficiency_score() {
-        assert!((efficiency_score(0.5, 100) - 0.005).abs() < 1e-6);
+        // 0.5 / (1 + 100/50000) = 0.5 / 1.002 ≈ 0.499001996
+        assert!((efficiency_score(0.5, 100) - 0.499001996).abs() < 1e-6);
+        // 1.0 / (1 + 0/50000) = 1.0
         assert!((efficiency_score(1.0, 0) - 1.0).abs() < 1e-6);
         assert!((efficiency_score(0.0, 100) - 0.0).abs() < 1e-6);
     }
@@ -139,10 +145,10 @@ mod tests {
         let ac = AdmissionController::new();
         // Simulate high utilization to raise threshold
         ac.update_bottleneck("Search", 0.95);
-        // Call should_admit many times to raise threshold
-        for _ in 0..200 {
-            ac.should_admit("Search", 100_000, 1000, 50_000);
-        }
+        // Backdate last_update by 1 second so RAISE_RATE * 1.0s = 1.0 threshold
+        *ac.last_update.lock().unwrap() = Instant::now() - std::time::Duration::from_secs(1);
+        // One call raises threshold to 1.0
+        ac.should_admit("Search", 100_000, 1000, 50_000);
         // Now with est_total_mean >= time_left → p_feasible=0 → score=0
         let admitted = ac.should_admit("Search", 1000, 100, 2000);
         assert!(!admitted);
