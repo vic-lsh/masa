@@ -971,14 +971,132 @@ Same config as quartz_1 (coral_ext_2 based). Two policies: prio_oldest,early + a
 
 **Decision: REVERT.**
 
+## Iteration 11: Replace threshold with compute-budget admission (experiment quartz_12)
+
+**Status:** Planned
+
+### Motivation
+
+Iterations 1-10 exhaustively explored threshold-based admission control. Every variant failed for the same structural reason: a scalar threshold cannot find stable equilibrium when the system's capacity is measured in compute-time but the threshold operates on a different scale (scores, probabilities, or request counts). The oscillation is inherent to threshold-based admission at loads beyond capacity.
+
+The fundamental problem: **the controller has no concept of capacity**. It reacts to instantaneous utilization (above/below 0.85) but doesn't track how much work the system can actually sustain. It needs to discover and hold at the system's compute capacity, like TCP congestion control discovers bandwidth.
+
+### Design: Compute-Budget Token Bucket
+
+Replace the threshold-based `AdmissionController` with a compute-budget controller. The control variable is `budget_rate` (μs of compute per second the system is willing to admit).
+
+**State:**
+```rust
+struct AdmissionController {
+    bottleneck: BottleneckTracker,          // unchanged
+    budget_us: Mutex<f64>,                   // available compute tokens (μs)
+    budget_rate: Mutex<f64>,                 // refill rate (μs/sec) — the learned capacity
+    last_refill: Mutex<Instant>,             // last token refill time
+}
+```
+
+**Constants:**
+```rust
+const UTIL_TARGET: f64 = 0.85;              // unchanged
+const ADJUST_RATE: f64 = 0.5;               // rate adjustment speed (per second)
+const MAX_BURST_SECS: f64 = 0.1;            // max token accumulation (100ms of budget)
+const INITIAL_BUDGET_RATE: f64 = 10_000_000.0;  // 10M μs/sec — effectively unlimited at start
+```
+
+**`should_admit()` logic:**
+```rust
+fn should_admit(&self, api: &str, time_left: u64, est_compute: u64, est_total_mean: u64) -> bool {
+    let now = Instant::now();
+    let mut budget = self.budget_us.lock().unwrap();
+    let mut rate = self.budget_rate.lock().unwrap();
+    let mut last = self.last_refill.lock().unwrap();
+
+    // 1. Refill tokens
+    let elapsed = now.duration_since(*last).as_secs_f64();
+    *last = now;
+    *budget += *rate * elapsed;
+    let max_budget = *rate * MAX_BURST_SECS;
+    *budget = budget.min(max_budget);  // cap burst accumulation
+
+    // 2. Adjust rate based on utilization
+    let bottleneck_util = self.bottleneck.get(api) as f64;
+    if bottleneck_util > UTIL_TARGET {
+        // Overloaded: shrink budget rate
+        *rate *= (1.0 - ADJUST_RATE * elapsed).max(0.5);
+    } else {
+        // Headroom: grow budget rate
+        *rate *= (1.0 + ADJUST_RATE * elapsed).min(2.0);
+    }
+    *rate = rate.clamp(0.0, INITIAL_BUDGET_RATE);
+
+    // 3. Admit if budget covers this request's compute cost
+    let cost = est_compute as f64;
+    if *budget >= cost {
+        *budget -= cost;
+        true  // admitted
+    } else {
+        false  // rejected — insufficient budget
+    }
+}
+```
+
+**How it works at different load levels:**
+
+- **≤1200 RPS (below saturation):** util stays below 0.85, budget_rate grows to INITIAL_BUDGET_RATE (effectively unlimited). All requests admitted. No behavioral change from current system.
+
+- **1400-1600 RPS (near saturation):** util crosses 0.85 intermittently. budget_rate oscillates slightly around the capacity point, admitting most requests. Small, bounded fluctuations — not the large boom-bust cycles of the threshold approach.
+
+- **2000 RPS (deep overload):** budget_rate converges to the system's compute capacity. With mixed traffic (Search=110ms, Reservation=20ms):
+  - Total compute demand: ~1000×110,000 + 1000×20,000 = 130M μs/sec
+  - System capacity: ~1M μs/sec per core
+  - budget_rate stabilizes at capacity. When budget is tight, Reservation (20,000 μs) fits more often than Search (110,000 μs) → natural cost-aware shedding.
+  - **No oscillation** — the rate adjusts continuously by small multiplicative steps, not bang-bang on/off.
+
+**Why this avoids the threshold problems:**
+
+| Threshold approach | Compute-budget approach |
+|---|---|
+| Score/threshold scale mismatch (10⁻⁵ vs 0.01) | No scores. Cost is in μs, budget is in μs. Same units. |
+| Bang-bang: one step rejects all | Gradual: rate adjusts by ±0.5×elapsed per second |
+| Decay to zero → flood on recovery | Rate holds at learned capacity — no reset to zero |
+| No capacity concept | Rate IS the learned capacity |
+| Binary per-API (all Search or no Search) | Granular: admits Search when budget available, Reservation when tight |
+
+**Layer 1 unchanged:** `est_compute_rem > time_left` feasibility check stays as-is. It correctly rejects requests that can't possibly complete regardless of budget.
+
+**Layer 2 replaced:** The threshold + efficiency_score + raise/decay logic is entirely replaced by the token bucket above.
+
+**p_feasible dropped from admission:** The budget handles cost-awareness directly. p_feasible is still used in deadline/priority calculations elsewhere but is no longer needed for admission. This simplifies the controller and removes a dependency on `est_total_mean` (which we showed can inflate during shedding).
+
+### Design decisions
+
+1. **ADJUST_RATE = 0.5/sec:** At sustained overload, rate shrinks by ~39% per second (`0.5^1 = 0.5`, so `(1-0.5)^1 = 0.5` — halves in ~1.4s). Fast enough to react to overload within 1-2 seconds, slow enough to not oscillate. Symmetric for growth — when overload subsides, rate doubles in ~1.4s.
+
+2. **MAX_BURST_SECS = 0.1 (100ms):** Limits token accumulation to 100ms worth of budget. Prevents post-quiet-period burst. Small enough to be responsive, large enough to absorb normal request spacing jitter.
+
+3. **INITIAL_BUDGET_RATE = 10M μs/sec:** Effectively unlimited — allows the system to start fully open and learn capacity downward. Much simpler than starting at 0 and learning upward.
+
+4. **Single lock vs three locks:** The prototype uses three separate Mutexes for simplicity. Could consolidate into a single Mutex<BudgetState> struct for atomicity. For correctness, all three should be updated together — use a single lock in implementation.
+
+### Hypothesis
+The oscillation at 2000 RPS is caused by the threshold controller's inability to hold at the system's capacity — it can only be "on" (admit all) or "off" (reject all). A compute-budget controller directly tracks capacity in the right units (μs/sec), adjusts gradually via multiplicative increase/decrease (like TCP), and never resets to zero. The system should converge to admitting ~1400 goodput worth of compute and holding there stably.
+
+### Expected outcomes if hypothesis is correct:
+1. At 2000 RPS: stable goodput near system capacity (~1400), no oscillation. Major improvement over q1's 1006.
+2. At 1600-1800 RPS: budget_rate finds capacity, admits appropriately. No regression.
+3. At ≤1200 RPS: budget_rate stays at max (unlimited). No change.
+4. Cost-aware shedding: Search naturally shed before Reservation when budget is tight (5.5x cost difference).
+5. Per-second goodput trace should be flat, not sawtooth.
+
+### Experiment design
+Same config as quartz_1 (coral_ext_2 based). Two policies: prio_oldest,early + adctl.
+
 ## Open questions
 
-1. **Threshold controller tuning.** The feedback controller for Layer 2's `threshold` needs tuning (proportional gain, update rate). Too aggressive → oscillation. Too conservative → slow adaptation.
+1. **Asymmetric adjustment.** Should the rate shrink faster than it grows? TCP uses additive increase / multiplicative decrease (AIMD). Our design uses multiplicative both ways. AIMD might be more stable — grow linearly, shrink multiplicatively — but the multiplicative approach is simpler and may be sufficient given the relatively stable capacity of the system.
 
-2. **P(feasible) computation.** Using the normal CDF approximation `Φ((time_left - mean) / stddev)` assumes normally distributed completion times. Real distributions are likely right-skewed. May need a different distributional assumption or a non-parametric approach.
+2. **Per-API vs global budget.** Current design uses a global budget. If Search and Reservation hit different bottleneck services, per-API budgets might be better. For Hotel (shared reservation-service bottleneck), global is correct. May need per-API for other apps.
 
-3. **est_compute vs est_total for P(feasible).** The design uses compute-only estimates for cost/priority but needs total-time estimates for P(feasible) (since queue delay counts against the deadline). The P(feasible) computation may need access to both the compute distribution and an expected queue delay factor derived from utilization.
+3. **Interaction with BottleneckTracker staleness.** When no requests flow (budget exhausted), bottleneck_util becomes stale and decays toward 0.5 (< UTIL_TARGET). This causes the rate to grow, eventually admitting requests again. This is correct behavior (self-recovery), but the 2-second staleness window means 2 seconds of potential under-admission before the rate starts growing. Acceptable for now.
 
-4. **Interaction with before_poll reprioritization.** The current prio_local implementation reprioritizes tasks via `before_poll`. If `local_deadline` changes to use `est_compute_remaining` (excluding queue delay), this affects the reprioritization logic. Need to verify compatibility.
-
-5. **Staleness decay rate.** How quickly should stale bottleneck signals decay toward neutral? Too fast → unnecessary readmission of genuinely problematic APIs. Too slow → shed APIs stay shed too long when conditions improve.
+4. **est_compute accuracy.** The budget's effectiveness depends on `est_compute` being a reasonable estimate. If the estimator is badly wrong (e.g., inflated during shedding), the budget deducts too much per request, under-admitting. Layer 1's feasibility check has the same dependency. We validated in Iteration 10 that the estimator is correctly calibrated (loosening it made things worse), so this should be fine.
