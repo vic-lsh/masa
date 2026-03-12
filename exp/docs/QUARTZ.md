@@ -593,6 +593,59 @@ The oscillation in quartz_1 is caused by score/threshold scale mismatch: scores 
 ### Experiment design
 Same config. Two policies: prio_oldest,early + adctl.
 
+### Actual Outcomes (quartz_5)
+
+**Status:** Regression ❌ — still oscillating, worse at 1600/2000
+
+| RPS | adctl q5 | adctl q1 | delta |
+|-----|------:|------:|------:|
+| 1200 | 1180.5 | 1179.9 | +0.6 |
+| 1400 | 1256.6 | 1276.9 | -20.3 |
+| 1600 | 1125.6 | 1461.9 | **-336.3** |
+| 1800 | 1144.0 | 1073.2 | +70.8 |
+| 2000 | 742.9 | 1005.8 | **-262.9** |
+
+Score normalization brought scores to [0, 0.71] but per-call threshold dynamics STILL overshoot: 0.01 × 1000 calls/s = 10/s rise, vastly exceeding 0.71 max score. Per-second trace at 2000 shows 17s healthy phase (~1650 goodput) then permanent collapse — the healthy phase is better than quartz_1, but recovery fails.
+
+**Critical insight across Iterations 1-4:** The fix requires BOTH:
+1. Bounded scores (Iteration 4) — so threshold and scores are in the same range
+2. Time-based dynamics (Iteration 1) — so controller is volume-independent
+
+Iteration 1 failed because scores were ~10^-5 with time-based params calibrated for [0,1]. Iteration 4 fixed scores but kept per-call dynamics. Combining them should work.
+
+**Decision: REVERT.** Code reverted via `git revert 266bfaff` → commit 48d846ae.
+
+## Iteration 5: Bounded scores + time-based controller (experiment quartz_6)
+
+**Status:** Pending
+
+### Change
+Combine Iteration 1 (time-based threshold) with Iteration 4 (bounded cost-normalized scoring). Two changes:
+
+1. **Score normalization:** `score = p_feasible / (1 + est_compute / 50000.0)` — bounded [0, 0.71]
+2. **Time-based threshold controller:** Track `last_update: Instant`. On each call:
+   - `elapsed_secs = now.duration_since(last_update).as_secs_f64()`
+   - If `bottleneck_util > 0.85`: `threshold += RAISE_RATE * elapsed_secs` (RAISE_RATE=1.0/s)
+   - Else: `threshold *= 0.5_f64.powf(elapsed_secs / HALF_LIFE)` (HALF_LIFE=1.0s)
+   - `threshold = threshold.clamp(0.0, 1.0)`
+   - Update `last_update = now`
+
+Parameters calibrated for score range [0, 0.71]:
+- RAISE_RATE=1.0/s: reaches max score in ~0.7s under sustained overload (fast enough to respond)
+- HALF_LIFE=1.0s: threshold halves every second during recovery (slow enough to prevent re-flood)
+
+### Hypothesis
+Per-call raise/decay is volume-dependent and creates overshoot at high RPS. Time-based dynamics are volume-independent but failed in Iteration 1 because scores were ~10^-5 (time-based params tuned for [0,1] range missed entirely). With bounded scores in [0, 0.71], time-based params can be correctly calibrated: RAISE_RATE=1.0/s ramps to full rejection in ~1s, HALF_LIFE=1.0s decays gradually over seconds. This prevents both the instant-overshoot problem (Iterations 1,4,5) and the too-slow-raise problem (Iteration 1).
+
+### Expected outcomes if hypothesis is correct:
+1. Stable goodput at 2000 RPS near the ~1650 seen in quartz_5's healthy phase.
+2. No regression at 1400-1600 (threshold doesn't overshoot into the score range).
+3. Cost-aware shedding: Search shed before Reservation under overload.
+4. No regression at ≤1200 RPS.
+
+### Experiment design
+Same config. Two policies: prio_oldest,early + adctl.
+
 ## Open questions
 
 1. **Threshold controller tuning.** The feedback controller for Layer 2's `threshold` needs tuning (proportional gain, update rate). Too aggressive → oscillation. Too conservative → slow adaptation.
