@@ -5,8 +5,8 @@ use std::time::Instant;
 const STALENESS_SECS: f64 = 2.0;
 const STALENESS_DEFAULT: f32 = 0.5;
 const UTIL_TARGET: f64 = 0.85;
-const RAISE_RATE: f64 = 0.5; // threshold units per second when overloaded
-const HALF_LIFE_SECS: f64 = 2.0; // threshold half-life during decay
+const THRESHOLD_DECAY: f64 = 0.99;
+const THRESHOLD_RAISE: f64 = 0.01;
 
 /// Tracks max_downstream_util per API with staleness decay.
 #[derive(Debug)]
@@ -55,7 +55,6 @@ fn efficiency_score(p_feasible: f64, est_compute: u64) -> f64 {
 pub(crate) struct AdmissionController {
     bottleneck: BottleneckTracker,
     threshold: Mutex<f64>,
-    last_update: Mutex<Instant>,
 }
 
 impl AdmissionController {
@@ -63,7 +62,6 @@ impl AdmissionController {
         Self {
             bottleneck: BottleneckTracker::new(),
             threshold: Mutex::new(0.0),
-            last_update: Mutex::new(Instant::now()),
         }
     }
 
@@ -90,14 +88,10 @@ impl AdmissionController {
         let bottleneck_util = self.bottleneck.get(api) as f64;
 
         let mut threshold = self.threshold.lock().unwrap();
-        let mut last_update = self.last_update.lock().unwrap();
-        let elapsed_secs = last_update.elapsed().as_secs_f64();
-        *last_update = Instant::now();
-
         if bottleneck_util > UTIL_TARGET {
-            *threshold += RAISE_RATE * elapsed_secs;
+            *threshold += THRESHOLD_RAISE;
         } else {
-            *threshold *= (0.5_f64).powf(elapsed_secs / HALF_LIFE_SECS);
+            *threshold *= THRESHOLD_DECAY;
         }
         // Clamp threshold to [0, 1]
         *threshold = threshold.clamp(0.0, 1.0);
@@ -145,10 +139,10 @@ mod tests {
         let ac = AdmissionController::new();
         // Simulate high utilization to raise threshold
         ac.update_bottleneck("Search", 0.95);
-        // Backdate last_update to simulate 2 seconds of sustained overload
-        // so threshold rises by RAISE_RATE * 2.0 = 1.0
-        *ac.last_update.lock().unwrap() = Instant::now() - std::time::Duration::from_secs(2);
-        ac.should_admit("Search", 100_000, 1000, 50_000);
+        // Call should_admit many times to raise threshold
+        for _ in 0..200 {
+            ac.should_admit("Search", 100_000, 1000, 50_000);
+        }
         // Now with est_total_mean >= time_left → p_feasible=0 → score=0
         let admitted = ac.should_admit("Search", 1000, 100, 2000);
         assert!(!admitted);
