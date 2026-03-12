@@ -6,7 +6,7 @@ mod timing;
 mod typing;
 
 pub use context::FutureSpan;
-pub use context::{Context, ContextBuilder, QueueLatencies};
+pub use context::{Context, ContextBuilder, QueueLatencies, ResponseMeta};
 pub use flag::{EARLY_RETURN, FIFO, PRIO_GLOBAL, PRIO_LOCAL, PRIO_OLDEST};
 pub use latency_estimator::{LatencyDistribution, LatencyEstimator, LatencyMeanVar, LatencyRms};
 pub use priority::{Prioritize, PriorityHint};

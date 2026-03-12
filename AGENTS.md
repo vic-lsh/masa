@@ -68,8 +68,9 @@ Key policy flags:
 - `prio_oldest`: Oldest request first (from the TailClipper paper)
 - `prio_local`: Priority by local deadline — **only works for `hotel`** as it requires a call graph description
 - `early`: Combined with a policy (e.g., `prio_global,early`) to return early for requests past their e2e deadline, avoiding wasteful work
+- `adctl`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Requires `prio_local` and `early`. Replaces the old `emp_admission` flag.
 
-`scripts/check.sh` checks: default (no features), `fifo`, `prio_global`, `prio_global,early`, `prio_local,early`. CI additionally checks `prio_oldest,early`.
+`scripts/check.sh` checks: default (no features), `fifo`, `prio_global`, `prio_global,early`, `prio_local,early`, `prio_local,early,adctl,est_mean_var`. CI additionally checks `prio_oldest,early`.
 
 ## Architecture
 

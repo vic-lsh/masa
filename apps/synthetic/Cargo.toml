@@ -33,6 +33,7 @@ est_mean_var = ["masa/est_mean_var"]
 fifo = ["masa/fifo"]
 
 early = ["masa/early"]
+adctl = ["masa/adctl"]
 trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
 
 gcp = ["dep:prost-types", "tonic/tls"]

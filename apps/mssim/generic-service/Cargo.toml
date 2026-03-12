@@ -41,3 +41,11 @@ fifo = ["masa/fifo"]
 prio_oldest = ["masa/prio_oldest"]
 
 prio_global = ["masa/prio_global"]
+
+prio_local = ["masa/prio_local"]
+
+est_rms = ["masa/est_rms"]
+est_hist = ["masa/est_hist"]
+est_mean_var = ["masa/est_mean_var"]
+
+adctl = ["masa/adctl"]
