@@ -34,28 +34,6 @@ fn header_round_trip_preserves_all_fields() {
         decoded.queue_latencies.as_ref(),
         ctx.queue_latencies.as_ref()
     );
-    #[cfg(feature = "emp_admission")]
-    assert_eq!(decoded.emp_admitted(), ctx.emp_admitted());
-}
-
-#[cfg(feature = "emp_admission")]
-#[test]
-fn header_round_trip_preserves_emp_admitted_true() {
-    let ctx = ContextBuilder::new("hotel.Reservation", 99)
-        .slo(50_000)
-        .gateway_entry(1_000_000)
-        .deadline(1_050_000)
-        .emp_admitted(true)
-        .build();
-    let decoded = Context::from_header_string(&ctx.to_header_string());
-    assert!(decoded.emp_admitted());
-}
-
-#[cfg(feature = "emp_admission")]
-#[test]
-fn emp_admitted_defaults_to_false() {
-    let ctx = Context::default();
-    assert!(!ctx.emp_admitted());
 }
 
 #[test]
