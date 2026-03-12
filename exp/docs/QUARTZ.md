@@ -410,7 +410,7 @@ Require the ingress to know which APIs call which downstream services (Hotel alr
 
 ## Iteration 1: Time-based threshold decay (experiment quartz_2)
 
-**Status:** Pending
+**Status:** Regression ❌ — reverted (git revert 7b345bf2 of code commit 33afd731)
 
 ### Change
 Replace per-call threshold decay (×0.99 per `should_admit()` call) with time-based exponential decay. The current implementation decays threshold by 0.99 on every request, which at 2000 RPS means 0.99^2000 ≈ 0 within one second — the threshold collapses to zero the instant utilization drops below 0.85, causing immediate re-overload and the observed oscillation pattern.
@@ -427,6 +427,38 @@ The oscillation at 2000 RPS (alternating between ~1500 and ~250 goodput in ~10-1
 
 ### Experiment design
 Same config as quartz_1 (coral_ext_2 based: Search SLO=200ms, Reservation SLO=50ms) with RPS sweep [100, 400, 800, 1200, 1400, 1600, 1800, 2000]. Only test `prio_oldest,early` and `prio_local,est_mean_var,early,adctl` to halve experiment time (we established EMV-only and prio_local,early baselines in quartz_1). Direct comparison to quartz_1's adctl numbers tells us if the fix helped.
+
+### Actual Outcomes (quartz_2)
+
+**Status:** Regression ❌
+
+| RPS | adctl q2 | adctl q1 | delta | prio_oldest q2 | adctl q2 vs oldest |
+|-----|------:|------:|------:|------:|------:|
+| 100 | 99.8 | 99.8 | 0.0 | 99.8 | 0.0 |
+| 400 | 399.3 | 399.2 | +0.1 | 399.3 | 0.0 |
+| 800 | 798.6 | 798.6 | 0.0 | 798.6 | 0.0 |
+| 1200 | 1185.2 | 1179.9 | +5.3 | 1180.9 | +4.3 |
+| 1400 | 1262.9 | 1276.9 | -14.0 | 1192.8 | +70.1 |
+| 1600 | 1417.0 | 1461.9 | -44.9 | 1266.9 | +150.1 |
+| 1800 | 1001.2 | 1073.2 | -72.0 | 945.9 | +55.3 |
+| 2000 | 624.7 | 1005.8 | -381.1 | 705.1 | -80.4 |
+
+**Key findings:**
+
+1. **Time-based decay worsens oscillation at 2000 RPS.** Goodput drops from 1006 → 625 (−381). Per-second trace shows boom-bust cycles: 17s collapse → 14s recovery (~1700 good) → 28s re-collapse. System spends ~75% of time in collapse.
+
+2. **Regression at all overload RPS levels.** 1400 (−14), 1600 (−45), 1800 (−72), 2000 (−381). Pre-overload (≤1200) unaffected.
+
+3. **Recovery proves mechanism CAN work.** During secs 38-51 at 2000 RPS, system achieves ~1700 goodput — exceptional if sustained. Problem is instability: RAISE_RATE=0.5/s too slow to re-raise threshold before flood overwhelms system.
+
+4. **Root cause:** Boom-bust cycle. Threshold decays (HALF_LIFE=2s) → admission opens wide → system floods → RAISE_RATE=0.5/s too slow to close the gate → re-collapse. At moderate overload (1400-1600), decay also loosens admission unnecessarily.
+
+**Decision: REVERT.** Code reverted via `git revert 33afd731` → commit 7b345bf2.
+
+**Lessons for next iteration:**
+- The per-call ×0.99 decay in the original code is actually functioning as a very aggressive time-based decay (effective half-life of milliseconds at high RPS). This is what creates the quartz_1 oscillation.
+- Making decay slower (HALF_LIFE=2s) didn't help because the RAISE was also made proportional to time, making it too slow.
+- The right fix may not be about decay rate at all — it may be about preventing the threshold from dropping too low (minimum threshold floor), or using integral/PID control instead of simple proportional.
 
 ## Open questions
 
