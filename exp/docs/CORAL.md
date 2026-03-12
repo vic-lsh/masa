@@ -919,3 +919,122 @@ completion → unchanged.
 - `coral_11`: coral_ext_2 config (Search=200ms, Reservation=50ms, RPS=[100,400,800,1200,1400,1600,1800,2000]).
 - `coral_11_b`: coral_4 config (both SLOs=50ms, RPS=[400,800,1400,2000,2500,3000,4000]).
 Policies: `prio_local,early` and `prio_local,est_mean_var,emp_admission,early`. 60s/step, 20s warmup.
+
+### Actual Outcomes (coral_11) — code commit: ec816975
+
+**Status:** Regression ❌ — hypothesis refuted; Reservation starvation entirely unchanged
+
+#### Goodput table
+
+| RPS  | ple    | emv+emp (coral_11) | emv+emp vs ple | emv+emp vs coral_ext_2 |
+|------|--------|--------------------|-----------------|-----------------------|
+| 100  | 99.8   | 99.8               | ~0              | ~0                    |
+| 400  | 399.2  | 399.3              | ~0              | ~0                    |
+| 800  | 798.4  | **405.1**          | −393.3          | +2.3                  |
+| 1200 | 1036.2 | **611.0**          | −425.2          | +3.4                  |
+| 1400 | 1274.9 | **104.2**          | −1170.7         | **−555.3**            |
+| 1600 | 1399.0 | **15.4**           | −1383.6         | ~0                    |
+| 1800 | 385.6  | **16.2**           | −369.4          | ~0                    |
+| 2000 | 246.1  | **20.2**           | −225.9          | ~0                    |
+
+#### Per-API breakdown (emv+emp)
+
+| RPS  | Search | Reservation |
+|------|--------|-------------|
+| 800  | 398.5  | **6.6**     |
+| 1200 | 599.2  | **11.8**    |
+| 1400 | 91.5   | **12.7**    |
+| 1600 | 0      | 15.4        |
+
+#### Key findings
+
+1. **Reservation starvation is completely unchanged across all 4 iterations (8, 9, 10, 11).**
+   At 800 RPS, Reservation goodput is 6.6/s — identical to coral_ext_2 (6.8), coral_10 (6.9),
+   coral_8 (7.1), and coral_9 (7.0). No architectural change to the admission check structure has
+   moved this number. The floor check was not causing the starvation.
+
+2. **Root cause identified definitively.** The last-child ER breakdown shows ~394 Reservation ERs/s
+   at 800 RPS are `None/None` — generated at the frontend ingress BEFORE any child RPC is spawned.
+   emp_admitted=true is NEVER set for these requests because they are shed before `before_child_rpc`
+   runs. The probe floor (5% of 400 Reservation/s = 20 probes/s) does survive all downstream hops
+   in coral_11, but the completion rate is ~33% (6.6/20). This 33% completion rate sets the steady-
+   state p = 0.33... but only if p is actually rising. It isn't, because:
+   - As p rises and more Reservation is admitted, shared backend congestion causes those additional
+     Reservation requests to also miss their 50ms SLO → `completed=false` updates drive p back down
+   - The feasibility of Reservation DEPENDS ON the admission rate of Reservation (circular)
+   - This is a congestion-feedback problem that cannot be solved by admission-check restructuring
+
+3. **Search at 1400 RPS partially recovered (91.5 vs 0 in coral_10) but far below baseline (647).**
+   The floor bypass did allow some Search to survive downstream hops. But under 1400 RPS overload,
+   Search queue delays push most Search requests past their 200ms SLO before completion.
+
+4. **The hypothesis about floor check killing probes was incorrect.** Probes were already passing
+   the floor check in prior iterations (they arrive at downstream hops quickly, before much queue
+   delay accumulates). The 6.8/s Reservation goodput was stable across coral_8/9/10/11 precisely
+   because the probes were already completing — just not enough to overcome the congestion feedback.
+
+### Actual Outcomes (coral_11_b) — coral_4 regression check
+
+**Status:** Complete ✅ — coral_4 win FULLY PRESERVED
+
+#### Goodput table
+
+| RPS  | emv+emp    | Fraction | prio_local,early | ple frac | Delta vs ple |
+|------|------------|----------|------------------|----------|--------------|
+| 400  | 201.3      | 50.3%    | 200.0            | 50.0%    | +1.3         |
+| 800  | 400.1      | 50.0%    | 399.7            | 50.0%    | +0.4         |
+| 1400 | 698.7      | 49.9%    | 418.3            | 29.9%    | **+280.4**   |
+| 2000 | 997.7      | 49.9%    | 261.1            | 13.1%    | **+736.6**   |
+| 2500 | 1251.2     | 50.0%    | 331.8            | 13.3%    | **+919.4**   |
+| 3000 | 1504.7     | 50.2%    | 458.8            | 15.3%    | **+1045.9**  |
+| 4000 | 1999.1     | 50.0%    | 612.6            | 15.3%    | **+1386.5**  |
+
+The ~50% fraction is maintained at every RPS. Deltas vs ple match or exceed coral_4 original at
+every overloaded point (+280 at 1400 vs coral_4's +239; +1386 at 4000 vs +1385). Regression
+check passes cleanly — the full bypass of floor check for emp_admitted=true requests does not
+harm the coral_4 win case.
+
+### Decision: Revert coral_11 code (ec816975); revert coral_10 code (90a42656)
+
+**Rationale:**
+- coral_11 and coral_10 both regress the mixed-SLO case vs the original emp_admission code:
+  - Original (no emp_admitted): 1400 RPS = 659.5 (Search=647, Reservation=12.8)
+  - coral_10 (emp_admitted, floor fires): 1400 RPS = 12.9 (−647 regression, floor kills Search)
+  - coral_11 (emp_admitted, full bypass): 1400 RPS = 104.2 (Search partially recovers to 91.5)
+- The original emp_admission (without emp_admitted flag) was better for mixed-SLO at 1400 RPS
+  because Search completed within 200ms SLO under multi-hop emp_admission (p(Search)≈1 there)
+- The emp_admitted flag breaks Search's multi-hop behavior by changing how Search requests are
+  admitted at downstream hops, resulting in Search collapse under load
+- coral_4 performance is essentially identical with or without emp_admitted (confirmed by coral_11_b
+  matching coral_4 results within noise), so there is no benefit to keeping the emp_admitted flag
+
+---
+
+## Final assessment: CORAL track (after iterations 10–11)
+
+The `emp_admitted` single-tier admission mechanism (iterations 10–11) was designed to fix the
+multi-hop probe compounding problem identified in the Iteration 9 analysis. The implementation is
+architecturally clean but **does not improve performance in any tested configuration** and
+**actively regresses the mixed-SLO case** at the 1400 RPS operating point.
+
+### What we learned
+
+1. **The multi-hop compounding hypothesis was wrong.** Reservation probes were already passing
+   downstream floor checks in the original code (they arrive quickly, before queue delay
+   accumulates). The 6.8/s Reservation goodput was not caused by floor-check shedding — it was
+   caused by the admission rate being limited to 5% probe floor and congestion feedback preventing
+   p(Reservation) from recovering.
+
+2. **The congestion-feedback loop is fundamental.** In the mixed-SLO case, Reservation feasibility
+   depends on the Reservation admission rate (higher admission → more shared congestion → lower
+   completion rate → lower p → lower admission). This circular dependency cannot be broken by
+   restructuring the admission check mechanism. It requires architectural solutions outside the
+   current framework.
+
+3. **The coral_4 win is robust.** The original emp_admission mechanism (all variants tested)
+   preserves ~50% goodput fraction in the homogeneous-SLO case at all RPS from 400 to 4000.
+
+4. **Best known code state:** The original emp_admission code (before iterations 10–11) is best:
+   - coral_4 (50ms both): ~50% fraction linear to 4000 RPS (unchanged)
+   - coral_ext_2 (mixed SLO): 659 at 1400 RPS (best of all tested variants); collapses at 1600+
+     (this failure is structural and unsolvable within current emp_admission architecture)
