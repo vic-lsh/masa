@@ -1,0 +1,421 @@
+# QUARTZ — Progressive Cost-Aware Admission Control
+
+## Problem
+
+Masa's current admission control mechanism (`emp_admission`) fails on mixed-SLO workloads. It works well when one API type is clearly infeasible (coral_4: both APIs have 50ms SLO, but Search takes ~110ms → always infeasible, Reservation takes ~20ms → always feasible). It fails when both API types are feasible but have different SLOs and costs (coral_ext_2: Search=200ms SLO/110ms cost, Reservation=50ms SLO/20ms cost).
+
+**The failure mode is a congestion-feedback monopoly:**
+1. emp_admission tracks `P(complete | api, time_left_bucket)` independently per API
+2. The API with the higher P monopolizes admission (Search: easy 200ms SLO → p≈1.0)
+3. The tight-SLO API's P collapses (Reservation: tight 50ms SLO → transient failures drive p→0)
+4. Once p collapses, only 5% probe floor admits the tight-SLO API. Recovery requires positive observations, but the few probes complete at only ~33% rate — insufficient to pull p back up.
+5. The monopoly is self-reinforcing: the expensive API fills capacity, the cheap API starves.
+
+This is not a tuning problem. 11 iterations of CORAL experimentation (adjusting probe floors, EMA asymmetry, update semantics, single-tier admission flags, floor-check bypass) all failed because the root cause is structural: **per-API completion rate tracking creates winner-take-all dynamics when APIs share backend resources.**
+
+The result: at 800 RPS (well below system saturation of ~1400 RPS), emp_admission achieves only 403 goodput vs 799 for `prio_local,early`. It is shedding half the traffic unnecessarily.
+
+**Goal:** Design an admission control mechanism that:
+- Maximizes goodput across N API types with different SLOs and costs
+- Has no per-API feedback loops that can collapse
+- Works without static call graph descriptions
+- Scales to arbitrary numbers of API types
+- Sheds load as early as possible to minimize wasted work
+
+## Context
+
+### How Masa works today
+
+**Scheduling:** `prio_local` assigns each request a local deadline based on its e2e deadline minus estimated remaining work. The modified single-threaded tokio runtime dequeues tasks by deadline (tighter deadline = higher priority). This naturally favors cheap requests — a request with 20ms of remaining work gets a tighter local deadline than one with 110ms, so it runs first.
+
+**Early return (floor-based):** At each hop, before spawning child RPCs, the system checks `est_remaining > time_left`. If true, the request is shed immediately (early return with DeadlineExceeded). This becomes more precise at later hops as `est_remaining` covers less of the call graph.
+
+**Empirical admission (emp_admission):** On top of the floor check, tracks `P(complete | api, time_left_bucket)` via asymmetric EMA (ALPHA_FALL=0.1, ALPHA_RISE=0.05). Requests in buckets 0–4 are admitted with probability `max(p, PROBE_FLOOR=0.05)`. This is the mechanism that fails on mixed SLO.
+
+**Latency estimation:** `LatencyMeanVar` tracks per-method mean and variance of observed latencies via EMA (α=0.1). Used for computing `est_remaining` and local deadlines.
+
+### Experimental evidence
+
+**coral_4** (homogeneous SLO=50ms, both APIs):
+
+| RPS  | prio_local,early | emv+emp | Delta |
+|------|-----------------|---------|-------|
+| 800  | 400.0           | 401.9   | +2    |
+| 1400 | 460.9           | 700.2   | +239  |
+| 2000 | 268.3           | 1002.3  | +734  |
+| 4000 | 612.7           | 1997.5  | +1385 |
+
+emp_admission achieves ~50% fraction (theoretical max: Search is infeasible at 50ms SLO, so admitting all Reservation = 50% of 50/50 mix).
+
+**coral_ext_2** (mixed SLO: Search=200ms, Reservation=50ms):
+
+| RPS  | prio_local,early | emv+emp | prio_oldest,early |
+|------|-----------------|---------|-------------------|
+| 800  | 798.5           | 402.8   | 798.5             |
+| 1200 | 1188.6          | 607.6   | 1176.5            |
+| 1400 | 1267.4          | 659.5   | 1201.4            |
+| 1600 | 1411.2          | 15.3    | 1313.5            |
+| 2000 | 214.8           | 19.6    | 549.8             |
+
+emp_admission is strictly worse than both baselines at every load point above 400 RPS.
+
+### What CORAL iterations tried and why they failed
+
+| Iter | Approach | Result | Root cause of failure |
+|------|----------|--------|-----------------------|
+| 5 | Remove bucket-5 bypass | ❌ | Didn't break per-API feedback loop |
+| 6 | Floor-first hybrid admission | Mixed | Fixed ext_2 but destroyed coral_4 win |
+| 7 | Decaying cold-start exploration floor | ❌ | Still converges to one-class monopoly |
+| 8 | Forced-probe flag (probes bypass all hops) | ❌ | Increased backend load, poisoned ALL estimates |
+| 9 | Update only on ER outcomes (not deadline miss) | ❌ | Wrong diagnosis — requests shed at ingress before update step |
+| 10 | emp_admitted single-tier (floor check active) | ❌ | Floor check killed Search at downstream hops |
+| 11 | emp_admitted full bypass (skip all downstream checks) | ❌ | Congestion feedback unchanged; Reservation still ~7/s at 800 RPS |
+
+**Core lesson:** Per-API P(complete) tracking is fundamentally incompatible with shared backends under mixed SLOs. Any mechanism that independently tracks per-API completion rates creates winner-take-all dynamics. The fix must eliminate per-API outcome tracking entirely.
+
+## Proposed design: Progressive Cost-Aware Admission Control (PAC)
+
+### Design principles
+
+1. **Admission is a resource allocation problem, not a classification problem.** The question isn't "will this request complete?" — it's "does admitting this request maximize total goodput?" This requires reasoning about both feasibility and cost.
+
+2. **Prefer cheap requests under overload.** A request that consumes 20ms of backend compute yields the same +1 goodput as one consuming 110ms. Under capacity constraints, admitting cheap requests maximizes goodput per resource unit. This extends prio_local's scheduling principle (prioritize tight-deadline requests) to admission control.
+
+3. **No per-API state that can collapse.** Replace per-API P(complete) with per-API cost estimates (from the latency estimator, which updates from all observed requests) and a global overload signal (from piggybacked downstream utilization). Neither creates per-API feedback loops.
+
+4. **Shed early, refine progressively.** The cheapest place to shed is the ingress (zero sunk cost). Later hops refine the decision with higher confidence (less remaining work to estimate). Each hop's floor check (`est_remaining > time_left`) becomes more precise as the request progresses.
+
+5. **Estimates should reflect compute cost, not queue delay.** The priority scheduler assigns different queue delays to different requests based on their priority. Including queue delay in cost estimates conflates the request's intrinsic cost with the system's scheduling decisions. Two requests with identical compute time should have identical cost estimates and identical priority (given equal remaining time). Queue delay is a system property that changes with load; compute cost is a request property that's relatively stable.
+
+6. **Downstream services self-report their state.** Instead of the ingress inferring downstream overload from latency inflation, each service reports its utilization in response metadata. This is more accurate (local knowledge), faster (no EMA lag), and disentangled from priority-mediated queue delay.
+
+### Architecture
+
+```
+                        ┌─────────────────────────────┐
+ Request ──►  Layer 1: Feasibility check (every hop)  │
+              est_compute_remaining > time_left → SHED │
+              Increasingly precise at later hops       │
+                        └──────────┬──────────────────┘
+                                   │ pass
+                        ┌──────────▼──────────────────┐
+              Layer 2: Capacity allocation (ingress)   │
+              score = P(feasible) / est_compute        │
+              Uses downstream utilization signals       │
+              Shed low-score requests when overloaded   │
+                        └──────────┬──────────────────┘
+                                   │ admit
+                        ┌──────────▼──────────────────┐
+              Priority scheduling (prio_local)         │
+              local_deadline = e2e_deadline             │
+                             - est_compute_remaining   │
+              Lower deadline = higher priority          │
+                        └─────────────────────────────┘
+```
+
+### Layer 1: Feasibility check
+
+Runs at **every hop** in the call chain. Unchanged from current floor-based early return:
+
+```
+shed if: est_compute_remaining > time_left
+```
+
+Where `est_compute_remaining` is the sum of estimated compute times for the remaining call chain, **excluding queue delay** (see "Compute time estimation" below). This check becomes progressively more precise at later hops because there's less remaining work to estimate.
+
+### Layer 2: Capacity allocation
+
+Runs at the **ingress** (first hop). Makes cost-aware shedding decisions when the system is overloaded.
+
+**Overload detection:** Each downstream service reports its `utilization` in response metadata (piggybacked on every response). Each response also carries `max_downstream_utilization` — the highest utilization observed transitively in the call chain below. The ingress tracks the most recent `max_downstream_utilization` for each API type from its responses.
+
+```
+bottleneck_util[api] = last observed max_downstream_util from api's responses
+```
+
+When `bottleneck_util[api]` exceeds a threshold (e.g., 0.85), that API's call chain is under stress and shedding may be needed.
+
+**Efficiency scoring:** For each incoming request:
+
+```
+est_compute = est_compute_remaining[api]
+P_feasible  = P(request completes within time_left)
+            = Φ((time_left - est_compute_mean) / est_compute_stddev)
+score       = P_feasible / est_compute
+```
+
+`P_feasible` is computed from the latency estimator's mean and variance for the remaining call chain. Unlike emp_admission's P(complete), this is **computed from the distribution**, not tracked via EMA of outcomes. There is no per-API state that can collapse.
+
+`est_compute` uses compute time only (excluding queue delay), making it stable across load levels. The priority scheduler naturally gives cheap requests less queue delay, but the cost estimate reflects the request's intrinsic resource consumption, not its historical scheduling luck.
+
+**Admission decision:**
+
+```
+if bottleneck_util[api] < 0.85:
+    ADMIT
+
+// System stressed. Admit based on efficiency score.
+if score > threshold:
+    ADMIT
+else:
+    SHED
+```
+
+The `threshold` is feedback-controlled: if downstream utilization remains high, raise threshold (shed more); if utilization drops, lower threshold (admit more). This is a simple proportional controller that converges to the admission rate that keeps the system at capacity.
+
+**Why this handles coral_ext_2 correctly:**
+- At 800 RPS (below saturation): downstream utilization < 0.85 → admit everything → no Reservation starvation
+- At 1400 RPS (overloaded): Reservation score = ~0.98/20ms = 0.049; Search score = ~0.91/110ms = 0.008. Reservation is 6× more efficient → threshold set between → Search shed first, Reservation admitted. Correct.
+
+**Why this preserves coral_4:**
+- Search with 50ms SLO: P_feasible ≈ 0 (est_compute=110ms >> time_left=50ms). Shed by Layer 1 floor check before Layer 2 even runs. Same behavior as current.
+
+### Compute time estimation
+
+#### Task lifecycle and types of delay
+
+A task in Masa's single-threaded tokio runtime cycles through three phases:
+
+```
+spawn ──► [QUEUE WAIT] ──► poll ──► [I/O WAIT] ──► [QUEUE WAIT] ──► poll ──► ... ──► complete
+           (BinaryHeap)    (CPU)    (child RPC)     (BinaryHeap)    (CPU)
+```
+
+1. **Queue wait**: task sitting in the BinaryHeap, waiting to be dequeued by the scheduler. Occurs both on initial spawn and on every re-enqueue after I/O completes. Duration depends on how many higher-priority tasks are ahead.
+
+2. **Poll execution**: the runtime is actively polling the task's future — local CPU work (processing data, preparing child RPC calls, handling responses). This is the actual resource consumed by this service.
+
+3. **I/O wait**: task returned `Pending`, waiting for a waker (typically a child RPC response). The task is NOT in the queue and NOT consuming CPU. This time is accounted for in the *child service's* total time, not the parent's compute.
+
+**Compute time** at a service = sum of all poll execution durations for this task. This is the resource the task consumes at this service, independent of queue depth or scheduling decisions.
+
+**Total handler time** = spawn to complete = sum of queue waits + sum of poll durations + sum of I/O waits.
+
+#### Existing runtime infrastructure
+
+The modified tokio runtime already tracks per-poll queue delay via `TraceTimer` in each task's `Header` (`libs/tokio/tokio/src/runtime/task/core.rs`):
+
+- `set_enqueue_time()`: called every time a task enters the BinaryHeap (initial push and re-enqueue)
+- `record_queue_lat()`: called every time a task is popped for polling
+- `obtain_task_queue_latency()`: public API for a running task to read its most recent queue wait
+
+**Current limitation:** `TraceTimer` only retains the most recent queue latency (overwritten on each pop). To measure total compute time, we need cumulative tracking.
+
+Additionally, `masa-core` already defines a `QueueLatencies` struct distinguishing initial vs resume delay:
+```rust
+pub struct QueueLatencies {
+    pub initial: u64,    // Initial queue delay (microseconds)
+    pub resume: u64,     // Resume queue delay (microseconds)
+}
+```
+
+#### Required changes
+
+Extend `TraceTimer` to accumulate across polls:
+
+```rust
+pub(crate) struct TraceTimer {
+    last_enqueue: Option<Instant>,
+    last_poll_start: Option<Instant>,
+    cumulative_queue_us: u64,    // NEW: sum of all queue waits
+    cumulative_poll_us: u64,     // NEW: sum of all poll durations
+}
+```
+
+- On dequeue (existing `record_queue_lat`): accumulate `cumulative_queue_us += now - last_enqueue`. Set `last_poll_start = now`.
+- On yield/completion: accumulate `cumulative_poll_us += now - last_poll_start`.
+
+Then: `compute_time = cumulative_poll_us` at task completion.
+
+This gives each completed task a precise decomposition:
+- `compute_time` = CPU work consumed at this service
+- `queue_delay` = total time spent waiting in the BinaryHeap
+- `io_wait` = total_handler_time − compute_time − queue_delay
+
+#### How compute time flows through the call graph
+
+Each service reports `compute_time` in its response metadata. The parent uses this to build `est_compute_remaining`:
+
+```
+est_child_compute[method] ← EMA(child_response.compute_time)
+est_local_compute ← EMA(local_compute_time)
+est_compute_remaining[api] = sum(est_child_compute[child] for child in api's remaining calls)
+                           + est_local_compute
+```
+
+Note: `est_child_compute[method]` tracks the child SERVICE's compute time, not the parent's I/O wait for that child. The parent's I/O wait includes the child's queue delay + compute + the child's own I/O — but only the child's `compute_time` is reported back. This ensures the parent's `est_compute_remaining` reflects pure resource consumption across the entire remaining call chain, without any queue delay from any hop.
+
+**Why exclude queue delay from cost estimates:**
+- Queue delay depends on priority assignment, which depends on cost estimates — including it creates circularity
+- Two requests with identical compute time should have identical cost and priority (given equal remaining time)
+- Compute time is stable across load levels; queue delay is volatile. Cost estimates based on compute time require less frequent updates and less probing.
+
+**Why include queue delay in P(feasible):**
+P(feasible) asks "will this request meet its deadline?" — queue delay is real time consumed from the budget. However, P(feasible) doesn't need an explicit queue delay estimate. It's computed from the latency distribution which reflects the request's actual time-to-completion. The priority scheduler ensures that high-priority (cheap) requests experience less queue delay, so their completion time distribution naturally shifts left. P(feasible) captures this implicitly.
+
+### Utilization measurement
+
+Each service tracks its own utilization — the fraction of time the CPU is busy:
+
+```
+utilization = busy_time / (busy_time + idle_time)    // rolling window, e.g., 1 second
+```
+
+In Masa's single-threaded tokio runtime, the event loop either polls tasks (busy) or parks waiting for I/O events (idle). Utilization measures what fraction of the runtime's capacity is consumed.
+
+Implementation: the modified tokio runtime adds two accumulators: time spent entering `poll()` (busy) and time spent in `park()` (idle). The ratio is computed over a rolling window.
+
+Key properties:
+- `utilization < 0.85`: service has spare capacity. Queues stay short.
+- `utilization → 1.0`: service is at capacity. Any additional work increases queue delay.
+- Independent of request mix: if a service handles requests from multiple APIs, utilization reflects total load.
+- Local measurement: each service knows its own state precisely, no inference needed.
+
+### Piggybacked probing via response metadata
+
+Every response carries two fields:
+
+```
+MasaResponseMeta {
+    compute_time_us: u64,         // this request's compute time at this service
+    utilization: f32,             // this service's current utilization
+    max_downstream_util: f32,     // max utilization observed in call chain below
+}
+```
+
+**`compute_time_us`**: This request's actual processing time, excluding queue wait. Used by the parent to update `est_child_compute[method]`.
+
+**`utilization`**: This service's current CPU utilization. Allows the parent (and transitively, the ingress) to know where capacity pressure exists.
+
+**`max_downstream_util`**: The maximum of this service's own utilization and the `max_downstream_util` from all child responses. Propagated transitively up the call chain so the ingress sees the bottleneck utilization without needing to know the call graph topology.
+
+**Cross-API observation sharing:** When multiple APIs share a backend service, ANY API's traffic to that service provides fresh observations. If Search and Reservation both call Rate, Reservation's calls to Rate keep the Rate utilization signal fresh even if Search is being shed. The ingress learns about shared backend pressure through whatever API is currently sending traffic.
+
+**Stale signals for shed APIs:** If an API is fully shed, the ingress receives no responses for it, so `bottleneck_util[api]` goes stale. Two mechanisms handle this:
+
+1. **Score-based readmission.** `est_compute` for the shed API is stable (compute time doesn't change when idle). If the global `threshold` drops (because admitted APIs' bottleneck signals show improving conditions), the shed API's score exceeds the threshold and it gets readmitted. Its first response immediately provides fresh `max_downstream_util`.
+
+2. **Staleness decay.** If an API's bottleneck signal hasn't been updated for N seconds, gradually decay it toward a neutral value (e.g., 0.5). This ensures the ingress periodically reconsiders shed APIs without requiring dedicated probe traffic. An idle downstream service is by definition unsaturated; the first readmitted request updates the signal within one RTT.
+
+### Priority computation
+
+Under prio_local, local deadline computation uses **compute time only**:
+
+```
+local_deadline = e2e_deadline - est_compute_remaining
+```
+
+This ensures priority reflects the request's intrinsic urgency (how much work remains vs. how much time is left), not historical queue dynamics. Two requests with identical compute remaining and identical time left get identical priority regardless of what queue delays they've historically experienced.
+
+The priority scheduler handles queue dynamics at runtime: high-priority tasks are dequeued first, naturally experiencing less queue delay. This is a runtime consequence of correct priority assignment, not something the priority formula should pre-compensate for.
+
+## Design alternatives considered
+
+### A1: Per-API P(complete) with tuned parameters (CORAL iterations 1–11)
+
+The current emp_admission design: track `P(complete | api, bucket)` via EMA of outcomes, admit probabilistically.
+
+**Why rejected:** Structurally incompatible with mixed-SLO workloads. Per-API completion rates create winner-take-all dynamics when APIs share backends. 11 iterations of CORAL experimentation (varying probe floors, EMA asymmetry, update semantics, single-tier admission, floor-check bypass) all failed because the feedback loop between admission decisions and completion observations is fundamentally destabilizing. When one API monopolizes capacity, the other's completion rate collapses with no recovery path.
+
+### A2: Cost-weighted P(complete) (initial QUARTZ hypothesis H5)
+
+Keep per-API P(complete) tracking but weight admission by `P(complete) / est_cost`. Higher efficiency → higher admission probability.
+
+**Why rejected:** Still relies on per-API P(complete) as the feasibility signal. The cost weighting improves the ADMISSION PRIORITY (cheap requests admitted first), but the underlying P(complete) tracking still creates feedback loops. If P(Reservation) collapses, the cost weighting can't fix it — `0.0 / 20ms = 0` is still zero regardless of how cheap Reservation is. The new design eliminates per-API outcome tracking entirely, computing P(feasible) from the latency distribution instead.
+
+### A3: Higher probe floor / reversed EMA asymmetry (QUARTZ H1, H2)
+
+Increase PROBE_FLOOR from 0.05 to 0.15–0.25, or flip EMA asymmetry so recovery is faster than collapse.
+
+**Why rejected:** These are parameter tweaks to a structurally broken mechanism. Higher probe floor risks coral_4 regression (more wasted work on infeasible Search probes: 20% × 2000 Search/s × 110ms = 44 CPU-seconds/s). Reversed asymmetry slows collapse when entering overload. Neither eliminates the per-API feedback loop — they just shift the equilibrium point, which may not be stable across diverse workloads.
+
+### A4: Load-gated activation (QUARTZ H3)
+
+Only activate emp_admission when `goodput_fraction < threshold`. Below threshold, admit everything.
+
+**Why rejected as standalone:** Fixes the underload case (800 RPS) but doesn't fix the mixed-SLO problem at true overload (1400+ RPS). Once activated, the same monopoly dynamics take over. Also introduces a tuning parameter (threshold) and hysteresis risk (oscillation near the threshold). However, the idea of overload gating is incorporated into the proposed design via downstream utilization signals — which are more precise (per-service, not global) and avoid the threshold discontinuity.
+
+### A5: Estimates including queue delay (no decomposition)
+
+Use the latency estimator as-is, with queue delay included in all estimates. The priority scheduler gives cheap requests less queue delay, so their estimates are naturally lower — providing implicit cost differentiation.
+
+**Why rejected for cost estimates and priority:** Queue delay in cost estimates creates circularity — priority depends on est_compute_remaining, which includes queue delay, which depends on priority. Two requests with identical compute time would get different priorities based on historical queue dynamics, not their intrinsic properties. Additionally, queue delay is volatile (changes with load), so cost estimates including queue delay require more frequent probing to stay current. Compute-only estimates are stable and need less probing.
+
+**Partially accepted for P(feasible):** The completion time distribution naturally reflects priority-mediated queue dynamics. P(feasible) doesn't need explicit queue delay estimates — the latency distribution captures the actual time-to-completion including whatever queue delay the priority scheduler assigns.
+
+### A6: Explicit call graph knowledge for bottleneck attribution
+
+Require the ingress to know which APIs call which downstream services (Hotel already has this for prio_local). When a specific service reports high utilization, shed APIs that use that service.
+
+**Why rejected:** Requires static call graph descriptions that must be maintained as the application evolves. Doesn't generalize to dynamic or polymorphic call graphs. The proposed design avoids this by transitively propagating `max_downstream_util` through response metadata — the ingress learns each API's bottleneck utilization from its own responses, without needing to know the call graph topology.
+
+## Experiment series: quartz_1, quartz_2, ... (hotel)
+
+### Baseline: quartz_1 (mixed-SLO eval, coral_ext_2 config)
+
+**Config:** Based on coral_ext_2 — Search SLO=200ms, Reservation SLO=50ms, RPS sweep [100, 400, 800, 1200, 1400, 1600, 1800, 2000].
+
+**Policies:**
+- `prio_oldest,early` — external baseline (TailClipper)
+- `prio_local,early` — scheduling-only baseline
+- `prio_local,est_mean_var,early` — EMV without admission control
+- `prio_local,est_mean_var,early,adctl` — QUARTZ admission control
+
+**Code state:** commit cf3c1eb0 (feat(adctl): replace emp_admission with progressive cost-aware admission control)
+
+**Goal:** Verify that adctl does NOT cause the emp_admission collapse on mixed-SLO workloads. Compare against EMV-only and baselines across the full RPS sweep.
+
+### Results: quartz_1
+
+**Status:** Complete ✅ — adctl eliminates emp_admission collapse and is best policy at deep overload.
+
+| RPS  | prio_oldest,early | prio_local,early | emv (no adctl) | emv+adctl | adctl vs oldest | adctl vs emv |
+|------|------------------:|-----------------:|---------------:|----------:|----------------:|-------------:|
+| 100  | 99.8              | 99.9             | 99.8           | 99.8      | 0.0             | 0.0          |
+| 400  | 399.3             | 399.3            | 399.3          | 399.2     | 0.0             | 0.0          |
+| 800  | 798.6             | 798.6            | 798.6          | 798.6     | 0.0             | 0.0          |
+| 1200 | 1180.9            | 1184.2           | 1185.4         | 1179.9    | -1.0            | -5.5         |
+| 1400 | 1192.8            | 1271.5           | 1279.8         | 1276.9    | +84.1           | -2.9         |
+| 1600 | 1266.9            | 1428.7           | 1426.7         | **1461.9**| **+195.0**      | **+35.2**    |
+| 1800 | 945.9             | 612.1            | 969.2          | **1073.2**| **+127.3**      | **+104.0**   |
+| 2000 | 705.1             | 650.5            | 214.4          | **1005.8**| **+300.6**      | **+791.4**   |
+
+**Key findings:**
+
+1. **emp_admission collapse eliminated.** adctl achieves 798.6 at 800 RPS (old emp_admission: 403). No per-API feedback loop starvation.
+
+2. **Best policy at all RPS >= 1600.** Massive wins at deep overload: +195 vs TailClipper at 1600, +301 at 2000. EMV-only collapses to 214.4 at 2000 but adctl sustains 1005.8.
+
+3. **Higher-quality shedding.** adctl has 839 ER/s at 2000 vs EMV's 1724 ER/s, yet 5x the goodput. Ingress admission prevents wasted downstream work, breaking the EMA cascade.
+
+4. **No regression** at any load point (1200 delta of -5.5 is within noise).
+
+5. **CPU profiles identical** across policies — adctl overhead is negligible. reservation-service confirmed as bottleneck (~100% CPU).
+
+**Comparison vs old emp_admission (from coral_ext_2):**
+
+| RPS  | emp_admission | adctl   | Delta    |
+|------|-------------:|--------:|---------:|
+| 800  | 402.8        | 798.6   | **+395.8** |
+| 1200 | 607.6        | 1179.9  | **+572.3** |
+| 1400 | 659.5        | 1276.9  | **+617.4** |
+| 1600 | 15.3         | 1461.9  | **+1446.6**|
+| 2000 | 19.6         | 1005.8  | **+986.2** |
+
+### Next experiments needed
+
+1. **quartz_2: coral_4 regression test** — both APIs SLO=50ms. Verify adctl preserves infeasible-API shedding (where emp_admission excelled: +734 at 2000 RPS). Design predicts Layer 1 handles this.
+2. **quartz_3: Socialnet** — parallel fanout call graph. PINE showed divergent behavior between serial/parallel.
+3. **quartz_4: Non-monotonic load** — test robustness to load swings and EMA staleness.
+
+## Open questions
+
+1. **Threshold controller tuning.** The feedback controller for Layer 2's `threshold` needs tuning (proportional gain, update rate). Too aggressive → oscillation. Too conservative → slow adaptation.
+
+2. **P(feasible) computation.** Using the normal CDF approximation `Φ((time_left - mean) / stddev)` assumes normally distributed completion times. Real distributions are likely right-skewed. May need a different distributional assumption or a non-parametric approach.
+
+3. **est_compute vs est_total for P(feasible).** The design uses compute-only estimates for cost/priority but needs total-time estimates for P(feasible) (since queue delay counts against the deadline). The P(feasible) computation may need access to both the compute distribution and an expected queue delay factor derived from utilization.
+
+4. **Interaction with before_poll reprioritization.** The current prio_local implementation reprioritizes tasks via `before_poll`. If `local_deadline` changes to use `est_compute_remaining` (excluding queue delay), this affects the reprioritization logic. Need to verify compatibility.
+
+5. **Staleness decay rate.** How quickly should stale bottleneck signals decay toward neutral? Too fast → unnecessary readmission of genuinely problematic APIs. Too slow → shed APIs stay shed too long when conditions improve.
