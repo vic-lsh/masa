@@ -903,6 +903,24 @@ Iteration 8 showed that slow decay helps at 1800 (+87) but hurts at 1600 (-50) �
 ### Experiment design
 Same config as quartz_1 (coral_ext_2 based). Two policies: prio_oldest,early + adctl.
 
+### Actual Outcomes (quartz_10)
+
+**Status:** Regression ❌ — reverted (git revert b6434793 → 9505909a)
+
+| RPS | adctl q10 | adctl q1 | q10 vs q1 | adctl q9 | q10 vs q9 |
+|-----|------:|------:|------:|------:|------:|
+| 1200 | 1186.9 | 1179.9 | +7.0 | 1184.7 | +2.2 |
+| 1400 | 1257.7 | 1276.9 | -19.2 | 1270.5 | -12.8 |
+| 1600 | 1428.4 | 1461.9 | **-33.5** | 1412.1 | +16.3 |
+| 1800 | 1152.2 | 1073.2 | **+79.0** | 1160.6 | -8.4 |
+| 2000 | 662.2 | 1005.8 | **-343.6** | 986.2 | -324.0 |
+
+1600: Partially recovered vs q9 (+16) but still below q1 (-34). 1800: Gain preserved (+79 vs q1). 2000: Catastrophic regression — adaptive decay too permissive, floods system during transient util dips.
+
+**Decision: REVERT.**
+
+**Cumulative pattern (iterations 7-9):** All three approaches to fix the threshold controller have failed. The ms-based scores + various decay strategies all regress at 2000 RPS compared to the original. The original's "accidental" behavior — instant overshoot creating brief total-shedding periods — functions as a circuit breaker that periodically resets inflated EMA estimates. Every attempt to make the controller "smarter" removes this reset mechanism and performs worse.
+
 ## Open questions
 
 1. **Threshold controller tuning.** The feedback controller for Layer 2's `threshold` needs tuning (proportional gain, update rate). Too aggressive → oscillation. Too conservative → slow adaptation.
