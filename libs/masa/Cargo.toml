@@ -19,5 +19,5 @@ est_hist = ["tonic/est_hist"]
 est_mean_var = ["tonic/est_mean_var"]
 
 early = ["masa-core/early", "tonic/early"]
-emp_admission = ["tonic/emp_admission"]
+adctl = ["tonic/adctl"]
 trace-queue = ["tonic/trace-queue"]

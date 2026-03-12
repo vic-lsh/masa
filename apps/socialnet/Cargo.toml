@@ -99,6 +99,7 @@ est_hist = ["masa/est_hist"]
 est_mean_var = ["masa/est_mean_var"]
 
 early = ["masa/early"]
+adctl = ["masa/adctl"]
 trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
 
 [dependencies]
