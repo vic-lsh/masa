@@ -921,6 +921,38 @@ Same config as quartz_1 (coral_ext_2 based). Two policies: prio_oldest,early + a
 
 **Cumulative pattern (iterations 7-9):** All three approaches to fix the threshold controller have failed. The ms-based scores + various decay strategies all regress at 2000 RPS compared to the original. The original's "accidental" behavior — instant overshoot creating brief total-shedding periods — functions as a circuit breaker that periodically resets inflated EMA estimates. Every attempt to make the controller "smarter" removes this reset mechanism and performs worse.
 
+## Iteration 10: Use floor estimate for Layer 1 compute feasibility check (experiment quartz_11)
+
+**Status:** Pending
+
+**Code commit:** TBD
+
+### Change
+In `admission_check()` (local.rs), change the Layer 1 compute feasibility check from `get_estimate()` to `get_mean_floor_estimate()`:
+
+```rust
+// Before:
+let est_compute_rem = self.server.est_compute_latency.get_estimate(self.resolved_method_id).unwrap_or(0);
+// After:
+let est_compute_rem = self.server.est_compute_latency.get_mean_floor_estimate(self.resolved_method_id).unwrap_or(0);
+```
+
+The floor estimate uses α_floor=0.01 for inflation (5x slower than regular α_up=0.05) and α_floor=0.3 for deflation. This makes Layer 1 resistant to the inflation feedback loop: during shedding periods, inflated samples barely move the floor estimate, but when load drops and normal samples arrive, the floor quickly corrects downward.
+
+No changes to the threshold controller (keep original THRESHOLD_RAISE=0.01, THRESHOLD_DECAY=0.99, μs-based scores).
+
+### Hypothesis
+The oscillation collapse is driven by Layer 1's `est_compute_rem > time_left` check, which uses `get_estimate()` — an EMA with α_up=0.05 that inflates during shedding. The floor estimate (α_floor=0.01 inflate, 0.3 deflate) is already used successfully for the early-return floor check. Applying it to Layer 1 should break the inflation feedback loop: the compute estimate stays anchored near the true compute cost even during low-sample-rate shedding periods.
+
+### Expected outcomes if hypothesis is correct:
+1. At 2000 RPS: goodput significantly better than q1's 1006 — the periodic collapse phases should be shorter or eliminated because Layer 1 doesn't over-tighten.
+2. At 1600-1800 RPS: no regression or improvement (Layer 1 rarely fires at moderate overload).
+3. At ≤1200 RPS: no change.
+4. The oscillation period should change — if Layer 1 inflation was driving the collapse duration, collapses should be shorter.
+
+### Experiment design
+Same config as quartz_1 (coral_ext_2 based). Two policies: prio_oldest,early + adctl.
+
 ## Open questions
 
 1. **Threshold controller tuning.** The feedback controller for Layer 2's `threshold` needs tuning (proportional gain, update rate). Too aggressive → oscillation. Too conservative → slow adaptation.
