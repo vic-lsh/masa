@@ -462,7 +462,7 @@ Same config as quartz_1 (coral_ext_2 based: Search SLO=200ms, Reservation SLO=50
 
 ## Iteration 2: Threshold floor to prevent full admission collapse (experiment quartz_3)
 
-**Status:** Pending
+**Status:** Regression ❌ — reverted (git revert 859712b0 of code commit d9bc47b6)
 
 ### Change
 Add a minimum threshold floor to the admission controller. Currently when `bottleneck_util` drops below 0.85, the threshold decays via ×0.99 per call to zero, opening admission fully and causing re-overload. The fix: clamp threshold to `max(threshold, MIN_THRESHOLD)` where MIN_THRESHOLD is a small positive value (e.g., 0.002). This keeps some selectivity even during the "recovery" phase, preventing the boom-bust cycle.
@@ -481,6 +481,55 @@ The floor value should be small enough to not interfere with admission at modera
 
 ### Experiment design
 Same config as quartz_1/2 (coral_ext_2 based). Two policies: prio_oldest,early + adctl.
+
+### Actual Outcomes (quartz_3)
+
+**Status:** Regression ❌ — catastrophic Search starvation
+
+| RPS | adctl q3 (floor) | adctl q1 (original) | delta |
+|-----|------:|------:|------:|
+| 100 | 50.5 | 99.8 | **-49.3** |
+| 400 | 198.7 | 399.2 | **-200.5** |
+| 800 | 396.2 | 798.6 | **-402.4** |
+| 1200 | 601.7 | 1179.9 | **-578.2** |
+| 1600 | 799.6 | 1461.9 | **-662.3** |
+| 2000 | 998.6 | 1005.8 | **-7.2** |
+
+**Root cause:** MIN_THRESHOLD=0.002 prevents the threshold from ever dropping to zero. Once Search gets restricted (its efficiency score is lower due to higher compute cost), the floor prevents readmission — even at 100 RPS with zero contention. Result: 0% Search goodput, 100% Reservation goodput at ALL RPS levels. The ~50% fraction matches the 50/50 Search/Reservation traffic mix.
+
+Ironically, oscillation IS eliminated at 2000 RPS (stddev=128 vs 689 in quartz_1), but only because Search is permanently dead.
+
+**Decision: REVERT.** Code reverted via `git revert d9bc47b6` → commit 859712b0.
+
+**Lessons:**
+- The threshold is a REJECTION gate, not an admission probability. A floor prevents it from opening, not from closing.
+- The threshold and efficiency score semantics are: score >= threshold → admit. Search score ≈ p_feasible / est_compute. With est_compute=110ms, Search score ≈ p/110000. For MIN_THRESHOLD=0.002, Search needs p ≥ 220 to be admitted — impossible since p ∈ [0,1].
+- **Fundamental insight:** The score = p_feasible / est_compute has units of 1/microseconds. Search (110ms) scores ~5000x lower than Reservation (20ms) for equal feasibility. A single threshold can never treat them equitably unless the score accounts for this scale difference.
+
+## Iteration 3: Normalize efficiency score to remove compute-cost scale bias (experiment quartz_4)
+
+**Status:** Pending
+
+### Change
+The efficiency score `p_feasible / est_compute` has a massive scale bias: Search (est_compute=110ms) gets scores ~5000x lower than Reservation (est_compute=20ms) for the same feasibility. This means ANY non-zero threshold will reject Search before Reservation. The fix: normalize the score so different API types are on a comparable scale.
+
+Option A: Use `p_feasible` alone (drop the cost weighting). The priority scheduler already favors cheap requests via tighter local deadlines — double-counting cost in both priority AND admission may be why Search gets permanently rejected.
+
+Option B: Use `p_feasible * log(1/est_compute)` or similar compression to reduce the 5000x gap to something manageable.
+
+Going with **Option A** first: simplest change, and the priority scheduler's cost-awareness may be sufficient.
+
+### Hypothesis
+The oscillation at 2000 RPS is NOT caused by the threshold controller dynamics (Iterations 1-2 proved this). The real problem is that the efficiency score's compute-cost weighting creates such extreme score differences that the threshold can never find a stable equilibrium: when it's high enough to reject Search, it rejects ALL Search; when it's low enough to admit Search, it admits everything. Removing the cost weighting from the score (using p_feasible alone) eliminates this bimodality. The priority scheduler still handles cost-aware scheduling at runtime.
+
+### Expected outcomes if hypothesis is correct:
+1. Search and Reservation should have comparable admission scores, enabling the threshold to find a balanced equilibrium.
+2. The oscillation at 2000 RPS should be reduced (threshold can rise/fall without creating all-or-nothing Search rejection).
+3. Goodput should be at least as good as quartz_1 at all RPS levels, potentially better at 2000 RPS.
+4. No regression at ≤1200 RPS.
+
+### Experiment design
+Same config as quartz_1/2/3 (coral_ext_2 based). Two policies: prio_oldest,early + adctl.
 
 ## Open questions
 
