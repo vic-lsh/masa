@@ -567,10 +567,18 @@ impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
                     .est_after_child_latency
                     .get_mean_estimate(key)
                     .unwrap_or(0);
+                // Use estimated child latency (total downstream time) as cost,
+                // not local compute. At the ingress, est_child captures the full
+                // downstream cost: ~110ms for Search, ~20ms for Reservation.
+                let est_child = self
+                    .server
+                    .est_child_latency
+                    .get_estimate(key)
+                    .unwrap_or(est_compute_rem);
                 if !self.server.admission_controller.should_admit(
                     self.ctx.api(),
                     time_left,
-                    est_compute_rem,
+                    est_child,
                     est_total_mean,
                 ) {
                     return true;
