@@ -705,6 +705,49 @@ Cost-aware via bounded score normalization (Search penalized ~2.3x).
 ### Experiment design
 Same config. Two policies: prio_oldest,early + adctl.
 
+### Actual Outcomes (quartz_7)
+
+**Status:** Regression ❌ — collapse at deep overload (same as Iterations 1-5)
+
+| RPS | adctl q7 | adctl q1 | delta |
+|-----|------:|------:|------:|
+| 1400 | 1260.3 | 1276.9 | -16.6 |
+| 1600 | 1399.4 | 1461.9 | -62.5 |
+| 1800 | 619.6 | 1073.2 | **-453.6** |
+| 2000 | 381.3 | 1005.8 | **-624.5** |
+
+Stateless admission also collapses. Per-second trace at 1800: 18s healthy (~1500) then permanent collapse (~220). At 2000: mostly collapsed, but spontaneous recovery secs 74-80 (~1700 goodput) proves system CAN sustain high throughput.
+
+**Decision: REVERT.** Commit 07604f75.
+
+## Meta-analysis: Why the oscillation is unfixable (Iterations 1-6)
+
+Every approach to stabilize the admission controller at deep overload (2000 RPS) failed:
+
+| Iter | Approach | Failure mode |
+|------|----------|-------------|
+| 1 | Time-based decay | Slow raise → boom-bust cycles |
+| 2 | Threshold floor | Permanent Search rejection (score scale mismatch) |
+| 3 | p_feasible only (no cost) | No cost differentiation → Search floods system |
+| 4 | Bounded scores, per-call dynamics | Per-call dynamics still overshoot |
+| 5 | Bounded scores + time-based | Latch-up: over-sheds, never relaxes |
+| 6 | Stateless utilization-proportional | Same collapse: over-shedding → no completions → util stays high |
+
+**Root cause:** The collapse isn't an admission controller problem — it's an **EMA estimator feedback loop**. When over-shedding occurs:
+1. Few requests complete → low sample rate for EMA
+2. Completions during overload have inflated latency → EMA estimates inflate
+3. Floor check (`est_remaining > time_left`) becomes hyper-aggressive → more shedding
+4. Positive feedback: more shedding → fewer samples → more inflation → more shedding
+
+**The quartz_1 oscillation is functional:** The per-call ×0.99 decay periodically drives the threshold to zero, admitting everything. This flood of requests provides fresh low-latency observations that reset the inflated EMA. The system recovers until the next overload spike. Average goodput of 1006 at 2000 RPS (50% in healthy phase, 50% in collapsed) is the best any approach has achieved.
+
+**To truly fix the oscillation,** the EMA estimator needs to be made robust to low-sample-rate periods (e.g., staleness decay toward a prior, or using compute-time estimates for the floor check). This is future work beyond admission controller tuning.
+
+**Going forward:** Accept quartz_1 as the adctl baseline and focus on:
+1. **coral_4 regression test** — verify Layer 1 handles infeasible APIs
+2. **Socialnet evaluation** — test parallel fanout call graph
+3. **Non-monotonic load** — test robustness to load swings
+
 ## Open questions
 
 1. **Threshold controller tuning.** The feedback controller for Layer 2's `threshold` needs tuning (proportional gain, update rate). Too aggressive → oscillation. Too conservative → slow adaptation.
