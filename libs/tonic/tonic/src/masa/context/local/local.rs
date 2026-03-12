@@ -12,9 +12,9 @@ use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::super::{
     resolve_method_name_from_http, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks,
 };
+use super::LatencyMap;
 #[cfg(feature = "emp_admission")]
 use super::completion_rate_map;
-use super::LatencyMap;
 use masa_core::{time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint, EARLY_RETURN};
 
 #[cfg(feature = "est_hist")]
@@ -353,15 +353,10 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             );
         }
 
-        let child_recv_ctx = {
-            let builder = ContextBuilder::from(&self.ctx)
-                .deadline(deadline)
-                .prio_hint(PriorityHint::new(prio_hint));
-            #[cfg(feature = "emp_admission")]
-            let builder = builder
-                .emp_admitted(self.ctx.emp_admitted() || self.first_er_decision.get().is_some());
-            builder.build()
-        };
+        let child_recv_ctx = ContextBuilder::from(&self.ctx)
+            .deadline(deadline)
+            .prio_hint(PriorityHint::new(prio_hint))
+            .build();
         request.set_masa_context(&child_recv_ctx);
 
         Ok(())
@@ -446,34 +441,34 @@ impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
     fn admission_check(&self, key: u64, est_remaining_floor: u64) -> bool {
         #[cfg(feature = "emp_admission")]
         if EARLY_RETURN {
-            // Only run the probabilistic emp_admission check at the ingress hop.
-            // Downstream hops that carry emp_admitted=true skip here and fall through to
-            // the floor-based check, raising end-to-end probe survival from 0.05^N to 0.05.
-            if !self.ctx.emp_admitted() {
-                let time_left = self.ctx.e2e_deadline().saturating_sub(time_now());
-                let slo = self.ctx.slo();
-                if slo > 0 {
-                    let bucket = completion_rate_map::time_left_to_bucket(time_left, slo);
-                    if bucket < 5 {
-                        let p = self
-                            .server
-                            .completion_rate_map
-                            .get_p(self.ctx.api(), bucket);
-                        let rand =
-                            completion_rate_map::deterministic_rand(self.ctx.request_id(), key);
-                        let admitted = rand <= p.max(completion_rate_map::PROBE_FLOOR);
-                        if admitted {
-                            // OnceLock: only the first admitted hop is recorded.
-                            let _ = self.first_er_decision.set((self.ctx.api().clone(), bucket));
-                        }
-                        return !admitted;
+            let time_left = self.ctx.e2e_deadline().saturating_sub(time_now());
+            let slo = self.ctx.slo();
+            if slo > 0 {
+                let bucket =
+                    completion_rate_map::time_left_to_bucket(time_left, slo);
+                if bucket < 5 {
+                    let p = self
+                        .server
+                        .completion_rate_map
+                        .get_p(self.ctx.api(), bucket);
+                    let rand = completion_rate_map::deterministic_rand(
+                        self.ctx.request_id(),
+                        key,
+                    );
+                    let admitted = rand <= p.max(completion_rate_map::PROBE_FLOOR);
+                    if admitted {
+                        // OnceLock: only the first admitted hop is recorded.
+                        let _ = self
+                            .first_er_decision
+                            .set((self.ctx.api().clone(), bucket));
                     }
+                    return !admitted;
                 }
             }
-            // emp_admitted=true: fall through to floor-based check below.
         }
         // Default: floor estimate check (also used when emp_admission disabled, or bucket == 5).
-        EARLY_RETURN && time_now() > self.ctx.e2e_deadline().saturating_sub(est_remaining_floor)
+        EARLY_RETURN
+            && time_now() > self.ctx.e2e_deadline().saturating_sub(est_remaining_floor)
     }
 
     /// Records the outcome of the first admitted empirical-admission decision.
@@ -820,124 +815,6 @@ mod tests {
             "expected ~5% admission, got {:.1}%",
             admit_rate * 100.0
         );
-    }
-
-    /// Verify that a downstream hop with emp_admitted=true bypasses the probabilistic
-    /// emp_admission check even when p is near 0, and instead falls through to the floor check.
-    #[cfg(feature = "emp_admission")]
-    #[test]
-    fn test_emp_admitted_flag_bypasses_emp_at_downstream() {
-        use crate::masa::context::MASA_CONTEXT_HEADER;
-        use masa_core::ContextBuilder;
-
-        let server_ctx = Arc::new(ServerContext::<LatencyRms>::new("DownstreamService"));
-
-        // Drive p to near 0 to ensure the probabilistic check would shed without the flag.
-        for _ in 0..100 {
-            server_ctx
-                .completion_rate_map
-                .update("Reservation", 2, false);
-        }
-        assert!(
-            server_ctx.completion_rate_map.get_p("Reservation", 2) < 0.01,
-            "p should be near 0"
-        );
-
-        // Build a context tagged emp_admitted=true with time_left that would fall in bucket 2.
-        // bucket 2 = 40-60% of SLO remaining. With slo=100_000 and gateway_entry=0,
-        // we want time_now ~ 40-60% consumed, i.e. e2e_deadline - time_now ~ 40_000-60_000.
-        // We set gateway_entry=0 and use a future deadline to ensure the request is not past
-        // its deadline but is in the critical bucket range.
-        let slo_us = 100_000u64;
-        let now = masa_core::time_now();
-        // Place gateway_entry so that ~50% of the SLO is left (bucket 2 = [40%, 60%)).
-        let gateway_entry = now.saturating_sub(slo_us / 2);
-        let deadline = gateway_entry + slo_us;
-        let ctx = ContextBuilder::new("Reservation", 1234)
-            .slo(slo_us)
-            .gateway_entry(gateway_entry)
-            .deadline(deadline)
-            .emp_admitted(true)
-            .build();
-
-        let req = http::Request::builder()
-            .header(MASA_CONTEXT_HEADER, ctx.to_header_string())
-            .body(())
-            .unwrap();
-
-        let method = GrpcMethod::new("DownstreamService", "Reservation");
-        let parent_ctx = ParentContext::<LatencyRms>::begin(method, &req, server_ctx.clone());
-
-        // With est_remaining_floor=0, floor check passes (plenty of time left).
-        // emp_admitted=true means the probabilistic shed is skipped entirely.
-        let shed = parent_ctx.admission_check(42, 0);
-        assert!(
-            !shed,
-            "emp_admitted=true should bypass probabilistic check and admit"
-        );
-    }
-
-    /// Verify that after admission_check sets first_er_decision, the child context built in
-    /// before_child_rpc carries emp_admitted=true.
-    #[cfg(feature = "emp_admission")]
-    #[test]
-    fn test_before_child_rpc_propagates_emp_admitted() {
-        use crate::masa::context::{MasaRequestExt, MASA_CONTEXT_HEADER};
-
-        let server_ctx = Arc::new(ServerContext::<LatencyRms>::new("IngressService"));
-
-        // Drive p to 1.0 (all successes) so the probabilistic check admits and sets first_er_decision.
-        for _ in 0..50 {
-            server_ctx
-                .completion_rate_map
-                .update("IngressService", 2, true);
-        }
-
-        // Build context with time_left in bucket 2 (~50% slo left).
-        let slo_us = 100_000u64;
-        let now = masa_core::time_now();
-        let gateway_entry = now.saturating_sub(slo_us / 2);
-        let deadline = gateway_entry + slo_us;
-        let ctx = ContextBuilder::new("IngressService", 5678)
-            .slo(slo_us)
-            .gateway_entry(gateway_entry)
-            .deadline(deadline)
-            .build();
-
-        let req = http::Request::builder()
-            .header(MASA_CONTEXT_HEADER, ctx.to_header_string())
-            .body(())
-            .unwrap();
-
-        let method = GrpcMethod::new("IngressService", "ParentMethod");
-        let parent_ctx = ParentContext::<LatencyRms>::begin(method, &req, server_ctx.clone());
-
-        // Force first_er_decision to be set by calling admission_check directly.
-        // (before_child_rpc calls admission_check internally, but also checks early_return
-        // handler; we set first_er_decision manually to isolate the propagation logic.)
-        let _ = parent_ctx
-            .first_er_decision
-            .set(("IngressService".to_string(), 2));
-
-        // Now call before_child_rpc and verify the child context has emp_admitted=true.
-        let child_method = GrpcMethod::new("DownstreamService", "ChildMethod");
-        let mut child_req = Request::new(());
-        let mut child_ctx = ChildContext::<LatencyRms>::new(child_method, &child_req);
-
-        // before_child_rpc may return Err if early_return fires; we only care about the
-        // child context's masa context header regardless.
-        let _ = parent_ctx.before_child_rpc(child_method, &mut child_req, &mut child_ctx);
-
-        // Decode the child context from the request header.
-        if let Some(child_masa_ctx) = child_req.get_masa_context() {
-            assert!(
-                child_masa_ctx.emp_admitted(),
-                "child context must carry emp_admitted=true when first_er_decision is set"
-            );
-        }
-        // If before_child_rpc returned early (e.g. early_return fired), the header may not be
-        // set; in that case the test is inconclusive but not failing — the main invariant is
-        // tested by test_emp_admitted_flag_bypasses_emp_at_downstream.
     }
 
     /// Verify that without `emp_admission`, `admission_check` falls back to the floor-based check.
