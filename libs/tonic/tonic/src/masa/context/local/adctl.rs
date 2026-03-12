@@ -47,7 +47,7 @@ fn efficiency_score(p_feasible: f64, est_compute: u64) -> f64 {
     if est_compute == 0 {
         return p_feasible;
     }
-    p_feasible / (est_compute as f64 / 1000.0)
+    p_feasible / est_compute as f64
 }
 
 /// Admission controller using efficiency-based threshold feedback.
@@ -121,7 +121,7 @@ mod tests {
 
     #[test]
     fn test_efficiency_score() {
-        assert!((efficiency_score(0.5, 100) - 5.0).abs() < 1e-6);
+        assert!((efficiency_score(0.5, 100) - 0.005).abs() < 1e-6);
         assert!((efficiency_score(1.0, 0) - 1.0).abs() < 1e-6);
         assert!((efficiency_score(0.0, 100) - 0.0).abs() < 1e-6);
     }
