@@ -790,6 +790,31 @@ Unlike Iteration 4 (bounded scoring with REFERENCE_COMPUTE), this preserves the 
 ### Experiment design
 Same config as quartz_1 (coral_ext_2 based: Search SLO=200ms, Reservation SLO=50ms, RPS sweep [100, 400, 800, 1200, 1400, 1600, 1800, 2000]). Two policies: prio_oldest,early + adctl.
 
+### Actual Outcomes (quartz_8)
+
+**Status:** Regression ❌ — reverted (git revert 42e8394b → a951019d)
+
+| RPS | adctl q8 | adctl q1 | delta | prio_oldest q8 | adctl vs oldest |
+|-----|------:|------:|------:|------:|------:|
+| 100 | 99.8 | 99.8 | 0.0 | 99.9 | -0.1 |
+| 400 | 399.3 | 399.2 | +0.1 | 399.2 | +0.1 |
+| 800 | 798.5 | 798.6 | -0.1 | 798.6 | -0.1 |
+| 1200 | 1183.4 | 1179.9 | +3.5 | 1177.9 | +5.5 |
+| 1400 | 1257.0 | 1276.9 | -19.9 | 1207.9 | +49.1 |
+| 1600 | 1308.9 | 1461.9 | **-153.0** | 1223.7 | +85.2 |
+| 1800 | 1135.3 | 1073.2 | +62.1 | 1120.0 | +15.3 |
+| 2000 | 593.9 | 1005.8 | **-411.9** | 928.5 | **-334.6** |
+
+**Root cause:** The μs→ms conversion makes scores 1000x *larger* (Search: 9×10⁻⁶ → 0.009, Reservation: 5×10⁻⁵ → 0.05). THRESHOLD_RAISE=0.01 now only barely exceeds Search's score and needs 5 steps to exceed Reservation's. The threshold rises too slowly — overload floods the system before admission can react.
+
+The original code's "bang-bang" behavior (one +0.01 step instantly exceeds all scores) is actually **fast reaction to overload**. The problem isn't the step size — it's that scores are too small for the threshold to have a proportional regime. Making scores larger gives proportionality but loses fast reaction.
+
+ER data at 2000 RPS: adctl q8 sheds 1302 req/s (vs q1's 839) yet has lower goodput — meaning it sheds requests too LATE (after they consumed resources), not too aggressively. The slow threshold ramp lets the system flood before admission kicks in.
+
+**Key insight:** The oscillation in q1 isn't caused by *over-shedding* (too aggressive). It's caused by the *recovery* phase (threshold→0) admitting too much. The admission reaction itself is fast and effective. Any fix must preserve fast reaction while preventing the recovery overshoot.
+
+**Decision: REVERT.** The original q1 behavior (fast bang-bang shedding with periodic recovery) outperforms proportional control.
+
 ## Open questions
 
 1. **Threshold controller tuning.** The feedback controller for Layer 2's `threshold` needs tuning (proportional gain, update rate). Too aggressive → oscillation. Too conservative → slow adaptation.
