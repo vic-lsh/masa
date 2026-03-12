@@ -7,6 +7,7 @@ const STALENESS_DEFAULT: f32 = 0.5;
 const UTIL_TARGET: f64 = 0.85;
 const THRESHOLD_DECAY: f64 = 0.99;
 const THRESHOLD_RAISE: f64 = 0.01;
+const MIN_THRESHOLD: f64 = 0.002;
 
 /// Tracks max_downstream_util per API with staleness decay.
 #[derive(Debug)]
@@ -94,7 +95,7 @@ impl AdmissionController {
             *threshold *= THRESHOLD_DECAY;
         }
         // Clamp threshold to [0, 1]
-        *threshold = threshold.clamp(0.0, 1.0);
+        *threshold = threshold.clamp(MIN_THRESHOLD, 1.0);
 
         score >= *threshold
     }
