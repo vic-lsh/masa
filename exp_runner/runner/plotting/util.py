@@ -17,6 +17,9 @@ class PlotData:
     apis: list[str]
     policies: list[str]
     rps_values: list[int]
+    rps_sequence: list[int]  # Original order from gen_config["Rps"]
+    duration_sec: float
+    warmup_sec: float
     results: list[dict]
 
 
@@ -215,6 +218,9 @@ def load_plot_data(config_dir: Path | str, data_dir: Path | str) -> PlotData:
         config = json.load(f)
     repeats = config["Repeats"]
     rps_values = config["Rps"]
+    rps_sequence = list(rps_values)  # Preserve original order before any dedup
+    duration_sec = float(config.get("DurationSecs", 60))
+    warmup_sec = float(config.get("WarmupSecs", 0))
     apis = config["Apis"]
     slos = config.get("Slos", [])
 
@@ -265,6 +271,9 @@ def load_plot_data(config_dir: Path | str, data_dir: Path | str) -> PlotData:
         apis=apis,
         policies=policies,
         rps_values=rps_values,
+        rps_sequence=rps_sequence,
+        duration_sec=duration_sec,
+        warmup_sec=warmup_sec,
         results=results,
     )
 

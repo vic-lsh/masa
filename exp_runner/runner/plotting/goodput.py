@@ -11,6 +11,7 @@ from .util import (
     get_plot_worker_count,
     get_policy_color,
     get_policy_display_name,
+    load_plot_data,
     parse_args,
     PlotData,
     prepare_output_dir,
@@ -1380,19 +1381,144 @@ def _plot_averaged_goodput(
     plt.close(fig)
 
 
+def plot_goodput_timeline(
+    output_path: str,
+    rps_sequence: list[int],
+    policies: list[str],
+    policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
+    *,
+    duration_sec: float,
+    warmup_sec: float = 0,
+    window_sec: float = 2.0,
+) -> None:
+    """Plot per-second goodput over time for real apps (hotel, socialnet, synthetic).
+
+    Stitches RPS periods in their original run order, using a sliding window.
+    SLO is per-row (``df["slo"]`` in microseconds), matching real-app mixed-SLO data.
+    """
+    fig, ax = plt.subplots(figsize=(14, 6))
+    cmap = plt.get_cmap("tab10")
+
+    for idx, policy in enumerate(policies):
+        rps_data = policy_data_by_rps.get(policy, {})
+        all_times: list[float] = []
+        all_goodput: list[float] = []
+
+        for period_idx, rps in enumerate(rps_sequence):
+            df = rps_data.get(rps, pd.DataFrame())
+            if df.empty:
+                continue
+
+            # Filter excluded errors (ER, ClientTimeout)
+            df = filter_excluded_errors(df)
+            if df.empty:
+                continue
+
+            start_at = pd.to_numeric(df["start_at"], errors="coerce")
+            if start_at.dropna().empty:
+                continue
+
+            t_min = start_at.min()
+            # Time relative to this period, in seconds
+            rel_sec = (start_at - t_min) / 1_000_000.0
+
+            # Skip warmup
+            if warmup_sec > 0:
+                keep = rel_sec >= warmup_sec
+                rel_sec = rel_sec[keep] - warmup_sec
+                df = df.loc[keep]
+
+            effective_duration = duration_sec - warmup_sec
+            abs_sec = rel_sec + period_idx * effective_duration
+
+            # Goodput mask: latency (microseconds) <= slo (microseconds)
+            latency = pd.to_numeric(df["latency"], errors="coerce")
+            slo = pd.to_numeric(df["slo"], errors="coerce")
+            good = latency <= slo
+
+            # Sort by time for efficient windowing
+            order = np.argsort(abs_sec.values)
+            t_arr = abs_sec.values[order]
+            g_arr = good.values[order]
+
+            # Sliding window: step=0.5s
+            step = 0.5
+            t_centers = np.arange(
+                period_idx * effective_duration + window_sec / 2,
+                (period_idx + 1) * effective_duration - window_sec / 2 + step,
+                step,
+            )
+            for tc in t_centers:
+                lo, hi = tc - window_sec / 2, tc + window_sec / 2
+                mask = (t_arr >= lo) & (t_arr < hi)
+                all_times.append(tc)
+                all_goodput.append(float(g_arr[mask].sum()) / window_sec)
+
+        if not all_times:
+            continue
+
+        color = get_policy_color(policy)
+        if color is None:
+            color = cmap(idx % cmap.N)
+        ax.plot(
+            all_times,
+            all_goodput,
+            label=get_policy_display_name(policy),
+            color=color,
+            linewidth=1.5,
+        )
+
+    # Offered RPS as a filled step area
+    effective_duration = duration_sec - warmup_sec
+    step_t = [0.0]
+    step_rps: list[float] = [float(rps_sequence[0])]
+    for i, rps in enumerate(rps_sequence):
+        t_start = i * effective_duration
+        if i > 0:
+            step_t.append(t_start)
+            step_rps.append(float(rps))
+            ax.axvline(t_start, linestyle="--", color="grey", alpha=0.4, linewidth=1)
+        step_t.append(t_start + effective_duration)
+        step_rps.append(float(rps))
+    ax.fill_between(
+        step_t, step_rps, step=None, color="grey", alpha=0.12, label="Offered RPS"
+    )
+    ax.step(
+        step_t,
+        step_rps,
+        where="post",
+        color="grey",
+        linewidth=1.5,
+        linestyle="-",
+        alpha=0.5,
+    )
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("RPS")
+    ax.set_title(f"Goodput timeline ({window_sec:g}s window)")
+    ax.set_xlim(left=0, right=len(rps_sequence) * effective_duration)
+    ax.set_ylim(bottom=0)
+    ax.grid(True, which="both", linestyle="--", alpha=0.4)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+
 def generate_plots(args, plot_data: PlotData | None = None) -> None:
     prepare_output_dir(args)
 
     if plot_data is None:
-        repeats, apis, policies, rps_values, results = read_data(
-            args.config_dir, args.data_dir
-        )
-    else:
-        repeats = plot_data.repeats
-        apis = plot_data.apis
-        policies = plot_data.policies
-        rps_values = plot_data.rps_values
-        results = plot_data.results
+        plot_data = load_plot_data(args.config_dir, args.data_dir)
+
+    repeats = plot_data.repeats
+    apis = plot_data.apis
+    policies = plot_data.policies
+    rps_values = plot_data.rps_values
+    rps_sequence = plot_data.rps_sequence
+    duration_sec = plot_data.duration_sec
+    warmup_sec = plot_data.warmup_sec
+    results = plot_data.results
 
     # First, compute all policy goodputs (needed for plots)
     policy_goodputs = []
@@ -1537,6 +1663,28 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                     {},
                 )
             )
+
+    # Add goodput timeline plots (per iteration, ALL api only)
+    for i in range(repeats):
+        output_dir = os.path.join(args.output_dir, str(i))
+        policy_data_by_rps = {
+            policy: results[i]["ALL"][policy] for policy in policies
+        }
+        future_specs.append(
+            (
+                plot_goodput_timeline,
+                (
+                    os.path.join(output_dir, "goodput_timeline.png"),
+                    rps_sequence,
+                    policies,
+                    policy_data_by_rps,
+                ),
+                {
+                    "duration_sec": duration_sec,
+                    "warmup_sec": warmup_sec,
+                },
+            )
+        )
 
     output_dir = args.output_dir
     for api in apis:
