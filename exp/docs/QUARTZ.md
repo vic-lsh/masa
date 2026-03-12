@@ -408,6 +408,26 @@ Require the ingress to know which APIs call which downstream services (Hotel alr
 2. **quartz_3: Socialnet** — parallel fanout call graph. PINE showed divergent behavior between serial/parallel.
 3. **quartz_4: Non-monotonic load** — test robustness to load swings and EMA staleness.
 
+## Iteration 1: Time-based threshold decay (experiment quartz_2)
+
+**Status:** Pending
+
+### Change
+Replace per-call threshold decay (×0.99 per `should_admit()` call) with time-based exponential decay. The current implementation decays threshold by 0.99 on every request, which at 2000 RPS means 0.99^2000 ≈ 0 within one second — the threshold collapses to zero the instant utilization drops below 0.85, causing immediate re-overload and the observed oscillation pattern.
+
+The fix: track `last_update_time` in the AdmissionController. On each call, compute `elapsed_secs` since last update and apply `threshold *= decay_rate.powf(elapsed_secs)` where `decay_rate` is calibrated for a ~1-2 second half-life. Similarly, make the raise proportional to elapsed time: `threshold += raise_rate * elapsed_secs`. This ensures the controller behaves identically regardless of request volume.
+
+### Hypothesis
+The oscillation at 2000 RPS (alternating between ~1500 and ~250 goodput in ~10-15s cycles) is caused by the threshold controller's per-call decay being volume-dependent. At high RPS, decay is so fast that the threshold reaches zero within milliseconds of utilization dropping below 0.85, causing instant re-overload. Time-based decay will create a smooth, predictable descent that allows the system to find a stable equilibrium admission rate.
+
+### Expected outcomes if hypothesis is correct:
+1. The bistable oscillation at 2000 RPS should be eliminated or significantly dampened, yielding sustained goodput closer to the healthy-phase peak (~1500) rather than the current average (~1006).
+2. Performance at 1600-1800 RPS should improve moderately (less micro-oscillation even if not visible in averages).
+3. No regression at 800-1400 RPS (threshold controller is dormant when util < 0.85).
+
+### Experiment design
+Same config as quartz_1 (coral_ext_2 based: Search SLO=200ms, Reservation SLO=50ms) with RPS sweep [100, 400, 800, 1200, 1400, 1600, 1800, 2000]. Only test `prio_oldest,early` and `prio_local,est_mean_var,early,adctl` to halve experiment time (we established EMV-only and prio_local,early baselines in quartz_1). Direct comparison to quartz_1's adctl numbers tells us if the fix helped.
+
 ## Open questions
 
 1. **Threshold controller tuning.** The feedback controller for Layer 2's `threshold` needs tuning (proportional gain, update rate). Too aggressive → oscillation. Too conservative → slow adaptation.
