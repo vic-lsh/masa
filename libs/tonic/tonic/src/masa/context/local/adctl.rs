@@ -43,10 +43,11 @@ impl BottleneckTracker {
     }
 }
 
-const REFERENCE_COMPUTE: f64 = 50_000.0; // 50ms in microseconds
-
 fn efficiency_score(p_feasible: f64, est_compute: u64) -> f64 {
-    p_feasible / (1.0 + est_compute as f64 / REFERENCE_COMPUTE)
+    if est_compute == 0 {
+        return p_feasible;
+    }
+    p_feasible / est_compute as f64
 }
 
 /// Admission controller using efficiency-based threshold feedback.
@@ -120,8 +121,7 @@ mod tests {
 
     #[test]
     fn test_efficiency_score() {
-        // 0.5 / (1.0 + 100.0/50000.0) = 0.5 / 1.002 ≈ 0.499
-        assert!((efficiency_score(0.5, 100) - 0.5 / 1.002).abs() < 1e-4);
+        assert!((efficiency_score(0.5, 100) - 0.005).abs() < 1e-6);
         assert!((efficiency_score(1.0, 0) - 1.0).abs() < 1e-6);
         assert!((efficiency_score(0.0, 100) - 0.0).abs() < 1e-6);
     }
