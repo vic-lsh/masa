@@ -201,6 +201,9 @@ def test_generate_all_plots_loads_request_data_once(tmp_path, monkeypatch):
         apis=["Login", "ALL"],
         policies=["fifo"],
         rps_values=[10],
+        rps_sequence=[10],
+        duration_sec=60.0,
+        warmup_sec=0.0,
         results=[],
     )
     calls = {"load": 0, "goodput": 0, "latency": 0, "queueing": 0, "cpu": 0}
