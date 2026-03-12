@@ -803,3 +803,119 @@ down. The `emp_admitted` approach instead:
 - `coral_10`: coral_ext_2 config (Search=200ms, Reservation=50ms, RPS=[100,400,800,1200,1400,1600,1800,2000]).
 - `coral_10_b`: coral_4 config (both SLOs=50ms, RPS=[400,800,1400,2000,2500,3000,4000]).
 Policies: `prio_local,early` and `prio_local,est_mean_var,emp_admission,early`. 60s/step, 20s warmup.
+
+### Actual Outcomes (coral_10) — code commit: 90a42656
+
+**Status:** Regression ❌ — single-tier fix does not help; floor check still kills admitted requests
+
+#### Goodput table
+
+| RPS  | prio_local,early | prio_oldest,early | emv+emp (coral_10) | emv+emp (coral_ext_2 baseline) | Delta |
+|------|------------------|-------------------|--------------------|---------------------------------|-------|
+| 100  | 99.8             | 99.8              | 99.8               | 99.8                            | ~0    |
+| 400  | 399.3            | 399.3             | 399.3              | 399.3                           | ~0    |
+| 800  | 798.6            | 798.5             | **407.5**          | 402.8                           | +4.7  |
+| 1200 | 1182.8           | 1186.5            | **612.1**          | 607.6                           | +4.5  |
+| 1400 | 1270.7           | 1221.3            | **12.9**           | 659.5                           | **−646.6** |
+| 1600 | 1422.3           | 1280.2            | **15.3**           | 15.3                            | ~0    |
+| 1800 | 413.0            | 614.8             | **16.2**           | 16.3                            | ~0    |
+| 2000 | 504.0            | 308.7             | **19.2**           | 19.6                            | ~0    |
+
+#### Per-API breakdown at key RPS
+
+| RPS  | emv+emp Search | emv+emp Reservation | ple Search | ple Reservation |
+|------|----------------|---------------------|------------|-----------------|
+| 800  | 400.5          | **6.9**             | 397.2      | 401.4           |
+| 1200 | 600.5          | **11.7**            | 598.7      | 584.1           |
+| 1400 | **0**          | **12.9**            | 669.7      | 601.0           |
+
+#### Early return breakdown
+
+- Reservation ERs (emv+emp): 391.8/s at 800, 690.3/s at 1400
+- None/None ingress shed ERs: ~365/s at 800, 1299/s at 1400 — ingress emp_admission blocking traffic
+- Search ERs at 1400: total collapse (0 goodput); floor-based ER kills Search at downstream hops
+
+#### Key findings
+
+1. **The floor-based ER check still fires at downstream hops even with emp_admitted=true.** The current
+   code bypasses only the probabilistic emp_admission check when `emp_admitted=true`, but then falls
+   through to the floor-based ER check (`time_now() > e2e_deadline - est_remaining_floor`). This
+   floor check is what kills both Reservation probes and Search at downstream hops under overload.
+
+2. **Reservation starvation is unchanged.** At 800–1200 RPS, Reservation goodput is ~7–12/s —
+   identical to the coral_ext_2 baseline. The probes admitted at ingress (5% floor) still get shed
+   by the floor-based ER at downstream hops before they can generate positive p updates.
+
+3. **New regression at 1400 RPS: Search also collapses.** In coral_ext_2, admitted Search requests
+   passed downstream hop emp_admission checks (p(Search)≈1 there). In coral_10, admitted Search
+   gets emp_admitted=true and then hits the floor-based ER at downstream hops. Under load at 1400
+   RPS, Search has been waiting long enough that est_remaining_floor > remaining SLO → shed.
+   Result: Search goodput drops from 647 to 0, making coral_10 worse than coral_ext_2 at 1400 RPS.
+
+4. **Root cause identified.** The single-tier fix was architecturally correct in principle but
+   incomplete in implementation: it bypassed probabilistic re-checking but left the floor-based ER
+   intact. The floor check is doing the same damage as the multi-hop emp_admission check did before.
+
+### Decision: Keep code change (emp_admitted flag infrastructure is correct); fix floor check bypass in Iteration 11
+
+---
+
+## Iteration 11: Complete bypass of all admission checks when emp_admitted=true (coral_11, coral_11_b)
+
+**Status:** Pending
+
+### Change
+
+In `admission_check` in `libs/tonic/tonic/src/masa/context/local/local.rs`:
+Add an early return at the TOP of the function: if `self.ctx.emp_admitted()`, immediately return
+`false` (not shed — admit unconditionally). This skips BOTH the probabilistic emp_admission check
+AND the floor-based ER check for already-admitted requests.
+
+Zombie protection at downstream hops relies on `before_poll`'s hard deadline check (`time_now() >
+ctx.e2e_deadline()`), which runs regardless of emp_admitted status. This prevents requests from
+consuming unbounded resources after their e2e deadline.
+
+### Hypothesis
+
+The root cause of coral_10's failure: `admission_check` with `emp_admitted=true` bypasses
+the probabilistic check but falls through to the floor-based ER check
+(`EARLY_RETURN && time_now() > e2e_deadline - est_remaining_floor`). This floor check:
+- Sheds Reservation probes at downstream hops (50ms SLO + inflated est_remaining → shed at floor)
+  → keeps Reservation goodput at ~7/s, unchanged from coral_ext_2
+- Sheds Search at 1400 RPS (by then, Search has waited long enough that remaining time < floor)
+  → drops Search from 647 to 0, making coral_10 WORSE than coral_ext_2 at 1400
+
+With complete bypass (emp_admitted=true → shed=false immediately):
+- Reservation probes admitted at ingress (5% floor) survive all downstream hops → complete within
+  50ms SLO → generate positive p updates → p(Reservation) recovers → admission rises → correct
+  steady state
+- Search in coral_ext_2 (200ms SLO): admitted at ingress → survives all hops → completes →
+  goodput recovers at 1400 RPS
+
+**coral_4 safety**: In coral_4 (both 50ms SLOs), Search probes (5% floor when p≈0) get
+emp_admitted=true but Search actually takes 110ms → before_poll ER fires at e2e deadline (50ms)
+→ shed at before_poll, not at before_child_rpc. This is slightly more wasted work per probe than
+before (runs for 50ms vs being shed earlier by floor check), but at 5% probe rate this overhead
+is bounded and negligible. Reservation in coral_4 already has p≈1 → all admitted → runs to
+completion → unchanged.
+
+### Expected outcomes if hypothesis is correct:
+
+1. **coral_11** (coral_ext_2 config, Search=200ms, Reservation=50ms):
+   - Reservation goodput at 800 RPS: rises above 6.9/s toward ~400 (once p recovers)
+   - Reservation goodput at 1200–1400 RPS: substantial recovery, approaching ple baseline
+   - Search goodput at 1400 RPS: recovers from 0 to ~670 (matching coral_ext_2)
+   - Total goodput at 800–1400 RPS: approaches ple performance
+
+2. **coral_11_b** (coral_4 config, both SLOs=50ms):
+   - emv+emp goodput at 1400–4000 RPS: remains close to coral_4 original (~700 at 1400, ~1000 at
+     2000). Small regression possible due to Search probes running slightly longer before before_poll.
+   - emv+emp still dominates ple by hundreds of goodput at each overloaded point.
+
+3. No system instability or feedback collapse in either configuration.
+
+### Experiment design
+
+- `coral_11`: coral_ext_2 config (Search=200ms, Reservation=50ms, RPS=[100,400,800,1200,1400,1600,1800,2000]).
+- `coral_11_b`: coral_4 config (both SLOs=50ms, RPS=[400,800,1400,2000,2500,3000,4000]).
+Policies: `prio_local,early` and `prio_local,est_mean_var,emp_admission,early`. 60s/step, 20s warmup.
