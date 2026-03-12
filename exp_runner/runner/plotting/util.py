@@ -344,6 +344,8 @@ def get_policy_color(policy: str) -> str | None:
         return "steelblue"
     elif policy_lower.startswith("prio_local"):
         if "est_mean_var" in policy_lower or "est_hist" in policy_lower:
+            if "adctl" in policy_lower:
+                return "forestgreen"
             return "coral"
         if ",early" in policy_lower:
             return "lightpink"
