@@ -508,7 +508,7 @@ Ironically, oscillation IS eliminated at 2000 RPS (stddev=128 vs 689 in quartz_1
 
 ## Iteration 3: Normalize efficiency score to remove compute-cost scale bias (experiment quartz_4)
 
-**Status:** Pending
+**Status:** Regression ❌ — reverted (git revert bb69c985 of code commit c81cc87d)
 
 ### Change
 The efficiency score `p_feasible / est_compute` has a massive scale bias: Search (est_compute=110ms) gets scores ~5000x lower than Reservation (est_compute=20ms) for the same feasibility. This means ANY non-zero threshold will reject Search before Reservation. The fix: normalize the score so different API types are on a comparable scale.
@@ -530,6 +530,68 @@ The oscillation at 2000 RPS is NOT caused by the threshold controller dynamics (
 
 ### Experiment design
 Same config as quartz_1/2/3 (coral_ext_2 based). Two policies: prio_oldest,early + adctl.
+
+### Actual Outcomes (quartz_4)
+
+**Status:** Regression ❌ — collapse at deep overload
+
+| RPS | adctl q4 (p_feasible only) | adctl q1 (original) | prio_oldest q4 | q4 vs q1 |
+|-----|------:|------:|------:|------:|
+| 100 | 99.8 | 99.8 | 99.8 | 0.0 |
+| 800 | 798.5 | 798.6 | 798.5 | 0.0 |
+| 1200 | 1183.9 | 1179.9 | 1181.7 | +4.0 |
+| 1400 | 1259.6 | 1276.9 | 1197.4 | -17.3 |
+| 1600 | 1379.8 | 1461.9 | 1267.1 | -82.1 |
+| 1800 | 1022.7 | 1073.2 | 1174.5 | -50.5 |
+| 2000 | 214.1 | 1005.8 | 281.2 | **-791.7** |
+
+**Key findings:**
+1. Fixes Search starvation — 99.8% goodput at low loads (vs 50% in quartz_3). The p_feasible score is in [0,1] range, compatible with threshold_raise=0.01.
+2. Catastrophic collapse at 2000 RPS (214 vs 1006). Without cost differentiation, system admits too many expensive Search requests → compute wasted → everyone suffers.
+3. At 2000 RPS, Search goodput = 11.8 (vs 387.3 in quartz_1). System can't serve Search because there's no cost-aware shedding.
+
+**Root cause analysis across all iterations:**
+
+The REAL bug in the original code is the **scale mismatch** between scores and threshold dynamics:
+- `score = p_feasible / est_compute_us` gives values ~10^-5 (e.g., 1.0/110000 ≈ 0.000009 for Search)
+- `THRESHOLD_RAISE = 0.01` per call — 1000x larger than any possible score
+- After ONE call with `util > 0.85`, threshold = 0.01, instantly rejecting everything
+- `× 0.99` decay takes ~530 calls to return to score range (~0.26s of total rejection)
+- This creates the boom-bust oscillation: overshoot → total rejection → util drops → slow decay → admit everything → re-overload
+
+**The fix must normalize scores to [0,1] while preserving cost differentiation.**
+
+**Decision: REVERT.** Code reverted via `git revert c81cc87d` → commit bb69c985.
+
+## Iteration 4: Bounded cost-normalized scoring (experiment quartz_5)
+
+**Status:** Pending
+
+### Change
+Replace `score = p_feasible / est_compute` with:
+```
+score = p_feasible / (1.0 + est_compute as f64 / REFERENCE_COMPUTE)
+```
+where `REFERENCE_COMPUTE = 50000.0` (50ms in μs).
+
+This normalizes scores to [0, 1] while preserving bounded cost differentiation:
+- Reservation (20ms): factor = 1/(1 + 20000/50000) = 0.71 → score ≈ 0.71 * p_feasible
+- Search (110ms): factor = 1/(1 + 110000/50000) = 0.31 → score ≈ 0.31 * p_feasible
+- Ratio: 2.3x (bounded), not 5500x (unbounded)
+
+Scores are now in [0, 0.71] range, compatible with THRESHOLD_RAISE=0.01 per call. At 2000 RPS with util > 0.85 on ~50% of calls, threshold rises ~10/s → reaches 0.71 in ~70ms. With ×0.99 decay on the other ~1000 calls, threshold decays to ~0 in ~700 calls (~0.35s). This is faster cycling but with bounded overshoot — the threshold stays within the meaningful score range.
+
+### Hypothesis
+The oscillation in quartz_1 is caused by score/threshold scale mismatch: scores ~10^-5 vs threshold steps of 0.01. By normalizing scores to [0,1] with bounded cost weighting, the threshold controller operates within the actual score range. Cost differentiation is preserved (Search ~2.3x harder to admit than Reservation) but is bounded, so the threshold can find equilibrium between admitting both vs shedding both.
+
+### Expected outcomes if hypothesis is correct:
+1. No oscillation at 2000 RPS — threshold operates within score range, not overshooting by 1000x.
+2. Cost-aware shedding preserved — Search shed before Reservation under overload (unlike quartz_4).
+3. Goodput ≥ quartz_1 at all RPS levels, potentially much better at 2000 RPS (stable ~1500 vs oscillating average of 1006).
+4. No regression at ≤1200 RPS.
+
+### Experiment design
+Same config. Two policies: prio_oldest,early + adctl.
 
 ## Open questions
 
