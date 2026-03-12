@@ -841,6 +841,31 @@ The oscillation has two causes: (1) score/threshold scale mismatch prevents prop
 ### Experiment design
 Same config as quartz_1 (coral_ext_2 based). Two policies: prio_oldest,early + adctl.
 
+### Actual Outcomes (quartz_9)
+
+**Status:** Mixed — +87 at 1800, -50 at 1600, -20 at 2000
+
+| RPS | adctl q9 | adctl q1 | delta | prio_oldest q9 | adctl vs oldest |
+|-----|------:|------:|------:|------:|------:|
+| 100 | 99.9 | 99.8 | +0.1 | 99.9 | 0.0 |
+| 400 | 399.2 | 399.2 | 0.0 | 399.3 | -0.1 |
+| 800 | 798.6 | 798.6 | 0.0 | 798.4 | +0.2 |
+| 1200 | 1184.7 | 1179.9 | +4.8 | 1133.9 | +50.8 |
+| 1400 | 1270.5 | 1276.9 | -6.4 | 992.6 | +277.9 |
+| 1600 | 1412.1 | 1461.9 | **-49.8** | 862.4 | +549.7 |
+| 1800 | 1160.6 | 1073.2 | **+87.4** | 628.3 | +532.3 |
+| 2000 | 986.2 | 1005.8 | -19.6 | 216.1 | +770.1 |
+
+**Findings:**
+- 1800 RPS: +87 over q1 — graduated recovery helps at moderate overload
+- 1600 RPS: -50 — threshold stays too high for too long, over-shedding
+- 2000 RPS: -20 — roughly neutral, oscillation not eliminated
+- ER rates: adctl 875/s vs oldest 1724/s at 2000 — still much more efficient
+
+**Analysis:** THRESHOLD_DECAY=0.999 is too slow at 1600 RPS (keeps shedding after overload subsides) but helps at 1800 (prevents re-flood). The optimal decay rate is load-dependent — suggesting a fixed constant is the wrong approach.
+
+**Decision:** Revert. The net effect is roughly neutral with tradeoffs at different load points. The original q1 behavior (fast decay) is better at 1600 while worse at 1800; this version is the reverse. Neither is strictly dominant.
+
 ## Open questions
 
 1. **Threshold controller tuning.** The feedback controller for Layer 2's `threshold` needs tuning (proportional gain, update rate). Too aggressive → oscillation. Too conservative → slow adaptation.
