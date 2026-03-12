@@ -646,6 +646,65 @@ Per-call raise/decay is volume-dependent and creates overshoot at high RPS. Time
 ### Experiment design
 Same config. Two policies: prio_oldest,early + adctl.
 
+### Actual Outcomes (quartz_6)
+
+**Status:** Regression ❌ — permanent latch-up at deep overload
+
+| RPS | adctl q6 | adctl q1 | delta |
+|-----|------:|------:|------:|
+| 1400 | 1286.0 | 1276.9 | +9.1 |
+| 1600 | 1421.6 | 1461.9 | -40.3 |
+| 1800 | 605.0 | 1073.2 | **-468.2** |
+| 2000 | 294.3 | 1005.8 | **-711.5** |
+
+Time-based controller creates permanent latch-up: once threshold tightens, sheds ~85% of traffic → almost no completions → controller never sees improvement → never relaxes. quartz_1's per-call oscillation at least recovers periodically (avg 1006 vs 294).
+
+**Decision: REVERT.** Commit 13f8e766.
+
+**Pattern across Iterations 1-5:**
+- Stateful threshold controllers are fundamentally unstable for admission control
+- Per-call: too fast → oscillation, but self-correcting
+- Time-based: too slow recovery → permanent latch-up
+- Floor: prevents recovery entirely
+- Score normalization helps but doesn't fix the controller instability
+
+## Iteration 6: Stateless utilization-proportional admission (experiment quartz_7)
+
+**Status:** Pending
+
+### Change
+Eliminate the persistent threshold entirely. Replace with stateless computation on every call:
+
+```
+excess = ((bottleneck_util - UTIL_TARGET) / (1.0 - UTIL_TARGET)).clamp(0.0, 1.0)
+threshold = excess * excess  // quadratic ramp: gentle near 0.85, aggressive near 1.0
+score = p_feasible / (1 + est_compute / REFERENCE_COMPUTE)  // bounded [0, 0.71]
+admit if score >= threshold
+```
+
+No persistent state. No raise/decay dynamics. Threshold is derived fresh from the current `bottleneck_util` on every call.
+
+Remove `self.threshold: Mutex<f64>` and `last_update` from AdmissionController. Keep `BottleneckTracker` (tracks per-API utilization from responses).
+
+### Hypothesis
+All previous iterations failed because the stateful threshold controller creates feedback loops between admission decisions and utilization observations. Stateless admission eliminates this: the shedding intensity is a direct function of current utilization with no memory of past decisions.
+
+The quadratic ramp provides:
+- No shedding when util < 0.85 (all requests admitted at low load)
+- Gentle shedding 0.85-0.92 (moderate overload: mostly feasible requests pass)
+- Aggressive shedding 0.93-1.0 (deep overload: only high-score requests pass)
+
+Cost-aware via bounded score normalization (Search penalized ~2.3x).
+
+### Expected outcomes if hypothesis is correct:
+1. No oscillation or latch-up — no state to oscillate or latch.
+2. Smooth degradation at 1600-2000 RPS: goodput decreases gradually, not cliff-edge.
+3. Cost-aware: Search shed preferentially over Reservation at moderate overload.
+4. At least quartz_1-level goodput at 2000 RPS, potentially better (no wasted time in collapsed phases).
+
+### Experiment design
+Same config. Two policies: prio_oldest,early + adctl.
+
 ## Open questions
 
 1. **Threshold controller tuning.** The feedback controller for Layer 2's `threshold` needs tuning (proportional gain, update rate). Too aggressive → oscillation. Too conservative → slow adaptation.
