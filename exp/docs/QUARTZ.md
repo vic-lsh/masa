@@ -815,6 +815,32 @@ ER data at 2000 RPS: adctl q8 sheds 1302 req/s (vs q1's 839) yet has lower goodp
 
 **Decision: REVERT.** The original q1 behavior (fast bang-bang shedding with periodic recovery) outperforms proportional control.
 
+## Iteration 8: Scale fix + fast raise + dampened decay (experiment quartz_9)
+
+**Status:** Pending
+
+**Code commit:** TBD
+
+### Change
+Three changes to `adctl.rs`:
+1. `efficiency_score`: `p_feasible / (est_compute as f64 / 1000.0)` — scores in 0.009–0.05 range
+2. `THRESHOLD_RAISE = 0.1` — one step exceeds all scores (fast reaction preserved)
+3. `THRESHOLD_DECAY = 0.999` — slow recovery prevents re-flood
+
+Iteration 7 (μs→ms only) failed because THRESHOLD_RAISE=0.01 was too small for the new score range — took 5 steps to shed Reservation, losing fast reaction. Increasing raise to 0.1 restores instant shedding. Slow decay (0.999 vs 0.99) creates graduated recovery: Reservation (score 0.05) re-admitted after ~0.35s, Search (score 0.009) after ~1.2s.
+
+### Hypothesis
+The oscillation has two causes: (1) score/threshold scale mismatch prevents proportional control, and (2) fast ×0.99 decay creates instant recovery flood. Iteration 7 fixed (1) but exposed that the raise was too slow. This iteration fixes both: fast raise for immediate overload response, slow decay for graduated recovery. The system should find a stable equilibrium where it sheds enough to stay below saturation without the boom-bust cycle.
+
+### Expected outcomes if hypothesis is correct:
+1. At 2000 RPS: stable goodput significantly better than q1's oscillating 1006. No boom-bust cycles.
+2. At 1600 RPS: no regression vs q1 (threshold stays below scores at moderate overload).
+3. Graduated recovery: Reservation re-admitted before Search (cheaper API recovers first).
+4. No regression at ≤1200 RPS.
+
+### Experiment design
+Same config as quartz_1 (coral_ext_2 based). Two policies: prio_oldest,early + adctl.
+
 ## Open questions
 
 1. **Threshold controller tuning.** The feedback controller for Layer 2's `threshold` needs tuning (proportional gain, update rate). Too aggressive → oscillation. Too conservative → slow adaptation.
