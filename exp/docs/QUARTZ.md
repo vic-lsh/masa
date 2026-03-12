@@ -1134,6 +1134,52 @@ The token bucket works at 1200-1800 RPS (rate limiting alone is sufficient at mo
 ### Experiment design
 Same config as quartz_1. Two policies: prio_oldest,early + adctl.
 
+### Actual Outcomes (quartz_13)
+
+**Status:** Major breakthrough ✅ — stable high goodput at deep overload
+
+| RPS | adctl q13 | adctl q1 | q13 vs q1 | prio_oldest q13 | adctl vs oldest |
+|-----|------:|------:|------:|------:|------:|
+| 100 | 99.8 | 99.8 | 0.0 | 99.8 | 0.0 |
+| 400 | 399.3 | 399.2 | +0.1 | 399.3 | 0.0 |
+| 800 | 798.5 | 798.6 | -0.1 | 798.5 | 0.0 |
+| 1200 | 1185.8 | 1179.9 | +5.9 | 1177.4 | +8.4 |
+| 1400 | 1285.1 | 1276.9 | +8.2 | 1203.1 | **+82.0** |
+| 1600 | 1459.5 | 1461.9 | -2.4 | 1257.1 | **+202.4** |
+| 1800 | 1596.3 | 1073.2 | **+523.1** | 473.0 | **+1123.2** |
+| 2000 | 1710.7 | 1005.8 | **+704.9** | 246.1 | **+1464.6** |
+
+**Key findings:**
+
+1. **Stable high goodput at deep overload.** 1711 at 2000 RPS (85.5% fraction), 1596 at 1800 (88.7%). No oscillation. The token bucket with correct cost metric finds and holds system capacity.
+
+2. **Cost-aware shedding confirmed.** At 2000 RPS: Search ER=283/s, Reservation ER=2.2/s. The budget correctly identifies Search (est_child ~110ms) as 5.5x more expensive and sheds it first. At 1800: Search ER=191, Reservation ER=8.
+
+3. **No regression at any load point.** ≤1200: identical. 1400: +8.2 over q1. 1600: -2.4 (within noise).
+
+4. **prio_oldest anomaly.** Baseline collapsed badly at 1800/2000 (473/246 vs historical ~946/705). Need verification run with 3 policies to confirm adctl improvements are real.
+
+**Caveat:** The prio_oldest collapse at 1800-2000 in this run is much worse than its historical performance. While adctl's absolute numbers (1596, 1711) are strong, a verification run is needed to confirm the result under controlled comparison.
+
+## Iteration 13: Verification run — 3-policy comparison (experiment quartz_14)
+
+**Status:** Pending
+
+### Change
+No code change. Verification run with all three policies: prio_oldest,early + prio_local,est_mean_var,early (emv-only) + prio_local,est_mean_var,early,adctl.
+
+### Hypothesis
+The quartz_13 result is real: the token bucket with est_child cost genuinely achieves stable 1700 goodput at 2000 RPS. The prio_oldest collapse is coincidental (run-to-run variance). If the result is genuine, emv-only should perform worse than adctl at 1800-2000 (since emv-only lacks admission control and collapses like prio_local in q1).
+
+### Expected outcomes if hypothesis is correct:
+1. adctl reproduces ~1600-1700 goodput at 2000 RPS.
+2. emv-only collapses at 1800-2000 (no admission control → resource waste at overload).
+3. prio_oldest recovers to historical range (~700-950 at 2000 RPS) or stays low — either way, adctl dominates.
+4. No regression at ≤1600 RPS for any policy.
+
+### Experiment design
+Same config as quartz_1 but 3 policies. This adds ~10 min to experiment time but provides controlled comparison.
+
 ## Open questions
 
 1. **Asymmetric adjustment.** Should the rate shrink faster than it grows? TCP uses additive increase / multiplicative decrease (AIMD). Our design uses multiplicative both ways. AIMD might be more stable — grow linearly, shrink multiplicatively — but the multiplicative approach is simpler and may be sufficient given the relatively stable capacity of the system.
