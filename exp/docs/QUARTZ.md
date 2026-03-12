@@ -460,6 +460,28 @@ Same config as quartz_1 (coral_ext_2 based: Search SLO=200ms, Reservation SLO=50
 - Making decay slower (HALF_LIFE=2s) didn't help because the RAISE was also made proportional to time, making it too slow.
 - The right fix may not be about decay rate at all — it may be about preventing the threshold from dropping too low (minimum threshold floor), or using integral/PID control instead of simple proportional.
 
+## Iteration 2: Threshold floor to prevent full admission collapse (experiment quartz_3)
+
+**Status:** Pending
+
+### Change
+Add a minimum threshold floor to the admission controller. Currently when `bottleneck_util` drops below 0.85, the threshold decays via ×0.99 per call to zero, opening admission fully and causing re-overload. The fix: clamp threshold to `max(threshold, MIN_THRESHOLD)` where MIN_THRESHOLD is a small positive value (e.g., 0.002). This keeps some selectivity even during the "recovery" phase, preventing the boom-bust cycle.
+
+Additionally, keep the per-call raise/decay mechanics unchanged (they're fast and responsive). The floor just prevents the threshold from reaching zero.
+
+### Hypothesis
+The quartz_1 oscillation at 2000 RPS is caused by threshold→0 during recovery phases, which admits everything and re-floods the system. A floor prevents this: when utilization drops below 0.85, the threshold decays toward MIN_THRESHOLD instead of zero, maintaining selective admission. Requests with `score < MIN_THRESHOLD` (i.e., expensive + low feasibility) remain shed even during recovery, preventing the system from re-overloading.
+
+The floor value should be small enough to not interfere with admission at moderate overload (1400-1600 RPS where all requests have high scores) but large enough to maintain selectivity at deep overload (2000 RPS where the system can't handle all traffic).
+
+### Expected outcomes if hypothesis is correct:
+1. At 2000 RPS: goodput should stabilize near the current healthy-phase peak (~1500) or at minimum improve over quartz_1's 1006 average.
+2. At 1400-1600 RPS: no regression (floor is below normal scores at these load levels).
+3. At ≤1200 RPS: no change (threshold controller dormant).
+
+### Experiment design
+Same config as quartz_1/2 (coral_ext_2 based). Two policies: prio_oldest,early + adctl.
+
 ## Open questions
 
 1. **Threshold controller tuning.** The feedback controller for Layer 2's `threshold` needs tuning (proportional gain, update rate). Too aggressive → oscillation. Too conservative → slow adaptation.
