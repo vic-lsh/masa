@@ -748,6 +748,48 @@ Every approach to stabilize the admission controller at deep overload (2000 RPS)
 2. **Socialnet evaluation** — test parallel fanout call graph
 3. **Non-monotonic load** — test robustness to load swings
 
+## Iteration 7: Fix score/threshold scale mismatch — use milliseconds (experiment quartz_8)
+
+**Status:** Pending
+
+### Change
+One-line fix in `efficiency_score()`: divide `est_compute` by 1000 to convert from microseconds to milliseconds before computing the score.
+
+```rust
+fn efficiency_score(p_feasible: f64, est_compute: u64) -> f64 {
+    if est_compute == 0 {
+        return p_feasible;
+    }
+    p_feasible / (est_compute as f64 / 1000.0)  // convert μs → ms
+}
+```
+
+New score ranges:
+- Search (est_compute=110,000μs → 110ms): score = p_feasible / 110 ≈ 0.009
+- Reservation (est_compute=20,000μs → 20ms): score = p_feasible / 20 ≈ 0.05
+
+With THRESHOLD_RAISE=0.01:
+- One step (0.01) puts threshold between Search (0.009) and Reservation (0.05)
+- This means moderate overload sheds Search first (correct — it's more expensive)
+- Threshold needs ~5 raise steps to exceed Reservation's max score (0.05)
+- This gives the controller a **proportional regime** instead of bang-bang
+
+Cost ratio: Reservation score / Search score = 5.5x (vs 5500x before). Still meaningful cost differentiation, but bounded enough for the threshold to operate between them.
+
+### Hypothesis
+The root cause of the oscillation at 2000 RPS is the 1000x-10000x scale mismatch between efficiency scores (10⁻⁶ to 10⁻⁵) and THRESHOLD_RAISE (0.01). A single raise step overshoots all possible scores, creating bang-bang behavior: either threshold=0 (admit all) or threshold>>max_score (reject all). Converting est_compute from μs to ms brings scores into the 0.01–0.05 range, matching the threshold step size. The controller can now find a stable equilibrium between "shed expensive Search" and "shed everything."
+
+Unlike Iteration 4 (bounded scoring with REFERENCE_COMPUTE), this preserves the original 1/cost scoring shape — it's just a unit conversion, not a functional change. The per-call raise/decay dynamics remain unchanged.
+
+### Expected outcomes if hypothesis is correct:
+1. At 2000 RPS: threshold stabilizes between Search score (0.009) and Reservation score (0.05), shedding Search while admitting Reservation. Goodput significantly better than quartz_1's 1006 average.
+2. At 1600-1800 RPS: threshold stays near or below Search score, admitting most requests. No regression vs quartz_1.
+3. At ≤1200 RPS: no change (util < 0.85, threshold decays to 0).
+4. Per-second goodput trace should show stable behavior, not oscillation.
+
+### Experiment design
+Same config as quartz_1 (coral_ext_2 based: Search SLO=200ms, Reservation SLO=50ms, RPS sweep [100, 400, 800, 1200, 1400, 1600, 1800, 2000]). Two policies: prio_oldest,early + adctl.
+
 ## Open questions
 
 1. **Threshold controller tuning.** The feedback controller for Layer 2's `threshold` needs tuning (proportional gain, update rate). Too aggressive → oscillation. Too conservative → slow adaptation.
