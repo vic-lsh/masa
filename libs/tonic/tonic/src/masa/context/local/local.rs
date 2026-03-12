@@ -554,7 +554,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
             let est_compute_rem = self
                 .server
                 .est_compute_latency
-                .get_mean_floor_estimate(self.resolved_method_id)
+                .get_estimate(self.resolved_method_id)
                 .unwrap_or(0);
             if est_compute_rem > time_left {
                 return true; // infeasible → shed
