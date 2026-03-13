@@ -447,6 +447,52 @@ Same config as basalt_1 (full RPS sweep [100–2000]).
 
 **Decision:** Revert. The marginal +13 at 1600 doesn't justify 4 parameter changes from defaults.
 
+## Iteration 7: Aggressive pricing + fast EWMA (experiment basalt_8)
+
+**Status:** Pending
+
+### Change
+Combine the best 1600 RPS result (basalt_4's aggressive pricing) with fast EWMA:
+1. `PRICE_PER_EXCESS_MS`: 10 → 50 (from basalt_4)
+2. `PRICE_DECREASE_STEP`: 1 → 5 (from basalt_4)
+3. `QUEUE_THRESHOLD_US`: 1000 → 2000 (from basalt_4)
+4. `PRICE_PROPAGATION_PROB`: 0.2 → 1.0 (from basalt_4)
+5. EWMA α: 1/4 → 1/2 (moderate responsiveness, not as noisy as 7/8)
+6. Tick: 100ms → 50ms
+
+### Hypothesis
+The 1800+ collapse is structural and unfixable by parameter tuning (confirmed by 6 iterations). The goal shifts to **maximizing pre-collapse performance**. basalt_4's aggressive pricing achieved 1554.6 (97.2%) at 1600 — the best Rajomon result at that load point. Adding faster EWMA may further improve the 1400-1600 range by enabling quicker price adaptation to load changes. Faster EWMA may also push the collapse point slightly higher (e.g., from 1750 to 1850 effective RPS).
+
+### Expected outcomes:
+1. 1600 RPS: Rajomon achieves >1550 goodput (matching or exceeding basalt_4's best)
+2. 1400 RPS: Rajomon maintains ~99% goodput
+3. 1800+ RPS: collapse persists (~180 goodput)
+
+### Experiment design
+Same config as basalt_1 (full RPS sweep). Focus on 1400-1800 range.
+
+## Iteration 8: Minimal rejection — very low price sensitivity (experiment basalt_9)
+
+**Status:** Pending
+
+### Change
+1. `PRICE_PER_EXCESS_MS`: 10 → 1 (10x slower price escalation)
+2. `QUEUE_THRESHOLD_US`: 1000 → 50000 (prices only increase above 50ms queue latency)
+3. `PRICE_DECREASE_STEP`: 1 → 50 (fast recovery when queues drop below 25ms)
+
+### Hypothesis
+All previous iterations explored the "more rejection" direction (faster/stronger price response). This iteration explores the opposite extreme: minimal rejection. With PRICE_PER_EXCESS_MS=1 and threshold=50000µs, prices barely increase even under significant queueing. The system relies on natural backpressure (slow responses → fewer new requests) rather than active rejection.
+
+This tests whether Rajomon's rejection mechanism is actually HURTING at the collapse point by causing instability (reject → drain → admit → overload → reject) that's worse than simply processing everything and accepting SLO violations. If goodput at 1800 improves beyond ~180, it suggests the rejection mechanism itself contributes to the collapse.
+
+### Expected outcomes if hypothesis is correct:
+1. 1800 RPS: goodput changes from ~178 to either higher (rejection was hurting) or ~0 (confirming rejection is the only thing keeping Reservation alive)
+2. 1600 RPS: may regress slightly (less rejection → more queue buildup)
+3. Low-load: unchanged (prices ~1 regardless)
+
+### Experiment design
+Same config as basalt_1 (full RPS sweep). This is a diagnostic experiment to understand whether less rejection helps or hurts.
+
 ## Assessment
 
 ### Summary of all iterations
