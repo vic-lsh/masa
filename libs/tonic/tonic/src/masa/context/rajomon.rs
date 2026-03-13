@@ -452,8 +452,8 @@ impl ClientTokenBucket {
         Self {
             pools: DashMap::new(),
             cached_prices: DashMap::new(),
-            replenish_amount: 10000,
-            max_tokens: 100000,
+            replenish_amount: 100000,
+            max_tokens: 1000000,
         }
     }
 
@@ -483,7 +483,7 @@ impl ClientTokenBucket {
                 .is_ok()
             {
                 // Assign random tokens to the request (1..=100)
-                let tokens = rand::Rng::gen_range(&mut rand::thread_rng(), 100..=10000u64);
+                let tokens = rand::Rng::gen_range(&mut rand::thread_rng(), 100..=100000u64);
                 return Some(tokens);
             }
         }
@@ -654,29 +654,29 @@ mod tests {
         let bucket = ClientTokenBucket::new();
         let method = CowGrpcMethod::new("svc", "method");
 
-        // First acquire should succeed (pool starts at max_tokens=100000, price defaults to 1)
+        // First acquire should succeed (pool starts at max_tokens=1000000, price defaults to 1)
         let result = bucket.try_acquire(&method);
         assert!(result.is_some());
         let tokens = result.unwrap();
-        assert!(tokens >= 100 && tokens <= 10000);
+        assert!(tokens >= 100 && tokens <= 100000);
 
-        // Pool should now be 99999
+        // Pool should now be 999999
         let pool_val = bucket
             .pools
             .get(&method)
             .unwrap()
             .value()
             .load(Ordering::Relaxed);
-        assert_eq!(pool_val, 99999);
+        assert_eq!(pool_val, 999999);
 
-        // Set a high price
-        bucket.update_price(&method, 200000);
+        // Set a very high price that exceeds the pool
+        bucket.update_price(&method, 2000000);
 
-        // Acquire should fail (pool=99999 < price=200000)
+        // Acquire should fail (pool=999999 < price=2000000)
         let result = bucket.try_acquire(&method);
         assert!(result.is_none());
 
-        // Replenish should add 10000, pool = 99999 + 10000 = 100000 (capped at max)
+        // Replenish should add 100000, pool = min(999999 + 100000, 1000000) = 1000000
         bucket.replenish();
         let pool_val = bucket
             .pools
@@ -684,9 +684,9 @@ mod tests {
             .unwrap()
             .value()
             .load(Ordering::Relaxed);
-        assert_eq!(pool_val, 100000);
+        assert_eq!(pool_val, 1000000);
 
-        // Still can't acquire at price 200000
+        // Still can't acquire at price 2000000
         assert!(bucket.try_acquire(&method).is_none());
     }
 
