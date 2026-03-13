@@ -1,6 +1,8 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::HashMap, sync::Arc, sync::Mutex, time::Duration};
 
 use masa_core::LatencyEstimator;
+
+use crate::masa::MethodRegistry;
 
 #[derive(Debug)]
 pub(crate) struct LatencyMap<E> {
@@ -95,6 +97,86 @@ where
     }
 }
 
+/// Spawns a background task to periodically print latency estimates keyed by parent→child pair.
+pub(crate) fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
+    distributions: Arc<LatencyMap<E>>,
+    label: &'static str,
+) {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+
+                if distributions.is_empty() {
+                    continue;
+                }
+
+                let mut parts = Vec::new();
+                distributions.for_each(|key, distribution| {
+                    if distribution.can_estimate() {
+                        let estimate = distribution.estimate();
+
+                        // Decode key
+                        let parent_id = key >> 32;
+                        let child_id = key & 0xFFFFFFFF;
+
+                        let registry = MethodRegistry::global();
+                        let p_name = registry
+                            .get_method_name(parent_id)
+                            .map(|(s, m)| format!("{}::{}", s, m))
+                            .unwrap_or_else(|| format!("{}", parent_id));
+                        let c_name = registry
+                            .get_method_name(child_id)
+                            .map(|(s, m)| format!("{}::{}", s, m))
+                            .unwrap_or_else(|| format!("{}", child_id));
+
+                        parts.push(format!("{}=>{}: {} us", p_name, c_name, estimate));
+                    } else {
+                        parts.push(format!("{}: (no estimate)", key));
+                    }
+                });
+                log::info!("{}: {}", label, parts.join(", "));
+            }
+        });
+    }
+}
+
+/// Spawns a background task to periodically print latency estimates keyed by method ID only.
+pub(crate) fn spawn_method_stats_printer<E: LatencyEstimator + Default + 'static>(
+    distributions: Arc<LatencyMap<E>>,
+    label: &'static str,
+) {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+
+                if distributions.is_empty() {
+                    continue;
+                }
+
+                let mut parts = Vec::new();
+                distributions.for_each(|key, distribution| {
+                    if distribution.can_estimate() {
+                        let estimate = distribution.estimate();
+                        let registry = MethodRegistry::global();
+                        let name = registry
+                            .get_method_name(key)
+                            .map(|(s, m)| format!("{}::{}", s, m))
+                            .unwrap_or_else(|| format!("{}", key));
+                        parts.push(format!("{}: {} us", name, estimate));
+                    } else {
+                        parts.push(format!("{}: (no estimate)", key));
+                    }
+                });
+                log::info!("{}: {}", label, parts.join(", "));
+            }
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,7 +221,6 @@ mod tests {
 
     #[test]
     fn test_latency_map_concurrency() {
-        use std::sync::Arc;
         use std::thread;
 
         let map = Arc::new(LatencyMap::<LatencyRms>::new());
