@@ -543,7 +543,48 @@ The +22 goodput at 1600 confirms the default pricing is slightly over-zealous at
 
 **Decision:** Revert. This was a diagnostic experiment confirming the structural nature of the collapse.
 
-## Assessment
+## ⚠ Bug invalidation notice (2026-03-13)
+
+**Commit ef86f1a0 ("fix: add queue latency timing to FIFO scheduler queue") revealed that all experiments basalt_1 through basalt_9 ran with a broken Rajomon price mechanism.** The FIFO queue was missing `set_enqueue_time()` and `record_queue_lat()` calls, so `obtain_task_queue_latency()` always returned 0. This meant the EWMA never registered any queue latency, prices never increased from their initial value, and Rajomon's admission control was effectively disabled in all experiments.
+
+**What this invalidates:**
+- All conclusions about price tuning (iterations 1, 3, 4, 6, 7, 8) — the price changes had no effect because the input signal was always zero
+- The "structural collapse" diagnosis — the collapse was simply the system running without any load shedding
+- The "Rajomon can only control admission, not execution" conclusion — untested because admission control was never active
+- The basalt_9 diagnostic ("collapse is independent of rejection") — trivially true because rejection was already broken
+
+**What remains valid:**
+- basalt_3 (token budget 100→10000 fixing low-load bleed) — this was about per-request token math at price=0, which was the actual operating point
+
+**Current codebase state:** Token budget `100..=10000` (from basalt_3) with all other Rajomon parameters at defaults, plus the queue latency bug fix. Experiments resume from iteration 9 below.
+
+---
+
+## Iteration 9: Re-baseline with working price feedback (experiment basalt_10)
+
+**Status:** Pending
+
+### Change
+No code change — the bug fix (ef86f1a0) is already committed. This is a clean re-run of basalt_1's config with working queue latency timing.
+
+### Hypothesis
+With functional queue latency reporting, Rajomon's EWMA-based price feedback will actually activate under load. At overload (1800+ RPS), queue latencies will drive prices up, causing the token-budget admission checks to reject excess traffic. The previous "collapse to ~180 goodput" was Rajomon running with zero admission control — with working prices, the system should shed load and achieve meaningfully higher goodput.
+
+The magnitude of improvement is uncertain since we've never seen Rajomon with working prices. Two possibilities:
+1. **Rajomon works well**: prices rise proportionally to overload, partial shedding occurs, goodput at 1800+ is substantially higher than 180 (maybe 500-1000+)
+2. **Rajomon still collapses**: even with working prices, the feedback loop is too slow or the price-token interaction creates phase transitions similar to what we hypothesized (but couldn't test) before
+
+### Expected outcomes:
+1. Low-load (100-1400 RPS): goodput should remain ~99.5% (prices stay near 0, no false rejections)
+2. High-load (1800-2000 RPS): goodput should increase substantially from ~180 (old broken baseline)
+3. We'll see actual price dynamics for the first time, informing future tuning directions
+
+### Experiment design
+Full RPS sweep [100, 400, 800, 1200, 1400, 1600, 1800, 2000] — same as basalt_1. We need the full sweep as a clean baseline with working Rajomon.
+
+---
+
+## Assessment (pre-bug-fix, now invalidated)
 
 ### Summary of all iterations
 
