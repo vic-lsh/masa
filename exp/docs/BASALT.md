@@ -471,6 +471,24 @@ The 1800+ collapse is structural and unfixable by parameter tuning (confirmed by
 ### Experiment design
 Same config as basalt_1 (full RPS sweep). Focus on 1400-1800 range.
 
+### Actual Outcomes (basalt_8)
+
+**Status:** Regression ❌ — worst 1600 result, collapse unchanged
+
+#### Rajomon Comparison: basalt_3 vs basalt_4 vs basalt_8
+
+| RPS | basalt_3 | basalt_4 (best 1600) | basalt_8 (combined) |
+|-----|----------|---------------------|---------------------|
+| 1200 | 1193.9 | 1192.2 | 1193.6 |
+| 1400 | 1388.7 | 1386.8 | 1390.6 |
+| 1600 | 1486.5 | **1554.6** | **1291.4** |
+| 1800 | 177.5 | 176.2 | 176.6 |
+| 2000 | 190.3 | 192.8 | 191.6 |
+
+**The combination is worse than its parts.** basalt_4's aggressive pricing alone achieved 1554.6 at 1600. Adding faster EWMA caused over-reaction: the faster signal tracking amplifies aggressive price feedback, creating oscillations that reject too many requests at the saturation point. Rajomon at 1600 dropped to 1291 — the worst result across all iterations.
+
+**Decision:** Revert. basalt_4's configuration (aggressive pricing only, default EWMA) remains the best for 1600 RPS, but it was previously reverted because the 1600 improvement didn't justify diverging from defaults.
+
 ## Iteration 8: Minimal rejection — very low price sensitivity (experiment basalt_9)
 
 **Status:** Pending
