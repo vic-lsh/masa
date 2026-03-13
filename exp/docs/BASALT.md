@@ -511,25 +511,76 @@ This tests whether Rajomon's rejection mechanism is actually HURTING at the coll
 ### Experiment design
 Same config as basalt_1 (full RPS sweep). This is a diagnostic experiment to understand whether less rejection helps or hurts.
 
+### Actual Outcomes (basalt_9)
+
+**Status:** Diagnostic — confirmed collapse is independent of rejection
+
+#### Goodput Comparison (basalt_9)
+
+| RPS | adctl | Rajomon (minimal rejection) | Delta |
+|-----|-------|------------------------------|-------|
+| 100 | 99.5 | 99.5 | 0.0 |
+| 400 | 398.0 | 398.0 | 0.0 |
+| 800 | 796.0 | 795.9 | +0.1 |
+| 1200 | 1193.5 | 1193.5 | 0.0 |
+| 1400 | 1389.9 | 1389.9 | 0.0 |
+| 1600 | 1508.9 | 1508.9 | 0.0 |
+| 1800 | 1575.3 | **175.2** | +1400.1 |
+| 2000 | 1708.4 | **191.2** | +1517.2 |
+
+#### Comparison: basalt_3 → basalt_9 Rajomon
+
+| RPS | basalt_3 | basalt_9 | Change |
+|-----|----------|----------|--------|
+| 100–1400 | ~99.5% | ~99.5% | unchanged |
+| 1600 | 1486.5 (92.9%) | 1508.9 (94.3%) | +22 (+1.4pp) |
+| 1800 | 177.5 (9.9%) | 175.2 (9.7%) | unchanged |
+| 2000 | 190.3 (9.5%) | 191.2 (9.6%) | unchanged |
+
+**Key finding:** With near-zero price sensitivity (PRICE_PER_EXCESS_MS=1, QUEUE_THRESHOLD_US=50000), Rajomon's price-based rejection is essentially disabled — yet the collapse at 1800+ RPS is **identical** (~175 goodput, 0 Search). This proves definitively that the collapse is NOT caused by Rajomon's rejection mechanism. It is a property of the underlying system under overload without early return.
+
+The +22 goodput at 1600 confirms the default pricing is slightly over-zealous at the saturation boundary, but the effect is minor.
+
+**Decision:** Revert. This was a diagnostic experiment confirming the structural nature of the collapse.
+
 ## Assessment
 
 ### Summary of all iterations
 
-| Iteration | Change | Low-load effect | High-load (1800+) effect |
-|-----------|--------|----------------|--------------------------|
-| Baseline (basalt_1) | Default Rajomon | 95.5% (−4pp vs adctl) | Catastrophic collapse (9.5%) |
-| 1 (basalt_2) | Server-side price tuning | No change | No change |
-| 2 (basalt_3) | Token budget 100..=10000 | **99.5% (matches adctl)** | No change |
-| 3 (basalt_4) | Aggressive price feedback | No change | No change (+68 at 1600 only) |
+| Iteration | Change | Low-load effect | High-load (1800+) effect | 1600 RPS |
+|-----------|--------|----------------|--------------------------|----------|
+| Baseline (basalt_1) | Default Rajomon | 95.5% (−4pp vs adctl) | Collapse (9.5%) | 1506 (94.1%) |
+| 1 (basalt_2) | Server-side price tuning | No change | No change | 1441 (-65) |
+| 2 (basalt_3) | Token budget 100..=10000 | **99.5% (matches adctl)** | No change | 1487 (92.9%) |
+| 3 (basalt_4) | Aggressive price feedback | No change | No change | **1555 (97.2%)** |
+| 4 (basalt_5) | Tight client pool + fast EWMA | No change | No change | 1453 (-33) |
+| 5 (basalt_6) | Very large token range (100..=100000) | No change | No change | 1394 (-93) |
+| 6 (basalt_7) | Ultra-responsive EWMA + rapid recovery | No change | No change | 1500 (+13) |
+| 7 (basalt_8) | Aggressive pricing + fast EWMA combined | No change | No change | **1291 (worst)** |
+| 8 (basalt_9) | Minimal rejection (diagnostic) | No change | No change | 1509 (+22) |
+
+### Parameter space explored
+
+| Parameter | Default | Values tested | Best value |
+|-----------|---------|---------------|------------|
+| QUEUE_THRESHOLD_US | 1000 | 1000, 2000, 5000, 50000 | 1000 (default) |
+| PRICE_PER_EXCESS_MS | 10 | 1, 10, 50 | 10 (default) or 50 (for 1600 only) |
+| PRICE_DECREASE_STEP | 1 | 1, 5, 10, 50, 5000 | 1 (default) |
+| PRICE_PROPAGATION_PROB | 0.2 | 0.2, 0.5, 1.0 | 0.2 (default) |
+| EWMA α | 1/4 | 1/4, 1/2, 7/8 | 1/4 (default) |
+| Tick interval | 100ms | 50ms, 100ms | 100ms (default) |
+| Token range | 1..=100 | 1..=100, 100..=10000, 100..=100000 | **100..=10000** |
+| Client replenish | 100 | 100, 1000, 10000, 100000 | 10000 |
+| Client max_tokens | 1000 | 1000, 5000, 100000, 1000000 | 100000 |
 
 ### Best Rajomon configuration
 
-Token budget `100..=10000` (iteration 2) with default price parameters. This eliminates the low-load goodput bleed but does not address the overload collapse.
+Token budget `100..=10000` (iteration 2) with all other parameters at defaults. This is the simplest effective configuration.
 
 | RPS | adctl (best) | Rajomon (tuned) | Gap |
 |-----|-------------|-----------------|-----|
 | 100–1400 | ~99.5% | ~99.5% | **none** |
-| 1600 | ~95% | ~93–97% | ~0–2pp |
+| 1600 | ~95% | ~93% | ~2pp |
 | 1800 | ~88% | **~10%** | **~78pp** |
 | 2000 | ~86% | **~10%** | **~76pp** |
 
@@ -537,10 +588,10 @@ Token budget `100..=10000` (iteration 2) with default price parameters. This eli
 
 1. **How does Rajomon compare to adctl?** At low-to-moderate load (≤1600 RPS), Rajomon with tuned token budgets matches adctl's goodput. At overload (≥1800 RPS), Rajomon suffers catastrophic collapse (~10% goodput) while adctl degrades gracefully (~86% goodput). The gap at 2000 RPS is **~1500 goodput (9x)**.
 
-2. **Can hyperparameter tuning close the gap?** Partially. Token budget tuning eliminated the ~4% low-load bleed. But the overload collapse is structural and impervious to all price/token tuning attempted (3 different configurations). No hyperparameter combination can fix it.
+2. **Can hyperparameter tuning close the gap?** Only at low load. Token budget tuning eliminated the ~4% low-load bleed. The overload collapse is **completely impervious to parameter tuning** — 8 iterations testing every dimension of the parameter space (price sensitivity, EWMA responsiveness, token budgets, client pool sizing, propagation probability, tick intervals) all produce the same ~178 goodput at 1800 RPS and ~190 at 2000 RPS. The iteration 8 diagnostic (minimal rejection) proved that the collapse occurs even when Rajomon's rejection mechanism is essentially disabled — confirming it is a property of the system, not of Rajomon's tuning.
 
 3. **What is the mechanistic difference?** adctl has two mechanisms Rajomon lacks:
    - **Early return:** adctl+early sheds 250+ requests/sec at high load by aborting in-flight requests that have exceeded their SLO deadline. This reclaims CPU for requests that can still succeed. Rajomon cannot use `early` (mutually exclusive feature flag).
    - **End-to-end cost awareness:** adctl uses latency estimates (`est_mean_var`) to make informed admission decisions based on predicted end-to-end cost. Rajomon's admission is based on per-method queue latency EWMA — a local signal that cannot predict end-to-end behavior in a multi-service call graph.
 
-   The collapse mechanism is: at 1800 RPS, queue latencies spike → admitted Search requests (which fan out to ~5 services) consume CPU processing work that will miss SLO → this crowds out Reservation requests → queue latencies spike further → positive feedback loop. adctl breaks this loop by aborting doomed work; Rajomon lets it run to completion.
+   The collapse mechanism is: at 1800 RPS, queue latencies spike → admitted Search requests (which fan out to ~5 services) consume CPU processing work that will miss SLO → this crowds out Reservation requests → queue latencies spike further → positive feedback loop. adctl breaks this loop by aborting doomed work; Rajomon lets it run to completion. **No parameter tuning can compensate for this structural gap.**
