@@ -150,7 +150,7 @@ pub struct LoadGenArgs {
     pub save_logs: bool,
 }
 
-const DEFAULT_COUNTER_KEYS: [&'static str; 6] = [
+const DEFAULT_COUNTER_KEYS: [&'static str; 7] = [
     // total number of (sent) requests
     "all",
     // number of (completed) requests satisfying SLO
@@ -163,6 +163,8 @@ const DEFAULT_COUNTER_KEYS: [&'static str; 6] = [
     "timeout",
     // total number of unexpected errors
     "unexpected",
+    // number of requests shed by client-side token bucket
+    "client_shed",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -413,6 +415,19 @@ where
 
         let (response, error) = map_response(response, latency <= self.slo);
 
+        #[cfg(feature = "rajomon")]
+        if let Some((ref metadata, _)) = response {
+            if let Some(price_header) = metadata.get("x-masa-rajomon-price") {
+                if let Ok(price_str) = price_header.to_str() {
+                    if let Ok(price) = price_str.parse::<u64>() {
+                        use tonic::masa::context::rajomon::CLIENT_TOKEN_BUCKET;
+                        let method = tonic::CowGrpcMethod::new("", self.api.clone());
+                        CLIENT_TOKEN_BUCKET.update_price(&method, price);
+                    }
+                }
+            }
+        }
+
         let stats = RequestStats::new(ctx, latency, error.clone(), response);
 
         if trace {
@@ -642,6 +657,20 @@ where
             let i = self.rng.gen_range(0..self.api_handlers.len());
             let handler = Arc::clone(&self.api_handlers[i]);
 
+            #[cfg(feature = "rajomon")]
+            let ctx = {
+                match masa::try_create_context(
+                    handler.api(),
+                    std::time::Duration::from_micros(handler.slo()),
+                ) {
+                    Some(ctx) => ctx,
+                    None => {
+                        counters.increment("client_shed");
+                        continue;
+                    }
+                }
+            };
+            #[cfg(not(feature = "rajomon"))]
             let ctx = masa::create_context(
                 handler.api(),
                 std::time::Duration::from_micros(handler.slo()),
@@ -761,16 +790,18 @@ async fn stats_logger(counters: Arc<Counters>, pause_at: Instant) {
         let delta = |k| counters.get(k) - prev.get(k);
 
         log::warn!(
-            "secs: {}, rps: {}, good: {}, ER: {}, ddl_miss: {}, timeouts: {}; total: ER {}, ddl_miss {}, timeout {}",
+            "secs: {}, rps: {}, good: {}, ER: {}, ddl_miss: {}, timeouts: {}, client_shed: {}; total: ER {}, ddl_miss {}, timeout {}, client_shed {}",
             secs,
             delta("all"),
             delta("good"),
             delta("early_return"),
             delta("deadline_miss"),
             delta("timeout"),
+            delta("client_shed"),
             counters.get("early_return"),
             counters.get("deadline_miss"),
             counters.get("timeout"),
+            counters.get("client_shed"),
         );
         // clone the Counters struct itself as opposed to creating another reference
         prev = (*counters).clone();
