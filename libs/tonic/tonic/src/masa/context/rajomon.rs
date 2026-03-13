@@ -19,9 +19,9 @@ const QUEUE_THRESHOLD_US: u64 = 1000;
 #[cfg(feature = "rajomon")]
 const PRICE_PER_EXCESS_MS: u64 = 10;
 #[cfg(feature = "rajomon")]
-const PRICE_DECREASE_STEP: u64 = 5000;
+const PRICE_DECREASE_STEP: u64 = 1;
 #[cfg(feature = "rajomon")]
-const PRICE_PROPAGATION_PROB: f64 = 1.0;
+const PRICE_PROPAGATION_PROB: f64 = 0.2;
 
 /// Global Rajomon state shared across all request handlers.
 #[cfg(feature = "rajomon")]
@@ -99,11 +99,11 @@ impl RajomonSharedState {
             // correctly reflecting the absence of observed queueing pressure.
             let window_avg = if count > 0 { sum / count } else { 0 };
 
-            // Time-based EWMA step: α = 7/8, half-life ≈ 0.3 ticks
+            // Time-based EWMA step: α = 1/4, half-life ≈ 2.4 ticks (240ms).
             // Decay is per-tick, not per-sample, so it is independent of RPS.
-            // new_ewma = (7/8) * window_avg + (1/8) * old_ewma
+            // new_ewma = (1/4) * window_avg + (3/4) * old_ewma
             let old_ewma = entry.ewma_us.load(Ordering::Relaxed);
-            let new_ewma = (7 * window_avg + old_ewma) / 8;
+            let new_ewma = (window_avg + 3 * old_ewma) / 4;
             entry.ewma_us.store(new_ewma, Ordering::Relaxed);
 
             let method = entry.key();
@@ -184,7 +184,7 @@ impl RajomonSharedState {
 
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async {
-                let mut interval = tokio::time::interval(Duration::from_millis(50));
+                let mut interval = tokio::time::interval(Duration::from_millis(100));
                 let mut log_tick: u32 = 0;
                 loop {
                     interval.tick().await;
@@ -553,9 +553,9 @@ mod tests {
         state.update_prices();
 
         let price = state.local_prices.get(&method).map(|v| *v).unwrap_or(1);
-        // EWMA = (7*5000 + 0) / 8 = 4375, excess = 4375-1000=3375, increment = (3375/1000+1)*10 = 40
-        // new_price = 1 (default) + 40 = 41
-        assert_eq!(price, 41);
+        // EWMA = (5000 + 0) / 4 = 1250, excess = 250, increment = (250/1000+1)*10 = 10
+        // new_price = 1 (default) + 10 = 11
+        assert_eq!(price, 11);
     }
 
     #[cfg(feature = "rajomon")]
@@ -571,10 +571,10 @@ mod tests {
             .entry(method.clone())
             .or_insert_with(MethodQueueStats::new);
 
-        // Simulate EWMA in middle band (700us: between 500 and 1000)
+        // Simulate EWMA in middle band (600us: between 500 and 1000)
         let stats = state.queue_stats.get(&method).unwrap();
-        // We need window_avg = 800 so EWMA = 7*800/8 = 700
-        stats.window_sum.store(8000, Ordering::Relaxed);
+        // We need window_avg = 2400 so EWMA = (2400 + 0)/4 = 600
+        stats.window_sum.store(24000, Ordering::Relaxed);
         stats.window_count.store(10, Ordering::Relaxed);
 
         state.update_prices();
@@ -604,8 +604,8 @@ mod tests {
         state.update_prices();
 
         let price = state.local_prices.get(&method).map(|v| *v).unwrap_or(1);
-        // EWMA = 7*100/8 = 87, below threshold/2=500, decrease by 5000: max(1, 5-5000) = 1
-        assert_eq!(price, 1);
+        // EWMA = 100/4 = 25, below threshold/2, decrease by 1: 5 -> 4
+        assert_eq!(price, 4);
     }
 
     #[cfg(feature = "rajomon")]
