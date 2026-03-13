@@ -1,13 +1,14 @@
 use std::collections::VecDeque;
 
 use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
+use crate::runtime::task::Traceable;
 
 pub(crate) struct FifoQueue<T> {
     inner: VecDeque<T>,
     push_count: u64,
 }
 
-impl<T> Queue for FifoQueue<T> {
+impl<T: Traceable> Queue for FifoQueue<T> {
     type Item = T;
 
     fn with_capacity(cap: usize) -> Self {
@@ -17,24 +18,19 @@ impl<T> Queue for FifoQueue<T> {
         }
     }
 
-    fn push(&mut self, item: Self::Item) -> Result<(), PushError<Self::Item>> {
+    fn push(&mut self, mut item: Self::Item) -> Result<(), PushError<Self::Item>> {
+        item.timer().set_enqueue_time();
         self.inner.push_back(item);
         self.push_count += 1;
 
-
-        // if self.push_count % 1000 == 0 {
-        //     println!(
-        //         "FifoQ: push_count {}, Current len {}, ratio {}",
-        //         self.push_count,
-        //         self.len(),
-        //         self.push_count as f64 / self.len() as f64
-        //     );
-        // }
         Ok(())
     }
 
     fn pop(&mut self) -> Result<Self::Item, PopError> {
-        self.inner.pop_front().ok_or(PopError::Empty)
+        self.inner.pop_front().ok_or(PopError::Empty).map(|mut e| {
+            e.timer().record_queue_lat();
+            e
+        })
     }
 
     fn len(&self) -> usize {
