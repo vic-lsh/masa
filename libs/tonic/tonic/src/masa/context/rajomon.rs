@@ -15,13 +15,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 #[cfg(feature = "rajomon")]
-const QUEUE_THRESHOLD_US: u64 = 1000;
+const QUEUE_THRESHOLD_US: u64 = 5000;
 #[cfg(feature = "rajomon")]
 const PRICE_PER_EXCESS_MS: u64 = 10;
 #[cfg(feature = "rajomon")]
-const PRICE_DECREASE_STEP: u64 = 1;
+const PRICE_DECREASE_STEP: u64 = 10;
 #[cfg(feature = "rajomon")]
-const PRICE_PROPAGATION_PROB: f64 = 0.2;
+const PRICE_PROPAGATION_PROB: f64 = 0.5;
 
 /// Global Rajomon state shared across all request handlers.
 #[cfg(feature = "rajomon")]
@@ -452,8 +452,8 @@ impl ClientTokenBucket {
         Self {
             pools: DashMap::new(),
             cached_prices: DashMap::new(),
-            replenish_amount: 100,
-            max_tokens: 1000,
+            replenish_amount: 500,
+            max_tokens: 5000,
         }
     }
 
@@ -696,9 +696,7 @@ mod tests {
         let method = CowGrpcMethod::new("svc", "method");
         let mut handler = RajomonHandler::new(method);
 
-        let mut ctx = masa_core::ContextBuilder::new("test", 0)
-            .tokens(50)
-            .build();
+        let mut ctx = masa_core::ContextBuilder::new("test", 0).tokens(50).build();
 
         // Default price is 1, so 50-1=49 remaining
         let dropped = handler.check_inbound(&mut ctx);
