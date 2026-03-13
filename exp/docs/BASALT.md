@@ -746,6 +746,57 @@ At severe overload (1800+ RPS) with queue latencies of 50-100ms+: excess=45-95ms
 ### Experiment design
 Full RPS sweep.
 
+### Actual Outcomes (basalt_13)
+
+**Status:** Best Rajomon result yet ✅
+
+#### Goodput Comparison (basalt_13)
+
+| RPS | adctl | Rajomon b13 (5ms, price=2) | Best prior Rajomon | Improvement |
+|-----|-------|---------------------------|-------------------|-------------|
+| 100 | 99.5 | 99.5 | 99.6 | — |
+| 400 | 397.9 | 397.8 | 397.8 | — |
+| 800 | 795.4 | 795.5 | 795.6 | — |
+| 1200 | 1138.5 | **1037.9** | 800.7 (b12) | **+237** |
+| 1400 | 1089.2 | **987.1** | 883.5 (b12) | **+104** |
+| 1600 | 1167.6 | 712.1 | 750.6 (b12) | -38 |
+| 1800 | 1281.1 | **892.3** | 752.5 (b10) | **+140** |
+| 2000 | 1269.2 | 874.2 | 876.9 (b12) | -3 |
+
+**Hypothesis confirmed.** Reducing PRICE_PER_EXCESS_MS from 10 to 2 substantially improved the over-shedding at 1200 RPS (+237 goodput vs b12) and achieved the best-ever Rajomon result at 1800 RPS (892.3). The gentler price escalation allows the system to find partial-shedding equilibria rather than oscillating.
+
+**Rajomon vs adctl gap:** At 1200-1400 RPS, Rajomon now achieves ~91% of adctl's goodput. At 1800-2000 RPS, it achieves ~69-70% of adctl. The gap at 1600 RPS (61%) remains the weakest point.
+
+**Remaining weakness at 1600 RPS:** Rajomon drops to 712.1 at 1600 (61% of adctl's 1167.6). This is the transition zone where the system crosses from "partially loaded" to "overloaded." The early return breakdown shows aggressive shedding at both frontend and reservation services, suggesting the cascading rejection problem (rejections at multiple service layers) is still the main drag.
+
+**Decision:** Keep. This is the best overall Rajomon configuration. Proceed to iteration 13 for one final attempt to close the 1600 RPS gap.
+
+## Iteration 13: Full price propagation for faster client-side adaptation (experiment basalt_14)
+
+**Status:** Pending
+
+### Change
+1. `PRICE_PROPAGATION_PROB`: 0.2 → 1.0 (every response carries price information)
+2. Keep `QUEUE_THRESHOLD_US` at 5000, `PRICE_PER_EXCESS_MS` at 2, `PRICE_DECREASE_STEP` at 1
+
+### Hypothesis
+With `PRICE_PROPAGATION_PROB=0.2`, clients only learn about price changes from 1 in 5 responses. This creates a lag: when prices rise due to queue buildup, 80% of responses still carry stale (low) price info. Clients continue sending requests at the old rate, causing the server to reject them via per-hop token checks deep in the call graph — wasting the CPU used to process them through upstream services.
+
+With 100% propagation, clients learn about price increases immediately. The client-side token pool (replenish=10000, max=100000) becomes a more effective gateway: at high prices, the pool depletes faster and clients self-throttle BEFORE sending requests into the call graph. This shifts rejection from expensive deep-in-call-graph token failures to cheap client-side pool exhaustion.
+
+At 1600 RPS (the weakest point), this should help because:
+- Faster price signal → clients self-limit sooner → fewer requests enter the call graph → less CPU wasted on doomed requests → more CPU available for requests that will succeed
+- The improvement should be most visible at the transition zone (1400-1800) where the system oscillates between capacity and overload
+
+### Expected outcomes if hypothesis is correct:
+1. 1600 RPS: >800 goodput (up from 712)
+2. 1200-1400 RPS: maintained or improved (faster price updates help fine-grained shedding)
+3. 1800-2000 RPS: maintained or improved
+4. Low-load: unchanged (prices stay near 0)
+
+### Experiment design
+Full RPS sweep.
+
 ---
 
 ## Assessment (pre-bug-fix, now invalidated)
