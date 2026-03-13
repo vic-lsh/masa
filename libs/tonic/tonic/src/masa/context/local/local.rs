@@ -10,6 +10,7 @@ use std::{
 
 use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
 use super::super::estimator::ParentToChildId;
+use super::super::rajomon::RajomonHandler;
 use super::super::{
     resolve_method_name_from_http, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks,
     ServerHooks,
@@ -95,6 +96,7 @@ pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyE
 
     q_lat_tracker: QueueLatencyTracker,
     early_return: EarlyReturnHandler,
+    rajomon: RajomonHandler,
     child_end_times: Mutex<Vec<(ParentToChildId, Instant)>>,
     poll_compute_us: AtomicU64,
     poll_start: Mutex<Option<Instant>>,
@@ -109,18 +111,23 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         req: &http::Request<B>,
         server_ctx: Arc<ServerContext<E>>,
     ) -> Self {
+        let mut ctx = read_context(req);
         let resolved_method = resolve_method_name_from_http(method, req);
         let resolved_method_id = MethodRegistry::global()
             .get_or_register_method(resolved_method.service(), resolved_method.method());
+
+        let mut rajomon = RajomonHandler::new(resolved_method.clone());
+        rajomon.check_inbound(&mut ctx);
 
         Self {
             method,
             resolved_method: resolved_method.clone(),
             resolved_method_id,
-            ctx: read_context(req),
+            ctx,
             server: server_ctx,
             q_lat_tracker: QueueLatencyTracker::new(),
             early_return: EarlyReturnHandler::new(resolved_method),
+            rajomon,
             child_end_times: Mutex::new(Vec::new()),
             poll_compute_us: AtomicU64::new(0),
             poll_start: Mutex::new(None),
@@ -129,6 +136,10 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
+        if self.rajomon.should_drop() {
+            return Err(Err(self.rajomon.issue_error(None)));
+        }
+
         if self.early_return.check(&self.ctx) {
             return Err(Err(self.early_return.issue_error()));
         }
@@ -136,6 +147,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         let remaining = self.ctx.deadline().saturating_sub(time_now());
         tokio::task::reprioritize(masa_core::PriorityHint::new(remaining));
 
+        self.rajomon.track_queue_delay();
         self.q_lat_tracker.track_poll();
         *self.poll_start.lock().unwrap() = Some(Instant::now());
         Ok(())
@@ -152,6 +164,9 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         }
 
         if let Poll::Pending = poll {
+            if self.rajomon.should_drop() {
+                return Err(Err(self.rajomon.issue_error(None)));
+            }
             if self.early_return.check(&self.ctx) {
                 return Err(Err(self.early_return.issue_error()));
             }
@@ -166,6 +181,10 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         request: &mut Request<T>,
         child_ctx: &mut ChildContext<E>,
     ) -> Result<(), Status> {
+        if self.rajomon.should_drop() {
+            return Err(self.rajomon.issue_error(None));
+        }
+
         if self.early_return.check(&self.ctx) {
             return Err(self.early_return.issue_error());
         }
@@ -177,6 +196,9 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         // parent methods (i.e. endpoints on this server)
         let resolved_child_method =
             super::super::resolve_method_name_from_request(child_method, request);
+
+        self.rajomon
+            .check_outbound(&resolved_child_method, &self.ctx)?;
 
         let resolved_child_id = MethodRegistry::global().get_or_register_method(
             resolved_child_method.service(),
@@ -299,6 +321,13 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         // Update EarlyReturnHandler with the actual child method name if possible
         if let Some(child_method) = &child_ctx.child_method {
+            if let Ok(resp) = response {
+                self.rajomon
+                    .update_cache_from_response(child_method, resp.metadata());
+            } else if let Err(status) = response {
+                self.rajomon
+                    .update_cache_from_response(child_method, status.metadata());
+            }
             self.early_return.set_last_child(child_method.clone());
         }
 
@@ -332,6 +361,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
     }
 
     fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
+        self.rajomon.finalize_queue_delay();
         if !is_early_return_response(result) {
             self.track_latencies();
         }
@@ -364,6 +394,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         self.q_lat_tracker
             .inject_context_metadata(&self.ctx, result);
+        self.rajomon.inject_price_to_response(result);
     }
 }
 

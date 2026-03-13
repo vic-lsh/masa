@@ -2,6 +2,7 @@
 Main experiment orchestration logic.
 """
 
+import collections
 import logging
 import os
 import shutil
@@ -100,8 +101,6 @@ class Experiment:
         if not self.dry_run:
             # Prepare directories and backup old configs
             self._prepare_experiment()
-            # Copy configs from input to working directories
-            self._copy_configs()
 
         # Run experiment iterations
         self._run_iterations()
@@ -170,13 +169,6 @@ class Experiment:
 
         logger.info(f"Backed up old configs to {backup_dir}")
 
-    def _copy_configs(self) -> None:
-        """Copy configuration files from input to working directories."""
-        logger.info("Copying configuration files")
-
-        # Note: gen_config.json and app config files are no longer copied to working directories.
-        # They are passed directly to Docker build via GEN_CONFIG_PATH.
-
     def _run_iterations(self) -> None:
         """Run all experiment iterations."""
         repeats = self.config.get_repeats()
@@ -234,10 +226,15 @@ class Experiment:
             return
 
         # Include nested logs (e.g., MSSIM stores orchestrator.log under per-RPS subdirectories)
-        log_files = sorted(output_dir.rglob("*.log"))
+        log_files = list(output_dir.rglob("*.log"))
         if not log_files:
             logger.warning(f"No log files found in {output_dir}")
             return
+
+        # Sort logs by modification time in reverse order (newest first)
+        log_files.sort(
+            key=lambda p: os.path.getmtime(p) if p.exists() else 0, reverse=True
+        )
 
         # Avoid dumping huge numbers of logs on failure
         max_logs = 10
@@ -245,14 +242,14 @@ class Experiment:
             log_files = log_files[:max_logs]
 
         logger.error("=" * 80)
-        logger.error(f"Tail of relevant logs from {output_dir}:")
+        logger.error(f"Tail of relevant logs from {output_dir} (newest first):")
         logger.error("=" * 80)
 
         for log_file in log_files:
             try:
                 with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
-                    lines = f.readlines()
-                    tail_lines = lines[-num_lines:] if len(lines) > num_lines else lines
+                    # Use deque to efficiently read only the last N lines without loading entire file into memory
+                    tail_lines = collections.deque(f, maxlen=num_lines)
 
                     logger.error("")
                     logger.error(f"--- {log_file} (last {len(tail_lines)} lines) ---")

@@ -1,3 +1,4 @@
+pub mod ewma;
 pub mod histogram;
 pub mod mean_var;
 pub mod rms;
@@ -34,6 +35,7 @@ pub trait LatencyEstimator: Send + Sync {
     }
 }
 
+pub use ewma::LatencyEwma;
 pub use histogram::LatencyDistribution;
 pub use mean_var::LatencyMeanVar;
 pub use rms::LatencyRms;

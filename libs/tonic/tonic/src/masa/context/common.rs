@@ -57,6 +57,11 @@ impl EarlyReturnHandler {
             return true;
         }
 
+        let deadline = ctx.deadline();
+        if deadline == 0 {
+            return false;
+        }
+
         let now = time_now();
         let should_early_return = now >= e2e_deadline;
 

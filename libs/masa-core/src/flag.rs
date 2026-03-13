@@ -8,6 +8,9 @@ pub const FIFO: bool = cfg!(feature = "fifo");
 
 pub const EARLY_RETURN: bool = cfg!(feature = "early");
 
+#[allow(dead_code)]
+pub const RAJOMON: bool = cfg!(feature = "rajomon");
+
 #[cfg(any(
     all(feature = "fifo", feature = "prio_global"),
     all(feature = "fifo", feature = "prio_oldest"),
@@ -17,3 +20,6 @@ pub const EARLY_RETURN: bool = cfg!(feature = "early");
     all(feature = "prio_oldest", feature = "prio_local"),
 ))]
 compile_error!("Enable at most one policy feature: fifo | prio_global | prio_oldest | prio_local");
+
+#[cfg(all(feature = "early", feature = "rajomon"))]
+compile_error!("Enable at most one early-rejection feature: early | rajomon");

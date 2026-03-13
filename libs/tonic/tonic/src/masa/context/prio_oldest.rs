@@ -4,6 +4,7 @@ use std::task::Poll;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::common::{EarlyReturnHandler, QueueLatencyTracker};
+use super::rajomon::RajomonHandler;
 use super::{resolve_method_name_from_http, resolve_method_name_from_request, MasaRequestExt};
 use crate::Response;
 use masa_core::{Context, ContextBuilder};
@@ -53,6 +54,7 @@ pub struct ParentContext {
     early_return: EarlyReturnHandler,
     #[cfg(feature = "adctl")]
     adctl: AdctlRequestState<DefaultLatencyEstimator>,
+    rajomon: RajomonHandler,
 }
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
@@ -61,26 +63,35 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         req: &http::Request<B>,
         _server_ctx: Arc<ServerContext>,
     ) -> Self {
+        let mut ctx = read_context(req);
         let resolved_method = resolve_method_name_from_http(method, req);
+        let mut rajomon = RajomonHandler::new(resolved_method.clone());
+        rajomon.check_inbound(&mut ctx);
 
         #[cfg(feature = "adctl")]
         let resolved_method_id = MethodRegistry::global()
             .get_or_register_method(resolved_method.service(), resolved_method.method());
 
         Self {
-            ctx: read_context(req),
+            ctx,
             q_lat_tracker: QueueLatencyTracker::new(),
             early_return: EarlyReturnHandler::new(resolved_method),
             #[cfg(feature = "adctl")]
             adctl: AdctlRequestState::new(resolved_method_id, _server_ctx.adctl.clone()),
+            rajomon,
         }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
+        if self.rajomon.should_drop() {
+            return Err(Err(self.rajomon.issue_error(None)));
+        }
+
         if self.early_return.check(&self.ctx) {
             return Err(Err(self.early_return.issue_error()));
         }
 
+        self.rajomon.track_queue_delay();
         self.q_lat_tracker.track_poll();
         #[cfg(feature = "adctl")]
         self.adctl.start_compute_tracking();
@@ -93,11 +104,17 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         request: &mut Request<T>,
         child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
+        if self.rajomon.should_drop() {
+            return Err(self.rajomon.issue_error(None));
+        }
+
         if self.early_return.check(&self.ctx) {
             return Err(self.early_return.issue_error());
         }
 
         let child_method_name = resolve_method_name_from_request(child_method, request);
+        self.rajomon.check_outbound(&child_method_name, &self.ctx)?;
+
         child_ctx.set_method_name(child_method_name.clone());
 
         #[cfg(feature = "adctl")]
@@ -189,6 +206,13 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         }
 
         if let Some(child) = child_ctx.child_method_name {
+            if let Ok(resp) = response {
+                self.rajomon
+                    .update_cache_from_response(&child, resp.metadata());
+            } else if let Err(status) = response {
+                self.rajomon
+                    .update_cache_from_response(&child, status.metadata());
+            }
             self.early_return.set_last_child(child);
         }
         Ok(())
@@ -203,6 +227,9 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
         match poll {
             Poll::Pending => {
+                if self.rajomon.should_drop() {
+                    return Err(Err(self.rajomon.issue_error(None)));
+                }
                 if self.early_return.check(&self.ctx) {
                     return Err(Err(self.early_return.issue_error()));
                 }
@@ -223,8 +250,10 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             self.adctl.inject_response_meta(&self.ctx, result);
         }
 
+        self.rajomon.finalize_queue_delay();
         self.q_lat_tracker
             .inject_context_metadata(&self.ctx, result);
+        self.rajomon.inject_price_to_response(result);
     }
 }
 

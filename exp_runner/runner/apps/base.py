@@ -56,6 +56,7 @@ class AppBuilder(ABC):
         no_cache: bool = False,
         gen_config_path: Optional[Path] = None,
         dry_run: bool = False,
+        build_logs_dir: Optional[Path] = None,
         executor: Optional[CommandExecutor] = None,
     ) -> Optional[list[list[str]]]:
         """
