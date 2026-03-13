@@ -17,7 +17,7 @@ use std::time::Duration;
 #[cfg(feature = "rajomon")]
 const QUEUE_THRESHOLD_US: u64 = 5000;
 #[cfg(feature = "rajomon")]
-const PRICE_PER_EXCESS_MS: u64 = 10;
+const PRICE_PER_EXCESS_MS: u64 = 2;
 #[cfg(feature = "rajomon")]
 const PRICE_DECREASE_STEP: u64 = 1;
 #[cfg(feature = "rajomon")]
@@ -553,9 +553,9 @@ mod tests {
         state.update_prices();
 
         let price = state.local_prices.get(&method).map(|v| *v).unwrap_or(1);
-        // EWMA = (30000 + 0) / 4 = 7500, excess = 2500, increment = (2500/1000+1)*10 = 30
-        // new_price = 1 (default) + 30 = 31
-        assert_eq!(price, 31);
+        // EWMA = (30000 + 0) / 4 = 7500, excess = 2500, increment = (2500/1000+1)*2 = 6
+        // new_price = 1 (default) + 6 = 7
+        assert_eq!(price, 7);
     }
 
     #[cfg(feature = "rajomon")]
