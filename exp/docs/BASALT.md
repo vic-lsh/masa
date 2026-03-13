@@ -254,6 +254,45 @@ Same config as basalt_1 (full RPS sweep). Focus analysis on 1600-2000 RPS behavi
 
 **Decision:** Revert the price changes (marginal benefit at 1600 doesn't justify diverging from defaults). Keep only the token budget fix from iteration 2 as the best Rajomon configuration. The collapse is a structural limitation, not a tuning problem.
 
+## Iteration 4: Tight client pool + fast EWMA as gateway-level rate limiter (experiment basalt_5)
+
+**Status:** Pending
+
+### Change
+On top of the 100..=10000 token budget from iteration 2, change five parameters targeting the feedback loop speed and client-side admission:
+1. EWMA α: 1/4 → 1/2 (line 106: `(window_avg + old_ewma) / 2` instead of `(window_avg + 3 * old_ewma) / 4`)
+2. Tick interval: 100ms → 50ms (line 187: `Duration::from_millis(50)`)
+3. `replenish_amount`: 10000 → 1000 (line 455)
+4. `max_tokens`: 100000 → 5000 (line 456)
+5. `PRICE_PROPAGATION_PROB`: 0.2 → 1.0 (line 24)
+
+### Hypothesis
+Previous iterations changed how fast prices *increase per tick* (basalt_4: 5x PRICE_PER_EXCESS_MS) and *token capacity* (basalt_3: 100x range), but never changed:
+- How fast the EWMA *converges to the true queue latency* (α=1/4, 100ms ticks → ~400ms convergence)
+- How aggressively the *client-side pool* throttles at the gateway
+
+The client pool with replenish=10000 sustains 1M tokens/sec. Even at price=10000, it admits 100 req/sec/method — it is **never the binding constraint**. All admission happens via per-request token checks deep in the call graph, AFTER requests have entered and consumed CPU.
+
+Making the client pool the primary "fast fuse":
+- At price=1 (no overload): replenish=1000 per 10ms → 100K tokens/sec per method. No bottleneck.
+- At price=500 (moderate overload): 1000/500 = 2 req/10ms = 200 req/sec per method. Starts shedding excess.
+- At price=1000 (heavy overload): 1000/1000 = 1 req/10ms = 100 req/sec per method. Aggressive shedding.
+
+Combined with faster EWMA (α=1/2, 50ms ticks → ~100ms convergence) and 100% price propagation, the system should:
+1. Detect overload within 100ms (vs 400ms)
+2. Propagate prices to clients immediately (vs 20% chance)
+3. Shed excess traffic AT THE GATEWAY (client pool becomes binding) before requests enter the call graph
+
+This is fundamentally different from basalt_2/4 which tuned server-side price magnitude. Here we're making the client pool the active admission controller, rejecting requests before they waste CPU.
+
+### Expected outcomes if hypothesis is correct:
+1. The catastrophic collapse at 1800–2000 RPS is softened — Rajomon achieves >500 goodput (vs current ~180)
+2. Low-load performance is preserved (prices stay at 1, client pool is not binding)
+3. There may be oscillation (admit → prices rise → reject → prices drop → admit) but with shorter cycle time than cascade failure
+
+### Experiment design
+Same config as basalt_1 (full RPS sweep [100–2000]). Full sweep needed to verify low-load isn't harmed and to see if the collapse point shifts.
+
 ## Assessment
 
 ### Summary of all iterations
