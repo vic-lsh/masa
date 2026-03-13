@@ -643,6 +643,56 @@ The faster price decrease (10 vs 1) prevents a scenario where a brief load spike
 ### Experiment design
 Full RPS sweep. Need to verify both that low-load false rejections are eliminated and that high-load shedding still works.
 
+### Actual Outcomes (basalt_11)
+
+**Status:** Mixed — low-load fixed, high-load regressed
+
+#### Goodput Comparison (basalt_11)
+
+| RPS | adctl | Rajomon (b11, 10ms) | Rajomon (b10, 1ms) | Best Rajomon |
+|-----|-------|--------------------|--------------------|-------------|
+| 100 | 99.5 | 99.6 | 99.5 | b11 |
+| 400 | 397.8 | **397.8** | 363.9 | **b11** |
+| 800 | 795.4 | **795.6** | 609.1 | **b11** |
+| 1200 | 1186.3 | **1148.8** | 677.1 | **b11** |
+| 1400 | 1267.0 | 829.3 | 663.0 | **b11** |
+| 1600 | 1167.8 | 718.5 | 719.2 | tie |
+| 1800 | 1543.9 | **368.5** | **752.5** | **b10** |
+| 2000 | 1668.9 | 736.0 | 784.7 | **b10** |
+
+**Hypothesis partially confirmed.** Raising the threshold to 10ms completely eliminated false rejections at 400-800 RPS (now matching adctl perfectly) and dramatically improved 1200 RPS (1149 vs 677). However, high-load performance regressed badly — 1800 RPS dropped from 752 to 368.
+
+**Root cause:** The 10ms threshold delays price activation too long. By the time queue latencies cross 10ms, the system is deeply overloaded. The delayed reaction creates a more chaotic feedback loop: massive queue buildup → sudden price spike → reject everything → queues drain → prices crash → admit everything → repeat. The faster PRICE_DECREASE_STEP=10 amplifies this oscillation.
+
+**The crossover point is around 1600 RPS** — below that, 10ms is better; above, 1ms is better. The optimal threshold is somewhere between 1ms and 10ms.
+
+**Decision:** Revert. Try 5ms threshold with default PRICE_DECREASE_STEP=1 (slower recovery = less oscillation).
+
+## Iteration 11: Moderate threshold (5ms) with slow price recovery (experiment basalt_12)
+
+**Status:** Pending
+
+### Change
+1. `QUEUE_THRESHOLD_US`: 10000 → 5000 (5ms — midpoint between 1ms and 10ms)
+2. `PRICE_DECREASE_STEP`: 10 → 1 (back to default — slow recovery prevents oscillation)
+
+### Hypothesis
+basalt_10 (1ms threshold) and basalt_11 (10ms threshold) bracket the optimal operating point:
+- 1ms: over-rejects at moderate load (400-1200), but handles overload (1800) with 752 goodput
+- 10ms: perfect at moderate load, but overload detection is too late (1800: 368 goodput)
+
+5ms should split the difference: normal queuing at 400-800 RPS stays under 5ms (no false rejections), while genuine congestion at 1400+ RPS crosses 5ms earlier than 10ms (faster shedding activation).
+
+Reverting PRICE_DECREASE_STEP to 1 (from 10) addresses the oscillation problem in basalt_11: when prices drop too fast, the system cycles between full admission and full rejection. Slow recovery (step=1) keeps prices elevated after a spike, maintaining steady-state partial shedding rather than oscillating.
+
+### Expected outcomes if hypothesis is correct:
+1. 400-800 RPS: ~99% goodput (matching adctl, no false rejections)
+2. 1200-1400 RPS: >90% goodput (better than basalt_10's 56-47%)
+3. 1800-2000 RPS: >700 goodput (matching or exceeding basalt_10's 752-785)
+
+### Experiment design
+Full RPS sweep.
+
 ---
 
 ## Assessment (pre-bug-fix, now invalidated)
