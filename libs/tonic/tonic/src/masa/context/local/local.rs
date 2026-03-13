@@ -1,29 +1,17 @@
 use crate::masa::MethodRegistry;
-use crate::{
-    masa::context::read_context, Code, CowGrpcMethod, GrpcMethod, Request, Response, Status,
-};
-use std::{
-    sync::{atomic::Ordering, Arc, Mutex},
-    task::Poll,
-    time::Instant,
-};
+use crate::{masa::context::read_context, GrpcMethod, Request, Response, Status};
+use std::sync::Arc;
+use std::task::Poll;
 
+use super::super::adctl_hooks::{
+    is_early_return_response, AdctlChildState, AdctlRequestState, AdctlServerState,
+};
 use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
-use super::super::estimator::ParentToChildId;
 use super::super::rajomon::RajomonHandler;
 use super::super::{
-    resolve_method_name_from_http, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks,
-    ServerHooks,
+    resolve_method_name_from_http, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks,
 };
-#[cfg(feature = "adctl")]
-use super::super::adctl;
-use super::LatencyMap;
-use super::super::latency_map::{spawn_method_stats_printer, spawn_stats_printer};
-use masa_core::{
-    time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint, ResponseMeta, EARLY_RETURN,
-};
-
-use std::sync::atomic::{AtomicU64, AtomicUsize};
+use masa_core::{time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint};
 
 use super::super::estimator::DefaultLatencyEstimator as LocalLatencyEstimator;
 
@@ -47,37 +35,13 @@ impl MasaHooks for LocalDeadlinePolicy {
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
 pub struct ServerContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
-    // for every method on this server, tracks the remaining duration of the method after an outgoing request has finished
-    est_after_child_latency: Arc<LatencyMap<E>>,
-    // tracks the actual child RPC call latencies
-    est_child_latency: Arc<LatencyMap<E>>,
-    // tracks compute time (poll duration) per method
-    est_compute_latency: Arc<LatencyMap<E>>,
-    print_counter: AtomicUsize,
-    #[cfg(feature = "adctl")]
-    admission_controller: Arc<adctl::AdmissionController>,
+    pub(super) adctl: Arc<AdctlServerState<E>>,
 }
 
 impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
     fn new(_service_name: &'static str) -> Self {
-        let est_after_child_latency = Arc::new(LatencyMap::new());
-        let est_child_latency = Arc::new(LatencyMap::new());
-        let est_compute_latency = Arc::new(LatencyMap::new());
-
-        spawn_stats_printer(est_after_child_latency.clone(), "Est Remaining Values");
-        spawn_stats_printer(est_child_latency.clone(), "Est Child Call Latencies");
-        spawn_method_stats_printer(est_compute_latency.clone(), "Est Compute Latencies");
-
-        #[cfg(feature = "adctl")]
-        let admission_controller = Arc::new(adctl::AdmissionController::new());
-
         Self {
-            est_after_child_latency,
-            est_child_latency,
-            est_compute_latency,
-            print_counter: AtomicUsize::new(0),
-            #[cfg(feature = "adctl")]
-            admission_controller,
+            adctl: Arc::new(AdctlServerState::new()),
         }
     }
 }
@@ -86,21 +50,11 @@ impl<E: LatencyEstimator + Default + 'static> ServerHooks for ServerContext<E> {
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
 pub struct ParentContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
-    method: GrpcMethod,
-    resolved_method_id: u64,
-    // Keep resolved_method for debugging/logging if needed, but remove if strict zero-overhead desired.
-    // Keeping it for now as EarlyReturnHandler uses it.
-    resolved_method: CowGrpcMethod,
     ctx: Context,
-    server: Arc<ServerContext<E>>,
-
     q_lat_tracker: QueueLatencyTracker,
     early_return: EarlyReturnHandler,
     rajomon: RajomonHandler,
-    child_end_times: Mutex<Vec<(ParentToChildId, Instant)>>,
-    poll_compute_us: AtomicU64,
-    poll_start: Mutex<Option<Instant>>,
-    max_child_downstream_util: Mutex<f32>,
+    adctl: AdctlRequestState<E>,
 }
 
 impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, ServerContext<E>>
@@ -120,18 +74,11 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         rajomon.check_inbound(&mut ctx);
 
         Self {
-            method,
-            resolved_method: resolved_method.clone(),
-            resolved_method_id,
             ctx,
-            server: server_ctx,
             q_lat_tracker: QueueLatencyTracker::new(),
             early_return: EarlyReturnHandler::new(resolved_method),
             rajomon,
-            child_end_times: Mutex::new(Vec::new()),
-            poll_compute_us: AtomicU64::new(0),
-            poll_start: Mutex::new(None),
-            max_child_downstream_util: Mutex::new(0.0),
+            adctl: AdctlRequestState::new(resolved_method_id, server_ctx.adctl.clone()),
         }
     }
 
@@ -149,7 +96,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
 
         self.rajomon.track_queue_delay();
         self.q_lat_tracker.track_poll();
-        *self.poll_start.lock().unwrap() = Some(Instant::now());
+        self.adctl.start_compute_tracking();
         Ok(())
     }
 
@@ -157,11 +104,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
-        if let Some(start) = self.poll_start.lock().unwrap().take() {
-            let elapsed_us = start.elapsed().as_micros() as u64;
-            self.poll_compute_us
-                .fetch_add(elapsed_us, Ordering::Relaxed);
-        }
+        self.adctl.stop_compute_tracking();
 
         if let Poll::Pending = poll {
             if self.rajomon.should_drop() {
@@ -189,90 +132,27 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             return Err(self.early_return.issue_error());
         }
 
-        // NOTE: if we don't have enough data to estimate the duration of the parent or child
-        // request, we set child deadline = parent deadline
-        // NOTE: we need to include the parent method in the key, because the duration until the
-        // end of the parent request after this child request completes will vary for different
-        // parent methods (i.e. endpoints on this server)
         let resolved_child_method =
             super::super::resolve_method_name_from_request(child_method, request);
 
         self.rajomon
             .check_outbound(&resolved_child_method, &self.ctx)?;
 
-        let resolved_child_id = MethodRegistry::global().get_or_register_method(
-            resolved_child_method.service(),
-            resolved_child_method.method(),
-        );
+        let prepare_result = self
+            .adctl
+            .prepare_before_child_rpc(&self.ctx, &resolved_child_method, &mut child_ctx.adctl)
+            .map_err(|_| self.early_return.issue_error())?;
 
-        let parent_to_child_id = ParentToChildId {
-            parent_id: self.resolved_method_id,
-            child_id: resolved_child_id,
-        };
-        let key = parent_to_child_id.to_key();
-
-        // Setup child context to track client runtime
-        child_ctx.setup(
-            parent_to_child_id.clone(),
-            resolved_child_method,
-            self.server.clone(),
-        );
-
-        let time_left = self.ctx.deadline().saturating_sub(time_now());
-
-        let est_remaining = self
-            .server
-            .est_after_child_latency
-            .get_estimate(key)
-            .unwrap_or(0)
-            .min(time_left);
-
-        // Mean-only for early-return check: avoids false-positive sheds from σ over-estimation.
-        let est_remaining_mean = self
-            .server
-            .est_after_child_latency
-            .get_mean_estimate(key)
-            .unwrap_or(0)
-            .min(time_left);
-
-        // Floor estimate for ER threshold: decouples the threshold from mean inflation.
-        // During load spikes, the EMA mean inflates (slow α_up=0.05), but the floor
-        // deflates quickly (α_down=0.3) while inflating very slowly (α_up=0.01).
-        // This prevents the feedback loop where mean inflation → tighter ER threshold
-        // → more ERs → less useful work being done.
-        let est_remaining_floor = self
-            .server
-            .est_after_child_latency
-            .get_mean_floor_estimate(key)
-            .unwrap_or(0)
-            .min(time_left);
-
-        let deadline = self.ctx.deadline().saturating_sub(est_remaining);
-        // Use floor estimate for ER threshold: the mean can inflate under load, causing
-        // over-aggressive shedding. The floor tracks the lower envelope and is resistant
-        // to transient spikes, avoiding wasteful sheds when work could still complete.
-        if self.admission_check(key, est_remaining_floor) {
-            return Err(self.early_return.issue_error());
-        }
-
+        let deadline = self
+            .ctx
+            .deadline()
+            .saturating_sub(prepare_result.est_remaining);
         // prio_hint = deadline (parent_deadline - est_remaining). Subtracting est_child caused
         // priority inversions under load: as est_child grew with queuing, newer requests got
         // tighter prio_hints than older ones computed with lower estimates, inverting FIFO order.
         // Using deadline alone gives FIFO-like ordering (since all requests share the same e2e
         // SLO deadline), while preserving path-aware early returns from the tightened deadline.
         let prio_hint = deadline;
-
-        if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
-            let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
-            log::info!(
-                "LAT_EST: p=>c: {}, est_child: {} (not used for prio_hint), est_rem: {}, est_rem_mean: {}, est_rem_floor: {}",
-                parent_to_child_id,
-                est_child,
-                est_remaining,
-                est_remaining_mean,
-                est_remaining_floor,
-            );
-        }
 
         let child_recv_ctx = ContextBuilder::from(&self.ctx)
             .deadline(deadline)
@@ -291,36 +171,11 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         child_ctx: ChildContext<E>,
     ) -> Result<(), Status> {
         self.q_lat_tracker.track_child_response(response);
-        // Finalize child context to track client runtime if response is not early return
-        child_ctx.finalize(response);
+        child_ctx.adctl.finalize(response);
+        self.adctl
+            .after_child_rpc(&self.ctx, response, &child_ctx.adctl);
 
-        // Extract ResponseMeta from child response
-        if let Ok(resp) = &response {
-            use super::super::MasaResponseExt;
-            if let Some(child_ctx_resp) = resp.get_masa_context() {
-                if let Some(meta) = child_ctx_resp.response_meta() {
-                    // Track child's compute time
-                    if let Some(parent_to_child_id) = &child_ctx.parent_to_child_id {
-                        self.server
-                            .est_compute_latency
-                            .track(parent_to_child_id.to_key(), meta.compute_time_us);
-                    }
-                    // Track max downstream utilization
-                    let mut max_util = self.max_child_downstream_util.lock().unwrap();
-                    if meta.max_downstream_util > *max_util {
-                        *max_util = meta.max_downstream_util;
-                    }
-                    // Update bottleneck tracker for adctl
-                    #[cfg(feature = "adctl")]
-                    self.server
-                        .admission_controller
-                        .update_bottleneck(self.ctx.api(), meta.max_downstream_util);
-                }
-            }
-        }
-
-        // Update EarlyReturnHandler with the actual child method name if possible
-        if let Some(child_method) = &child_ctx.child_method {
+        if let Some(child_method) = &child_ctx.adctl.child_method {
             if let Ok(resp) = response {
                 self.rajomon
                     .update_cache_from_response(child_method, resp.metadata());
@@ -332,30 +187,9 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         }
 
         if let Err(status) = response {
-            // When the child early-returns, track 0 into est_after_child_latency to create
-            // negative feedback. Without this, ERs prevent all tracking updates, freezing the
-            // estimate at a high value and creating a self-reinforcing failure loop:
-            //   high estimate → tight deadline → ERs → no updates → estimate stays high → ...
-            // With this: more ERs → more 0 observations → estimate decreases → looser deadlines
-            // → fewer ERs. The equilibrium stabilizes at a lower estimate.
-            if status.code() == Code::DeadlineExceeded {
-                if let Some(parent_to_child_id) = &child_ctx.parent_to_child_id {
-                    self.server
-                        .est_after_child_latency
-                        .track(parent_to_child_id.to_key(), 0);
-                }
-            }
             // NOTE(vic): could we avoid cloning here?
             return Err(status.clone());
         }
-
-        self.child_end_times.lock().unwrap().push((
-            child_ctx
-                .parent_to_child_id
-                .clone()
-                .expect("childctx method must be set"),
-            Instant::now(),
-        ));
 
         Ok(())
     }
@@ -363,34 +197,9 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
     fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
         self.rajomon.finalize_queue_delay();
         if !is_early_return_response(result) {
-            self.track_latencies();
+            self.adctl.track_latencies();
         }
-        self.record_admission_outcome(result);
-
-        // Inject ResponseMeta with compute time and utilization
-        let compute_time_us = self.poll_compute_us.load(Ordering::Relaxed);
-        let utilization = tokio::task::current_utilization() as f32;
-        let max_child_util = *self.max_child_downstream_util.lock().unwrap();
-        let max_downstream_util = utilization.max(max_child_util);
-
-        let mut ctx = self.ctx.clone();
-        ctx.set_response_meta(ResponseMeta {
-            compute_time_us,
-            utilization,
-            max_downstream_util,
-        });
-
-        // Inject the updated context with response metadata
-        match result {
-            Ok(resp) => {
-                use super::super::MasaResponseExt;
-                resp.set_masa_context(&ctx);
-            }
-            Err(status) => {
-                use super::super::MasaStatusExt;
-                status.set_masa_context(&ctx);
-            }
-        }
+        self.adctl.inject_response_meta(&self.ctx, result);
 
         self.q_lat_tracker
             .inject_context_metadata(&self.ctx, result);
@@ -398,136 +207,17 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
     }
 }
 
-impl<E: LatencyEstimator + Default + 'static> ParentContext<E> {
-    fn track_latencies(&self) {
-        let parent_end = Instant::now();
-
-        // Track remaining time after child RPC completes
-        let mut child_end_times = self.child_end_times.lock().unwrap();
-        let child_end_times = std::mem::replace(&mut *child_end_times, Vec::new());
-
-        for (parent_to_child_id, child_end) in child_end_times {
-            self.server.est_after_child_latency.track(
-                parent_to_child_id.to_key(),
-                parent_end.duration_since(child_end).as_micros() as u64,
-            );
-        }
-
-        // Track compute time (accumulated poll duration) per method
-        self.server.est_compute_latency.track(
-            self.resolved_method_id,
-            self.poll_compute_us.load(Ordering::Relaxed),
-        );
-    }
-
-    /// Returns true if the request should be shed (early-returned).
-    ///
-    /// With `adctl` enabled: Layer 1 checks compute-time feasibility at every hop.
-    /// Layer 2 (ingress only, hop_count==0) applies efficiency-based admission.
-    /// Falls through to floor-based check when adctl is disabled.
-    #[allow(unused_variables)]
-    fn admission_check(&self, key: u64, est_remaining_floor: u64) -> bool {
-        #[cfg(feature = "adctl")]
-        if EARLY_RETURN {
-            let time_left = self.ctx.e2e_deadline().saturating_sub(time_now());
-
-            // Layer 1: compute-time feasibility (every hop)
-            let est_compute_rem = self
-                .server
-                .est_compute_latency
-                .get_estimate(self.resolved_method_id)
-                .unwrap_or(0);
-            if est_compute_rem > time_left {
-                return true; // infeasible → shed
-            }
-
-            // Layer 2: efficiency-based admission (ingress only)
-            if self.ctx.hop_count() == 0 {
-                let est_total_mean = self
-                    .server
-                    .est_after_child_latency
-                    .get_mean_estimate(key)
-                    .unwrap_or(0);
-                // Use estimated child latency (total downstream time) as cost,
-                // not local compute. At the ingress, est_child captures the full
-                // downstream cost: ~110ms for Search, ~20ms for Reservation.
-                let est_child = self
-                    .server
-                    .est_child_latency
-                    .get_estimate(key)
-                    .unwrap_or(est_compute_rem);
-                if !self.server.admission_controller.should_admit(
-                    self.ctx.api(),
-                    time_left,
-                    est_child,
-                    est_total_mean,
-                ) {
-                    return true;
-                }
-            }
-        }
-        // Default: floor estimate check (also used when adctl disabled).
-        EARLY_RETURN && time_now() > self.ctx.e2e_deadline().saturating_sub(est_remaining_floor)
-    }
-
-    /// Records admission outcome. No-op currently (adctl uses feedback controller).
-    #[allow(unused_variables)]
-    fn record_admission_outcome<Ret>(&self, _result: &Result<Response<Ret>, Status>) {}
-}
-
-fn is_early_return_response<T>(response: &Result<Response<T>, Status>) -> bool {
-    match response {
-        Ok(_) => false,
-        Err(status) => status.code() == Code::DeadlineExceeded,
-    }
-}
-
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
 pub struct ChildContext<E: LatencyEstimator + Default + 'static = LocalLatencyEstimator> {
-    start_time: Option<Instant>,
-    parent_to_child_id: Option<ParentToChildId>,
-    child_method: Option<CowGrpcMethod>,
-    server: Option<Arc<ServerContext<E>>>,
+    adctl: AdctlChildState<E>,
 }
 
 impl<E: LatencyEstimator + Default + 'static> ClientHooks for ChildContext<E> {
     fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
         Self {
-            start_time: None,
-            parent_to_child_id: None,
-            child_method: None,
-            server: None,
-        }
-    }
-}
-
-impl<E: LatencyEstimator + Default + 'static> ChildContext<E> {
-    fn setup(
-        &mut self,
-        parent_to_child_id: ParentToChildId,
-        child_method: CowGrpcMethod,
-        server: Arc<ServerContext<E>>,
-    ) {
-        self.start_time = Some(Instant::now());
-        self.parent_to_child_id = Some(parent_to_child_id);
-        self.child_method = Some(child_method);
-        self.server = Some(server);
-    }
-
-    fn finalize<T>(&self, response: &Result<Response<T>, Status>) {
-        if is_early_return_response(response) {
-            return;
-        }
-
-        if let (Some(start_time), Some(parent_to_child_id), Some(server)) =
-            (self.start_time, &self.parent_to_child_id, &self.server)
-        {
-            let client_runtime = Instant::now().duration_since(start_time).as_micros() as u64;
-            server
-                .est_child_latency
-                .track(parent_to_child_id.to_key(), client_runtime);
+            adctl: AdctlChildState::new(),
         }
     }
 }
@@ -540,7 +230,7 @@ mod tests {
     #[test]
     fn test_server_context_rms_integration() {
         let ctx = ServerContext::<LatencyRms>::new("test_service");
-        let method = ParentToChildId {
+        let method = super::super::super::estimator::ParentToChildId {
             parent_id: 1,
             child_id: 2,
         };
@@ -549,32 +239,32 @@ mod tests {
         // Inject an estimator with a short update interval (2) for testing.
         // By default, LatencyRms has a large update interval (512), which makes testing hard.
         {
-            ctx.est_child_latency.insert(key, LatencyRms::new(2));
+            ctx.adctl.est_child_latency.insert(key, LatencyRms::new(2));
         }
 
         // 1st track: sum_sq=100, count=1, since_update=1. No update yet.
-        ctx.est_child_latency.track(key, 10);
+        ctx.adctl.est_child_latency.track(key, 10);
 
         // Estimate uses cached RMS value (initially 0).
-        let est = ctx.est_child_latency.get_estimate(key);
+        let est = ctx.adctl.est_child_latency.get_estimate(key);
         assert_eq!(est, Some(0));
 
         // 2nd track: sum_sq=200, count=2, since_update=2. Update triggers.
         // RMS = sqrt( (10^2 + 10^2) / 2 ) = 10.
-        ctx.est_child_latency.track(key, 10);
+        ctx.adctl.est_child_latency.track(key, 10);
 
-        let est = ctx.est_child_latency.get_estimate(key);
+        let est = ctx.adctl.est_child_latency.get_estimate(key);
         assert_eq!(est, Some(10));
 
         // 3rd track: sum_sq=200+400=600, count=3, since_update=1. No update yet.
-        ctx.est_child_latency.track(key, 20);
-        let est = ctx.est_child_latency.get_estimate(key);
+        ctx.adctl.est_child_latency.track(key, 20);
+        let est = ctx.adctl.est_child_latency.get_estimate(key);
         assert_eq!(est, Some(10)); // Still 10
 
         // 4th track: sum_sq=600+400=1000, count=4, since_update=2. Update triggers.
         // RMS = sqrt( (100 + 100 + 400 + 400) / 4 ) = sqrt(250) ≈ 15.
-        ctx.est_child_latency.track(key, 20);
-        let est = ctx.est_child_latency.get_estimate(key);
+        ctx.adctl.est_child_latency.track(key, 20);
+        let est = ctx.adctl.est_child_latency.get_estimate(key);
         // integer_sqrt(250) is 15 (15*15=225, 16*16=256)
         assert_eq!(est, Some(15));
     }
@@ -681,8 +371,8 @@ mod tests {
             .unwrap();
 
         // Verify child context has ID and Server
-        assert!(child_ctx.parent_to_child_id.is_some());
-        assert!(child_ctx.server.is_some());
+        assert!(child_ctx.adctl.parent_to_child_id.is_some());
+        assert!(child_ctx.adctl.server.is_some());
 
         // Verify registry has IDs
         let registry = MethodRegistry::global();
@@ -690,11 +380,16 @@ mod tests {
         let child_id = registry.get_or_register_method("IntegrationService", "ChildMethod");
 
         assert_eq!(
-            child_ctx.parent_to_child_id.clone().unwrap().parent_id,
+            child_ctx
+                .adctl
+                .parent_to_child_id
+                .clone()
+                .unwrap()
+                .parent_id,
             parent_id
         );
         assert_eq!(
-            child_ctx.parent_to_child_id.clone().unwrap().child_id,
+            child_ctx.adctl.parent_to_child_id.clone().unwrap().child_id,
             child_id
         );
 
@@ -763,7 +458,7 @@ mod tests {
 
         // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline - 0 = e2e_deadline.
         // Since e2e_deadline is 100ms in the future, this should NOT shed.
-        let shed = parent_ctx.admission_check(0, 0);
+        let shed = parent_ctx.adctl.admission_check(&parent_ctx.ctx, 0, 0);
         assert!(!shed, "should admit when plenty of time remains");
     }
 }

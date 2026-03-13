@@ -4,10 +4,13 @@ use crate::metadata::{Ascii, MetadataValue};
 use crate::{body::BoxBody, CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
 mod common;
+#[cfg(any(feature = "adctl", feature = "prio_local"))]
 pub(crate) mod estimator;
 mod fifo;
 mod global;
+#[cfg(any(feature = "adctl", feature = "prio_local"))]
 pub(crate) mod latency_map;
+#[cfg(feature = "prio_local")]
 mod local;
 mod noop;
 mod prio_oldest;
@@ -16,7 +19,7 @@ mod rajomon;
 
 #[cfg(feature = "adctl")]
 pub(crate) mod adctl;
-#[cfg(feature = "adctl")]
+#[cfg(any(feature = "adctl", feature = "prio_local"))]
 pub(crate) mod adctl_hooks;
 
 #[cfg(all(feature = "adctl", not(feature = "early")))]
