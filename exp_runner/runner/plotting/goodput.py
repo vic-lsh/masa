@@ -1667,9 +1667,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
     # Add goodput timeline plots (per iteration, ALL api only)
     for i in range(repeats):
         output_dir = os.path.join(args.output_dir, str(i))
-        policy_data_by_rps = {
-            policy: results[i]["ALL"][policy] for policy in policies
-        }
+        policy_data_by_rps = {policy: results[i]["ALL"][policy] for policy in policies}
         future_specs.append(
             (
                 plot_goodput_timeline,
