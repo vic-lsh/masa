@@ -693,6 +693,59 @@ Reverting PRICE_DECREASE_STEP to 1 (from 10) addresses the oscillation problem i
 ### Experiment design
 Full RPS sweep.
 
+### Actual Outcomes (basalt_12)
+
+**Status:** Mixed — low-load fixed, high-load inconsistent
+
+#### Goodput Comparison across all threshold experiments
+
+| RPS | adctl | Rajomon 1ms (b10) | Rajomon 10ms (b11) | Rajomon 5ms (b12) | Best Rajomon |
+|-----|-------|-------------------|--------------------|--------------------|-------------|
+| 100 | 99.6 | 99.5 | 99.6 | 99.6 | tie |
+| 400 | 397.8 | 363.9 | 397.8 | 397.7 | 5ms/10ms |
+| 800 | 795.6 | 609.1 | 795.6 | 795.4 | 5ms/10ms |
+| 1200 | 1133.5 | 677.1 | **1148.8** | 800.7 | **10ms** |
+| 1400 | 1353.6 | 663.0 | 829.3 | **883.5** | **5ms** |
+| 1600 | 1113.8 | **719.2** | 718.5 | 613.4 | **1ms** |
+| 1800 | 1416.0 | **752.5** | 368.5 | 750.6 | **1ms** |
+| 2000 | 1405.3 | 784.7 | 736.0 | **876.9** | **5ms** |
+
+**Hypothesis partially confirmed.** 5ms threshold eliminates low-load false rejections (matching 10ms at 400-800 RPS) but doesn't consistently improve high-load behavior. No single threshold dominates — the best config changes at every RPS level.
+
+**Root cause:** The problem isn't the threshold alone — it's that `PRICE_PER_EXCESS_MS=10` causes prices to escalate too quickly once the threshold is crossed. At 1200 RPS with 5ms threshold, even moderate queue latency (8ms) causes prices to rise by 30/tick, reaching 300 after 1 second. With a 5-hop call graph, the accumulated cost is 1500 tokens — rejecting ~15% of requests unnecessarily. The cascading rejection across service layers compounds this: a request can be rejected at the frontend AND at downstream services independently.
+
+**Decision:** Keep 5ms threshold (best overall compromise), but reduce price sensitivity to address over-shedding.
+
+## Iteration 12: Low price sensitivity with 5ms threshold (experiment basalt_13)
+
+**Status:** Pending
+
+### Change
+1. `PRICE_PER_EXCESS_MS`: 10 → 2 (5x slower price escalation — prices need sustained high queue latency to reach rejection-level values)
+2. Keep `QUEUE_THRESHOLD_US` at 5000 (5ms)
+3. Keep `PRICE_DECREASE_STEP` at 1
+
+### Hypothesis
+The current `PRICE_PER_EXCESS_MS=10` causes prices to reach rejection-level values too quickly once queue latency exceeds the threshold. In a 5-hop call graph with token budget 100-10000:
+- At price=200 per hop: total cost = 1000 → rejects ~9% of requests (those with budget <1000)
+- At price=1000 per hop: total cost = 5000 → rejects ~49% of requests
+- At price=2000 per hop: total cost = 10000 → rejects ~100%
+
+With `PRICE_PER_EXCESS_MS=10` and 5ms threshold, at queue latency=15ms: excess=10ms, price increase=100/tick. After 10 ticks (1s), price=1000/hop → 50% rejection. This is too aggressive for moderate overload.
+
+With `PRICE_PER_EXCESS_MS=2`: same scenario yields price increase=20/tick, reaching 200 after 1s → only ~9% rejection. Prices would need to accumulate for ~5 seconds at sustained high queue latency to reach 50% rejection. This gives the system much more time to find a stable partial-shedding equilibrium rather than oscillating between over-admission and over-rejection.
+
+At severe overload (1800+ RPS) with queue latencies of 50-100ms+: excess=45-95ms, price increase=90-190/tick → still reaches rejection-level prices (1000+) within ~5-10 ticks (500ms-1s). Load shedding still activates, just with a longer ramp.
+
+### Expected outcomes if hypothesis is correct:
+1. 400-800 RPS: ~99.5% goodput (unchanged — prices stay near 0)
+2. 1200 RPS: >1000 goodput (reduced over-shedding, closer to adctl's 1133)
+3. 1400-1600 RPS: >800 goodput (gentler shedding curve)
+4. 1800-2000 RPS: ≥750 goodput (shedding still activates, possibly better due to more stable equilibrium)
+
+### Experiment design
+Full RPS sweep.
+
 ---
 
 ## Assessment (pre-bug-fix, now invalidated)
