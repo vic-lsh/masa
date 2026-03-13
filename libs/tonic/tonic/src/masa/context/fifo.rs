@@ -8,6 +8,15 @@ use super::{resolve_method_name_from_http, resolve_method_name_from_request, Mas
 use crate::Response;
 use masa_core::{Context, ContextBuilder};
 
+#[cfg(feature = "adctl")]
+use super::adctl_hooks::{is_early_return_response, AdctlChildState, AdctlRequestState, AdctlServerState};
+#[cfg(feature = "adctl")]
+use super::estimator::{DefaultLatencyEstimator, ParentToChildId};
+#[cfg(feature = "adctl")]
+use crate::masa::MethodRegistry;
+#[cfg(feature = "adctl")]
+use masa_core::time_now;
+
 #[derive(Debug)]
 /// FIFO policy with optional early return support.
 /// Requests are served in first-in-first-out order.
@@ -23,11 +32,17 @@ impl MasaHooks for Fifo {
 
 #[derive(Debug)]
 #[allow(unreachable_pub)]
-pub struct ServerContext {}
+pub struct ServerContext {
+    #[cfg(feature = "adctl")]
+    adctl: Arc<AdctlServerState<DefaultLatencyEstimator>>,
+}
 
 impl ServerHooks for ServerContext {
     fn new(_service_name: &'static str) -> Self {
-        Self {}
+        Self {
+            #[cfg(feature = "adctl")]
+            adctl: Arc::new(AdctlServerState::new()),
+        }
     }
 }
 
@@ -37,6 +52,8 @@ pub struct ParentContext {
     ctx: Context,
     q_lat_tracker: QueueLatencyTracker,
     early_return: EarlyReturnHandler,
+    #[cfg(feature = "adctl")]
+    adctl: AdctlRequestState<DefaultLatencyEstimator>,
 }
 
 /// Resolve the method name from Request metadata, checking for override header.
@@ -47,10 +64,18 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         req: &http::Request<B>,
         _server_ctx: Arc<ServerContext>,
     ) -> Self {
+        let resolved_method = resolve_method_name_from_http(method, req);
+
+        #[cfg(feature = "adctl")]
+        let resolved_method_id = MethodRegistry::global()
+            .get_or_register_method(resolved_method.service(), resolved_method.method());
+
         Self {
             ctx: read_context(req),
             q_lat_tracker: QueueLatencyTracker::new(),
-            early_return: EarlyReturnHandler::new(resolve_method_name_from_http(method, req)),
+            early_return: EarlyReturnHandler::new(resolved_method),
+            #[cfg(feature = "adctl")]
+            adctl: AdctlRequestState::new(resolved_method_id, _server_ctx.adctl.clone()),
         }
     }
 
@@ -60,6 +85,8 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         }
 
         self.q_lat_tracker.track_poll();
+        #[cfg(feature = "adctl")]
+        self.adctl.start_compute_tracking();
         Ok(())
     }
 
@@ -74,15 +101,77 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         }
 
         let child_method_name = resolve_method_name_from_request(child_method, request);
-        child_ctx.set_method_name(child_method_name);
+        child_ctx.set_method_name(child_method_name.clone());
+
+        #[cfg(feature = "adctl")]
+        {
+            let resolved_child_id = MethodRegistry::global()
+                .get_or_register_method(child_method_name.service(), child_method_name.method());
+            let parent_to_child_id = ParentToChildId {
+                parent_id: self.adctl.resolved_method_id,
+                child_id: resolved_child_id,
+            };
+            let key = parent_to_child_id.to_key();
+
+            child_ctx.adctl.setup(
+                parent_to_child_id.clone(),
+                child_method_name,
+                self.adctl.server.clone(),
+            );
+
+            let time_left = self.ctx.e2e_deadline().saturating_sub(time_now());
+
+            let est_remaining = self
+                .adctl
+                .server
+                .est_after_child_latency
+                .get_estimate(key)
+                .unwrap_or(0)
+                .min(time_left);
+
+            let est_remaining_mean = self
+                .adctl
+                .server
+                .est_after_child_latency
+                .get_mean_estimate(key)
+                .unwrap_or(0)
+                .min(time_left);
+
+            let est_remaining_floor = self
+                .adctl
+                .server
+                .est_after_child_latency
+                .get_mean_floor_estimate(key)
+                .unwrap_or(0)
+                .min(time_left);
+
+            if self.adctl.admission_check(&self.ctx, key, est_remaining_floor) {
+                return Err(self.early_return.issue_error());
+            }
+
+            self.adctl.log_estimates(
+                &parent_to_child_id,
+                key,
+                est_remaining,
+                est_remaining_mean,
+                est_remaining_floor,
+            );
+        }
 
         let deadline = self.ctx.deadline();
         let prio_hint = self.ctx.prio_hint();
 
-        let child_recv_ctx = ContextBuilder::from(&self.ctx)
+        #[allow(unused_mut)]
+        let mut builder = ContextBuilder::from(&self.ctx)
             .deadline(deadline)
-            .prio_hint(prio_hint)
-            .build();
+            .prio_hint(prio_hint);
+
+        #[cfg(feature = "adctl")]
+        {
+            builder = builder.hop_count(self.ctx.hop_count().saturating_add(1));
+        }
+
+        let child_recv_ctx = builder.build();
         request.set_masa_context(&child_recv_ctx);
 
         Ok(())
@@ -95,6 +184,13 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         child_ctx: ChildContext,
     ) -> Result<(), Status> {
         self.q_lat_tracker.track_child_response(response);
+
+        #[cfg(feature = "adctl")]
+        {
+            child_ctx.adctl.finalize(response);
+            self.adctl.after_child_rpc(&self.ctx, response, &child_ctx.adctl);
+        }
+
         if let Some(child) = child_ctx.child_method_name {
             self.early_return.set_last_child(child);
         }
@@ -105,6 +201,9 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
+        #[cfg(feature = "adctl")]
+        self.adctl.stop_compute_tracking();
+
         match poll {
             Poll::Pending => {
                 if self.early_return.check(&self.ctx) {
@@ -119,6 +218,14 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
     // expect frontend method, all other method are going send back their latency trace
     fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
+        #[cfg(feature = "adctl")]
+        {
+            if !is_early_return_response(result) {
+                self.adctl.track_latencies();
+            }
+            self.adctl.inject_response_meta(&self.ctx, result);
+        }
+
         self.q_lat_tracker
             .inject_context_metadata(&self.ctx, result);
     }
@@ -128,12 +235,16 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 #[allow(unreachable_pub)]
 pub struct ChildContext {
     pub child_method_name: Option<CowGrpcMethod>,
+    #[cfg(feature = "adctl")]
+    adctl: AdctlChildState<DefaultLatencyEstimator>,
 }
 
 impl ClientHooks for ChildContext {
     fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
         Self {
             child_method_name: None,
+            #[cfg(feature = "adctl")]
+            adctl: AdctlChildState::new(),
         }
     }
 }

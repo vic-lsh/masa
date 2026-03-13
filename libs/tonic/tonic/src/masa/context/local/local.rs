@@ -5,94 +5,26 @@ use crate::{
 use std::{
     sync::{atomic::Ordering, Arc, Mutex},
     task::Poll,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use super::super::common::{EarlyReturnHandler, QueueLatencyTracker};
+use super::super::estimator::ParentToChildId;
 use super::super::{
-    resolve_method_name_from_http, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks,
+    resolve_method_name_from_http, ClientHooks, MasaHooks, MasaRequestExt, ParentHooks,
+    ServerHooks,
 };
 #[cfg(feature = "adctl")]
-use super::adctl;
+use super::super::adctl;
 use super::LatencyMap;
+use super::super::latency_map::{spawn_method_stats_printer, spawn_stats_printer};
 use masa_core::{
     time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint, ResponseMeta, EARLY_RETURN,
 };
 
-#[cfg(feature = "est_hist")]
-use masa_core::LatencyDistribution as LatencyHistogram;
-
-#[cfg(feature = "est_mean_var")]
-use masa_core::LatencyMeanVar;
-
-#[cfg(any(
-    feature = "est_rms",
-    all(
-        not(feature = "est_rms"),
-        not(feature = "est_hist"),
-        not(feature = "est_mean_var")
-    )
-))]
-use masa_core::LatencyRms;
-
 use std::sync::atomic::{AtomicU64, AtomicUsize};
 
-#[cfg(all(feature = "est_rms", feature = "est_hist"))]
-compile_error!("Features 'est_rms' and 'est_hist' cannot be enabled simultaneously");
-
-#[cfg(all(feature = "est_rms", feature = "est_mean_var"))]
-compile_error!("Features 'est_rms' and 'est_mean_var' cannot be enabled simultaneously");
-
-#[cfg(all(feature = "est_hist", feature = "est_mean_var"))]
-compile_error!("Features 'est_hist' and 'est_mean_var' cannot be enabled simultaneously");
-
-#[cfg(any(feature = "est_rms", feature = "est_hist", feature = "est_mean_var"))]
-#[cfg(not(feature = "prio_local"))]
-compile_error!(
-    "Features 'est_rms', 'est_hist', or 'est_mean_var' require 'prio_local' to be enabled"
-);
-
-#[cfg(all(feature = "adctl", not(feature = "prio_local")))]
-compile_error!("Feature 'adctl' requires 'prio_local'");
-
-#[cfg(all(feature = "adctl", not(feature = "early")))]
-compile_error!("Feature 'adctl' requires 'early'");
-
-/// Type alias for the latency estimator used in the local deadline policy.
-#[cfg(feature = "est_hist")]
-pub(crate) type LocalLatencyEstimator = LatencyHistogram;
-
-#[cfg(feature = "est_mean_var")]
-pub(crate) type LocalLatencyEstimator = LatencyMeanVar;
-
-#[cfg(any(
-    feature = "est_rms",
-    all(
-        not(feature = "est_rms"),
-        not(feature = "est_hist"),
-        not(feature = "est_mean_var")
-    )
-))]
-pub(crate) type LocalLatencyEstimator = LatencyRms;
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub(crate) struct ParentToChildId {
-    pub parent_id: u64,
-    pub child_id: u64,
-}
-
-impl ParentToChildId {
-    pub(crate) fn to_key(&self) -> u64 {
-        // Simple combination of two 32-bit (effective) IDs into one 64-bit key
-        (self.parent_id << 32) | self.child_id
-    }
-}
-
-impl std::fmt::Display for ParentToChildId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}=>{}", self.parent_id, self.child_id)
-    }
-}
+use super::super::estimator::DefaultLatencyEstimator as LocalLatencyEstimator;
 
 #[derive(Debug)]
 /// This policy computes the deadline d of a child request as
@@ -108,88 +40,6 @@ impl MasaHooks for LocalDeadlinePolicy {
     type ServerContext = ServerContext<LocalLatencyEstimator>;
     type ChildContext = ChildContext<LocalLatencyEstimator>;
     type ParentContext = ParentContext<LocalLatencyEstimator>;
-}
-
-/// Spawns a background task to periodically print latency estimates
-fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
-    distributions: Arc<LatencyMap<E>>,
-    label: &'static str,
-) {
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        handle.spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(5));
-            loop {
-                interval.tick().await;
-
-                if distributions.is_empty() {
-                    continue;
-                }
-
-                let mut parts = Vec::new();
-                distributions.for_each(|key, distribution| {
-                    if distribution.can_estimate() {
-                        let estimate = distribution.estimate();
-
-                        // Decode key
-                        let parent_id = key >> 32;
-                        let child_id = key & 0xFFFFFFFF;
-
-                        // Use registry to get names
-                        // We use a simplified formatting if registry lookup fails (shouldn't happen)
-                        let registry = MethodRegistry::global();
-                        let p_name = registry
-                            .get_method_name(parent_id)
-                            .map(|(s, m)| format!("{}::{}", s, m))
-                            .unwrap_or_else(|| format!("{}", parent_id));
-                        let c_name = registry
-                            .get_method_name(child_id)
-                            .map(|(s, m)| format!("{}::{}", s, m))
-                            .unwrap_or_else(|| format!("{}", child_id));
-
-                        parts.push(format!("{}=>{}: {} us", p_name, c_name, estimate));
-                    } else {
-                        parts.push(format!("{}: (no estimate)", key));
-                    }
-                });
-                log::info!("{}: {}", label, parts.join(", "));
-            }
-        });
-    }
-}
-
-/// Spawns a background task to periodically print latency estimates keyed by method ID only.
-fn spawn_method_stats_printer<E: LatencyEstimator + Default + 'static>(
-    distributions: Arc<LatencyMap<E>>,
-    label: &'static str,
-) {
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        handle.spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(5));
-            loop {
-                interval.tick().await;
-
-                if distributions.is_empty() {
-                    continue;
-                }
-
-                let mut parts = Vec::new();
-                distributions.for_each(|key, distribution| {
-                    if distribution.can_estimate() {
-                        let estimate = distribution.estimate();
-                        let registry = MethodRegistry::global();
-                        let name = registry
-                            .get_method_name(key)
-                            .map(|(s, m)| format!("{}::{}", s, m))
-                            .unwrap_or_else(|| format!("{}", key));
-                        parts.push(format!("{}: {} us", name, estimate));
-                    } else {
-                        parts.push(format!("{}: (no estimate)", key));
-                    }
-                });
-                log::info!("{}: {}", label, parts.join(", "));
-            }
-        });
-    }
 }
 
 #[derive(Debug)]
@@ -773,8 +623,12 @@ mod tests {
 
         // 2. Prepare Parent Request
         let method = GrpcMethod::new("IntegrationService", "ParentMethod");
-        let deadline = masa_core::time_now() + 100_000; // 100ms future
+        let now = masa_core::time_now();
+        let slo_us = 100_000u64; // 100ms SLO
+        let deadline = now + slo_us;
         let ctx = ContextBuilder::new("IntegrationService", 123)
+            .slo(slo_us)
+            .gateway_entry(now)
             .deadline(deadline)
             .build();
 
@@ -864,6 +718,7 @@ mod tests {
         let deadline = now + slo_us;
         let ctx = ContextBuilder::new("FloorService", 42)
             .slo(slo_us)
+            .gateway_entry(now)
             .deadline(deadline)
             .build();
 
