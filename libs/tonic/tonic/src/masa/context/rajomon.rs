@@ -91,8 +91,8 @@ impl RajomonSharedState {
 
             let method = entry.key();
             let current_price = self.local_prices.get(method).map(|v| *v).unwrap_or(1);
-            let new_price = if new_ewma > 1000 {
-                // > 1ms average queue latency: scheduler is overloaded, raise price.
+            let new_price = if new_ewma > 5000 {
+                // > 5ms average queue latency: scheduler is overloaded, raise price.
                 current_price + 1
             } else {
                 max(1, current_price.saturating_sub(1))
