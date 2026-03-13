@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 #[cfg(feature = "rajomon")]
-const QUEUE_THRESHOLD_US: u64 = 1000;
+const QUEUE_THRESHOLD_US: u64 = 5000;
 #[cfg(feature = "rajomon")]
 const PRICE_PER_EXCESS_MS: u64 = 10;
 #[cfg(feature = "rajomon")]
@@ -541,21 +541,21 @@ mod tests {
         let state = RajomonSharedState::new();
         let method = CowGrpcMethod::new("svc", "method");
 
-        // Simulate a window with high queue latency (5000us avg)
+        // Simulate a window with high queue latency (30000us avg)
         state
             .queue_stats
             .entry(method.clone())
             .or_insert_with(MethodQueueStats::new);
         let stats = state.queue_stats.get(&method).unwrap();
-        stats.window_sum.store(50000, Ordering::Relaxed);
+        stats.window_sum.store(300000, Ordering::Relaxed);
         stats.window_count.store(10, Ordering::Relaxed);
 
         state.update_prices();
 
         let price = state.local_prices.get(&method).map(|v| *v).unwrap_or(1);
-        // EWMA = (5000 + 0) / 4 = 1250, excess = 250, increment = (250/1000+1)*10 = 10
-        // new_price = 1 (default) + 10 = 11
-        assert_eq!(price, 11);
+        // EWMA = (30000 + 0) / 4 = 7500, excess = 2500, increment = (2500/1000+1)*10 = 30
+        // new_price = 1 (default) + 30 = 31
+        assert_eq!(price, 31);
     }
 
     #[cfg(feature = "rajomon")]
@@ -571,10 +571,10 @@ mod tests {
             .entry(method.clone())
             .or_insert_with(MethodQueueStats::new);
 
-        // Simulate EWMA in middle band (600us: between 500 and 1000)
+        // Simulate EWMA in middle band (3000us: between 2500 and 5000)
         let stats = state.queue_stats.get(&method).unwrap();
-        // We need window_avg = 2400 so EWMA = (2400 + 0)/4 = 600
-        stats.window_sum.store(24000, Ordering::Relaxed);
+        // We need window_avg = 12000 so EWMA = (12000 + 0)/4 = 3000
+        stats.window_sum.store(120000, Ordering::Relaxed);
         stats.window_count.store(10, Ordering::Relaxed);
 
         state.update_prices();
@@ -596,15 +596,15 @@ mod tests {
             .entry(method.clone())
             .or_insert_with(MethodQueueStats::new);
 
-        // Simulate very low EWMA (100us: below 500)
+        // Simulate very low EWMA (500us: below 2500)
         let stats = state.queue_stats.get(&method).unwrap();
-        stats.window_sum.store(1000, Ordering::Relaxed);
+        stats.window_sum.store(5000, Ordering::Relaxed);
         stats.window_count.store(10, Ordering::Relaxed);
 
         state.update_prices();
 
         let price = state.local_prices.get(&method).map(|v| *v).unwrap_or(1);
-        // EWMA = 100/4 = 25, below threshold/2, decrease by 1: 5 -> 4
+        // EWMA = 500/4 = 125, below threshold/2, decrease by 1: 5 -> 4
         assert_eq!(price, 4);
     }
 
