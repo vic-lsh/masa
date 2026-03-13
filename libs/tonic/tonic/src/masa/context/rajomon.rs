@@ -21,7 +21,7 @@ const PRICE_PER_EXCESS_MS: u64 = 10;
 #[cfg(feature = "rajomon")]
 const PRICE_DECREASE_STEP: u64 = 1;
 #[cfg(feature = "rajomon")]
-const PRICE_PROPAGATION_PROB: f64 = 0.2;
+const PRICE_PROPAGATION_PROB: f64 = 1.0;
 
 /// Global Rajomon state shared across all request handlers.
 #[cfg(feature = "rajomon")]
@@ -99,11 +99,11 @@ impl RajomonSharedState {
             // correctly reflecting the absence of observed queueing pressure.
             let window_avg = if count > 0 { sum / count } else { 0 };
 
-            // Time-based EWMA step: α = 1/4, half-life ≈ 2.4 ticks (240ms).
+            // Time-based EWMA step: α = 1/2, half-life ≈ 1 tick (50ms).
             // Decay is per-tick, not per-sample, so it is independent of RPS.
-            // new_ewma = (1/4) * window_avg + (3/4) * old_ewma
+            // new_ewma = (1/2) * window_avg + (1/2) * old_ewma
             let old_ewma = entry.ewma_us.load(Ordering::Relaxed);
-            let new_ewma = (window_avg + 3 * old_ewma) / 4;
+            let new_ewma = (window_avg + old_ewma) / 2;
             entry.ewma_us.store(new_ewma, Ordering::Relaxed);
 
             let method = entry.key();
@@ -184,7 +184,7 @@ impl RajomonSharedState {
 
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async {
-                let mut interval = tokio::time::interval(Duration::from_millis(100));
+                let mut interval = tokio::time::interval(Duration::from_millis(50));
                 let mut log_tick: u32 = 0;
                 loop {
                     interval.tick().await;
@@ -363,7 +363,7 @@ impl RajomonHandler {
     pub(crate) fn track_queue_delay(&self) {}
 
     /// Commit this request's total accumulated queue latency to the current time window.
-    /// The background worker drains the window every 100ms and applies a time-based EWMA step,
+    /// The background worker drains the window every 50ms and applies a time-based EWMA step,
     /// so the decay rate is independent of RPS. Call this exactly once per request.
     #[cfg(feature = "rajomon")]
     pub(crate) fn finalize_queue_delay(&self) {
@@ -409,7 +409,7 @@ impl RajomonHandler {
         &self,
         result: &mut Result<crate::Response<T>, Status>,
     ) {
-        // Lazy propagation: only send price on ~20% of responses
+        // Propagation: send price on every response
         if rand::random::<f64>() > PRICE_PROPAGATION_PROB {
             return;
         }
@@ -452,8 +452,8 @@ impl ClientTokenBucket {
         Self {
             pools: DashMap::new(),
             cached_prices: DashMap::new(),
-            replenish_amount: 10000,
-            max_tokens: 100000,
+            replenish_amount: 1000,
+            max_tokens: 5000,
         }
     }
 
@@ -553,9 +553,9 @@ mod tests {
         state.update_prices();
 
         let price = state.local_prices.get(&method).map(|v| *v).unwrap_or(1);
-        // EWMA = (5000 + 0) / 4 = 1250, excess = 250, increment = (250/1000+1)*10 = 10
-        // new_price = 1 (default) + 10 = 11
-        assert_eq!(price, 11);
+        // EWMA = (5000 + 0) / 2 = 2500, excess = 1500, increment = (1500/1000+1)*10 = 20
+        // new_price = 1 (default) + 20 = 21
+        assert_eq!(price, 21);
     }
 
     #[cfg(feature = "rajomon")]
@@ -573,8 +573,8 @@ mod tests {
 
         // Simulate EWMA in middle band (600us: between 500 and 1000)
         let stats = state.queue_stats.get(&method).unwrap();
-        // We need window_avg = 2400 so EWMA = (2400 + 0)/4 = 600
-        stats.window_sum.store(24000, Ordering::Relaxed);
+        // We need window_avg = 1200 so EWMA = (1200 + 0)/2 = 600
+        stats.window_sum.store(12000, Ordering::Relaxed);
         stats.window_count.store(10, Ordering::Relaxed);
 
         state.update_prices();
@@ -604,7 +604,7 @@ mod tests {
         state.update_prices();
 
         let price = state.local_prices.get(&method).map(|v| *v).unwrap_or(1);
-        // EWMA = 100/4 = 25, below threshold/2, decrease by 1: 5 -> 4
+        // EWMA = 100/2 = 50, below threshold/2, decrease by 1: 5 -> 4
         assert_eq!(price, 4);
     }
 
@@ -654,29 +654,29 @@ mod tests {
         let bucket = ClientTokenBucket::new();
         let method = CowGrpcMethod::new("svc", "method");
 
-        // First acquire should succeed (pool starts at max_tokens=100000, price defaults to 1)
+        // First acquire should succeed (pool starts at max_tokens=5000, price defaults to 1)
         let result = bucket.try_acquire(&method);
         assert!(result.is_some());
         let tokens = result.unwrap();
         assert!(tokens >= 100 && tokens <= 10000);
 
-        // Pool should now be 99999
+        // Pool should now be 4999
         let pool_val = bucket
             .pools
             .get(&method)
             .unwrap()
             .value()
             .load(Ordering::Relaxed);
-        assert_eq!(pool_val, 99999);
+        assert_eq!(pool_val, 4999);
 
         // Set a high price
         bucket.update_price(&method, 200000);
 
-        // Acquire should fail (pool=99999 < price=200000)
+        // Acquire should fail (pool=4999 < price=200000)
         let result = bucket.try_acquire(&method);
         assert!(result.is_none());
 
-        // Replenish should add 10000, pool = 99999 + 10000 = 100000 (capped at max)
+        // Replenish should add 1000, pool = 4999 + 1000 = 5000 (capped at max)
         bucket.replenish();
         let pool_val = bucket
             .pools
@@ -684,7 +684,7 @@ mod tests {
             .unwrap()
             .value()
             .load(Ordering::Relaxed);
-        assert_eq!(pool_val, 100000);
+        assert_eq!(pool_val, 5000);
 
         // Still can't acquire at price 200000
         assert!(bucket.try_acquire(&method).is_none());
