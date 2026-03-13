@@ -325,6 +325,40 @@ The client pool is not the binding constraint for the collapse. Even when the po
 
 **Decision:** Revert all basalt_5 code changes. The tight client pool and fast EWMA provide no benefit and slightly hurt 1600 RPS.
 
+## Iteration 5: Very large token range for gradual shedding (experiment basalt_6)
+
+**Status:** Pending
+
+### Change
+Increase per-request token budget from `100..=10000` to `100..=100000` in two places:
+1. `libs/masa/src/lib.rs` — initial token assignment
+2. `libs/tonic/tonic/src/masa/context/rajomon.rs` `ClientTokenBucket::try_acquire` — token assignment after client pool admission
+
+Also increase client-side pool to match: `max_tokens = 1000000`, `replenish_amount = 100000`.
+
+### Hypothesis
+The collapse is caused by a **phase transition** in the token-price interaction. With budget range 100..=10000, the system transitions from "all admitted" to "all rejected" over a very narrow price band:
+- At per-hop price=1000, 5-hop Search cost ≈ 10000 → requests with exactly max budget barely survive
+- At per-hop price=2000, 5-hop cost ≈ 20000 → exceeds max budget → 100% rejection
+
+This all-or-nothing behavior creates the cliff at 1800 RPS: prices spike past the threshold, ALL Search is rejected, and the system can't find a stable partial-shedding equilibrium.
+
+With 100..=100000 (10x range):
+- At per-hop price=2000, 5-hop cost ≈ 10000 → ~90% of requests survive (those with >10000/99900 tokens)
+- At per-hop price=5000, 5-hop cost ≈ 25000 → ~75% survive
+- At per-hop price=10000, 5-hop cost ≈ 50000 → ~50% survive
+- At per-hop price=20000, 5-hop cost ≈ 100000 → ~0% survive
+
+This gives a smooth degradation curve where the price feedback loop can find a stable operating point with partial shedding, rather than oscillating between 100% admission and 100% rejection.
+
+### Expected outcomes if hypothesis is correct:
+1. The sharp cliff at 1800 RPS is replaced by gradual degradation — Rajomon achieves >500 goodput at 1800 RPS
+2. Low-load performance is preserved (at price=1, min budget of 100 can traverse 100 services)
+3. The system may still trail adctl at 2000 RPS but the gap shrinks from 9x to <3x
+
+### Experiment design
+Same config as basalt_1 (full RPS sweep [100–2000]).
+
 ## Assessment
 
 ### Summary of all iterations
