@@ -106,7 +106,14 @@ impl RajomonSharedState {
             let parts: Vec<String> = self
                 .local_prices
                 .iter()
-                .map(|e| format!("{}::{}: {}", e.key().service(), e.key().method(), *e.value()))
+                .map(|e| {
+                    format!(
+                        "{}::{}: {}",
+                        e.key().service(),
+                        e.key().method(),
+                        *e.value()
+                    )
+                })
                 .collect();
             log::info!("Rajomon local_prices: {}", parts.join(", "));
         }
@@ -114,7 +121,14 @@ impl RajomonSharedState {
             let parts: Vec<String> = self
                 .downstream_prices
                 .iter()
-                .map(|e| format!("{}::{}: {}", e.key().service(), e.key().method(), *e.value()))
+                .map(|e| {
+                    format!(
+                        "{}::{}: {}",
+                        e.key().service(),
+                        e.key().method(),
+                        *e.value()
+                    )
+                })
                 .collect();
             log::info!("Rajomon downstream_prices: {}", parts.join(", "));
         }
@@ -296,7 +310,8 @@ impl RajomonHandler {
     #[cfg(feature = "rajomon")]
     pub(crate) fn track_queue_delay(&self) {
         let q_lat_us = tokio::task::obtain_task_queue_latency().as_micros() as u64;
-        self.accumulated_q_lat_us.fetch_add(q_lat_us, Ordering::Relaxed);
+        self.accumulated_q_lat_us
+            .fetch_add(q_lat_us, Ordering::Relaxed);
     }
 
     #[cfg(not(feature = "rajomon"))]

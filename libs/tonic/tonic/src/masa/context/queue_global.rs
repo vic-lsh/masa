@@ -10,13 +10,13 @@ use crate::Response;
 use masa_core::{Context, ContextBuilder};
 
 #[cfg(feature = "adctl")]
-use super::adctl_hooks::{is_early_return_response, AdctlChildState, AdctlRequestState, AdctlServerState};
+use super::adctl_hooks::{
+    is_early_return_response, AdctlChildState, AdctlRequestState, AdctlServerState,
+};
 #[cfg(feature = "adctl")]
-use super::estimator::{DefaultLatencyEstimator, ParentToChildId};
+use super::estimator::DefaultLatencyEstimator;
 #[cfg(feature = "adctl")]
 use crate::masa::MethodRegistry;
-#[cfg(feature = "adctl")]
-use masa_core::time_now;
 
 #[derive(Debug)]
 /// This policy always sets the deadline of each request as
@@ -120,58 +120,12 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         child_ctx.set_method_name(child_method_name.clone());
 
         #[cfg(feature = "adctl")]
+        if self
+            .adctl
+            .prepare_before_child_rpc(&self.ctx, &child_method_name, &mut child_ctx.adctl)
+            .is_err()
         {
-            let resolved_child_id = MethodRegistry::global()
-                .get_or_register_method(child_method_name.service(), child_method_name.method());
-            let parent_to_child_id = ParentToChildId {
-                parent_id: self.adctl.resolved_method_id,
-                child_id: resolved_child_id,
-            };
-            let key = parent_to_child_id.to_key();
-
-            child_ctx.adctl.setup(
-                parent_to_child_id.clone(),
-                child_method_name,
-                self.adctl.server.clone(),
-            );
-
-            let time_left = self.ctx.e2e_deadline().saturating_sub(time_now());
-
-            let est_remaining = self
-                .adctl
-                .server
-                .est_after_child_latency
-                .get_estimate(key)
-                .unwrap_or(0)
-                .min(time_left);
-
-            let est_remaining_mean = self
-                .adctl
-                .server
-                .est_after_child_latency
-                .get_mean_estimate(key)
-                .unwrap_or(0)
-                .min(time_left);
-
-            let est_remaining_floor = self
-                .adctl
-                .server
-                .est_after_child_latency
-                .get_mean_floor_estimate(key)
-                .unwrap_or(0)
-                .min(time_left);
-
-            if self.adctl.admission_check(&self.ctx, key, est_remaining_floor) {
-                return Err(self.early_return.issue_error());
-            }
-
-            self.adctl.log_estimates(
-                &parent_to_child_id,
-                key,
-                est_remaining,
-                est_remaining_mean,
-                est_remaining_floor,
-            );
+            return Err(self.early_return.issue_error());
         }
 
         let deadline = self.ctx.deadline();
@@ -204,7 +158,8 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         #[cfg(feature = "adctl")]
         {
             child_ctx.adctl.finalize(response);
-            self.adctl.after_child_rpc(&self.ctx, response, &child_ctx.adctl);
+            self.adctl
+                .after_child_rpc(&self.ctx, response, &child_ctx.adctl);
         }
 
         if let Some(child) = child_ctx.child_method_name {

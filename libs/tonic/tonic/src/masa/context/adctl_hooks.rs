@@ -13,10 +13,12 @@ use std::time::Instant;
 use crate::{Code, CowGrpcMethod, Response, Status};
 use masa_core::{time_now, Context, LatencyEstimator, ResponseMeta, EARLY_RETURN};
 
+#[cfg(feature = "adctl")]
 use super::adctl::AdmissionController;
 use super::estimator::ParentToChildId;
 use super::latency_map::{spawn_method_stats_printer, spawn_stats_printer, LatencyMap};
 use super::{MasaResponseExt, MasaStatusExt};
+use crate::masa::MethodRegistry;
 
 /// Server-level admission control state (shared across requests on a service).
 #[derive(Debug)]
@@ -28,6 +30,7 @@ pub(crate) struct AdctlServerState<E: LatencyEstimator + Default + 'static> {
     /// Tracks compute time (poll duration) per method.
     pub est_compute_latency: Arc<LatencyMap<E>>,
     /// Admission controller using compute-budget token bucket.
+    #[cfg(feature = "adctl")]
     pub admission_controller: Arc<AdmissionController>,
     /// Counter for periodic logging.
     pub print_counter: AtomicUsize,
@@ -47,6 +50,7 @@ impl<E: LatencyEstimator + Default + 'static> AdctlServerState<E> {
             est_after_child_latency,
             est_child_latency,
             est_compute_latency,
+            #[cfg(feature = "adctl")]
             admission_controller: Arc::new(AdmissionController::new()),
             print_counter: AtomicUsize::new(0),
         }
@@ -92,10 +96,17 @@ impl<E: LatencyEstimator + Default + 'static> AdctlRequestState<E> {
 
     /// Returns true if the request should be shed (early-returned).
     ///
-    /// Layer 1 checks compute-time feasibility at every hop.
+    /// With `adctl` enabled: Layer 1 checks compute-time feasibility at every hop.
     /// Layer 2 (ingress only, hop_count==0) applies efficiency-based admission.
     /// Falls through to floor-based check.
-    pub(crate) fn admission_check(&self, ctx: &Context, key: u64, est_remaining_floor: u64) -> bool {
+    #[allow(unused_variables)]
+    pub(crate) fn admission_check(
+        &self,
+        ctx: &Context,
+        key: u64,
+        est_remaining_floor: u64,
+    ) -> bool {
+        #[cfg(feature = "adctl")]
         if EARLY_RETURN {
             let time_left = ctx.e2e_deadline().saturating_sub(time_now());
 
@@ -186,6 +197,7 @@ impl<E: LatencyEstimator + Default + 'static> AdctlRequestState<E> {
 
     /// Process a child RPC response: extract ResponseMeta, update bottleneck tracker,
     /// handle early-return negative feedback, and record child end time.
+    #[allow(unused_variables)]
     pub(crate) fn after_child_rpc<T>(
         &self,
         ctx: &Context,
@@ -208,6 +220,7 @@ impl<E: LatencyEstimator + Default + 'static> AdctlRequestState<E> {
                         *max_util = meta.max_downstream_util;
                     }
                     // Update bottleneck tracker
+                    #[cfg(feature = "adctl")]
                     self.server
                         .admission_controller
                         .update_bottleneck(ctx.api(), meta.max_downstream_util);
@@ -248,18 +261,8 @@ impl<E: LatencyEstimator + Default + 'static> AdctlRequestState<E> {
         est_remaining_mean: u64,
         est_remaining_floor: u64,
     ) {
-        if self
-            .server
-            .print_counter
-            .fetch_add(1, Ordering::Relaxed)
-            % 5000
-            == 0
-        {
-            let est_child = self
-                .server
-                .est_child_latency
-                .get_estimate(key)
-                .unwrap_or(0);
+        if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
+            let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
             log::info!(
                 "LAT_EST: p=>c: {}, est_child: {}, est_rem: {}, est_rem_mean: {}, est_rem_floor: {}",
                 parent_to_child_id,
@@ -270,6 +273,73 @@ impl<E: LatencyEstimator + Default + 'static> AdctlRequestState<E> {
             );
         }
     }
+
+    /// Setup child context, run admission checks, log estimates.
+    /// Returns Err if the request should be shed (early-returned).
+    /// Returns Ok(ChildRpcPrepareResult) with estimates for deadline computation.
+    pub(crate) fn prepare_before_child_rpc(
+        &self,
+        ctx: &Context,
+        child_method_name: &CowGrpcMethod,
+        child_adctl: &mut AdctlChildState<E>,
+    ) -> Result<ChildRpcPrepareResult, ()> {
+        let resolved_child_id = MethodRegistry::global()
+            .get_or_register_method(child_method_name.service(), child_method_name.method());
+        let parent_to_child_id = ParentToChildId {
+            parent_id: self.resolved_method_id,
+            child_id: resolved_child_id,
+        };
+        let key = parent_to_child_id.to_key();
+
+        child_adctl.setup(
+            parent_to_child_id.clone(),
+            child_method_name.clone(),
+            self.server.clone(),
+        );
+
+        let time_left = ctx.e2e_deadline().saturating_sub(time_now());
+
+        let est_remaining = self
+            .server
+            .est_after_child_latency
+            .get_estimate(key)
+            .unwrap_or(0)
+            .min(time_left);
+
+        let est_remaining_mean = self
+            .server
+            .est_after_child_latency
+            .get_mean_estimate(key)
+            .unwrap_or(0)
+            .min(time_left);
+
+        let est_remaining_floor = self
+            .server
+            .est_after_child_latency
+            .get_mean_floor_estimate(key)
+            .unwrap_or(0)
+            .min(time_left);
+
+        if self.admission_check(ctx, key, est_remaining_floor) {
+            return Err(());
+        }
+
+        self.log_estimates(
+            &parent_to_child_id,
+            key,
+            est_remaining,
+            est_remaining_mean,
+            est_remaining_floor,
+        );
+
+        Ok(ChildRpcPrepareResult { est_remaining })
+    }
+}
+
+/// Result of `prepare_before_child_rpc` containing estimates for deadline computation.
+#[allow(dead_code)]
+pub(crate) struct ChildRpcPrepareResult {
+    pub est_remaining: u64,
 }
 
 /// Per-child-RPC admission control state.
