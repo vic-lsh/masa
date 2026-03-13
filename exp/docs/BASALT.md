@@ -104,3 +104,60 @@ The low-load bleed is caused by small token budgets relative to request costs. I
 
 ### Experiment design
 Same config as basalt_1 (full RPS sweep [100–2000], Search SLO=200ms, Reservation SLO=50ms). The full sweep is needed to verify both that the collapse is fixed (1800–2000) and that low-load performance improves (100–1400).
+
+### Actual Outcomes (basalt_2)
+
+**Status:** Failed ❌ — no improvement over basalt_1
+
+#### Goodput Comparison (basalt_2)
+
+| RPS | adctl | Rajomon-tuned | Delta |
+|-----|-------|--------------|-------|
+| 100 | 99.5 | 96.2 | +3.4 |
+| 400 | 398.0 | 382.2 | +15.8 |
+| 800 | 796.0 | 763.5 | +32.5 |
+| 1200 | 1194.0 | 1147.4 | +46.6 |
+| 1400 | 1386.9 | 1337.3 | +49.6 |
+| 1600 | 1530.8 | 1440.7 | +90.1 |
+| 1800 | 1619.0 | **172.2** | +1446.8 |
+| 2000 | 1680.2 | **189.6** | +1490.7 |
+
+Results are **statistically indistinguishable** from basalt_1 at every load level. The collapse at 1800+ RPS is completely unchanged. At 1600 RPS, performance actually degraded by 65 goodput (1506 → 1441).
+
+### Root cause analysis (post-basalt_2)
+
+The server-side price parameters are **not the binding constraint**. Re-reading the code reveals the true bottleneck:
+
+1. **Per-request token budget is always `rand(1..=100)`** (hardcoded in `libs/masa/src/lib.rs` and `ClientTokenBucket::try_acquire`). The `replenish_amount`/`max_tokens` changes only affect the client-side pool gating (whether to send the request at all), NOT the per-request budget carried through the call graph.
+
+2. **Low-load bleed mechanism:** At price=1 (minimum), a request traversing N services spends N tokens. The hotel call graph has ~5-7 services. Requests drawing 1-4 tokens are guaranteed to be rejected at some downstream service. With uniform(1..=100), ~4% of requests draw ≤4 tokens → explains the constant ~4% loss.
+
+3. **High-load collapse mechanism:** Once any service's price exceeds ~50-100, virtually no request has enough tokens to pass through even the first service. With proportional price increases at 1800 RPS queue latencies (likely 100ms+), prices spike to thousands, far exceeding the max token budget of 100.
+
+**Decision:** Revert the basalt_1 code changes (they had no effect) and proceed to iteration 2 targeting the per-request token budget.
+
+## Iteration 2: Increase per-request token budget (experiment basalt_3)
+
+**Status:** Pending
+
+### Change
+Increase the per-request token budget from `1..=100` to `100..=10000` in two places:
+1. `libs/masa/src/lib.rs` — initial token assignment for outgoing requests
+2. `libs/tonic/tonic/src/masa/context/rajomon.rs` `ClientTokenBucket::try_acquire` — token assignment after client pool admission
+
+Also increase client-side pool to match: `max_tokens = 100000`, `replenish_amount = 10000` (so the pool doesn't become the bottleneck with 10000-token draws).
+
+### Hypothesis
+The per-request token budget `1..=100` is the binding constraint for both failure modes:
+
+**Low-load bleed (4% loss):** At minimum price=1, traversing ~5-7 hotel services costs 5-7 tokens. With uniform(1..=100), ~4-7% of requests draw ≤7 tokens and are guaranteed to be rejected at some downstream service regardless of system load. Increasing the floor to 100 means even the lowest-budget request can traverse 100 services at price=1 — eliminating unnecessary rejections.
+
+**High-load collapse:** At 1800 RPS, queue latencies spike to 100ms+, causing prices to spike to hundreds or thousands via proportional increase. With max budget=100, prices only need to exceed 100 to reject ALL traffic. With max budget=10000, prices would need to reach 10000 — giving the price feedback loop much more dynamic range before total collapse. This should allow Rajomon to degrade gracefully (partial rejection) rather than catastrophically (total rejection).
+
+### Expected outcomes if hypothesis is correct:
+1. Low-load goodput improves from ~95.5% to >99% of offered load (matching adctl)
+2. The catastrophic collapse at 1800–2000 RPS is eliminated or at least delayed to a higher RPS
+3. Rajomon achieves >1000 goodput at 2000 RPS
+
+### Experiment design
+Same config as basalt_1 (full RPS sweep [100–2000]). Need full sweep to verify both low-load improvement and high-load stability.
