@@ -797,6 +797,53 @@ At 1600 RPS (the weakest point), this should help because:
 ### Experiment design
 Full RPS sweep.
 
+### Actual Outcomes (basalt_14)
+
+**Status:** Blocked ⏸ — Docker build failed due to insufficient disk space in build cache. Requires `docker system prune` (running but slow over NFS). Retry when disk is available.
+
+---
+
+## Post-bugfix Assessment (iterations 9–13)
+
+### Summary of post-bugfix iterations
+
+| Iteration | Config | 100-800 | 1200 | 1400 | 1600 | 1800 | 2000 |
+|-----------|--------|---------|------|------|------|------|------|
+| 9 (b10) | 1ms threshold, defaults | 91-99.5% | 677 (56%) | 663 (47%) | 719 (45%) | 752 (42%) | 785 (39%) |
+| 10 (b11) | 10ms threshold, decrease=10 | **99.5%** | **1149 (96%)** | 829 (59%) | 718 (45%) | 369 (21%) | 736 (37%) |
+| 11 (b12) | 5ms threshold | **99.5%** | 801 (67%) | 884 (63%) | 613 (38%) | 751 (42%) | 877 (44%) |
+| **12 (b13)** | **5ms, price=2** | **99.5%** | **1038 (87%)** | **987 (71%)** | **712 (45%)** | **892 (50%)** | **874 (44%)** |
+| 13 (b14) | + propagation=1.0 | *(blocked — disk full)* |
+
+### Best Rajomon configuration (post-bugfix)
+
+`QUEUE_THRESHOLD_US=5000, PRICE_PER_EXCESS_MS=2, PRICE_DECREASE_STEP=1` (iteration 12/basalt_13). Token budget `100..=10000` from the pre-bugfix iteration 2.
+
+| RPS | adctl (best) | Rajomon (tuned) | Gap | Rajomon % of adctl |
+|-----|-------------|-----------------|-----|--------------------|
+| 100–800 | ~99.5% | ~99.5% | **none** | 100% |
+| 1200 | ~1138 | ~1038 | ~100 | **91%** |
+| 1400 | ~1089 | ~987 | ~102 | **91%** |
+| 1600 | ~1168 | ~712 | ~456 | **61%** |
+| 1800 | ~1281 | ~892 | ~389 | **70%** |
+| 2000 | ~1269 | ~874 | ~395 | **69%** |
+
+### Updated answers to the key questions
+
+1. **How does Rajomon compare to adctl?** With the queue latency bug fixed and tuned parameters, Rajomon matches adctl at low-to-moderate load (≤800 RPS) and achieves 69-91% of adctl's goodput at overload. The gap is largest at 1600 RPS (61%) — the transition zone. This is a dramatic improvement from the pre-bugfix state where Rajomon collapsed to ~10% goodput at 1800+.
+
+2. **Can hyperparameter tuning close the gap?** Substantially but not fully. Tuning improved Rajomon from 42% of adctl (default params, 1ms threshold) to 70% of adctl at 1800 RPS. The remaining gap is structural: adctl sheds only at the frontend (one rejection point), while Rajomon rejects at every service independently, causing cascading rejections that waste CPU on partially-processed requests. Additionally, adctl uses `early` return to abort in-flight doomed requests — a mechanism Rajomon cannot access.
+
+3. **What is the mechanistic difference?** The same two mechanisms identified pre-bugfix remain the structural gap, but their relative importance has changed:
+   - **Cascading rejection:** Rajomon's per-service price-based rejection causes requests to be rejected at both the frontend AND downstream services. This wastes the CPU spent processing the request through upstream services before rejection. adctl concentrates rejection at the frontend, avoiding this waste. This is now the **primary** gap — visible in early return breakdowns where Rajomon rejects at 4+ methods across 2 services while adctl rejects at 2 methods on the frontend only.
+   - **Early return:** adctl+early aborts in-flight requests past their deadline, reclaiming CPU. Rajomon cannot use `early` (mutually exclusive). This contributes to the gap but is secondary to the cascading rejection problem.
+
+### Open hypotheses (not yet tested)
+
+1. **Full price propagation (PRICE_PROPAGATION_PROB=1.0):** basalt_14 was blocked by disk space. Expected to help by enabling client-side self-throttling before requests enter the call graph.
+2. **Frontend-only rejection:** If Rajomon could be configured to only enforce token-budget checks at the first hop (frontend), it would avoid cascading rejections and behave more like adctl's single-point-of-rejection architecture. This would require a code change to distinguish "entry service" from "downstream service" in the Rajomon admission check.
+3. **Adaptive threshold:** Instead of a fixed QUEUE_THRESHOLD_US, use a percentile of recent queue latencies (e.g., P90). This would auto-calibrate to the workload's natural queuing behavior.
+
 ---
 
 ## Assessment (pre-bug-fix, now invalidated)
