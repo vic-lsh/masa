@@ -15,13 +15,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 #[cfg(feature = "rajomon")]
-const QUEUE_THRESHOLD_US: u64 = 1000;
+const QUEUE_THRESHOLD_US: u64 = 2000;
 #[cfg(feature = "rajomon")]
-const PRICE_PER_EXCESS_MS: u64 = 10;
+const PRICE_PER_EXCESS_MS: u64 = 50;
 #[cfg(feature = "rajomon")]
-const PRICE_DECREASE_STEP: u64 = 1;
+const PRICE_DECREASE_STEP: u64 = 5;
 #[cfg(feature = "rajomon")]
-const PRICE_PROPAGATION_PROB: f64 = 0.2;
+const PRICE_PROPAGATION_PROB: f64 = 1.0;
 
 /// Global Rajomon state shared across all request handlers.
 #[cfg(feature = "rajomon")]
