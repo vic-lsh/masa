@@ -20,4 +20,5 @@ est_mean_var = ["tonic/est_mean_var"]
 
 early = ["masa-core/early", "tonic/early"]
 adctl = ["tonic/adctl"]
+rajomon = ["masa-core/rajomon", "tonic/rajomon"]
 trace-queue = ["tonic/trace-queue"]

@@ -186,9 +186,9 @@ def _parse_error_columns(df: pd.DataFrame) -> pd.DataFrame:
     # ^/EarlyReturn\?src=         Start with literal prefix
     # (?P<er_service>.+?)         Capture service (non-greedy)
     # ::                          Literal separator
-    # (?P<er_method>[^?]+)        Capture method (until next ? or end)
-    # (?:\?last_rpc=(?P<er_last_child>.*))?  Optional group: ?last_rpc= followed by anything
-    pattern = r"^/EarlyReturn\?src=(?P<er_service>.+?)::(?P<er_method>[^?]+)(?:\?last_rpc=(?P<er_last_child>.*))?$"
+    # (?P<er_method>[^?\s]+)        Capture method (until next ?, whitespace or end)
+    # (?:\?last_rpc=(?P<er_last_child>[^\s]*))?  Optional group: ?last_rpc= followed by anything up to space
+    pattern = r"^/EarlyReturn\?src=(?P<er_service>.+?)::(?P<er_method>[^?\s]+)(?:\?last_rpc=(?P<er_last_child>[^\s]*))?"
 
     extracted_data = df.loc[mask_er, "error"].str.extract(pattern)
 

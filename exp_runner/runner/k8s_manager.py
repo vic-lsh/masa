@@ -44,6 +44,8 @@ class K8sManager(DeploymentManager):
         super().__init__(repo_root, executor)
         self.kube_context = kube_context
         self.namespace = namespace
+        self._log_processes: List[subprocess.Popen] = []
+        self._log_threads: List[threading.Thread] = []
 
     def _run_cmd(
         self, cmd: List[str], check: bool = True, capture_output: bool = True
@@ -65,7 +67,13 @@ class K8sManager(DeploymentManager):
                 logger.error(f"Stdout: {e.stdout}")
                 logger.error(f"Stderr: {e.stderr}")
                 raise
-            return e
+            # Construct a dummy CompletedProcess for when check=False
+            return subprocess.CompletedProcess(
+                args=final_cmd,
+                returncode=e.returncode,
+                stdout=e.stdout or "",
+                stderr=e.stderr or "",
+            )
 
     def _get_pod_phase(self, pod_name: str) -> str:
         cmd = [
@@ -425,6 +433,20 @@ class K8sManager(DeploymentManager):
         """
         Stop services (uninstall Helm release).
         """
+        for process in self._log_processes:
+            try:
+                process.terminate()
+            except Exception as e:
+                logger.warning(f"Error terminating log process: {e}")
+        self._log_processes.clear()
+
+        for thread in self._log_threads:
+            try:
+                thread.join(timeout=2.0)
+            except Exception as e:
+                logger.warning(f"Error joining log thread: {e}")
+        self._log_threads.clear()
+
         if not project_name:
             logger.warning("No project_name provided to stop, skipping k8s uninstall")
             return
@@ -497,6 +519,7 @@ class K8sManager(DeploymentManager):
                 )
                 thread.start()
                 threads.append(thread)
+                self._log_threads.append(thread)
                 logger.debug(f"Started log streaming for {pod_name}")
             else:
                 self._stream_pod_log(pod_name, log_file, False)
@@ -521,12 +544,15 @@ class K8sManager(DeploymentManager):
                         text=True,
                         bufsize=1,
                     )
+                    self._log_processes.append(process)
                     try:
                         # Read line by line until process exits
-                        for line in iter(process.stdout.readline, ""):
-                            if line:
-                                f.write(strip_ansi_codes(line))
-                                f.flush()
+                        if process.stdout is not None:
+                            stdout = process.stdout
+                            for line in iter(stdout.readline, ""):
+                                if line:
+                                    f.write(strip_ansi_codes(line))
+                                    f.flush()
                     finally:
                         process.terminate()
             else:

@@ -7,7 +7,10 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from .executor import CommandExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +24,9 @@ class CPUMonitor:
         poll_interval: float = 2.0,
         container_prefix: Optional[str] = None,
         container_names: Optional[list[str]] = None,
+        use_k8s: bool = False,
+        namespace: str = "default",
+        executor: Optional[Any] = None,
     ):
         """
         Initialize CPU monitor.
@@ -32,11 +38,21 @@ class CPUMonitor:
                             If provided, only containers with names starting with this prefix will be monitored
             container_names: Optional list of specific container names to monitor
                             If provided, only containers with names in this list will be monitored
+            use_k8s: Whether to use Kubernetes (kubectl top pods) instead of docker stats
+            namespace: Kubernetes namespace to use if use_k8s is True
+            executor: Optional CommandExecutor for running shell commands
         """
         self.output_path = output_path
         self.poll_interval = poll_interval
         self.container_prefix = container_prefix
         self.container_names = set(container_names) if container_names else None
+        self.use_k8s = use_k8s
+        self.namespace = namespace
+        self.executor = executor
+        if self.executor is None:
+            from .executor import SubprocessExecutor
+
+            self.executor = SubprocessExecutor()
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._stats_data: list[dict] = []
@@ -102,78 +118,151 @@ class CPUMonitor:
                                      memory_usage_mb, memory_limit_mb, memory_percent
         """
         try:
-            # Use docker stats --no-stream to get a single snapshot
-            # Format: container_name, cpu_percent, mem_usage, mem_limit, mem_percent
-            cmd = [
-                "docker",
-                "stats",
-                "--no-stream",
-                "--no-trunc",
-                "--format",
-                "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}",
-            ]
-
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=10.0, check=True
-            )
-
             timestamp = time.time()
             stats = []
 
-            for line in result.stdout.strip().split("\n"):
-                if not line:
-                    continue
+            if self.use_k8s:
+                cmd = ["kubectl", "top", "pods", "-n", self.namespace, "--no-headers"]
+                if self.executor is not None:
+                    result = self.executor.run(
+                        cmd, capture_output=True, text=True, check=True
+                    )
+                else:
+                    result = subprocess.run(
+                        cmd, capture_output=True, text=True, check=True
+                    )
 
-                parts = line.split("\t")
-                if len(parts) != 4:
-                    continue
+                for line in result.stdout.strip().split("\n"):
+                    if not line:
+                        continue
 
-                container_name, cpu_str, mem_usage_str, mem_percent_str = parts
+                    parts = line.split()
+                    if len(parts) != 3:
+                        continue
 
-                # Filter by container prefix if specified
-                if self.container_prefix and not container_name.startswith(
-                    self.container_prefix
-                ):
-                    continue
+                    container_name, cpu_str, mem_str = parts
 
-                # Filter by specific container names if specified
-                if (
-                    self.container_names is not None
-                    and container_name not in self.container_names
-                ):
-                    continue
+                    if self.container_prefix and not container_name.startswith(
+                        self.container_prefix
+                    ):
+                        continue
 
-                # Parse CPU percentage (e.g., "12.34%" -> 12.34)
-                cpu_percent = self._parse_percentage(cpu_str)
+                    if (
+                        self.container_names is not None
+                        and container_name not in self.container_names
+                    ):
+                        continue
 
-                # Parse memory usage (e.g., "123.4MiB / 1.5GiB" -> usage_mb, limit_mb)
-                memory_usage_mb, memory_limit_mb = self._parse_memory(mem_usage_str)
+                    # Parse CPU cores (e.g., "12m" -> 1.2% assuming 1 core = 1000m)
+                    # For simplicity, just convert millicores to percentage
+                    cpu_percent = self._parse_k8s_cpu(cpu_str)
 
-                # Parse memory percentage (e.g., "8.23%" -> 8.23)
-                memory_percent = self._parse_percentage(mem_percent_str)
+                    # Parse memory (e.g., "123Mi" -> 123.0)
+                    memory_usage_mb = self._parse_k8s_memory(mem_str)
 
-                stats.append(
-                    {
-                        "timestamp": timestamp,
-                        "container_name": container_name,
-                        "cpu_percent": cpu_percent,
-                        "memory_usage_mb": memory_usage_mb,
-                        "memory_limit_mb": memory_limit_mb,
-                        "memory_percent": memory_percent,
-                    }
-                )
+                    stats.append(
+                        {
+                            "timestamp": timestamp,
+                            "container_name": container_name,
+                            "cpu_percent": cpu_percent,
+                            "memory_usage_mb": memory_usage_mb,
+                            "memory_limit_mb": 0.0,
+                            "memory_percent": 0.0,
+                        }
+                    )
+                return stats
+            else:
+                # Use docker stats --no-stream to get a single snapshot
+                # Format: container_name, cpu_percent, mem_usage, mem_limit, mem_percent
+                cmd = [
+                    "docker",
+                    "stats",
+                    "--no-stream",
+                    "--no-trunc",
+                    "--format",
+                    "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}",
+                ]
 
-            return stats
+                if self.executor is not None:
+                    # Timeout is not supported by executor.run
+                    result = self.executor.run(
+                        cmd, capture_output=True, text=True, check=True
+                    )
+                else:
+                    result = subprocess.run(
+                        cmd, capture_output=True, text=True, timeout=10.0, check=True
+                    )
+
+                for line in result.stdout.strip().split("\n"):
+                    if not line:
+                        continue
+
+                    parts = line.split("\t")
+                    if len(parts) != 4:
+                        continue
+
+                    container_name, cpu_str, mem_usage_str, mem_percent_str = parts
+
+                    # Filter by container prefix if specified
+                    if self.container_prefix and not container_name.startswith(
+                        self.container_prefix
+                    ):
+                        continue
+
+                    # Filter by specific container names if specified
+                    if (
+                        self.container_names is not None
+                        and container_name not in self.container_names
+                    ):
+                        continue
+
+                    # Parse CPU percentage (e.g., "12.34%" -> 12.34)
+                    cpu_percent = self._parse_percentage(cpu_str)
+
+                    # Parse memory usage (e.g., "123.4MiB / 1.5GiB" -> usage_mb, limit_mb)
+                    memory_usage_mb, memory_limit_mb = self._parse_memory(mem_usage_str)
+
+                    # Parse memory percentage (e.g., "8.23%" -> 8.23)
+                    memory_percent = self._parse_percentage(mem_percent_str)
+
+                    stats.append(
+                        {
+                            "timestamp": timestamp,
+                            "container_name": container_name,
+                            "cpu_percent": cpu_percent,
+                            "memory_usage_mb": memory_usage_mb,
+                            "memory_limit_mb": memory_limit_mb,
+                            "memory_percent": memory_percent,
+                        }
+                    )
+
+                return stats
 
         except subprocess.TimeoutExpired:
-            logger.warning("docker stats command timed out")
+            logger.warning("docker/kubectl top command timed out")
             return []
         except subprocess.CalledProcessError as e:
-            logger.error(f"docker stats failed: {e.stderr}")
+            logger.error(f"stats command failed: {e.stderr}")
             return []
         except Exception as e:
             logger.error(f"Unexpected error in _collect_stats: {e}")
             return []
+
+    def _parse_k8s_cpu(self, cpu_str: str) -> float:
+        """Parse k8s cpu string (e.g. '12m') to percentage float (e.g. 1.2)."""
+        if cpu_str.endswith("m"):
+            return float(cpu_str[:-1]) / 10.0
+        return float(cpu_str) * 100.0
+
+    def _parse_k8s_memory(self, mem_str: str) -> float:
+        """Parse k8s memory string (e.g. '123Mi') to MB."""
+        if mem_str.endswith("Mi"):
+            return float(mem_str[:-2])
+        if mem_str.endswith("Gi"):
+            return float(mem_str[:-2]) * 1024.0
+        if mem_str.endswith("Ki"):
+            return float(mem_str[:-2]) / 1024.0
+        return float(mem_str) / (1024.0 * 1024.0)
 
     def _parse_percentage(self, percent_str: str) -> float:
         """Parse percentage string like '12.34%' to float 12.34."""
