@@ -799,7 +799,26 @@ Full RPS sweep.
 
 ### Actual Outcomes (basalt_14)
 
-**Status:** Blocked ⏸ — Docker build failed due to insufficient disk space in build cache. Requires `docker system prune` (running but slow over NFS). Retry when disk is available.
+**Status:** Regression ❌ — full propagation causes over-reaction
+
+#### Goodput Comparison (basalt_14)
+
+| RPS | adctl | Rajomon b14 (prop=1.0) | Rajomon b13 (prop=0.2) | Delta (b14-b13) |
+|-----|-------|------------------------|------------------------|-----------------|
+| 100 | 99.5 | 99.5 | 99.5 | 0.0 |
+| 400 | 397.7 | 397.9 | 397.8 | +0.1 |
+| 800 | 795.5 | 795.0 | 795.5 | -0.5 |
+| 1200 | 1146.6 | **1089.4** | 1037.9 | +51.5 |
+| 1400 | 1043.9 | **703.6** | 987.1 | **-283.5** |
+| 1600 | 1047.8 | **783.6** | 712.1 | +71.5 |
+| 1800 | 1399.6 | 871.3 | 892.3 | -21.0 |
+| 2000 | 1294.9 | **690.4** | 874.2 | **-183.8** |
+
+**Hypothesis rejected.** Full price propagation causes a "price storm" — every response carries price info, amplifying the feedback loop. At 1400 RPS, Rajomon drops from 987 to 704 (-29%). At 2000, from 874 to 690 (-21%). The modest improvements at 1200 (+51) and 1600 (+72) are far outweighed by the regressions.
+
+**Root cause:** The 0.2 propagation probability in the default config acts as a natural damper on price oscillation. With 100% propagation, price increases and decreases propagate instantly, creating rapid oscillation: prices spike → mass rejection → queues drain → prices crash → mass admission → prices spike again. The 20% sampling smooths this cycle by introducing lag, which actually helps stability.
+
+**Decision:** Revert. basalt_13 (propagation=0.2) remains the best configuration.
 
 ---
 
@@ -840,9 +859,9 @@ Full RPS sweep.
 
 ### Open hypotheses (not yet tested)
 
-1. **Full price propagation (PRICE_PROPAGATION_PROB=1.0):** basalt_14 was blocked by disk space. Expected to help by enabling client-side self-throttling before requests enter the call graph.
-2. **Frontend-only rejection:** If Rajomon could be configured to only enforce token-budget checks at the first hop (frontend), it would avoid cascading rejections and behave more like adctl's single-point-of-rejection architecture. This would require a code change to distinguish "entry service" from "downstream service" in the Rajomon admission check.
-3. **Adaptive threshold:** Instead of a fixed QUEUE_THRESHOLD_US, use a percentile of recent queue latencies (e.g., P90). This would auto-calibrate to the workload's natural queuing behavior.
+1. **Frontend-only rejection:** If Rajomon could be configured to only enforce token-budget checks at the first hop (frontend), it would avoid cascading rejections and behave more like adctl's single-point-of-rejection architecture. This would require a code change to distinguish "entry service" from "downstream service" in the Rajomon admission check. This is likely the highest-impact change remaining.
+2. **Adaptive threshold:** Instead of a fixed QUEUE_THRESHOLD_US, use a percentile of recent queue latencies (e.g., P90). This would auto-calibrate to the workload's natural queuing behavior.
+3. **Intermediate propagation probability (0.5):** Full propagation (1.0) caused over-reaction (basalt_14). A value between 0.2 and 1.0 might find a better balance between signal speed and stability.
 
 ---
 
