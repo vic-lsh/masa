@@ -10,6 +10,7 @@ full = [
 ]
 default = ["full"]
 prio_oldest = ["masa/prio_oldest"]
+rajomon = ["masa/rajomon", "tonic/rajomon"]
 trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
 
 [dependencies]

@@ -134,7 +134,8 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         #[allow(unused_mut)]
         let mut builder = ContextBuilder::from(&self.ctx)
             .deadline(deadline)
-            .prio_hint(prio_hint);
+            .prio_hint(prio_hint)
+            .tokens(self.rajomon.remaining_tokens());
 
         #[cfg(feature = "adctl")]
         {

@@ -15,7 +15,8 @@ mod local;
 mod noop;
 mod prio_oldest;
 mod queue_global;
-mod rajomon;
+#[allow(missing_docs)]
+pub mod rajomon;
 
 #[cfg(feature = "adctl")]
 pub(crate) mod adctl;
@@ -208,6 +209,8 @@ pub const SERVICE_NAME_OVERRIDE_HEADER: &str = "x-masa-service-name";
 /// Internal header key for MASA context.
 pub(crate) const MASA_CONTEXT_HEADER: &str = masa_core::MASA_CONTEXT_HEADER;
 
+#[cfg(feature = "rajomon")]
+pub use rajomon::CLIENT_TOKEN_BUCKET;
 #[cfg(feature = "rajomon")]
 pub use rajomon::RAJOMON_STATE;
 
