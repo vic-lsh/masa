@@ -582,6 +582,67 @@ The magnitude of improvement is uncertain since we've never seen Rajomon with wo
 ### Experiment design
 Full RPS sweep [100, 400, 800, 1200, 1400, 1600, 1800, 2000] — same as basalt_1. We need the full sweep as a clean baseline with working Rajomon.
 
+### Actual Outcomes (basalt_10)
+
+**Status:** Complete ✅ — dramatically different from broken runs
+
+#### Goodput Comparison (basalt_10)
+
+| RPS | adctl | Rajomon (fixed) | Rajomon (broken, basalt_3) | Delta (adctl - fixed) |
+|-----|-------|-----------------|---------------------------|----------------------|
+| 100 | 99.6 | 99.5 | 99.6 | +0.1 |
+| 400 | 397.8 | 363.9 | 398.1 | +33.9 |
+| 800 | 795.6 | 609.1 | 796.0 | +186.5 |
+| 1200 | 1127.8 | 677.1 | 1193.9 | +450.7 |
+| 1400 | 1154.8 | 663.0 | 1388.7 | +491.8 |
+| 1600 | 1100.3 | 719.2 | 1486.5 | +381.1 |
+| 1800 | 1537.4 | 752.5 | 177.5 | +784.9 |
+| 2000 | 1466.8 | 784.7 | 190.3 | +682.1 |
+
+#### Goodput by Request Type at High Load
+
+| RPS | Type | adctl | Rajomon (fixed) |
+|-----|------|-------|-----------------|
+| 1800 | Search | 785.3 | 482.2 |
+| 1800 | Reservation | 752.1 | 270.3 |
+| 2000 | Search | 713.5 | 495.7 |
+| 2000 | Reservation | 753.3 | 289.1 |
+
+### Key Findings
+
+1. **The catastrophic collapse is gone.** Rajomon at 1800 now gives 752.5 goodput (vs 177.5 broken) — a 4.2x improvement. Search goodput is no longer zero.
+
+2. **New problem: over-rejection at ALL load levels.** Rajomon starts shedding at 400 RPS (363.9 vs 397.8 adctl). At 800 RPS — well below saturation — it achieves only 76% goodput (609/796). The price feedback is too sensitive with default QUEUE_THRESHOLD_US=1000µs (1ms).
+
+3. **Cascading rejections across service layers.** Rajomon early-returns at both the frontend AND downstream reservation service. A request can be rejected at the downstream service even when the frontend would have let it through. adctl only early-returns at the frontend layer, avoiding this compounding effect.
+
+4. **The previous "structural limitation" diagnosis was wrong.** The collapse was simply Rajomon running with no load shedding at all (broken queue latency). With working prices, Rajomon can shed load — it just needs to be tuned to shed less aggressively.
+
+**Decision:** Keep the bug fix. Proceed to iteration 10 to reduce price sensitivity, starting with a higher QUEUE_THRESHOLD_US to prevent price activation at sub-saturation load levels.
+
+## Iteration 10: Raise queue threshold to reduce false-positive rejections (experiment basalt_11)
+
+**Status:** Pending
+
+### Change
+1. `QUEUE_THRESHOLD_US`: 1000 → 10000 (10ms — only activate price increases when queue latency exceeds 10ms, which indicates genuine congestion rather than normal queuing)
+2. `PRICE_DECREASE_STEP`: 1 → 10 (faster recovery when queues clear, preventing hysteresis from transient spikes)
+
+### Hypothesis
+The default QUEUE_THRESHOLD_US=1000µs (1ms) triggers price increases at queue latencies that are normal for a multi-service system under moderate load. Even at 400 RPS (well below saturation), the hotel call graph's ~5-7 services create enough queuing to exceed 1ms, driving prices up and causing false-positive rejections.
+
+Raising the threshold to 10ms means prices only increase when queue latency clearly indicates congestion. At 400-800 RPS, queue latencies should be well under 10ms, so prices remain at 1 and no false rejections occur. At 1600+ RPS, genuine congestion will push latencies above 10ms, activating load shedding.
+
+The faster price decrease (10 vs 1) prevents a scenario where a brief load spike pushes prices up and they take too long to come down, rejecting requests after the spike has passed.
+
+### Expected outcomes if hypothesis is correct:
+1. Low-to-moderate load (100-1200 RPS): Rajomon matches adctl (~99.5% goodput) — no false rejections
+2. Near saturation (1400-1600 RPS): Rajomon achieves >90% goodput (vs current 47-45%)
+3. Overload (1800-2000 RPS): Rajomon maintains or improves on the 752-785 goodput from basalt_10
+
+### Experiment design
+Full RPS sweep. Need to verify both that low-load false rejections are eliminated and that high-load shedding still works.
+
 ---
 
 ## Assessment (pre-bug-fix, now invalidated)
