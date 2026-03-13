@@ -293,6 +293,38 @@ This is fundamentally different from basalt_2/4 which tuned server-side price ma
 ### Experiment design
 Same config as basalt_1 (full RPS sweep [100–2000]). Full sweep needed to verify low-load isn't harmed and to see if the collapse point shifts.
 
+### Actual Outcomes (basalt_5)
+
+**Status:** Failed ❌ — collapse unchanged, slight regression at 1600
+
+#### Goodput Comparison (basalt_5)
+
+| RPS | adctl | Rajomon (tight pool + fast EWMA) | Delta |
+|-----|-------|----------------------------------|-------|
+| 100 | 99.5 | 99.7 | -0.2 |
+| 400 | 398.0 | 397.9 | +0.1 |
+| 800 | 795.8 | 796.0 | -0.2 |
+| 1200 | 1193.9 | 1191.0 | +2.9 |
+| 1400 | 1382.3 | 1385.4 | -3.1 |
+| 1600 | 1478.0 | 1453.4 | +24.6 |
+| 1800 | 1561.7 | **176.6** | +1385.1 |
+| 2000 | 1733.2 | **190.3** | +1542.9 |
+
+#### Comparison: basalt_3 → basalt_5 Rajomon
+
+| RPS | basalt_3 | basalt_5 | Change |
+|-----|----------|----------|--------|
+| 100–1400 | ~99.5% | ~99.2–99.7% | unchanged |
+| 1600 | 1486.5 (92.9%) | 1453.4 (90.8%) | **-33 (-2.1pp)** |
+| 1800 | 177.5 (9.9%) | 176.6 (9.8%) | unchanged |
+| 2000 | 190.3 (9.5%) | 190.3 (9.5%) | unchanged |
+
+**Hypothesis (gateway-level rate limiting via tight client pool): REJECTED.** The tight client pool, faster EWMA, and 100% price propagation had zero effect on the 1800+ RPS collapse. The only measurable effect was a -33 goodput regression at 1600 RPS (client pool being too aggressive at the transition point). Search goodput remains exactly 0.0 at 1800+.
+
+The client pool is not the binding constraint for the collapse. Even when the pool actively rate-limits at the gateway, the phase transition at 1800 RPS is identical — indicating the collapse is driven by dynamics WITHIN the call graph (admitted requests consuming CPU for work that misses SLO), which no external admission control can address.
+
+**Decision:** Revert all basalt_5 code changes. The tight client pool and fast EWMA provide no benefit and slightly hurt 1600 RPS.
+
 ## Assessment
 
 ### Summary of all iterations
