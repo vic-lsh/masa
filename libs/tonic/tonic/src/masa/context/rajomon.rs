@@ -21,7 +21,7 @@ const PRICE_PER_EXCESS_MS: u64 = 2;
 #[cfg(feature = "rajomon")]
 const PRICE_DECREASE_STEP: u64 = 1;
 #[cfg(feature = "rajomon")]
-const PRICE_PROPAGATION_PROB: f64 = 1.0;
+const PRICE_PROPAGATION_PROB: f64 = 0.2;
 
 /// Global Rajomon state shared across all request handlers.
 #[cfg(feature = "rajomon")]
