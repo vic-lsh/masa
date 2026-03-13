@@ -4,12 +4,22 @@ use crate::metadata::{Ascii, MetadataValue};
 use crate::{body::BoxBody, CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
 mod common;
+pub(crate) mod estimator;
 mod fifo;
 mod global;
+pub(crate) mod latency_map;
 mod local;
 mod noop;
 mod prio_oldest;
 mod queue_global;
+
+#[cfg(feature = "adctl")]
+pub(crate) mod adctl;
+#[cfg(feature = "adctl")]
+pub(crate) mod adctl_hooks;
+
+#[cfg(all(feature = "adctl", not(feature = "early")))]
+compile_error!("Feature 'adctl' requires 'early'");
 
 pub mod runtime;
 mod tls;

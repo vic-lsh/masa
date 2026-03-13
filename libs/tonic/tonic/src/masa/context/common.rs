@@ -251,7 +251,7 @@ macro_rules! generate_early_return_test {
 
             // Update last child info manually (simulating a completed child call)
             let mut child_ctx = $ChildContext::new(method, &Request::new(()));
-            child_ctx.set_method_name("ChildMethod".to_string());
+            child_ctx.set_method_name(crate::CowGrpcMethod::new("test.Service", "ChildMethod"));
 
             // This simulates a child RPC finishing
             let mut resp_result: Result<Response<()>, Status> = Ok(Response::new(()));
@@ -266,7 +266,7 @@ macro_rules! generate_early_return_test {
 
             let msg = err.message();
             assert!(
-                msg.contains("last_rpc=ChildMethod"),
+                msg.contains("last_rpc=test.Service::ChildMethod"),
                 "Message should contain last_rpc: {}",
                 msg
             );
