@@ -417,6 +417,36 @@ This creates fast oscillation: overload → prices spike → all rejected → qu
 ### Experiment design
 Same config as basalt_1 (full RPS sweep [100–2000]).
 
+### Actual Outcomes (basalt_7)
+
+**Status:** Failed ❌ — collapse unchanged
+
+#### Goodput Comparison (basalt_7)
+
+| RPS | adctl | Rajomon (fast oscillation) | Delta |
+|-----|-------|----------------------------|-------|
+| 100 | 99.5 | 99.5 | 0.0 |
+| 400 | 398.0 | 398.0 | 0.0 |
+| 800 | 796.1 | 796.1 | 0.0 |
+| 1200 | 1193.1 | 1193.1 | 0.0 |
+| 1400 | 1390.8 | 1390.8 | 0.0 |
+| 1600 | 1534.6 | 1499.7 | +34.9 |
+| 1800 | 1589.0 | **176.1** | +1412.9 |
+| 2000 | 1730.8 | **190.6** | +1540.2 |
+
+#### Comparison: basalt_3 → basalt_7 Rajomon
+
+| RPS | basalt_3 | basalt_7 | Change |
+|-----|----------|----------|--------|
+| 100–1400 | ~99.5% | ~99.5% | unchanged |
+| 1600 | 1486.5 (92.9%) | 1499.7 (93.7%) | +13 (+0.8pp) |
+| 1800 | 177.5 (9.9%) | 176.1 (9.8%) | unchanged |
+| 2000 | 190.3 (9.5%) | 190.6 (9.5%) | unchanged |
+
+**Hypothesis (fast oscillation yields higher average goodput): REJECTED.** Ultra-responsive EWMA (α=7/8), 50ms ticks, PRICE_DECREASE_STEP=5000, and 100% propagation had zero effect on the 1800+ collapse. The +13 at 1600 is marginal. The oscillation approach fails because the overload-to-collapse transition is not a slow feedback loop problem — it's a sharp phase transition that no oscillation frequency can smooth.
+
+**Decision:** Revert. The marginal +13 at 1600 doesn't justify 4 parameter changes from defaults.
+
 ## Assessment
 
 ### Summary of all iterations
