@@ -158,6 +158,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             .deadline(deadline)
             .prio_hint(PriorityHint::new(prio_hint))
             .hop_count(self.ctx.hop_count().saturating_add(1))
+            .tokens(self.rajomon.remaining_tokens())
             .build();
         request.set_masa_context(&child_recv_ctx);
 

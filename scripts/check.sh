@@ -8,6 +8,7 @@ flag_combos=(
     "fifo,early,adctl"
     "fifo,rajomon"
     "prio_global"
+    "prio_global,rajomon"
     "prio_global,early"
     "prio_global,early,adctl"
     "prio_oldest,early,adctl"
