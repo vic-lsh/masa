@@ -161,3 +161,64 @@ The per-request token budget `1..=100` is the binding constraint for both failur
 
 ### Experiment design
 Same config as basalt_1 (full RPS sweep [100–2000]). Need full sweep to verify both low-load improvement and high-load stability.
+
+### Actual Outcomes (basalt_3)
+
+**Status:** Mixed — low-load fixed, collapse unchanged
+
+#### Goodput Comparison (basalt_3)
+
+| RPS | adctl | Rajomon (100..=10000 tokens) | Delta |
+|-----|-------|------------------------------|-------|
+| 100 | 99.5 | 99.6 | -0.1 |
+| 400 | 398.1 | 398.1 | 0.0 |
+| 800 | 795.9 | 796.0 | -0.1 |
+| 1200 | 1193.1 | 1193.9 | -0.8 |
+| 1400 | 1390.4 | 1388.7 | +1.7 |
+| 1600 | 1529.6 | 1486.5 | +43.1 |
+| 1800 | 1540.8 | **177.5** | +1363.3 |
+| 2000 | 1730.8 | **190.3** | +1540.5 |
+
+#### Comparison: basalt_1 → basalt_3 Rajomon improvement
+
+| RPS | basalt_1 | basalt_3 | Change |
+|-----|----------|----------|--------|
+| 100-1400 | ~95.5% | ~99.2-99.6% | **+4pp (fixed!)** |
+| 1600 | 94.1% | 92.9% | -1.2pp |
+| 1800 | 9.6% | 9.9% | unchanged |
+| 2000 | 9.5% | 9.5% | unchanged |
+
+**Hypothesis 1 (low-load): CONFIRMED.** Rajomon now matches adctl at low load (99.2-99.6% vs 99.3-99.5%). The token budget floor of 100 eliminated false-positive rejections.
+
+**Hypothesis 2 (collapse): REJECTED.** Collapse is identical. At 1800+ RPS, Search goodput drops to exactly 0.0 while Reservation survives at ~177-190. The larger token budget had no effect because the problem is not token exhaustion — it's that admitted requests are not shed once doomed. adctl early-returns 249+ req/s at 1800 RPS; Rajomon has no equivalent mechanism (rajomon and `early` are mutually exclusive).
+
+**Decision:** Keep the token budget change (it fixed low-load). The collapse is a structural limitation: Rajomon can only control admission, not execution. Without early return, admitted requests that will miss SLO consume CPU until completion, causing cascading queue buildup. Proceed to iteration 3 to try faster price feedback as a partial mitigation.
+
+## Iteration 3: Aggressive price feedback + full propagation (experiment basalt_4)
+
+**Status:** Pending
+
+### Change
+On top of the 100..=10000 token budget from iteration 2, tune price feedback for faster reaction:
+- `PRICE_PER_EXCESS_MS`: 10 → 50 (5x faster price increase under overload)
+- `PRICE_DECREASE_STEP`: 1 → 5 (faster recovery to reduce oscillation)
+- `PRICE_PROPAGATION_PROB`: 0.2 → 1.0 (every response propagates price — fastest possible convergence)
+- `QUEUE_THRESHOLD_US`: 1000 → 2000 (slight increase to avoid triggering on normal variation)
+
+### Hypothesis
+The collapse at 1800 RPS happens because the price feedback loop is too slow to shed load before queues explode. With the current parameters:
+- EWMA α=1/4 at 100ms ticks: takes ~400ms to converge on the true queue latency
+- 20% propagation: clients only learn about price changes 1 in 5 responses
+- PRICE_PER_EXCESS_MS=10: at 100ms queue latency (EWMA=100000µs), increment = ~1000/tick → takes ~10 ticks (1 second) to reach price 10000 (which would reject all traffic with max budget 10000)
+
+During that 1-second convergence window, thousands of requests are admitted and queue up, making the overload worse. By the time prices rise high enough to shed, the system is already in cascade failure.
+
+Making price increase 5x faster and propagation 100% (vs 20%) should reduce the convergence time from ~1s to ~200ms. This may be fast enough to shed load before queue buildup becomes catastrophic. Faster decrease (5 vs 1) reduces oscillation by allowing faster recovery after load drops.
+
+### Expected outcomes if hypothesis is correct:
+1. The collapse at 1800 RPS is delayed or softened — Rajomon achieves >500 goodput at 1800 RPS (vs current 177)
+2. At 2000 RPS, Rajomon achieves >500 goodput (vs current 190)
+3. Low-load performance is unaffected (prices stay at 1 when EWMA < threshold)
+
+### Experiment design
+Same config as basalt_1 (full RPS sweep). Focus analysis on 1600-2000 RPS behavior and on whether price oscillation is visible in the early return patterns.
