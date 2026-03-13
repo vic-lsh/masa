@@ -12,6 +12,7 @@ mod local;
 mod noop;
 mod prio_oldest;
 mod queue_global;
+mod rajomon;
 
 #[cfg(feature = "adctl")]
 pub(crate) mod adctl;
@@ -38,26 +39,12 @@ pub type DefaultMasaHooks = noop::NoopMasaHooks;
 
 #[cfg(all(
     feature = "fifo",
-    feature = "early",
     not(feature = "prio_global"),
     not(feature = "prio_oldest"),
     not(feature = "prio_local")
 ))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = fifo::Fifo;
-
-#[cfg(all(
-    feature = "fifo",
-    not(feature = "early"),
-    not(feature = "prio_global"),
-    not(feature = "prio_oldest"),
-    not(feature = "prio_local")
-))]
-#[allow(missing_docs)]
-// TODO: revert back to noop for Fifo. Add another feature flag for tracing.
-// pub type DefaultMasaHooks = noop::NoopMasaHooks;
-// pub type DefaultMasaHooks = tracing::Tracing;
-pub type DefaultMasaHooks = noop::NoopMasaHooks;
 
 #[cfg(any(feature = "prio_global"))]
 #[allow(missing_docs)]
@@ -217,6 +204,9 @@ pub const SERVICE_NAME_OVERRIDE_HEADER: &str = "x-masa-service-name";
 
 /// Internal header key for MASA context.
 pub(crate) const MASA_CONTEXT_HEADER: &str = masa_core::MASA_CONTEXT_HEADER;
+
+#[cfg(feature = "rajomon")]
+pub use rajomon::RAJOMON_STATE;
 
 /// Get the MASA context from metadata.
 pub fn get_masa_context_from_metadata(metadata: &crate::metadata::MetadataMap) -> Option<Context> {

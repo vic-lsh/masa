@@ -14,6 +14,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from exp_runner.runner.naming import generate_project_name
 from exp_runner.runner.apps.synthetic import (
     SyntheticApp,
     SyntheticBuilder,
