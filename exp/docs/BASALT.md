@@ -359,6 +359,64 @@ This gives a smooth degradation curve where the price feedback loop can find a s
 ### Experiment design
 Same config as basalt_1 (full RPS sweep [100–2000]).
 
+### Actual Outcomes (basalt_6)
+
+**Status:** Failed ❌ — collapse unchanged, regression at 1600
+
+#### Goodput Comparison (basalt_6)
+
+| RPS | adctl | Rajomon (100..=100000 tokens) | Delta |
+|-----|-------|-------------------------------|-------|
+| 100 | 99.5 | 99.5 | 0.0 |
+| 400 | 398.0 | 398.0 | 0.0 |
+| 800 | 796.0 | 796.0 | 0.0 |
+| 1200 | 1191.4 | 1191.4 | 0.0 |
+| 1400 | 1388.8 | 1388.8 | 0.0 |
+| 1600 | 1534.2 | 1393.7 | +140.5 |
+| 1800 | 1591.1 | **178.4** | +1412.7 |
+| 2000 | 1735.1 | **191.4** | +1543.7 |
+
+#### Comparison: basalt_3 → basalt_6 Rajomon
+
+| RPS | basalt_3 | basalt_6 | Change |
+|-----|----------|----------|--------|
+| 100–1400 | ~99.5% | ~99.5% | unchanged |
+| 1600 | 1486.5 (92.9%) | 1393.7 (87.1%) | **-93 (-5.8pp)** |
+| 1800 | 177.5 (9.9%) | 178.4 (9.9%) | unchanged |
+| 2000 | 190.3 (9.5%) | 191.4 (9.6%) | unchanged |
+
+**Hypothesis (wider token range prevents phase transition): REJECTED.** The 10x larger token budget had zero effect on the 1800+ collapse and caused a -93 goodput regression at 1600 RPS. The wider budget doesn't help because the problem isn't the granularity of per-request shedding — it's that once queue latencies spike, ALL services raise prices simultaneously, and the accumulated cost across the call graph exceeds ANY budget.
+
+**Decision:** Revert to 100..=10000 token budget (basalt_3 configuration). The 100..=100000 range is strictly worse.
+
+## Iteration 6: Fast oscillation via ultra-responsive EWMA + rapid price recovery (experiment basalt_7)
+
+**Status:** Pending
+
+### Change
+On top of the 100..=10000 token budget from iteration 2:
+1. EWMA α: 1/4 → 7/8 (`(7 * window_avg + old_ewma) / 8` instead of `(window_avg + 3 * old_ewma) / 4`)
+2. Tick interval: 100ms → 50ms
+3. `PRICE_DECREASE_STEP`: 1 → 5000 (very fast price recovery when queues clear)
+4. `PRICE_PROPAGATION_PROB`: 0.2 → 1.0 (instant price propagation)
+
+### Hypothesis
+The current EWMA (α=1/4, 100ms tick) has a critical flaw for overload recovery: even when queues EMPTY (window_avg=0), the EWMA takes ~6 ticks (600ms) to drop below QUEUE_THRESHOLD_US. During those 600ms, prices KEEP INCREASING (because EWMA > threshold), even though the queue is already empty. This creates a one-way ratchet: prices spike instantly under overload but take hundreds of seconds to recover (price decreases at 1/tick, and recovery only starts after EWMA drops below threshold/2).
+
+With α=7/8: when queue empties, new_ewma = old_ewma/8. From 100000µs: tick 1 → 12500, tick 2 → 1562, tick 3 → 195 (below threshold/2=500). Recovery triggers in **3 ticks (150ms)** instead of 6+ ticks.
+
+With PRICE_DECREASE_STEP=5000: once recovery triggers, price drops from 10000 → 5000 → 1 in 2 ticks. Total recovery time: **5 ticks (250ms)** from queue emptying.
+
+This creates fast oscillation: overload → prices spike → all rejected → queue drains (100ms) → EWMA drops (150ms) → prices crash (100ms) → requests admitted → overload again. Cycle time ≈ 500ms. During each cycle, ~200ms of admit window where system operates within capacity (~1500 RPS goodput). Average goodput ≈ 0.4 × 1500 = 600. Even this conservative estimate would be 3.4x better than current 178.
+
+### Expected outcomes if hypothesis is correct:
+1. Rajomon achieves >500 goodput at 1800 RPS (vs current 178)
+2. Visible oscillation pattern in the data (goodput variance increases)
+3. Low-load performance preserved (EWMA stays near 0, prices stay at 1)
+
+### Experiment design
+Same config as basalt_1 (full RPS sweep [100–2000]).
+
 ## Assessment
 
 ### Summary of all iterations
