@@ -94,3 +94,68 @@ Together, these changes should allow rajomon to start shedding load within ~1 se
 
 ### Experiment design
 Same config as anvil_1 (forge_1 RPS sweep, Search SLO=200ms, Reservation SLO=50ms). Full 8-point sweep to see both the underload and overload regimes.
+
+### Actual Outcomes (anvil_2)
+
+**Status:** Regression ❌ — hypothesis rejected
+
+#### Goodput Comparison
+
+| RPS | adctl (anvil_2) | adctl (anvil_1) | rajomon tuned | rajomon default |
+|-----|----------------|-----------------|---------------|-----------------|
+| 100 | 99.7 | 99.5 | 99.5 | 99.5 |
+| 400 | 398.0 | 398.0 | 398.1 | 398.1 |
+| 800 | 795.9 | 795.9 | 796.0 | 795.9 |
+| 1200 | 1193.9 | 1193.6 | 1193.7 | 1193.6 |
+| 1400 | 1391.0 | 1388.8 | 1386.1 | 1390.1 |
+| 1600 | 1492.2 | 1536.5 | 1492.1 | 1513.8 |
+| 1800 | 1593.2 | 1542.1 | **177.2** | 176.2 |
+| 2000 | 1688.4 | 1726.7 | **191.5** | 191.1 |
+
+**Rajomon still collapses at 1800+ RPS.** Goodput at 1800: 177.2 (tuned) vs 176.2 (default) — statistically identical. Zero Search goodput at 1800+.
+
+**Token budget change also hurt adctl.** At 1600 RPS, adctl dropped from 1536.5 to 1492.2 (-44) due to the shared token budget parameter being lowered to 10. Mixed effect elsewhere.
+
+**Rajomon still produces zero early returns.** The ResourceExhausted rejections from rajomon are counted as errors, not early returns.
+
+### Root cause analysis
+
+The token budget + threshold tuning was insufficient because:
+1. **Even with budget=10, price needs 10 ticks (1s) to reach rejection** — 1800 requests arrive during that window
+2. **Price oscillation**: once rejection starts, queue drains → price drops → admits again → collapse again. The +1/-1 symmetric step creates unstable oscillation.
+3. **No in-flight shedding**: rajomon can only reject at admission. Already-admitted requests run to completion even if past deadline, wasting CPU. This is the fundamental architectural gap vs adctl+early.
+
+### Decision: Revert
+
+Reverting code commit `6fc7e1f5` because: (a) no benefit to rajomon, (b) shared token budget change degraded adctl at 1600 RPS.
+
+---
+
+## Iteration 2: Faster price escalation with asymmetric step (experiment anvil_3)
+
+**Status:** Pending
+
+### Change
+- Price increment: +1 → +10 per tick when overloaded (in `rajomon.rs` `update_prices()`)
+- Price decrement: -1 unchanged (keep slow decay to prevent oscillation)
+- Queue latency threshold: 5000µs → 1000µs (keep from iteration 1)
+- Token budget: revert to 100 (stop affecting adctl)
+
+### Hypothesis
+Iteration 1 failed because even with budget=10, it took 10 ticks to start rejecting. The root issue is the symmetric +1/-1 step causing price oscillation: price rises slowly → rejects → queue drains → price falls just as slowly → admits → overload again.
+
+By making the step **asymmetric** (+10 up, -1 down), the price:
+- Reaches rejection threshold (100) in 10 ticks = 1 second (was 100 ticks = 10s)
+- Takes 100 ticks = 10 seconds to fully recover, preventing premature re-admission
+- This asymmetry creates a natural hysteresis that should stabilize the system under overload
+
+Note: changing the step size is a hyperparameter change, not an algorithm change. The algorithm structure (if above threshold → increment, else → decrement) is preserved.
+
+### Expected outcomes if hypothesis is correct:
+1. Rajomon reaches rejection within 1 second at 1800+ RPS, preventing full collapse
+2. Slow decay (-1/tick) prevents oscillation — once rejecting, stays rejecting until load genuinely subsides
+3. Adctl unaffected (token budget back to 100)
+4. Low-load behavior unchanged (queue latency stays below 1000µs, prices stay at 1)
+
+### Experiment design
+Same config as anvil_1. Full 8-point sweep.
