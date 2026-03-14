@@ -186,7 +186,8 @@ Hotel and mssim only (socialnet still not saturated). Same ridge_1/ridge_2 confi
 
 ## Iteration 3: Increase MAX_BURST_SECS from 0.1 to 0.5 (experiment ridge_4)
 
-**Status:** Pending
+**Status:** Reverted ❌
+**Code commit:** a0e3c556 (reverted)
 
 ### Change
 Increase `MAX_BURST_SECS` from 0.1 to 0.5 in `libs/tonic/tonic/src/masa/context/adctl.rs`.
@@ -208,3 +209,53 @@ Unlike UTIL_TARGET (which shifts *when* shedding starts) or ADJUST_RATE (which c
 
 ### Experiment design
 Hotel and mssim with ridge_1 configs.
+
+### Actual Outcomes (ridge_4)
+
+**Hotel:** Mixed — improved at 1200 (+7) and 1600 (+17), but regressed at 1400 (-19), 1800 (-12), 2000 (-16). Same Pareto frontier pattern as iterations 1-2.
+
+**Decision:** Revert. MAX_BURST_SECS=0.5 shifts goodput between load regions without net improvement.
+
+---
+
+## Final Assessment
+
+### Summary of all iterations
+
+| Iteration | Change | Result | Decision |
+|-----------|--------|--------|----------|
+| 1 | UTIL_TARGET 0.85→0.92 | MSSIM 1000 RPS +6%, hotel 1800 -2.4% | **Keep** |
+| 2 | ADJUST_RATE 0.5→0.3 | Hotel/MSSIM high load worse | Revert |
+| 3 | MAX_BURST_SECS 0.1→0.5 | Mixed, same Pareto tradeoff | Revert |
+
+### Final configuration
+- `UTIL_TARGET = 0.92` (changed from 0.85)
+- `ADJUST_RATE = 0.5` (unchanged)
+- `MAX_BURST_SECS = 0.1` (unchanged)
+
+### Best performance achieved (UTIL_TARGET=0.92)
+
+**Hotel:**
+| RPS | target | prio_oldest | Δ | fifo,early | Δ | fifo,rajomon | Δ |
+|-----|--------|-------------|---|-----------|---|-------------|---|
+| 1200 | 1172 | 1184 | -1% | 1173 | 0% | 1129 | +4% |
+| 1400 | 1225 | 1154 | **+6%** | 1048 | **+17%** | 981 | **+25%** |
+| 1600 | 1339 | 1175 | **+14%** | 802 | **+67%** | 702 | **+91%** |
+| 1800 | 1456 | 1069 | **+36%** | 745 | **+95%** | 699 | **+108%** |
+| 2000 | 1568 | 1114 | **+41%** | 666 | **+135%** | 696 | **+125%** |
+
+**MSSIM:**
+| RPS | target | prio_oldest | Δ | fifo,early | Δ | fifo,rajomon | Δ |
+|-----|--------|-------------|---|-----------|---|-------------|---|
+| 1000 | 816 | 787 | **+4%** | 307 | **+166%** | 0 | **inf** |
+| 1200 | 724 | 756 | -4% | 319 | **+127%** | 0 | **inf** |
+| 1500 | 800 | 766 | **+4%** | 382 | **+109%** | 0 | **inf** |
+| 1800 | 924 | 795 | **+16%** | 458 | **+102%** | 0 | **inf** |
+
+### Conclusion
+
+The `prio_local,early,adctl,est_mean_var` policy already dominates all baselines by large margins at high load. The UTIL_TARGET=0.92 tuning partially closed the moderate-overload gap vs prio_oldest. Further parameter tuning (ADJUST_RATE, MAX_BURST_SECS) confirmed a Pareto frontier: improvements at moderate overload trade off against regressions at deep overload.
+
+The remaining ~4% gap vs prio_oldest at 1200 RPS (hotel/mssim) is the cost of having admission control — adctl sheds a small number of viable requests at the saturation boundary. This is the fundamental tradeoff of proactive load shedding vs reactive early return.
+
+To maximize goodput further would require algorithmic changes to the admission control logic (e.g., making Layer 2 admission load-adaptive rather than util-threshold-based), not parameter tuning.
