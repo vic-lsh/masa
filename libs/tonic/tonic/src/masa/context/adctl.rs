@@ -6,7 +6,7 @@ const STALENESS_SECS: f64 = 2.0;
 const STALENESS_DEFAULT: f32 = 0.5;
 const UTIL_TARGET: f64 = 0.92;
 const ADJUST_RATE: f64 = 0.5;
-const MAX_BURST_SECS: f64 = 0.5;
+const MAX_BURST_SECS: f64 = 0.1;
 const INITIAL_BUDGET_RATE: f64 = 10_000_000.0; // µs/s — start generous
 
 /// Tracks max_downstream_util per API with staleness decay.
@@ -160,10 +160,10 @@ mod tests {
     fn test_admission_controller_rejects_when_budget_exhausted() {
         let ac = AdmissionController::new();
         // Exhaust the budget by admitting requests with large compute costs
-        // Initial budget = INITIAL_BUDGET_RATE * MAX_BURST_SECS = 10M * 0.5 = 5M µs
-        // Each request costs 100_000 µs, so ~50 requests should exhaust it
+        // Initial budget = INITIAL_BUDGET_RATE * MAX_BURST_SECS = 10M * 0.1 = 1M µs
+        // Each request costs 100_000 µs, so ~10 requests should exhaust it
         let mut rejected = false;
-        for _ in 0..100 {
+        for _ in 0..20 {
             if !ac.should_admit("Search", 100_000, 100_000, 50_000) {
                 rejected = true;
                 break;
