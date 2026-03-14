@@ -980,10 +980,29 @@ Full RPS sweep.
 
 **Decision:** Revert. The price accumulation model is fundamentally more brittle at high load because price amplification across the call graph depth creates cliff-edge dynamics. b13 (no accumulation, QUEUE_THRESHOLD_US=5000, PRICE_PER_EXCESS_MS=2) remains the most robust configuration.
 
-### Open hypotheses (not yet tested)
+## Iteration 16: Gentler pricing + higher token floor (experiment basalt_18)
 
-1. **Adaptive threshold:** Instead of a fixed QUEUE_THRESHOLD_US, use a percentile of recent queue latencies (e.g., P90). This would auto-calibrate to the workload's natural queuing behavior.
-2. **Intermediate propagation probability (0.5):** Full propagation (1.0) caused over-reaction (basalt_14). A value between 0.2 and 1.0 might find a better balance between signal speed and stability.
+**Status:** Pending
+
+### Change
+1. `PRICE_PER_EXCESS_MS`: 2 → 1 (half the price growth rate)
+2. Token range: `100..=10000` → `1000..=10000` (raise floor from 100 to 1000)
+   - In `libs/masa/src/lib.rs` and `libs/tonic/tonic/src/masa/context/rajomon.rs`
+
+### Hypothesis
+b13's weakness is over-shedding at 1200-1400 RPS (1038 and 987 vs adctl's 1138 and 1089). Two mechanisms contribute:
+1. **Price escalation too fast:** PRICE_PER_EXCESS_MS=2 means prices reach rejection-level values quickly. Halving to 1 doubles the time needed, giving more room for partial shedding equilibrium.
+2. **Low-budget requests rejected unnecessarily:** With uniform(100, 10000), ~9% of requests have budget <1000. At per-hop price=500 (moderate overload), these requests are guaranteed rejected even though the system has capacity. Raising the floor to 1000 ensures every request can traverse at least 1 service at price=1000 before rejection.
+
+At heavy overload (1800+ RPS), prices reach 2000-5000+ per hop. With ceiling=10000, requests with budget <5000 are rejected → ~40% shedding. This should still provide effective load shedding.
+
+### Expected outcomes:
+1. 1200-1400 RPS: >1050 goodput (closer to adctl)
+2. 1800-2000 RPS: ≥850 goodput (maintained or slightly improved)
+3. Low load: unchanged
+
+### Experiment design
+Full RPS sweep.
 
 ---
 
@@ -1016,6 +1035,28 @@ Full RPS sweep.
 | Token range | 1..=100 | 1..=100, 100..=10000, 100..=100000 | **100..=10000** |
 | Client replenish | 100 | 100, 1000, 10000, 100000 | 10000 |
 | Client max_tokens | 1000 | 1000, 5000, 100000, 1000000 | 100000 |
+
+---
+
+## Iteration 16: basalt_16 — gentler pricing + token floor 1000
+
+### Hypothesis
+
+Reducing `PRICE_PER_EXCESS_MS` from 2 to 1 makes pricing less aggressive, so transient queue spikes produce smaller price bumps and fewer false rejections. Raising the token floor from 100 to 1000 (`1000..=10000`) gives each request a larger minimum budget, making it harder for downstream price accumulation to exhaust tokens before the request completes its call graph. Together, these changes should reduce unnecessary shedding at moderate load (1200-1600 RPS) while still allowing rejection under genuine overload.
+
+### Changes
+- `PRICE_PER_EXCESS_MS`: 2 → 1
+- Token range (client + server): `100..=10000` → `1000..=10000`
+
+### Expected outcome
+1. 1200-1600 RPS: fewer false rejections, goodput closer to adctl
+2. 1800-2000 RPS: may not improve (structural gap), but should not regress
+3. Low load: unchanged
+
+### Experiment design
+Full RPS sweep.
+
+---
 
 ### Best Rajomon configuration
 
