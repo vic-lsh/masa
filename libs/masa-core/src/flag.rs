@@ -21,5 +21,5 @@ pub const RAJOMON: bool = cfg!(feature = "rajomon");
 ))]
 compile_error!("Enable at most one policy feature: fifo | prio_global | prio_oldest | prio_local");
 
-#[cfg(all(feature = "early", feature = "rajomon"))]
-compile_error!("Enable at most one early-rejection feature: early | rajomon");
+// early + rajomon can now be combined: rajomon handles admission control
+// (token-based), early handles in-flight abortion (deadline-based).
