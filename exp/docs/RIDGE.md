@@ -181,3 +181,30 @@ Hotel and mssim only (socialnet still not saturated). Same ridge_1/ridge_2 confi
 **Decision:** Revert. ADJUST_RATE=0.3 is too sluggish — delays shedding under deep overload. Cross-app results are inconsistent. ADJUST_RATE=0.5 is the right value.
 
 **Current state:** UTIL_TARGET=0.92 (kept), ADJUST_RATE=0.5 (reverted to original).
+
+---
+
+## Iteration 3: Increase MAX_BURST_SECS from 0.1 to 0.5 (experiment ridge_4)
+
+**Status:** Pending
+
+### Change
+Increase `MAX_BURST_SECS` from 0.1 to 0.5 in `libs/tonic/tonic/src/masa/context/adctl.rs`.
+
+### Hypothesis
+`MAX_BURST_SECS` caps the token bucket at `budget_rate * 0.1` tokens. At moderate overload, brief utilization spikes cause the budget rate to decrease. With only 100ms of burst capacity, the system cannot absorb short congestion bursts — requests arriving during a brief spike get shed even though the spike would pass within milliseconds.
+
+Increasing to 0.5 seconds of burst capacity means:
+1. At moderate overload: transient congestion doesn't exhaust the bucket → fewer false-positive rejections → goodput improves at 1000-1400 RPS
+2. At deep overload: budget_rate is low enough that even 0.5s burst is small → shedding behavior unchanged
+3. At low load: budget_rate is high, burst cap is irrelevant → no change
+
+Unlike UTIL_TARGET (which shifts *when* shedding starts) or ADJUST_RATE (which changes *how fast* shedding ramps), MAX_BURST_SECS changes *how much short-term variability* the system tolerates. This is orthogonal to the previous tuning.
+
+### Expected outcomes if hypothesis is correct:
+1. Hotel 1200 RPS: goodput ≥1180 (matching prio_oldest)
+2. MSSIM 1000-1400 RPS: goodput improves toward prio_oldest
+3. Hotel 1800-2000 RPS: maintained (burst cap doesn't affect sustained overload)
+
+### Experiment design
+Hotel and mssim with ridge_1 configs.
