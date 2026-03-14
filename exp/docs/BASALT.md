@@ -857,11 +857,40 @@ Full RPS sweep.
    - **Cascading rejection:** Rajomon's per-service price-based rejection causes requests to be rejected at both the frontend AND downstream services. This wastes the CPU spent processing the request through upstream services before rejection. adctl concentrates rejection at the frontend, avoiding this waste. This is now the **primary** gap — visible in early return breakdowns where Rajomon rejects at 4+ methods across 2 services while adctl rejects at 2 methods on the frontend only.
    - **Early return:** adctl+early aborts in-flight requests past their deadline, reclaiming CPU. Rajomon cannot use `early` (mutually exclusive). This contributes to the gap but is secondary to the cascading rejection problem.
 
+## Iteration 14: Fix price accumulation to match paper (experiment basalt_15)
+
+**Status:** Pending
+**Code commit:** dbf7fa72
+
+### Change
+Three bugs fixed in how Rajomon propagates and uses prices:
+
+1. **Price accumulation:** `inject_price_to_response` now sends `accumulated_price(method) = local_price + max_downstream_child_price` instead of just the local price. Upstream services and clients now see the true end-to-end cost of the call path.
+
+2. **Additive instead of max:** New `accumulated_price()` uses `local + downstream` (additive) instead of the old `max(local, downstream)`. Added `child_price()` for outbound checks (returns cached accumulated price from child response).
+
+3. **No double-charging:** `check_inbound` now charges only the LOCAL price (not accumulated). `check_outbound` charges the child's cached accumulated price. Total deduction per hop = local + child_accumulated, matching the paper's model where each service charges its local cost and the upstream verifies total budget.
+
+### Hypothesis
+The cascading rejection problem (Rajomon rejects at both frontend AND downstream services) exists because upstream services don't know the true downstream cost. With price accumulation:
+
+- When the search service is overloaded, its high price propagates to the frontend's `accumulated_price`
+- The frontend now charges `local_frontend + downstream_search_price` via outbound check BEFORE sending to search
+- Requests that can't afford the full path cost are rejected at the frontend, not after wasting CPU traversing upstream services
+- This pushes rejection to the earliest possible point (the paper's core design goal), matching adctl's behavior of rejecting only at the frontend
+
+### Expected outcomes if hypothesis is correct:
+1. Rejection shifts from downstream services to the frontend (matching adctl's pattern)
+2. Less wasted CPU on partially-processed requests → higher goodput at 1200-1800 RPS
+3. Low-load unchanged (prices near 1, accumulated price still low)
+
+### Experiment design
+Full RPS sweep. Focus on early return breakdown to verify rejection shifts to frontend.
+
 ### Open hypotheses (not yet tested)
 
-1. **Frontend-only rejection:** If Rajomon could be configured to only enforce token-budget checks at the first hop (frontend), it would avoid cascading rejections and behave more like adctl's single-point-of-rejection architecture. This would require a code change to distinguish "entry service" from "downstream service" in the Rajomon admission check. This is likely the highest-impact change remaining.
-2. **Adaptive threshold:** Instead of a fixed QUEUE_THRESHOLD_US, use a percentile of recent queue latencies (e.g., P90). This would auto-calibrate to the workload's natural queuing behavior.
-3. **Intermediate propagation probability (0.5):** Full propagation (1.0) caused over-reaction (basalt_14). A value between 0.2 and 1.0 might find a better balance between signal speed and stability.
+1. **Adaptive threshold:** Instead of a fixed QUEUE_THRESHOLD_US, use a percentile of recent queue latencies (e.g., P90). This would auto-calibrate to the workload's natural queuing behavior.
+2. **Intermediate propagation probability (0.5):** Full propagation (1.0) caused over-reaction (basalt_14). A value between 0.2 and 1.0 might find a better balance between signal speed and stability.
 
 ---
 
