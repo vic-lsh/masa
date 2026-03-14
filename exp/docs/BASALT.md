@@ -923,11 +923,42 @@ Catastrophic collapse at 1200+ RPS. **However, the rejection pattern shifted cor
 
 **Status:** Reverted
 
+## Iteration 15: Price accumulation + scaled token range (experiment basalt_17)
+
+**Status:** Pending
+**Code commit:** 9a7eb94b
+
+### Change
+Re-apply the price accumulation fix (dbf7fa72) and compare-not-deduct model (2cf524cb) from iteration 14, plus scale token parameters:
+1. Token range: `100..=10000` → `100..=100000` (10x wider ceiling)
+2. Client `max_tokens`: `100000` → `10000000` (100x)
+3. Client `replenish_amount`: `10000` → `1000000` (100x)
+
+### Hypothesis
+basalt_16 proved the price accumulation model correctly pushes 99%+ of rejection to the frontend. The collapse was caused by accumulated prices (1000-5000 at moderate overload) exceeding the token budget ceiling (10000), causing >50% rejection.
+
+With `T_max=100000`, the shedding curve becomes:
+- Accumulated price 100 → 0% rejection (no overload, prices ~1 per hop)
+- Accumulated price 50000 → ~50% rejection (moderate overload)
+- Accumulated price 100000 → ~100% rejection (severe overload)
+
+With PRICE_PER_EXCESS_MS=2 and depth ~3-5, accumulated prices at moderate overload should be ~3000-5000, giving only ~3-5% rejection. At heavy overload (queue 100ms+), accumulated ~10000-30000, giving ~10-30% rejection. This should match the gradual shedding curve needed.
+
+The 100x client pool scaling (replenish=1M per 10ms = 100M tokens/sec) ensures the client pool is never the bottleneck even at high accumulated prices.
+
+### Expected outcomes:
+1. Low load (100-800 RPS): ~99.5% goodput (prices ~1, no rejection)
+2. Moderate overload (1200-1600): >1000 goodput (gentle shedding, much better than b16's collapse)
+3. Heavy overload (1800-2000): >800 goodput (controlled shedding)
+4. Rejection pattern: 99%+ at frontend (matching adctl)
+
+### Experiment design
+Full RPS sweep.
+
 ### Open hypotheses (not yet tested)
 
-1. **Price accumulation with scaled token budget:** basalt_16 proved that accumulated prices push rejection to the frontend (correct!), but the token budget 100-10000 is too small for accumulated prices of 1000-5000+. Try increasing to 10000-1000000 and scaling client pool to match.
-2. **Adaptive threshold:** Instead of a fixed QUEUE_THRESHOLD_US, use a percentile of recent queue latencies (e.g., P90). This would auto-calibrate to the workload's natural queuing behavior.
-3. **Intermediate propagation probability (0.5):** Full propagation (1.0) caused over-reaction (basalt_14). A value between 0.2 and 1.0 might find a better balance between signal speed and stability.
+1. **Adaptive threshold:** Instead of a fixed QUEUE_THRESHOLD_US, use a percentile of recent queue latencies (e.g., P90). This would auto-calibrate to the workload's natural queuing behavior.
+2. **Intermediate propagation probability (0.5):** Full propagation (1.0) caused over-reaction (basalt_14). A value between 0.2 and 1.0 might find a better balance between signal speed and stability.
 
 ---
 
