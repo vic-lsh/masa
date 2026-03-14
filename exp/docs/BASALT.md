@@ -887,10 +887,47 @@ The cascading rejection problem (Rajomon rejects at both frontend AND downstream
 ### Experiment design
 Full RPS sweep. Focus on early return breakdown to verify rejection shifts to frontend.
 
+### Actual Outcomes (basalt_15 + basalt_16)
+
+Two sub-experiments tested the fixes independently and together:
+
+**basalt_15 — price accumulation only (still deducting tokens):**
+
+| RPS | adctl | Rajomon b15 | Rajomon b13 (ref) | Delta b15-b13 |
+|-----|-------|-------------|-------------------|---------------|
+| 100-800 | ~99.5% | ~99.5% | ~99.5% | 0 |
+| 1200 | 1152.5 | 1089.7 | 1037.9 | +51.8 |
+| 1400 | 1069.1 | 826.7 | 987.1 | **-160.4** |
+| 1600 | 1093.4 | 820.1 | 712.1 | **+108.0** |
+| 1800 | 1100.6 | 867.4 | 892.3 | -6.8 |
+| 2000 | 1247.0 | 869.5 | 874.2 | -22.8 |
+
+Rejection still cascades to downstream services. Price accumulation alone doesn't fix the cascading problem because token deduction at each hop still drains the budget.
+
+**basalt_16 — price accumulation + compare-not-deduct tokens:**
+
+| RPS | adctl | Rajomon b16 | Rajomon b13 (ref) | Delta b16-b13 |
+|-----|-------|-------------|-------------------|---------------|
+| 100-800 | ~99.5% | 99.7 / 397.9 / **767.9** | ~99.5% | -27 at 800 |
+| 1200 | 1150.2 | **164.6** | 1037.9 | **-873** |
+| 1400 | 1001.0 | **186.8** | 987.1 | **-800** |
+| 1600 | 1060.7 | **216.9** | 712.1 | **-495** |
+| 1800 | 1307.9 | **244.3** | 892.3 | **-648** |
+| 2000 | 1123.5 | **280.0** | 874.2 | **-594** |
+
+Catastrophic collapse at 1200+ RPS. **However, the rejection pattern shifted correctly:** 99%+ of rejections are at the frontend (matching adctl), with near-zero downstream rejection. The problem is the system rejects TOO MUCH at the frontend.
+
+**Root cause of b16 collapse:** The token budget range (100-10000) was tuned for per-hop local prices (~1-100). With price accumulation, the frontend's accumulated price = local + max(downstream) → easily reaches 1000-5000 at moderate overload. With uniform token budget 100-10000, a large fraction of requests have tokens < accumulated_price and are rejected. The token budget range needs to be scaled up proportionally to the accumulated price magnitude. Additionally, the client-side pool (replenish=10000 per 10ms) deducts accumulated prices which are now much larger, causing it to rate-limit too aggressively.
+
+**Decision:** Revert both changes. The price accumulation fix correctly shifts rejection to the frontend (matching the paper's design), but requires re-tuning the token budget range and client pool to account for the larger accumulated prices. This is a valid direction but needs parameter co-optimization in a follow-up.
+
+**Status:** Reverted
+
 ### Open hypotheses (not yet tested)
 
-1. **Adaptive threshold:** Instead of a fixed QUEUE_THRESHOLD_US, use a percentile of recent queue latencies (e.g., P90). This would auto-calibrate to the workload's natural queuing behavior.
-2. **Intermediate propagation probability (0.5):** Full propagation (1.0) caused over-reaction (basalt_14). A value between 0.2 and 1.0 might find a better balance between signal speed and stability.
+1. **Price accumulation with scaled token budget:** basalt_16 proved that accumulated prices push rejection to the frontend (correct!), but the token budget 100-10000 is too small for accumulated prices of 1000-5000+. Try increasing to 10000-1000000 and scaling client pool to match.
+2. **Adaptive threshold:** Instead of a fixed QUEUE_THRESHOLD_US, use a percentile of recent queue latencies (e.g., P90). This would auto-calibrate to the workload's natural queuing behavior.
+3. **Intermediate propagation probability (0.5):** Full propagation (1.0) caused over-reaction (basalt_14). A value between 0.2 and 1.0 might find a better balance between signal speed and stability.
 
 ---
 
