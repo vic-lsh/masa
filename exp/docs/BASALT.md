@@ -1023,7 +1023,7 @@ Experiments basalt_18 (PRICE_PER_EXCESS_MS=1 + token floor 1000), basalt_19 (PRI
 
 ---
 
-## Iteration 16: basalt_16 — gentler pricing + token floor 1000
+## Iteration 16: gentler pricing + token floor 1000
 
 ### Hypothesis
 
@@ -1041,27 +1041,202 @@ Reducing `PRICE_PER_EXCESS_MS` from 2 to 1 makes pricing less aggressive, so tra
 ### Experiment design
 Full RPS sweep.
 
+### Actual Outcomes
+
+**Status:** Discarded — ran as basalt_18 during CPU contention (see "Iterations 16-18" section above). May have caused regression at 1600+ but cannot be confirmed.
+
+## Iteration 19: Token floor 1000 (experiment basalt_21)
+
+**Status:** Pending
+
+### Change
+Raise per-request token budget floor from `100..=10000` to `1000..=10000` in two places:
+1. `libs/masa/src/lib.rs` — initial token assignment
+2. `libs/tonic/tonic/src/masa/context/rajomon.rs` `ClientTokenBucket::try_acquire` — token assignment after client pool admission
+
+### Hypothesis
+With the current floor of 100 and PRICE_PER_EXCESS_MS=2, at moderate overload (queue latency ~10ms above threshold), per-hop prices reach ~50-200 after a few seconds. In a 5-hop call graph, accumulated cost = 250-1000 tokens. With uniform(100, 10000), ~2-9% of requests draw tokens below this cost and are rejected even though the system could handle them — this is wasted shedding at the margin.
+
+Raising the floor to 1000 eliminates these marginal false-positive rejections:
+- At total cost 500 (mild overload): rejection drops from 4% → 0%
+- At total cost 2000 (moderate): 19% → 11%
+- At total cost 5000 (heavy): 49% → 44%
+
+The improvement is largest at moderate overload (the 1200-1600 RPS range where basalt_13 has the biggest gap vs adctl). At heavy overload the effect is small, so 1800-2000 should not regress.
+
+This is a safe, incremental change. It was tested as part of the discarded basalt_18 (combined with PRICE_PER_EXCESS_MS=1), but never in isolation with clean data.
+
+### Expected outcomes if hypothesis is correct:
+1. 1200-1400 RPS: >1050 goodput (reducing marginal false rejections)
+2. 1600 RPS: >750 goodput (up from 712 in basalt_13)
+3. 1800-2000 RPS: ≥890 goodput (minimal change)
+4. Low-load: unchanged (prices ~1, cost ~5, well below floor of 1000)
+
+### Experiment design
+Full RPS sweep [100, 400, 800, 1200, 1400, 1600, 1800, 2000].
+
+### Actual Outcomes (basalt_21)
+
+**Status:** Regression ❌ — improvement at 1200 offset by severe regression at 1400+
+
+#### Goodput Comparison (basalt_21)
+
+| RPS | adctl | Rajomon b21 (floor=1000) | Rajomon b13 (floor=100) | Delta b21-b13 |
+|-----|-------|--------------------------|-------------------------|---------------|
+| 100 | 99.5 | 99.5 | 99.5 | 0.0 |
+| 400 | 397.6 | 397.6 | 397.8 | -0.2 |
+| 800 | 794.6 | 794.9 | 795.5 | -0.6 |
+| 1200 | 1160.1 | **1146.3** | 1037.9 | **+108.4** |
+| 1400 | 1101.4 | 821.4 | 987.1 | **-165.7** |
+| 1600 | 1136.1 | 693.7 | 712.1 | -18.4 |
+| 1800 | 1263.9 | 683.4 | 892.3 | **-208.9** |
+| 2000 | 1320.5 | 676.7 | 874.2 | **-197.5** |
+
+**Hypothesis partially confirmed at 1200 only.** The higher floor reduced false rejections at moderate overload (+108 at 1200). But at 1400+ the floor makes admission too permissive — requests are admitted, consume CPU, then miss SLO. Early return breakdown shows massive wasted work: at 1800 RPS, 898 HandleSearch + 208 HandleReservation early-returned/sec.
+
+**Decision:** Revert. The floor=100 configuration (basalt_13) is better at 4 of 5 overloaded RPS levels.
+
+## Iteration 20: Moderate price propagation (experiment basalt_22)
+
+**Status:** Pending
+
+### Change
+1. `PRICE_PROPAGATION_PROB`: 0.2 → 0.5
+
+### Hypothesis
+PRICE_PROPAGATION_PROB controls how quickly price signals reach clients. At 0.2 (default), only 1 in 5 responses carries price info — clients operate on stale price data ~80% of the time. At 1.0 (tested in basalt_14), every response carries price info, causing "price storms" where rapid oscillation between admission and rejection hurt goodput by 29% at 1400 and 21% at 2000.
+
+0.5 is the untested midpoint. With 50% propagation:
+- Clients learn about price changes 2.5x faster than at 0.2
+- But the 50% sampling still provides natural damping against oscillation (unlike 1.0 which amplified feedback)
+- At moderate overload (1200-1400), faster price convergence may help clients self-throttle before the price-token mismatch becomes extreme
+- At heavy overload (1800+), the damping from 50% non-propagation may prevent the oscillation seen at 1.0
+
+This parameter was tested as basalt_20 during CPU contention — results were completely unreliable (adctl at 1800 was 360 vs typical 1280). This is the first clean test.
+
+### Expected outcomes if hypothesis is correct:
+1. 1200-1400 RPS: ≥1000 goodput (faster price convergence helps fine-grained shedding)
+2. 1600 RPS: ≥712 goodput (no regression from basalt_13)
+3. 1800-2000 RPS: ≥890 goodput (maintained or improved)
+4. Low-load: unchanged
+
+### Experiment design
+Full RPS sweep.
+
+### Actual Outcomes (basalt_22)
+
+**Status:** Regression ❌ — same pattern as basalt_21
+
+#### Goodput Comparison (basalt_22)
+
+| RPS | adctl | Rajomon b22 (prop=0.5) | Rajomon b13 (prop=0.2) | Delta b22-b13 |
+|-----|-------|------------------------|------------------------|-----------------
+| 100 | 99.5 | 99.6 | 99.5 | +0.1 |
+| 400 | 397.7 | 397.7 | 397.8 | -0.1 |
+| 800 | 794.5 | 795.0 | 795.5 | -0.5 |
+| 1200 | 1150.8 | **1094.4** | 1037.9 | **+56.5** |
+| 1400 | 1088.7 | 865.5 | 987.1 | **-121.6** |
+| 1600 | 1143.4 | 699.5 | 712.1 | -12.6 |
+| 1800 | 1211.0 | 696.7 | 892.3 | **-195.6** |
+| 2000 | 1316.7 | 674.7 | 874.2 | **-199.5** |
+
+**Same pattern as basalt_21:** improvement at 1200 (+56) but severe regression at 1400+ (up to -200). Faster price propagation causes over-reaction under heavy load: early return breakdown shows massive wasted work at 1800-2000 (897-1005 HandleReservation early-returns/sec vs adctl's 341-337).
+
+Interestingly, b22 (p=0.5) at 1800 is worse than both b13 (p=0.2) and b14 (p=1.0, which got 871) — the relationship is non-monotonic. The 0.2 default provides near-optimal damping.
+
+**Decision:** Revert. p=0.2 remains best.
+
+## Iteration 21: Raised threshold with slow recovery (experiment basalt_23)
+
+**Status:** Pending
+
+### Change
+1. `QUEUE_THRESHOLD_US`: 5000 → 7000 (7ms)
+
+### Hypothesis
+Re-examining the threshold experiments:
+- basalt_11 (10ms, PRICE_DECREASE_STEP=10): 1200=1149, 1600=718, **1800=369** (collapsed)
+- basalt_12 (5ms, PRICE_DECREASE_STEP=1): 1200=801, 1600=613, 1800=751
+- basalt_13 (5ms, PRICE_PER_EXCESS_MS=2): 1200=1038, 1600=712, 1800=892 (best)
+
+basalt_11's collapse at 1800 was attributed to PRICE_DECREASE_STEP=10 causing oscillation, not the 10ms threshold itself. The threshold actually helped at 1200 (+348 vs basalt_12) and 1600 (+105 vs basalt_12) by avoiding false-positive price activation.
+
+A 7ms threshold with PRICE_DECREASE_STEP=1 (slow recovery, no oscillation) should:
+1. Tolerate normal queuing at 1200 RPS (queue latency 5-7ms stays below threshold → no false rejection)
+2. Still detect genuine congestion at 1600+ (queue latency >7ms → prices activate)
+3. Avoid the oscillation that killed basalt_11 (slow recovery prevents price crash → re-admission → price spike cycle)
+
+Note: basalt_13 uses PRICE_PER_EXCESS_MS=2 (not the default 10), which further reduces over-reaction. This combination (7ms threshold, price=2, decrease=1) has never been tested.
+
+### Expected outcomes if hypothesis is correct:
+1. 1200 RPS: >1050 goodput (closer to b11's 1149 than b13's 1038)
+2. 1400 RPS: ≥987 goodput (maintained from b13)
+3. 1600 RPS: >750 goodput (improvement from b13's 712)
+4. 1800-2000 RPS: ≥890 goodput (maintained — slow recovery prevents oscillation)
+
+### Experiment design
+Full RPS sweep.
+
+### Actual Outcomes (basalt_23)
+
+**Status:** Regression ❌ — same pattern as iterations 19-20
+
+#### Goodput Comparison (basalt_23)
+
+| RPS | adctl | Rajomon b23 (7ms) | Rajomon b13 (5ms) | Delta b23-b13 |
+|-----|-------|-------------------|-------------------|---------------|
+| 100 | 99.5 | 99.5 | 99.5 | 0.0 |
+| 400 | 397.8 | 397.8 | 397.8 | 0.0 |
+| 800 | 795.7 | 794.6 | 795.5 | -0.9 |
+| 1200 | 1177.2 | **1132.0** | 1037.9 | **+94.1** |
+| 1400 | 1098.0 | 905.1 | 987.1 | -82.0 |
+| 1600 | 1163.3 | 678.5 | 712.1 | -33.6 |
+| 1800 | 1235.2 | 687.6 | 892.3 | **-204.7** |
+| 2000 | 1337.1 | 681.2 | 874.2 | **-193.0** |
+
+**Identical pattern to basalt_21 and basalt_22:** improvement at 1200, severe regression at 1400+. All three iterations (token floor, propagation prob, threshold) independently confirm that **any parameter change reducing false rejection at moderate overload also reduces necessary rejection at heavy overload**. The basalt_13 configuration sits at a Pareto-optimal sweet spot in the parameter space.
+
+**Decision:** Revert. basalt_13 configuration is confirmed optimal.
+
 ---
 
-### Best Rajomon configuration
+## Post-bugfix Final Assessment (iterations 9–21)
 
-Token budget `100..=10000` (iteration 2) with all other parameters at defaults. This is the simplest effective configuration.
+### Summary of all post-bugfix iterations
 
-| RPS | adctl (best) | Rajomon (tuned) | Gap |
-|-----|-------------|-----------------|-----|
-| 100–1400 | ~99.5% | ~99.5% | **none** |
-| 1600 | ~95% | ~93% | ~2pp |
-| 1800 | ~88% | **~10%** | **~78pp** |
-| 2000 | ~86% | **~10%** | **~76pp** |
+| Iteration | Config change | 1200 | 1400 | 1600 | 1800 | 2000 | Verdict |
+|-----------|--------------|------|------|------|------|------|---------|
+| 9 (b10) | 1ms threshold, defaults | 677 | 663 | 719 | 752 | 785 | over-rejection at all loads |
+| 10 (b11) | 10ms threshold, decrease=10 | **1149** | 829 | 718 | 369 | 736 | 1800 collapse from oscillation |
+| 11 (b12) | 5ms threshold | 801 | 884 | 613 | 751 | 877 | unstable at 1600 |
+| **12 (b13)** | **5ms, price=2** | **1038** | **987** | **712** | **892** | **874** | **best overall** |
+| 13 (b14) | + propagation=1.0 | 1089 | 704 | 784 | 871 | 690 | price storms at 1400/2000 |
+| 14 (b15/16) | price accumulation | — | — | — | — | — | phase transitions |
+| 15 (b17) | accum + scaled tokens | 1173 | 889 | 198 | 185 | 406 | collapse at 1600+ |
+| 16–18 | discarded (CPU contention) | — | — | — | — | — | — |
+| 19 (b21) | token floor 1000 | **1146** | 821 | 694 | 683 | 677 | helps 1200, kills 1400+ |
+| 20 (b22) | propagation=0.5 | **1094** | 866 | 700 | 697 | 675 | helps 1200, kills 1400+ |
+| 21 (b23) | 7ms threshold | **1132** | 905 | 679 | 688 | 681 | helps 1200, kills 1400+ |
 
-### Answer to the key questions
+### Best Rajomon configuration (final)
 
-1. **How does Rajomon compare to adctl?** At low-to-moderate load (≤1600 RPS), Rajomon with tuned token budgets matches adctl's goodput. At overload (≥1800 RPS), Rajomon suffers catastrophic collapse (~10% goodput) while adctl degrades gracefully (~86% goodput). The gap at 2000 RPS is **~1500 goodput (9x)**.
+`QUEUE_THRESHOLD_US=5000, PRICE_PER_EXCESS_MS=2, PRICE_DECREASE_STEP=1, PRICE_PROPAGATION_PROB=0.2`. Token budget `100..=10000`.
 
-2. **Can hyperparameter tuning close the gap?** Only at low load. Token budget tuning eliminated the ~4% low-load bleed. The overload collapse is **completely impervious to parameter tuning** — 8 iterations testing every dimension of the parameter space (price sensitivity, EWMA responsiveness, token budgets, client pool sizing, propagation probability, tick intervals) all produce the same ~178 goodput at 1800 RPS and ~190 at 2000 RPS. The iteration 8 diagnostic (minimal rejection) proved that the collapse occurs even when Rajomon's rejection mechanism is essentially disabled — confirming it is a property of the system, not of Rajomon's tuning.
+| RPS | adctl (best) | Rajomon (tuned) | Gap | Rajomon % of adctl |
+|-----|-------------|-----------------|-----|-------------------|
+| 100–800 | ~99.5% | ~99.5% | **none** | 100% |
+| 1200 | ~1138 | ~1038 | ~100 | **91%** |
+| 1400 | ~1089 | ~987 | ~102 | **91%** |
+| 1600 | ~1168 | ~712 | ~456 | **61%** |
+| 1800 | ~1281 | ~892 | ~389 | **70%** |
+| 2000 | ~1269 | ~874 | ~395 | **69%** |
 
-3. **What is the mechanistic difference?** adctl has two mechanisms Rajomon lacks:
-   - **Early return:** adctl+early sheds 250+ requests/sec at high load by aborting in-flight requests that have exceeded their SLO deadline. This reclaims CPU for requests that can still succeed. Rajomon cannot use `early` (mutually exclusive feature flag).
-   - **End-to-end cost awareness:** adctl uses latency estimates (`est_mean_var`) to make informed admission decisions based on predicted end-to-end cost. Rajomon's admission is based on per-method queue latency EWMA — a local signal that cannot predict end-to-end behavior in a multi-service call graph.
+### Updated answers to the key questions
 
-   The collapse mechanism is: at 1800 RPS, queue latencies spike → admitted Search requests (which fan out to ~5 services) consume CPU processing work that will miss SLO → this crowds out Reservation requests → queue latencies spike further → positive feedback loop. adctl breaks this loop by aborting doomed work; Rajomon lets it run to completion. **No parameter tuning can compensate for this structural gap.**
+1. **How does Rajomon compare to adctl?** With the queue latency bug fixed and tuned parameters, Rajomon matches adctl at low-to-moderate load (≤800 RPS) and achieves 69-91% of adctl's goodput at overload. The gap is largest at 1600 RPS (61%) — the transition zone.
+
+2. **Can hyperparameter tuning close the gap?** Substantially but not fully. Tuning improved Rajomon from 42% of adctl (default params, 1ms threshold) to 70% at 1800 RPS. Iterations 19-21 demonstrated that the basalt_13 configuration is at a **Pareto-optimal sweet spot**: every parameter change tested (token floor, propagation probability, threshold) that improved 1200 RPS caused proportionally larger regressions at 1800-2000 RPS. The remaining gap is structural.
+
+3. **What is the mechanistic difference?** Two structural factors that parameter tuning cannot address:
+   - **No early return:** adctl+early aborts in-flight requests past their SLO deadline, reclaiming CPU for viable requests. Rajomon cannot use `early` (mutually exclusive). Under overload, admitted requests that will miss SLO consume CPU until completion.
+   - **Cascading per-service rejection:** Rajomon independently rejects at every service in the call graph (by design — decentralized admission control). A request can pass the frontend but be rejected at a downstream service, wasting the CPU spent on upstream processing. adctl concentrates rejection at the frontend. While this is a feature of Rajomon's design (enabling localized congestion response), it creates additional CPU waste in deep call graphs under overload.
