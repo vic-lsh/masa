@@ -242,6 +242,11 @@ pub(crate) struct RajomonHandler {
     /// Remaining token budget for this request, shared across fan-out branches.
     #[cfg(feature = "rajomon")]
     remaining_tokens: AtomicU64,
+    /// Whether this handler is at the frontend (hop_count == 0).
+    /// Only the frontend makes admit/reject decisions; downstream services
+    /// still compute and report prices but never reject requests.
+    #[cfg(feature = "rajomon")]
+    is_frontend: bool,
 }
 
 impl Default for RajomonHandler {
@@ -255,6 +260,8 @@ impl Default for RajomonHandler {
             accumulated_q_lat_us: AtomicU64::new(0),
             #[cfg(feature = "rajomon")]
             remaining_tokens: AtomicU64::new(0),
+            #[cfg(feature = "rajomon")]
+            is_frontend: false,
         }
     }
 }
@@ -269,6 +276,7 @@ impl RajomonHandler {
                 should_drop: false,
                 accumulated_q_lat_us: AtomicU64::new(0),
                 remaining_tokens: AtomicU64::new(0),
+                is_frontend: false,
             }
         }
         #[cfg(not(feature = "rajomon"))]
@@ -280,6 +288,14 @@ impl RajomonHandler {
 
     #[cfg(feature = "rajomon")]
     pub(crate) fn check_inbound(&mut self, ctx: &mut Context) -> bool {
+        self.is_frontend = ctx.hop_count() == 0;
+
+        // Downstream services still compute and report prices, but never reject.
+        if !self.is_frontend {
+            self.remaining_tokens.store(ctx.tokens(), Ordering::Relaxed);
+            return false;
+        }
+
         let price = RAJOMON_STATE.accumulated_price(&self.rpc);
         if ctx.tokens() < price {
             self.should_drop = true;
@@ -321,6 +337,11 @@ impl RajomonHandler {
         child_method: &CowGrpcMethod,
         _ctx: &Context,
     ) -> Result<(), Status> {
+        // Downstream services never reject outbound calls.
+        if !self.is_frontend {
+            return Ok(());
+        }
+
         let price = RAJOMON_STATE.child_price(child_method);
         let current = self.remaining_tokens.load(Ordering::Relaxed);
         if current < price {
@@ -510,7 +531,7 @@ impl ClientTokenBucket {
                 .is_ok()
             {
                 // Assign random tokens to the request (1..=100)
-                let tokens = rand::Rng::gen_range(&mut rand::thread_rng(), 100..=10000u64);
+                let tokens = rand::Rng::gen_range(&mut rand::thread_rng(), 1000..=10000u64);
                 return Some(tokens);
             }
         }
