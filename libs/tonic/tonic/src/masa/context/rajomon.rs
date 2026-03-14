@@ -70,7 +70,6 @@ impl std::fmt::Debug for MethodQueueStats {
 pub struct RajomonSharedState {
     pub local_prices: DashMap<CowGrpcMethod, u64>,
     pub downstream_prices: DashMap<CowGrpcMethod, u64>,
-    pub max_downstream_for_method: DashMap<CowGrpcMethod, u64>,
     pub queue_stats: DashMap<CowGrpcMethod, MethodQueueStats>,
 }
 
@@ -80,29 +79,15 @@ impl RajomonSharedState {
         Self {
             local_prices: DashMap::new(),
             downstream_prices: DashMap::new(),
-            max_downstream_for_method: DashMap::new(),
             queue_stats: DashMap::new(),
         }
     }
 
-    /// Accumulated price = local price + max downstream child price.
-    /// This represents the total cost of processing through this service and all downstream deps.
-    pub fn accumulated_price(&self, method: &CowGrpcMethod) -> u64 {
+    /// Effective price = max(local, downstream) for a method.
+    pub fn effective_price(&self, method: &CowGrpcMethod) -> u64 {
         let local = self.local_prices.get(method).map(|v| *v).unwrap_or(1);
-        let downstream = self
-            .max_downstream_for_method
-            .get(method)
-            .map(|v| *v)
-            .unwrap_or(0);
-        local + downstream
-    }
-
-    /// Price to charge for calling a child method (cached from child's response).
-    pub fn child_price(&self, child_method: &CowGrpcMethod) -> u64 {
-        self.downstream_prices
-            .get(child_method)
-            .map(|v| *v)
-            .unwrap_or(1)
+        let downstream = self.downstream_prices.get(method).map(|v| *v).unwrap_or(0);
+        std::cmp::max(local, downstream)
     }
 
     fn update_prices(&self) {
@@ -168,21 +153,6 @@ impl RajomonSharedState {
                 })
                 .collect();
             log::info!("Rajomon downstream_prices: {}", parts.join(", "));
-        }
-        if !self.max_downstream_for_method.is_empty() {
-            let parts: Vec<String> = self
-                .max_downstream_for_method
-                .iter()
-                .map(|e| {
-                    format!(
-                        "{}::{}: {}",
-                        e.key().service(),
-                        e.key().method(),
-                        *e.value()
-                    )
-                })
-                .collect();
-            log::info!("Rajomon max_downstream_for_method: {}", parts.join(", "));
         }
         if !self.queue_stats.is_empty() {
             let parts: Vec<String> = self
@@ -280,12 +250,8 @@ impl RajomonHandler {
 
     #[cfg(feature = "rajomon")]
     pub(crate) fn check_inbound(&mut self, ctx: &mut Context) -> bool {
-        let local_price = RAJOMON_STATE
-            .local_prices
-            .get(&self.rpc)
-            .map(|v| *v)
-            .unwrap_or(1);
-        if !ctx.consume_tokens(local_price) {
+        let price = RAJOMON_STATE.effective_price(&self.rpc);
+        if !ctx.consume_tokens(price) {
             self.should_drop = true;
             true
         } else {
@@ -325,7 +291,7 @@ impl RajomonHandler {
         child_method: &CowGrpcMethod,
         _ctx: &Context,
     ) -> Result<(), Status> {
-        let price = RAJOMON_STATE.child_price(child_method);
+        let price = RAJOMON_STATE.effective_price(child_method);
         // CAS loop to atomically subtract price from remaining_tokens
         loop {
             let current = self.remaining_tokens.load(Ordering::Relaxed);
@@ -425,17 +391,6 @@ impl RajomonHandler {
                     RAJOMON_STATE
                         .downstream_prices
                         .insert(child_method.clone(), price);
-                    // Update max downstream price for this parent method
-                    let current_max = RAJOMON_STATE
-                        .max_downstream_for_method
-                        .get(&self.rpc)
-                        .map(|v| *v)
-                        .unwrap_or(0);
-                    if price > current_max {
-                        RAJOMON_STATE
-                            .max_downstream_for_method
-                            .insert(self.rpc.clone(), price);
-                    }
                 }
             }
         }
@@ -458,7 +413,7 @@ impl RajomonHandler {
         if rand::random::<f64>() > PRICE_PROPAGATION_PROB {
             return;
         }
-        let price = RAJOMON_STATE.accumulated_price(&self.rpc);
+        let price = RAJOMON_STATE.effective_price(&self.rpc);
         if let Ok(value) = crate::metadata::MetadataValue::try_from(price.to_string()) {
             match result {
                 Ok(resp) => {
@@ -673,38 +628,24 @@ mod tests {
 
     #[cfg(feature = "rajomon")]
     #[test]
-    fn test_child_price() {
+    fn test_effective_price_max_of_local_downstream() {
         let state = RajomonSharedState::new();
         let method = CowGrpcMethod::new("svc", "method");
 
-        // No cached downstream price: default=1
-        assert_eq!(state.child_price(&method), 1);
+        // No prices set: default local=1, downstream=0 -> effective=1
+        assert_eq!(state.effective_price(&method), 1);
 
-        // After caching a downstream price
-        state.downstream_prices.insert(method.clone(), 7);
-        assert_eq!(state.child_price(&method), 7);
-    }
-
-    #[cfg(feature = "rajomon")]
-    #[test]
-    fn test_accumulated_price() {
-        let state = RajomonSharedState::new();
-        let method = CowGrpcMethod::new("svc", "method");
-
-        // No prices set: default local=1, downstream=0 -> accumulated=1
-        assert_eq!(state.accumulated_price(&method), 1);
-
-        // Local=5, no downstream -> accumulated=5
+        // Local=5, no downstream -> effective=5
         state.local_prices.insert(method.clone(), 5);
-        assert_eq!(state.accumulated_price(&method), 5);
+        assert_eq!(state.effective_price(&method), 5);
 
-        // Local=5, max_downstream=3 -> accumulated=8
-        state.max_downstream_for_method.insert(method.clone(), 3);
-        assert_eq!(state.accumulated_price(&method), 8);
+        // Local=5, downstream=3 -> effective=5
+        state.downstream_prices.insert(method.clone(), 3);
+        assert_eq!(state.effective_price(&method), 5);
 
-        // Local=5, max_downstream=10 -> accumulated=15
-        state.max_downstream_for_method.insert(method.clone(), 10);
-        assert_eq!(state.accumulated_price(&method), 15);
+        // Local=5, downstream=10 -> effective=10
+        state.downstream_prices.insert(method.clone(), 10);
+        assert_eq!(state.effective_price(&method), 10);
     }
 
     #[cfg(feature = "rajomon")]
