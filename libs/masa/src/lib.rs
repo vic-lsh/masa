@@ -41,7 +41,7 @@ pub fn create_context(api: &str, slo: Duration) -> Context {
     #[cfg(feature = "rajomon")]
     {
         use rand::Rng;
-        let tokens = rand::thread_rng().gen_range(100..=10000);
+        let tokens = rand::thread_rng().gen_range(1000..=10000);
         builder = builder.tokens(tokens);
     }
 
