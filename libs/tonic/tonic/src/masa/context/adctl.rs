@@ -4,7 +4,7 @@ use std::time::Instant;
 
 const STALENESS_SECS: f64 = 2.0;
 const STALENESS_DEFAULT: f32 = 0.5;
-const UTIL_TARGET: f64 = 0.85;
+const UTIL_TARGET: f64 = 0.92;
 const ADJUST_RATE: f64 = 0.5;
 const MAX_BURST_SECS: f64 = 0.1;
 const INITIAL_BUDGET_RATE: f64 = 10_000_000.0; // µs/s — start generous
