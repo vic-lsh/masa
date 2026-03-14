@@ -259,3 +259,37 @@ The `prio_local,early,adctl,est_mean_var` policy already dominates all baselines
 The remaining ~4% gap vs prio_oldest at 1200 RPS (hotel/mssim) is the cost of having admission control — adctl sheds a small number of viable requests at the saturation boundary. This is the fundamental tradeoff of proactive load shedding vs reactive early return.
 
 To maximize goodput further would require algorithmic changes to the admission control logic (e.g., making Layer 2 admission load-adaptive rather than util-threshold-based), not parameter tuning.
+
+---
+
+## Investigation: Why fifo,rajomon collapses in MSSIM
+
+Two compounding bugs were identified:
+
+**Bug 1 — MSSIM loadgen missing rajomon token integration.** Hotel/socialnet use `masa::try_create_context()` which assigns random tokens in 100..=10000 and consults the client-side token bucket. MSSIM's loadgen builds contexts directly via `MasaContextBuilder` without calling `.tokens()`, so every request gets only 100 tokens (the default). There is no client-side rate limiting and no price feedback loop.
+
+**Bug 2 — Monotonically increasing `max_downstream_for_method`.** In `update_cache_from_response`, the max downstream price for a parent method is a one-way ratchet: once a high price is observed from any child response, it never decreases. A transient queue latency spike at MS_73106 (which makes 3 sequential RPCs, accumulating queue wait) caused the local price to jump to 177 in one tick. This propagated upstream, latching `max_downstream_for_method` at 169 at the USER service. With accumulated_price = 170 and every request carrying only 100 tokens, `check_inbound` drops 100% of requests permanently.
+
+**Why hotel/socialnet survive:** They use `try_create_context()` giving tokens up to 10000 (median ~5000), plus client-side rate limiting prevents the queue latency spikes that trigger price escalation. Their call graphs are also shallower with less fan-out amplification.
+
+---
+
+## Iteration 4: Fix MSSIM loadgen token assignment (experiment ridge_6)
+
+**Status:** Pending
+
+### Change
+Add rajomon-aware token assignment to MSSIM loadgen (`apps/mssim/generic-service/src/loadgen.rs`). When the `rajomon` feature is enabled, assign random tokens in 100..=10000 (matching hotel/socialnet behavior). This is the minimum fix — we're not adding the full `CLIENT_TOKEN_BUCKET` integration since MSSIM's loadgen architecture is different (it drives requests internally, not through a gateway).
+
+### Hypothesis
+The primary reason rajomon collapses in MSSIM is that every request carries only 100 tokens while accumulated prices quickly exceed 100 due to the deep call graph. With tokens up to 10000, most requests will pass the `check_inbound` price check even when transient price spikes occur. This alone may be sufficient since hotel (which has similar token assignment) doesn't exhibit the collapse.
+
+However, Bug 2 (monotonic price latch) means prices can only grow. If the price latches above 10000, even max-token requests will be rejected. The question is whether this happens in practice — if prices stabilize below ~5000 (the median token value), rajomon should function.
+
+### Expected outcomes if hypothesis is correct:
+1. MSSIM fifo,rajomon goodput at 800+ RPS should become non-zero (currently 0-15)
+2. Goodput may still be lower than hotel's rajomon performance due to Bug 2 (price latch)
+3. No effect on hotel or socialnet (they already have correct token assignment)
+
+### Experiment design
+MSSIM only with ridge_1 config (same callgraph and RPS range). Only run fifo,rajomon to get fast signal.
