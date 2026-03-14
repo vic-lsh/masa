@@ -21,7 +21,7 @@ const PRICE_PER_EXCESS_MS: u64 = 2;
 #[cfg(feature = "rajomon")]
 const PRICE_DECREASE_STEP: u64 = 1;
 #[cfg(feature = "rajomon")]
-const PRICE_PROPAGATION_PROB: f64 = 0.2;
+const PRICE_PROPAGATION_PROB: f64 = 0.5;
 
 /// Global Rajomon state shared across all request handlers.
 #[cfg(feature = "rajomon")]
@@ -436,7 +436,7 @@ impl RajomonHandler {
         &self,
         result: &mut Result<crate::Response<T>, Status>,
     ) {
-        // Lazy propagation: only send price on ~20% of responses
+        // Lazy propagation: only send price on ~50% of responses
         if rand::random::<f64>() > PRICE_PROPAGATION_PROB {
             return;
         }
