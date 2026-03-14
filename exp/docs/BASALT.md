@@ -980,29 +980,14 @@ Full RPS sweep.
 
 **Decision:** Revert. The price accumulation model is fundamentally more brittle at high load because price amplification across the call graph depth creates cliff-edge dynamics. b13 (no accumulation, QUEUE_THRESHOLD_US=5000, PRICE_PER_EXCESS_MS=2) remains the most robust configuration.
 
-## Iteration 16: Gentler pricing + higher token floor (experiment basalt_18)
+## Iterations 16–18: Discarded due to infrastructure noise
 
-**Status:** Pending
+Experiments basalt_18 (PRICE_PER_EXCESS_MS=1 + token floor 1000), basalt_19 (PRICE_PER_EXCESS_MS=1 only), and basalt_20 (PRICE_PROPAGATION_PROB=0.5) all ran during a period of heavy CPU contention from another user on the shared machine (Java process at 591% CPU, load average 31). adctl goodput (which should be unaffected by Rajomon parameter changes) dropped from typical ~1140-1280 at 1200-2000 RPS to 344-886, confirming infrastructure instability. All three experiments' results are unreliable and should be re-run when the machine is idle.
 
-### Change
-1. `PRICE_PER_EXCESS_MS`: 2 → 1 (half the price growth rate)
-2. Token range: `100..=10000` → `1000..=10000` (raise floor from 100 to 1000)
-   - In `libs/masa/src/lib.rs` and `libs/tonic/tonic/src/masa/context/rajomon.rs`
-
-### Hypothesis
-b13's weakness is over-shedding at 1200-1400 RPS (1038 and 987 vs adctl's 1138 and 1089). Two mechanisms contribute:
-1. **Price escalation too fast:** PRICE_PER_EXCESS_MS=2 means prices reach rejection-level values quickly. Halving to 1 doubles the time needed, giving more room for partial shedding equilibrium.
-2. **Low-budget requests rejected unnecessarily:** With uniform(100, 10000), ~9% of requests have budget <1000. At per-hop price=500 (moderate overload), these requests are guaranteed rejected even though the system has capacity. Raising the floor to 1000 ensures every request can traverse at least 1 service at price=1000 before rejection.
-
-At heavy overload (1800+ RPS), prices reach 2000-5000+ per hop. With ceiling=10000, requests with budget <5000 are rejected → ~40% shedding. This should still provide effective load shedding.
-
-### Expected outcomes:
-1. 1200-1400 RPS: >1050 goodput (closer to adctl)
-2. 1800-2000 RPS: ≥850 goodput (maintained or slightly improved)
-3. Low load: unchanged
-
-### Experiment design
-Full RPS sweep.
+**Changes tested (all reverted):**
+- PRICE_PER_EXCESS_MS=1: May have caused real regression at 1600+ (Rajomon collapsed to ~190-270 in both b18 and b19), but cannot be confirmed due to noise.
+- Token floor 1000..=10000: Combined with PRICE_PER_EXCESS_MS=1 in b18, unclear effect.
+- PRICE_PROPAGATION_PROB=0.5: Completely unreliable (adctl at 1800 was 360 vs typical 1280).
 
 ---
 
