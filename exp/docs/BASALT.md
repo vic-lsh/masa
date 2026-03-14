@@ -1231,12 +1231,27 @@ Full RPS sweep.
 | 1800 | ~1281 | ~892 | ~389 | **70%** |
 | 2000 | ~1269 | ~874 | ~395 | **69%** |
 
+### The fundamental tradeoff
+
+Rajomon's parameter space has a single effective dimension: **how aggressively to reject requests based on queue latency**. Every tunable parameter (threshold, price sensitivity, token budget, propagation speed) ultimately controls this one thing. The tradeoff is:
+
+- **More aggressive** → heavy load (1800+) is well-managed, but moderate load (1200) suffers false rejections
+- **Less aggressive** → moderate load (1200) improves, but heavy load (1800+) collapses as too many requests are admitted and waste CPU on doomed work
+
+This creates a Pareto frontier between 1200 and 1800 goodput. Iterations 19-21 confirmed this by testing three orthogonal parameters (token floor, propagation probability, threshold) — all three moved along the same frontier.
+
+**Why Rajomon cannot escape this tradeoff:** Its price signal (queue latency EWMA) is a single scalar that doesn't distinguish "mildly congested but manageable" from "about to collapse." The same parameter setting that prevents false rejection at 1200 RPS also prevents necessary rejection at 1800 RPS. A single linear price function cannot express "be lenient at moderate load but strict at heavy load."
+
+**Why adctl escapes it:** adctl has two mechanisms that break the tradeoff:
+1. **Early return** aborts in-flight work past deadline, reclaiming CPU without needing to predict overload at admission time. This is reactive (acts after the fact) rather than predictive.
+2. **End-to-end latency estimates** provide a richer signal than per-service queue depth — adctl can distinguish "this request will barely make SLO" from "this request is already doomed," enabling selective shedding that Rajomon's local EWMA cannot achieve.
+
 ### Updated answers to the key questions
 
 1. **How does Rajomon compare to adctl?** With the queue latency bug fixed and tuned parameters, Rajomon matches adctl at low-to-moderate load (≤800 RPS) and achieves 69-91% of adctl's goodput at overload. The gap is largest at 1600 RPS (61%) — the transition zone.
 
-2. **Can hyperparameter tuning close the gap?** Substantially but not fully. Tuning improved Rajomon from 42% of adctl (default params, 1ms threshold) to 70% at 1800 RPS. Iterations 19-21 demonstrated that the basalt_13 configuration is at a **Pareto-optimal sweet spot**: every parameter change tested (token floor, propagation probability, threshold) that improved 1200 RPS caused proportionally larger regressions at 1800-2000 RPS. The remaining gap is structural.
+2. **Can hyperparameter tuning close the gap?** Substantially but not fully. Tuning improved Rajomon from 42% of adctl (default params, 1ms threshold) to 70% at 1800 RPS. The basalt_13 configuration sits at the knee of the Pareto frontier between moderate-load and heavy-load goodput. No single-parameter change can improve one without degrading the other.
 
-3. **What is the mechanistic difference?** Two structural factors that parameter tuning cannot address:
+3. **What are the mechanistic differences?** Two structural factors that parameter tuning cannot address:
    - **No early return:** adctl+early aborts in-flight requests past their SLO deadline, reclaiming CPU for viable requests. Rajomon cannot use `early` (mutually exclusive). Under overload, admitted requests that will miss SLO consume CPU until completion.
    - **Cascading per-service rejection:** Rajomon independently rejects at every service in the call graph (by design — decentralized admission control). A request can pass the frontend but be rejected at a downstream service, wasting the CPU spent on upstream processing. adctl concentrates rejection at the frontend. While this is a feature of Rajomon's design (enabling localized congestion response), it creates additional CPU waste in deep call graphs under overload.
