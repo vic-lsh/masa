@@ -86,7 +86,8 @@ All 4 policies achieve >99.94% goodput fraction across all RPS levels (100-800).
 
 ## Iteration 1: Raise UTIL_TARGET from 0.85 to 0.92 (experiment ridge_2)
 
-**Status:** Pending
+**Status:** Keep ✅
+**Code commit:** c7b5699d
 
 ### Change
 Raise `UTIL_TARGET` from 0.85 to 0.92 in `libs/tonic/tonic/src/masa/context/adctl.rs`.
@@ -111,3 +112,30 @@ This does NOT affect Layer 1 (compute feasibility check), which runs at every ho
 
 ### Experiment design
 Run hotel and mssim with same ridge_1 configs. Also extend socialnet RPS to [100, 300, 500, 700, 900, 1100, 1300, 1500] to find saturation.
+
+### Actual Outcomes (ridge_2)
+
+**Status:** Keep ✅ — moderate-overload valley improved, small deep-overload regression
+
+#### Hotel (ridge_2 vs ridge_1, target policy only)
+
+| RPS | ridge_1 (0.85) | ridge_2 (0.92) | Delta |
+|-----|----------------|----------------|-------|
+| 1200 | 1166.0 | 1172.0 | **+6.0** (+0.5%) |
+| 1400 | 1220.0 | 1225.3 | **+5.3** (+0.4%) |
+| 1600 | 1339.7 | 1339.2 | -0.5 (flat) |
+| 1800 | 1492.1 | 1455.6 | **-36.5** (-2.4%) |
+| 2000 | 1561.9 | 1567.8 | +5.9 (flat) |
+
+#### MSSIM (ridge_2 vs ridge_1, target policy only)
+
+| RPS | ridge_1 (0.85) | ridge_2 (0.92) | Delta |
+|-----|----------------|----------------|-------|
+| 1000 | 770.1 | 816.2 | **+46.1** (+6.0%) |
+| 1200 | 709.2 | 723.6 | **+14.4** (+2.0%) |
+| 1400 | 748.4 | 751.1 | +2.7 (flat) |
+| 1500 | 818.6 | 799.8 | -18.8 (-2.3%) |
+| 1600 | 844.0 | 829.8 | -14.2 (-1.7%) |
+| 1800 | 918.5 | 923.9 | +5.4 (flat) |
+
+**Decision:** Keep. The MSSIM valley improvement (+6% at 1000 RPS) is the key win — this was where the target policy lost most to prio_oldest. The hotel 1800 regression (-2.4%) is a tradeoff but acceptable since the target still leads prio_oldest by 386+ goodput at that load.
