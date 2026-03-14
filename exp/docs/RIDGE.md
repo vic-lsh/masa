@@ -139,3 +139,35 @@ Run hotel and mssim with same ridge_1 configs. Also extend socialnet RPS to [100
 | 1800 | 918.5 | 923.9 | +5.4 (flat) |
 
 **Decision:** Keep. The MSSIM valley improvement (+6% at 1000 RPS) is the key win — this was where the target policy lost most to prio_oldest. The hotel 1800 regression (-2.4%) is a tradeoff but acceptable since the target still leads prio_oldest by 386+ goodput at that load.
+
+---
+
+## Iteration 2: Reduce ADJUST_RATE from 0.5 to 0.3 (experiment ridge_3)
+
+**Status:** Pending
+
+### Change
+Reduce `ADJUST_RATE` from 0.5 to 0.3 in `libs/tonic/tonic/src/masa/context/adctl.rs`.
+
+### Hypothesis
+The `ADJUST_RATE=0.5` means the budget rate changes by 50% per second when utilization crosses UTIL_TARGET. This is aggressive — at the transition between moderate and deep overload (hotel 1800 RPS, mssim 1500 RPS), the rate oscillates:
+1. Util crosses 0.92 → budget drops 50%/sec → too few requests admitted → utilization drops
+2. Util drops below 0.92 → budget rises 50%/sec → too many requests admitted → util spikes
+3. Repeat
+
+This oscillation wastes CPU on requests that are admitted during the "rise" phase but then can't complete because the system is overloaded during the "spike" phase.
+
+Reducing ADJUST_RATE to 0.3 makes the budget track utilization more smoothly:
+- Budget drops by 30%/sec when overloaded (more gradual shedding, less overshoot)
+- Budget rises by 30%/sec when underloaded (more gradual recovery, less oscillation)
+- The net effect should be a more stable admission rate at the transition point
+
+This targets the hotel 1800 regression from iteration 1 while preserving the moderate-overload gains.
+
+### Expected outcomes if hypothesis is correct:
+1. Hotel 1800 RPS: recover from 1456 toward 1492 (eliminating the regression)
+2. MSSIM 1500-1600 RPS: recover from 800-830 toward 818-844
+3. All other RPS levels: maintained (smoother budget doesn't affect steady-state)
+
+### Experiment design
+Hotel and mssim only (socialnet still not saturated). Same ridge_1/ridge_2 configs.
