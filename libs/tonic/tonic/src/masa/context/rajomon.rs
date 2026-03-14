@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 #[cfg(feature = "rajomon")]
-const QUEUE_THRESHOLD_US: u64 = 7000;
+const QUEUE_THRESHOLD_US: u64 = 5000;
 #[cfg(feature = "rajomon")]
 const PRICE_PER_EXCESS_MS: u64 = 2;
 #[cfg(feature = "rajomon")]
