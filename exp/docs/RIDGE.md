@@ -144,7 +144,8 @@ Run hotel and mssim with same ridge_1 configs. Also extend socialnet RPS to [100
 
 ## Iteration 2: Reduce ADJUST_RATE from 0.5 to 0.3 (experiment ridge_3)
 
-**Status:** Pending
+**Status:** Reverted ❌
+**Code commit:** d79873a7 (reverted)
 
 ### Change
 Reduce `ADJUST_RATE` from 0.5 to 0.3 in `libs/tonic/tonic/src/masa/context/adctl.rs`.
@@ -171,3 +172,12 @@ This targets the hotel 1800 regression from iteration 1 while preserving the mod
 
 ### Experiment design
 Hotel and mssim only (socialnet still not saturated). Same ridge_1/ridge_2 configs.
+
+### Actual Outcomes (ridge_3)
+
+**Hotel:** 1800 RPS worsened further (1442 vs 1456 in ridge_2). 1600 improved (+24). Net negative.
+**MSSIM:** Mixed — 1000 RPS regressed (-5.3% vs ridge_2), but 1200-1800 improved modestly (+2-3%).
+
+**Decision:** Revert. ADJUST_RATE=0.3 is too sluggish — delays shedding under deep overload. Cross-app results are inconsistent. ADJUST_RATE=0.5 is the right value.
+
+**Current state:** UTIL_TARGET=0.92 (kept), ADJUST_RATE=0.5 (reverted to original).
