@@ -292,4 +292,49 @@ However, Bug 2 (monotonic price latch) means prices can only grow. If the price 
 3. No effect on hotel or socialnet (they already have correct token assignment)
 
 ### Experiment design
-MSSIM only with ridge_1 config (same callgraph and RPS range). Only run fifo,rajomon to get fast signal.
+MSSIM only with ridge_1 config (same callgraph and RPS range). Run fifo,rajomon + baselines.
+
+### Actual Outcomes (ridge_6)
+
+**Status:** Insufficient ❌ — token fix alone does not resolve the collapse
+
+| RPS | fifo,rajomon (ridge_1) | fifo,rajomon (ridge_6) | prio_oldest,early | target |
+|-----|------------------------|------------------------|-------------------|--------|
+| 200 | 197.5 | 198.0 | 200 | 201 |
+| 400 | 397.2 | 401.0 | 400 | 402 |
+| 800 | 15.5 | 22.9 | 791 | 798 |
+| 1000 | 0.0 | 0.0 | 797 | 806 |
+| 1200 | 0.0 | 0.0 | 772 | 721 |
+| 1400 | 0.0 | 0.0 | 766 | 778 |
+| 1800 | 0.0 | 0.0 | 774 | 943 |
+
+CPU utilization on bottleneck services under rajomon: 11% (vs 80%+ for other policies). The system is starved — rajomon rejects nearly all work.
+
+**Root cause confirmed:** Bug 2 (monotonic `max_downstream_for_method` latch) is the primary culprit. The token fix was necessary but not sufficient.
+
+---
+
+## Iteration 5: Replace monotonic max_downstream with EWMA decay (experiment ridge_7)
+
+**Status:** Pending
+
+### Change
+Replace the one-way ratchet in `update_cache_from_response` (`rajomon.rs:410-420`) with an EWMA-based tracking mechanism. Instead of `max(current, new_price)`, use an EWMA update: `new_max = α * price + (1-α) * current_max` when price > current, and decay toward price when price < current. This allows the downstream price to recover after transient spikes.
+
+Specifically:
+- When a new downstream price arrives, update `max_downstream_for_method` using EWMA with α=0.3
+- This means a transient spike to price=177 that reverts to price=1 will decay: 177 → 124 → 87 → 61 → ... (halving roughly every 2 observations)
+- The background pricing worker already runs every 100ms and could also apply decay, but updating on each response is more responsive
+
+### Hypothesis
+The current monotonic max means any transient queue latency spike at a deep service (MS_73106) permanently inflates the accumulated price at all upstream services. With EWMA decay, the price tracks the *recent* downstream cost rather than the *worst-ever* cost. After a spike subsides:
+- Local price at MS_73106 decreases (the existing pricing logic already handles this via PRICE_DECREASE_STEP)
+- But `max_downstream_for_method` at MS_56394 and USER never decreases → accumulated price stays high → all requests rejected
+
+With EWMA, the downstream price will decay within a few hundred milliseconds of the spike ending, allowing admission to resume.
+
+### Expected outcomes if hypothesis is correct:
+1. MSSIM fifo,rajomon goodput at 800+ RPS becomes non-zero and competitive
+2. At moderate overload (800-1000 RPS), rajomon should admit most requests since queue latency is manageable
+3. At deep overload (1400+ RPS), rajomon may still underperform prio_oldest/target due to its simpler scheduling, but should not be at zero
+4. No effect on hotel/socialnet (they already work with rajomon)
