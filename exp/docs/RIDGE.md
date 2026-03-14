@@ -338,3 +338,45 @@ With EWMA, the downstream price will decay within a few hundred milliseconds of 
 2. At moderate overload (800-1000 RPS), rajomon should admit most requests since queue latency is manageable
 3. At deep overload (1400+ RPS), rajomon may still underperform prio_oldest/target due to its simpler scheduling, but should not be at zero
 4. No effect on hotel/socialnet (they already work with rajomon)
+
+### Actual Outcomes (ridge_7)
+
+**Status:** Insufficient ❌ — EWMA decay on response had no effect
+
+| RPS | fifo,rajomon (ridge_1) | fifo,rajomon (ridge_7) | prio_oldest,early | target |
+|-----|------------------------|------------------------|-------------------|--------|
+| 200 | 197.5 | 200.6 | 198.0 | 200.9 |
+| 400 | 397.2 | 394.9 | 402.8 | 396.6 |
+| 800 | 15.5 | 15.0 | 794.3 | 794.0 |
+| 1000 | 0.0 | 0.0 | 825.2 | 770.0 |
+| 1200 | 0.0 | 0.0 | 779.3 | 719.6 |
+| 1800 | 0.0 | 0.0 | 787.3 | 921.5 |
+
+**Root cause of failure:** Chicken-and-egg problem. Once rajomon rejects all requests at the upstream service, no responses come back from downstream → `update_cache_from_response` is never called → the EWMA never gets a new observation → the price is permanently latched. The decay mechanism fires on-response, but there are no responses when the system is in lockout.
+
+---
+
+## Iteration 6: Add time-based decay of max_downstream in background worker (experiment ridge_8)
+
+**Status:** Pending
+
+### Change
+Add periodic decay of `max_downstream_for_method` in the background pricing worker (`update_prices`), which runs every 100ms regardless of traffic. When the worker ticks:
+1. After updating local prices, iterate over `max_downstream_for_method`
+2. For each entry, decay by a constant factor (e.g., multiply by 0.9 every tick)
+3. Remove entries that decay below 1
+
+This ensures downstream price estimates decay even when no responses are arriving (the lockout scenario). Combined with the on-response EWMA from iteration 5, prices will:
+- React instantly to increases (on-response, fast-up)
+- Decay on response when prices decrease (EWMA, slow-down)
+- Decay over time when no responses arrive (background decay, prevents permanent lockout)
+
+### Hypothesis
+The permanent lockout occurs because `max_downstream_for_method` is only updated in `update_cache_from_response`, which requires successful downstream calls. When all requests are rejected, no calls happen, creating a self-reinforcing lockout. Adding time-based decay in the background worker breaks this cycle: after ~2-3 seconds of no responses, prices will decay enough to allow some requests through, which generates responses, which updates the price to its true current value.
+
+With decay factor 0.9 per 100ms tick: price 170 → 153 → 138 → ... → below 100 (median token value) in ~6 ticks (600ms). This is fast enough to recover from lockout within ~1 second.
+
+### Expected outcomes if hypothesis is correct:
+1. MSSIM fifo,rajomon should show non-zero goodput at 800+ RPS
+2. Recovery should be visible in the per-RPS-step data — initial lockout followed by recovery
+3. At steady deep overload (1400+), rajomon may still underperform other policies due to FIFO scheduling, but should not be at zero
