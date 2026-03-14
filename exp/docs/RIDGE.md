@@ -380,3 +380,48 @@ With decay factor 0.9 per 100ms tick: price 170 → 153 → 138 → ... → belo
 1. MSSIM fifo,rajomon should show non-zero goodput at 800+ RPS
 2. Recovery should be visible in the per-RPS-step data — initial lockout followed by recovery
 3. At steady deep overload (1400+), rajomon may still underperform other policies due to FIFO scheduling, but should not be at zero
+
+### Actual Outcomes (ridge_8)
+
+**Status:** Partial fix ⚠️ — rajomon no longer collapses to zero, but remains heavily degraded
+
+| RPS | fifo,rajomon (ridge_1) | fifo,rajomon (ridge_8) | prio_oldest,early | target |
+|-----|------------------------|------------------------|-------------------|--------|
+| 200 | 197.5 | 197.6 | 196.3 | 202.0 |
+| 400 | 397.2 | 395.7 | 404.6 | 397.1 |
+| 800 | **15.5** | **207.0** | 793.5 | 803.5 |
+| 1000 | **0.0** | **258.2** | 792.5 | 801.6 |
+| 1200 | 0.0 | **308.0** | 755.7 | 720.5 |
+| 1400 | 0.0 | **351.6** | 758.1 | 762.9 |
+| 1500 | 0.0 | **380.2** | 776.6 | 802.3 |
+| 1600 | 0.0 | **406.7** | 779.6 | 845.8 |
+| 1800 | 0.0 | **453.3** | 784.9 | 940.4 |
+
+**Progress:** Rajomon now produces non-zero goodput at all load levels (207-453 at 800-1800 RPS). The background decay successfully breaks the permanent lockout cycle.
+
+**Remaining problem:** Rajomon still delivers only 25-50% of what prio_oldest/target achieve. CPU on bottleneck services: 11% under rajomon vs 80% under other policies. The admission controller is still far too aggressive — the `max_downstream_for_method` estimate remains inflated even with decay, causing most requests to be rejected.
+
+**Root cause:** The 0.9x decay per 100ms tick means a price of 170 takes ~50 ticks (5 seconds) to decay below the median token value of ~5000. During those 5 seconds, the price is being refreshed by the trickle of admitted requests, creating a steady-state where prices are elevated enough to reject most requests but low enough to admit a small fraction. The system equilibrates at ~25% admission rather than recovering fully.
+
+**What would fix this:** The fundamental issue is that rajomon's pricing mechanism isn't calibrated for MSSIM's deep call graph (3 sequential RPCs at ms-73106). The accumulated queue latency per request is 3x what it would be in a single-RPC service, causing proportionally higher prices. Proper fixes include:
+1. Faster decay (0.7x or 0.5x per tick)
+2. Normalizing queue latency by call depth
+3. Separate pricing per child method instead of aggregating via max
+
+These are outside the 3-iteration budget. The fixes applied (token assignment + EWMA + background decay) are net improvements and should be kept.
+
+---
+
+## Summary of Iterations 4-6 (Rajomon MSSIM Fix)
+
+| Iteration | Change | Result | Decision |
+|-----------|--------|--------|----------|
+| 4 | Add token assignment to MSSIM loadgen | No effect (price > max tokens) | Keep (correct bug) |
+| 5 | EWMA decay in update_cache_from_response | No effect (no responses during lockout) | Keep (correct design) |
+| 6 | Time-based decay in background worker (0.9x/100ms) | Partial fix: 0→207-453 goodput | Keep (breaks lockout) |
+
+**Net code changes (iterations 4-6):**
+- `apps/mssim/generic-service/src/loadgen.rs`: Add rajomon-aware token assignment (100-10000)
+- `libs/tonic/tonic/src/masa/context/rajomon.rs`: Replace monotonic max_downstream with EWMA (fast-up, slow-down) + time-based background decay (0.9x per 100ms tick)
+
+**Commits:** e5549269 (iter 4), e3049671 (iter 5), d032f602 (iter 6)
