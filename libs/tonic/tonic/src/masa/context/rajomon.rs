@@ -280,12 +280,8 @@ impl RajomonHandler {
 
     #[cfg(feature = "rajomon")]
     pub(crate) fn check_inbound(&mut self, ctx: &mut Context) -> bool {
-        let local_price = RAJOMON_STATE
-            .local_prices
-            .get(&self.rpc)
-            .map(|v| *v)
-            .unwrap_or(1);
-        if !ctx.consume_tokens(local_price) {
+        let price = RAJOMON_STATE.accumulated_price(&self.rpc);
+        if ctx.tokens() < price {
             self.should_drop = true;
             true
         } else {
@@ -326,25 +322,11 @@ impl RajomonHandler {
         _ctx: &Context,
     ) -> Result<(), Status> {
         let price = RAJOMON_STATE.child_price(child_method);
-        // CAS loop to atomically subtract price from remaining_tokens
-        loop {
-            let current = self.remaining_tokens.load(Ordering::Relaxed);
-            if current < price {
-                return Err(self.issue_error(Some(child_method)));
-            }
-            if self
-                .remaining_tokens
-                .compare_exchange_weak(
-                    current,
-                    current - price,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                )
-                .is_ok()
-            {
-                return Ok(());
-            }
+        let current = self.remaining_tokens.load(Ordering::Relaxed);
+        if current < price {
+            return Err(self.issue_error(Some(child_method)));
         }
+        Ok(())
     }
 
     #[cfg(not(feature = "rajomon"))]
@@ -759,9 +741,10 @@ mod tests {
             .tokens(500)
             .build();
 
-        // Default price is 1, so 500-1=499 remaining
+        // Default accumulated price is local=1 + downstream=0 = 1.
+        // Tokens are checked but NOT deducted.
         let dropped = handler.check_inbound(&mut ctx);
         assert!(!dropped);
-        assert_eq!(handler.remaining_tokens(), 499);
+        assert_eq!(handler.remaining_tokens(), 500);
     }
 }
