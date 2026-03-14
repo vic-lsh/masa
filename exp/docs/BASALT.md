@@ -955,6 +955,31 @@ The 100x client pool scaling (replenish=1M per 10ms = 100M tokens/sec) ensures t
 ### Experiment design
 Full RPS sweep.
 
+### Actual Outcomes (basalt_17)
+
+**Status:** Mixed — best-ever 1200 RPS, but collapse persists at 1600+
+
+#### Goodput Comparison (basalt_17)
+
+| RPS | adctl | Rajomon b17 (accum+scaled) | Rajomon b13 (no accum) | Rajomon b16 (accum+small) |
+|-----|-------|---------------------------|------------------------|--------------------------|
+| 100 | 100.0 | 99.6 | 99.5 | 99.7 |
+| 400 | 397.8 | 398.0 | 397.8 | 397.9 |
+| 800 | 786.7 | **795.4** | 795.5 | 767.9 |
+| 1200 | 759.9 | **1173.0** | 1037.9 | 164.6 |
+| 1400 | 1015.1 | 888.6 | 987.1 | 186.8 |
+| 1600 | 1442.8 | **197.8** | 712.1 | 216.9 |
+| 1800 | 1210.5 | **185.4** | 892.3 | 244.3 |
+| 2000 | 1534.9 | **406.3** | 874.2 | 280.0 |
+
+**Scaling the token range moved the collapse from 1200 to 1400 RPS**, but didn't eliminate it. At 1200 RPS, b17 achieves the best Rajomon result ever (1173, actually beating adctl's 760!). But at 1600+ it collapses to ~185-406 goodput — worse than b13's 712-892.
+
+**Rejection pattern is 99%+ frontend** (correct), with only tiny downstream leakage (0.1-3.0 req/s at reservation vs hundreds at frontend). The accumulation model successfully pushes rejection to the gateway.
+
+**Root cause of the persistent collapse:** The price accumulation model creates a **sharp phase transition**. Below the critical load (1400 RPS), accumulated prices stay within the token range → gentle shedding → good goodput. Above it, queue latencies spike → accumulated prices grow rapidly (additive across depth) → quickly exceed most of the token range → near-total rejection → catastrophic collapse. The non-accumulated model (b13) doesn't have this amplification, so it degrades more gracefully.
+
+**Decision:** Revert. The price accumulation model is fundamentally more brittle at high load because price amplification across the call graph depth creates cliff-edge dynamics. b13 (no accumulation, QUEUE_THRESHOLD_US=5000, PRICE_PER_EXCESS_MS=2) remains the most robust configuration.
+
 ### Open hypotheses (not yet tested)
 
 1. **Adaptive threshold:** Instead of a fixed QUEUE_THRESHOLD_US, use a percentile of recent queue latencies (e.g., P90). This would auto-calibrate to the workload's natural queuing behavior.
