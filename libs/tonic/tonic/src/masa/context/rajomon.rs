@@ -407,17 +407,29 @@ impl RajomonHandler {
                     RAJOMON_STATE
                         .downstream_prices
                         .insert(child_method.clone(), price);
-                    // Update max downstream price for this parent method
-                    let current_max = RAJOMON_STATE
+                    // Track downstream price with EWMA decay.
+                    // Previously this was a monotonically-increasing max, which caused
+                    // permanent lockout after transient price spikes (the price would
+                    // ratchet up and never come back down).
+                    let current = RAJOMON_STATE
                         .max_downstream_for_method
                         .get(&self.rpc)
                         .map(|v| *v)
                         .unwrap_or(0);
-                    if price > current_max {
-                        RAJOMON_STATE
-                            .max_downstream_for_method
-                            .insert(self.rpc.clone(), price);
-                    }
+                    // Use max to respond instantly to increases, EWMA for decreases.
+                    let updated = if price >= current {
+                        price
+                    } else {
+                        // EWMA decay: α=0.3, half-life ≈ 2 observations
+                        let alpha = 0.3_f64;
+                        std::cmp::max(
+                            1,
+                            (alpha * price as f64 + (1.0 - alpha) * current as f64) as u64,
+                        )
+                    };
+                    RAJOMON_STATE
+                        .max_downstream_for_method
+                        .insert(self.rpc.clone(), updated);
                 }
             }
         }
