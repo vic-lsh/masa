@@ -136,6 +136,22 @@ impl RajomonSharedState {
             };
             self.local_prices.insert(method.clone(), new_price);
         }
+
+        // Decay max_downstream_for_method over time to prevent permanent lockout.
+        // Without this, a transient spike in downstream prices would permanently
+        // latch high because no new responses arrive when all requests are rejected.
+        let mut to_remove = Vec::new();
+        for mut entry in self.max_downstream_for_method.iter_mut() {
+            let decayed = (*entry.value() as f64 * 0.9) as u64;
+            if decayed <= 1 {
+                to_remove.push(entry.key().clone());
+            } else {
+                *entry.value_mut() = decayed;
+            }
+        }
+        for key in to_remove {
+            self.max_downstream_for_method.remove(&key);
+        }
     }
 
     fn log_pricing_tables(&self) {
