@@ -1,3 +1,4 @@
+pub mod ewma;
 pub mod histogram;
 pub mod mean_var;
 pub mod rms;
@@ -22,8 +23,19 @@ pub trait LatencyEstimator: Send + Sync {
     fn mean_estimate(&self) -> u64 {
         self.estimate()
     }
+
+    /// Get a floor estimate of latency using a slow-to-inflate, fast-to-deflate EMA.
+    /// Used for early-return thresholds to avoid over-shedding when the mean has
+    /// temporarily inflated (e.g., during load spikes). The floor tracks the lower
+    /// envelope of observations: it deflates quickly (α=0.3) but inflates very slowly
+    /// (α=0.01), providing a conservative lower bound on remaining time.
+    /// Default implementation returns mean_estimate() for backwards compatibility.
+    fn mean_floor_estimate(&self) -> u64 {
+        self.mean_estimate()
+    }
 }
 
+pub use ewma::LatencyEwma;
 pub use histogram::LatencyDistribution;
 pub use mean_var::LatencyMeanVar;
 pub use rms::LatencyRms;

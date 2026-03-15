@@ -2,6 +2,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Optional, Type
+from dataclasses import dataclass
 
 from .apps.base import AppPlugin
 from .config import ExperimentConfig
@@ -10,6 +11,17 @@ from .deployment_manager import DeploymentManager
 from .executor import CommandExecutor, SubprocessExecutor
 from .exceptions import DeploymentError, LoadGenError
 from .utils import wait_until
+
+
+@dataclass
+class WorkloadContext:
+    project_name: str
+    env_vars: dict
+    use_k8s: bool
+    deploy_root: Path
+    deploy_file: str
+    cpu_monitor: Optional["CPUMonitor"] = None
+
 
 logger = logging.getLogger(__name__)
 
@@ -44,19 +56,54 @@ class ExpDriver:
     ) -> None:
         """
         Execute a single workload (setup -> build -> deploy -> run -> teardown).
-
-        Flow:
-        1. Prepare Workload: Generate configs and environment variables.
-        2. Build Images: Build required docker images.
-        3. Deploy: Start services (Docker Compose or Helm).
-        4. Run Task: Execute load generator or task.
-        5. Teardown: Cleanup resources.
         """
 
-        # Determine platform
-        use_k8s = hasattr(self.deployment, "kube_context")
-
         # 1. Setup & Configuration
+        ctx = self._setup_context(
+            config, policy, iteration, output_dir, repo_root, dry_run
+        )
+
+        # 2. Build Images
+        self._build_images(
+            config, policy, ctx.env_vars, output_dir, repo_root, no_cache, dry_run
+        )
+
+        # Handle Dry-Run Exit Point
+        if dry_run:
+            logger.info(
+                f"[dry-run] Would deploy from {ctx.deploy_root}/{ctx.deploy_file} with project={ctx.project_name}"
+            )
+            return
+
+        # 3. Deploy, Run, Collect (wrapped in try/except)
+        try:
+            self._deploy_run_collect(config, policy, output_dir, ctx)
+
+        except (DeploymentError, LoadGenError) as e:
+            logger.error(f"Workload execution failed: {e}")
+            self._log_failed_containers(ctx)
+            raise
+
+        except Exception as e:
+            logger.error(f"Unexpected error during workload execution: {e}")
+            self._log_failed_containers(ctx)
+            raise
+
+        finally:
+            # 4. Teardown
+            self._teardown(ctx)
+
+    def _setup_context(
+        self,
+        config: ExperimentConfig,
+        policy: str,
+        iteration: int,
+        output_dir: Path,
+        repo_root: Path,
+        dry_run: bool,
+    ) -> WorkloadContext:
+        """Sets up the initial context, env vars, and deployment details."""
+        use_k8s = hasattr(self.deployment, "kube_context")
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Prepare workload (generate configs, env vars)
@@ -75,15 +122,34 @@ class ExpDriver:
         if not project_name and not dry_run:
             logger.warning("No DOCKER_COMPOSE_PROJECT_NAME in env_vars")
 
-        # 2. Build Images
+        deploy_root, deploy_file = self.app.get_deployment_location(
+            output_dir, use_k8s, repo_root
+        )
+
+        return WorkloadContext(
+            project_name=project_name,
+            env_vars=env_vars,
+            use_k8s=use_k8s,
+            deploy_root=deploy_root,
+            deploy_file=deploy_file,
+        )
+
+    def _build_images(
+        self,
+        config: ExperimentConfig,
+        policy: str,
+        env_vars: dict,
+        output_dir: Path,
+        repo_root: Path,
+        no_cache: bool,
+        dry_run: bool,
+    ) -> None:
+        """Builds all necessary application images."""
         template_gen_config = config.in_dir / "gen_config.json"
         builder = self.app.create_builder()
         build_logs_dir = output_dir / "build_logs"
 
         if dry_run:
-            # For dry-run, we rely on the executor (MockCommandExecutor) to record commands
-            # We still pass dry_run=True for compatibility with builders that might use it
-            # to skip side effects not captured by executor (like file I/O).
             builder.build(
                 repo_root=repo_root,
                 app_dir=config.app_dir,
@@ -107,19 +173,25 @@ class ExpDriver:
                 executor=self.executor,
             )
 
-        # 3. Deploy
-        deploy_root, deploy_file = self.app.get_deployment_location(
-            output_dir, use_k8s, repo_root
+    def _log_failed_containers(self, ctx: WorkloadContext) -> None:
+        """Checks for and logs failed containers during an error."""
+        failed = self.deployment.check_project_health(
+            ctx.deploy_root / ctx.deploy_file, ctx.project_name, ctx.env_vars
         )
+        if failed:
+            logger.error(f"Failed containers: {failed}")
 
-        if dry_run:
-            logger.info(
-                f"[dry-run] Would deploy from {deploy_root}/{deploy_file} with project={project_name}"
-            )
-            return
+    def _deploy_run_collect(
+        self,
+        config: ExperimentConfig,
+        policy: str,
+        output_dir: Path,
+        ctx: WorkloadContext,
+    ) -> None:
+        """Deploys the services, runs the load generator, and collects artifacts."""
 
-        # Load images into Kind if needed (K8s mode)
-        if use_k8s and hasattr(self.deployment, "load_image_to_cluster"):
+        # Load images into Kind if needed
+        if ctx.use_k8s and hasattr(self.deployment, "load_image_to_cluster"):
             kind_cluster_name = os.environ.get("KIND_CLUSTER_NAME")
             if kind_cluster_name:
                 images = self.app.get_required_images(policy)
@@ -128,111 +200,96 @@ class ExpDriver:
             else:
                 logger.debug("KIND_CLUSTER_NAME not set, skipping kind load")
 
-        cpu_monitor = None
+        # Start services
+        self.deployment.start(
+            app_dir=ctx.deploy_root,
+            deployment_config=ctx.deploy_file,
+            env_vars=ctx.env_vars,
+            project_name=ctx.project_name,
+        )
+
+        # Wait for deployment to stabilize
+        self._wait_for_deployment(
+            ctx.deploy_root, ctx.deploy_file, ctx.project_name, ctx.env_vars
+        )
+
+        # Start Monitoring
+        container_names = self.deployment.get_container_names(
+            config_path=ctx.deploy_root / ctx.deploy_file,
+            project_name=ctx.project_name,
+            env_vars=ctx.env_vars,
+        )
+
+        if not container_names:
+            logger.warning("No containers found to monitor/log.")
+
+        # CPU Monitor
+        cpu_stats_file = output_dir / "cpu_stats.csv"
+        ctx.cpu_monitor = self.cpu_monitor_factory(
+            output_path=cpu_stats_file,
+            poll_interval=2.0,
+            container_names=container_names,
+            use_k8s=ctx.use_k8s,
+            namespace=getattr(self.deployment, "namespace", "default"),
+            executor=self.executor,
+        )
+        ctx.cpu_monitor.start()
+
+        # Log Streaming
+        logs_dir = output_dir / "logs"
+        self.deployment.stream_logs(container_names, logs_dir, follow=True)
+
+        # 4. Execute Task (Load Generator)
+        loadgen_spec = self.app.get_loadgen_spec(
+            output_dir=output_dir,
+            features=policy,
+            env_vars=ctx.env_vars,
+            use_k8s=ctx.use_k8s,
+        )
+
+        # Disable auto-cleanup so we can copy artifacts
+        original_cleanup = loadgen_spec.cleanup
+        loadgen_spec.cleanup = False
 
         try:
-            # Start services
-            self.deployment.start(
-                app_dir=deploy_root,
-                deployment_config=deploy_file,
-                env_vars=env_vars,
-                project_name=project_name,
-            )
+            loadgen_log = output_dir / "loadgen.log"
+            self.deployment.run_task(loadgen_spec, log_file=loadgen_log)
 
-            # Wait for deployment to stabilize
-            self._wait_for_deployment(deploy_root, deploy_file, project_name, env_vars)
-
-            # Start Monitoring
-            container_names = self.deployment.get_container_names(
-                config_path=deploy_root / deploy_file,
-                project_name=project_name,
-                env_vars=env_vars,
-            )
-
-            if not container_names:
-                logger.warning("No containers found to monitor/log.")
-
-            # CPU Monitor
-            cpu_stats_file = output_dir / "cpu_stats.csv"
-            cpu_monitor = self.cpu_monitor_factory(
-                output_path=cpu_stats_file,
-                poll_interval=2.0,
-                container_names=container_names,
-            )
-            cpu_monitor.start()
-
-            # Log Streaming
-            logs_dir = output_dir / "logs"
-            self.deployment.stream_logs(container_names, logs_dir, follow=True)
-
-            # 4. Execute Task (Load Generator)
-            loadgen_spec = self.app.get_loadgen_spec(
-                output_dir=output_dir,
-                features=policy,
-                env_vars=env_vars,
-                use_k8s=use_k8s,
-            )
-
-            # Disable auto-cleanup so we can copy artifacts
-            original_cleanup = loadgen_spec.cleanup
-            loadgen_spec.cleanup = False
-
-            try:
-                loadgen_log = output_dir / "loadgen.log"
-                self.deployment.run_task(loadgen_spec, log_file=loadgen_log)
-
-                # 5. Collect Artifacts
-                for src, dst in loadgen_spec.artifacts:
-                    try:
-                        self.deployment.copy_from_container(
-                            loadgen_spec.name, src, output_dir / dst
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to copy artifact {src} -> {dst}: {e}")
-                        # Fallback: try to extract from logs if use_k8s
-                        if use_k8s and loadgen_log.exists():
-                            logger.info("Attempting to extract artifacts from logs...")
-                            self._extract_artifacts_from_log(
-                                loadgen_log, output_dir / dst
-                            )
-
-            finally:
-                if original_cleanup:
-                    self.deployment.cleanup_task(loadgen_spec)
-
-        except (DeploymentError, LoadGenError) as e:
-            logger.error(f"Workload execution failed: {e}")
-            failed = self.deployment.check_project_health(
-                deploy_root / deploy_file, project_name, env_vars
-            )
-            if failed:
-                logger.error(f"Failed containers: {failed}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error during workload execution: {e}")
-            failed = self.deployment.check_project_health(
-                deploy_root / deploy_file, project_name, env_vars
-            )
-            if failed:
-                logger.error(f"Failed containers: {failed}")
-            raise
-        finally:
-            # Teardown
-            if cpu_monitor:
+            # 5. Collect Artifacts
+            for src, dst in loadgen_spec.artifacts:
                 try:
-                    cpu_monitor.stop()
+                    self.deployment.copy_from_container(
+                        loadgen_spec.name, src, output_dir / dst
+                    )
                 except Exception as e:
-                    logger.warning(f"Failed to stop CPU monitor: {e}")
+                    logger.warning(f"Failed to copy artifact {src} -> {dst}: {e}")
+                    # Fallback: try to extract from logs if use_k8s
+                    if ctx.use_k8s and loadgen_log.exists():
+                        logger.info("Attempting to extract artifacts from logs...")
+                        self._extract_artifacts_from_log(loadgen_log, output_dir / dst)
 
+        finally:
+            # Cleanup loadgen task
+            if original_cleanup:
+                self.deployment.cleanup_task(loadgen_spec)
+
+    def _teardown(self, ctx: WorkloadContext) -> None:
+        """Stops CPU monitor and tears down deployment."""
+        if ctx.cpu_monitor:
             try:
-                self.deployment.stop(
-                    app_dir=deploy_root,
-                    deployment_config=deploy_file,
-                    env_vars=env_vars,
-                    project_name=project_name,
-                )
+                ctx.cpu_monitor.stop()
             except Exception as e:
-                logger.warning(f"Failed to stop deployment: {e}")
+                logger.warning(f"Failed to stop CPU monitor: {e}")
+
+        try:
+            self.deployment.stop(
+                app_dir=ctx.deploy_root,
+                deployment_config=ctx.deploy_file,
+                env_vars=ctx.env_vars,
+                project_name=ctx.project_name,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to stop deployment: {e}")
 
     def _wait_for_deployment(
         self, deploy_root: Path, deploy_file: str, project_name: str, env_vars: dict

@@ -22,8 +22,15 @@ pub struct QueueLatencies {
     pub resume: u64,
 }
 
-/// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ResponseMeta {
+    pub compute_time_us: u64,
+    pub utilization: f32,
+    pub max_downstream_util: f32,
+}
+
+/// Represent a Masa context.
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Context {
     api: Api,
     request_id: RequestId,
@@ -34,6 +41,22 @@ pub struct Context {
     frontend_elapse: Option<u64>,
     #[serde(default)]
     pub queue_latencies: Option<QueueLatencies>,
+    #[serde(default)]
+    pub response_meta: Option<ResponseMeta>,
+    #[serde(default)]
+    pub hop_count: u8,
+    #[serde(default = "default_tokens")]
+    pub tokens: u64,
+}
+
+fn default_tokens() -> u64 {
+    100
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        ContextBuilder::new(Api::default(), 0).build()
+    }
 }
 
 pub struct ContextBuilder {
@@ -45,6 +68,9 @@ pub struct ContextBuilder {
     prio_hint: Option<PriorityHint>,
     frontend_elapse: Option<u64>,
     queue_latencies: Option<QueueLatencies>,
+    response_meta: Option<ResponseMeta>,
+    hop_count: u8,
+    tokens: u64,
 }
 
 impl ContextBuilder {
@@ -58,6 +84,9 @@ impl ContextBuilder {
             prio_hint: None,
             frontend_elapse: None,
             queue_latencies: None,
+            response_meta: None,
+            hop_count: 0,
+            tokens: default_tokens(),
         }
     }
 
@@ -71,6 +100,9 @@ impl ContextBuilder {
             prio_hint: Some(ctx.prio_hint),
             frontend_elapse: ctx.frontend_elapse,
             queue_latencies: ctx.queue_latencies.clone(),
+            response_meta: ctx.response_meta.clone(),
+            hop_count: ctx.hop_count,
+            tokens: ctx.tokens,
         }
     }
 
@@ -104,6 +136,21 @@ impl ContextBuilder {
         self
     }
 
+    pub fn response_meta(mut self, meta: ResponseMeta) -> Self {
+        self.response_meta = Some(meta);
+        self
+    }
+
+    pub fn hop_count(mut self, hop_count: u8) -> Self {
+        self.hop_count = hop_count;
+        self
+    }
+
+    pub fn tokens(mut self, tokens: u64) -> Self {
+        self.tokens = tokens;
+        self
+    }
+
     pub fn build(self) -> Context {
         Context {
             api: self.api,
@@ -114,6 +161,9 @@ impl ContextBuilder {
             prio_hint: self.prio_hint.unwrap_or(PriorityHint::new(self.deadline)),
             frontend_elapse: self.frontend_elapse,
             queue_latencies: self.queue_latencies,
+            response_meta: self.response_meta,
+            hop_count: self.hop_count,
+            tokens: self.tokens,
         }
     }
 }
@@ -149,6 +199,21 @@ impl Context {
         self.gateway_entry + self.slo
     }
 
+    /// Get the tokens budget.
+    pub fn tokens(&self) -> u64 {
+        self.tokens
+    }
+
+    /// Consume tokens from the budget. Returns false if budget is insufficient.
+    pub fn consume_tokens(&mut self, amount: u64) -> bool {
+        if self.tokens >= amount {
+            self.tokens -= amount;
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn prio_hint(&self) -> PriorityHint {
         self.prio_hint
     }
@@ -161,6 +226,21 @@ impl Context {
     /// Set the frontend elapse time.
     pub fn set_frontend_elapse(&mut self, elapse: u64) {
         self.frontend_elapse = Some(elapse);
+    }
+
+    /// Get the response metadata.
+    pub fn response_meta(&self) -> Option<&ResponseMeta> {
+        self.response_meta.as_ref()
+    }
+
+    /// Set the response metadata.
+    pub fn set_response_meta(&mut self, meta: ResponseMeta) {
+        self.response_meta = Some(meta);
+    }
+
+    /// Get the hop count.
+    pub fn hop_count(&self) -> u8 {
+        self.hop_count
     }
 
     /// Create a new Masa context from JSON.

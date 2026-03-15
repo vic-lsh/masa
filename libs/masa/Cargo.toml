@@ -7,6 +7,7 @@ edition = "2021"
 masa-core = { path = "../masa-core" }
 tokio = { path = "../tokio/tokio", optional = true }
 tonic = { path = "../tonic/tonic" }
+rand = { version = "0.8", optional = true }
 
 [features]
 prio_global = ["masa-core/prio_global", "tokio/prio_global", "tonic/prio_global"]
@@ -19,4 +20,6 @@ est_hist = ["tonic/est_hist"]
 est_mean_var = ["tonic/est_mean_var"]
 
 early = ["masa-core/early", "tonic/early"]
+adctl = ["tonic/adctl"]
+rajomon = ["masa-core/rajomon", "tonic/rajomon", "dep:rand"]
 trace-queue = ["tonic/trace-queue"]

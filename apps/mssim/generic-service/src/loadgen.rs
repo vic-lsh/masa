@@ -295,12 +295,19 @@ async fn run_root_load(
                         let start_at = time_now();
                         let deadline = start_at + slo_us;
                         let prio_hint = if masa::PRIO_OLDEST { start_at } else { deadline };
-                        MasaContextBuilder::new("root".to_string(), req_id)
+                        #[allow(unused_mut)]
+                        let mut builder = MasaContextBuilder::new("root".to_string(), req_id)
                             .slo(slo_us)
                             .gateway_entry(start_at)
                             .deadline(deadline)
-                            .prio_hint(PriorityHint::new(prio_hint))
-                            .build()
+                            .prio_hint(PriorityHint::new(prio_hint));
+                        #[cfg(feature = "rajomon")]
+                        {
+                            use rand::Rng;
+                            builder =
+                                builder.tokens(rand::rng().random_range(100..=10000));
+                        }
+                        builder.build()
                     };
                     let request = request.with_masa_context(&ctx);
 

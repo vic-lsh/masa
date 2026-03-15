@@ -6,9 +6,11 @@ import numpy as np
 
 from .util import (
     filter_excluded_errors,
+    get_plot_worker_count,
     get_policy_color,
     get_policy_display_name,
     parse_args,
+    PlotData,
     prepare_output_dir,
     read_data,
 )
@@ -20,13 +22,7 @@ import matplotlib.pyplot as plt
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams["figure.max_open_warning"] = 0
 
-
-def _convert_to_milliseconds(df, cols):
-    """Convert specified columns from microseconds to milliseconds."""
-    MS_TO_US = 10**3
-    for col in cols:
-        if col in df.columns:
-            df[col] /= MS_TO_US
+MS_TO_US = 10**3
 
 
 def _get_queueing_columns(df):
@@ -115,7 +111,7 @@ def _plot_queueing_breakdown(
             df_filtered = filter_excluded_errors(df)
             if not df_filtered.empty:
                 # Average per RPS
-                means = df_filtered[queueing_cols].mean()
+                means = df_filtered[queueing_cols].mean() / MS_TO_US
                 total = means.sum()
                 global_max = max(global_max, total)
 
@@ -142,7 +138,7 @@ def _plot_queueing_breakdown(
                     comp_values[c].append(0.0)
             else:
                 for c in queueing_cols:
-                    comp_values[c].append(df_filtered[c].mean())
+                    comp_values[c].append(df_filtered[c].mean() / MS_TO_US)
 
         for i, col in enumerate(queueing_cols):
             comp_name = component_names[i]
@@ -226,7 +222,7 @@ def _plot_total_queueing_latency(
             else:
                 # Sum queueing cols for each row, then take mean
                 # Or mean of each col, then sum. (Equivalent)
-                total_avg = df_filtered[queueing_cols].sum(axis=1).mean()
+                total_avg = df_filtered[queueing_cols].sum(axis=1).mean() / MS_TO_US
                 totals.append(total_avg)
 
         color = get_policy_color(policy)
@@ -251,69 +247,70 @@ def _plot_total_queueing_latency(
     plt.close(fig)
 
 
-def generate_plots(args) -> None:
+def generate_plots(args, plot_data: PlotData | None = None) -> None:
     prepare_output_dir(args)
 
-    repeats, apis, policies, rps_values, results = read_data(
-        args.config_dir, args.data_dir
-    )
+    if plot_data is None:
+        repeats, apis, policies, rps_values, results = read_data(
+            args.config_dir, args.data_dir
+        )
+    else:
+        repeats = plot_data.repeats
+        apis = plot_data.apis
+        policies = plot_data.policies
+        rps_values = plot_data.rps_values
+        results = plot_data.results
 
-    # Pre-process: convert queueing columns to ms
+    futures = []
+
     for i in range(repeats):
+        output_dir = os.path.join(args.output_dir, str(i))
         for api in apis:
+            has_component_data = False
+
             for policy in policies:
                 for rps in rps_values:
                     df = results[i][api][policy][rps]
-                    q_cols = _get_queueing_columns(df)
-                    if q_cols:
-                        _convert_to_milliseconds(df, q_cols)
-
-    with ThreadPoolExecutor() as executor:
-        futures = []
-
-        for i in range(repeats):
-            output_dir = os.path.join(args.output_dir, str(i))
-            for api in apis:
-                # Check if this API has queueing data
-                has_component_data = False
-
-                for policy in policies:
-                    for rps in rps_values:
-                        df = results[i][api][policy][rps]
-                        if _get_queueing_columns(df):
-                            has_component_data = True
-                            break
-                    if has_component_data:
+                    if _get_queueing_columns(df):
+                        has_component_data = True
                         break
-
                 if has_component_data:
-                    # Breakdown Plot
-                    futures.append(
-                        executor.submit(
-                            _plot_queueing_breakdown,
+                    break
+
+            if has_component_data:
+                futures.append(
+                    (
+                        _plot_queueing_breakdown,
+                        (
                             os.path.join(output_dir, f"queueing_breakdown_{api}.png"),
                             api,
                             policies,
                             rps_values,
                             results[i][api],
                             f"Queueing Latency Breakdown for {api}",
-                        )
+                        ),
                     )
+                )
 
-                    # Total Plot
-                    futures.append(
-                        executor.submit(
-                            _plot_total_queueing_latency,
+                futures.append(
+                    (
+                        _plot_total_queueing_latency,
+                        (
                             os.path.join(output_dir, f"queueing_total_{api}.png"),
                             api,
                             policies,
                             rps_values,
                             results[i][api],
                             f"Total Queueing Latency for {api}",
-                        )
+                        ),
                     )
+                )
 
-        for future in as_completed(futures):
+    with ThreadPoolExecutor(
+        max_workers=get_plot_worker_count(len(futures), max_workers=6)
+    ) as executor:
+        submitted = [executor.submit(func, *func_args) for func, func_args in futures]
+        for future in as_completed(submitted):
             try:
                 future.result()
             except Exception as e:

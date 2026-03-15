@@ -692,6 +692,7 @@ impl CoreGuard<'_> {
                         Some(entry) => entry,
                         None => {
                             core.metrics.end_processing_scheduled_tasks();
+                            crate::task::utilization::set_utilization(core.metrics.utilization());
 
                             core = if !context.defer.is_empty() {
                                 context.park_yield(core, handle)
@@ -716,6 +717,7 @@ impl CoreGuard<'_> {
                 }
 
                 core.metrics.end_processing_scheduled_tasks();
+                crate::task::utilization::set_utilization(core.metrics.utilization());
 
                 // Yield to the driver, this drives the timer and pulls any
                 // pending I/O events.
