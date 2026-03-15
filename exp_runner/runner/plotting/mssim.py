@@ -141,7 +141,7 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
             print(f"Warning: missing e2e_latency_us in {csv_path}")
             continue
 
-        df = _filter_errors(df)
+        df = filter_excluded_errors(df)
         df = _filter_after_warmup(df, warmup_sec, csv_path)
         if df.empty:
             continue

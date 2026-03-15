@@ -7,7 +7,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from .executor import CommandExecutor
@@ -26,7 +26,7 @@ class CPUMonitor:
         container_names: Optional[list[str]] = None,
         use_k8s: bool = False,
         namespace: str = "default",
-        executor: Optional[Any] = None,
+        executor: Optional["CommandExecutor"] = None,
     ):
         """
         Initialize CPU monitor.
