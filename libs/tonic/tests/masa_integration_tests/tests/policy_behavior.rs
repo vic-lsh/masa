@@ -187,28 +187,36 @@ async fn sufficient_tokens_executes_and_piggybacks_price() {
         .await
         .unwrap();
 
-    let now = time_now();
-    let rajomon_ctx = ContextBuilder::new("test.ChildService/Rpc1", 99)
-        .gateway_entry(now)
-        .slo(1_000_000)
-        .deadline(now + 1_000_000)
-        .tokens(1_000_000) // Plenty of tokens
-        .build();
+    // Price is propagated with ~20% probability, so retry until we see it.
+    let mut piggybacked_price: Option<String> = None;
+    for _ in 0..50 {
+        let now = time_now();
+        let rajomon_ctx = ContextBuilder::new("test.ChildService/Rpc1", 99)
+            .gateway_entry(now)
+            .slo(1_000_000)
+            .deadline(now + 1_000_000)
+            .tokens(1_000_000) // Plenty of tokens
+            .build();
 
-    let mut request = Request::new(Input1 {});
-    request.set_masa_context(&rajomon_ctx);
+        let mut request = Request::new(Input1 {});
+        request.set_masa_context(&rajomon_ctx);
 
-    let response = client
-        .rpc1(request)
-        .await
-        .expect("request should have succeeded");
+        let response = client
+            .rpc1(request)
+            .await
+            .expect("request should have succeeded");
+
+        if let Some(header) = response.metadata().get("x-masa-rajomon-price") {
+            piggybacked_price = Some(header.to_str().unwrap().to_owned());
+            break;
+        }
+    }
 
     // Check that piggybacked price is 1
-    let price_header = response
-        .metadata()
-        .get("x-masa-rajomon-price")
-        .expect("missing piggybacked price");
-    assert_eq!(price_header.to_str().unwrap(), "1");
+    assert_eq!(
+        piggybacked_price.expect("price should have been piggybacked within 50 attempts"),
+        "1"
+    );
 
     server.abort();
 }
