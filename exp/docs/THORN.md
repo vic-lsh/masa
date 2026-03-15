@@ -163,3 +163,45 @@ By raising the threshold to 20ms (only true overload triggers price increases) A
 2. Goodput at 2000 RPS should significantly improve from thorn_2's 217.6 (target: >500)
 3. Low-load parity maintained
 4. The price signal should stabilize at a low equilibrium under moderate load rather than spiraling
+
+### Actual Outcomes (thorn_4)
+
+**Status:** Regression ❌
+
+| RPS | fifo,rajomon | prio_local,rajomon | **champion** | prio_oldest,early |
+|-----|-------------|-------------------|-------------|-------------------|
+| 100 | 99.7 | 99.5 | **99.5** | 99.5 |
+| 800 | 795.5 | 795.7 | **795.8** | 795.4 |
+| 1400 | 137.3 | 137.3 | **1219.9** | 1140.6 |
+| 2000 | 201.1 | 198.9 | **1568.8** | 1046.4 |
+
+**Same regression pattern as thorn_3.** Goodput at 1400 collapsed from thorn_2's 833.7 to 137.3. Both loosening the threshold (20ms) and slowing updates (50ms) caused the same ~138 goodput floor. The system admits too many requests initially (threshold too high to trigger early), saturates, and then over-corrects.
+
+**thorn_2 remains the only working configuration.** Its threshold=5000us + rate=10ms represents a narrow sweet spot. The remaining untouched lever is TOKEN_UPDATE_RATE_MS (client refill frequency).
+
+**Decision: Revert.** This was informative but unhelpful.
+
+---
+
+## Iteration 4: Faster token refill for high-load recovery (experiment thorn_5)
+
+**Status:** Pending
+
+**Code commit:** 56d61f7a
+
+### Change
+Revert thorn_4 back to thorn_2 base, then make one targeted change:
+- `TOKEN_UPDATE_RATE_MS`: 10 → 5 (2x faster client refill = 1000 tokens/s)
+
+All other params stay at thorn_2 values: LATENCY_THRESHOLD_US=5000, PRICE_UPDATE_RATE_MS=10, MAX_TOKEN=100, TOKEN_UPDATE_STEP=5, PRICE_FREQ=1.
+
+### Hypothesis
+At 2000 RPS in thorn_2, rajomon over-sheds (CPU 22% vs champion's 65%), suggesting the price-induced lockout is too sticky. When prices spike during transient congestion, the client-side token bucket takes too long to recover (refilling at 500/s with 10ms ticks). Doubling the refill frequency to 5ms (1000/s) should let clients recover faster from price spikes, maintaining higher sustained throughput under load. The higher refill rate compensates for the token cost of admitting requests through the multi-hop call graph.
+
+### Expected outcomes if hypothesis is correct:
+1. Goodput at 1400 RPS should match or slightly exceed thorn_2's 833.7
+2. Goodput at 2000 RPS should improve from thorn_2's 217.6 (target: >400)
+3. Low-load parity maintained
+
+### Experiment design
+Full 8-RPS sweep (100-2000) since this is the penultimate iteration. 4 policies: fifo,rajomon, prio_local,rajomon, champion, prio_oldest,early.
