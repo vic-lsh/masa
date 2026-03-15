@@ -38,6 +38,12 @@ pub(crate) struct MetricsBatch {
 
     /// If `Some`, tracks poll times in nanoseconds
     poll_timer: Option<PollTimer>,
+
+    /// Current EMA utilization estimate (0.0 to 1.0)
+    utilization_ema: f64,
+
+    /// When the last batch ended (for idle time calculation)
+    last_batch_end: Option<Instant>,
 }
 
 struct PollTimer {
@@ -70,6 +76,8 @@ impl MetricsBatch {
                     poll_counts: HistogramBatch::from_histogram(worker_poll_counts),
                     poll_started_at: now,
                 }),
+            utilization_ema: 0.0,
+            last_batch_end: None,
         }
     }
 
@@ -118,6 +126,28 @@ impl MetricsBatch {
     pub(crate) fn end_processing_scheduled_tasks(&mut self) {
         let busy_duration = self.processing_scheduled_tasks_started_at.elapsed();
         self.busy_duration_total += duration_as_u64(busy_duration);
+
+        // Update utilization EMA
+        if let Some(last_end) = self.last_batch_end {
+            // idle = time between last batch end and this batch start
+            let idle_ns = self
+                .processing_scheduled_tasks_started_at
+                .saturating_duration_since(last_end)
+                .as_nanos() as f64;
+            let busy_ns = busy_duration.as_nanos() as f64;
+            let total_ns = busy_ns + idle_ns;
+            if total_ns > 0.0 {
+                let busy_frac = busy_ns / total_ns;
+                let alpha: f64 = 0.1;
+                self.utilization_ema = (1.0 - alpha) * self.utilization_ema + alpha * busy_frac;
+            }
+        }
+        self.last_batch_end = Some(Instant::now());
+    }
+
+    /// Returns the current utilization EMA estimate (0.0 to 1.0).
+    pub(crate) fn utilization(&self) -> f64 {
+        self.utilization_ema
     }
 
     /// Start polling an individual task

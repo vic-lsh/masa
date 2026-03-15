@@ -117,6 +117,11 @@ Report back both commit hashes. Record the code commit hash in the tracking mark
 
 The experiment design reasoning was already written to the tracking markdown in Step 1. Now create the config and run.
 
+**Experiment efficiency tips:**
+- For quick validation of a hypothesis, you can selectively test a few representative RPS values (e.g., one near saturation and one well below) rather than the full sweep. This is useful when you want fast signal before committing to a full run.
+- Prefer running only policies with `,early` in the `policies` file. The `early` flag is an overload control mechanism; policies without it will almost always perform worse than their `,early` counterparts. Omit non-`early` variants unless the user explicitly requests them.
+- You can drop `fifo` from the `policies` file once you have established a baseline policy (e.g., `prio_oldest,early`) that consistently beats it. Including `fifo` adds experiment time with little analytical value once its inferiority is confirmed.
+
 **Config design principles** (to guide Step 1 design and Step 3 execution):
 - The baseline config is a regression anchor — you always want to be able to compare against it. But it may not be the most informative config for testing a specific hypothesis.
 - If your change makes the system more responsive to load variation, design a schedule with dramatic load swings (e.g., high → low → high) rather than a monotonic ramp.

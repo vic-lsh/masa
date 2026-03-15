@@ -339,6 +339,9 @@ cfg_rt! {
     mod queue_latency;
     pub use queue_latency::obtain_task_queue_latency;
 
+    pub(crate) mod utilization;
+    pub use utilization::current_utilization;
+
     cfg_rt_multi_thread! {
         pub use blocking::block_in_place;
     }

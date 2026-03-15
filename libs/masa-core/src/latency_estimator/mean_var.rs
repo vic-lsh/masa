@@ -3,11 +3,11 @@ use serde::{Deserialize, Serialize};
 
 /// Exponential Moving Average (EMA) latency estimator: mean + k*stddev.
 ///
-/// Uses EMA with decay factor `alpha` (weight of each new observation).
-/// Effective window ≈ 1/alpha observations. With alpha=0.05, the estimator
-/// adapts to load changes within ~20 observations, discarding stale history
-/// from prior load levels. This avoids the Welford all-time accumulator's
-/// lag when load drops significantly.
+/// Uses asymmetric EMA: alpha_up=0.05 when a new observation exceeds the current
+/// mean (slow to inflate), alpha_down=0.2 when at or below (fast to deflate).
+/// This prevents transient spikes from inflating estimates while ensuring rapid
+/// adaptation when load drops, avoiding stale over-estimates that cause unnecessary
+/// early returns.
 ///
 /// The estimate is: mean + k * stddev, where stddev = sqrt(EMA variance).
 /// Updated on every tracked observation (no batching).
@@ -19,6 +19,10 @@ pub struct LatencyMeanVar {
     alpha: f64,
     estimate: u64,
     initialized: bool,
+    /// Floor estimate: slow-to-inflate (α=0.01), fast-to-deflate (α=0.3) EMA.
+    /// Tracks the lower envelope of latency observations to provide a conservative
+    /// lower bound that is resistant to mean inflation during load spikes.
+    mean_floor: f64,
 }
 
 impl LatencyMeanVar {
@@ -32,6 +36,7 @@ impl LatencyMeanVar {
             alpha,
             estimate: 0,
             initialized: false,
+            mean_floor: 0.0,
         }
     }
 
@@ -50,11 +55,23 @@ impl LatencyEstimator for LatencyMeanVar {
         if !self.initialized {
             self.mean = x;
             self.variance = 0.0;
+            self.mean_floor = x;
             self.initialized = true;
         } else {
+            // Asymmetric alpha: slow to inflate (observations above mean), fast to deflate.
+            // alpha_up=0.05 prevents latency spikes from inflating estimates too quickly.
+            // alpha_down=0.2 ensures rapid adaptation when load drops, avoiding stale
+            // over-estimates that cause unnecessary early returns.
+            let alpha = if x > self.mean { 0.05 } else { 0.2 };
             let delta = x - self.mean;
-            self.mean += self.alpha * delta;
-            self.variance = (1.0 - self.alpha) * (self.variance + self.alpha * delta * delta);
+            self.mean += alpha * delta;
+            self.variance = (1.0 - alpha) * (self.variance + alpha * delta * delta);
+
+            // Floor EMA: fast deflation (α=0.3) when observation is below floor,
+            // very slow inflation (α=0.01) when above. Tracks the lower envelope of
+            // latency to provide a conservative ER threshold resistant to mean inflation.
+            let alpha_floor = if x < self.mean_floor { 0.3 } else { 0.01 };
+            self.mean_floor += alpha_floor * (x - self.mean_floor);
         }
         let raw = self.mean + self.k * self.variance.sqrt();
         self.estimate = if raw.is_finite() && raw > 0.0 {
@@ -79,17 +96,23 @@ impl LatencyEstimator for LatencyMeanVar {
             0
         }
     }
+
+    fn mean_floor_estimate(&self) -> u64 {
+        if self.mean_floor > 0.0 && self.mean_floor.is_finite() {
+            self.mean_floor.min(u64::MAX as f64) as u64
+        } else {
+            0
+        }
+    }
 }
 
 impl Default for LatencyMeanVar {
     fn default() -> Self {
-        // k=1.2: estimate at ~88th percentile (between k=1.0 at ~84th and k=1.5 at ~93rd).
-        // k=1.5 showed +17.7 at 1400 RPS but -17.9 at 1000 RPS (FLINT Iteration 7).
-        // k=1.2 tests whether a more moderate increase captures the 1400 gain without the
-        // 1000 regression.
-        // alpha=0.1: effective window ~10 observations; adapts to load changes
-        // faster than alpha=0.05 (20 obs), helping at RPS step transitions.
-        Self::new(1.2, 0.1)
+        // k=0.0: pure mean estimator — variance term removed (PINE Iteration 2).
+        // alpha field is kept for API compatibility but the EMA update uses hardcoded
+        // asymmetric values: alpha_up=0.05 (slow inflation) and alpha_down=0.2 (fast
+        // deflation). See track() for rationale.
+        Self::new(0.0, 0.1)
     }
 }
 
@@ -127,7 +150,7 @@ mod tests {
     #[test]
     fn test_default() {
         let est = LatencyMeanVar::default();
-        assert_eq!(est.k, 1.2);
+        assert_eq!(est.k, 0.0);
         assert_eq!(est.alpha, 0.1);
         assert!(!est.initialized);
     }
