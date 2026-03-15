@@ -18,9 +18,9 @@ use std::time::Duration;
 
 // Overload detection
 #[cfg(feature = "rajomon")]
-const PRICE_UPDATE_RATE_MS: u64 = 10; // original: priceUpdateRate (10ms)
+const PRICE_UPDATE_RATE_MS: u64 = 50; // original: priceUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const LATENCY_THRESHOLD_US: u64 = 5000; // original: latencyThreshold (0)
+const LATENCY_THRESHOLD_US: u64 = 20000; // original: latencyThreshold (0)
 
 // Price update (step strategy)
 #[cfg(feature = "rajomon")]
@@ -199,8 +199,8 @@ impl RajomonSharedState {
                     interval.tick().await;
                     RAJOMON_STATE.update_prices();
                     log_tick += 1;
-                    // At 10ms tick rate, 500 ticks = 5s logging interval
-                    if log_tick >= 500 {
+                    // At 50ms tick rate, 100 ticks = 5s logging interval
+                    if log_tick >= 100 {
                         log_tick = 0;
                         RAJOMON_STATE.log_pricing_tables();
                     }
@@ -369,7 +369,7 @@ impl RajomonHandler {
     pub(crate) fn track_queue_delay(&self) {}
 
     /// Commit this request's total accumulated queue latency to the global window max.
-    /// The background worker drains the window every 10ms, so call this exactly once per request.
+    /// The background worker drains the window every 50ms, so call this exactly once per request.
     #[cfg(feature = "rajomon")]
     pub(crate) fn finalize_queue_delay(&self) {
         let total_us = self.accumulated_q_lat_us.load(Ordering::Relaxed);
@@ -555,7 +555,7 @@ mod tests {
     #[test]
     fn test_step_price_increase_on_congestion() {
         let state = RajomonSharedState::new();
-        state.queue_stats.window_max.store(10000, Ordering::Relaxed);
+        state.queue_stats.window_max.store(30000, Ordering::Relaxed);
         state.update_prices();
         assert_eq!(
             state.own_price.load(Ordering::Relaxed),
@@ -563,7 +563,7 @@ mod tests {
         );
 
         // Second tick, still congested
-        state.queue_stats.window_max.store(6000, Ordering::Relaxed);
+        state.queue_stats.window_max.store(25000, Ordering::Relaxed);
         state.update_prices();
         assert_eq!(
             state.own_price.load(Ordering::Relaxed),
@@ -610,7 +610,7 @@ mod tests {
 
         // Mild congestion (above threshold)
         state.own_price.store(0, Ordering::Relaxed);
-        state.queue_stats.window_max.store(6000, Ordering::Relaxed);
+        state.queue_stats.window_max.store(25000, Ordering::Relaxed);
         state.update_prices();
         let price_after_mild = state.own_price.load(Ordering::Relaxed);
 
@@ -963,7 +963,7 @@ mod tests {
 
         // 5 ticks of congestion (above threshold)
         for _ in 0..5 {
-            state.queue_stats.window_max.store(10000, Ordering::Relaxed);
+            state.queue_stats.window_max.store(30000, Ordering::Relaxed);
             state.update_prices();
         }
         assert_eq!(state.own_price.load(Ordering::Relaxed), 5 * PRICE_STEP);
