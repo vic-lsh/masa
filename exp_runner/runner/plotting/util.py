@@ -2,12 +2,25 @@ import argparse
 import json
 import logging
 import os
+from dataclasses import dataclass
 from argparse import Namespace
 from pathlib import Path
 
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PlotData:
+    repeats: int
+    apis: list[str]
+    policies: list[str]
+    rps_values: list[int]
+    rps_sequence: list[int]  # Original order from gen_config["Rps"]
+    duration_sec: float
+    warmup_sec: float
+    results: list[dict]
 
 
 def _repair_row_parts(parts: list[str], *, expected_fields: int) -> list[str]:
@@ -173,9 +186,9 @@ def _parse_error_columns(df: pd.DataFrame) -> pd.DataFrame:
     # ^/EarlyReturn\?src=         Start with literal prefix
     # (?P<er_service>.+?)         Capture service (non-greedy)
     # ::                          Literal separator
-    # (?P<er_method>[^?]+)        Capture method (until next ? or end)
-    # (?:\?last_rpc=(?P<er_last_child>.*))?  Optional group: ?last_rpc= followed by anything
-    pattern = r"^/EarlyReturn\?src=(?P<er_service>.+?)::(?P<er_method>[^?]+)(?:\?last_rpc=(?P<er_last_child>.*))?$"
+    # (?P<er_method>[^?\s]+)        Capture method (until next ?, whitespace or end)
+    # (?:\?last_rpc=(?P<er_last_child>[^\s]*))?  Optional group: ?last_rpc= followed by anything up to space
+    pattern = r"^/EarlyReturn\?src=(?P<er_service>.+?)::(?P<er_method>[^?\s]+)(?:\?last_rpc=(?P<er_last_child>[^\s]*))?"
 
     extracted_data = df.loc[mask_er, "error"].str.extract(pattern)
 
@@ -200,11 +213,14 @@ def read_policies(config_dir: Path) -> list[str]:
     return policies
 
 
-def read_data(config_dir, data_dir):
+def load_plot_data(config_dir: Path | str, data_dir: Path | str) -> PlotData:
     with open(os.path.join(config_dir, "gen_config.json")) as f:
         config = json.load(f)
     repeats = config["Repeats"]
     rps_values = config["Rps"]
+    rps_sequence = list(rps_values)  # Preserve original order before any dedup
+    duration_sec = float(config.get("DurationSecs", 60))
+    warmup_sec = float(config.get("WarmupSecs", 0))
     apis = config["Apis"]
     slos = config.get("Slos", [])
 
@@ -250,7 +266,27 @@ def read_data(config_dir, data_dir):
 
     apis.append("ALL")
 
-    return repeats, apis, policies, rps_values, results
+    return PlotData(
+        repeats=repeats,
+        apis=apis,
+        policies=policies,
+        rps_values=rps_values,
+        rps_sequence=rps_sequence,
+        duration_sec=duration_sec,
+        warmup_sec=warmup_sec,
+        results=results,
+    )
+
+
+def read_data(config_dir, data_dir):
+    plot_data = load_plot_data(config_dir, data_dir)
+    return (
+        plot_data.repeats,
+        plot_data.apis,
+        plot_data.policies,
+        plot_data.rps_values,
+        plot_data.results,
+    )
 
 
 def prepare_output_dir(args) -> None:
@@ -262,6 +298,13 @@ def prepare_output_dir(args) -> None:
 
     for i in range(repeats):
         os.makedirs(os.path.join(args.output_dir, str(i)), exist_ok=True)
+
+
+def get_plot_worker_count(task_count: int, *, max_workers: int = 8) -> int:
+    if task_count <= 0:
+        return 1
+
+    return max(1, min(task_count, max_workers))
 
 
 def parse_args() -> Namespace:
@@ -301,6 +344,8 @@ def get_policy_color(policy: str) -> str | None:
         return "steelblue"
     elif policy_lower.startswith("prio_local"):
         if "est_mean_var" in policy_lower or "est_hist" in policy_lower:
+            if "adctl" in policy_lower:
+                return "forestgreen"
             return "coral"
         if ",early" in policy_lower:
             return "lightpink"
@@ -357,6 +402,9 @@ def filter_excluded_errors(df):
         DataFrame with excluded errors filtered out
     """
     if df.empty:
+        return df
+
+    if "error" not in df.columns:
         return df
 
     # Fast path: use parsed error_type if available

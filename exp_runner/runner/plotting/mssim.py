@@ -24,6 +24,7 @@ from .goodput import (
 )
 from .util import (
     _read_request_csv,
+    filter_excluded_errors,
     get_policy_color,
     get_policy_display_name,
     read_policies,
@@ -93,14 +94,6 @@ def _normalize_bool_series(series: pd.Series) -> pd.Series:
     return normalized.isin(["true", "1", "yes", "y", "t"])
 
 
-def _filter_errors(df: pd.DataFrame) -> pd.DataFrame:
-    if "is_err" not in df.columns:
-        return df
-    # We don't filter errors here anymore, because we want to analyze early returns.
-    # The caller functions (like goodput calculation) should filter errors if needed.
-    return df
-
-
 def _filter_after_warmup(
     df: pd.DataFrame, warmup_sec: float, source: Path
 ) -> pd.DataFrame:
@@ -155,7 +148,7 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
             print(f"Warning: missing e2e_latency_us in {csv_path}")
             continue
 
-        df = _filter_errors(df)
+        df = filter_excluded_errors(df)
         df = _filter_after_warmup(df, warmup_sec, csv_path)
         if df.empty:
             continue
@@ -238,10 +231,7 @@ def _compute_latency_percentiles(
     if df.empty:
         return {p: float("nan") for p in percentiles}
 
-    # Filter out errors for latency calculation
-    if "is_err" in df.columns:
-        err_mask = _normalize_bool_series(df["is_err"])
-        df = df.loc[~err_mask]
+    df = filter_excluded_errors(df)
 
     if df.empty:
         return {p: float("nan") for p in percentiles}
@@ -374,10 +364,7 @@ def _plot_latency_cdf(
         if df.empty:
             continue
 
-        # Filter out errors for CDF
-        if "is_err" in df.columns:
-            err_mask = _normalize_bool_series(df["is_err"])
-            df = df.loc[~err_mask]
+        df = filter_excluded_errors(df)
 
         latencies = df["e2e_latency_ms"].dropna()
         if latencies.empty:
