@@ -121,7 +121,8 @@ def cmd_run_experiment(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     # If running with --kind, set the KIND_CLUSTER_NAME environment variable
-    if getattr(args, "kind", False):
+    # (only if not already set by the calling shell script, e.g. CI sets kind-{job_id})
+    if getattr(args, "kind", False) and "KIND_CLUSTER_NAME" not in os.environ:
         os.environ["KIND_CLUSTER_NAME"] = "kind"
 
     # Load experiment configuration
