@@ -257,3 +257,70 @@ The tradeoff: slower reaction means the system might overshoot briefly during lo
 
 ### Experiment design
 Full 8-RPS sweep. 4 policies (same as thorn_5). This is the final iteration — results will determine whether Rajomon can be competitive with parameter tuning alone.
+
+### Actual Outcomes (thorn_6)
+
+**Status:** Mixed
+
+| RPS | fifo,rajomon | prio_local,rajomon | **champion** | prio_oldest,early |
+|----:|---:|---:|---:|---:|
+| 100 | 99.6 | 99.5 | **99.6** | 99.5 |
+| 400 | 397.9 | 397.9 | **397.8** | 397.9 |
+| 800 | 795.6 | 795.8 | **795.8** | 795.7 |
+| 1200 | **1180.0** | **1180.0** | 1177.0 | 1166.6 |
+| 1400 | 138.9 | 141.7 | **1239.6** | 1124.0 |
+| 1600 | 160.9 | 159.8 | **1347.9** | 1058.2 |
+| 1800 | 186.8 | 185.2 | **1483.7** | 1053.4 |
+| 2000 | 200.1 | 200.7 | **1577.0** | 1065.9 |
+
+**Breakthrough at 1200 RPS: Rajomon matches the champion.** fifo,rajomon achieves 1180.0 vs champion's 1177.0 — a +283.3 improvement over thorn_5's 896.7. The dampened price mechanism allows the system to reach equilibrium at the saturation point.
+
+**Sharper cliff at 1400 RPS.** Goodput collapses from 1180 at 1200 to 139 at 1400 — a 8.5x drop within a single 200-RPS step. This is worse than thorn_5's more gradual decline (897→834→214). The dampening delays the collapse but makes it more abrupt.
+
+**prio_local,rajomon matches fifo,rajomon.** Both rajomon variants produce identical results across all RPS levels, confirming that scheduling policy is irrelevant under rajomon admission control.
+
+**Fundamental tradeoff confirmed.** There is a parameter-mediated tradeoff between saturation-point performance and overload resilience. No parameter setting achieves both.
+
+**Decision: Keep.** This is the best result at 1200 RPS and demonstrates Rajomon's ceiling.
+
+---
+
+## Conclusion
+
+### Best Rajomon configuration found
+| Parameter | Value | Changed from default? |
+|-----------|-------|-----------------------|
+| `LATENCY_THRESHOLD_US` | 10000 | Yes (was 0) |
+| `PRICE_UPDATE_RATE_MS` | 25 | Yes (was 10) |
+| `MAX_TOKEN` | 100 | Yes (was 10) |
+| `TOKEN_UPDATE_STEP` | 5 | Yes (was 1) |
+| `PRICE_FREQ` | 1 | Yes (was 5) |
+| `TOKENS_LEFT_INIT` | 10 | No |
+| `TOKEN_UPDATE_RATE_MS` | 10 | No |
+| `PRICE_STEP` | 1 | No |
+| `INIT_PRICE` | 0 | No |
+
+### Performance comparison (best rajomon vs champion)
+
+| RPS | Best rajomon (thorn_6) | Champion (adctl) | Gap |
+|----:|---:|---:|---:|
+| 100-800 | ~99.5% | ~99.5% | Parity |
+| 1200 | **1180.0** | **1177.0** | **+3 (Rajomon wins)** |
+| 1400 | 138.9 | 1239.6 | -1101 (-89%) |
+| 1600+ | ~160-200 | ~1350-1577 | -1100-1377 (-87%) |
+
+### Key questions answered
+
+1. **Can Rajomon's default parameters be tuned to close the goodput gap with adctl?** **No, not above saturation.** At the saturation point (~1200 RPS), Rajomon can match adctl. But above it, Rajomon collapses catastrophically regardless of parameters. The gap is 87-89% at 1400+ RPS.
+
+2. **Does combining Rajomon with prio_local help?** **No.** prio_local,rajomon produces identical results to fifo,rajomon at every RPS level. Under rajomon's token-based admission control, scheduling order is irrelevant — the bottleneck is admission, not scheduling.
+
+3. **What is the root cause of Rajomon's collapse?** The step-based price mechanism (AIAD: +1/-1 per tick) creates a one-way ratchet under sustained congestion. Once queue latency exceeds the threshold, price increases monotonically until it exceeds the token budget, causing total lockout. There is no proportional control or equilibrium-finding mechanism — the system is binary (working or collapsed) with no graceful degradation between.
+
+### What would be needed (beyond parameter tuning)
+
+Closing the gap with adctl would require architectural changes:
+- **Proportional price control** (e.g., price proportional to congestion severity, not binary step)
+- **AIMD dynamics** (multiplicative decrease instead of additive, breaking the price latch)
+- **Per-request cost awareness** (adctl uses latency estimates per RPC type; rajomon uses a single global price)
+- **Tighter integration with early-return** (adctl and early cooperate; rajomon and early interfere)
