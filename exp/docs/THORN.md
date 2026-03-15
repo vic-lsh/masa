@@ -121,3 +121,45 @@ The price mechanism should still provide natural backpressure: when services are
 
 ### Experiment design
 Same 4 RPS levels (100, 800, 1400, 2000). Drop the `early` variants — thorn_2 proved early+rajomon is counterproductive. Keep only `fifo,rajomon` and `prio_local,rajomon` plus the two baselines.
+
+### Actual Outcomes (thorn_3)
+
+**Status:** Regression ❌
+
+| RPS | fifo,rajomon | prio_local,rajomon | **champion** | prio_oldest,early |
+|-----|-------------|-------------------|-------------|-------------------|
+| 100 | 99.5 | 99.5 | **99.5** | 99.5 |
+| 800 | 795.6 | 795.7 | **795.8** | 795.4 |
+| 1400 | 138.3 | 137.3 | **1224.5** | 1140.6 |
+| 2000 | 200.5 | 198.9 | **1570.0** | 1046.4 |
+
+**Catastrophic regression at 1400 RPS.** fifo,rajomon dropped from 833.7 (thorn_2) to 138.3 — a 6x collapse. The larger token budget (MAX_TOKEN=500, TOKENS_LEFT_INIT=500) backfired: high initial tokens flood the system at startup, creating real congestion that triggers runaway price inflation. Once prices spike, nearly all requests are rejected (~90%+ early returns at 1400 RPS).
+
+**Root cause:** The problem is not token budget size but price dynamics. Higher initial tokens → initial flood → real congestion → prices spike → price latch → permanent over-rejection. The feedback loop is self-reinforcing regardless of token budget.
+
+**Decision: Revert.** Token budget increases make things worse. The price mechanism itself needs to be less reactive.
+
+---
+
+## Iteration 3: Slow down price dynamics (experiment thorn_4)
+
+**Status:** Pending
+
+**Code commit (to revert):** 62e80b68
+
+### Change
+Revert thorn_3's token changes back to thorn_2 values, then attack the price mechanism:
+- Revert `MAX_TOKEN`: 500 → 100, `TOKEN_UPDATE_STEP`: 10 → 5, `TOKENS_LEFT_INIT`: 500 → 10
+- `LATENCY_THRESHOLD_US`: 5000 → 20000 (20ms) — 4x higher tolerance before triggering price increase
+- `PRICE_UPDATE_RATE_MS`: 10 → 50 (50ms ticks) — 5x slower price updates
+
+### Hypothesis
+The price spiral happens because PRICE_UPDATE_RATE_MS=10ms means 100 price-update ticks/second. With PRICE_STEP=1, any sustained congestion (queue latency > threshold) increases price by 100/s. At thorn_2's 5ms threshold, moderate load likely exceeds this frequently. Within 1-2 seconds of congestion, price exceeds the token budget, locking out all requests.
+
+By raising the threshold to 20ms (only true overload triggers price increases) AND slowing ticks to 50ms (max price increase rate = 20/s), the price mechanism becomes 25x less reactive. This should prevent the price spiral while still providing congestion feedback under genuine overload.
+
+### Expected outcomes if hypothesis is correct:
+1. Goodput at 1400 RPS should match or exceed thorn_2's 833.7 (target: >1000)
+2. Goodput at 2000 RPS should significantly improve from thorn_2's 217.6 (target: >500)
+3. Low-load parity maintained
+4. The price signal should stabilize at a low equilibrium under moderate load rather than spiraling
