@@ -34,13 +34,13 @@ const PRICE_FREQ: u64 = 1; // original: priceFreq (5) — send price every 1/N r
 
 // Client-side token bucket
 #[cfg(feature = "rajomon")]
-const TOKENS_LEFT_INIT: u64 = 10; // original: tokensLeft (10)
+const TOKENS_LEFT_INIT: u64 = 500; // original: tokensLeft (10)
 #[cfg(feature = "rajomon")]
 const TOKEN_UPDATE_RATE_MS: u64 = 10; // original: tokenUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const TOKEN_UPDATE_STEP: u64 = 5; // original: tokenUpdateStep (1)
+const TOKEN_UPDATE_STEP: u64 = 10; // original: tokenUpdateStep (1)
 #[cfg(feature = "rajomon")]
-const MAX_TOKEN: u64 = 100; // original: maxToken (10)
+const MAX_TOKEN: u64 = 500; // original: maxToken (10)
 
 /// Global Rajomon state shared across all request handlers.
 #[cfg(feature = "rajomon")]
