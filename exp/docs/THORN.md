@@ -205,3 +205,55 @@ At 2000 RPS in thorn_2, rajomon over-sheds (CPU 22% vs champion's 65%), suggesti
 
 ### Experiment design
 Full 8-RPS sweep (100-2000) since this is the penultimate iteration. 4 policies: fifo,rajomon, prio_local,rajomon, champion, prio_oldest,early.
+
+### Actual Outcomes (thorn_5)
+
+**Status:** Neutral (no improvement over thorn_2)
+
+| RPS | fifo,rajomon | prio_local,rajomon | **champion** | prio_oldest,early |
+|----:|---:|---:|---:|---:|
+| 100 | 99.5 | 100.0 | **99.7** | 99.5 |
+| 400 | 397.6 | 397.7 | **397.8** | 397.9 |
+| 800 | 795.3 | 795.8 | **795.9** | 795.8 |
+| 1200 | 896.7 | 714.7 | **1165.5** | 1177.3 |
+| 1400 | 834.4 | 143.5 | **1251.6** | 1167.3 |
+| 1600 | 214.1 | 162.0 | **1330.5** | 1056.8 |
+| 1800 | 185.8 | 185.0 | **1443.4** | 1023.7 |
+| 2000 | 199.0 | 200.9 | **1556.7** | 1069.7 |
+
+**TOKEN_UPDATE_RATE_MS=5 had zero effect.** Results are within noise of thorn_2. The client refill speed is not the bottleneck.
+
+**Full sweep reveals cliff-edge collapse at 1600 RPS.** fifo,rajomon drops from 834 at 1400 to 214 at 1600 — a 4x collapse. Above 1600, goodput stabilizes at ~190-200 (Reservation-only floor).
+
+**prio_local,rajomon is strictly worse than fifo,rajomon.** It collapses earlier (714.7 at 1200 vs 896.7) and harder (143.5 at 1400 vs 834.4). Priority scheduling hurts under rajomon.
+
+**Core diagnosis:** With PRICE_UPDATE_RATE_MS=10ms and PRICE_STEP=1, price increases at 100/s during congestion. MAX_TOKEN=100 means 1 second of sustained congestion → total lockout. At 1600+ RPS, congestion is permanent, so prices climb indefinitely. The step-based mechanism has no proportional control — it either detects congestion (latency > 5ms) or doesn't.
+
+**Decision: Keep** (neutral change, but the full sweep data is valuable). Revert TOKEN_UPDATE_RATE_MS change for the final iteration.
+
+---
+
+## Iteration 5: Moderate price dampening (experiment thorn_6) — FINAL
+
+**Status:** Pending
+
+**Code commit:** ef6c3c89
+
+### Change
+Revert TOKEN_UPDATE_RATE_MS to 10 (thorn_5 was neutral), then try a moderate combination:
+- `PRICE_UPDATE_RATE_MS`: 10 → 25 (2.5x slower — price changes at 40/s instead of 100/s)
+- `LATENCY_THRESHOLD_US`: 5000 → 10000 (2x higher — only triggers above 10ms queue latency)
+
+### Hypothesis
+thorn_4 tried extreme dampening (50ms rate + 20ms threshold) and collapsed. This moderate version should be within the working range. The key difference: at thorn_2's 10ms/5000us, price reaches MAX_TOKEN (100) after 1s of congestion. At 25ms/10000us, it takes ~2.5s AND the congestion must be more severe. This extends the "working zone" from ~1400 RPS to potentially ~1600 RPS by delaying the price death spiral.
+
+The tradeoff: slower reaction means the system might overshoot briefly during load spikes. But at steady-state high load (where rajomon currently fails), the dampened response should reach a more sustainable equilibrium.
+
+### Expected outcomes if hypothesis is correct:
+1. Low-load parity maintained (100-800 RPS)
+2. Goodput at 1400 should match or exceed thorn_2/5's ~834
+3. Goodput at 1600 should significantly improve from thorn_5's 214 (target: >500)
+4. Goodput at 2000 may still lag but should improve from ~200
+
+### Experiment design
+Full 8-RPS sweep. 4 policies (same as thorn_5). This is the final iteration — results will determine whether Rajomon can be competitive with parameter tuning alone.
