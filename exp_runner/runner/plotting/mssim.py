@@ -87,6 +87,13 @@ def _load_json(path: Path) -> dict:
         return json.load(fh)
 
 
+def _normalize_bool_series(series: pd.Series) -> pd.Series:
+    if pd.api.types.is_bool_dtype(series):
+        return series.fillna(False)
+    normalized = series.astype(str).str.strip().str.lower()
+    return normalized.isin(["true", "1", "yes", "y", "t"])
+
+
 def _filter_after_warmup(
     df: pd.DataFrame, warmup_sec: float, source: Path
 ) -> pd.DataFrame:
@@ -196,7 +203,19 @@ def _compute_goodput(
     if df.empty:
         return 0.0
 
-    df = filter_excluded_errors(df)
+    # Filter out EarlyReturn and ClientTimeout — they should not count as goodput.
+    # Prefer the parsed error_type column (set by _read_request_csv) over the legacy is_err flag.
+    if "error_type" in df.columns:
+        is_early_return = df["error_type"] == "EarlyReturn"
+        is_timeout = (
+            df["error"].astype(str) == "/ClientTimeout"
+            if "error" in df.columns
+            else pd.Series(False, index=df.index)
+        )
+        df = df.loc[~(is_early_return | is_timeout)]
+    elif "is_err" in df.columns:
+        err_mask = _normalize_bool_series(df["is_err"])
+        df = df.loc[~err_mask]
 
     if df.empty:
         return 0.0
