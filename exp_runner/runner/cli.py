@@ -11,7 +11,6 @@ import subprocess
 import sys
 from argparse import Namespace
 from pathlib import Path
-from typing import Any
 from dataclasses import dataclass
 
 from .apps import get_app_plugin
