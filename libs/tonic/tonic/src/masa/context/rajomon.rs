@@ -20,7 +20,7 @@ use std::time::Duration;
 #[cfg(feature = "rajomon")]
 const PRICE_UPDATE_RATE_MS: u64 = 10; // original: priceUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const LATENCY_THRESHOLD_US: u64 = 0; // original: latencyThreshold (0)
+const LATENCY_THRESHOLD_US: u64 = 5000; // original: latencyThreshold (0)
 
 // Price update (step strategy)
 #[cfg(feature = "rajomon")]
@@ -30,7 +30,7 @@ const INIT_PRICE: u64 = 0; // original: initprice (0)
 
 // Price propagation
 #[cfg(feature = "rajomon")]
-const PRICE_FREQ: u64 = 5; // original: priceFreq (5) — send price every 1/N requests
+const PRICE_FREQ: u64 = 1; // original: priceFreq (5) — send price every 1/N requests
 
 // Client-side token bucket
 #[cfg(feature = "rajomon")]
@@ -38,9 +38,9 @@ const TOKENS_LEFT_INIT: u64 = 10; // original: tokensLeft (10)
 #[cfg(feature = "rajomon")]
 const TOKEN_UPDATE_RATE_MS: u64 = 10; // original: tokenUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const TOKEN_UPDATE_STEP: u64 = 1; // original: tokenUpdateStep (1)
+const TOKEN_UPDATE_STEP: u64 = 5; // original: tokenUpdateStep (1)
 #[cfg(feature = "rajomon")]
-const MAX_TOKEN: u64 = 10; // original: maxToken (10)
+const MAX_TOKEN: u64 = 100; // original: maxToken (10)
 
 /// Global Rajomon state shared across all request handlers.
 #[cfg(feature = "rajomon")]
@@ -555,7 +555,7 @@ mod tests {
     #[test]
     fn test_step_price_increase_on_congestion() {
         let state = RajomonSharedState::new();
-        state.queue_stats.window_max.store(5000, Ordering::Relaxed);
+        state.queue_stats.window_max.store(10000, Ordering::Relaxed);
         state.update_prices();
         assert_eq!(
             state.own_price.load(Ordering::Relaxed),
@@ -563,7 +563,7 @@ mod tests {
         );
 
         // Second tick, still congested
-        state.queue_stats.window_max.store(3000, Ordering::Relaxed);
+        state.queue_stats.window_max.store(6000, Ordering::Relaxed);
         state.update_prices();
         assert_eq!(
             state.own_price.load(Ordering::Relaxed),
@@ -608,9 +608,9 @@ mod tests {
     fn test_price_increase_uses_constant_step_not_proportional() {
         let state = RajomonSharedState::new();
 
-        // Mild congestion
+        // Mild congestion (above threshold)
         state.own_price.store(0, Ordering::Relaxed);
-        state.queue_stats.window_max.store(1, Ordering::Relaxed);
+        state.queue_stats.window_max.store(6000, Ordering::Relaxed);
         state.update_prices();
         let price_after_mild = state.own_price.load(Ordering::Relaxed);
 
@@ -874,7 +874,10 @@ mod tests {
     #[test]
     fn test_client_replenish_caps_at_max() {
         let bucket = ClientTokenBucket::new();
-        bucket.replenish();
+        // Replenish enough times to reach MAX_TOKEN from TOKENS_LEFT_INIT
+        for _ in 0..((MAX_TOKEN - TOKENS_LEFT_INIT) / TOKEN_UPDATE_STEP + 1) {
+            bucket.replenish();
+        }
         let tok = bucket.try_acquire(&CowGrpcMethod::new("svc", "m")).unwrap();
         assert_eq!(tok, MAX_TOKEN);
     }
@@ -895,12 +898,16 @@ mod tests {
     #[cfg(feature = "rajomon")]
     #[test]
     fn test_price_propagation_deterministic() {
+        // With PRICE_FREQ=1, every request propagates price (N % 1 == 0 for all N).
         let handler = RajomonHandler::new(CowGrpcMethod::new("svc", "m"));
         handler.inbound_tokens.store(5, Ordering::Relaxed);
-        assert!(handler.should_propagate_price()); // 5 % 5 == 0
+        assert!(handler.should_propagate_price()); // 5 % 1 == 0
 
         handler.inbound_tokens.store(3, Ordering::Relaxed);
-        assert!(!handler.should_propagate_price()); // 3 % 5 != 0
+        assert!(handler.should_propagate_price()); // 3 % 1 == 0
+
+        handler.inbound_tokens.store(0, Ordering::Relaxed);
+        assert!(handler.should_propagate_price()); // 0 % 1 == 0
     }
 
     // ── H. End-to-End Algorithmic Equivalence Tests ──
@@ -954,9 +961,9 @@ mod tests {
     fn test_price_increases_then_decreases_over_time() {
         let state = RajomonSharedState::new();
 
-        // 5 ticks of congestion
+        // 5 ticks of congestion (above threshold)
         for _ in 0..5 {
-            state.queue_stats.window_max.store(1000, Ordering::Relaxed);
+            state.queue_stats.window_max.store(10000, Ordering::Relaxed);
             state.update_prices();
         }
         assert_eq!(state.own_price.load(Ordering::Relaxed), 5 * PRICE_STEP);
