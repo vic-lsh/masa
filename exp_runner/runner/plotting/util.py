@@ -404,6 +404,9 @@ def filter_excluded_errors(df):
     if df.empty:
         return df
 
+    if "error" not in df.columns:
+        return df
+
     # Fast path: use parsed error_type if available
     if "error_type" in df.columns:
         # Exclude EarlyReturn
