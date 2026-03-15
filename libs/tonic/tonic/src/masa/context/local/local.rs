@@ -13,72 +13,7 @@ use super::super::{
 };
 use masa_core::{time_now, Context, ContextBuilder, LatencyEstimator, PriorityHint};
 
-#[cfg(feature = "est_hist")]
-use masa_core::LatencyDistribution as LatencyHistogram;
-
-#[cfg(feature = "est_mean_var")]
-use masa_core::LatencyMeanVar;
-
-#[cfg(any(
-    feature = "est_rms",
-    all(
-        not(feature = "est_rms"),
-        not(feature = "est_hist"),
-        not(feature = "est_mean_var")
-    )
-))]
-use masa_core::LatencyRms;
-
-#[cfg(all(feature = "est_rms", feature = "est_hist"))]
-compile_error!("Features 'est_rms' and 'est_hist' cannot be enabled simultaneously");
-
-#[cfg(all(feature = "est_rms", feature = "est_mean_var"))]
-compile_error!("Features 'est_rms' and 'est_mean_var' cannot be enabled simultaneously");
-
-#[cfg(all(feature = "est_hist", feature = "est_mean_var"))]
-compile_error!("Features 'est_hist' and 'est_mean_var' cannot be enabled simultaneously");
-
-#[cfg(any(feature = "est_rms", feature = "est_hist", feature = "est_mean_var"))]
-#[cfg(not(feature = "prio_local"))]
-compile_error!(
-    "Features 'est_rms', 'est_hist', or 'est_mean_var' require 'prio_local' to be enabled"
-);
-
-/// Type alias for the latency estimator used in the local deadline policy.
-#[cfg(feature = "est_hist")]
-pub(crate) type LocalLatencyEstimator = LatencyHistogram;
-
-#[cfg(feature = "est_mean_var")]
-pub(crate) type LocalLatencyEstimator = LatencyMeanVar;
-
-#[cfg(any(
-    feature = "est_rms",
-    all(
-        not(feature = "est_rms"),
-        not(feature = "est_hist"),
-        not(feature = "est_mean_var")
-    )
-))]
-pub(crate) type LocalLatencyEstimator = LatencyRms;
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub(crate) struct ParentToChildId {
-    pub parent_id: u64,
-    pub child_id: u64,
-}
-
-impl ParentToChildId {
-    pub(crate) fn to_key(&self) -> u64 {
-        // Simple combination of two 32-bit (effective) IDs into one 64-bit key
-        (self.parent_id << 32) | self.child_id
-    }
-}
-
-impl std::fmt::Display for ParentToChildId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}=>{}", self.parent_id, self.child_id)
-    }
-}
+use super::super::estimator::DefaultLatencyEstimator as LocalLatencyEstimator;
 
 #[derive(Debug)]
 /// This policy computes the deadline d of a child request as
