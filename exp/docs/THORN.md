@@ -50,7 +50,9 @@
 
 ## Iteration 1: Fix total lockout with threshold + token budget (experiment thorn_2)
 
-**Status:** Pending
+**Status:** Complete ✅ (partial — lockout fixed, high-load still poor)
+
+**Code commit:** 5a293de3
 
 ### Change
 Tune 4 parameters to break the immediate lockout:
@@ -70,3 +72,52 @@ The zero latency threshold causes permanent price inflation because single-threa
 
 ### Experiment design
 Use 4 representative RPS levels (100, 800, 1400, 2000) for quick validation. If results look promising, follow up with the full 8-level sweep. Keep all 6 policies from thorn_1 plus the two non-rajomon baselines.
+
+### Actual Outcomes (thorn_2)
+
+**Status:** Complete ✅ (partial)
+
+| Policy | 100 RPS | 800 RPS | 1400 RPS | 2000 RPS |
+|---|---|---|---|---|
+| fifo,rajomon | 99.5 | 795.6 | **833.7** | 217.6 |
+| fifo,rajomon,early | 99.5 | 795.6 | 138.1 | 201.7 |
+| prio_local,rajomon | 99.6 | 795.7 | 137.4 | 199.9 |
+| prio_local,rajomon,early | 99.5 | 795.7 | 137.8 | 201.8 |
+| **prio_local,early,adctl** | **99.5** | **795.6** | **1215.9** | **1570.2** |
+| prio_oldest,early | 99.5 | 795.5 | 1107.9 | 1071.4 |
+
+**Lockout fixed at low load.** All rajomon variants achieve ~99.5% goodput at 100-800 RPS, matching the champion. This confirms the latency threshold and token budget changes resolved the immediate lockout.
+
+**Massive gap at high load persists.** Best rajomon (fifo,rajomon) achieves 833.7 at 1400 RPS vs champion's 1215.9 (-31%) and only 217.6 at 2000 RPS vs 1570.2 (-86%).
+
+**Key surprise findings:**
+1. **`early` is counterproductive with rajomon** — at 1400 RPS, fifo,rajomon gets 833.7 goodput but fifo,rajomon,early drops to 138.1. Early-return kills Search requests that would have completed within SLO.
+2. **`prio_local` adds no benefit over FIFO** — scheduling order is irrelevant when admission control is the bottleneck.
+3. **Token budget still too restrictive** — reservation-service CPU for rajomon (~22%) is 1/3 of the champion (~65%), confirming rajomon is shedding too much traffic.
+4. **fifo,rajomon is the best rajomon variant** — its advantage at 1400 comes from allowing Search requests to complete naturally (698 Search + 136 Reservation) while early variants kill all Search goodput.
+
+---
+
+## Iteration 2: Dramatically increase token budget (experiment thorn_3)
+
+**Status:** Pending
+
+### Change
+Focus on increasing throughput by enlarging the token economy:
+- `MAX_TOKEN`: 100 → 500 — 5x larger cap to sustain high-load fan-out
+- `TOKEN_UPDATE_STEP`: 5 → 10 — faster replenishment (1000 tokens/s)
+- `TOKENS_LEFT_INIT`: 10 → 500 — start with full budget to avoid cold-start starvation
+
+### Hypothesis
+The thorn_2 data shows rajomon is over-shedding at high load (reservation CPU 22% vs champion's 65%). The token budget is the admission bottleneck — prices are working as intended (rising under congestion) but the token cap is too low to sustain the required throughput. With MAX_TOKEN=500 and 1000 tokens/s refill, the system should be able to sustain ~500 concurrent tokens across Hotel's call graph. The high initial budget prevents cold-start rejection.
+
+The price mechanism should still provide natural backpressure: when services are truly congested (queue latency > 5ms), prices rise, consuming more tokens per request and reducing admission rate. But with a larger budget, the equilibrium admission rate should be much higher.
+
+### Expected outcomes if hypothesis is correct:
+1. Goodput at 1400 RPS should rise significantly (target: >1000, closer to champion's 1216)
+2. Goodput at 2000 RPS should improve but still lag the champion (target: >500)
+3. Low-load goodput should remain at parity (~99.5% at 100-800 RPS)
+4. CPU utilization for rajomon variants should increase toward champion levels
+
+### Experiment design
+Same 4 RPS levels (100, 800, 1400, 2000). Drop the `early` variants — thorn_2 proved early+rajomon is counterproductive. Keep only `fifo,rajomon` and `prio_local,rajomon` plus the two baselines.
