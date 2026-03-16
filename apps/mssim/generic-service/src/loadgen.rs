@@ -304,8 +304,16 @@ async fn run_root_load(
                         #[cfg(feature = "rajomon")]
                         {
                             use rand::Rng;
-                            builder =
-                                builder.tokens(rand::rng().random_range(100..=10000));
+                            use tonic::masa::context::rajomon::CLIENT_TOKEN_BUCKET;
+                            let balance = CLIENT_TOKEN_BUCKET.tokens_left();
+                            // Uniform random in [0, balance-1]: as price rises, fraction of
+                            // requests dropped increases gradually (smooth overload reaction).
+                            let tok = if balance > 0 {
+                                rand::rng().random_range(0..balance)
+                            } else {
+                                0
+                            };
+                            builder = builder.tokens(tok);
                         }
                         builder.build()
                     };
