@@ -20,7 +20,7 @@ use std::time::Duration;
 #[cfg(feature = "rajomon")]
 const PRICE_UPDATE_RATE_MS: u64 = 25; // original: priceUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const LATENCY_THRESHOLD_US: u64 = 50_000; // original: latencyThreshold (0)
+const LATENCY_THRESHOLD_US: u64 = 150_000; // original: latencyThreshold (0)
 
 // Price update (step strategy)
 #[cfg(feature = "rajomon")]
@@ -38,7 +38,7 @@ const TOKENS_LEFT_INIT: u64 = 10; // original: tokensLeft (10)
 #[cfg(feature = "rajomon")]
 const TOKEN_UPDATE_RATE_MS: u64 = 10; // original: tokenUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const TOKEN_UPDATE_STEP: u64 = 50; // original: tokenUpdateStep (1)
+const TOKEN_UPDATE_STEP: u64 = 5; // original: tokenUpdateStep (1)
 #[cfg(feature = "rajomon")]
 const MAX_TOKEN: u64 = 100; // original: maxToken (10)
 
