@@ -132,7 +132,7 @@ Full 7-level sweep matching est01 (800, 1000, 1200, 1400, 1500, 1600, 1800 RPS).
 
 **Status:** Pending
 
-**Code commit:** TBD
+**Code commit:** b4c8e285
 
 ### Change
 - `TOKEN_UPDATE_STEP`: 5 → 50 (10× increase, token refill rate 500/s → 5000/s)
@@ -157,3 +157,55 @@ The larger token throughput should also fix the `fifo,rajomon` regression: even 
 
 ### Experiment design
 Full 7-level sweep. Same policies. Named slate_2.
+
+### Actual Outcomes (slate_2)
+
+**Status:** Revert ❌ — TOKEN_UPDATE_STEP axis is irrelevant
+
+| RPS | fifo,raj (slate_2) | fifo,raj (slate_1) | prio_local,raj (slate_2) | prio_local,raj (slate_1) | prio_local,early (slate_2) |
+|----:|---:|---:|---:|---:|---:|
+| 800 | 176.2 | 160.5 | **795.4** | 798.5 | 806.2 |
+| 1000 | 156.0 | 168.4 | 255.5 | 254.8 | 818.5 |
+| 1200 | 172.5 | 159.5 | 303.4 | 294.8 | 734.2 |
+| 1400 | 169.0 | 158.3 | 348.2 | 355.5 | 722.2 |
+| 1600 | 163.2 | 174.4 | 400.4 | 402.4 | 869.0 |
+| 1800 | 161.8 | 164.7 | 461.4 | 452.0 | 821.0 |
+
+**Key findings:**
+
+1. **TOKEN_UPDATE_STEP=50 had zero effect.** prio_local,rajomon at every RPS level is within noise of slate_1. The ~25% flat floor at 1000+ RPS is completely unchanged.
+2. **Root cause of invariance:** The AIAD price mechanism self-calibrates. Higher TOKEN_UPDATE_STEP → more initial admission → more congestion → prices rise proportionally → same admission rate at equilibrium. The equilibrium throughput is set by the multiplicative admission structure, not by the token economy.
+3. **The 25% floor is multiplicative across N hops.** If N services each independently check admission with duty cycle D, total throughput = D^N. For 25%: N=2 with D=0.5, or N=4 with D≈0.71. Changing TOKEN_UPDATE_STEP only changes the price level at equilibrium, not the throughput.
+4. **fifo,rajomon unchanged** — remains at ~160-175 across all RPS. Not improved by larger token economy.
+
+**Decision: Revert TOKEN_UPDATE_STEP to 5 (neutral, cleaner code). Address the multi-hop multiplication in Iteration 3 by raising threshold to 150ms (75% of SLO) to reduce N — the number of services actively running admission control.**
+
+Reverted in commit a96c4bcb (TOKEN_UPDATE_STEP: 50 → 5, LATENCY_THRESHOLD_US: 50000 → 150000 applied together).
+
+---
+
+## Iteration 3: Raise threshold to 150ms to reduce multi-hop admission multiplication (experiment slate_3)
+
+**Status:** Pending
+
+**Code commit:** a96c4bcb
+
+### Change
+- `TOKEN_UPDATE_STEP`: 50 → 5 (revert slate_2, neutral)
+- `LATENCY_THRESHOLD_US`: 50000 → 150000 (150ms — 3× increase from slate_1, 75% of 200ms SLO)
+
+Current params: LATENCY_THRESHOLD_US=150000, PRICE_UPDATE_RATE_MS=25, MAX_TOKEN=100, TOKEN_UPDATE_STEP=5, PRICE_FREQ=1, TOKEN_UPDATE_RATE_MS=10, TOKENS_LEFT_INIT=10, PRICE_STEP=1, INIT_PRICE=0.
+
+### Hypothesis
+The ~25% floor at 1000+ RPS is caused by multiplicative independent admission control at N services in the call graph (total throughput = D^N per hop). At threshold=50ms, multiple services trigger price increases simultaneously (even at modest overload), producing N≥2 active admission control points. By raising to 150ms (75% of SLO), only services with severe congestion (queue > 150ms) trigger price increases. At slight overload (1000 RPS, ~11% above capacity), fewer services should reach 150ms queue latency, reducing N toward 1. With N=1, throughput = D rather than D^N, potentially improving from 25% to 50%+ at 1000 RPS.
+
+At deep overload (1400–1800 RPS), queue latencies may still exceed 150ms at multiple services, maintaining some admission control. But even if N=2 with D=0.5 at deep overload: 25% throughput = same as current. No regression expected.
+
+### Expected outcomes if hypothesis is correct:
+1. `prio_local,rajomon` at 1000–1200 RPS: significant improvement from 25% (target: 40%+ at 1000 RPS, approaching 400 goodput)
+2. `prio_local,rajomon` at 800 RPS: maintains ~100% (threshold well above light-load queue latencies)
+3. `fifo,rajomon` may also improve if fewer services trigger simultaneously
+4. At 1400–1800 RPS: outcome uncertain — may maintain ~25% or slightly improve depending on how many services exceed 150ms
+
+### Experiment design
+Full 7-level sweep. Same policies. Named slate_3.
