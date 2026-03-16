@@ -70,6 +70,8 @@ mssim is a trace-driven simulator with realistic processing times. Services in t
 
 **Status:** Pending
 
+**Code commit:** 9fff3118
+
 ### Change
 - `LATENCY_THRESHOLD_US`: 10000 → 50000 (50ms — 5× increase, 25% of the 200ms SLO)
 
@@ -86,3 +88,72 @@ mssim's trace-driven services have inherently higher baseline queue latency than
 
 ### Experiment design
 Full 7-level sweep matching est01 (800, 1000, 1200, 1400, 1500, 1600, 1800 RPS). Same policies. The key test is whether the 25% lockout at 800 RPS is eliminated. Named slate_1.
+
+### Actual Outcomes (slate_1)
+
+**Status:** Mixed — `prio_local,rajomon` fixed at 800 RPS, `fifo,rajomon` regressed, cliff at 1000 RPS unchanged
+
+| RPS | fifo,raj (slate_1) | fifo,raj (est01) | prio_local,raj (slate_1) | prio_local,raj (est01) | prio_local,early (slate_1) |
+|----:|---:|---:|---:|---:|---:|
+| 800 | 160.5 | 199.2 | **798.5** | 199.2 | 802.1 |
+| 1000 | 168.4 | 248.2 | 254.8 | 262.9 | 857.3 |
+| 1200 | 159.5 | 301.4 | 294.8 | 297.9 | 757.5 |
+| 1400 | 158.3 | 350.8 | 355.5 | 348.0 | 681.1 |
+| 1500 | 168.9 | 381.0 | 386.3 | 381.4 | 673.8 |
+| 1600 | 174.4 | 405.9 | 402.4 | 412.5 | 747.1 |
+| 1800 | 164.7 | 464.2 | 452.0 | 467.1 | 667.7 |
+
+**Goodput fraction (slate_1):**
+
+| RPS | fifo,rajomon | prio_local,rajomon | prio_local,early |
+|----:|---:|---:|---:|
+| 800 | 0.201 | **0.998** | 1.003 |
+| 1000 | 0.168 | 0.255 | 0.857 |
+| 1200 | 0.133 | 0.246 | 0.631 |
+| 1400 | 0.113 | 0.254 | 0.487 |
+
+**Key findings:**
+
+1. **`prio_local,rajomon` at 800 RPS: fully fixed.** 199 → 799 (+600), fraction 0.249 → 0.998. The 50ms threshold eliminates false congestion detection for the priority-scheduled variant. Hypothesis confirmed for prio_local.
+
+2. **`fifo,rajomon` regressed at all RPS.** 199 → 160 at 800 RPS. The 50ms threshold makes fifo *worse*, not better. Likely explanation: FIFO scheduling occasionally allows tasks to accumulate queue times >50ms even at 800 RPS (due to FIFO head-of-line blocking), triggering price increases. At 10ms threshold, prices were consistently small (2–3) and the token economy was in a stable equilibrium. At 50ms threshold, prices spike to higher values during rare FIFO bursts, and the token budget (500 tokens/s at TOKEN_UPDATE_STEP=5) can't sustain throughput at those prices.
+
+3. **Cliff at 1000 RPS is unchanged for both variants.** `prio_local,rajomon` drops from 0.998 (800 RPS) to 0.255 (1000 RPS) in one step. The threshold shift moved the cliff from 800 to 1000 RPS (for prio_local), but the cliff itself is unchanged in character. Above the saturation point (~900 RPS), even rare price increases exhaust the token budget (TOKEN_UPDATE_STEP=5 = 500 tokens/s). At price=1 per hop with a multi-service call graph costing ~6 tokens per request, max throughput = 500/6 ≈ 83 req/s. Immediate collapse to ~25%.
+
+4. **`prio_local,early` stable and slightly improved at several points** (1200: 700→757, 1600: 622→747). The threshold change is irrelevant to this policy, so these are likely noise or minor run-to-run variation.
+
+**Root cause of cliff:** Token refill rate (500 tokens/s at TOKEN_UPDATE_STEP=5) is far too low to sustain any non-zero price. A 6-service call graph where each hop deducts its accumulated_price consumes ~6 tokens per request. Equilibrium admission rate at price=1/hop = 500/6 ≈ 83 req/s — nowhere near the 900 RPS system capacity. The token economy must be enlarged to allow stable equilibrium at moderate prices.
+
+**Decision: Keep slate_1 code (LATENCY_THRESHOLD_US=50000).** The +600 goodput at 800 RPS for prio_local,rajomon is a large win. The fifo regression and the cliff are to be addressed in Iteration 2.
+
+---
+
+## Iteration 2: Enlarge token economy to allow equilibrium at moderate prices (experiment slate_2)
+
+**Status:** Pending
+
+**Code commit:** TBD
+
+### Change
+- `TOKEN_UPDATE_STEP`: 5 → 50 (10× increase, token refill rate 500/s → 5000/s)
+
+All other parameters remain at slate_1 values (LATENCY_THRESHOLD_US=50000, PRICE_UPDATE_RATE_MS=25, MAX_TOKEN=100, PRICE_FREQ=1, TOKEN_UPDATE_RATE_MS=10, TOKENS_LEFT_INIT=10, PRICE_STEP=1, INIT_PRICE=0).
+
+### Hypothesis
+
+The cliff at 1000 RPS is caused by the token economy being too tight to sustain any non-zero price. With TOKEN_UPDATE_STEP=5 (500 tokens/s), a 6-hop mssim call graph consuming ~6 tokens/request caps admission at 500/6 ≈ 83 req/s once any service sees price=1. This means there is no stable equilibrium between 0 (unlimited) and 83 req/s — the system snaps directly from full admission to near-lockout.
+
+By raising TOKEN_UPDATE_STEP to 50 (5000 tokens/s), equilibrium admission at price=1/hop becomes 5000/6 ≈ 833 req/s, just below the system capacity of ~900 RPS. This creates a useful oscillating equilibrium: at price=1, admission=833 < capacity, so queue drains and price returns to 0; at price=0, full load admitted → slight overload → price rises to 1. The system oscillates around 833–900 req/s admission rather than collapsing to 83.
+
+For offered loads above 900 RPS (1000–1800 RPS), the system can shed the excess (~100–900 req/s) proportionally via price increases, rather than the current binary collapse. At price=2/hop: 5000/12 = 416 req/s admission (rough proportional shedding).
+
+The larger token throughput should also fix the `fifo,rajomon` regression: even if fifo's FIFO scheduling occasionally causes queue bursts that push prices to 2–3, the token economy can sustain 5000/12–18 = 278–416 req/s, which is substantially better than the current 83 req/s floor.
+
+### Expected outcomes if hypothesis is correct:
+1. `prio_local,rajomon` at 800 RPS: maintains ~100% (ceiling held from slate_1)
+2. `prio_local,rajomon` at 1000–1200 RPS: significant improvement from 25% toward 50%+ — price equilibrium should allow ~700–800 goodput at 1000 RPS
+3. `fifo,rajomon` at 800 RPS: recovers from 160 toward 200+ (token floor raised)
+4. Both variants: no longer flat at ~25% across all RPS — should show differentiation by load level
+
+### Experiment design
+Full 7-level sweep. Same policies. Named slate_2.
