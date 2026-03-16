@@ -20,7 +20,7 @@ use std::time::Duration;
 #[cfg(feature = "rajomon")]
 const PRICE_UPDATE_RATE_MS: u64 = 25; // original: priceUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const LATENCY_THRESHOLD_US: u64 = 10000; // original: latencyThreshold (0)
+const LATENCY_THRESHOLD_US: u64 = 50_000; // original: latencyThreshold (0)
 
 // Price update (step strategy)
 #[cfg(feature = "rajomon")]
