@@ -502,6 +502,11 @@ impl ClientTokenBucket {
         }
     }
 
+    /// Current token balance (used by callers to pick a uniform random token value).
+    pub fn tokens_left(&self) -> u64 {
+        self.tokens_left.load(Ordering::Relaxed)
+    }
+
     /// Update the cached price for a method (called when response header received).
     pub fn update_price(&self, method: &CowGrpcMethod, price: u64) {
         self.cached_prices.insert(method.clone(), price);
