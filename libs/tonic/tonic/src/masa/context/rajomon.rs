@@ -18,9 +18,9 @@ use std::time::Duration;
 
 // Overload detection
 #[cfg(feature = "rajomon")]
-const PRICE_UPDATE_RATE_MS: u64 = 25; // original: priceUpdateRate (10ms)
+const PRICE_UPDATE_RATE_MS: u64 = 10; // original: priceUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const LATENCY_THRESHOLD_US: u64 = 150_000; // original: latencyThreshold (0)
+const LATENCY_THRESHOLD_US: u64 = 1_000; // original: latencyThreshold (0)
 
 // Price update (step strategy)
 #[cfg(feature = "rajomon")]
