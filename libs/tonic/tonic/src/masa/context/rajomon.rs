@@ -24,7 +24,9 @@ const LATENCY_THRESHOLD_US: u64 = 1_000; // original: latencyThreshold (0)
 
 // Price update (step strategy)
 #[cfg(feature = "rajomon")]
-const PRICE_STEP: u64 = 1; // original: priceStep (1)
+const PRICE_STEP_UP: u64 = 8; // paper: +8 per tick when congested
+#[cfg(feature = "rajomon")]
+const PRICE_STEP_DOWN: u64 = 1; // paper: -1 per tick when below half-threshold
 #[cfg(feature = "rajomon")]
 const INIT_PRICE: u64 = 0; // original: initprice (0)
 
@@ -120,18 +122,19 @@ impl RajomonSharedState {
             .unwrap_or(0)
     }
 
-    /// Step price update algorithm matching the original Go implementation.
-    /// if congestion:       ownPrice += priceStep
-    /// else if ownPrice > 0: ownPrice -= 1
+    /// Step price update algorithm with hysteresis band.
+    /// if congestion (above threshold):         ownPrice += PRICE_STEP_UP
+    /// else if below half-threshold:            ownPrice -= PRICE_STEP_DOWN
+    /// else (between half and full threshold):  hold steady
     pub(crate) fn update_prices(&self) {
         let max_us = self.queue_stats.window_max.swap(0, Ordering::Relaxed);
         let own = self.own_price.load(Ordering::Relaxed);
         let new_price = if max_us > LATENCY_THRESHOLD_US {
-            own + PRICE_STEP
-        } else if own > 0 {
-            own - 1
+            own + PRICE_STEP_UP
+        } else if own > 0 && max_us < LATENCY_THRESHOLD_US / 2 {
+            own - PRICE_STEP_DOWN
         } else {
-            0
+            own
         };
         self.own_price.store(new_price, Ordering::Relaxed);
     }
@@ -524,10 +527,13 @@ impl ClientTokenBucket {
 
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async {
-                let mut interval =
-                    tokio::time::interval(Duration::from_millis(TOKEN_UPDATE_RATE_MS));
+                use rand_distr::{Distribution, Exp};
+                let rate = 1.0 / TOKEN_UPDATE_RATE_MS as f64; // events per ms
+                let dist = Exp::new(rate).expect("Exp::new failed");
                 loop {
-                    interval.tick().await;
+                    let sleep_ms: f64 = dist.sample(&mut rand::thread_rng());
+                    let sleep_ms_clamped = sleep_ms.max(0.1).min(10_000.0);
+                    tokio::time::sleep(Duration::from_secs_f64(sleep_ms_clamped / 1000.0)).await;
                     CLIENT_TOKEN_BUCKET.replenish();
                 }
             });
@@ -559,7 +565,7 @@ mod tests {
         state.update_prices();
         assert_eq!(
             state.own_price.load(Ordering::Relaxed),
-            INIT_PRICE + PRICE_STEP
+            INIT_PRICE + PRICE_STEP_UP
         );
 
         // Second tick, still congested
@@ -567,7 +573,7 @@ mod tests {
         state.update_prices();
         assert_eq!(
             state.own_price.load(Ordering::Relaxed),
-            INIT_PRICE + 2 * PRICE_STEP
+            INIT_PRICE + 2 * PRICE_STEP_UP
         );
     }
 
@@ -595,12 +601,17 @@ mod tests {
 
     #[cfg(feature = "rajomon")]
     #[test]
-    fn test_no_hysteresis_band() {
+    fn test_hysteresis_band_holds_price() {
         let state = RajomonSharedState::new();
         state.own_price.store(10, Ordering::Relaxed);
-        state.queue_stats.window_max.store(0, Ordering::Relaxed);
+        // Set window_max to midpoint: between half-threshold and threshold
+        state
+            .queue_stats
+            .window_max
+            .store(LATENCY_THRESHOLD_US * 3 / 4, Ordering::Relaxed);
         state.update_prices();
-        assert_eq!(state.own_price.load(Ordering::Relaxed), 9);
+        // Should hold, not increase or decrease
+        assert_eq!(state.own_price.load(Ordering::Relaxed), 10);
     }
 
     #[cfg(feature = "rajomon")]
@@ -624,7 +635,7 @@ mod tests {
         let price_after_severe = state.own_price.load(Ordering::Relaxed);
 
         assert_eq!(price_after_mild, price_after_severe);
-        assert_eq!(price_after_mild, PRICE_STEP);
+        assert_eq!(price_after_mild, PRICE_STEP_UP);
     }
 
     // ── B. Queue Delay Signal Tests (Window Max) ──
@@ -663,11 +674,14 @@ mod tests {
         let state = RajomonSharedState::new();
         state.queue_stats.window_max.store(50000, Ordering::Relaxed);
         state.update_prices();
-        assert_eq!(state.own_price.load(Ordering::Relaxed), PRICE_STEP);
+        assert_eq!(state.own_price.load(Ordering::Relaxed), PRICE_STEP_UP);
 
         // Next window: no latency observed (window_max already 0 from swap)
         state.update_prices();
-        assert_eq!(state.own_price.load(Ordering::Relaxed), PRICE_STEP - 1);
+        assert_eq!(
+            state.own_price.load(Ordering::Relaxed),
+            PRICE_STEP_UP - PRICE_STEP_DOWN
+        );
     }
 
     // ── C. Price Aggregation Tests (Maximal Strategy) ──
@@ -966,13 +980,16 @@ mod tests {
             state.queue_stats.window_max.store(20000, Ordering::Relaxed);
             state.update_prices();
         }
-        assert_eq!(state.own_price.load(Ordering::Relaxed), 5 * PRICE_STEP);
+        assert_eq!(state.own_price.load(Ordering::Relaxed), 5 * PRICE_STEP_UP);
 
         // 3 ticks of no congestion
         for _ in 0..3 {
             state.update_prices(); // window_max already 0
         }
-        assert_eq!(state.own_price.load(Ordering::Relaxed), 5 * PRICE_STEP - 3);
+        assert_eq!(
+            state.own_price.load(Ordering::Relaxed),
+            5 * PRICE_STEP_UP - 3 * PRICE_STEP_DOWN
+        );
     }
 
     #[cfg(feature = "rajomon")]
