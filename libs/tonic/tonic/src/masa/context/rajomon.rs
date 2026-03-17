@@ -507,16 +507,40 @@ impl ClientTokenBucket {
         self.tokens_left.load(Ordering::Relaxed)
     }
 
+    /// Deduct n tokens from the bucket (saturating at 0). Matches Go's DeductTokens.
+    pub fn deduct(&self, n: u64) {
+        loop {
+            let current = self.tokens_left.load(Ordering::Relaxed);
+            let new_val = current.saturating_sub(n);
+            if self
+                .tokens_left
+                .compare_exchange_weak(current, new_val, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                return;
+            }
+        }
+    }
+
     /// Update the cached price for a method (called when response header received).
     pub fn update_price(&self, method: &CowGrpcMethod, price: u64) {
         self.cached_prices.insert(method.clone(), price);
     }
 
     /// Replenish token pool by TOKEN_UPDATE_STEP, capped at MAX_TOKEN.
+    /// Cap matches the maxToken field in Go (natural bound via per-request deductions).
     pub fn replenish(&self) {
-        let current = self.tokens_left.load(Ordering::Relaxed);
-        let new_val = std::cmp::min(current + TOKEN_UPDATE_STEP, MAX_TOKEN);
-        self.tokens_left.store(new_val, Ordering::Relaxed);
+        loop {
+            let current = self.tokens_left.load(Ordering::Relaxed);
+            let new_val = (current + TOKEN_UPDATE_STEP).min(MAX_TOKEN);
+            if self
+                .tokens_left
+                .compare_exchange_weak(current, new_val, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                return;
+            }
+        }
     }
 
     /// Start the background replenishment worker.

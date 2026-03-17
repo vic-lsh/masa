@@ -313,6 +313,9 @@ async fn run_root_load(
                             } else {
                                 0
                             };
+                            // Deduct tok from bucket (matches Go's DeductTokens).
+                            // Replenishment via Poisson refill keeps the bucket alive.
+                            CLIENT_TOKEN_BUCKET.deduct(tok);
                             builder = builder.tokens(tok);
                         }
                         builder.build()
