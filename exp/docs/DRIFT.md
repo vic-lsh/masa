@@ -105,18 +105,128 @@ All of these were fixed in drift_2 commits (see DRIFT_CHANGES.md items 2-5).
 
 ## Iteration 2: Fix token bucket, price dynamics, and queue latency measurement (drift_2_a, drift_2_b)
 
-**Status:** Running
+**Status:** Complete
 
 ### Changes (on top of drift_1)
 - **Queue latency fix**: Per-poll `fetch_max` instead of accumulated sum across polls
-- **Price dynamics**: `PRICE_STEP_UP=8`, `PRICE_STEP_DOWN=1`, hysteresis band (hold between half-threshold and threshold)
+- **Price dynamics**: `PRICE_STEP_UP=8`, `PRICE_STEP_DOWN=1`, hysteresis band
 - **Token replenishment**: Poisson inter-arrival distribution (mean 10ms), matching Go
 - **Token spending**: Uniform random in [0, balance-1], deduct immediately per request (CAS loop)
 
-### Hypothesis
-The drift_1 failure in est02 was caused by a cascade of bugs: (1) accumulated queue latency causing runaway price increases that shed 100% of load, (2) loose token bucket (step=5, max=100) that flooded requests when price was near-zero, (3) symmetric price steps that couldn't respond fast enough to sudden congestion. The queue latency fix should prevent runaway prices, and the corrected token dynamics should produce smoother load shedding.
+### Results (drift_2_a, drift_2_b)
 
-### Expected outcomes if hypothesis is correct:
-1. est02 goodput rises from 0% to measurable values at all RPS levels
-2. est01 goodput improves further above the 25% ratio from drift_1
-3. own_price actually rises under load (verifiable from logs: "Rajomon own_price")
+| RPS  | est01 adctl | est01 rajomon | est02 adctl | est02 rajomon |
+|------|-------------|---------------|-------------|---------------|
+| 800  | 699.6       | 208.9 (30%)   | 335.1       | 3.0 (0.9%)   |
+| 1400 | 868.4       | 344.6 (40%)   | 320.0       | 0.0 (0%)      |
+| 1800 | 1035.9      | 456.7 (44%)   | 336.9       | 0.0 (0%)      |
+
+### Analysis
+est01 improved (25%→40%) but est02 still crashes. Root cause: three cascading bugs remained:
+1. **Double-counting**: `check_inbound` deducted `accumulated_price` (own + downstream max) but `check_outbound` checked `remaining >= child_price` again → effectively needed `tok >= 2×price` to pass.
+2. **Token depletion**: Loadgen deducted `tok` from bucket per request. Bucket equilibrated at ~1 token (spending >> replenishment at high RPS) → `tok=0` always → all inbound gates failed.
+3. **Stale cache deadlock**: A transient congestion spike raised downstream price (observed: ms-20664 price=44 propagated to ms-9570→root). Once root blocked all traffic to ms-9570, no responses returned → cached price never updated → permanent 0% goodput.
+
+---
+
+## Iteration 3: Fix double-counting, token depletion, and stale cache deadlock (drift_3_a, drift_3_b)
+
+**Status:** Complete
+
+### Changes
+- `check_inbound`: gate uses `accumulated_price` but deducts only `own_price`
+- Loadgen: `tok = random(0..=MAX_TOKEN)` always, no bucket deduction
+- Worker: clear `downstream_prices` every 1s (100 ticks) to break stale-cache deadlock
+
+### Results (drift_3_a, drift_3_b)
+
+| RPS  | est01 adctl | est01 rajomon | est02 adctl | est02 rajomon |
+|------|-------------|---------------|-------------|---------------|
+| 800  | 699.6       | 243.5 (35%)   | 335.1       | 0.0 (0%)     |
+| 1400 | 868.4       | 371.7 (43%)   | 320.0       | 41.8 (13%)   |
+| 1800 | 1035.9      | 263.3 (25%)   | 336.9       | 52.3 (16%)   |
+
+### Analysis
+est02 first shows non-zero results at 1400/1800 RPS. But two new issues:
+- est02 800 RPS: `/ClientMiss` errors — system overwhelmed before admission control kicks in at low load
+- est01 1800 RPS drops: price oscillates wildly (logs show 36→66→4→8→55) because 8/1 asymmetry causes divergence when congested ticks exceed 11% equilibrium
+
+---
+
+## Iterations 4–5: Tuning price step dynamics (drift_4, drift_5)
+
+**Iteration 4** (drift_4_a, drift_4_b) tried symmetric 2/2 steps + 5ms threshold — WORSE (all prices stay 0 with 5ms threshold, no signal fires at all in mssim).
+
+**Iteration 5** (drift_5_a, drift_5_b): reverted to 1ms threshold with 8/2 (up/down) steps for faster recovery than drift_3.
+
+### Results (drift_5_a, drift_5_b)
+
+| RPS  | est01 adctl | est01 rajomon | est02 adctl | est02 rajomon |
+|------|-------------|---------------|-------------|---------------|
+| 800  | 685.4       | 285.4 (42%)   | 304.6       | 73.5 (24%)   |
+| 1400 | 893.9       | 409.2 (46%)   | 289.7       | 75.8 (26%)   |
+| 1800 | 1015.4      | 219.0 (22%)   | 286.8       | 72.0 (25%)   |
+
+est02 fixed (73-76 consistently). est01 800/1400 improved but 1800 still drops.
+
+---
+
+## Iteration 6: Add PRICE_CAP to prevent overshoot (drift_6_a, drift_6_b)
+
+**Status:** Complete
+
+### Change
+- `PRICE_CAP = MAX_TOKEN * 6/10 = 60`: clamp price on the way up; ensures ≥40% admission even at peak congestion
+
+### Hypothesis
+At 1800 RPS est01, own_price observed spiking to 90+ (90% rejection → queue empties → traffic flood → spike again). Binary oscillation instead of stable admission. Cap at 60 maintains minimum throughput.
+
+### Results (drift_6_a, drift_6_b)
+
+| RPS  | est01 adctl | est01 rajomon | est02 adctl | est02 rajomon |
+|------|-------------|---------------|-------------|---------------|
+| 800  | 703.3       | 305.0 (43%)   | 285.4       | 91.9 (32%)   |
+| 1400 | 880.4       | 503.9 (57%)   | 321.5       | 90.7 (28%)   |
+| 1800 | 1041.5      | 637.1 (61%)   | 281.2       | 97.4 (35%)   |
+
+est01 1800 jumped from 219 to 637 — the price cap fixed the lockout oscillation.
+
+---
+
+## Iteration 7: Raise threshold to 2ms (drift_7_a, drift_7_b)
+
+**Status:** Complete
+
+### Change
+- `LATENCY_THRESHOLD_US`: 1ms → 2ms
+
+### Hypothesis
+At 800 RPS, est01 goodput is 43% vs adctl 88%. System is not heavily overloaded (only 12% fail SLO with adctl), but 1ms threshold fires spuriously at moderate queue depth. Raising to 2ms reduces over-triggering at light load while still firing under true overload.
+
+### Results (drift_7_a, drift_7_b)
+
+| RPS  | est01 adctl | est01 rajomon | est02 adctl | est02 rajomon |
+|------|-------------|---------------|-------------|---------------|
+| 800  | 700.4       | 321.9 (46%)   | 323.0       | 144.2 (45%)  |
+| 1400 | 910.1       | 525.7 (58%)   | 290.2       | 127.3 (44%)  |
+| 1800 | 1013.2      | 650.8 (64%)   | 290.4       | 127.7 (44%)  |
+
+### Summary (best constants so far)
+```rust
+LATENCY_THRESHOLD_US  = 2_000  // 2ms
+PRICE_STEP_UP         = 8
+PRICE_STEP_DOWN       = 2
+PRICE_CAP             = 60     // MAX_TOKEN × 60%
+MAX_TOKEN             = 100
+```
+
+| Trace | RPS  | adctl | rajomon | ratio |
+|-------|------|-------|---------|-------|
+| est01 | 800  | 700   | 322     | 46%   |
+| est01 | 1400 | 910   | 526     | 58%   |
+| est01 | 1800 | 1013  | 651     | 64%   |
+| est02 | 800  | 323   | 144     | 45%   |
+| est02 | 1400 | 290   | 127     | 44%   |
+| est02 | 1800 | 290   | 128     | 44%   |
+
+Significant improvement from baseline (rajomon was 0-21% of adctl). Now 44-64% across both traces and all RPS levels.
