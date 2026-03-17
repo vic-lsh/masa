@@ -56,7 +56,7 @@ MAX_TOKEN             = 100     // Go: 10
 
 ## Iteration 1: Lower latency threshold to activate congestion signal (drift_1_a, drift_1_b)
 
-**Status:** Running
+**Status:** Complete
 
 ### Change
 - `LATENCY_THRESHOLD_US`: 150_000 → 1_000 (1ms)
@@ -72,3 +72,51 @@ The congestion signal is broken because the threshold is 150ms — scheduler que
 
 ### Experiment design
 Run on both traces to check whether the fix is general. Use only RPS 800/1400/1800 as required. The congestion detection fix should be visible even at 800 RPS if the queue latency there is consistently below 1ms — if goodput still drops at 800, that's a sign the threshold is still too high or something else is broken.
+
+### Results (drift_1_a, drift_1_b)
+
+**drift_1_a (trace S_14677443) — goodput in req/s:**
+
+| RPS  | fifo,early,adctl,est_mean_var | fifo,rajomon |
+|------|-------------------------------|--------------|
+| 800  | 698.6 (87.3%)                 | 202.8 (25.4%) |
+| 1400 | 905.8 (64.7%)                 | 348.3 (24.9%) |
+| 1800 | 1000.8 (55.6%)                | 459.7 (25.5%) |
+
+**drift_1_b (trace S_32048416) — goodput in req/s:**
+
+| RPS  | fifo,early,adctl,est_mean_var | fifo,rajomon |
+|------|-------------------------------|--------------|
+| 800  | 337.2 (42.2%)                 | 27.0 (3.4%)  |
+| 1400 | 321.8 (23.0%)                 | 0.0 (0%)     |
+| 1800 | 315.4 (17.5%)                 | 0.0 (0%)     |
+
+### Analysis
+
+**Hypothesis was only partially correct.** The threshold fix helped est01 (goodput ratio improved from ~10-21% to ~25%), but est02 remained catastrophic (0% at 1400/1800 RPS, vs 0.1% baseline). This reveals additional bugs beyond the threshold:
+
+- The queue latency measurement was accumulating across all polls per request (total sum vs threshold), causing spurious congestion signals — price rises too aggressively, shedding all load.
+- Token spending was broken: tokens were set per-channel (not deducted), TOKEN_UPDATE_STEP was 5× too large (5 vs Go's 1), MAX_TOKEN was 10× too large (100 vs Go's 10).
+- Price dynamics were symmetric (step=1 both ways), causing slow response to congestion.
+
+All of these were fixed in drift_2 commits (see DRIFT_CHANGES.md items 2-5).
+
+---
+
+## Iteration 2: Fix token bucket, price dynamics, and queue latency measurement (drift_2_a, drift_2_b)
+
+**Status:** Running
+
+### Changes (on top of drift_1)
+- **Queue latency fix**: Per-poll `fetch_max` instead of accumulated sum across polls
+- **Price dynamics**: `PRICE_STEP_UP=8`, `PRICE_STEP_DOWN=1`, hysteresis band (hold between half-threshold and threshold)
+- **Token replenishment**: Poisson inter-arrival distribution (mean 10ms), matching Go
+- **Token spending**: Uniform random in [0, balance-1], deduct immediately per request (CAS loop)
+
+### Hypothesis
+The drift_1 failure in est02 was caused by a cascade of bugs: (1) accumulated queue latency causing runaway price increases that shed 100% of load, (2) loose token bucket (step=5, max=100) that flooded requests when price was near-zero, (3) symmetric price steps that couldn't respond fast enough to sudden congestion. The queue latency fix should prevent runaway prices, and the corrected token dynamics should produce smoother load shedding.
+
+### Expected outcomes if hypothesis is correct:
+1. est02 goodput rises from 0% to measurable values at all RPS levels
+2. est01 goodput improves further above the 25% ratio from drift_1
+3. own_price actually rises under load (verifiable from logs: "Rajomon own_price")
