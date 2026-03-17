@@ -20,7 +20,7 @@ use std::time::Duration;
 #[cfg(feature = "rajomon")]
 const PRICE_UPDATE_RATE_MS: u64 = 10; // original: priceUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const LATENCY_THRESHOLD_US: u64 = 2_000; // 2ms — less spurious at moderate load vs 1ms
+const LATENCY_THRESHOLD_US: u64 = 1_000_000; // 1s — effectively disabled; price stays at 0
 
 // Price update (step strategy)
 // Asymmetric up/down: fast rise provides quick back-pressure; faster recovery
@@ -42,7 +42,7 @@ const INIT_PRICE: u64 = 0; // original: initprice (0)
 
 // Price propagation
 #[cfg(feature = "rajomon")]
-const PRICE_FREQ: u64 = 1; // original: priceFreq (5) — send price every 1/N requests
+const PRICE_FREQ: u64 = 5; // original: priceFreq (5) — send price every 1/N requests
 
 // Client-side token bucket
 #[cfg(feature = "rajomon")]

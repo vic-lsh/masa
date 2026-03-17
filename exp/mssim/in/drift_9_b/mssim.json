@@ -1,0 +1,11 @@
+{
+  "callgraph_dirs": [
+    "trace-analysis/golden/S_32048416"
+  ],
+  "config_dir": "apps/mssim/simulator/example_config/",
+  "slo_ms": 200,
+  "orchestrator": "localhost:50051",
+  "replay_path": null,
+  "stats_interval_sec": 2,
+  "extra_env": {}
+}
