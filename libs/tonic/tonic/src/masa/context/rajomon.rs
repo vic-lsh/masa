@@ -30,6 +30,13 @@ const LATENCY_THRESHOLD_US: u64 = 1_000; // 1ms — fires quickly under mssim lo
 const PRICE_STEP_UP: u64 = 8; // fast rise: 44 in 55ms under congestion
 #[cfg(feature = "rajomon")]
 const PRICE_STEP_DOWN: u64 = 2; // 2× faster recovery than drift_3 (220ms vs 440ms)
+/// Price ceiling: prevents overshooting into near-total lockout. With unlimited
+/// price, a burst of congestion can drive price to 90+ (>90% rejection), which
+/// empties the queue, then collapses back to 0, flooding the system — oscillation
+/// rather than stable equilibrium. Cap at 60% of MAX_TOKEN ensures at least 40%
+/// of bids always get admitted, maintaining minimum throughput under worst-case load.
+#[cfg(feature = "rajomon")]
+const PRICE_CAP: u64 = MAX_TOKEN * 6 / 10; // 60 with MAX_TOKEN=100
 #[cfg(feature = "rajomon")]
 const INIT_PRICE: u64 = 0; // original: initprice (0)
 
@@ -136,7 +143,7 @@ impl RajomonSharedState {
         let max_us = self.queue_stats.window_max.swap(0, Ordering::Relaxed);
         let own = self.own_price.load(Ordering::Relaxed);
         let new_price = if max_us > LATENCY_THRESHOLD_US {
-            own + PRICE_STEP_UP
+            (own + PRICE_STEP_UP).min(PRICE_CAP)
         } else if own > 0 && max_us < LATENCY_THRESHOLD_US / 2 {
             own.saturating_sub(PRICE_STEP_DOWN)
         } else {
