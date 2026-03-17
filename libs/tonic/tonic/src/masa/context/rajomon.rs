@@ -20,13 +20,15 @@ use std::time::Duration;
 #[cfg(feature = "rajomon")]
 const PRICE_UPDATE_RATE_MS: u64 = 10; // original: priceUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const LATENCY_THRESHOLD_US: u64 = 1_000; // original: latencyThreshold (0)
+const LATENCY_THRESHOLD_US: u64 = 5_000; // 5ms — less sensitive than 1ms, avoids spurious triggers
 
 // Price update (step strategy)
+// Symmetric steps stabilize the control loop: with equal up/down, price
+// equilibrates when ~50% of ticks are congested instead of diverging.
 #[cfg(feature = "rajomon")]
-const PRICE_STEP_UP: u64 = 8; // paper: +8 per tick when congested
+const PRICE_STEP_UP: u64 = 2; // symmetric: +2 per congested tick
 #[cfg(feature = "rajomon")]
-const PRICE_STEP_DOWN: u64 = 1; // paper: -1 per tick when below half-threshold
+const PRICE_STEP_DOWN: u64 = 2; // symmetric: -2 per uncongested tick
 #[cfg(feature = "rajomon")]
 const INIT_PRICE: u64 = 0; // original: initprice (0)
 
@@ -135,7 +137,7 @@ impl RajomonSharedState {
         let new_price = if max_us > LATENCY_THRESHOLD_US {
             own + PRICE_STEP_UP
         } else if own > 0 && max_us < LATENCY_THRESHOLD_US / 2 {
-            own - PRICE_STEP_DOWN
+            own.saturating_sub(PRICE_STEP_DOWN)
         } else {
             own
         };
@@ -619,9 +621,15 @@ mod tests {
         let state = RajomonSharedState::new();
         state.own_price.store(5, Ordering::Relaxed);
         state.update_prices();
-        assert_eq!(state.own_price.load(Ordering::Relaxed), 4);
+        assert_eq!(
+            state.own_price.load(Ordering::Relaxed),
+            5u64.saturating_sub(PRICE_STEP_DOWN)
+        );
         state.update_prices();
-        assert_eq!(state.own_price.load(Ordering::Relaxed), 3);
+        assert_eq!(
+            state.own_price.load(Ordering::Relaxed),
+            5u64.saturating_sub(2 * PRICE_STEP_DOWN)
+        );
     }
 
     #[cfg(feature = "rajomon")]
