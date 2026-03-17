@@ -20,15 +20,16 @@ use std::time::Duration;
 #[cfg(feature = "rajomon")]
 const PRICE_UPDATE_RATE_MS: u64 = 10; // original: priceUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const LATENCY_THRESHOLD_US: u64 = 5_000; // 5ms — less sensitive than 1ms, avoids spurious triggers
+const LATENCY_THRESHOLD_US: u64 = 1_000; // 1ms — fires quickly under mssim load
 
 // Price update (step strategy)
-// Symmetric steps stabilize the control loop: with equal up/down, price
-// equilibrates when ~50% of ticks are congested instead of diverging.
+// Asymmetric up/down: fast rise provides quick back-pressure; faster recovery
+// than drift_3 (down=2 vs down=1) reduces the lockout duration and improves
+// the equilibrium stability point from K=11% to K=20% congested ticks.
 #[cfg(feature = "rajomon")]
-const PRICE_STEP_UP: u64 = 2; // symmetric: +2 per congested tick
+const PRICE_STEP_UP: u64 = 8; // fast rise: 44 in 55ms under congestion
 #[cfg(feature = "rajomon")]
-const PRICE_STEP_DOWN: u64 = 2; // symmetric: -2 per uncongested tick
+const PRICE_STEP_DOWN: u64 = 2; // 2× faster recovery than drift_3 (220ms vs 440ms)
 #[cfg(feature = "rajomon")]
 const INIT_PRICE: u64 = 0; // original: initprice (0)
 
