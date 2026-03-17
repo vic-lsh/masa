@@ -1,0 +1,10 @@
+{
+  "Repeats": 1,
+  "Rps": [
+    800,
+    1400,
+    1800
+  ],
+  "DurationSecs": 30,
+  "WarmupSecs": 20
+}
