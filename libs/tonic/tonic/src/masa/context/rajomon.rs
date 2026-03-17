@@ -219,9 +219,6 @@ pub(crate) struct RajomonHandler {
     rpc: CowGrpcMethod,
     #[cfg(feature = "rajomon")]
     should_drop: bool,
-    /// Accumulated scheduler queue latency across all polls for this request (microseconds).
-    #[cfg(feature = "rajomon")]
-    accumulated_q_lat_us: AtomicU64,
     /// Remaining token budget for this request, shared across fan-out branches.
     #[cfg(feature = "rajomon")]
     remaining_tokens: AtomicU64,
@@ -238,8 +235,6 @@ impl Default for RajomonHandler {
             #[cfg(feature = "rajomon")]
             should_drop: false,
             #[cfg(feature = "rajomon")]
-            accumulated_q_lat_us: AtomicU64::new(0),
-            #[cfg(feature = "rajomon")]
             remaining_tokens: AtomicU64::new(0),
             #[cfg(feature = "rajomon")]
             inbound_tokens: AtomicU64::new(0),
@@ -255,7 +250,6 @@ impl RajomonHandler {
             Self {
                 rpc,
                 should_drop: false,
-                accumulated_q_lat_us: AtomicU64::new(0),
                 remaining_tokens: AtomicU64::new(0),
                 inbound_tokens: AtomicU64::new(0),
             }
@@ -358,29 +352,25 @@ impl RajomonHandler {
         Status::resource_exhausted("Rajomon disabled")
     }
 
-    /// Accumulate the scheduler queue latency for this poll. The window stats are updated once
-    /// per request via `finalize_queue_delay`, so each request contributes one data point
-    /// (its total accumulated scheduler queue wait time across all polls).
+    /// Update the global window max with this poll's individual queue latency.
+    /// Each poll measures time-in-run-queue for that specific wakeup; taking the max
+    /// across polls (not accumulating) means the threshold is compared against a single
+    /// scheduler wait, not the sum of all waits across the request lifetime.
     #[cfg(feature = "rajomon")]
     pub(crate) fn track_queue_delay(&self) {
         let q_lat_us = tokio::task::obtain_task_queue_latency().as_micros() as u64;
-        self.accumulated_q_lat_us
-            .fetch_add(q_lat_us, Ordering::Relaxed);
+        RAJOMON_STATE
+            .queue_stats
+            .window_max
+            .fetch_max(q_lat_us, Ordering::Relaxed);
     }
 
     #[cfg(not(feature = "rajomon"))]
     pub(crate) fn track_queue_delay(&self) {}
 
-    /// Commit this request's total accumulated queue latency to the global window max.
-    /// The background worker drains the window every 10ms, so call this exactly once per request.
+    /// No-op: window_max is updated per-poll in track_queue_delay.
     #[cfg(feature = "rajomon")]
-    pub(crate) fn finalize_queue_delay(&self) {
-        let total_us = self.accumulated_q_lat_us.load(Ordering::Relaxed);
-        RAJOMON_STATE
-            .queue_stats
-            .window_max
-            .fetch_max(total_us, Ordering::Relaxed);
-    }
+    pub(crate) fn finalize_queue_delay(&self) {}
 
     #[cfg(not(feature = "rajomon"))]
     pub(crate) fn finalize_queue_delay(&self) {}
