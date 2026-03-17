@@ -41,8 +41,11 @@ const TOKENS_LEFT_INIT: u64 = 10; // original: tokensLeft (10)
 const TOKEN_UPDATE_RATE_MS: u64 = 10; // original: tokenUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
 const TOKEN_UPDATE_STEP: u64 = 5; // original: tokenUpdateStep (1)
+/// The maximum token value the loadgen can generate for a bid. Server prices are
+/// meaningful only when they are ≤ MAX_TOKEN; a price above MAX_TOKEN means 100%
+/// rejection. Exported so the loadgen can draw uniform random bids in [0, MAX_TOKEN].
 #[cfg(feature = "rajomon")]
-const MAX_TOKEN: u64 = 100; // original: maxToken (10)
+pub const MAX_TOKEN: u64 = 100; // original: maxToken (10)
 
 /// Global Rajomon state shared across all request handlers.
 #[cfg(feature = "rajomon")]
@@ -198,9 +201,19 @@ impl RajomonSharedState {
                 let mut interval =
                     tokio::time::interval(Duration::from_millis(PRICE_UPDATE_RATE_MS));
                 let mut log_tick: u32 = 0;
+                let mut cache_clear_tick: u32 = 0;
                 loop {
                     interval.tick().await;
                     RAJOMON_STATE.update_prices();
+                    cache_clear_tick += 1;
+                    // At 10ms tick rate, 100 ticks = 1s. Clear stale downstream
+                    // price caches so that a transient congestion spike doesn't
+                    // permanently lock out traffic via stale cached prices.
+                    if cache_clear_tick >= 100 {
+                        cache_clear_tick = 0;
+                        RAJOMON_STATE.downstream_prices.clear();
+                        RAJOMON_STATE.max_downstream_for_method.clear();
+                    }
                     log_tick += 1;
                     // At 10ms tick rate, 500 ticks = 5s logging interval
                     if log_tick >= 500 {
@@ -262,17 +275,21 @@ impl RajomonHandler {
     }
 
     /// Check inbound request tokens against accumulated price.
-    /// Original: tokenleft = tokens - price (deduction at each hop).
+    /// Gate: reject if tok < accumulated_price (max of own and downstream).
+    /// Deduct: remaining = tok - own_price only — not accumulated — so that the
+    /// outbound check (remaining >= child_price) isn't double-counted against the
+    /// same downstream price that was already used in the inbound gate.
     #[cfg(feature = "rajomon")]
     pub(crate) fn check_inbound(&mut self, ctx: &mut Context) -> bool {
-        let price = RAJOMON_STATE.accumulated_price(&self.rpc);
+        let accumulated = RAJOMON_STATE.accumulated_price(&self.rpc);
+        let own = RAJOMON_STATE.own_price.load(Ordering::Relaxed);
         self.inbound_tokens.store(ctx.tokens(), Ordering::Relaxed);
-        if ctx.tokens() < price {
+        if ctx.tokens() < accumulated {
             self.should_drop = true;
             true
         } else {
             self.remaining_tokens
-                .store(ctx.tokens() - price, Ordering::Relaxed);
+                .store(ctx.tokens() - own, Ordering::Relaxed);
             false
         }
     }
@@ -739,7 +756,7 @@ mod tests {
 
     #[cfg(feature = "rajomon")]
     #[test]
-    fn test_check_inbound_deducts_tokens() {
+    fn test_check_inbound_deducts_own_price_not_accumulated() {
         let _lock = GLOBAL_STATE_LOCK.lock().unwrap();
         let method = CowGrpcMethod::new("svc", "method");
         let mut handler = RajomonHandler::new(method);
@@ -752,7 +769,27 @@ mod tests {
         let mut ctx = masa_core::ContextBuilder::new("test", 0).tokens(20).build();
         let dropped = handler.check_inbound(&mut ctx);
         assert!(!dropped);
-        assert_eq!(handler.remaining_tokens(), 17); // 20 - 3 = 17
+        assert_eq!(handler.remaining_tokens(), 17); // 20 - own(3) = 17
+    }
+
+    /// When downstream price > own_price, gate uses accumulated but deduction uses own only.
+    /// This prevents double-counting: a request that passes the inbound gate is guaranteed
+    /// to pass the subsequent outbound check (remaining >= child_price) without needing
+    /// tok >= 2×price.
+    #[cfg(feature = "rajomon")]
+    #[test]
+    fn test_check_inbound_deducts_own_not_accumulated_when_downstream_dominant() {
+        let _lock = GLOBAL_STATE_LOCK.lock().unwrap();
+        let method = CowGrpcMethod::new("svc", "method_downstream_dom");
+        RAJOMON_STATE.own_price.store(5, Ordering::Relaxed);
+        RAJOMON_STATE
+            .max_downstream_for_method
+            .insert(method.clone(), 20); // accumulated = max(5, 20) = 20
+        let mut handler = RajomonHandler::new(method);
+        let mut ctx = masa_core::ContextBuilder::new("test", 0).tokens(25).build();
+        let dropped = handler.check_inbound(&mut ctx);
+        assert!(!dropped); // tok(25) >= accumulated(20) → admitted
+        assert_eq!(handler.remaining_tokens(), 20); // 25 - own(5) = 20, not 25 - 20 = 5
     }
 
     #[cfg(feature = "rajomon")]

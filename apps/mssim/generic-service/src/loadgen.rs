@@ -304,18 +304,14 @@ async fn run_root_load(
                         #[cfg(feature = "rajomon")]
                         {
                             use rand::Rng;
-                            use tonic::masa::context::rajomon::CLIENT_TOKEN_BUCKET;
-                            let balance = CLIENT_TOKEN_BUCKET.tokens_left();
-                            // Uniform random in [0, balance-1]: as price rises, fraction of
-                            // requests dropped increases gradually (smooth overload reaction).
-                            let tok = if balance > 0 {
-                                rand::rng().random_range(0..balance)
-                            } else {
-                                0
-                            };
-                            // Deduct tok from bucket (matches Go's DeductTokens).
-                            // Replenishment via Poisson refill keeps the bucket alive.
-                            CLIENT_TOKEN_BUCKET.deduct(tok);
+                            use tonic::masa::context::rajomon::MAX_TOKEN;
+                            // Bid is a uniform random value in [0, MAX_TOKEN]. The server
+                            // admits requests whose bid >= its current price, giving a
+                            // (MAX_TOKEN - price) / MAX_TOKEN admission fraction. Drawing
+                            // from the full fixed range avoids the balance-depletion problem
+                            // where bucket drains to 0 in a single-process loadgen, causing
+                            // permanent zero-bid and complete admission collapse.
+                            let tok = rand::rng().random_range(0..=MAX_TOKEN);
                             builder = builder.tokens(tok);
                         }
                         builder.build()
