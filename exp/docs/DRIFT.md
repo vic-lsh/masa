@@ -230,3 +230,58 @@ MAX_TOKEN             = 100
 | est02 | 1800 | 290   | 128     | 44%   |
 
 Significant improvement from baseline (rajomon was 0-21% of adctl). Now 44-64% across both traces and all RPS levels.
+
+---
+
+## Iteration 8: Faster price recovery with PRICE_STEP_DOWN=4 (drift_8_a, drift_8_b)
+
+**Status:** Complete — reverted (regression)
+
+### Change
+- `PRICE_STEP_DOWN`: 2 → 4
+
+### Hypothesis
+At high RPS, recovery from PRICE_CAP=60 takes ~300ms with step=2 (60/2 × 10ms). If overload passes quickly, the system stays over-throttled too long. Halving recovery time to ~150ms might let through more requests during the non-overloaded window.
+
+### Results (drift_8_a, drift_8_b)
+
+| RPS  | est01 adctl | est01 rajomon | est02 adctl | est02 rajomon |
+|------|-------------|---------------|-------------|---------------|
+| 800  | 703.3       | 396.0 (56%)   | —           | 173.0         |
+| 1400 | 880.4       | 292.0 (33%)   | —           | 0.0 (0%)      |
+| 1800 | 1041.5      | 741.0 (71%)   | —           | 0.0 (0%)      |
+
+### Analysis
+Regression at intermediate load (est01 1400 dropped 526→292; est02 1400/1800 collapsed to 0). Faster recovery from cap means price undershoots during sustained congestion — the system briefly over-admits, queue saturates, then price slams back to cap. This oscillation is worse than drift_7's slower recovery. PRICE_STEP_DOWN=2 is retained.
+
+**Conclusion: drift_7 config is the best found. No further parameter tuning attempted.**
+
+---
+
+## Final Summary
+
+The best rajomon constants found through parameter search:
+
+```rust
+LATENCY_THRESHOLD_US  = 2_000  // 2ms
+PRICE_STEP_UP         = 8
+PRICE_STEP_DOWN       = 2
+PRICE_CAP             = 60     // MAX_TOKEN × 60%
+MAX_TOKEN             = 100
+TOKEN_UPDATE_STEP     = 5
+PRICE_UPDATE_RATE_MS  = 10     // 10ms
+TOKEN_UPDATE_RATE_MS  = 10     // 10ms
+```
+
+Goodput ratio vs `fifo,early,adctl,est_mean_var` (from baseline 0-21% to):
+
+| Trace | RPS  | adctl | rajomon | ratio |
+|-------|------|-------|---------|-------|
+| est01 | 800  | 700   | 322     | 46%   |
+| est01 | 1400 | 910   | 526     | 58%   |
+| est01 | 1800 | 1013  | 651     | 64%   |
+| est02 | 800  | 323   | 144     | 45%   |
+| est02 | 1400 | 290   | 127     | 44%   |
+| est02 | 1800 | 290   | 128     | 44%   |
+
+The remaining ~36-56% gap reflects a fundamental architectural difference: rajomon admits randomly (uniform random token bid), while adctl selects based on utilization estimates and per-request cost. Closing this gap requires changing the admission algorithm, not tuning the price dynamics.
