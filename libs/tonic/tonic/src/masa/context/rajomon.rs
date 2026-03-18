@@ -20,14 +20,14 @@ use std::time::Duration;
 #[cfg(feature = "rajomon")]
 const PRICE_UPDATE_RATE_MS: u64 = 10; // original: priceUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const LATENCY_THRESHOLD_US: u64 = 1_000_000; // 1s — effectively disabled; price stays at 0
+const LATENCY_THRESHOLD_US: u64 = 12_000; // 20ms — effectively disabled; price stays at 0
 
 // Price update (step strategy)
 // Asymmetric up/down: fast rise provides quick back-pressure; faster recovery
 // than drift_3 (down=2 vs down=1) reduces the lockout duration and improves
 // the equilibrium stability point from K=11% to K=20% congested ticks.
 #[cfg(feature = "rajomon")]
-const PRICE_STEP_UP: u64 = 8; // fast rise: 44 in 55ms under congestion
+const PRICE_STEP_UP: u64 = 5; // fast rise: 44 in 55ms under congestion
 #[cfg(feature = "rajomon")]
 const PRICE_STEP_DOWN: u64 = 2; // 2× faster recovery than drift_3 (220ms vs 440ms)
 /// Price ceiling: prevents overshooting into near-total lockout. With unlimited
@@ -67,6 +67,9 @@ pub static RAJOMON_STATE: Lazy<RajomonSharedState> = Lazy::new(|| RajomonSharedS
 pub struct QueueStats {
     /// Maximum per-request queue latency (us) observed since the last tick.
     pub window_max: AtomicU64,
+    /// Maximum window_max seen across all ticks since last periodic log.
+    /// Not reset by update_prices, only by log_pricing_tables.
+    pub log_window_max: AtomicU64,
 }
 
 #[cfg(feature = "rajomon")]
@@ -74,6 +77,7 @@ impl QueueStats {
     fn new() -> Self {
         Self {
             window_max: AtomicU64::new(0),
+            log_window_max: AtomicU64::new(0),
         }
     }
 }
@@ -83,6 +87,7 @@ impl std::fmt::Debug for QueueStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("QueueStats")
             .field("window_max", &self.window_max.load(Ordering::Relaxed))
+            .field("log_window_max", &self.log_window_max.load(Ordering::Relaxed))
             .finish()
     }
 }
@@ -141,9 +146,12 @@ impl RajomonSharedState {
     /// else (between half and full threshold):  hold steady
     pub(crate) fn update_prices(&self) {
         let max_us = self.queue_stats.window_max.swap(0, Ordering::Relaxed);
+        self.queue_stats
+            .log_window_max
+            .fetch_max(max_us, Ordering::Relaxed);
         let own = self.own_price.load(Ordering::Relaxed);
         let new_price = if max_us > LATENCY_THRESHOLD_US {
-            (own + PRICE_STEP_UP).min(PRICE_CAP)
+            (own + PRICE_STEP_UP * (max_us.saturating_sub(LATENCY_THRESHOLD_US))).min(PRICE_CAP)
         } else if own > 0 && max_us < LATENCY_THRESHOLD_US / 2 {
             own.saturating_sub(PRICE_STEP_DOWN)
         } else {
@@ -189,9 +197,10 @@ impl RajomonSharedState {
                 .collect();
             log::info!("Rajomon max_downstream_for_method: {}", parts.join(", "));
         }
+        let peak = self.queue_stats.log_window_max.swap(0, Ordering::Relaxed);
         log::info!(
-            "Rajomon queue_latency (window_max): {} us",
-            self.queue_stats.window_max.load(Ordering::Relaxed)
+            "Rajomon queue_latency (peak_window_max over 5s): {} us",
+            peak
         );
     }
 
