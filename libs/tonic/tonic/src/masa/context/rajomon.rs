@@ -20,7 +20,7 @@ use std::time::Duration;
 #[cfg(feature = "rajomon")]
 const PRICE_UPDATE_RATE_MS: u64 = 10; // original: priceUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const LATENCY_THRESHOLD_US: u64 = 2_000; // 2ms — triggers price increase when queue latency exceeds 2ms
+const LATENCY_THRESHOLD_US: u64 = 20_000; // 20ms — triggers price increase when queue latency exceeds 20ms
 
 // Price update (step strategy)
 // Asymmetric up/down: fast rise provides quick back-pressure; faster recovery
