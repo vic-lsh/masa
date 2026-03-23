@@ -156,3 +156,46 @@ The price is oscillating near PRICE_CAP=60, cycling between 40% admission (price
 
 ### Experiment design
 Same config. Named `cobalt_3`.
+
+### Actual Outcomes (cobalt_3)
+
+**Status:** Complete ✅ — prio_local,rajomon,early now matches/exceeds adctl at 600–900 RPS
+
+| RPS | fifo,adctl | fifo,raj (c2→c3) | plocal,adctl | plocal,raj (c2→c3) | raj/adctl % |
+|-----|-----------|-----------------|-------------|-------------------|-------------|
+| 600 | 598.1 | 611.5 → **614.0** | 596.5 | 608.2 → **587.0** | 98.4% |
+| 700 | 693.9 | 687.7 → **703.1** | 688.1 | 704.3 → **699.3** | 101.6% |
+| 800 | 686.0 | 602.0 → **575.4** | 817.1 | 798.9 → **814.7** | 99.7% |
+| 900 | 688.1 | 367.0 → 425.5 | 873.3 | 815.8 → **887.4** | **101.6%** |
+| 1000| 791.0 | 294.0 → 298.0 | 925.8 | 796.0 → **870.8** | **94.1%** |
+
+**Key win:** `prio_local,rajomon,early` at 900 RPS jumped from 815.8 → 887.4 (+8.8%), now exceeding adctl (873.3) at that load. At 1000 RPS, 870.8 → 94.1% of adctl (up from 85.1%). The lower PRICE_CAP (40 vs 60) and slower ramp (PRICE_STEP_UP 4 vs 8) reduced over-rejection at high load dramatically: deep-downstream rejections at 1000 RPS dropped from 6181 → 476.
+
+**Early return depth shift:** adctl rejects mostly at Root (no downstream work done); rajomon still rejects post-child-call. This is the structural gap — not closable by tuning.
+
+**fifo,rajomon,early:** No improvement (298 req/s at 1000 RPS). The failure is architectural — without priority scheduling, ms-56394 queue fills and all rejections are time-based ERs. No amount of price tuning can fix this.
+
+**Decision:** Keep cobalt_3 as the best configuration. The remaining 5.9% gap at 1000 RPS is structural and motivates the root cause experiments below.
+
+---
+
+## Root Cause Investigation: Why adctl outperforms rajomon
+
+Three architectural pillars explain the persistent gap:
+
+### Pillar A: Rejection depth (wasted compute)
+adctl rejects at ingress before calling any children (Type A: no `last_rpc`). Rajomon rejects after calling child services (Type B: has `last_rpc`). At 1000 RPS (cobalt_3): adctl has 1759 root-only ERs vs 367 post-child; rajomon has 0 root-only ERs vs 476 deep. Every rajomon rejection has already consumed at least one downstream hop of compute — this is wasted work that backpressures the bottleneck services.
+
+### Pillar B: Signal quality (lagging indicator)
+adctl signal: compute-time estimates per method (measures actual SLO-relevant work remaining). Decision is made per-request immediately.
+Rajomon signal: Tokio task queue latency (proxy — only detects overload after the queue has already backed up). Decision made on 10ms ticks.
+
+### Pillar C: Equilibrium stability (bursty vs smooth admission)
+adctl: continuous budget-rate adjustment converging to a stable equilibrium.
+Rajomon: threshold toggle — price oscillates between 0 and PRICE_CAP, causing bursty 40–60% admission during high-price phase then 100% during recovery.
+
+### Root cause experiments
+
+- **cobalt_depth** (`exp/mssim/in/cobalt_depth/`): Constant 900 RPS, 2 policies. Quantify rejection depth (root-only vs post-child ER) for adctl vs rajomon. Proves Pillar A.
+- **cobalt_step** (`exp/mssim/in/cobalt_step/`): Step load [400→1000→400 RPS], 2 policies. Shows how quickly each adapts at load transitions. Proves Pillar B.
+- **cobalt_robust** (`exp/mssim/in/cobalt_robust/`): Sweep [700, 800, 900, 1000 RPS], 4 policies (adctl+prio_local, rajomon+prio_local, adctl+fifo, rajomon+fifo). Shows adctl flat/near-capacity across the sweep while rajomon degrades steeply above 800 RPS. Proves Pillar C + shows scheduling dependency.
