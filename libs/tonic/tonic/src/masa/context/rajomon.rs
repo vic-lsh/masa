@@ -20,16 +20,16 @@ use std::time::Duration;
 #[cfg(feature = "rajomon")]
 const PRICE_UPDATE_RATE_MS: u64 = 10; // original: priceUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const LATENCY_THRESHOLD_US: u64 = 12_000; // 20ms — effectively disabled; price stays at 0
+const LATENCY_THRESHOLD_US: u64 = 2_000; // 2ms — triggers price increase when queue latency exceeds 2ms
 
 // Price update (step strategy)
 // Asymmetric up/down: fast rise provides quick back-pressure; faster recovery
 // than drift_3 (down=2 vs down=1) reduces the lockout duration and improves
 // the equilibrium stability point from K=11% to K=20% congested ticks.
 #[cfg(feature = "rajomon")]
-const PRICE_STEP_UP: u64 = 5; // fast rise: 44 in 55ms under congestion
+const PRICE_STEP_UP: u64 = 8; // additive step up per tick: ramps to PRICE_CAP in ~75ms (8 ticks × 10ms)
 #[cfg(feature = "rajomon")]
-const PRICE_STEP_DOWN: u64 = 2; // 2× faster recovery than drift_3 (220ms vs 440ms)
+const PRICE_STEP_DOWN: u64 = 2; // additive step down per tick: recovers to 0 in ~300ms from PRICE_CAP
 /// Price ceiling: prevents overshooting into near-total lockout. With unlimited
 /// price, a burst of congestion can drive price to 90+ (>90% rejection), which
 /// empties the queue, then collapses back to 0, flooding the system — oscillation
@@ -87,7 +87,10 @@ impl std::fmt::Debug for QueueStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("QueueStats")
             .field("window_max", &self.window_max.load(Ordering::Relaxed))
-            .field("log_window_max", &self.log_window_max.load(Ordering::Relaxed))
+            .field(
+                "log_window_max",
+                &self.log_window_max.load(Ordering::Relaxed),
+            )
             .finish()
     }
 }
@@ -151,7 +154,7 @@ impl RajomonSharedState {
             .fetch_max(max_us, Ordering::Relaxed);
         let own = self.own_price.load(Ordering::Relaxed);
         let new_price = if max_us > LATENCY_THRESHOLD_US {
-            (own + PRICE_STEP_UP * (max_us.saturating_sub(LATENCY_THRESHOLD_US))).min(PRICE_CAP)
+            (own + PRICE_STEP_UP).min(PRICE_CAP)
         } else if own > 0 && max_us < LATENCY_THRESHOLD_US / 2 {
             own.saturating_sub(PRICE_STEP_DOWN)
         } else {
@@ -993,16 +996,23 @@ mod tests {
     #[cfg(feature = "rajomon")]
     #[test]
     fn test_price_propagation_deterministic() {
-        // With PRICE_FREQ=1, every request propagates price (N % 1 == 0 for all N).
+        // Price is propagated when inbound_tokens % PRICE_FREQ == 0.
+        // PRICE_FREQ=5, so only multiples of 5 propagate.
         let handler = RajomonHandler::new(CowGrpcMethod::new("svc", "m"));
         handler.inbound_tokens.store(5, Ordering::Relaxed);
-        assert!(handler.should_propagate_price()); // 5 % 1 == 0
+        assert!(handler.should_propagate_price()); // 5 % 5 == 0
 
-        handler.inbound_tokens.store(3, Ordering::Relaxed);
-        assert!(handler.should_propagate_price()); // 3 % 1 == 0
+        handler.inbound_tokens.store(10, Ordering::Relaxed);
+        assert!(handler.should_propagate_price()); // 10 % 5 == 0
 
         handler.inbound_tokens.store(0, Ordering::Relaxed);
-        assert!(handler.should_propagate_price()); // 0 % 1 == 0
+        assert!(handler.should_propagate_price()); // 0 % 5 == 0
+
+        handler.inbound_tokens.store(3, Ordering::Relaxed);
+        assert!(!handler.should_propagate_price()); // 3 % 5 != 0
+
+        handler.inbound_tokens.store(7, Ordering::Relaxed);
+        assert!(!handler.should_propagate_price()); // 7 % 5 != 0
     }
 
     // ── H. End-to-End Algorithmic Equivalence Tests ──
