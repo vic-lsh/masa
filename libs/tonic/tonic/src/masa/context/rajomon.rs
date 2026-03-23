@@ -27,16 +27,14 @@ const LATENCY_THRESHOLD_US: u64 = 20_000; // 20ms — triggers price increase wh
 // than drift_3 (down=2 vs down=1) reduces the lockout duration and improves
 // the equilibrium stability point from K=11% to K=20% congested ticks.
 #[cfg(feature = "rajomon")]
-const PRICE_STEP_UP: u64 = 8; // additive step up per tick: ramps to PRICE_CAP in ~75ms (8 ticks × 10ms)
+const PRICE_STEP_UP: u64 = 4; // additive step up per tick: ramps to PRICE_CAP in ~150ms (15 ticks × 10ms)
 #[cfg(feature = "rajomon")]
 const PRICE_STEP_DOWN: u64 = 2; // additive step down per tick: recovers to 0 in ~300ms from PRICE_CAP
-/// Price ceiling: prevents overshooting into near-total lockout. With unlimited
-/// price, a burst of congestion can drive price to 90+ (>90% rejection), which
-/// empties the queue, then collapses back to 0, flooding the system — oscillation
-/// rather than stable equilibrium. Cap at 60% of MAX_TOKEN ensures at least 40%
-/// of bids always get admitted, maintaining minimum throughput under worst-case load.
+/// Price ceiling at 40% of MAX_TOKEN. Limits worst-case rejection to 60% of requests,
+/// maintaining a minimum 60% admission floor even under peak overload. Lower than
+/// the 60% cap avoids oscillation between total lockout and full admission.
 #[cfg(feature = "rajomon")]
-const PRICE_CAP: u64 = MAX_TOKEN * 6 / 10; // 60 with MAX_TOKEN=100
+const PRICE_CAP: u64 = MAX_TOKEN * 4 / 10; // 40 with MAX_TOKEN=100
 #[cfg(feature = "rajomon")]
 const INIT_PRICE: u64 = 0; // original: initprice (0)
 
@@ -619,7 +617,10 @@ mod tests {
     #[test]
     fn test_step_price_increase_on_congestion() {
         let state = RajomonSharedState::new();
-        state.queue_stats.window_max.store(20000, Ordering::Relaxed);
+        state
+            .queue_stats
+            .window_max
+            .store(LATENCY_THRESHOLD_US + 1, Ordering::Relaxed);
         state.update_prices();
         assert_eq!(
             state.own_price.load(Ordering::Relaxed),
@@ -627,7 +628,10 @@ mod tests {
         );
 
         // Second tick, still congested
-        state.queue_stats.window_max.store(15000, Ordering::Relaxed);
+        state
+            .queue_stats
+            .window_max
+            .store(LATENCY_THRESHOLD_US + 1, Ordering::Relaxed);
         state.update_prices();
         assert_eq!(
             state.own_price.load(Ordering::Relaxed),
@@ -683,9 +687,12 @@ mod tests {
     fn test_price_increase_uses_constant_step_not_proportional() {
         let state = RajomonSharedState::new();
 
-        // Mild congestion (above threshold)
+        // Mild congestion (just above threshold)
         state.own_price.store(0, Ordering::Relaxed);
-        state.queue_stats.window_max.store(15000, Ordering::Relaxed);
+        state
+            .queue_stats
+            .window_max
+            .store(LATENCY_THRESHOLD_US + 1, Ordering::Relaxed);
         state.update_prices();
         let price_after_mild = state.own_price.load(Ordering::Relaxed);
 
@@ -1068,7 +1075,10 @@ mod tests {
 
         // 5 ticks of congestion (above threshold)
         for _ in 0..5 {
-            state.queue_stats.window_max.store(20000, Ordering::Relaxed);
+            state
+                .queue_stats
+                .window_max
+                .store(LATENCY_THRESHOLD_US + 1, Ordering::Relaxed);
             state.update_prices();
         }
         assert_eq!(state.own_price.load(Ordering::Relaxed), 5 * PRICE_STEP_UP);
