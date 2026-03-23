@@ -115,3 +115,44 @@ The 2ms threshold was below the services' idle queue latency, making the signal 
 
 ### Experiment design
 Same config as cobalt_1. Named `cobalt_2`.
+
+### Actual Outcomes (cobalt_2)
+
+**Status:** Mixed ✅/❌ — prio_local fixed at low load, high-load gap remains; fifo structurally limited
+
+| RPS | fifo,adctl (c2) | fifo,raj,early | % adctl | plocal,adctl (c2) | plocal,raj,early | % adctl |
+|-----|----------------|---------------|---------|------------------|-----------------|---------|
+| 600 | 594.9 | **611.5** | **102.8%** | 618.7 | **608.2** | 98.3% |
+| 700 | 685.7 | **687.7** | **100.3%** | 694.0 | **704.3** | **101.5%** |
+| 800 | 695.2 | 602.0 | 86.6% | 795.3 | **798.9** | **100.5%** |
+| 900 | 722.2 | 367.0 | 50.8% | 885.4 | 815.8 | 92.1% |
+| 1000| 738.8 | 294.0 | 39.8% | 934.8 | 796.0 | 85.2% |
+
+**prio_local,rajomon,early (big win):** 20ms threshold eliminated all false-positive rejections. Zero rejections at 600–800 RPS (up from 20–47% in cobalt_1). On par with or ahead of adctl at 600–800 RPS. Gap only at 900–1000 RPS, caused by token rejections at ms-73106 (10% and 20% rejection rates). Price oscillates 0→60→0 (near PRICE_CAP) causing bursty shedding.
+
+**fifo,rajomon,early (structurally limited):** Token rejections are still zero. All losses are time-based early returns caused by ms-56394 queue filling beyond 20ms. The price signal from ms-56394 (max ~20) propagates upstream but is insufficient to shed enough load without priority scheduling to route away from the bottleneck. This is a fundamental FIFO limitation, not a parameter issue.
+
+**Root cause for prio_local 900–1000 RPS gap:** PRICE_CAP=60 means when overloaded, only 40% of requests pass. This is too aggressive — with prio_local scheduling the system CAN handle ~99% of 900 RPS (adctl proves this). The price oscillates between 0 and cap, creating bursty bursts of 40% admission then 100% admission instead of a stable ~90%+ admission.
+
+---
+
+## Iteration 3: Lower PRICE_CAP and PRICE_STEP_UP to smooth equilibrium (cobalt_3)
+
+**Status:** Pending
+
+### Change
+1. `PRICE_CAP`: 60 → 40 (i.e., `MAX_TOKEN * 4 / 10`)
+2. `PRICE_STEP_UP`: 8 → 4
+
+### Hypothesis
+The price is oscillating near PRICE_CAP=60, cycling between 40% admission (price at cap) and 100% admission (price=0). This bursty admission causes the 10–20% excess rejection at 900–1000 RPS. Lowering the cap to 40 means the worst-case admission floor is 60% (better for a system that can genuinely handle most requests), and slowing the ramp from 75ms to 150ms (step_up 8→4) reduces overshoot. Together these should drive the price to a stable equilibrium near the true load-shedding point rather than oscillating between extremes.
+
+### Expected outcomes if hypothesis is correct
+1. prio_local,rajomon,early at 900 RPS improves from 815.8 → ≥850 req/s (≥96% of adctl)
+2. prio_local,rajomon,early at 1000 RPS improves from 796.0 → ≥870 req/s (≥93% of adctl)
+3. Token rejection rate drops from 10–20% to 5–10% at 900–1000 RPS
+4. 600–800 RPS goodput unchanged (price still near 0 in that range)
+5. fifo,rajomon,early unchanged (different failure mechanism — time-based ER not token rejection)
+
+### Experiment design
+Same config. Named `cobalt_3`.
