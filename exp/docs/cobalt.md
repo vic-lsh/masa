@@ -199,3 +199,59 @@ Rajomon: threshold toggle — price oscillates between 0 and PRICE_CAP, causing 
 - **cobalt_depth** (`exp/mssim/in/cobalt_depth/`): Constant 900 RPS, 2 policies. Quantify rejection depth (root-only vs post-child ER) for adctl vs rajomon. Proves Pillar A.
 - **cobalt_step** (`exp/mssim/in/cobalt_step/`): Step load [400→1000→400 RPS], 2 policies. Shows how quickly each adapts at load transitions. Proves Pillar B.
 - **cobalt_robust** (`exp/mssim/in/cobalt_robust/`): Sweep [700, 800, 900, 1000 RPS], 4 policies (adctl+prio_local, rajomon+prio_local, adctl+fifo, rajomon+fifo). Shows adctl flat/near-capacity across the sweep while rajomon degrades steeply above 800 RPS. Proves Pillar C + shows scheduling dependency.
+
+---
+
+## Root Cause Experiment Results
+
+### cobalt_depth (Pillar A — Rejection Depth)
+
+At 900 RPS, adctl and rajomon shed similar counts of requests (527 vs 657 ERs) but the **location of rejection** differs sharply:
+
+| Category | adctl | rajomon |
+|---|---|---|
+| Root-only ERs (no child called) | 260 — **49.3%** | 0 — **0.0%** |
+| Root ERs with last_rpc (≥1 child called) | 210 — 39.8% | 466 — 70.9% |
+| Downstream ERs | 57 — 10.8% | 191 — 29.1% |
+| **Avg wasted child RPCs per ER** | **0.60** | **1.23** |
+
+adctl rejects nearly half its shedded requests at ingress before doing any downstream work. Rajomon produces **zero** root-only rejections — every rejection occurs after at least one child RPC has already been dispatched. Rajomon wastes **2.1× more child-service invocations** per unit of load shedding. **Pillar A confirmed.**
+
+### cobalt_step (Pillar B — Signal Response Speed)
+
+Step load [400 → 1000 → 400 RPS]. At 1000 RPS, per-2s goodput after the 400→1000 transition:
+
+| Interval | adctl | rajomon |
+|---|---|---|
+| t+0–2s | 841 | 860 |
+| t+2–4s | **927** | **760** ← rajomon oscillation |
+| t+4–6s | 926 | 866 |
+| Avg first 10s | **901** | **844** |
+| Full 60s avg | **921.1** | **858.8** |
+
+adctl locks onto ~920 rps by the second interval. Rajomon dips to 760 rps at t+2-4s (overcorrection as price ramps) and takes the full first 10s to converge. Error deltas increase over time for rajomon (hunting, not converging), while adctl's are stable (81–229/interval). After the 1000→400 drop, both recover immediately. **Pillar B confirmed.**
+
+### cobalt_robust (Pillar C — Stability and Scheduling Dependency)
+
+| RPS | prio_local+adctl | prio_local+rajomon | fifo+adctl | fifo+rajomon |
+|-----|-----------------|-------------------|-----------|-------------|
+| 700 | 706.6 (1.009) | 703.5 (1.005) | 680.3 (0.972) | 676.8 (0.967) |
+| 800 | 800.5 (1.001) | 805.8 (1.007) | 683.7 (0.855) | 567.4 (0.709) |
+| 900 | 887.9 (0.988) | 883.8 (0.982) | 706.0 (0.784) | 392.2 (0.436) |
+| 1000 | **923.5 (0.923)** | **868.0 (0.868)** | **735.2 (0.735)** | **299.0 (0.299)** |
+
+Scheduling sensitivity (prio_local vs fifo) at 1000 RPS:
+- rajomon: +569.0 rps benefit from priority scheduling (66%)
+- adctl: +188.4 rps benefit from priority scheduling (20%)
+
+`fifo+rajomon` collapses to 29.9% goodput fraction at 1000 RPS while `fifo+adctl` holds 73.5%. Rajomon depends on priority scheduling as a second control layer to rescue late-admitted requests; adctl's ingress admission makes scheduling optional. **Pillar C confirmed.**
+
+---
+
+## Research Summary
+
+**Pillar A — Rejection Depth.** adctl and rajomon shed similar numbers of requests at 900 RPS, but the location of rejection differs sharply. adctl rejects 49.3% of its shedded requests at the ingress Root before dispatching any child RPC (260 of 527 ERs carry no `last_rpc`), whereas rajomon produces zero root-only rejections — every one of its 657 ERs was issued only after at least one downstream service had already been invoked. Counting dispatched child RPCs before each rejection, adctl averages 0.60 wasted child invocations per ER vs. 1.23 for rajomon — a **2.1× reduction in wasted compute per unit of load shedding**. This difference arises because adctl's admission decision is predictive (estimated compute cost + observed downstream utilization), while rajomon's token-price mechanism relies on observing the downstream queue state, available only after a child RPC completes.
+
+**Pillar B — Signal Response Speed.** Under a step load change from 400 to 1000 RPS, adctl reaches stable ~920 rps goodput by the second measurement interval (t = 2–4 s) and sustains it with consistent per-interval error counts. Rajomon oscillates — dropping to 760 rps at t = 2–4 s — and its error delta increases over the 60-second overload window (up to 578/interval), indicating the price signal continues to hunt rather than converge. Averaged across the first 10 seconds of overload, adctl delivers 901 rps vs. 844 rps for rajomon (6.8% higher); over the full 60-second window, 921.1 vs. 858.8 rps (7.3% higher). The faster admission signal translates into a sustained, not just transient, goodput advantage.
+
+**Pillar C — Stability and Scheduling Dependency.** With priority scheduling, adctl and rajomon are nearly equivalent at 700–900 RPS, with adctl's advantage growing to 55.5 rps only at 1000 RPS. The critical divergence is without priority scheduling: `fifo+rajomon` collapses from 676.8 rps at 700 RPS to 299.0 rps at 1000 RPS (goodput fraction 0.299), while `fifo+adctl` maintains 735.2 rps (fraction 0.735). Rajomon's scheduling dependence costs **491.6 rps at 900 RPS** (56% of its priority-scheduled goodput) vs. adctl's 181.9 rps (20%). Rajomon's price mechanism requires priority scheduling as a second control layer to enforce decisions made too late (post-child-dispatch); adctl's ingress admission control is self-sufficient, keeping overloaded requests out of the system entirely before any scheduling is needed.
