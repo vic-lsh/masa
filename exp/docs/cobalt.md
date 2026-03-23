@@ -73,3 +73,45 @@ The multiplicative excess formula causes price to jump from 0 → PRICE_CAP in a
 
 ### Experiment design
 Same call graph, SLO, and load as drift_14 (S_14677443, 200ms, 600–1000 RPS). All 4 policies run together so the adctl baselines serve as a live regression check. Named `cobalt_1`.
+
+### Actual Outcomes (cobalt_1)
+
+**Status:** Regression ❌
+
+| RPS | fifo,adctl | fifo,raj,early (d14→c1) | plocal,adctl | plocal,raj,early (d14→c1) |
+|-----|-----------|------------------------|-------------|--------------------------|
+| 600 | 594.0     | 599.8 → **261.8** (-56%) | 581.6 | 604.6 → **456.8** (-24%) |
+| 700 | 699.2     | 685.4 → **302.6** (-56%) | 690.4 | 713.2 → **459.3** (-36%) |
+| 800 | 702.9     | 599.4 → **328.2** (-45%) | 797.0 | 781.7 → **430.3** (-45%) |
+| 900 | 684.4     | 395.4 → **351.3** (-11%) | 890.4 | 726.2 → **405.6** (-44%) |
+| 1000| 745.3     | 311.1 → **382.3** (+23%) | 928.6 | 694.8 → **420.0** (-40%) |
+
+**What worked:**  The formula fix succeeded: time-based early returns dropped to 0 (vs 50–68% of requests at 900–1000 RPS in drift_14). Oscillation eliminated — goodput CV dropped from 23% → 5.8% at 900 RPS for fifo,rajomon. The additive step formula is correct and should be kept.
+
+**What failed:** LATENCY_THRESHOLD_US=2ms is below the services' baseline idle queue latency. The price mechanism fires even at 600 RPS (well below saturation), causing ~55–60% token rejection uniformly across all load levels. The system permanently believes it is overloaded.
+
+**Root cause:** The 2ms threshold, combined with Tokio's single-threaded scheduler, triggers on nearly every task scheduling cycle. The price converges to 42–60 (near PRICE_CAP) even at low load, starving most requests of tokens.
+
+**Decision:** Keep the formula fix (revert would bring back oscillation). Raise the threshold in Iteration 2.
+
+---
+
+## Iteration 2: Raise threshold to 20ms — find the right operating point (cobalt_2)
+
+**Status:** Pending
+
+### Change
+`LATENCY_THRESHOLD_US`: 2_000 → 20_000 (20ms). No other changes.
+
+### Hypothesis
+The 2ms threshold was below the services' idle queue latency, making the signal permanently active. The 40ms threshold in drift_14 was too high (only fires under extreme congestion, causing oscillation with the old multiplicative formula). With the fixed additive formula, 20ms should land in the sweet spot: above normal idle latency (avoids spurious triggers at low load), below the onset of true congestion (provides early warning before SLO misses). At this threshold, price should stay near 0 at 600–700 RPS and ramp up gracefully only when the system is genuinely overloaded.
+
+### Expected outcomes if hypothesis is correct
+1. fifo,rajomon,early goodput recovers to near 100% at 600–700 RPS (≥650 req/s)
+2. Price stays near 0 at low load, rises gradually at 800+ RPS
+3. Token rejections appear only at 800+ RPS (not at 600–700 RPS)
+4. prio_local,rajomon,early goodput returns to near drift_14 levels or better across all RPS
+5. No time-based early returns (formula fix preserved)
+
+### Experiment design
+Same config as cobalt_1. Named `cobalt_2`.
