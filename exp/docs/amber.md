@@ -50,3 +50,38 @@ The 20ms threshold was calibrated for mssim's simulated queue latencies. Hotel's
 
 ### Experiment design
 Dense RPS sweep [700, 800, 900, 1000, 1100, 1200] to characterize the saturation knee. Same 4 policies. Named `amber_2`.
+
+### Actual Outcomes (amber_2)
+
+**Status:** Partial improvement, token gate still inert ❌
+
+| Policy | 700 | 800 | 900 | 1000 | 1100 | 1200 | Peak |
+|---|---|---|---|---|---|---|---|
+| fifo,rajomon,early | 687 | 501 | 710 | **943** | 820 | **0** | 943 |
+| prio_oldest,early | 701 | 727 | 786 | 903 | **1004** | 874 | **1004** |
+| prio_local,early,adctl | 698 | 782 | 833 | 852 | 790 | 895 | 895 |
+| prio_oldest,early,adctl | 695 | 730 | 706 | 737 | 742 | 727 | 742 |
+
+Threshold fix improved fifo,rajomon,early at 800 (+95) and 1000 (+210 RPS) vs amber_1. But **total collapse at 1200 RPS (0 goodput) is unchanged**.
+
+**Root cause of collapse:** The token gate still never fires. Reservation's own_price rises to PRICE_CAP=60 (queue latency 154ms), but the client always bids near MAX_TOKEN=100. Since 100 > 60, the check `tokens < accumulated_price` never triggers. The **frontend** own_price stays 0 (its queue latency peaks at 4.6ms, just below the 5ms threshold). Without the frontend propagating a non-zero price to the loadgen, the loadgen's CLIENT_TOKEN_BUCKET is never depleted and bids remain near 100.
+
+---
+
+## Iteration 2: Lower threshold to 2ms — activate the frontend price signal (amber_3)
+
+**Status:** Pending
+
+### Change
+`LATENCY_THRESHOLD_US`: 5_000 → 2_000 (2ms). Only change — all other constants stay.
+
+### Hypothesis
+The frontend's queue latency peaks at 4.6ms. At a 2ms threshold, the frontend will start raising own_price during overload. This price propagates in response headers back to the loadgen, causing the loadgen's CLIENT_TOKEN_BUCKET to be depleted. Once the loadgen bids drop below PRICE_CAP, the token gate fires and actual admission control engages — preventing the 1200 RPS collapse.
+
+### Expected outcomes if hypothesis is correct
+1. fifo,rajomon,early goodput at 1200 RPS > 0 (token gate sheds excess load before e2e deadline)
+2. Some token rejections appear (not all losses are time-based ER)
+3. Non-monotone goodput curve (943 at 1000, then graceful decline) instead of cliff
+
+### Experiment design
+Same RPS [700, 800, 900, 1000, 1100, 1200]. Named `amber_3`.
