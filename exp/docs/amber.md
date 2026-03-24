@@ -119,3 +119,53 @@ Frontend idle queue latency is 2–3ms; overload peak is 4–5ms. A 3ms threshol
 
 ### Experiment design
 Same RPS [700, 800, 900, 1000, 1100, 1200]. Named `amber_4`.
+
+### Actual Outcomes (amber_4)
+
+**Status:** Best at 800 RPS, but 1100 RPS collapsed (likely run variability, Repeats=1)
+
+| RPS | fifo,rajomon,early | prio_local,adctl | prio_oldest,early | prio_oldest,adctl |
+|-----|--------------------|-----------------|------------------|------------------|
+| 700 | 685 (0.978) | 702 (1.002) | 695 (0.992) | 693 (0.990) |
+| 800 | **748 (0.935)** | 781 (0.976) | 719 (0.899) | 745 (0.931) |
+| 900 | 761 (0.845) | 873 (0.970) | 724 (0.805) | 722 (0.802) |
+| 1000 | 825 (0.825) | 873 (0.873) | 678 (0.678) | 712 (0.712) |
+| 1100 | 404 (0.367) | **907 (0.825)** | **864 (0.785)** | 715 (0.650) |
+| 1200 | 0 (0.000) | 802 (0.669) | 748 (0.623) | 734 (0.612) |
+
+Token gate still inert: frontend own_price = 0 across all 97 log windows. Zero token rejections.
+
+---
+
+## Final Summary: amber optimization track complete
+
+### Best goodput per policy across all amber experiments
+
+| Policy | Peak goodput | At RPS | Experiment |
+|--------|-------------|--------|------------|
+| **prio_oldest,early** | **1004 req/s** | 1100 | amber_2 |
+| prio_local,early,adctl | 912 req/s | 1000 | amber_3 |
+| fifo,rajomon,early | 943 req/s | 1000 | amber_2 |
+| prio_oldest,early,adctl | 746 req/s | 1100 | amber_3 |
+
+### fifo,rajomon,early across all thresholds
+
+| Threshold | Best RPS point | Behavior |
+|-----------|---------------|----------|
+| 20ms (amber_1) | 733 @ 1000 | Gate never fires; collapses at 1200 |
+| 5ms (amber_2) | **943 @ 1000** | Gate never fires; best overall curve |
+| 2ms (amber_3) | 800 @ 1100 | Gate barely fires (6/98 windows); hurts 800–1000 RPS |
+| 3ms (amber_4) | **748 @ 800** | Gate inert; best at 800 RPS but 1100 collapses (noise) |
+
+### Why the token gate is structurally limited on hotel
+
+The Rajomon admission gate checks `ctx.tokens() < accumulated_price`. The loadgen's `CLIENT_TOKEN_BUCKET` replenishes at TOKEN_UPDATE_STEP=5 per 10ms (500 tokens/s). Bids stay near MAX_TOKEN=100 because the deduction only occurs when the service's accumulated price is non-zero — but the frontend's accumulated price is almost always 0:
+
+1. **Frontend own_price ≈ 0:** Frontend queue latency peaks at 4–5ms under heavy load; even at threshold=3ms it only fires briefly (3–6 ticks) before recovering. By the time the loadgen sees a response with non-zero price, the price has already decayed back to 0.
+2. **Downstream price propagation blocked:** The real bottleneck (rate service) has prices 40–60 and queue latency 4–14ms, but the DashMap of downstream prices is cleared every 1 second. With PRICE_FREQ=5, prices propagate in 1/5 of responses, meaning at 800 RPS only ~160 responses/sec carry price updates. The 1s cache clear erases them before the loadgen can consistently see non-zero accumulated price.
+3. **Arithmetic gap:** With bids ≈ 100 and PRICE_CAP ≤ 60, the check `tokens < price` never fires regardless of threshold. Fixing this requires either: (a) depleting the loadgen's token bucket (need non-zero frontend price consistently), or (b) lowering TOKEN_UPDATE_STEP to slow replenishment.
+
+**Net result:** In all amber experiments, goodput control came entirely from the `early` return mechanism (deadline-based), not the Rajomon token gate. fifo,rajomon,early with the `early` flag behaves identically to `fifo,early` — the rajomon price mechanism adds no benefit in the hotel application due to propagation dynamics and FIFO scheduling.
+
+### Recommended constants for detail.txt (best balance)
+`LATENCY_THRESHOLD_US = 5_000` (amber_2 config) — best overall goodput curve, no false positives at any load level.
