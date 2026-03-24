@@ -20,7 +20,7 @@ use std::time::Duration;
 #[cfg(feature = "rajomon")]
 const PRICE_UPDATE_RATE_MS: u64 = 10; // original: priceUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const LATENCY_THRESHOLD_US: u64 = 5_000; // 5ms — calibrated for hotel's real microservice queue latencies (idle: 1–2ms)
+const LATENCY_THRESHOLD_US: u64 = 2_000; // 2ms — activates at hotel frontend queue latency onset (idle: 1–2ms, peaks: 4–5ms under load)
 
 // Price update (step strategy)
 // Asymmetric up/down: fast rise provides quick back-pressure; faster recovery
