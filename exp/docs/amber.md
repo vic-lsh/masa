@@ -85,3 +85,37 @@ The frontend's queue latency peaks at 4.6ms. At a 2ms threshold, the frontend wi
 
 ### Experiment design
 Same RPS [700, 800, 900, 1000, 1100, 1200]. Named `amber_3`.
+
+### Actual Outcomes (amber_3)
+
+**Status:** Regression ❌ — 2ms threshold too low, fires at idle baseline (frontend ql 2–3ms normal)
+
+| RPS | fifo,rajomon,early | prio_local,adctl | prio_oldest,early | prio_oldest,adctl |
+|-----|--------------------|-----------------|------------------|------------------|
+| 700 | 0.967 | 0.998 | 0.993 | 0.967 |
+| 800 | **0.485** | 0.940 | 0.904 | 0.921 |
+| 900 | 0.485 | 0.960 | 0.878 | 0.782 |
+| 1000 | 0.653 | **0.912** | **0.917** | 0.731 |
+| 1100 | 0.727 | 0.759 | 0.539 | 0.678 |
+| 1200 | **0.055** | 0.716 | 0.669 | 0.575 |
+
+Amber_2 was better at 800–1000 RPS by 113–290 req/s. 1200 RPS improved slightly (66 vs 0) but still catastrophic.
+
+**Root cause:** Frontend queue latency sits at 2–3ms even at moderate load (not overloaded). At 2ms threshold, prices flicker on unnecessarily at 800–900 RPS. The token gate did technically activate (6/98 frontend price readings were non-zero, max=12), but too weakly to help at 1200 RPS — 79 token rejections vs 71,882 total requests. The real bottleneck is the rate service (prices 40–60, ql 4–14ms), but its price signals don't propagate effectively upstream.
+
+**Decision:** Revert to amber_2 approach but find the precise threshold that's above the 2–3ms idle baseline but below the 4–5ms overload peak. Try 3ms.
+
+---
+
+## Iteration 3: Threshold 3ms — between idle baseline and overload onset (amber_4)
+
+**Status:** Pending
+
+### Change
+`LATENCY_THRESHOLD_US`: 2_000 → 3_000 (3ms).
+
+### Hypothesis
+Frontend idle queue latency is 2–3ms; overload peak is 4–5ms. A 3ms threshold sits at the knee — stays silent during moderate load, activates only when the system is genuinely congested. This should recover amber_2's 800–1000 RPS goodput while still engaging the price mechanism at 1100–1200 RPS.
+
+### Experiment design
+Same RPS [700, 800, 900, 1000, 1100, 1200]. Named `amber_4`.
