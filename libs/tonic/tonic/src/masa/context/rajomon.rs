@@ -20,21 +20,19 @@ use std::time::Duration;
 #[cfg(feature = "rajomon")]
 const PRICE_UPDATE_RATE_MS: u64 = 10; // original: priceUpdateRate (10ms)
 #[cfg(feature = "rajomon")]
-const LATENCY_THRESHOLD_US: u64 = 20_000; // 20ms — triggers price increase when queue latency exceeds 20ms
+const LATENCY_THRESHOLD_US: u64 = 5_000; // 5ms — calibrated for hotel's real microservice queue latencies (idle: 1–2ms)
 
 // Price update (step strategy)
 // Asymmetric up/down: fast rise provides quick back-pressure; faster recovery
 // than drift_3 (down=2 vs down=1) reduces the lockout duration and improves
 // the equilibrium stability point from K=11% to K=20% congested ticks.
 #[cfg(feature = "rajomon")]
-const PRICE_STEP_UP: u64 = 4; // additive step up per tick: ramps to PRICE_CAP in ~150ms (15 ticks × 10ms)
+const PRICE_STEP_UP: u64 = 8; // additive step up per tick: ramps to PRICE_CAP in ~75ms (8 ticks × 10ms)
 #[cfg(feature = "rajomon")]
 const PRICE_STEP_DOWN: u64 = 2; // additive step down per tick: recovers to 0 in ~300ms from PRICE_CAP
-/// Price ceiling at 40% of MAX_TOKEN. Limits worst-case rejection to 60% of requests,
-/// maintaining a minimum 60% admission floor even under peak overload. Lower than
-/// the 60% cap avoids oscillation between total lockout and full admission.
+/// Price ceiling at 60% of MAX_TOKEN (60). Allows shedding up to 60% of requests to protect SLO under heavy overload.
 #[cfg(feature = "rajomon")]
-const PRICE_CAP: u64 = MAX_TOKEN * 4 / 10; // 40 with MAX_TOKEN=100
+const PRICE_CAP: u64 = MAX_TOKEN * 6 / 10; // 60 with MAX_TOKEN=100
 #[cfg(feature = "rajomon")]
 const INIT_PRICE: u64 = 0; // original: initprice (0)
 
