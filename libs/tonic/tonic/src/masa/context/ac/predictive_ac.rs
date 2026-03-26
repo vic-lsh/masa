@@ -1,8 +1,9 @@
 // Zero-cost wrapper for est-based admission control.
 //
 // When `ac_est` is enabled, PredictiveAc holds an AdmissionController and
-// reads estimation maps from EstServerState to make admission decisions.
-// When disabled, all methods are no-ops that compile away entirely.
+// reads estimation maps from EstServerState to make admission decisions
+// (floor-based feasibility, compute-time feasibility, efficiency-based).
+// When disabled, only the floor-based deadline feasibility check runs.
 //
 // Dependency direction: this module reads from `est/state` (estimation maps).
 // The estimation module has no knowledge of admission control.
@@ -59,7 +60,17 @@ impl PredictiveAc {
 
         let time_left = ctx.e2e_deadline().saturating_sub(time_now());
 
-        // Layer 1: compute-time feasibility (every hop)
+        // Layer 1: floor-based deadline feasibility
+        let est_remaining_floor = est_server
+            .est_after_child_latency
+            .get_mean_floor_estimate(key)
+            .unwrap_or(0)
+            .min(time_left);
+        if time_now() > ctx.e2e_deadline().saturating_sub(est_remaining_floor) {
+            return true;
+        }
+
+        // Layer 2: compute-time feasibility (every hop)
         let est_compute_rem = est_server
             .est_compute_latency
             .get_estimate(resolved_method_id)
@@ -68,7 +79,7 @@ impl PredictiveAc {
             return true; // infeasible → shed
         }
 
-        // Layer 2: efficiency-based admission (ingress only)
+        // Layer 3: efficiency-based admission (ingress only)
         if ctx.hop_count() == 0 {
             let est_total_mean = est_server
                 .est_after_child_latency
@@ -109,15 +120,30 @@ impl PredictiveAc {
         Self
     }
 
+    /// Floor-based deadline feasibility check using latency estimates.
+    ///
+    /// When `ac_est` is disabled, this is the only admission check that runs.
     #[inline]
     pub(crate) fn admission_check(
         &self,
-        _est_server: &EstServerState<DefaultLatencyEstimator>,
+        est_server: &EstServerState<DefaultLatencyEstimator>,
         _resolved_method_id: u64,
-        _ctx: &Context,
-        _key: u64,
+        ctx: &Context,
+        key: u64,
     ) -> bool {
-        false
+        use masa_core::{time_now, SLO_ABORT};
+
+        if !SLO_ABORT {
+            return false;
+        }
+
+        let time_left = ctx.e2e_deadline().saturating_sub(time_now());
+        let est_remaining_floor = est_server
+            .est_after_child_latency
+            .get_mean_floor_estimate(key)
+            .unwrap_or(0)
+            .min(time_left);
+        time_now() > ctx.e2e_deadline().saturating_sub(est_remaining_floor)
     }
 
     #[inline]

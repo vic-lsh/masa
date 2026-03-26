@@ -116,8 +116,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         let est_remaining = {
             let result = self
                 .est
-                .prepare_before_child_rpc(&self.base.ctx, &child_method_name, &mut child_ctx.est)
-                .map_err(|_| self.base.slo_abort.issue_error())?;
+                .prepare_before_child_rpc(&self.base.ctx, &child_method_name, &mut child_ctx.est);
 
             if self.ac_est.admission_check(
                 &self.est.server,
