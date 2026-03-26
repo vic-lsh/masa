@@ -28,44 +28,31 @@ where
         Self::default()
     }
 
-    pub(crate) fn get_estimate(&self, key: u64) -> Option<u64> {
+    /// Get an estimate using the given extraction function, inserting a default entry if missing.
+    fn get_estimate_with(&self, key: u64, extract: impl FnOnce(&E) -> u64) -> Option<u64> {
         let mut m = self.inner.lock().unwrap();
         if let Some(estimator) = m.get(&key) {
             if estimator.can_estimate() {
-                return Some(estimator.estimate());
+                return Some(extract(estimator));
             }
-            // Found but cannot estimate yet
         } else {
-            // Not found, insert default
             m.insert(key, E::default());
         }
         None
+    }
+
+    pub(crate) fn get_estimate(&self, key: u64) -> Option<u64> {
+        self.get_estimate_with(key, E::estimate)
     }
 
     /// Returns the mean-only estimate (k=0), used for conservative early-return thresholds.
     pub(crate) fn get_mean_estimate(&self, key: u64) -> Option<u64> {
-        let mut m = self.inner.lock().unwrap();
-        if let Some(estimator) = m.get(&key) {
-            if estimator.can_estimate() {
-                return Some(estimator.mean_estimate());
-            }
-        } else {
-            m.insert(key, E::default());
-        }
-        None
+        self.get_estimate_with(key, E::mean_estimate)
     }
 
     /// Returns the floor estimate, used for ER thresholds that are robust to mean inflation.
     pub(crate) fn get_mean_floor_estimate(&self, key: u64) -> Option<u64> {
-        let mut m = self.inner.lock().unwrap();
-        if let Some(estimator) = m.get(&key) {
-            if estimator.can_estimate() {
-                return Some(estimator.mean_floor_estimate());
-            }
-        } else {
-            m.insert(key, E::default());
-        }
-        None
+        self.get_estimate_with(key, E::mean_floor_estimate)
     }
 
     pub(crate) fn track(&self, key: u64, duration: u64) {
@@ -97,10 +84,13 @@ where
     }
 }
 
-/// Spawns a background task to periodically print latency estimates keyed by parent→child pair.
-pub(crate) fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
+/// Spawns a background task to periodically log latency estimates.
+///
+/// `format_entry` converts a (key, estimate) pair into a display string.
+fn spawn_stats_printer_impl<E: LatencyEstimator + Default + 'static>(
     distributions: Arc<LatencyMap<E>>,
     label: &'static str,
+    format_entry: fn(u64, u64) -> String,
 ) {
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         handle.spawn(async move {
@@ -115,23 +105,7 @@ pub(crate) fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
                 let mut parts = Vec::new();
                 distributions.for_each(|key, distribution| {
                     if distribution.can_estimate() {
-                        let estimate = distribution.estimate();
-
-                        // Decode key
-                        let parent_id = key >> 32;
-                        let child_id = key & 0xFFFFFFFF;
-
-                        let registry = MethodRegistry::global();
-                        let p_name = registry
-                            .get_method_name(parent_id)
-                            .map(|(s, m)| format!("{}::{}", s, m))
-                            .unwrap_or_else(|| format!("{}", parent_id));
-                        let c_name = registry
-                            .get_method_name(child_id)
-                            .map(|(s, m)| format!("{}::{}", s, m))
-                            .unwrap_or_else(|| format!("{}", child_id));
-
-                        parts.push(format!("{}=>{}: {} us", p_name, c_name, estimate));
+                        parts.push(format_entry(key, distribution.estimate()));
                     } else {
                         parts.push(format!("{}: (no estimate)", key));
                     }
@@ -142,39 +116,33 @@ pub(crate) fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
     }
 }
 
+fn format_method_name(id: u64) -> String {
+    MethodRegistry::global()
+        .get_method_name(id)
+        .map(|(s, m)| format!("{}::{}", s, m))
+        .unwrap_or_else(|| format!("{}", id))
+}
+
+/// Spawns a background task to periodically print latency estimates keyed by parent->child pair.
+pub(crate) fn spawn_stats_printer<E: LatencyEstimator + Default + 'static>(
+    distributions: Arc<LatencyMap<E>>,
+    label: &'static str,
+) {
+    spawn_stats_printer_impl(distributions, label, |key, estimate| {
+        let p_name = format_method_name(key >> 32);
+        let c_name = format_method_name(key & 0xFFFFFFFF);
+        format!("{}=>{}: {} us", p_name, c_name, estimate)
+    });
+}
+
 /// Spawns a background task to periodically print latency estimates keyed by method ID only.
 pub(crate) fn spawn_method_stats_printer<E: LatencyEstimator + Default + 'static>(
     distributions: Arc<LatencyMap<E>>,
     label: &'static str,
 ) {
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        handle.spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(5));
-            loop {
-                interval.tick().await;
-
-                if distributions.is_empty() {
-                    continue;
-                }
-
-                let mut parts = Vec::new();
-                distributions.for_each(|key, distribution| {
-                    if distribution.can_estimate() {
-                        let estimate = distribution.estimate();
-                        let registry = MethodRegistry::global();
-                        let name = registry
-                            .get_method_name(key)
-                            .map(|(s, m)| format!("{}::{}", s, m))
-                            .unwrap_or_else(|| format!("{}", key));
-                        parts.push(format!("{}: {} us", name, estimate));
-                    } else {
-                        parts.push(format!("{}: (no estimate)", key));
-                    }
-                });
-                log::info!("{}: {}", label, parts.join(", "));
-            }
-        });
-    }
+    spawn_stats_printer_impl(distributions, label, |key, estimate| {
+        format!("{}: {} us", format_method_name(key), estimate)
+    });
 }
 
 #[cfg(test)]

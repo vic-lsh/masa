@@ -32,9 +32,9 @@ impl BaseHookState {
 
         Self {
             ctx,
-            resolved_method: resolved_method.clone(),
+            slo_abort: SloAbortHandler::new(resolved_method.clone()),
             q_lat_tracker: QueueLatencyTracker::new(),
-            slo_abort: SloAbortHandler::new(resolved_method),
+            resolved_method,
             ac,
         }
     }
