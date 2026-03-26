@@ -15,6 +15,7 @@ tailclipper = ["sched_prio", "masa-core/tailclipper", "tokio/tailclipper", "toni
 sched_fifo  = ["masa-core/sched_fifo",  "tokio/sched_fifo",  "tonic/sched_fifo"]
 
 slo_abort = ["masa-core/slo_abort", "tonic/slo_abort"]
+est = ["masa-core/est", "tonic/est"]
 est_abort = ["masa-core/est_abort", "tonic/est_abort"]
 
 est_rms = ["tonic/est_rms"]
