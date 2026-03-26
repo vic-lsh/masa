@@ -80,7 +80,7 @@ Key policy flags:
 - `ac_est`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Requires `slo_abort`. Works with scheduling policies (`sched_fifo`, `sched_prio`, `sched_prio,est_abort`).
 - `ac_rajomon`: Token-bucket rate limiting admission control.
 
-`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_fifo,slo_abort,ac_est`, `sched_prio`, `sched_prio,slo_abort`, `sched_prio,slo_abort,ac_est`, `sched_prio,tailclipper,slo_abort`, `sched_prio,est_abort`, `sched_prio,est_abort,ac_est,est_mean_var`.
+`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_prio`, `sched_prio,tailclipper,slo_abort`, `sched_prio,ac_rajomon`, `sched_prio,est_abort,ac_est,est_mean_var`.
 
 ## Architecture
 
