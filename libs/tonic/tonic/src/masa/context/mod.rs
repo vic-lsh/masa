@@ -9,7 +9,6 @@ mod base;
 mod common;
 #[cfg(feature = "est")]
 pub(crate) mod est;
-#[cfg(feature = "est_abort")]
 mod est_abort;
 mod noop;
 mod standard;
@@ -23,16 +22,9 @@ pub use tls::{client, server};
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = noop::NoopMasaHooks;
 
-#[cfg(any(
-    all(feature = "sched_fifo", not(feature = "sched_prio")),
-    all(feature = "sched_prio", not(feature = "est_abort")),
-))]
+#[cfg(any(feature = "sched_fifo", feature = "sched_prio"))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = standard::StandardHooks;
-
-#[cfg(all(feature = "sched_prio", feature = "est_abort"))]
-#[allow(missing_docs)]
-pub type DefaultMasaHooks = est_abort::EstAbort;
 
 // TODO: add notes on trait bounds
 /// Trait for specifying the set of hooks to apply in a Masa build.
