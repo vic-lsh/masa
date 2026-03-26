@@ -1,0 +1,18 @@
+[package]
+name = "tonic-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core types for tonic gRPC — Request, Response, Status, metadata, and hook traits."
+
+[dependencies]
+base64 = "0.21"
+bytes = "1.0"
+http = "0.2"
+http-body = "0.4.4"
+tracing = "0.1"
+percent-encoding = "2.1"
+pin-project = "1.0.11"
+tokio-stream = { path = "../../tokio/tokio-stream" }
+
+[features]
+default = []

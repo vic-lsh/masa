@@ -7,7 +7,7 @@
 // implementation of `AcHandler` for `BaseHookState` — EST admission
 // decisions happen at the estimation layer, not the base hook layer.
 
-use tonic::CowGrpcMethod;
+use tonic_core::CowGrpcMethod;
 
 use super::AcHandler;
 

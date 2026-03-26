@@ -68,7 +68,8 @@ impl<T> Response<T> {
         }
     }
 
-    pub(crate) fn from_http(res: http::Response<T>) -> Self {
+    #[doc(hidden)]
+    pub fn from_http(res: http::Response<T>) -> Self {
         let (head, message) = res.into_parts();
         Response {
             metadata: MetadataMap::from_headers(head.headers),
@@ -77,7 +78,8 @@ impl<T> Response<T> {
         }
     }
 
-    pub(crate) fn into_http(self) -> http::Response<T> {
+    #[doc(hidden)]
+    pub fn into_http(self) -> http::Response<T> {
         let mut res = http::Response::new(self.message);
 
         *res.version_mut() = http::Version::HTTP_2;
@@ -108,21 +110,6 @@ impl<T> Response<T> {
     /// Returns a mutable reference to the associated extensions.
     pub fn extensions_mut(&mut self) -> &mut Extensions {
         &mut self.extensions
-    }
-
-    /// Disable compression of the response body.
-    ///
-    /// This disables compression of the body of this response, even if compression is enabled on
-    /// the server.
-    ///
-    /// **Note**: This only has effect on responses to unary requests and responses to client to
-    /// server streams. Response streams (server to client stream and bidirectional streams) will
-    /// still be compressed according to the configuration of the server.
-    #[cfg(feature = "gzip")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "gzip")))]
-    pub fn disable_compression(&mut self) {
-        self.extensions_mut()
-            .insert(crate::codec::compression::SingleMessageCompressionOverride::Disable);
     }
 }
 

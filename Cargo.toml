@@ -1,6 +1,7 @@
 [workspace]
 members = [
   # tonic
+  "libs/tonic/tonic-core",
   "libs/tonic/tonic",
   "libs/tonic/tonic-build",
   "libs/tonic/tonic-health",

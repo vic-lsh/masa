@@ -2284,6 +2284,7 @@ dependencies = [
  "listenfd",
  "log",
  "masa",
+ "masa-policy",
  "memcache",
  "mongodb",
  "prost",
@@ -3002,6 +3003,7 @@ dependencies = [
  "criterion",
  "hdrhistogram",
  "masa",
+ "masa-policy",
  "prost",
  "serde",
  "serde_json",
@@ -3049,7 +3051,7 @@ dependencies = [
  "rand 0.8.5",
  "rand_distr 0.4.3",
  "tokio",
- "tonic",
+ "tonic-core",
 ]
 
 [[package]]
@@ -5070,6 +5072,7 @@ dependencies = [
  "lapin",
  "log",
  "masa",
+ "masa-policy",
  "mongodb",
  "once_cell",
  "opentelemetry",
@@ -5332,6 +5335,7 @@ dependencies = [
  "listenfd",
  "log",
  "masa",
+ "masa-policy",
  "memcache",
  "mongodb",
  "prost",
@@ -5769,6 +5773,7 @@ dependencies = [
  "hyper-timeout",
  "log",
  "masa-core",
+ "masa-policy",
  "once_cell",
  "percent-encoding",
  "pin-project",
@@ -5786,6 +5791,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.4",
  "tokio-stream",
+ "tonic-core",
  "tower",
  "tower-layer",
  "tower-service",
@@ -5805,6 +5811,20 @@ dependencies = [
  "quote",
  "syn 2.0.114",
  "tonic",
+]
+
+[[package]]
+name = "tonic-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "bytes",
+ "http",
+ "http-body",
+ "percent-encoding",
+ "pin-project",
+ "tokio-stream",
+ "tracing",
 ]
 
 [[package]]

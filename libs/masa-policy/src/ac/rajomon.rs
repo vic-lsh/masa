@@ -4,12 +4,12 @@
 // price signals and client-side token bucket rate limiting. Aligned with
 // the original Go implementation (3rd_party/rajomon/).
 
-use tonic::{CowGrpcMethod, Response, Status};
 use dashmap::DashMap;
 use masa_core::Context;
 use once_cell::sync::Lazy;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
+use tonic_core::{CowGrpcMethod, Response, Status};
 
 use super::AcHandler;
 
@@ -301,7 +301,7 @@ impl AcHandler for RajomonHandler {
     fn on_child_response(
         &self,
         child_method: &CowGrpcMethod,
-        metadata: &tonic::metadata::MetadataMap,
+        metadata: &tonic_core::metadata::MetadataMap,
     ) {
         if let Some(price_header) = metadata.get("x-masa-rajomon-price") {
             if let Ok(price_str) = price_header.to_str() {
@@ -333,7 +333,7 @@ impl AcHandler for RajomonHandler {
         }
         // Minimum effective price is 1 (baseline cost), matching the admission gate.
         let price = RAJOMON_STATE.accumulated_price(&self.rpc).max(1);
-        if let Ok(value) = tonic::metadata::MetadataValue::try_from(price.to_string()) {
+        if let Ok(value) = tonic_core::metadata::MetadataValue::try_from(price.to_string()) {
             match result {
                 Ok(resp) => {
                     resp.metadata_mut().insert("x-masa-rajomon-price", value);

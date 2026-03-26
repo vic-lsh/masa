@@ -9,6 +9,7 @@ use std::{
 
 use app_utils::load_gen::TraceRecord;
 use masa::{time_now, ContextBuilder as MasaContextBuilder};
+use masa_policy::MasaRequestExt;
 use rand_distr::{Distribution, Exp};
 use serde::Deserialize;
 use serde_json;
@@ -18,7 +19,6 @@ use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::task::JoinSet;
 use tokio::time::{Instant, MissedTickBehavior};
 use tokio::{fs, time};
-use tonic::masa::MasaRequestExt;
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::Request;
 use tracing_subscriber::layer::SubscriberExt;
