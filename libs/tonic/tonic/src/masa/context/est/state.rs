@@ -90,10 +90,6 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         }
     }
 
-    /// Floor-based SLO abort check using estimation data.
-    ///
-    /// Returns true if the request should be shed based on the floor estimate
-    /// of remaining work exceeding the available time budget.
     /// Track latency observations for completed request.
     pub(crate) fn track_latencies(&self) {
         let parent_end = Instant::now();
