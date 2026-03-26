@@ -5,11 +5,11 @@ use crate::service_stubs::span::Kind;
 use crate::service_stubs::{ChildSpans, LocalSpan, ReplayRequest};
 use crate::RpcClient;
 use masa::ContextBuilder as MasaContextBuilder;
+use masa_policy::MasaRequestExt;
 use sim_config::svc::ServiceName;
 use std::collections::HashMap;
 use tokio::sync::RwLockReadGuard;
 use tokio::time::{sleep, Duration};
-use tonic::masa::MasaRequestExt;
 use tonic::{Request, Status};
 use tracing::warn;
 

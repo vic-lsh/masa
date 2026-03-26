@@ -95,10 +95,38 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![feature(trait_alias)]
 
-pub mod body;
+// Re-export core types from tonic-core so that `tonic::Request`, `tonic::Status`, etc.
+// resolve to the same types used by masa-policy.
+pub use tonic_core::body;
+pub use tonic_core::http;
+pub use tonic_core::metadata;
+pub use tonic_core::Response;
+pub use tonic_core::{Code, Status};
+pub use tonic_core::{CowGrpcMethod, Extensions, GrpcMethod};
+pub use tonic_core::{IntoRequest, IntoStreamingRequest, Request};
+
+// Re-export internal modules from tonic-core so that `crate::status::*`,
+// `crate::extensions::*` etc. still resolve for tonic's own code.
+#[doc(hidden)]
+pub mod request {
+    pub use tonic_core::request::*;
+}
+#[doc(hidden)]
+pub mod status {
+    pub use tonic_core::status::*;
+}
+#[doc(hidden)]
+pub mod extensions {
+    pub use tonic_core::extensions::*;
+}
+#[doc(hidden)]
+pub mod response {
+    pub use tonic_core::response::*;
+}
+
+// Tonic's own modules (codecs, transport, client, server, services).
 pub mod client;
 pub mod codec;
-pub mod metadata;
 pub mod server;
 pub mod service;
 
@@ -106,13 +134,15 @@ pub mod service;
 #[cfg_attr(docsrs, doc(cfg(feature = "transport")))]
 pub mod transport;
 
-mod extensions;
+mod request_ext;
+#[cfg(feature = "transport")]
+pub use request_ext::RequestExt;
+mod response_ext;
+#[cfg(feature = "gzip")]
+pub use response_ext::ResponseExt;
 mod macros;
 /// Masa-related modules.
 pub mod masa;
-mod request;
-mod response;
-mod status;
 pub mod util;
 
 /// A re-export of [`async-trait`](https://docs.rs/async-trait) for use with codegen.
@@ -122,12 +152,6 @@ pub use async_trait::async_trait;
 
 #[doc(inline)]
 pub use codec::Streaming;
-pub use extensions::{CowGrpcMethod, Extensions, GrpcMethod};
-pub use request::{IntoRequest, IntoStreamingRequest, Request};
-pub use response::Response;
-pub use status::{Code, Status};
-
-pub use http;
 
 pub(crate) type Error = Box<dyn std::error::Error + Send + Sync>;
 

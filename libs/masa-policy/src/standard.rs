@@ -1,15 +1,16 @@
-use tonic::{CowGrpcMethod, GrpcMethod, Request, Status};
 use std::sync::Arc;
 use std::task::Poll;
+use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Status};
 
-use tonic::masa::context::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use crate::ac::AcHandler;
 use crate::base::BaseHookState;
+use crate::context_ext::MasaRequestExt;
 #[cfg(feature = "est")]
 use crate::pred_sched::PredictiveSchedPolicy;
-use tonic::masa::context::{resolve_method_name_from_request, MasaRequestExt};
-use tonic::Response;
 use masa_core::ContextBuilder;
+use tonic_core::masa::context::resolve_method_name_from_request;
+use tonic_core::masa::context::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
+use tonic_core::Response;
 
 #[cfg(feature = "est")]
 use crate::ac::predictive_ac::PredictiveAc;
@@ -236,14 +237,15 @@ mod tests {
 
     #[cfg(feature = "est")]
     mod est_tests {
+        use super::super::{ChildContext, ParentContext, ServerContext};
+        use crate::context_ext::MASA_CONTEXT_HEADER;
         use crate::est::estimator::ParentToChildId;
         use crate::est::state::EstServerState;
-        use tonic::masa::context::{resolve_method_name_from_http, MASA_CONTEXT_HEADER};
-        use super::super::{ChildContext, ParentContext, ServerContext};
-        use tonic::masa::context::{ClientHooks, ParentHooks, ServerHooks};
-        use tonic::{GrpcMethod, Request, Response};
         use masa_core::{ContextBuilder, LatencyRms};
         use std::sync::Arc;
+        use tonic_core::masa::context::resolve_method_name_from_http;
+        use tonic_core::masa::context::{ClientHooks, ParentHooks, ServerHooks};
+        use tonic_core::{GrpcMethod, Request, Response};
 
         #[test]
         fn test_server_context_rms_integration() {
@@ -289,8 +291,10 @@ mod tests {
 
         #[test]
         fn test_resolve_method_name_from_http_with_overrides() {
-            use tonic::masa::context::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
             use http::HeaderValue;
+            use tonic_core::masa::context::{
+                METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
+            };
 
             let method = GrpcMethod::new("TestService", "TestMethod");
             let mut req = http::Request::new(());
@@ -321,11 +325,11 @@ mod tests {
 
         #[test]
         fn test_resolve_method_name_from_request_with_overrides() {
-            use tonic::masa::context::{
+            use tonic_core::masa::context::{
                 resolve_method_name_from_request, METHOD_NAME_OVERRIDE_HEADER,
                 SERVICE_NAME_OVERRIDE_HEADER,
             };
-            use tonic::metadata::MetadataValue;
+            use tonic_core::metadata::MetadataValue;
 
             let method = GrpcMethod::new("TestService", "TestMethod");
             let mut req = Request::new(());

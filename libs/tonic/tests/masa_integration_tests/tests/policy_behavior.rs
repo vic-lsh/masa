@@ -47,9 +47,7 @@ async fn queue_latency_metadata_is_attached() {
     let server = tokio::spawn(async move {
         Server::builder()
             .add_service(
-                ChildServiceServer::<_, masa_policy::StandardHooks>::with_custom_context(
-                    QueueSvc,
-                ),
+                ChildServiceServer::<_, masa_policy::StandardHooks>::with_custom_context(QueueSvc),
             )
             .serve_with_masa(addr)
             .await

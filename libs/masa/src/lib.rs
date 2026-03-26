@@ -11,13 +11,10 @@ static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
 
 /// The default MasaHooks implementation, selected at compile time.
 ///
-/// - When no scheduling features are enabled: `NoopMasaHooks` (zero overhead).
-/// - When any scheduling feature is enabled: `StandardHooks` from `masa-policy`.
-#[cfg(not(any(feature = "sched_fifo", feature = "sched_slo", feature = "sched_tailclipper")))]
-pub type DefaultMasaHooks = tonic::masa::noop::NoopMasaHooks;
-
-#[cfg(any(feature = "sched_fifo", feature = "sched_slo", feature = "sched_tailclipper"))]
-pub type DefaultMasaHooks = masa_policy::StandardHooks;
+/// This is a convenience re-export of `tonic::masa::DefaultMasaHooks`, which
+/// resolves to `NoopMasaHooks` (zero overhead) when no scheduling features
+/// are enabled, or `masa_policy::StandardHooks` when any scheduling feature is on.
+pub use tonic::masa::DefaultMasaHooks;
 
 /// Utility function to create a Masa Context.
 ///
@@ -66,6 +63,7 @@ pub fn try_create_context(api: &str, slo: std::time::Duration) -> Option<Context
 
 /// Utility function to create and attach a Masa Context to a Request.
 pub fn attach_context<T>(req: &mut tonic::Request<T>, api: &str, slo: Duration) {
+    use masa_policy::context_ext::MasaRequestExt;
     let ctx = create_context(api, slo);
-    req.metadata_mut().insert_ctx("ctx", &ctx);
+    req.set_masa_context(&ctx);
 }

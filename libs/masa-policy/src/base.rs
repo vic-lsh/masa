@@ -5,8 +5,9 @@
 // latency tracking, and context propagation. Policy-specific logic
 // (e.g., pred_sched's reprioritization) lives in the policy files.
 
-use tonic::{CowGrpcMethod, GrpcMethod, Response, Status};
-use tonic::masa::context::{read_context, resolve_method_name_from_http};
+use crate::context_ext::read_context;
+use tonic_core::masa::context::resolve_method_name_from_http;
+use tonic_core::{CowGrpcMethod, GrpcMethod, Response, Status};
 
 use crate::ac::{AcHandler, ActiveAcHandler};
 use crate::common::{QueueLatencyTracker, SloAbortHandler};

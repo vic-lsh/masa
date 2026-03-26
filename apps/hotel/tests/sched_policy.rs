@@ -1,4 +1,8 @@
-#[cfg(not(any(feature = "sched_fifo", feature = "sched_slo", feature = "sched_tailclipper")))]
+#[cfg(not(any(
+    feature = "sched_fifo",
+    feature = "sched_slo",
+    feature = "sched_tailclipper"
+)))]
 #[test]
 fn test_default_policy_is_fifo() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Fifo);
