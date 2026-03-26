@@ -1,9 +1,9 @@
-// Common hook state shared by all scheduling policies (standard, est_abort).
+// Common hook state shared by all scheduling policies (standard, pred_sched).
 //
 // `BaseHookState` holds the fields and logic common to every policy's
 // `ParentContext`: SLO abort checking, Rajomon admission control, queue
 // latency tracking, and context propagation. Policy-specific logic
-// (e.g., est_abort's reprioritization) lives in the policy files.
+// (e.g., pred_sched's reprioritization) lives in the policy files.
 
 use crate::{masa::context::read_context, CowGrpcMethod, GrpcMethod, Response, Status};
 

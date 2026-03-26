@@ -15,7 +15,7 @@ use super::super::est::state::EstServerState;
 
 /// Zero-cost admission control overlay using latency estimates.
 ///
-/// This follows the same dual-impl pattern as `PredictiveAbort`: a single
+/// This follows the same dual-impl pattern as `PredictiveSchedPolicy`: a single
 /// struct with feature-gated implementations. `standard.rs` calls methods
 /// unconditionally; the compiler eliminates no-op paths entirely.
 

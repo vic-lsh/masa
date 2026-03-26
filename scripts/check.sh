@@ -8,7 +8,7 @@ flag_combos=(
     "sched_prio"
     "sched_prio,tailclipper,slo_abort"
     "sched_prio,ac_rajomon"
-    "sched_prio,est_abort,ac_est,est_mean_var"
+    "sched_prio,pred_sched,ac_est,est_mean_var"
 )
 
 CONTINUE_ON_ERROR=false

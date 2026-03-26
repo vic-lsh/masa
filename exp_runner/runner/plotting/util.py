@@ -321,7 +321,7 @@ def _has_abort(policy_lower: str) -> bool:
     """Check if policy has an abort/early-return flag (new or old name)."""
     return (
         ",slo_abort" in policy_lower
-        or ",est_abort" in policy_lower
+        or ",pred_sched" in policy_lower
         or ",early" in policy_lower
     )
 
@@ -347,8 +347,8 @@ def _is_prio(policy_lower: str) -> bool:
     Matches sched_prio (new) and prio_global (old), but not prio_local or prio_oldest.
     """
     if policy_lower.startswith("sched_prio"):
-        # sched_prio without tailclipper or est_abort is the new prio_global
-        return not (",tailclipper" in policy_lower or ",est_abort" in policy_lower)
+        # sched_prio without tailclipper or pred_sched is the new prio_global
+        return not (",tailclipper" in policy_lower or ",pred_sched" in policy_lower)
     return policy_lower.startswith("prio_global")
 
 
@@ -359,7 +359,7 @@ def _is_tailclipper(policy_lower: str) -> bool:
 
 def _is_local(policy_lower: str) -> bool:
     """Check if policy is local-deadline based (new or old name)."""
-    return ",est_abort" in policy_lower or policy_lower.startswith("prio_local")
+    return ",pred_sched" in policy_lower or policy_lower.startswith("prio_local")
 
 
 def get_policy_color(policy: str) -> str | None:
@@ -369,7 +369,7 @@ def get_policy_color(policy: str) -> str | None:
     Color scheme:
     - FIFO (sched_fifo / fifo) uses grey hues
     - Priority (sched_prio / prio_global) uses blue hues
-    - Local deadline (sched_prio,est_abort / prio_local) uses pink hues
+    - Local deadline (sched_prio,pred_sched / prio_local) uses pink hues
     - Tailclipper (sched_prio,tailclipper / prio_oldest) uses purple hues
 
     Supports both new flag names (sched_fifo, sched_prio, slo_abort, ac_est, etc.)
@@ -434,7 +434,7 @@ def get_policy_display_name(policy: str) -> str:
     else:
         # Unknown policy: strip abort suffixes to get a readable base name
         display = policy
-        for suffix in (",slo_abort", ",est_abort", ",early"):
+        for suffix in (",slo_abort", ",pred_sched", ",early"):
             if display.lower().endswith(suffix):
                 display = display[: -len(suffix)]
                 break

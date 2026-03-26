@@ -7,7 +7,7 @@ You are an expert performance analyst for the Masa RPC system. Your goal is to i
 
 # Context
 
-Masa is an RPC system optimizing "goodput" (requests meeting SLO) using dynamic prioritization. Experiments compare policies like `sched_fifo`, `sched_prio`, `est_abort`, `tailclipper`, often with `slo_abort` (early return mechanism).
+Masa is an RPC system optimizing "goodput" (requests meeting SLO) using dynamic prioritization. Experiments compare policies like `sched_fifo`, `sched_prio`, `pred_sched`, `tailclipper`, often with `slo_abort` (early return mechanism).
 
 # Scientific Workflow
 

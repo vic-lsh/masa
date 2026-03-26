@@ -1,25 +1,25 @@
-// Zero-cost wrapper for est_abort-specific scheduling behavior.
+// Zero-cost wrapper for pred_sched-specific scheduling behavior.
 //
-// This module is only compiled with the `est` feature (`est_abort` implies `est`).
+// This module is only compiled with the `est` feature (`pred_sched` implies `est`).
 //
-// When `est_abort` is enabled, PredictiveAbort performs dynamic reprioritization,
+// When `pred_sched` is enabled, PredictiveSchedPolicy performs dynamic reprioritization,
 // deadline tightening, and child error propagation. When disabled, all methods
 // are no-ops that compile away entirely.
 
 use crate::{Response, Status};
 use masa_core::Context;
 
-/// Zero-cost policy overlay for predictive abort behavior.
+/// Zero-cost policy overlay for predictive scheduling behavior.
 ///
 /// This struct has no fields and exists purely to provide feature-gated method
 /// implementations that `standard.rs` calls when `est` is enabled.
 #[derive(Debug)]
-pub(super) struct PredictiveAbort;
+pub(super) struct PredictiveSchedPolicy;
 
-// ── est_abort ENABLED ──────────────────────────────────────────────────────────
+// ── pred_sched ENABLED ───────────────────────────────────────────────────────
 
-#[cfg(feature = "est_abort")]
-impl PredictiveAbort {
+#[cfg(feature = "pred_sched")]
+impl PredictiveSchedPolicy {
     /// Reprioritize the current task based on remaining time to deadline.
     #[inline]
     pub(super) fn reprioritize(&self, ctx: &Context) {
@@ -57,10 +57,10 @@ impl PredictiveAbort {
     }
 }
 
-// ── est_abort DISABLED ─────────────────────────────────────────────────────────
+// ── pred_sched DISABLED ──────────────────────────────────────────────────────
 
-#[cfg(not(feature = "est_abort"))]
-impl PredictiveAbort {
+#[cfg(not(feature = "pred_sched"))]
+impl PredictiveSchedPolicy {
     #[inline]
     pub(super) fn reprioritize(&self, _ctx: &Context) {}
 

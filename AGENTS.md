@@ -69,21 +69,21 @@ Key policy flags:
 - `sched_prio`: Priority by end-to-end SLO end time (binary heap)
 
 **Scheduling modifiers** (overlays on `sched_prio`):
-- `tailclipper`: Implements the TailClipper paper's oldest-request-first policy with round-robin fairness. Cannot be combined with `est_abort` or `ac_est`.
-- `est_abort`: Adds deadline tightening and dynamic reprioritization using latency estimates. Implies `est` and `slo_abort`. **Only works for `hotel`** as it requires a call graph description.
+- `tailclipper`: Implements the TailClipper paper's oldest-request-first policy with round-robin fairness. Cannot be combined with `pred_sched` or `ac_est`.
+- `pred_sched`: Adds deadline tightening and dynamic reprioritization using latency estimates. Implies `est` and `slo_abort`. **Only works for `hotel`** as it requires a call graph description.
 
 **Estimation infrastructure:**
-- `est`: Enables shared latency estimation infrastructure (estimator type selection, latency maps, estimation state). Implied by `est_abort` and `ac_est`. Does not require `slo_abort` on its own.
+- `est`: Enables shared latency estimation infrastructure (estimator type selection, latency maps, estimation state). Implied by `pred_sched` and `ac_est`. Does not require `slo_abort` on its own.
 
 **Abort strategies:**
 - `slo_abort`: Combined with a policy (e.g., `sched_prio,slo_abort`) to return early for requests past their e2e deadline, avoiding wasteful work
-- `est_abort`: Proactively aborts requests predicted to miss their SLO based on estimated remaining work. Implies `est` and `slo_abort`.
+- `pred_sched`: Proactively aborts requests predicted to miss their SLO based on estimated remaining work. Implies `est` and `slo_abort`.
 
 **Admission control** (mutually exclusive):
-- `ac_est`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Implies `est` and `slo_abort`. Works with scheduling policies (`sched_fifo`, `sched_prio`, `sched_prio,est_abort`).
+- `ac_est`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Implies `est` and `slo_abort`. Works with scheduling policies (`sched_fifo`, `sched_prio`, `sched_prio,pred_sched`).
 - `ac_rajomon`: Token-bucket rate limiting admission control.
 
-`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_prio`, `sched_prio,tailclipper,slo_abort`, `sched_prio,ac_rajomon`, `sched_prio,est_abort,ac_est,est_mean_var`.
+`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_prio`, `sched_prio,tailclipper,slo_abort`, `sched_prio,ac_rajomon`, `sched_prio,pred_sched,ac_est,est_mean_var`.
 
 ## Architecture
 
@@ -108,7 +108,7 @@ Core Masa types and utilities:
 ### libs/tonic/tonic/src/masa/
 Masa integration into Tonic gRPC:
 - `context/mod.rs`: `MasaHooks` trait with `before_child_rpc`, `before_poll`, `after_poll` hooks; feature flags select the `DefaultMasaHooks` implementation
-- `context/`: Policy implementations — `fifo.rs`, `prio.rs`, `tailclipper.rs`, `est_abort.rs`; admission control — `ac_hooks.rs`, `ac_est.rs`, `rajomon.rs`
+- `context/`: Policy implementations — `fifo.rs`, `prio.rs`, `tailclipper.rs`, `pred_sched.rs`; admission control — `ac_hooks.rs`, `ac_est.rs`, `rajomon.rs`
 - `transport/masa_channel/`: Masa-aware channel transport
 
 ### Patched Libraries

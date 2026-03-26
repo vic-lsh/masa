@@ -6,7 +6,7 @@ pub const TAILCLIPPER: bool = cfg!(feature = "tailclipper");
 
 pub const SLO_ABORT: bool = cfg!(feature = "slo_abort");
 
-pub const EST_ABORT: bool = cfg!(feature = "est_abort");
+pub const PRED_SCHED: bool = cfg!(feature = "pred_sched");
 
 #[allow(dead_code)]
 pub const RAJOMON: bool = cfg!(feature = "ac_rajomon");
@@ -20,11 +20,11 @@ compile_error!("Enable at most one scheduling discipline: sched_fifo | sched_pri
 // === TailClipper constraints ===
 // tailclipper implements the TailClipper paper's scheduling policy exactly:
 // sched_prio + round-robin fairness for the top-N priority tasks.
-// Adding est_abort or ac_est would modify the paper's original design,
+// Adding pred_sched or ac_est would modify the paper's original design,
 // so tailclipper is only valid with sched_prio (+ optionally slo_abort).
-#[cfg(all(feature = "tailclipper", feature = "est_abort"))]
+#[cfg(all(feature = "tailclipper", feature = "pred_sched"))]
 compile_error!(
-    "'tailclipper' cannot be combined with 'est_abort': \
+    "'tailclipper' cannot be combined with 'pred_sched': \
     tailclipper implements the TailClipper paper's policy as-is"
 );
 
@@ -47,4 +47,4 @@ compile_error!("Enable at most one admission control strategy: ac_est | ac_rajom
 compile_error!("Feature 'ac_est' requires 'slo_abort'");
 
 // early + ac_rajomon can now be combined: ac_rajomon handles admission control
-// (token-based), slo_abort/est_abort handle in-flight abortion (deadline-based).
+// (token-based), slo_abort/pred_sched handle in-flight abortion (deadline-based).

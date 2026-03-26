@@ -2,7 +2,7 @@
 name: masa-policy-optimizer
 description: >
   Iteratively optimize a Masa scheduling policy (specified as a Cargo feature flag combination,
-  e.g. "est_abort,est_mean_var,slo_abort") for goodput. Use this skill whenever the user asks to
+  e.g. "pred_sched,est_mean_var,slo_abort") for goodput. Use this skill whenever the user asks to
   improve, optimize, tune, experiment with, or analyze any Masa policy — even if they say
   something casual like "let's keep iterating on this policy" or "can we try a different approach".
   The skill manages the full hypothesis → code edit → experiment → analysis → decision loop,
@@ -15,7 +15,7 @@ description: >
 
 Ask the user for these inputs if not already provided:
 
-- **Target policy**: the feature flag combination being optimized (e.g., `est_abort,est_mean_var,slo_abort`)
+- **Target policy**: the feature flag combination being optimized (e.g., `pred_sched,est_mean_var,slo_abort`)
 - **Baseline policies**: the policies to beat — default is `tailclipper,slo_abort`. Ask if there are others to compare.
 - **Number of iterations**: how many hypothesis-experiment cycles to run before stopping for review. Ask if not specified.
 - **Tracking markdown**: Should we start a new file, or resume from an existing one? They may have a prior iteration doc from a previous optimization run (e.g., `PRIO_LOCAL_IMPROVEMENTS.md`). If resuming, read the file fully before doing anything — understand what has already been tried and what iteration number to continue from.
@@ -32,7 +32,7 @@ At the very top of a new markdown, write a header like:
 # <CODEWORD> — <target policy>
 
 ## Key questions
-- <The central question this track is trying to answer, e.g. "Can est_abort,est_mean_var,slo_abort beat tailclipper,slo_abort under realistic load variation?">
+- <The central question this track is trying to answer, e.g. "Can pred_sched,est_mean_var,slo_abort beat tailclipper,slo_abort under realistic load variation?">
 - <Any secondary questions, e.g. "Does the EMA estimator create feedback loops under non-monotonic load schedules?">
 
 ## Experiment series: <codeword>_1, <codeword>_2, ... (<app>)
