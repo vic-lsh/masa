@@ -5,27 +5,17 @@ use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Status};
 use crate::ac::AcHandler;
 use crate::base::BaseHookState;
 use crate::context_ext::MasaRequestExt;
-#[cfg(feature = "est")]
-use crate::pred_sched::PredictiveSchedPolicy;
+use crate::predictive_overlay::{PredictiveOverlay, PredictiveOverlayChild, PredictiveOverlayServer};
 use masa_core::ContextBuilder;
 use tonic_core::masa_ext::resolve_method_name_from_request;
 use tonic_core::masa_ext::{ClientHooks, Hooks, ParentHooks, ServerHooks};
 use tonic_core::Response;
 
-#[cfg(feature = "est")]
-use crate::ac::predictive_ac::PredictiveAc;
-#[cfg(feature = "est")]
-use crate::est::estimator::DefaultLatencyEstimator;
-#[cfg(feature = "est")]
-use crate::est::state::{is_early_return_response, EstChildState, EstRequestState, EstServerState};
-#[cfg(feature = "est")]
-use crate::MethodRegistry;
-
 #[derive(Debug)]
 /// Standard Masa hooks implementation shared by all scheduling policies
 /// (sched_fifo, sched_slo, sched_tailclipper, sched_pred). The actual scheduling
 /// differences are handled by the tokio runtime and, when `est` is enabled, the
-/// `PredictiveSchedPolicy` overlay (`sched_pred` tightens deadlines and reprioritizes).
+/// `PredictiveOverlay` (deadline tightening, reprioritization, predictive AC).
 #[allow(dead_code)]
 pub struct StandardHooks;
 
@@ -37,19 +27,13 @@ impl Hooks for StandardHooks {
 
 #[derive(Debug)]
 pub struct ServerContext {
-    #[cfg(feature = "est")]
-    est: Arc<EstServerState<DefaultLatencyEstimator>>,
-    #[cfg(feature = "est")]
-    ac_est: Arc<PredictiveAc>,
+    predictive: PredictiveOverlayServer,
 }
 
 impl ServerHooks for ServerContext {
     fn new(_service_name: &'static str) -> Self {
         Self {
-            #[cfg(feature = "est")]
-            est: Arc::new(EstServerState::new()),
-            #[cfg(feature = "est")]
-            ac_est: Arc::new(PredictiveAc::new()),
+            predictive: PredictiveOverlayServer::new(),
         }
     }
 }
@@ -57,12 +41,7 @@ impl ServerHooks for ServerContext {
 #[derive(Debug)]
 pub struct ParentContext {
     base: BaseHookState,
-    #[cfg(feature = "est")]
-    pred_sched: PredictiveSchedPolicy,
-    #[cfg(feature = "est")]
-    est: EstRequestState<DefaultLatencyEstimator>,
-    #[cfg(feature = "est")]
-    ac_est: Arc<PredictiveAc>,
+    predictive: PredictiveOverlay,
 }
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
@@ -73,30 +52,16 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Self {
         let base = BaseHookState::new(method, req);
 
-        #[cfg(feature = "est")]
-        let resolved_method_id = MethodRegistry::global().get_or_register_method(
-            base.resolved_method.service(),
-            base.resolved_method.method(),
-        );
-
         Self {
+            predictive: PredictiveOverlay::new(&base.resolved_method, &_server_ctx.predictive),
             base,
-            #[cfg(feature = "est")]
-            pred_sched: PredictiveSchedPolicy,
-            #[cfg(feature = "est")]
-            est: EstRequestState::new(resolved_method_id, _server_ctx.est.clone()),
-            #[cfg(feature = "est")]
-            ac_est: _server_ctx.ac_est.clone(),
         }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         self.base.check_guards()?;
-        #[cfg(feature = "est")]
-        self.pred_sched.reprioritize(&self.base.ctx);
+        self.predictive.before_poll(&self.base.ctx);
         self.base.track_poll();
-        #[cfg(feature = "est")]
-        self.est.start_compute_tracking();
         Ok(())
     }
 
@@ -115,42 +80,17 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
         child_ctx.set_method_name(child_method_name.clone());
 
-        #[cfg(feature = "est")]
-        let (deadline, prio_hint) = {
-            let est_remaining = {
-                let result = self.est.prepare_before_child_rpc(
-                    &self.base.ctx,
-                    &child_method_name,
-                    &mut child_ctx.est,
-                );
-
-                if self.ac_est.admission_check(
-                    &self.est.server,
-                    self.est.resolved_method_id,
-                    &self.base.ctx,
-                    result.key,
-                ) {
-                    return Err(self.base.slo_abort.issue_error());
-                }
-
-                result.est_remaining
-            };
-            self.pred_sched
-                .child_deadline_and_prio(&self.base.ctx, est_remaining)
-        };
-        #[cfg(not(feature = "est"))]
-        let (deadline, prio_hint) = (self.base.ctx.deadline(), self.base.ctx.prio_hint());
-
-        #[allow(unused_mut)]
-        let mut builder = ContextBuilder::from(&self.base.ctx)
-            .deadline(deadline)
-            .prio_hint(prio_hint)
+        let builder = ContextBuilder::from(&self.base.ctx)
             .tokens(self.base.ac.remaining_tokens());
 
-        #[cfg(feature = "est")]
-        {
-            builder = builder.hop_count(self.base.ctx.hop_count().saturating_add(1));
-        }
+        let (_deadline, _prio_hint, builder) = self.predictive.before_child_rpc(
+            &self.base.ctx,
+            &child_method_name,
+            &mut child_ctx.predictive,
+            request,
+            builder,
+            || self.base.slo_abort.issue_error(),
+        )?;
 
         let child_recv_ctx = builder.build();
         request.set_masa_context(&child_recv_ctx);
@@ -166,21 +106,12 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Result<(), Status> {
         self.base.q_lat_tracker.track_child_response(response);
 
-        #[cfg(feature = "est")]
-        {
-            child_ctx.est.finalize(response);
-            if let Some(downstream_util) = self.est.after_child_rpc(response, &child_ctx.est) {
-                self.ac_est
-                    .update_bottleneck(self.base.ctx.api(), downstream_util);
-            }
-        }
+        self.predictive
+            .after_child_rpc(&self.base.ctx, response, &child_ctx.predictive)?;
 
         if let Some(child) = child_ctx.child_method_name {
             self.base.update_after_child(&child, response);
         }
-
-        #[cfg(feature = "est")]
-        self.pred_sched.check_child_response(response)?;
 
         Ok(())
     }
@@ -189,21 +120,12 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
-        #[cfg(feature = "est")]
-        self.est.stop_compute_tracking();
-
+        self.predictive.after_poll(poll);
         self.base.check_pending_guards(poll)
     }
 
     fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
-        #[cfg(feature = "est")]
-        {
-            if !is_early_return_response(result) {
-                self.est.track_latencies();
-            }
-            self.est.inject_response_meta(&self.base.ctx, result);
-        }
-
+        self.predictive.finalize(&self.base.ctx, result);
         self.base.finalize(result);
     }
 }
@@ -211,16 +133,14 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 #[derive(Debug, Clone)]
 pub struct ChildContext {
     pub child_method_name: Option<CowGrpcMethod>,
-    #[cfg(feature = "est")]
-    est: EstChildState<DefaultLatencyEstimator>,
+    predictive: PredictiveOverlayChild,
 }
 
 impl ClientHooks for ChildContext {
     fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
         Self {
             child_method_name: None,
-            #[cfg(feature = "est")]
-            est: EstChildState::new(),
+            predictive: PredictiveOverlayChild::new(),
         }
     }
 }
@@ -394,8 +314,8 @@ mod tests {
                 .unwrap();
 
             // Verify child context has ID and Server
-            assert!(child_ctx.est.parent_to_child_id.is_some());
-            assert!(child_ctx.est.server.is_some());
+            assert!(child_ctx.predictive.est.parent_to_child_id.is_some());
+            assert!(child_ctx.predictive.est.server.is_some());
 
             // Verify registry has IDs
             let registry = MethodRegistry::global();
@@ -403,11 +323,11 @@ mod tests {
             let child_id = registry.get_or_register_method("IntegrationService", "ChildMethod");
 
             assert_eq!(
-                child_ctx.est.parent_to_child_id.clone().unwrap().parent_id,
+                child_ctx.predictive.est.parent_to_child_id.clone().unwrap().parent_id,
                 parent_id
             );
             assert_eq!(
-                child_ctx.est.parent_to_child_id.clone().unwrap().child_id,
+                child_ctx.predictive.est.parent_to_child_id.clone().unwrap().child_id,
                 child_id
             );
 
@@ -453,7 +373,7 @@ mod tests {
 
             // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline - 0 = e2e_deadline.
             // Since e2e_deadline is 100ms in the future, this should NOT shed.
-            let shed = parent_ctx.est.admission_check(&parent_ctx.base.ctx, 0);
+            let shed = parent_ctx.predictive.est.admission_check(&parent_ctx.base.ctx, 0);
             assert!(!shed, "should admit when plenty of time remains");
         }
     }
