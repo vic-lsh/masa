@@ -15,7 +15,19 @@ from exp_runner.runner.plotting.util import (
 plotting_all = importlib.import_module("exp_runner.runner.plotting.all")
 
 
-def test_get_policy_display_name_known_policies():
+def test_get_policy_display_name_new_names():
+    """Test display names with new flag names."""
+    assert get_policy_display_name("sched_fifo") == "FIFO (no-drop)"
+    assert get_policy_display_name("sched_fifo,slo_abort") == "FIFO"
+    assert get_policy_display_name("sched_prio") == "Masa (global ddl) (no-drop)"
+    assert get_policy_display_name("sched_prio,slo_abort") == "Masa (global ddl)"
+    assert get_policy_display_name("sched_prio,est_abort") == "Masa (local ddl)"
+    assert get_policy_display_name("sched_prio,tailclipper") == "Tailclipper (no-drop)"
+    assert get_policy_display_name("sched_prio,tailclipper,slo_abort") == "Tailclipper"
+
+
+def test_get_policy_display_name_old_names():
+    """Test display names with old flag names (backward compat)."""
     assert get_policy_display_name("fifo") == "FIFO (no-drop)"
     assert get_policy_display_name("fifo,early") == "FIFO"
     assert get_policy_display_name("prio_global") == "Masa (global ddl) (no-drop)"
@@ -28,17 +40,18 @@ def test_get_policy_display_name_known_policies():
 
 def test_get_policy_display_name_unknown_policies():
     assert get_policy_display_name("custom") == "custom (no-drop)"
+    assert get_policy_display_name("custom,slo_abort") == "custom"
     assert get_policy_display_name("custom,early") == "custom"
 
 
 def test_read_policies_from_config_dir(tmp_path):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "policies").write_text("fifo prio_global\n", encoding="utf-8")
+    (config_dir / "policies").write_text("sched_fifo sched_prio\n", encoding="utf-8")
 
     policies = read_policies(config_dir)
 
-    assert policies == ["fifo", "prio_global"]
+    assert policies == ["sched_fifo", "sched_prio"]
 
 
 def test_read_data_uses_policies_file(tmp_path):
@@ -51,9 +64,9 @@ def test_read_data_uses_policies_file(tmp_path):
         json.dumps({"Repeats": 1, "Rps": [10], "Apis": ["Login"], "Slos": [1000]}),
         encoding="utf-8",
     )
-    (config_dir / "policies").write_text("fifo prio_global\n", encoding="utf-8")
+    (config_dir / "policies").write_text("sched_fifo sched_prio\n", encoding="utf-8")
 
-    for policy in ["fifo", "prio_global", "extra_policy"]:
+    for policy in ["sched_fifo", "sched_prio", "extra_policy"]:
         policy_dir = data_dir / "0" / policy
         policy_dir.mkdir(parents=True, exist_ok=True)
         (policy_dir / "r10_Login.csv").write_text(
@@ -64,7 +77,7 @@ def test_read_data_uses_policies_file(tmp_path):
 
     assert repeats == 1
     assert apis[-1] == "ALL"
-    assert policies == ["fifo", "prio_global"]
+    assert policies == ["sched_fifo", "sched_prio"]
     assert rps_values == [10]
     assert "extra_policy" not in results[0]["Login"]
 
@@ -79,9 +92,9 @@ def test_load_plot_data_matches_read_data(tmp_path):
         json.dumps({"Repeats": 1, "Rps": [10], "Apis": ["Login"], "Slos": [1000]}),
         encoding="utf-8",
     )
-    (config_dir / "policies").write_text("fifo\n", encoding="utf-8")
+    (config_dir / "policies").write_text("sched_fifo\n", encoding="utf-8")
 
-    policy_dir = data_dir / "0" / "fifo"
+    policy_dir = data_dir / "0" / "sched_fifo"
     policy_dir.mkdir(parents=True, exist_ok=True)
     (policy_dir / "r10_Login.csv").write_text(
         "api,start_at,latency,slo,error\nLogin,0,100,1000,\n",
@@ -96,10 +109,10 @@ def test_load_plot_data_matches_read_data(tmp_path):
     assert plot_data.policies == policies
     assert plot_data.rps_values == rps_values
     assert len(plot_data.results) == len(results)
-    assert plot_data.results[0]["Login"]["fifo"][10].equals(
-        results[0]["Login"]["fifo"][10]
+    assert plot_data.results[0]["Login"]["sched_fifo"][10].equals(
+        results[0]["Login"]["sched_fifo"][10]
     )
-    assert plot_data.results[0]["ALL"]["fifo"][10].equals(results[0]["ALL"]["fifo"][10])
+    assert plot_data.results[0]["ALL"]["sched_fifo"][10].equals(results[0]["ALL"]["sched_fifo"][10])
 
 
 def test_read_data_repairs_malformed_request_csv_rows(tmp_path):
@@ -126,9 +139,9 @@ def test_read_data_repairs_malformed_request_csv_rows(tmp_path):
         ),
         encoding="utf-8",
     )
-    (config_dir / "policies").write_text("prio_local,early\n", encoding="utf-8")
+    (config_dir / "policies").write_text("sched_prio,est_abort\n", encoding="utf-8")
 
-    policy_dir = data_dir / "0" / "prio_local,early"
+    policy_dir = data_dir / "0" / "sched_prio,est_abort"
     policy_dir.mkdir(parents=True, exist_ok=True)
 
     header = "api,request_id,slo,start_at,deadline,latency,error,frontend_latency"
@@ -158,10 +171,10 @@ def test_read_data_repairs_malformed_request_csv_rows(tmp_path):
 
     assert repeats == 1
     assert apis == ["a", "ALL"]
-    assert policies == ["prio_local,early"]
+    assert policies == ["sched_prio,est_abort"]
     assert rps_values == [300]
 
-    df = results[0]["a"]["prio_local,early"][300]
+    df = results[0]["a"]["sched_prio,est_abort"][300]
     # Original columns should be present
     for col in header.split(","):
         assert col in df.columns
@@ -194,12 +207,12 @@ def test_generate_all_plots_loads_request_data_once(tmp_path, monkeypatch):
         json.dumps({"Repeats": 1, "Rps": [10], "Apis": ["Login"], "Slos": [1000]}),
         encoding="utf-8",
     )
-    (args.config_dir / "policies").write_text("fifo\n", encoding="utf-8")
+    (args.config_dir / "policies").write_text("sched_fifo\n", encoding="utf-8")
 
     plot_data = PlotData(
         repeats=1,
         apis=["Login", "ALL"],
-        policies=["fifo"],
+        policies=["sched_fifo"],
         rps_values=[10],
         rps_sequence=[10],
         duration_sec=60.0,
@@ -228,7 +241,7 @@ def test_generate_all_plots_loads_request_data_once(tmp_path, monkeypatch):
         calls["cpu"] += 1
         assert data_dir == args.data_dir
         assert output_dir == args.output_dir
-        assert policies == ["fifo"]
+        assert policies == ["sched_fifo"]
 
     monkeypatch.setattr(plotting_all, "load_plot_data", fake_load_plot_data)
     monkeypatch.setattr(plotting_all.goodput, "generate_plots", fake_plotter("goodput"))

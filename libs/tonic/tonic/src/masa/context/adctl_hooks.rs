@@ -11,9 +11,9 @@ use std::sync::{
 use std::time::Instant;
 
 use crate::{Code, CowGrpcMethod, Response, Status};
-use masa_core::{time_now, Context, LatencyEstimator, ResponseMeta, EARLY_RETURN};
+use masa_core::{time_now, Context, LatencyEstimator, ResponseMeta, SLO_ABORT};
 
-#[cfg(feature = "adctl")]
+#[cfg(feature = "ac_est")]
 use super::adctl::AdmissionController;
 use super::estimator::ParentToChildId;
 use super::latency_map::{spawn_method_stats_printer, spawn_stats_printer, LatencyMap};
@@ -30,7 +30,7 @@ pub(crate) struct AdctlServerState<E: LatencyEstimator + Default + 'static> {
     /// Tracks compute time (poll duration) per method.
     pub est_compute_latency: Arc<LatencyMap<E>>,
     /// Admission controller using compute-budget token bucket.
-    #[cfg(feature = "adctl")]
+    #[cfg(feature = "ac_est")]
     pub admission_controller: Arc<AdmissionController>,
     /// Counter for periodic logging.
     pub print_counter: AtomicUsize,
@@ -50,7 +50,7 @@ impl<E: LatencyEstimator + Default + 'static> AdctlServerState<E> {
             est_after_child_latency,
             est_child_latency,
             est_compute_latency,
-            #[cfg(feature = "adctl")]
+            #[cfg(feature = "ac_est")]
             admission_controller: Arc::new(AdmissionController::new()),
             print_counter: AtomicUsize::new(0),
         }
@@ -106,8 +106,8 @@ impl<E: LatencyEstimator + Default + 'static> AdctlRequestState<E> {
         key: u64,
         est_remaining_floor: u64,
     ) -> bool {
-        #[cfg(feature = "adctl")]
-        if EARLY_RETURN {
+        #[cfg(feature = "ac_est")]
+        if SLO_ABORT {
             let time_left = ctx.e2e_deadline().saturating_sub(time_now());
 
             // Layer 1: compute-time feasibility (every hop)
@@ -144,7 +144,7 @@ impl<E: LatencyEstimator + Default + 'static> AdctlRequestState<E> {
             }
         }
         // Default: floor estimate check
-        EARLY_RETURN && time_now() > ctx.e2e_deadline().saturating_sub(est_remaining_floor)
+        SLO_ABORT && time_now() > ctx.e2e_deadline().saturating_sub(est_remaining_floor)
     }
 
     /// Track latency observations for completed request.
@@ -220,7 +220,7 @@ impl<E: LatencyEstimator + Default + 'static> AdctlRequestState<E> {
                         *max_util = meta.max_downstream_util;
                     }
                     // Update bottleneck tracker
-                    #[cfg(feature = "adctl")]
+                    #[cfg(feature = "ac_est")]
                     self.server
                         .admission_controller
                         .update_bottleneck(ctx.api(), meta.max_downstream_util);

@@ -9,13 +9,13 @@ use super::{resolve_method_name_from_http, resolve_method_name_from_request, Mas
 use crate::Response;
 use masa_core::{Context, ContextBuilder};
 
-#[cfg(feature = "adctl")]
+#[cfg(feature = "ac_est")]
 use super::adctl_hooks::{
     is_early_return_response, AdctlChildState, AdctlRequestState, AdctlServerState,
 };
-#[cfg(feature = "adctl")]
+#[cfg(feature = "ac_est")]
 use super::estimator::DefaultLatencyEstimator;
-#[cfg(feature = "adctl")]
+#[cfg(feature = "ac_est")]
 use crate::masa::MethodRegistry;
 
 #[derive(Debug)]
@@ -35,14 +35,14 @@ impl MasaHooks for QueueGlobal {
 #[derive(Debug)]
 #[allow(unreachable_pub)]
 pub struct ServerContext {
-    #[cfg(feature = "adctl")]
+    #[cfg(feature = "ac_est")]
     adctl: Arc<AdctlServerState<DefaultLatencyEstimator>>,
 }
 
 impl ServerHooks for ServerContext {
     fn new(_service_name: &'static str) -> Self {
         Self {
-            #[cfg(feature = "adctl")]
+            #[cfg(feature = "ac_est")]
             adctl: Arc::new(AdctlServerState::new()),
         }
     }
@@ -54,7 +54,7 @@ pub struct ParentContext {
     ctx: Context,
     q_lat_tracker: QueueLatencyTracker,
     early_return: EarlyReturnHandler,
-    #[cfg(feature = "adctl")]
+    #[cfg(feature = "ac_est")]
     adctl: AdctlRequestState<DefaultLatencyEstimator>,
     rajomon: RajomonHandler,
 }
@@ -70,7 +70,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         let mut rajomon = RajomonHandler::new(resolved_method.clone());
         rajomon.check_inbound(&mut ctx);
 
-        #[cfg(feature = "adctl")]
+        #[cfg(feature = "ac_est")]
         let resolved_method_id = MethodRegistry::global()
             .get_or_register_method(resolved_method.service(), resolved_method.method());
 
@@ -78,7 +78,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             ctx,
             q_lat_tracker: QueueLatencyTracker::new(),
             early_return: EarlyReturnHandler::new(resolved_method),
-            #[cfg(feature = "adctl")]
+            #[cfg(feature = "ac_est")]
             adctl: AdctlRequestState::new(resolved_method_id, _server_ctx.adctl.clone()),
             rajomon,
         }
@@ -95,7 +95,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
         self.rajomon.track_queue_delay();
         self.q_lat_tracker.track_poll();
-        #[cfg(feature = "adctl")]
+        #[cfg(feature = "ac_est")]
         self.adctl.start_compute_tracking();
         Ok(())
     }
@@ -119,7 +119,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
         child_ctx.set_method_name(child_method_name.clone());
 
-        #[cfg(feature = "adctl")]
+        #[cfg(feature = "ac_est")]
         if self
             .adctl
             .prepare_before_child_rpc(&self.ctx, &child_method_name, &mut child_ctx.adctl)
@@ -137,7 +137,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             .prio_hint(prio_hint)
             .tokens(self.rajomon.remaining_tokens());
 
-        #[cfg(feature = "adctl")]
+        #[cfg(feature = "ac_est")]
         {
             builder = builder.hop_count(self.ctx.hop_count().saturating_add(1));
         }
@@ -156,7 +156,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Result<(), Status> {
         self.q_lat_tracker.track_child_response(response);
 
-        #[cfg(feature = "adctl")]
+        #[cfg(feature = "ac_est")]
         {
             child_ctx.adctl.finalize(response);
             self.adctl
@@ -180,7 +180,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
-        #[cfg(feature = "adctl")]
+        #[cfg(feature = "ac_est")]
         self.adctl.stop_compute_tracking();
 
         match poll {
@@ -200,7 +200,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
     // expect frontend method, all other method are going send back their latency trace
     fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
-        #[cfg(feature = "adctl")]
+        #[cfg(feature = "ac_est")]
         {
             if !is_early_return_response(result) {
                 self.adctl.track_latencies();
@@ -219,7 +219,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 #[allow(unreachable_pub)]
 pub struct ChildContext {
     pub child_method_name: Option<CowGrpcMethod>,
-    #[cfg(feature = "adctl")]
+    #[cfg(feature = "ac_est")]
     adctl: AdctlChildState<DefaultLatencyEstimator>,
 }
 
@@ -227,7 +227,7 @@ impl ClientHooks for ChildContext {
     fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
         Self {
             child_method_name: None,
-            #[cfg(feature = "adctl")]
+            #[cfg(feature = "ac_est")]
             adctl: AdctlChildState::new(),
         }
     }

@@ -1,6 +1,6 @@
 pub use masa_core::{
     time_now, Context, ContextBuilder, FutureSpan, LatencyDistribution, MethodId, PriorityHint,
-    PRIO_OLDEST,
+    TAILCLIPPER,
 };
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -22,10 +22,10 @@ pub fn create_context(api: &str, slo: Duration) -> Context {
     let deadline = start_at + slo_us;
 
     // Priority logic:
-    // If PRIO_OLDEST is enabled, priority is based on arrival time (start_at).
-    // Otherwise (FIFO, PRIO_GLOBAL, PRIO_LOCAL), priority is based on deadline.
-    // Note: PRIO_OLDEST is a const bool exported by masa_core based on compile features.
-    let prio_hint = if masa_core::PRIO_OLDEST {
+    // If TAILCLIPPER is enabled, priority is based on arrival time (start_at).
+    // Otherwise (sched_fifo, sched_prio, est_abort), priority is based on deadline.
+    // Note: TAILCLIPPER is a const bool exported by masa_core based on compile features.
+    let prio_hint = if masa_core::TAILCLIPPER {
         start_at
     } else {
         deadline
@@ -43,7 +43,7 @@ pub fn create_context(api: &str, slo: Duration) -> Context {
 
 /// Try to create a Masa context, checking the client-side Rajomon token bucket first.
 /// Returns None if the client-side rate limiter rejects the request.
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 pub fn try_create_context(api: &str, slo: std::time::Duration) -> Option<Context> {
     use tonic::masa::context::rajomon::CLIENT_TOKEN_BUCKET;
 
@@ -56,7 +56,7 @@ pub fn try_create_context(api: &str, slo: std::time::Duration) -> Option<Context
     let start_at = time_now();
     let deadline = start_at + slo_us;
 
-    let prio_hint = if masa_core::PRIO_OLDEST {
+    let prio_hint = if masa_core::TAILCLIPPER {
         start_at
     } else {
         deadline

@@ -7,24 +7,27 @@ This document explains the implementation of Masa's dynamic RPC prioritization s
 Masa uses Rust feature flags to select the scheduling policy at compile time. These flags are defined in `libs/masa/Cargo.toml` (the facade) and propagated to `libs/masa-core`, `libs/tonic` and `libs/tokio`.
 
 Key feature flags include:
-- `fifo`: First-In-First-Out ordering (baseline).
-- `prio_global`: Priority based on end-to-end deadline (global clock).
-- `prio_oldest`: Priority based on request arrival time (oldest first).
-- `prio_local`: Priority based on local deadlines.
-- `early`: Enables "Early Return" to drop requests that have already missed their deadline.
+- `sched_fifo`: First-In-First-Out ordering (baseline).
+- `sched_prio`: Priority based on end-to-end deadline (global clock).
+- `sched_prio,tailclipper`: Priority based on request arrival time (oldest first), implementing the TailClipper paper.
+- `sched_prio,est_abort`: Priority based on local deadlines with deadline tightening using latency estimates.
+- `slo_abort`: Enables "Early Return" to drop requests that have already missed their deadline.
+- `est_abort`: Proactively aborts requests predicted to miss their SLO (implies `slo_abort`).
+- `ac_est`: Progressive cost-aware admission control.
+- `ac_rajomon`: Token-bucket rate limiting admission control.
 
-When a specific feature flag (e.g., `prio_global`) is enabled, it activates corresponding conditional compilation modules (`#[cfg(feature = "...")]`) across the modified libraries.
+When a specific feature flag (e.g., `sched_prio`) is enabled, it activates corresponding conditional compilation modules (`#[cfg(feature = "...")]`) across the modified libraries.
 
 ### Feature Flag Propagation
 
 Features propagate from application crates through a dependency chain:
 
 ```
-Application Cargo.toml (e.g., apps/hotel --features prio_global)
-  └─ libs/tonic/tonic/Cargo.toml:  prio_global = ["masa/prio_global", "tokio/prio_global"]
-       ├─ libs/masa/Cargo.toml:    prio_global = []   (forwards to masa-core, tokio, tonic)
-├─ libs/masa-core/Cargo.toml: prio_global = []   (sets cfg flag)
-       └─ libs/tokio/tokio/Cargo.toml: prio_global = ["masa/prio_global"]
+Application Cargo.toml (e.g., apps/hotel --features sched_prio)
+  └─ libs/tonic/tonic/Cargo.toml:  sched_prio = ["masa/sched_prio", "tokio/sched_prio"]
+       ├─ libs/masa/Cargo.toml:    sched_prio = []   (forwards to masa-core, tokio, tonic)
+├─ libs/masa-core/Cargo.toml: sched_prio = []   (sets cfg flag)
+       └─ libs/tokio/tokio/Cargo.toml: sched_prio = ["masa/sched_prio"]
 ```
 
 The root `Cargo.toml` `[patch.crates-io]` section replaces 8 upstream crates (`tokio`, `tokio-util`, `tokio-stream`, `tokio-test`, `tokio-macros`, `hyper`, `tower`, `tower-service`, `tower-layer`) with local modified versions. All must be built from local copies.
@@ -33,11 +36,11 @@ The root `Cargo.toml` `[patch.crates-io]` section replaces 8 upstream crates (`t
 
 The `DefaultMasaHooks` type alias (in `libs/tonic/tonic/src/masa/context/mod.rs`) is resolved by feature flag **precedence**. When multiple flags are enabled, the first match wins:
 
-1. `prio_local` → `LocalDeadlinePolicy`
-2. `prio_oldest` → `PrioOldest`
-3. `prio_global` → `QueueGlobal`
-4. `fifo` + `early` → `Fifo`
-5. `fifo` (without `early`) → `NoopMasaHooks`
+1. `sched_prio` + `est_abort` → `LocalDeadlinePolicy`
+2. `sched_prio` + `tailclipper` → `PrioOldest`
+3. `sched_prio` → `QueueGlobal`
+4. `sched_fifo` + `slo_abort` → `Fifo`
+5. `sched_fifo` (without `slo_abort`) → `NoopMasaHooks`
 6. Default (no features) → `NoopMasaHooks`
 
 Each flag also selects the corresponding tokio queue implementation (see Section 5).
@@ -46,11 +49,11 @@ Each flag also selects the corresponding tokio queue implementation (see Section
 
 In `libs/masa-core/src/flag.rs`, each feature flag is exposed as a `const bool`:
 ```
-pub const PRIO_GLOBAL: bool = cfg!(feature = "prio_global");
-pub const EARLY_RETURN: bool = cfg!(feature = "early");
+pub const SCHED_PRIO: bool = cfg!(feature = "sched_prio");
+pub const SLO_ABORT: bool = cfg!(feature = "slo_abort");
 // ... etc.
 ```
-These allow `if PRIO_GLOBAL { ... }` branches to be optimized away by the compiler when the flag is off.
+These allow `if SCHED_PRIO { ... }` branches to be optimized away by the compiler when the flag is off.
 
 ## 2. Core Data Structures (`libs/masa-core`)
 
@@ -87,7 +90,7 @@ A wrapper around `u64`:
 
 ### `LatencyEstimator`
 
-A trait with two implementations, used by the `prio_local` policy to estimate child RPC latencies:
+A trait with two implementations, used by the `est_abort` policy to estimate child RPC latencies:
 
 *   **`LatencyRms`** (`latency_estimator/rms.rs`): Tracks Root Mean Square of observed latencies. Uses integer square root (Newton's method) to avoid floating-point. Batches updates every N samples (default 512) to amortize cost. `estimate()` returns the cached RMS regardless of the percentile parameter.
 *   **`LatencyDistribution`** (`latency_estimator/histogram.rs`): Double-buffered histogram. Collects samples into a current buffer; when it reaches capacity, merges with the previous buffer, sorts, and extracts 100 percentiles. `estimate(p)` returns the p-th percentile.
@@ -123,7 +126,7 @@ pub trait MasaHooks: Send + Sync + 'static {
 
 The three levels have different lifetimes and thread-safety requirements:
 
-*   **`ServerHooks`** (`ServerContext`): Created **once per service**. Holds service-wide state (e.g., latency distributions for the `prio_local` policy). Thread-safe (`Send + Sync`).
+*   **`ServerHooks`** (`ServerContext`): Created **once per service**. Holds service-wide state (e.g., latency distributions for the `est_abort` policy). Thread-safe (`Send + Sync`).
 *   **`ParentHooks`** (`ParentContext`): Created **once per incoming request**. Manages deadline propagation, early return checks, and queue latency tracking. Thread-safe (`Send + Sync`) since it is accessed from both the handler task and child RPC tasks.
 *   **`ClientHooks`** (`ChildContext`): Created **once per outgoing RPC call**. Tracks per-call timing. Not thread-safe (accessed only on the calling task).
 
@@ -143,12 +146,12 @@ For a complete request lifecycle:
 
 ### Policy Implementations
 Different modules implement `MasaHooks` based on the active feature flag:
-*   **`QueueGlobal`** (for `prio_global`): In `before_child_rpc`, it calculates the deadline and priority for the child request and injects a `ctx` header. Tracks queue latency via `QueueLatencyTracker`.
-*   **`PrioOldest`** (for `prio_oldest`): Like `QueueGlobal`, but the priority hint is the request creation time (older requests = higher priority), implementing the TailClipper approach.
-*   **`LocalDeadlinePolicy`** (for `prio_local`): Computes local deadlines by subtracting estimated remaining processing time from the parent deadline. Maintains per-method-pair `LatencyRms` estimators. Only works for applications with a known call graph (currently `hotel`).
-*   **Fifo**: Passes through deadline/priority. Handles `early` return checks if the `early` feature is also enabled.
+*   **`QueueGlobal`** (for `sched_prio`): In `before_child_rpc`, it calculates the deadline and priority for the child request and injects a `ctx` header. Tracks queue latency via `QueueLatencyTracker`.
+*   **`PrioOldest`** (for `sched_prio,tailclipper`): Like `QueueGlobal`, but the priority hint is the request creation time (older requests = higher priority), implementing the TailClipper approach.
+*   **`LocalDeadlinePolicy`** (for `sched_prio,est_abort`): Computes local deadlines by subtracting estimated remaining processing time from the parent deadline. Maintains per-method-pair `LatencyRms` estimators. Only works for applications with a known call graph (currently `hotel`).
+*   **Fifo**: Passes through deadline/priority. Handles `slo_abort` return checks if the `slo_abort` feature is also enabled.
 *   **Global**: Simplified global deadline policy without queue latency tracking (no early return support).
-*   **Noop**: No-op hooks. Selected when `fifo` is enabled without `early`, or when no policy feature is active.
+*   **Noop**: No-op hooks. Selected when `sched_fifo` is enabled without `slo_abort`, or when no policy feature is active.
 ### Client Code Generation
 
 `tonic-build` (`libs/tonic/tonic-build/src/client.rs`) generates client stub methods that integrate with the hook architecture. Each generated unary method:
@@ -212,12 +215,12 @@ The `current_thread` scheduler's run queue (`libs/tokio/tokio/src/runtime/schedu
 
 | Feature Flag(s) | Queue Type | Behavior |
 |---|---|---|
-| (none), `fifo` | `FifoQueue` | Standard `VecDeque` — FIFO ordering |
-| `prio_global`, `prio_local` | `BinaryHeapQueue` | `std::collections::BinaryHeap` — O(log n) insert, O(1) pop of highest-priority task |
-| `prio_oldest` | `BinaryHeapRoundRobinQueue` | Hybrid: binary heap + round-robin `VecDeque` for the top N=6 highest-priority tasks (prevents starvation) |
+| (none), `sched_fifo` | `FifoQueue` | Standard `VecDeque` — FIFO ordering |
+| `sched_prio`, `sched_prio,est_abort` | `BinaryHeapQueue` | `std::collections::BinaryHeap` — O(log n) insert, O(1) pop of highest-priority task |
+| `sched_prio,tailclipper` | `BinaryHeapRoundRobinQueue` | Hybrid: binary heap + round-robin `VecDeque` for the top N=6 highest-priority tasks (prevents starvation) |
 | Any tracing variant | `TimedQueue<Inner>` wrapper | Wraps the inner queue, calling `set_enqueue_time()` on push and `record_queue_lat()` on pop |
 
-`BinaryHeapRoundRobinQueue` (for `prio_oldest`) additionally supports a dedicated infrastructure queue: if enabled, `PriorityHint::infra()` tasks are routed to a separate FIFO and always popped first.
+`BinaryHeapRoundRobinQueue` (for `sched_prio,tailclipper`) additionally supports a dedicated infrastructure queue: if enabled, `PriorityHint::infra()` tasks are routed to a separate FIFO and always popped first.
 
 When the runtime polls for the next task, it selects the one with the highest priority (lowest `PriorityHint` value). Infrastructure tasks (`infra`, value 0) are always prioritized over request processing tasks.
 
@@ -309,11 +312,11 @@ This means the tonic `before_poll`/`after_poll` closures (installed on the top-l
 
 ### Early Return
 
-Early Return uses poll hooks to abort requests that have already missed their deadline, avoiding wasteful computation. It is gated by the compile-time `early` feature flag (`libs/masa-core/src/flag.rs`: `pub const EARLY_RETURN: bool = cfg!(feature = "early")`).
+Early Return uses poll hooks to abort requests that have already missed their deadline, avoiding wasteful computation. It is gated by the compile-time `slo_abort` feature flag (`libs/masa-core/src/flag.rs`: `pub const SLO_ABORT: bool = cfg!(feature = "slo_abort")`).
 
 The `EarlyReturnHandler` (`libs/tonic/tonic/src/masa/context/common.rs`) tracks whether a request should be aborted:
 
-*   `check(&self, ctx: &Context) -> bool`: Returns `false` immediately if `EARLY_RETURN` is disabled. Otherwise, compares the current time against `ctx.deadline()`. Once the deadline passes, sets an atomic flag so subsequent checks short-circuit.
+*   `check(&self, ctx: &Context) -> bool`: Returns `false` immediately if `SLO_ABORT` is disabled. Otherwise, compares the current time against `ctx.deadline()`. Once the deadline passes, sets an atomic flag so subsequent checks short-circuit.
 *   `issue_error(&self) -> Status`: Returns a `DeadlineExceeded` status with the service and method name.
 
 Policies that support Early Return call `check` in both `before_poll` and `after_poll(Pending)`:
@@ -344,7 +347,7 @@ Policies with queue latency tracking: `QueueGlobal` and `PrioOldest`.
 
 For an application to use Masa's features, it must:
 
-1.  **Compile with Feature Flags**: Select the desired policy (e.g., `--features prio_global`).
+1.  **Compile with Feature Flags**: Select the desired policy (e.g., `--features sched_prio`).
 2.  **Use `serve_with_masa`**: In the server initialization code (e.g., `main.rs`), the application calls `.serve_with_masa(addr)` instead of the standard `.serve(addr)`.
     *   This configures the `hyper` server to use the `Exec::Masa` executor, ensuring that priorities are passed to `tokio`.
     *   Using `.serve(addr)` will use `Exec::Default`, which calls standard `tokio::spawn()` and **ignores priorities entirely**.
@@ -376,3 +379,33 @@ The total is injected into the outgoing response in `finalize_after_serializatio
 7.  **CPU**: Picks highest priority task (lowest `PriorityHint` value) to execute.
 8.  **Each poll cycle**: Tonic's `AbortableFuture` runs `before_poll` (sets thread-local context, checks deadline) → polls handler → runs `after_poll` (clears thread-local, checks deadline if `Pending`). Child tasks inherit a tokio `PollHook` that mirrors the thread-local setup/teardown.
 9.  **Response**: `finalize_after_serialization` injects `x-queue-latency` header (if applicable). Response travels back to caller.
+
+## Migration Guide: Old → New Feature Flags
+
+| Old flags | New flags | Notes |
+|-----------|-----------|-------|
+| `fifo` | `sched_fifo` | |
+| `prio_global` | `sched_prio` | |
+| `prio_oldest` | `sched_prio,tailclipper` | |
+| `prio_local` | `sched_prio,est_abort` | |
+| `early` | `slo_abort` | When NOT combined with prio_local |
+| `prio_local,early` | `sched_prio,est_abort` | est_abort implies slo_abort |
+| `adctl` | `ac_est` | |
+| `rajomon` | `ac_rajomon` | |
+| `fifo,early,adctl` | `sched_fifo,slo_abort,ac_est` | |
+| `prio_global,early` | `sched_prio,slo_abort` | |
+| `prio_global,early,adctl` | `sched_prio,slo_abort,ac_est` | |
+| `prio_oldest,early` | `sched_prio,tailclipper,slo_abort` | |
+| `prio_oldest,early,adctl` | *(dropped — tailclipper cannot be combined with ac_est)* | TailClipper paper policy used as-is |
+| `prio_local,early,adctl` | `sched_prio,est_abort,ac_est` | |
+| `prio_local,rajomon,early` | `sched_prio,est_abort,ac_rajomon` | |
+
+### Design intent
+
+**Scheduling disciplines** (`sched_fifo`, `sched_prio`): Mutually exclusive base queue implementations. `sched_prio` uses a binary heap; `sched_fifo` uses FIFO.
+
+**Scheduling modifiers** (`tailclipper`, `est_abort`): Overlays on `sched_prio`. `tailclipper` implements the TailClipper paper's policy exactly (round-robin fairness for top-N priority tasks) — it cannot be combined with `est_abort` or `ac_est` to preserve the paper's design. `est_abort` adds deadline tightening and dynamic reprioritization using latency estimates.
+
+**Abort strategies** (`slo_abort`, `est_abort`): `slo_abort` aborts requests that have already exceeded their e2e SLO. `est_abort` proactively aborts requests predicted to miss their SLO based on estimated remaining work. `est_abort` implies `slo_abort`.
+
+**Admission control** (`ac_est`, `ac_rajomon`): Mutually exclusive admission strategies. `ac_est` uses compute-time feasibility and efficiency-based checks. `ac_rajomon` uses token-bucket rate limiting.

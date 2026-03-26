@@ -9,7 +9,7 @@ The experiment runner replaces the previous bash script system with a well-struc
 ## Features
 
 - **Multiple Applications**: Supports hotel, socialnet, synthetic, and mssim applications with extensible plugin architecture
-- **Policy Testing**: Run experiments with different scheduling policies (fifo, prio_global, prio_local, etc.)
+- **Policy Testing**: Run experiments with different scheduling policies (sched_fifo, sched_prio, sched_prio,est_abort, etc.)
 - **Automated Workflow**: Handles Docker builds, service orchestration, load generation, and log collection
 - **Result Analysis**: Integrated plotting for goodput, latency, and hotel replica metrics
 - **Type Safety**: Uses Python dataclasses for configuration validation
@@ -96,7 +96,7 @@ Experiments are configured using files in `exp/<app>/data/in/<experiment_name>/`
 
 2. **`policies`** - Whitespace-separated list of scheduling policies to test
    ```
-   fifo prio_global prio_local
+   sched_fifo sched_prio sched_prio,est_abort
    ```
 
 3. **Application-specific config** (varies by app):
@@ -122,7 +122,7 @@ MSSIM experiments live under `exp/mssim/data/in/<experiment_name>/` and require:
 
 2. **`policies`** (whitespace-separated)
    ```
-   fifo prio_global
+   sched_fifo sched_prio
    ```
 
 3. **`mssim.json`**
@@ -184,14 +184,14 @@ Results are saved to `exp/<app>/data/out/<experiment_name>/`:
 ```
 exp/hotel/data/out/exp1/
 ├── 0/                           # First iteration
-│   ├── fifo/                    # Results for fifo policy
+│   ├── sched_fifo/              # Results for sched_fifo policy
 │   │   ├── loadgen.log         # Load generator output
 │   │   ├── local-hotel-frontend-service-1.log  # Frontend container logs
 │   │   ├── local-rate-service-1.log
 │   │   ├── *.csv               # Trace files
 │   │   └── ...
-│   ├── prio_global/            # Results for prio_global policy
-│   └── prio_local/             # Results for prio_local policy
+│   ├── sched_prio/             # Results for sched_prio policy
+│   └── sched_prio,est_abort/   # Results for sched_prio,est_abort policy
 ├── 1/                          # Second iteration (if Repeats > 1)
 └── done                        # Marker file when complete
 ```
@@ -206,14 +206,14 @@ MSSIM uses the standard runner output root, with per-RPS subdirectories under ea
 ```
 exp/mssim/data/out/e2e_test/
 ├── 0/
-│   ├── fifo/
+│   ├── sched_fifo/
 │   │   └── rps_200/
 │   │       └── run_0/
 │   │           ├── docker-compose.yml
 │   │           ├── deployment.json
 │   │           ├── metadata.json
 │   │           └── orchestrator.log
-│   └── prio_global/
+│   └── sched_prio/
 │       └── rps_200/
 │           └── run_0/
 └── done

@@ -85,13 +85,13 @@ execute_test() {
 # ./scripts/test_sched_policy.sh
 
 policy_flags=(
-    "fifo"
-    "prio_global"
-    "prio_oldest"
-    "prio_local"
-    "prio_local,est_rms"
-    "prio_local,est_hist"
-    "prio_local,est_mean_var"
+    "sched_fifo"
+    "sched_prio"
+    "sched_prio,tailclipper"
+    "sched_prio,est_abort"
+    "sched_prio,est_abort,est_rms"
+    "sched_prio,est_abort,est_hist"
+    "sched_prio,est_abort,est_mean_var"
 )
 
 # Run scheduling policy tests
@@ -183,12 +183,12 @@ if [ "$IS_MATRIX" = false ] || [ -z "$FEATURE_FLAG" ]; then
 fi
 
 declare -A specific_feature_tests=(
-    ["prio_local,est_rms"]="tonic (prio_local,est_rms):cargo test -p tonic --features masa,prio_local,est_rms"
-    ["prio_local,est_hist"]="tonic (prio_local,est_hist):cargo test -p tonic --features masa,prio_local,est_hist"
-    ["prio_local,est_mean_var"]="tonic (prio_local,est_mean_var):cargo test -p tonic --features masa,prio_local,est_mean_var"
-    ["prio_global"]="masa-integration-tests (prio_global):cargo test -p masa-integration-tests --features prio_global"
-    ["prio_global,trace-queue"]="masa-integration-tests (prio_global+trace-queue):cargo test -p masa-integration-tests --features prio_global,trace-queue"
-    ["prio_global,early"]="masa-integration-tests (prio_global+early):cargo test -p masa-integration-tests --features prio_global,early"
+    ["sched_prio,est_abort,est_rms"]="tonic (est_abort,est_rms):cargo test -p tonic --features masa,sched_prio,est_abort,est_rms"
+    ["sched_prio,est_abort,est_hist"]="tonic (est_abort,est_hist):cargo test -p tonic --features masa,sched_prio,est_abort,est_hist"
+    ["sched_prio,est_abort,est_mean_var"]="tonic (est_abort,est_mean_var):cargo test -p tonic --features masa,sched_prio,est_abort,est_mean_var"
+    ["sched_prio"]="masa-integration-tests (sched_prio):cargo test -p masa-integration-tests --features sched_prio"
+    ["sched_prio,trace-queue"]="masa-integration-tests (sched_prio+trace-queue):cargo test -p masa-integration-tests --features sched_prio,trace-queue"
+    ["sched_prio,slo_abort"]="masa-integration-tests (sched_prio+slo_abort):cargo test -p masa-integration-tests --features sched_prio,slo_abort"
 )
 
 for feat in "${!specific_feature_tests[@]}"; do
@@ -198,13 +198,13 @@ for feat in "${!specific_feature_tests[@]}"; do
     fi
 done
 
-execute_test "tonic (prio_local,est_rms)" cargo test -p tonic --features "masa,prio_local,est_rms"
-execute_test "tonic (prio_local,est_hist)" cargo test -p tonic --features "masa,prio_local,est_hist"
+execute_test "tonic (est_abort,est_rms)" cargo test -p tonic --features "masa,sched_prio,est_abort,est_rms"
+execute_test "tonic (est_abort,est_hist)" cargo test -p tonic --features "masa,sched_prio,est_abort,est_hist"
 execute_test "tokio (masa priority suite)" cargo test -p tokio --features full --test masa_priority
-execute_test "masa-integration-tests (prio_global)" cargo test -p masa-integration-tests --features prio_global
-execute_test "masa-integration-tests (prio_global+trace-queue)" cargo test -p masa-integration-tests --features "prio_global,trace-queue"
-execute_test "masa-integration-tests (prio_global+early)" cargo test -p masa-integration-tests --features "prio_global,early"
-execute_test "masa-integration-tests (prio_global+rajomon)" cargo test -p masa-integration-tests --features "prio_global,rajomon"
+execute_test "masa-integration-tests (sched_prio)" cargo test -p masa-integration-tests --features sched_prio
+execute_test "masa-integration-tests (sched_prio+trace-queue)" cargo test -p masa-integration-tests --features "sched_prio,trace-queue"
+execute_test "masa-integration-tests (sched_prio+slo_abort)" cargo test -p masa-integration-tests --features "sched_prio,slo_abort"
+execute_test "masa-integration-tests (sched_prio+ac_rajomon)" cargo test -p masa-integration-tests --features "sched_prio,ac_rajomon"
 
 # Collect results if parallel
 if [ "$PARALLEL_JOBS" -gt 1 ]; then

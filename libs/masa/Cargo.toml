@@ -10,16 +10,17 @@ tonic = { path = "../tonic/tonic" }
 
 
 [features]
-prio_global = ["masa-core/prio_global", "tokio/prio_global", "tonic/prio_global"]
-prio_oldest = ["masa-core/prio_oldest", "tokio/prio_oldest", "tonic/prio_oldest"]
-prio_local  = ["masa-core/prio_local",  "tokio/prio_local",  "tonic/prio_local"]
-fifo        = ["masa-core/fifo",        "tokio/fifo",        "tonic/fifo"]
+sched_prio = ["masa-core/sched_prio", "tokio/sched_prio", "tonic/sched_prio"]
+tailclipper = ["sched_prio", "masa-core/tailclipper", "tokio/tailclipper", "tonic/tailclipper"]
+sched_fifo  = ["masa-core/sched_fifo",  "tokio/sched_fifo",  "tonic/sched_fifo"]
+
+slo_abort = ["masa-core/slo_abort", "tonic/slo_abort"]
+est_abort = ["masa-core/est_abort", "tonic/est_abort"]
 
 est_rms = ["tonic/est_rms"]
 est_hist = ["tonic/est_hist"]
 est_mean_var = ["tonic/est_mean_var"]
 
-early = ["masa-core/early", "tonic/early"]
-adctl = ["tonic/adctl"]
-rajomon = ["masa-core/rajomon", "tonic/rajomon"]
+ac_est = ["masa-core/ac_est", "tonic/ac_est"]
+ac_rajomon = ["masa-core/ac_rajomon", "tonic/ac_rajomon"]
 trace-queue = ["tonic/trace-queue"]

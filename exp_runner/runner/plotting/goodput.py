@@ -7,6 +7,11 @@ import numpy as np
 import pandas as pd
 
 from .util import (
+    _has_abort,
+    _is_fifo,
+    _is_local,
+    _is_prio,
+    _is_tailclipper,
     filter_excluded_errors,
     get_plot_worker_count,
     get_policy_color,
@@ -47,7 +52,11 @@ def get_request_type_hatch(request_type: str):
 
 
 def sort_policies_by_type(policies):
-    """Sort policies to group fifo first, then prio_global, then prio_local."""
+    """Sort policies to group fifo first, then prio/prio_global, then local/prio_local.
+
+    Supports both new flag names (sched_fifo, sched_prio, etc.) and old flag names
+    (fifo, prio_global, prio_local) for backward compatibility.
+    """
     fifo_policies = []
     prio_global_policies = []
     prio_local_policies = []
@@ -55,19 +64,24 @@ def sort_policies_by_type(policies):
 
     for policy in policies:
         policy_lower = policy.lower()
-        if policy_lower.startswith("fifo"):
+        if _is_fifo(policy_lower):
             fifo_policies.append(policy)
-        elif policy_lower.startswith("prio_global"):
-            prio_global_policies.append(policy)
-        elif policy_lower.startswith("prio_local"):
+        elif _is_local(policy_lower):
             prio_local_policies.append(policy)
+        elif _is_tailclipper(policy_lower):
+            other_policies.append(policy)
+        elif _is_prio(policy_lower):
+            prio_global_policies.append(policy)
         else:
             other_policies.append(policy)
 
-    # Sort within each group (base policy before early variant)
-    fifo_policies.sort(key=lambda p: (",early" in p.lower(), p))
-    prio_global_policies.sort(key=lambda p: (",early" in p.lower(), p))
-    prio_local_policies.sort(key=lambda p: (",early" in p.lower(), p))
+    def _abort_sort_key(p):
+        return (_has_abort(p.lower()), p)
+
+    # Sort within each group (base policy before abort variant)
+    fifo_policies.sort(key=_abort_sort_key)
+    prio_global_policies.sort(key=_abort_sort_key)
+    prio_local_policies.sort(key=_abort_sort_key)
     other_policies.sort()
 
     return fifo_policies + prio_global_policies + prio_local_policies + other_policies
