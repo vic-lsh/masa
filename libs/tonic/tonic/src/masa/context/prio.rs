@@ -10,7 +10,7 @@ use crate::Response;
 use masa_core::{Context, ContextBuilder};
 
 #[cfg(feature = "ac_est")]
-use super::adctl_hooks::{
+use super::ac_hooks::{
     is_early_return_response, AdctlChildState, AdctlRequestState, AdctlServerState,
 };
 #[cfg(feature = "ac_est")]
@@ -19,12 +19,14 @@ use super::estimator::DefaultLatencyEstimator;
 use crate::masa::MethodRegistry;
 
 #[derive(Debug)]
-/// This policy sets the priority of each child request to be the request generation time (prio_hint).
+/// This policy always sets the deadline of each request as
+///   d = start + SLO
+/// where start is the point in time when the original request from the client was sent out
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct PrioOldest;
+pub struct Prio;
 
-impl MasaHooks for PrioOldest {
+impl MasaHooks for Prio {
     type ServerContext = ServerContext;
     type ChildContext = ChildContext;
     type ParentContext = ParentContext;

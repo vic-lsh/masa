@@ -328,7 +328,12 @@ def _has_abort(policy_lower: str) -> bool:
 
 def _has_admission_control(policy_lower: str) -> bool:
     """Check if policy has admission control (new or old name)."""
-    return ",ac_est" in policy_lower or ",ac_rajomon" in policy_lower or ",adctl" in policy_lower or ",rajomon" in policy_lower
+    return (
+        ",ac_est" in policy_lower
+        or ",ac_rajomon" in policy_lower
+        or ",adctl" in policy_lower
+        or ",rajomon" in policy_lower
+    )
 
 
 def _is_fifo(policy_lower: str) -> bool:

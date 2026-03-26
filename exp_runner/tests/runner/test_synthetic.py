@@ -104,7 +104,10 @@ class TestSyntheticApp:
 
     def test_safe_project_name(self):
         name = generate_project_name(
-            prefix="syn", experiment_name="exp 1", iteration=0, policy="sched_fifo,slo_abort"
+            prefix="syn",
+            experiment_name="exp 1",
+            iteration=0,
+            policy="sched_fifo,slo_abort",
         )
         # docker compose project name allowed chars: [a-z0-9_-]
         assert "," not in name

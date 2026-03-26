@@ -12,18 +12,18 @@ fn test_fifo_policy() {
 
 #[cfg(feature = "sched_prio")]
 #[test]
-fn test_prio_global_policy() {
+fn test_sched_prio_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }
 
 #[cfg(all(feature = "sched_prio", feature = "tailclipper"))]
 #[test]
-fn test_prio_oldest_policy() {
+fn test_tailclipper_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }
 
 #[cfg(all(feature = "sched_prio", feature = "est_abort"))]
 #[test]
-fn test_prio_local_policy() {
+fn test_est_abort_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }

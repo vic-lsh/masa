@@ -59,8 +59,8 @@ The recommended way to run MSSIM experiments is using the experiment runner scri
 
    **`policies`** - Newline-separated list of scheduling policies:
    ```
-   fifo
-   prio_global
+   sched_fifo
+   sched_prio
    ```
 
 2. Run the experiment:
