@@ -1,18 +1,15 @@
-use crate::{masa::context::read_context, CowGrpcMethod, GrpcMethod, Request, Status};
+use crate::{CowGrpcMethod, GrpcMethod, Request, Status};
 use std::sync::Arc;
 use std::task::Poll;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
-use super::common::{EarlyReturnHandler, QueueLatencyTracker};
-use super::rajomon::RajomonHandler;
-use super::{resolve_method_name_from_http, resolve_method_name_from_request, MasaRequestExt};
+use super::base::BaseHookState;
+use super::{resolve_method_name_from_request, MasaRequestExt};
 use crate::Response;
-use masa_core::{Context, ContextBuilder};
+use masa_core::ContextBuilder;
 
 #[cfg(feature = "ac_est")]
-use super::ac_hooks::{
-    is_early_return_response, AdctlChildState, AdctlRequestState, AdctlServerState,
-};
+use super::est_state::{is_early_return_response, EstChildState, EstRequestState, EstServerState};
 #[cfg(feature = "ac_est")]
 use super::estimator::DefaultLatencyEstimator;
 #[cfg(feature = "ac_est")]
@@ -35,14 +32,14 @@ impl MasaHooks for StandardHooks {
 #[allow(unreachable_pub)]
 pub struct ServerContext {
     #[cfg(feature = "ac_est")]
-    adctl: Arc<AdctlServerState<DefaultLatencyEstimator>>,
+    est: Arc<EstServerState<DefaultLatencyEstimator>>,
 }
 
 impl ServerHooks for ServerContext {
     fn new(_service_name: &'static str) -> Self {
         Self {
             #[cfg(feature = "ac_est")]
-            adctl: Arc::new(AdctlServerState::new()),
+            est: Arc::new(EstServerState::new()),
         }
     }
 }
@@ -50,12 +47,9 @@ impl ServerHooks for ServerContext {
 #[derive(Debug)]
 #[allow(unreachable_pub)]
 pub struct ParentContext {
-    ctx: Context,
-    q_lat_tracker: QueueLatencyTracker,
-    early_return: EarlyReturnHandler,
+    base: BaseHookState,
     #[cfg(feature = "ac_est")]
-    adctl: AdctlRequestState<DefaultLatencyEstimator>,
-    rajomon: RajomonHandler,
+    est: EstRequestState<DefaultLatencyEstimator>,
 }
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
@@ -64,38 +58,26 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         req: &http::Request<B>,
         _server_ctx: Arc<ServerContext>,
     ) -> Self {
-        let mut ctx = read_context(req);
-        let resolved_method = resolve_method_name_from_http(method, req);
-        let mut rajomon = RajomonHandler::new(resolved_method.clone());
-        rajomon.check_inbound(&mut ctx);
+        let base = BaseHookState::new(method, req);
 
         #[cfg(feature = "ac_est")]
-        let resolved_method_id = MethodRegistry::global()
-            .get_or_register_method(resolved_method.service(), resolved_method.method());
+        let resolved_method_id = MethodRegistry::global().get_or_register_method(
+            base.resolved_method.service(),
+            base.resolved_method.method(),
+        );
 
         Self {
-            ctx,
-            q_lat_tracker: QueueLatencyTracker::new(),
-            early_return: EarlyReturnHandler::new(resolved_method),
+            base,
             #[cfg(feature = "ac_est")]
-            adctl: AdctlRequestState::new(resolved_method_id, _server_ctx.adctl.clone()),
-            rajomon,
+            est: EstRequestState::new(resolved_method_id, _server_ctx.est.clone()),
         }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        if self.rajomon.should_drop() {
-            return Err(Err(self.rajomon.issue_error(None)));
-        }
-
-        if self.early_return.check(&self.ctx) {
-            return Err(Err(self.early_return.issue_error()));
-        }
-
-        self.rajomon.track_queue_delay();
-        self.q_lat_tracker.track_poll();
+        self.base.check_guards()?;
+        self.base.track_poll();
         #[cfg(feature = "ac_est")]
-        self.adctl.start_compute_tracking();
+        self.est.start_compute_tracking();
         Ok(())
     }
 
@@ -105,40 +87,36 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         request: &mut Request<T>,
         child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
-        if self.rajomon.should_drop() {
-            return Err(self.rajomon.issue_error(None));
-        }
-
-        if self.early_return.check(&self.ctx) {
-            return Err(self.early_return.issue_error());
-        }
+        self.base.check_guards_status()?;
 
         let child_method_name = resolve_method_name_from_request(child_method, request);
-        self.rajomon.check_outbound(&child_method_name, &self.ctx)?;
+        self.base
+            .rajomon
+            .check_outbound(&child_method_name, &self.base.ctx)?;
 
         child_ctx.set_method_name(child_method_name.clone());
 
         #[cfg(feature = "ac_est")]
         if self
-            .adctl
-            .prepare_before_child_rpc(&self.ctx, &child_method_name, &mut child_ctx.adctl)
+            .est
+            .prepare_before_child_rpc(&self.base.ctx, &child_method_name, &mut child_ctx.est)
             .is_err()
         {
-            return Err(self.early_return.issue_error());
+            return Err(self.base.slo_abort.issue_error());
         }
 
-        let deadline = self.ctx.deadline();
-        let prio_hint = self.ctx.prio_hint();
+        let deadline = self.base.ctx.deadline();
+        let prio_hint = self.base.ctx.prio_hint();
 
         #[allow(unused_mut)]
-        let mut builder = ContextBuilder::from(&self.ctx)
+        let mut builder = ContextBuilder::from(&self.base.ctx)
             .deadline(deadline)
             .prio_hint(prio_hint)
-            .tokens(self.rajomon.remaining_tokens());
+            .tokens(self.base.rajomon.remaining_tokens());
 
         #[cfg(feature = "ac_est")]
         {
-            builder = builder.hop_count(self.ctx.hop_count().saturating_add(1));
+            builder = builder.hop_count(self.base.ctx.hop_count().saturating_add(1));
         }
 
         let child_recv_ctx = builder.build();
@@ -153,24 +131,17 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         response: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext,
     ) -> Result<(), Status> {
-        self.q_lat_tracker.track_child_response(response);
+        self.base.q_lat_tracker.track_child_response(response);
 
         #[cfg(feature = "ac_est")]
         {
-            child_ctx.adctl.finalize(response);
-            self.adctl
-                .after_child_rpc(&self.ctx, response, &child_ctx.adctl);
+            child_ctx.est.finalize(response);
+            self.est
+                .after_child_rpc(&self.base.ctx, response, &child_ctx.est);
         }
 
         if let Some(child) = child_ctx.child_method_name {
-            if let Ok(resp) = response {
-                self.rajomon
-                    .update_cache_from_response(&child, resp.metadata());
-            } else if let Err(status) = response {
-                self.rajomon
-                    .update_cache_from_response(&child, status.metadata());
-            }
-            self.early_return.set_last_child(child);
+            self.base.update_after_child(&child, response);
         }
         Ok(())
     }
@@ -180,37 +151,21 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
         #[cfg(feature = "ac_est")]
-        self.adctl.stop_compute_tracking();
+        self.est.stop_compute_tracking();
 
-        match poll {
-            Poll::Pending => {
-                if self.rajomon.should_drop() {
-                    return Err(Err(self.rajomon.issue_error(None)));
-                }
-                if self.early_return.check(&self.ctx) {
-                    return Err(Err(self.early_return.issue_error()));
-                }
-            }
-            Poll::Ready(_) => {}
-        };
-
-        Ok(())
+        self.base.check_pending_guards(poll)
     }
 
-    // expect frontend method, all other method are going send back their latency trace
     fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
         #[cfg(feature = "ac_est")]
         {
             if !is_early_return_response(result) {
-                self.adctl.track_latencies();
+                self.est.track_latencies();
             }
-            self.adctl.inject_response_meta(&self.ctx, result);
+            self.est.inject_response_meta(&self.base.ctx, result);
         }
 
-        self.rajomon.finalize_queue_delay();
-        self.q_lat_tracker
-            .inject_context_metadata(&self.ctx, result);
-        self.rajomon.inject_price_to_response(result);
+        self.base.finalize(result);
     }
 }
 
@@ -219,7 +174,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 pub struct ChildContext {
     pub child_method_name: Option<CowGrpcMethod>,
     #[cfg(feature = "ac_est")]
-    adctl: AdctlChildState<DefaultLatencyEstimator>,
+    est: EstChildState<DefaultLatencyEstimator>,
 }
 
 impl ClientHooks for ChildContext {
@@ -227,7 +182,7 @@ impl ClientHooks for ChildContext {
         Self {
             child_method_name: None,
             #[cfg(feature = "ac_est")]
-            adctl: AdctlChildState::new(),
+            est: EstChildState::new(),
         }
     }
 }
@@ -240,5 +195,5 @@ impl ChildContext {
 
 #[cfg(test)]
 mod tests {
-    crate::generate_early_return_test!(ParentContext, ServerContext, ChildContext);
+    crate::generate_slo_abort_test!(ParentContext, ServerContext, ChildContext);
 }
