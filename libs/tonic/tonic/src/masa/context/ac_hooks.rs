@@ -14,7 +14,7 @@ use crate::{Code, CowGrpcMethod, Response, Status};
 use masa_core::{time_now, Context, LatencyEstimator, ResponseMeta, SLO_ABORT};
 
 #[cfg(feature = "ac_est")]
-use super::adctl::AdmissionController;
+use super::ac_est::AdmissionController;
 use super::estimator::ParentToChildId;
 use super::latency_map::{spawn_method_stats_printer, spawn_stats_printer, LatencyMap};
 use super::{MasaResponseExt, MasaStatusExt};

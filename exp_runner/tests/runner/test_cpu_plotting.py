@@ -126,7 +126,11 @@ class TestGetPolicyColors:
 
     def test_abort_policies(self):
         """Test color assignment for abort policies (new names)."""
-        policies = ["sched_fifo,slo_abort", "sched_prio,slo_abort", "sched_prio,est_abort"]
+        policies = [
+            "sched_fifo,slo_abort",
+            "sched_prio,slo_abort",
+            "sched_prio,est_abort",
+        ]
         colors = _get_policy_colors(policies)
 
         assert colors["sched_fifo,slo_abort"] == "darkgrey"
