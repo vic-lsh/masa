@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::task::Poll;
 
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
+use super::ac::AcHandler;
 use super::base::BaseHookState;
 use super::{resolve_method_name_from_request, MasaRequestExt};
 use crate::Response;
@@ -91,7 +92,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
         let child_method_name = resolve_method_name_from_request(child_method, request);
         self.base
-            .rajomon
+            .ac
             .check_outbound(&child_method_name, &self.base.ctx)?;
 
         child_ctx.set_method_name(child_method_name.clone());
@@ -112,7 +113,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         let mut builder = ContextBuilder::from(&self.base.ctx)
             .deadline(deadline)
             .prio_hint(prio_hint)
-            .tokens(self.base.rajomon.remaining_tokens());
+            .tokens(self.base.ac.remaining_tokens());
 
         #[cfg(feature = "ac_est")]
         {

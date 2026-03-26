@@ -3,6 +3,8 @@ use std::{sync::Arc, task::Poll};
 use crate::metadata::{Ascii, MetadataValue};
 use crate::{body::BoxBody, CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
+#[allow(missing_docs)]
+pub mod ac;
 mod base;
 mod common;
 #[cfg(feature = "est")]
@@ -10,8 +12,6 @@ pub(crate) mod est;
 #[cfg(feature = "est_abort")]
 mod est_abort;
 mod noop;
-#[allow(missing_docs)]
-pub mod rajomon;
 mod standard;
 
 pub mod runtime;
@@ -182,9 +182,9 @@ pub const SERVICE_NAME_OVERRIDE_HEADER: &str = "x-masa-service-name";
 pub(crate) const MASA_CONTEXT_HEADER: &str = masa_core::MASA_CONTEXT_HEADER;
 
 #[cfg(feature = "ac_rajomon")]
-pub use rajomon::CLIENT_TOKEN_BUCKET;
+pub use ac::rajomon::CLIENT_TOKEN_BUCKET;
 #[cfg(feature = "ac_rajomon")]
-pub use rajomon::RAJOMON_STATE;
+pub use ac::rajomon::RAJOMON_STATE;
 
 /// Get the MASA context from metadata.
 pub fn get_masa_context_from_metadata(metadata: &crate::metadata::MetadataMap) -> Option<Context> {

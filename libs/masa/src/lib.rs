@@ -45,10 +45,10 @@ pub fn create_context(api: &str, slo: Duration) -> Context {
 /// Returns None if the client-side rate limiter rejects the request.
 #[cfg(feature = "ac_rajomon")]
 pub fn try_create_context(api: &str, slo: std::time::Duration) -> Option<Context> {
-    use tonic::masa::context::rajomon::CLIENT_TOKEN_BUCKET;
+    use tonic::masa::context::ac::rajomon::CLIENT_TOKEN_BUCKET;
 
     let method = tonic::CowGrpcMethod::new("", api.to_string());
-    tonic::masa::context::rajomon::ClientTokenBucket::ensure_worker_started();
+    tonic::masa::context::ac::rajomon::ClientTokenBucket::ensure_worker_started();
     let tokens = CLIENT_TOKEN_BUCKET.try_acquire(&method)?;
 
     let request_id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
