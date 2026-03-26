@@ -206,7 +206,7 @@ macro_rules! generate_slo_abort_test {
             use crate::context_ext::MASA_CONTEXT_HEADER;
             use masa_core::{time_now, ContextBuilder};
             use std::sync::Arc;
-            use tonic_core::masa::context::{ClientHooks, ParentHooks, ServerHooks};
+            use tonic_core::masa_ext::{ClientHooks, ParentHooks, ServerHooks};
             use tonic_core::{GrpcMethod, Request, Response, Status};
 
             // Create a context with an e2e SLO deadline in the past.

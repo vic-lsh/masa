@@ -4,7 +4,7 @@ use app_utils::timing::time_now;
 use rand::{thread_rng, Rng};
 use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
-use tonic::masa::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
+use tonic::masa_ext::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
 use tonic::metadata::MetadataValue;
 use tonic::{Request, Status};
 use tracing::warn;

@@ -11,10 +11,10 @@ static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
 
 /// The default MasaHooks implementation, selected at compile time.
 ///
-/// This is a convenience re-export of `tonic::masa::DefaultMasaHooks`, which
+/// This is a convenience re-export of `tonic::masa_ext::DefaultMasaHooks`, which
 /// resolves to `NoopMasaHooks` (zero overhead) when no scheduling features
 /// are enabled, or `masa_policy::StandardHooks` when any scheduling feature is on.
-pub use tonic::masa::DefaultMasaHooks;
+pub use tonic::masa_ext::DefaultMasaHooks;
 
 /// Utility function to create a Masa Context.
 ///

@@ -109,7 +109,7 @@ pub(crate) fn generate_internal<T: Service>(
 
             // required to call functions in the trait, referenced through MasaHooks
             #[allow(unused_imports)]
-            use tonic::masa::{ParentHooks, ServerHooks};
+            use tonic::masa_ext::{ParentHooks, ServerHooks};
 
             #generated_trait
 
@@ -118,7 +118,7 @@ pub(crate) fn generate_internal<T: Service>(
             #[derive(Debug)]
             pub struct #server_service<
                     T: #server_trait,
-                    M: tonic::masa::MasaHooks = tonic::masa::DefaultMasaHooks
+                    M: tonic::masa_ext::MasaHooks = tonic::masa_ext::DefaultMasaHooks
                 > {
                 inner: _Inner<T>,
                 ctx: Arc<M::ServerContext>,
@@ -150,7 +150,7 @@ pub(crate) fn generate_internal<T: Service>(
 
             impl<
                 T: #server_trait,
-                M: tonic::masa::MasaHooks
+                M: tonic::masa_ext::MasaHooks
             > #server_service<T, M> {
                 pub fn with_custom_context(inner: T) -> Self {
                     Self::new_impl(inner)
@@ -188,7 +188,7 @@ pub(crate) fn generate_internal<T: Service>(
             impl<T, M, B> tonic::codegen::Service<http::Request<B>> for #server_service<T, M>
                 where
                     T: #server_trait,
-                    M: tonic::masa::MasaHooks,
+                    M: tonic::masa_ext::MasaHooks,
                     B: Body + Send + 'static,
                     B::Error: Into<StdError> + Send + 'static,
             {
@@ -222,7 +222,7 @@ pub(crate) fn generate_internal<T: Service>(
 
             impl<
                 T: #server_trait,
-                M: tonic::masa::MasaHooks
+                M: tonic::masa_ext::MasaHooks
             > Clone for #server_service<T, M> {
                 fn clone(&self) -> Self {
                     let inner = self.inner.clone();
@@ -424,7 +424,7 @@ fn generate_named(
     quote! {
         impl<
             T: #server_trait,
-            M: tonic::masa::MasaHooks
+            M: tonic::masa_ext::MasaHooks
         > tonic::server::NamedService for #server_service<T, M> {
             const NAME: &'static str = #service_name;
         }

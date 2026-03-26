@@ -18,9 +18,9 @@ use masa_integration_tests::pb::{
     child_service_server::{ChildService, ChildServiceServer},
     Input1, Input2, Output1, Output2,
 };
-use tonic::masa::context::MasaRequestExt;
+use tonic::masa_ext::MasaRequestExt;
 #[cfg(feature = "trace-queue")]
-use tonic::masa::context::MasaResponseExt;
+use tonic::masa_ext::MasaResponseExt;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
