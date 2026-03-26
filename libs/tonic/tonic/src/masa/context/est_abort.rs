@@ -1,5 +1,7 @@
 // Zero-cost wrapper for est_abort-specific scheduling behavior.
 //
+// This module is only compiled with the `est` feature (`est_abort` implies `est`).
+//
 // When `est_abort` is enabled, PredictiveAbort performs dynamic reprioritization,
 // deadline tightening, and child error propagation. When disabled, all methods
 // are no-ops that compile away entirely.
@@ -10,7 +12,7 @@ use masa_core::Context;
 /// Zero-cost policy overlay for predictive abort behavior.
 ///
 /// This struct has no fields and exists purely to provide feature-gated method
-/// implementations that `standard.rs` can call unconditionally.
+/// implementations that `standard.rs` calls when `est` is enabled.
 #[derive(Debug)]
 pub(super) struct PredictiveAbort;
 
