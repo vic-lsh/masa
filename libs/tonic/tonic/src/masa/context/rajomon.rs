@@ -1,15 +1,15 @@
 use crate::{CowGrpcMethod, Status};
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 use dashmap::DashMap;
-#[cfg(not(feature = "rajomon"))]
+#[cfg(not(feature = "ac_rajomon"))]
 use masa_core::Context;
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 use masa_core::Context;
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 use once_cell::sync::Lazy;
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 use std::sync::atomic::{AtomicU64, Ordering};
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 use std::time::Duration;
 
 // ── Rajomon Tunable Parameters ──
@@ -17,49 +17,49 @@ use std::time::Duration;
 // All defaults match the original unless noted.
 
 // Overload detection
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 const PRICE_UPDATE_RATE_MS: u64 = 10; // original: priceUpdateRate (10ms)
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 const LATENCY_THRESHOLD_US: u64 = 5_000; // 5ms — best for hotel; above idle frontend queue latency, avoids false positives
 
 // Price update (step strategy)
 // Asymmetric up/down: fast rise provides quick back-pressure; faster recovery
 // than drift_3 (down=2 vs down=1) reduces the lockout duration and improves
 // the equilibrium stability point from K=11% to K=20% congested ticks.
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 const PRICE_STEP_UP: u64 = 8; // additive step up per tick: ramps to PRICE_CAP in ~75ms (8 ticks × 10ms)
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 const PRICE_STEP_DOWN: u64 = 2; // additive step down per tick: recovers to 0 in ~300ms from PRICE_CAP
 /// Price ceiling at 60% of MAX_TOKEN (60). Allows shedding up to 60% of requests to protect SLO under heavy overload.
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 const PRICE_CAP: u64 = MAX_TOKEN * 6 / 10; // 60 with MAX_TOKEN=100
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 const INIT_PRICE: u64 = 0; // original: initprice (0)
 
 // Price propagation
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 const PRICE_FREQ: u64 = 5; // original: priceFreq (5) — send price every 1/N requests
 
 // Client-side token bucket
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 const TOKENS_LEFT_INIT: u64 = 10; // original: tokensLeft (10)
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 const TOKEN_UPDATE_RATE_MS: u64 = 10; // original: tokenUpdateRate (10ms)
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 const TOKEN_UPDATE_STEP: u64 = 5; // original: tokenUpdateStep (1)
 /// The maximum token value the loadgen can generate for a bid. Server prices are
 /// meaningful only when they are ≤ MAX_TOKEN; a price above MAX_TOKEN means 100%
 /// rejection. Exported so the loadgen can draw uniform random bids in [0, MAX_TOKEN].
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 pub const MAX_TOKEN: u64 = 100; // original: maxToken (10)
 
 /// Global Rajomon state shared across all request handlers.
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 pub static RAJOMON_STATE: Lazy<RajomonSharedState> = Lazy::new(|| RajomonSharedState::new());
 
 /// Global queue statistics for the current time window.
 /// Tracks the maximum queue latency observed since the last tick.
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 pub struct QueueStats {
     /// Maximum per-request queue latency (us) observed since the last tick.
     pub window_max: AtomicU64,
@@ -68,7 +68,7 @@ pub struct QueueStats {
     pub log_window_max: AtomicU64,
 }
 
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 impl QueueStats {
     fn new() -> Self {
         Self {
@@ -78,7 +78,7 @@ impl QueueStats {
     }
 }
 
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 impl std::fmt::Debug for QueueStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("QueueStats")
@@ -91,7 +91,7 @@ impl std::fmt::Debug for QueueStats {
     }
 }
 
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 #[derive(Debug)]
 #[allow(missing_docs)]
 pub struct RajomonSharedState {
@@ -105,7 +105,7 @@ pub struct RajomonSharedState {
     pub queue_stats: QueueStats,
 }
 
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 impl RajomonSharedState {
     pub(crate) fn new() -> Self {
         Self {
@@ -246,28 +246,28 @@ impl RajomonSharedState {
 
 #[derive(Debug)]
 pub(crate) struct RajomonHandler {
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     rpc: CowGrpcMethod,
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     should_drop: bool,
     /// Remaining token budget for this request, shared across fan-out branches.
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     remaining_tokens: AtomicU64,
     /// Inbound token count from the request context (for deterministic price propagation).
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     inbound_tokens: AtomicU64,
 }
 
 impl Default for RajomonHandler {
     fn default() -> Self {
         Self {
-            #[cfg(feature = "rajomon")]
+            #[cfg(feature = "ac_rajomon")]
             rpc: CowGrpcMethod::new("", ""),
-            #[cfg(feature = "rajomon")]
+            #[cfg(feature = "ac_rajomon")]
             should_drop: false,
-            #[cfg(feature = "rajomon")]
+            #[cfg(feature = "ac_rajomon")]
             remaining_tokens: AtomicU64::new(0),
-            #[cfg(feature = "rajomon")]
+            #[cfg(feature = "ac_rajomon")]
             inbound_tokens: AtomicU64::new(0),
         }
     }
@@ -275,7 +275,7 @@ impl Default for RajomonHandler {
 
 impl RajomonHandler {
     pub(crate) fn new(rpc: CowGrpcMethod) -> Self {
-        #[cfg(feature = "rajomon")]
+        #[cfg(feature = "ac_rajomon")]
         {
             RajomonSharedState::ensure_worker_started();
             Self {
@@ -285,7 +285,7 @@ impl RajomonHandler {
                 inbound_tokens: AtomicU64::new(0),
             }
         }
-        #[cfg(not(feature = "rajomon"))]
+        #[cfg(not(feature = "ac_rajomon"))]
         {
             let _ = rpc;
             Self {}
@@ -297,7 +297,7 @@ impl RajomonHandler {
     /// Deduct: remaining = tok - own_price only — not accumulated — so that the
     /// outbound check (remaining >= child_price) isn't double-counted against the
     /// same downstream price that was already used in the inbound gate.
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     pub(crate) fn check_inbound(&mut self, ctx: &mut Context) -> bool {
         let accumulated = RAJOMON_STATE.accumulated_price(&self.rpc);
         let own = RAJOMON_STATE.own_price.load(Ordering::Relaxed);
@@ -315,32 +315,32 @@ impl RajomonHandler {
         }
     }
 
-    #[cfg(not(feature = "rajomon"))]
+    #[cfg(not(feature = "ac_rajomon"))]
     pub(crate) fn check_inbound(&mut self, _ctx: &mut Context) -> bool {
         false
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     pub(crate) fn should_drop(&self) -> bool {
         self.should_drop
     }
 
-    #[cfg(not(feature = "rajomon"))]
+    #[cfg(not(feature = "ac_rajomon"))]
     pub(crate) fn should_drop(&self) -> bool {
         false
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     pub(crate) fn remaining_tokens(&self) -> u64 {
         self.remaining_tokens.load(Ordering::Relaxed)
     }
 
-    #[cfg(not(feature = "rajomon"))]
+    #[cfg(not(feature = "ac_rajomon"))]
     pub(crate) fn remaining_tokens(&self) -> u64 {
         100 // default token budget when rajomon disabled
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     pub(crate) fn check_outbound(
         &self,
         child_method: &CowGrpcMethod,
@@ -354,7 +354,7 @@ impl RajomonHandler {
         Ok(())
     }
 
-    #[cfg(not(feature = "rajomon"))]
+    #[cfg(not(feature = "ac_rajomon"))]
     pub(crate) fn check_outbound(
         &self,
         _child_method: &CowGrpcMethod,
@@ -363,7 +363,7 @@ impl RajomonHandler {
         Ok(())
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     pub(crate) fn issue_error(&self, child_method: Option<&CowGrpcMethod>) -> Status {
         let mut msg = format!(
             "/EarlyReturn?src={}::{}",
@@ -385,7 +385,7 @@ impl RajomonHandler {
         Status::resource_exhausted(msg)
     }
 
-    #[cfg(not(feature = "rajomon"))]
+    #[cfg(not(feature = "ac_rajomon"))]
     pub(crate) fn issue_error(&self, _child_method: Option<&CowGrpcMethod>) -> Status {
         Status::resource_exhausted("Rajomon disabled")
     }
@@ -394,7 +394,7 @@ impl RajomonHandler {
     /// Each poll measures time-in-run-queue for that specific wakeup; taking the max
     /// across polls (not accumulating) means the threshold is compared against a single
     /// scheduler wait, not the sum of all waits across the request lifetime.
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     pub(crate) fn track_queue_delay(&self) {
         let q_lat_us = tokio::task::obtain_task_queue_latency().as_micros() as u64;
         RAJOMON_STATE
@@ -403,17 +403,17 @@ impl RajomonHandler {
             .fetch_max(q_lat_us, Ordering::Relaxed);
     }
 
-    #[cfg(not(feature = "rajomon"))]
+    #[cfg(not(feature = "ac_rajomon"))]
     pub(crate) fn track_queue_delay(&self) {}
 
     /// No-op: window_max is updated per-poll in track_queue_delay.
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     pub(crate) fn finalize_queue_delay(&self) {}
 
-    #[cfg(not(feature = "rajomon"))]
+    #[cfg(not(feature = "ac_rajomon"))]
     pub(crate) fn finalize_queue_delay(&self) {}
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     pub(crate) fn update_cache_from_response(
         &self,
         child_method: &CowGrpcMethod,
@@ -442,7 +442,7 @@ impl RajomonHandler {
         }
     }
 
-    #[cfg(not(feature = "rajomon"))]
+    #[cfg(not(feature = "ac_rajomon"))]
     pub(crate) fn update_cache_from_response(
         &self,
         _child_method: &CowGrpcMethod,
@@ -452,13 +452,13 @@ impl RajomonHandler {
 
     /// Deterministic price propagation: send price when inbound_tokens % PRICE_FREQ == 0.
     /// Original Go: tok % priceFreq == 0.
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     fn should_propagate_price(&self) -> bool {
         let tokens = self.inbound_tokens.load(Ordering::Relaxed);
         tokens % PRICE_FREQ == 0
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     pub(crate) fn inject_price_to_response<T>(
         &self,
         result: &mut Result<crate::Response<T>, Status>,
@@ -480,7 +480,7 @@ impl RajomonHandler {
         }
     }
 
-    #[cfg(not(feature = "rajomon"))]
+    #[cfg(not(feature = "ac_rajomon"))]
     pub(crate) fn inject_price_to_response<T>(
         &self,
         _result: &mut Result<crate::Response<T>, Status>,
@@ -490,14 +490,14 @@ impl RajomonHandler {
 
 /// Client-side token bucket for Rajomon rate limiting.
 /// Single global counter matching the original Go implementation.
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 #[allow(missing_debug_implementations)]
 pub struct ClientTokenBucket {
     tokens_left: AtomicU64,
     cached_prices: DashMap<CowGrpcMethod, u64>,
 }
 
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 impl ClientTokenBucket {
     fn new() -> Self {
         Self {
@@ -599,7 +599,7 @@ impl ClientTokenBucket {
     }
 }
 
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 #[allow(missing_docs)]
 pub static CLIENT_TOKEN_BUCKET: Lazy<ClientTokenBucket> = Lazy::new(|| ClientTokenBucket::new());
 
@@ -610,12 +610,12 @@ mod tests {
 
     /// Mutex to serialize tests that modify the global RAJOMON_STATE.own_price,
     /// since it's a single global value shared across all test threads.
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     static GLOBAL_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     // ── A. Price Update Algorithm Tests (Step Strategy) ──
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_step_price_increase_on_congestion() {
         let state = RajomonSharedState::new();
@@ -641,7 +641,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_step_price_decrease_no_congestion() {
         let state = RajomonSharedState::new();
@@ -658,7 +658,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_price_floor_at_zero() {
         let state = RajomonSharedState::new();
@@ -669,7 +669,7 @@ mod tests {
         assert_eq!(state.own_price.load(Ordering::Relaxed), 0);
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_hysteresis_band_holds_price() {
         let state = RajomonSharedState::new();
@@ -684,7 +684,7 @@ mod tests {
         assert_eq!(state.own_price.load(Ordering::Relaxed), 10);
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_price_increase_uses_constant_step_not_proportional() {
         let state = RajomonSharedState::new();
@@ -713,7 +713,7 @@ mod tests {
 
     // ── B. Queue Delay Signal Tests (Window Max) ──
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_queue_stats_tracks_maximum_not_average() {
         let state = RajomonSharedState::new();
@@ -732,7 +732,7 @@ mod tests {
         assert_eq!(state.queue_stats.window_max.load(Ordering::Relaxed), 5000);
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_window_max_resets_after_price_update() {
         let state = RajomonSharedState::new();
@@ -741,7 +741,7 @@ mod tests {
         assert_eq!(state.queue_stats.window_max.load(Ordering::Relaxed), 0);
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_no_ewma_smoothing() {
         let state = RajomonSharedState::new();
@@ -759,7 +759,7 @@ mod tests {
 
     // ── C. Price Aggregation Tests (Maximal Strategy) ──
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_accumulated_price_is_max_not_sum() {
         let state = RajomonSharedState::new();
@@ -780,7 +780,7 @@ mod tests {
         assert_eq!(state.accumulated_price(&method2), 0);
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_accumulated_price_own_only_no_downstream() {
         let state = RajomonSharedState::new();
@@ -791,7 +791,7 @@ mod tests {
 
     // ── D. Token Consumption Tests (Deduction at Each Hop) ──
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_check_inbound_deducts_own_price_not_accumulated() {
         let _lock = GLOBAL_STATE_LOCK.lock().unwrap();
@@ -813,7 +813,7 @@ mod tests {
     /// This prevents double-counting: a request that passes the inbound gate is guaranteed
     /// to pass the subsequent outbound check (remaining >= child_price) without needing
     /// tok >= 2×price.
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_check_inbound_deducts_own_not_accumulated_when_downstream_dominant() {
         let _lock = GLOBAL_STATE_LOCK.lock().unwrap();
@@ -829,7 +829,7 @@ mod tests {
         assert_eq!(handler.remaining_tokens(), 20); // 25 - own(5) = 20, not 25 - 20 = 5
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_check_inbound_rejects_insufficient_tokens() {
         let _lock = GLOBAL_STATE_LOCK.lock().unwrap();
@@ -843,7 +843,7 @@ mod tests {
         assert!(handler.should_drop());
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_check_inbound_accepts_exact_tokens() {
         let _lock = GLOBAL_STATE_LOCK.lock().unwrap();
@@ -860,7 +860,7 @@ mod tests {
         assert_eq!(handler.remaining_tokens(), 0); // 10 - 10 = 0
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_check_inbound_tokens_zero_price_zero() {
         let _lock = GLOBAL_STATE_LOCK.lock().unwrap();
@@ -877,7 +877,7 @@ mod tests {
 
     // ── E. Downstream Price Tests (Max Recomputation, Not Ratchet) ──
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_downstream_price_can_decrease() {
         let parent = CowGrpcMethod::new("svc", "parent");
@@ -943,7 +943,7 @@ mod tests {
         assert_eq!(*state.max_downstream_for_method.get(&parent).unwrap(), 20);
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_child_price_default_zero() {
         let state = RajomonSharedState::new();
@@ -953,7 +953,7 @@ mod tests {
 
     // ── F. Client Token Bucket Tests (Single Global Counter) ──
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_client_token_bucket_single_global_counter() {
         let bucket = ClientTokenBucket::new();
@@ -968,7 +968,7 @@ mod tests {
         assert!(tok_b.is_some());
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_client_returns_actual_balance_not_random() {
         let bucket = ClientTokenBucket::new();
@@ -978,7 +978,7 @@ mod tests {
         assert_eq!(tok, TOKENS_LEFT_INIT);
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_client_replenish_caps_at_max() {
         let bucket = ClientTokenBucket::new();
@@ -990,7 +990,7 @@ mod tests {
         assert_eq!(tok, MAX_TOKEN);
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_client_rate_limits_when_insufficient() {
         let bucket = ClientTokenBucket::new();
@@ -1003,7 +1003,7 @@ mod tests {
 
     // ── G. Price Propagation Tests (Deterministic) ──
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_price_propagation_deterministic() {
         // Price is propagated when inbound_tokens % PRICE_FREQ == 0.
@@ -1027,7 +1027,7 @@ mod tests {
 
     // ── H. End-to-End Algorithmic Equivalence Tests ──
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_load_shedding_returns_correct_remaining_tokens() {
         let _lock = GLOBAL_STATE_LOCK.lock().unwrap();
@@ -1042,7 +1042,7 @@ mod tests {
         assert_eq!(handler.remaining_tokens(), 13); // 20 - 7 = 13
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_mixed_tokens_accept_reject() {
         let _lock = GLOBAL_STATE_LOCK.lock().unwrap();
@@ -1071,7 +1071,7 @@ mod tests {
         assert_eq!(accepted, 5);
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_price_increases_then_decreases_over_time() {
         let state = RajomonSharedState::new();
@@ -1096,7 +1096,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "rajomon")]
+    #[cfg(feature = "ac_rajomon")]
     #[test]
     fn test_global_own_price_shared_across_methods() {
         let state = RajomonSharedState::new();

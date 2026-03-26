@@ -4,13 +4,13 @@ use crate::metadata::{Ascii, MetadataValue};
 use crate::{body::BoxBody, CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
 mod common;
-#[cfg(any(feature = "adctl", feature = "prio_local"))]
+#[cfg(any(feature = "ac_est", feature = "est_abort"))]
 pub(crate) mod estimator;
 mod fifo;
 mod global;
-#[cfg(any(feature = "adctl", feature = "prio_local"))]
+#[cfg(any(feature = "ac_est", feature = "est_abort"))]
 pub(crate) mod latency_map;
-#[cfg(feature = "prio_local")]
+#[cfg(feature = "est_abort")]
 mod local;
 mod noop;
 mod prio_oldest;
@@ -18,47 +18,37 @@ mod queue_global;
 #[allow(missing_docs)]
 pub mod rajomon;
 
-#[cfg(feature = "adctl")]
+#[cfg(feature = "ac_est")]
 pub(crate) mod adctl;
-#[cfg(any(feature = "adctl", feature = "prio_local"))]
+#[cfg(any(feature = "ac_est", feature = "est_abort"))]
 pub(crate) mod adctl_hooks;
-
-#[cfg(all(feature = "adctl", not(feature = "early")))]
-compile_error!("Feature 'adctl' requires 'early'");
 
 pub mod runtime;
 mod tls;
 use masa_core::Context;
 pub use tls::{client, server};
 
-#[cfg(all(
-    not(feature = "masa"),
-    not(feature = "prio_global"),
-    not(feature = "prio_oldest"),
-    not(feature = "prio_local"),
-    not(feature = "fifo")
-))]
+#[cfg(not(any(feature = "masa", feature = "sched_prio", feature = "sched_fifo")))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = noop::NoopMasaHooks;
 
-#[cfg(all(
-    feature = "fifo",
-    not(feature = "prio_global"),
-    not(feature = "prio_oldest"),
-    not(feature = "prio_local")
-))]
+#[cfg(all(feature = "sched_fifo", not(feature = "sched_prio")))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = fifo::Fifo;
 
-#[cfg(any(feature = "prio_global"))]
+#[cfg(all(
+    feature = "sched_prio",
+    not(feature = "tailclipper"),
+    not(feature = "est_abort")
+))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = queue_global::QueueGlobal;
 
-#[cfg(any(feature = "prio_oldest"))]
+#[cfg(all(feature = "sched_prio", feature = "tailclipper"))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = prio_oldest::PrioOldest;
 
-#[cfg(any(feature = "prio_local"))]
+#[cfg(all(feature = "sched_prio", feature = "est_abort"))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = local::local::LocalDeadlinePolicy;
 
@@ -209,9 +199,9 @@ pub const SERVICE_NAME_OVERRIDE_HEADER: &str = "x-masa-service-name";
 /// Internal header key for MASA context.
 pub(crate) const MASA_CONTEXT_HEADER: &str = masa_core::MASA_CONTEXT_HEADER;
 
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 pub use rajomon::CLIENT_TOKEN_BUCKET;
-#[cfg(feature = "rajomon")]
+#[cfg(feature = "ac_rajomon")]
 pub use rajomon::RAJOMON_STATE;
 
 /// Get the MASA context from metadata.

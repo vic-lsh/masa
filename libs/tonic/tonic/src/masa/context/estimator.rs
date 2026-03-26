@@ -12,9 +12,9 @@ compile_error!("Features 'est_rms' and 'est_mean_var' cannot be enabled simultan
 compile_error!("Features 'est_hist' and 'est_mean_var' cannot be enabled simultaneously");
 
 #[cfg(any(feature = "est_rms", feature = "est_hist", feature = "est_mean_var"))]
-#[cfg(not(any(feature = "prio_local", feature = "adctl")))]
+#[cfg(not(any(feature = "est_abort", feature = "ac_est")))]
 compile_error!(
-    "Features 'est_rms', 'est_hist', or 'est_mean_var' require 'prio_local' or 'adctl' to be enabled"
+    "Features 'est_rms', 'est_hist', or 'est_mean_var' require 'est_abort' or 'ac_est' to be enabled"
 );
 
 // --- Default latency estimator type alias ---

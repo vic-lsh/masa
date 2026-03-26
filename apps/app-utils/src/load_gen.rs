@@ -415,7 +415,7 @@ where
 
         let (response, error) = map_response(response, latency <= self.slo);
 
-        #[cfg(feature = "rajomon")]
+        #[cfg(feature = "ac_rajomon")]
         if let Some((ref metadata, _)) = response {
             if let Some(price_header) = metadata.get("x-masa-rajomon-price") {
                 if let Ok(price_str) = price_header.to_str() {
@@ -657,7 +657,7 @@ where
             let i = self.rng.gen_range(0..self.api_handlers.len());
             let handler = Arc::clone(&self.api_handlers[i]);
 
-            #[cfg(feature = "rajomon")]
+            #[cfg(feature = "ac_rajomon")]
             let ctx = {
                 match masa::try_create_context(
                     handler.api(),
@@ -670,7 +670,7 @@ where
                     }
                 }
             };
-            #[cfg(not(feature = "rajomon"))]
+            #[cfg(not(feature = "ac_rajomon"))]
             let ctx = masa::create_context(
                 handler.api(),
                 std::time::Duration::from_micros(handler.slo()),
