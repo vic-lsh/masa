@@ -19,7 +19,7 @@ thread_local! {
 ///
 pub mod client {
 
-    use crate::masa::MasaHooks;
+    use crate::masa_ext::MasaHooks;
 
     /// SAFETY:
     /// - Caller must ensure that the same type parameter P is used when setting and retrieving the parent context.
@@ -32,7 +32,7 @@ pub mod client {
 
 ///
 pub mod server {
-    use crate::masa::MasaHooks;
+    use crate::masa_ext::MasaHooks;
 
     /// Set parent context.
     ///

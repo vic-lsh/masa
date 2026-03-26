@@ -8,8 +8,8 @@ use crate::context_ext::MasaRequestExt;
 #[cfg(feature = "est")]
 use crate::pred_sched::PredictiveSchedPolicy;
 use masa_core::ContextBuilder;
-use tonic_core::masa::context::resolve_method_name_from_request;
-use tonic_core::masa::context::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
+use tonic_core::masa_ext::resolve_method_name_from_request;
+use tonic_core::masa_ext::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use tonic_core::Response;
 
 #[cfg(feature = "est")]
@@ -243,8 +243,8 @@ mod tests {
         use crate::est::state::EstServerState;
         use masa_core::{ContextBuilder, LatencyRms};
         use std::sync::Arc;
-        use tonic_core::masa::context::resolve_method_name_from_http;
-        use tonic_core::masa::context::{ClientHooks, ParentHooks, ServerHooks};
+        use tonic_core::masa_ext::resolve_method_name_from_http;
+        use tonic_core::masa_ext::{ClientHooks, ParentHooks, ServerHooks};
         use tonic_core::{GrpcMethod, Request, Response};
 
         #[test]
@@ -292,7 +292,7 @@ mod tests {
         #[test]
         fn test_resolve_method_name_from_http_with_overrides() {
             use http::HeaderValue;
-            use tonic_core::masa::context::{
+            use tonic_core::masa_ext::{
                 METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
             };
 
@@ -325,7 +325,7 @@ mod tests {
 
         #[test]
         fn test_resolve_method_name_from_request_with_overrides() {
-            use tonic_core::masa::context::{
+            use tonic_core::masa_ext::{
                 resolve_method_name_from_request, METHOD_NAME_OVERRIDE_HEADER,
                 SERVICE_NAME_OVERRIDE_HEADER,
             };

@@ -142,7 +142,7 @@ mod response_ext;
 pub use response_ext::ResponseExt;
 mod macros;
 /// Masa-related modules.
-pub mod masa;
+pub mod masa_ext;
 pub mod util;
 
 /// A re-export of [`async-trait`](https://docs.rs/async-trait) for use with codegen.

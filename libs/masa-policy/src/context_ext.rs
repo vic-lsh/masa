@@ -1,6 +1,6 @@
 //! Masa context extension traits and helpers.
 //!
-//! These were originally in `tonic::masa::context` but are moved here to avoid
+//! These were originally in `tonic::masa_ext` but are moved here to avoid
 //! a circular dependency between tonic and masa-policy. They depend on
 //! `masa_core::Context` for serialization.
 
@@ -56,7 +56,7 @@ pub trait MasaRequestExt<T> {
 
 impl<T> MasaRequestExt<T> for Request<T> {
     fn set_method_name_override(&mut self, method_name: &str) -> Result<(), Status> {
-        use tonic_core::masa::METHOD_NAME_OVERRIDE_HEADER;
+        use tonic_core::masa_ext::METHOD_NAME_OVERRIDE_HEADER;
         let value = MetadataValue::<Ascii>::try_from(method_name).map_err(|e| {
             Status::internal(format!(
                 "Failed to create metadata value for method name override: {:?}",
@@ -69,7 +69,7 @@ impl<T> MasaRequestExt<T> for Request<T> {
     }
 
     fn set_service_name_override(&mut self, service_name: &str) -> Result<(), Status> {
-        use tonic_core::masa::SERVICE_NAME_OVERRIDE_HEADER;
+        use tonic_core::masa_ext::SERVICE_NAME_OVERRIDE_HEADER;
         let value = MetadataValue::<Ascii>::try_from(service_name).map_err(|e| {
             Status::internal(format!(
                 "Failed to create metadata value for service name override: {:?}",

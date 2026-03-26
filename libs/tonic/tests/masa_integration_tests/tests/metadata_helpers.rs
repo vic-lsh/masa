@@ -1,5 +1,5 @@
 use masa_core::ContextBuilder;
-use tonic::masa::context::{get_masa_context_from_metadata, set_masa_context_in_metadata};
+use tonic::masa_ext::{get_masa_context_from_metadata, set_masa_context_in_metadata};
 
 #[test]
 fn metadata_helpers_round_trip_without_network() {
