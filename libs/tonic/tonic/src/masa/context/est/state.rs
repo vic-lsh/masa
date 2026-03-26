@@ -4,8 +4,8 @@
 // embedded into any policy's Server/Parent/ChildContext to track latency
 // distributions and make abort decisions. Used by:
 // - est_abort.rs: deadline tightening and dynamic reprioritization
-// - ac_est.rs: progressive cost-aware admission control (via AdmissionController)
-// - standard.rs: optional estimation when ac_est feature is enabled
+// - ac/predictive_ac.rs: reads estimation maps for admission control decisions
+// - standard.rs: orchestrates estimation and admission control
 
 use std::sync::{
     atomic::{AtomicU64, AtomicUsize, Ordering},
@@ -18,8 +18,6 @@ use masa_core::{time_now, Context, LatencyEstimator, ResponseMeta, SLO_ABORT};
 
 use super::estimator::ParentToChildId;
 use super::latency_map::{spawn_method_stats_printer, spawn_stats_printer, LatencyMap};
-#[cfg(feature = "ac_est")]
-use crate::masa::context::ac::est::AdmissionController;
 use crate::masa::context::{MasaResponseExt, MasaStatusExt};
 use crate::masa::MethodRegistry;
 
@@ -32,9 +30,6 @@ pub(crate) struct EstServerState<E: LatencyEstimator + Default + 'static> {
     pub est_child_latency: Arc<LatencyMap<E>>,
     /// Tracks compute time (poll duration) per method.
     pub est_compute_latency: Arc<LatencyMap<E>>,
-    /// Admission controller using compute-budget token bucket.
-    #[cfg(feature = "ac_est")]
-    pub admission_controller: Arc<AdmissionController>,
     /// Counter for periodic logging.
     pub print_counter: AtomicUsize,
 }
@@ -53,8 +48,6 @@ impl<E: LatencyEstimator + Default + 'static> EstServerState<E> {
             est_after_child_latency,
             est_child_latency,
             est_compute_latency,
-            #[cfg(feature = "ac_est")]
-            admission_controller: Arc::new(AdmissionController::new()),
             print_counter: AtomicUsize::new(0),
         }
     }
@@ -97,56 +90,11 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         }
     }
 
-    /// Returns true if the request should be shed (aborted).
+    /// Floor-based SLO abort check using estimation data.
     ///
-    /// With `ac_est` enabled: Layer 1 checks compute-time feasibility at every hop.
-    /// Layer 2 (ingress only, hop_count==0) applies efficiency-based admission.
-    /// Falls through to floor-based SLO abort check.
-    #[allow(unused_variables)]
-    pub(crate) fn admission_check(
-        &self,
-        ctx: &Context,
-        key: u64,
-        est_remaining_floor: u64,
-    ) -> bool {
-        #[cfg(feature = "ac_est")]
-        if SLO_ABORT {
-            let time_left = ctx.e2e_deadline().saturating_sub(time_now());
-
-            // Layer 1: compute-time feasibility (every hop)
-            let est_compute_rem = self
-                .server
-                .est_compute_latency
-                .get_estimate(self.resolved_method_id)
-                .unwrap_or(0);
-            if est_compute_rem > time_left {
-                return true; // infeasible → shed
-            }
-
-            // Layer 2: efficiency-based admission (ingress only)
-            if ctx.hop_count() == 0 {
-                let est_total_mean = self
-                    .server
-                    .est_after_child_latency
-                    .get_mean_estimate(key)
-                    .unwrap_or(0);
-                // Use estimated child latency (total downstream time) as cost
-                let est_child = self
-                    .server
-                    .est_child_latency
-                    .get_estimate(key)
-                    .unwrap_or(est_compute_rem);
-                if !self.server.admission_controller.should_admit(
-                    ctx.api(),
-                    time_left,
-                    est_child,
-                    est_total_mean,
-                ) {
-                    return true;
-                }
-            }
-        }
-        // Default: floor estimate check
+    /// Returns true if the request should be shed based on the floor estimate
+    /// of remaining work exceeding the available time budget.
+    pub(crate) fn admission_check(&self, ctx: &Context, est_remaining_floor: u64) -> bool {
         SLO_ABORT && time_now() > ctx.e2e_deadline().saturating_sub(est_remaining_floor)
     }
 
@@ -198,15 +146,18 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         }
     }
 
-    /// Process a child RPC response: extract ResponseMeta, update bottleneck tracker,
+    /// Process a child RPC response: extract ResponseMeta, track latencies,
     /// handle early-return negative feedback, and record child end time.
-    #[allow(unused_variables)]
+    ///
+    /// Returns the `max_downstream_util` from the child response metadata,
+    /// if available, so the caller can feed it to admission control.
     pub(crate) fn after_child_rpc<T>(
         &self,
-        ctx: &Context,
         response: &Result<Response<T>, Status>,
         child_ctx: &EstChildState<E>,
-    ) {
+    ) -> Option<f32> {
+        let mut downstream_util = None;
+
         // Extract ResponseMeta from child response
         if let Ok(resp) = response {
             if let Some(child_ctx_resp) = resp.get_masa_context() {
@@ -222,11 +173,7 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
                     if meta.max_downstream_util > *max_util {
                         *max_util = meta.max_downstream_util;
                     }
-                    // Update bottleneck tracker
-                    #[cfg(feature = "ac_est")]
-                    self.server
-                        .admission_controller
-                        .update_bottleneck(ctx.api(), meta.max_downstream_util);
+                    downstream_util = Some(meta.max_downstream_util);
                 }
             }
         }
@@ -253,6 +200,8 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
                     .push((parent_to_child_id.clone(), Instant::now()));
             }
         }
+
+        downstream_util
     }
 
     /// Periodic logging of latency estimates.
@@ -323,7 +272,7 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
             .unwrap_or(0)
             .min(time_left);
 
-        if self.admission_check(ctx, key, est_remaining_floor) {
+        if self.admission_check(ctx, est_remaining_floor) {
             return Err(());
         }
 
@@ -335,7 +284,7 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
             est_remaining_floor,
         );
 
-        Ok(ChildRpcPrepareResult { est_remaining })
+        Ok(ChildRpcPrepareResult { est_remaining, key })
     }
 }
 
@@ -343,6 +292,8 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
 #[allow(dead_code)]
 pub(crate) struct ChildRpcPrepareResult {
     pub est_remaining: u64,
+    /// Parent→child key for admission control lookups.
+    pub key: u64,
 }
 
 /// Per-child-RPC estimation state.
