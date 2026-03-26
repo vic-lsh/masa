@@ -302,7 +302,10 @@ impl RajomonHandler {
         let accumulated = RAJOMON_STATE.accumulated_price(&self.rpc);
         let own = RAJOMON_STATE.own_price.load(Ordering::Relaxed);
         self.inbound_tokens.store(ctx.tokens(), Ordering::Relaxed);
-        if ctx.tokens() < accumulated {
+        // Enforce a minimum effective price of 1 so that requests with 0 tokens
+        // are always rejected, even when the server is not congested (own_price=0).
+        let effective_accumulated = accumulated.max(1);
+        if ctx.tokens() < effective_accumulated {
             self.should_drop = true;
             true
         } else {
@@ -463,7 +466,8 @@ impl RajomonHandler {
         if !self.should_propagate_price() {
             return;
         }
-        let price = RAJOMON_STATE.accumulated_price(&self.rpc);
+        // Minimum effective price is 1 (baseline cost), matching the admission gate.
+        let price = RAJOMON_STATE.accumulated_price(&self.rpc).max(1);
         if let Ok(value) = crate::metadata::MetadataValue::try_from(price.to_string()) {
             match result {
                 Ok(resp) => {
@@ -864,10 +868,11 @@ mod tests {
         let mut handler = RajomonHandler::new(method);
         RAJOMON_STATE.own_price.store(0, Ordering::Relaxed);
 
+        // Even with own_price=0, the baseline minimum effective price is 1,
+        // so a request with 0 tokens is always rejected.
         let mut ctx = masa_core::ContextBuilder::new("test", 0).tokens(0).build();
         let dropped = handler.check_inbound(&mut ctx);
-        assert!(!dropped);
-        assert_eq!(handler.remaining_tokens(), 0);
+        assert!(dropped);
     }
 
     // ── E. Downstream Price Tests (Max Recomputation, Not Ratchet) ──
