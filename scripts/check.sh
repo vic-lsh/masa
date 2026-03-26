@@ -7,6 +7,7 @@ flag_combos=(
     "fifo"
     "fifo,early,adctl"
     "fifo,rajomon"
+    "fifo,rajomon,early"
     "prio_global"
     "prio_global,rajomon"
     "prio_global,early"
@@ -14,6 +15,7 @@ flag_combos=(
     "prio_oldest,early,adctl"
     "prio_local,early"
     "prio_local,early,adctl,est_mean_var"
+    "prio_local,rajomon,early"
 )
 
 CONTINUE_ON_ERROR=false
