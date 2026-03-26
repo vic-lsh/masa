@@ -5,10 +5,13 @@ export RUSTFLAGS="-D warnings"
 
 flag_combos=(
     "sched_fifo"
-    "sched_prio"
-    "sched_prio,tailclipper,slo_abort"
-    "sched_prio,ac_rajomon"
-    "sched_prio,pred_sched,ac_est,est_mean_var"
+    "sched_fifo,slo_abort"
+    "sched_slo"
+    "sched_slo,slo_abort"
+    "sched_tailclipper,slo_abort"
+    "sched_slo,ac_rajomon"
+    "sched_slo,ac_est,est_mean_var"
+    "sched_pred,slo_abort,ac_est,est_mean_var"
 )
 
 CONTINUE_ON_ERROR=false

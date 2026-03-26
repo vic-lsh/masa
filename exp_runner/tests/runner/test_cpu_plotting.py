@@ -107,13 +107,13 @@ class TestGetPolicyColors:
 
     def test_standard_policies(self):
         """Test color assignment for standard policies (new names)."""
-        policies = ["sched_fifo", "sched_prio", "sched_prio,pred_sched"]
+        policies = ["sched_fifo", "sched_slo", "sched_slo,sched_pred"]
         colors = _get_policy_colors(policies)
 
         assert colors["sched_fifo"] == "grey"
-        assert colors["sched_prio"] == "steelblue"
-        # pred_sched implies abort, so lightpink (abort variant of local ddl)
-        assert colors["sched_prio,pred_sched"] == "lightpink"
+        assert colors["sched_slo"] == "steelblue"
+        # sched_pred implies abort, so lightpink (abort variant of local ddl)
+        assert colors["sched_slo,sched_pred"] == "lightpink"
 
     def test_standard_policies_old_names(self):
         """Test color assignment for standard policies (old names, backward compat)."""
@@ -124,18 +124,18 @@ class TestGetPolicyColors:
         assert colors["prio_global"] == "steelblue"
         assert colors["prio_local"] == "hotpink"
 
-    def tpred_sched_policies(self):
+    def test_abort_policies(self):
         """Test color assignment for abort policies (new names)."""
         policies = [
             "sched_fifo,slo_abort",
-            "sched_prio,slo_abort",
-            "sched_prio,pred_sched",
+            "sched_slo,slo_abort",
+            "sched_slo,sched_pred",
         ]
         colors = _get_policy_colors(policies)
 
         assert colors["sched_fifo,slo_abort"] == "darkgrey"
-        assert colors["sched_prio,slo_abort"] == "cornflowerblue"
-        assert colors["sched_prio,pred_sched"] == "lightpink"
+        assert colors["sched_slo,slo_abort"] == "cornflowerblue"
+        assert colors["sched_slo,sched_pred"] == "lightpink"
 
     def test_early_policies_old_names(self):
         """Test color assignment for early abort policies (old names, backward compat)."""
@@ -148,17 +148,17 @@ class TestGetPolicyColors:
 
     def test_mixed_policies(self):
         """Test color assignment for mixed standard and abort policies."""
-        policies = ["sched_fifo", "sched_fifo,slo_abort", "sched_prio", "custom_policy"]
+        policies = ["sched_fifo", "sched_fifo,slo_abort", "sched_slo", "custom_policy"]
         colors = _get_policy_colors(policies)
 
         assert "sched_fifo" in colors
         assert "sched_fifo,slo_abort" in colors
-        assert "sched_prio" in colors
+        assert "sched_slo" in colors
         assert "custom_policy" in colors
 
         # Standard policies should have defined colors
         assert colors["sched_fifo"] == "grey"
-        assert colors["sched_prio"] == "steelblue"
+        assert colors["sched_slo"] == "steelblue"
 
     def test_unknown_policies(self):
         """Test that unknown policies get default colors."""
@@ -179,7 +179,7 @@ class TestPlotServiceCpu:
         """Create a test DataFrame with CPU stats."""
         data = []
         for iteration in [0, 1]:
-            for policy in ["sched_fifo", "sched_prio"]:
+            for policy in ["sched_fifo", "sched_slo"]:
                 for replica in [1, 2]:
                     for time_offset in range(0, 10, 2):
                         data.append(
@@ -231,7 +231,7 @@ class TestPlotServiceCpu:
         """Test that plot includes all policies."""
         # Create data with 3 policies
         data = []
-        for policy in ["sched_fifo", "sched_prio", "sched_prio,pred_sched"]:
+        for policy in ["sched_fifo", "sched_slo", "sched_slo,sched_pred"]:
             for time_offset in range(0, 10, 2):
                 data.append(
                     {
@@ -265,7 +265,7 @@ class TestPlotCpuUtilization:
         """Create test CPU stats CSV files."""
         # Create directory structure: data_dir / iteration / policy / cpu_stats.csv
         for iteration in [0, 1]:
-            for policy in ["sched_fifo", "sched_prio"]:
+            for policy in ["sched_fifo", "sched_slo"]:
                 policy_dir = data_dir / str(iteration) / policy
                 policy_dir.mkdir(parents=True, exist_ok=True)
 
@@ -484,7 +484,7 @@ class TestCpuPlottingIntegration:
 
             # Create realistic experiment structure
             for iteration in [0]:
-                for policy in ["sched_fifo", "sched_prio", "sched_prio,pred_sched"]:
+                for policy in ["sched_fifo", "sched_slo", "sched_slo,sched_pred"]:
                     policy_dir = data_dir / str(iteration) / policy
                     policy_dir.mkdir(parents=True, exist_ok=True)
 
@@ -579,7 +579,7 @@ class TestMssimCpuPlotting:
                 json.dump(mssim_config, f)
 
             # Create experiment data structure with CPU stats
-            for policy in ["sched_fifo", "sched_prio"]:
+            for policy in ["sched_fifo", "sched_slo"]:
                 policy_dir = data_dir / "0" / policy
                 run_dir = policy_dir / "run_0"
                 run_dir.mkdir(parents=True, exist_ok=True)

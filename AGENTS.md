@@ -58,32 +58,29 @@ uv run -m exp_runner plot <app> <experiment_name>
 
 Policies are selected at **compile time** via feature flags. Applications must be built with the desired policy:
 ```bash
-cargo build -p hotel --features sched_prio --release
-cargo build -p hotel --features "sched_prio,slo_abort" --release
+cargo build -p hotel --features sched_slo --release
+cargo build -p hotel --features "sched_slo,slo_abort" --release
 ```
 
 Key policy flags:
 
-**Scheduling disciplines** (mutually exclusive base queue implementations):
+**Scheduling policies** (mutually exclusive):
 - `sched_fifo`: FIFO ordering (baseline)
-- `sched_prio`: Priority by end-to-end SLO end time (binary heap)
-
-**Scheduling modifiers** (overlays on `sched_prio`):
-- `tailclipper`: Implements the TailClipper paper's oldest-request-first policy with round-robin fairness. Cannot be combined with `pred_sched` or `ac_est`.
-- `pred_sched`: Adds deadline tightening and dynamic reprioritization using latency estimates. Implies `est` and `slo_abort`. **Only works for `hotel`** as it requires a call graph description.
+- `sched_slo`: Priority by end-to-end SLO deadline (implies tokio priority queue)
+- `sched_tailclipper`: TailClipper paper's oldest-request-first policy with round-robin fairness
+- `sched_pred`: Adds deadline tightening and dynamic reprioritization using latency estimates. Implies `sched_slo` and `est`. **Only works for `hotel`** as it requires a call graph description.
 
 **Estimation infrastructure:**
-- `est`: Enables shared latency estimation infrastructure (estimator type selection, latency maps, estimation state). Implied by `pred_sched` and `ac_est`. Does not require `slo_abort` on its own.
+- `est`: Enables shared latency estimation infrastructure (estimator type selection, latency maps, estimation state). Implied by `sched_pred` and `ac_est`. Does not require `slo_abort` on its own.
 
-**Abort strategies:**
-- `slo_abort`: Combined with a policy (e.g., `sched_prio,slo_abort`) to return early for requests past their e2e deadline, avoiding wasteful work
-- `pred_sched`: Proactively aborts requests predicted to miss their SLO based on estimated remaining work. Implies `est` and `slo_abort`.
+**Composable modifiers:**
+- `slo_abort`: Returns early for requests past their e2e deadline, avoiding wasteful work. Composable with any scheduling policy.
 
 **Admission control** (mutually exclusive):
-- `ac_est`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Implies `est` and `slo_abort`. Works with scheduling policies (`sched_fifo`, `sched_prio`, `sched_prio,pred_sched`).
+- `ac_est`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Requires `est`.
 - `ac_rajomon`: Token-bucket rate limiting admission control.
 
-`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_prio`, `sched_prio,tailclipper,slo_abort`, `sched_prio,ac_rajomon`, `sched_prio,pred_sched,ac_est,est_mean_var`.
+`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_fifo,slo_abort`, `sched_slo`, `sched_slo,slo_abort`, `sched_tailclipper,slo_abort`, `sched_slo,ac_rajomon`, `sched_slo,ac_est,est_mean_var`, `sched_pred,slo_abort,ac_est,est_mean_var`.
 
 ## Architecture
 
@@ -108,7 +105,7 @@ Core Masa types and utilities:
 ### libs/tonic/tonic/src/masa/
 Masa integration into Tonic gRPC:
 - `context/mod.rs`: `MasaHooks` trait with `before_child_rpc`, `before_poll`, `after_poll` hooks; feature flags select the `DefaultMasaHooks` implementation
-- `context/`: Policy implementations — `fifo.rs`, `prio.rs`, `tailclipper.rs`, `pred_sched.rs`; admission control — `ac_hooks.rs`, `ac_est.rs`, `rajomon.rs`
+- `context/`: Policy implementations — `standard.rs` (shared hooks for all policies), `pred_sched.rs` (predictive scheduling overlay), `base.rs`, `common.rs`; admission control in `ac/`
 - `transport/masa_channel/`: Masa-aware channel transport
 
 ### Patched Libraries

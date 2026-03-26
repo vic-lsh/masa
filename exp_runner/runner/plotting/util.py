@@ -318,10 +318,16 @@ def parse_args() -> Namespace:
 
 
 def _has_abort(policy_lower: str) -> bool:
-    """Check if policy has an abort/early-return flag (new or old name)."""
+    """Check if policy has an abort/early-return flag (new or old name).
+
+    Note: sched_pred and pred_sched no longer imply slo_abort on their own,
+    but we keep recognizing them here for backward compatibility with old
+    experiment data where pred_sched did imply slo_abort.
+    """
     return (
         ",slo_abort" in policy_lower
         or ",pred_sched" in policy_lower
+        or ",sched_pred" in policy_lower
         or ",early" in policy_lower
     )
 
@@ -344,22 +350,42 @@ def _is_fifo(policy_lower: str) -> bool:
 def _is_prio(policy_lower: str) -> bool:
     """Check if policy is priority-based scheduling (new or old name).
 
-    Matches sched_prio (new) and prio_global (old), but not prio_local or prio_oldest.
+    Matches sched_slo (newest), sched_prio (old-new), and prio_global (oldest),
+    but not prio_local or prio_oldest.
     """
+    if policy_lower.startswith("sched_slo"):
+        # sched_slo without sched_tailclipper or sched_pred is the new prio_global
+        return not (
+            ",sched_tailclipper" in policy_lower
+            or ",sched_pred" in policy_lower
+        )
     if policy_lower.startswith("sched_prio"):
-        # sched_prio without tailclipper or pred_sched is the new prio_global
-        return not (",tailclipper" in policy_lower or ",pred_sched" in policy_lower)
+        # sched_prio without tailclipper or pred_sched is the old-new prio_global
+        return not (
+            ",tailclipper" in policy_lower
+            or ",pred_sched" in policy_lower
+            or ",sched_tailclipper" in policy_lower
+            or ",sched_pred" in policy_lower
+        )
     return policy_lower.startswith("prio_global")
 
 
 def _is_tailclipper(policy_lower: str) -> bool:
     """Check if policy is Tailclipper/prio_oldest (new or old name)."""
-    return ",tailclipper" in policy_lower or policy_lower.startswith("prio_oldest")
+    return (
+        ",sched_tailclipper" in policy_lower
+        or ",tailclipper" in policy_lower
+        or policy_lower.startswith("prio_oldest")
+    )
 
 
 def _is_local(policy_lower: str) -> bool:
     """Check if policy is local-deadline based (new or old name)."""
-    return ",pred_sched" in policy_lower or policy_lower.startswith("prio_local")
+    return (
+        ",sched_pred" in policy_lower
+        or ",pred_sched" in policy_lower
+        or policy_lower.startswith("prio_local")
+    )
 
 
 def get_policy_color(policy: str) -> str | None:
@@ -368,12 +394,14 @@ def get_policy_color(policy: str) -> str | None:
 
     Color scheme:
     - FIFO (sched_fifo / fifo) uses grey hues
-    - Priority (sched_prio / prio_global) uses blue hues
-    - Local deadline (sched_prio,pred_sched / prio_local) uses pink hues
-    - Tailclipper (sched_prio,tailclipper / prio_oldest) uses purple hues
+    - Priority (sched_slo / sched_prio / prio_global) uses blue hues
+    - Local deadline (sched_slo,sched_pred / sched_prio,pred_sched / prio_local) uses pink hues
+    - Tailclipper (sched_slo,sched_tailclipper / sched_prio,tailclipper / prio_oldest) uses purple hues
 
-    Supports both new flag names (sched_fifo, sched_prio, slo_abort, ac_est, etc.)
-    and old flag names (fifo, prio_global, early, adctl, etc.) for backward compatibility.
+    Supports newest flag names (sched_slo, sched_pred, sched_tailclipper),
+    previous flag names (sched_prio, pred_sched, tailclipper),
+    and oldest flag names (fifo, prio_global, prio_local, prio_oldest, early, adctl, etc.)
+    for backward compatibility.
 
     Args:
         policy: Policy name
@@ -414,8 +442,10 @@ def get_policy_display_name(policy: str) -> str:
     - Add "(no-drop)" when the policy does not have an abort flag.
     - Map known policy families to display names.
 
-    Supports both new flag names (sched_fifo, sched_prio, slo_abort, ac_est, etc.)
-    and old flag names (fifo, prio_global, early, adctl, etc.) for backward compatibility.
+    Supports newest flag names (sched_slo, sched_pred, sched_tailclipper),
+    previous flag names (sched_prio, pred_sched, tailclipper),
+    and oldest flag names (fifo, prio_global, early, adctl, etc.)
+    for backward compatibility.
     """
     policy_lower = policy.lower()
 
@@ -434,7 +464,7 @@ def get_policy_display_name(policy: str) -> str:
     else:
         # Unknown policy: strip abort suffixes to get a readable base name
         display = policy
-        for suffix in (",slo_abort", ",pred_sched", ",early"):
+        for suffix in (",slo_abort", ",sched_pred", ",pred_sched", ",early"):
             if display.lower().endswith(suffix):
                 display = display[: -len(suffix)]
                 break

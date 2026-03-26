@@ -7,7 +7,7 @@ mod typing;
 
 pub use context::FutureSpan;
 pub use context::{Context, ContextBuilder, QueueLatencies, ResponseMeta};
-pub use flag::{PRED_SCHED, RAJOMON, SCHED_FIFO, SCHED_PRIO, SLO_ABORT, TAILCLIPPER};
+pub use flag::{RAJOMON, SCHED_FIFO, SCHED_PRED, SCHED_SLO, SCHED_TAILCLIPPER, SLO_ABORT};
 pub use latency_estimator::{
     LatencyDistribution, LatencyEstimator, LatencyEwma, LatencyMeanVar, LatencyRms,
 };

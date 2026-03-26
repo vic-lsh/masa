@@ -1,4 +1,4 @@
-#[cfg(not(any(feature = "sched_fifo", feature = "sched_prio",)))]
+#[cfg(not(any(feature = "sched_fifo", feature = "sched_slo", feature = "sched_tailclipper")))]
 #[test]
 fn test_default_policy_is_fifo() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Fifo);
@@ -10,20 +10,20 @@ fn test_fifo_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Fifo);
 }
 
-#[cfg(feature = "sched_prio")]
+#[cfg(feature = "sched_slo")]
 #[test]
-fn test_sched_prio_policy() {
+fn test_sched_slo_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }
 
-#[cfg(all(feature = "sched_prio", feature = "tailclipper"))]
+#[cfg(feature = "sched_tailclipper")]
 #[test]
-fn test_tailclipper_policy() {
+fn test_sched_tailclipper_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }
 
-#[cfg(all(feature = "sched_prio", feature = "pred_sched"))]
+#[cfg(feature = "sched_pred")]
 #[test]
-fn test_pred_sched_policy() {
+fn test_sched_pred_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }

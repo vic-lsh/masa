@@ -1,6 +1,5 @@
 pub use masa_core::{
     time_now, Context, ContextBuilder, FutureSpan, LatencyDistribution, MethodId, PriorityHint,
-    TAILCLIPPER,
 };
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -14,31 +13,18 @@ static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
 /// 1. Generating a unique request ID (process-local)
 /// 2. Capturing the current time as start time
 /// 3. Calculating deadline based on SLO
-/// 4. Calculating priority hint based on the active scheduling policy (FIFO/Global vs Oldest)
+/// 4. Deriving priority hint from the compile-time scheduling policy
 pub fn create_context(api: &str, slo: Duration) -> Context {
     let request_id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
     let slo_us = slo.as_micros() as u64;
     let start_at = time_now();
     let deadline = start_at + slo_us;
 
-    // Priority logic:
-    // If TAILCLIPPER is enabled, priority is based on arrival time (start_at).
-    // Otherwise (sched_fifo, sched_prio, pred_sched), priority is based on deadline.
-    // Note: TAILCLIPPER is a const bool exported by masa_core based on compile features.
-    let prio_hint = if masa_core::TAILCLIPPER {
-        start_at
-    } else {
-        deadline
-    };
-
-    #[allow(unused_mut)]
-    let mut builder = ContextBuilder::new(api, request_id)
+    ContextBuilder::new(api, request_id)
         .slo(slo_us)
         .gateway_entry(start_at)
         .deadline(deadline)
-        .prio_hint(PriorityHint::new(prio_hint));
-
-    builder.build()
+        .build()
 }
 
 /// Try to create a Masa context, checking the client-side Rajomon token bucket first.
@@ -56,18 +42,11 @@ pub fn try_create_context(api: &str, slo: std::time::Duration) -> Option<Context
     let start_at = time_now();
     let deadline = start_at + slo_us;
 
-    let prio_hint = if masa_core::TAILCLIPPER {
-        start_at
-    } else {
-        deadline
-    };
-
     Some(
         ContextBuilder::new(api, request_id)
             .slo(slo_us)
             .gateway_entry(start_at)
             .deadline(deadline)
-            .prio_hint(PriorityHint::new(prio_hint))
             .tokens(tokens)
             .build(),
     )

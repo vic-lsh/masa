@@ -52,11 +52,7 @@ impl PredictiveAc {
         ctx: &Context,
         key: u64,
     ) -> bool {
-        use masa_core::{time_now, SLO_ABORT};
-
-        if !SLO_ABORT {
-            return false;
-        }
+        use masa_core::time_now;
 
         let time_left = ctx.e2e_deadline().saturating_sub(time_now());
 
@@ -131,11 +127,7 @@ impl PredictiveAc {
         ctx: &Context,
         key: u64,
     ) -> bool {
-        use masa_core::{time_now, SLO_ABORT};
-
-        if !SLO_ABORT {
-            return false;
-        }
+        use masa_core::time_now;
 
         let time_left = ctx.e2e_deadline().saturating_sub(time_now());
         let est_remaining_floor = est_server
