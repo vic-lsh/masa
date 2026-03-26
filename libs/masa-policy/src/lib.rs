@@ -3,7 +3,7 @@
 // This crate contains the scheduling, estimation, and admission control
 // implementations for Masa. It depends on `tonic-core` for gRPC types and
 // hook traits, and optionally `tonic` depends on this crate to wire up
-// `DefaultMasaHooks`.
+// `DefaultHooks`.
 
 #[allow(missing_docs)]
 pub mod ac;

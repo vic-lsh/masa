@@ -16,7 +16,7 @@ use masa_integration_tests::pb::{
     Input1, Input2, Output1, Output2,
 };
 use tonic::{
-    masa::{ClientHooks, MasaHooks, ParentHooks, ServerHooks},
+    masa::{ClientHooks, Hooks, ParentHooks, ServerHooks},
     transport::Server,
     GrpcMethod, Request, Response, Status,
 };
@@ -40,7 +40,7 @@ impl<P> ParentSvc<P> {
 #[tonic::async_trait]
 impl<M> ParentService for ParentSvc<M>
 where
-    M: MasaHooks,
+    M: Hooks,
     M::ChildContext: Send + Sync + 'static,
     M::ParentContext: 'static,
 {
@@ -126,7 +126,7 @@ async fn make_parent_child_svcs<M>(
     fanout_factor: usize,
 ) -> (tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>)
 where
-    M: MasaHooks,
+    M: Hooks,
     M::ChildContext: Send + Sync + 'static,
     M::ParentContext: 'static,
 {
@@ -164,9 +164,9 @@ async fn test_service_ctx_construction() {
         }
     }
 
-    struct MockMasaHooks;
+    struct MockHooks;
 
-    impl MasaHooks for MockMasaHooks {
+    impl Hooks for MockHooks {
         type ParentContext = MockParentCtx;
         type ChildContext = MockChildCtx;
         type ServerContext = TestCtorCountServerCtx;
@@ -178,7 +178,7 @@ async fn test_service_ctx_construction() {
             let addr = format!("127.0.0.1:{}", 7878 + i);
             tokio::spawn(async move {
                 Server::builder()
-                    .add_service(ChildServiceServer::<_, MockMasaHooks>::with_custom_context(
+                    .add_service(ChildServiceServer::<_, MockHooks>::with_custom_context(
                         ChildSvc,
                     ))
                     .serve_with_masa(addr.parse().unwrap())
@@ -225,9 +225,9 @@ async fn test_parent_ctx_before_after_rpc_hooks() {
         }
     }
 
-    struct MockMasaHooks;
+    struct MockHooks;
 
-    impl MasaHooks for MockMasaHooks {
+    impl Hooks for MockHooks {
         type ParentContext = TestChildRpcParentCtx;
         type ChildContext = MockChildCtx;
         type ServerContext = MockServerCtx;
@@ -237,7 +237,7 @@ async fn test_parent_ctx_before_after_rpc_hooks() {
     let child_svc_addr = "127.0.0.1:4466";
     let fanout_factor = 10;
     let (_parent, _child) =
-        make_parent_child_svcs::<MockMasaHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
+        make_parent_child_svcs::<MockHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
             .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -281,9 +281,9 @@ async fn test_child_ctx_before_after_rpc_hooks() {
         }
     }
 
-    struct MockMasaHooks;
+    struct MockHooks;
 
-    impl MasaHooks for MockMasaHooks {
+    impl Hooks for MockHooks {
         type ParentContext = MockParentCtx;
         type ChildContext = TestInvocationChildCtx;
         type ServerContext = MockServerCtx;
@@ -294,7 +294,7 @@ async fn test_child_ctx_before_after_rpc_hooks() {
     let fanout_factor = 10;
 
     let (_parent, _child) =
-        make_parent_child_svcs::<MockMasaHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
+        make_parent_child_svcs::<MockHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
             .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -343,9 +343,9 @@ async fn test_parent_ctx_before_after_poll_hooks() {
         }
     }
 
-    struct MockMasaHooks;
+    struct MockHooks;
 
-    impl MasaHooks for MockMasaHooks {
+    impl Hooks for MockHooks {
         type ParentContext = TestChildRpcParentCtx;
         type ChildContext = MockChildCtx;
         type ServerContext = MockServerCtx;
@@ -355,7 +355,7 @@ async fn test_parent_ctx_before_after_poll_hooks() {
     let child_svc_addr = "127.0.0.1:4488";
     let fanout_factor = 1;
     let (_parent, _child) =
-        make_parent_child_svcs::<MockMasaHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
+        make_parent_child_svcs::<MockHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
             .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -390,9 +390,9 @@ async fn test_parent_ctx_finalize_hook() {
         }
     }
 
-    struct MockMasaHooks;
+    struct MockHooks;
 
-    impl MasaHooks for MockMasaHooks {
+    impl Hooks for MockHooks {
         type ParentContext = TestChildRpcParentCtx;
         type ChildContext = MockChildCtx;
         type ServerContext = MockServerCtx;
@@ -402,7 +402,7 @@ async fn test_parent_ctx_finalize_hook() {
     let child_svc_addr = "127.0.0.1:4400";
     let fanout_factor = 1;
     let (_parent, _child) =
-        make_parent_child_svcs::<MockMasaHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
+        make_parent_child_svcs::<MockHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
             .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;

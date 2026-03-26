@@ -88,7 +88,7 @@ End your analysis by synthesizing your findings into a hypothesis and proposing 
 
 3.  **New Metrics:**
     *   *Idea:* Is the queue time dominating?
-    *   *Action:* Instrument `MasaHooks` to measure and plot `queue_time` vs `service_time`.
+    *   *Action:* Instrument `Hooks` to measure and plot `queue_time` vs `service_time`.
     *   *Reasoning:* High `cpu_stats.csv` (100%) but low goodput suggests requests are spending time in the scheduler queue. If `queue_time` > `service_time`, the bottleneck is queuing delay, confirming that we need a policy that reorders the queue (like `sched_prio,pred_sched`) rather than just faster processing.
 
 ---

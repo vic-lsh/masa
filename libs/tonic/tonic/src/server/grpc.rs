@@ -1,7 +1,7 @@
 use crate::codec::compression::{
     CompressionEncoding, EnabledCompressionEncodings, SingleMessageCompressionOverride,
 };
-use crate::masa_ext::{MasaHooks, ParentHooks};
+use crate::masa_ext::{Hooks, ParentHooks};
 use crate::{
     body::BoxBody,
     codec::{encode_server, Codec, Streaming},
@@ -273,7 +273,7 @@ where
         S: UnaryService<T::Decode, Response = T::Encode>,
         B: Body + Send + 'static,
         B::Error: Into<crate::Error> + Send,
-        M: MasaHooks,
+        M: Hooks,
     {
         let req_ctx = Arc::new(req_ctx);
 
