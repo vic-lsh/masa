@@ -19,11 +19,11 @@ mod thread_local;
 use masa_core::Context;
 pub use thread_local::{client, server};
 
-#[cfg(not(any(feature = "masa", feature = "sched_prio", feature = "sched_fifo")))]
+#[cfg(not(any(feature = "sched_fifo", feature = "sched_slo", feature = "sched_tailclipper")))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = noop::NoopMasaHooks;
 
-#[cfg(any(feature = "sched_fifo", feature = "sched_prio"))]
+#[cfg(any(feature = "sched_fifo", feature = "sched_slo", feature = "sched_tailclipper"))]
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = standard::StandardHooks;
 

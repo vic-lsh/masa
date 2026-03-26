@@ -16,12 +16,21 @@ plotting_all = importlib.import_module("exp_runner.runner.plotting.all")
 
 
 def test_get_policy_display_name_new_names():
-    """Test display names with new flag names."""
+    """Test display names with newest flag names (sched_slo, sched_pred, sched_tailclipper)."""
     assert get_policy_display_name("sched_fifo") == "FIFO (no-drop)"
     assert get_policy_display_name("sched_fifo,slo_abort") == "FIFO"
+    assert get_policy_display_name("sched_slo") == "Masa (global ddl) (no-drop)"
+    assert get_policy_display_name("sched_slo,slo_abort") == "Masa (global ddl)"
+    assert get_policy_display_name("sched_slo,sched_pred") == "Masa (local ddl)"
+    assert get_policy_display_name("sched_slo,sched_tailclipper") == "Tailclipper (no-drop)"
+    assert get_policy_display_name("sched_slo,sched_tailclipper,slo_abort") == "Tailclipper"
+
+
+def test_get_policy_display_name_previous_names():
+    """Test display names with previous flag names (sched_prio, pred_sched, tailclipper)."""
     assert get_policy_display_name("sched_prio") == "Masa (global ddl) (no-drop)"
     assert get_policy_display_name("sched_prio,slo_abort") == "Masa (global ddl)"
-    assert get_policy_display_name("sched_prio,pred_sched") == "Masa (local ddl)"
+    assert get_policy_display_name("sched_slo,sched_pred") == "Masa (local ddl)"
     assert get_policy_display_name("sched_prio,tailclipper") == "Tailclipper (no-drop)"
     assert get_policy_display_name("sched_prio,tailclipper,slo_abort") == "Tailclipper"
 
@@ -47,11 +56,11 @@ def test_get_policy_display_name_unknown_policies():
 def test_read_policies_from_config_dir(tmp_path):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "policies").write_text("sched_fifo sched_prio\n", encoding="utf-8")
+    (config_dir / "policies").write_text("sched_fifo sched_slo\n", encoding="utf-8")
 
     policies = read_policies(config_dir)
 
-    assert policies == ["sched_fifo", "sched_prio"]
+    assert policies == ["sched_fifo", "sched_slo"]
 
 
 def test_read_data_uses_policies_file(tmp_path):
@@ -64,9 +73,9 @@ def test_read_data_uses_policies_file(tmp_path):
         json.dumps({"Repeats": 1, "Rps": [10], "Apis": ["Login"], "Slos": [1000]}),
         encoding="utf-8",
     )
-    (config_dir / "policies").write_text("sched_fifo sched_prio\n", encoding="utf-8")
+    (config_dir / "policies").write_text("sched_fifo sched_slo\n", encoding="utf-8")
 
-    for policy in ["sched_fifo", "sched_prio", "extra_policy"]:
+    for policy in ["sched_fifo", "sched_slo", "extra_policy"]:
         policy_dir = data_dir / "0" / policy
         policy_dir.mkdir(parents=True, exist_ok=True)
         (policy_dir / "r10_Login.csv").write_text(
@@ -77,7 +86,7 @@ def test_read_data_uses_policies_file(tmp_path):
 
     assert repeats == 1
     assert apis[-1] == "ALL"
-    assert policies == ["sched_fifo", "sched_prio"]
+    assert policies == ["sched_fifo", "sched_slo"]
     assert rps_values == [10]
     assert "extra_policy" not in results[0]["Login"]
 
@@ -141,9 +150,9 @@ def test_read_data_repairs_malformed_request_csv_rows(tmp_path):
         ),
         encoding="utf-8",
     )
-    (config_dir / "policies").write_text("sched_prio,pred_sched\n", encoding="utf-8")
+    (config_dir / "policies").write_text("sched_slo,sched_pred\n", encoding="utf-8")
 
-    policy_dir = data_dir / "0" / "sched_prio,pred_sched"
+    policy_dir = data_dir / "0" / "sched_slo,sched_pred"
     policy_dir.mkdir(parents=True, exist_ok=True)
 
     header = "api,request_id,slo,start_at,deadline,latency,error,frontend_latency"
@@ -173,10 +182,10 @@ def test_read_data_repairs_malformed_request_csv_rows(tmp_path):
 
     assert repeats == 1
     assert apis == ["a", "ALL"]
-    assert policies == ["sched_prio,pred_sched"]
+    assert policies == ["sched_slo,sched_pred"]
     assert rps_values == [300]
 
-    df = results[0]["a"]["sched_prio,pred_sched"][300]
+    df = results[0]["a"]["sched_slo,sched_pred"][300]
     # Original columns should be present
     for col in header.split(","):
         assert col in df.columns

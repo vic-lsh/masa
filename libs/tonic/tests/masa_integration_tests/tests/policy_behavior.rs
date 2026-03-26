@@ -1,7 +1,7 @@
 #![cfg(any(
-    all(feature = "sched_prio", feature = "trace-queue"),
-    all(feature = "sched_prio", feature = "slo_abort"),
-    all(feature = "sched_prio", feature = "ac_rajomon")
+    all(feature = "sched_slo", feature = "trace-queue"),
+    all(feature = "sched_slo", feature = "slo_abort"),
+    all(feature = "sched_slo", feature = "ac_rajomon")
 ))]
 
 use std::time::Duration;
@@ -27,7 +27,7 @@ use tonic::{Request, Response, Status};
 #[cfg(any(feature = "slo_abort", feature = "ac_rajomon"))]
 use tonic::Code;
 
-#[cfg(all(feature = "sched_prio", feature = "trace-queue"))]
+#[cfg(all(feature = "sched_slo", feature = "trace-queue"))]
 #[tokio::test(flavor = "current_thread")]
 async fn queue_latency_metadata_is_attached() {
     struct QueueSvc;
@@ -85,7 +85,7 @@ async fn queue_latency_metadata_is_attached() {
     server.abort();
 }
 
-#[cfg(all(feature = "sched_prio", feature = "slo_abort"))]
+#[cfg(all(feature = "sched_slo", feature = "slo_abort"))]
 #[tokio::test(flavor = "current_thread")]
 async fn expired_context_triggers_early_return() {
     #[derive(Clone)]
@@ -151,7 +151,7 @@ async fn expired_context_triggers_early_return() {
     server.abort();
 }
 
-#[cfg(all(feature = "sched_prio", feature = "ac_rajomon"))]
+#[cfg(all(feature = "sched_slo", feature = "ac_rajomon"))]
 #[tokio::test(flavor = "current_thread")]
 async fn sufficient_tokens_executes_and_piggybacks_price() {
     #[derive(Clone)]
@@ -221,7 +221,7 @@ async fn sufficient_tokens_executes_and_piggybacks_price() {
     server.abort();
 }
 
-#[cfg(all(feature = "sched_prio", feature = "ac_rajomon"))]
+#[cfg(all(feature = "sched_slo", feature = "ac_rajomon"))]
 #[tokio::test(flavor = "current_thread")]
 async fn insufficient_tokens_triggers_early_return() {
     #[derive(Clone)]

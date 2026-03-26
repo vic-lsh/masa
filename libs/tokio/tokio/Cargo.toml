@@ -27,9 +27,9 @@ default = []
 
 scheduler_trace = []
 static = []
-sched_prio = ["masa-core/sched_prio"]
-tailclipper = ["sched_prio", "masa-core/tailclipper"]
-sched_fifo = ["masa-core/sched_fifo"]
+sched_prio = []
+tailclipper = ["sched_prio"]
+sched_fifo = []
 # enable everything
 full = [
   "fs",

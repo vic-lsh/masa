@@ -21,7 +21,7 @@ tonic-build = { path = "../../tonic-build" }
 
 [features]
 default = []
-sched_prio = ["tonic/sched_prio", "masa-core/sched_prio"]
+sched_slo = ["tonic/sched_slo", "masa-core/sched_slo"]
 slo_abort = ["tonic/slo_abort", "masa-core/slo_abort"]
 ac_rajomon = ["tonic/ac_rajomon", "masa-core/ac_rajomon"]
 trace-queue = ["tonic/trace-queue"]

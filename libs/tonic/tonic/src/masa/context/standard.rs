@@ -22,9 +22,9 @@ use crate::masa::MethodRegistry;
 
 #[derive(Debug)]
 /// Standard Masa hooks implementation shared by all scheduling policies
-/// (FIFO, priority, tailclipper, pred_sched). The actual scheduling differences
-/// are handled by the tokio runtime and, when `est` is enabled, the
-/// `PredictiveSchedPolicy` overlay (`pred_sched` tightens deadlines and reprioritizes).
+/// (sched_fifo, sched_slo, sched_tailclipper, sched_pred). The actual scheduling
+/// differences are handled by the tokio runtime and, when `est` is enabled, the
+/// `PredictiveSchedPolicy` overlay (`sched_pred` tightens deadlines and reprioritizes).
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
 pub struct StandardHooks;

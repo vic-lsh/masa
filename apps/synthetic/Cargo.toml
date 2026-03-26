@@ -22,12 +22,12 @@ name = "validate_config"
 path = "src/bin/validate_config.rs"
 
 [features]
-sched_prio = ["masa/sched_prio"]
-tailclipper = ["masa/tailclipper"]
+sched_slo = ["masa/sched_slo"]
+sched_tailclipper = ["masa/sched_tailclipper"]
 sched_fifo = ["masa/sched_fifo"]
+sched_pred = ["masa/sched_pred"]
 slo_abort = ["masa/slo_abort"]
 est = ["masa/est"]
-pred_sched = ["masa/pred_sched"]
 ac_est = ["masa/ac_est"]
 ac_rajomon = ["masa/ac_rajomon"]
 
