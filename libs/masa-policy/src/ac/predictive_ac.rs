@@ -10,8 +10,8 @@
 
 use masa_core::Context;
 
-use super::super::est::estimator::DefaultLatencyEstimator;
-use super::super::est::state::EstServerState;
+use crate::est::estimator::DefaultLatencyEstimator;
+use crate::est::state::EstServerState;
 
 /// Zero-cost admission control overlay using latency estimates.
 ///
@@ -72,7 +72,7 @@ impl PredictiveAc {
             .get_estimate(resolved_method_id)
             .unwrap_or(0);
         if est_compute_rem > time_left {
-            return true; // infeasible → shed
+            return true; // infeasible -> shed
         }
 
         // Layer 3: efficiency-based admission (ingress only)

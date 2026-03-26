@@ -3,29 +3,25 @@ use std::{sync::Arc, task::Poll};
 use crate::metadata::{Ascii, MetadataValue};
 use crate::{body::BoxBody, CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
-#[allow(missing_docs)]
-pub mod ac;
-mod base;
-mod common;
-#[cfg(feature = "est")]
-pub(crate) mod est;
-#[cfg(feature = "est")]
-mod pred_sched;
-mod noop;
-mod standard;
+/// No-op Masa hooks implementation for when no scheduling features are enabled.
+pub mod noop;
+
+// NOTE: The scheduling policy implementations (StandardHooks, AC, estimation,
+// etc.) have been moved to the `masa-policy` crate. Tonic retains only the
+// hook trait definitions, NoopMasaHooks, metadata extensions, and runtime glue.
 
 pub mod runtime;
 mod thread_local;
 use masa_core::Context;
 pub use thread_local::{client, server};
 
-#[cfg(not(any(feature = "sched_fifo", feature = "sched_slo", feature = "sched_tailclipper")))]
+/// Default hooks type used by generated code.
+///
+/// This always resolves to `NoopMasaHooks` in tonic itself. When scheduling
+/// features are enabled, use `masa::DefaultMasaHooks` (from the `masa` crate)
+/// with `with_custom_context()` to get the active scheduling policy.
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = noop::NoopMasaHooks;
-
-#[cfg(any(feature = "sched_fifo", feature = "sched_slo", feature = "sched_tailclipper"))]
-#[allow(missing_docs)]
-pub type DefaultMasaHooks = standard::StandardHooks;
 
 // TODO: add notes on trait bounds
 /// Trait for specifying the set of hooks to apply in a Masa build.
@@ -174,10 +170,7 @@ pub const SERVICE_NAME_OVERRIDE_HEADER: &str = "x-masa-service-name";
 /// Internal header key for MASA context.
 pub(crate) const MASA_CONTEXT_HEADER: &str = masa_core::MASA_CONTEXT_HEADER;
 
-#[cfg(feature = "ac_rajomon")]
-pub use ac::rajomon::CLIENT_TOKEN_BUCKET;
-#[cfg(feature = "ac_rajomon")]
-pub use ac::rajomon::RAJOMON_STATE;
+// CLIENT_TOKEN_BUCKET and RAJOMON_STATE are now in `masa_policy::ac::rajomon`.
 
 /// Get the MASA context from metadata.
 pub fn get_masa_context_from_metadata(metadata: &crate::metadata::MetadataMap) -> Option<Context> {
@@ -325,7 +318,8 @@ impl MasaStatusExt for Status {
     }
 }
 
-fn read_context<B>(req: &http::Request<B>) -> Context {
+/// Read the MASA context from the HTTP request headers.
+pub fn read_context<B>(req: &http::Request<B>) -> Context {
     let ctx_str = req.headers()[MASA_CONTEXT_HEADER].to_str().unwrap();
     Context::from_header_string(ctx_str)
 }
@@ -350,7 +344,7 @@ fn header_to_str(value: Option<&http::HeaderValue>) -> Option<&str> {
 }
 
 /// Resolve the method name from HTTP request headers, checking for override header.
-pub(crate) fn resolve_method_name_from_http<B>(
+pub fn resolve_method_name_from_http<B>(
     method: GrpcMethod,
     req: &http::Request<B>,
 ) -> CowGrpcMethod {
@@ -362,7 +356,7 @@ pub(crate) fn resolve_method_name_from_http<B>(
 }
 
 /// Resolve the method name from Request metadata, checking for override header.
-pub(crate) fn resolve_method_name_from_request<T>(
+pub fn resolve_method_name_from_request<T>(
     method: GrpcMethod,
     request: &Request<T>,
 ) -> CowGrpcMethod {

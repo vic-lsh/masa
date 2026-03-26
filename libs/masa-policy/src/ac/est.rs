@@ -7,7 +7,7 @@
 // implementation of `AcHandler` for `BaseHookState` — EST admission
 // decisions happen at the estimation layer, not the base hook layer.
 
-use crate::CowGrpcMethod;
+use tonic::CowGrpcMethod;
 
 use super::AcHandler;
 
@@ -20,7 +20,7 @@ const STALENESS_DEFAULT: f32 = 0.5;
 const UTIL_TARGET: f64 = 0.92;
 const ADJUST_RATE: f64 = 0.5;
 const MAX_BURST_SECS: f64 = 0.1;
-const INITIAL_BUDGET_RATE: f64 = 10_000_000.0; // µs/s — start generous
+const INITIAL_BUDGET_RATE: f64 = 10_000_000.0; // us/s — start generous
 
 /// Tracks max_downstream_util per API with staleness decay.
 #[derive(Debug)]
@@ -188,8 +188,8 @@ mod tests {
     fn test_admission_controller_rejects_when_budget_exhausted() {
         let ac = AdmissionController::new();
         // Exhaust the budget by admitting requests with large compute costs
-        // Initial budget = INITIAL_BUDGET_RATE * MAX_BURST_SECS = 10M * 0.1 = 1M µs
-        // Each request costs 100_000 µs, so ~10 requests should exhaust it
+        // Initial budget = INITIAL_BUDGET_RATE * MAX_BURST_SECS = 10M * 0.1 = 1M us
+        // Each request costs 100_000 us, so ~10 requests should exhaust it
         let mut rejected = false;
         for _ in 0..20 {
             if !ac.should_admit("Search", 100_000, 100_000, 50_000) {

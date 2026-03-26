@@ -39,7 +39,7 @@ pub(crate) type DefaultLatencyEstimator = masa_core::LatencyRms;
 
 // --- Shared types ---
 
-/// Identifies a parent→child method pair for latency tracking.
+/// Identifies a parent->child method pair for latency tracking.
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub(crate) struct ParentToChildId {
     pub parent_id: u64,

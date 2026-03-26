@@ -212,6 +212,7 @@ dependencies = [
  "env_logger 0.9.3",
  "log",
  "masa",
+ "masa-policy",
  "rand 0.8.5",
  "rand_distr 0.4.3",
  "serde",
@@ -1982,6 +1983,7 @@ dependencies = [
  "clap 4.5.54",
  "futures",
  "masa",
+ "masa-policy",
  "prost",
  "prost-types",
  "protoc-bin-vendored",
@@ -2986,6 +2988,7 @@ name = "masa"
 version = "0.1.0"
 dependencies = [
  "masa-core",
+ "masa-policy",
  "tokio",
  "tonic",
 ]
@@ -3026,11 +3029,27 @@ dependencies = [
  "http",
  "hyper",
  "masa-core",
+ "masa-policy",
  "prost",
  "prost-build",
  "tokio",
  "tonic",
  "tonic-build",
+]
+
+[[package]]
+name = "masa-policy"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "http",
+ "log",
+ "masa-core",
+ "once_cell",
+ "rand 0.8.5",
+ "rand_distr 0.4.3",
+ "tokio",
+ "tonic",
 ]
 
 [[package]]
