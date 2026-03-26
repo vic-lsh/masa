@@ -304,8 +304,15 @@ async fn run_root_load(
                         #[cfg(feature = "rajomon")]
                         {
                             use rand::Rng;
-                            builder =
-                                builder.tokens(rand::rng().random_range(100..=10000));
+                            use tonic::masa::context::rajomon::MAX_TOKEN;
+                            // Bid is a uniform random value in [0, MAX_TOKEN]. The server
+                            // admits requests whose bid >= its current price, giving a
+                            // (MAX_TOKEN - price) / MAX_TOKEN admission fraction. Drawing
+                            // from the full fixed range avoids the balance-depletion problem
+                            // where bucket drains to 0 in a single-process loadgen, causing
+                            // permanent zero-bid and complete admission collapse.
+                            let tok = rand::rng().random_range(0..=MAX_TOKEN);
+                            builder = builder.tokens(tok);
                         }
                         builder.build()
                     };

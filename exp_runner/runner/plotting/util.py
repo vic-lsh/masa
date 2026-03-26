@@ -414,7 +414,11 @@ def filter_excluded_errors(df):
         # unless we add it to parser, but let's check string for Timeout for now or add it)
         # Actually, let's just use string check for ClientTimeout and column for EarlyReturn
         is_early_return = df["error_type"] == "EarlyReturn"
-        is_timeout = df["error"] == "/ClientTimeout"
+        is_timeout = (
+            (df["error"] == "/ClientTimeout")
+            if "error" in df.columns
+            else pd.Series(False, index=df.index)
+        )
         return df[~(is_early_return | is_timeout)].copy()
 
     # Use apply instead of str.startswith to avoid potential numpy.rec issues

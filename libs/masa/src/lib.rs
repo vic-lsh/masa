@@ -38,13 +38,6 @@ pub fn create_context(api: &str, slo: Duration) -> Context {
         .deadline(deadline)
         .prio_hint(PriorityHint::new(prio_hint));
 
-    #[cfg(feature = "rajomon")]
-    {
-        use rand::Rng;
-        let tokens = rand::thread_rng().gen_range(100..=10000);
-        builder = builder.tokens(tokens);
-    }
-
     builder.build()
 }
 
