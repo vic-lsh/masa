@@ -14,9 +14,9 @@ mod noop;
 mod standard;
 
 pub mod runtime;
-mod tls;
+mod thread_local;
 use masa_core::Context;
-pub use tls::{client, server};
+pub use thread_local::{client, server};
 
 #[cfg(not(any(feature = "masa", feature = "sched_prio", feature = "sched_fifo")))]
 #[allow(missing_docs)]
