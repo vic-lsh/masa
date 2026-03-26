@@ -11,6 +11,8 @@ use crate::Response;
 use masa_core::ContextBuilder;
 
 #[cfg(feature = "est")]
+use super::ac::predictive_ac::PredictiveAc;
+#[cfg(feature = "est")]
 use super::est::estimator::DefaultLatencyEstimator;
 #[cfg(feature = "est")]
 use super::est::state::{is_early_return_response, EstChildState, EstRequestState, EstServerState};
@@ -36,6 +38,8 @@ impl MasaHooks for StandardHooks {
 pub struct ServerContext {
     #[cfg(feature = "est")]
     est: Arc<EstServerState<DefaultLatencyEstimator>>,
+    #[cfg(feature = "est")]
+    ac_est: Arc<PredictiveAc>,
 }
 
 impl ServerHooks for ServerContext {
@@ -43,6 +47,8 @@ impl ServerHooks for ServerContext {
         Self {
             #[cfg(feature = "est")]
             est: Arc::new(EstServerState::new()),
+            #[cfg(feature = "est")]
+            ac_est: Arc::new(PredictiveAc::new()),
         }
     }
 }
@@ -54,6 +60,8 @@ pub struct ParentContext {
     pred_abort: PredictiveAbort,
     #[cfg(feature = "est")]
     est: EstRequestState<DefaultLatencyEstimator>,
+    #[cfg(feature = "est")]
+    ac_est: Arc<PredictiveAc>,
 }
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
@@ -75,6 +83,8 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             pred_abort: PredictiveAbort,
             #[cfg(feature = "est")]
             est: EstRequestState::new(resolved_method_id, _server_ctx.est.clone()),
+            #[cfg(feature = "est")]
+            ac_est: _server_ctx.ac_est.clone(),
         }
     }
 
@@ -103,11 +113,23 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         child_ctx.set_method_name(child_method_name.clone());
 
         #[cfg(feature = "est")]
-        let est_remaining = self
-            .est
-            .prepare_before_child_rpc(&self.base.ctx, &child_method_name, &mut child_ctx.est)
-            .map_err(|_| self.base.slo_abort.issue_error())?
-            .est_remaining;
+        let est_remaining = {
+            let result = self
+                .est
+                .prepare_before_child_rpc(&self.base.ctx, &child_method_name, &mut child_ctx.est)
+                .map_err(|_| self.base.slo_abort.issue_error())?;
+
+            if self.ac_est.admission_check(
+                &self.est.server,
+                self.est.resolved_method_id,
+                &self.base.ctx,
+                result.key,
+            ) {
+                return Err(self.base.slo_abort.issue_error());
+            }
+
+            result.est_remaining
+        };
         #[cfg(not(feature = "est"))]
         let est_remaining = 0u64;
 
@@ -143,8 +165,10 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         #[cfg(feature = "est")]
         {
             child_ctx.est.finalize(response);
-            self.est
-                .after_child_rpc(&self.base.ctx, response, &child_ctx.est);
+            if let Some(downstream_util) = self.est.after_child_rpc(response, &child_ctx.est) {
+                self.ac_est
+                    .update_bottleneck(self.base.ctx.api(), downstream_util);
+            }
         }
 
         if let Some(child) = child_ctx.child_method_name {
@@ -396,9 +420,8 @@ mod tests {
             assert_eq!(p_m, "ParentMethod");
         }
 
-        /// Verify that without `ac_est`, `admission_check` falls back to the floor-based check.
+        /// Verify that `admission_check` uses the floor-based check.
         /// The floor check should admit when there is plenty of time left (no shed).
-        #[cfg(not(feature = "ac_est"))]
         #[test]
         fn test_admission_check_floor_based_admits_with_budget() {
             let server_ctx = Arc::new(ServerContext::new("FloorService"));
@@ -423,7 +446,7 @@ mod tests {
 
             // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline - 0 = e2e_deadline.
             // Since e2e_deadline is 100ms in the future, this should NOT shed.
-            let shed = parent_ctx.est.admission_check(&parent_ctx.base.ctx, 0, 0);
+            let shed = parent_ctx.est.admission_check(&parent_ctx.base.ctx, 0);
             assert!(!shed, "should admit when plenty of time remains");
         }
     }
