@@ -3,6 +3,7 @@ use crate::{GrpcMethod, Request, Response, Status};
 use std::sync::Arc;
 use std::task::Poll;
 
+use super::ac::AcHandler;
 use super::base::BaseHookState;
 use super::est::state::{is_early_return_response, EstChildState, EstRequestState, EstServerState};
 use super::{ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks};
@@ -99,7 +100,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
         let resolved_child_method = super::resolve_method_name_from_request(child_method, request);
 
         self.base
-            .rajomon
+            .ac
             .check_outbound(&resolved_child_method, &self.base.ctx)?;
 
         let prepare_result = self
@@ -123,7 +124,7 @@ impl<E: LatencyEstimator + Default + 'static> ParentHooks<ChildContext<E>, Serve
             .deadline(deadline)
             .prio_hint(PriorityHint::new(prio_hint))
             .hop_count(self.base.ctx.hop_count().saturating_add(1))
-            .tokens(self.base.rajomon.remaining_tokens())
+            .tokens(self.base.ac.remaining_tokens())
             .build();
         request.set_masa_context(&child_recv_ctx);
 

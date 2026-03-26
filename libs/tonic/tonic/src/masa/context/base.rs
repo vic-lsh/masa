@@ -7,8 +7,8 @@
 
 use crate::{masa::context::read_context, CowGrpcMethod, GrpcMethod, Response, Status};
 
+use super::ac::{AcHandler, ActiveAcHandler};
 use super::common::{QueueLatencyTracker, SloAbortHandler};
-use super::rajomon::RajomonHandler;
 use super::resolve_method_name_from_http;
 use masa_core::Context;
 
@@ -19,7 +19,7 @@ pub(super) struct BaseHookState {
     pub(super) resolved_method: CowGrpcMethod,
     pub(super) q_lat_tracker: QueueLatencyTracker,
     pub(super) slo_abort: SloAbortHandler,
-    pub(super) rajomon: RajomonHandler,
+    pub(super) ac: ActiveAcHandler,
 }
 
 impl BaseHookState {
@@ -27,23 +27,23 @@ impl BaseHookState {
     pub(super) fn new<B>(method: GrpcMethod, req: &http::Request<B>) -> Self {
         let mut ctx = read_context(req);
         let resolved_method = resolve_method_name_from_http(method, req);
-        let mut rajomon = RajomonHandler::new(resolved_method.clone());
-        rajomon.check_inbound(&mut ctx);
+        let mut ac = ActiveAcHandler::new(resolved_method.clone());
+        ac.check_inbound(&mut ctx);
 
         Self {
             ctx,
             resolved_method: resolved_method.clone(),
             q_lat_tracker: QueueLatencyTracker::new(),
             slo_abort: SloAbortHandler::new(resolved_method),
-            rajomon,
+            ac,
         }
     }
 
     /// Check rajomon drop and SLO abort guards. Returns early-return error envelope
     /// on failure. Used in `before_poll` and similar contexts.
     pub(super) fn check_guards<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        if self.rajomon.should_drop() {
-            return Err(Err(self.rajomon.issue_error(None)));
+        if let Some(status) = self.ac.drop_status() {
+            return Err(Err(status));
         }
         if self.slo_abort.check(&self.ctx) {
             return Err(Err(self.slo_abort.issue_error()));
@@ -51,11 +51,11 @@ impl BaseHookState {
         Ok(())
     }
 
-    /// Check rajomon drop and SLO abort guards, returning a flat `Status` error.
+    /// Check AC drop and SLO abort guards, returning a flat `Status` error.
     /// Used in `before_child_rpc`.
     pub(super) fn check_guards_status(&self) -> Result<(), Status> {
-        if self.rajomon.should_drop() {
-            return Err(self.rajomon.issue_error(None));
+        if let Some(status) = self.ac.drop_status() {
+            return Err(status);
         }
         if self.slo_abort.check(&self.ctx) {
             return Err(self.slo_abort.issue_error());
@@ -65,7 +65,7 @@ impl BaseHookState {
 
     /// Track queue delay and poll latency. Called after guard checks in `before_poll`.
     pub(super) fn track_poll(&self) {
-        self.rajomon.track_queue_delay();
+        self.ac.track_queue_delay();
         self.q_lat_tracker.track_poll();
     }
 
@@ -82,10 +82,9 @@ impl BaseHookState {
 
     /// Common finalization: rajomon queue delay, queue latency injection, price injection.
     pub(super) fn finalize<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
-        self.rajomon.finalize_queue_delay();
         self.q_lat_tracker
             .inject_context_metadata(&self.ctx, result);
-        self.rajomon.inject_price_to_response(result);
+        self.ac.inject_response_metadata(result);
     }
 
     /// Update rajomon cache and SLO abort handler after a child RPC completes.
@@ -94,12 +93,9 @@ impl BaseHookState {
         child_method: &CowGrpcMethod,
         response: &Result<Response<T>, Status>,
     ) {
-        if let Ok(resp) = response {
-            self.rajomon
-                .update_cache_from_response(child_method, resp.metadata());
-        } else if let Err(status) = response {
-            self.rajomon
-                .update_cache_from_response(child_method, status.metadata());
+        match response {
+            Ok(resp) => self.ac.on_child_response(child_method, resp.metadata()),
+            Err(status) => self.ac.on_child_response(child_method, status.metadata()),
         }
         self.slo_abort.set_last_child(child_method.clone());
     }
