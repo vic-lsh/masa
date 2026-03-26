@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc, sync::Mutex, time::Duration};
 
 use masa_core::LatencyEstimator;
 
-use crate::masa::MethodRegistry;
+use crate::MethodRegistry;
 
 #[derive(Debug)]
 pub(crate) struct LatencyMap<E> {

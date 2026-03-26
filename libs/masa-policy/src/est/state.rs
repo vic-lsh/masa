@@ -13,20 +13,20 @@ use std::sync::{
 };
 use std::time::Instant;
 
-use crate::{Code, CowGrpcMethod, Response, Status};
+use tonic::{Code, CowGrpcMethod, Response, Status};
 use masa_core::{time_now, Context, LatencyEstimator, ResponseMeta};
 
 use super::estimator::ParentToChildId;
 use super::latency_map::{spawn_method_stats_printer, spawn_stats_printer, LatencyMap};
-use crate::masa::context::{MasaResponseExt, MasaStatusExt};
-use crate::masa::MethodRegistry;
+use tonic::masa::context::{MasaResponseExt, MasaStatusExt};
+use crate::MethodRegistry;
 
 /// Server-level estimation state (shared across requests on a service).
 #[derive(Debug)]
 pub(crate) struct EstServerState<E: LatencyEstimator + Default + 'static> {
-    /// Tracks remaining duration after each child RPC completes (keyed by parent→child pair).
+    /// Tracks remaining duration after each child RPC completes (keyed by parent->child pair).
     pub est_after_child_latency: Arc<LatencyMap<E>>,
-    /// Tracks actual child RPC call latencies (keyed by parent→child pair).
+    /// Tracks actual child RPC call latencies (keyed by parent->child pair).
     pub est_child_latency: Arc<LatencyMap<E>>,
     /// Tracks compute time (poll duration) per method.
     pub est_compute_latency: Arc<LatencyMap<E>>,
@@ -273,13 +273,30 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
 
         ChildRpcPrepareResult { est_remaining, key }
     }
+
+    /// Floor-based admission check using latency estimates.
+    ///
+    /// Returns true if the request should be shed (rejected).
+    #[allow(dead_code)]
+    pub(crate) fn admission_check(&self, ctx: &Context, key: u64) -> bool {
+        use masa_core::time_now;
+
+        let time_left = ctx.e2e_deadline().saturating_sub(time_now());
+        let est_remaining_floor = self
+            .server
+            .est_after_child_latency
+            .get_mean_floor_estimate(key)
+            .unwrap_or(0)
+            .min(time_left);
+        time_now() > ctx.e2e_deadline().saturating_sub(est_remaining_floor)
+    }
 }
 
 /// Result of `prepare_before_child_rpc` containing estimates for deadline computation.
 #[allow(dead_code)]
 pub(crate) struct ChildRpcPrepareResult {
     pub est_remaining: u64,
-    /// Parent→child key for admission control lookups.
+    /// Parent->child key for admission control lookups.
     pub key: u64,
 }
 

@@ -1,24 +1,24 @@
-use crate::{CowGrpcMethod, GrpcMethod, Request, Status};
+use tonic::{CowGrpcMethod, GrpcMethod, Request, Status};
 use std::sync::Arc;
 use std::task::Poll;
 
-use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
-use super::ac::AcHandler;
-use super::base::BaseHookState;
+use tonic::masa::context::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
+use crate::ac::AcHandler;
+use crate::base::BaseHookState;
 #[cfg(feature = "est")]
-use super::pred_sched::PredictiveSchedPolicy;
-use super::{resolve_method_name_from_request, MasaRequestExt};
-use crate::Response;
+use crate::pred_sched::PredictiveSchedPolicy;
+use tonic::masa::context::{resolve_method_name_from_request, MasaRequestExt};
+use tonic::Response;
 use masa_core::ContextBuilder;
 
 #[cfg(feature = "est")]
-use super::ac::predictive_ac::PredictiveAc;
+use crate::ac::predictive_ac::PredictiveAc;
 #[cfg(feature = "est")]
-use super::est::estimator::DefaultLatencyEstimator;
+use crate::est::estimator::DefaultLatencyEstimator;
 #[cfg(feature = "est")]
-use super::est::state::{is_early_return_response, EstChildState, EstRequestState, EstServerState};
+use crate::est::state::{is_early_return_response, EstChildState, EstRequestState, EstServerState};
 #[cfg(feature = "est")]
-use crate::masa::MethodRegistry;
+use crate::MethodRegistry;
 
 #[derive(Debug)]
 /// Standard Masa hooks implementation shared by all scheduling policies
@@ -26,7 +26,6 @@ use crate::masa::MethodRegistry;
 /// differences are handled by the tokio runtime and, when `est` is enabled, the
 /// `PredictiveSchedPolicy` overlay (`sched_pred` tightens deadlines and reprioritizes).
 #[allow(dead_code)]
-#[allow(unreachable_pub)]
 pub struct StandardHooks;
 
 impl MasaHooks for StandardHooks {
@@ -36,7 +35,6 @@ impl MasaHooks for StandardHooks {
 }
 
 #[derive(Debug)]
-#[allow(unreachable_pub)]
 pub struct ServerContext {
     #[cfg(feature = "est")]
     est: Arc<EstServerState<DefaultLatencyEstimator>>,
@@ -56,7 +54,6 @@ impl ServerHooks for ServerContext {
 }
 
 #[derive(Debug)]
-#[allow(unreachable_pub)]
 pub struct ParentContext {
     base: BaseHookState,
     #[cfg(feature = "est")]
@@ -211,7 +208,6 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 }
 
 #[derive(Debug, Clone)]
-#[allow(unreachable_pub)]
 pub struct ChildContext {
     pub child_method_name: Option<CowGrpcMethod>,
     #[cfg(feature = "est")]
@@ -229,7 +225,7 @@ impl ClientHooks for ChildContext {
 }
 
 impl ChildContext {
-    pub(super) fn set_method_name(&mut self, name: CowGrpcMethod) {
+    pub fn set_method_name(&mut self, name: CowGrpcMethod) {
         self.child_method_name = Some(name);
     }
 }
@@ -240,12 +236,12 @@ mod tests {
 
     #[cfg(feature = "est")]
     mod est_tests {
-        use super::super::super::est::estimator::ParentToChildId;
-        use super::super::super::est::state::EstServerState;
-        use super::super::super::{resolve_method_name_from_http, MASA_CONTEXT_HEADER};
+        use crate::est::estimator::ParentToChildId;
+        use crate::est::state::EstServerState;
+        use tonic::masa::context::{resolve_method_name_from_http, MASA_CONTEXT_HEADER};
         use super::super::{ChildContext, ParentContext, ServerContext};
-        use crate::masa::context::{ClientHooks, ParentHooks, ServerHooks};
-        use crate::{GrpcMethod, Request, Response};
+        use tonic::masa::context::{ClientHooks, ParentHooks, ServerHooks};
+        use tonic::{GrpcMethod, Request, Response};
         use masa_core::{ContextBuilder, LatencyRms};
         use std::sync::Arc;
 
@@ -284,7 +280,7 @@ mod tests {
             assert_eq!(val, Some(10)); // Still 10
 
             // 4th track: sum_sq=600+400=1000, count=4, since_update=2. Update triggers.
-            // RMS = sqrt( (100 + 100 + 400 + 400) / 4 ) = sqrt(250) ≈ 15.
+            // RMS = sqrt( (100 + 100 + 400 + 400) / 4 ) = sqrt(250) ~ 15.
             est.est_child_latency.track(key, 20);
             let val = est.est_child_latency.get_estimate(key);
             // integer_sqrt(250) is 15 (15*15=225, 16*16=256)
@@ -293,7 +289,7 @@ mod tests {
 
         #[test]
         fn test_resolve_method_name_from_http_with_overrides() {
-            use super::super::super::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
+            use tonic::masa::context::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
             use http::HeaderValue;
 
             let method = GrpcMethod::new("TestService", "TestMethod");
@@ -325,11 +321,11 @@ mod tests {
 
         #[test]
         fn test_resolve_method_name_from_request_with_overrides() {
-            use super::super::super::{
+            use tonic::masa::context::{
                 resolve_method_name_from_request, METHOD_NAME_OVERRIDE_HEADER,
                 SERVICE_NAME_OVERRIDE_HEADER,
             };
-            use crate::metadata::MetadataValue;
+            use tonic::metadata::MetadataValue;
 
             let method = GrpcMethod::new("TestService", "TestMethod");
             let mut req = Request::new(());
@@ -360,7 +356,7 @@ mod tests {
 
         #[test]
         fn test_local_deadline_policy_integration() {
-            use crate::masa::MethodRegistry;
+            use crate::MethodRegistry;
 
             // 1. Setup Server Context
             let server_ctx = Arc::new(ServerContext::new("IntegrationService"));
