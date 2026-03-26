@@ -262,6 +262,7 @@ def _plot_goodput_lines(
     ax.set_xlabel("Offered load (RPS)")
     ax.set_ylabel(ylabel)
     ax.set_title(title)
+    ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
     ax.legend()
     fig.tight_layout()
