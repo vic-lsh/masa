@@ -329,22 +329,35 @@ fn read_context<B>(req: &http::Request<B>) -> Context {
     Context::from_header_string(ctx_str)
 }
 
+/// Resolve the method name, applying override headers if present.
+fn resolve_method_name_impl(
+    method: GrpcMethod,
+    method_override: Option<&str>,
+    service_override: Option<&str>,
+) -> CowGrpcMethod {
+    if let Some(method_name) = method_override {
+        if let Some(service_name) = service_override {
+            return CowGrpcMethod::new(service_name.to_string(), method_name.to_string());
+        }
+        return CowGrpcMethod::new(method.service(), method_name.to_string());
+    }
+    CowGrpcMethod::new(method.service(), method.method())
+}
+
+fn header_to_str(value: Option<&http::HeaderValue>) -> Option<&str> {
+    value.and_then(|v| v.to_str().ok())
+}
+
 /// Resolve the method name from HTTP request headers, checking for override header.
 pub(crate) fn resolve_method_name_from_http<B>(
     method: GrpcMethod,
     req: &http::Request<B>,
 ) -> CowGrpcMethod {
-    if let Some(header_value) = req.headers().get(METHOD_NAME_OVERRIDE_HEADER) {
-        if let Ok(method_name) = header_value.to_str() {
-            if let Some(service_header) = req.headers().get(SERVICE_NAME_OVERRIDE_HEADER) {
-                if let Ok(service_name) = service_header.to_str() {
-                    return CowGrpcMethod::new(service_name.to_string(), method_name.to_string());
-                }
-            }
-            return CowGrpcMethod::new(method.service(), method_name.to_string());
-        }
-    }
-    CowGrpcMethod::new(method.service(), method.method())
+    resolve_method_name_impl(
+        method,
+        header_to_str(req.headers().get(METHOD_NAME_OVERRIDE_HEADER)),
+        header_to_str(req.headers().get(SERVICE_NAME_OVERRIDE_HEADER)),
+    )
 }
 
 /// Resolve the method name from Request metadata, checking for override header.
@@ -352,15 +365,10 @@ pub(crate) fn resolve_method_name_from_request<T>(
     method: GrpcMethod,
     request: &Request<T>,
 ) -> CowGrpcMethod {
-    if let Some(header_value) = request.metadata().get(METHOD_NAME_OVERRIDE_HEADER) {
-        if let Ok(method_name) = header_value.to_str() {
-            if let Some(service_header) = request.metadata().get(SERVICE_NAME_OVERRIDE_HEADER) {
-                if let Ok(service_name) = service_header.to_str() {
-                    return CowGrpcMethod::new(service_name.to_string(), method_name.to_string());
-                }
-            }
-            return CowGrpcMethod::new(method.service(), method_name.to_string());
-        }
-    }
-    CowGrpcMethod::new(method.service(), method.method())
+    let meta_to_str = |key| request.metadata().get(key).and_then(|v| v.to_str().ok());
+    resolve_method_name_impl(
+        method,
+        meta_to_str(METHOD_NAME_OVERRIDE_HEADER),
+        meta_to_str(SERVICE_NAME_OVERRIDE_HEADER),
+    )
 }
