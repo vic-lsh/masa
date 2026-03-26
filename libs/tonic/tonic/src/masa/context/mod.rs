@@ -8,14 +8,12 @@ mod common;
 mod est_abort;
 #[cfg(any(feature = "ac_est", feature = "est_abort"))]
 pub(crate) mod estimator;
-mod fifo;
 #[cfg(any(feature = "ac_est", feature = "est_abort"))]
 pub(crate) mod latency_map;
 mod noop;
-mod prio;
 #[allow(missing_docs)]
 pub mod rajomon;
-mod tailclipper;
+mod standard;
 
 #[cfg(feature = "ac_est")]
 pub(crate) mod ac_est;
@@ -31,21 +29,12 @@ pub use tls::{client, server};
 #[allow(missing_docs)]
 pub type DefaultMasaHooks = noop::NoopMasaHooks;
 
-#[cfg(all(feature = "sched_fifo", not(feature = "sched_prio")))]
-#[allow(missing_docs)]
-pub type DefaultMasaHooks = fifo::Fifo;
-
-#[cfg(all(
-    feature = "sched_prio",
-    not(feature = "tailclipper"),
-    not(feature = "est_abort")
+#[cfg(any(
+    all(feature = "sched_fifo", not(feature = "sched_prio")),
+    all(feature = "sched_prio", not(feature = "est_abort")),
 ))]
 #[allow(missing_docs)]
-pub type DefaultMasaHooks = prio::Prio;
-
-#[cfg(all(feature = "sched_prio", feature = "tailclipper"))]
-#[allow(missing_docs)]
-pub type DefaultMasaHooks = tailclipper::Tailclipper;
+pub type DefaultMasaHooks = standard::StandardHooks;
 
 #[cfg(all(feature = "sched_prio", feature = "est_abort"))]
 #[allow(missing_docs)]

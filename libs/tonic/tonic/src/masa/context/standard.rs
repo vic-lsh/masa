@@ -19,13 +19,13 @@ use super::estimator::DefaultLatencyEstimator;
 use crate::masa::MethodRegistry;
 
 #[derive(Debug)]
-/// FIFO policy with optional early return support.
-/// Requests are served in first-in-first-out order.
+/// Standard Masa hooks implementation shared by FIFO, priority, and tailclipper policies.
+/// The actual scheduling differences are handled by the tokio runtime, not these hooks.
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
-pub struct Fifo;
+pub struct StandardHooks;
 
-impl MasaHooks for Fifo {
+impl MasaHooks for StandardHooks {
     type ServerContext = ServerContext;
     type ChildContext = ChildContext;
     type ParentContext = ParentContext;
@@ -57,8 +57,6 @@ pub struct ParentContext {
     adctl: AdctlRequestState<DefaultLatencyEstimator>,
     rajomon: RajomonHandler,
 }
-
-/// Resolve the method name from Request metadata, checking for override header.
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn begin<B>(
@@ -151,7 +149,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
     fn after_child_rpc<T>(
         &self,
-        _child_method: GrpcMethod,
+        _method: GrpcMethod,
         response: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext,
     ) -> Result<(), Status> {
