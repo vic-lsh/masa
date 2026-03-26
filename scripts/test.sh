@@ -58,8 +58,7 @@ execute_test() {
                 failed=$((failed+1))
             fi
         done
-        local total=$(( ${#packages[@]} + 2 + 1 + ${#policy_flags[@]} ))
-        echo "Starting $name (Passed: $passed, Failed: $failed, Total: $total)..."
+        echo "Starting $name (Passed: $passed, Failed: $failed, Queued: ${#TEST_NAMES[@]})..."
 
         (
             outfile="$RESULTS_DIR/$name.log"
@@ -80,31 +79,54 @@ execute_test() {
     fi
 }
 
-# First, run tests from scripts for specialized purposes.
-# We keep this sequential as it might set up things or be independent.
-# ./scripts/test_sched_policy.sh
-
-policy_flags=(
+# Feature flag combinations to test (aligned with check.sh)
+feature_combos=(
     "sched_fifo"
     "sched_prio"
-    "sched_prio,tailclipper"
-    "sched_prio,est_abort"
-    "sched_prio,est_abort,est_rms"
-    "sched_prio,est_abort,est_hist"
+    "sched_prio,tailclipper,slo_abort"
+    "sched_prio,ac_rajomon"
     "sched_prio,est_abort,est_mean_var"
 )
 
-# Run scheduling policy tests
+# Per-combo test dispatch: runs the hotel sched_policy test for every combo,
+# plus additional feature-specific tests where applicable.
+run_feature_tests() {
+    local feat="$1"
+    execute_test "hotel (sched_policy $feat)" cargo test -p hotel --test sched_policy --features "$feat"
+    case "$feat" in
+        sched_prio)
+            execute_test "masa-integration-tests (sched_prio)" \
+                cargo test -p masa-integration-tests --features sched_prio
+            execute_test "masa-integration-tests (sched_prio+trace-queue)" \
+                cargo test -p masa-integration-tests --features sched_prio,trace-queue
+            ;;
+        sched_prio,tailclipper,slo_abort)
+            execute_test "masa-integration-tests (sched_prio+slo_abort)" \
+                cargo test -p masa-integration-tests --features sched_prio,slo_abort
+            ;;
+        sched_prio,ac_rajomon)
+            execute_test "masa-integration-tests (ac_rajomon)" \
+                cargo test -p masa-integration-tests --features sched_prio,ac_rajomon
+            ;;
+        sched_prio,est_abort,est_mean_var)
+            execute_test "tonic (est_mean_var)" \
+                cargo test -p tonic --features masa,sched_prio,est_abort,est_mean_var
+            ;;
+    esac
+}
+
+# Run scheduling policy test with no features
 if [ "$IS_MATRIX" = false ] || [ -z "$FEATURE_FLAG" ]; then
     execute_test "hotel (sched_policy no-op)" cargo test -p hotel --test sched_policy
 fi
 
+# Run feature-specific tests
 if [ "$IS_MATRIX" = false ]; then
-    for policy in "${policy_flags[@]}"; do
-        execute_test "hotel (sched_policy $policy)" cargo test -p hotel --test sched_policy --features "$policy"
+    for feat in "${feature_combos[@]}"; do
+        run_feature_tests "$feat"
     done
-elif [[ " ${policy_flags[*]} " =~ " $FEATURE_FLAG " ]]; then
-    execute_test "hotel (sched_policy $FEATURE_FLAG)" cargo test -p hotel --test sched_policy --features "$FEATURE_FLAG"
+elif [[ " ${feature_combos[*]} " =~ " $FEATURE_FLAG " ]]; then
+    run_feature_tests "$FEATURE_FLAG"
 fi
 
 # because not all tests build right now, we only test the modules we know to build successfully.
@@ -168,7 +190,6 @@ if [ "$IS_MATRIX" = false ] || [ -z "$FEATURE_FLAG" ]; then
             execute_test "$package" cargo test --manifest-path "${package_manifest_paths[$package]}"
         else
             # otherwise, test with package name and optionally with feature flags
-            cmd=("cargo" "test" "-p" "$package")
             if [ -n "$features" ]; then
                  execute_test "$package" cargo test -p "$package" $features
             else
@@ -176,35 +197,9 @@ if [ "$IS_MATRIX" = false ] || [ -z "$FEATURE_FLAG" ]; then
             fi
         fi
     done
-fi
 
-if [ "$IS_MATRIX" = false ] || [ -z "$FEATURE_FLAG" ]; then
     execute_test "tokio (masa priority suite)" cargo test -p tokio --features full --test masa_priority
 fi
-
-declare -A specific_feature_tests=(
-    ["sched_prio,est_abort,est_rms"]="tonic (est_abort,est_rms):cargo test -p tonic --features masa,sched_prio,est_abort,est_rms"
-    ["sched_prio,est_abort,est_hist"]="tonic (est_abort,est_hist):cargo test -p tonic --features masa,sched_prio,est_abort,est_hist"
-    ["sched_prio,est_abort,est_mean_var"]="tonic (est_abort,est_mean_var):cargo test -p tonic --features masa,sched_prio,est_abort,est_mean_var"
-    ["sched_prio"]="masa-integration-tests (sched_prio):cargo test -p masa-integration-tests --features sched_prio"
-    ["sched_prio,trace-queue"]="masa-integration-tests (sched_prio+trace-queue):cargo test -p masa-integration-tests --features sched_prio,trace-queue"
-    ["sched_prio,slo_abort"]="masa-integration-tests (sched_prio+slo_abort):cargo test -p masa-integration-tests --features sched_prio,slo_abort"
-)
-
-for feat in "${!specific_feature_tests[@]}"; do
-    if [ "$IS_MATRIX" = false ] || [ "$FEATURE_FLAG" = "$feat" ]; then
-        IFS=":" read -r name cmd <<< "${specific_feature_tests[$feat]}"
-        execute_test "$name" $cmd
-    fi
-done
-
-execute_test "tonic (est_abort,est_rms)" cargo test -p tonic --features "masa,sched_prio,est_abort,est_rms"
-execute_test "tonic (est_abort,est_hist)" cargo test -p tonic --features "masa,sched_prio,est_abort,est_hist"
-execute_test "tokio (masa priority suite)" cargo test -p tokio --features full --test masa_priority
-execute_test "masa-integration-tests (sched_prio)" cargo test -p masa-integration-tests --features sched_prio
-execute_test "masa-integration-tests (sched_prio+trace-queue)" cargo test -p masa-integration-tests --features "sched_prio,trace-queue"
-execute_test "masa-integration-tests (sched_prio+slo_abort)" cargo test -p masa-integration-tests --features "sched_prio,slo_abort"
-execute_test "masa-integration-tests (sched_prio+ac_rajomon)" cargo test -p masa-integration-tests --features "sched_prio,ac_rajomon"
 
 # Collect results if parallel
 if [ "$PARALLEL_JOBS" -gt 1 ]; then
