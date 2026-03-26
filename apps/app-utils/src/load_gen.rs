@@ -420,7 +420,7 @@ where
             if let Some(price_header) = metadata.get("x-masa-rajomon-price") {
                 if let Ok(price_str) = price_header.to_str() {
                     if let Ok(price) = price_str.parse::<u64>() {
-                        use masa_policy::ac::rajomon::CLIENT_TOKEN_BUCKET;
+                        use masa_policy::CLIENT_TOKEN_BUCKET;
                         let method = tonic::CowGrpcMethod::new("", self.api.clone());
                         CLIENT_TOKEN_BUCKET.update_price(&method, price);
                     }

@@ -5,17 +5,13 @@
 // hook traits, and optionally `tonic` depends on this crate to wire up
 // `DefaultHooks`.
 
-#[allow(missing_docs)]
-pub mod ac;
 mod base;
-mod common;
 /// Masa context extension traits and helpers (moved from tonic to break circular dep).
 pub mod context_ext;
-#[cfg(feature = "est")]
-pub(crate) mod est;
-mod predictive_overlay;
+pub(crate) mod overlay;
 /// Method registry for mapping service/method strings to IDs.
 pub mod registry;
+mod slo_abort;
 mod standard;
 
 pub use context_ext::{
@@ -24,3 +20,9 @@ pub use context_ext::{
 };
 pub use registry::MethodRegistry;
 pub use standard::{ChildContext, ParentContext, ServerContext, StandardHooks};
+
+// Re-export Rajomon public items when the feature is enabled.
+#[cfg(feature = "ac_rajomon")]
+pub use overlay::rajomon::{
+    ClientTokenBucket, RajomonSharedState, CLIENT_TOKEN_BUCKET, MAX_TOKEN, RAJOMON_STATE,
+};

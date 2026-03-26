@@ -302,7 +302,7 @@ async fn run_root_load(
                         #[cfg(feature = "ac_rajomon")]
                         {
                             use rand::Rng;
-                            use masa_policy::ac::rajomon::MAX_TOKEN;
+                            use masa_policy::MAX_TOKEN;
                             // Bid is a uniform random value in [0, MAX_TOKEN]. The server
                             // admits requests whose bid >= its current price, giving a
                             // (MAX_TOKEN - price) / MAX_TOKEN admission fraction. Drawing

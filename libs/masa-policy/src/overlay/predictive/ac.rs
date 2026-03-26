@@ -1,15 +1,18 @@
-// EST-based admission control.
+// Predictive admission control.
 //
-// Provides `AdmissionController` (compute-budget token bucket) and
-// `BottleneckTracker` (per-API utilization tracking with staleness decay).
-// These are consumed directly by `EstServerState`/`EstRequestState` for
-// the actual admission decisions. The `EstAcHandler` is a thin no-op
-// implementation of `AcHandler` for `BaseHookState` — EST admission
-// decisions happen at the estimation layer, not the base hook layer.
+// Provides `PredictiveAc` (zero-cost wrapper selecting between full ac_est
+// and floor-only checks), `AdmissionController` (compute-budget token bucket),
+// and `BottleneckTracker` (per-API utilization tracking with staleness decay).
+//
+// `PredictiveAc` is owned by `PredictiveOverlay` and called from
+// `before_child_rpc`. It reads estimation maps from `EstServerState`.
 
-use tonic_core::CowGrpcMethod;
+use masa_core::Context;
 
-use super::AcHandler;
+use super::est::estimator::DefaultLatencyEstimator;
+use super::est::state::EstServerState;
+
+// ── Bottleneck Tracker ──────────────────────────────────────────────────
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -17,10 +20,6 @@ use std::time::Instant;
 
 const STALENESS_SECS: f64 = 2.0;
 const STALENESS_DEFAULT: f32 = 0.5;
-const UTIL_TARGET: f64 = 0.92;
-const ADJUST_RATE: f64 = 0.5;
-const MAX_BURST_SECS: f64 = 0.1;
-const INITIAL_BUDGET_RATE: f64 = 10_000_000.0; // us/s — start generous
 
 /// Tracks max_downstream_util per API with staleness decay.
 #[derive(Debug)]
@@ -57,20 +56,19 @@ impl BottleneckTracker {
     }
 }
 
+// ── Admission Controller ────────────────────────────────────────────────
+
+const UTIL_TARGET: f64 = 0.92;
+const ADJUST_RATE: f64 = 0.5;
+const MAX_BURST_SECS: f64 = 0.1;
+const INITIAL_BUDGET_RATE: f64 = 10_000_000.0; // us/s — start generous
+
 struct BudgetState {
     budget_us: f64,
     budget_rate: f64,
     last_refill: Instant,
 }
 
-/// Admission controller using compute-budget token bucket.
-#[derive(Debug)]
-pub(crate) struct AdmissionController {
-    bottleneck: BottleneckTracker,
-    state: Mutex<BudgetState>,
-}
-
-// BudgetState doesn't implement Debug, so we need a manual impl
 impl std::fmt::Debug for BudgetState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BudgetState")
@@ -78,6 +76,13 @@ impl std::fmt::Debug for BudgetState {
             .field("budget_rate", &self.budget_rate)
             .finish()
     }
+}
+
+/// Admission controller using compute-budget token bucket.
+#[derive(Debug)]
+pub(crate) struct AdmissionController {
+    bottleneck: BottleneckTracker,
+    state: Mutex<BudgetState>,
 }
 
 impl AdmissionController {
@@ -142,19 +147,126 @@ impl AdmissionController {
     }
 }
 
-/// No-op AC handler for the EST admission control strategy.
-///
-/// EST admission decisions happen inside `EstRequestState::admission_check()`
-/// (called from `prepare_before_child_rpc`), not at the `BaseHookState` level.
-/// This handler satisfies the `AcHandler` trait with defaults so that
-/// `BaseHookState` compiles cleanly when `ac_est` is enabled.
-#[derive(Debug)]
-pub(crate) struct EstAcHandler;
+// ── PredictiveAc ────────────────────────────────────────────────────────
 
-impl AcHandler for EstAcHandler {
-    fn new(_method: CowGrpcMethod) -> Self {
+// ac_est ENABLED
+
+#[cfg(feature = "ac_est")]
+#[derive(Debug)]
+pub(crate) struct PredictiveAc {
+    controller: AdmissionController,
+}
+
+#[cfg(feature = "ac_est")]
+impl PredictiveAc {
+    pub(crate) fn new() -> Self {
+        Self {
+            controller: AdmissionController::new(),
+        }
+    }
+
+    /// Two-layer admission check reading estimation maps from `est_server`.
+    ///
+    /// - Layer 1 (every hop): compute-time feasibility — reject if estimated
+    ///   compute time exceeds remaining deadline.
+    /// - Layer 2 (ingress only, hop_count==0): efficiency-based admission via
+    ///   token-bucket `AdmissionController`.
+    #[inline]
+    pub(crate) fn admission_check(
+        &self,
+        est_server: &EstServerState<DefaultLatencyEstimator>,
+        resolved_method_id: u64,
+        ctx: &Context,
+        key: u64,
+    ) -> bool {
+        use masa_core::time_now;
+
+        let time_left = ctx.e2e_deadline().saturating_sub(time_now());
+
+        // Layer 1: floor-based deadline feasibility
+        let est_remaining_floor = est_server
+            .est_after_child_latency
+            .get_mean_floor_estimate(key)
+            .unwrap_or(0)
+            .min(time_left);
+        if time_now() > ctx.e2e_deadline().saturating_sub(est_remaining_floor) {
+            return true;
+        }
+
+        // Layer 2: compute-time feasibility (every hop)
+        let est_compute_rem = est_server
+            .est_compute_latency
+            .get_estimate(resolved_method_id)
+            .unwrap_or(0);
+        if est_compute_rem > time_left {
+            return true; // infeasible -> shed
+        }
+
+        // Layer 3: efficiency-based admission (ingress only)
+        if ctx.hop_count() == 0 {
+            let est_total_mean = est_server
+                .est_after_child_latency
+                .get_mean_estimate(key)
+                .unwrap_or(0);
+            let est_child = est_server
+                .est_child_latency
+                .get_estimate(key)
+                .unwrap_or(est_compute_rem);
+            if !self
+                .controller
+                .should_admit(ctx.api(), time_left, est_child, est_total_mean)
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Feed downstream utilization data into the admission controller.
+    #[inline]
+    pub(crate) fn update_bottleneck(&self, api: &str, max_downstream_util: f32) {
+        self.controller.update_bottleneck(api, max_downstream_util);
+    }
+}
+
+// ac_est DISABLED
+
+#[cfg(not(feature = "ac_est"))]
+#[derive(Debug)]
+pub(crate) struct PredictiveAc;
+
+#[cfg(not(feature = "ac_est"))]
+impl PredictiveAc {
+    #[inline]
+    pub(crate) fn new() -> Self {
         Self
     }
+
+    /// Floor-based deadline feasibility check using latency estimates.
+    ///
+    /// When `ac_est` is disabled, this is the only admission check that runs.
+    #[inline]
+    pub(crate) fn admission_check(
+        &self,
+        est_server: &EstServerState<DefaultLatencyEstimator>,
+        _resolved_method_id: u64,
+        ctx: &Context,
+        key: u64,
+    ) -> bool {
+        use masa_core::time_now;
+
+        let time_left = ctx.e2e_deadline().saturating_sub(time_now());
+        let est_remaining_floor = est_server
+            .est_after_child_latency
+            .get_mean_floor_estimate(key)
+            .unwrap_or(0)
+            .min(time_left);
+        time_now() > ctx.e2e_deadline().saturating_sub(est_remaining_floor)
+    }
+
+    #[inline]
+    pub(crate) fn update_bottleneck(&self, _api: &str, _max_downstream_util: f32) {}
 }
 
 #[cfg(test)]
