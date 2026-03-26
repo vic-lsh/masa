@@ -19,11 +19,11 @@ thread_local! {
 ///
 pub mod client {
 
-    use crate::masa_ext::MasaHooks;
+    use crate::masa_ext::Hooks;
 
     /// SAFETY:
     /// - Caller must ensure that the same type parameter P is used when setting and retrieving the parent context.
-    pub unsafe fn get_parent_ctx<'a, M: MasaHooks>() -> Option<&'a M::ParentContext> {
+    pub unsafe fn get_parent_ctx<'a, M: Hooks>() -> Option<&'a M::ParentContext> {
         let p = super::PARENT_CTX.get();
         let parent_ctx = p as *const M::ParentContext;
         parent_ctx.as_ref()
@@ -32,7 +32,7 @@ pub mod client {
 
 ///
 pub mod server {
-    use crate::masa_ext::MasaHooks;
+    use crate::masa_ext::Hooks;
 
     /// Set parent context.
     ///
@@ -40,7 +40,7 @@ pub mod server {
     /// Do not call unless you know what it's used for.
     pub fn set_parent_ctx<'a, M>(parent_ctx: &'a M::ParentContext)
     where
-        M: MasaHooks,
+        M: Hooks,
     {
         super::PARENT_CTX.replace(parent_ctx as *const M::ParentContext as *const ());
     }
@@ -51,7 +51,7 @@ pub mod server {
     /// Do not call unless you know what it's used for.
     pub fn reset_parent_ctx<'a, M>()
     where
-        M: MasaHooks,
+        M: Hooks,
     {
         super::PARENT_CTX.replace(core::ptr::null());
     }

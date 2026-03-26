@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
+use super::{ClientHooks, Hooks, ParentHooks, ServerHooks};
 use crate::{GrpcMethod, Request};
 
-/// No-op Masa hooks implementation used when no scheduling features are enabled.
+/// No-op hooks implementation used when no scheduling features are enabled.
 #[derive(Debug)]
 #[allow(dead_code)]
-pub struct NoopMasaHooks;
+pub struct NoopHooks;
 
-impl MasaHooks for NoopMasaHooks {
+impl Hooks for NoopHooks {
     type ServerContext = ServerContext;
     type ChildContext = ChildContext;
     type ParentContext = ParentContext;

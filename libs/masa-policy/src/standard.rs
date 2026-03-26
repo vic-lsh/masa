@@ -9,7 +9,7 @@ use crate::context_ext::MasaRequestExt;
 use crate::pred_sched::PredictiveSchedPolicy;
 use masa_core::ContextBuilder;
 use tonic_core::masa_ext::resolve_method_name_from_request;
-use tonic_core::masa_ext::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
+use tonic_core::masa_ext::{ClientHooks, Hooks, ParentHooks, ServerHooks};
 use tonic_core::Response;
 
 #[cfg(feature = "est")]
@@ -29,7 +29,7 @@ use crate::MethodRegistry;
 #[allow(dead_code)]
 pub struct StandardHooks;
 
-impl MasaHooks for StandardHooks {
+impl Hooks for StandardHooks {
     type ServerContext = ServerContext;
     type ChildContext = ChildContext;
     type ParentContext = ParentContext;
