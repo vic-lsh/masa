@@ -4,24 +4,23 @@ use crate::metadata::{Ascii, MetadataValue};
 use crate::{body::BoxBody, CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
 mod common;
+#[cfg(feature = "est_abort")]
+mod est_abort;
 #[cfg(any(feature = "ac_est", feature = "est_abort"))]
 pub(crate) mod estimator;
 mod fifo;
-mod global;
 #[cfg(any(feature = "ac_est", feature = "est_abort"))]
 pub(crate) mod latency_map;
-#[cfg(feature = "est_abort")]
-mod local;
 mod noop;
-mod prio_oldest;
-mod queue_global;
+mod prio;
 #[allow(missing_docs)]
 pub mod rajomon;
+mod tailclipper;
 
 #[cfg(feature = "ac_est")]
-pub(crate) mod adctl;
+pub(crate) mod ac_est;
 #[cfg(any(feature = "ac_est", feature = "est_abort"))]
-pub(crate) mod adctl_hooks;
+pub(crate) mod ac_hooks;
 
 pub mod runtime;
 mod tls;
@@ -42,15 +41,15 @@ pub type DefaultMasaHooks = fifo::Fifo;
     not(feature = "est_abort")
 ))]
 #[allow(missing_docs)]
-pub type DefaultMasaHooks = queue_global::QueueGlobal;
+pub type DefaultMasaHooks = prio::Prio;
 
 #[cfg(all(feature = "sched_prio", feature = "tailclipper"))]
 #[allow(missing_docs)]
-pub type DefaultMasaHooks = prio_oldest::PrioOldest;
+pub type DefaultMasaHooks = tailclipper::Tailclipper;
 
 #[cfg(all(feature = "sched_prio", feature = "est_abort"))]
 #[allow(missing_docs)]
-pub type DefaultMasaHooks = local::local::LocalDeadlinePolicy;
+pub type DefaultMasaHooks = est_abort::EstAbort;
 
 // TODO: add notes on trait bounds
 /// Trait for specifying the set of hooks to apply in a Masa build.
@@ -350,7 +349,6 @@ impl MasaStatusExt for Status {
     }
 }
 
-#[allow(dead_code)]
 fn read_context<B>(req: &http::Request<B>) -> Context {
     let ctx_str = req.headers()[MASA_CONTEXT_HEADER].to_str().unwrap();
     Context::from_header_string(ctx_str)

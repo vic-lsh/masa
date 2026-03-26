@@ -112,7 +112,9 @@ def test_load_plot_data_matches_read_data(tmp_path):
     assert plot_data.results[0]["Login"]["sched_fifo"][10].equals(
         results[0]["Login"]["sched_fifo"][10]
     )
-    assert plot_data.results[0]["ALL"]["sched_fifo"][10].equals(results[0]["ALL"]["sched_fifo"][10])
+    assert plot_data.results[0]["ALL"]["sched_fifo"][10].equals(
+        results[0]["ALL"]["sched_fifo"][10]
+    )
 
 
 def test_read_data_repairs_malformed_request_csv_rows(tmp_path):

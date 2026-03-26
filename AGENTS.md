@@ -105,7 +105,7 @@ Core Masa types and utilities:
 ### libs/tonic/tonic/src/masa/
 Masa integration into Tonic gRPC:
 - `context/mod.rs`: `MasaHooks` trait with `before_child_rpc`, `before_poll`, `after_poll` hooks; feature flags select the `DefaultMasaHooks` implementation
-- `context/`: Policy implementations — `fifo.rs`, `global.rs`, `local/`, `prio_oldest.rs`, `queue_global.rs`, tracing variants
+- `context/`: Policy implementations — `fifo.rs`, `prio.rs`, `tailclipper.rs`, `est_abort.rs`; admission control — `ac_hooks.rs`, `ac_est.rs`, `rajomon.rs`
 - `transport/masa_channel/`: Masa-aware channel transport
 
 ### Patched Libraries
