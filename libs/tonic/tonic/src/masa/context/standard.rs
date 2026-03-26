@@ -6,7 +6,7 @@ use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::ac::AcHandler;
 use super::base::BaseHookState;
 #[cfg(feature = "est")]
-use super::est_abort::PredictiveAbort;
+use super::pred_sched::PredictiveSchedPolicy;
 use super::{resolve_method_name_from_request, MasaRequestExt};
 use crate::Response;
 use masa_core::ContextBuilder;
@@ -22,9 +22,9 @@ use crate::masa::MethodRegistry;
 
 #[derive(Debug)]
 /// Standard Masa hooks implementation shared by all scheduling policies
-/// (FIFO, priority, tailclipper, est_abort). The actual scheduling differences
+/// (FIFO, priority, tailclipper, pred_sched). The actual scheduling differences
 /// are handled by the tokio runtime and, when `est` is enabled, the
-/// `PredictiveAbort` overlay (`est_abort` tightens deadlines and reprioritizes).
+/// `PredictiveSchedPolicy` overlay (`pred_sched` tightens deadlines and reprioritizes).
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
 pub struct StandardHooks;
@@ -60,7 +60,7 @@ impl ServerHooks for ServerContext {
 pub struct ParentContext {
     base: BaseHookState,
     #[cfg(feature = "est")]
-    pred_abort: PredictiveAbort,
+    pred_sched: PredictiveSchedPolicy,
     #[cfg(feature = "est")]
     est: EstRequestState<DefaultLatencyEstimator>,
     #[cfg(feature = "est")]
@@ -84,7 +84,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         Self {
             base,
             #[cfg(feature = "est")]
-            pred_abort: PredictiveAbort,
+            pred_sched: PredictiveSchedPolicy,
             #[cfg(feature = "est")]
             est: EstRequestState::new(resolved_method_id, _server_ctx.est.clone()),
             #[cfg(feature = "est")]
@@ -95,7 +95,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         self.base.check_guards()?;
         #[cfg(feature = "est")]
-        self.pred_abort.reprioritize(&self.base.ctx);
+        self.pred_sched.reprioritize(&self.base.ctx);
         self.base.track_poll();
         #[cfg(feature = "est")]
         self.est.start_compute_tracking();
@@ -137,7 +137,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
                 result.est_remaining
             };
-            self.pred_abort
+            self.pred_sched
                 .child_deadline_and_prio(&self.base.ctx, est_remaining)
         };
         #[cfg(not(feature = "est"))]
@@ -182,7 +182,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         }
 
         #[cfg(feature = "est")]
-        self.pred_abort.check_child_response(response)?;
+        self.pred_sched.check_child_response(response)?;
 
         Ok(())
     }

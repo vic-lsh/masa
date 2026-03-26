@@ -9,7 +9,7 @@ The experiment runner replaces the previous bash script system with a well-struc
 ## Features
 
 - **Multiple Applications**: Supports hotel, socialnet, synthetic, and mssim applications with extensible plugin architecture
-- **Policy Testing**: Run experiments with different scheduling policies (sched_fifo, sched_prio, sched_prio,est_abort, etc.)
+- **Policy Testing**: Run experiments with different scheduling policies (sched_fifo, sched_prio, sched_prio,pred_sched, etc.)
 - **Automated Workflow**: Handles Docker builds, service orchestration, load generation, and log collection
 - **Result Analysis**: Integrated plotting for goodput, latency, and hotel replica metrics
 - **Type Safety**: Uses Python dataclasses for configuration validation
@@ -96,7 +96,7 @@ Experiments are configured using files in `exp/<app>/data/in/<experiment_name>/`
 
 2. **`policies`** - Whitespace-separated list of scheduling policies to test
    ```
-   sched_fifo sched_prio sched_prio,est_abort
+   sched_fifo sched_prio sched_prio,pred_sched
    ```
 
 3. **Application-specific config** (varies by app):
@@ -191,7 +191,7 @@ exp/hotel/data/out/exp1/
 │   │   ├── *.csv               # Trace files
 │   │   └── ...
 │   ├── sched_prio/             # Results for sched_prio policy
-│   └── sched_prio,est_abort/   # Results for sched_prio,est_abort policy
+│   └── sched_prio,pred_sched/   # Results for sched_prio,pred_sched policy
 ├── 1/                          # Second iteration (if Repeats > 1)
 └── done                        # Marker file when complete
 ```

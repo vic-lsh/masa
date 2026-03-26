@@ -21,7 +21,7 @@ def test_get_policy_display_name_new_names():
     assert get_policy_display_name("sched_fifo,slo_abort") == "FIFO"
     assert get_policy_display_name("sched_prio") == "Masa (global ddl) (no-drop)"
     assert get_policy_display_name("sched_prio,slo_abort") == "Masa (global ddl)"
-    assert get_policy_display_name("sched_prio,est_abort") == "Masa (local ddl)"
+    assert get_policy_display_name("sched_prio,pred_sched") == "Masa (local ddl)"
     assert get_policy_display_name("sched_prio,tailclipper") == "Tailclipper (no-drop)"
     assert get_policy_display_name("sched_prio,tailclipper,slo_abort") == "Tailclipper"
 
@@ -141,9 +141,9 @@ def test_read_data_repairs_malformed_request_csv_rows(tmp_path):
         ),
         encoding="utf-8",
     )
-    (config_dir / "policies").write_text("sched_prio,est_abort\n", encoding="utf-8")
+    (config_dir / "policies").write_text("sched_prio,pred_sched\n", encoding="utf-8")
 
-    policy_dir = data_dir / "0" / "sched_prio,est_abort"
+    policy_dir = data_dir / "0" / "sched_prio,pred_sched"
     policy_dir.mkdir(parents=True, exist_ok=True)
 
     header = "api,request_id,slo,start_at,deadline,latency,error,frontend_latency"
@@ -173,10 +173,10 @@ def test_read_data_repairs_malformed_request_csv_rows(tmp_path):
 
     assert repeats == 1
     assert apis == ["a", "ALL"]
-    assert policies == ["sched_prio,est_abort"]
+    assert policies == ["sched_prio,pred_sched"]
     assert rps_values == [300]
 
-    df = results[0]["a"]["sched_prio,est_abort"][300]
+    df = results[0]["a"]["sched_prio,pred_sched"][300]
     # Original columns should be present
     for col in header.split(","):
         assert col in df.columns

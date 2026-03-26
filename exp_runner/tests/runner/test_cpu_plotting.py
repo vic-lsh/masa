@@ -107,13 +107,13 @@ class TestGetPolicyColors:
 
     def test_standard_policies(self):
         """Test color assignment for standard policies (new names)."""
-        policies = ["sched_fifo", "sched_prio", "sched_prio,est_abort"]
+        policies = ["sched_fifo", "sched_prio", "sched_prio,pred_sched"]
         colors = _get_policy_colors(policies)
 
         assert colors["sched_fifo"] == "grey"
         assert colors["sched_prio"] == "steelblue"
-        # est_abort implies abort, so lightpink (abort variant of local ddl)
-        assert colors["sched_prio,est_abort"] == "lightpink"
+        # pred_sched implies abort, so lightpink (abort variant of local ddl)
+        assert colors["sched_prio,pred_sched"] == "lightpink"
 
     def test_standard_policies_old_names(self):
         """Test color assignment for standard policies (old names, backward compat)."""
@@ -124,18 +124,18 @@ class TestGetPolicyColors:
         assert colors["prio_global"] == "steelblue"
         assert colors["prio_local"] == "hotpink"
 
-    def test_abort_policies(self):
+    def tpred_sched_policies(self):
         """Test color assignment for abort policies (new names)."""
         policies = [
             "sched_fifo,slo_abort",
             "sched_prio,slo_abort",
-            "sched_prio,est_abort",
+            "sched_prio,pred_sched",
         ]
         colors = _get_policy_colors(policies)
 
         assert colors["sched_fifo,slo_abort"] == "darkgrey"
         assert colors["sched_prio,slo_abort"] == "cornflowerblue"
-        assert colors["sched_prio,est_abort"] == "lightpink"
+        assert colors["sched_prio,pred_sched"] == "lightpink"
 
     def test_early_policies_old_names(self):
         """Test color assignment for early abort policies (old names, backward compat)."""
@@ -231,7 +231,7 @@ class TestPlotServiceCpu:
         """Test that plot includes all policies."""
         # Create data with 3 policies
         data = []
-        for policy in ["sched_fifo", "sched_prio", "sched_prio,est_abort"]:
+        for policy in ["sched_fifo", "sched_prio", "sched_prio,pred_sched"]:
             for time_offset in range(0, 10, 2):
                 data.append(
                     {
@@ -484,7 +484,7 @@ class TestCpuPlottingIntegration:
 
             # Create realistic experiment structure
             for iteration in [0]:
-                for policy in ["sched_fifo", "sched_prio", "sched_prio,est_abort"]:
+                for policy in ["sched_fifo", "sched_prio", "sched_prio,pred_sched"]:
                     policy_dir = data_dir / str(iteration) / policy
                     policy_dir.mkdir(parents=True, exist_ok=True)
 

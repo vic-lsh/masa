@@ -85,7 +85,7 @@ feature_combos=(
     "sched_prio"
     "sched_prio,tailclipper,slo_abort"
     "sched_prio,ac_rajomon"
-    "sched_prio,est_abort,est_mean_var"
+    "sched_prio,pred_sched,est_mean_var"
 )
 
 # Per-combo test dispatch: runs the hotel sched_policy test for every combo,
@@ -108,9 +108,9 @@ run_feature_tests() {
             execute_test "masa-integration-tests (ac_rajomon)" \
                 cargo test -p masa-integration-tests --features sched_prio,ac_rajomon
             ;;
-        sched_prio,est_abort,est_mean_var)
+        sched_prio,pred_sched,est_mean_var)
             execute_test "tonic (est_mean_var)" \
-                cargo test -p tonic --features masa,sched_prio,est_abort,est_mean_var
+                cargo test -p tonic --features masa,sched_prio,pred_sched,est_mean_var
             ;;
     esac
 }

@@ -3,7 +3,7 @@
 // Provides `EstServerState`, `EstRequestState`, and `EstChildState` that can be
 // embedded into any policy's Server/Parent/ChildContext to track latency
 // distributions and make abort decisions. Used by:
-// - est_abort.rs: deadline tightening and dynamic reprioritization
+// - pred_sched.rs: deadline tightening and dynamic reprioritization
 // - ac/predictive_ac.rs: reads estimation maps for admission control decisions
 // - standard.rs: orchestrates estimation and admission control
 
