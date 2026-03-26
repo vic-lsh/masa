@@ -1,3 +1,6 @@
 [submodule "traces/alibaba"]
 	path = traces/alibaba
 	url = git@github.com:vic-lsh/alibaba-clusterdata.git
+[submodule "3rd_party/rajomon"]
+	path = 3rd_party/rajomon
+	url = git@github.com:pennsail/rajomon.git
