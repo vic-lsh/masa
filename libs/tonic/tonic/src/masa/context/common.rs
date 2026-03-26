@@ -8,26 +8,26 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 #[derive(Debug)]
-pub(crate) struct EarlyReturnHandler {
-    will_early_return: AtomicBool,
+pub(crate) struct SloAbortHandler {
+    will_slo_abort: AtomicBool,
     rpc: CowGrpcMethod,
     last_child: Mutex<Option<CowGrpcMethod>>,
 }
 
-impl Default for EarlyReturnHandler {
+impl Default for SloAbortHandler {
     fn default() -> Self {
         Self {
-            will_early_return: AtomicBool::new(false),
+            will_slo_abort: AtomicBool::new(false),
             rpc: CowGrpcMethod::new("", ""),
             last_child: Mutex::new(None),
         }
     }
 }
 
-impl EarlyReturnHandler {
+impl SloAbortHandler {
     pub(crate) fn new(rpc: CowGrpcMethod) -> Self {
         Self {
-            will_early_return: AtomicBool::new(false),
+            will_slo_abort: AtomicBool::new(false),
             rpc,
             last_child: Mutex::new(None),
         }
@@ -46,14 +46,14 @@ impl EarlyReturnHandler {
 
         // e2e_deadline=0 means no SLO was set (e.g. health-check pings); never early-return.
         // Use e2e_deadline (gateway_entry + slo) rather than ctx.deadline() so that policies
-        // like prio_local that tighten the per-hop deadline for scheduling purposes do not
+        // like est_abort that tighten the per-hop deadline for scheduling purposes do not
         // cause premature early-returns — ER fires only at the actual end-to-end SLO boundary.
         let e2e_deadline = ctx.e2e_deadline();
         if e2e_deadline == 0 {
             return false;
         }
 
-        if self.will_early_return.load(Ordering::Relaxed) {
+        if self.will_slo_abort.load(Ordering::Relaxed) {
             return true;
         }
 
@@ -68,7 +68,7 @@ impl EarlyReturnHandler {
         if should_early_return {
             // We use compare_exchange_weak to ensure we only log or trigger side effects once if needed,
             // though in this simple implementation it just sets the flag.
-            let _ = self.will_early_return.compare_exchange_weak(
+            let _ = self.will_slo_abort.compare_exchange_weak(
                 false,
                 true,
                 Ordering::Relaxed,
@@ -197,7 +197,7 @@ impl QueueLatencyTracker {
 
 #[cfg(test)]
 #[macro_export]
-macro_rules! generate_early_return_test {
+macro_rules! generate_slo_abort_test {
     ($ParentContext:ident, $ServerContext:ident, $ChildContext:ident) => {
         #[test]
         #[cfg(feature = "slo_abort")]
@@ -210,7 +210,7 @@ macro_rules! generate_early_return_test {
             use std::sync::Arc;
 
             // Create a context with an e2e SLO deadline in the past.
-            // EarlyReturnHandler now uses e2e_deadline (gateway_entry + slo) for the ER check,
+            // SloAbortHandler now uses e2e_deadline (gateway_entry + slo) for the ER check,
             // so we must set both gateway_entry and slo such that their sum is in the past.
             let slo = 1_000_u64; // 1ms SLO
             let gateway_entry = time_now().saturating_sub(1_000_000); // entered 1s ago

@@ -1,8 +1,11 @@
-// Composable admission control state and hooks for use by any scheduling policy.
+// Latency estimation state for Masa scheduling policies.
 //
-// This module provides `AdctlServerState`, `AdctlRequestState`, and `AdctlChildState`
-// that can be embedded into any policy's Server/Parent/ChildContext to add progressive
-// cost-aware admission control without coupling to a specific priority discipline.
+// Provides `EstServerState`, `EstRequestState`, and `EstChildState` that can be
+// embedded into any policy's Server/Parent/ChildContext to track latency
+// distributions and make abort decisions. Used by:
+// - est_abort.rs: deadline tightening and dynamic reprioritization
+// - ac_est.rs: progressive cost-aware admission control (via AdmissionController)
+// - standard.rs: optional estimation when ac_est feature is enabled
 
 use std::sync::{
     atomic::{AtomicU64, AtomicUsize, Ordering},
@@ -20,9 +23,9 @@ use super::latency_map::{spawn_method_stats_printer, spawn_stats_printer, Latenc
 use super::{MasaResponseExt, MasaStatusExt};
 use crate::masa::MethodRegistry;
 
-/// Server-level admission control state (shared across requests on a service).
+/// Server-level estimation state (shared across requests on a service).
 #[derive(Debug)]
-pub(crate) struct AdctlServerState<E: LatencyEstimator + Default + 'static> {
+pub(crate) struct EstServerState<E: LatencyEstimator + Default + 'static> {
     /// Tracks remaining duration after each child RPC completes (keyed by parent→child pair).
     pub est_after_child_latency: Arc<LatencyMap<E>>,
     /// Tracks actual child RPC call latencies (keyed by parent→child pair).
@@ -36,7 +39,7 @@ pub(crate) struct AdctlServerState<E: LatencyEstimator + Default + 'static> {
     pub print_counter: AtomicUsize,
 }
 
-impl<E: LatencyEstimator + Default + 'static> AdctlServerState<E> {
+impl<E: LatencyEstimator + Default + 'static> EstServerState<E> {
     pub(crate) fn new() -> Self {
         let est_after_child_latency = Arc::new(LatencyMap::new());
         let est_child_latency = Arc::new(LatencyMap::new());
@@ -57,19 +60,19 @@ impl<E: LatencyEstimator + Default + 'static> AdctlServerState<E> {
     }
 }
 
-/// Per-request admission control state.
+/// Per-request estimation state.
 #[derive(Debug)]
-pub(crate) struct AdctlRequestState<E: LatencyEstimator + Default + 'static> {
+pub(crate) struct EstRequestState<E: LatencyEstimator + Default + 'static> {
     pub resolved_method_id: u64,
-    pub server: Arc<AdctlServerState<E>>,
+    pub server: Arc<EstServerState<E>>,
     pub child_end_times: Mutex<Vec<(ParentToChildId, Instant)>>,
     pub poll_compute_us: AtomicU64,
     pub poll_start: Mutex<Option<Instant>>,
     pub max_child_downstream_util: Mutex<f32>,
 }
 
-impl<E: LatencyEstimator + Default + 'static> AdctlRequestState<E> {
-    pub(crate) fn new(resolved_method_id: u64, server: Arc<AdctlServerState<E>>) -> Self {
+impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
+    pub(crate) fn new(resolved_method_id: u64, server: Arc<EstServerState<E>>) -> Self {
         Self {
             resolved_method_id,
             server,
@@ -94,11 +97,11 @@ impl<E: LatencyEstimator + Default + 'static> AdctlRequestState<E> {
         }
     }
 
-    /// Returns true if the request should be shed (early-returned).
+    /// Returns true if the request should be shed (aborted).
     ///
-    /// With `adctl` enabled: Layer 1 checks compute-time feasibility at every hop.
+    /// With `ac_est` enabled: Layer 1 checks compute-time feasibility at every hop.
     /// Layer 2 (ingress only, hop_count==0) applies efficiency-based admission.
-    /// Falls through to floor-based check.
+    /// Falls through to floor-based SLO abort check.
     #[allow(unused_variables)]
     pub(crate) fn admission_check(
         &self,
@@ -202,7 +205,7 @@ impl<E: LatencyEstimator + Default + 'static> AdctlRequestState<E> {
         &self,
         ctx: &Context,
         response: &Result<Response<T>, Status>,
-        child_ctx: &AdctlChildState<E>,
+        child_ctx: &EstChildState<E>,
     ) {
         // Extract ResponseMeta from child response
         if let Ok(resp) = response {
@@ -281,7 +284,7 @@ impl<E: LatencyEstimator + Default + 'static> AdctlRequestState<E> {
         &self,
         ctx: &Context,
         child_method_name: &CowGrpcMethod,
-        child_adctl: &mut AdctlChildState<E>,
+        child_est: &mut EstChildState<E>,
     ) -> Result<ChildRpcPrepareResult, ()> {
         let resolved_child_id = MethodRegistry::global()
             .get_or_register_method(child_method_name.service(), child_method_name.method());
@@ -291,7 +294,7 @@ impl<E: LatencyEstimator + Default + 'static> AdctlRequestState<E> {
         };
         let key = parent_to_child_id.to_key();
 
-        child_adctl.setup(
+        child_est.setup(
             parent_to_child_id.clone(),
             child_method_name.clone(),
             self.server.clone(),
@@ -342,16 +345,16 @@ pub(crate) struct ChildRpcPrepareResult {
     pub est_remaining: u64,
 }
 
-/// Per-child-RPC admission control state.
+/// Per-child-RPC estimation state.
 #[derive(Debug, Clone)]
-pub(crate) struct AdctlChildState<E: LatencyEstimator + Default + 'static> {
+pub(crate) struct EstChildState<E: LatencyEstimator + Default + 'static> {
     pub start_time: Option<Instant>,
     pub parent_to_child_id: Option<ParentToChildId>,
     pub child_method: Option<CowGrpcMethod>,
-    pub server: Option<Arc<AdctlServerState<E>>>,
+    pub server: Option<Arc<EstServerState<E>>>,
 }
 
-impl<E: LatencyEstimator + Default + 'static> AdctlChildState<E> {
+impl<E: LatencyEstimator + Default + 'static> EstChildState<E> {
     pub(crate) fn new() -> Self {
         Self {
             start_time: None,
@@ -365,7 +368,7 @@ impl<E: LatencyEstimator + Default + 'static> AdctlChildState<E> {
         &mut self,
         parent_to_child_id: ParentToChildId,
         child_method: CowGrpcMethod,
-        server: Arc<AdctlServerState<E>>,
+        server: Arc<EstServerState<E>>,
     ) {
         self.start_time = Some(Instant::now());
         self.parent_to_child_id = Some(parent_to_child_id);
