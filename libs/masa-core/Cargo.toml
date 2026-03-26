@@ -4,12 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-prio_global = []
-prio_oldest = []
-prio_local = []
-fifo = []
-early = []
-rajomon = []
+sched_fifo = []
+sched_prio = []
+tailclipper = ["sched_prio"]
+slo_abort = []
+est_abort = ["slo_abort"]
+est_mean_var = []
+est_rms = []
+est_hist = []
+ac_est = ["slo_abort"]
+ac_rajomon = []
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

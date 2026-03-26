@@ -1,4 +1,4 @@
-#![cfg(feature = "prio_global")]
+#![cfg(feature = "sched_prio")]
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

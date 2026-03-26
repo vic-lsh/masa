@@ -1,7 +1,7 @@
 use crate::{Code, CowGrpcMethod, Response, Status};
 #[cfg(feature = "trace-queue")]
 use masa_core::QueueLatencies;
-use masa_core::{time_now, Context, EARLY_RETURN};
+use masa_core::{time_now, Context, SLO_ABORT};
 #[cfg(feature = "trace-queue")]
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -40,7 +40,7 @@ impl EarlyReturnHandler {
     }
 
     pub(crate) fn check(&self, ctx: &Context) -> bool {
-        if !EARLY_RETURN {
+        if !SLO_ABORT {
             return false;
         }
 
@@ -200,7 +200,7 @@ impl QueueLatencyTracker {
 macro_rules! generate_early_return_test {
     ($ParentContext:ident, $ServerContext:ident, $ChildContext:ident) => {
         #[test]
-        #[cfg(feature = "early")]
+        #[cfg(feature = "slo_abort")]
         fn test_early_return_tracking() {
             use super::{$ChildContext, $ParentContext, $ServerContext};
             use crate::masa::context::MASA_CONTEXT_HEADER;

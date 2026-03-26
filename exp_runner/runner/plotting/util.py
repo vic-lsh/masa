@@ -317,15 +317,58 @@ def parse_args() -> Namespace:
     return args
 
 
+def _has_abort(policy_lower: str) -> bool:
+    """Check if policy has an abort/early-return flag (new or old name)."""
+    return (
+        ",slo_abort" in policy_lower
+        or ",est_abort" in policy_lower
+        or ",early" in policy_lower
+    )
+
+
+def _has_admission_control(policy_lower: str) -> bool:
+    """Check if policy has admission control (new or old name)."""
+    return ",ac_est" in policy_lower or ",ac_rajomon" in policy_lower or ",adctl" in policy_lower or ",rajomon" in policy_lower
+
+
+def _is_fifo(policy_lower: str) -> bool:
+    """Check if policy is FIFO (new or old name)."""
+    return policy_lower.startswith("sched_fifo") or policy_lower.startswith("fifo")
+
+
+def _is_prio(policy_lower: str) -> bool:
+    """Check if policy is priority-based scheduling (new or old name).
+
+    Matches sched_prio (new) and prio_global (old), but not prio_local or prio_oldest.
+    """
+    if policy_lower.startswith("sched_prio"):
+        # sched_prio without tailclipper or est_abort is the new prio_global
+        return not (",tailclipper" in policy_lower or ",est_abort" in policy_lower)
+    return policy_lower.startswith("prio_global")
+
+
+def _is_tailclipper(policy_lower: str) -> bool:
+    """Check if policy is Tailclipper/prio_oldest (new or old name)."""
+    return ",tailclipper" in policy_lower or policy_lower.startswith("prio_oldest")
+
+
+def _is_local(policy_lower: str) -> bool:
+    """Check if policy is local-deadline based (new or old name)."""
+    return ",est_abort" in policy_lower or policy_lower.startswith("prio_local")
+
+
 def get_policy_color(policy: str) -> str | None:
     """
     Get color for a policy.
 
     Color scheme:
-    - FIFO uses grey hues
-    - prio_global uses blue hues
-    - prio_local uses pink hues
-    - prio_oldest uses purple hues
+    - FIFO (sched_fifo / fifo) uses grey hues
+    - Priority (sched_prio / prio_global) uses blue hues
+    - Local deadline (sched_prio,est_abort / prio_local) uses pink hues
+    - Tailclipper (sched_prio,tailclipper / prio_oldest) uses purple hues
+
+    Supports both new flag names (sched_fifo, sched_prio, slo_abort, ac_est, etc.)
+    and old flag names (fifo, prio_global, early, adctl, etc.) for backward compatibility.
 
     Args:
         policy: Policy name
@@ -334,26 +377,26 @@ def get_policy_color(policy: str) -> str | None:
         Color string, or None to use matplotlib default color cycle
     """
     policy_lower = policy.lower()
-    if policy_lower.startswith("fifo"):
-        if ",early" in policy_lower:
+    if _is_fifo(policy_lower):
+        if _has_abort(policy_lower):
             return "darkgrey"
         return "grey"
-    elif policy_lower.startswith("prio_global"):
-        if ",early" in policy_lower:
-            return "cornflowerblue"
-        return "steelblue"
-    elif policy_lower.startswith("prio_local"):
+    elif _is_local(policy_lower):
         if "est_mean_var" in policy_lower or "est_hist" in policy_lower:
-            if "adctl" in policy_lower:
+            if _has_admission_control(policy_lower):
                 return "forestgreen"
             return "coral"
-        if ",early" in policy_lower:
+        if _has_abort(policy_lower):
             return "lightpink"
         return "hotpink"
-    elif policy_lower.startswith("prio_oldest"):
-        if ",early" in policy_lower:
+    elif _is_tailclipper(policy_lower):
+        if _has_abort(policy_lower):
             return "mediumpurple"
         return "purple"
+    elif _is_prio(policy_lower):
+        if _has_abort(policy_lower):
+            return "cornflowerblue"
+        return "steelblue"
     return None  # Use matplotlib default color cycle
 
 
@@ -362,26 +405,36 @@ def get_policy_display_name(policy: str) -> str:
     Return a human-friendly display name for a policy.
 
     Rules:
-    - Drop the trailing ",early" suffix if present.
-    - Add "(no-drop)" when the policy does not have the ",early" suffix.
-    - Map known base policy names to display names.
+    - Use category detection functions to determine the policy family.
+    - Add "(no-drop)" when the policy does not have an abort flag.
+    - Map known policy families to display names.
+
+    Supports both new flag names (sched_fifo, sched_prio, slo_abort, ac_est, etc.)
+    and old flag names (fifo, prio_global, early, adctl, etc.) for backward compatibility.
     """
-    base_policy = policy
-    has_early = False
-    if base_policy.endswith(",early"):
-        base_policy = base_policy[: -len(",early")]
-        has_early = True
+    policy_lower = policy.lower()
 
-    base_lower = base_policy.lower()
-    display_name_map = {
-        "fifo": "FIFO",
-        "prio_global": "Masa (global ddl)",
-        "prio_local": "Masa (local ddl)",
-        "prio_oldest": "Tailclipper",
-    }
-    display = display_name_map.get(base_lower, base_policy)
+    # Determine if policy has an abort/early-return flag
+    has_abort = _has_abort(policy_lower)
 
-    if not has_early:
+    # Use the category helpers to determine the display name
+    if _is_fifo(policy_lower):
+        display = "FIFO"
+    elif _is_local(policy_lower):
+        display = "Masa (local ddl)"
+    elif _is_tailclipper(policy_lower):
+        display = "Tailclipper"
+    elif _is_prio(policy_lower):
+        display = "Masa (global ddl)"
+    else:
+        # Unknown policy: strip abort suffixes to get a readable base name
+        display = policy
+        for suffix in (",slo_abort", ",est_abort", ",early"):
+            if display.lower().endswith(suffix):
+                display = display[: -len(suffix)]
+                break
+
+    if not has_abort:
         display = f"{display} (no-drop)"
 
     return display

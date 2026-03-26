@@ -58,19 +58,29 @@ uv run -m exp_runner plot <app> <experiment_name>
 
 Policies are selected at **compile time** via feature flags. Applications must be built with the desired policy:
 ```bash
-cargo build -p hotel --features prio_global --release
-cargo build -p hotel --features "prio_global,early" --release
+cargo build -p hotel --features sched_prio --release
+cargo build -p hotel --features "sched_prio,slo_abort" --release
 ```
 
 Key policy flags:
-- `fifo`: FIFO ordering (baseline)
-- `prio_global`: Priority by end-to-end SLO end time
-- `prio_oldest`: Oldest request first (from the TailClipper paper)
-- `prio_local`: Priority by local deadline — **only works for `hotel`** as it requires a call graph description
-- `early`: Combined with a policy (e.g., `prio_global,early`) to return early for requests past their e2e deadline, avoiding wasteful work
-- `adctl`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Requires `early`. Works with all scheduling policies (`fifo`, `prio_global`, `prio_oldest`, `prio_local`). Replaces the old `emp_admission` flag.
 
-`scripts/check.sh` checks: default (no features), `fifo`, `fifo,early,adctl`, `prio_global`, `prio_global,early`, `prio_global,early,adctl`, `prio_oldest,early,adctl`, `prio_local,early`, `prio_local,early,adctl,est_mean_var`. CI additionally checks `prio_oldest,early`.
+**Scheduling disciplines** (mutually exclusive base queue implementations):
+- `sched_fifo`: FIFO ordering (baseline)
+- `sched_prio`: Priority by end-to-end SLO end time (binary heap)
+
+**Scheduling modifiers** (overlays on `sched_prio`):
+- `tailclipper`: Implements the TailClipper paper's oldest-request-first policy with round-robin fairness. Cannot be combined with `est_abort` or `ac_est`.
+- `est_abort`: Adds deadline tightening and dynamic reprioritization using latency estimates. Implies `slo_abort`. **Only works for `hotel`** as it requires a call graph description.
+
+**Abort strategies:**
+- `slo_abort`: Combined with a policy (e.g., `sched_prio,slo_abort`) to return early for requests past their e2e deadline, avoiding wasteful work
+- `est_abort`: Proactively aborts requests predicted to miss their SLO based on estimated remaining work. Implies `slo_abort`.
+
+**Admission control** (mutually exclusive):
+- `ac_est`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Requires `slo_abort`. Works with scheduling policies (`sched_fifo`, `sched_prio`, `sched_prio,est_abort`).
+- `ac_rajomon`: Token-bucket rate limiting admission control.
+
+`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_fifo,slo_abort,ac_est`, `sched_prio`, `sched_prio,slo_abort`, `sched_prio,slo_abort,ac_est`, `sched_prio,tailclipper,slo_abort`, `sched_prio,est_abort`, `sched_prio,est_abort,ac_est,est_mean_var`.
 
 ## Architecture
 

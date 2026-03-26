@@ -74,7 +74,7 @@ log_success "Python Lint Passed"
 
 # 3. Cargo Checks (Matrix)
 log_info "Running Cargo Checks..."
-FEATURES_LIST=("" "fifo" "prio_global" "prio_global,early" "prio_local,early" "prio_oldest,early")
+FEATURES_LIST=("" "sched_fifo" "sched_prio" "sched_prio,slo_abort" "sched_prio,est_abort" "sched_prio,tailclipper,slo_abort")
 
 for features in "${FEATURES_LIST[@]}"; do
     echo "  Checking features: '$features'"

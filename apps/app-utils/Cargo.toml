@@ -9,8 +9,8 @@ full = [
 	"json-codec",
 ]
 default = ["full"]
-prio_oldest = ["masa/prio_oldest"]
-rajomon = ["masa/rajomon", "tonic/rajomon"]
+tailclipper = ["masa/tailclipper"]
+ac_rajomon = ["masa/ac_rajomon", "tonic/ac_rajomon"]
 trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
 
 [dependencies]

@@ -431,7 +431,7 @@ mod tests {
 
     /// Verify that without `adctl`, `admission_check` falls back to the floor-based check.
     /// The floor check should admit when there is plenty of time left (no shed).
-    #[cfg(not(feature = "adctl"))]
+    #[cfg(not(feature = "ac_est"))]
     #[test]
     fn test_admission_check_floor_based_admits_with_budget() {
         use crate::masa::context::MASA_CONTEXT_HEADER;

@@ -294,14 +294,14 @@ async fn run_root_load(
                         let slo_us = entry.slo_ms * 1000;
                         let start_at = time_now();
                         let deadline = start_at + slo_us;
-                        let prio_hint = if masa::PRIO_OLDEST { start_at } else { deadline };
+                        let prio_hint = if masa::TAILCLIPPER { start_at } else { deadline };
                         #[allow(unused_mut)]
                         let mut builder = MasaContextBuilder::new("root".to_string(), req_id)
                             .slo(slo_us)
                             .gateway_entry(start_at)
                             .deadline(deadline)
                             .prio_hint(PriorityHint::new(prio_hint));
-                        #[cfg(feature = "rajomon")]
+                        #[cfg(feature = "ac_rajomon")]
                         {
                             use rand::Rng;
                             use tonic::masa::context::rajomon::MAX_TOKEN;

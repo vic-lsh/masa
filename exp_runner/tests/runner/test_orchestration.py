@@ -45,7 +45,7 @@ class TestOrchestration:
             out_dir=mock_repo_root / "exp" / "synthetic" / "out" / "test_exp",
             plot_dir=mock_repo_root / "exp" / "synthetic" / "plots" / "test_exp",
             gen_config={"Addr": "http://localhost:8080", "Repeats": 1},
-            policies=["fifo"],
+            policies=["sched_fifo"],
             app_config=None,
         )
 
