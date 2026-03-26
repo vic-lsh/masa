@@ -192,7 +192,7 @@ class TestExpDriverLogic(unittest.TestCase):
         repo_root = self.test_dir / "repo"
         self.driver.run_workload(
             config=self.config,
-            policy="sched_prio",
+            policy="sched_slo",
             iteration=1,
             output_dir=output_dir,
             repo_root=repo_root,
@@ -238,7 +238,7 @@ class TestExpDriverLogic(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.driver.run_workload(
                 config=self.config,
-                policy="sched_prio",
+                policy="sched_slo",
                 iteration=1,
                 output_dir=output_dir,
                 repo_root=repo_root,

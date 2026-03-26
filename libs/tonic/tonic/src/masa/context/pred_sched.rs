@@ -2,7 +2,7 @@
 //
 // This module is only compiled with the `est` feature (`pred_sched` implies `est`).
 //
-// When `pred_sched` is enabled, PredictiveSchedPolicy performs dynamic reprioritization,
+// When `sched_pred` is enabled, PredictiveSchedPolicy performs dynamic reprioritization,
 // deadline tightening, and child error propagation. When disabled, all methods
 // are no-ops that compile away entirely.
 
@@ -18,7 +18,7 @@ pub(super) struct PredictiveSchedPolicy;
 
 // ── pred_sched ENABLED ───────────────────────────────────────────────────────
 
-#[cfg(feature = "pred_sched")]
+#[cfg(feature = "sched_pred")]
 impl PredictiveSchedPolicy {
     /// Reprioritize the current task based on remaining time to deadline.
     #[inline]
@@ -59,7 +59,7 @@ impl PredictiveSchedPolicy {
 
 // ── pred_sched DISABLED ──────────────────────────────────────────────────────
 
-#[cfg(not(feature = "pred_sched"))]
+#[cfg(not(feature = "sched_pred"))]
 impl PredictiveSchedPolicy {
     #[inline]
     pub(super) fn reprioritize(&self, _ctx: &Context) {}

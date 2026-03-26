@@ -9,7 +9,7 @@ full = [
 	"json-codec",
 ]
 default = ["full"]
-tailclipper = ["masa/tailclipper"]
+sched_tailclipper = ["masa/sched_tailclipper"]
 ac_rajomon = ["masa/ac_rajomon", "tonic/ac_rajomon"]
 trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
 

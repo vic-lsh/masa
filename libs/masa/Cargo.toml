@@ -10,13 +10,13 @@ tonic = { path = "../tonic/tonic" }
 
 
 [features]
-sched_prio = ["masa-core/sched_prio", "tokio/sched_prio", "tonic/sched_prio"]
-tailclipper = ["sched_prio", "masa-core/tailclipper", "tokio/tailclipper", "tonic/tailclipper"]
+sched_slo = ["masa-core/sched_slo", "tokio/sched_prio", "tonic/sched_slo"]
+sched_tailclipper = ["masa-core/sched_tailclipper", "tokio/sched_prio", "tokio/tailclipper", "tonic/sched_tailclipper"]
 sched_fifo  = ["masa-core/sched_fifo",  "tokio/sched_fifo",  "tonic/sched_fifo"]
+sched_pred = ["masa-core/sched_pred", "tonic/sched_pred", "sched_slo"]
 
 slo_abort = ["masa-core/slo_abort", "tonic/slo_abort"]
 est = ["masa-core/est", "tonic/est"]
-pred_sched = ["masa-core/pred_sched", "tonic/pred_sched"]
 
 est_rms = ["tonic/est_rms"]
 est_hist = ["tonic/est_hist"]

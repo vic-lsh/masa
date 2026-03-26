@@ -143,7 +143,7 @@ class TestExtractServiceName:
             prefix="mssim",
             experiment_name="test-mssim",
             iteration=1,
-            policy="sched_prio",
+            policy="sched_slo",
             extra_suffix="100.0",
         )
         assert mssim_proj.startswith("mssim-")

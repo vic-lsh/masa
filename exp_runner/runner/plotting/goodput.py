@@ -54,8 +54,9 @@ def get_request_type_hatch(request_type: str):
 def sort_policies_by_type(policies):
     """Sort policies to group fifo first, then prio/prio_global, then local/prio_local.
 
-    Supports both new flag names (sched_fifo, sched_prio, etc.) and old flag names
-    (fifo, prio_global, prio_local) for backward compatibility.
+    Supports newest flag names (sched_slo, sched_pred, sched_tailclipper),
+    previous flag names (sched_fifo, sched_prio, pred_sched, tailclipper),
+    and oldest flag names (fifo, prio_global, prio_local) for backward compatibility.
     """
     fifo_policies = []
     prio_global_policies = []

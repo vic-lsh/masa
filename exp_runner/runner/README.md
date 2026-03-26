@@ -9,7 +9,7 @@ The experiment runner replaces the previous bash script system with a well-struc
 ## Features
 
 - **Multiple Applications**: Supports hotel, socialnet, synthetic, and mssim applications with extensible plugin architecture
-- **Policy Testing**: Run experiments with different scheduling policies (sched_fifo, sched_prio, sched_prio,pred_sched, etc.)
+- **Policy Testing**: Run experiments with different scheduling policies (sched_fifo, sched_slo, sched_slo,sched_pred, etc.)
 - **Automated Workflow**: Handles Docker builds, service orchestration, load generation, and log collection
 - **Result Analysis**: Integrated plotting for goodput, latency, and hotel replica metrics
 - **Type Safety**: Uses Python dataclasses for configuration validation
@@ -96,7 +96,7 @@ Experiments are configured using files in `exp/<app>/data/in/<experiment_name>/`
 
 2. **`policies`** - Whitespace-separated list of scheduling policies to test
    ```
-   sched_fifo sched_prio sched_prio,pred_sched
+   sched_fifo sched_slo sched_slo,sched_pred
    ```
 
 3. **Application-specific config** (varies by app):
@@ -122,7 +122,7 @@ MSSIM experiments live under `exp/mssim/data/in/<experiment_name>/` and require:
 
 2. **`policies`** (whitespace-separated)
    ```
-   sched_fifo sched_prio
+   sched_fifo sched_slo
    ```
 
 3. **`mssim.json`**
@@ -190,8 +190,8 @@ exp/hotel/data/out/exp1/
 │   │   ├── local-rate-service-1.log
 │   │   ├── *.csv               # Trace files
 │   │   └── ...
-│   ├── sched_prio/             # Results for sched_prio policy
-│   └── sched_prio,pred_sched/   # Results for sched_prio,pred_sched policy
+│   ├── sched_slo/              # Results for sched_slo policy
+│   └── sched_slo,sched_pred/   # Results for sched_slo,sched_pred policy
 ├── 1/                          # Second iteration (if Repeats > 1)
 └── done                        # Marker file when complete
 ```
@@ -213,7 +213,7 @@ exp/mssim/data/out/e2e_test/
 │   │           ├── deployment.json
 │   │           ├── metadata.json
 │   │           └── orchestrator.log
-│   └── sched_prio/
+│   └── sched_slo/
 │       └── rps_200/
 │           └── run_0/
 └── done

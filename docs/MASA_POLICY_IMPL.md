@@ -6,29 +6,36 @@ This document explains the implementation of Masa's dynamic RPC prioritization s
 
 Masa uses Rust feature flags to select the scheduling policy at compile time. These flags are defined in `libs/masa/Cargo.toml` (the facade) and propagated to `libs/masa-core`, `libs/tonic` and `libs/tokio`.
 
-Key feature flags include:
+Policy is configured along three composable dimensions:
+
+**Scheduling policy** (mutually exclusive — pick one):
 - `sched_fifo`: First-In-First-Out ordering (baseline).
-- `sched_prio`: Priority based on end-to-end deadline (global clock).
-- `sched_prio,tailclipper`: Priority based on request arrival time (oldest first), implementing the TailClipper paper.
-- `sched_prio,pred_sched`: Priority based on local deadlines with deadline tightening using latency estimates.
-- `slo_abort`: Enables "Early Return" to drop requests that have already missed their deadline.
-- `pred_sched`: Proactively aborts requests predicted to miss their SLO (implies `slo_abort`).
-- `ac_est`: Progressive cost-aware admission control.
+- `sched_slo`: Priority by end-to-end SLO deadline (implies tokio priority queue).
+- `sched_tailclipper`: Priority by request arrival time (oldest first), implementing the TailClipper paper (implies tokio priority queue).
+- `sched_pred`: Priority by per-RPC predicted deadline with deadline tightening and dynamic reprioritization (implies `sched_slo` and `est`).
+
+**Admission control** (mutually exclusive — pick at most one):
+- `ac_est`: Progressive cost-aware admission control using compute-time estimates and downstream utilization signals (requires `est`).
 - `ac_rajomon`: Token-bucket rate limiting admission control.
 
-When a specific feature flag (e.g., `sched_prio`) is enabled, it activates corresponding conditional compilation modules (`#[cfg(feature = "...")]`) across the modified libraries.
+**SLO abort** (composable with any of the above):
+- `slo_abort`: Early-return requests that have already missed their e2e SLO deadline, avoiding wasteful work.
+
+When a specific feature flag (e.g., `sched_slo`) is enabled, it activates corresponding conditional compilation modules (`#[cfg(feature = "...")]`) across the modified libraries.
 
 ### Feature Flag Propagation
 
 Features propagate from application crates through a dependency chain:
 
 ```
-Application Cargo.toml (e.g., apps/hotel --features sched_prio)
-  └─ libs/tonic/tonic/Cargo.toml:  sched_prio = ["masa/sched_prio", "tokio/sched_prio"]
-       ├─ libs/masa/Cargo.toml:    sched_prio = []   (forwards to masa-core, tokio, tonic)
-├─ libs/masa-core/Cargo.toml: sched_prio = []   (sets cfg flag)
-       └─ libs/tokio/tokio/Cargo.toml: sched_prio = ["masa/sched_prio"]
+Application Cargo.toml (e.g., apps/hotel --features sched_slo)
+  └─ libs/tonic/tonic/Cargo.toml:  sched_slo = ["masa/sched_slo", "tokio/sched_prio"]
+       ├─ libs/masa/Cargo.toml:    sched_slo = []   (forwards to masa-core, tokio, tonic)
+├─ libs/masa-core/Cargo.toml: sched_slo = []   (sets cfg flag)
+       └─ libs/tokio/tokio/Cargo.toml: sched_prio = ["masa/sched_prio"]  (tokio-internal flag)
 ```
+
+Note: `sched_prio` remains as a tokio-internal flag that controls the priority queue implementation. User-facing flags (`sched_slo`, `sched_pred`, `sched_tailclipper`) activate it internally.
 
 The root `Cargo.toml` `[patch.crates-io]` section replaces 8 upstream crates (`tokio`, `tokio-util`, `tokio-stream`, `tokio-test`, `tokio-macros`, `hyper`, `tower`, `tower-service`, `tower-layer`) with local modified versions. All must be built from local copies.
 
@@ -36,9 +43,9 @@ The root `Cargo.toml` `[patch.crates-io]` section replaces 8 upstream crates (`t
 
 The `DefaultMasaHooks` type alias (in `libs/tonic/tonic/src/masa/context/mod.rs`) is resolved by feature flag **precedence**. When multiple flags are enabled, the first match wins:
 
-1. `sched_prio` + `pred_sched` → `LocalDeadlinePolicy`
-2. `sched_prio` + `tailclipper` → `PrioOldest`
-3. `sched_prio` → `QueueGlobal`
+1. `sched_slo` + `sched_pred` → `LocalDeadlinePolicy`
+2. `sched_slo` + `sched_tailclipper` → `PrioOldest`
+3. `sched_slo` → `QueueGlobal`
 4. `sched_fifo` + `slo_abort` → `Fifo`
 5. `sched_fifo` (without `slo_abort`) → `NoopMasaHooks`
 6. Default (no features) → `NoopMasaHooks`
@@ -49,11 +56,11 @@ Each flag also selects the corresponding tokio queue implementation (see Section
 
 In `libs/masa-core/src/flag.rs`, each feature flag is exposed as a `const bool`:
 ```
-pub const SCHED_PRIO: bool = cfg!(feature = "sched_prio");
+pub const SCHED_SLO: bool = cfg!(feature = "sched_slo");
 pub const SLO_ABORT: bool = cfg!(feature = "slo_abort");
 // ... etc.
 ```
-These allow `if SCHED_PRIO { ... }` branches to be optimized away by the compiler when the flag is off.
+These allow `if SCHED_SLO { ... }` branches to be optimized away by the compiler when the flag is off.
 
 ## 2. Core Data Structures (`libs/masa-core`)
 
@@ -90,7 +97,7 @@ A wrapper around `u64`:
 
 ### `LatencyEstimator`
 
-A trait with two implementations, used by the `pred_sched` policy to estimate child RPC latencies:
+A trait with two implementations, used by the `sched_pred` policy to estimate child RPC latencies:
 
 *   **`LatencyRms`** (`latency_estimator/rms.rs`): Tracks Root Mean Square of observed latencies. Uses integer square root (Newton's method) to avoid floating-point. Batches updates every N samples (default 512) to amortize cost. `estimate()` returns the cached RMS regardless of the percentile parameter.
 *   **`LatencyDistribution`** (`latency_estimator/histogram.rs`): Double-buffered histogram. Collects samples into a current buffer; when it reaches capacity, merges with the previous buffer, sorts, and extracts 100 percentiles. `estimate(p)` returns the p-th percentile.
@@ -126,7 +133,7 @@ pub trait MasaHooks: Send + Sync + 'static {
 
 The three levels have different lifetimes and thread-safety requirements:
 
-*   **`ServerHooks`** (`ServerContext`): Created **once per service**. Holds service-wide state (e.g., latency distributions for the `pred_sched` policy). Thread-safe (`Send + Sync`).
+*   **`ServerHooks`** (`ServerContext`): Created **once per service**. Holds service-wide state (e.g., latency distributions for the `sched_pred` policy). Thread-safe (`Send + Sync`).
 *   **`ParentHooks`** (`ParentContext`): Created **once per incoming request**. Manages deadline propagation, early return checks, and queue latency tracking. Thread-safe (`Send + Sync`) since it is accessed from both the handler task and child RPC tasks.
 *   **`ClientHooks`** (`ChildContext`): Created **once per outgoing RPC call**. Tracks per-call timing. Not thread-safe (accessed only on the calling task).
 
@@ -146,9 +153,9 @@ For a complete request lifecycle:
 
 ### Policy Implementations
 Different modules implement `MasaHooks` based on the active feature flag:
-*   **`QueueGlobal`** (for `sched_prio`): In `before_child_rpc`, it calculates the deadline and priority for the child request and injects a `ctx` header. Tracks queue latency via `QueueLatencyTracker`.
-*   **`PrioOldest`** (for `sched_prio,tailclipper`): Like `QueueGlobal`, but the priority hint is the request creation time (older requests = higher priority), implementing the TailClipper approach.
-*   **`LocalDeadlinePolicy`** (for `sched_prio,pred_sched`): Computes local deadlines by subtracting estimated remaining processing time from the parent deadline. Maintains per-method-pair `LatencyRms` estimators. Only works for applications with a known call graph (currently `hotel`).
+*   **`QueueGlobal`** (for `sched_slo`): In `before_child_rpc`, it calculates the deadline and priority for the child request and injects a `ctx` header. Tracks queue latency via `QueueLatencyTracker`.
+*   **`PrioOldest`** (for `sched_slo,sched_tailclipper`): Like `QueueGlobal`, but the priority hint is the request creation time (older requests = higher priority), implementing the TailClipper approach.
+*   **`LocalDeadlinePolicy`** (for `sched_slo,sched_pred`): Computes local deadlines by subtracting estimated remaining processing time from the parent deadline. Maintains per-method-pair `LatencyRms` estimators. Only works for applications with a known call graph (currently `hotel`).
 *   **Fifo**: Passes through deadline/priority. Handles `slo_abort` return checks if the `slo_abort` feature is also enabled.
 *   **Global**: Simplified global deadline policy without queue latency tracking (no early return support).
 *   **Noop**: No-op hooks. Selected when `sched_fifo` is enabled without `slo_abort`, or when no policy feature is active.
@@ -216,11 +223,11 @@ The `current_thread` scheduler's run queue (`libs/tokio/tokio/src/runtime/schedu
 | Feature Flag(s) | Queue Type | Behavior |
 |---|---|---|
 | (none), `sched_fifo` | `FifoQueue` | Standard `VecDeque` — FIFO ordering |
-| `sched_prio`, `sched_prio,pred_sched` | `BinaryHeapQueue` | `std::collections::BinaryHeap` — O(log n) insert, O(1) pop of highest-priority task |
-| `sched_prio,tailclipper` | `BinaryHeapRoundRobinQueue` | Hybrid: binary heap + round-robin `VecDeque` for the top N=6 highest-priority tasks (prevents starvation) |
+| `sched_slo`, `sched_slo,sched_pred` | `BinaryHeapQueue` | `std::collections::BinaryHeap` — O(log n) insert, O(1) pop of highest-priority task |
+| `sched_slo,sched_tailclipper` | `BinaryHeapRoundRobinQueue` | Hybrid: binary heap + round-robin `VecDeque` for the top N=6 highest-priority tasks (prevents starvation) |
 | Any tracing variant | `TimedQueue<Inner>` wrapper | Wraps the inner queue, calling `set_enqueue_time()` on push and `record_queue_lat()` on pop |
 
-`BinaryHeapRoundRobinQueue` (for `sched_prio,tailclipper`) additionally supports a dedicated infrastructure queue: if enabled, `PriorityHint::infra()` tasks are routed to a separate FIFO and always popped first.
+`BinaryHeapRoundRobinQueue` (for `sched_slo,sched_tailclipper`) additionally supports a dedicated infrastructure queue: if enabled, `PriorityHint::infra()` tasks are routed to a separate FIFO and always popped first.
 
 When the runtime polls for the next task, it selects the one with the highest priority (lowest `PriorityHint` value). Infrastructure tasks (`infra`, value 0) are always prioritized over request processing tasks.
 
@@ -347,7 +354,7 @@ Policies with queue latency tracking: `QueueGlobal` and `PrioOldest`.
 
 For an application to use Masa's features, it must:
 
-1.  **Compile with Feature Flags**: Select the desired policy (e.g., `--features sched_prio`).
+1.  **Compile with Feature Flags**: Select the desired policy (e.g., `--features sched_slo`).
 2.  **Use `serve_with_masa`**: In the server initialization code (e.g., `main.rs`), the application calls `.serve_with_masa(addr)` instead of the standard `.serve(addr)`.
     *   This configures the `hyper` server to use the `Exec::Masa` executor, ensuring that priorities are passed to `tokio`.
     *   Using `.serve(addr)` will use `Exec::Default`, which calls standard `tokio::spawn()` and **ignores priorities entirely**.
@@ -385,27 +392,27 @@ The total is injected into the outgoing response in `finalize_after_serializatio
 | Old flags | New flags | Notes |
 |-----------|-----------|-------|
 | `fifo` | `sched_fifo` | |
-| `prio_global` | `sched_prio` | |
-| `prio_oldest` | `sched_prio,tailclipper` | |
-| `prio_local` | `sched_prio,pred_sched` | |
-| `early` | `slo_abort` | When NOT combined with prio_local |
-| `prio_local,early` | `sched_prio,pred_sched` | pred_sched implies slo_abort |
+| `prio_global` | `sched_slo` | |
+| `prio_oldest` | `sched_slo,sched_tailclipper` | |
+| `prio_local` | `sched_slo,sched_pred` | |
+| `early` | `slo_abort` | Composable with any scheduling policy |
+| `prio_local,early` | `sched_slo,sched_pred,slo_abort` | sched_pred no longer implies slo_abort |
 | `adctl` | `ac_est` | |
 | `rajomon` | `ac_rajomon` | |
 | `fifo,early,adctl` | `sched_fifo,slo_abort,ac_est` | |
-| `prio_global,early` | `sched_prio,slo_abort` | |
-| `prio_global,early,adctl` | `sched_prio,slo_abort,ac_est` | |
-| `prio_oldest,early` | `sched_prio,tailclipper,slo_abort` | |
-| `prio_oldest,early,adctl` | *(dropped — tailclipper cannot be combined with ac_est)* | TailClipper paper policy used as-is |
-| `prio_local,early,adctl` | `sched_prio,pred_sched,ac_est` | |
-| `prio_local,rajomon,early` | `sched_prio,pred_sched,ac_rajomon` | |
+| `prio_global,early` | `sched_slo,slo_abort` | |
+| `prio_global,early,adctl` | `sched_slo,slo_abort,ac_est` | |
+| `prio_oldest,early` | `sched_slo,sched_tailclipper,slo_abort` | |
+| `prio_oldest,early,adctl` | *(dropped — sched_tailclipper cannot be combined with ac_est)* | TailClipper paper policy used as-is |
+| `prio_local,early,adctl` | `sched_slo,sched_pred,slo_abort,ac_est` | |
+| `prio_local,rajomon,early` | `sched_slo,sched_pred,slo_abort,ac_rajomon` | |
 
 ### Design intent
 
-**Scheduling disciplines** (`sched_fifo`, `sched_prio`): Mutually exclusive base queue implementations. `sched_prio` uses a binary heap; `sched_fifo` uses FIFO.
+**Scheduling disciplines** (`sched_fifo`, `sched_slo`): Mutually exclusive base queue implementations. `sched_slo` implies the tokio priority queue (binary heap); `sched_fifo` uses FIFO.
 
-**Scheduling modifiers** (`tailclipper`, `pred_sched`): Overlays on `sched_prio`. `tailclipper` implements the TailClipper paper's policy exactly (round-robin fairness for top-N priority tasks) — it cannot be combined with `pred_sched` or `ac_est` to preserve the paper's design. `pred_sched` adds deadline tightening and dynamic reprioritization using latency estimates.
+**Scheduling modifiers** (`sched_tailclipper`, `sched_pred`): Overlays on `sched_slo`. `sched_tailclipper` implements the TailClipper paper's policy exactly (round-robin fairness for top-N priority tasks) — it cannot be combined with `sched_pred` or `ac_est` to preserve the paper's design. `sched_pred` adds deadline tightening and dynamic reprioritization using latency estimates. `sched_pred` implies `sched_slo` and `est`.
 
-**Abort strategies** (`slo_abort`, `pred_sched`): `slo_abort` aborts requests that have already exceeded their e2e SLO. `pred_sched` proactively aborts requests predicted to miss their SLO based on estimated remaining work. `pred_sched` implies `slo_abort`.
+**Abort strategies** (`slo_abort`): Aborts requests that have already exceeded their e2e SLO. Composable with any scheduling policy. `sched_pred` additionally performs proactive abort for requests predicted to miss their SLO based on estimated remaining work.
 
 **Admission control** (`ac_est`, `ac_rajomon`): Mutually exclusive admission strategies. `ac_est` uses compute-time feasibility and efficiency-based checks. `ac_rajomon` uses token-bucket rate limiting.
