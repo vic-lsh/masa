@@ -14,6 +14,9 @@ pub mod rajomon;
 #[cfg(feature = "ac_est")]
 pub(crate) mod est;
 
+#[cfg(feature = "est")]
+pub(crate) mod predictive_ac;
+
 mod noop;
 
 /// The active admission control handler, selected at compile time.
