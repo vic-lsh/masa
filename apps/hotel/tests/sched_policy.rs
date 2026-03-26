@@ -22,8 +22,8 @@ fn test_tailclipper_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }
 
-#[cfg(all(feature = "sched_prio", feature = "est_abort"))]
+#[cfg(all(feature = "sched_prio", feature = "pred_sched"))]
 #[test]
-fn test_est_abort_policy() {
+fn test_pred_sched_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }

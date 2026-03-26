@@ -23,7 +23,7 @@ pub fn create_context(api: &str, slo: Duration) -> Context {
 
     // Priority logic:
     // If TAILCLIPPER is enabled, priority is based on arrival time (start_at).
-    // Otherwise (sched_fifo, sched_prio, est_abort), priority is based on deadline.
+    // Otherwise (sched_fifo, sched_prio, pred_sched), priority is based on deadline.
     // Note: TAILCLIPPER is a const bool exported by masa_core based on compile features.
     let prio_hint = if masa_core::TAILCLIPPER {
         start_at

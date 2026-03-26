@@ -46,7 +46,7 @@ impl SloAbortHandler {
 
         // e2e_deadline=0 means no SLO was set (e.g. health-check pings); never early-return.
         // Use e2e_deadline (gateway_entry + slo) rather than ctx.deadline() so that policies
-        // like est_abort that tighten the per-hop deadline for scheduling purposes do not
+        // like pred_sched that tighten the per-hop deadline for scheduling purposes do not
         // cause premature early-returns — ER fires only at the actual end-to-end SLO boundary.
         let e2e_deadline = ctx.e2e_deadline();
         if e2e_deadline == 0 {

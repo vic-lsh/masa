@@ -94,7 +94,7 @@ tailclipper = ["masa/tailclipper"]
 sched_fifo = ["masa/sched_fifo"]
 slo_abort = ["masa/slo_abort"]
 est = ["masa/est"]
-est_abort = ["masa/est_abort"]
+pred_sched = ["masa/pred_sched"]
 ac_est = ["masa/ac_est"]
 ac_rajomon = ["masa/ac_rajomon"]
 
