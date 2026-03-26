@@ -1,4 +1,4 @@
-use crate::{Code, CowGrpcMethod, Response, Status};
+use tonic::{Code, CowGrpcMethod, Response, Status};
 #[cfg(feature = "trace-queue")]
 use masa_core::QueueLatencies;
 use masa_core::{time_now, Context, SLO_ABORT};
@@ -143,7 +143,7 @@ impl QueueLatencyTracker {
 
     pub(crate) fn track_child_response<T>(&self, response: &Result<Response<T>, Status>) {
         if let Ok(resp) = response {
-            use super::MasaResponseExt;
+            use tonic::masa::context::MasaResponseExt;
             if let Some(ctx) = resp.get_masa_context() {
                 if let Some(ql) = ctx.queue_latencies {
                     self.initial_q_lat.fetch_add(ql.initial, Ordering::AcqRel);
@@ -158,7 +158,7 @@ impl QueueLatencyTracker {
         ctx: &Context,
         result: &mut Result<Response<T>, Status>,
     ) {
-        use super::{MasaResponseExt, MasaStatusExt};
+        use tonic::masa::context::{MasaResponseExt, MasaStatusExt};
 
         let mut ctx = ctx.clone();
 
@@ -203,9 +203,9 @@ macro_rules! generate_slo_abort_test {
         #[cfg(feature = "slo_abort")]
         fn test_early_return_tracking() {
             use super::{$ChildContext, $ParentContext, $ServerContext};
-            use crate::masa::context::MASA_CONTEXT_HEADER;
-            use crate::masa::context::{ClientHooks, ParentHooks, ServerHooks};
-            use crate::{GrpcMethod, Request, Response, Status};
+            use tonic::masa::context::MASA_CONTEXT_HEADER;
+            use tonic::masa::context::{ClientHooks, ParentHooks, ServerHooks};
+            use tonic::{GrpcMethod, Request, Response, Status};
             use masa_core::{time_now, ContextBuilder};
             use std::sync::Arc;
 
@@ -240,7 +240,7 @@ macro_rules! generate_slo_abort_test {
                 _ => panic!("Expected Err(Err(Status))"),
             };
 
-            assert_eq!(err.code(), crate::Code::DeadlineExceeded);
+            assert_eq!(err.code(), tonic::Code::DeadlineExceeded);
             // Verify error message format: /EarlyReturn?src=test.Service::Method
             let msg = err.message();
             assert!(
@@ -256,7 +256,7 @@ macro_rules! generate_slo_abort_test {
 
             // Update last child info manually (simulating a completed child call)
             let mut child_ctx = $ChildContext::new(method, &Request::new(()));
-            child_ctx.set_method_name(crate::CowGrpcMethod::new("test.Service", "ChildMethod"));
+            child_ctx.set_method_name(tonic::CowGrpcMethod::new("test.Service", "ChildMethod"));
 
             // This simulates a child RPC finishing
             let mut resp_result: Result<Response<()>, Status> = Ok(Response::new(()));

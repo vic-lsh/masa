@@ -6,7 +6,7 @@
 // deadline tightening, and child error propagation. When disabled, all methods
 // are no-ops that compile away entirely.
 
-use crate::{Response, Status};
+use tonic::{Response, Status};
 use masa_core::Context;
 
 /// Zero-cost policy overlay for predictive scheduling behavior.

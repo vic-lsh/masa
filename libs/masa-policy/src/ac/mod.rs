@@ -5,7 +5,7 @@
 // The two admission control strategies (Rajomon token-based and EST
 // compute-budget-based) are mutually exclusive.
 
-use crate::{CowGrpcMethod, Response, Status};
+use tonic::{CowGrpcMethod, Response, Status};
 use masa_core::Context;
 
 #[cfg(feature = "ac_rajomon")]
@@ -85,7 +85,7 @@ pub(crate) trait AcHandler: Send + Sync + std::fmt::Debug {
     fn on_child_response(
         &self,
         _child_method: &CowGrpcMethod,
-        _metadata: &crate::metadata::MetadataMap,
+        _metadata: &tonic::metadata::MetadataMap,
     ) {
     }
 

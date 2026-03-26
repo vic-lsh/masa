@@ -4,7 +4,7 @@
 // price signals and client-side token bucket rate limiting. Aligned with
 // the original Go implementation (3rd_party/rajomon/).
 
-use crate::{CowGrpcMethod, Response, Status};
+use tonic::{CowGrpcMethod, Response, Status};
 use dashmap::DashMap;
 use masa_core::Context;
 use once_cell::sync::Lazy;
@@ -39,7 +39,7 @@ const TOKENS_LEFT_INIT: u64 = 10; // original: tokensLeft (10)
 const TOKEN_UPDATE_RATE_MS: u64 = 10; // original: tokenUpdateRate (10ms)
 const TOKEN_UPDATE_STEP: u64 = 5; // original: tokenUpdateStep (1)
 /// The maximum token value the loadgen can generate for a bid. Server prices are
-/// meaningful only when they are ≤ MAX_TOKEN; a price above MAX_TOKEN means 100%
+/// meaningful only when they are <= MAX_TOKEN; a price above MAX_TOKEN means 100%
 /// rejection. Exported so the loadgen can draw uniform random bids in [0, MAX_TOKEN].
 pub const MAX_TOKEN: u64 = 100; // original: maxToken (10)
 
@@ -301,7 +301,7 @@ impl AcHandler for RajomonHandler {
     fn on_child_response(
         &self,
         child_method: &CowGrpcMethod,
-        metadata: &crate::metadata::MetadataMap,
+        metadata: &tonic::metadata::MetadataMap,
     ) {
         if let Some(price_header) = metadata.get("x-masa-rajomon-price") {
             if let Ok(price_str) = price_header.to_str() {
@@ -333,7 +333,7 @@ impl AcHandler for RajomonHandler {
         }
         // Minimum effective price is 1 (baseline cost), matching the admission gate.
         let price = RAJOMON_STATE.accumulated_price(&self.rpc).max(1);
-        if let Ok(value) = crate::metadata::MetadataValue::try_from(price.to_string()) {
+        if let Ok(value) = tonic::metadata::MetadataValue::try_from(price.to_string()) {
             match result {
                 Ok(resp) => {
                     resp.metadata_mut().insert("x-masa-rajomon-price", value);
@@ -688,7 +688,7 @@ mod tests {
     /// When downstream price > own_price, gate uses accumulated but deduction uses own only.
     /// This prevents double-counting: a request that passes the inbound gate is guaranteed
     /// to pass the subsequent outbound check (remaining >= child_price) without needing
-    /// tok >= 2×price.
+    /// tok >= 2x price.
     #[test]
     fn test_check_inbound_deducts_own_not_accumulated_when_downstream_dominant() {
         let _lock = GLOBAL_STATE_LOCK.lock().unwrap();
@@ -700,7 +700,7 @@ mod tests {
         let mut handler = RajomonHandler::new(method);
         let mut ctx = masa_core::ContextBuilder::new("test", 0).tokens(25).build();
         handler.check_inbound(&mut ctx);
-        assert!(!handler.should_drop); // tok(25) >= accumulated(20) → admitted
+        assert!(!handler.should_drop); // tok(25) >= accumulated(20) -> admitted
         assert_eq!(handler.remaining_tokens(), 20); // 25 - own(5) = 20, not 25 - 20 = 5
     }
 
