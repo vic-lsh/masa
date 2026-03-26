@@ -14,7 +14,7 @@ use std::sync::{
 use std::time::Instant;
 
 use crate::{Code, CowGrpcMethod, Response, Status};
-use masa_core::{time_now, Context, LatencyEstimator, ResponseMeta, SLO_ABORT};
+use masa_core::{time_now, Context, LatencyEstimator, ResponseMeta};
 
 use super::estimator::ParentToChildId;
 use super::latency_map::{spawn_method_stats_printer, spawn_stats_printer, LatencyMap};
@@ -94,10 +94,6 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
     ///
     /// Returns true if the request should be shed based on the floor estimate
     /// of remaining work exceeding the available time budget.
-    pub(crate) fn admission_check(&self, ctx: &Context, est_remaining_floor: u64) -> bool {
-        SLO_ABORT && time_now() > ctx.e2e_deadline().saturating_sub(est_remaining_floor)
-    }
-
     /// Track latency observations for completed request.
     pub(crate) fn track_latencies(&self) {
         let parent_end = Instant::now();
@@ -226,15 +222,14 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         }
     }
 
-    /// Setup child context, run admission checks, log estimates.
-    /// Returns Err if the request should be shed (early-returned).
-    /// Returns Ok(ChildRpcPrepareResult) with estimates for deadline computation.
+    /// Setup child context and log estimates.
+    /// Returns estimates for deadline computation and admission control lookups.
     pub(crate) fn prepare_before_child_rpc(
         &self,
         ctx: &Context,
         child_method_name: &CowGrpcMethod,
         child_est: &mut EstChildState<E>,
-    ) -> Result<ChildRpcPrepareResult, ()> {
+    ) -> ChildRpcPrepareResult {
         let resolved_child_id = MethodRegistry::global()
             .get_or_register_method(child_method_name.service(), child_method_name.method());
         let parent_to_child_id = ParentToChildId {
@@ -272,10 +267,6 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
             .unwrap_or(0)
             .min(time_left);
 
-        if self.admission_check(ctx, est_remaining_floor) {
-            return Err(());
-        }
-
         self.log_estimates(
             &parent_to_child_id,
             key,
@@ -284,7 +275,7 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
             est_remaining_floor,
         );
 
-        Ok(ChildRpcPrepareResult { est_remaining, key })
+        ChildRpcPrepareResult { est_remaining, key }
     }
 }
 
