@@ -6,6 +6,7 @@ use crate::service_stubs::{InvokeRequest, ReplayRequest};
 use crate::RpcClient;
 use anyhow::Result;
 use masa::MethodId;
+use masa_policy::MasaRequestExt;
 use sim_config::deployment::Deployment;
 use sim_config::svc::call_sequence::CallSequence;
 use sim_config::svc::{CallGraphConfig, GraphId, ServiceName};
@@ -14,7 +15,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Once};
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tokio::task::JoinSet;
-use tonic::{masa::context::MasaRequestExt, Request, Status};
+use tonic::{Request, Status};
 use tracing::{info, warn};
 
 pub(crate) struct ServiceCore {

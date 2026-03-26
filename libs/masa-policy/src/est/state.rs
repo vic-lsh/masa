@@ -13,12 +13,12 @@ use std::sync::{
 };
 use std::time::Instant;
 
-use tonic::{Code, CowGrpcMethod, Response, Status};
 use masa_core::{time_now, Context, LatencyEstimator, ResponseMeta};
+use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
 use super::estimator::ParentToChildId;
 use super::latency_map::{spawn_method_stats_printer, spawn_stats_printer, LatencyMap};
-use tonic::masa::context::{MasaResponseExt, MasaStatusExt};
+use crate::context_ext::{MasaResponseExt, MasaStatusExt};
 use crate::MethodRegistry;
 
 /// Server-level estimation state (shared across requests on a service).

@@ -305,10 +305,8 @@ impl Status {
         Status::new(Code::Unauthenticated, message)
     }
 
-    #[cfg_attr(not(feature = "transport"), allow(dead_code))]
-    pub(crate) fn from_error_generic(
-        err: impl Into<Box<dyn Error + Send + Sync + 'static>>,
-    ) -> Status {
+    #[doc(hidden)]
+    pub fn from_error_generic(err: impl Into<Box<dyn Error + Send + Sync + 'static>>) -> Status {
         Self::from_error(err.into())
     }
 
@@ -316,7 +314,6 @@ impl Status {
     ///
     /// Inspects the error source chain for recognizable errors, including statuses, HTTP2, and
     /// hyper, and attempts to maps them to a `Status`, or else returns an Unknown `Status`.
-    #[cfg_attr(not(feature = "transport"), allow(dead_code))]
     pub fn from_error(err: Box<dyn Error + Send + Sync + 'static>) -> Status {
         Status::try_from_error(err).unwrap_or_else(|err| {
             let mut status = Status::new(Code::Unknown, err.to_string());
@@ -342,14 +339,6 @@ impl Status {
             Err(err) => err,
         };
 
-        #[cfg(feature = "transport")]
-        let err = match err.downcast::<h2::Error>() {
-            Ok(h2) => {
-                return Ok(Status::from_h2_error(h2));
-            }
-            Err(err) => err,
-        };
-
         if let Some(mut status) = find_status_in_source_chain(&*err) {
             status.source = Some(err.into());
             return Ok(status);
@@ -358,81 +347,8 @@ impl Status {
         Err(err)
     }
 
-    // FIXME: bubble this into `transport` and expose generic http2 reasons.
-    #[cfg(feature = "transport")]
-    fn from_h2_error(err: Box<h2::Error>) -> Status {
-        let code = Self::code_from_h2(&err);
-
-        let mut status = Self::new(code, format!("h2 protocol error: {}", err));
-        status.source = Some(Arc::new(*err));
-        status
-    }
-
-    #[cfg(feature = "transport")]
-    fn code_from_h2(err: &h2::Error) -> Code {
-        // See https://github.com/grpc/grpc/blob/3977c30/doc/PROTOCOL-HTTP2.md#errors
-        match err.reason() {
-            Some(h2::Reason::NO_ERROR)
-            | Some(h2::Reason::PROTOCOL_ERROR)
-            | Some(h2::Reason::INTERNAL_ERROR)
-            | Some(h2::Reason::FLOW_CONTROL_ERROR)
-            | Some(h2::Reason::SETTINGS_TIMEOUT)
-            | Some(h2::Reason::COMPRESSION_ERROR)
-            | Some(h2::Reason::CONNECT_ERROR) => Code::Internal,
-            Some(h2::Reason::REFUSED_STREAM) => Code::Unavailable,
-            Some(h2::Reason::CANCEL) => Code::Cancelled,
-            Some(h2::Reason::ENHANCE_YOUR_CALM) => Code::ResourceExhausted,
-            Some(h2::Reason::INADEQUATE_SECURITY) => Code::PermissionDenied,
-
-            _ => Code::Unknown,
-        }
-    }
-
-    #[cfg(feature = "transport")]
-    fn to_h2_error(&self) -> h2::Error {
-        // conservatively transform to h2 error codes...
-        let reason = match self.code {
-            Code::Cancelled => h2::Reason::CANCEL,
-            _ => h2::Reason::INTERNAL_ERROR,
-        };
-
-        reason.into()
-    }
-
-    /// Handles hyper errors specifically, which expose a number of different parameters about the
-    /// http stream's error: https://docs.rs/hyper/0.14.11/hyper/struct.Error.html.
-    ///
-    /// Returns Some if there's a way to handle the error, or None if the information from this
-    /// hyper error, but perhaps not its source, should be ignored.
-    #[cfg(feature = "transport")]
-    fn from_hyper_error(err: &hyper::Error) -> Option<Status> {
-        // is_timeout results from hyper's keep-alive logic
-        // (https://docs.rs/hyper/0.14.11/src/hyper/error.rs.html#192-194).  Per the grpc spec
-        // > An expired client initiated PING will cause all calls to be closed with an UNAVAILABLE
-        // > status. Note that the frequency of PINGs is highly dependent on the network
-        // > environment, implementations are free to adjust PING frequency based on network and
-        // > application requirements, which is why it's mapped to unavailable here.
-        //
-        // Likewise, if we are unable to connect to the server, map this to UNAVAILABLE.  This is
-        // consistent with the behavior of a C++ gRPC client when the server is not running, and
-        // matches the spec of:
-        // > The service is currently unavailable. This is most likely a transient condition that
-        // > can be corrected if retried with a backoff.
-        if err.is_timeout() || err.is_connect() {
-            return Some(Status::unavailable(err.to_string()));
-        }
-
-        if let Some(h2_err) = err.source().and_then(|e| e.downcast_ref::<h2::Error>()) {
-            let code = Status::code_from_h2(h2_err);
-            let status = Self::new(code, format!("h2 protocol error: {}", err));
-
-            return Some(status);
-        }
-
-        None
-    }
-
-    pub(crate) fn map_error<E>(err: E) -> Status
+    #[doc(hidden)]
+    pub fn map_error<E>(err: E) -> Status
     where
         E: Into<Box<dyn Error + Send + Sync>>,
     {
@@ -515,7 +431,8 @@ impl Status {
         &mut self.metadata
     }
 
-    pub(crate) fn to_header_map(&self) -> Result<HeaderMap, Self> {
+    #[doc(hidden)]
+    pub fn to_header_map(&self) -> Result<HeaderMap, Self> {
         let mut header_map = HeaderMap::with_capacity(3 + self.metadata.len());
         self.add_header(&mut header_map)?;
         Ok(header_map)
@@ -614,19 +531,6 @@ fn find_status_in_source_chain(err: &(dyn Error + 'static)) -> Option<Status> {
             });
         }
 
-        #[cfg(feature = "transport")]
-        if let Some(timeout) = err.downcast_ref::<crate::transport::TimeoutExpired>() {
-            return Some(Status::cancelled(timeout.to_string()));
-        }
-
-        #[cfg(feature = "transport")]
-        if let Some(hyper) = err
-            .downcast_ref::<hyper::Error>()
-            .and_then(Status::from_hyper_error)
-        {
-            return Some(hyper);
-        }
-
         source = err.source();
     }
 
@@ -664,20 +568,6 @@ fn invalid_header_value_byte<Error: fmt::Display>(err: Error) -> Status {
         Code::Internal,
         "Couldn't serialize non-text grpc status header".to_string(),
     )
-}
-
-#[cfg(feature = "transport")]
-impl From<h2::Error> for Status {
-    fn from(err: h2::Error) -> Self {
-        Status::from_h2_error(Box::new(err))
-    }
-}
-
-#[cfg(feature = "transport")]
-impl From<Status> for h2::Error {
-    fn from(status: Status) -> Self {
-        status.to_h2_error()
-    }
 }
 
 impl From<std::io::Error> for Status {
@@ -726,10 +616,9 @@ impl Error for Status {
     }
 }
 
-///
 /// Take the `Status` value from `trailers` if it is available, else from `status_code`.
-///
-pub(crate) fn infer_grpc_status(
+#[doc(hidden)]
+pub fn infer_grpc_status(
     trailers: Option<&HeaderMap>,
     status_code: http::StatusCode,
 ) -> Result<(), Option<Status>> {
@@ -919,32 +808,6 @@ mod tests {
 
         assert_eq!(found.code(), Code::OutOfRange);
         assert_eq!(found.message(), "weeaboo");
-    }
-
-    #[test]
-    #[cfg(feature = "transport")]
-    fn from_error_h2() {
-        use std::error::Error as _;
-
-        let orig = h2::Error::from(h2::Reason::CANCEL);
-        let found = Status::from_error(Box::new(orig));
-
-        assert_eq!(found.code(), Code::Cancelled);
-
-        let source = found
-            .source()
-            .and_then(|err| err.downcast_ref::<h2::Error>())
-            .unwrap();
-        assert_eq!(source.reason(), Some(h2::Reason::CANCEL));
-    }
-
-    #[test]
-    #[cfg(feature = "transport")]
-    fn to_h2_error() {
-        let orig = Status::new(Code::Cancelled, "stop eet!");
-        let err = orig.to_h2_error();
-
-        assert_eq!(err.reason(), Some(h2::Reason::CANCEL));
     }
 
     #[test]

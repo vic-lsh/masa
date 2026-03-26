@@ -1,6 +1,6 @@
 use std::time::Duration;
 use tokio::time::sleep;
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{transport::Server, Request, RequestExt, Response, Status};
 
 use hello_world::greeter_server::{Greeter, GreeterServer};
 use hello_world::{HelloReply, HelloRequest};

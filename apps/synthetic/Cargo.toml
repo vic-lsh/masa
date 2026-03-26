@@ -118,6 +118,7 @@ default = ["full"]
 [dependencies]
 # Reboot
 masa = { path = "../../libs/masa" }
+masa-policy = { path = "../../libs/masa-policy" }
 app-utils = { path = "../app-utils" }
 app-util-macros = { path = "../app-util-macros" }
 futures-lite = { version = "2.0.0" }

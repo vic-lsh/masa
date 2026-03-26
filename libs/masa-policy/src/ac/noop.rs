@@ -3,7 +3,7 @@
 // Used when neither `ac_rajomon` nor `ac_est` feature flags are enabled.
 // All methods use the trait defaults (admit everything, no metadata).
 
-use tonic::CowGrpcMethod;
+use tonic_core::CowGrpcMethod;
 
 use super::AcHandler;
 
