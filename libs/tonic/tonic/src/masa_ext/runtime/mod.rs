@@ -2,12 +2,12 @@
 
 use std::sync::Arc;
 
-use super::MasaHooks;
+use super::Hooks;
 
 /// Create the poll hook used to propagate parent context.
 pub fn make_child_task_poll_hook<M>(parent_context: Arc<M::ParentContext>) -> tokio::task::PollHook
 where
-    M: MasaHooks,
+    M: Hooks,
 {
     let hook_ctx = Arc::into_raw(parent_context) as *const ();
     let child_hook = unsafe {
@@ -26,12 +26,12 @@ where
 mod hook_impl {
     use std::sync::Arc;
 
-    use crate::masa_ext::MasaHooks;
+    use crate::masa_ext::Hooks;
 
     // Each child task would clone this request context using this fn.
     pub(crate) fn on_clone<M>(raw_ctx: *const ())
     where
-        M: MasaHooks,
+        M: Hooks,
     {
         // Bump req-ctx ref-count without losing the original ref-count.
         let c = unsafe { Arc::from_raw(raw_ctx as *const M::ParentContext) };
@@ -42,7 +42,7 @@ mod hook_impl {
     // Release context ref-count associated with this child task.
     pub(crate) fn on_destroy<M>(raw_ctx: *const ())
     where
-        M: MasaHooks,
+        M: Hooks,
     {
         unsafe { Arc::from_raw(raw_ctx as *const M::ParentContext) };
     }
@@ -50,7 +50,7 @@ mod hook_impl {
     // Configure child task's thread-local to point to our request context.
     pub(crate) fn before_poll<M>(raw_ctx: *const ())
     where
-        M: MasaHooks,
+        M: Hooks,
     {
         // SAFETY: the hook holds one ref-count to the request context.
         let ctx = unsafe { &*(raw_ctx as *const M::ParentContext) };
@@ -61,7 +61,7 @@ mod hook_impl {
     // to another task (and mislead another task to think they have a parent rpc).
     pub(crate) fn after_poll<M>(_raw_ctx: *const ())
     where
-        M: MasaHooks,
+        M: Hooks,
     {
         crate::masa_ext::server::reset_parent_ctx::<M>();
     }

@@ -7,8 +7,8 @@ use crate::{CowGrpcMethod, GrpcMethod, Request, Response, Status};
 pub mod noop;
 
 // TODO: add notes on trait bounds
-/// Trait for specifying the set of hooks to apply in a Masa build.
-pub trait MasaHooks: Send + Sync + 'static {
+/// Trait for specifying the set of hooks to apply.
+pub trait Hooks: Send + Sync + 'static {
     /// The server-level state and hook implementations.
     type ServerContext: ServerHooks;
     /// The state and hook implementations maintained per child RPC.

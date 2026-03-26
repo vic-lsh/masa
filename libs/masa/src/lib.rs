@@ -9,12 +9,12 @@ use std::time::Duration;
 
 static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
 
-/// The default MasaHooks implementation, selected at compile time.
+/// The default Hooks implementation, selected at compile time.
 ///
-/// This is a convenience re-export of `tonic::masa_ext::DefaultMasaHooks`, which
-/// resolves to `NoopMasaHooks` (zero overhead) when no scheduling features
+/// This is a convenience re-export of `tonic::masa_ext::DefaultHooks`, which
+/// resolves to `NoopHooks` (zero overhead) when no scheduling features
 /// are enabled, or `masa_policy::StandardHooks` when any scheduling feature is on.
-pub use tonic::masa_ext::DefaultMasaHooks;
+pub use tonic::masa_ext::DefaultHooks;
 
 /// Utility function to create a Masa Context.
 ///

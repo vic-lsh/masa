@@ -85,7 +85,7 @@ Key policy flags:
 ## Architecture
 
 ### Data Flow
-1. Client's `MasaHooks` calculates child deadline/priority, serializes `Context` to JSON in HTTP/2 header (`ctx` key)
+1. Client's `Hooks` calculates child deadline/priority, serializes `Context` to JSON in HTTP/2 header (`ctx` key)
 2. Server-side `hyper` parses `ctx` header, extracts `PriorityHint`
 3. `hyper` calls `tokio::spawn_with_prio(handler_future, priority)` via the `Exec::Masa` executor
 4. Modified `tokio` runtime enqueues task in a priority queue (binary heap); lower `PriorityHint` value = higher priority
@@ -104,7 +104,7 @@ Core Masa types and utilities:
 
 ### libs/tonic/tonic/src/masa/
 Masa integration into Tonic gRPC:
-- `context/mod.rs`: `MasaHooks` trait with `before_child_rpc`, `before_poll`, `after_poll` hooks; feature flags select the `DefaultMasaHooks` implementation
+- `context/mod.rs`: `Hooks` trait with `before_child_rpc`, `before_poll`, `after_poll` hooks; feature flags select the `DefaultHooks` implementation
 - `context/`: Policy implementations — `standard.rs` (shared hooks for all policies), `pred_sched.rs` (predictive scheduling overlay), `base.rs`, `common.rs`; admission control in `ac/`
 - `transport/masa_channel/`: Masa-aware channel transport
 

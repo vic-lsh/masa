@@ -1,6 +1,6 @@
 // Re-export core hook traits and types from tonic-core.
 pub use tonic_core::masa_ext::{
-    noop, resolve_method_name_from_http, resolve_method_name_from_request, ClientHooks, MasaHooks,
+    noop, resolve_method_name_from_http, resolve_method_name_from_request, ClientHooks, Hooks,
     ParentHooks, ServerHooks, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
 };
 
@@ -17,7 +17,7 @@ pub use thread_local::{client, server};
 
 /// Default hooks type, selected at compile time by feature flags.
 ///
-/// - No scheduling features: `NoopMasaHooks` (zero overhead).
+/// - No scheduling features: `NoopHooks` (zero overhead).
 /// - Any scheduling feature (`sched_fifo`, `sched_slo`, `sched_tailclipper`):
 ///   `masa_policy::StandardHooks` with full scheduling hooks.
 #[cfg(not(any(
@@ -25,7 +25,7 @@ pub use thread_local::{client, server};
     feature = "sched_slo",
     feature = "sched_tailclipper"
 )))]
-pub type DefaultMasaHooks = tonic_core::masa_ext::noop::NoopMasaHooks;
+pub type DefaultHooks = tonic_core::masa_ext::noop::NoopHooks;
 
 /// Default hooks type, selected at compile time by feature flags.
 #[cfg(any(
@@ -33,4 +33,4 @@ pub type DefaultMasaHooks = tonic_core::masa_ext::noop::NoopMasaHooks;
     feature = "sched_slo",
     feature = "sched_tailclipper"
 ))]
-pub type DefaultMasaHooks = masa_policy::StandardHooks;
+pub type DefaultHooks = masa_policy::StandardHooks;

@@ -39,16 +39,16 @@ Note: `sched_prio` remains as a tokio-internal flag that controls the priority q
 
 The root `Cargo.toml` `[patch.crates-io]` section replaces 8 upstream crates (`tokio`, `tokio-util`, `tokio-stream`, `tokio-test`, `tokio-macros`, `hyper`, `tower`, `tower-service`, `tower-layer`) with local modified versions. All must be built from local copies.
 
-### `DefaultMasaHooks` Selection
+### `DefaultHooks` Selection
 
-The `DefaultMasaHooks` type alias (in `libs/tonic/tonic/src/masa/context/mod.rs`) is resolved by feature flag **precedence**. When multiple flags are enabled, the first match wins:
+The `DefaultHooks` type alias (in `libs/tonic/tonic/src/masa/context/mod.rs`) is resolved by feature flag **precedence**. When multiple flags are enabled, the first match wins:
 
 1. `sched_slo` + `sched_pred` → `LocalDeadlinePolicy`
 2. `sched_slo` + `sched_tailclipper` → `PrioOldest`
 3. `sched_slo` → `QueueGlobal`
 4. `sched_fifo` + `slo_abort` → `Fifo`
-5. `sched_fifo` (without `slo_abort`) → `NoopMasaHooks`
-6. Default (no features) → `NoopMasaHooks`
+5. `sched_fifo` (without `slo_abort`) → `NoopHooks`
+6. Default (no features) → `NoopHooks`
 
 Each flag also selects the corresponding tokio queue implementation (see Section 5).
 
@@ -117,14 +117,14 @@ Serialized to JSON in the `X-Latency-Traces` response header by the `Tracing` po
 
 ## 3. Client-Side Logic (`libs/tonic`)
 
-When a service (acting as a client) sends an RPC to a downstream service, the policy logic is handled by `MasaHooks`.
+When a service (acting as a client) sends an RPC to a downstream service, the policy logic is handled by `Hooks`.
 
 ### Three-Level Hook Architecture
 
-`MasaHooks` (defined in `libs/tonic/tonic/src/masa/context/mod.rs`) is the central trait that associates three context types:
+`Hooks` (defined in `libs/tonic/tonic/src/masa/context/mod.rs`) is the central trait that associates three context types:
 
 ```
-pub trait MasaHooks: Send + Sync + 'static {
+pub trait Hooks: Send + Sync + 'static {
     type ServerContext: ServerHooks;
     type ChildContext: ClientHooks;
     type ParentContext: ParentHooks<Self::ChildContext, Self::ServerContext>;
@@ -152,7 +152,7 @@ For a complete request lifecycle:
 10. `finalize_after_serialization()` — after response is serialized (e.g., inject `x-queue-latency` header).
 
 ### Policy Implementations
-Different modules implement `MasaHooks` based on the active feature flag:
+Different modules implement `Hooks` based on the active feature flag:
 *   **`QueueGlobal`** (for `sched_slo`): In `before_child_rpc`, it calculates the deadline and priority for the child request and injects a `ctx` header. Tracks queue latency via `QueueLatencyTracker`.
 *   **`PrioOldest`** (for `sched_slo,sched_tailclipper`): Like `QueueGlobal`, but the priority hint is the request creation time (older requests = higher priority), implementing the TailClipper approach.
 *   **`LocalDeadlinePolicy`** (for `sched_slo,sched_pred`): Computes local deadlines by subtracting estimated remaining processing time from the parent deadline. Maintains per-method-pair `LatencyRms` estimators. Only works for applications with a known call graph (currently `hotel`).
