@@ -4,11 +4,11 @@ use std::sync::Arc;
 use std::task::Poll;
 
 use super::base::BaseHookState;
-use super::est_state::{is_early_return_response, EstChildState, EstRequestState, EstServerState};
+use super::est::state::{is_early_return_response, EstChildState, EstRequestState, EstServerState};
 use super::{ClientHooks, MasaHooks, MasaRequestExt, ParentHooks, ServerHooks};
 use masa_core::{time_now, ContextBuilder, LatencyEstimator, PriorityHint};
 
-use super::estimator::DefaultLatencyEstimator as LocalLatencyEstimator;
+use super::est::estimator::DefaultLatencyEstimator as LocalLatencyEstimator;
 
 #[derive(Debug)]
 /// This policy computes the deadline d of a child request as
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn test_server_context_rms_integration() {
         let ctx = ServerContext::<LatencyRms>::new("test_service");
-        let method = super::super::estimator::ParentToChildId {
+        let method = super::super::est::estimator::ParentToChildId {
             parent_id: 1,
             child_id: 2,
         };

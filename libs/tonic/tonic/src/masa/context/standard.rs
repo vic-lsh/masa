@@ -9,9 +9,9 @@ use crate::Response;
 use masa_core::ContextBuilder;
 
 #[cfg(feature = "ac_est")]
-use super::est_state::{is_early_return_response, EstChildState, EstRequestState, EstServerState};
+use super::est::estimator::DefaultLatencyEstimator;
 #[cfg(feature = "ac_est")]
-use super::estimator::DefaultLatencyEstimator;
+use super::est::state::{is_early_return_response, EstChildState, EstRequestState, EstServerState};
 #[cfg(feature = "ac_est")]
 use crate::masa::MethodRegistry;
 

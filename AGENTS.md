@@ -70,14 +70,17 @@ Key policy flags:
 
 **Scheduling modifiers** (overlays on `sched_prio`):
 - `tailclipper`: Implements the TailClipper paper's oldest-request-first policy with round-robin fairness. Cannot be combined with `est_abort` or `ac_est`.
-- `est_abort`: Adds deadline tightening and dynamic reprioritization using latency estimates. Implies `slo_abort`. **Only works for `hotel`** as it requires a call graph description.
+- `est_abort`: Adds deadline tightening and dynamic reprioritization using latency estimates. Implies `est` and `slo_abort`. **Only works for `hotel`** as it requires a call graph description.
+
+**Estimation infrastructure:**
+- `est`: Enables shared latency estimation infrastructure (estimator type selection, latency maps, estimation state). Implied by `est_abort` and `ac_est`. Does not require `slo_abort` on its own.
 
 **Abort strategies:**
 - `slo_abort`: Combined with a policy (e.g., `sched_prio,slo_abort`) to return early for requests past their e2e deadline, avoiding wasteful work
-- `est_abort`: Proactively aborts requests predicted to miss their SLO based on estimated remaining work. Implies `slo_abort`.
+- `est_abort`: Proactively aborts requests predicted to miss their SLO based on estimated remaining work. Implies `est` and `slo_abort`.
 
 **Admission control** (mutually exclusive):
-- `ac_est`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Requires `slo_abort`. Works with scheduling policies (`sched_fifo`, `sched_prio`, `sched_prio,est_abort`).
+- `ac_est`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Implies `est` and `slo_abort`. Works with scheduling policies (`sched_fifo`, `sched_prio`, `sched_prio,est_abort`).
 - `ac_rajomon`: Token-bucket rate limiting admission control.
 
 `scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_prio`, `sched_prio,tailclipper,slo_abort`, `sched_prio,ac_rajomon`, `sched_prio,est_abort,ac_est,est_mean_var`.
