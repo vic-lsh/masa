@@ -6,7 +6,7 @@ use app_utils::timing::time_now;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
-use tonic::masa::{MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
+use tonic::masa_ext::{MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
 use tonic::transport::Server;
 use tonic::Request;
 

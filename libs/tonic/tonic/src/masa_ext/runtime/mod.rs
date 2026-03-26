@@ -26,7 +26,7 @@ where
 mod hook_impl {
     use std::sync::Arc;
 
-    use crate::masa::MasaHooks;
+    use crate::masa_ext::MasaHooks;
 
     // Each child task would clone this request context using this fn.
     pub(crate) fn on_clone<M>(raw_ctx: *const ())
@@ -54,7 +54,7 @@ mod hook_impl {
     {
         // SAFETY: the hook holds one ref-count to the request context.
         let ctx = unsafe { &*(raw_ctx as *const M::ParentContext) };
-        crate::masa::context::server::set_parent_ctx::<M>(ctx);
+        crate::masa_ext::server::set_parent_ctx::<M>(ctx);
     }
 
     // Remove request context from our thread local to avoid exposing it
@@ -63,6 +63,6 @@ mod hook_impl {
     where
         M: MasaHooks,
     {
-        crate::masa::context::server::reset_parent_ctx::<M>();
+        crate::masa_ext::server::reset_parent_ctx::<M>();
     }
 }

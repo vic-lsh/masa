@@ -6,7 +6,7 @@
 // (e.g., pred_sched's reprioritization) lives in the policy files.
 
 use crate::context_ext::read_context;
-use tonic_core::masa::context::resolve_method_name_from_http;
+use tonic_core::masa_ext::resolve_method_name_from_http;
 use tonic_core::{CowGrpcMethod, GrpcMethod, Response, Status};
 
 use crate::ac::{AcHandler, ActiveAcHandler};

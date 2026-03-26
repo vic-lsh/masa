@@ -13,7 +13,7 @@ pub mod body;
 pub mod metadata;
 
 /// Masa-related modules.
-pub mod masa;
+pub mod masa_ext;
 
 #[doc(hidden)]
 pub mod extensions;
