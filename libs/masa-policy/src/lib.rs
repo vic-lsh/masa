@@ -13,8 +13,7 @@ mod common;
 pub mod context_ext;
 #[cfg(feature = "est")]
 pub(crate) mod est;
-#[cfg(feature = "est")]
-mod pred_sched;
+mod predictive_overlay;
 /// Method registry for mapping service/method strings to IDs.
 pub mod registry;
 mod standard;
